@@ -1,173 +1,88 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+
+/**
+ * PetFeedingTask — showstopper edition.
+ *
+ * Students tap food cards to feed their pet. Good foods grow the pet and
+ * score points; bad foods make the pet sick and shake the screen. The pet
+ * visually reacts to every feed, grows bigger with each success, and a
+ * full celebration explodes when the goal is reached.
+ *
+ * Mobile-first (tap), drag also works on desktop.
+ */
 
 const ANIMAL_PACKS = {
   classic: {
     name: "Classic Pets",
     animals: [
-      {
-        type: "dog",
-        emoji: "🐶",
-        name: "Dog",
-        hungry: "I'm starving!",
-        thanks: "Woof! Thanks!",
-      },
-      {
-        type: "cat",
-        emoji: "🐱",
-        name: "Cat",
-        hungry: "Meow... feed me?",
-        thanks: "Purrrfect!",
-      },
-      {
-        type: "bunny",
-        emoji: "🐰",
-        name: "Bunny",
-        hungry: "Nom nom?",
-        thanks: "Hop hop happy!",
-      },
+      { type: "dog", emoji: "🐶", name: "Buddy the Dog" },
+      { type: "cat", emoji: "🐱", name: "Whiskers" },
+      { type: "bunny", emoji: "🐰", name: "Flopsy" },
     ],
   },
   farm: {
     name: "Farm Friends",
     animals: [
-      {
-        type: "cow",
-        emoji: "🐮",
-        name: "Cow",
-        hungry: "Moo! Grass?",
-        thanks: "Moooo!",
-      },
-      {
-        type: "pig",
-        emoji: "🐷",
-        name: "Pig",
-        hungry: "Oink! Slop?",
-        thanks: "Oink oink!",
-      },
-      {
-        type: "chicken",
-        emoji: "🐔",
-        name: "Chicken",
-        hungry: "Cluck cluck!",
-        thanks: "Bawk bawk!",
-      },
+      { type: "cow", emoji: "🐮", name: "Daisy" },
+      { type: "pig", emoji: "🐷", name: "Hamlet" },
+      { type: "chicken", emoji: "🐔", name: "Nugget" },
     ],
   },
   ocean: {
     name: "Sea Creatures",
     animals: [
-      {
-        type: "dolphin",
-        emoji: "🐬",
-        name: "Dolphin",
-        hungry: "Eeee! Fish?",
-        thanks: "Eeeeee!",
-      },
-      {
-        type: "octopus",
-        emoji: "🐙",
-        name: "Octopus",
-        hungry: "Blub blub!",
-        thanks: "🫧",
-      },
-      {
-        type: "shark",
-        emoji: "🦈",
-        name: "Shark",
-        hungry: "Rawr! Meat?",
-        thanks: "CHOMP!",
-      },
+      { type: "dolphin", emoji: "🐬", name: "Splash" },
+      { type: "octopus", emoji: "🐙", name: "Inky" },
+      { type: "shark", emoji: "🦈", name: "Finn" },
     ],
   },
   dino: {
     name: "DINOSAURS!",
     animals: [
-      {
-        type: "trex",
-        emoji: "🦖",
-        name: "T-Rex",
-        hungry: "ROOOOAR!",
-        thanks: "ROAR!!!",
-      },
-      {
-        type: "triceratops",
-        emoji: "🦕",
-        name: "Triceratops",
-        hungry: "Huff huff!",
-        thanks: "Stomp stomp!",
-      },
-      {
-        type: "raptor",
-        emoji: "🦤",
-        name: "Velociraptor",
-        hungry: "Screech!",
-        thanks: "Clever girl...",
-      },
+      { type: "trex", emoji: "🦖", name: "Rex" },
+      { type: "triceratops", emoji: "🦕", name: "Trixie" },
+      { type: "raptor", emoji: "🦤", name: "Veloci" },
     ],
   },
   fantasy: {
     name: "Mythical Beasts",
     animals: [
-      {
-        type: "dragon",
-        emoji: "🐉",
-        name: "Dragon",
-        hungry: "Fire... hungry...",
-        thanks: "ROAR! 🔥",
-      },
-      {
-        type: "unicorn",
-        emoji: "🦄",
-        name: "Unicorn",
-        hungry: "Neigh! Magic?",
-        thanks: "✨",
-      },
-      {
-        type: "phoenix",
-        emoji: "🦅",
-        name: "Phoenix",
-        hungry: "Caw! Ashes?",
-        thanks: "REBORN!",
-      },
+      { type: "dragon", emoji: "🐉", name: "Ember" },
+      { type: "unicorn", emoji: "🦄", name: "Sparkle" },
+      { type: "phoenix", emoji: "🦅", name: "Blaze" },
     ],
   },
 };
 
-const TREATS = ["🍖", "🥕", "🍪", "🍗", "🐟", "🍕", "🥦", "🍩"];
+const FOOD_EMOJIS = ["🍖", "🥕", "🍪", "🍗", "🐟", "🍎", "🥦", "🍩", "🧀", "🍕", "🥩", "🍌", "🥚", "🍯", "🌽", "🍓"];
 
-function pickRandomAnimal(pack) {
-  const animals = pack.animals || [];
-  if (!animals.length) return null;
-  const index = Math.floor(Math.random() * animals.length);
-  return animals[index];
+function pickRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
 export default function PetFeedingTask({ task, onSubmit, disabled }) {
   const safeTask = task || {};
-
-  const packKey = safeTask.pack || safeTask?.config?.pack || "classic"; // AI or teacher chooses
+  const packKey = safeTask.pack || safeTask?.config?.pack || "classic";
   const pack = ANIMAL_PACKS[packKey] || ANIMAL_PACKS.classic;
 
-  // Keep the chosen animal stable across renders
-  const [animal, setAnimal] = useState(() => pickRandomAnimal(pack));
-
-  // Visual / game state
-  const [fedCount, setFedCount] = useState(0); // how many GOOD feeds
-  const [mistakes, setMistakes] = useState(0); // how many BAD feeds
-  const [lastDrop, setLastDrop] = useState(null); // { item, good }
+  const [animal] = useState(() => pickRandom(pack.animals));
+  const [fedCount, setFedCount] = useState(0);
+  const [mistakes, setMistakes] = useState(0);
+  const [lastResult, setLastResult] = useState(null); // "good" | "bad" | null
   const [submitted, setSubmitted] = useState(false);
+  const [selectedId, setSelectedId] = useState(null); // tap-to-feed selection
+  const [shakeScreen, setShakeScreen] = useState(false);
+  const [sparkles, setSparkles] = useState([]); // floating sparkle particles
+  const [petScale, setPetScale] = useState(1.0);
+  const [celebration, setCelebration] = useState(false);
+  const hasSubmittedRef = useRef(false);
+  const containerRef = useRef(null);
 
-  // Drag state
-  const [draggingId, setDraggingId] = useState(null);
-  const [dishHover, setDishHover] = useState(false);
+  const goal = Number(safeTask?.config?.goal || safeTask.goal || 4) || 4;
+  const maxMistakes = Number(safeTask?.config?.maxMistakes || safeTask.maxMistakes || 3) || 3;
 
-  // Normalize food items from task config.
-  // The player learns good/bad only by reading the word, not by visuals.
-  // Supported shapes:
-  // - task.config.foodItems: [{ id, label, good }]
-  // - task.foodItems: ...
-  // - task.config.goodFoods / badFoods arrays of strings
-  const normalizeFoodItems = () => {
+  // ─── Normalize food items ───
+  const initialFoodItems = useMemo(() => {
     const cfg = safeTask.config || {};
     const fromArray =
       (Array.isArray(cfg.foodItems) && cfg.foodItems) ||
@@ -175,629 +90,693 @@ export default function PetFeedingTask({ task, onSubmit, disabled }) {
       (Array.isArray(safeTask.items) && safeTask.items) ||
       null;
 
-    const goodFoods = Array.isArray(cfg.goodFoods)
-      ? cfg.goodFoods
-      : Array.isArray(safeTask.goodFoods)
-      ? safeTask.goodFoods
-      : null;
-
-    const badFoods = Array.isArray(cfg.badFoods)
-      ? cfg.badFoods
-      : Array.isArray(safeTask.badFoods)
-      ? safeTask.badFoods
-      : null;
+    const goodFoods = Array.isArray(cfg.goodFoods) ? cfg.goodFoods :
+      Array.isArray(safeTask.goodFoods) ? safeTask.goodFoods : null;
+    const badFoods = Array.isArray(cfg.badFoods) ? cfg.badFoods :
+      Array.isArray(safeTask.badFoods) ? safeTask.badFoods : null;
 
     if (fromArray && fromArray.length) {
-      return fromArray
-        .map((x, idx) => {
-          if (typeof x === "string") {
-            return { id: `i_${idx}`, label: x, good: null };
-          }
-          const label = String(x?.label || x?.word || x?.text || x?.name || `Item ${idx + 1}`).trim();
-          const good =
-            typeof x?.good === "boolean"
-              ? x.good
-              : typeof x?.isGood === "boolean"
-              ? x.isGood
-              : null;
-
-          return { id: String(x?.id || x?._id || `i_${idx}`), label, good };
-        })
-        .filter((x) => x.label);
+      return fromArray.map((x, idx) => {
+        if (typeof x === "string") return { id: `i_${idx}`, label: x, good: null, emoji: FOOD_EMOJIS[idx % FOOD_EMOJIS.length] };
+        const label = String(x?.label || x?.word || x?.text || x?.name || `Item ${idx + 1}`).trim();
+        const good = typeof x?.good === "boolean" ? x.good : typeof x?.isGood === "boolean" ? x.isGood : null;
+        return { id: String(x?.id || `i_${idx}`), label, good, emoji: x?.emoji || FOOD_EMOJIS[idx % FOOD_EMOJIS.length] };
+      }).filter((x) => x.label);
     }
 
-    // If good/bad arrays provided, merge them.
-    if ((goodFoods && goodFoods.length) || (badFoods && badFoods.length)) {
+    if ((goodFoods?.length) || (badFoods?.length)) {
       const items = [];
-      const push = (arr, goodFlag) => {
-        (arr || []).forEach((w) => {
+      const push = (arr, goodFlag, prefix) =>
+        (arr || []).forEach((w, i) => {
           const label = String(w || "").trim();
           if (!label) return;
-          items.push({
-            id: `${goodFlag ? "g" : "b"}_${label.toLowerCase().replace(/\W+/g, "_")}`,
-            label,
-            good: !!goodFlag,
-          });
+          items.push({ id: `${prefix}_${i}`, label, good: goodFlag, emoji: FOOD_EMOJIS[items.length % FOOD_EMOJIS.length] });
         });
-      };
-      push(goodFoods, true);
-      push(badFoods, false);
+      push(goodFoods, true, "g");
+      push(badFoods, false, "b");
+      // Shuffle
+      for (let i = items.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [items[i], items[j]] = [items[j], items[i]];
+      }
       return items.slice(0, 16);
     }
 
-    // Default classroom-friendly set.
+    // Default set
     return [
-      { id: "g_1", label: "Fresh carrots", good: true },
-      { id: "g_2", label: "Clean water", good: true },
-      { id: "g_3", label: "Healthy kibble", good: true },
-      { id: "g_4", label: "Fish fillet", good: true },
-      { id: "b_1", label: "Chocolate", good: false },
-      { id: "b_2", label: "Soda pop", good: false },
-      { id: "b_3", label: "Old leftovers", good: false },
-      { id: "b_4", label: "Spoiled milk", good: false },
-      { id: "n_1", label: "Mystery snack", good: null },
-      { id: "n_2", label: "Crunchy treat", good: null },
-      { id: "n_3", label: "Spicy chips", good: null },
-      { id: "n_4", label: "Salty cracker", good: null },
-    ].slice(0, 16);
-  };
+      { id: "g1", label: "Fresh carrots", good: true, emoji: "🥕" },
+      { id: "g2", label: "Clean water", good: true, emoji: "💧" },
+      { id: "g3", label: "Healthy kibble", good: true, emoji: "🦴" },
+      { id: "g4", label: "Fish fillet", good: true, emoji: "🐟" },
+      { id: "g5", label: "Apple slices", good: true, emoji: "🍎" },
+      { id: "b1", label: "Chocolate bar", good: false, emoji: "🍫" },
+      { id: "b2", label: "Soda pop", good: false, emoji: "🥤" },
+      { id: "b3", label: "Old leftovers", good: false, emoji: "🗑️" },
+      { id: "b4", label: "Spoiled milk", good: false, emoji: "🥛" },
+      { id: "b5", label: "Spicy peppers", good: false, emoji: "🌶️" },
+      { id: "n1", label: "Mystery snack", good: null, emoji: "❓" },
+      { id: "n2", label: "Crunchy treat", good: null, emoji: "🍪" },
+    ];
+  }, [safeTask?.id, safeTask?._id, packKey]);
 
-  const [foodItems, setFoodItems] = useState(() => normalizeFoodItems());
+  const [foodItems, setFoodItems] = useState(initialFoodItems);
 
-  // When the task or pack changes (new station, new round, etc.), reset
-  useEffect(() => {
-    setAnimal(pickRandomAnimal(pack));
-    setFedCount(0);
-    setMistakes(0);
-    setLastDrop(null);
-    setSubmitted(false);
-    setDraggingId(null);
-    setDishHover(false);
-    setFoodItems(normalizeFoodItems());
-  }, [packKey, safeTask?.id, safeTask?._id]);
+  useEffect(() => { setFoodItems(initialFoodItems); }, [initialFoodItems]);
 
-  // Play a happy sound once the pet reaches a goal
-  useEffect(() => {
-    if (fedCount <= 0) return;
-    try {
-      const audio = new Audio("/sounds/yay.mp3");
-      audio.play().catch(() => {});
-    } catch {
-      // ignore
-    }
-  }, [fedCount]);
-
-  const goal = Number(safeTask?.config?.goal || safeTask.goal || 4) || 4;
-  const maxMistakes = Number(safeTask?.config?.maxMistakes || safeTask.maxMistakes || 3) || 3;
-
-  const fedEnough = fedCount >= goal;
-
+  // ─── Evaluate goodness ───
   const evaluateGoodness = (item) => {
-    // If the item has explicit good/bad, use it.
     if (typeof item.good === "boolean") return item.good;
-
-    // Otherwise, infer with a tiny heuristic (still "unknown" to students),
-    // but keep it conservative and safe. This is only used when the generator
-    // doesn't provide good/bad flags.
     const t = String(item.label || "").toLowerCase();
-    const badHints = ["chocolate", "soda", "spoiled", "old", "mold", "rotten", "poison", "glass", "soap"];
-    const goodHints = ["water", "fresh", "healthy", "kibble", "carrot", "fish", "apple", "grain", "hay", "lettuce", "berries"];
-    if (badHints.some((h) => t.includes(h))) return false;
-    if (goodHints.some((h) => t.includes(h))) return true;
-
-    // fallback: deterministic "random" based on label
+    const bad = ["chocolate", "soda", "spoiled", "old", "mold", "rotten", "poison", "glass", "soap", "candy", "spicy", "pepper"];
+    const good = ["water", "fresh", "healthy", "kibble", "carrot", "fish", "apple", "grain", "hay", "lettuce", "berries", "clean"];
+    if (bad.some((h) => t.includes(h))) return false;
+    if (good.some((h) => t.includes(h))) return true;
     let hash = 0;
-    for (let i = 0; i < t.length; i += 1) hash = (hash + t.charCodeAt(i) * (i + 1)) % 997;
-    return hash % 10 >= 6;
+    for (let i = 0; i < t.length; i++) hash = (hash + t.charCodeAt(i) * (i + 1)) % 997;
+    return hash % 10 >= 5;
   };
 
-  const canSubmit = fedEnough || mistakes >= maxMistakes;
-
-  const submitIfDone = (nextFed, nextMistakes, last) => {
-    if (submitted) return;
-    const doneNow = nextFed >= goal || nextMistakes >= maxMistakes;
-    if (!doneNow) return;
-
-    setSubmitted(true);
-
+  // ─── Spawn sparkle particles ───
+  const spawnSparkles = (count = 8) => {
+    const newSparkles = Array.from({ length: count }, (_, i) => ({
+      id: Date.now() + i,
+      x: 40 + Math.random() * 20,
+      y: 30 + Math.random() * 10,
+      emoji: pickRandom(["✨", "⭐", "💫", "🌟", "💖", "🎉"]),
+      dx: (Math.random() - 0.5) * 60,
+      dy: -(Math.random() * 40 + 20),
+    }));
+    setSparkles((prev) => [...prev, ...newSparkles]);
     setTimeout(() => {
-      onSubmit?.({
-        type: safeTask.taskType || safeTask.type || "pet-feeding",
-        completed: true,
-        pack: packKey,
-        animal: animal?.type || null,
-        goal,
-        fedCount: nextFed,
-        mistakes: nextMistakes,
-        lastDrop: last ? { label: last.item?.label, good: last.good } : null,
-        // include the set shown to students:
-        foodItems: foodItems.map((fi) => ({ id: fi.id, label: fi.label })),
-      });
-    }, 900);
+      setSparkles((prev) => prev.filter((s) => !newSparkles.find((n) => n.id === s.id)));
+    }, 1200);
   };
 
-  const handleDropToDish = (item) => {
-    if (disabled || submitted) return;
-    if (!item) return;
+  // ─── Feed the pet ───
+  const feedPet = (item) => {
+    if (disabled || submitted || !item) return;
 
     const good = evaluateGoodness(item);
-
     const nextFed = good ? fedCount + 1 : fedCount;
     const nextMistakes = good ? mistakes : mistakes + 1;
 
     setFedCount(nextFed);
     setMistakes(nextMistakes);
-    setLastDrop({ item, good });
+    setLastResult(good ? "good" : "bad");
+    setSelectedId(null);
 
-    // remove dropped item from the list for a cleaner feel
+    // Remove the food card
     setFoodItems((prev) => prev.filter((x) => x.id !== item.id));
 
-    // Brief celebration / reaction delay then maybe submit
-    submitIfDone(nextFed, nextMistakes, { item, good });
+    if (good) {
+      // Growth + sparkles
+      setPetScale((s) => Math.min(s + 0.08, 1.6));
+      spawnSparkles(10);
+      try { new Audio("/sounds/yay.mp3").play().catch(() => {}); } catch {}
+    } else {
+      // Screen shake
+      setShakeScreen(true);
+      setTimeout(() => setShakeScreen(false), 500);
+      try { new Audio("/sounds/buzz.mp3").play().catch(() => {}); } catch {}
+    }
+
+    // Clear result flash after a moment
+    setTimeout(() => setLastResult(null), 1500);
+
+    // Check win/loss
+    if (nextFed >= goal) {
+      setCelebration(true);
+      spawnSparkles(25);
+      try { new Audio("/sounds/victory.mp3").play().catch(() => {}); } catch {}
+    }
+
+    // Submit
+    if ((nextFed >= goal || nextMistakes >= maxMistakes) && !hasSubmittedRef.current) {
+      hasSubmittedRef.current = true;
+      setSubmitted(true);
+      setTimeout(() => {
+        onSubmit?.({
+          type: safeTask.taskType || safeTask.type || "pet-feeding",
+          taskType: "pet-feeding",
+          completed: true,
+          pack: packKey,
+          animal: animal?.type || null,
+          goal,
+          fedCount: nextFed,
+          mistakes: nextMistakes,
+          success: nextFed >= goal,
+          pointsEarned: nextFed * 25 + (nextFed >= goal ? 50 : 0),
+          teamPointsEarned: nextFed * 25 + (nextFed >= goal ? 50 : 0),
+        });
+      }, 1500);
+    }
   };
 
-  if (!animal) {
-    return (
-      <div className="flex h-full items-center justify-center p-8">
-        <div className="text-center text-xl text-red-600">No animals found for this pack.</div>
-      </div>
-    );
-  }
+  // ─── Tap-to-feed: tap card to select, tap pet/bowl area to feed ───
+  const handleCardTap = (item) => {
+    if (disabled || submitted) return;
+    if (selectedId === item.id) {
+      // Double-tap = feed immediately
+      feedPet(item);
+    } else {
+      setSelectedId(item.id);
+    }
+  };
 
-  const mood =
-    mistakes >= maxMistakes
-      ? "sad"
-      : fedEnough
-      ? "happy"
-      : lastDrop
-      ? lastDrop.good
-        ? "happy"
-        : "yuck"
-      : "hungry";
+  const handlePetAreaTap = () => {
+    if (disabled || submitted || !selectedId) return;
+    const item = foodItems.find((x) => x.id === selectedId);
+    if (item) feedPet(item);
+  };
 
-  const petLine =
-    mood === "sad"
-      ? "Oh no… too many yucky foods."
-      : mood === "happy"
-      ? animal.thanks
-      : mood === "yuck"
-      ? "Bleh… that was gross."
-      : animal.hungry;
+  // ─── Drag support ───
+  const handleDragStart = (e, item) => {
+    if (disabled || submitted) return;
+    setSelectedId(item.id);
+    e.dataTransfer.setData("text/plain", item.id);
+  };
 
-  const progressPct = Math.max(0, Math.min(100, Math.round((fedCount / goal) * 100)));
-  const mistakePct = Math.max(0, Math.min(100, Math.round((mistakes / maxMistakes) * 100)));
+  const handleDrop = (e) => {
+    e.preventDefault();
+    if (disabled || submitted) return;
+    const id = e.dataTransfer.getData("text/plain");
+    const item = foodItems.find((x) => x.id === id);
+    if (item) feedPet(item);
+  };
+
+  // ─── Pet expression ───
+  const expression = (() => {
+    if (celebration) return "🥳";
+    if (mistakes >= maxMistakes) return "🤢";
+    if (lastResult === "bad") return "😖";
+    if (lastResult === "good") return "😋";
+    if (fedCount > 0) return "😊";
+    return "🤤"; // hungry
+  })();
+
+  const petMessage = (() => {
+    if (celebration) return "YUMMY! I'M SO FULL AND HAPPY!";
+    if (mistakes >= maxMistakes) return "Urghh... my tummy hurts...";
+    if (lastResult === "bad") return "BLEH! That was GROSS!";
+    if (lastResult === "good") return "MMMM! MORE MORE MORE!";
+    if (fedCount > 0) return "That was delicious! Got more?";
+    return `I'm SO hungry! Feed me, please!`;
+  })();
+
+  const fullnessPct = Math.min(100, Math.round((fedCount / goal) * 100));
+  const dangerPct = Math.min(100, Math.round((mistakes / maxMistakes) * 100));
+  const gameOver = submitted || fedCount >= goal || mistakes >= maxMistakes;
 
   return (
     <div
-      className="flex h-full flex-col items-center justify-center p-6"
+      ref={containerRef}
       style={{
-        background: "radial-gradient(circle at 20% 10%, rgba(186,230,253,1), rgba(34,197,94,0.20) 40%, rgba(255,255,255,1) 75%)",
-        fontFamily: "system-ui",
+        ...S.page,
+        animation: shakeScreen ? "screenShake 0.5s ease" : "none",
       }}
     >
-      <div
-        style={{
-          width: "min(980px, 96vw)",
-          borderRadius: 22,
-          border: "1px solid rgba(226,232,240,1)",
-          background: "linear-gradient(180deg, #ffffff, #f8fafc)",
-          boxShadow: "0 22px 60px rgba(2,6,23,0.10)",
-          padding: 16,
-        }}
-      >
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontSize: "1.35rem", fontWeight: 1000, color: "#0f172a" }}>🐾 Feed the Pet</div>
-            <div style={{ marginTop: 4, color: "#475569", fontWeight: 750 }}>
-              Drag a word-card into the bowl. Some foods help… some are yucky.
-            </div>
+      {/* Header */}
+      <div style={S.header}>
+        <div style={S.titleRow}>
+          <span style={S.titleEmoji}>🐾</span>
+          <h2 style={S.title}>FEED THE PET!</h2>
+        </div>
+        <div style={S.packBadge}>{pack.name}</div>
+      </div>
+
+      {/* Status bars */}
+      <div style={S.statusRow}>
+        <div style={S.statusBar}>
+          <div style={S.statusLabel}>
+            <span>😋 Fullness</span>
+            <span style={S.statusNum}>{fedCount}/{goal}</span>
           </div>
-
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <div
-              style={{
-                padding: "8px 12px",
-                borderRadius: 999,
-                border: "1px solid rgba(226,232,240,1)",
-                background: "#ffffff",
-                fontWeight: 900,
-                color: "#0f172a",
-              }}
-              title="Animal pack"
-            >
-              {pack.name}
-            </div>
-
-            <div
-              style={{
-                padding: "8px 12px",
-                borderRadius: 999,
-                border: "1px solid rgba(226,232,240,1)",
-                background: "#ffffff",
-                fontWeight: 900,
-                color: "#0f172a",
-              }}
-              title="Goal"
-            >
-              Goal: {fedCount}/{goal}
-            </div>
-
-            <div
-              style={{
-                padding: "8px 12px",
-                borderRadius: 999,
-                border: "1px solid rgba(226,232,240,1)",
-                background: "#ffffff",
-                fontWeight: 900,
-                color: mistakes >= maxMistakes ? "#b91c1c" : "#0f172a",
-              }}
-              title="Mistakes"
-            >
-              Yuck: {mistakes}/{maxMistakes}
-            </div>
+          <div style={S.barTrack}>
+            <div style={{
+              ...S.barFill,
+              width: `${fullnessPct}%`,
+              background: "linear-gradient(90deg, #22c55e, #16a34a)",
+              boxShadow: fullnessPct > 50 ? "0 0 12px rgba(34,197,94,0.5)" : "none",
+            }} />
           </div>
         </div>
-
-        <div
-          style={{
-            marginTop: 12,
-            borderRadius: 18,
-            border: "1px solid rgba(226,232,240,1)",
-            background: "rgba(255,255,255,0.85)",
-            padding: 12,
-          }}
-        >
-          <div style={{ fontWeight: 1000, color: "#0f172a" }}>How to play (quick)</div>
-          <ol style={{ margin: "6px 0 0 18px", padding: 0, color: "#334155", fontWeight: 800, lineHeight: 1.35 }}>
-            <li>Drag one word-card into the bowl.</li>
-            <li>Try to feed the pet <b>{goal}</b> good items.</li>
-            <li>Be careful: <b>{maxMistakes}</b> yucky items ends the round.</li>
-          </ol>
-        </div>
-
-        {/* Main grid */}
-        <div
-          style={{
-            marginTop: 14,
-            display: "grid",
-            gridTemplateColumns: "1.05fr 0.95fr",
-            gap: 14,
-          }}
-        >
-          {/* Left: Pet scene */}
-          <div
-            style={{
-              borderRadius: 20,
-              border: "1px solid rgba(226,232,240,1)",
-              background: "linear-gradient(180deg, rgba(239,246,255,1), rgba(255,255,255,1))",
-              padding: 14,
-              position: "relative",
-              overflow: "hidden",
-              minHeight: 340,
-            }}
-          >
-            {/* soft blobs */}
-            <div
-              aria-hidden="true"
-              style={{
-                position: "absolute",
-                inset: -80,
-                background:
-                  "radial-gradient(circle at 30% 20%, rgba(99,102,241,0.18), transparent 55%), radial-gradient(circle at 70% 35%, rgba(34,197,94,0.18), transparent 55%), radial-gradient(circle at 50% 80%, rgba(251,191,36,0.14), transparent 55%)",
-                pointerEvents: "none",
-              }}
-            />
-
-            <div style={{ position: "relative", display: "grid", gap: 10, justifyItems: "center" }}>
-              {/* Pet card */}
-              <div
-                style={{
-                  width: "min(520px, 100%)",
-                  borderRadius: 22,
-                  border: "1px solid rgba(226,232,240,1)",
-                  background: "#ffffff",
-                  boxShadow: "0 18px 45px rgba(2,6,23,0.08)",
-                  padding: 14,
-                  display: "grid",
-                  justifyItems: "center",
-                  textAlign: "center",
-                }}
-              >
-                <div style={{ fontWeight: 1000, fontSize: "1.05rem", color: "#0f172a" }}>
-                  {animal.name}
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 8,
-                    width: 200,
-                    height: 200,
-                    borderRadius: 999,
-                    background:
-                      mood === "sad"
-                        ? "radial-gradient(circle at 35% 25%, #fecaca, #fca5a5)"
-                        : mood === "yuck"
-                        ? "radial-gradient(circle at 35% 25%, #fde68a, #fbbf24)"
-                        : "radial-gradient(circle at 35% 25%, #bbf7d0, #86efac)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    boxShadow: "0 20px 55px rgba(2,6,23,0.18)",
-                    transform: draggingId ? "scale(1.01)" : "scale(1.00)",
-                    transition: "transform 140ms ease",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: "7.5rem",
-                      lineHeight: 1,
-                      filter: "drop-shadow(0 16px 28px rgba(2,6,23,0.25))",
-                      animation: mood === "happy" ? "petBounce 900ms ease-in-out infinite" : "none",
-                    }}
-                  >
-                    {animal.emoji}
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 10, fontSize: "1.35rem", fontWeight: 1000, color: "#0f172a" }}>
-                  {petLine}
-                </div>
-
-                {/* Progress bars */}
-                <div style={{ width: "min(520px, 100%)", marginTop: 12, display: "grid", gap: 10 }}>
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, color: "#0f172a" }}>
-                      <span>Fullness</span>
-                      <span>{progressPct}%</span>
-                    </div>
-                    <div style={{ height: 14, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: `${progressPct}%`, background: "#22c55e" }} />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, color: "#0f172a" }}>
-                      <span>Yuck Meter</span>
-                      <span>{mistakePct}%</span>
-                    </div>
-                    <div style={{ height: 14, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: `${mistakePct}%`, background: mistakes >= maxMistakes ? "#b91c1c" : "#f59e0b" }} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Dish drop zone */}
-              <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  if (disabled || submitted) return;
-                  setDishHover(true);
-                }}
-                onDragLeave={() => setDishHover(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDishHover(false);
-                  if (disabled || submitted) return;
-
-                  try {
-                    const id = e.dataTransfer.getData("text/plain");
-                    const item = foodItems.find((x) => x.id === id);
-                    handleDropToDish(item);
-                  } catch {
-                    // ignore
-                  } finally {
-                    setDraggingId(null);
-                  }
-                }}
-                style={{
-                  width: "min(520px, 100%)",
-                  borderRadius: 22,
-                  border: dishHover ? "2px dashed #6366f1" : "1px solid rgba(226,232,240,1)",
-                  background: dishHover ? "rgba(238,242,255,1)" : "#ffffff",
-                  boxShadow: dishHover ? "0 22px 70px rgba(99,102,241,0.20)" : "0 18px 45px rgba(2,6,23,0.06)",
-                  padding: 14,
-                  transition: "all 120ms ease",
-                  display: "grid",
-                  justifyItems: "center",
-                }}
-                title="Drop food here"
-              >
-                <div style={{ fontWeight: 1000, color: "#0f172a" }}>🍽️ Feeding Bowl</div>
-
-                {/* Bowl illustration */}
-                <div style={{ width: 260, height: 110, marginTop: 10, position: "relative" }}>
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      borderRadius: 999,
-                      background: "linear-gradient(180deg, #e2e8f0, #cbd5e1)",
-                      boxShadow: "0 18px 35px rgba(2,6,23,0.18)",
-                    }}
-                  />
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: 18,
-                      right: 18,
-                      top: 18,
-                      height: 56,
-                      borderRadius: 999,
-                      background: "linear-gradient(180deg, #f8fafc, #e2e8f0)",
-                    }}
-                  />
-                  {/* food pile */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: 40,
-                      right: 40,
-                      top: 18,
-                      height: 44,
-                      borderRadius: 999,
-                      background:
-                        lastDrop && lastDrop.good
-                          ? "radial-gradient(circle at 30% 25%, rgba(34,197,94,0.75), rgba(34,197,94,0.15))"
-                          : lastDrop && !lastDrop.good
-                          ? "radial-gradient(circle at 30% 25%, rgba(245,158,11,0.75), rgba(245,158,11,0.15))"
-                          : "radial-gradient(circle at 30% 25%, rgba(148,163,184,0.65), rgba(148,163,184,0.12))",
-                      filter: "blur(0.2px)",
-                    }}
-                  />
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      right: 0,
-                      bottom: -10,
-                      height: 28,
-                      borderRadius: 999,
-                      background: "rgba(15,23,42,0.10)",
-                      filter: "blur(10px)",
-                    }}
-                  />
-                </div>
-
-                <div style={{ marginTop: 10, color: "#475569", fontWeight: 800, textAlign: "center" }}>
-                  {submitted ? (
-                    fedEnough ? (
-                      <span style={{ color: "#16a34a" }}>✅ Goal reached! Great feeding choices.</span>
-                    ) : (
-                      <span style={{ color: "#b91c1c" }}>⛔ Too many yucky choices. Try again next time.</span>
-                    )
-                  ) : dishHover ? (
-                    <span style={{ color: "#4f46e5" }}>Drop it in the bowl…</span>
-                  ) : (
-                    <span>Drag a word-card into the bowl.</span>
-                  )}
-                </div>
-              </div>
-
-              {/* last drop feedback */}
-              {lastDrop && (
-                <div
-                  style={{
-                    width: "min(520px, 100%)",
-                    borderRadius: 18,
-                    border: "1px solid rgba(226,232,240,1)",
-                    background: lastDrop.good ? "rgba(240,253,244,1)" : "rgba(255,251,235,1)",
-                    padding: 12,
-                    fontWeight: 900,
-                    color: "#0f172a",
-                    textAlign: "center",
-                  }}
-                >
-                  {lastDrop.good ? "✅ Good choice:" : "⚠️ Not a great choice:"} {lastDrop.item?.label}
-                </div>
-              )}
-            </div>
+        <div style={S.statusBar}>
+          <div style={S.statusLabel}>
+            <span>🤢 Yuck Meter</span>
+            <span style={{ ...S.statusNum, color: dangerPct >= 66 ? "#dc2626" : "#64748b" }}>{mistakes}/{maxMistakes}</span>
           </div>
-
-          {/* Right: draggable word cards */}
-          <div
-            style={{
-              borderRadius: 20,
-              border: "1px solid rgba(226,232,240,1)",
-              background: "#ffffff",
-              padding: 14,
-              minHeight: 340,
-            }}
-          >
-            <div style={{ fontWeight: 1000, fontSize: "1.05rem", color: "#0f172a" }}>Food word-cards</div>
-            <div style={{ marginTop: 6, color: "#64748b", fontWeight: 750 }}>
-              Read the words. Drag one into the bowl.
-            </div>
-
-            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-              {foodItems.length ? (
-                foodItems.map((item) => (
-                  <div
-                    key={item.id}
-                    draggable={!disabled && !submitted}
-                    onDragStart={(e) => {
-                      if (disabled || submitted) return;
-                      setDraggingId(item.id);
-                      e.dataTransfer.setData("text/plain", item.id);
-                      e.dataTransfer.effectAllowed = "move";
-                    }}
-                    onDragEnd={() => setDraggingId(null)}
-                    style={{
-                      padding: "12px 12px",
-                      borderRadius: 16,
-                      border: draggingId === item.id ? "2px solid #6366f1" : "1px solid rgba(226,232,240,1)",
-                      background: draggingId === item.id ? "rgba(238,242,255,1)" : "linear-gradient(180deg, #ffffff, #f8fafc)",
-                      boxShadow: draggingId === item.id ? "0 18px 45px rgba(99,102,241,0.18)" : "0 12px 28px rgba(2,6,23,0.05)",
-                      cursor: disabled || submitted ? "not-allowed" : "grab",
-                      userSelect: "none",
-                      fontWeight: 1000,
-                      color: "#0f172a",
-                      transform: draggingId === item.id ? "scale(1.01)" : "scale(1.00)",
-                      transition: "transform 120ms ease",
-                    }}
-                    title={disabled || submitted ? "Disabled" : "Drag to bowl"}
-                  >
-                    {item.label}
-                  </div>
-                ))
-              ) : (
-                <div
-                  style={{
-                    marginTop: 8,
-                    padding: 14,
-                    borderRadius: 16,
-                    border: "1px solid rgba(226,232,240,1)",
-                    background: "#f8fafc",
-                    color: "#475569",
-                    fontWeight: 900,
-                    textAlign: "center",
-                  }}
-                >
-                  No more cards to drag.
-                </div>
-              )}
-            </div>
-
-            <div style={{ marginTop: 14, color: "#64748b", fontSize: "0.95rem", fontWeight: 750 }}>
-              Goal: feed <strong>{goal}</strong> good items before reaching <strong>{maxMistakes}</strong> yucky items.
-            </div>
-
-            {/* Manual submit button (optional) */}
-            <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
-              <button
-                type="button"
-                onClick={() => submitIfDone(fedCount, mistakes, lastDrop)}
-                disabled={disabled || submitted || !canSubmit}
-                style={{
-                  padding: "12px 14px",
-                  borderRadius: 999,
-                  border: "none",
-                  background: disabled || submitted || !canSubmit ? "#94a3b8" : "#16a34a",
-                  color: "#fff",
-                  fontWeight: 1000,
-                  cursor: disabled || submitted || !canSubmit ? "not-allowed" : "pointer",
-                  minWidth: 170,
-                }}
-                title="Finish when goal reached or mistakes maxed"
-              >
-                {submitted ? "Submitted" : "Finish"}
-              </button>
-            </div>
+          <div style={S.barTrack}>
+            <div style={{
+              ...S.barFill,
+              width: `${dangerPct}%`,
+              background: dangerPct >= 66 ? "linear-gradient(90deg, #f59e0b, #dc2626)" : "linear-gradient(90deg, #fbbf24, #f59e0b)",
+              boxShadow: dangerPct >= 66 ? "0 0 12px rgba(220,38,38,0.4)" : "none",
+            }} />
           </div>
         </div>
       </div>
 
-      {/* local keyframes */}
-      <style>
-        {`
-          @keyframes petBounce {
-            0% { transform: translateY(0px); }
-            50% { transform: translateY(-6px); }
-            100% { transform: translateY(0px); }
-          }
-        `}
-      </style>
+      {/* Pet area — tappable to feed selected card */}
+      <div
+        style={S.petArea}
+        onClick={handlePetAreaTap}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={handleDrop}
+      >
+        {/* Sparkle particles */}
+        {sparkles.map((s) => (
+          <div
+            key={s.id}
+            style={{
+              position: "absolute",
+              left: `${s.x}%`,
+              top: `${s.y}%`,
+              fontSize: 24,
+              pointerEvents: "none",
+              animation: "sparkleFloat 1.2s ease-out forwards",
+              "--dx": `${s.dx}px`,
+              "--dy": `${s.dy}px`,
+              zIndex: 10,
+            }}
+          >
+            {s.emoji}
+          </div>
+        ))}
+
+        {/* Pet character */}
+        <div style={{
+          ...S.petCharacter,
+          transform: `scale(${petScale})`,
+          animation:
+            lastResult === "good" ? "petBounce 0.6s ease" :
+            lastResult === "bad" ? "petGag 0.5s ease" :
+            celebration ? "petDance 0.8s ease infinite" :
+            "petIdle 3s ease-in-out infinite",
+        }}>
+          <div style={S.petEmoji}>{animal.emoji}</div>
+          <div style={S.petExpression}>{expression}</div>
+        </div>
+
+        {/* Pet name + message */}
+        <div style={S.petName}>{animal.name}</div>
+        <div style={{
+          ...S.petMessage,
+          color: lastResult === "bad" ? "#dc2626" : lastResult === "good" ? "#16a34a" : "#475569",
+          fontWeight: lastResult ? 900 : 700,
+        }}>
+          {petMessage}
+        </div>
+
+        {/* Bowl */}
+        <div style={S.bowl}>
+          <div style={S.bowlInner}>
+            {selectedId && !gameOver && (
+              <div style={S.bowlHint}>
+                Tap here to feed!
+              </div>
+            )}
+            {!selectedId && !gameOver && (
+              <div style={S.bowlHintDim}>
+                Pick a food below
+              </div>
+            )}
+          </div>
+          <div style={S.bowlShadow} />
+        </div>
+      </div>
+
+      {/* Result flash */}
+      {lastResult && (
+        <div style={{
+          ...S.resultFlash,
+          background: lastResult === "good" ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)",
+          borderColor: lastResult === "good" ? "#22c55e" : "#ef4444",
+          color: lastResult === "good" ? "#15803d" : "#dc2626",
+        }}>
+          {lastResult === "good" ? "✅ Great choice! The pet loves it!" : "❌ Yuck! That made the pet sick!"}
+        </div>
+      )}
+
+      {/* Celebration overlay */}
+      {celebration && (
+        <div style={S.celebrationOverlay}>
+          <div style={S.celebrationText}>🎉 GOAL REACHED! 🎉</div>
+          <div style={S.celebrationSub}>{animal.name} is full and happy!</div>
+        </div>
+      )}
+
+      {/* Game over (failure) */}
+      {mistakes >= maxMistakes && !celebration && (
+        <div style={S.failOverlay}>
+          <div style={S.failText}>💔 Too many yucky foods!</div>
+          <div style={S.failSub}>{animal.name} has a tummy ache...</div>
+        </div>
+      )}
+
+      {/* Food cards grid */}
+      {!gameOver && (
+        <>
+          <div style={S.foodHeader}>
+            {selectedId
+              ? "Now tap the pet area above to feed it! (or tap another card to switch)"
+              : "Tap a food card to select it, then tap the pet to feed!"}
+          </div>
+          <div style={S.foodGrid}>
+            {foodItems.map((item) => {
+              const isSelected = selectedId === item.id;
+              return (
+                <div
+                  key={item.id}
+                  draggable={!disabled && !submitted}
+                  onDragStart={(e) => handleDragStart(e, item)}
+                  onClick={() => handleCardTap(item)}
+                  style={{
+                    ...S.foodCard,
+                    borderColor: isSelected ? "#6366f1" : "rgba(226,232,240,1)",
+                    background: isSelected
+                      ? "linear-gradient(135deg, #eef2ff, #e0e7ff)"
+                      : "linear-gradient(135deg, #ffffff, #f8fafc)",
+                    transform: isSelected ? "scale(1.05)" : "scale(1)",
+                    boxShadow: isSelected
+                      ? "0 8px 24px rgba(99,102,241,0.3)"
+                      : "0 4px 12px rgba(0,0,0,0.06)",
+                  }}
+                >
+                  <div style={S.foodEmoji}>{item.emoji}</div>
+                  <div style={S.foodLabel}>{item.label}</div>
+                  {isSelected && <div style={S.selectedBadge}>SELECTED</div>}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* Keyframe animations */}
+      <style>{`
+        @keyframes petIdle {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-4px); }
+        }
+        @keyframes petBounce {
+          0% { transform: scale(1) translateY(0); }
+          30% { transform: scale(1.15) translateY(-18px); }
+          50% { transform: scale(0.95) translateY(0); }
+          70% { transform: scale(1.05) translateY(-8px); }
+          100% { transform: scale(1) translateY(0); }
+        }
+        @keyframes petGag {
+          0% { transform: translateX(0) rotate(0); }
+          20% { transform: translateX(-8px) rotate(-5deg); }
+          40% { transform: translateX(8px) rotate(5deg); }
+          60% { transform: translateX(-6px) rotate(-3deg); }
+          80% { transform: translateX(4px) rotate(2deg); }
+          100% { transform: translateX(0) rotate(0); }
+        }
+        @keyframes petDance {
+          0%, 100% { transform: translateY(0) rotate(0); }
+          25% { transform: translateY(-10px) rotate(-5deg); }
+          75% { transform: translateY(-10px) rotate(5deg); }
+        }
+        @keyframes screenShake {
+          0%, 100% { transform: translateX(0); }
+          10% { transform: translateX(-6px); }
+          20% { transform: translateX(6px); }
+          30% { transform: translateX(-5px); }
+          40% { transform: translateX(5px); }
+          50% { transform: translateX(-3px); }
+          60% { transform: translateX(3px); }
+        }
+        @keyframes sparkleFloat {
+          0% { transform: translate(0, 0) scale(1); opacity: 1; }
+          100% { transform: translate(var(--dx), var(--dy)) scale(0.3); opacity: 0; }
+        }
+        @keyframes celebrationPulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+        }
+        @keyframes slideUp {
+          0% { transform: translateY(20px); opacity: 0; }
+          100% { transform: translateY(0); opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }
+
+// ─── Styles ───
+const S = {
+  page: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    minHeight: "100%",
+    padding: "16px 12px 32px",
+    background: "radial-gradient(ellipse at 30% 10%, rgba(186,230,253,0.5), transparent 60%), radial-gradient(ellipse at 70% 80%, rgba(187,247,208,0.3), transparent 50%), #f8fafc",
+    borderRadius: 18,
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
+    position: "relative",
+    overflow: "hidden",
+  },
+
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    width: "100%",
+    maxWidth: 560,
+    marginBottom: 8,
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  titleRow: { display: "flex", alignItems: "center", gap: 8 },
+  titleEmoji: { fontSize: 28 },
+  title: { fontSize: 24, fontWeight: 900, color: "#1e293b", margin: 0, letterSpacing: -0.5 },
+  packBadge: {
+    padding: "6px 14px",
+    borderRadius: 99,
+    background: "white",
+    border: "1px solid #e2e8f0",
+    fontWeight: 800,
+    fontSize: 13,
+    color: "#475569",
+  },
+
+  // Status bars
+  statusRow: {
+    display: "flex",
+    gap: 12,
+    width: "100%",
+    maxWidth: 560,
+    marginBottom: 12,
+  },
+  statusBar: { flex: 1 },
+  statusLabel: {
+    display: "flex",
+    justifyContent: "space-between",
+    fontSize: 13,
+    fontWeight: 800,
+    color: "#475569",
+    marginBottom: 4,
+  },
+  statusNum: { fontWeight: 900, color: "#1e293b" },
+  barTrack: {
+    height: 10,
+    borderRadius: 5,
+    background: "#e2e8f0",
+    overflow: "hidden",
+  },
+  barFill: {
+    height: "100%",
+    borderRadius: 5,
+    transition: "width 0.5s ease, background 0.3s ease",
+  },
+
+  // Pet area
+  petArea: {
+    position: "relative",
+    width: "100%",
+    maxWidth: 560,
+    borderRadius: 24,
+    background: "linear-gradient(180deg, #ffffff, #f1f5f9)",
+    border: "2px solid #e2e8f0",
+    boxShadow: "0 12px 32px rgba(0,0,0,0.06)",
+    padding: "24px 16px 16px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    cursor: "pointer",
+    overflow: "hidden",
+    marginBottom: 12,
+  },
+  petCharacter: {
+    transition: "transform 0.4s ease",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+  },
+  petEmoji: {
+    fontSize: 96,
+    lineHeight: 1,
+    filter: "drop-shadow(0 8px 16px rgba(0,0,0,0.15))",
+  },
+  petExpression: {
+    fontSize: 32,
+    marginTop: -8,
+    filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.1))",
+  },
+  petName: {
+    fontSize: 18,
+    fontWeight: 900,
+    color: "#1e293b",
+    marginTop: 8,
+  },
+  petMessage: {
+    fontSize: 15,
+    textAlign: "center",
+    marginTop: 4,
+    maxWidth: 300,
+    lineHeight: 1.4,
+    minHeight: 42,
+    transition: "color 0.3s ease",
+  },
+
+  // Bowl
+  bowl: {
+    position: "relative",
+    width: 160,
+    height: 60,
+    marginTop: 12,
+  },
+  bowlInner: {
+    position: "absolute",
+    inset: 0,
+    borderRadius: "0 0 80px 80px",
+    background: "linear-gradient(180deg, #cbd5e1, #94a3b8)",
+    border: "3px solid #94a3b8",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  bowlHint: {
+    fontSize: 12,
+    fontWeight: 800,
+    color: "#4f46e5",
+    animation: "celebrationPulse 1.5s ease infinite",
+  },
+  bowlHintDim: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#94a3b8",
+  },
+  bowlShadow: {
+    position: "absolute",
+    bottom: -6,
+    left: 20,
+    right: 20,
+    height: 12,
+    borderRadius: 99,
+    background: "rgba(0,0,0,0.08)",
+    filter: "blur(6px)",
+  },
+
+  // Result flash
+  resultFlash: {
+    width: "100%",
+    maxWidth: 560,
+    padding: "10px 16px",
+    borderRadius: 14,
+    border: "2px solid",
+    fontWeight: 800,
+    fontSize: 15,
+    textAlign: "center",
+    marginBottom: 8,
+    animation: "slideUp 0.3s ease",
+  },
+
+  // Celebration
+  celebrationOverlay: {
+    width: "100%",
+    maxWidth: 560,
+    padding: 24,
+    borderRadius: 20,
+    background: "linear-gradient(135deg, rgba(34,197,94,0.12), rgba(99,102,241,0.12))",
+    border: "2px solid #22c55e",
+    textAlign: "center",
+    marginBottom: 12,
+    animation: "celebrationPulse 1.5s ease infinite",
+  },
+  celebrationText: {
+    fontSize: 28,
+    fontWeight: 900,
+    color: "#15803d",
+  },
+  celebrationSub: {
+    fontSize: 16,
+    color: "#475569",
+    marginTop: 4,
+    fontWeight: 700,
+  },
+
+  // Fail
+  failOverlay: {
+    width: "100%",
+    maxWidth: 560,
+    padding: 24,
+    borderRadius: 20,
+    background: "rgba(239,68,68,0.08)",
+    border: "2px solid #ef4444",
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  failText: { fontSize: 24, fontWeight: 900, color: "#dc2626" },
+  failSub: { fontSize: 15, color: "#64748b", marginTop: 4, fontWeight: 700 },
+
+  // Food cards
+  foodHeader: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: "#64748b",
+    textAlign: "center",
+    marginBottom: 10,
+    maxWidth: 400,
+  },
+  foodGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+    gap: 10,
+    width: "100%",
+    maxWidth: 560,
+  },
+  foodCard: {
+    padding: "12px 10px",
+    borderRadius: 16,
+    border: "2px solid",
+    cursor: "pointer",
+    userSelect: "none",
+    textAlign: "center",
+    transition: "all 0.2s ease",
+    position: "relative",
+  },
+  foodEmoji: { fontSize: 28 },
+  foodLabel: {
+    fontSize: 13,
+    fontWeight: 800,
+    color: "#1e293b",
+    marginTop: 4,
+    lineHeight: 1.3,
+  },
+  selectedBadge: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    background: "#6366f1",
+    color: "white",
+    fontSize: 9,
+    fontWeight: 900,
+    padding: "2px 8px",
+    borderRadius: 99,
+    letterSpacing: 0.5,
+  },
+};
