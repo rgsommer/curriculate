@@ -1162,7 +1162,7 @@ export async function regenerateSingleTask({
   const request = {
     model: process.env.AI_MODEL || "gpt-4.1-mini",
     temperature: typeof temperature === "number" ? temperature : 0.4,
-    max_completion_tokens: 900,
+    max_completion_tokens: 2048,
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },
@@ -1177,9 +1177,11 @@ export async function regenerateSingleTask({
   const completion = await client.chat.completions.create(request);
   const raw = completion.choices?.[0]?.message?.content?.trim() || "{}";
 
+  const finishReason = completion.choices?.[0]?.finish_reason;
   const parsed = extractJsonFromText(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new Error("AI did not return a JSON object task.");
+      console.error(`[AI] Single-task generation failed for ${allowedType}. finish_reason=${finishReason}, raw (first 300):`, raw.slice(0, 300));
+      throw new Error(`AI did not return a JSON object task for ${allowedType}.`);
     }
 
     // 1) Force the type + guarantee title/prompt on the raw task
