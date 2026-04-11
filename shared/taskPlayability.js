@@ -263,6 +263,13 @@ export function assessTaskPlayability(rawTask) {
       break;
     }
 
+    case TASK_TYPES.TRUE_FALSE_CONNECT_FOUR: {
+      // Needs statements for the connect-four grid
+      const c4stmts = getArr(() => t.statements, () => t.config?.statements, () => t.items, () => t.config?.items);
+      if (!c4stmts || c4stmts.length < 6) issues.push(`need at least 6 statements (got ${c4stmts?.length || 0})`);
+      break;
+    }
+
     case TASK_TYPES.FLASHCARDS: {
       hasAtLeast(8, "cards/items", () => t.items, () => t.cards, () => t.config?.items, () => t.config?.cards);
       break;
