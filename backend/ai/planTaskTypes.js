@@ -71,6 +71,7 @@ GUIDELINES:
 - Use creative types (draw, make-and-snap, photo) for objects, scenes, emotions.
 - Use analytical types (sequence, compare/contrast, "why/how") for cause/effect, timelines.
 - Use input types (short-answer, photo evidence) for reflections, quick captures.
+- Use "matching" for vocabulary terms, key terms, definitions, word-definition pairs, person-role pairs, cause-effect pairs, or any concept where students match two sets of items. NEVER use "open-text" for key terms or vocabulary matching.
 
 RULES:
 - ONLY choose from the allowed taskType values.
