@@ -140,6 +140,7 @@ Rules:
 - Keep prompts concise and classroom-station friendly.
 - Do NOT include markdown or code fences.
 - No extra wrapper keys besides { "tasks": [...] }.
+- CRITICAL: NEVER use placeholder text. Every item, option, clue, left/right entry, question, and answer MUST contain real subject-matter content drawn from the subject, topic, and concept. NEVER write "Term 1", "Term 2", "Definition 1", "Option A", "Item 1", "Left 1", "Right 1", or any other generic filler. If you do not have enough content, invent plausible age-appropriate content for the subject.
 
 Task-type-specific rules:
 - draw-mime: MUST include a "clues" array of EXACTLY 4 unique short clues (1-3 words each, max 5 words).
@@ -156,6 +157,7 @@ Task-type-specific rules:
   Example: { "taskType":"short-answer", "title":"Key Terms", "prompt":"Answer each question.", "items":[{"id":"q1","prompt":"What was the main export?","correctAnswer":"fur"},{"id":"q2","prompt":"Who led the expedition?","correctAnswer":"Samuel de Champlain"}] }
 - matching: MUST include "leftItems" array and "rightItems" array (5-7 items each) plus a "correctMatches" object mapping left IDs to right IDs.
   Each item is an object with "id" and "text". Use L1,L2,... for left IDs and R1,R2,... for right IDs.
+  NEVER use placeholder text like "Term 1", "Definition 2", "Left 1", "Right 1" — every "text" value MUST be a real vocabulary word, name, concept, or definition drawn from the subject.
   Example: { "taskType":"matching", "title":"Match Terms to Definitions", "prompt":"Connect each word on the left to its correct meaning on the right.", "leftItems":[{"id":"L1","text":"Obedience"},{"id":"L2","text":"Faith"},{"id":"L3","text":"Grace"},{"id":"L4","text":"Covenant"},{"id":"L5","text":"Repentance"}], "rightItems":[{"id":"R1","text":"Following God's commands"},{"id":"R2","text":"Trust in what is unseen"},{"id":"R3","text":"Unmerited favor from God"},{"id":"R4","text":"A sacred agreement"},{"id":"R5","text":"Turning away from sin"}], "correctMatches":{"L1":"R1","L2":"R2","L3":"R3","L4":"R4","L5":"R5"} }
   `.trim();
 
