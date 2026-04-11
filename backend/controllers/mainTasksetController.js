@@ -144,25 +144,53 @@ function buildDiversePool(availableTypes, count, guaranteedTypes = []) {
   // Inject guaranteed types: ensure each appears at least once in the pool
   if (guaranteedTypes.length > 0) {
     const uniqueGuaranteed = [...new Set(guaranteedTypes)];
-    for (const gType of uniqueGuaranteed) {
-      if (pool.includes(gType)) continue; // already in pool — no action needed
-      // Find a slot to replace: prefer a slot whose type appears more than once
-      let replaced = false;
-      for (let i = pool.length - 1; i >= 0; i--) {
-        const t = pool[i];
-        if (pool.indexOf(t) !== i) {
-          // This type appears earlier in the pool too — safe to replace this duplicate
-          pool[i] = gType;
-          replaced = true;
-          break;
+
+    if (uniqueGuaranteed.length >= count) {
+      // Guaranteed types fill or exceed the pool — use them directly
+      // Shuffle so the order isn't predictable
+      const shuffled = [...uniqueGuaranteed];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      pool.length = 0;
+      pool.push(...shuffled.slice(0, count));
+    } else {
+      // Fewer guaranteed types than pool slots — replace non-guaranteed slots
+      // First, identify which guaranteed types are already in the pool
+      const missing = uniqueGuaranteed.filter((g) => !pool.includes(g));
+      // Replace slots occupied by non-guaranteed types (prefer duplicates first)
+      for (const gType of missing) {
+        let replaced = false;
+        // Pass 1: replace a non-guaranteed duplicate (type appears more than once)
+        for (let i = pool.length - 1; i >= 0; i--) {
+          const t = pool[i];
+          if (uniqueGuaranteed.includes(t)) continue; // don't evict another guaranteed type
+          if (pool.indexOf(t) !== i) {
+            pool[i] = gType;
+            replaced = true;
+            break;
+          }
+        }
+        if (!replaced) {
+          // Pass 2: replace any non-guaranteed type (last occurrence)
+          for (let i = pool.length - 1; i >= 0; i--) {
+            if (!uniqueGuaranteed.includes(pool[i])) {
+              pool[i] = gType;
+              replaced = true;
+              break;
+            }
+          }
+        }
+        if (!replaced) {
+          // All slots are guaranteed types already — append and we'll trim
+          pool.push(gType);
         }
       }
-      if (!replaced) {
-        // No duplicates left — replace the last slot
-        pool[pool.length - 1] = gType;
-      }
+      // Trim back to count if we overflowed
+      if (pool.length > count) pool.length = count;
     }
-    console.log(`[AI] Guaranteed types injected: ${uniqueGuaranteed.join(", ")}`);
+    console.log(`[AI] Guaranteed types injected (${uniqueGuaranteed.length}): ${uniqueGuaranteed.join(", ")}`);
   }
 
   // Verify no more than 2 consecutive same-category (swap if needed)
