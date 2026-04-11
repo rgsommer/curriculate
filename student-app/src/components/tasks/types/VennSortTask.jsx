@@ -93,9 +93,8 @@ function Pill({ item, draggable, onDragStart, status = "neutral" }) {
         lineHeight: 1.1,
         maxWidth: 260,
         textAlign: "center",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
+        whiteSpace: "normal",
+        wordBreak: "break-word",
       }}
       title={item.text}
     >
