@@ -1,6 +1,103 @@
 // student-app/src/components/tasks/types/TrueFalseTask.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+// Inline animation styles
+const animationStyles = `
+  @keyframes slideInDown {
+    from {
+      opacity: 0;
+      transform: translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+  }
+
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0) rotate(0deg); }
+    10% { transform: translateX(-5px) rotate(-1deg); }
+    20% { transform: translateX(5px) rotate(1deg); }
+    30% { transform: translateX(-5px) rotate(-1deg); }
+    40% { transform: translateX(5px) rotate(1deg); }
+    50% { transform: translateX(-5px) rotate(-1deg); }
+    60% { transform: translateX(5px) rotate(1deg); }
+    70% { transform: translateX(-5px) rotate(-1deg); }
+    80% { transform: translateX(5px) rotate(1deg); }
+    90% { transform: translateX(-5px) rotate(-1deg); }
+  }
+
+  @keyframes correctGlow {
+    0% {
+      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+    }
+    70% {
+      box-shadow: 0 0 0 15px rgba(34, 197, 94, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+    }
+  }
+
+  @keyframes incorrectRed {
+    0%, 100% { background-color: #fecaca; }
+    50% { background-color: #fca5a5; }
+  }
+
+  @keyframes confetti {
+    0% {
+      opacity: 1;
+      transform: translate(0, 0) rotate(0deg);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(var(--tx), var(--ty)) rotate(360deg);
+    }
+  }
+
+  @keyframes scorePopup {
+    0% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-50px) scale(1.5);
+    }
+  }
+
+  @keyframes progressFill {
+    from { width: 0; }
+    to { width: 100%; }
+  }
+`;
+
+// Inject animation styles into document
+if (typeof document !== "undefined") {
+  const styleId = "tf-task-animations";
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = animationStyles;
+    document.head.appendChild(style);
+  }
+}
+
 /**
  * True/False task (multi-question aware).
  * Deterministic randomization per task (+ team salt) to prevent flipping.
@@ -21,6 +118,14 @@ export default function TrueFalseTask({
   const [singleSelected, setSingleSelected] = React.useState(null); // "true" | "false"
   const [singleFirstLabel, setSingleFirstLabel] = React.useState("True");
   const [singleSecondLabel, setSingleSecondLabel] = React.useState("False");
+
+  // Gaming experience state
+  const [score, setScore] = React.useState(0);
+  const [streak, setStreak] = React.useState(0);
+  const [feedbackState, setFeedbackState] = React.useState(null); // { type: "correct"|"incorrect", itemIdx?: number }
+  const [showCelebration, setShowCelebration] = React.useState(false);
+  const [scorePopups, setScorePopups] = React.useState([]);
+  const [confettiPieces, setConfettiPieces] = React.useState([]);
 
   const instructions =
     "How to play: Read the statement. Decide if it is TRUE or FALSE. " +
@@ -208,6 +313,8 @@ export default function TrueFalseTask({
     if (disabled) return;
     if (!task) return;
 
+    triggerCelebration();
+
     if (hasItems && presentedItems.length > 0) {
       const allAnswered =
         Array.isArray(multiSelectedValues) &&
@@ -236,6 +343,62 @@ export default function TrueFalseTask({
       onSubmit(val);
     }
   };
+
+  // Play sound effect
+  const playSound = React.useCallback((soundType) => {
+    try {
+      const soundPath = soundType === "correct" ? "/sounds/yay.mp3" : "/sounds/buzz.mp3";
+      const audio = new Audio(soundPath);
+      audio.volume = 0.5;
+      audio.play().catch(() => {
+        // Sound playback failed silently
+      });
+    } catch (e) {
+      // Audio not available
+    }
+  }, []);
+
+  // Trigger celebration effect
+  const triggerCelebration = React.useCallback(() => {
+    setShowCelebration(true);
+    playSound("correct");
+
+    // Create confetti pieces
+    const pieces = Array.from({ length: 30 }, (_, i) => ({
+      id: i,
+      left: Math.random() * 100,
+      delay: Math.random() * 0.3,
+      duration: 2 + Math.random() * 0.5,
+      tx: (Math.random() - 0.5) * 200,
+      ty: -200 - Math.random() * 100,
+    }));
+    setConfettiPieces(pieces);
+
+    setTimeout(() => setShowCelebration(false), 3000);
+  }, [playSound]);
+
+  // Show feedback with animation
+  const showFeedback = React.useCallback((isCorrect, itemIdx) => {
+    setFeedbackState({ type: isCorrect ? "correct" : "incorrect", itemIdx });
+
+    if (isCorrect) {
+      playSound("correct");
+      setScore((s) => s + 10);
+      setStreak((s) => s + 1);
+
+      // Add score popup
+      const popupId = Date.now();
+      setScorePopups((prev) => [...prev, { id: popupId, text: "+10 🎉" }]);
+      setTimeout(() => {
+        setScorePopups((prev) => prev.filter((p) => p.id !== popupId));
+      }, 1500);
+    } else {
+      playSound("incorrect");
+      setStreak(0);
+    }
+
+    setTimeout(() => setFeedbackState(null), 1500);
+  }, [playSound]);
 
   const handleSingleSelect = (label) => {
     if (disabled) return;
@@ -267,209 +430,595 @@ export default function TrueFalseTask({
       : 0;
     const totalCount = presentedItems.length;
     const allAnswered = totalCount > 0 && answeredCount === totalCount;
+    const progressPercent = (answeredCount / totalCount) * 100;
 
     return (
-      <div className="flex flex-col h-full p-3 gap-3" style={{ paddingTop: 18 }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
+          padding: "16px",
+          gap: "12px",
+          position: "relative",
+          overflow: "hidden",
+          background: "linear-gradient(135deg, #f0f9ff 0%, #f0fdff 100%)",
+        }}
+      >
+        {/* Celebration overlay */}
+        {showCelebration && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              pointerEvents: "none",
+              zIndex: 999,
+            }}
+          >
+            {confettiPieces.map((piece) => (
+              <div
+                key={piece.id}
+                style={{
+                  position: "absolute",
+                  width: "8px",
+                  height: "8px",
+                  background: ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#ec4899"][
+                    Math.floor(Math.random() * 5)
+                  ],
+                  borderRadius: "50%",
+                  left: piece.left + "%",
+                  top: "-10px",
+                  "--tx": piece.tx + "px",
+                  "--ty": piece.ty + "px",
+                  animation: `confetti ${piece.duration}s ease-in forwards`,
+                  animationDelay: piece.delay + "s",
+                }}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Header with score and streak */}
         <div
-          className="rounded-2xl shadow-md"
           style={{
-            background: cardBg,
-            padding: 16,
-            display: "flex",
-            flexDirection: "column",
-            height: "100%",
+            background: "linear-gradient(135deg, #3b82f6 0%, #0ea5e9 100%)",
+            borderRadius: "20px",
+            padding: "16px",
+            color: "#fff",
+            animation: "slideInDown 0.5s ease-out",
+            boxShadow: "0 8px 16px rgba(59, 130, 246, 0.2)",
           }}
         >
-          <header
-            style={{
-              background: cardHeaderBg,
-              color: cardHeaderText,
-              padding: "10px 14px",
-              borderRadius: 14,
-              marginBottom: 10,
-            }}
-          >
-            <div style={{ fontSize: "0.8rem", opacity: 0.9 }}>True / False</div>
-            <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>{safeTitle}</div>
-          </header>
-
-          <div className="text-sm" style={{ color: "rgba(15,23,42,0.78)", fontWeight: 700, marginBottom: 10 }}>
-            {instructions} <span style={{ marginLeft: 8, opacity: 0.85 }}>({answeredCount}/{totalCount} answered)</span>
-          </div>
-
-          <div className="flex-1 flex flex-col gap-3 overflow-y-auto" style={{ paddingRight: 4 }}>
-            {presentedItems.map((pItem, displayIdx) => {
-              const selected = multiSelectedValues[displayIdx];
-              const firstVal = pItem.firstLabel.toLowerCase() === "true" ? "true" : "false";
-              const secondVal = pItem.secondLabel.toLowerCase() === "true" ? "true" : "false";
-              const isFirstSelected = selected === firstVal;
-              const isSecondSelected = selected === secondVal;
-
-              return (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <div>
+              <div style={{ fontSize: "0.75rem", opacity: 0.9, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                ✨ True / False Challenge
+              </div>
+              <div style={{ fontSize: "1.2rem", fontWeight: 700, marginTop: "4px" }}>{safeTitle}</div>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: "12px",
+                alignItems: "center",
+              }}
+            >
+              <div
+                style={{
+                  textAlign: "center",
+                  background: "rgba(255,255,255,0.2)",
+                  padding: "8px 12px",
+                  borderRadius: "12px",
+                  backdropFilter: "blur(10px)",
+                }}
+              >
+                <div style={{ fontSize: "0.7rem", opacity: 0.9 }}>SCORE</div>
+                <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>{score}</div>
+              </div>
+              {streak > 0 && (
                 <div
-                  key={pItem.canonicalIndex}
-                  className="rounded-xl border"
                   style={{
-                    padding: 10,
-                    borderColor: "rgba(15,23,42,0.08)",
-                    background: "rgba(255,255,255,0.9)",
+                    textAlign: "center",
+                    background: "linear-gradient(135deg, #f59e0b, #d97706)",
+                    padding: "8px 12px",
+                    borderRadius: "12px",
+                    animation: "pulse 1s infinite",
                   }}
                 >
-                  <div style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: 8 }}>
-                    <span
-                      style={{
-                        display: "inline-block",
-                        minWidth: 20,
-                        fontWeight: 700,
-                        opacity: 0.7,
-                      }}
-                    >
-                      {displayIdx + 1}.
-                    </span>{" "}
-                    {pItem.prompt}
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleMultiSelect(displayIdx, pItem.firstLabel)}
-                      disabled={disabled}
-                      className="flex-1 border rounded-lg px-3 py-2"
-                      style={{
-                        background: isFirstSelected ? optionSelectedBg : optionBaseBg,
-                        color: isFirstSelected ? "#fff" : "#111827",
-                        opacity: disabled ? 0.6 : 1,
-                        borderColor: "rgba(15,23,42,0.12)",
-                      }}
-                    >
-                      {pItem.firstLabel}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleMultiSelect(displayIdx, pItem.secondLabel)}
-                      disabled={disabled}
-                      className="flex-1 border rounded-lg px-3 py-2"
-                      style={{
-                        background: isSecondSelected ? optionSelectedBg : optionBaseBg,
-                        color: isSecondSelected ? "#fff" : "#111827",
-                        opacity: disabled ? 0.6 : 1,
-                        borderColor: "rgba(15,23,42,0.12)",
-                      }}
-                    >
-                      {pItem.secondLabel}
-                    </button>
-                  </div>
+                  <div style={{ fontSize: "0.7rem", opacity: 0.9 }}>🔥 STREAK</div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>{streak}</div>
                 </div>
-              );
-            })}
+              )}
+            </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleSubmitClick}
-            disabled={disabled || !allAnswered}
-            className="mt-3 border rounded-full px-4 py-2 disabled:opacity-50 self-end"
+          {/* Progress bar */}
+          <div style={{ background: "rgba(255,255,255,0.2)", borderRadius: "8px", height: "8px", overflow: "hidden" }}>
+            <div
+              style={{
+                background: "linear-gradient(90deg, #34d399, #10b981)",
+                height: "100%",
+                width: progressPercent + "%",
+                animation: "progressFill 0.6s ease-out",
+                borderRadius: "8px",
+              }}
+            />
+          </div>
+          <div
             style={{
-              background: disabled ? "#9ca3af" : "#0ea5e9",
-              color: "#fff",
+              fontSize: "0.75rem",
+              marginTop: "6px",
+              opacity: 0.9,
               fontWeight: 600,
-              paddingInline: 20,
             }}
           >
-            {allAnswered ? "Submit all answers" : "Answer all, then submit"}
-          </button>
+            {answeredCount} of {totalCount} answered
+          </div>
         </div>
+
+        {/* Questions container */}
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            display: "flex",
+            flexDirection: "column",
+            gap: "12px",
+            paddingRight: "4px",
+          }}
+        >
+          {presentedItems.map((pItem, displayIdx) => {
+            const selected = multiSelectedValues[displayIdx];
+            const firstVal = pItem.firstLabel.toLowerCase() === "true" ? "true" : "false";
+            const secondVal = pItem.secondLabel.toLowerCase() === "true" ? "true" : "false";
+            const isFirstSelected = selected === firstVal;
+            const isSecondSelected = selected === secondVal;
+            const isAnswered = selected !== null && selected !== undefined;
+
+            return (
+              <div
+                key={pItem.canonicalIndex}
+                style={{
+                  background: "#fff",
+                  borderRadius: "16px",
+                  padding: "14px",
+                  boxShadow: isAnswered ? "0 4px 12px rgba(59, 130, 246, 0.15)" : "0 2px 8px rgba(0,0,0,0.08)",
+                  border: "2px solid " + (isAnswered ? "#3b82f6" : "#e5e7eb"),
+                  animation: `slideInDown 0.5s ease-out ${displayIdx * 0.1}s backwards`,
+                  transition: "all 0.3s ease",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "8px",
+                    marginBottom: "12px",
+                    alignItems: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      background: "linear-gradient(135deg, #3b82f6, #0ea5e9)",
+                      color: "#fff",
+                      width: "28px",
+                      height: "28px",
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontWeight: 700,
+                      fontSize: "0.85rem",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {displayIdx + 1}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "1rem",
+                      fontWeight: 600,
+                      color: "#1f2937",
+                      flex: 1,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {pItem.prompt}
+                  </div>
+                  {isAnswered && (
+                    <div
+                      style={{
+                        fontSize: "1.2rem",
+                        animation: "bounce 0.5s ease",
+                      }}
+                    >
+                      ✓
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <button
+                    type="button"
+                    onClick={() => handleMultiSelect(displayIdx, pItem.firstLabel)}
+                    disabled={disabled}
+                    style={{
+                      flex: 1,
+                      padding: "12px 14px",
+                      borderRadius: "12px",
+                      border: "none",
+                      fontWeight: 600,
+                      fontSize: "0.95rem",
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      transition: "all 0.3s ease",
+                      background: isFirstSelected
+                        ? firstVal === "true"
+                          ? "linear-gradient(135deg, #3b82f6, #0ea5e9)"
+                          : "linear-gradient(135deg, #ef4444, #dc2626)"
+                        : "#f3f4f6",
+                      color: isFirstSelected ? "#fff" : "#374151",
+                      boxShadow: isFirstSelected ? "0 4px 12px rgba(59, 130, 246, 0.3)" : "none",
+                      transform: isFirstSelected ? "scale(1.02)" : "scale(1)",
+                      opacity: disabled ? 0.6 : 1,
+                    }}
+                  >
+                    {firstVal === "true" ? "✅ " : "❌ "}
+                    {pItem.firstLabel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMultiSelect(displayIdx, pItem.secondLabel)}
+                    disabled={disabled}
+                    style={{
+                      flex: 1,
+                      padding: "12px 14px",
+                      borderRadius: "12px",
+                      border: "none",
+                      fontWeight: 600,
+                      fontSize: "0.95rem",
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      transition: "all 0.3s ease",
+                      background: isSecondSelected
+                        ? secondVal === "true"
+                          ? "linear-gradient(135deg, #3b82f6, #0ea5e9)"
+                          : "linear-gradient(135deg, #ef4444, #dc2626)"
+                        : "#f3f4f6",
+                      color: isSecondSelected ? "#fff" : "#374151",
+                      boxShadow: isSecondSelected ? "0 4px 12px rgba(59, 130, 246, 0.3)" : "none",
+                      transform: isSecondSelected ? "scale(1.02)" : "scale(1)",
+                      opacity: disabled ? 0.6 : 1,
+                    }}
+                  >
+                    {secondVal === "true" ? "✅ " : "❌ "}
+                    {pItem.secondLabel}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Submit button */}
+        <button
+          type="button"
+          onClick={handleSubmitClick}
+          disabled={disabled || !allAnswered}
+          style={{
+            padding: "16px 24px",
+            borderRadius: "16px",
+            border: "none",
+            fontWeight: 700,
+            fontSize: "1rem",
+            cursor: allAnswered && !disabled ? "pointer" : "not-allowed",
+            background: allAnswered && !disabled ? "linear-gradient(135deg, #10b981, #059669)" : "#9ca3af",
+            color: "#fff",
+            boxShadow: allAnswered && !disabled ? "0 8px 16px rgba(16, 185, 129, 0.3)" : "none",
+            transition: "all 0.3s ease",
+            transform: allAnswered && !disabled ? "scale(1)" : "scale(0.98)",
+            opacity: disabled ? 0.6 : 1,
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+          }}
+        >
+          {allAnswered ? "🎉 Submit All Answers!" : "📝 Answer All Questions"}
+        </button>
+
+        {/* Score popups */}
+        {scorePopups.map((popup) => (
+          <div
+            key={popup.id}
+            style={{
+              position: "fixed",
+              bottom: "50px",
+              right: "20px",
+              fontSize: "1.2rem",
+              fontWeight: 700,
+              color: "#10b981",
+              animation: "scorePopup 1.5s ease-out forwards",
+              pointerEvents: "none",
+            }}
+          >
+            {popup.text}
+          </div>
+        ))}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full p-3 gap-3">
-      <div
-        className="rounded-2xl shadow-md"
-        style={{
-          background: cardBg,
-          padding: 16,
-          display: "flex",
-          flexDirection: "column",
-          height: "100%",
-        }}
-      >
-        <header
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        padding: "16px",
+        gap: "16px",
+        position: "relative",
+        overflow: "hidden",
+        background: "linear-gradient(135deg, #f0f9ff 0%, #f0fdff 100%)",
+      }}
+    >
+      {/* Celebration overlay */}
+      {showCelebration && (
+        <div
           style={{
-            background: cardHeaderBg,
-            color: cardHeaderText,
-            padding: "10px 14px",
-            borderRadius: 14,
-            marginBottom: 10,
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            pointerEvents: "none",
+            zIndex: 999,
           }}
         >
-          <div style={{ fontSize: "0.8rem", opacity: 0.9 }}>True / False</div>
-          <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>{safeTitle}</div>
-        </header>
-
-        <div className="flex-1 flex flex-col gap-3 overflow-y-auto">
-          <div className="font-semibold text-base max-h-40 overflow-y-auto">
-            {safePrompt || " "}
-          </div>
-
-          <div className="text-sm" style={{ color: "rgba(15,23,42,0.78)", fontWeight: 700 }}>
-            {instructions}
-          </div>
-
-          <div className="flex gap-2 mt-2">
-            <button
-              type="button"
-              onClick={() => handleSingleSelect(singleFirstLabel)}
-              disabled={disabled}
-              className="flex-1 border rounded-lg px-3 py-2"
+          {confettiPieces.map((piece) => (
+            <div
+              key={piece.id}
               style={{
-                background:
-                  singleSelected === (singleFirstLabel.toLowerCase() === "true" ? "true" : "false")
-                    ? optionSelectedBg
-                    : optionBaseBg,
-                color: singleSelected ? "#fff" : "#111827",
-                opacity: disabled ? 0.6 : 1,
-                borderColor: "rgba(15,23,42,0.12)",
+                position: "absolute",
+                width: "10px",
+                height: "10px",
+                background: ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#ec4899"][
+                  Math.floor(Math.random() * 5)
+                ],
+                borderRadius: "50%",
+                left: piece.left + "%",
+                top: "-10px",
+                "--tx": piece.tx + "px",
+                "--ty": piece.ty + "px",
+                animation: `confetti ${piece.duration}s ease-in forwards`,
+                animationDelay: piece.delay + "s",
               }}
-            >
-              {singleFirstLabel}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSingleSelect(singleSecondLabel)}
-              disabled={disabled}
-              className="flex-1 border rounded-lg px-3 py-2"
-              style={{
-                background:
-                  singleSelected === (singleSecondLabel.toLowerCase() === "true" ? "true" : "false")
-                    ? optionSelectedBg
-                    : optionBaseBg,
-                color: singleSelected ? "#fff" : "#111827",
-                opacity: disabled ? 0.6 : 1,
-                borderColor: "rgba(15,23,42,0.12)",
-              }}
-            >
-              {singleSecondLabel}
-            </button>
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Header with score */}
+      <div
+        style={{
+          background: "linear-gradient(135deg, #3b82f6 0%, #0ea5e9 100%)",
+          borderRadius: "20px",
+          padding: "20px",
+          color: "#fff",
+          animation: "slideInDown 0.5s ease-out",
+          boxShadow: "0 8px 16px rgba(59, 130, 246, 0.2)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+          <div>
+            <div style={{ fontSize: "0.75rem", opacity: 0.9, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              ✨ True / False
+            </div>
+            <div style={{ fontSize: "1.3rem", fontWeight: 700, marginTop: "4px" }}>{safeTitle}</div>
+          </div>
+          <div
+            style={{
+              textAlign: "center",
+              background: "rgba(255,255,255,0.2)",
+              padding: "10px 14px",
+              borderRadius: "12px",
+              backdropFilter: "blur(10px)",
+            }}
+          >
+            <div style={{ fontSize: "0.7rem", opacity: 0.9 }}>SCORE</div>
+            <div style={{ fontSize: "1.8rem", fontWeight: 700 }}>{score}</div>
           </div>
         </div>
 
+        {streak > 0 && (
+          <div
+            style={{
+              background: "rgba(255,255,255,0.15)",
+              padding: "8px 12px",
+              borderRadius: "10px",
+              fontSize: "0.9rem",
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              animation: "pulse 1s infinite",
+            }}
+          >
+            🔥 {streak} streak!
+          </div>
+        )}
+      </div>
+
+      {/* Statement card */}
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: "20px",
+          padding: "24px",
+          boxShadow: "0 8px 24px rgba(59, 130, 246, 0.15)",
+          border: "2px solid #e5e7eb",
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          animation: "fadeIn 0.6s ease-out",
+        }}
+      >
+        <div style={{ marginBottom: "16px", color: "#6b7280", fontSize: "0.9rem", fontWeight: 600 }}>
+          Read the statement carefully:
+        </div>
+        <div
+          style={{
+            fontSize: "1.5rem",
+            fontWeight: 700,
+            color: "#1f2937",
+            lineHeight: 1.6,
+            marginBottom: "20px",
+            textAlign: "center",
+            letterSpacing: "0.3px",
+          }}
+        >
+          {safePrompt || "Is this statement true or false?"}
+        </div>
+        <div style={{ fontSize: "0.85rem", color: "#9ca3af", textAlign: "center", fontStyle: "italic" }}>
+          {instructions}
+        </div>
+      </div>
+
+      {/* Decision buttons - BIG and satisfying */}
+      <div style={{ display: "flex", gap: "12px", flexDirection: "column" }}>
+        <button
+          type="button"
+          onClick={() => handleSingleSelect(singleFirstLabel)}
+          disabled={disabled}
+          style={{
+            padding: "20px",
+            borderRadius: "16px",
+            border: "none",
+            fontWeight: 700,
+            fontSize: "1.2rem",
+            cursor: disabled ? "not-allowed" : "pointer",
+            transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+            background:
+              singleSelected === (singleFirstLabel.toLowerCase() === "true" ? "true" : "false")
+                ? singleFirstLabel.toLowerCase() === "true"
+                  ? "linear-gradient(135deg, #3b82f6, #0ea5e9)"
+                  : "linear-gradient(135deg, #ef4444, #dc2626)"
+                : "linear-gradient(135deg, #f3f4f6, #e5e7eb)",
+            color:
+              singleSelected === (singleFirstLabel.toLowerCase() === "true" ? "true" : "false")
+                ? "#fff"
+                : "#374151",
+            boxShadow:
+              singleSelected === (singleFirstLabel.toLowerCase() === "true" ? "true" : "false")
+                ? singleFirstLabel.toLowerCase() === "true"
+                  ? "0 8px 20px rgba(59, 130, 246, 0.4)"
+                  : "0 8px 20px rgba(239, 68, 68, 0.4)"
+                : "0 4px 12px rgba(0, 0, 0, 0.1)",
+            transform:
+              singleSelected === (singleFirstLabel.toLowerCase() === "true" ? "true" : "false")
+                ? "scale(1.02)"
+                : "scale(1)",
+            opacity: disabled ? 0.6 : 1,
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+          }}
+        >
+          {singleFirstLabel.toLowerCase() === "true" ? "✅ " : "❌ "}
+          {singleFirstLabel}
+        </button>
+        <button
+          type="button"
+          onClick={() => handleSingleSelect(singleSecondLabel)}
+          disabled={disabled}
+          style={{
+            padding: "20px",
+            borderRadius: "16px",
+            border: "none",
+            fontWeight: 700,
+            fontSize: "1.2rem",
+            cursor: disabled ? "not-allowed" : "pointer",
+            transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+            background:
+              singleSelected === (singleSecondLabel.toLowerCase() === "true" ? "true" : "false")
+                ? singleSecondLabel.toLowerCase() === "true"
+                  ? "linear-gradient(135deg, #3b82f6, #0ea5e9)"
+                  : "linear-gradient(135deg, #ef4444, #dc2626)"
+                : "linear-gradient(135deg, #f3f4f6, #e5e7eb)",
+            color:
+              singleSelected === (singleSecondLabel.toLowerCase() === "true" ? "true" : "false")
+                ? "#fff"
+                : "#374151",
+            boxShadow:
+              singleSelected === (singleSecondLabel.toLowerCase() === "true" ? "true" : "false")
+                ? singleSecondLabel.toLowerCase() === "true"
+                  ? "0 8px 20px rgba(59, 130, 246, 0.4)"
+                  : "0 8px 20px rgba(239, 68, 68, 0.4)"
+                : "0 4px 12px rgba(0, 0, 0, 0.1)",
+            transform:
+              singleSelected === (singleSecondLabel.toLowerCase() === "true" ? "true" : "false")
+                ? "scale(1.02)"
+                : "scale(1)",
+            opacity: disabled ? 0.6 : 1,
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+          }}
+        >
+          {singleSecondLabel.toLowerCase() === "true" ? "✅ " : "❌ "}
+          {singleSecondLabel}
+        </button>
+      </div>
+
+      {/* Submit button */}
+      {singleSelected && (
         <button
           type="button"
           onClick={handleSubmitClick}
-          disabled={!singleCanSubmit}
-          className="mt-3 border rounded-full px-4 py-2 disabled:opacity-50 self-end"
+          disabled={disabled || !singleCanSubmit}
           style={{
-            background: singleCanSubmit ? "#0ea5e9" : "#9ca3af",
+            padding: "16px 24px",
+            borderRadius: "16px",
+            border: "none",
+            fontWeight: 700,
+            fontSize: "1rem",
+            cursor: singleCanSubmit && !disabled ? "pointer" : "not-allowed",
+            background:
+              singleCanSubmit && !disabled
+                ? "linear-gradient(135deg, #10b981, #059669)"
+                : "#9ca3af",
             color: "#fff",
-            fontWeight: 600,
-            paddingInline: 20,
+            boxShadow:
+              singleCanSubmit && !disabled
+                ? "0 8px 16px rgba(16, 185, 129, 0.3)"
+                : "none",
+            transition: "all 0.3s ease",
+            transform: singleCanSubmit && !disabled ? "scale(1)" : "scale(0.98)",
+            opacity: disabled ? 0.6 : 1,
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+            animation: "slideInDown 0.4s ease-out",
           }}
         >
-          {singleCanSubmit ? "Submit" : "Pick True or False"}
+          🎉 Submit Answer!
         </button>
-      </div>
+      )}
+
+      {/* Score popups */}
+      {scorePopups.map((popup) => (
+        <div
+          key={popup.id}
+          style={{
+            position: "fixed",
+            bottom: "50px",
+            right: "20px",
+            fontSize: "1.3rem",
+            fontWeight: 700,
+            color: "#10b981",
+            animation: "scorePopup 1.5s ease-out forwards",
+            pointerEvents: "none",
+          }}
+        >
+          {popup.text}
+        </div>
+      ))}
     </div>
   );
 }

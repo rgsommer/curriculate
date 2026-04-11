@@ -19,6 +19,68 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  *   }
  * }
  */
+
+// Confetti particle generator
+const Confetti = ({ duration = 2000 }) => {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const particles = Array.from({ length: 50 }, () => ({
+      x: Math.random() * canvas.width,
+      y: -10,
+      vx: (Math.random() - 0.5) * 8,
+      vy: Math.random() * 4 + 3,
+      life: 1,
+      decay: Math.random() * 0.015 + 0.01,
+      emoji: ["✨", "🎉", "⭐", "🌟", "💫"][Math.floor(Math.random() * 5)],
+    }));
+
+    const animate = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      particles.forEach((p) => {
+        p.y += p.vy;
+        p.x += p.vx;
+        p.life -= p.decay;
+
+        if (p.life > 0) {
+          ctx.globalAlpha = p.life;
+          ctx.font = "24px Arial";
+          ctx.fillText(p.emoji, p.x, p.y);
+        }
+      });
+
+      ctx.globalAlpha = 1;
+
+      if (particles.some((p) => p.life > 0)) {
+        requestAnimationFrame(animate);
+      }
+    };
+
+    animate();
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        pointerEvents: "none",
+        zIndex: 9999,
+      }}
+    />
+  );
+};
+
 export default function OpenTextTask({
   task,
   onSubmit,
@@ -44,7 +106,12 @@ export default function OpenTextTask({
   const [value, setValue] = useState(initial);
   const [isListening, setIsListening] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [milestone, setMilestone] = useState(null);
   const recognitionRef = useRef(null);
+  const textareaRef = useRef(null);
+  const prevWordCountRef = useRef(0);
 
   const isDisabled = !!disabled || !!answered;
 
@@ -61,14 +128,9 @@ export default function OpenTextTask({
   ).toLowerCase();
 
   const computedMinWords = useMemo(() => {
-    // If backend provides a value, use it.
     const explicit = Number(task?.settings?.minWords ?? task?.config?.minWords);
     if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
 
-    // Otherwise compute:
-    // - medium: 2 words per grade level
-    // - hard:   3 words per grade level
-    // - easy:   no minimum
     const g = Number.isFinite(gradeLevel) && gradeLevel > 0 ? gradeLevel : 8;
     if (difficultyRaw === "hard") return 3 * g;
     if (difficultyRaw === "medium") return 2 * g;
@@ -81,7 +143,20 @@ export default function OpenTextTask({
     return t.split(/\s+/).filter(Boolean).length;
   }, [value]);
 
+  const charCount = String(value || "").length;
+
   const meetsMin = computedMinWords <= 0 ? true : wordCount >= computedMinWords;
+
+  // Milestone celebrations
+  useEffect(() => {
+    if (wordCount > prevWordCountRef.current) {
+      if (wordCount === 50 || wordCount === 100 || (wordCount > 100 && wordCount % 50 === 0)) {
+        setMilestone(wordCount);
+        setTimeout(() => setMilestone(null), 1500);
+      }
+    }
+    prevWordCountRef.current = wordCount;
+  }, [wordCount]);
 
   // reset when a new task comes in or answerDraft changes
   useEffect(() => {
@@ -91,7 +166,7 @@ export default function OpenTextTask({
   const emitDraft = (textValue) => {
     if (!onAnswerChange) return;
     onAnswerChange({
-      correct: false, // AI-scored elsewhere
+      correct: false,
       basePoints,
       response: textValue,
       wordCount: String(textValue || "").trim()
@@ -105,19 +180,32 @@ export default function OpenTextTask({
     if (isDisabled) return;
     if (!meetsMin) return;
 
-    const payload = {
-      type: task?.taskType || task?.type || "open-text",
-      correct: false, // AI-scored elsewhere
-      basePoints,
-      response: value,
-      wordCount,
-      minWords: computedMinWords || 0,
-    };
+    setIsSubmitting(true);
+    setShowConfetti(true);
 
-    onSubmit?.(payload);
+    // Play sound effect
+    try {
+      const audio = new Audio("/sounds/yay.mp3");
+      audio.play().catch(() => {});
+    } catch (e) {
+      // Silently fail if sound not available
+    }
 
-    // Clear after submit (keeps UI consistent with other tasks)
-    setValue("");
+    setTimeout(() => {
+      const payload = {
+        type: task?.taskType || task?.type || "open-text",
+        correct: false,
+        basePoints,
+        response: value,
+        wordCount,
+        minWords: computedMinWords || 0,
+      };
+
+      onSubmit?.(payload);
+      setValue("");
+      setIsSubmitting(false);
+      setShowConfetti(false);
+    }, 800);
   };
 
   const handleChange = (e) => {
@@ -128,13 +216,13 @@ export default function OpenTextTask({
   };
 
   const startListening = () => {
-    if (!SpeechRecognition) {
-      setError("Voice input is not supported on this browser. Try Chrome or Safari.");
+    if (typeof window === "undefined" || !window.SpeechRecognition) {
+      setErrorMsg("Voice input is not supported on this browser. Try Chrome or Safari.");
       return;
     }
 
     try {
-      const recognition = new SpeechRecognition();
+      const recognition = new window.SpeechRecognition();
       recognition.lang = "en-US";
       recognition.interimResults = true;
 
@@ -144,34 +232,35 @@ export default function OpenTextTask({
           transcript += event.results[i][0].transcript;
         }
         setValue(transcript);
+        emitDraft(transcript);
       };
 
       recognition.onerror = (event) => {
         console.error("Speech recognition error:", event.error);
 
         if (event.error === "not-allowed") {
-          setError("Microphone access was denied. Please allow mic access and try again.");
+          setErrorMsg("Microphone access was denied. Please allow mic access and try again.");
         } else if (event.error === "no-speech") {
-          setError("No speech detected. Try speaking more clearly.");
+          setErrorMsg("No speech detected. Try speaking more clearly.");
         } else {
-          setError("Voice input isn't working right now. You can still type your answer.");
+          setErrorMsg("Voice input isn't working right now. You can still type your answer.");
         }
 
-        setListening(false);
+        setIsListening(false);
       };
 
       recognition.onend = () => {
-        setListening(false);
+        setIsListening(false);
       };
 
       recognition.start();
       recognitionRef.current = recognition;
-      setListening(true);
-      setError("");
+      setIsListening(true);
+      setErrorMsg("");
     } catch (err) {
       console.error("Speech recognition start failed:", err);
-      setError("Voice input is not available. Please type your response.");
-      setListening(false);
+      setErrorMsg("Voice input is not available. Please type your response.");
+      setIsListening(false);
     }
   };
 
@@ -183,243 +272,459 @@ export default function OpenTextTask({
     setIsListening(false);
   };
 
+  const progressPercent = computedMinWords > 0 ? Math.min(100, (wordCount / computedMinWords) * 100) : (wordCount > 0 ? 100 : 0);
+
+  const getProgressColor = () => {
+    if (progressPercent < 30) return "#f97316";
+    if (progressPercent < 70) return "#eab308";
+    return "#22c55e";
+  };
+
   return (
     <div
-      className="flex flex-col h-full p-3 gap-3"
-      style={{ minHeight: "260px",  opacity: isDisabled ? 0.75 : 1 }}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        padding: "12px",
+        gap: "12px",
+        minHeight: "260px",
+        opacity: isDisabled ? 0.75 : 1,
+        animation: "fadeInScale 0.6s ease-out",
+      }}
     >
+      <style>{`
+        @keyframes fadeInScale {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        @keyframes slideInDown {
+          from {
+            opacity: 0;
+            transform: translateY(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+        }
+        @keyframes textPulse {
+          0% { opacity: 0; transform: scale(0.8); }
+          50% { opacity: 1; transform: scale(1.1); }
+          100% { opacity: 0; transform: scale(0.8); }
+        }
+        @keyframes shimmer {
+          0% { background-position: -1000px 0; }
+          100% { background-position: 1000px 0; }
+        }
+      `}</style>
+
       <div
-        className="rounded-2xl shadow-md flex flex-col h-full"
         style={{
-          background: "linear-gradient(135deg, #eff6ff, #e0f2fe)",
-          padding: 16,
+          borderRadius: "20px",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.08)",
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
+          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+          padding: "20px",
+          position: "relative",
+          overflow: "hidden",
         }}
       >
-        <header
-          style={{
-            background: "rgba(37,99,235,0.9)",
-            color: "#f9fafb",
-            padding: "10px 14px",
-            borderRadius: 14,
-            marginBottom: 10,
-          }}
-        >
-          <div style={{ fontSize: "0.8rem", opacity: 0.9 }}>
-            Open-text Response
-          </div>
-          <div style={{ fontSize: "1.1rem", fontWeight: 700 }}>
-            {task?.title || "Explain your thinking"}
-          </div>
-          {!!task?.prompt && (
-            <div
-              style={{
-                marginTop: 8,
-                fontSize: "0.95rem",
-                fontWeight: 600,
-                lineHeight: 1.25,
-              }}
-            >
-              {task.prompt}
-            </div>
-          )}
-        </header>
-
+        {/* Animated gradient background */}
         <div
           style={{
-            borderRadius: 14,
-            border: "1px solid rgba(15,23,42,0.10)",
-            background: "rgba(255,255,255,0.92)",
-            padding: "10px 12px",
-            marginBottom: 10,
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 900, color: "#0f172a" }}>How to do this task</div>
-          <ol
-            style={{
-              margin: "6px 0 0 18px",
-              padding: 0,
-              color: "#334155",
-              fontSize: 13,
-              lineHeight: 1.35,
-              fontWeight: 600,
-            }}
-          >
-            <li>Read the prompt.</li>
-            <li>Type a full answer in the box (or use Speak 🎤 if it works on your device).</li>
-            <li>Check the word counter, then press <b>Submit</b>.</li>
-          </ol>
-          {computedMinWords > 0 && (
-            <div style={{ marginTop: 6, fontSize: 12, color: "#475569", fontWeight: 700 }}>
-              Tip: You need at least <b>{computedMinWords}</b> words.
-            </div>
-          )}
-        </div>
-
-        {!!errorMsg && (
-          <div
-            style={{
-              borderRadius: 14,
-              border: "1px solid rgba(239,68,68,0.35)",
-              background: "rgba(254,226,226,0.75)",
-              padding: "10px 12px",
-              marginBottom: 10,
-              color: "#7f1d1d",
-              fontWeight: 800,
-              fontSize: 13,
-            }}
-          >
-            {errorMsg}
-          </div>
-        )}
-
-        {task?.mediaUrl && (
-          <img
-            src={task.mediaUrl}
-            alt=""
-            style={{
-              maxWidth: "100%",
-              borderRadius: 12,
-              marginBottom: 10,
-            }}
-          />
-        )}
-
-        {/* Toolbar: mic + live word count */}
-        <div
-          className="flex items-center justify-between gap-2"
-          style={{
-            marginBottom: 8,
-            padding: "8px 10px",
-            borderRadius: 14,
-            border: "1px solid rgba(15,23,42,0.10)",
-            background: "rgba(255,255,255,0.85)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              flexWrap: "wrap",
-            }}
-          >
-            <span style={{ fontSize: 13, color: "#334155", fontWeight: 600 }}>
-              Write a full response
-            </span>
-
-            {computedMinWords > 0 && (
-              <span
-                style={{
-                  fontSize: 12,
-                  padding: "4px 10px",
-                  borderRadius: 9999,
-                  border: "1px solid rgba(15,23,42,0.12)",
-                  background: meetsMin
-                    ? "rgba(34,197,94,0.15)"
-                    : "rgba(249,115,22,0.12)",
-                  color: "#0f172a",
-                  fontWeight: 700,
-                }}
-                title="Minimum word requirement"
-              >
-                {wordCount}/{computedMinWords} words
-              </span>
-            )}
-
-            {computedMinWords <= 0 && (
-              <span
-                style={{
-                  fontSize: 12,
-                  padding: "4px 10px",
-                  borderRadius: 9999,
-                  border: "1px solid rgba(15,23,42,0.12)",
-                  background: "rgba(14,165,233,0.10)",
-                  color: "#0f172a",
-                  fontWeight: 700,
-                }}
-                title="Word counter"
-              >
-                {wordCount} words
-              </span>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={isListening ? stopListening : startListening}
-            disabled={isDisabled}
-            style={{
-              fontSize: 13,
-              padding: "6px 12px",
-              borderRadius: 9999,
-              border: "none",
-              cursor: isDisabled ? "not-allowed" : "pointer",
-              backgroundColor: isDisabled
-                ? "#cbd5e1"
-                : isListening
-                ? "#dc2626"
-                : "#2563eb",
-              color: "#fff",
-              fontWeight: 700,
-              whiteSpace: "nowrap",
-            }}
-            title="Speech-to-text (browser support required)"
-          >
-            {isListening ? "Stop 🎤" : "Speak 🎤"}
-          </button>
-        </div>
-
-        <textarea
-          value={value}
-          onChange={handleChange}
-          onPaste={(e) => e.preventDefault()}
-          placeholder={
-            isDisabled
-              ? "Submitted. Waiting for next task…"
-              : "Type a thoughtful response…"
-          }
-          disabled={isDisabled}
-          className="border rounded-xl p-3 w-full flex-1 resize-none text-sm"
-          style={{
-            borderColor: "rgba(148,163,184,0.8)",
-            background: isDisabled ? "#f1f5f9" : "#ffffff",
-            minHeight: 160,
-            lineHeight: 1.35,
-            width: "100%",
-            display: "block",
-            boxSizing: "border-box",
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "linear-gradient(135deg, rgba(102,126,234,0.1) 0%, rgba(118,75,162,0.1) 100%)",
+            animation: "shimmer 6s infinite",
+            backgroundSize: "200% 100%",
+            pointerEvents: "none",
           }}
         />
 
-        {computedMinWords > 0 && !meetsMin && !isDisabled && (
-          <div
-            style={{ marginTop: 8, fontSize: 12, color: "#b45309", fontWeight: 700 }}
-          >
-            Keep going — aim for at least {computedMinWords} words.
-          </div>
-        )}
+        {/* Decorative circles */}
+        <div
+          style={{
+            position: "absolute",
+            top: "-50px",
+            right: "-50px",
+            width: "200px",
+            height: "200px",
+            background: "rgba(255,255,255,0.05)",
+            borderRadius: "50%",
+            pointerEvents: "none",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: "-80px",
+            left: "-80px",
+            width: "250px",
+            height: "250px",
+            background: "rgba(255,255,255,0.03)",
+            borderRadius: "50%",
+            pointerEvents: "none",
+          }}
+        />
 
-        <div className="mt-3 flex justify-end">
+        {/* Content container */}
+        <div style={{ position: "relative", zIndex: 10, display: "flex", flexDirection: "column", height: "100%" }}>
+          {/* Header card with animation */}
+          <div
+            style={{
+              background: "rgba(255,255,255,0.95)",
+              borderRadius: "16px",
+              padding: "16px",
+              marginBottom: "14px",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.1)",
+              animation: "slideInDown 0.8s ease-out",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+              <span style={{ fontSize: "20px" }}>✍️</span>
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "#667eea", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                Share Your Thoughts
+              </div>
+            </div>
+            <h2
+              style={{
+                fontSize: "18px",
+                fontWeight: 800,
+                color: "#1e293b",
+                margin: "4px 0",
+                lineHeight: 1.3,
+              }}
+            >
+              {task?.title || "Explain your thinking"}
+            </h2>
+            {!!task?.prompt && (
+              <p
+                style={{
+                  marginTop: "10px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  lineHeight: 1.4,
+                  color: "#475569",
+                  margin: 0,
+                }}
+              >
+                {task.prompt}
+              </p>
+            )}
+          </div>
+
+          {/* Tips card */}
+          <div
+            style={{
+              background: "rgba(255,255,255,0.9)",
+              borderRadius: "12px",
+              padding: "12px 14px",
+              marginBottom: "12px",
+              borderLeft: "4px solid #667eea",
+              fontSize: "12px",
+              color: "#334155",
+              lineHeight: 1.4,
+              fontWeight: 500,
+            }}
+          >
+            <div style={{ fontWeight: 700, color: "#1e293b", marginBottom: "4px" }}>💡 Tips:</div>
+            <div>Use specific examples and explain your reasoning clearly.</div>
+          </div>
+
+          {/* Error message */}
+          {!!errorMsg && (
+            <div
+              style={{
+                borderRadius: "12px",
+                border: "1px solid rgba(239,68,68,0.5)",
+                background: "rgba(254,226,226,0.9)",
+                padding: "10px 12px",
+                marginBottom: "10px",
+                color: "#7f1d1d",
+                fontWeight: 700,
+                fontSize: "12px",
+                animation: "slideInDown 0.3s ease-out",
+              }}
+            >
+              ⚠️ {errorMsg}
+            </div>
+          )}
+
+          {/* Media display */}
+          {task?.mediaUrl && (
+            <img
+              src={task.mediaUrl}
+              alt=""
+              style={{
+                maxWidth: "100%",
+                borderRadius: "12px",
+                marginBottom: "12px",
+                maxHeight: "180px",
+                objectFit: "cover",
+              }}
+            />
+          )}
+
+          {/* Textarea with enhanced styling */}
+          <div
+            style={{
+              position: "relative",
+              marginBottom: "12px",
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <textarea
+              ref={textareaRef}
+              value={value}
+              onChange={handleChange}
+              onPaste={(e) => e.preventDefault()}
+              placeholder={
+                isDisabled
+                  ? "Submitted. Waiting for next task…"
+                  : "Type your thoughtful response here… no rush, take your time! 🌟"
+              }
+              disabled={isDisabled}
+              style={{
+                borderRadius: "12px",
+                border: "2px solid rgba(255,255,255,0.3)",
+                background: isDisabled ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.95)",
+                color: "#1e293b",
+                padding: "14px",
+                flex: 1,
+                minHeight: "140px",
+                resize: "none",
+                lineHeight: 1.5,
+                fontSize: "14px",
+                fontFamily: "inherit",
+                boxSizing: "border-box",
+                transition: "all 0.3s ease",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+                outline: "none",
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = "rgba(255,255,255,0.6)";
+                e.target.style.boxShadow = "0 8px 20px rgba(0,0,0,0.12), inset 0 0 0 2px rgba(102,126,234,0.2)";
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = "rgba(255,255,255,0.3)";
+                e.target.style.boxShadow = "0 4px 12px rgba(0,0,0,0.08)";
+              }}
+            />
+
+            {/* Progress bar for min words requirement */}
+            {computedMinWords > 0 && (
+              <div
+                style={{
+                  marginTop: "8px",
+                  height: "6px",
+                  background: "rgba(255,255,255,0.2)",
+                  borderRadius: "3px",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${progressPercent}%`,
+                    background: getProgressColor(),
+                    transition: "all 0.3s ease",
+                    borderRadius: "3px",
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Counter & Toolbar */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px",
+              marginBottom: "12px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                background: "rgba(255,255,255,0.15)",
+                borderRadius: "12px",
+                padding: "10px 12px",
+                backdropFilter: "blur(10px)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                {/* Word count badge */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    background: meetsMin && computedMinWords > 0 ? "rgba(34,197,94,0.2)" : "rgba(14,165,233,0.2)",
+                    color: meetsMin && computedMinWords > 0 ? "#16a34a" : "#0ea5e9",
+                    borderRadius: "8px",
+                    padding: "6px 10px",
+                    fontWeight: 700,
+                    fontSize: "13px",
+                  }}
+                >
+                  <span style={{ fontSize: "16px" }}>📝</span>
+                  {computedMinWords > 0 ? `${wordCount}/${computedMinWords}` : `${wordCount}`}
+                </div>
+
+                {/* Character count */}
+                <div
+                  style={{
+                    fontSize: "11px",
+                    color: "rgba(255,255,255,0.8)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {charCount} chars
+                </div>
+              </div>
+
+              {/* Mic button */}
+              <button
+                type="button"
+                onClick={isListening ? stopListening : startListening}
+                disabled={isDisabled}
+                style={{
+                  fontSize: "12px",
+                  padding: "6px 12px",
+                  borderRadius: "20px",
+                  border: "none",
+                  cursor: isDisabled ? "not-allowed" : "pointer",
+                  backgroundColor: isDisabled
+                    ? "rgba(0,0,0,0.1)"
+                    : isListening
+                    ? "#ef4444"
+                    : "rgba(255,255,255,0.25)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  whiteSpace: "nowrap",
+                  transition: "all 0.2s ease",
+                  opacity: isDisabled ? 0.5 : 1,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isDisabled) {
+                    e.target.style.backgroundColor = isListening
+                      ? "#dc2626"
+                      : "rgba(255,255,255,0.35)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isDisabled) {
+                    e.target.style.backgroundColor = isListening
+                      ? "#ef4444"
+                      : "rgba(255,255,255,0.25)";
+                  }
+                }}
+                title="Speech-to-text (browser support required)"
+              >
+                {isListening ? "Stop 🎤" : "Speak 🎤"}
+              </button>
+            </div>
+
+            {/* Milestone celebration */}
+            {milestone && (
+              <div
+                style={{
+                  textAlign: "center",
+                  color: "#fff",
+                  fontSize: "14px",
+                  fontWeight: 800,
+                  animation: "textPulse 1.5s ease-out forwards",
+                }}
+              >
+                🎉 {milestone} words! Keep going! 🎉
+              </div>
+            )}
+
+            {/* Motivational text */}
+            {computedMinWords > 0 && !meetsMin && !isDisabled && (
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "rgba(255,255,255,0.85)",
+                  fontWeight: 600,
+                  textAlign: "center",
+                }}
+              >
+                {wordCount === 0
+                  ? "Start writing to see your progress..."
+                  : `Only ${computedMinWords - wordCount} more words to go! 💪`}
+              </div>
+            )}
+          </div>
+
+          {/* Submit button - BIG & SATISFYING */}
           <button
             type="button"
             onClick={handleSubmitClick}
-            disabled={isDisabled || !String(value || "").trim() || !meetsMin}
-            className="border rounded-full px-4 py-2 disabled:opacity-50"
+            disabled={isDisabled || !String(value || "").trim() || !meetsMin || isSubmitting}
             style={{
+              padding: "16px 32px",
+              borderRadius: "12px",
+              border: "none",
+              fontSize: "16px",
+              fontWeight: 800,
+              cursor: isDisabled || !String(value || "").trim() || !meetsMin || isSubmitting ? "not-allowed" : "pointer",
               background:
                 isDisabled || !String(value || "").trim() || !meetsMin
-                  ? "#9ca3af"
-                  : "#16a34a",
-              color: "#fff",
-              fontWeight: 800,
-              paddingInline: 20,
-              cursor: isDisabled ? "not-allowed" : "pointer",
+                  ? "rgba(0,0,0,0.2)"
+                  : isSubmitting
+                  ? "rgba(255,255,255,0.3)"
+                  : "linear-gradient(135deg, #fff 0%, #f0f9ff 100%)",
+              color: isDisabled || !String(value || "").trim() || !meetsMin ? "rgba(255,255,255,0.5)" : "#667eea",
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              transition: "all 0.3s ease",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+              opacity: isDisabled || !String(value || "").trim() || !meetsMin ? 0.6 : 1,
+              transform: isSubmitting ? "scale(0.98)" : "scale(1)",
+              animation: isSubmitting ? "pulse 0.6s ease-in-out" : "none",
+            }}
+            onMouseEnter={(e) => {
+              if (!isDisabled && String(value || "").trim() && meetsMin && !isSubmitting) {
+                e.target.style.transform = "translateY(-2px)";
+                e.target.style.boxShadow = "0 12px 32px rgba(0,0,0,0.2)";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isDisabled && String(value || "").trim() && meetsMin && !isSubmitting) {
+                e.target.style.transform = "translateY(0)";
+                e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.15)";
+              }
             }}
           >
-            {isDisabled ? "Submitted" : "Submit"}
+            {isSubmitting ? "Submitting... ✨" : "Submit Answer"}
           </button>
         </div>
       </div>
+
+      {/* Confetti on submit */}
+      {showConfetti && <Confetti />}
     </div>
   );
 }

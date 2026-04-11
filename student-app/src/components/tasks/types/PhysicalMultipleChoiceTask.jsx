@@ -2,7 +2,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Physical Multiple Choice Task – SINGLE global scanner (StudentApp)
+ * Physical Multiple Choice Task – SUPER PREMIUM GAMING EXPERIENCE
+ * Showstopper quality with animations, sound, visual feedback, and celebration
  *
  * Receives scans via:
  *  - window event: "curriculate:stationScan" detail: { color, stationColor, stationId }
@@ -14,6 +15,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  *
  * Also emits (optional UX hook for StudentApp):
  *  - "curriculate:pmcAnswerResult" detail: { accepted, correct, done }
+ *
+ * VISUAL DESIGN: Kahoot-style bold colors, smooth animations, arcade-grade feedback
  */
 
 export default function PhysicalMultipleChoiceTask({
@@ -87,8 +90,24 @@ export default function PhysicalMultipleChoiceTask({
   const [streakBanner, setStreakBanner] = useState("");
   const streakTimerRef = useRef(null);
 
+  // New gaming UX state
+  const [score, setScore] = useState(0);
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [shakedLetter, setShakedLetter] = useState(null);
+  const [pulsingLetters, setPulsingLetters] = useState(new Set());
+  const [animatingCards, setAnimatingCards] = useState(new Set());
+
   const normalizeColor = (c) =>
     typeof c === "string" ? c.trim().toLowerCase() : "";
+
+  // Play sound effect with fallback
+  const playSound = (soundUrl) => {
+    try {
+      const audio = new Audio(soundUrl);
+      audio.volume = 0.8;
+      audio.play().catch(() => {});
+    } catch {}
+  };
 
     useEffect(() => {
       // reset on new task
@@ -108,6 +127,11 @@ export default function PhysicalMultipleChoiceTask({
       setStreak(0);
       setStreakBanner("");
       clearStreakTimer();
+      setScore(0);
+      setShowCelebration(false);
+      setShakedLetter(null);
+      setPulsingLetters(new Set());
+      setAnimatingCards(new Set());
 
       return () => {
         clearAdvanceTimer();
@@ -287,14 +311,16 @@ export default function PhysicalMultipleChoiceTask({
       )?.[0] || null;
 
     if (!matchingLetter) {
-      setScanError("The last color scanned was not an option. Try again!");
+      setScanError("Oops! That's not one of the options. Try again!");
       clearErrorTimer();
-      errorTimerRef.current = setTimeout(() => setScanError(""), 1600);
+      errorTimerRef.current = setTimeout(() => setScanError(""), 1800);
 
       setFlashColor("yellow");
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-      flashTimerRef.current = setTimeout(() => setFlashColor(null), 300);
+      flashTimerRef.current = setTimeout(() => setFlashColor(null), 400);
 
+      // Play buzzer sound
+      playSound("/sounds/buzz.mp3");
       try { window.__curriculatePlayWrongSound?.(); } catch {}
       try { navigator.vibrate?.(120); } catch {}
 
@@ -339,15 +365,20 @@ export default function PhysicalMultipleChoiceTask({
         };
       });
 
+      // Trigger shake animation
+      setShakedLetter(matchingLetter);
+
       setShowScannerPrompt(false);
       setShowingFeedback(true);
-      setFeedbackMessage("Incorrect — try again");
+      setFeedbackMessage("Not quite! Try again!");
 
       setFlashColor("red");
       setStreak(0);
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-      flashTimerRef.current = setTimeout(() => setFlashColor(null), 300);
+      flashTimerRef.current = setTimeout(() => setFlashColor(null), 500);
 
+      // Play buzzer sound
+      playSound("/sounds/buzz.mp3");
       try { window.__curriculatePlayWrongSound?.(); } catch {}
       try { navigator.vibrate?.([100, 60, 100]); } catch {}
 
@@ -359,6 +390,7 @@ export default function PhysicalMultipleChoiceTask({
           ...prev,
           [qIndex]: null,
         }));
+        setShakedLetter(null);
         resetGlobalScanDedupe();
         setShowScannerPrompt(true);
 
@@ -377,9 +409,12 @@ export default function PhysicalMultipleChoiceTask({
     setSelectedLetterByQ(nextSelected);
     selectedLetterByQRef.current = nextSelected;
 
+    // Trigger pulsing animation on correct answer
+    setPulsingLetters((prev) => new Set([...prev, matchingLetter]));
+
     setShowScannerPrompt(false);
     setShowingFeedback(true);
-    setFeedbackMessage("Correct!");
+    setFeedbackMessage("🎉 Correct!");
 
     setFlashColor("green");
 
@@ -389,9 +424,14 @@ export default function PhysicalMultipleChoiceTask({
       return next;
     });
 
-    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-    flashTimerRef.current = setTimeout(() => setFlashColor(null), 300);
+    // Update score
+    setScore((prev) => prev + 1);
 
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(() => setFlashColor(null), 500);
+
+    // Play success sound
+    playSound("/sounds/yay.mp3");
     try { window.__curriculatePlayCorrectSound?.(); } catch {}
     try { navigator.vibrate?.(60); } catch {}
 
@@ -407,6 +447,7 @@ export default function PhysicalMultipleChoiceTask({
       if (!done) {
         setShowingFeedback(false);
         setFeedbackMessage("");
+        setPulsingLetters(new Set());
         resetGlobalScanDedupe();
         setQIndex(nextIndex);
         setShowScannerPrompt(true);
@@ -415,6 +456,9 @@ export default function PhysicalMultipleChoiceTask({
 
       if (submittedOnceRef.current) return;
       submittedOnceRef.current = true;
+
+      // Show celebration!
+      setShowCelebration(true);
 
       const answers = items.map((item, idx) => {
         const itemCorrect = resolveCorrectLetter(item.correctAnswer);
@@ -427,15 +471,17 @@ export default function PhysicalMultipleChoiceTask({
         };
       });
 
-      onSubmit?.({
-        ok: true,
-        type: "physical-multiple-choice",
-        completed: true,
-        answers,
-        score: answers.filter((a) => a.isCorrect).length,
-        total: items.length,
-        lastScannedColor: lastValidScanColorRef.current || null,
-      });
+      setTimeout(() => {
+        onSubmit?.({
+          ok: true,
+          type: "physical-multiple-choice",
+          completed: true,
+          answers,
+          score: answers.filter((a) => a.isCorrect).length,
+          total: items.length,
+          lastScannedColor: lastValidScanColorRef.current || null,
+        });
+      }, 2000);
     }, delay);
 
     return true;
@@ -505,17 +551,17 @@ export default function PhysicalMultipleChoiceTask({
     };
   }, []);
 
-  // UI helpers
+  // UI helpers - bold Kahoot-style colors
   function getColorCss(color) {
     const map = {
-      Red: "#ef4444",
-      Orange: "#f97316",
-      Yellow: "#eab308",
-      Green: "#22c55e",
-      Blue: "#3b82f6",
-      Teal: "#14b8a6",
-      Purple: "#a855f7",
-      Pink: "#ec4899",
+      Red: "#ee3333",
+      Orange: "#ff6633",
+      Yellow: "#ffdd33",
+      Green: "#33dd33",
+      Blue: "#3366ff",
+      Teal: "#00cccc",
+      Purple: "#dd33ff",
+      Pink: "#ff3399",
     };
     return map[color] || "#6b7280";
   }
@@ -533,71 +579,170 @@ export default function PhysicalMultipleChoiceTask({
     }, 1200);
   };
 
-  function getOptionStyle(chosen, isCorrect, isWrong, stationColor) {
-    const base = {
-      background: getColorCss(stationColor),
-      color: "#ffffff",
-      borderColor: "transparent",
-      boxShadow: "none",
-    };
-    if (isCorrect) base.boxShadow = "0 0 0 4px rgba(34,197,94,0.5)";
-    if (isWrong) base.boxShadow = "0 0 0 4px rgba(239,68,68,0.5)";
-    if (chosen && !isCorrect && !isWrong) base.boxShadow = "0 8px 20px rgba(99,102,241,0.35)";
-    return base;
-  }
-
   const selectedLetter = selectedLetterByQ[qIndex] ?? null;
   const correctIndex = letters.indexOf(correctLetter);
 
+  // Confetti particles for celebration
+  const confetti = Array.from({ length: 20 }, (_, i) => ({
+    id: i,
+    delay: i * 40,
+    duration: 2000 + Math.random() * 1000,
+  }));
+
   return (
-    <div className="relative min-h-screen bg-gradient-to-b from-indigo-950 to-purple-950 text-white p-4 pb-20">
+    <div
+      style={{
+        position: "relative",
+        minHeight: "100vh",
+        background: "linear-gradient(135deg, #0f0f2e 0%, #1a0f3e 50%, #2d0f4e 100%)",
+        color: "#ffffff",
+        padding: "16px",
+        paddingBottom: "80px",
+        overflow: "hidden",
+        fontFamily: "system-ui, -apple-system, sans-serif",
+      }}
+    >
+      <style>{`
+        @keyframes pmcScanLine {
+          0%   { top: 0%; opacity: 0.5; }
+          50%  { top: 100%; opacity: 1; }
+          100% { top: 0%; opacity: 0.5; }
+        }
+        @keyframes pmcCardPop {
+          0% { transform: scale(0.8) rotateX(90deg); opacity: 0; }
+          70% { transform: scale(1.08); }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes pmcPulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.05); box-shadow: 0 0 30px currentColor; }
+        }
+        @keyframes pmcBounce {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-12px); }
+        }
+        @keyframes pmcShake {
+          0%, 100% { transform: translateX(0) rotate(0deg); }
+          25% { transform: translateX(-8px) rotate(-2deg); }
+          75% { transform: translateX(8px) rotate(2deg); }
+        }
+        @keyframes pmcConfetti {
+          0% { transform: translateY(0) rotateZ(0deg); opacity: 1; }
+          100% { transform: translateY(100vh) rotateZ(720deg); opacity: 0; }
+        }
+        .pmc-card-pop { animation: pmcCardPop 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards; }
+        .pmc-pulse { animation: pmcPulse 0.8s ease-in-out infinite; }
+        .pmc-bounce { animation: pmcBounce 0.6s ease-out; }
+        .pmc-shake { animation: pmcShake 0.4s ease-in-out; }
+      `}</style>
+
+      {/* Celebration confetti */}
+      {showCelebration && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998, pointerEvents: "none" }}>
+          {confetti.map((c) => (
+            <div
+              key={c.id}
+              style={{
+                position: "absolute",
+                width: "12px",
+                height: "12px",
+                borderRadius: "50%",
+                background: getColorCss(
+                  ["Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Teal"][c.id % 8]
+                ),
+                left: `${Math.random() * 100}%`,
+                top: "-20px",
+                animation: `pmcConfetti ${c.duration}ms ease-in forwards`,
+                animationDelay: `${c.delay}ms`,
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Error message banner */}
       {scanError && (
         <div
           style={{
+            position: "fixed",
+            top: "20px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 40,
             color: "#fff",
-            background: "rgba(0,0,0,0.75)",
-            padding: "10px 14px",
-            borderRadius: 8,
-            fontWeight: 600,
+            background: "rgba(239, 68, 68, 0.95)",
+            padding: "14px 20px",
+            borderRadius: "12px",
+            fontWeight: 700,
             textAlign: "center",
-            marginTop: 10,
+            fontSize: "1rem",
+            boxShadow: "0 10px 30px rgba(239, 68, 68, 0.3)",
+            animation: "pmcShake 0.4s ease-in-out",
+            maxWidth: "90%",
           }}
         >
           {scanError}
         </div>
       )}
 
-      {/* "Use global scanner" overlay (NO QrScanner here) */}
+      {/* Streak banner with fire */}
       {streakBanner && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-orange-500/90 px-6 py-3 rounded-xl shadow-xl text-white font-bold">
+        <div
+          style={{
+            position: "fixed",
+            top: "80px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 50,
+            background: "linear-gradient(135deg, #ff6633, #ffaa33)",
+            color: "#fff",
+            padding: "16px 24px",
+            borderRadius: "16px",
+            fontWeight: 800,
+            fontSize: "1.3rem",
+            boxShadow: "0 12px 40px rgba(255, 102, 51, 0.4)",
+            animation: "pmcBounce 0.6s ease-out",
+          }}
+        >
           {streakBanner}
         </div>
       )}
+
+      {/* Scanner prompt with camera frame */}
       {wantsScan && (
-        <div style={{ marginTop: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-          {/* Decorative scanner frame with embedded camera */}
+        <div
+          style={{
+            marginTop: "20px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "16px",
+          }}
+        >
           <div
             style={{
               position: "relative",
               width: "min(90vw, 360px)",
-              borderRadius: 24,
+              borderRadius: "24px",
               overflow: "hidden",
-              border: "4px solid rgba(34,211,238,0.6)",
-              boxShadow: "0 0 32px rgba(34,211,238,0.3), 0 8px 32px rgba(0,0,0,0.5)",
+              border: "4px solid rgba(51, 187, 255, 0.8)",
+              boxShadow: "0 0 40px rgba(51, 187, 255, 0.4), 0 12px 40px rgba(0, 0, 0, 0.6)",
               background: "#0f172a",
             }}
           >
-            {/* Camera feed or placeholder */}
             <div style={{ position: "relative" }}>
               {scannerSlot || (
-                <div style={{
-                  height: 200,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "rgba(34,211,238,0.6)",
-                  fontSize: "3rem",
-                }}>
+                <div
+                  style={{
+                    height: "200px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "rgba(51, 187, 255, 0.8)",
+                    fontSize: "3.5rem",
+                    fontWeight: "bold",
+                  }}
+                >
                   📷
                 </div>
               )}
@@ -609,53 +754,87 @@ export default function PhysicalMultipleChoiceTask({
                 position: "absolute",
                 left: 0,
                 right: 0,
-                height: 3,
-                background: "linear-gradient(to right, transparent, #22d3ee, transparent)",
-                boxShadow: "0 0 24px #22d3ee",
-                animation: "pmcScanLine 2.8s cubic-bezier(0.4,0,0.6,1) infinite",
+                height: "3px",
+                background: "linear-gradient(to right, transparent, #33bbff, transparent)",
+                boxShadow: "0 0 32px #33bbff",
+                animation: "pmcScanLine 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite",
                 pointerEvents: "none",
               }}
             />
 
             {/* Corner brackets */}
-            <div style={{ position: "absolute", inset: 12, pointerEvents: "none" }}>
+            <div style={{ position: "absolute", inset: "12px", pointerEvents: "none" }}>
               {[
-                { top: 0, left: 0, borderTop: "4px solid #22d3ee", borderLeft: "4px solid #22d3ee", borderRadius: "12px 0 0 0" },
-                { top: 0, right: 0, borderTop: "4px solid #22d3ee", borderRight: "4px solid #22d3ee", borderRadius: "0 12px 0 0" },
-                { bottom: 0, left: 0, borderBottom: "4px solid #22d3ee", borderLeft: "4px solid #22d3ee", borderRadius: "0 0 0 12px" },
-                { bottom: 0, right: 0, borderBottom: "4px solid #22d3ee", borderRight: "4px solid #22d3ee", borderRadius: "0 0 12px 0" },
+                { top: 0, left: 0, borderTop: "4px solid #33bbff", borderLeft: "4px solid #33bbff" },
+                { top: 0, right: 0, borderTop: "4px solid #33bbff", borderRight: "4px solid #33bbff" },
+                { bottom: 0, left: 0, borderBottom: "4px solid #33bbff", borderLeft: "4px solid #33bbff" },
+                { bottom: 0, right: 0, borderBottom: "4px solid #33bbff", borderRight: "4px solid #33bbff" },
               ].map((s, i) => (
-                <div key={i} style={{ position: "absolute", width: 40, height: 40, ...s }} />
+                <div
+                  key={i}
+                  style={{
+                    position: "absolute",
+                    width: "40px",
+                    height: "40px",
+                    borderRadius: i % 2 === 0 ? "12px 0 0 0" : "0 12px 0 0",
+                    ...s,
+                  }}
+                />
               ))}
             </div>
           </div>
 
-          <p style={{ margin: 0, fontSize: "1rem", fontWeight: 600, textAlign: "center", opacity: 0.85 }}>
-            Scan the colored station that matches your answer
+          <p
+            style={{
+              margin: 0,
+              fontSize: "1.05rem",
+              fontWeight: 700,
+              textAlign: "center",
+              opacity: 0.95,
+              color: "#fff",
+            }}
+          >
+            Scan the colored station matching your answer
           </p>
-
-          <style>{`
-            @keyframes pmcScanLine {
-              0%   { top: 0%; opacity: 0.5; }
-              50%  { top: 100%; opacity: 1; }
-              100% { top: 0%; opacity: 0.5; }
-            }
-          `}</style>
         </div>
       )}
 
+      {/* Feedback overlay */}
       {showingFeedback && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center">
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 50,
+            background: feedbackMessage.includes("Correct") ? "rgba(0, 0, 0, 0.6)" : "rgba(0, 0, 0, 0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backdropFilter: "blur(4px)",
+          }}
+        >
           <div
-            className={`text-5xl font-bold px-12 py-8 rounded-3xl shadow-2xl ${
-              feedbackMessage.includes("Correct") ? "bg-green-600/90" : "bg-red-600/90"
-            }`}
+            style={{
+              fontSize: "4rem",
+              fontWeight: 900,
+              padding: "32px 48px",
+              borderRadius: "32px",
+              textAlign: "center",
+              boxShadow: "0 20px 60px rgba(0, 0, 0, 0.8)",
+              background: feedbackMessage.includes("Correct")
+                ? "linear-gradient(135deg, #33dd33, #00ff88)"
+                : "linear-gradient(135deg, #ff3333, #ff6666)",
+              color: "#fff",
+              textShadow: "0 4px 12px rgba(0, 0, 0, 0.5)",
+              animation: "pmcBounce 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55)",
+            }}
           >
             {feedbackMessage}
           </div>
         </div>
       )}
 
+      {/* Flash overlay */}
       {flashColor && (
         <div
           style={{
@@ -663,69 +842,262 @@ export default function PhysicalMultipleChoiceTask({
             inset: 0,
             background:
               flashColor === "green"
-                ? "rgba(0,255,0,0.25)"
+                ? "rgba(51, 221, 51, 0.35)"
                 : flashColor === "red"
-                ? "rgba(255,0,0,0.25)"
-                : "rgba(255,200,0,0.25)",
+                ? "rgba(255, 51, 51, 0.35)"
+                : "rgba(255, 200, 51, 0.25)",
             pointerEvents: "none",
             zIndex: 9999,
-            transition: "opacity 0.2s ease",
+            animation: "fadeOut 0.5s ease-out forwards",
           }}
         />
       )}
 
-      <div className="max-w-3xl mx-auto pt-6">
-        <h2 className="text-2xl md:text-3xl font-bold mb-4">
-          Question {qIndex + 1} of {items.length}
-        </h2>
+      {/* Celebration screen */}
+      {showCelebration && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9997,
+            background: "rgba(0, 0, 0, 0.7)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "24px",
+            backdropFilter: "blur(8px)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "5rem",
+              fontWeight: 900,
+              animation: "pmcBounce 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55)",
+            }}
+          >
+            🎉 Quiz Complete! 🎉
+          </div>
+          <div
+            style={{
+              fontSize: "2.5rem",
+              fontWeight: 800,
+              color: "#ffdd33",
+              animation: "pmcPulse 1s ease-in-out infinite",
+            }}
+          >
+            Score: {score}/{items.length}
+          </div>
+          <div
+            style={{
+              fontSize: "4rem",
+              animation: "pmcBounce 1s cubic-bezier(0.68, -0.55, 0.265, 1.55) 0.2s",
+            }}
+          >
+            ⭐
+          </div>
+        </div>
+      )}
 
-        <div className="bg-white/10 backdrop-blur-md rounded-2xl shadow-xl p-6 md:p-8 mb-8 border border-white/10">
-          <p className="text-xl md:text-2xl font-medium leading-relaxed mb-10">
-            {currentQuestion?.prompt || "—"}
-          </p>
-
-          <div className="grid gap-5">
-            {letters.map((letter, idx) => {
-              const text = options[idx] ?? `Option ${letter}`;
-              const chosen = selectedLetter === letter;
-              const wrongLetters = wrongLettersByQ[qIndex] || [];
-              const showX = wrongLetters.includes(letter);
-              const isCorrect = showingFeedback && idx === correctIndex;
-              const isWrong = showingFeedback && chosen && idx !== correctIndex;
-              const stationColor = currentMap[letter];
-              const style = getOptionStyle(chosen, isCorrect, isWrong, stationColor);
-
-              return (
-                <div
-                  key={letter}
-                  className="rounded-2xl p-5 flex items-center justify-between transition-all duration-300"
-                  style={style}
-                >
-                  <div className="flex items-center gap-5">
-                    <div
-                      className="w-14 h-14 rounded-xl flex items-center justify-center text-xl font-bold text-white shrink-0"
-                      style={{ background: "rgba(0,0,0,0.25)" }}
-                    >
-                      {letter}
-                    </div>
-                    <div className="text-lg md:text-xl font-semibold">{text}</div>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0 ml-4">
-                    {showX && (
-                      <span className="text-2xl font-black text-red-200">✕</span>
-                    )}
-                    <div className="text-base font-medium opacity-90">
-                      {stationColor}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+      {/* Main content area */}
+      <div
+        style={{
+          maxWidth: "900px",
+          margin: "0 auto",
+          paddingTop: "24px",
+        }}
+      >
+        {/* Header with question counter and score */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "20px",
+            paddingBottom: "16px",
+            borderBottom: "2px solid rgba(255, 255, 255, 0.1)",
+          }}
+        >
+          <h2
+            style={{
+              fontSize: "1.5rem",
+              fontWeight: 800,
+              margin: 0,
+              letterSpacing: "0.5px",
+            }}
+          >
+            Question {qIndex + 1} of {items.length}
+          </h2>
+          <div
+            style={{
+              fontSize: "1.2rem",
+              fontWeight: 700,
+              background: "rgba(51, 187, 255, 0.2)",
+              padding: "8px 16px",
+              borderRadius: "12px",
+              border: "2px solid rgba(51, 187, 255, 0.5)",
+            }}
+          >
+            Score: {score}
           </div>
         </div>
 
-        <div className="text-center text-slate-400 text-sm">
-          Scan a station to submit • Only shown colors are accepted
+        {/* Question card */}
+        <div
+          style={{
+            background: "rgba(255, 255, 255, 0.08)",
+            backdropFilter: "blur(20px)",
+            borderRadius: "20px",
+            border: "1px solid rgba(255, 255, 255, 0.15)",
+            padding: "32px 28px",
+            marginBottom: "32px",
+            boxShadow: "0 8px 40px rgba(0, 0, 0, 0.3)",
+            animation: qIndex > 0 ? "pmcCardPop 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55)" : "none",
+          }}
+        >
+          <p
+            style={{
+              fontSize: "1.4rem",
+              fontWeight: 600,
+              margin: 0,
+              lineHeight: 1.6,
+              color: "#fff",
+            }}
+          >
+            {currentQuestion?.prompt || "—"}
+          </p>
+        </div>
+
+        {/* Answer grid - 2x2 layout */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "16px",
+            marginBottom: "24px",
+          }}
+        >
+          {letters.map((letter, idx) => {
+            const text = options[idx] ?? `Option ${letter}`;
+            const chosen = selectedLetter === letter;
+            const wrongLetters = wrongLettersByQ[qIndex] || [];
+            const showX = wrongLetters.includes(letter);
+            const isCorrect = showingFeedback && idx === correctIndex;
+            const isWrong = showingFeedback && chosen && idx !== correctIndex;
+            const stationColor = currentMap[letter];
+            const baseColor = getColorCss(stationColor);
+            const isShaken = shakedLetter === letter;
+
+            return (
+              <div
+                key={letter}
+                style={{
+                  position: "relative",
+                  borderRadius: "16px",
+                  overflow: "hidden",
+                  animation:
+                    isShaken && showingFeedback && !isCorrect
+                      ? "pmcShake 0.4s ease-in-out"
+                      : pulsingLetters.has(letter) && isCorrect
+                      ? "pmcPulse 0.8s ease-in-out"
+                      : `pmcCardPop 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) ${idx * 100}ms backwards`,
+                }}
+              >
+                <div
+                  style={{
+                    background: isCorrect
+                      ? "linear-gradient(135deg, #33dd33, #00ff88)"
+                      : isWrong
+                      ? "linear-gradient(135deg, #ff3333, #ff6666)"
+                      : baseColor,
+                    color: "#ffffff",
+                    padding: "24px 16px",
+                    borderRadius: "16px",
+                    textAlign: "center",
+                    fontWeight: 700,
+                    fontSize: "1.05rem",
+                    cursor: "pointer",
+                    userSelect: "none",
+                    boxShadow: isCorrect
+                      ? "0 0 40px rgba(51, 221, 51, 0.6), inset 0 0 20px rgba(255, 255, 255, 0.2)"
+                      : isWrong
+                      ? "0 0 40px rgba(255, 51, 51, 0.6), inset 0 0 20px rgba(255, 255, 255, 0.1)"
+                      : chosen
+                      ? `0 0 30px ${baseColor}, inset 0 0 10px rgba(255, 255, 255, 0.15)`
+                      : "0 4px 20px rgba(0, 0, 0, 0.3)",
+                    transition: "all 0.3s cubic-bezier(0.2, 0.6, 0.2, 1)",
+                    border: isCorrect || isWrong ? "2px solid rgba(255, 255, 255, 0.4)" : "2px solid transparent",
+                    minHeight: "100px",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    position: "relative",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "1.8rem",
+                      fontWeight: 900,
+                      letterSpacing: "2px",
+                    }}
+                  >
+                    {letter}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "0.95rem",
+                      fontWeight: 600,
+                      lineHeight: 1.3,
+                      opacity: 0.95,
+                    }}
+                  >
+                    {text}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "0.8rem",
+                      opacity: 0.85,
+                      marginTop: "4px",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {stationColor}
+                  </div>
+
+                  {/* Wrong X indicator */}
+                  {showX && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "8px",
+                        right: "8px",
+                        fontSize: "1.8rem",
+                        fontWeight: 900,
+                        color: "rgba(255, 255, 255, 0.9)",
+                      }}
+                    >
+                      ✕
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Instruction text */}
+        <div
+          style={{
+            textAlign: "center",
+            fontSize: "0.95rem",
+            fontWeight: 600,
+            color: "rgba(255, 255, 255, 0.75)",
+            marginTop: "20px",
+          }}
+        >
+          📸 Scan a colored station to submit • Only shown colors accepted
         </div>
       </div>
     </div>

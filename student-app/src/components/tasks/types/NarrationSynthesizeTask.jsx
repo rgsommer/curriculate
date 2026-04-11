@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 /**
  * NarrationSynthesizeTask
  * Turn-based oral teach-back / narration task.
+ * Enhanced version with animations, visual personality, and immersive feedback.
  *
  * Expected task shape (from backend):
  * task = {
@@ -19,6 +20,62 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  *   }
  * }
  */
+
+// Keyframe animations for immersive effects
+const createAnimationStyles = () => {
+  if (typeof document === "undefined") return {};
+
+  const styleId = "narration-synthesize-animations";
+  let style = document.getElementById(styleId);
+
+  if (!style) {
+    style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+      @keyframes audioWave {
+        0%, 100% { transform: scaleY(0.4); opacity: 0.6; }
+        50% { transform: scaleY(1); opacity: 1; }
+      }
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+      }
+      @keyframes slideUp {
+        from { opacity: 0; transform: translateY(12px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes celebrate {
+        0% { transform: scale(0) rotate(0deg); opacity: 0; }
+        50% { opacity: 1; }
+        100% { transform: scale(1) rotate(360deg); opacity: 0; }
+      }
+      @keyframes timerGlow {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.7); }
+        50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+      }
+      .audio-bar {
+        display: inline-block;
+        width: 3px;
+        height: 20px;
+        margin: 0 2px;
+        background: linear-gradient(180deg, #3b82f6, #8b5cf6);
+        border-radius: 2px;
+        animation: audioWave 0.6s ease-in-out infinite;
+      }
+      .audio-bar:nth-child(1) { animation-delay: 0s; }
+      .audio-bar:nth-child(2) { animation-delay: 0.1s; }
+      .audio-bar:nth-child(3) { animation-delay: 0.2s; }
+      .audio-bar:nth-child(4) { animation-delay: 0.3s; }
+      .audio-bar:nth-child(5) { animation-delay: 0.4s; }
+    `;
+    document.head.appendChild(style);
+  }
+};
+
 export default function NarrationSynthesizeTask({
   task,
   onSubmit,
@@ -26,6 +83,10 @@ export default function NarrationSynthesizeTask({
   roomCode, // unused
   teamId, // unused
 }) {
+  // Initialize animations
+  useEffect(() => {
+    createAnimationStyles();
+  }, []);
   const config = (task && task.config && typeof task.config === "object") ? task.config : {};
   const playerCount = clampInt(config.playerCount, 1, 8, 4);
 
@@ -85,6 +146,22 @@ export default function NarrationSynthesizeTask({
       value: Math.round((ratingScale.min + ratingScale.max) / 2),
     }))
   );
+
+  const [showCelebration, setShowCelebration] = useState(false);
+  const audioRef = useRef(null);
+
+  // Play yay sound
+  const playCelebrationSound = () => {
+    try {
+      if (!audioRef.current) {
+        audioRef.current = new Audio("/sounds/yay.mp3");
+      }
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(() => {});
+    } catch (e) {
+      // Silently fail if audio unavailable
+    }
+  };
 
   // Reset timer when turn changes or perTurnSeconds changes
   useEffect(() => {
@@ -148,6 +225,8 @@ export default function NarrationSynthesizeTask({
     if (turnIndex + 1 >= playerCount) {
       setPhase("done");
       stopTimer();
+      setShowCelebration(true);
+      playCelebrationSound();
       return;
     }
     setTurnIndex((i) => i + 1);
@@ -177,89 +256,110 @@ export default function NarrationSynthesizeTask({
     }
   }
 
-  // ----- UI helpers -----
+  // ----- UI helpers with enhanced personality -----
+
+  // Color scheme for phase indicators
+  const phaseColors = {
+    prompt: { bg: "rgba(219,234,254,0.6)", border: "rgba(59,130,246,0.5)", icon: "📢" },
+    speaking: { bg: "rgba(219,239,255,0.6)", border: "rgba(59,130,246,0.7)", icon: "🎤" },
+    rate: { bg: "rgba(240,253,250,0.6)", border: "rgba(16,185,129,0.5)", icon: "⭐" },
+    done: { bg: "rgba(248,240,245,0.6)", border: "rgba(236,72,153,0.5)", icon: "🎉" },
+  };
+
+  const currentPhaseColor = phaseColors[phase] || phaseColors.prompt;
+
   const cardStyle = {
-    borderRadius: 18,
-    padding: 16,
-    border: "1px solid rgba(148,163,184,0.6)",
-    boxShadow: "0 10px 28px rgba(2,6,23,0.08)",
-    background:
-      "linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,250,252,0.92))",
-    maxWidth: 860,
+    borderRadius: 20,
+    padding: "20px",
+    border: `2px solid ${currentPhaseColor.border}`,
+    boxShadow: phase === "speaking"
+      ? `0 0 20px rgba(59,130,246,0.25), 0 10px 30px rgba(2,6,23,0.08)`
+      : "0 10px 30px rgba(2,6,23,0.08)",
+    background: `linear-gradient(135deg, ${currentPhaseColor.bg} 0%, rgba(255,255,255,0.95) 100%)`,
+    maxWidth: 900,
     margin: "0 auto",
+    transition: "all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)",
+    animation: phase === "speaking" ? "pulse 2s ease-in-out infinite" : "none",
   };
 
   const headerRow = {
     display: "flex",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
-    gap: 12,
-    marginBottom: 12,
+    gap: "16px",
+    marginBottom: 20,
+    flexWrap: "wrap",
   };
 
-  const pill = (bg) => ({
-    padding: "6px 10px",
+  const pill = (bg, border = "rgba(148,163,184,0.55)") => ({
+    padding: "8px 12px",
     borderRadius: 999,
-    fontSize: 13,
-    fontWeight: 700,
-    border: "1px solid rgba(148,163,184,0.55)",
+    fontSize: 12,
+    fontWeight: 800,
+    border: `1.5px solid ${border}`,
     background: bg,
     color: "#0f172a",
     whiteSpace: "nowrap",
+    transition: "all 0.3s ease",
   });
 
   const bigTitle = {
-    fontSize: 22,
+    fontSize: "clamp(24px, 5vw, 28px)",
     fontWeight: 900,
     letterSpacing: "-0.02em",
     margin: 0,
     color: "#0f172a",
+    animation: "slideUp 0.5s ease",
   };
 
   const subtitle = {
-    margin: "6px 0 0 0",
+    margin: "8px 0 0 0",
     color: "#334155",
     fontSize: 14,
-    lineHeight: 1.35,
+    lineHeight: 1.4,
   };
 
   const promptBox = {
-    marginTop: 14,
-    padding: 14,
-    borderRadius: 14,
-    border: "1px solid rgba(203,213,225,0.9)",
-    background:
-      "linear-gradient(180deg, rgba(241,245,249,0.95), rgba(255,255,255,0.95))",
+    marginTop: 18,
+    padding: "18px",
+    borderRadius: 16,
+    border: `1.5px solid ${currentPhaseColor.border}`,
+    background: phase === "speaking"
+      ? `linear-gradient(135deg, rgba(219,234,254,0.4), rgba(255,255,255,0.98))`
+      : `linear-gradient(135deg, rgba(241,245,249,0.8), rgba(255,255,255,0.95))`,
+    animation: "slideUp 0.5s ease",
+    transition: "all 0.4s ease",
   };
 
   const conceptStyle = {
-    fontSize: 13,
-    fontWeight: 800,
-    letterSpacing: "0.02em",
+    fontSize: 12,
+    fontWeight: 900,
+    letterSpacing: "0.08em",
     color: "#1e293b",
     textTransform: "uppercase",
-    margin: "0 0 8px 0",
-    opacity: 0.9,
+    margin: "0 0 10px 0",
+    opacity: 0.85,
   };
 
   const promptStyle = {
-    fontSize: 20,
+    fontSize: "clamp(18px, 4vw, 24px)",
     fontWeight: 800,
     color: "#0f172a",
     margin: 0,
-    lineHeight: 1.25,
+    lineHeight: 1.3,
   };
 
   const hintStyle = {
     fontSize: 13,
     color: "#475569",
-    marginTop: 10,
-    lineHeight: 1.35,
+    marginTop: 12,
+    lineHeight: 1.4,
+    fontStyle: "italic",
   };
 
   const btnBase = {
     borderRadius: 14,
-    padding: "12px 14px",
+    padding: "13px 16px",
     border: "1px solid rgba(148,163,184,0.7)",
     background: "white",
     color: "#0f172a",
@@ -267,20 +367,33 @@ export default function NarrationSynthesizeTask({
     fontSize: 15,
     cursor: "pointer",
     boxShadow: "0 6px 16px rgba(2,6,23,0.08)",
+    transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
   };
 
   const btnPrimary = {
     ...btnBase,
-    border: "1px solid rgba(59,130,246,0.45)",
-    background:
-      "linear-gradient(180deg, rgba(59,130,246,0.16), rgba(255,255,255,0.9))",
+    border: "1.5px solid rgba(59,130,246,0.6)",
+    background: "linear-gradient(135deg, rgba(59,130,246,0.1), rgba(147,197,253,0.1))",
+  };
+
+  const btnPrimaryActive = {
+    ...btnPrimary,
+    background: "linear-gradient(135deg, rgba(59,130,246,0.25), rgba(147,197,253,0.15))",
+    boxShadow: "0 8px 20px rgba(59,130,246,0.25)",
+    transform: "scale(1.02)",
   };
 
   const btnSuccess = {
     ...btnBase,
-    border: "1px solid rgba(34,197,94,0.45)",
-    background:
-      "linear-gradient(180deg, rgba(34,197,94,0.14), rgba(255,255,255,0.9))",
+    border: "1.5px solid rgba(34,197,94,0.6)",
+    background: "linear-gradient(135deg, rgba(34,197,94,0.1), rgba(134,239,172,0.1))",
+  };
+
+  const btnSuccessActive = {
+    ...btnSuccess,
+    background: "linear-gradient(135deg, rgba(34,197,94,0.25), rgba(134,239,172,0.15))",
+    boxShadow: "0 8px 20px rgba(34,197,94,0.25)",
+    transform: "scale(1.02)",
   };
 
   const btnMuted = {
@@ -291,124 +404,241 @@ export default function NarrationSynthesizeTask({
 
   const footerRow = {
     display: "flex",
-    gap: 10,
+    gap: 12,
     justifyContent: "flex-end",
-    marginTop: 14,
+    marginTop: 18,
     flexWrap: "wrap",
   };
 
   return (
     <div style={cardStyle}>
+      {/* Celebration particles */}
+      {showCelebration && (
+        <div style={{ position: "absolute", pointerEvents: "none" }}>
+          {[...Array(8)].map((_, i) => (
+            <div
+              key={i}
+              style={{
+                position: "fixed",
+                left: "50%",
+                top: "50%",
+                fontSize: 32,
+                animation: "celebrate 1.5s ease-out forwards",
+                animationDelay: `${i * 0.1}s`,
+                transform: `rotate(${(i / 8) * 360}deg) translateY(-100px)`,
+              }}
+            >
+              {["🎉", "⭐", "🌟", "✨", "🎊"][i % 5]}
+            </div>
+          ))}
+        </div>
+      )}
+
       <div style={headerRow}>
-        <div style={{ minWidth: 0 }}>
-          <p style={{ margin: 0, fontSize: 12, fontWeight: 900, color: "#64748b" }}>
-            Narration Synthesize
-          </p>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 4,
+          }}>
+            <p style={{ margin: 0, fontSize: 12, fontWeight: 900, color: "#64748b" }}>
+              {currentPhaseColor.icon} NARRATION SYNTHESIZE
+            </p>
+          </div>
           <h2 style={bigTitle}>{task?.title || "Teach-back Turns"}</h2>
           <p style={subtitle}>
             {task?.prompt ||
               "Take turns explaining out loud. After each turn, the group rates the explanation."}
           </p>
 
-          {/* Standards: clear, explicit, Grade-7 instructions */}
-          <div
-            style={{
-              marginTop: 10,
-              borderRadius: 14,
-              padding: "10px 12px",
-              border: "1px solid rgba(203,213,225,0.9)",
-              background: "rgba(248,250,252,0.92)",
-              color: "#0f172a",
-              fontSize: 13,
-              lineHeight: 1.35,
-            }}
-          >
-            <div style={{ fontWeight: 950, marginBottom: 4 }}>How this works</div>
-            <div>1) <b>{currentName}</b> speaks out loud.</div>
-            <div>2) Everyone listens.</div>
-            <div>3) The group gives a rating.</div>
-            <div>4) Tap <b>Next Player</b> and repeat.</div>
-          </div>
+          {/* Enhanced instructions */}
+          {phase !== "done" && (
+            <div
+              style={{
+                marginTop: 14,
+                borderRadius: 14,
+                padding: "12px 14px",
+                border: "1.5px solid rgba(203,213,225,0.8)",
+                background: "linear-gradient(135deg, rgba(248,250,252,0.9), rgba(241,245,249,0.95))",
+                color: "#0f172a",
+                fontSize: 13,
+                lineHeight: 1.45,
+                animation: "slideUp 0.5s ease",
+              }}
+            >
+              <div style={{ fontWeight: 950, marginBottom: 5 }}>⚡ How this works</div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <div><span style={{ opacity: 0.7 }}>1️⃣</span> <b>{currentName}</b> speaks out loud</div>
+                <div><span style={{ opacity: 0.7 }}>2️⃣</span> Everyone listens closely</div>
+                <div><span style={{ opacity: 0.7 }}>3️⃣</span> Group rates it</div>
+                <div><span style={{ opacity: 0.7 }}>4️⃣</span> Next player</div>
+              </div>
+            </div>
+          )}
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={pill("rgba(224,231,255,0.75)")}>{turnLabel}</span>
-          <span style={pill("rgba(254,249,195,0.8)")}>{currentName}</span>
+
+        {/* Enhanced phase indicators */}
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <span style={pill("rgba(224,231,255,0.85)", "rgba(59,130,246,0.5)")}>
+            🔢 Turn {turnIndex + 1}/{playerCount}
+          </span>
+          <span style={pill("rgba(254,243,199,0.85)", "rgba(202,138,4,0.5)")}>
+            👤 {currentName}
+          </span>
           {canUseTimer ? (
-            <span style={pill("rgba(255,255,255,0.8)")}>
-              ⏱ {String(secondsLeft).padStart(2, "0")}s
+            <span
+              style={{
+                ...pill("rgba(255,255,255,0.95)", secondsLeft <= 10 ? "rgba(239,68,68,0.7)" : "rgba(107,114,128,0.5)"),
+                fontSize: 14,
+                fontWeight: 900,
+                animation: secondsLeft <= 10 && phase === "speaking" ? "timerGlow 1s ease-in-out infinite" : "none",
+                background: secondsLeft <= 10
+                  ? "linear-gradient(135deg, rgba(254,226,226,0.9), rgba(255,255,255,0.95))"
+                  : "rgba(255,255,255,0.95)",
+              }}
+            >
+              {phase === "speaking" ? "⏱" : "⏲"} {String(secondsLeft).padStart(2, "0")}s
             </span>
           ) : (
-            <span style={pill("rgba(241,245,249,0.9)")}>No timer</span>
+            <span style={pill("rgba(241,245,249,0.85)", "rgba(148,163,184,0.5)")}>
+              ∞ Unlimited
+            </span>
           )}
         </div>
       </div>
 
+      {/* Prompt section with audio wave during speaking */}
       {phase !== "done" && (
         <div style={promptBox}>
           <div style={conceptStyle}>{current?.concept || "Concept"}</div>
           <p style={promptStyle}>{current?.prompt || "Explain the concept out loud."}</p>
           <div style={hintStyle}>
-            Speak to your group (not silently). Aim for: what it is • how it works • one example.
+            💡 Speak to your group (not silently). Aim for: what it is • how it works • one example.
           </div>
+
+          {/* Audio wave visualization during speaking */}
+          {phase === "speaking" && (
+            <div style={{
+              marginTop: 16,
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: 4,
+              padding: "12px",
+              background: "rgba(59,130,246,0.08)",
+              borderRadius: 12,
+            }}>
+              <span className="audio-bar" />
+              <span className="audio-bar" />
+              <span className="audio-bar" />
+              <span className="audio-bar" />
+              <span className="audio-bar" />
+            </div>
+          )}
         </div>
       )}
 
+      {/* Start Turn button */}
       {phase === "prompt" && (
         <div style={footerRow}>
-          <button style={btnPrimary} onClick={goToSpeaking}>
-            Start Turn
+          <button
+            style={btnPrimaryActive}
+            onClick={goToSpeaking}
+          >
+            🎤 Start Turn
           </button>
         </div>
       )}
 
+      {/* Finished Speaking button with urgency */}
       {phase === "speaking" && (
         <div style={footerRow}>
-          <button style={btnSuccess} onClick={finishSpeaking}>
-            Finished
+          <button
+            style={btnSuccessActive}
+            onClick={finishSpeaking}
+          >
+            ✓ Finished Speaking
           </button>
         </div>
       )}
 
+      {/* Rating section */}
       {phase === "rate" && (
-        <div style={{ marginTop: 14 }}>
+        <div style={{ marginTop: 18, animation: "slideUp 0.5s ease" }}>
           <div
             style={{
-              borderRadius: 14,
-              padding: 14,
-              border: "1px solid rgba(203,213,225,0.9)",
+              borderRadius: 16,
+              padding: "16px",
+              border: "1.5px solid rgba(16,185,129,0.4)",
               background:
-                "linear-gradient(180deg, rgba(236,254,255,0.92), rgba(255,255,255,0.95))",
+                "linear-gradient(135deg, rgba(236,254,250,0.8), rgba(255,255,255,0.95))",
             }}
           >
-            <div style={{ fontSize: 14, fontWeight: 900, color: "#0f172a" }}>
-              Peer rating
+            <div style={{ fontSize: 15, fontWeight: 900, color: "#0f172a", display: "flex", gap: 6, alignItems: "center" }}>
+              ⭐ Peer Rating
             </div>
-            <div style={{ marginTop: 6, fontSize: 13, color: "#334155" }}>
-              Slide to rate this explanation: <b>{ratingScale.label}</b>
+            <div style={{ marginTop: 8, fontSize: 13, color: "#334155" }}>
+              Rate this explanation on: <b>{ratingScale.label}</b>
             </div>
 
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginTop: 14 }}>
               <input
                 type="range"
                 min={ratingScale.min}
                 max={ratingScale.max}
                 value={clampInt(ratings[turnIndex]?.value, ratingScale.min, ratingScale.max, ratingScale.min)}
                 onChange={(e) => setRatingForTurn(e.target.value)}
-                style={{ width: "100%" }}
+                style={{
+                  width: "100%",
+                  height: 8,
+                  borderRadius: 4,
+                  background: "linear-gradient(90deg, #ef4444, #f97316, #eab308, #84cc16, #22c55e)",
+                  outline: "none",
+                  WebkitAppearance: "none",
+                  cursor: "pointer",
+                }}
               />
+              <style>{`
+                input[type="range"]::-webkit-slider-thumb {
+                  -webkit-appearance: none;
+                  appearance: none;
+                  width: 20px;
+                  height: 20px;
+                  border-radius: 50%;
+                  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+                  cursor: pointer;
+                  box-shadow: 0 2px 8px rgba(59,130,246,0.4);
+                }
+                input[type="range"]::-moz-range-thumb {
+                  width: 20px;
+                  height: 20px;
+                  border-radius: 50%;
+                  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+                  cursor: pointer;
+                  border: none;
+                  box-shadow: 0 2px 8px rgba(59,130,246,0.4);
+                }
+              `}</style>
               <div
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
-                  marginTop: 6,
+                  marginTop: 10,
                   color: "#64748b",
                   fontSize: 12,
                   fontWeight: 800,
                 }}
               >
-                <span>{ratingScale.min}</span>
-                <span style={{ color: "#0f172a" }}>
-                  Score:{" "}
+                <span>Low</span>
+                <span style={{
+                  color: "#0f172a",
+                  fontSize: 16,
+                  fontWeight: 900,
+                  padding: "4px 12px",
+                  borderRadius: 8,
+                  background: "linear-gradient(135deg, rgba(59,130,246,0.15), rgba(147,197,253,0.1))",
+                }}>
                   {clampInt(
                     ratings[turnIndex]?.value,
                     ratingScale.min,
@@ -416,71 +646,112 @@ export default function NarrationSynthesizeTask({
                     ratingScale.min
                   )}
                 </span>
-                <span>{ratingScale.max}</span>
+                <span>High</span>
               </div>
             </div>
           </div>
 
           <div style={footerRow}>
-            <button style={btnPrimary} onClick={nextTurn}>
-              {turnIndex + 1 >= playerCount ? "Finish Task" : "Next Player"}
+            <button style={btnPrimaryActive} onClick={nextTurn}>
+              {turnIndex + 1 >= playerCount ? "🎉 Finish Task" : "➜ Next Player"}
             </button>
           </div>
         </div>
       )}
 
+      {/* Completion celebration */}
       {phase === "done" && (
-        <div style={{ marginTop: 14 }}>
+        <div style={{ marginTop: 18, animation: "slideUp 0.5s ease" }}>
           <div
             style={{
-              borderRadius: 14,
-              padding: 14,
-              border: "1px solid rgba(187,247,208,0.95)",
+              borderRadius: 16,
+              padding: "20px",
+              border: "1.5px solid rgba(236,72,153,0.4)",
               background:
-                "linear-gradient(180deg, rgba(220,252,231,0.75), rgba(255,255,255,0.96))",
+                "linear-gradient(135deg, rgba(248,240,245,0.9), rgba(255,255,255,0.98))",
             }}
           >
-            <div style={{ fontSize: 16, fontWeight: 950, color: "#052e16" }}>
-              All turns complete ✅
+            <div style={{
+              fontSize: 20,
+              fontWeight: 950,
+              color: "#831843",
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              marginBottom: 2,
+            }}>
+              🎉 All Turns Complete!
             </div>
-            <div style={{ marginTop: 6, fontSize: 13, color: "#14532d" }}>
-              Tap submit to send your team's ratings.
+            <div style={{ marginTop: 8, fontSize: 13, color: "#831843", opacity: 0.8 }}>
+              Great job! Here's your team's feedback summary.
             </div>
 
-            <div style={{ marginTop: 12 }}>
-              {ratings.map((r, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "8px 10px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(203,213,225,0.9)",
-                    background: "rgba(255,255,255,0.8)",
-                    marginBottom: 8,
-                  }}
-                >
-                  <div style={{ fontWeight: 900, color: "#0f172a" }}>
-                    {playerNames[i] || `Player ${i + 1}`}
+            {/* Summary of ratings */}
+            <div style={{ marginTop: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#64748b", marginBottom: 8, textTransform: "uppercase" }}>
+                Ratings Summary
+              </div>
+              {ratings.map((r, i) => {
+                const score = clampInt(r?.value, ratingScale.min, ratingScale.max, ratingScale.min);
+                const percent = ((score - ratingScale.min) / (ratingScale.max - ratingScale.min)) * 100;
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "10px 12px",
+                      borderRadius: 12,
+                      border: "1px solid rgba(236,72,153,0.25)",
+                      background: "rgba(255,255,255,0.85)",
+                      marginBottom: 8,
+                      animation: `slideUp 0.5s ease ${i * 0.1}s backwards`,
+                    }}
+                  >
+                    <div style={{ fontWeight: 900, color: "#0f172a", flex: 1 }}>
+                      👤 {playerNames[i] || `Player ${i + 1}`}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{
+                        width: 100,
+                        height: 6,
+                        borderRadius: 3,
+                        background: "rgba(203,213,225,0.5)",
+                        overflow: "hidden",
+                      }}>
+                        <div style={{
+                          width: `${percent}%`,
+                          height: "100%",
+                          background: "linear-gradient(90deg, #ef4444, #f97316, #eab308, #84cc16, #22c55e)",
+                          transition: "width 0.6s ease",
+                        }} />
+                      </div>
+                      <div style={{
+                        fontWeight: 950,
+                        color: "#0f172a",
+                        fontSize: 14,
+                        minWidth: 24,
+                        textAlign: "right",
+                      }}>
+                        {score}
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ fontWeight: 950, color: "#0f172a" }}>
-                    {clampInt(r?.value, ratingScale.min, ratingScale.max, ratingScale.min)}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div style={footerRow}>
-              <button style={btnSuccess} onClick={submitAll}>
-                Submit
+              <button style={btnSuccessActive} onClick={submitAll}>
+                ✓ Submit Results
               </button>
               <button
                 style={btnMuted}
                 onClick={() => {
                   setTurnIndex(0);
                   setPhase("prompt");
+                  setShowCelebration(false);
                   setRatings(
                     Array.from({ length: playerCount }, () => ({
                       value: Math.round((ratingScale.min + ratingScale.max) / 2),
@@ -489,7 +760,7 @@ export default function NarrationSynthesizeTask({
                   setSecondsLeft(perTurnSeconds);
                 }}
               >
-                Reset (local)
+                ↻ Reset
               </button>
             </div>
           </div>
