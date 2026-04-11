@@ -1542,6 +1542,40 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
+    case TASK_TYPES.TRUE_FALSE_CONNECT_FOUR: {
+      // Normalize statements from various AI field names
+      const _c4Sources = [
+        task.statements, task.config?.statements,
+        task.items, task.config?.items,
+        task.clues, task.config?.clues,
+      ];
+      let c4Raw = [];
+      for (const src of _c4Sources) {
+        if (Array.isArray(src) && src.length > 0) { c4Raw = src; break; }
+      }
+
+      const c4Stmts = c4Raw
+        .map((s, i) => {
+          if (!s) return null;
+          if (typeof s === "string") return { text: s.trim(), isFalse: false, id: `s${i}` };
+          const text = String(s.text || s.prompt || s.statement || s.question || "").trim();
+          if (!text) return null;
+          const isFalse =
+            typeof s.isFalse === "boolean" ? s.isFalse :
+            typeof s.correct === "boolean" ? !s.correct :
+            typeof s.correctAnswer === "boolean" ? !s.correctAnswer :
+            typeof s.answer === "boolean" ? !s.answer :
+            typeof s.answer === "string" ? String(s.answer).toLowerCase() === "false" :
+            false;
+          return { text, isFalse, id: String(s.id || s._id || `s${i}`) };
+        })
+        .filter(Boolean);
+
+      task.statements = c4Stmts;
+      if (!task.timeLimitSeconds) task.timeLimitSeconds = 300;
+      break;
+    }
+
     default:
       break;
   }
@@ -1962,6 +1996,25 @@ export function validateTaskByType(taskType, task) {
       if (!Array.isArray(words) || words.length < 8) {
         errors.push("word-weaver-duel requires at least 8 words");
         break;
+      }
+      break;
+    }
+
+    case TASK_TYPES.TRUE_FALSE_CONNECT_FOUR: {
+      const c4Stmts = Array.isArray(task.statements) ? task.statements : [];
+      if (c4Stmts.length < 10) {
+        errors.push(`true-false-connect-four requires at least 10 statements (got ${c4Stmts.length})`);
+        break;
+      }
+      const badStmts = c4Stmts.filter((s) => !s?.text || typeof s.text !== "string" || !s.text.trim());
+      if (badStmts.length > 0) {
+        errors.push(`${badStmts.length} statement(s) have empty text`);
+      }
+      // Check for reasonable true/false balance (at least 30% each side)
+      const falseCount = c4Stmts.filter((s) => s.isFalse).length;
+      const trueCount = c4Stmts.length - falseCount;
+      if (falseCount < 3 || trueCount < 3) {
+        errors.push(`statements must include at least 3 true and 3 false (got ${trueCount} true, ${falseCount} false)`);
       }
       break;
     }

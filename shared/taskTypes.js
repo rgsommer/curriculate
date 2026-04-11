@@ -1480,7 +1480,47 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       ].join("\n"),
 
     demoPrompt: "",
-    aiPrompt: "",
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "true-false-connect-four".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt, statements.
+    - Keep language age-appropriate and classroom-safe.
+    - Avoid copyrighted passages; write original content.
+
+    Task-specific guidance:
+    - This is a Connect Four game powered by true/false statements. Students pick a statement, then drop a piece into a column. TRUE statements → Blue piece, FALSE statements → Red piece. First to get 4-in-a-row wins.
+    - Generate a LARGE pool of true/false statements so students can play multiple rounds in 5 minutes.
+    - Create ONE true/false statement for EVERY term, concept, or vocabulary word from the topic. Then add extra statements to reach at least 20 total.
+    - Aim for 20–30 statements. Mix of TRUE and FALSE (roughly 50/50 split).
+    - Each statement must be a clear, factual claim that is unambiguously true or false.
+
+    REQUIRED STRUCTURE — statements array at ROOT level:
+    {
+      "taskType": "true-false-connect-four",
+      "title": "Connect Four: The Water Cycle",
+      "prompt": "Pick a statement, then tap a column to drop your piece!",
+      "timeLimitSeconds": 300,
+      "statements": [
+        { "text": "Evaporation turns liquid water into water vapor.", "isFalse": false },
+        { "text": "Condensation happens when water vapor cools and forms droplets.", "isFalse": false },
+        { "text": "Rain falls upward during precipitation.", "isFalse": true },
+        { "text": "The water cycle is powered by the moon's gravity.", "isFalse": true }
+      ]
+    }
+
+    CRITICAL — NO PLACEHOLDER TEXT:
+    - NEVER use "Statement 1", "True statement", "False statement", or any generic filler.
+    - Every statement MUST be a real factual claim about the subject.
+    - FALSE statements should be plausible-sounding but incorrect (not absurd jokes).
+
+    Common failure prevention:
+    - statements[] MUST contain at least 15 items. 20–30 is ideal.
+    - Each statement MUST have "text" (non-empty string) and "isFalse" (boolean).
+    - Include roughly equal numbers of true and false statements.
+    - Do NOT put statements inside config — put them at the ROOT level of the task object.
+    `,
   },
 
   [TASK_TYPES.TOWER_BUILDER]: {
@@ -1665,21 +1705,42 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "flashcards-race".
-    
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
-    
+
     Task-specific guidance:
-    - Create 12–20 flashcards optimized for speed. Include clear, short fronts and backs. Avoid ambiguous synonyms.
-    
+    - This is a buzzer-style competitive recall game. Students race to answer flashcard questions.
+    - You MUST place flashcards inside config.items (NOT at the root level).
+    - Generate 8–15 flashcard objects inside config.items.
+    - Each flashcard MUST have: { "question": "...", "answer": "..." }
+    - "question" = the prompt shown on the card (short, clear — a definition, clue, or question).
+    - "answer" = the expected correct response (1–5 words, unambiguous).
+
+    CRITICAL — config.items structure:
+    {
+      "taskType": "flashcards-race",
+      "title": "Flashcards Race: The Water Cycle",
+      "prompt": "Buzz in and answer each question as fast as you can!",
+      "config": {
+        "items": [
+          { "question": "What process turns liquid water into water vapor?", "answer": "evaporation" },
+          { "question": "Water droplets forming in clouds is called...", "answer": "condensation" }
+        ]
+      }
+    }
+
+    CRITICAL — NO PLACEHOLDER TEXT:
+    - NEVER use "Question 1", "Answer 1", "Term 1", "Card 1" or any generic filler.
+    - Every question and answer MUST contain real subject-matter content.
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - config.items MUST contain at least 5 cards. 8–15 is ideal.
+    - Each card MUST have both "question" (non-empty) and "answer" (non-empty).
+    - Do NOT put items at the root level — they MUST be inside config.items.
     `,
 },
 

@@ -98,6 +98,7 @@ export default function TrueFalseConnectFourTask({
 }) {
   const [board, setBoard] = useState(task.board || Array(CELLS).fill(null));
   const [usedStatementIds, setUsedStatementIds] = useState(new Set());
+  const [roundNumber, setRoundNumber] = useState(1);
   const [activeStatement, setActiveStatement] = useState(null);
   const [hintPulse, setHintPulse] = useState(false);
   const [droppingCol, setDroppingCol] = useState(null);
@@ -201,8 +202,11 @@ export default function TrueFalseConnectFourTask({
     return raw.filter((s) => s && !usedStatementIds.has(String(s.id || s._id || ""))).length;
   }, [task?.statements, task?.items, task?.config?.statements, usedStatementIds]);
 
-  const gameOver = boardFull || (statementsRemaining === 0 && !activeStatement);
-  const inputDisabled = disabled || !!winCelebrating || gameOver;
+  // Round is over when board fills OR statements run out — but game continues via restart
+  const roundOver = boardFull || (statementsRemaining === 0 && !activeStatement);
+  // True game-over only when the parent timer expires (disabled=true) while a round is over
+  const gameOver = disabled && roundOver;
+  const inputDisabled = disabled || !!winCelebrating || roundOver;
 
   // ─── Column click (tap-to-place after selecting a statement) ───
   const handleColumnClick = (col) => {
@@ -304,7 +308,22 @@ export default function TrueFalseConnectFourTask({
     return () => clearTimeout(timer);
   }, [latestWinner, latestWinLine]);
 
-  // ─── Submit final score when game ends ───
+  // ─── Restart: clear board + re-enable all statements for a new round ───
+  const handleRestart = useCallback(() => {
+    setBoard(Array(CELLS).fill(null));
+    setUsedStatementIds(new Set());
+    setActiveStatement(null);
+    setClearedCells(new Set());
+    setCurrentWinLine(null);
+    setWinCelebrating(null);
+    prevWinnerRef.current = null;
+    setDroppingCol(null);
+    setLastDrop(null);
+    setRoundNumber((prev) => prev + 1);
+    if (isIntraTeam) setCurrentTurn(0);
+  }, [isIntraTeam]);
+
+  // ─── Submit final score when game ends (timer expired) ───
   useEffect(() => {
     if (hasSubmittedRef.current) return;
     if (!gameOver) return;
@@ -366,6 +385,7 @@ export default function TrueFalseConnectFourTask({
       pointsEarned: teamPointsEarned,
       teamPointsEarned,
       speedBonus,
+      roundsPlayed: roundNumber,
       submittedAt: new Date().toISOString(),
     });
   }, [gameOver]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -411,10 +431,12 @@ export default function TrueFalseConnectFourTask({
   }, [task?.statements, task?.items, task?.config?.statements, task?.prompt, task?.title]);
 
   const instructions = gameOver
-    ? "Game over! All statements used."
-    : "Pick a statement below, then tap a column to drop your piece. " +
-      "TRUE statements always go Blue (O), FALSE statements always go Red (X). " +
-      "Each 4-in-a-row scores points — keep playing until statements run out!";
+    ? "Time's up! Great game!"
+    : roundOver
+      ? `Round ${roundNumber} complete! Tap "Play Again" to start a new round.`
+      : "Pick a statement below, then tap a column to drop your piece. " +
+        "TRUE statements always go Blue (O), FALSE statements always go Red (X). " +
+        `Each 4-in-a-row scores points — play as many rounds as you can! (Round ${roundNumber})`;
 
   return (
     <div
@@ -593,7 +615,23 @@ export default function TrueFalseConnectFourTask({
         </div>
       )}
 
-      {/* GAME OVER DISPLAY */}
+      {/* ROUND OVER — Play Again */}
+      {roundOver && !gameOver && (
+        <div className="mt-6 text-center">
+          <div className="text-2xl font-bold text-indigo-700 mb-3">
+            Round {roundNumber} complete!
+          </div>
+          <button
+            onClick={handleRestart}
+            className="px-8 py-4 bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-2xl font-extrabold rounded-2xl shadow-lg hover:scale-105 active:scale-95 transition-all duration-200 animate-pulse"
+          >
+            Play Again!
+          </button>
+          <div className="text-base mt-2 text-slate-600">Keep playing to earn more points!</div>
+        </div>
+      )}
+
+      {/* GAME OVER (timer expired) */}
       {gameOver && (
         <div className="mt-6 text-center">
           <div className="text-4xl font-bold animate-pulse">
@@ -606,7 +644,7 @@ export default function TrueFalseConnectFourTask({
             )}
           </div>
           <div className="text-lg mt-2 text-slate-600 font-semibold">
-            Final: Blue {wins.O} — Red {wins.X}
+            Final: Blue {wins.O} — Red {wins.X} ({roundNumber} round{roundNumber > 1 ? "s" : ""} played)
           </div>
           {isIntraTeam && wins.O !== wins.X && (
             <div className="text-xl mt-2 font-semibold text-slate-700">
