@@ -271,7 +271,7 @@ export function assessTaskPlayability(rawTask) {
     }
 
     case TASK_TYPES.FLASHCARDS: {
-      hasAtLeast(8, "cards/items", () => t.items, () => t.cards, () => t.config?.items, () => t.config?.cards);
+      hasAtLeast(5, "cards/items", () => t.items, () => t.cards, () => t.config?.items, () => t.config?.cards);
       break;
     }
 
