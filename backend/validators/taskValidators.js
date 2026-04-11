@@ -8,7 +8,7 @@ import { assessTaskPlayability } from "../../shared/taskPlayability.js";
 /** Reject obvious placeholder / template-missing content. */
 const _PLACEHOLDER_RE =
   /(\bplaceholder\b|template\s+missing|\[object Object\]|lorem\s+ipsum|\[insert\b|\[?\s*insert\s+here\b)/i;
-const _WEAK_LABEL_RE = /\b(option\s*\d+|left\s*\d+|right\s*\d+|term\s*\d+|definition\s*\d+|key\s*term\s*\d+|concept\s*\d+|branch\s*\d+|sub.?branch\s*\d+|word\s*\d+|role\s*[A-Z]|bucket\s*\d+|category\s*\d+|group\s*\d+|statement\s*\d+|clue\s*\d+|hint\s*\d+)\b/i;
+const _WEAK_LABEL_RE = /\b(option\s*\d+|left\s*\d+|right\s*\d+|term\s*\d+|definition\s*\d+|key\s*term\s*\d+|concept\s*\d+|branch\s*\d+|sub.?branch\s*\d+|word\s*\d+|role\s+[A-Z]\b|bucket\s*\d+|category\s*\d+|group\s*\d+|statement\s*\d+|clue\s*\d+|hint\s*\d+)\b/i;
 
 function _isBadText(s) {
   if (typeof s !== "string") return false;

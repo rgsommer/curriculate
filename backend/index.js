@@ -1605,6 +1605,8 @@ socket.on("task:force-advance", ({ roomCode }) => {
 
 // LOG EVERY EVENT THIS SOCKET EMITS
   socket.onAny((event, ...args) => {
+    // Skip noisy high-frequency events
+    if (event === "teacher:keepalive" || event === "student:keepalive") return;
     console.log(
       `[SOCKET ${socket.id}] event:`,
       event,
