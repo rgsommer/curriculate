@@ -2025,8 +2025,9 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - This is a TRUE/FALSE classification game disguised as feeding a pet.
     - Students see statement cards presented as "food" items. They must pick the TRUE/PRO statements (good food) and avoid the FALSE/CON statements (bad food).
     - Generate two arrays:
-      * "goodFoods": 5–8 TRUE or PRO statements about the topic (these grow the pet)
-      * "badFoods": 4–6 FALSE or CON statements about the topic (these make the pet sick)
+      * "goodFoods": 6–8 TRUE or PRO statements about the topic (these grow the pet)
+      * "badFoods": 6–8 FALSE or CON statements about the topic (these make the pet sick)
+    - Aim for at least 12 total items (6+ good, 6+ bad). More is better — up to 16 total.
     - Each statement should be a short factual claim (1 sentence) that is clearly true or false.
     - Set "pack" to one of: "classic", "farm", "ocean", "dino", "fantasy"
     - Set config.goal to the number of good feeds needed to win (typically 4).
@@ -2055,7 +2056,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Every statement MUST be a real factual claim about the subject.
 
     Common failure prevention:
-    - goodFoods MUST contain at least 4 items. badFoods MUST contain at least 3 items.
+    - goodFoods MUST contain at least 6 items. badFoods MUST contain at least 6 items. Total should be 12+.
     - Every item must be a non-empty string with real content.
     `,
 },

@@ -2208,9 +2208,9 @@ export function validateTaskByType(taskType, task) {
       const pfBad = Array.isArray(task.badFoods) ? task.badFoods : [];
       const pfItems = Array.isArray(task.items) ? task.items : Array.isArray(task.foodItems) ? task.foodItems : [];
       const pfTotal = pfGood.length + pfBad.length + pfItems.length;
-      if (pfTotal < 6) errors.push(`pet-feeding requires at least 6 food items (got ${pfTotal} across goodFoods/badFoods/items)`);
-      if (pfGood.length > 0 && pfBad.length < 2) errors.push("pet-feeding requires at least 2 badFoods (false/con statements)");
-      if (pfBad.length > 0 && pfGood.length < 3) errors.push("pet-feeding requires at least 3 goodFoods (true/pro statements)");
+      if (pfTotal < 10) errors.push(`pet-feeding requires at least 10 food items (got ${pfTotal} across goodFoods/badFoods/items)`);
+      if (pfGood.length > 0 && pfBad.length < 4) errors.push("pet-feeding requires at least 4 badFoods (false/con statements)");
+      if (pfBad.length > 0 && pfGood.length < 4) errors.push("pet-feeding requires at least 4 goodFoods (true/pro statements)");
       break;
     }
 
