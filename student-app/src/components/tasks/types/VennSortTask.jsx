@@ -118,11 +118,14 @@ export default function VennSortTask({
   // Extract categories (2 or 3)
   const categories = useMemo(() => {
     const raw = task?.config?.categories || task?.categories || [];
+    const OVERLAP_WORDS = /^(both|all|overlap|intersection|shared|either|neither|none)$/i;
     const cleaned = Array.isArray(raw)
       ? raw
           .map(String)
           .map((s) => s.trim())
           .filter(Boolean)
+          // Strip overlap-label pseudo-categories the AI sometimes adds
+          .filter((s) => !OVERLAP_WORDS.test(s))
           .slice(0, 3)
       : [];
 
