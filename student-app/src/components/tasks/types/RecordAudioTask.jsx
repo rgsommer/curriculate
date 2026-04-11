@@ -394,11 +394,17 @@ export default function RecordAudioTask({
       className="flex flex-col items-center justify-center h-full p-8 bg-gradient-to-br from-purple-700 via-pink-600 to-red-600 text-white"
       style={{ fontFamily: "system-ui, sans-serif" }}
     >
-      <h2 className="text-6xl font-black mb-4 drop-shadow-2xl animate-pulse">
-        RECORD YOUR VOICE!
+      <h2 className="text-4xl font-black mb-3 drop-shadow-2xl animate-pulse tracking-wide uppercase opacity-80">
+        🎙️ Record Your Voice
       </h2>
 
-      <p className="text-3xl text-center mb-8 max-w-4xl leading-tight">
+      {task.title && (
+        <p className="text-4xl font-black text-center mb-2 max-w-4xl leading-tight drop-shadow-lg">
+          {task.title}
+        </p>
+      )}
+
+      <p className="text-xl text-center mb-8 max-w-4xl leading-snug opacity-90">
         {task.prompt || "Record your voice so your teacher can listen later."}
       </p>
 
