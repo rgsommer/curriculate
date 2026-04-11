@@ -97,10 +97,17 @@ export default function DrawMimeTask({
         task?.wordList, task?.config?.wordList,
         task?.concepts, task?.config?.concepts,
         task?.terms, task?.config?.terms,
+        task?.items, task?.config?.items,
+        task?.statements, task?.config?.statements,
       ];
+      const extractText = (w) => {
+        if (typeof w === "string") return w.trim();
+        if (w && typeof w === "object") return String(w.text || w.word || w.term || w.statement || w.clue || w.concept || w.name || "").trim();
+        return "";
+      };
       for (const src of wordSources) {
         if (Array.isArray(src) && src.length > 0) {
-          arr = src.map((w) => String(w || "").trim()).filter(Boolean).filter(isValidClue);
+          arr = src.map(extractText).filter(Boolean).filter(isValidClue);
           if (arr.length) break;
         }
       }
@@ -751,7 +758,7 @@ export default function DrawMimeTask({
           {phase === "pass" && (
             <motion.div key="pass" variants={pv} initial="initial" animate="animate" exit="exit"
               style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 20, textAlign: "center" }}>
-              <div style={{ fontSize: "2rem", opacity: 0.85 }}>📱 Hand the phone to:</div>
+              <div style={{ fontSize: "2rem", opacity: 0.85 }}>📱 Hand the device to:</div>
               <div style={{ fontSize: "3.5rem", fontWeight: 900, textShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
                 {performer?.name || "the performer"}
               </div>

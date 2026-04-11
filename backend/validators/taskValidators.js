@@ -1414,10 +1414,17 @@ export function normalizeTaskByType(taskType, rawTask) {
           task.wordList, task.config?.wordList,
           task.concepts, task.config?.concepts,
           task.terms, task.config?.terms,
+          task.items, task.config?.items,
+          task.statements, task.config?.statements,
         ];
+        const _extractText = (w) => {
+          if (typeof w === "string") return w.trim();
+          if (w && typeof w === "object") return String(w.text || w.word || w.term || w.statement || w.clue || w.concept || w.name || "").trim();
+          return "";
+        };
         for (const src of wordSources) {
           if (Array.isArray(src) && src.length > 0) {
-            clues = src.map((w) => String(w || "").trim()).filter(Boolean);
+            clues = src.map(_extractText).filter(Boolean);
             if (clues.length) {
               console.log(`[normalizeDrawMime] Using ${clues.length} words from task word list`);
               break;
