@@ -824,27 +824,42 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
-    case TASK_TYPES.ECHO_CHAIN:
+    case TASK_TYPES.ECHO_CHAIN: {
+      // Echo-chain: oral memory game. Needs config.seedTerm (one word/phrase).
+      const ecCfg = isObject(task.config) ? task.config : (task.config = {});
+      // Normalize seedTerm from various field names AI might use
+      if (!ecCfg.seedTerm) {
+        ecCfg.seedTerm =
+          task.seedTerm || ecCfg.startWord || task.startWord ||
+          ecCfg.word || task.word || ecCfg.concept || task.concept || "";
+      }
+      ecCfg.seedTerm = String(ecCfg.seedTerm || "").trim();
+      if (!ecCfg.minChainLength) ecCfg.minChainLength = 5;
+      task.title = asNonEmptyString(task.title, "Echo Chain");
+      task.prompt = asNonEmptyString(task.prompt, "Repeat the chain aloud, then add one related word!");
+      break;
+    }
+
     case TASK_TYPES.NARRATION_SYNTHESIZE: {
-      const cfg = isObject(task.config) ? task.config : (task.config = {});
-      let pc = cfg.playerCount ?? cfg.players ?? task.playerCount;
+      const nsCfg = isObject(task.config) ? task.config : (task.config = {});
+      let pc = nsCfg.playerCount ?? nsCfg.players ?? task.playerCount;
       if (typeof pc === "string" && !Number.isNaN(Number(pc))) pc = Number(pc);
       if (typeof pc !== "number" || Number.isNaN(pc)) pc = 4;
-      cfg.playerCount = Math.max(2, Math.min(8, pc));
+      nsCfg.playerCount = Math.max(2, Math.min(8, pc));
 
       let prompts =
-        (Array.isArray(cfg.prompts) && cfg.prompts) ||
+        (Array.isArray(nsCfg.prompts) && nsCfg.prompts) ||
         (Array.isArray(task.prompts) && task.prompts) ||
-        (Array.isArray(cfg.items) && cfg.items) ||
+        (Array.isArray(nsCfg.items) && nsCfg.items) ||
         (Array.isArray(task.items) && task.items) ||
         [];
 
       prompts = prompts.map((p) => String(p || "").trim()).filter(Boolean);
       if (prompts.length < 2) prompts = ["Continue the chain with one sentence.", "Add a detail that changes the meaning."];
 
-      cfg.prompts = prompts;
+      nsCfg.prompts = prompts;
 
-      task.title = asNonEmptyString(task.title, taskType === TASK_TYPES.ECHO_CHAIN ? "Echo Chain" : "Narration Synthesize");
+      task.title = asNonEmptyString(task.title, "Narration Synthesize");
       task.prompt = asNonEmptyString(task.prompt, "Players take turns adding to a shared narration. Follow the prompts.");
       break;
     }
@@ -2251,8 +2266,8 @@ export function validateTaskByType(taskType, task) {
     }
 
     case TASK_TYPES.ECHO_CHAIN: {
-      const ecCfg = task.config || {};
-      if (!ecCfg.startWord && !task.startWord) errors.push("echo-chain requires startWord");
+      const ecSeed = task.config?.seedTerm || task.seedTerm || "";
+      if (!ecSeed) errors.push("echo-chain requires config.seedTerm (a vocabulary word to start the chain)");
       break;
     }
 

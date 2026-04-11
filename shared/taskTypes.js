@@ -2924,21 +2924,32 @@ config: {
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "echo-chain".
-    
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
     - Keep language age-appropriate and classroom-safe.
-    - Avoid copyrighted passages; write original content.
-    
+
     Task-specific guidance:
-    - Create a call-and-response / echo chain activity: 8–12 short phrases (language or key facts) that build progressively. Include the correct sequence.
-    
+    - This is an oral memory-chain game. The AI provides ONE seed word/concept.
+    - Players take turns repeating the full chain aloud, then adding one related word.
+    - config.seedTerm: a single vocabulary word or concept from the topic (the chain starter).
+    - config.minChainLength: minimum chain length to reach (default 5).
+
+    REQUIRED STRUCTURE:
+    {
+      "taskType": "echo-chain",
+      "title": "Echo Chain: Early Canada",
+      "prompt": "Repeat the chain aloud, then add one related word!",
+      "config": {
+        "seedTerm": "fur trade",
+        "minChainLength": 5
+      }
+    }
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - config.seedTerm MUST be a single real vocabulary word or short phrase from the topic.
+    - NEVER use "startWord" — the field name is "seedTerm".
     `,
 },
 
