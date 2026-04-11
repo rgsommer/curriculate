@@ -696,6 +696,34 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
+    case TASK_TYPES.FLASHCARDS:
+    case TASK_TYPES.FLASHCARDS_RACE: {
+      // AI may place cards at root level (items, cards, flashcards) or inside config.
+      const cfg = isObject(task.config) ? task.config : (task.config = {});
+
+      const rawItems =
+        Array.isArray(cfg.items) && cfg.items.length ? cfg.items
+        : Array.isArray(task.items) && task.items.length ? task.items
+        : Array.isArray(task.cards) && task.cards.length ? task.cards
+        : Array.isArray(cfg.cards) && cfg.cards.length ? cfg.cards
+        : Array.isArray(task.flashcards) && task.flashcards.length ? task.flashcards
+        : Array.isArray(cfg.flashcards) && cfg.flashcards.length ? cfg.flashcards
+        : [];
+
+      const cards = rawItems
+        .map((it) => {
+          if (!it || typeof it !== "object") return null;
+          const question = String(it.question || it.term || it.front || it.word || it.concept || "").trim();
+          const answer = String(it.answer || it.definition || it.back || it.meaning || it.response || "").trim();
+          return question && answer ? { question, answer } : null;
+        })
+        .filter(Boolean);
+
+      cfg.items = cards;
+      task.config = cfg;
+      break;
+    }
+
     case TASK_TYPES.MATCHING: {
       const cfg = isObject(task.config) ? task.config : (task.config = {});
 
@@ -1764,6 +1792,20 @@ export function validateTaskByType(taskType, task) {
             errors.push("each item.category must be benefit, harm, or neutral");
           }
         }
+      }
+      break;
+    }
+
+    case TASK_TYPES.FLASHCARDS:
+    case TASK_TYPES.FLASHCARDS_RACE: {
+      const fcItems = task.config?.items || [];
+      if (!Array.isArray(fcItems) || fcItems.length < 5) {
+        errors.push("flashcards requires config.items[] with at least 5 cards");
+        break;
+      }
+      for (const it of fcItems) {
+        if (!isNonEmptyString(it?.question)) errors.push("each card.question must be a non-empty string");
+        if (!isNonEmptyString(it?.answer)) errors.push("each card.answer must be a non-empty string");
       }
       break;
     }
