@@ -40,7 +40,6 @@ const client = new Proxy({}, { get: (_, prop) => getClient()[prop] });
  * - Unique types preferred (no repeats until the full set is exhausted)
  */
 function buildDiversePool(availableTypes, count, guaranteedTypes = []) {
-  // Pure physical/movement break types (NOT PMC — that's academic with movement)
   const PHYSICAL_BODY_BREAK_TYPES = new Set([
     TASK_TYPES.BODY_BREAK,
     TASK_TYPES.MAD_DASH,
@@ -52,151 +51,103 @@ function buildDiversePool(availableTypes, count, guaranteedTypes = []) {
     return String(meta?.category || "other").toLowerCase();
   };
 
-  // Split available types into physical and academic
-  const physicalTypes = availableTypes.filter((t) => PHYSICAL_BODY_BREAK_TYPES.has(t));
-  const academicTypes = availableTypes.filter((t) => !PHYSICAL_BODY_BREAK_TYPES.has(t));
-
-  // Group academic types by category for variety
-  const byCat = {};
-  for (const t of academicTypes) {
-    const cat = catOf(t);
-    if (!byCat[cat]) byCat[cat] = [];
-    byCat[cat].push(t);
-  }
-  // Shuffle within each category
-  for (const arr of Object.values(byCat)) {
+  const shuffle = (arr) => {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
-  }
-  // Shuffle physical types too
-  for (let i = physicalTypes.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [physicalTypes[i], physicalTypes[j]] = [physicalTypes[j], physicalTypes[i]];
+    return arr;
+  };
+
+  // ── Step 1: Start with ALL guaranteed types ──
+  const uniqueGuaranteed = [...new Set(guaranteedTypes)];
+  const pool = shuffle([...uniqueGuaranteed]).slice(0, count);
+  const inPool = new Set(pool);
+
+  if (pool.length >= count) {
+    console.log(`[AI] Guaranteed types fill the pool (${uniqueGuaranteed.length} guaranteed, ${count} slots)`);
   }
 
-  // Build interleaved academic list: round-robin across categories for max variety
-  const catKeys = Object.keys(byCat);
-  // Shuffle category order
-  for (let i = catKeys.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [catKeys[i], catKeys[j]] = [catKeys[j], catKeys[i]];
-  }
-  const catIdx = {};
-  for (const k of catKeys) catIdx[k] = 0;
+  // ── Step 2: Fill remaining slots with diverse non-guaranteed types ──
+  if (pool.length < count) {
+    const remaining = count - pool.length;
+    const fillerTypes = availableTypes.filter((t) => !inPool.has(t));
+    const physicalFillers = fillerTypes.filter((t) => PHYSICAL_BODY_BREAK_TYPES.has(t));
+    const academicFillers = fillerTypes.filter((t) => !PHYSICAL_BODY_BREAK_TYPES.has(t));
 
-  const academicQueue = [];
-  const usedTypes = new Set();
-  let round = 0;
-  while (academicQueue.length < count * 2 && round < 20) {
-    let added = false;
-    for (const cat of catKeys) {
-      const arr = byCat[cat];
-      if (catIdx[cat] < arr.length) {
-        const t = arr[catIdx[cat]];
-        if (!usedTypes.has(t)) {
-          academicQueue.push(t);
-          usedTypes.add(t);
-          added = true;
-        }
-        catIdx[cat]++;
-      }
+    // Group academic fillers by category for variety
+    const byCat = {};
+    for (const t of academicFillers) {
+      const cat = catOf(t);
+      if (!byCat[cat]) byCat[cat] = [];
+      byCat[cat].push(t);
     }
-    if (!added) {
-      // All unique types exhausted; allow repeats
-      for (const cat of catKeys) catIdx[cat] = 0;
-      usedTypes.clear();
-      round++;
-    }
-  }
+    for (const arr of Object.values(byCat)) shuffle(arr);
+    shuffle(physicalFillers);
 
-  // Now build the final pool: insert physical every 4–5 academic tasks
-  const pool = [];
-  let academicSincePhysical = 0;
-  let physIdx = 0;
-  let acaIdx = 0;
-  const physicalInterval = 5; // physical after every 4-5 academic tasks
+    // Round-robin across categories
+    const catKeys = shuffle(Object.keys(byCat));
+    const catIdx = {};
+    for (const k of catKeys) catIdx[k] = 0;
 
-  for (let i = 0; i < count; i++) {
-    if (
-      academicSincePhysical >= physicalInterval - 1 &&
-      physicalTypes.length > 0 &&
-      i < count - 1 // don't end on a physical
-    ) {
-      pool.push(physicalTypes[physIdx % physicalTypes.length]);
-      physIdx++;
-      academicSincePhysical = 0;
-    } else if (acaIdx < academicQueue.length) {
-      pool.push(academicQueue[acaIdx]);
-      acaIdx++;
-      academicSincePhysical++;
-    } else if (physicalTypes.length > 0) {
-      pool.push(physicalTypes[physIdx % physicalTypes.length]);
-      physIdx++;
-      academicSincePhysical = 0;
-    } else {
-      // Fallback: repeat from available
-      pool.push(availableTypes[i % availableTypes.length]);
-    }
-  }
-
-  // Inject guaranteed types: ensure each appears at least once in the pool
-  if (guaranteedTypes.length > 0) {
-    const uniqueGuaranteed = [...new Set(guaranteedTypes)];
-
-    if (uniqueGuaranteed.length >= count) {
-      // Guaranteed types fill or exceed the pool — use them directly
-      // Shuffle so the order isn't predictable
-      const shuffled = [...uniqueGuaranteed];
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-      }
-      pool.length = 0;
-      pool.push(...shuffled.slice(0, count));
-    } else {
-      // Fewer guaranteed types than pool slots — replace non-guaranteed slots
-      // First, identify which guaranteed types are already in the pool
-      const missing = uniqueGuaranteed.filter((g) => !pool.includes(g));
-      // Replace slots occupied by non-guaranteed types (prefer duplicates first)
-      for (const gType of missing) {
-        let replaced = false;
-        // Pass 1: replace a non-guaranteed duplicate (type appears more than once)
-        for (let i = pool.length - 1; i >= 0; i--) {
-          const t = pool[i];
-          if (uniqueGuaranteed.includes(t)) continue; // don't evict another guaranteed type
-          if (pool.indexOf(t) !== i) {
-            pool[i] = gType;
-            replaced = true;
-            break;
+    const academicQueue = [];
+    const usedTypes = new Set();
+    let round = 0;
+    while (academicQueue.length < remaining * 2 && round < 20) {
+      let added = false;
+      for (const cat of catKeys) {
+        const arr = byCat[cat];
+        if (catIdx[cat] < arr.length) {
+          const t = arr[catIdx[cat]];
+          if (!usedTypes.has(t)) {
+            academicQueue.push(t);
+            usedTypes.add(t);
+            added = true;
           }
-        }
-        if (!replaced) {
-          // Pass 2: replace any non-guaranteed type (last occurrence)
-          for (let i = pool.length - 1; i >= 0; i--) {
-            if (!uniqueGuaranteed.includes(pool[i])) {
-              pool[i] = gType;
-              replaced = true;
-              break;
-            }
-          }
-        }
-        if (!replaced) {
-          // All slots are guaranteed types already — append and we'll trim
-          pool.push(gType);
+          catIdx[cat]++;
         }
       }
-      // Trim back to count if we overflowed
-      if (pool.length > count) pool.length = count;
+      if (!added) {
+        for (const cat of catKeys) catIdx[cat] = 0;
+        usedTypes.clear();
+        round++;
+      }
     }
-    console.log(`[AI] Guaranteed types injected (${uniqueGuaranteed.length}): ${uniqueGuaranteed.join(", ")}`);
+
+    // Interleave physical breaks every 4–5 academic tasks
+    let academicSincePhysical = 0;
+    let physIdx = 0;
+    let acaIdx = 0;
+    const physicalInterval = 5;
+
+    for (let i = 0; i < remaining; i++) {
+      if (
+        academicSincePhysical >= physicalInterval - 1 &&
+        physicalFillers.length > 0 &&
+        i < remaining - 1
+      ) {
+        pool.push(physicalFillers[physIdx % physicalFillers.length]);
+        physIdx++;
+        academicSincePhysical = 0;
+      } else if (acaIdx < academicQueue.length) {
+        pool.push(academicQueue[acaIdx]);
+        acaIdx++;
+        academicSincePhysical++;
+      } else if (physicalFillers.length > 0) {
+        pool.push(physicalFillers[physIdx % physicalFillers.length]);
+        physIdx++;
+        academicSincePhysical = 0;
+      } else {
+        pool.push(fillerTypes[i % Math.max(1, fillerTypes.length)]);
+      }
+    }
+
+    console.log(`[AI] ${uniqueGuaranteed.length} guaranteed + ${remaining} fillers = ${pool.length} slots`);
   }
 
-  // Verify no more than 2 consecutive same-category (swap if needed)
+  // ── Step 3: Avoid 3+ consecutive same-category (swap if needed) ──
   for (let i = 2; i < pool.length; i++) {
     if (catOf(pool[i]) === catOf(pool[i - 1]) && catOf(pool[i]) === catOf(pool[i - 2])) {
-      // Find a later slot with a different category and swap
       for (let j = i + 1; j < pool.length; j++) {
         if (catOf(pool[j]) !== catOf(pool[i])) {
           [pool[i], pool[j]] = [pool[j], pool[i]];
