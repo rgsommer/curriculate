@@ -271,7 +271,7 @@ export default function VennSortTask({
 
   const handleSubmit = () => {
     if (effectiveDisabled) return;
-    onSubmit?.({ placements });
+    onSubmit?.({ placements, completed: true });
   };
 
   if (numCircles < 2 || numCircles > 3) {
