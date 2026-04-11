@@ -1761,22 +1761,38 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       "Yes/No deduction game. One player privately views the secret concept (hold-to-reveal). Others ask only yes/no questions, then make limited guesses (e.g., max 10). Timer (e.g., 60s) starts on first reveal. Encourages logical elimination and strategic questioning.",
   
     aiPrompt: `
-    Generate ONE Curriculate task object with taskType "guess-who".
-    
+    Generate ONE Curriculate task object with taskType “guess-who”.
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
-    
+
     Task-specific guidance:
-    - Create a “Guess Who” style set: 12–18 characters/items each with 6–10 yes/no attributes. Ensure attributes discriminate well.
-    
+    - This is a YES/NO deduction game. One player secretly sees a concept, and others ask yes/no questions to figure out what it is.
+    - Generate config.secretAnswers: an array of 3–6 vocabulary words or concepts from the topic (one per round).
+    - Set config.category to the topic/theme label (e.g., “Early Canada Vocabulary”).
+    - Set config.maxGuesses to 10 (default).
+
+    REQUIRED STRUCTURE:
+    {
+      “taskType”: “guess-who”,
+      “title”: “Guess Who: Key Concepts”,
+      “prompt”: “One player will secretly see a word. Ask yes/no questions to figure out what it is! You have 10 guesses.”,
+      “config”: {
+        “secretAnswers”: [“photosynthesis”, “mitosis”, “chloroplast”, “DNA”, “cell membrane”],
+        “category”: “Cell Biology”,
+        “maxGuesses”: 10
+      }
+    }
+
+    CRITICAL — NO PLACEHOLDER TEXT:
+    - NEVER use “Concept 1”, “Term 1”, or generic filler.
+    - Every secret answer MUST be a real vocabulary word or concept from the subject.
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - config.secretAnswers MUST contain at least 3 items.
     `,
 },
 
@@ -2124,22 +2140,26 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       Hard requirements:
       - Output ONLY a single JSON object (no markdown, no commentary).
       - Include non-empty root fields: taskType, title, prompt, postulate.
-      - "postulate" is the debate topic/resolution statement (e.g. "Social media does more harm than good").
-        This MUST be a clear, debatable proposition — NOT a generic instruction.
-      - "prompt" is a brief student-facing instruction (e.g. "Argue for or against the topic below").
-      - "title" is a short label (e.g. "Social Media Debate").
-      - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
       - Keep language age-appropriate and classroom-safe.
       - Avoid copyrighted passages; write original content.
 
       Task-specific guidance:
-      - Provide a debate resolution in "postulate" plus 3 pro and 3 con starting points in config.proPoints / config.conPoints.
-      - Include 4 judging criteria (evidence, clarity, respect, rebuttal) in config.criteria.
+      - This is a live debate task. Students argue FOR or AGAINST a proposition.
+      - "postulate" is the debate topic/resolution — a clear, debatable statement.
+        MUST be a proposition, NOT an instruction. Good: "The fur trade did more harm than good for Indigenous peoples."
+        Bad: "Debate the fur trade."
+      - "prompt" is a brief student-facing instruction.
+
+      REQUIRED STRUCTURE:
+      {
+        "taskType": "live-debate",
+        "title": "Debate: The Fur Trade",
+        "prompt": "Your team will argue FOR or AGAINST the topic below. Take turns making your best arguments!",
+        "postulate": "The fur trade did more harm than good for Indigenous peoples in early Canada."
+      }
 
       Common failure prevention:
-      - Do not omit required arrays/fields; satisfy minimum item counts.
-      - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-      - The "postulate" field MUST contain the actual debate topic, not a task instruction.
+      - "postulate" MUST be a debatable statement — not a question, not an instruction.
       `,
 },
 

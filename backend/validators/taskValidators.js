@@ -1618,13 +1618,17 @@ export function normalizeTaskByType(taskType, rawTask) {
 
     case TASK_TYPES.GUESS_WHO: {
       const gwCfg = isObject(task.config) ? task.config : (task.config = {});
-      // Normalize characters from various field names
-      if (!Array.isArray(gwCfg.characters) || !gwCfg.characters.length) {
-        gwCfg.characters =
-          Array.isArray(task.characters) ? task.characters :
-          Array.isArray(task.items) ? task.items :
-          Array.isArray(gwCfg.items) ? gwCfg.items : [];
+      // Normalize secretAnswers from various field names
+      if (!Array.isArray(gwCfg.secretAnswers) || !gwCfg.secretAnswers.length) {
+        gwCfg.secretAnswers =
+          Array.isArray(task.secretAnswers) ? task.secretAnswers :
+          Array.isArray(task.items) ? task.items.map((x) => typeof x === "string" ? x : x?.text || x?.word || x?.name || "") :
+          Array.isArray(gwCfg.items) ? gwCfg.items.map((x) => typeof x === "string" ? x : x?.text || x?.word || x?.name || "") :
+          typeof gwCfg.secretAnswer === "string" ? [gwCfg.secretAnswer] :
+          typeof task.secretAnswer === "string" ? [task.secretAnswer] : [];
       }
+      gwCfg.secretAnswers = gwCfg.secretAnswers.map(String).filter(Boolean);
+      if (!gwCfg.maxGuesses) gwCfg.maxGuesses = 10;
       break;
     }
 
@@ -1670,12 +1674,11 @@ export function normalizeTaskByType(taskType, rawTask) {
 
     case TASK_TYPES.LIVE_DEBATE: {
       const ldCfg = isObject(task.config) ? task.config : (task.config = {});
-      // Normalize postulate
-      if (!task.postulate && ldCfg.postulate) task.postulate = ldCfg.postulate;
+      // Normalize postulate from various field names
+      if (!task.postulate) {
+        task.postulate = ldCfg.postulate || task.resolution || ldCfg.resolution || task.topic || ldCfg.topic || "";
+      }
       if (!ldCfg.postulate && task.postulate) ldCfg.postulate = task.postulate;
-      // Normalize proPoints / conPoints
-      if (!Array.isArray(ldCfg.proPoints)) ldCfg.proPoints = Array.isArray(task.proPoints) ? task.proPoints : [];
-      if (!Array.isArray(ldCfg.conPoints)) ldCfg.conPoints = Array.isArray(task.conPoints) ? task.conPoints : [];
       break;
     }
 
@@ -2197,8 +2200,8 @@ export function validateTaskByType(taskType, task) {
     }
 
     case TASK_TYPES.GUESS_WHO: {
-      const gwChars = task.config?.characters || [];
-      if (!Array.isArray(gwChars) || gwChars.length < 8) errors.push("guess-who requires config.characters[] with at least 8 characters");
+      const gwAnswers = task.config?.secretAnswers || [];
+      if (!Array.isArray(gwAnswers) || gwAnswers.length < 2) errors.push("guess-who requires config.secretAnswers[] with at least 2 concepts");
       break;
     }
 
@@ -2216,10 +2219,8 @@ export function validateTaskByType(taskType, task) {
 
     case TASK_TYPES.LIVE_DEBATE: {
       const ldCfg = task.config || {};
-      const postulate = task.postulate || ldCfg.postulate || "";
-      if (!postulate) errors.push("live-debate requires a postulate (debate topic)");
-      if (!Array.isArray(ldCfg.proPoints) || ldCfg.proPoints.length < 2) errors.push("live-debate requires config.proPoints[] with at least 2 points");
-      if (!Array.isArray(ldCfg.conPoints) || ldCfg.conPoints.length < 2) errors.push("live-debate requires config.conPoints[] with at least 2 points");
+      const postulate = task.postulate || ldCfg.postulate || task.resolution || ldCfg.resolution || "";
+      if (!postulate) errors.push("live-debate requires a postulate (debate topic/resolution)");
       break;
     }
 
