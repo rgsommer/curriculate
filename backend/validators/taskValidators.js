@@ -714,13 +714,18 @@ export function normalizeTaskByType(taskType, rawTask) {
 
       const cards = rawItems
         .map((it) => {
-          // Handle string items: use as question with empty answer (will get filtered)
-          if (typeof it === "string") return null;
+          // Handle string items: treat as a term (question = term, answer = term)
+          if (typeof it === "string") {
+            const trimmed = it.trim();
+            return trimmed ? { question: trimmed, answer: trimmed } : null;
+          }
           if (!it || typeof it !== "object") return null;
           const question = String(it.question || it.term || it.front || it.word || it.concept || it.prompt || it.text || it.clue || "").trim();
           const answer = String(it.answer || it.definition || it.back || it.meaning || it.response || it.correctAnswer || it.correct || "").trim();
           // Also handle {question, acceptableAnswers} shape where answer is in acceptableAnswers[0]
           const finalAnswer = answer || (Array.isArray(it.acceptableAnswers) && it.acceptableAnswers.length ? String(it.acceptableAnswers[0]).trim() : "");
+          // If we have a question but no answer, use the question as both (better than dropping it)
+          if (question && !finalAnswer) return { question, answer: question };
           return question && finalAnswer ? { question, answer: finalAnswer } : null;
         })
         .filter(Boolean);
