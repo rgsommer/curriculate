@@ -772,21 +772,26 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "make-and-snap".
-    
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
-    
+
     Task-specific guidance:
-    - Prompt students to build/make something quick (diagram, model, arrangement) and then photograph it. Include materials constraints (classroom-safe) and a clear checklist of required features in the final photo.
-    
+    - This is a BUILD AND PHOTOGRAPH task. Students physically make or arrange something, then submit a photo of it.
+    - The "prompt" should describe WHAT to build/make and list 2–4 required features that must appear in the photo.
+    - Use classroom-safe materials (paper, pencils, desks, classroom objects).
+    - Good examples: "Draw a diagram of the water cycle labelling evaporation, condensation, and precipitation. Take a photo of your diagram."
+    - Prompt students to tap the camera icon to submit when done.
+
+    SCHEMA RESTRICTION — NEVER include these fields:
+    - Do NOT include: items, options, leftItems, rightItems, correctMatches, correctAnswer, clues, pairs, bullets, categories
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - This task only needs taskType, title, and prompt (plus optional config with checklist items).
+    - Do NOT add quiz questions, answer choices, or vocabulary lists.
     `,
 },
 
@@ -810,21 +815,24 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "photo-journal".
-    
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
-    
+
     Task-specific guidance:
-    - Prompt students to submit a photo plus a short caption/reflection (2–4 sentences). Include reflection questions and success criteria.
-    
+    - This is a PHOTO CAPTURE + CAPTION task. Students find or create something to photograph, then write a short explanation connecting the image to the concept.
+    - The "prompt" should: (1) tell students what to photograph, (2) ask 1–2 reflection questions for their caption (2–4 sentences).
+    - Good examples: "Take a photo of something that reminds you of the concept of 'gravity' from today's lesson. In your caption, explain why you chose this object and how it relates to gravity."
+    - Optionally include config.captionPrompt (a short sentence starter) and config.wordCountTarget (e.g., 30).
+
+    SCHEMA RESTRICTION — NEVER include these fields:
+    - Do NOT include: items, options, leftItems, rightItems, correctMatches, correctAnswer, clues, pairs, bullets, categories
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - This task only needs taskType, title, and prompt. Vocabulary lists, answer options, and quiz questions do NOT belong here.
     `,
 },
 
@@ -852,21 +860,26 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "body-break".
-    
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
-    
+
     Task-specific guidance:
-    - Provide a 30–60 second classroom-safe movement break with 3–5 steps. Keep it simple, inclusive, and safe (no jumping onto furniture, etc.).
-    
+    - This is a MOVEMENT BREAK — no quiz, no answers, no scoring.
+    - Write a fun 30–60 second classroom-safe physical activity (stretches, jumping jacks, dance moves, etc.).
+    - The "prompt" field should describe the activity in 2–4 clear steps addressed to students.
+    - Title example: "Energy Boost: Shake It Out!"
+    - Prompt example: "Stand up and shake your arms for 10 seconds. Now do 10 jumping jacks. Stretch your arms above your head for 5 seconds. Sit back down and take a deep breath!"
+
+    SCHEMA RESTRICTION — NEVER include these fields (they belong to other task types):
+    - Do NOT include: items, options, leftItems, rightItems, correctMatches, correctAnswer, clues, pairs, bullets, categories, config.questions, config.pairs
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - This task only needs taskType, title, and prompt.
+    - Do NOT add quiz content, answer choices, or vocabulary lists.
     `,
 },
 
@@ -908,21 +921,22 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       Hard requirements:
       - Output ONLY a single JSON object (no markdown, no commentary).
       - Include non-empty root fields: taskType, title, prompt.
-      - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
       - Keep language age-appropriate and classroom-safe.
       - Avoid copyrighted passages; write original content.
 
       Task-specific guidance:
-      - Create a quick movement-based challenge tied to the topic (e.g., act out a concept, mime an action, move to corners, gestures).
-      - The "prompt" field is displayed directly to students on screen. Write it as second-person instructions addressed to the student.
-      - IMPORTANT: Do NOT reference a teacher giving verbal cues (no "when the teacher says Start"). The student reads the prompt on screen and clicks a Start button themselves, then taps DONE when finished.
-      - Include safety reminders (e.g., "Remember to move safely and be aware of your space!").
-      - Keep the mission to 2–4 clear steps. Mention how many times to repeat if applicable.
+      - This is a MOVEMENT MISSION — no quiz, no answer options, no scoring.
+      - Create a quick physical challenge tied to the topic (e.g., act out a concept, mime an action, move to corners, use gestures).
+      - The "prompt" field is displayed on screen to students. Write 2–4 clear steps addressed directly to the student (second-person).
+      - IMPORTANT: Do NOT reference a teacher giving verbal cues. The student reads the prompt and taps DONE when finished.
+      - Include a safety reminder (e.g., "Move safely and be aware of your space!").
+
+      SCHEMA RESTRICTION — NEVER include these fields (they belong to other task types):
+      - Do NOT include: items, options, leftItems, rightItems, correctMatches, correctAnswer, clues, pairs, bullets, categories, config.questions, config.pairs
 
       Common failure prevention:
-      - Do not omit required arrays/fields; satisfy minimum item counts.
-      - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-      - Ensure prompts are student-facing instructions (what to do).
+      - This task only needs taskType, title, and prompt (plus optional config with variant/safetyNotes).
+      - Do NOT add quiz content, answer choices, or vocabulary lists.
       `,
 },
 
@@ -2337,20 +2351,27 @@ config: {
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "brain-spark-notes".
-    
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
     - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
-    
+
     Task-specific guidance:
     - Create a note-taking task with a clear topic title and a model set of notes.
     - Provide task.bullets as an array of concise jot-notes/definitions that students will COPY (no blanks).
     - Bullet count: 3–5 for Grades 3–7; 6–10 for Grades 8+ (if grade is unknown, use 5–7).
     - Each bullet should be a specific definition or key point (not generic advice).
-    
+
+    CRITICAL — NO PLACEHOLDER TEXT:
+    - NEVER write "Key Term 1", "Key Term 2", "Definition 1", "Concept 1", "Bullet 1", or any generic filler.
+    - Every bullet MUST be a real, specific fact, definition, or jot-note drawn from the actual subject and concept.
+    - If you are unsure of exact content, invent plausible age-appropriate content for the subject — but NEVER use numbered placeholders.
+    - Bad example: "Key Term 1: Definition of Key Term 1"
+    - Good example: "Photosynthesis: the process by which plants convert sunlight into glucose using water and CO₂"
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
@@ -2393,17 +2414,26 @@ IMPORTANT:
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "mind-mapper".
-    
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
     - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
-    
+
     Task-specific guidance:
     - Create a graphic organizer / mind map structure with 1 central topic, 3–5 branches, and 2–4 sub-branches each. Include blank slots (_____ or empty strings) for students to fill.
-    
+    - The items[] array must contain real subject-matter vocabulary/concepts from the topic — these are the idea-bank words students drag into the blanks.
+
+    CRITICAL — NO PLACEHOLDER TEXT:
+    - NEVER write "Concept 1", "Concept 2", "Branch 1", "Item 1", "Sub-branch 1", or any numbered filler.
+    - Every item in items[] MUST be a real vocabulary word, name, or concept drawn from the subject and topic.
+    - config.centralTopic MUST be the actual topic name (e.g., "The Water Cycle", "World War I Causes"), never "Central Topic".
+    - config.structure entries must describe real branches/sub-branches (e.g., "Evaporation", "Condensation"), never "Branch 1" or "Sub-branch A".
+    - Bad example items: ["Concept 1", "Concept 2", "Concept 3"]
+    - Good example items: ["evaporation", "condensation", "precipitation", "runoff", "transpiration"]
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.

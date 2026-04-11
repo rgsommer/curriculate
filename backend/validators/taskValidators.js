@@ -8,7 +8,7 @@ import { assessTaskPlayability } from "../../shared/taskPlayability.js";
 /** Reject obvious placeholder / template-missing content. */
 const _PLACEHOLDER_RE =
   /(\bplaceholder\b|template\s+missing|\[object Object\]|lorem\s+ipsum|\[insert\b|\[?\s*insert\s+here\b)/i;
-const _WEAK_LABEL_RE = /\b(option\s*\d+|left\s*\d+|right\s*\d+)\b/i;
+const _WEAK_LABEL_RE = /\b(option\s*\d+|left\s*\d+|right\s*\d+|term\s*\d+|definition\s*\d+|key\s*term\s*\d+|concept\s*\d+|branch\s*\d+|sub.?branch\s*\d+)\b/i;
 
 function _isBadText(s) {
   if (typeof s !== "string") return false;
@@ -1962,6 +1962,22 @@ export function validateTaskByType(taskType, task) {
       if (!Array.isArray(words) || words.length < 8) {
         errors.push("word-weaver-duel requires at least 8 words");
         break;
+      }
+      break;
+    }
+
+    case TASK_TYPES.DRAW_MIME: {
+      const dmClues = Array.isArray(task.clues) ? task.clues : [];
+      if (dmClues.length < 2) {
+        errors.push("draw-mime requires at least 2 clues");
+        break;
+      }
+      // Reject if clues are all generic fallbacks ("Draw or Mime", "Clue 1", etc.)
+      const isGenericClue = (c) =>
+        /^(draw\s+or\s+mime|clue\s*\d+|item\s*\d+|concept\s*\d+)$/i.test(String(c || "").trim());
+      const genericCount = dmClues.filter(isGenericClue).length;
+      if (genericCount === dmClues.length) {
+        errors.push("draw-mime clues are all generic placeholders — real subject-matter clues required");
       }
       break;
     }

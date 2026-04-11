@@ -571,7 +571,17 @@ function matchingIsValid(task) {
   const left = Array.isArray(task?.leftItems) ? task.leftItems : [];
   const right = Array.isArray(task?.rightItems) ? task.rightItems : [];
   const cm = task?.correctMatches && typeof task.correctMatches === "object" ? task.correctMatches : null;
-  return left.length >= 5 && right.length >= 5 && !!cm;
+  if (left.length < 5 || right.length < 5 || !cm) return false;
+
+  // Reject if ALL items look like generic padded placeholders (e.g. "Left 1", "Right 3", "Term 1", "Definition 2")
+  const isPlaceholder = (text) => /^(left|right|term|definition|item|word|concept|option)\s*\d+$/i.test(String(text || "").trim());
+  const leftTexts = left.map((x) => (typeof x === "object" ? x?.text : x) || "");
+  const rightTexts = right.map((x) => (typeof x === "object" ? x?.text : x) || "");
+  const allLeftPlaceholders = leftTexts.every(isPlaceholder);
+  const allRightPlaceholders = rightTexts.every(isPlaceholder);
+  if (allLeftPlaceholders || allRightPlaceholders) return false;
+
+  return true;
 }
 
 function vennSortIsValid(task) {
