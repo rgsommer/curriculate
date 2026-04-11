@@ -1988,26 +1988,75 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     maxTimeSeconds: 180,
     interTeamEnabled: false,
     intraTeamEnabled: false,
-    description: 
-    "Feed the Pet: a motivation layer where completing the task feeds/powers up a virtual pet.\nStudent flow:\n- A cute pet appears (pack/theme).\n- Students choose a treat; celebration plays; task submits.\nScoring: typically completion-based or fixed bonus (e.g., +10) handled by session rules.\nAI generation should produce:\n- pack (string; one of: classic, farm, ocean, dino, fantasy)\n- optional pointsAwarded (number)\nInter-team: NO. Intra-team: NO.",
-  
+    description: [
+      "Feed the Pet: students classify statements as 'good' (true/pro/beneficial) or 'bad' (false/con/harmful) for a topic.",
+      "Good items feed and grow a cute virtual pet; bad items make the pet sick.",
+      "",
+      "Student flow:",
+      "- A cute pet appears (from the chosen animal pack).",
+      "- Statement cards appear as 'food' items. Student taps to select, then taps the pet to feed it.",
+      "- Good (true/pro) statements → pet grows, sparkles, +points.",
+      "- Bad (false/con) statements → pet shakes, screen trembles, +mistake.",
+      "- Goal: feed the pet enough good items before running out of chances.",
+      "",
+      "AI generation / schema hints:",
+      "taskType: \"pet-feeding\"",
+      "title: short (3–7 words)",
+      "prompt: instructions (e.g., 'Feed only the TRUE statements to your pet!')",
+      "pack: \"classic\" | \"farm\" | \"ocean\" | \"dino\" | \"fantasy\"",
+      "goodFoods: string[]  // 5–8 TRUE/PRO statements about the topic",
+      "badFoods: string[]   // 4–6 FALSE/CON statements about the topic",
+      "config.goal: number  // how many good feeds to win (default 4)",
+      "",
+      "Alternative: items/foodItems array of { label: string, good: boolean }",
+      "Inter-team: NO. Intra-team: NO.",
+    ].join("\n"),
+
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "pet-feeding".
-    
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
-    
+
     Task-specific guidance:
-    - Create 8–12 questions; each correct answer feeds a virtual pet. Provide answers and simple difficulty progression.
-    
+    - This is a TRUE/FALSE classification game disguised as feeding a pet.
+    - Students see statement cards presented as "food" items. They must pick the TRUE/PRO statements (good food) and avoid the FALSE/CON statements (bad food).
+    - Generate two arrays:
+      * "goodFoods": 5–8 TRUE or PRO statements about the topic (these grow the pet)
+      * "badFoods": 4–6 FALSE or CON statements about the topic (these make the pet sick)
+    - Each statement should be a short factual claim (1 sentence) that is clearly true or false.
+    - Set "pack" to one of: "classic", "farm", "ocean", "dino", "fantasy"
+    - Set config.goal to the number of good feeds needed to win (typically 4).
+
+    REQUIRED STRUCTURE:
+    {
+      "taskType": "pet-feeding",
+      "title": "Feed the Pet: The Water Cycle",
+      "prompt": "Feed your pet only the TRUE statements! Avoid the false ones or your pet will get sick!",
+      "pack": "ocean",
+      "goodFoods": [
+        "Evaporation turns liquid water into water vapor",
+        "The sun powers the water cycle",
+        "Condensation forms clouds"
+      ],
+      "badFoods": [
+        "Rain falls upward during precipitation",
+        "The water cycle stops at night",
+        "Ice cannot turn directly into water vapor"
+      ],
+      "config": { "goal": 4 }
+    }
+
+    CRITICAL — NO PLACEHOLDER TEXT:
+    - NEVER use "Good Food 1", "Bad Food 1", "Statement 1", or any generic filler.
+    - Every statement MUST be a real factual claim about the subject.
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - goodFoods MUST contain at least 4 items. badFoods MUST contain at least 3 items.
+    - Every item must be a non-empty string with real content.
     `,
 },
 

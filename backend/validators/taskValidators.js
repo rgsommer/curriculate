@@ -1629,9 +1629,42 @@ export function normalizeTaskByType(taskType, rawTask) {
     }
 
     case TASK_TYPES.PET_FEEDING: {
-      // Pet-feeding is a reward/motivation layer — only needs title, prompt, and optional pack
+      // Pet-feeding: classify statements as good/bad by feeding them to a pet.
+      // Normalize goodFoods/badFoods into foodItems with { label, good } shape.
       const pfCfg = isObject(task.config) ? task.config : (task.config = {});
       if (!pfCfg.pack) pfCfg.pack = task.pack || "classic";
+      if (!pfCfg.goal) pfCfg.goal = task.goal || 4;
+
+      // If AI provided goodFoods/badFoods arrays, convert to foodItems
+      const goodFoods = Array.isArray(task.goodFoods) ? task.goodFoods
+        : Array.isArray(pfCfg.goodFoods) ? pfCfg.goodFoods : [];
+      const badFoods = Array.isArray(task.badFoods) ? task.badFoods
+        : Array.isArray(pfCfg.badFoods) ? pfCfg.badFoods : [];
+
+      if (goodFoods.length || badFoods.length) {
+        task.goodFoods = goodFoods.map(String).filter(Boolean);
+        task.badFoods = badFoods.map(String).filter(Boolean);
+      }
+
+      // Also accept items/foodItems with { label, good } objects
+      if (!task.goodFoods?.length && !task.badFoods?.length) {
+        const rawItems =
+          Array.isArray(pfCfg.foodItems) ? pfCfg.foodItems :
+          Array.isArray(task.foodItems) ? task.foodItems :
+          Array.isArray(task.items) ? task.items :
+          Array.isArray(pfCfg.items) ? pfCfg.items : [];
+
+        if (rawItems.length) {
+          task.goodFoods = rawItems
+            .filter((x) => x?.good === true || x?.isGood === true)
+            .map((x) => String(x?.label || x?.text || x?.word || "").trim())
+            .filter(Boolean);
+          task.badFoods = rawItems
+            .filter((x) => x?.good === false || x?.isGood === false)
+            .map((x) => String(x?.label || x?.text || x?.word || "").trim())
+            .filter(Boolean);
+        }
+      }
       break;
     }
 
@@ -2169,9 +2202,17 @@ export function validateTaskByType(taskType, task) {
       break;
     }
 
-    case TASK_TYPES.PET_FEEDING:
-      // Pet-feeding is a reward/motivation layer — only needs title + prompt (validated globally)
+    case TASK_TYPES.PET_FEEDING: {
+      // Pet-feeding: students classify statements as good (true/pro) or bad (false/con)
+      const pfGood = Array.isArray(task.goodFoods) ? task.goodFoods : [];
+      const pfBad = Array.isArray(task.badFoods) ? task.badFoods : [];
+      const pfItems = Array.isArray(task.items) ? task.items : Array.isArray(task.foodItems) ? task.foodItems : [];
+      const pfTotal = pfGood.length + pfBad.length + pfItems.length;
+      if (pfTotal < 6) errors.push(`pet-feeding requires at least 6 food items (got ${pfTotal} across goodFoods/badFoods/items)`);
+      if (pfGood.length > 0 && pfBad.length < 2) errors.push("pet-feeding requires at least 2 badFoods (false/con statements)");
+      if (pfBad.length > 0 && pfGood.length < 3) errors.push("pet-feeding requires at least 3 goodFoods (true/pro statements)");
       break;
+    }
 
     case TASK_TYPES.LIVE_DEBATE: {
       const ldCfg = task.config || {};
