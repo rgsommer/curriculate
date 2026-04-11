@@ -460,6 +460,15 @@ function normalizeTaskType(raw) {
     case "match_up":
     case "matchup":
     case "pairs":
+    case "key-terms-match":
+    case "key_terms_match":
+    case "key-terms":
+    case "key_terms":
+    case "keyterms":
+    case "term-match":
+    case "term_match":
+    case "vocabulary-match":
+    case "vocab-match":
       return TASK_TYPES.MATCHING;
 
     // Timeline

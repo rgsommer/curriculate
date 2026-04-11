@@ -3293,7 +3293,12 @@ export function normalizeTaskType(value) {
 
   if (v === "open" || v === "open_text" || v === "open-text") return TASK_TYPES.OPEN_TEXT;
 
-  if (v === "match" || v === "connect" || v === "line-match") return TASK_TYPES.MATCHING;
+  if (
+    v === "match" || v === "connect" || v === "line-match" ||
+    v === "match-up" || v === "matchup" || v === "pairs" ||
+    v === "key-terms-match" || v === "key-terms" || v === "keyterms" ||
+    v === "term-match" || v === "vocabulary-match" || v === "vocab-match"
+  ) return TASK_TYPES.MATCHING;
 
   if (v === "venn" || v === "venn-diagram" || v === "venndiagram") return TASK_TYPES.VENNSORT;
 
