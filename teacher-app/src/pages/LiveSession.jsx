@@ -3448,7 +3448,6 @@ if (
                   fontSize: "0.8rem",
                 }}
               >
-                <span style={{ fontWeight: 600 }}>Taskset</span>
                 {activeTasksetMeta ? (
                   <span style={{ color: "#6b7280" }}>
                     <strong>{activeTasksetName}</strong>

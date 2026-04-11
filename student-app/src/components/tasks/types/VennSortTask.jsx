@@ -342,7 +342,7 @@ export default function VennSortTask({
     alignItems: "center",
     justifyContent: "flex-start",
     padding: "12px 10px 10px",
-    overflow: "hidden",
+    overflow: "visible",
   };
 
   const circleHeaderStyle = {
@@ -422,14 +422,14 @@ export default function VennSortTask({
         style={{
           position: "relative",
           width: "100%",
-          aspectRatio: "1 / 1",
-          maxHeight: "68vh",
+          aspectRatio: numCircles === 2 ? "2 / 1" : "1 / 1",
+          maxHeight: "60vh",
           margin: "0 auto",
           borderRadius: 18,
           background:
             "linear-gradient(180deg, rgba(248,250,252,1), rgba(241,245,249,1))",
           border: "1px solid rgba(2,6,23,0.10)",
-          overflow: "hidden",
+          overflow: "visible",
         }}
       >
         {/* Circle A */}
@@ -599,48 +599,45 @@ export default function VennSortTask({
           </>
         )}
 
-        {/* Pool (unplaced) */}
+      </div>
+
+      {/* Pool (unplaced) — below the diagram */}
+      <div
+        style={{
+          marginTop: 16,
+          padding: 12,
+          borderRadius: 16,
+          border: "2px dashed rgba(100,116,139,0.60)",
+          background: "rgba(241,245,249,0.92)",
+          boxShadow: "0 4px 14px rgba(2,6,23,0.07)",
+          ...dropHighlight("POOL"),
+        }}
+        onDragOver={handleDragOver}
+        onDrop={(e) => handleDrop(e, [])}
+        onDragEnter={() => !effectiveDisabled && setHoverZone("POOL")}
+        onDragLeave={() => setHoverZone(null)}
+      >
         <div
           style={{
-            position: "absolute",
-            left: 14,
-            right: 14,
-            bottom: 14,
-            padding: 12,
-            borderRadius: 16,
-            border: "2px dashed rgba(100,116,139,0.60)",
-            background: "rgba(241,245,249,0.92)",
-            boxShadow: "0 10px 26px rgba(2,6,23,0.10)",
-            ...dropHighlight("POOL"),
+            textAlign: "center",
+            fontSize: "0.85rem",
+            fontWeight: 800,
+            color: "rgba(51,65,85,0.95)",
+            marginBottom: 10,
           }}
-          onDragOver={handleDragOver}
-          onDrop={(e) => handleDrop(e, [])}
-          onDragEnter={() => !effectiveDisabled && setHoverZone("POOL")}
-          onDragLeave={() => setHoverZone(null)}
         >
-          <div
-            style={{
-              textAlign: "center",
-              fontSize: "0.85rem",
-              fontWeight: 800,
-              color: "rgba(51,65,85,0.95)",
-              marginBottom: 10,
-            }}
-          >
-            Pool (belongs nowhere)
-          </div>
-
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center" }}>
-            {getItemsInZone([]).map((item) => (
-              <Pill
-                key={item.id}
-                item={item}
-                draggable={!effectiveDisabled}
-                onDragStart={(e) => handleDragStart(e, item.id)}
-                status={itemStatus(item.id)}
-              />
-            ))}
-          </div>
+          Pool (belongs nowhere)
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center" }}>
+          {getItemsInZone([]).map((item) => (
+            <Pill
+              key={item.id}
+              item={item}
+              draggable={!effectiveDisabled}
+              onDragStart={(e) => handleDragStart(e, item.id)}
+              status={itemStatus(item.id)}
+            />
+          ))}
         </div>
       </div>
 
