@@ -61,7 +61,15 @@ function buildDiversePool(availableTypes, count, guaranteedTypes = []) {
 
   // ── Step 1: Start with ALL guaranteed types ──
   const uniqueGuaranteed = [...new Set(guaranteedTypes)];
-  const pool = shuffle([...uniqueGuaranteed]).slice(0, count);
+
+  // If there are more guaranteed types than slots, expand count to fit them all.
+  // The teacher explicitly requested these types — we must not silently drop any.
+  if (uniqueGuaranteed.length > count) {
+    console.log(`[AI] Expanding pool from ${count} to ${uniqueGuaranteed.length} to fit all guaranteed types`);
+    count = uniqueGuaranteed.length;
+  }
+
+  const pool = shuffle([...uniqueGuaranteed]);
   const inPool = new Set(pool);
 
   if (pool.length >= count) {
@@ -1505,7 +1513,7 @@ export async function createAiTaskset(req, res) {
       [specialConsiderations, topicDescription].map(s => String(s || "").trim()).filter(Boolean).join("\n\n");
 
     // Accept either key the frontend might send for count
-    const safeCount = clampInt(count || numberOfTasks, 1, 30, 12);
+    let safeCount = clampInt(count || numberOfTasks, 1, 30, 12);
 
     const eligible = getGenerationEligibleTypes(subject);
 
@@ -1522,8 +1530,11 @@ export async function createAiTaskset(req, res) {
         ? guaranteedTaskTypes.map(normalizeSelectedType).filter(Boolean).filter((t) => eligible.includes(t))
         : [];
 
-    // Build the actual N-slot pool with enforced variety + guaranteed types first
+    // Build the actual N-slot pool with enforced variety + guaranteed types first.
+    // buildDiversePool may expand the pool if guaranteed types exceed safeCount.
     const pool = buildDiversePool(userPool || eligible, safeCount, guaranteed);
+    // Update safeCount to match actual pool size (may have grown to fit all guaranteed types)
+    safeCount = pool.length;
     if (!pool.length) {
       if (wantsStream) {
         sendSSE({ type: "error", error: "No eligible task types provided." });
