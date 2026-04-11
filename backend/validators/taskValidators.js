@@ -1629,14 +1629,9 @@ export function normalizeTaskByType(taskType, rawTask) {
     }
 
     case TASK_TYPES.PET_FEEDING: {
+      // Pet-feeding is a reward/motivation layer — only needs title, prompt, and optional pack
       const pfCfg = isObject(task.config) ? task.config : (task.config = {});
-      // Normalize questions from various field names
-      if (!Array.isArray(pfCfg.questions) || !pfCfg.questions.length) {
-        pfCfg.questions =
-          Array.isArray(task.questions) ? task.questions :
-          Array.isArray(task.items) ? task.items :
-          Array.isArray(pfCfg.items) ? pfCfg.items : [];
-      }
+      if (!pfCfg.pack) pfCfg.pack = task.pack || "classic";
       break;
     }
 
@@ -2174,11 +2169,9 @@ export function validateTaskByType(taskType, task) {
       break;
     }
 
-    case TASK_TYPES.PET_FEEDING: {
-      const pfQs = task.config?.questions || [];
-      if (!Array.isArray(pfQs) || pfQs.length < 5) errors.push("pet-feeding requires config.questions[] with at least 5 questions");
+    case TASK_TYPES.PET_FEEDING:
+      // Pet-feeding is a reward/motivation layer — only needs title + prompt (validated globally)
       break;
-    }
 
     case TASK_TYPES.LIVE_DEBATE: {
       const ldCfg = task.config || {};
