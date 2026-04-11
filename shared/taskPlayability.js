@@ -307,8 +307,9 @@ export function assessTaskPlayability(rawTask) {
       break;
     }
 
-    case TASK_TYPES.PET_FEEDING: {
-      // Usually just needs prompt; pack optional.
+    case TASK_TYPES.PET_FEEDING:
+    case TASK_TYPES.TOWER_BUILDER: {
+      // Usually just needs prompt; items validated by backend normalizer.
       break;
     }
 
