@@ -426,13 +426,7 @@ export function normalizeTaskByType(taskType, rawTask) {
         })
         .filter((c) => c && typeof c.name === "string" && c.name.trim());
 
-      if (pool.length < 6) {
-        const baseFacts = pool[0]?.facts?.length ? pool[0].facts.slice(0, 3) : ["Clue 1", "Clue 2", "Clue 3"];
-        while (pool.length < 6) {
-          const n = pool.length + 1;
-          pool.push({ name: `Candidate ${n}`, facts: baseFacts });
-        }
-      }
+      // Do NOT pad with placeholder candidates — let validation reject if < 6
 
       task.items = pool;
       task.config = isObject(task.config) ? task.config : {};
