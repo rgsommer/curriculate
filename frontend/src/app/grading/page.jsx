@@ -58,6 +58,7 @@ const VOICE_OPTIONS = [
   { value: "student_friendly", label: "Student-friendly (simple wording)" },
   { value: "iep_supportive", label: "IEP-supportive (extra encouraging, partial-credit friendly)" },
   { value: "student_conference", label: "Student Conference (jot points)" },
+  { value: "pudewa_mastery", label: "Mastery / IEW-style (Pudewa)" },
 ];
 
 const VOICE_KEY = "curriculate_grading_voice_v1";
