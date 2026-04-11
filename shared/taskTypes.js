@@ -1882,21 +1882,31 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "word-weaver-duel".
-    
+
+    SCHEMA:
+    {
+      taskType: "word-weaver-duel",
+      title: string,
+      prompt: string (student-facing instruction),
+      config: {
+        words: string[] (8–12 REAL vocabulary words from the provided vocabulary list)
+      }
+    }
+
+    CRITICAL — NO PLACEHOLDERS:
+    NEVER use generic labels like "WORD1", "WORD2", "word3", etc.
+    Every word in config.words MUST be a real vocabulary term relevant to the topic.
+    BAD: ["WORD1", "WORD2", "WORD3", "WORD4", "WORD5", "WORD6", "WORD7", "WORD8"]
+    GOOD: ["photosynthesis", "chloroplast", "carbon dioxide", "glucose", "oxygen", "stomata", "sunlight", "ATP"]
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
-    - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
-    - Keep language age-appropriate and classroom-safe.
-    - Avoid copyrighted passages; write original content.
-    
-    Task-specific guidance:
-    - Create a word-building challenge: provide 8–12 target vocabulary words and 4–6 constraints (use in a sentence, synonyms, prefixes, etc.).
-    
+    - config.words must contain 8–12 real vocabulary words from the topic.
+    - prompt should tell students to use these words in a word-building challenge.
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - Do NOT generate placeholder words. Use REAL vocabulary from the provided concept list.
+    - Do NOT use "WORD" + number patterns. Every word must be meaningful.
     `,
 },
 
@@ -2666,21 +2676,35 @@ IMPORTANT:
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "role-play-deck".
-    
-    Hard requirements:
-    - Output ONLY a single JSON object (no markdown, no commentary).
-    - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
-    - Keep language age-appropriate and classroom-safe.
-    - Avoid copyrighted passages; write original content.
-    
+
+    SCHEMA:
+    {
+      taskType: "role-play-deck",
+      title: string,
+      prompt: string (student-facing instruction),
+      config: {
+        scenario: string (the situation students will role-play, linked to the subject),
+        roles: [
+          { name: "specific character name", role: "their role description", characteristics: ["trait1", "trait2"] },
+          ...at least 2 roles
+        ]
+      }
+    }
+
+    CRITICAL — NO PLACEHOLDERS:
+    Every role MUST have a specific, meaningful name related to the scenario.
+    NEVER use generic labels like "Role A", "Role B", "Role 1", "Role 2".
+    BAD: { name: "Role A", role: "Explain your perspective" }
+    GOOD: { name: "Town Mayor", role: "Defend the new park proposal using environmental data" }
+
     Task-specific guidance:
-    - Create 10–16 role-play prompt cards. Each card has a scenario, roles, and a goal. Keep prompts short and varied.
-    
+    - Create a scenario connected to the subject/vocabulary provided.
+    - Provide 3–5 roles with descriptive names, clear goals, and 3–5 characteristics each.
+    - Scenario should invite perspective-taking and classroom discussion.
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - config.roles must have at least 2 entries with real character names.
+    - config.scenario must be a non-empty description of the situation.
     `,
 },
 

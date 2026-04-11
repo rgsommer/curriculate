@@ -890,6 +890,20 @@ function _normalizeConcept(s) {
     .replace(/\s+/g, " ");
 }
 
+/**
+ * Reject document artifacts and non-vocabulary entries that leak from
+ * PDF/doc extraction (image captions, layout labels, page numbers, etc.)
+ */
+const _DOC_ARTIFACT_RE = /^(illustration|figure|image|photo|picture|diagram|table|caption|page|source|copyright|©|\d+\s*$)/i;
+const _DOC_ARTIFACT_CONTENT_RE = /\b(illustration:\s|figure\s*\d|image\s*\d|\.png|\.jpg|\.gif|\.svg|clip\s*art|stock\s*photo|shutterstock|getty|istock)/i;
+
+function _isDocArtifact(s) {
+  if (!s) return false;
+  if (_DOC_ARTIFACT_RE.test(s.trim())) return true;
+  if (_DOC_ARTIFACT_CONTENT_RE.test(s)) return true;
+  return false;
+}
+
 function _parseConceptList(aiWordBank) {
   const raw = Array.isArray(aiWordBank) ? aiWordBank : String(aiWordBank || "").split(/\r?\n/);
 
@@ -901,6 +915,11 @@ function _parseConceptList(aiWordBank) {
     const t = _normalizeConcept(r);
     if (!t) continue;
     if (seen.has(t)) continue;
+    // Filter out document artifacts (image captions, figure labels, etc.)
+    if (_isDocArtifact(t)) {
+      console.warn(`[_parseConceptList] Filtered document artifact: "${t}"`);
+      continue;
+    }
     seen.add(t);
     concepts.push(t);
   }
@@ -1563,20 +1582,12 @@ export async function createAiTaskset(req, res) {
       console.warn("[AI] Timing stats lookup failed (non-blocking):", e?.message || e);
     }
 
-    let rawTasks = await generateTasksArray({
-      typePool: pool,
-      count: safeCount,
-      subject,
-      gradeLevel,
-      difficulty,
-      learningGoal,
-      topicLabel,
-      vocabularyLines: initialVocabularyLines,
-      specialConsiderations: mergedSpecialConsiderations,
-      timingContext,
-    });
+    // ── Per-task sequential generation ──
+    // Each task is generated individually via regenerateSingleTask to avoid
+    // cross-type schema contamination that occurs in batch generation.
+    // This is slower (one API call per task) but far more accurate.
 
-    sendSSE({ type: "phase", phase: "finalizing", message: "Validating and finalizing tasks…" });
+    sendSSE({ type: "phase", phase: "generating", message: "Generating tasks one-by-one…" });
 
     const finalized = [];
     const errors = [];
@@ -1595,8 +1606,6 @@ export async function createAiTaskset(req, res) {
         sendSSE({ type: "progress", done: finalized.length, total: safeCount, taskType: expectedType });
         continue;
       }
-
-      const candidate = rawTasks[i] || null;
 
       const mustHave = retryMustHave[expectedType] || "";
       const maxAttempts = expectedType === TASK_TYPES.MUSICAL_CHAIRS ? 6 : 4;
@@ -1618,7 +1627,20 @@ export async function createAiTaskset(req, res) {
         .filter(Boolean)
         .join("\n\n");
 
-      let attemptTask = candidate && typeof candidate === "object" ? candidate : null;
+      // Generate the first attempt via per-task single-type call (no batch)
+      let attemptTask = await regenerateSingleTask({
+        allowedType: expectedType,
+        mustHave,
+        subject,
+        gradeLevel,
+        difficulty,
+        learningGoal,
+        topicLabel,
+        vocabularyLines: scopedLines,
+        specialConsiderations: scopedConsiderations,
+        previousTask: null,
+      });
+
       let lastErr = null;
       let success = false;
       let usedAttempts = 0;
@@ -1654,7 +1676,6 @@ export async function createAiTaskset(req, res) {
             difficulty,
             learningGoal,
             topicLabel,
-            // ✅ Only give the subset for this task
             vocabularyLines: scopedLines,
             specialConsiderations: scopedConsiderations,
             previousTask: attemptTask,

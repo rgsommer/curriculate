@@ -1074,6 +1074,16 @@ export function buildTasksetPrompt(
     - "tasks" MUST be an array of EXACTLY ${count} task objects.
     - Return ONLY JSON. No prose.
 
+    ⚠️ CRITICAL — TYPE-CONTENT ALIGNMENT (most common failure mode):
+    Each task's content MUST match its taskType's schema. Do NOT mix schemas across tasks.
+    Common mistakes to avoid:
+    - Do NOT put multiple-choice items[] (with options/correctAnswer) on non-MC types like record-audio, photo, body-break, make-and-snap, brain-spark-notes.
+    - Do NOT put tower-builder config on body-break tasks.
+    - Do NOT put brain-blitz items on make-and-snap or photo tasks.
+    - Do NOT put echo-chain config (seedTerm) on draw-mime tasks.
+    - Simple types (open-text, record-audio, draw, mime, photo, make-and-snap, photo-journal, body-break, motion-mission) need ONLY title + prompt. Do NOT add items[], options[], config.items, or MC-style content.
+    - Before writing each task, re-read the schema for THAT specific taskType and generate content that matches ONLY that schema.
+
     CONTENT CONTEXT
     Subject: ${subject}
     Grade: ${gradeLevel}

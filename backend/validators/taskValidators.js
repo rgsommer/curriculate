@@ -8,19 +8,20 @@ import { assessTaskPlayability } from "../../shared/taskPlayability.js";
 /** Reject obvious placeholder / template-missing content. */
 const _PLACEHOLDER_RE =
   /(\bplaceholder\b|template\s+missing|\[object Object\]|lorem\s+ipsum|\[insert\b|\[?\s*insert\s+here\b)/i;
-const _WEAK_LABEL_RE = /\b(option\s*\d+|left\s*\d+|right\s*\d+|term\s*\d+|definition\s*\d+|key\s*term\s*\d+|concept\s*\d+|branch\s*\d+|sub.?branch\s*\d+)\b/i;
+const _WEAK_LABEL_RE = /\b(option\s*\d+|left\s*\d+|right\s*\d+|term\s*\d+|definition\s*\d+|key\s*term\s*\d+|concept\s*\d+|branch\s*\d+|sub.?branch\s*\d+|word\s*\d+|role\s*[A-Z]|bucket\s*\d+|category\s*\d+|group\s*\d+|statement\s*\d+|clue\s*\d+|hint\s*\d+)\b/i;
 
 function _isBadText(s) {
   if (typeof s !== "string") return false;
   const t = s.trim();
   if (!t) return false;
 
-  // Allow safe auto-generated labels (these are not placeholders)
-  if (t.startsWith("Item ") || t.startsWith("Step ") || t.startsWith("Clue ")) return false;
-
   if (_PLACEHOLDER_RE.test(t)) return true;
   if (/^[A-D]$/.test(t)) return true;
-  if (_WEAK_LABEL_RE.test(t) && t.length < 20) return true;
+  // Catch generic numbered labels like "Item 1", "Step 4", "Clue 3", "WORD1", "Role A"
+  if (_WEAK_LABEL_RE.test(t) && t.length < 30) return true;
+  // Also catch "Item N" / "Step N" patterns (previously exempted) but only with a space
+  // (e.g. "Item 1" is a placeholder, but "item1" is a valid programmatic ID)
+  if (/^(item|step|clue)\s+\d+$/i.test(t)) return true;
   if (/_{3,}/.test(t)) return true;
   return false;
 }
@@ -210,10 +211,7 @@ function normalizeSortTask(task) {
     })
     .filter((it) => it.text);
 
-  while (items.length < 4) {
-    const n = items.length + 1;
-    items.push({ id: `item${n}`, text: `Item ${n}` });
-  }
+  // Do NOT pad with placeholder items — let validation reject if < 4
 
   t.items = items;
   t.config.items = items;
@@ -225,10 +223,23 @@ function normalizeSortTask(task) {
 
   let answerKey = existing ? { ...existing } : {};
 
+  // Build answerKey from items' bucketIndex / bucket / category fields if answerKey is missing
   const needFill = Object.keys(answerKey).length < items.length;
   if (needFill) {
     items.forEach((it, idx) => {
-      if (answerKey[it.id] === undefined) answerKey[it.id] = idx % buckets.length;
+      if (answerKey[it.id] !== undefined) return;
+
+      // Check if item has a bucketIndex (AI often puts this on items)
+      const bi = it.bucketIndex ?? it.bucket ?? it.category;
+      if (typeof bi === "number" && bi >= 0 && bi < buckets.length) {
+        answerKey[it.id] = bi;
+      } else if (typeof bi === "string") {
+        // Try to match bucket name to index
+        const bIdx = buckets.findIndex((b) => b.toLowerCase() === bi.toLowerCase());
+        answerKey[it.id] = bIdx >= 0 ? bIdx : idx % buckets.length;
+      } else {
+        answerKey[it.id] = idx % buckets.length;
+      }
     });
   }
 
@@ -347,12 +358,11 @@ export function normalizeTaskByType(taskType, rawTask) {
       words = words
         .map((w) => (typeof w === "string" ? w : w?.word ?? w?.text ?? w?.value))
         .map((w) => String(w || "").trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        // Strip any placeholder words that slipped through
+        .filter((w) => !/^WORD\s*\d+$/i.test(w));
 
-      while (words.length < 8) {
-        const n = words.length + 1;
-        words.push(`WORD${n}`);
-      }
+      // Do NOT pad with placeholder words — let validation reject if < 8
 
       cfg.words = words;
       task.config = cfg;
@@ -1159,12 +1169,9 @@ export function normalizeTaskByType(taskType, rawTask) {
         .filter((r) => r.name);
 
       if (!cfg.scenario) cfg.scenario = "Work through the scenario respectfully and aim for a constructive outcome.";
-      if (roles.length < 2) {
-        roles = [
-          { name: "Role A", goal: "Explain your perspective clearly.", constraint: "Stay respectful and concise." },
-          { name: "Role B", goal: "Ask clarifying questions and propose a solution.", constraint: "No interruptions." },
-        ];
-      }
+      // Do NOT pad with placeholder roles — let validation reject if < 2 real roles
+      // Filter out generic placeholder role names
+      roles = roles.filter((r) => !/^role\s*[A-Z0-9]$/i.test(r.name));
 
       cfg.roles = roles;
 
@@ -1397,11 +1404,7 @@ export function normalizeTaskByType(taskType, rawTask) {
       // Trim to 8 if AI generated more (common: prompt says 10-16)
       if (cfg.wordsByStation.length > 8) cfg.wordsByStation = cfg.wordsByStation.slice(0, 8);
 
-      // Pad to 8 if fewer (shouldn't happen with AI but defensive)
-      while (cfg.wordsByStation.length < 8) {
-        const n = cfg.wordsByStation.length + 1;
-        cfg.wordsByStation.push({ word: `WORD${n}`, hint: `Hint ${n}` });
-      }
+      // Do NOT pad with placeholder words — let validation reject if < 8
 
       task.config = cfg;
       break;
@@ -1525,7 +1528,16 @@ export function normalizeTaskByType(taskType, rawTask) {
 
       task.clues = clues.slice(0, 4);
       // Keep task.prompt in sync with first clue (backward compat)
-      task.prompt = task.clues[0];
+      if (task.clues.length > 0) task.prompt = task.clues[0];
+
+      // Strip fields from other task types that may have leaked in (wrong-type assignment)
+      delete task.config?.seedTerm;
+      delete task.config?.startWord;
+      delete task.config?.secretAnswers;
+      delete task.config?.characters;
+      delete task.config?.postulate;
+      delete task.config?.goodFoods;
+      delete task.config?.badFoods;
       break;
     }
 
@@ -1606,6 +1618,7 @@ export function normalizeTaskByType(taskType, rawTask) {
     case TASK_TYPES.PHOTO_JOURNAL:
     case TASK_TYPES.BODY_BREAK:
     case TASK_TYPES.MOTION_MISSION:
+      // Leave items/config untouched so validation can detect wrong-type assignments
       break;
 
     case TASK_TYPES.VENNSORT: {
@@ -2200,9 +2213,23 @@ export function validateTaskByType(taskType, task) {
     case TASK_TYPES.MAKE_AND_SNAP:
     case TASK_TYPES.PHOTO_JOURNAL:
     case TASK_TYPES.BODY_BREAK:
-    case TASK_TYPES.MOTION_MISSION:
-      // Title + prompt already validated above; no additional structured data required
+    case TASK_TYPES.MOTION_MISSION: {
+      // Title + prompt already validated above; no additional structured data required.
+      // BUT reject if the AI stuffed MC-style or structured content (wrong-type assignment).
+      const simpleItems = Array.isArray(task.items) ? task.items : [];
+      const hasMcContent = simpleItems.some(
+        (it) => isObject(it) && (Array.isArray(it.options) || it.correctAnswer !== undefined || it.correctIndex !== undefined)
+      );
+      if (hasMcContent) {
+        errors.push(`${taskType} has multiple-choice style items[] — wrong taskType assignment (content belongs to a different type)`);
+      }
+      // Also reject if config has structured data from other types
+      const cfg = task.config || {};
+      if (cfg.statements || cfg.wordsByStation || cfg.rounds || cfg.secretAnswers || cfg.seedTerm || cfg.goodFoods) {
+        errors.push(`${taskType} has config fields from another task type — wrong taskType assignment`);
+      }
       break;
+    }
 
     case TASK_TYPES.VENNSORT: {
       const vCfg = task.config || {};
@@ -2287,6 +2314,17 @@ export function validateTaskByType(taskType, task) {
       const spCfg = task.config || {};
       if (!Array.isArray(spCfg.roles) || spCfg.roles.length < 2) errors.push("script-play requires config.roles[] with at least 2 roles");
       if (!Array.isArray(spCfg.lines) || spCfg.lines.length < 4) errors.push("script-play requires config.lines[] with at least 4 lines");
+      break;
+    }
+
+    case TASK_TYPES.ROLE_PLAY_DECK: {
+      const rpCfg = task.config || {};
+      if (!Array.isArray(rpCfg.roles) || rpCfg.roles.length < 2) {
+        errors.push("role-play-deck requires config.roles[] with at least 2 named roles");
+      }
+      if (!isNonEmptyString(rpCfg.scenario)) {
+        errors.push("role-play-deck requires config.scenario (non-empty)");
+      }
       break;
     }
 
