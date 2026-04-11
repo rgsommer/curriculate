@@ -698,28 +698,38 @@ export function normalizeTaskByType(taskType, rawTask) {
 
     case TASK_TYPES.FLASHCARDS:
     case TASK_TYPES.FLASHCARDS_RACE: {
-      // AI may place cards at root level (items, cards, flashcards) or inside config.
+      // AI may place cards at root level (items, cards, flashcards, questions) or inside config.
       const cfg = isObject(task.config) ? task.config : (task.config = {});
 
-      const rawItems =
-        Array.isArray(cfg.items) && cfg.items.length ? cfg.items
-        : Array.isArray(task.items) && task.items.length ? task.items
-        : Array.isArray(task.cards) && task.cards.length ? task.cards
-        : Array.isArray(cfg.cards) && cfg.cards.length ? cfg.cards
-        : Array.isArray(task.flashcards) && task.flashcards.length ? task.flashcards
-        : Array.isArray(cfg.flashcards) && cfg.flashcards.length ? cfg.flashcards
-        : [];
+      const _fcSources = [
+        cfg.items, task.items,
+        cfg.cards, task.cards,
+        cfg.flashcards, task.flashcards,
+        cfg.questions, task.questions,
+      ];
+      let rawItems = [];
+      for (const src of _fcSources) {
+        if (Array.isArray(src) && src.length > 0) { rawItems = src; break; }
+      }
 
       const cards = rawItems
         .map((it) => {
+          // Handle string items: use as question with empty answer (will get filtered)
+          if (typeof it === "string") return null;
           if (!it || typeof it !== "object") return null;
-          const question = String(it.question || it.term || it.front || it.word || it.concept || "").trim();
-          const answer = String(it.answer || it.definition || it.back || it.meaning || it.response || "").trim();
-          return question && answer ? { question, answer } : null;
+          const question = String(it.question || it.term || it.front || it.word || it.concept || it.prompt || it.text || it.clue || "").trim();
+          const answer = String(it.answer || it.definition || it.back || it.meaning || it.response || it.correctAnswer || it.correct || "").trim();
+          // Also handle {question, acceptableAnswers} shape where answer is in acceptableAnswers[0]
+          const finalAnswer = answer || (Array.isArray(it.acceptableAnswers) && it.acceptableAnswers.length ? String(it.acceptableAnswers[0]).trim() : "");
+          return question && finalAnswer ? { question, answer: finalAnswer } : null;
         })
         .filter(Boolean);
 
-      cfg.items = cards;
+      if (cards.length > 0) {
+        cfg.items = cards;
+      } else {
+        console.warn(`[normalizeFlashcards] No valid cards found for ${task.taskType}. rawItems had ${rawItems.length} entries.`);
+      }
       task.config = cfg;
       break;
     }
