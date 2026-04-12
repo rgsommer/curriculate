@@ -1,0 +1,2659 @@
+{
+  "ok": true,
+  "key": "demoTaskset:v1",
+  "taskset": {
+    "key": "demoTaskset:v1",
+    "name": "Demo Taskset (42 types)",
+    "subject": "General",
+    "gradeLevel": 7,
+    "createdAt": "2026-04-09T01:36:48.918Z",
+    "tasks": [
+      {
+        "taskType": "multiple-choice",
+        "title": "Demo Multiple-Choice Task",
+        "prompt": "Read each question carefully and select the best answer from the options provided.",
+        "items": [
+          {
+            "id": "q1",
+            "prompt": "What is the primary purpose of a multiple-choice question?",
+            "options": [
+              "To allow students to write long essays",
+              "To select the correct answer from several choices",
+              "To guess randomly without reading",
+              "To confuse the test taker"
+            ],
+            "correctAnswer": 1
+          },
+          {
+            "id": "q2",
+            "prompt": "How many answer options should a standard multiple-choice question have?",
+            "options": [
+              "One",
+              "Two",
+              "Three to Five",
+              "More than Ten"
+            ],
+            "correctAnswer": 2
+          },
+          {
+            "id": "q3",
+            "prompt": "When answering multiple-choice questions, what is the best strategy?",
+            "options": [
+              "Choose the first option always",
+              "Read all options carefully before choosing",
+              "Pick the longest answer",
+              "Skip the question"
+            ],
+            "correctAnswer": 1
+          },
+          {
+            "id": "q4",
+            "prompt": "Which of the following is important for multiple-choice questions?",
+            "options": [
+              "Having only one correct answer",
+              "Having multiple correct answers",
+              "Having no correct answer",
+              "Having confusing language"
+            ],
+            "correctAnswer": 0
+          }
+        ],
+        "config": {}
+      },
+      {
+        "taskType": "physical-multiple-choice",
+        "title": "Demo: Physical Multiple Choice Practice",
+        "prompt": "Read each question carefully. To answer, walk to the station with the color chip that matches your chosen option and scan the QR code there. After scanning, you'll move to the next question automatically.",
+        "items": [
+          {
+            "id": "q1",
+            "prompt": "What color do you get when you mix red and blue?",
+            "options": [
+              "Purple",
+              "Green",
+              "Orange",
+              "Yellow"
+            ],
+            "correctAnswer": 0
+          },
+          {
+            "id": "q2",
+            "prompt": "Which planet is known as the Red Planet?",
+            "options": [
+              "Venus",
+              "Mars",
+              "Jupiter",
+              "Saturn"
+            ],
+            "correctAnswer": 1
+          },
+          {
+            "id": "q3",
+            "prompt": "What is the freezing point of water in degrees Celsius?",
+            "options": [
+              "0",
+              "100",
+              "50",
+              "32"
+            ],
+            "correctAnswer": 0
+          },
+          {
+            "id": "q4",
+            "prompt": "Which animal is known for its black and white stripes?",
+            "options": [
+              "Tiger",
+              "Zebra",
+              "Panda",
+              "Leopard"
+            ],
+            "correctAnswer": 1
+          }
+        ],
+        "config": {}
+      },
+      {
+        "taskType": "true-false",
+        "title": "True or False: Demo Statements",
+        "prompt": "Read each statement carefully and decide if it is true or false. Select the correct answer for each.",
+        "items": [
+          {
+            "id": "1",
+            "prompt": "The Earth revolves around the Sun.",
+            "correctAnswer": 1
+          },
+          {
+            "id": "2",
+            "prompt": "Water freezes at 50 degrees Celsius.",
+            "correctAnswer": 0
+          },
+          {
+            "id": "3",
+            "prompt": "Humans have walked on the Moon.",
+            "correctAnswer": 1
+          },
+          {
+            "id": "4",
+            "prompt": "Bats are mammals, not birds.",
+            "correctAnswer": 1
+          },
+          {
+            "id": "5",
+            "prompt": "The capital of France is Berlin.",
+            "correctAnswer": 0
+          }
+        ],
+        "config": {}
+      },
+      {
+        "taskType": "short-answer",
+        "title": "Demo Short Answer Questions",
+        "prompt": "Answer the following questions briefly and clearly.",
+        "items": [
+          {
+            "id": "q1",
+            "prompt": "What is the main purpose of this demo task?",
+            "correctAnswer": "To demonstrate the short-answer task type clearly and correctly."
+          },
+          {
+            "id": "q2",
+            "prompt": "How many questions are included in this demo?",
+            "correctAnswer": "3"
+          },
+          {
+            "id": "q3",
+            "prompt": "What grade level is this demo designed for?",
+            "correctAnswer": "7"
+          }
+        ],
+        "config": {
+          "items": [
+            {
+              "id": "q1",
+              "prompt": "What is the main purpose of this demo task?",
+              "correctAnswer": "To demonstrate the short-answer task type clearly and correctly."
+            },
+            {
+              "id": "q2",
+              "prompt": "How many questions are included in this demo?",
+              "correctAnswer": "3"
+            },
+            {
+              "id": "q3",
+              "prompt": "What grade level is this demo designed for?",
+              "correctAnswer": "7"
+            }
+          ]
+        }
+      },
+      {
+        "taskType": "reading-comp",
+        "title": "Understanding a Demo Paragraph",
+        "prompt": "Read the paragraph below carefully. Then, write ONE sentence that summarizes or shows your understanding of the paragraph.",
+        "generatedParagraph": "This is a demo paragraph created to help students practice reading comprehension skills. It contains ten sentences, each designed to be clear and easy to understand. The paragraph explains that reading comprehension means understanding what you read. It is important to read carefully and think about the meaning of the words. Good readers ask questions and make connections while they read. This paragraph also shows how tasks can help students learn. The task asks students to write a summary sentence. Writing summaries helps improve memory and understanding. Finally, practicing reading skills regularly can make a big difference in learning. This demo task is safe and suitable for all students.",
+        "config": {
+          "text": "This is a demo paragraph created to help students practice reading comprehension skills. It contains ten sentences, each designed to be clear and easy to understand. The paragraph explains that reading comprehension means understanding what you read. It is important to read carefully and think about the meaning of the words. Good readers ask questions and make connections while they read. This paragraph also shows how tasks can help students learn. The task asks students to write a summary sentence. Writing summaries helps improve memory and understanding. Finally, practicing reading skills regularly can make a big difference in learning. This demo task is safe and suitable for all students.",
+          "passage": "This is a demo paragraph created to help students practice reading comprehension skills. It contains ten sentences, each designed to be clear and easy to understand. The paragraph explains that reading comprehension means understanding what you read. It is important to read carefully and think about the meaning of the words. Good readers ask questions and make connections while they read. This paragraph also shows how tasks can help students learn. The task asks students to write a summary sentence. Writing summaries helps improve memory and understanding. Finally, practicing reading skills regularly can make a big difference in learning. This demo task is safe and suitable for all students.",
+          "questions": [
+            {
+              "id": "1",
+              "prompt": "What is the main idea of the passage?",
+              "answer": null
+            },
+            {
+              "id": "2",
+              "prompt": "Name one important detail that supports the main idea.",
+              "answer": null
+            },
+            {
+              "id": "3",
+              "prompt": "What conclusion can you draw from the passage?",
+              "answer": null
+            }
+          ]
+        },
+        "passage": "This is a demo paragraph created to help students practice reading comprehension skills. It contains ten sentences, each designed to be clear and easy to understand. The paragraph explains that reading comprehension means understanding what you read. It is important to read carefully and think about the meaning of the words. Good readers ask questions and make connections while they read. This paragraph also shows how tasks can help students learn. The task asks students to write a summary sentence. Writing summaries helps improve memory and understanding. Finally, practicing reading skills regularly can make a big difference in learning. This demo task is safe and suitable for all students."
+      },
+      {
+        "taskType": "open-text",
+        "title": "Writing About Your Favorite Hobby",
+        "prompt": "Complete the task.",
+        "config": {}
+      },
+      {
+        "taskType": "record-audio",
+        "title": "Speak About Your Favorite Hobby",
+        "prompt": "Record a 20-45 second audio response describing your favorite hobby. Include why you enjoy it, how you got started, and what you like most about it. Speak clearly and use complete sentences.",
+        "config": {}
+      },
+      {
+        "taskType": "draw",
+        "title": "Demo Drawing Challenge",
+        "prompt": "Complete each drawing prompt below by creating a clear and labeled illustration. Make sure to include the required label or annotation for each drawing.",
+        "items": [
+          {
+            "instruction": "Draw a simple house and label the roof."
+          },
+          {
+            "instruction": "Draw a tree and label the trunk."
+          },
+          {
+            "instruction": "Draw a sun and label the rays."
+          },
+          {
+            "instruction": "Draw a car and label the wheels."
+          },
+          {
+            "instruction": "Draw a flower and label the petals."
+          },
+          {
+            "instruction": "Draw a fish and label the fins."
+          },
+          {
+            "instruction": "Draw a book and label the cover."
+          },
+          {
+            "instruction": "Draw a clock and label the hands."
+          },
+          {
+            "instruction": "Draw a cloud and label the rain."
+          },
+          {
+            "instruction": "Draw a mountain and label the peak."
+          }
+        ],
+        "config": {
+          "items": [
+            {
+              "instruction": "Draw a simple house and label the roof."
+            },
+            {
+              "instruction": "Draw a tree and label the trunk."
+            },
+            {
+              "instruction": "Draw a sun and label the rays."
+            },
+            {
+              "instruction": "Draw a car and label the wheels."
+            },
+            {
+              "instruction": "Draw a flower and label the petals."
+            },
+            {
+              "instruction": "Draw a fish and label the fins."
+            },
+            {
+              "instruction": "Draw a book and label the cover."
+            },
+            {
+              "instruction": "Draw a clock and label the hands."
+            },
+            {
+              "instruction": "Draw a cloud and label the rain."
+            },
+            {
+              "instruction": "Draw a mountain and label the peak."
+            }
+          ]
+        }
+      },
+      {
+        "taskType": "mime",
+        "title": "Mime It Out: Demo Challenge",
+        "prompt": "Act out the following actions silently using only your body and facial expressions. No props or speaking allowed. Try to be clear and creative!",
+        "prompts": [
+          "Pretend to be climbing a tall ladder.",
+          "Mime brushing your teeth carefully.",
+          "Act like you are catching a big fish.",
+          "Pretend to open a heavy door with effort.",
+          "Mime writing a letter with a pen.",
+          "Act like you are blowing up a balloon.",
+          "Pretend to be riding a bicycle fast.",
+          "Mime eating your favorite food happily.",
+          "Act like you are painting a wall.",
+          "Pretend to be playing the piano.",
+          "Mime watering plants in a garden.",
+          "Act like you are tying your shoelaces."
+        ],
+        "config": {}
+      },
+      {
+        "taskType": "sort",
+        "title": "Sorting Animals by Habitat",
+        "prompt": "Sort the items into the correct habitat buckets. Drag each item to the right category.",
+        "config": {
+          "buckets": [
+            "Forest",
+            "Ocean",
+            "Desert",
+            "Grassland"
+          ],
+          "items": [
+            {
+              "id": "item1",
+              "text": "Bear",
+              "bucketIndex": 0
+            },
+            {
+              "id": "item2",
+              "text": "Owl",
+              "bucketIndex": 0
+            },
+            {
+              "id": "item3",
+              "text": "Shark",
+              "bucketIndex": 1
+            },
+            {
+              "id": "item4",
+              "text": "Dolphin",
+              "bucketIndex": 1
+            },
+            {
+              "id": "item5",
+              "text": "Camel",
+              "bucketIndex": 2
+            },
+            {
+              "id": "item6",
+              "text": "Cactus",
+              "bucketIndex": 2
+            },
+            {
+              "id": "item7",
+              "text": "Lion",
+              "bucketIndex": 3
+            },
+            {
+              "id": "item8",
+              "text": "Elephant",
+              "bucketIndex": 3
+            }
+          ],
+          "answerKey": {
+            "item1": 0,
+            "item2": 0,
+            "item3": 1,
+            "item4": 1,
+            "item5": 2,
+            "item6": 2,
+            "item7": 3,
+            "item8": 3
+          },
+          "categories": [
+            "Forest",
+            "Ocean",
+            "Desert",
+            "Grassland"
+          ]
+        },
+        "items": [
+          {
+            "id": "item1",
+            "text": "Bear",
+            "bucketIndex": 0
+          },
+          {
+            "id": "item2",
+            "text": "Owl",
+            "bucketIndex": 0
+          },
+          {
+            "id": "item3",
+            "text": "Shark",
+            "bucketIndex": 1
+          },
+          {
+            "id": "item4",
+            "text": "Dolphin",
+            "bucketIndex": 1
+          },
+          {
+            "id": "item5",
+            "text": "Camel",
+            "bucketIndex": 2
+          },
+          {
+            "id": "item6",
+            "text": "Cactus",
+            "bucketIndex": 2
+          },
+          {
+            "id": "item7",
+            "text": "Lion",
+            "bucketIndex": 3
+          },
+          {
+            "id": "item8",
+            "text": "Elephant",
+            "bucketIndex": 3
+          }
+        ],
+        "answerKey": {
+          "item1": 0,
+          "item2": 0,
+          "item3": 1,
+          "item4": 1,
+          "item5": 2,
+          "item6": 2,
+          "item7": 3,
+          "item8": 3
+        },
+        "categories": [
+          "Forest",
+          "Ocean",
+          "Desert",
+          "Grassland"
+        ]
+      },
+      {
+        "taskType": "sequence",
+        "title": "Ordering the Steps of Plant Growth",
+        "prompt": "Arrange the following steps of plant growth in the correct order from seed to mature plant.",
+        "items": [
+          {
+            "id": "seq1",
+            "text": "Seed absorbs water and begins to swell"
+          },
+          {
+            "id": "seq2",
+            "text": "Seed coat breaks open"
+          },
+          {
+            "id": "seq3",
+            "text": "Roots start to grow downward"
+          },
+          {
+            "id": "seq4",
+            "text": "Shoot grows upward toward the sunlight"
+          },
+          {
+            "id": "seq5",
+            "text": "First leaves appear"
+          },
+          {
+            "id": "seq6",
+            "text": "Plant matures and produces flowers"
+          }
+        ],
+        "correctOrder": [
+          "step1",
+          "step2",
+          "step3",
+          "step4",
+          "step5",
+          "step6"
+        ],
+        "config": {
+          "items": [
+            "Seed absorbs water and begins to swell",
+            "Seed coat breaks open",
+            "Roots start to grow downward",
+            "Shoot grows upward toward the sunlight",
+            "First leaves appear",
+            "Plant matures and produces flowers"
+          ],
+          "sequence": [
+            "Seed absorbs water and begins to swell",
+            "Seed coat breaks open",
+            "Roots start to grow downward",
+            "Shoot grows upward toward the sunlight",
+            "First leaves appear",
+            "Plant matures and produces flowers"
+          ]
+        },
+        "sequence": [
+          "Seed absorbs water and begins to swell",
+          "Seed coat breaks open",
+          "Roots start to grow downward",
+          "Shoot grows upward toward the sunlight",
+          "First leaves appear",
+          "Plant matures and produces flowers"
+        ]
+      },
+      {
+        "taskType": "matching",
+        "title": "Match Terms with Definitions",
+        "prompt": "Connect each item on the left to its match on the right.",
+        "leftItems": [
+          {
+            "id": "L1",
+            "text": "Photosynthesis"
+          },
+          {
+            "id": "L2",
+            "text": "Evaporation"
+          },
+          {
+            "id": "L3",
+            "text": "Mitochondria"
+          },
+          {
+            "id": "L4",
+            "text": "Gravity"
+          },
+          {
+            "id": "L5",
+            "text": "Erosion"
+          },
+          {
+            "id": "L6",
+            "text": "Osmosis"
+          }
+        ],
+        "rightItems": [
+          {
+            "id": "R1",
+            "text": "Process by which plants make food using sunlight"
+          },
+          {
+            "id": "R2",
+            "text": "The force that pulls objects toward Earth"
+          },
+          {
+            "id": "R3",
+            "text": "Movement of water from an area of low concentration to high concentration through a membrane"
+          },
+          {
+            "id": "R4",
+            "text": "The wearing away of soil or rock by wind or water"
+          },
+          {
+            "id": "R5",
+            "text": "Organelles that produce energy in cells"
+          },
+          {
+            "id": "R6",
+            "text": "Change of water from liquid to gas"
+          }
+        ],
+        "correctMatches": {
+          "L1": "R1",
+          "L2": "R6",
+          "L3": "R5",
+          "L4": "R2",
+          "L5": "R4",
+          "L6": "R3"
+        },
+        "config": {}
+      },
+      {
+        "taskType": "timeline",
+        "title": "Demo Timeline: Key Events in a Day",
+        "prompt": "Arrange the following daily events in the correct order from morning to night.",
+        "items": [
+          {
+            "id": "seq1",
+            "text": "Wake up"
+          },
+          {
+            "id": "seq2",
+            "text": "Eat breakfast"
+          },
+          {
+            "id": "seq3",
+            "text": "Go to school"
+          },
+          {
+            "id": "seq4",
+            "text": "Have lunch"
+          },
+          {
+            "id": "seq5",
+            "text": "Do homework"
+          },
+          {
+            "id": "seq6",
+            "text": "Eat dinner"
+          },
+          {
+            "id": "seq7",
+            "text": "Go to bed"
+          }
+        ],
+        "correctOrder": [
+          "event1",
+          "event2",
+          "event3",
+          "event4",
+          "event5",
+          "event6",
+          "event7"
+        ],
+        "config": {
+          "items": [
+            "Wake up",
+            "Eat breakfast",
+            "Go to school",
+            "Have lunch",
+            "Do homework",
+            "Eat dinner",
+            "Go to bed"
+          ],
+          "sequence": [
+            "Wake up",
+            "Eat breakfast",
+            "Go to school",
+            "Have lunch",
+            "Do homework",
+            "Eat dinner",
+            "Go to bed"
+          ]
+        },
+        "sequence": [
+          "Wake up",
+          "Eat breakfast",
+          "Go to school",
+          "Have lunch",
+          "Do homework",
+          "Eat dinner",
+          "Go to bed"
+        ]
+      },
+      {
+        "taskType": "vennsort",
+        "title": "Sort Animals by Habitat",
+        "prompt": "Sort each animal into the correct circle based on where it lives: Forest, Ocean, or Both.",
+        "config": {
+          "categories": [
+            "Forest",
+            "Ocean"
+          ],
+          "items": [
+            {
+              "id": "item-0-Deer",
+              "text": "Deer",
+              "categories": [
+                "Forest"
+              ]
+            },
+            {
+              "id": "item-1-Shark",
+              "text": "Shark",
+              "categories": [
+                "Ocean"
+              ]
+            },
+            {
+              "id": "item-2-Frog",
+              "text": "Frog",
+              "categories": [
+                "Forest",
+                "Ocean"
+              ]
+            },
+            {
+              "id": "item-3-Eagle",
+              "text": "Eagle",
+              "categories": [
+                "Forest"
+              ]
+            },
+            {
+              "id": "item-4-Dolphin",
+              "text": "Dolphin",
+              "categories": [
+                "Ocean"
+              ]
+            },
+            {
+              "id": "item-5-Otter",
+              "text": "Otter",
+              "categories": [
+                "Forest",
+                "Ocean"
+              ]
+            },
+            {
+              "id": "item-6-Bear",
+              "text": "Bear",
+              "categories": [
+                "Forest"
+              ]
+            },
+            {
+              "id": "item-7-Sea Turtle",
+              "text": "Sea Turtle",
+              "categories": [
+                "Ocean"
+              ]
+            },
+            {
+              "id": "item-8-Salamander",
+              "text": "Salamander",
+              "categories": [
+                "Forest",
+                "Ocean"
+              ]
+            },
+            {
+              "id": "item-9-Wolf",
+              "text": "Wolf",
+              "categories": [
+                "Forest"
+              ]
+            }
+          ]
+        },
+        "correctAnswer": {
+          "item-0-Deer": [
+            "Forest"
+          ],
+          "item-1-Shark": [
+            "Ocean"
+          ],
+          "item-2-Frog": [
+            "Forest",
+            "Ocean"
+          ],
+          "item-3-Eagle": [
+            "Forest"
+          ],
+          "item-4-Dolphin": [
+            "Ocean"
+          ],
+          "item-5-Otter": [
+            "Forest",
+            "Ocean"
+          ],
+          "item-6-Bear": [
+            "Forest"
+          ],
+          "item-7-Sea Turtle": [
+            "Ocean"
+          ],
+          "item-8-Salamander": [
+            "Forest",
+            "Ocean"
+          ],
+          "item-9-Wolf": [
+            "Forest"
+          ]
+        },
+        "items": [
+          {
+            "id": "item-0-Deer",
+            "text": "Deer",
+            "categories": [
+              "Forest"
+            ]
+          },
+          {
+            "id": "item-1-Shark",
+            "text": "Shark",
+            "categories": [
+              "Ocean"
+            ]
+          },
+          {
+            "id": "item-2-Frog",
+            "text": "Frog",
+            "categories": [
+              "Forest",
+              "Ocean"
+            ]
+          },
+          {
+            "id": "item-3-Eagle",
+            "text": "Eagle",
+            "categories": [
+              "Forest"
+            ]
+          },
+          {
+            "id": "item-4-Dolphin",
+            "text": "Dolphin",
+            "categories": [
+              "Ocean"
+            ]
+          },
+          {
+            "id": "item-5-Otter",
+            "text": "Otter",
+            "categories": [
+              "Forest",
+              "Ocean"
+            ]
+          },
+          {
+            "id": "item-6-Bear",
+            "text": "Bear",
+            "categories": [
+              "Forest"
+            ]
+          },
+          {
+            "id": "item-7-Sea Turtle",
+            "text": "Sea Turtle",
+            "categories": [
+              "Ocean"
+            ]
+          },
+          {
+            "id": "item-8-Salamander",
+            "text": "Salamander",
+            "categories": [
+              "Forest",
+              "Ocean"
+            ]
+          },
+          {
+            "id": "item-9-Wolf",
+            "text": "Wolf",
+            "categories": [
+              "Forest"
+            ]
+          }
+        ]
+      },
+      {
+        "taskType": "photo",
+        "title": "Demo Photo Submission",
+        "prompt": "Take a clear photo that shows your completed demo task. Make sure your work is fully visible and well-lit. Checklist: 1) Your work is easy to see and read, 2) The photo is focused and not blurry, 3) Your name or initials are visible on the work.",
+        "config": {}
+      },
+      {
+        "taskType": "make-and-snap",
+        "title": "Create a Simple Shape Model",
+        "prompt": "Using classroom-safe materials, build a model of a simple geometric shape such as a cube, pyramid, or cylinder. Make sure your model clearly shows the shape's faces and edges. Then, take a photo of your model from an angle that shows all its key features.",
+        "config": {
+          "requiresPhoto": true,
+          "materials": [
+            "paper",
+            "scissors",
+            "glue or tape",
+            "pencils or markers",
+            "cardboard or construction paper"
+          ]
+        }
+      },
+      {
+        "taskType": "photo-journal",
+        "title": "My Day in Photos",
+        "prompt": "Take a photo that shows something interesting or important from your day. Then write a short caption or reflection (2–4 sentences) explaining why you chose this photo and what it means to you. Think about these questions: What story does your photo tell? How does it relate to your experiences or feelings today? Success means your photo clearly shows your chosen subject and your reflection explains your thoughts clearly.",
+        "config": {}
+      },
+      {
+        "taskType": "body-break",
+        "title": "Quick Classroom Stretch",
+        "prompt": "Let's take a short break to stretch and refresh. Follow these steps: 1) Stand up tall and reach your arms overhead, stretching as high as you can. 2) Slowly bend forward and try to touch your toes, keeping your knees slightly bent if needed. 3) Roll your shoulders forward and backward five times each. 4) Twist your torso gently to the right, then to the left, holding each twist for a few seconds. 5) Take a deep breath in and out to finish. Ready? Let's go!",
+        "config": {}
+      },
+      {
+        "taskType": "musical-chairs",
+        "title": "Demo Musical Chairs Challenge",
+        "prompt": "When the music stops, quickly answer the question on your screen by tapping the correct choice.",
+        "items": [
+          {
+            "id": "1",
+            "prompt": "True or False: The sun is a star.",
+            "options": [
+              "False",
+              "True"
+            ],
+            "correctAnswer": 1
+          },
+          {
+            "id": "2",
+            "prompt": "Which planet is known as the Red Planet?",
+            "options": [
+              "Venus",
+              "Mars",
+              "Jupiter"
+            ],
+            "correctAnswer": 1
+          },
+          {
+            "id": "3",
+            "prompt": "True or False: Water freezes at 0 degrees Celsius.",
+            "options": [
+              "True",
+              "False"
+            ],
+            "correctAnswer": 0
+          },
+          {
+            "id": "4",
+            "prompt": "What is the capital of France?",
+            "options": [
+              "Berlin",
+              "Paris",
+              "Rome",
+              "Madrid"
+            ],
+            "correctAnswer": 1
+          },
+          {
+            "id": "5",
+            "prompt": "True or False: Bats are mammals.",
+            "options": [
+              "False",
+              "True"
+            ],
+            "correctAnswer": 1
+          },
+          {
+            "id": "6",
+            "prompt": "Which of these is a primary color?",
+            "options": [
+              "Green",
+              "Blue",
+              "Purple"
+            ],
+            "correctAnswer": 1
+          },
+          {
+            "id": "7",
+            "prompt": "Which animal is known for its black and white stripes?",
+            "options": [
+              "Tiger",
+              "Zebra",
+              "Leopard"
+            ],
+            "correctAnswer": 1
+          },
+          {
+            "id": "8",
+            "prompt": "True or False: The Earth orbits the moon.",
+            "options": [
+              "True",
+              "False"
+            ],
+            "correctAnswer": 1
+          }
+        ],
+        "config": {
+          "rounds": 8,
+          "items": [
+            {
+              "id": "1",
+              "prompt": "True or False: The sun is a star.",
+              "options": [
+                "False",
+                "True"
+              ],
+              "correctAnswer": 1
+            },
+            {
+              "id": "2",
+              "prompt": "Which planet is known as the Red Planet?",
+              "options": [
+                "Venus",
+                "Mars",
+                "Jupiter"
+              ],
+              "correctAnswer": 1
+            },
+            {
+              "id": "3",
+              "prompt": "True or False: Water freezes at 0 degrees Celsius.",
+              "options": [
+                "True",
+                "False"
+              ],
+              "correctAnswer": 0
+            },
+            {
+              "id": "4",
+              "prompt": "What is the capital of France?",
+              "options": [
+                "Berlin",
+                "Paris",
+                "Rome",
+                "Madrid"
+              ],
+              "correctAnswer": 1
+            },
+            {
+              "id": "5",
+              "prompt": "True or False: Bats are mammals.",
+              "options": [
+                "False",
+                "True"
+              ],
+              "correctAnswer": 1
+            },
+            {
+              "id": "6",
+              "prompt": "Which of these is a primary color?",
+              "options": [
+                "Green",
+                "Blue",
+                "Purple"
+              ],
+              "correctAnswer": 1
+            },
+            {
+              "id": "7",
+              "prompt": "Which animal is known for its black and white stripes?",
+              "options": [
+                "Tiger",
+                "Zebra",
+                "Leopard"
+              ],
+              "correctAnswer": 1
+            },
+            {
+              "id": "8",
+              "prompt": "True or False: The Earth orbits the moon.",
+              "options": [
+                "True",
+                "False"
+              ],
+              "correctAnswer": 1
+            }
+          ]
+        }
+      },
+      {
+        "taskType": "motion-mission",
+        "title": "Movement Challenge: Act It Out!",
+        "prompt": "Get ready to move safely! When I say 'Start,' act out the following actions: stretch your arms up high, then pretend to jump like a frog, and finally spin slowly in place. When I say 'Stop,' freeze in your position. Remember to keep plenty of space around you and be careful not to bump into anything or anyone.",
+        "config": {}
+      },
+      {
+        "taskType": "mad-dash-sequence",
+        "title": "Demo: Order the Steps",
+        "prompt": "Figure out the correct order of these steps, then scan them in that order to complete the task.",
+        "config": {
+          "items": [
+            "Start the timer",
+            "Read the instructions",
+            "Gather your materials",
+            "Complete the task",
+            "Check your work"
+          ],
+          "correctOrder": [
+            1,
+            2,
+            0,
+            3,
+            4
+          ]
+        },
+        "items": [
+          "Start the timer",
+          "Read the instructions",
+          "Gather your materials",
+          "Complete the task",
+          "Check your work"
+        ],
+        "sequence": [
+          "Start the timer",
+          "Read the instructions",
+          "Gather your materials",
+          "Complete the task",
+          "Check your work"
+        ],
+        "correctOrder": [
+          1,
+          2,
+          0,
+          3,
+          4
+        ]
+      },
+      {
+        "taskType": "brain-blitz",
+        "title": "Demo Brain-Blitz Challenge",
+        "prompt": "Read each clue carefully. After the last clue, type your best guess for the answer.",
+        "clues": [
+          "This is a demonstration task.",
+          "It uses a series of clues to find one answer.",
+          "The answer is related to learning activities.",
+          "Students use clues to think quickly and respond.",
+          "It helps show how this type of task works."
+        ],
+        "correctAnswer": "Brain-Blitz",
+        "config": {
+          "clues": [
+            "This is a demonstration task.",
+            "It uses a series of clues to find one answer.",
+            "The answer is related to learning activities.",
+            "Students use clues to think quickly and respond.",
+            "It helps show how this type of task works."
+          ],
+          "correctAnswer": "Brain-Blitz"
+        }
+      },
+      {
+        "taskType": "true-false-tictactoe",
+        "title": "True or False Tic-Tac-Toe: Demo Challenge",
+        "prompt": "Play tic-tac-toe by correctly identifying whether each statement is true or false. Choose wisely to claim your square!",
+        "items": [
+          {
+            "statement": "The Earth revolves around the Sun once every year.",
+            "correctAnswer": true
+          },
+          {
+            "statement": "Water freezes at 50 degrees Celsius.",
+            "correctAnswer": false
+          },
+          {
+            "statement": "Humans have five senses including sight and hearing.",
+            "correctAnswer": true
+          },
+          {
+            "statement": "Lightning never strikes the same place twice.",
+            "correctAnswer": false
+          },
+          {
+            "statement": "The capital of France is Paris.",
+            "correctAnswer": true
+          },
+          {
+            "statement": "Sound travels faster than light.",
+            "correctAnswer": false
+          },
+          {
+            "statement": "Plants produce oxygen during photosynthesis.",
+            "correctAnswer": true
+          },
+          {
+            "statement": "The Great Wall of China is visible from the Moon.",
+            "correctAnswer": false
+          },
+          {
+            "statement": "Bats are mammals, not birds.",
+            "correctAnswer": true
+          }
+        ],
+        "config": {
+          "items": [
+            {
+              "statement": "The Earth revolves around the Sun once every year.",
+              "correctAnswer": true
+            },
+            {
+              "statement": "Water freezes at 50 degrees Celsius.",
+              "correctAnswer": false
+            },
+            {
+              "statement": "Humans have five senses including sight and hearing.",
+              "correctAnswer": true
+            },
+            {
+              "statement": "Lightning never strikes the same place twice.",
+              "correctAnswer": false
+            },
+            {
+              "statement": "The capital of France is Paris.",
+              "correctAnswer": true
+            },
+            {
+              "statement": "Sound travels faster than light.",
+              "correctAnswer": false
+            },
+            {
+              "statement": "Plants produce oxygen during photosynthesis.",
+              "correctAnswer": true
+            },
+            {
+              "statement": "The Great Wall of China is visible from the Moon.",
+              "correctAnswer": false
+            },
+            {
+              "statement": "Bats are mammals, not birds.",
+              "correctAnswer": true
+            }
+          ],
+          "statements": [
+            {
+              "text": "The Earth revolves around the Sun once every year.",
+              "answer": true
+            },
+            {
+              "text": "Water freezes at 50 degrees Celsius.",
+              "answer": false
+            },
+            {
+              "text": "Humans have five senses including sight and hearing.",
+              "answer": true
+            },
+            {
+              "text": "Lightning never strikes the same place twice.",
+              "answer": false
+            },
+            {
+              "text": "The capital of France is Paris.",
+              "answer": true
+            },
+            {
+              "text": "Sound travels faster than light.",
+              "answer": false
+            },
+            {
+              "text": "Plants produce oxygen during photosynthesis.",
+              "answer": true
+            },
+            {
+              "text": "The Great Wall of China is visible from the Moon.",
+              "answer": false
+            },
+            {
+              "text": "Bats are mammals, not birds.",
+              "answer": true
+            }
+          ]
+        }
+      },
+      {
+        "taskType": "flashcards",
+        "title": "Demo Flashcards: General Knowledge",
+        "prompt": "Study each term and its definition to build your general knowledge. Use these flashcards to review and memorize the key concepts.",
+        "config": {
+          "items": [
+            {
+              "question": "Atom",
+              "answer": "The smallest unit of a chemical element that retains its properties."
+            },
+            {
+              "question": "Ecosystem",
+              "answer": "A community of living organisms interacting with their environment."
+            },
+            {
+              "question": "Photosynthesis",
+              "answer": "The process by which plants use sunlight to make food from carbon dioxide and water."
+            },
+            {
+              "question": "Gravity",
+              "answer": "The force that attracts objects toward each other, especially toward the center of the Earth."
+            },
+            {
+              "question": "Democracy",
+              "answer": "A system of government where citizens vote to make decisions."
+            },
+            {
+              "question": "Evaporation",
+              "answer": "The process of turning from liquid into vapor."
+            },
+            {
+              "question": "Molecule",
+              "answer": "Two or more atoms bonded together."
+            },
+            {
+              "question": "Habitat",
+              "answer": "The natural home or environment of an animal, plant, or other organism."
+            },
+            {
+              "question": "Energy",
+              "answer": "The ability to do work or cause change."
+            },
+            {
+              "question": "Constitution",
+              "answer": "A set of fundamental principles or laws that govern a country."
+            },
+            {
+              "question": "Inertia",
+              "answer": "The tendency of an object to resist changes in its motion."
+            },
+            {
+              "question": "Photosynthesis",
+              "answer": "The process plants use to convert sunlight into chemical energy."
+            },
+            {
+              "question": "Climate",
+              "answer": "The usual weather conditions in a particular place over a long time."
+            },
+            {
+              "question": "Neuron",
+              "answer": "A nerve cell that transmits electrical signals in the body."
+            },
+            {
+              "question": "Recycling",
+              "answer": "The process of converting waste into reusable material."
+            }
+          ]
+        },
+        "items": [
+          {
+            "question": "Atom",
+            "answer": "The smallest unit of a chemical element that retains its properties."
+          },
+          {
+            "question": "Ecosystem",
+            "answer": "A community of living organisms interacting with their environment."
+          },
+          {
+            "question": "Photosynthesis",
+            "answer": "The process by which plants use sunlight to make food from carbon dioxide and water."
+          },
+          {
+            "question": "Gravity",
+            "answer": "The force that attracts objects toward each other, especially toward the center of the Earth."
+          },
+          {
+            "question": "Democracy",
+            "answer": "A system of government where citizens vote to make decisions."
+          },
+          {
+            "question": "Evaporation",
+            "answer": "The process of turning from liquid into vapor."
+          },
+          {
+            "question": "Molecule",
+            "answer": "Two or more atoms bonded together."
+          },
+          {
+            "question": "Habitat",
+            "answer": "The natural home or environment of an animal, plant, or other organism."
+          },
+          {
+            "question": "Energy",
+            "answer": "The ability to do work or cause change."
+          },
+          {
+            "question": "Constitution",
+            "answer": "A set of fundamental principles or laws that govern a country."
+          },
+          {
+            "question": "Inertia",
+            "answer": "The tendency of an object to resist changes in its motion."
+          },
+          {
+            "question": "Photosynthesis",
+            "answer": "The process plants use to convert sunlight into chemical energy."
+          },
+          {
+            "question": "Climate",
+            "answer": "The usual weather conditions in a particular place over a long time."
+          },
+          {
+            "question": "Neuron",
+            "answer": "A nerve cell that transmits electrical signals in the body."
+          },
+          {
+            "question": "Recycling",
+            "answer": "The process of converting waste into reusable material."
+          }
+        ]
+      },
+      {
+        "taskType": "flashcards-race",
+        "title": "Demo Flashcards Race",
+        "prompt": "Quickly review each flashcard and say or write the answer as fast as you can.",
+        "config": {
+          "items": [
+            {
+              "question": "What is the capital of France?",
+              "answer": "Paris"
+            },
+            {
+              "question": "What is 7 multiplied by 6?",
+              "answer": "42"
+            },
+            {
+              "question": "Name the largest planet in our solar system.",
+              "answer": "Jupiter"
+            },
+            {
+              "question": "What is the process by which plants make food?",
+              "answer": "Photosynthesis"
+            },
+            {
+              "question": "Who wrote the play 'Romeo and Juliet'?",
+              "answer": "William Shakespeare"
+            },
+            {
+              "question": "What is the freezing point of water in Celsius?",
+              "answer": "0 degrees"
+            },
+            {
+              "question": "What gas do humans breathe in to live?",
+              "answer": "Oxygen"
+            },
+            {
+              "question": "What is the main language spoken in Spain?",
+              "answer": "Spanish"
+            },
+            {
+              "question": "What is the square root of 81?",
+              "answer": "9"
+            },
+            {
+              "question": "Which organ pumps blood through the body?",
+              "answer": "Heart"
+            },
+            {
+              "question": "What is the chemical symbol for gold?",
+              "answer": "Au"
+            },
+            {
+              "question": "How many continents are there on Earth?",
+              "answer": "7"
+            },
+            {
+              "question": "What is the first letter of the Greek alphabet?",
+              "answer": "Alpha"
+            },
+            {
+              "question": "What do bees collect from flowers?",
+              "answer": "Nectar"
+            },
+            {
+              "question": "Which planet is known as the Red Planet?",
+              "answer": "Mars"
+            }
+          ]
+        },
+        "items": [
+          {
+            "question": "What is the capital of France?",
+            "answer": "Paris"
+          },
+          {
+            "question": "What is 7 multiplied by 6?",
+            "answer": "42"
+          },
+          {
+            "question": "Name the largest planet in our solar system.",
+            "answer": "Jupiter"
+          },
+          {
+            "question": "What is the process by which plants make food?",
+            "answer": "Photosynthesis"
+          },
+          {
+            "question": "Who wrote the play 'Romeo and Juliet'?",
+            "answer": "William Shakespeare"
+          },
+          {
+            "question": "What is the freezing point of water in Celsius?",
+            "answer": "0 degrees"
+          },
+          {
+            "question": "What gas do humans breathe in to live?",
+            "answer": "Oxygen"
+          },
+          {
+            "question": "What is the main language spoken in Spain?",
+            "answer": "Spanish"
+          },
+          {
+            "question": "What is the square root of 81?",
+            "answer": "9"
+          },
+          {
+            "question": "Which organ pumps blood through the body?",
+            "answer": "Heart"
+          },
+          {
+            "question": "What is the chemical symbol for gold?",
+            "answer": "Au"
+          },
+          {
+            "question": "How many continents are there on Earth?",
+            "answer": "7"
+          },
+          {
+            "question": "What is the first letter of the Greek alphabet?",
+            "answer": "Alpha"
+          },
+          {
+            "question": "What do bees collect from flowers?",
+            "answer": "Nectar"
+          },
+          {
+            "question": "Which planet is known as the Red Planet?",
+            "answer": "Mars"
+          }
+        ]
+      },
+      {
+        "taskType": "pet-feeding",
+        "title": "Feed Your Virtual Pet by Answering Questions",
+        "prompt": "Answer each question correctly to feed your virtual pet and help it grow! Try your best on all 10 questions.",
+        "questions": [
+          {
+            "question": "What color do you get when you mix red and yellow?",
+            "answers": [
+              "Orange",
+              "Green",
+              "Purple",
+              "Blue"
+            ],
+            "correctAnswer": 0
+          },
+          {
+            "question": "Which planet is known as the Red Planet?",
+            "answers": [
+              "Venus",
+              "Mars",
+              "Jupiter",
+              "Saturn"
+            ],
+            "correctAnswer": 1
+          },
+          {
+            "question": "What is the main ingredient in a salad?",
+            "answers": [
+              "Lettuce",
+              "Bread",
+              "Cheese",
+              "Chicken"
+            ],
+            "correctAnswer": 0
+          },
+          {
+            "question": "How many legs does a spider have?",
+            "answers": [
+              "6",
+              "8",
+              "10",
+              "12"
+            ],
+            "correctAnswer": 1
+          },
+          {
+            "question": "Which is a mammal?",
+            "answers": [
+              "Shark",
+              "Dolphin",
+              "Frog",
+              "Eagle"
+            ],
+            "correctAnswer": 1
+          },
+          {
+            "question": "What do plants need to make food?",
+            "answers": [
+              "Sunlight",
+              "Moonlight",
+              "Rain",
+              "Wind"
+            ],
+            "correctAnswer": 0
+          },
+          {
+            "question": "Which number is a prime number?",
+            "answers": [
+              "15",
+              "21",
+              "17",
+              "27"
+            ],
+            "correctAnswer": 2
+          },
+          {
+            "question": "What is 7 x 6?",
+            "answers": [
+              "42",
+              "36",
+              "48",
+              "40"
+            ],
+            "correctAnswer": 0
+          },
+          {
+            "question": "Which continent is the largest by land area?",
+            "answers": [
+              "Africa",
+              "Asia",
+              "Europe",
+              "Antarctica"
+            ],
+            "correctAnswer": 1
+          },
+          {
+            "question": "What is the freezing point of water in Celsius?",
+            "answers": [
+              "0",
+              "32",
+              "100",
+              "-10"
+            ],
+            "correctAnswer": 0
+          }
+        ],
+        "config": {}
+      },
+      {
+        "taskType": "draw-mime",
+        "title": "Draw or Mime: Demo Challenge",
+        "prompt": "smile",
+        "clues": [
+          "smile",
+          "jump",
+          "tree",
+          "book"
+        ],
+        "timeLimitSeconds": 60,
+        "config": {}
+      },
+      {
+        "taskType": "hangman-duel",
+        "title": "Hangman Duel: Vocabulary Challenge",
+        "prompt": "Play a hangman duel by guessing the words from the hints. Take turns and try to guess the word before your opponent does!",
+        "config": {
+          "wordsByStation": [
+            {
+              "word": "PLANET",
+              "hint": "A large body orbiting a star"
+            },
+            {
+              "word": "PYRAMID",
+              "hint": "An ancient triangular structure in Egypt"
+            },
+            {
+              "word": "OCEAN",
+              "hint": "A vast body of salt water"
+            },
+            {
+              "word": "VOLCANO",
+              "hint": "A mountain that can erupt with lava"
+            },
+            {
+              "word": "FOSSIL",
+              "hint": "Preserved remains of ancient life"
+            },
+            {
+              "word": "GALAXY",
+              "hint": "A system of millions or billions of stars"
+            },
+            {
+              "word": "ECLIPSE",
+              "hint": "When one celestial body blocks another"
+            },
+            {
+              "word": "COMET",
+              "hint": "A space object with a glowing tail"
+            }
+          ]
+        }
+      },
+      {
+        "taskType": "word-weaver-duel",
+        "title": "Word Weaver Duel: Build and Connect Words",
+        "prompt": "Use the words below to create sentences or find connections. Follow the constraints to show your understanding of each word.",
+        "words": [
+          "create",
+          "connect",
+          "explore",
+          "imagine",
+          "discover",
+          "build",
+          "learn",
+          "share"
+        ],
+        "constraints": [
+          "Use each word in a sentence that shows its meaning.",
+          "Find a synonym for at least three words.",
+          "Use prefixes or suffixes to change the meaning of two words.",
+          "Explain how two words can be related in a sentence.",
+          "Write a short paragraph using at least five of the words."
+        ],
+        "gridSize": 8,
+        "config": {
+          "words": [
+            "create",
+            "connect",
+            "explore",
+            "imagine",
+            "discover",
+            "build",
+            "learn",
+            "share"
+          ],
+          "items": [
+            "create",
+            "connect",
+            "explore",
+            "imagine",
+            "discover",
+            "build",
+            "learn",
+            "share"
+          ]
+        },
+        "items": [
+          "create",
+          "connect",
+          "explore",
+          "imagine",
+          "discover",
+          "build",
+          "learn",
+          "share"
+        ]
+      },
+      {
+        "taskType": "guess-who",
+        "title": "Guess Who: Fun Characters Challenge",
+        "prompt": "Use the yes/no facts to guess which character your friend is thinking of. Ask questions to narrow down the possibilities!",
+        "config": {
+          "items": [
+            {
+              "name": "Alex the Astronaut",
+              "facts": [
+                "Wears a space helmet",
+                "Has visited the Moon",
+                "Loves stars and planets",
+                "Wears a white suit",
+                "Uses a rocket ship",
+                "Has zero gravity experience"
+              ],
+              "isAnswer": false
+            },
+            {
+              "name": "Bella the Biologist",
+              "facts": [
+                "Studies animals",
+                "Works in a lab",
+                "Wears glasses",
+                "Loves plants",
+                "Carries a microscope",
+                "Has a pet frog"
+              ],
+              "isAnswer": false
+            },
+            {
+              "name": "Charlie the Chef",
+              "facts": [
+                "Wears a tall white hat",
+                "Cooks delicious meals",
+                "Uses a big spoon",
+                "Works in a kitchen",
+                "Loves baking cakes",
+                "Has a favorite recipe book"
+              ],
+              "isAnswer": false
+            },
+            {
+              "name": "Diana the Detective",
+              "facts": [
+                "Wears a trench coat",
+                "Solves mysteries",
+                "Carries a magnifying glass",
+                "Has a secret notebook",
+                "Wears a fedora hat",
+                "Loves puzzles"
+              ],
+              "isAnswer": false
+            },
+            {
+              "name": "Ethan the Engineer",
+              "facts": [
+                "Builds machines",
+                "Wears a hard hat",
+                "Uses blueprints",
+                "Loves robots",
+                "Works with tools",
+                "Designs bridges"
+              ],
+              "isAnswer": false
+            },
+            {
+              "name": "Fiona the Firefighter",
+              "facts": [
+                "Wears a yellow helmet",
+                "Drives a fire truck",
+                "Uses a fire hose",
+                "Helps people in emergencies",
+                "Wears boots and gloves",
+                "Climbs ladders"
+              ],
+              "isAnswer": false
+            },
+            {
+              "name": "George the Gardener",
+              "facts": [
+                "Plants flowers",
+                "Wears a sun hat",
+                "Uses a watering can",
+                "Loves nature",
+                "Works outside",
+                "Has green thumbs"
+              ],
+              "isAnswer": false
+            },
+            {
+              "name": "Hannah the Historian",
+              "facts": [
+                "Reads old books",
+                "Studies the past",
+                "Wears glasses",
+                "Visits museums",
+                "Writes reports",
+                "Loves ancient stories"
+              ],
+              "isAnswer": true
+            }
+          ],
+          "playerCount": 4,
+          "secretAnswers": [
+            "UNKNOWN",
+            "UNKNOWN",
+            "UNKNOWN",
+            "UNKNOWN"
+          ],
+          "maxGuesses": 12,
+          "timerSeconds": 120,
+          "interTeamEnabled": false,
+          "intraTeamEnabled": true
+        },
+        "items": [
+          {
+            "name": "Alex the Astronaut",
+            "facts": [
+              "Wears a space helmet",
+              "Has visited the Moon",
+              "Loves stars and planets",
+              "Wears a white suit",
+              "Uses a rocket ship",
+              "Has zero gravity experience"
+            ],
+            "isAnswer": false
+          },
+          {
+            "name": "Bella the Biologist",
+            "facts": [
+              "Studies animals",
+              "Works in a lab",
+              "Wears glasses",
+              "Loves plants",
+              "Carries a microscope",
+              "Has a pet frog"
+            ],
+            "isAnswer": false
+          },
+          {
+            "name": "Charlie the Chef",
+            "facts": [
+              "Wears a tall white hat",
+              "Cooks delicious meals",
+              "Uses a big spoon",
+              "Works in a kitchen",
+              "Loves baking cakes",
+              "Has a favorite recipe book"
+            ],
+            "isAnswer": false
+          },
+          {
+            "name": "Diana the Detective",
+            "facts": [
+              "Wears a trench coat",
+              "Solves mysteries",
+              "Carries a magnifying glass",
+              "Has a secret notebook",
+              "Wears a fedora hat",
+              "Loves puzzles"
+            ],
+            "isAnswer": false
+          },
+          {
+            "name": "Ethan the Engineer",
+            "facts": [
+              "Builds machines",
+              "Wears a hard hat",
+              "Uses blueprints",
+              "Loves robots",
+              "Works with tools",
+              "Designs bridges"
+            ],
+            "isAnswer": false
+          },
+          {
+            "name": "Fiona the Firefighter",
+            "facts": [
+              "Wears a yellow helmet",
+              "Drives a fire truck",
+              "Uses a fire hose",
+              "Helps people in emergencies",
+              "Wears boots and gloves",
+              "Climbs ladders"
+            ],
+            "isAnswer": false
+          },
+          {
+            "name": "George the Gardener",
+            "facts": [
+              "Plants flowers",
+              "Wears a sun hat",
+              "Uses a watering can",
+              "Loves nature",
+              "Works outside",
+              "Has green thumbs"
+            ],
+            "isAnswer": false
+          },
+          {
+            "name": "Hannah the Historian",
+            "facts": [
+              "Reads old books",
+              "Studies the past",
+              "Wears glasses",
+              "Visits museums",
+              "Writes reports",
+              "Loves ancient stories"
+            ],
+            "isAnswer": true
+          }
+        ]
+      },
+      {
+        "taskType": "echo-chain",
+        "title": "Demo Echo Chain Practice",
+        "prompt": "Listen carefully and repeat each phrase in order. Each phrase builds on the last, so try to remember the whole chain!",
+        "chain": [
+          "Hello, class!",
+          "Hello, class! Let's learn.",
+          "Hello, class! Let's learn together.",
+          "Hello, class! Let's learn together and have fun.",
+          "Hello, class! Let's learn together and have fun every day.",
+          "Hello, class! Let's learn together and have fun every day with new ideas.",
+          "Hello, class! Let's learn together and have fun every day with new ideas and teamwork.",
+          "Hello, class! Let's learn together and have fun every day with new ideas and teamwork to grow."
+        ],
+        "config": {
+          "playerCount": 4,
+          "prompts": [
+            "Continue the chain with one sentence.",
+            "Add a detail that changes the meaning."
+          ]
+        }
+      },
+      {
+        "taskType": "collaboration",
+        "title": "Team Puzzle: Combine Your Clues",
+        "prompt": "You are part of a team where each member has a unique clue about a famous invention. Share your clues with each other, discuss, and work together to identify the invention and explain how it changed the world.",
+        "roles": [
+          {
+            "role": "Role 1: The Inventor",
+            "clue": "I created a device that changed how people communicate instantly over long distances."
+          },
+          {
+            "role": "Role 2: The Historian",
+            "clue": "This invention was first patented in the late 19th century and revolutionized business and personal life."
+          },
+          {
+            "role": "Role 3: The Engineer",
+            "clue": "My clue is about the technology inside the device that converts sound into electrical signals."
+          },
+          {
+            "role": "Role 4: The User",
+            "clue": "I know how this invention impacted daily life by making it easier to connect with family and friends."
+          }
+        ],
+        "finalTask": "After sharing and discussing your clues, write a short paragraph naming the invention and describing its importance.",
+        "config": {}
+      },
+      {
+        "taskType": "live-debate",
+        "title": "Demo Debate: Should School Start Later?",
+        "prompt": "Engage in a live debate on whether school should start later in the morning. Use the starting points below to prepare your arguments. Listen carefully to your opponents and respond respectfully. Focus on clear evidence and strong reasoning to support your position.",
+        "resolution": "School should start later in the morning for middle and high school students.",
+        "proPoints": [
+          "Starting school later helps students get more sleep, improving their health and focus.",
+          "Later start times can lead to better academic performance and reduced tardiness.",
+          "Teenagers’ natural sleep cycles make early mornings challenging, so a later start matches their biology."
+        ],
+        "conPoints": [
+          "Starting later could interfere with after-school activities and sports schedules.",
+          "Later start times may cause conflicts for parents’ work schedules and transportation.",
+          "Changing start times could reduce the amount of daylight after school, affecting safety and activities."
+        ],
+        "judgingCriteria": [
+          "Evidence: Use facts, studies, and examples to support your arguments.",
+          "Clarity: Speak clearly and organize your points logically.",
+          "Respect: Listen to others and respond politely without interrupting.",
+          "Rebuttal: Address opposing points directly with thoughtful counterarguments."
+        ],
+        "config": {}
+      },
+      {
+        "taskType": "brainstorm-battle",
+        "title": "Creative Ideas Challenge: Demo Edition",
+        "prompt": "Get ready for a fun brainstorm battle! You will have 3 rounds to come up with ideas based on different prompts. Each round has its own scoring rule. Try to think creatively and clearly!",
+        "rounds": [
+          {
+            "prompt": "Round 1: List as many unique uses for a paperclip as you can in 2 minutes.",
+            "scoringRule": "Points for each unique and creative idea.",
+            "exampleAnswers": [
+              "Bookmark for a book",
+              "Reset button pusher for electronics",
+              "Miniature hook for hanging ornaments",
+              "DIY zipper pull"
+            ]
+          },
+          {
+            "prompt": "Round 2: Think of ideas for ways to help your community stay clean.",
+            "scoringRule": "Points for relevance and practicality of ideas.",
+            "exampleAnswers": [
+              "Organize a neighborhood trash pick-up day",
+              "Set up recycling bins in public places",
+              "Create posters encouraging people not to litter",
+              "Start a composting program at school"
+            ]
+          },
+          {
+            "prompt": "Round 3: Brainstorm fun activities you can do indoors on a rainy day.",
+            "scoringRule": "Points for variety and creativity.",
+            "exampleAnswers": [
+              "Build a blanket fort",
+              "Have a board game tournament",
+              "Try new recipes and bake treats",
+              "Create an indoor scavenger hunt"
+            ]
+          }
+        ],
+        "config": {}
+      },
+      {
+        "taskType": "fake-out",
+        "title": "Demo Fake-Out Challenge",
+        "prompt": "Read each question carefully. Choose the real answer, but watch out for the silly joke option trying to trick you!",
+        "config": {
+          "rounds": [
+            {
+              "prompt": "Which planet is known as the Red Planet?",
+              "options": [
+                "Planet of the Cupcakes",
+                "Mars",
+                "Venus",
+                "Jupiter"
+              ],
+              "jokeOption": "Planet of the Cupcakes",
+              "correctOption": "Venus",
+              "jokeIndex": 0,
+              "correctIndex": 2
+            },
+            {
+              "prompt": "What is the main ingredient in a classic peanut butter sandwich?",
+              "options": [
+                "Peanut butter",
+                "Jelly",
+                "Bread",
+                "Chocolate unicorn dust"
+              ],
+              "jokeOption": "Chocolate unicorn dust",
+              "correctOption": "Jelly",
+              "jokeIndex": 3,
+              "correctIndex": 1
+            },
+            {
+              "prompt": "Which animal is famous for its black and white stripes?",
+              "options": [
+                "Tiger",
+                "Zebra",
+                "Candy cane cat",
+                "Skunk"
+              ],
+              "jokeOption": "Candy cane cat",
+              "correctOption": "Zebra",
+              "jokeIndex": 2,
+              "correctIndex": 1
+            }
+          ],
+          "pointsPerCorrect": 10,
+          "readerBonusPoints": 0,
+          "interTeamEnabled": false,
+          "intraTeamEnabled": true,
+          "playerCount": 4
+        },
+        "rounds": [
+          {
+            "prompt": "Which planet is known as the Red Planet?",
+            "options": [
+              "Planet of the Cupcakes",
+              "Mars",
+              "Venus",
+              "Jupiter"
+            ],
+            "jokeOption": "Planet of the Cupcakes",
+            "correctOption": "Venus",
+            "jokeIndex": 0,
+            "correctIndex": 2
+          },
+          {
+            "prompt": "What is the main ingredient in a classic peanut butter sandwich?",
+            "options": [
+              "Peanut butter",
+              "Jelly",
+              "Bread",
+              "Chocolate unicorn dust"
+            ],
+            "jokeOption": "Chocolate unicorn dust",
+            "correctOption": "Jelly",
+            "jokeIndex": 3,
+            "correctIndex": 1
+          },
+          {
+            "prompt": "Which animal is famous for its black and white stripes?",
+            "options": [
+              "Tiger",
+              "Zebra",
+              "Candy cane cat",
+              "Skunk"
+            ],
+            "jokeOption": "Candy cane cat",
+            "correctOption": "Zebra",
+            "jokeIndex": 2,
+            "correctIndex": 1
+          }
+        ]
+      },
+      {
+        "taskType": "brain-spark-notes",
+        "title": "Demo: Taking Effective Notes",
+        "prompt": "Read the notes below on how to take effective notes. Use these notes to help you practice organizing information clearly and efficiently.",
+        "notes": {
+          "heading": "How to Take Effective Notes",
+          "keyTerms": [
+            {
+              "term": "Note-taking",
+              "definition": "The process of recording information from a lesson or text.",
+              "points": [
+                "Helps remember important details.",
+                "Supports studying and review."
+              ]
+            },
+            {
+              "term": "Key Points",
+              "definition": "The most important ideas or facts in a lesson or text.",
+              "points": [
+                "Focus on main ideas, not every word.",
+                "Use your own words to summarize."
+              ]
+            },
+            {
+              "term": "Organizing Notes",
+              "definition": "Arranging information clearly and logically.",
+              "points": [
+                "Use headings and bullet points.",
+                "Group related ideas together."
+              ]
+            }
+          ],
+          "mainPoints": [
+            {
+              "heading": "Preparing to Take Notes",
+              "sections": [
+                {
+                  "title": "Key details",
+                  "bullets": [
+                    "Choose a quiet place to focus.",
+                    "Have your notebook or device ready."
+                  ]
+                }
+              ]
+            },
+            {
+              "heading": "During the Lesson",
+              "sections": [
+                {
+                  "title": "Key details",
+                  "bullets": [
+                    "Listen carefully and write down key points.",
+                    "Use abbreviations and symbols to save time."
+                  ]
+                }
+              ]
+            },
+            {
+              "heading": "After the Lesson",
+              "sections": [
+                {
+                  "title": "Key details",
+                  "bullets": [
+                    "Review and organize your notes soon after class.",
+                    "Add any missing details while the information is fresh."
+                  ]
+                }
+              ]
+            }
+          ],
+          "summary": [
+            "Effective note-taking helps you understand and remember information better.",
+            "Organizing your notes clearly makes studying easier and more efficient."
+          ]
+        },
+        "config": {
+          "notes": {
+            "heading": "How to Take Effective Notes",
+            "keyTerms": [
+              {
+                "term": "Note-taking",
+                "definition": "The process of recording information from a lesson or text.",
+                "points": [
+                  "Helps remember important details.",
+                  "Supports studying and review."
+                ]
+              },
+              {
+                "term": "Key Points",
+                "definition": "The most important ideas or facts in a lesson or text.",
+                "points": [
+                  "Focus on main ideas, not every word.",
+                  "Use your own words to summarize."
+                ]
+              },
+              {
+                "term": "Organizing Notes",
+                "definition": "Arranging information clearly and logically.",
+                "points": [
+                  "Use headings and bullet points.",
+                  "Group related ideas together."
+                ]
+              }
+            ],
+            "mainPoints": [
+              {
+                "heading": "Preparing to Take Notes",
+                "sections": [
+                  {
+                    "title": "Key details",
+                    "bullets": [
+                      "Choose a quiet place to focus.",
+                      "Have your notebook or device ready."
+                    ]
+                  }
+                ]
+              },
+              {
+                "heading": "During the Lesson",
+                "sections": [
+                  {
+                    "title": "Key details",
+                    "bullets": [
+                      "Listen carefully and write down key points.",
+                      "Use abbreviations and symbols to save time."
+                    ]
+                  }
+                ]
+              },
+              {
+                "heading": "After the Lesson",
+                "sections": [
+                  {
+                    "title": "Key details",
+                    "bullets": [
+                      "Review and organize your notes soon after class.",
+                      "Add any missing details while the information is fresh."
+                    ]
+                  }
+                ]
+              }
+            ],
+            "summary": [
+              "Effective note-taking helps you understand and remember information better.",
+              "Organizing your notes clearly makes studying easier and more efficient."
+            ]
+          },
+          "bullets": [
+            "Effective note-taking helps you understand and remember information better.",
+            "Organizing your notes clearly makes studying easier and more efficient.",
+            "Key takeaway 3"
+          ]
+        },
+        "bullets": [
+          "Effective note-taking helps you understand and remember information better.",
+          "Organizing your notes clearly makes studying easier and more efficient.",
+          "Key takeaway 3"
+        ]
+      },
+      {
+        "taskType": "mind-mapper",
+        "title": "Demo Mind Map: Exploring a Topic",
+        "prompt": "Fill in the blanks to complete the mind map about the central topic. Use your knowledge to add details to each branch and sub-branch.",
+        "structure": {
+          "centralTopic": "_____",
+          "branches": [
+            {
+              "branchTitle": "Branch 1: _____",
+              "subBranches": [
+                "Sub-branch 1.1: _____",
+                "Sub-branch 1.2: _____",
+                "Sub-branch 1.3: _____"
+              ]
+            },
+            {
+              "branchTitle": "Branch 2: _____",
+              "subBranches": [
+                "Sub-branch 2.1: _____",
+                "Sub-branch 2.2: _____"
+              ]
+            },
+            {
+              "branchTitle": "Branch 3: _____",
+              "subBranches": [
+                "Sub-branch 3.1: _____",
+                "Sub-branch 3.2: _____",
+                "Sub-branch 3.3: _____",
+                "Sub-branch 3.4: _____"
+              ]
+            },
+            {
+              "branchTitle": "Branch 4: _____",
+              "subBranches": [
+                "Sub-branch 4.1: _____",
+                "Sub-branch 4.2: _____"
+              ]
+            }
+          ]
+        },
+        "items": [
+          "Concept 1",
+          "Concept 2",
+          "Concept 3",
+          "Concept 4"
+        ],
+        "config": {
+          "structure": {
+            "centralTopic": "_____",
+            "branches": [
+              {
+                "branchTitle": "Branch 1: _____",
+                "subBranches": [
+                  "Sub-branch 1.1: _____",
+                  "Sub-branch 1.2: _____",
+                  "Sub-branch 1.3: _____"
+                ]
+              },
+              {
+                "branchTitle": "Branch 2: _____",
+                "subBranches": [
+                  "Sub-branch 2.1: _____",
+                  "Sub-branch 2.2: _____"
+                ]
+              },
+              {
+                "branchTitle": "Branch 3: _____",
+                "subBranches": [
+                  "Sub-branch 3.1: _____",
+                  "Sub-branch 3.2: _____",
+                  "Sub-branch 3.3: _____",
+                  "Sub-branch 3.4: _____"
+                ]
+              },
+              {
+                "branchTitle": "Branch 4: _____",
+                "subBranches": [
+                  "Sub-branch 4.1: _____",
+                  "Sub-branch 4.2: _____"
+                ]
+              }
+            ]
+          },
+          "items": [
+            "Concept 1",
+            "Concept 2",
+            "Concept 3",
+            "Concept 4"
+          ]
+        }
+      },
+      {
+        "taskType": "narration-synthesize",
+        "title": "Synthesizing Information from Multiple Sources",
+        "prompt": "Read the three short source points below. Then write a 3–5 sentence paragraph that combines these ideas into one clear claim supported by evidence from the points.",
+        "config": {
+          "playerCount": 4,
+          "prompts": [
+            "Source 1: Trees produce oxygen which is essential for humans and animals to breathe.",
+            "Source 2: Trees provide homes and food for many different animals and insects.",
+            "Source 3: Trees help prevent soil erosion by holding the soil in place with their roots.",
+            "Using these points, explain why trees are important to the environment."
+          ]
+        }
+      },
+      {
+        "taskType": "role-play-deck",
+        "title": "Role-Play Scenarios: Practice Communication",
+        "prompt": "Choose a scenario and role to act out. Work with your classmates to achieve your role's goal while following your role's constraint.",
+        "config": {
+          "scenario": "You are participating in various everyday situations where communication and problem-solving are key. Each scenario involves three roles with different goals and constraints. Collaborate and negotiate to reach your objectives.",
+          "roles": [
+            {
+              "name": "Customer",
+              "goal": "Explain your problem clearly and get a helpful solution.",
+              "constraint": "You can only speak for 2 minutes and must remain polite."
+            },
+            {
+              "name": "Store Assistant",
+              "goal": "Understand the customer's issue and offer the best possible help.",
+              "constraint": "You cannot use technical jargon and must ask clarifying questions."
+            },
+            {
+              "name": "Manager",
+              "goal": "Ensure the customer leaves satisfied while following store policies.",
+              "constraint": "You can only intervene if the conversation is stuck or escalating."
+            },
+            {
+              "name": "Team Member A",
+              "goal": "Convince your team to choose your idea for the project.",
+              "constraint": "You cannot interrupt others and must listen carefully."
+            },
+            {
+              "name": "Team Member B",
+              "goal": "Support your idea with facts and examples to persuade the team.",
+              "constraint": "You can only speak twice during the discussion."
+            },
+            {
+              "name": "Team Leader",
+              "goal": "Help the team reach a decision everyone agrees on.",
+              "constraint": "You must remain neutral and summarize points without giving your opinion."
+            },
+            {
+              "name": "Friend A",
+              "goal": "Plan a fun weekend activity that everyone will enjoy.",
+              "constraint": "You must consider everyone's preferences and avoid conflicts."
+            },
+            {
+              "name": "Friend B",
+              "goal": "Suggest a budget-friendly activity for the group.",
+              "constraint": "You cannot mention any activities that cost more than $10."
+            },
+            {
+              "name": "Friend C",
+              "goal": "Encourage the group to try something new and exciting.",
+              "constraint": "You must be positive but respectful of others' opinions."
+            },
+            {
+              "name": "Teacher",
+              "goal": "Guide the students to work together and complete the task.",
+              "constraint": "You can only give hints, not direct answers."
+            },
+            {
+              "name": "Student A",
+              "goal": "Share your ideas clearly to contribute to the group work.",
+              "constraint": "You must wait for your turn to speak."
+            },
+            {
+              "name": "Student B",
+              "goal": "Listen carefully and build on others' ideas.",
+              "constraint": "You cannot repeat what others have already said."
+            }
+          ]
+        }
+      },
+      {
+        "taskType": "script-play",
+        "title": "Understanding Teamwork: A Short Play",
+        "prompt": "Read the script below with your group. Afterward, discuss the questions to understand the importance of teamwork.",
+        "lines": [
+          "Alex: Hey team, we have a big project due next week. How should we start?",
+          "Jamie: I think we should divide the tasks based on what each of us is good at.",
+          "Taylor: Good idea! I’m great at research, so I can handle that part.",
+          "Morgan: I like designing presentations. I’ll make sure our slides look great.",
+          "Alex: Perfect! And I can organize our meetings and keep track of deadlines.",
+          "Jamie: Working together like this will make the project easier and better.",
+          "Taylor: Plus, we learn from each other and support one another.",
+          "Morgan: Teamwork really helps us achieve more than working alone."
+        ],
+        "questions": [
+          "Why is dividing tasks based on strengths helpful in a team?",
+          "How does teamwork improve the quality of a project?",
+          "What roles did each character take in the team?"
+        ],
+        "config": {
+          "lines": [
+            "Alex: Hey team, we have a big project due next week. How should we start?",
+            "Jamie: I think we should divide the tasks based on what each of us is good at.",
+            "Taylor: Good idea! I’m great at research, so I can handle that part.",
+            "Morgan: I like designing presentations. I’ll make sure our slides look great.",
+            "Alex: Perfect! And I can organize our meetings and keep track of deadlines.",
+            "Jamie: Working together like this will make the project easier and better.",
+            "Taylor: Plus, we learn from each other and support one another.",
+            "Morgan: Teamwork really helps us achieve more than working alone."
+          ]
+        }
+      },
+      {
+        "taskType": "pronunciation",
+        "title": "Pronunciation Practice: Common Words",
+        "prompt": "Practice pronouncing each word clearly. Use the phonetic hints to help with tricky sounds.",
+        "referenceText": "This activity focuses on pronouncing common English words with clarity and accuracy.",
+        "targetWords": [
+          {
+            "word": "comfortable",
+            "phoneticHint": "KUM-fter-bul"
+          },
+          {
+            "word": "schedule",
+            "phoneticHint": "SKED-jool"
+          },
+          {
+            "word": "often",
+            "phoneticHint": "OFF-en"
+          },
+          {
+            "word": "vehicle",
+            "phoneticHint": "VEE-uh-kl"
+          },
+          {
+            "word": "chocolate",
+            "phoneticHint": "CHAWK-lit"
+          },
+          {
+            "word": "library",
+            "phoneticHint": "LYE-brer-ee"
+          },
+          {
+            "word": "February",
+            "phoneticHint": "FEB-roo-air-ee"
+          },
+          {
+            "word": "clothes",
+            "phoneticHint": "KLOHZ"
+          },
+          {
+            "word": "receipt",
+            "phoneticHint": "ri-SEET"
+          },
+          {
+            "word": "answer",
+            "phoneticHint": "AN-ser"
+          },
+          {
+            "word": "business",
+            "phoneticHint": "BIZ-nis"
+          },
+          {
+            "word": "comfortable",
+            "phoneticHint": "KUM-fter-bul"
+          },
+          {
+            "word": "Wednesday",
+            "phoneticHint": "WENZ-day"
+          },
+          {
+            "word": "salmon",
+            "phoneticHint": "SAM-un"
+          },
+          {
+            "word": "ballet",
+            "phoneticHint": "BAL-ay"
+          },
+          {
+            "word": "garage",
+            "phoneticHint": "GARE-ij"
+          }
+        ],
+        "config": {
+          "referenceText": "This activity focuses on pronouncing common English words with clarity and accuracy."
+        }
+      },
+      {
+        "taskType": "speech-recognition",
+        "title": "Speech Recognition Practice: Demo Phrases",
+        "prompt": "Practice speaking each phrase clearly. Try to enunciate every word so the system can recognize your speech accurately. Repeat each phrase until you feel confident.",
+        "phrases": [
+          {
+            "target": "Hello, how are you today?",
+            "variations": [
+              "Hello, how are you today",
+              "Hi, how are you today?"
+            ]
+          },
+          {
+            "target": "Please open the window.",
+            "variations": [
+              "Please open the window",
+              "Could you open the window?"
+            ]
+          },
+          {
+            "target": "I enjoy reading books.",
+            "variations": [
+              "I enjoy reading books",
+              "I like to read books"
+            ]
+          },
+          {
+            "target": "The weather is nice outside.",
+            "variations": [
+              "The weather is nice outside",
+              "It's nice weather outside"
+            ]
+          },
+          {
+            "target": "Can you help me with this task?",
+            "variations": [
+              "Can you help me with this task",
+              "Could you help me with this task?"
+            ]
+          },
+          {
+            "target": "My favorite color is blue.",
+            "variations": [
+              "My favorite color is blue",
+              "I like the color blue"
+            ]
+          },
+          {
+            "target": "Let's meet at the library.",
+            "variations": [
+              "Let's meet at the library",
+              "We will meet at the library"
+            ]
+          },
+          {
+            "target": "I have a question about the lesson.",
+            "variations": [
+              "I have a question about the lesson",
+              "Can I ask a question about the lesson?"
+            ]
+          },
+          {
+            "target": "Thank you for your help.",
+            "variations": [
+              "Thank you for your help",
+              "Thanks for your help"
+            ]
+          },
+          {
+            "target": "Goodbye and see you tomorrow.",
+            "variations": [
+              "Goodbye and see you tomorrow",
+              "See you tomorrow, goodbye"
+            ]
+          }
+        ],
+        "instructions": "Speak each phrase clearly and at a moderate pace. Focus on pronouncing each word distinctly. The system will listen and check your pronunciation. Aim to match the target phrase or an acceptable variation to succeed.",
+        "config": {}
+      }
+    ]
+  },
+  "updatedAt": "2026-04-09T01:36:48.919Z",
+  "signature": "{\"v\":\"demo:v3:attempt-log:strict:no-placeholders:LOGS_ON_2026-01-19a\",\"totalEligible\":42,\"types\":[\"multiple-choice\",\"physical-multiple-choice\",\"true-false\",\"short-answer\",\"reading-comp\",\"open-text\",\"record-audio\",\"draw\",\"mime\",\"sort\",\"sequence\",\"matching\",\"timeline\",\"vennsort\",\"photo\",\"make-and-snap\",\"photo-journal\",\"body-break\",\"musical-chairs\",\"motion-mission\",\"mad-dash-sequence\",\"brain-blitz\",\"true-false-tictactoe\",\"flashcards\",\"flashcards-race\",\"pet-feeding\",\"draw-mime\",\"hangman-duel\",\"word-weaver-duel\",\"guess-who\",\"echo-chain\",\"collaboration\",\"live-debate\",\"brainstorm-battle\",\"fake-out\",\"brain-spark-notes\",\"mind-mapper\",\"narration-synthesize\",\"role-play-deck\",\"script-play\",\"pronunciation\",\"speech-recognition\"]}"
+}

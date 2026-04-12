@@ -454,6 +454,7 @@ export default function CampfirePage() {
   const [screen, setScreen] = useState<Screen>("home");
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
   const [currentEng, setCurrentEng] = useState<Engagement | null>(null);
+  const [simulatedAllIn, setSimulatedAllIn] = useState(false);
   const [currentTemplate, setCurrentTemplate] = useState<Template | null>(null);
   const [selectedPollIdx, setSelectedPollIdx] = useState<number | null>(null);
   const [pollSubmitted, setPollSubmitted] = useState(false);
@@ -489,6 +490,7 @@ export default function CampfirePage() {
     setSelectedPollIdx(null);
     setPollSubmitted(false);
     setChallengeUploaded(false);
+    setSimulatedAllIn(false);
     setUserReacted(null);
     setReactions({ "🔥": 0, "😂": 0, "❤️": 0, "👍": 0, "🤯": 0 });
     if (eng.type === "poll" && eng.options) {
@@ -693,6 +695,12 @@ export default function CampfirePage() {
                 <span>{eng.time}</span>
                 <span className="h-1 w-1 rounded-full bg-slate-400" />
                 <span>{eng.responses}/{eng.total} responded</span>
+                {eng.responses < eng.total && (
+                  <span className="ml-auto text-amber-600 text-[10px] font-semibold">🔒 Sealed</span>
+                )}
+                {eng.responses >= eng.total && (
+                  <span className="ml-auto text-emerald-600 text-[10px] font-semibold">✓ Revealed</span>
+                )}
               </div>
             </button>
           ))}
@@ -704,6 +712,8 @@ export default function CampfirePage() {
   function renderPoll() {
     if (!currentEng || !currentEng.options || !currentEng.votes) return null;
     const totalVotes = currentEng.votes.reduce((a, b) => a + b, 0);
+    const allIn = currentEng.responses >= currentEng.total || simulatedAllIn;
+    const showResults = pollSubmitted && allIn;
     return (
       <>
         <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
@@ -713,6 +723,30 @@ export default function CampfirePage() {
           <h3 className="text-base font-bold text-slate-900">Poll</h3>
         </div>
         <div className="p-5 flex-1 overflow-y-auto">
+          {/* Sealed / waiting banner */}
+          {!allIn && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 mb-4">
+              <span className="text-lg">🔒</span>
+              <div>
+                <div className="text-sm font-bold text-amber-900">Results are sealed</div>
+                <div className="text-xs text-amber-700">
+                  {currentEng.responses}/{currentEng.total} responded — results revealed when everyone is in
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* All in — reveal banner */}
+          {allIn && pollSubmitted && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 mb-4">
+              <span className="text-lg">🎉</span>
+              <div>
+                <div className="text-sm font-bold text-emerald-900">All responses are in!</div>
+                <div className="text-xs text-emerald-700">Results have been revealed to the group</div>
+              </div>
+            </div>
+          )}
+
           <h2 className="text-lg font-extrabold text-slate-900 mb-5 leading-snug">
             {currentEng.title}
           </h2>
@@ -727,10 +761,12 @@ export default function CampfirePage() {
                   className={`relative flex items-center gap-3 rounded-xl border-2 px-4 py-3.5 text-left transition overflow-hidden ${
                     isSelected && !pollSubmitted
                       ? "border-orange-500 bg-orange-50"
-                      : "border-slate-200"
+                      : pollSubmitted && !showResults
+                        ? "border-slate-100 bg-slate-50 opacity-70"
+                        : "border-slate-200"
                   }`}
                 >
-                  {pollSubmitted && (
+                  {showResults && (
                     <div
                       className="absolute inset-y-0 left-0 bg-orange-500/10 transition-all duration-700"
                       style={{ width: `${pct}%` }}
@@ -748,27 +784,70 @@ export default function CampfirePage() {
                   <span className="relative z-10 text-sm font-medium text-slate-800">
                     {opt}
                   </span>
-                  {pollSubmitted && (
+                  {showResults && (
                     <span className="relative z-10 ml-auto text-sm font-bold text-orange-600">
                       {pct}%
                     </span>
+                  )}
+                  {pollSubmitted && !showResults && isSelected && (
+                    <span className="relative z-10 ml-auto text-xs text-slate-400">Your vote</span>
                   )}
                 </button>
               );
             })}
           </div>
-          <button
-            disabled={selectedPollIdx === null || pollSubmitted}
-            onClick={() => {
-              setPollSubmitted(true);
-              showToast("Your vote has been recorded!");
-            }}
-            className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 py-3.5 text-sm font-bold text-white shadow-md transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed mb-4"
-          >
-            {pollSubmitted ? "Vote Submitted!" : "Submit Vote"}
-          </button>
 
-          {pollSubmitted && (
+          {!pollSubmitted && (
+            <button
+              disabled={selectedPollIdx === null}
+              onClick={() => {
+                setPollSubmitted(true);
+                showToast("Vote locked in! Results revealed when everyone responds.");
+              }}
+              className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 py-3.5 text-sm font-bold text-white shadow-md transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed mb-4"
+            >
+              Submit Vote
+            </button>
+          )}
+
+          {/* Waiting state after voting */}
+          {pollSubmitted && !allIn && (
+            <div className="text-center py-6 mb-4">
+              <div className="text-4xl mb-3">🔐</div>
+              <div className="text-sm font-bold text-slate-700 mb-1">Your vote is locked in</div>
+              <div className="text-xs text-slate-500 mb-3">
+                Waiting for {currentEng.total - currentEng.responses} more {currentEng.total - currentEng.responses === 1 ? "response" : "responses"}...
+              </div>
+              <div className="flex justify-center gap-1.5">
+                {Array.from({ length: currentEng.total }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className={`h-2.5 w-2.5 rounded-full ${
+                      idx < currentEng.responses ? "bg-orange-500" : "bg-slate-200"
+                    }`}
+                  />
+                ))}
+              </div>
+              <button
+                onClick={() => showToast("Nudge sent to remaining members!")}
+                className="mt-4 rounded-full border border-orange-200 bg-orange-50 px-4 py-1.5 text-xs font-semibold text-orange-600 hover:bg-orange-100 transition"
+              >
+                👋 Send Nudge
+              </button>
+              <button
+                onClick={() => {
+                  setSimulatedAllIn(true);
+                  showToast("Everyone responded! Results revealed!");
+                }}
+                className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
+              >
+                Demo: Simulate everyone responds
+              </button>
+            </div>
+          )}
+
+          {/* Results + reactions (only after all in) */}
+          {showResults && (
             <>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Reactions</span>
@@ -892,67 +971,130 @@ export default function CampfirePage() {
           )}
 
           {challengeUploaded && (
-            <button
-              onClick={() => showToast("Exported to camera roll!")}
-              className="w-full rounded-xl border-2 border-emerald-400 bg-emerald-50 py-3.5 text-sm font-bold text-emerald-700 mb-4"
-            >
-              ✅ Response uploaded! 📤 Export
-            </button>
+            <div className="w-full rounded-xl border-2 border-emerald-400 bg-emerald-50 py-3 px-4 text-sm font-bold text-emerald-700 mb-4 text-center">
+              ✅ Your response is locked in!
+            </div>
           )}
 
-          {currentEng.submitted && (
-            <>
-              <div className="mt-3 mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                Responses ({currentEng.responses}/{currentEng.total})
-              </div>
-              <div className="flex flex-col gap-2">
-                {currentEng.submitted.map((s) => (
-                  <div
-                    key={s.name}
-                    className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5"
-                  >
-                    <div
-                      className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
-                      style={{ background: s.color }}
-                    >
-                      {s.name.charAt(0)}
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-sm font-semibold text-slate-800">{s.name}</div>
-                      <div className="text-xs text-slate-500">
-                        {s.done ? "Submitted" : "Waiting..."}
+          {currentEng.submitted && (() => {
+            const challAllIn = currentEng.responses >= currentEng.total || simulatedAllIn;
+            return (
+              <>
+                {/* Sealed state — show who's in but not what they submitted */}
+                {!challAllIn && (
+                  <div className="flex items-center gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 mb-4">
+                    <span className="text-lg">🔒</span>
+                    <div>
+                      <div className="text-sm font-bold text-amber-900">Responses are sealed</div>
+                      <div className="text-xs text-amber-700">
+                        No one sees results until everyone responds ({currentEng.responses}/{currentEng.total} in)
                       </div>
                     </div>
-                    {s.done && <span className="text-emerald-500 font-bold">✓</span>}
                   </div>
-                ))}
-              </div>
+                )}
 
-              {challengeUploaded && (
-                <>
-                  <div className="flex items-center justify-between mt-4 mb-2">
-                    <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Reactions</span>
+                {challAllIn && (
+                  <div className="flex items-center gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 mb-4">
+                    <span className="text-lg">🎉</span>
+                    <div>
+                      <div className="text-sm font-bold text-emerald-900">All responses are in!</div>
+                      <div className="text-xs text-emerald-700">Tap each response to view — rate your favourites</div>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    {Object.entries(reactions).map(([emoji, count]) => (
-                      <button
-                        key={emoji}
-                        onClick={() => handleReaction(emoji)}
-                        className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium transition ${
-                          userReacted === emoji
-                            ? "bg-orange-100 text-orange-700 border-2 border-orange-500"
-                            : "bg-slate-100 text-slate-600 border-2 border-transparent hover:bg-slate-200"
-                        }`}
+                )}
+
+                <div className="mt-1 mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  Members ({currentEng.responses}/{currentEng.total})
+                </div>
+                <div className="flex flex-col gap-2">
+                  {currentEng.submitted.map((s) => (
+                    <div
+                      key={s.name}
+                      className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5"
+                    >
+                      <div
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
+                        style={{ background: s.color }}
                       >
-                        <span>{emoji}</span>
-                        {count > 0 && <span className="text-xs">{count}</span>}
-                      </button>
-                    ))}
+                        {s.name.charAt(0)}
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-sm font-semibold text-slate-800">{s.name}</div>
+                        <div className="text-xs text-slate-500">
+                          {s.done ? (challAllIn ? "Tap to view" : "Submitted") : "Waiting..."}
+                        </div>
+                      </div>
+                      {s.done && !challAllIn && <span className="text-amber-500 font-bold">🔒</span>}
+                      {s.done && challAllIn && <span className="text-emerald-500 font-bold">👀</span>}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Nudge button when waiting */}
+                {challengeUploaded && !challAllIn && (
+                  <div className="text-center mt-4">
+                    <div className="flex justify-center gap-1.5 mb-3">
+                      {Array.from({ length: currentEng.total }).map((_, idx) => (
+                        <div
+                          key={idx}
+                          className={`h-2.5 w-2.5 rounded-full ${
+                            idx < currentEng.responses ? "bg-orange-500" : "bg-slate-200"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => showToast("Nudge sent to remaining members!")}
+                      className="rounded-full border border-orange-200 bg-orange-50 px-4 py-1.5 text-xs font-semibold text-orange-600 hover:bg-orange-100 transition"
+                    >
+                      👋 Send Nudge
+                    </button>
+                    <br />
+                    <button
+                      onClick={() => {
+                        setSimulatedAllIn(true);
+                        showToast("Everyone responded! Responses revealed!");
+                      }}
+                      className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
+                    >
+                      Demo: Simulate everyone responds
+                    </button>
                   </div>
-                </>
-              )}
-            </>
-          )}
+                )}
+
+                {/* Reactions + export only after all in */}
+                {challAllIn && challengeUploaded && (
+                  <>
+                    <div className="flex items-center justify-between mt-4 mb-2">
+                      <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Reactions</span>
+                      <button
+                        onClick={() => showToast("Exported to camera roll!")}
+                        className="text-lg"
+                      >
+                        📤
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      {Object.entries(reactions).map(([emoji, count]) => (
+                        <button
+                          key={emoji}
+                          onClick={() => handleReaction(emoji)}
+                          className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                            userReacted === emoji
+                              ? "bg-orange-100 text-orange-700 border-2 border-orange-500"
+                              : "bg-slate-100 text-slate-600 border-2 border-transparent hover:bg-slate-200"
+                          }`}
+                        >
+                          <span>{emoji}</span>
+                          {count > 0 && <span className="text-xs">{count}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            );
+          })()}
         </div>
       </>
     );

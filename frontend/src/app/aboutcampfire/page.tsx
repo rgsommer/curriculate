@@ -4,7 +4,42 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "About Campfire — Group Engagement Reimagined",
   description:
-    "Campfire is a social engagement app that brings back what group chats lost — structured activities, accountability, surprises, and fun for families, friends, and communities.",
+    "Campfire is a group engagement app with sealed results — nobody sees answers until everyone responds. 12 activity types including polls, challenges, games, and accountability for families, friends, churches, and communities.",
+  keywords: [
+    "campfire app",
+    "group engagement app",
+    "sealed polls",
+    "group challenges",
+    "family group app",
+    "church group activities",
+    "community engagement platform",
+    "group activities app",
+    "interactive group games",
+    "social engagement",
+    "accountability app",
+    "group poll app",
+    "team building app",
+    "friend group app",
+    "youth group activities",
+  ],
+  openGraph: {
+    title: "Campfire — Group Engagement Reimagined",
+    description:
+      "The group app where results stay sealed until everyone responds. Polls, challenges, games, accountability — for families, friends, and communities.",
+    url: "https://curriculate.net/aboutcampfire",
+    siteName: "Campfire",
+    type: "website",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Campfire — Group Engagement Reimagined",
+    description:
+      "Sealed polls, group challenges, accountability check-ins, and 12 activity types. The app that brings your group to life.",
+  },
+  alternates: {
+    canonical: "https://curriculate.net/aboutcampfire",
+  },
 };
 
 function Pill({ children }: { children: React.ReactNode }) {
@@ -91,6 +126,58 @@ function EngCard({
 export default function AboutCampfirePage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            name: "Campfire",
+            applicationCategory: "SocialNetworkingApplication",
+            operatingSystem: "iOS, Android, Web",
+            description:
+              "Campfire is a group engagement app with 12 activity types. Results stay sealed until everyone responds — turning every poll, challenge, and game into a shared reveal event.",
+            url: "https://curriculate.net/aboutcampfire",
+            offers: [
+              {
+                "@type": "Offer",
+                price: "0",
+                priceCurrency: "USD",
+                name: "Free Trial",
+                description: "3-month free trial with full access",
+              },
+              {
+                "@type": "Offer",
+                price: "4.99",
+                priceCurrency: "USD",
+                name: "Premium",
+                description:
+                  "Monthly subscription — no ads, analytics, exclusive engagement types",
+                priceSpecification: {
+                  "@type": "UnitPriceSpecification",
+                  price: "4.99",
+                  priceCurrency: "USD",
+                  billingDuration: "P1M",
+                },
+              },
+            ],
+            featureList: [
+              "Sealed results — nobody sees answers until everyone responds",
+              "12 engagement types: polls, challenges, truth or dare, photo pose, share, accountability, games, trivia, anonymous judge, guess, surprise, advice",
+              "Voice responses",
+              "Blind/anonymous mode",
+              "Group streaks and health scores",
+              "Recurring scheduled engagements",
+              "Template packs: Icebreaker, Bible Study, Family Game Night, Party, Youth Group, Couples",
+              "Themed seasons: Summer, Advent, March Madness, Spooky Season",
+              "Real-time nudges and presence",
+              "Export to social media with Campfire branding",
+              "Spectator mode for observers",
+              "Engagement chains — winners post next",
+            ],
+          }),
+        }}
+      />
       {/* ── Hero ── */}
       <section className="mx-auto max-w-6xl px-6 pt-16 pb-10">
         <div className="max-w-3xl">
@@ -122,6 +209,43 @@ export default function AboutCampfirePage() {
             </Link>
           </div>
         </div>
+
+        {/* ── Sealed Results Callout ── */}
+        <div className="mt-10 rounded-3xl border-2 border-amber-200 bg-amber-50/60 p-7 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="text-4xl">🔒</div>
+            <div>
+              <h2 className="text-2xl font-extrabold text-slate-900">
+                The sealed envelope mechanic
+              </h2>
+              <p className="mt-2 text-slate-700 leading-relaxed">
+                This is what makes Campfire different from every other poll, challenge,
+                or group activity app.{" "}
+                <strong className="text-amber-800">
+                  Nobody sees results until everyone has responded.
+                </strong>{" "}
+                Poll results stay hidden. Challenge entries stay locked. Accountability
+                answers stay sealed. The moment everyone is in, the envelope opens — and
+                the collective reveal becomes the highlight. It turns every engagement
+                into an event.
+              </p>
+              <div className="mt-4 grid sm:grid-cols-3 gap-3 text-sm">
+                <div className="rounded-xl bg-white/80 border border-amber-200 p-3">
+                  <div className="font-bold text-amber-900">No peeking</div>
+                  <div className="text-slate-600">Results sealed until the last person responds</div>
+                </div>
+                <div className="rounded-xl bg-white/80 border border-amber-200 p-3">
+                  <div className="font-bold text-amber-900">Nudge stragglers</div>
+                  <div className="text-slate-600">Gentle reminders keep momentum and build anticipation</div>
+                </div>
+                <div className="rounded-xl bg-white/80 border border-amber-200 p-3">
+                  <div className="font-bold text-amber-900">Collective reveal</div>
+                  <div className="text-slate-600">Everyone sees results at the same moment — together</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section className="mx-auto max-w-6xl px-6">
@@ -151,12 +275,13 @@ export default function AboutCampfirePage() {
             ]}
           />
           <Card
-            title="🔥 Campfire = Structure"
-            desc="Gives groups a reason to engage — structured activities that turn passive members into active participants."
+            title="🔥 Campfire = Structure + Suspense"
+            desc="Gives groups a reason to engage — and a reason to wait. Results stay sealed until every member responds."
             bullets={[
               "12 engagement types from polls to games",
-              "Deadline-driven participation",
-              "Favourites tab for replaying greetings",
+              "Sealed results — nobody sees anything until everyone is in",
+              "The reveal is the event, not just the answer",
+              "Deadline-driven participation with nudges",
             ]}
           />
         </div>
@@ -253,13 +378,13 @@ export default function AboutCampfirePage() {
             },
             {
               num: "4",
-              title: "Everyone participates",
-              desc: "Members get notified. Nudges keep people on track. No results until everyone is in.",
+              title: "Respond — results stay sealed",
+              desc: "Everyone submits their vote, entry, or answer. Results are locked behind a sealed envelope until the last person responds. Nudge stragglers to keep momentum.",
             },
             {
               num: "5",
-              title: "Reveal, rate, and celebrate",
-              desc: "Responses are revealed, rated, and winners are crowned. Save favourites to replay.",
+              title: "The big reveal",
+              desc: "When everyone is in, the seal breaks. Results appear for the whole group at once — react, comment, rate, and crown a winner. Save favourites to replay.",
             },
           ].map((step) => (
             <div key={step.num} className="flex gap-4 py-4">
@@ -283,6 +408,15 @@ export default function AboutCampfirePage() {
           desc="Deadlines, blind mode, reveal mechanics, ratings, and rewards — all configurable per engagement."
         />
         <div className="grid gap-4 md:grid-cols-2">
+          <Card
+            title="🔒 Sealed Results"
+            desc="The core mechanic. Nobody sees poll results, challenge entries, or accountability answers until every member has responded. The reveal happens together."
+            bullets={[
+              "Builds anticipation and honest responses",
+              "Eliminates bandwagon voting and bias",
+              "Turns every engagement into a shared event",
+            ]}
+          />
           <Card
             title="⏱️ Deadlines"
             desc="Set a response window. If someone doesn't respond, they're temporarily locked out until they do."
@@ -428,6 +562,7 @@ export default function AboutCampfirePage() {
             </thead>
             <tbody className="text-slate-700">
               {[
+                ["Results sealed until all respond", "Yes", "-", "-", "-"],
                 ["Structured group engagements", "Yes", "-", "-", "-"],
                 ["Polls with QR code access", "Yes", "-", "-", "Basic"],
                 ["Accountability check-ins", "Yes", "-", "-", "-"],

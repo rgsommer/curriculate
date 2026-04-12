@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Script Play — Life in Canada: Early 1800s</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+
+  .wrap {
+    border-radius: 18px; padding: 18px; max-width: 860px; width: 100%;
+    background: radial-gradient(1200px 400px at 20% 0%, rgba(168,85,247,0.20), transparent 60%),
+                radial-gradient(900px 350px at 80% 20%, rgba(59,130,246,0.18), transparent 60%),
+                rgba(17,24,39,0.92);
+    border: 1px solid rgba(255,255,255,0.10);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    color: rgba(255,255,255,0.92);
+  }
+
+  .header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .title { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 800; }
+  .badge { font-size: 12px; font-weight: 700; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.14); white-space: nowrap; }
+
+  .meta-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .pill { font-size: 12px; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); }
+
+  .setting-card {
+    margin-top: 12px; border-radius: 16px; padding: 14px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+    line-height: 1.45; font-size: 14px;
+  }
+  .setting-label { font-weight: 900; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.7; margin-bottom: 8px; }
+  .setting-text { opacity: 0.92; }
+  .role-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .role-chip {
+    font-size: 13px; font-weight: 700; padding: 6px 12px; border-radius: 999px;
+    border: 1px solid rgba(168,85,247,0.3);
+  }
+  .role-chip.active { background: rgba(168,85,247,0.25); border-color: rgba(168,85,247,0.5); }
+  .role-chip:not(.active) { background: rgba(255,255,255,0.06); }
+
+  .how-to {
+    margin-top: 10px; border-radius: 16px; padding: 12px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+    line-height: 1.35;
+  }
+  .how-to-title { font-weight: 900; font-size: 13px; margin-bottom: 6px; opacity: 0.95; }
+  .how-to ol { margin: 0; padding-left: 18px; font-size: 13px; opacity: 0.9; }
+  .how-to li { margin-bottom: 2px; }
+
+  .progress-wrap { margin-top: 12px; display: flex; align-items: center; gap: 10px; }
+  .bar-outer { flex: 1; height: 10px; border-radius: 999px; background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.10); overflow: hidden; }
+  .bar-inner { height: 100%; border-radius: 999px; background: linear-gradient(90deg, rgba(168,85,247,0.95), rgba(59,130,246,0.95)); transition: width 0.3s ease; }
+  .progress-pct { font-size: 12px; opacity: 0.78; white-space: nowrap; }
+
+  .scene-card { margin-top: 14px; border-radius: 16px; padding: 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); }
+  .scene-title { font-size: 14px; font-weight: 800; opacity: 0.95; }
+
+  .line-card {
+    margin-top: 12px; border-radius: 18px; padding: 16px;
+    background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.14);
+    transition: all 0.2s ease;
+  }
+  .speaker-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .speaker { font-size: 14px; font-weight: 800; opacity: 0.95; }
+  .speaker-hint { font-size: 12px; opacity: 0.65; }
+
+  .line-text { margin-top: 14px; font-size: 26px; font-weight: 800; letter-spacing: 0.2px; line-height: 1.2; }
+  .stage-dir { color: rgba(168,85,247,0.85); font-style: italic; font-weight: 600; }
+
+  .controls { margin-top: 14px; display: flex; gap: 10px; justify-content: space-between; flex-wrap: wrap; }
+  .btn {
+    flex: 1 1 140px; padding: 12px 14px; border-radius: 14px; font-weight: 800; font-size: 14px;
+    border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.92); cursor: pointer; text-align: center;
+  }
+  .btn:hover:not(:disabled) { background: rgba(255,255,255,0.12); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-primary {
+    flex: 2 1 220px; padding: 12px 14px; border-radius: 14px; font-weight: 900; font-size: 15px;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: linear-gradient(90deg, rgba(168,85,247,0.95), rgba(59,130,246,0.95));
+    color: rgba(255,255,255,0.98); cursor: pointer; text-align: center;
+  }
+  .btn-primary:hover { filter: brightness(1.1); }
+
+  .speaker-colors { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+</style>
+</head>
+<body>
+
+<div class="wrap" id="app"></div>
+
+<script>
+const memberNames = ["Gavy", "Sonam", "Bernadette", "Nysa"];
+
+const task = {
+  title: "Voices of Early Canada",
+  setting: "It is 1803 in a small backwoods settlement in Upper Canada. Four young people — a settler's child, a Métis trader's daughter, a church apprentice, and a newcomer from a debtors' prison in England — meet at a working bee to help clear land for a new family. As they work side by side, they share stories about their very different lives and discover how much the colony is changing.",
+  roles: ["Narrator", "Molly (Settler)", "Élise (Métis)", "Thomas (Newcomer)"],
+  lines: [
+    "Narrator: The morning sun breaks over the backwoods clearing. Smoke rises from a nearby cabin as families gather for a working bee — neighbours helping neighbours clear land for the season.",
+    "Molly (Settler): (wiping her brow) My father says Governor Simcoe's 1793 Act to Limit Slavery was supposed to change things, but I still hear of people kept in bondage in the colony.",
+    "Élise (Métis): (stacking branches) My mother is Métis. She trades pemmican with the fur traders who pass through. She says the reserve lands keep shrinking every year.",
+    "Thomas (Newcomer): (hesitant) I only arrived last month. Back in England, my father was thrown into debtors' prison. We had nothing. The clergy reserve land was the only place we could settle.",
+    "Narrator: The children pause their work. A woman from the settlement approaches carrying candles and soap she made that morning — working in the home meant sewing, soap-making, wool spinning, and candle-making.",
+    "Molly (Settler): (pointing toward town) Life in a town is different from out here. They have a one room schoolhouse — Father Frechette started it for the children. Out here, my mother teaches us from the Bible.",
+    "Élise (Métis): (quietly) The Beothuk people in the east are nearly gone. The impact of diseases in early Canada has been terrible. My grandmother says whole villages disappeared.",
+    "Thomas (Newcomer): (looking around) I never imagined a place like this. The class structure here is nothing like England. Middle and lower classes work side by side at these working bees.",
+    "Narrator: A church bell rings in the distance. The positive contributions of the Church in early Canada included building schools, caring for the sick, and bringing communities together.",
+    "Élise (Métis): (gesturing) Have you seen the painting — Loyalists on Their Way to Upper Canada? My mother says those families looked just like yours, Thomas. Everyone came here running from something.",
+    "Molly (Settler): And the fires! Last summer, the impact of fires on town life was devastating. Half the buildings on the main road burned. Everyone had to rebuild together.",
+    "Thomas (Newcomer): (with growing confidence) Maybe that is what this place is about. The crown reserve, the clergy reserve, the settlements — none of it works unless people help each other.",
+    "Narrator: As the sun climbs higher, the four young people return to clearing the land. They are different in every way — in heritage, in faith, in class — but here in the backwoods, the work makes them equal.",
+    "Élise (Métis): (smiling) Same time tomorrow?",
+    "Molly (Settler): (laughing) Bring more pemmican!",
+    "Thomas (Newcomer): (grinning) I will bring soap. Apparently I need to learn candle-making too.",
+  ],
+};
+
+const speakers = task.roles;
+const speakerColors = ["#a855f7", "#3b82f6", "#10b981", "#f59e0b"];
+
+let turnIndex = 0;
+
+function parseLine(line) {
+  const colon = line.indexOf(":");
+  const speaker = colon > 0 ? line.slice(0, colon).trim() : "Speaker";
+  const text = colon > 0 ? line.slice(colon + 1).trim() : line;
+  return { speaker, text };
+}
+
+function getSpeakerIndex(speakerName) {
+  const idx = speakers.findIndex(r => speakerName.startsWith(r.split(" ")[0]));
+  return idx >= 0 ? idx : 0;
+}
+
+function render() {
+  const total = task.lines.length;
+  const pct = Math.round(((turnIndex + 1) / total) * 100);
+  const { speaker, text } = parseLine(task.lines[turnIndex]);
+  const si = getSpeakerIndex(speaker);
+  const playerName = memberNames[si] || `Team member ${si + 1}`;
+  const color = speakerColors[si];
+
+  // Next speaker info
+  let nextHint = "Last line!";
+  if (turnIndex < total - 1) {
+    const next = parseLine(task.lines[turnIndex + 1]);
+    const nsi = getSpeakerIndex(next.speaker);
+    nextHint = `Pass to ${memberNames[nsi] || "next speaker"} next`;
+  }
+
+  // Format text with stage directions highlighted
+  const formatted = text.replace(/\(([^)]+)\)/g, '<span class="stage-dir">($1)</span>');
+
+  const roleChips = speakers.map((role, i) => {
+    const active = i === si;
+    const name = memberNames[i] || `Player ${i + 1}`;
+    return `<span class="role-chip ${active ? 'active' : ''}" style="${active ? `border-color: ${speakerColors[i]}; background: ${speakerColors[i]}22;` : ''}">
+      <span class="speaker-colors" style="background: ${speakerColors[i]};"></span>
+      ${name} → ${role}
+    </span>`;
+  }).join("");
+
+  document.getElementById("app").innerHTML = `
+    <div class="header-row">
+      <div class="title">
+        <span style="font-size: 22px;">🎭</span>
+        <span>Script Play</span>
+      </div>
+      <div class="badge">${turnIndex + 1}/${total} • ${speakers.length} roles</div>
+    </div>
+
+    <div class="meta-row">
+      <div class="pill">Pass the device speaker-to-speaker</div>
+      <div class="pill">Read with expression</div>
+      <div class="pill">Intra-team only</div>
+    </div>
+
+    <div class="setting-card">
+      <div class="setting-label">Setting</div>
+      <div class="setting-text">${task.setting}</div>
+      <div class="role-chips">${roleChips}</div>
+    </div>
+
+    <div class="how-to">
+      <div class="how-to-title">How to do this task</div>
+      <ol>
+        <li>Look at the speaker name and pass the device to that person.</li>
+        <li>Read your line out loud with the tone and direction cues.</li>
+        <li>Tap <strong>Next Line</strong> and pass the device to the next speaker.</li>
+        <li>At the end, tap <strong>Finish Performance</strong>.</li>
+      </ol>
+    </div>
+
+    <div class="progress-wrap">
+      <div class="bar-outer"><div class="bar-inner" style="width: ${pct}%"></div></div>
+      <div class="progress-pct">${pct}%</div>
+    </div>
+
+    <div class="scene-card">
+      <div class="scene-title">${task.title}</div>
+
+      <div class="line-card" style="border-left: 3px solid ${color};">
+        <div class="speaker-row">
+          <div class="speaker">
+            <span class="speaker-colors" style="background: ${color};"></span>
+            ${playerName} as ${speaker}
+          </div>
+          <div class="speaker-hint">${nextHint}</div>
+        </div>
+        <div class="line-text">${formatted}</div>
+      </div>
+
+      <div class="controls">
+        <button class="btn" onclick="prev()" ${turnIndex === 0 ? 'disabled' : ''}>◀ Back</button>
+        <button class="btn-primary" onclick="next()">
+          ${turnIndex === total - 1 ? 'Finish Performance 🎉' : 'Next Line ▶'}
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function next() {
+  if (turnIndex < task.lines.length - 1) {
+    turnIndex++;
+    render();
+  } else {
+    document.getElementById("app").innerHTML = `
+      <div style="text-align: center; padding: 40px 20px;">
+        <div style="font-size: 48px; margin-bottom: 16px;">🎭 🎉</div>
+        <div style="font-size: 24px; font-weight: 900; margin-bottom: 12px;">Performance Complete!</div>
+        <div style="font-size: 15px; opacity: 0.8; margin-bottom: 20px;">Great job, Gavy, Sonam, Bernadette, and Nysa!</div>
+        <button class="btn-primary" onclick="turnIndex=0;render();" style="max-width: 300px; margin: 0 auto;">Replay Script</button>
+      </div>
+    `;
+  }
+}
+
+function prev() {
+  if (turnIndex > 0) { turnIndex--; render(); }
+}
+
+render();
+</script>
+</body>
+</html>

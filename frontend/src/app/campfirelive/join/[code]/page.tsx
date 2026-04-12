@@ -1,0 +1,76 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { useAuth } from "@/lib/campfire/AuthProvider";
+import { useGroups } from "@/lib/campfire/hooks";
+
+export default function JoinGroupPage() {
+  const params = useParams();
+  const code = params.code as string;
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  const { joinGroup } = useGroups();
+  const [status, setStatus] = useState<"loading" | "joining" | "success" | "error">("loading");
+  const [error, setError] = useState("");
+  const [groupId, setGroupId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!user) {
+      // Store invite code and redirect to auth
+      sessionStorage.setItem("campfire_invite", code);
+      router.push("/campfirelive/auth");
+      return;
+    }
+
+    // Auto-join
+    setStatus("joining");
+    joinGroup(code).then((result) => {
+      if (result.error && !result.groupId) {
+        setStatus("error");
+        setError(result.error);
+      } else {
+        setStatus("success");
+        setGroupId(result.groupId ?? null);
+        setTimeout(() => {
+          router.push(result.groupId ? `/campfirelive/group/${result.groupId}` : "/campfirelive");
+        }, 1500);
+      }
+    });
+  }, [user, authLoading, code, joinGroup, router]);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50 flex items-center justify-center p-6">
+      <div className="max-w-md w-full text-center">
+        {status === "loading" || status === "joining" ? (
+          <>
+            <div className="text-5xl mb-4 animate-pulse">🔥</div>
+            <h1 className="text-2xl font-extrabold text-slate-900 mb-2">Joining group...</h1>
+            <p className="text-slate-500">Invite code: {code}</p>
+          </>
+        ) : status === "success" ? (
+          <>
+            <div className="text-5xl mb-4">🎉</div>
+            <h1 className="text-2xl font-extrabold text-slate-900 mb-2">You&apos;re in!</h1>
+            <p className="text-slate-500">Redirecting to your new group...</p>
+          </>
+        ) : (
+          <>
+            <div className="text-5xl mb-4">😕</div>
+            <h1 className="text-2xl font-extrabold text-slate-900 mb-2">Couldn&apos;t join</h1>
+            <p className="text-slate-500 mb-4">{error}</p>
+            <Link
+              href="/campfirelive"
+              className="inline-block rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-sm font-semibold text-white"
+            >
+              Go to Dashboard
+            </Link>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
