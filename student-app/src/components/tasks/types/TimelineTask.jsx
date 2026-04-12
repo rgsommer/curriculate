@@ -267,7 +267,7 @@ export default function TimelineTask({ task, onSubmit, disabled }) {
       <div style={railWrap}>
         <div style={rail} aria-hidden="true" />
         <div style={row}>
-          {order.map((it) => (
+          {order.map((it, idx) => (
             <div
               key={it.id}
               style={card}
@@ -283,6 +283,7 @@ export default function TimelineTask({ task, onSubmit, disabled }) {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                 <div style={dot} aria-hidden="true" />
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  {idx > 0 && (
                   <button
                     type="button"
                     onClick={() => move(it.id, -1)}
@@ -300,6 +301,8 @@ export default function TimelineTask({ task, onSubmit, disabled }) {
                   >
                     ←
                   </button>
+                  )}
+                  {idx < order.length - 1 && (
                   <button
                     type="button"
                     onClick={() => move(it.id, +1)}
@@ -317,6 +320,7 @@ export default function TimelineTask({ task, onSubmit, disabled }) {
                   >
                     →
                   </button>
+                  )}
                 </div>
               </div>
 
