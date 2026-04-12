@@ -1,0 +1,498 @@
+[
+  {
+    "title": "Early Canadian Society: Backwoods Settlement",
+    "prompt": "Read the paragraph below carefully. Then write ONE sentence that shows you understand the main idea.",
+    "taskType": "reading-comp",
+    "options": [],
+    "timeLimitSeconds": 180,
+    "points": 10,
+    "config": {
+      "text": "Life in the backwoods of Upper Canada was hard and isolating. Settlers had to clear dense forest before they could plant crops or build homes. Families often lived far apart, so neighbors relied on working bees — community events where people gathered to help each other raise barns, clear stumps, or harvest crops. These working bees were not just practical; they were also social events with food, music, and storytelling. For many settlers, the working bee was the only time they saw other families for weeks. This combination of difficult physical labor and strong community bonds defined backwoods life in early Canada.",
+      "passage": "Life in the backwoods of Upper Canada was hard and isolating. Settlers had to clear dense forest before they could plant crops or build homes. Families often lived far apart, so neighbors relied on working bees — community events where people gathered to help each other raise barns, clear stumps, or harvest crops. These working bees were not just practical; they were also social events with food, music, and storytelling. For many settlers, the working bee was the only time they saw other families for weeks. This combination of difficult physical labor and strong community bonds defined backwoods life in early Canada.",
+      "questions": [
+        {
+          "id": "1",
+          "prompt": "What is the main idea of the passage?"
+        },
+        {
+          "id": "2",
+          "prompt": "Name one detail that supports the main idea."
+        }
+      ]
+    },
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Vocabulary Paragraph: Early Canadian History",
+    "prompt": "Write ONE coherent paragraph using every required word at least once: clergy reserve, pemmican, Great Awakening, backwoods, working bee. Show that you understand their meanings and how they relate to early Canadian history. Your paragraph should be between 45 and 120 words.",
+    "taskType": "open-text",
+    "options": [],
+    "timeLimitSeconds": 150,
+    "points": 10,
+    "config": {
+      "kind": "vocabulary-paragraph",
+      "requiredWords": [
+        "clergy reserve",
+        "pemmican",
+        "Great Awakening",
+        "backwoods",
+        "working bee"
+      ],
+      "minWords": 45,
+      "maxWords": 120,
+      "interTeamEnabled": false,
+      "intraTeamEnabled": false
+    },
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Sorting Early Skills: Land Clearing vs Soap-Making",
+    "prompt": "Sort the following terms into the correct category: either 'Land Clearing' or 'Soap-Making'. Drag each term to the category it best fits.",
+    "taskType": "sort",
+    "options": [],
+    "timeLimitSeconds": 120,
+    "points": 10,
+    "config": {
+      "buckets": [
+        "Land Clearing",
+        "Soap-Making"
+      ],
+      "items": [
+        { "text": "axe", "bucketIndex": 0, "id": "item1" },
+        { "text": "burning brush", "bucketIndex": 0, "id": "item2" },
+        { "text": "pulling stumps", "bucketIndex": 0, "id": "item3" },
+        { "text": "felling trees", "bucketIndex": 0, "id": "item4" },
+        { "text": "oxen and chains", "bucketIndex": 0, "id": "item5" },
+        { "text": "lye from ashes", "bucketIndex": 1, "id": "item6" },
+        { "text": "animal fat", "bucketIndex": 1, "id": "item7" },
+        { "text": "boiling the mixture", "bucketIndex": 1, "id": "item8" },
+        { "text": "pouring into molds", "bucketIndex": 1, "id": "item9" },
+        { "text": "curing bars to harden", "bucketIndex": 1, "id": "item10" }
+      ],
+      "answerKey": {
+        "item1": 0, "item2": 0, "item3": 0, "item4": 0, "item5": 0,
+        "item6": 1, "item7": 1, "item8": 1, "item9": 1, "item10": 1
+      },
+      "categories": ["Land Clearing", "Soap-Making"]
+    },
+    "items": [
+      { "text": "axe", "bucketIndex": 0, "id": "item1" },
+      { "text": "burning brush", "bucketIndex": 0, "id": "item2" },
+      { "text": "pulling stumps", "bucketIndex": 0, "id": "item3" },
+      { "text": "felling trees", "bucketIndex": 0, "id": "item4" },
+      { "text": "oxen and chains", "bucketIndex": 0, "id": "item5" },
+      { "text": "lye from ashes", "bucketIndex": 1, "id": "item6" },
+      { "text": "animal fat", "bucketIndex": 1, "id": "item7" },
+      { "text": "boiling the mixture", "bucketIndex": 1, "id": "item8" },
+      { "text": "pouring into molds", "bucketIndex": 1, "id": "item9" },
+      { "text": "curing bars to harden", "bucketIndex": 1, "id": "item10" }
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Discuss: One Key Topic from Early Canada",
+    "prompt": "Record a 20 to 40 second response explaining ONE of the following topics. Pick the one you know best: (1) Why were working bees important for backwoods settlers? (2) What was the role of the church in early Canadian communities? (3) What did Governor Simcoe do for Upper Canada? Give at least one specific example in your answer.",
+    "taskType": "record-audio",
+    "options": [],
+    "timeLimitSeconds": 120,
+    "points": 10,
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "True or False: Daily Life and Work in Early Canada",
+    "prompt": "Read each statement carefully. Decide if it is true or false based on what you know about life for settlers and the middle and lower classes.",
+    "taskType": "true-false",
+    "options": [],
+    "timeLimitSeconds": 60,
+    "points": 10,
+    "items": [
+      {
+        "id": "1",
+        "prompt": "Wool spinning was work done mainly by women and children in the home.",
+        "correctAnswer": 1
+      },
+      {
+        "id": "2",
+        "prompt": "Most middle and lower class families had plenty of leisure time.",
+        "correctAnswer": 0
+      },
+      {
+        "id": "3",
+        "prompt": "Pemmican was a preserved food made from dried meat, fat, and berries.",
+        "correctAnswer": 1
+      },
+      {
+        "id": "4",
+        "prompt": "One-room schoolhouses were common in early Canadian settlements.",
+        "correctAnswer": 1
+      },
+      {
+        "id": "5",
+        "prompt": "Only wealthy families participated in working bees.",
+        "correctAnswer": 0
+      }
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Short Answer: Key Historical Concepts",
+    "prompt": "Answer the following questions briefly to review important historical terms and events.",
+    "taskType": "short-answer",
+    "options": [],
+    "timeLimitSeconds": 90,
+    "points": 10,
+    "config": {
+      "items": [
+        {
+          "id": "q1",
+          "prompt": "What was a debtors' prison?",
+          "correctAnswer": "A place where people were imprisoned because they could not pay their debts."
+        },
+        {
+          "id": "q2",
+          "prompt": "What was a clergy reserve in Upper Canada?",
+          "correctAnswer": "Land set aside to support the Protestant church and its clergy."
+        },
+        {
+          "id": "q3",
+          "prompt": "Who was George Whitefield?",
+          "correctAnswer": "A preacher known for his role in the Great Awakening religious revival."
+        },
+        {
+          "id": "q4",
+          "prompt": "What was a working bee?",
+          "correctAnswer": "A community event where neighbors gathered to help each other with large tasks like barn raising."
+        }
+      ]
+    },
+    "items": [
+      {
+        "id": "q1",
+        "prompt": "What was a debtors' prison?",
+        "correctAnswer": "A place where people were imprisoned because they could not pay their debts."
+      },
+      {
+        "id": "q2",
+        "prompt": "What was a clergy reserve in Upper Canada?",
+        "correctAnswer": "Land set aside to support the Protestant church and its clergy."
+      },
+      {
+        "id": "q3",
+        "prompt": "Who was George Whitefield?",
+        "correctAnswer": "A preacher known for his role in the Great Awakening religious revival."
+      },
+      {
+        "id": "q4",
+        "prompt": "What was a working bee?",
+        "correctAnswer": "A community event where neighbors gathered to help each other with large tasks like barn raising."
+      }
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Early Canada: Key Concepts Matching",
+    "prompt": "Connect each term on the left to its correct description on the right.",
+    "taskType": "matching",
+    "options": [],
+    "timeLimitSeconds": 120,
+    "points": 10,
+    "leftItems": ["backwoods", "pemmican", "clergy reserve", "emancipation", "working bee", "one-room schoolhouse"],
+    "rightItems": [
+      "Remote forested areas where settlers cleared land and built homes",
+      "Preserved food made from dried meat, fat, and berries",
+      "Land set aside to support the church and its leaders",
+      "The process of freeing people from slavery",
+      "Community event where neighbors helped with large tasks",
+      "A school where children of all ages learned together in one room"
+    ],
+    "correctMatches": {
+      "L1": "R1",
+      "L2": "R2",
+      "L3": "R3",
+      "L4": "R4",
+      "L5": "R5",
+      "L6": "R6"
+    },
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Multiple Choice: Early Canadian History",
+    "prompt": "Choose the best answer for each question.",
+    "taskType": "multiple-choice",
+    "options": [],
+    "timeLimitSeconds": 60,
+    "points": 10,
+    "items": [
+      {
+        "id": "q1",
+        "prompt": "What does 'emancipation' mean?",
+        "options": [
+          "Building new settlements",
+          "Trading goods between colonies",
+          "Freeing people from slavery",
+          "Passing new church laws"
+        ],
+        "correctAnswer": 2
+      },
+      {
+        "id": "q2",
+        "prompt": "What was a typical feature of schooling in early Canada?",
+        "options": [
+          "One-room schoolhouses where all ages learned together",
+          "Large schools with many separate classrooms",
+          "Schools only for children of wealthy families",
+          "Classes taught entirely by travelling preachers"
+        ],
+        "correctAnswer": 0
+      },
+      {
+        "id": "q3",
+        "prompt": "Who was Jonathan Edwards?",
+        "options": [
+          "The governor of Upper Canada",
+          "A fur trader who made pemmican",
+          "A pioneer schoolteacher",
+          "A preacher known for his role in the Great Awakening"
+        ],
+        "correctAnswer": 3
+      },
+      {
+        "id": "q4",
+        "prompt": "Why were working bees important to backwoods settlers?",
+        "options": [
+          "They were religious ceremonies",
+          "They let neighbors help each other with large tasks",
+          "They were organized by Governor Simcoe",
+          "They were used to collect taxes"
+        ],
+        "correctAnswer": 1
+      }
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Sequence: Steps Toward Limiting Slavery in Canada",
+    "prompt": "Put these events in the correct chronological order.",
+    "taskType": "sequence",
+    "options": [],
+    "timeLimitSeconds": 120,
+    "points": 10,
+    "config": {
+      "items": [
+        "Slavery exists in New France and British colonies",
+        "Loyalists bring enslaved people to Upper Canada after the American Revolution (1780s)",
+        "Governor Simcoe introduces the 1793 Act to Limit Slavery",
+        "The Act bans importing new enslaved people into Upper Canada",
+        "Children of enslaved mothers are freed at age 25",
+        "Slavery gradually declines in Upper Canada"
+      ],
+      "sequence": [
+        "Slavery exists in New France and British colonies",
+        "Loyalists bring enslaved people to Upper Canada after the American Revolution (1780s)",
+        "Governor Simcoe introduces the 1793 Act to Limit Slavery",
+        "The Act bans importing new enslaved people into Upper Canada",
+        "Children of enslaved mothers are freed at age 25",
+        "Slavery gradually declines in Upper Canada"
+      ]
+    },
+    "items": [
+      { "id": "seq1", "text": "Slavery exists in New France and British colonies" },
+      { "id": "seq2", "text": "Loyalists bring enslaved people to Upper Canada after the American Revolution (1780s)" },
+      { "id": "seq3", "text": "Governor Simcoe introduces the 1793 Act to Limit Slavery" },
+      { "id": "seq4", "text": "The Act bans importing new enslaved people into Upper Canada" },
+      { "id": "seq5", "text": "Children of enslaved mothers are freed at age 25" },
+      { "id": "seq6", "text": "Slavery gradually declines in Upper Canada" }
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Physical Multiple Choice: Early Canada Key Concepts",
+    "prompt": "For each question, walk to the station with the color matching your chosen answer and scan the QR code to submit.",
+    "taskType": "physical-multiple-choice",
+    "options": [],
+    "timeLimitSeconds": 60,
+    "points": 10,
+    "items": [
+      {
+        "id": "q1",
+        "prompt": "What role did Governor Simcoe play in early Upper Canada?",
+        "options": [
+          "He led church missionary work across the colony",
+          "He helped establish the government of Upper Canada",
+          "He was a backwoods explorer who mapped forests",
+          "He organized the first working bees"
+        ],
+        "correctAnswer": 1
+      },
+      {
+        "id": "q2",
+        "prompt": "What was pemmican used for?",
+        "options": [
+          "Building shelters in the backwoods",
+          "Trading with European merchants only",
+          "As a long-lasting food for travel and survival",
+          "Lighting candles and lamps in towns"
+        ],
+        "correctAnswer": 2
+      },
+      {
+        "id": "q3",
+        "prompt": "What is a clergy reserve?",
+        "options": [
+          "A school run by travelling preachers",
+          "A military fort guarding the frontier",
+          "A type of community working bee",
+          "Land set aside to support the church and its leaders"
+        ],
+        "correctAnswer": 3
+      },
+      {
+        "id": "q4",
+        "prompt": "What was the Great Awakening?",
+        "options": [
+          "A widespread religious revival led by preachers like Whitefield and Edwards",
+          "The discovery of new farmland in the backwoods",
+          "A law that freed all enslaved people immediately",
+          "A trading agreement between settlers and Indigenous peoples"
+        ],
+        "correctAnswer": 0
+      }
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Venn Sort: Candle-Making vs Wool Spinning",
+    "prompt": "Sort each term into 'Candle-Making', 'Wool Spinning', or 'Both' if it applies to both activities.",
+    "taskType": "vennsort",
+    "options": [],
+    "correctAnswer": {
+      "item-0-Wax": ["Candle-Making"],
+      "item-1-Wick": ["Candle-Making"],
+      "item-2-Spinning-wheel": ["Wool Spinning"],
+      "item-3-Fleece": ["Wool Spinning"],
+      "item-4-Molds": ["Candle-Making"],
+      "item-5-Carding": ["Wool Spinning"],
+      "item-6-Done-at-home": ["Both"],
+      "item-7-Tallow": ["Candle-Making"],
+      "item-8-Dyeing": ["Wool Spinning"],
+      "item-9-Womens-work": ["Both"]
+    },
+    "timeLimitSeconds": 120,
+    "points": 10,
+    "config": {
+      "categories": ["Candle-Making", "Wool Spinning"],
+      "items": [
+        { "id": "item-0-Wax", "text": "Wax", "categories": ["Candle-Making"] },
+        { "id": "item-1-Wick", "text": "Wick", "categories": ["Candle-Making"] },
+        { "id": "item-2-Spinning-wheel", "text": "Spinning wheel", "categories": ["Wool Spinning"] },
+        { "id": "item-3-Fleece", "text": "Fleece", "categories": ["Wool Spinning"] },
+        { "id": "item-4-Molds", "text": "Molds", "categories": ["Candle-Making"] },
+        { "id": "item-5-Carding", "text": "Carding wool", "categories": ["Wool Spinning"] },
+        { "id": "item-6-Done-at-home", "text": "Done at home by the family", "categories": ["Both"] },
+        { "id": "item-7-Tallow", "text": "Tallow (animal fat)", "categories": ["Candle-Making"] },
+        { "id": "item-8-Dyeing", "text": "Dyeing yarn", "categories": ["Wool Spinning"] },
+        { "id": "item-9-Womens-work", "text": "Often done by women and children", "categories": ["Both"] }
+      ],
+      "correctAnswer": {
+        "item-0-Wax": ["Candle-Making"],
+        "item-1-Wick": ["Candle-Making"],
+        "item-2-Spinning-wheel": ["Wool Spinning"],
+        "item-3-Fleece": ["Wool Spinning"],
+        "item-4-Molds": ["Candle-Making"],
+        "item-5-Carding": ["Wool Spinning"],
+        "item-6-Done-at-home": ["Both"],
+        "item-7-Tallow": ["Candle-Making"],
+        "item-8-Dyeing": ["Wool Spinning"],
+        "item-9-Womens-work": ["Both"]
+      }
+    },
+    "items": [
+      { "id": "item-0-Wax", "text": "Wax", "categories": ["Candle-Making"] },
+      { "id": "item-1-Wick", "text": "Wick", "categories": ["Candle-Making"] },
+      { "id": "item-2-Spinning-wheel", "text": "Spinning wheel", "categories": ["Wool Spinning"] },
+      { "id": "item-3-Fleece", "text": "Fleece", "categories": ["Wool Spinning"] },
+      { "id": "item-4-Molds", "text": "Molds", "categories": ["Candle-Making"] },
+      { "id": "item-5-Carding", "text": "Carding wool", "categories": ["Wool Spinning"] },
+      { "id": "item-6-Done-at-home", "text": "Done at home by the family", "categories": ["Both"] },
+      { "id": "item-7-Tallow", "text": "Tallow (animal fat)", "categories": ["Candle-Making"] },
+      { "id": "item-8-Dyeing", "text": "Dyeing yarn", "categories": ["Wool Spinning"] },
+      { "id": "item-9-Womens-work", "text": "Often done by women and children", "categories": ["Both"] }
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Timeline: Key Events in Early Upper Canada",
+    "prompt": "Place these events in the correct chronological order.",
+    "taskType": "timeline",
+    "options": [],
+    "timeLimitSeconds": 120,
+    "points": 10,
+    "config": {
+      "items": [
+        "The Great Awakening spreads through the colonies (1730s–1740s)",
+        "The Seven Years' War ends; France cedes Canada to Britain (1763)",
+        "Loyalists flee to Upper Canada after the American Revolution (1784)",
+        "Governor Simcoe establishes Upper Canada's government (1791)",
+        "The 1793 Act to Limit Slavery is passed",
+        "Settlers push deeper into the backwoods of Upper Canada (early 1800s)"
+      ],
+      "sequence": [
+        "The Great Awakening spreads through the colonies (1730s–1740s)",
+        "The Seven Years' War ends; France cedes Canada to Britain (1763)",
+        "Loyalists flee to Upper Canada after the American Revolution (1784)",
+        "Governor Simcoe establishes Upper Canada's government (1791)",
+        "The 1793 Act to Limit Slavery is passed",
+        "Settlers push deeper into the backwoods of Upper Canada (early 1800s)"
+      ]
+    },
+    "items": [
+      { "id": "seq1", "text": "The Great Awakening spreads through the colonies (1730s–1740s)" },
+      { "id": "seq2", "text": "The Seven Years' War ends; France cedes Canada to Britain (1763)" },
+      { "id": "seq3", "text": "Loyalists flee to Upper Canada after the American Revolution (1784)" },
+      { "id": "seq4", "text": "Governor Simcoe establishes Upper Canada's government (1791)" },
+      { "id": "seq5", "text": "The 1793 Act to Limit Slavery is passed" },
+      { "id": "seq6", "text": "Settlers push deeper into the backwoods of Upper Canada (early 1800s)" }
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  }
+]
