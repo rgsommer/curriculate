@@ -2155,9 +2155,13 @@ export function validateTaskByType(taskType, task) {
     }
 
     case TASK_TYPES.WORD_WEAVER_DUEL: {
-      const words = Array.isArray(task.items) ? task.items : Array.isArray(task.words) ? task.words : [];
-      if (!Array.isArray(words) || words.length < 8) {
-        errors.push("word-weaver-duel requires at least 8 words");
+      const words =
+        (Array.isArray(task.config?.words) && task.config.words) ||
+        (Array.isArray(task.items) && task.items) ||
+        (Array.isArray(task.words) && task.words) ||
+        [];
+      if (!Array.isArray(words) || words.length < 4) {
+        errors.push(`word-weaver-duel requires at least 4 words (got ${words.length})`);
         break;
       }
       break;
