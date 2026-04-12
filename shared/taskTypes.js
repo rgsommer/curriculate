@@ -164,6 +164,12 @@ export const TASK_TYPE_META = {
     - Across your items, the correctAnswer index should use at least 3 different positions (0, 1, 2, 3).
     - Example distribution for 4 items: correctAnswer values of [2, 0, 3, 1] — NOT [1, 1, 1, 1].
 
+    DISTRACTOR QUALITY RULE (MANDATORY):
+    - All wrong answers (distractors) must be PLAUSIBLE — a student who hasn't studied should find them tempting.
+    - BAD distractors: "Online classes taught by distant teachers" (anachronistic/absurd), "A type of Indigenous dance" (random/unrelated).
+    - GOOD distractors: "Church-run schools for boys only", "Apprenticeship programs run by tradesmen" (plausible but wrong for the period/context).
+    - Each distractor should be the same length and style as the correct answer. Don't make the correct answer obviously longer or more detailed.
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
@@ -214,6 +220,10 @@ export const TASK_TYPE_META = {
     - VARY the position of the correct answer across items. Do NOT place the correct answer in the same index for every question.
     - Across your items, the correctAnswer index should use at least 3 different positions (0, 1, 2, 3).
     - Example distribution for 4 items: correctAnswer values of [2, 0, 3, 1] — NOT [1, 1, 1, 1].
+
+    DISTRACTOR QUALITY RULE (MANDATORY):
+    - All wrong answers must be PLAUSIBLE — not obviously absurd or anachronistic.
+    - Each distractor should be the same length and style as the correct answer.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -344,12 +354,14 @@ export const TASK_TYPE_META = {
     - Keep the prompt student-facing and very explicit (Grade 7 reading level).
     - Do NOT generate multiple-choice questions for this task.
 
-    COHERENCE RULE (MANDATORY):
-    - The passage MUST be about ONE unified topic with a clear through-line.
-    - Do NOT stitch together summaries of multiple unrelated subjects into one paragraph.
-    - BAD: A paragraph that jumps from fur trade → Indigenous governance → religion → settlement patterns → economy.
-    - GOOD: A paragraph that explores ONE topic (e.g., the fur trade) in depth — its origins, key players, effects, and legacy.
+    COHERENCE RULE (MANDATORY — WILL BE REJECTED IF VIOLATED):
+    - The passage MUST be about ONE unified topic with a clear through-line. Maximum 2 closely related ideas.
+    - Count the distinct subjects in your passage. If it's more than 2, REWRITE IT.
+    - BAD: "Life in early Canadian towns involved soap-making... settlers lived near the backwoods... the crown reserve was land... the 1793 act to limit slavery was passed... sewing was important..." ← This touches 5 different topics. REJECTED.
+    - BAD: A paragraph that jumps from fur trade → Indigenous governance → religion → settlement patterns → economy. REJECTED.
+    - GOOD: A paragraph that explores ONE topic (e.g., life in the backwoods) in depth — what it was like, why people moved there, the challenges they faced, how they survived, and how it shaped Canadian settlement. ONE TOPIC, MULTIPLE ANGLES.
     - If the vocabulary list spans many topics, pick ONE and go deep rather than touching all of them shallowly.
+    - The passage should read like a coherent mini-essay, NOT like a textbook glossary stitched into paragraph form.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -657,6 +669,8 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
         "item-2-Snake": ["Reptiles"]
       }
     - Each item in config.items MUST also have a "categories" array matching its correctAnswer entry.
+    - CRITICAL: Every item MUST have at least one category. An item with categories:[] (empty array) means the student CANNOT place it — the task will be REJECTED.
+    - If an item doesn't fit any of your categories, either: change the categories so it fits, or don't include that item. NEVER include an item with no valid placement.
 
     UNAMBIGUITY RULE (MANDATORY):
     - Every item's category placement MUST be clearly defensible — a knowledgeable student should not be able to reasonably argue a different placement.
@@ -782,12 +796,14 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     Task-specific guidance:
     - Prompt students to record a 20–45 second response. Include 2–3 speaking cues and 2–4 simple assessment criteria (clarity, accuracy, evidence, etc.) if schema supports.
 
-    FOCUS RULE (MANDATORY):
-    - The prompt MUST ask students to discuss ONE specific topic — NOT multiple topics.
-    - BAD: "Discuss the fur trade, Indigenous governance, and the impact of European settlement."
-    - GOOD: "Explain how the fur trade shaped relationships between Indigenous peoples and European settlers."
-    - If providing bullet-point speaking cues, all cues should relate to the SAME single topic.
-    - 20–45 seconds is SHORT — one focused topic is enough. Multiple topics lead to shallow, rushed responses.
+    FOCUS RULE (MANDATORY — WILL BE REJECTED IF VIOLATED):
+    - The prompt MUST ask students to discuss exactly ONE specific topic — NOT two, NOT three. ONE.
+    - Count the number of distinct subjects in your prompt. If it's more than 1, REWRITE IT.
+    - BAD: "Explain the 1793 Act to Limit Slavery, the hymns from the 1700s, and the sermon 'Sinners in the Hands of an Angry God'." ← This asks about THREE topics. REJECTED.
+    - BAD: "Discuss the fur trade and Indigenous governance." ← This asks about TWO topics. REJECTED.
+    - GOOD: "Explain how the 1793 Act to Limit Slavery changed attitudes toward freedom in Upper Canada." ← ONE topic. ACCEPTED.
+    - GOOD: "Describe how hymns from the 1700s reflected religious values during the Great Awakening." ← ONE topic. ACCEPTED.
+    - 20–45 seconds is SHORT. Students can only meaningfully discuss ONE thing. Listing multiple topics guarantees shallow, rushed responses.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.

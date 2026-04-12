@@ -529,6 +529,21 @@ export function normalizeTaskByType(taskType, rawTask) {
       task.categories = task.config.buckets;
       task.config.categories = task.config.buckets;
 
+      // --- GUARDRAIL: Flag lopsided sort buckets ---
+      // If one bucket has <2 items while another has 5+, the sort is trivially easy
+      if (buckets.length >= 2 && items.length >= 4) {
+        const bucketCounts = new Array(buckets.length).fill(0);
+        for (const it of items) {
+          const bi = typeof it?.bucketIndex === "number" ? it.bucketIndex : -1;
+          if (bi >= 0 && bi < buckets.length) bucketCounts[bi]++;
+        }
+        const minBucket = Math.min(...bucketCounts);
+        const maxBucket = Math.max(...bucketCounts);
+        if (minBucket < 2 && maxBucket >= 5) {
+          task._validationWarning = `Sort is lopsided: bucket "${buckets[bucketCounts.indexOf(minBucket)]}" has only ${minBucket} item(s) while "${buckets[bucketCounts.indexOf(maxBucket)]}" has ${maxBucket} — each bucket should have at least 2-3 items`;
+        }
+      }
+
       break;
     }
 
@@ -1685,10 +1700,23 @@ export function normalizeTaskByType(taskType, rawTask) {
         vCfg.correctAnswer = task.correctAnswer || task.answerKey || null;
       }
 
-      // --- GUARDRAIL: Flag overly generic vennsort items ---
-      // Items like "Social disruption", "Economic impact", "Cultural change" are too vague
-      // and could plausibly fit any category, making the task unfair.
+      // --- GUARDRAIL: Reject vennsort items with empty categories (unplaceable) ---
       if (Array.isArray(vCfg.items) && vCfg.items.length > 0) {
+        const correctAnswerMap = isObject(vCfg.correctAnswer) ? vCfg.correctAnswer
+          : isObject(task.correctAnswer) ? task.correctAnswer : {};
+        const unplaceableItems = vCfg.items.filter((it) => {
+          const id = it?.id || "";
+          const itemCats = Array.isArray(it?.categories) ? it.categories : [];
+          const answerCats = Array.isArray(correctAnswerMap[id]) ? correctAnswerMap[id] : [];
+          return itemCats.length === 0 && answerCats.length === 0;
+        });
+        if (unplaceableItems.length > 0) {
+          task._validationError = `Vennsort has ${unplaceableItems.length} item(s) with no category assignment (e.g. "${unplaceableItems[0]?.text}") — every item MUST belong to at least one category. Students cannot place items that have no correct answer.`;
+        }
+      }
+
+      // --- GUARDRAIL: Flag overly generic vennsort items ---
+      if (Array.isArray(vCfg.items) && vCfg.items.length > 0 && !task._validationError) {
         const genericPattern = /^(social|economic|cultural|political|environmental|historical|general|overall|various)\s+(disruption|impact|change|effects?|factors?|issues?|aspects?|developments?|influences?)$/i;
         const genericItems = vCfg.items.filter((it) => genericPattern.test(String(it?.text || "").trim()));
         if (genericItems.length >= 3) {
