@@ -2529,6 +2529,16 @@ socket.on("task:force-advance", ({ roomCode }) => {
         };
       }
 
+      // READING COMP (AI paragraph + 1-sentence response)
+      if (type === "reading-comp" || type === "reading_comp" || type === "reading-comprehension") {
+        return {
+          aiFeedback: aiScore?.aiFeedback || aiScore?.reason || aiScore?.feedback || aiScore?.rationale || null,
+          score: aiScore?.score ?? aiScore?.totalScore ?? null,
+          maxScore: aiScore?.maxPoints ?? task?.points ?? null,
+          perResponse: aiScore?.details?.perResponse || null,
+        };
+      }
+
       // BRAIN BLITZ
       if (type === "brain-blitz") {
         return {

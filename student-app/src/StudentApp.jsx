@@ -636,9 +636,14 @@ function StudentApp() {
       setRoomIsActive(!!state.isActive);
 
       if (!currentTaskRef.current) {
-        setWaitingForLaunch(true);
-        if (state?.isActive || tasksStartedRef.current || tasksStarted) {
-          setPostPhase("tasks");
+        // Don't overwrite feedback/trophy phase — taskset is done, we're
+        // showing the multi-player feedback form or the victory screen.
+        const currentPhase = postPhaseRef.current;
+        if (currentPhase !== "feedback" && currentPhase !== "trophy") {
+          setWaitingForLaunch(true);
+          if (state?.isActive || tasksStartedRef.current || tasksStarted) {
+            setPostPhase("tasks");
+          }
         }
       }
       
@@ -1121,6 +1126,18 @@ function StudentApp() {
       endReviewAndReturnToScan();
     };
 
+    // Handle server telling us all tasks are done (e.g. after page reload
+    // when team has already completed every task in the taskset).
+    const handleSessionComplete = () => {
+      console.log("[StudentApp] session:complete — all tasks done");
+      setCurrentTask(null);
+      setCurrentTaskIndex(null);
+      setWaitingForLaunch(false);
+      setScannerActive(false);
+      setPostPhase("feedback");
+      // Don't set tasksetComplete yet — feedback form should show first
+    };
+
     socket.on("room:state", handleRoomState);
     socket.on("task:assigned", handleTaskAssigned);
     socket.on("task:launch", handleTaskAssigned);
@@ -1131,6 +1148,7 @@ function StudentApp() {
     socket.on("collab:reply", handleCollabReply);
     socket.on("team:pacing-hold", handlePacingHold);
     socket.on("team:pacing-released", handlePacingRelease);
+    socket.on("session:complete", handleSessionComplete);
 
     socket.emit("room:request-state", {
       roomCode: roomCode.trim().toUpperCase(),
@@ -1148,6 +1166,7 @@ function StudentApp() {
       socket.off("collab:reply", handleCollabReply);
       socket.off("team:pacing-hold", handlePacingHold);
       socket.off("team:pacing-released", handlePacingRelease);
+      socket.off("session:complete", handleSessionComplete);
     };
   }, [teamId, roomCode]
   );
@@ -2002,8 +2021,14 @@ function StudentApp() {
             reviewObj.hint = reviewObj.aiHint;
           }
           // Also pull aiFeedback off the top-level aiScore if the review didn't carry it
+          if (!reviewObj.feedback && response?.aiScore?.aiFeedback) {
+            reviewObj.feedback = response.aiScore.aiFeedback;
+          }
           if (!reviewObj.feedback && response?.aiScore?.feedback) {
             reviewObj.feedback = response.aiScore.feedback;
+          }
+          if (!reviewObj.feedback && response?.aiScore?.reason) {
+            reviewObj.feedback = response.aiScore.reason;
           }
           if (!reviewObj.feedback && response?.aiScore?.rationale) {
             reviewObj.feedback = response.aiScore.rationale;
@@ -2046,6 +2071,20 @@ function StudentApp() {
               !reviewObj.comment
             ) {
               reviewObj.feedback = "Thanks — your response was submitted.";
+            }
+          }
+
+          // Reading Comp: ensure there's always feedback for the reader
+          if (currentType === TASK_TYPES.READING_COMP || currentType === "reading-comp") {
+            if (
+              !reviewObj.feedback &&
+              !reviewObj.hint &&
+              !reviewObj.modelAnswer &&
+              !reviewObj.comment
+            ) {
+              reviewObj.feedback = accepted
+                ? "Nice work — your answer shows good comprehension."
+                : "Good try — look for the main idea in the paragraph next time.";
             }
           }
 
@@ -2181,7 +2220,7 @@ function StudentApp() {
               // For tasks with a feedback panel (short-answer, open-text, record-audio),
               // wait for student to tap "Read it" button.
               // For all other tasks, auto-advance since there's no feedback to read.
-              const feedbackTaskTypes = ["short-answer", "open-text", "record-audio"];
+              const feedbackTaskTypes = ["short-answer", "open-text", "record-audio", "reading-comp"];
               const ct = currentTaskRef.current?.taskType || "";
               const hasFeedbackPanel = feedbackTaskTypes.includes(ct);
               if (!hasFeedbackPanel) {
@@ -4684,13 +4723,13 @@ function StudentApp() {
         </div>
     )}
 
-    {/* ── Short-answer / open-text / record-audio inline feedback (no overlay) ──
-         NOTE: reading-comp is intentionally excluded here — ReadingCompTask renders
-         its own "What we noticed" feedback box inside the task component. ── */}
+    {/* ── Short-answer / open-text / record-audio / reading-comp inline feedback (no overlay) ──
+         Reading-comp is included here so the reader-rotation feedback panel shows after submit. ── */}
     {taskLocked && !isPhysicalTask &&
      (currentTask?.taskType === TASK_TYPES.SHORT_ANSWER ||
       currentTask?.taskType === TASK_TYPES.OPEN_TEXT ||
-      currentTask?.taskType === TASK_TYPES.RECORD_AUDIO) &&
+      currentTask?.taskType === TASK_TYPES.RECORD_AUDIO ||
+      currentTask?.taskType === TASK_TYPES.READING_COMP) &&
      reviewState && (
       <div style={{ marginTop: 12, width: "100%", borderRadius: 14, overflow: "hidden" }}>
         {/* Thin countdown bar at top */}
