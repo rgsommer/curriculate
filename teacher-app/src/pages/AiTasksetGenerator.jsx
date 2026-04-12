@@ -8,6 +8,41 @@ import { TASK_TYPES, TASK_TYPE_META } from "../../../shared/taskTypes.js";
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
 
+/* ------------------------------------------------------------------ */
+/*  PARTY MODE                                                         */
+/* ------------------------------------------------------------------ */
+
+const PARTY_TASK_TYPES = [
+  "flashcards-race",
+  "musical-chairs",
+  "brain-blitz",
+  "speed-draw",
+  "treasure-runner",
+  "draw-mime",
+  "fake-out",
+  "hangman-duel",
+  "true-false-tictactoe",
+  "true-false-connect-four",
+  "mad-dash",
+  "echo-chain",
+  "diff-detective",
+  "guess-who",
+];
+
+const PARTY_THEMES = [
+  { id: "dinosaurs", emoji: "🦕", label: "Dinosaurs", vocab: ["T-Rex", "Triceratops", "Stegosaurus", "fossil", "herbivore", "carnivore", "Jurassic", "extinction", "paleontologist", "velociraptor"] },
+  { id: "space", emoji: "🚀", label: "Space", vocab: ["planet", "asteroid", "galaxy", "astronaut", "orbit", "comet", "nebula", "gravity", "solar system", "constellation"] },
+  { id: "sports", emoji: "⚽", label: "Sports", vocab: ["championship", "referee", "penalty", "goalkeeper", "marathon", "relay", "sportsmanship", "offense", "defense", "tournament"] },
+  { id: "ocean", emoji: "🐙", label: "Under the Sea", vocab: ["coral reef", "dolphin", "whale", "seahorse", "jellyfish", "octopus", "submarine", "tide", "bioluminescence", "plankton"] },
+  { id: "superheroes", emoji: "🦸", label: "Superheroes", vocab: ["superpower", "villain", "sidekick", "shield", "cape", "headquarters", "identity", "mission", "nemesis", "rescue"] },
+  { id: "animals", emoji: "🐾", label: "Animals", vocab: ["habitat", "camouflage", "migration", "predator", "nocturnal", "endangered", "ecosystem", "hibernate", "mammal", "amphibian"] },
+  { id: "magic", emoji: "🧙", label: "Wizards & Magic", vocab: ["spell", "potion", "enchantment", "wand", "crystal", "sorcery", "invisible", "prophecy", "apprentice", "talisman"] },
+  { id: "music", emoji: "🎵", label: "Music", vocab: ["rhythm", "melody", "harmony", "tempo", "chorus", "instrument", "conductor", "lyrics", "bass", "treble"] },
+  { id: "science", emoji: "🔬", label: "Science", vocab: ["experiment", "hypothesis", "molecule", "chemical reaction", "microscope", "gravity", "electricity", "magnetism", "photosynthesis", "DNA"] },
+  { id: "pirates", emoji: "🏴‍☠️", label: "Pirates", vocab: ["treasure", "captain", "compass", "anchor", "plank", "parrot", "cannon", "island", "shipwreck", "sword"] },
+  { id: "custom", emoji: "✨", label: "Custom (your own)", vocab: [] },
+];
+
 // --- Task-specific generation constraints (additive). These get appended to topicDescription
 // so the backend AI prompt is forced to include required fields for certain task types.
 const TASK_GEN_CONSTRAINTS = {
@@ -165,6 +200,13 @@ export default function AiTasksetGenerator() {
   // Multi-room list as text
   const [multiRoomText, setMultiRoomText] = useState("");
 
+  // Party mode
+  const [isPartyMode, setIsPartyMode] = useState(
+    location.search?.includes("mode=party") || location.state?.partyMode || false
+  );
+  const [partyTheme, setPartyTheme] = useState("");
+  const [partyCustomWords, setPartyCustomWords] = useState("");
+
   // UI feedback for copy buttons
   const [copiedTag, setCopiedTag] = useState("");
 
@@ -290,15 +332,28 @@ export default function AiTasksetGenerator() {
       return;
     }
 
-    // Word bank
-    const aiWordBank = wordListText
-      .split(/[\n,;]+/)
-      .map((w) => w.trim())
-      .filter(Boolean);
+    // Word bank — in party mode, merge theme vocab with custom words
+    let aiWordBank;
+    if (isPartyMode) {
+      const themeObj = PARTY_THEMES.find((t) => t.id === partyTheme);
+      const themeVocab = themeObj ? themeObj.vocab : [];
+      const customWords = partyCustomWords
+        .split(/[\n,;]+/)
+        .map((w) => w.trim())
+        .filter(Boolean);
+      aiWordBank = uniqStrings([...themeVocab, ...customWords]);
+    } else {
+      aiWordBank = wordListText
+        .split(/[\n,;]+/)
+        .map((w) => w.trim())
+        .filter(Boolean);
+    }
 
     if (!aiWordBank.length) {
       setError(
-        "Please provide at least one vocabulary term or key word. The AI uses these to stay on topic."
+        isPartyMode
+          ? "Please select a theme or add some custom words for the party games."
+          : "Please provide at least one vocabulary term or key word. The AI uses these to stay on topic."
       );
       setGenerating(false);
       return;
@@ -345,7 +400,18 @@ export default function AiTasksetGenerator() {
 
       let requiredTaskTypes = [];
       let guaranteedTypes_payload = [];
-      const baseSpecialConsiderations = (form.topicDescription || "").trim();
+      let baseSpecialConsiderations = (form.topicDescription || "").trim();
+
+      // Party mode: force party-only task types and add party context
+      if (isPartyMode) {
+        const themeObj = PARTY_THEMES.find((t) => t.id === partyTheme);
+        const themeName = themeObj ? themeObj.label : "General";
+        const partyContext = `PARTY MODE — This is for a birthday party, NOT a classroom lesson. Theme: "${themeName}". Keep all content fun, energetic, and age-appropriate for a party setting. Use playful language. The vocabulary words include personal/custom items that should be woven into the games to make them feel personalized for the occasion.`;
+        baseSpecialConsiderations = [partyContext, baseSpecialConsiderations].filter(Boolean).join("\n\n");
+        requiredTaskTypes = PARTY_TASK_TYPES.filter((t) =>
+          GENERATOR_ELIGIBLE_TYPES.includes(t)
+        );
+      }
 
       if (guaranteeTypes && guaranteedTaskTypes.length > 0) {
         guaranteedTypes_payload = Array.from(new Set(guaranteedTaskTypes));
@@ -393,9 +459,9 @@ export default function AiTasksetGenerator() {
         difficulty: form.difficulty,
         learningGoal: form.learningGoal,
 
-        uniqueTaskTypes: !!limitTasks,
+        uniqueTaskTypes: isPartyMode ? true : !!limitTasks,
         allowMovementTasks: true,
-        maxMovementRatio: 0.10,
+        maxMovementRatio: isPartyMode ? 0.30 : 0.10,
 
         topicTitle: form.name.trim(),
         topicDescription: specialConsiderations,
@@ -406,8 +472,8 @@ export default function AiTasksetGenerator() {
         totalDurationMinutes,
         numberOfTasks: limitTasks ? estimatedTaskCount : undefined,
         count: limitTasks ? estimatedTaskCount : undefined,
-        taskTypePool: limitTasks ? requiredTaskTypes : undefined,
-        requiredTaskTypes: limitTasks ? requiredTaskTypes : undefined,
+        taskTypePool: (limitTasks || isPartyMode) ? requiredTaskTypes : undefined,
+        requiredTaskTypes: (limitTasks || isPartyMode) ? requiredTaskTypes : undefined,
         guaranteedTaskTypes: guaranteedTypes_payload.length ? guaranteedTypes_payload : undefined,
 
         tasksetName: form.name || undefined,
@@ -886,6 +952,192 @@ export default function AiTasksetGenerator() {
       )}
 
       <form onSubmit={handleSubmit}>
+        {/* PARTY MODE TOGGLE */}
+        <div
+          style={{
+            marginBottom: 16,
+            padding: "12px 16px",
+            borderRadius: 14,
+            border: isPartyMode ? "2px solid #db2777" : "1px solid #e5e7eb",
+            background: isPartyMode
+              ? "linear-gradient(135deg, #fdf2f8 0%, #faf5ff 100%)"
+              : "#f9fafb",
+          }}
+        >
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: "pointer",
+              fontWeight: 700,
+              fontSize: "0.95rem",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={isPartyMode}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setIsPartyMode(on);
+                if (on) {
+                  handleChange("learningGoal", "ENRICHMENT");
+                  handleChange("difficulty", "EASY");
+                  handleChange("roomLocation", "Party venue");
+                  if (!form.name) handleChange("name", "Birthday Party Games");
+                }
+              }}
+              style={{ width: 18, height: 18 }}
+            />
+            <span>🎉 Party Mode</span>
+            <span
+              style={{
+                fontSize: "0.75rem",
+                fontWeight: 500,
+                color: "#6b7280",
+                marginLeft: 4,
+              }}
+            >
+              — generates fun, competitive games for birthday parties and events
+            </span>
+          </label>
+
+          {isPartyMode && (
+            <div style={{ marginTop: 14 }}>
+              {/* Theme selector */}
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.85rem",
+                  marginBottom: 8,
+                  fontWeight: 600,
+                }}
+              >
+                Pick a theme:
+              </label>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  marginBottom: 12,
+                }}
+              >
+                {PARTY_THEMES.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      setPartyTheme(t.id);
+                      if (t.id !== "custom" && !form.name.includes("Party")) {
+                        handleChange("name", `${t.label} Birthday Party`);
+                      }
+                    }}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "8px 14px",
+                      borderRadius: 999,
+                      border:
+                        partyTheme === t.id
+                          ? "2px solid #db2777"
+                          : "1px solid #d1d5db",
+                      background:
+                        partyTheme === t.id ? "#fdf2f8" : "#ffffff",
+                      cursor: "pointer",
+                      fontWeight: partyTheme === t.id ? 700 : 500,
+                      fontSize: "0.88rem",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    <span>{t.emoji}</span>
+                    <span>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Theme vocab preview */}
+              {partyTheme && partyTheme !== "custom" && (
+                <div style={{ marginBottom: 12 }}>
+                  <div
+                    style={{
+                      fontSize: "0.8rem",
+                      fontWeight: 700,
+                      color: "#6b7280",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Pre-loaded words for this theme:
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {(
+                      PARTY_THEMES.find((t) => t.id === partyTheme)?.vocab || []
+                    ).map((word) => (
+                      <span
+                        key={word}
+                        style={{
+                          display: "inline-block",
+                          padding: "4px 10px",
+                          borderRadius: 999,
+                          border: "1px solid #e5e7eb",
+                          background: "#fff",
+                          fontSize: "0.8rem",
+                          fontWeight: 500,
+                          color: "#374151",
+                        }}
+                      >
+                        {word}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Custom words input */}
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.85rem",
+                  fontWeight: 600,
+                  marginBottom: 4,
+                }}
+              >
+                Add personal/custom words{" "}
+                <span style={{ fontWeight: 400, color: "#6b7280" }}>
+                  (birthday kid&apos;s name, favorite things, inside jokes...)
+                </span>
+              </label>
+              <textarea
+                value={partyCustomWords}
+                onChange={(e) => setPartyCustomWords(e.target.value)}
+                rows={3}
+                placeholder={
+                  "e.g.\nEmma\nUnicorn cake\nMr. Whiskers the cat\nCanada trip"
+                }
+                style={{
+                  width: "100%",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  padding: 8,
+                  fontSize: "0.9rem",
+                  resize: "vertical",
+                }}
+              />
+              <p
+                style={{
+                  marginTop: 4,
+                  fontSize: "0.78rem",
+                  color: "#6b7280",
+                }}
+              >
+                These get mixed into the games for a personal touch. One per
+                line or separated by commas.
+              </p>
+            </div>
+          )}
+        </div>
+
         {/* TOP ROW: title + base room */}
         <div
           style={{

@@ -143,6 +143,7 @@ export default function SiteHeader() {
           </div>
 
           <NavLink href="/ai-grading">AI Grading</NavLink>
+          <NavLink href="/parties">Parties</NavLink>
           <NavLink href="/pricing">Pricing</NavLink>
           <NavLink href="/about">About</NavLink>
           <NavLink href="/faq">FAQ</NavLink>

@@ -416,6 +416,9 @@ function TeacherApp() {
           <NavLinkButton to="/teacher/ai-tasksets" active={onAiTasksets}>
             Generate A New Set
           </NavLinkButton>
+          <NavLinkButton to="/teacher/ai-tasksets?mode=party" active={false}>
+            🎉 Party Games
+          </NavLinkButton>
 
           {/* Admin link (only for admins) */}
           {isAdmin && (
