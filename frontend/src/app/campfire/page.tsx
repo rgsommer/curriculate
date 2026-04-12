@@ -25,7 +25,9 @@ type Screen =
   | "challenge"
   | "favs"
   | "notifs"
-  | "profile";
+  | "profile"
+  | "templates"
+  | "template-detail";
 
 interface Member {
   name: string;
@@ -41,18 +43,32 @@ interface Engagement {
   time: string;
   responses: number;
   total: number;
+  recurring?: "daily" | "weekly" | "monthly";
   options?: string[];
   votes?: number[];
   desc?: string;
   deadline?: string;
   submitted?: Member[];
   questions?: string[];
+  winner?: string;
 }
 
 interface Group {
   id: number;
   name: string;
   members: string[];
+  engagements: Engagement[];
+  streak?: number;
+  health?: number;
+  completedCount?: number;
+  spectators?: number;
+}
+
+interface Template {
+  id: number;
+  name: string;
+  emoji: string;
+  desc: string;
   engagements: Engagement[];
 }
 
@@ -73,6 +89,10 @@ const groups: Group[] = [
     id: 1,
     name: "Family Circle",
     members: ["RS", "MJ", "KS", "TS", "AS"],
+    streak: 12,
+    health: 85,
+    completedCount: 45,
+    spectators: 2,
     engagements: [
       {
         id: 1,
@@ -82,6 +102,7 @@ const groups: Group[] = [
         time: "2h ago",
         responses: 3,
         total: 5,
+        recurring: "weekly",
         options: [
           "Grandma's house",
           "Beach cabin rental",
@@ -100,6 +121,7 @@ const groups: Group[] = [
         total: 5,
         desc: "No mixes, no frozen items. Must include protein, carbs, and fruit. Post a photo of the final plate!",
         deadline: "18 hours remaining",
+        winner: "MJ",
         submitted: [
           { name: "MJ", color: COLORS[1], done: true },
           { name: "KS", color: COLORS[2], done: true },
@@ -123,6 +145,10 @@ const groups: Group[] = [
     id: 2,
     name: "Men's Accountability",
     members: ["RS", "DW", "JT", "BL"],
+    streak: 8,
+    health: 92,
+    completedCount: 32,
+    spectators: 1,
     engagements: [
       {
         id: 4,
@@ -132,6 +158,7 @@ const groups: Group[] = [
         time: "5h ago",
         responses: 2,
         total: 4,
+        recurring: "weekly",
         questions: [
           "Have you been keeping up with your personal devotions this week?",
           "Have you been spending quality time with your family?",
@@ -154,6 +181,10 @@ const groups: Group[] = [
     id: 3,
     name: "College Friends",
     members: ["RS", "AK", "NP", "LR", "CM", "TD"],
+    streak: 5,
+    health: 72,
+    completedCount: 28,
+    spectators: 3,
     engagements: [
       {
         id: 6,
@@ -190,6 +221,10 @@ const groups: Group[] = [
     id: 4,
     name: "Church Small Group",
     members: ["RS", "PH", "SW", "ML", "KD"],
+    streak: 15,
+    health: 88,
+    completedCount: 52,
+    spectators: 0,
     engagements: [
       {
         id: 9,
@@ -216,8 +251,144 @@ const groups: Group[] = [
         time: "4d ago",
         responses: 5,
         total: 5,
+        recurring: "monthly",
         options: ["Romans", "Ecclesiastes", "James", "Philippians"],
         votes: [2, 0, 2, 1],
+      },
+    ],
+  },
+];
+
+const templates: Template[] = [
+  {
+    id: 1,
+    name: "Icebreaker Pack",
+    emoji: "❄️",
+    desc: "5 quick conversation starters",
+    engagements: [
+      {
+        id: 101,
+        type: "poll",
+        title: "Coffee or tea person?",
+        by: "Template",
+        time: "now",
+        responses: 0,
+        total: 0,
+        options: ["Coffee ☕", "Tea 🍵", "Neither"],
+        votes: [0, 0, 0],
+      },
+      {
+        id: 102,
+        type: "truth-dare",
+        title: "Two Truths and a Lie",
+        by: "Template",
+        time: "now",
+        responses: 0,
+        total: 0,
+      },
+      {
+        id: 103,
+        type: "guess",
+        title: "Guess My Favorite Movie",
+        by: "Template",
+        time: "now",
+        responses: 0,
+        total: 0,
+      },
+    ],
+  },
+  {
+    id: 2,
+    name: "Bible Study Pack",
+    emoji: "📖",
+    desc: "Scripture discussion templates",
+    engagements: [
+      {
+        id: 201,
+        type: "accountability",
+        title: "Weekly Scripture Reflection",
+        by: "Template",
+        time: "now",
+        responses: 0,
+        total: 0,
+        questions: [
+          "What verse stood out to you this week?",
+          "How are you applying it to your life?",
+          "What do you need prayer for?",
+        ],
+      },
+      {
+        id: 202,
+        type: "poll",
+        title: "Which passage should we study next?",
+        by: "Template",
+        time: "now",
+        responses: 0,
+        total: 0,
+        options: ["Matthew 5-7", "1 John", "Proverbs", "Psalms"],
+        votes: [0, 0, 0, 0],
+      },
+    ],
+  },
+  {
+    id: 3,
+    name: "Family Game Night",
+    emoji: "🎮",
+    desc: "Fun games & challenges",
+    engagements: [
+      {
+        id: 301,
+        type: "trivia",
+        title: "Family Trivia Challenge",
+        by: "Template",
+        time: "now",
+        responses: 0,
+        total: 0,
+      },
+      {
+        id: 302,
+        type: "challenge",
+        title: "Talent Show Video",
+        by: "Template",
+        time: "now",
+        responses: 0,
+        total: 0,
+        desc: "Record a 30-second talent performance",
+      },
+    ],
+  },
+  {
+    id: 4,
+    name: "Party Games",
+    emoji: "🎉",
+    desc: "Get everyone laughing",
+    engagements: [
+      {
+        id: 401,
+        type: "guess",
+        title: "Guess the Song from Lyrics",
+        by: "Template",
+        time: "now",
+        responses: 0,
+        total: 0,
+      },
+      {
+        id: 402,
+        type: "judge",
+        title: "Best Meme Contest",
+        by: "Template",
+        time: "now",
+        responses: 0,
+        total: 0,
+      },
+      {
+        id: 403,
+        type: "photo",
+        title: "Silliest Selfie",
+        by: "Template",
+        time: "now",
+        responses: 0,
+        total: 0,
       },
     ],
   },
@@ -254,7 +425,6 @@ const engagementTypes: { key: EngType; icon: string; label: string }[] = [
   { key: "advice", icon: "💡", label: "Advice" },
 ];
 
-// ── Badge color map ──
 const typeBadge: Record<string, string> = {
   poll: "bg-purple-100 text-purple-700",
   challenge: "bg-orange-100 text-orange-700",
@@ -284,6 +454,7 @@ export default function CampfirePage() {
   const [screen, setScreen] = useState<Screen>("home");
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
   const [currentEng, setCurrentEng] = useState<Engagement | null>(null);
+  const [currentTemplate, setCurrentTemplate] = useState<Template | null>(null);
   const [selectedPollIdx, setSelectedPollIdx] = useState<number | null>(null);
   const [pollSubmitted, setPollSubmitted] = useState(false);
   const [challengeUploaded, setChallengeUploaded] = useState(false);
@@ -291,6 +462,17 @@ export default function CampfirePage() {
   const [selectedEngType, setSelectedEngType] = useState<EngType | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("home");
+  const [recordingVoice, setRecordingVoice] = useState(false);
+  const [reactions, setReactions] = useState<Record<string, number>>({
+    "🔥": 0,
+    "😂": 0,
+    "❤️": 0,
+    "👍": 0,
+    "🤯": 0,
+  });
+  const [userReacted, setUserReacted] = useState<string | null>(null);
+  const [recurringFreq, setRecurringFreq] = useState<"daily" | "weekly" | "monthly" | null>(null);
+  const [allowSpectators, setAllowSpectators] = useState(false);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -307,6 +489,8 @@ export default function CampfirePage() {
     setSelectedPollIdx(null);
     setPollSubmitted(false);
     setChallengeUploaded(false);
+    setUserReacted(null);
+    setReactions({ "🔥": 0, "😂": 0, "❤️": 0, "👍": 0, "🤯": 0 });
     if (eng.type === "poll" && eng.options) {
       setScreen("poll");
     } else if (eng.type === "challenge") {
@@ -319,6 +503,39 @@ export default function CampfirePage() {
   function switchTab(tab: string) {
     setActiveTab(tab);
     setScreen(tab as Screen);
+  }
+
+  function openTemplateDetail(t: Template) {
+    setCurrentTemplate(t);
+    setScreen("template-detail");
+  }
+
+  function useTemplate() {
+    setShowModal(true);
+    setScreen("home");
+    showToast("Template loaded! Fill in details and create.");
+  }
+
+  function handleReaction(emoji: string) {
+    if (userReacted === emoji) {
+      setUserReacted(null);
+      setReactions((prev) => ({
+        ...prev,
+        [emoji]: Math.max(0, prev[emoji] - 1),
+      }));
+    } else {
+      if (userReacted) {
+        setReactions((prev) => ({
+          ...prev,
+          [userReacted]: Math.max(0, prev[userReacted] - 1),
+        }));
+      }
+      setUserReacted(emoji);
+      setReactions((prev) => ({
+        ...prev,
+        [emoji]: prev[emoji] + 1,
+      }));
+    }
   }
 
   // ── Sub-screens ──
@@ -334,6 +551,14 @@ export default function CampfirePage() {
             RS
           </button>
         </div>
+
+        <div className="px-4 pb-3">
+          <div className="rounded-xl bg-gradient-to-r from-orange-400 via-rose-400 to-pink-400 p-3.5 text-white">
+            <div className="text-xs font-bold uppercase tracking-wide opacity-90">🏖️ Summer Challenge Series</div>
+            <div className="text-sm font-bold mt-1">3 days left to join</div>
+          </div>
+        </div>
+
         <div className="px-3 pb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">
           Active Engagements
         </div>
@@ -368,8 +593,19 @@ export default function CampfirePage() {
                     </div>
                   ))}
                 </div>
-                <div className="text-sm text-slate-500 truncate">
-                  {g.engagements[0]?.title ?? "No engagements yet"}
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-500 truncate">
+                    {g.engagements[0]?.title ?? "No engagements yet"}
+                  </span>
+                  <span className="text-orange-600 font-semibold ml-2">
+                    🔥 {g.streak}-week
+                  </span>
+                </div>
+                <div className="mt-2 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-orange-500 to-rose-500"
+                    style={{ width: `${(g.health || 0) * 2}%` }}
+                  />
                 </div>
               </button>
             );
@@ -381,6 +617,7 @@ export default function CampfirePage() {
 
   function renderGroupDetail() {
     if (!currentGroup) return null;
+    const showMilestone = (currentGroup.completedCount || 0) >= 10;
     return (
       <>
         <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
@@ -391,7 +628,37 @@ export default function CampfirePage() {
             &larr;
           </button>
           <h3 className="text-base font-bold text-slate-900">{currentGroup.name}</h3>
+          <div className="ml-auto flex items-center gap-1.5 text-xs text-slate-500">
+            <span>👁️</span>
+            <span>{currentGroup.spectators || 0} spectators</span>
+          </div>
         </div>
+
+        {showMilestone && (
+          <div className="mx-3 mt-3 rounded-xl bg-gradient-to-r from-amber-100 to-orange-100 px-3.5 py-2.5 border border-amber-200">
+            <div className="text-sm font-bold text-amber-900">
+              🎉 {currentGroup.completedCount} engagements completed!
+            </div>
+          </div>
+        )}
+
+        <div className="bg-slate-50 px-4 py-3 mt-2">
+          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            <div>
+              <div className="font-bold text-slate-900">{currentGroup.streak}</div>
+              <div className="text-slate-500">Week Streak</div>
+            </div>
+            <div>
+              <div className="font-bold text-slate-900">{currentGroup.health}%</div>
+              <div className="text-slate-500">Health</div>
+            </div>
+            <div>
+              <div className="font-bold text-slate-900">{currentGroup.completedCount}</div>
+              <div className="text-slate-500">Completed</div>
+            </div>
+          </div>
+        </div>
+
         <div className="px-3 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">
           Engagements
         </div>
@@ -402,13 +669,23 @@ export default function CampfirePage() {
               onClick={() => openEngagement(eng)}
               className="rounded-xl border border-slate-200 bg-white p-3.5 text-left transition hover:shadow-md"
             >
-              <span
-                className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide mb-1.5 ${
-                  typeBadge[eng.type] || "bg-slate-100 text-slate-600"
-                }`}
-              >
-                {eng.type}
-              </span>
+              <div className="flex items-start gap-2 mb-1.5">
+                <span
+                  className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                    typeBadge[eng.type] || "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {eng.type}
+                </span>
+                {eng.recurring && (
+                  <span className="inline-block rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-blue-100 text-blue-700">
+                    ↻ {eng.recurring}
+                  </span>
+                )}
+                {eng.winner && (
+                  <span className="ml-auto inline-block text-sm">👑</span>
+                )}
+              </div>
               <div className="font-semibold text-sm text-slate-900 mb-1">{eng.title}</div>
               <div className="flex items-center gap-2 text-xs text-slate-500">
                 <span>by {eng.by}</span>
@@ -435,11 +712,11 @@ export default function CampfirePage() {
           </button>
           <h3 className="text-base font-bold text-slate-900">Poll</h3>
         </div>
-        <div className="p-5 flex-1">
+        <div className="p-5 flex-1 overflow-y-auto">
           <h2 className="text-lg font-extrabold text-slate-900 mb-5 leading-snug">
             {currentEng.title}
           </h2>
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-2.5 mb-5">
             {currentEng.options.map((opt, i) => {
               const pct = totalVotes ? Math.round((currentEng.votes![i] / totalVotes) * 100) : 0;
               const isSelected = selectedPollIdx === i;
@@ -486,10 +763,40 @@ export default function CampfirePage() {
               setPollSubmitted(true);
               showToast("Your vote has been recorded!");
             }}
-            className="mt-5 w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 py-3.5 text-sm font-bold text-white shadow-md transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 py-3.5 text-sm font-bold text-white shadow-md transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed mb-4"
           >
             {pollSubmitted ? "Vote Submitted!" : "Submit Vote"}
           </button>
+
+          {pollSubmitted && (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Reactions</span>
+                <button
+                  onClick={() => showToast("Exported to camera roll!")}
+                  className="text-lg"
+                >
+                  📤
+                </button>
+              </div>
+              <div className="flex gap-2 mb-4">
+                {Object.entries(reactions).map(([emoji, count]) => (
+                  <button
+                    key={emoji}
+                    onClick={() => handleReaction(emoji)}
+                    className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                      userReacted === emoji
+                        ? "bg-orange-100 text-orange-700 border-2 border-orange-500"
+                        : "bg-slate-100 text-slate-600 border-2 border-transparent hover:bg-slate-200"
+                    }`}
+                  >
+                    <span>{emoji}</span>
+                    {count > 0 && <span className="text-xs">{count}</span>}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </>
     );
@@ -497,6 +804,7 @@ export default function CampfirePage() {
 
   function renderChallenge() {
     if (!currentEng) return null;
+    const [uploadMode, setUploadMode] = useState<"photo" | "voice" | null>(null);
     return (
       <>
         <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
@@ -505,7 +813,7 @@ export default function CampfirePage() {
           </button>
           <h3 className="text-base font-bold text-slate-900">Challenge</h3>
         </div>
-        <div className="p-5 flex-1">
+        <div className="p-5 flex-1 overflow-y-auto">
           <h2 className="text-lg font-extrabold text-slate-900 mb-2">{currentEng.title}</h2>
           {currentEng.desc && (
             <p className="text-sm text-slate-600 leading-relaxed mb-4">{currentEng.desc}</p>
@@ -516,28 +824,85 @@ export default function CampfirePage() {
               <span className="text-sm font-medium text-orange-600">{currentEng.deadline}</span>
             </div>
           )}
-          <button
-            onClick={() => {
-              if (!challengeUploaded) {
-                setChallengeUploaded(true);
-                showToast("Response submitted! Waiting for others...");
-              }
-            }}
-            className={`w-full rounded-2xl border-2 border-dashed p-8 text-center transition ${
-              challengeUploaded
-                ? "border-emerald-400 bg-emerald-50"
-                : "border-slate-300 hover:border-orange-400 hover:bg-orange-50 cursor-pointer"
-            }`}
-          >
-            <div className="text-3xl mb-2">{challengeUploaded ? "✅" : "📷"}</div>
-            <div className="text-sm text-slate-600">
-              {challengeUploaded ? "Response uploaded!" : "Tap to upload your response"}
+
+          {!challengeUploaded ? (
+            <div className="flex flex-col gap-2 mb-4">
+              <button
+                onClick={() => setUploadMode(uploadMode === "photo" ? null : "photo")}
+                className={`rounded-xl border-2 p-4 text-center transition ${
+                  uploadMode === "photo"
+                    ? "border-orange-500 bg-orange-50"
+                    : "border-slate-300 hover:border-orange-400 hover:bg-orange-50"
+                }`}
+              >
+                <div className="text-2xl mb-1">📷</div>
+                <div className="text-sm font-medium text-slate-700">Photo/Video</div>
+              </button>
+              <button
+                onClick={() => setUploadMode(uploadMode === "voice" ? null : "voice")}
+                className={`rounded-xl border-2 p-4 text-center transition ${
+                  uploadMode === "voice"
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-slate-300 hover:border-blue-400 hover:bg-blue-50"
+                }`}
+              >
+                <div className="text-2xl mb-1">🎙️</div>
+                <div className="text-sm font-medium text-slate-700">Voice Note</div>
+              </button>
             </div>
-          </button>
+          ) : null}
+
+          {uploadMode === "photo" && !challengeUploaded && (
+            <button
+              onClick={() => {
+                setChallengeUploaded(true);
+                setUploadMode(null);
+                showToast("Response submitted! Waiting for others...");
+              }}
+              className="w-full rounded-2xl border-2 border-dashed border-slate-300 p-8 text-center transition hover:border-orange-400 hover:bg-orange-50 cursor-pointer mb-4"
+            >
+              <div className="text-2xl mb-2">📸</div>
+              <div className="text-sm text-slate-600">Tap to select photo or video</div>
+            </button>
+          )}
+
+          {uploadMode === "voice" && !challengeUploaded && (
+            <button
+              onClick={() => {
+                setRecordingVoice(!recordingVoice);
+                if (recordingVoice) {
+                  setChallengeUploaded(true);
+                  setUploadMode(null);
+                  showToast("Voice note submitted!");
+                }
+              }}
+              className={`w-full rounded-2xl border-2 p-8 text-center transition mb-4 ${
+                recordingVoice
+                  ? "border-red-500 bg-red-50"
+                  : "border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50 cursor-pointer"
+              }`}
+            >
+              <div className={`text-3xl mb-2 ${recordingVoice ? "animate-pulse" : ""}`}>
+                {recordingVoice ? "⏹️" : "🎤"}
+              </div>
+              <div className="text-sm text-slate-600">
+                {recordingVoice ? "Recording... tap to stop" : "Tap to record voice note"}
+              </div>
+            </button>
+          )}
+
+          {challengeUploaded && (
+            <button
+              onClick={() => showToast("Exported to camera roll!")}
+              className="w-full rounded-xl border-2 border-emerald-400 bg-emerald-50 py-3.5 text-sm font-bold text-emerald-700 mb-4"
+            >
+              ✅ Response uploaded! 📤 Export
+            </button>
+          )}
 
           {currentEng.submitted && (
             <>
-              <div className="mt-5 mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              <div className="mt-3 mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
                 Responses ({currentEng.responses}/{currentEng.total})
               </div>
               <div className="flex flex-col gap-2">
@@ -562,8 +927,112 @@ export default function CampfirePage() {
                   </div>
                 ))}
               </div>
+
+              {challengeUploaded && (
+                <>
+                  <div className="flex items-center justify-between mt-4 mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Reactions</span>
+                  </div>
+                  <div className="flex gap-2">
+                    {Object.entries(reactions).map(([emoji, count]) => (
+                      <button
+                        key={emoji}
+                        onClick={() => handleReaction(emoji)}
+                        className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                          userReacted === emoji
+                            ? "bg-orange-100 text-orange-700 border-2 border-orange-500"
+                            : "bg-slate-100 text-slate-600 border-2 border-transparent hover:bg-slate-200"
+                        }`}
+                      >
+                        <span>{emoji}</span>
+                        {count > 0 && <span className="text-xs">{count}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </>
           )}
+        </div>
+      </>
+    );
+  }
+
+  function renderTemplates() {
+    return (
+      <>
+        <div className="px-5 pt-5 pb-3">
+          <h2 className="text-xl font-extrabold text-slate-900">Templates</h2>
+        </div>
+        <div className="flex flex-col gap-3 px-4 pb-4">
+          {templates.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => openTemplateDetail(t)}
+              className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:shadow-md"
+            >
+              <div className="flex items-start gap-3">
+                <div className="text-3xl">{t.emoji}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-slate-900">{t.name}</div>
+                  <div className="text-sm text-slate-500">{t.desc}</div>
+                  <div className="text-xs text-slate-400 mt-1">
+                    {t.engagements.length} items
+                  </div>
+                </div>
+                <span className="text-slate-400">→</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </>
+    );
+  }
+
+  function renderTemplateDetail() {
+    if (!currentTemplate) return null;
+    return (
+      <>
+        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+          <button
+            onClick={() => { setScreen("templates"); }}
+            className="text-lg text-orange-600 font-bold"
+          >
+            &larr;
+          </button>
+          <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <span className="text-2xl">{currentTemplate.emoji}</span>
+            {currentTemplate.name}
+          </h3>
+        </div>
+        <div className="p-4 flex-1 overflow-y-auto">
+          <p className="text-sm text-slate-600 mb-4">{currentTemplate.desc}</p>
+          <div className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3">
+            Items in this pack
+          </div>
+          <div className="flex flex-col gap-2.5 mb-4">
+            {currentTemplate.engagements.map((eng) => (
+              <div
+                key={eng.id}
+                className="rounded-xl border border-slate-200 bg-white p-3"
+              >
+                <span
+                  className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide mb-1.5 ${
+                    typeBadge[eng.type] || "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {eng.type}
+                </span>
+                <div className="font-semibold text-sm text-slate-900">{eng.title}</div>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => useTemplate()}
+            className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 py-3.5 text-sm font-bold text-white shadow-md transition hover:opacity-90"
+          >
+            Use Template
+          </button>
         </div>
       </>
     );
@@ -683,7 +1152,6 @@ export default function CampfirePage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50">
-      {/* Page header */}
       <div className="mx-auto max-w-6xl px-6 pt-10 pb-6">
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <span className="inline-flex items-center rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-3 py-1 text-xs font-semibold text-white">
@@ -705,12 +1173,9 @@ export default function CampfirePage() {
         </p>
       </div>
 
-      {/* Phone mockup */}
       <div className="flex justify-center px-4 pb-16">
         <div className="relative w-full max-w-[400px]">
-          {/* Phone frame */}
           <div className="rounded-[2.5rem] border-[6px] border-slate-800 bg-white shadow-2xl overflow-hidden">
-            {/* Status bar */}
             <div className="flex items-center justify-between bg-slate-800 px-6 py-1.5 text-[11px] font-medium text-white">
               <span>9:41</span>
               <div className="flex items-center gap-1.5">
@@ -720,7 +1185,6 @@ export default function CampfirePage() {
               </div>
             </div>
 
-            {/* App header */}
             <div className="flex items-center justify-between bg-white px-4 py-2.5 border-b border-slate-100">
               <span className="text-lg font-extrabold bg-gradient-to-r from-orange-500 to-rose-500 bg-clip-text text-transparent">
                 Campfire
@@ -728,18 +1192,18 @@ export default function CampfirePage() {
               <span className="text-xs text-slate-400">v0.1 prototype</span>
             </div>
 
-            {/* Screen content — fixed height for phone feel */}
             <div className="h-[520px] overflow-y-auto bg-slate-50">
               {screen === "home" && renderHome()}
               {screen === "group" && renderGroupDetail()}
               {screen === "poll" && renderPoll()}
               {screen === "challenge" && renderChallenge()}
+              {screen === "templates" && renderTemplates()}
+              {screen === "template-detail" && renderTemplateDetail()}
               {screen === "favs" && renderFavourites()}
               {screen === "notifs" && renderNotifications()}
               {screen === "profile" && renderProfile()}
             </div>
 
-            {/* FAB */}
             {(screen === "home" || screen === "group") && (
               <button
                 onClick={() => setShowModal(true)}
@@ -749,10 +1213,10 @@ export default function CampfirePage() {
               </button>
             )}
 
-            {/* Tab bar */}
             <div className="flex items-center justify-around border-t border-slate-200 bg-white py-2">
               {[
                 { key: "home", icon: "🏠", label: "Home" },
+                { key: "templates", icon: "📋", label: "Templates" },
                 { key: "favs", icon: "❤️", label: "Favourites" },
                 { key: "notifs", icon: "🔔", label: "Alerts", badge: 3 },
                 { key: "profile", icon: "👤", label: "Profile" },
@@ -778,13 +1242,12 @@ export default function CampfirePage() {
         </div>
       </div>
 
-      {/* Create engagement modal */}
       {showModal && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
           onClick={(e) => e.target === e.currentTarget && setShowModal(false)}
         >
-          <div className="w-full max-w-[400px] rounded-t-3xl bg-white p-5 animate-slide-up">
+          <div className="w-full max-w-[400px] rounded-t-3xl bg-white p-5 animate-slide-up max-h-[90vh] overflow-y-auto">
             <div className="mx-auto mb-4 h-1 w-9 rounded-full bg-slate-300" />
             <h3 className="text-lg font-extrabold text-slate-900 mb-4">New Engagement</h3>
             <div className="grid grid-cols-3 gap-2.5 mb-5">
@@ -834,6 +1297,37 @@ export default function CampfirePage() {
                 <ToggleRow label="Add random guest" desc="" defaultOn={false} />
                 <ToggleRow label="Adult content" desc="" defaultOn={false} />
 
+                <div className="space-y-3 border-t border-slate-200 pt-3">
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                    Advanced
+                  </div>
+                  <ToggleRow
+                    label="Make recurring"
+                    desc="Repeats on a schedule"
+                    defaultOn={false}
+                  />
+                  {recurringFreq !== null && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-slate-700">Frequency</span>
+                      <select
+                        onChange={(e) =>
+                          setRecurringFreq(e.target.value as "daily" | "weekly" | "monthly")
+                        }
+                        className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm bg-white"
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                      </select>
+                    </div>
+                  )}
+                  <ToggleRow
+                    label="Allow spectators"
+                    desc="Non-members can watch"
+                    defaultOn={false}
+                  />
+                </div>
+
                 <button
                   onClick={() => {
                     setShowModal(false);
@@ -841,8 +1335,9 @@ export default function CampfirePage() {
                       `${selectedEngType.charAt(0).toUpperCase() + selectedEngType.slice(1)} engagement created!`
                     );
                     setSelectedEngType(null);
+                    setRecurringFreq(null);
                   }}
-                  className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 py-3 text-sm font-bold text-white shadow-md mt-2"
+                  className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 py-3 text-sm font-bold text-white shadow-md mt-4"
                 >
                   Create Engagement
                 </button>

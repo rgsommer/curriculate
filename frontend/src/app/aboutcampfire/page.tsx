@@ -182,6 +182,48 @@ export default function AboutCampfirePage() {
           <EngCard icon="🔍" name="Guess" desc="Post a mystery photo for the group to guess." />
           <EngCard icon="🎉" name="Surprise" desc="Coordinate greetings or video mash-ups, hidden from the recipient." />
           <EngCard icon="💡" name="Advice" desc="Ask your group or filtered random users for counsel." />
+          <EngCard icon="🎤" name="Voice Response" desc="Leave voice notes instead of text. Lower friction, higher personality." />
+        </div>
+
+        <Divider />
+
+        {/* ── Template Packs ── */}
+        <SectionHeader
+          eyebrow="Pre-built Packs"
+          title="Engagement templates to get started instantly"
+          desc="Browse curated template packs tailored to your group's interests and gatherings."
+        />
+        <div className="grid gap-4 md:grid-cols-3">
+          <EngCard
+            icon="🧊"
+            name="Icebreaker Pack"
+            desc="Quick two-truths, would-you-rather, and speed questions to warm up new groups."
+          />
+          <EngCard
+            icon="📖"
+            name="Bible Study Pack"
+            desc="Reflection prompts, verse discussion, and faith-based accountability check-ins."
+          />
+          <EngCard
+            icon="🎮"
+            name="Family Game Night Pack"
+            desc="Trivia, word games, photo challenges, and team-based competitions."
+          />
+          <EngCard
+            icon="🎉"
+            name="Party Games Pack"
+            desc="Dare challenges, truth or dare, Pictionary, and group guessing games."
+          />
+          <EngCard
+            icon="👥"
+            name="Youth Group Pack"
+            desc="Scavenger hunts, video challenges, group accountability, and milestone celebrations."
+          />
+          <EngCard
+            icon="💑"
+            name="Couples Pack"
+            desc="Relationship questions, date night ideas, anniversary countdowns, and memory shares."
+          />
         </div>
 
         <Divider />
@@ -265,6 +307,94 @@ export default function AboutCampfirePage() {
             title="🎲 Random Guests"
             desc="Add random users who opt in during sign-up. Adult content preferences respected."
           />
+          <Card
+            title="🔄 Recurring Engagements"
+            desc="Schedule weekly accountability check-ins, monthly challenges, or daily trivia to auto-post on a cycle."
+          />
+          <Card
+            title="💬 Reactions & Commentary"
+            desc="After the reveal, react with emojis and leave comments on individual responses for deeper interaction."
+          />
+          <Card
+            title="📤 Export & Share"
+            desc="Export video mash-ups, photo collages, and poll results to share on social media with Campfire branding."
+          />
+          <Card
+            title="👁️ Spectator Mode"
+            desc="Let some members watch without participating. Perfect for large communities or observer roles."
+          />
+          <Card
+            title="🔗 Engagement Chains"
+            desc="Winners automatically get the right to post the next engagement, creating self-sustaining activity."
+          />
+        </div>
+
+        <Divider />
+
+        {/* ── Streaks & Group Health ── */}
+        <SectionHeader
+          eyebrow="Group Engagement"
+          title="Streaks & group health at a glance"
+          desc="Track participation, build momentum, and celebrate collective milestones."
+        />
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card
+            title="🔥 Streak Counters"
+            desc="Individual and group participation streaks. Keep the chain alive and unlock streak badges."
+          />
+          <Card
+            title="📊 Participation Dashboard"
+            desc="Real-time view of who's responded, who's still pending, and overall group engagement metrics."
+          />
+          <Card
+            title="💪 Group Health Score"
+            desc="A single score reflecting participation rates, response quality, and consistency. Trending up or down."
+          />
+          <Card
+            title="🎖️ Group Milestones"
+            desc="Celebratory milestones at 10, 25, 50, and 100 engagements. Shareable graphics for each achievement."
+          />
+        </div>
+
+        <Divider />
+
+        {/* ── Themed Seasons ── */}
+        <SectionHeader
+          eyebrow="Seasonal Engagement"
+          title="Themed seasons to keep things fresh"
+          desc="Time-limited engagement themes tailored to seasons, holidays, and group moments."
+        />
+        <div className="grid gap-4 md:grid-cols-3">
+          <EngCard
+            icon="☀️"
+            name="Summer Challenge Series"
+            desc="Weekly outdoor challenges, travel stories, and summer bucket list countdown."
+          />
+          <EngCard
+            icon="🕯️"
+            name="Advent Calendar"
+            desc="Daily devotions, gratitude shares, and surprise gift reveals for the season."
+          />
+          <EngCard
+            icon="🏀"
+            name="March Madness Bracket"
+            desc="Collaborative bracket competitions, pick-the-winner games, and playoff predictions."
+          />
+          <EngCard
+            icon="🎃"
+            name="Spooky Season Pack"
+            desc="Halloween costume votes, scary story challenges, and haunted house recommendations."
+          />
+          <EngCard
+            icon="🌱"
+            name="New Year Resolution Check-ins"
+            desc="Weekly accountability on goals, progress shares, and celebration of wins."
+          />
+          <EngCard
+            icon="💝"
+            name="Love & Gratitude Series"
+            desc="Appreciation shares, compliment exchanges, and love-letter submissions."
+          />
         </div>
 
         <Divider />
@@ -308,6 +438,12 @@ export default function AboutCampfirePage() {
                 ["Deadline-enforced responses", "Yes", "-", "-", "-"],
                 ["Random guest opt-in", "Yes", "-", "-", "-"],
                 ["Favourites tab for replaying greetings", "Yes", "-", "-", "-"],
+                ["Recurring / scheduled engagements", "Yes", "-", "-", "-"],
+                ["Template packs", "Yes", "-", "-", "-"],
+                ["Reactions on responses", "Yes", "-", "Partial", "Partial"],
+                ["Streak tracking", "Yes", "-", "-", "-"],
+                ["Export to social media", "Yes", "-", "-", "-"],
+                ["Voice note responses", "Yes", "Yes", "-", "Yes"],
               ].map(([feat, ...vals]) => (
                 <tr key={feat} className="hover:bg-slate-50/50">
                   <td className="p-3 border-b border-slate-100">{feat}</td>
