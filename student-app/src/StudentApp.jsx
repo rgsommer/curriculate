@@ -4224,7 +4224,7 @@ function StudentApp() {
       </button>
     </div>
 
-    {/* Share with a teacher nudge */}
+    {/* Share nudge — two options for different audiences */}
     <div
       style={{
         marginTop: 20,
@@ -4236,44 +4236,79 @@ function StudentApp() {
       }}
     >
       <div style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: 6 }}>
-        🎉 Had fun? Know a teacher who&apos;d love this?
+        🎉 Had fun? Share the experience!
       </div>
       <div style={{ fontSize: "0.82rem", color: "#4b5563", marginBottom: 10 }}>
-        Curriculate works for classrooms too — interactive stations, team games, and live reporting.
+        Curriculate works for classrooms, parties, and corporate events — interactive team games on any device.
       </div>
-      <button
-        type="button"
-        onClick={() => {
-          const shareText = "I just played some awesome team games on Curriculate — it would be amazing for your classroom! Check it out: https://curriculate.net?ref=party";
-          if (navigator.share) {
-            navigator.share({ title: "Curriculate", text: shareText, url: "https://curriculate.net?ref=party" }).catch(() => {});
-          } else {
-            navigator.clipboard.writeText(shareText).then(() => {
-              const btn = document.getElementById("share-teacher-btn");
-              if (btn) { btn.textContent = "Copied! 🎉"; setTimeout(() => { btn.textContent = "Share with a Teacher"; }, 2000); }
-            }).catch(() => {
-              window.open("https://curriculate.net?ref=party", "_blank");
-            });
-          }
-        }}
-        id="share-teacher-btn"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "8px 18px",
-          borderRadius: 999,
-          border: "none",
-          background: "linear-gradient(135deg, #db2777, #7c3aed)",
-          color: "#fff",
-          fontWeight: 700,
-          fontSize: "0.88rem",
-          cursor: "pointer",
-          boxShadow: "0 4px 12px rgba(219,39,119,0.25)",
-        }}
-      >
-        Share with a Teacher
-      </button>
+      <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          onClick={() => {
+            const shareText = "I just played some awesome team games on Curriculate — it would be amazing for your classroom! Check it out: https://curriculate.net?ref=share";
+            if (navigator.share) {
+              navigator.share({ title: "Curriculate", text: shareText, url: "https://curriculate.net?ref=share" }).catch(() => {});
+            } else {
+              navigator.clipboard.writeText(shareText).then(() => {
+                const btn = document.getElementById("share-teacher-btn");
+                if (btn) { btn.textContent = "Copied! 🎉"; setTimeout(() => { btn.textContent = "Tell a Teacher"; }, 2000); }
+              }).catch(() => {
+                window.open("https://curriculate.net?ref=share", "_blank");
+              });
+            }
+          }}
+          id="share-teacher-btn"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "8px 16px",
+            borderRadius: 999,
+            border: "none",
+            background: "linear-gradient(135deg, #db2777, #7c3aed)",
+            color: "#fff",
+            fontWeight: 700,
+            fontSize: "0.84rem",
+            cursor: "pointer",
+            boxShadow: "0 4px 12px rgba(219,39,119,0.25)",
+          }}
+        >
+          🎓 Tell a Teacher
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const shareText = "Just used Curriculate for an interactive team event — it was a hit. Would be great for your next offsite or conference: https://curriculate.net/events?ref=share";
+            if (navigator.share) {
+              navigator.share({ title: "Curriculate Events", text: shareText, url: "https://curriculate.net/events?ref=share" }).catch(() => {});
+            } else {
+              navigator.clipboard.writeText(shareText).then(() => {
+                const btn = document.getElementById("share-events-btn");
+                if (btn) { btn.textContent = "Copied! 🎉"; setTimeout(() => { btn.textContent = "Tell Your Team"; }, 2000); }
+              }).catch(() => {
+                window.open("https://curriculate.net/events?ref=share", "_blank");
+              });
+            }
+          }}
+          id="share-events-btn"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "8px 16px",
+            borderRadius: 999,
+            border: "none",
+            background: "linear-gradient(135deg, #2563eb, #4f46e5)",
+            color: "#fff",
+            fontWeight: 700,
+            fontSize: "0.84rem",
+            cursor: "pointer",
+            boxShadow: "0 4px 12px rgba(37,99,235,0.25)",
+          }}
+        >
+          🏢 Tell Your Team
+        </button>
+      </div>
     </div>
   </section>
 )}

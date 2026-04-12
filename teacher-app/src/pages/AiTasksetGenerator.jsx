@@ -43,6 +43,46 @@ const PARTY_THEMES = [
   { id: "custom", emoji: "✨", label: "Custom (your own)", vocab: [] },
 ];
 
+/* ------------------------------------------------------------------ */
+/*  EVENT MODE                                                         */
+/* ------------------------------------------------------------------ */
+
+const EVENT_TASK_TYPES = [
+  "flashcards-race",
+  "brain-blitz",
+  "speed-draw",
+  "fake-out",
+  "guess-who",
+  "draw-mime",
+  "hangman-duel",
+  "diff-detective",
+  "echo-chain",
+  "true-false-tictactoe",
+  "true-false-connect-four",
+  "debate",
+];
+
+const EVENT_INDUSTRY_THEMES = [
+  { id: "tech", emoji: "💻", label: "Tech / SaaS", vocab: ["API", "deployment", "sprint", "standup", "pull request", "latency", "microservice", "agile", "refactor", "CI/CD"] },
+  { id: "finance", emoji: "📊", label: "Finance", vocab: ["portfolio", "hedge", "dividend", "equity", "liquidity", "amortization", "yield curve", "arbitrage", "compliance", "fiduciary"] },
+  { id: "healthcare", emoji: "🏥", label: "Healthcare", vocab: ["triage", "diagnosis", "protocol", "patient outcome", "HIPAA", "clinical trial", "prognosis", "formulary", "EHR", "palliative"] },
+  { id: "marketing", emoji: "📣", label: "Marketing", vocab: ["conversion", "funnel", "attribution", "impressions", "engagement rate", "retargeting", "brand equity", "CTA", "A/B test", "churn"] },
+  { id: "sales", emoji: "🤝", label: "Sales", vocab: ["pipeline", "discovery call", "quota", "close rate", "objection handling", "upsell", "champion", "BANT", "POC", "renewal"] },
+  { id: "hr", emoji: "👥", label: "HR / People", vocab: ["retention", "onboarding", "DEI", "performance review", "engagement survey", "HRIS", "succession planning", "employer brand", "attrition", "PIP"] },
+  { id: "legal", emoji: "⚖️", label: "Legal", vocab: ["liability", "indemnity", "compliance", "due diligence", "NDA", "arbitration", "precedent", "statute", "injunction", "jurisdiction"] },
+  { id: "product", emoji: "🛠️", label: "Product / Design", vocab: ["user story", "wireframe", "MVP", "iteration", "A/B test", "persona", "roadmap", "OKR", "feature flag", "design system"] },
+  { id: "general", emoji: "🏢", label: "General Business", vocab: ["stakeholder", "ROI", "synergy", "bandwidth", "deliverable", "alignment", "KPI", "scalable", "leverage", "pivot"] },
+];
+
+const EVENT_TYPE_THEMES = [
+  { id: "icebreaker", emoji: "🧊", label: "Icebreaker", vocab: ["two truths and a lie", "fun fact", "bucket list", "hidden talent", "first job", "guilty pleasure", "unpopular opinion", "pet peeve", "dream vacation", "superpower"] },
+  { id: "team-building", emoji: "🏗️", label: "Team Building", vocab: ["collaboration", "trust", "communication", "leadership", "problem solving", "brainstorm", "consensus", "delegation", "feedback", "team spirit"] },
+  { id: "conference-recap", emoji: "📝", label: "Conference Recap", vocab: ["keynote", "takeaway", "action item", "insight", "trend", "disruption", "innovation", "panel", "Q&A", "breakout session"] },
+  { id: "onboarding", emoji: "🚀", label: "New Hire Onboarding", vocab: ["company values", "org chart", "mission statement", "benefits", "code of conduct", "mentor", "probation", "handbook", "culture", "all-hands"] },
+  { id: "quarterly", emoji: "📈", label: "Quarterly Kickoff", vocab: ["OKR", "target", "roadmap", "retrospective", "milestone", "forecast", "pipeline review", "win", "challenge", "north star metric"] },
+  { id: "holiday", emoji: "🎄", label: "Holiday Party", vocab: ["celebration", "gratitude", "highlights", "year in review", "toast", "award", "recognition", "tradition", "resolution", "team spirit"] },
+];
+
 // --- Task-specific generation constraints (additive). These get appended to topicDescription
 // so the backend AI prompt is forced to include required fields for certain task types.
 const TASK_GEN_CONSTRAINTS = {
@@ -207,6 +247,14 @@ export default function AiTasksetGenerator() {
   const [partyTheme, setPartyTheme] = useState("");
   const [partyCustomWords, setPartyCustomWords] = useState("");
 
+  // Event mode
+  const [isEventMode, setIsEventMode] = useState(
+    location.search?.includes("mode=event") || location.state?.eventMode || false
+  );
+  const [eventIndustry, setEventIndustry] = useState("");
+  const [eventType, setEventType] = useState("");
+  const [eventCustomWords, setEventCustomWords] = useState("");
+
   // UI feedback for copy buttons
   const [copiedTag, setCopiedTag] = useState("");
 
@@ -332,7 +380,7 @@ export default function AiTasksetGenerator() {
       return;
     }
 
-    // Word bank — in party mode, merge theme vocab with custom words
+    // Word bank — in party/event mode, merge theme vocab with custom words
     let aiWordBank;
     if (isPartyMode) {
       const themeObj = PARTY_THEMES.find((t) => t.id === partyTheme);
@@ -342,6 +390,16 @@ export default function AiTasksetGenerator() {
         .map((w) => w.trim())
         .filter(Boolean);
       aiWordBank = uniqStrings([...themeVocab, ...customWords]);
+    } else if (isEventMode) {
+      const indObj = EVENT_INDUSTRY_THEMES.find((t) => t.id === eventIndustry);
+      const evtObj = EVENT_TYPE_THEMES.find((t) => t.id === eventType);
+      const indVocab = indObj ? indObj.vocab : [];
+      const evtVocab = evtObj ? evtObj.vocab : [];
+      const customWords = eventCustomWords
+        .split(/[\n,;]+/)
+        .map((w) => w.trim())
+        .filter(Boolean);
+      aiWordBank = uniqStrings([...indVocab, ...evtVocab, ...customWords]);
     } else {
       aiWordBank = wordListText
         .split(/[\n,;]+/)
@@ -353,7 +411,9 @@ export default function AiTasksetGenerator() {
       setError(
         isPartyMode
           ? "Please select a theme or add some custom words for the party games."
-          : "Please provide at least one vocabulary term or key word. The AI uses these to stay on topic."
+          : isEventMode
+            ? "Please select an industry or event type, or add custom content for the event games."
+            : "Please provide at least one vocabulary term or key word. The AI uses these to stay on topic."
       );
       setGenerating(false);
       return;
@@ -413,6 +473,19 @@ export default function AiTasksetGenerator() {
         );
       }
 
+      // Event mode: force event-appropriate task types and add corporate context
+      if (isEventMode) {
+        const indObj = EVENT_INDUSTRY_THEMES.find((t) => t.id === eventIndustry);
+        const evtObj = EVENT_TYPE_THEMES.find((t) => t.id === eventType);
+        const indName = indObj ? indObj.label : "General";
+        const evtName = evtObj ? evtObj.label : "General";
+        const eventContext = `EVENT MODE — This is for a corporate/professional event, NOT a classroom lesson. Industry: "${indName}". Event type: "${evtName}". Keep all content professional but engaging and fun. Use industry-appropriate vocabulary and references. The vocabulary words may include company-specific terms, conference content, or team inside references — weave them naturally into the games. Avoid anything childish — these are adults in a professional setting who should feel energized, not patronized.`;
+        baseSpecialConsiderations = [eventContext, baseSpecialConsiderations].filter(Boolean).join("\n\n");
+        requiredTaskTypes = EVENT_TASK_TYPES.filter((t) =>
+          GENERATOR_ELIGIBLE_TYPES.includes(t)
+        );
+      }
+
       if (guaranteeTypes && guaranteedTaskTypes.length > 0) {
         guaranteedTypes_payload = Array.from(new Set(guaranteedTaskTypes));
       }
@@ -459,9 +532,9 @@ export default function AiTasksetGenerator() {
         difficulty: form.difficulty,
         learningGoal: form.learningGoal,
 
-        uniqueTaskTypes: isPartyMode ? true : !!limitTasks,
+        uniqueTaskTypes: (isPartyMode || isEventMode) ? true : !!limitTasks,
         allowMovementTasks: true,
-        maxMovementRatio: isPartyMode ? 0.30 : 0.10,
+        maxMovementRatio: isPartyMode ? 0.30 : isEventMode ? 0.10 : 0.10,
 
         topicTitle: form.name.trim(),
         topicDescription: specialConsiderations,
@@ -472,8 +545,8 @@ export default function AiTasksetGenerator() {
         totalDurationMinutes,
         numberOfTasks: limitTasks ? estimatedTaskCount : undefined,
         count: limitTasks ? estimatedTaskCount : undefined,
-        taskTypePool: (limitTasks || isPartyMode) ? requiredTaskTypes : undefined,
-        requiredTaskTypes: (limitTasks || isPartyMode) ? requiredTaskTypes : undefined,
+        taskTypePool: (limitTasks || isPartyMode || isEventMode) ? requiredTaskTypes : undefined,
+        requiredTaskTypes: (limitTasks || isPartyMode || isEventMode) ? requiredTaskTypes : undefined,
         guaranteedTaskTypes: guaranteedTypes_payload.length ? guaranteedTypes_payload : undefined,
 
         tasksetName: form.name || undefined,
@@ -981,6 +1054,7 @@ export default function AiTasksetGenerator() {
                 const on = e.target.checked;
                 setIsPartyMode(on);
                 if (on) {
+                  setIsEventMode(false);
                   handleChange("learningGoal", "ENRICHMENT");
                   handleChange("difficulty", "EASY");
                   handleChange("roomLocation", "Party venue");
@@ -1133,6 +1207,190 @@ export default function AiTasksetGenerator() {
               >
                 These get mixed into the games for a personal touch. One per
                 line or separated by commas.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* EVENT MODE TOGGLE */}
+        <div
+          style={{
+            marginBottom: 16,
+            padding: "12px 16px",
+            borderRadius: 14,
+            border: isEventMode ? "2px solid #4f46e5" : "1px solid #e5e7eb",
+            background: isEventMode
+              ? "linear-gradient(135deg, #eef2ff 0%, #f0f9ff 100%)"
+              : "#f9fafb",
+          }}
+        >
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: "pointer",
+              fontWeight: 700,
+              fontSize: "0.95rem",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={isEventMode}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setIsEventMode(on);
+                if (on) {
+                  setIsPartyMode(false);
+                  handleChange("learningGoal", "ENRICHMENT");
+                  handleChange("difficulty", "MEDIUM");
+                  handleChange("roomLocation", "Event venue");
+                  if (!form.name) handleChange("name", "Corporate Event Games");
+                }
+              }}
+              style={{ width: 18, height: 18 }}
+            />
+            <span>🏢 Event Mode</span>
+            <span
+              style={{
+                fontSize: "0.75rem",
+                fontWeight: 500,
+                color: "#6b7280",
+                marginLeft: 4,
+              }}
+            >
+              — for conferences, team building, training, and corporate events
+            </span>
+          </label>
+
+          {isEventMode && (
+            <div style={{ marginTop: 14 }}>
+              {/* Industry axis */}
+              <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 6 }}>
+                Industry:
+              </label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+                {EVENT_INDUSTRY_THEMES.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      setEventIndustry(t.id);
+                      if (!form.name.includes("Event") && !form.name.includes("Kickoff")) {
+                        handleChange("name", `${t.label} Team Event`);
+                      }
+                    }}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                      padding: "6px 12px",
+                      borderRadius: 999,
+                      border: eventIndustry === t.id ? "2px solid #4f46e5" : "1px solid #d1d5db",
+                      background: eventIndustry === t.id ? "#eef2ff" : "#fff",
+                      cursor: "pointer",
+                      fontWeight: eventIndustry === t.id ? 700 : 500,
+                      fontSize: "0.84rem",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    <span>{t.emoji}</span>
+                    <span>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Event type axis */}
+              <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 6 }}>
+                Event type:
+              </label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                {EVENT_TYPE_THEMES.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setEventType(t.id)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                      padding: "6px 12px",
+                      borderRadius: 999,
+                      border: eventType === t.id ? "2px solid #4f46e5" : "1px solid #d1d5db",
+                      background: eventType === t.id ? "#eef2ff" : "#fff",
+                      cursor: "pointer",
+                      fontWeight: eventType === t.id ? 700 : 500,
+                      fontSize: "0.84rem",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    <span>{t.emoji}</span>
+                    <span>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Vocab preview */}
+              {(eventIndustry || eventType) && (
+                <div style={{ marginBottom: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {eventIndustry && (() => {
+                    const ind = EVENT_INDUSTRY_THEMES.find((t) => t.id === eventIndustry);
+                    if (!ind) return null;
+                    return (
+                      <div style={{ flex: "1 1 280px" }}>
+                        <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#6b7280", marginBottom: 4 }}>
+                          {ind.emoji} {ind.label} vocab:
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {ind.vocab.map((w) => (
+                            <span key={w} style={{ padding: "3px 8px", borderRadius: 999, border: "1px solid #e5e7eb", background: "#fff", fontSize: "0.76rem", color: "#374151" }}>{w}</span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {eventType && (() => {
+                    const evt = EVENT_TYPE_THEMES.find((t) => t.id === eventType);
+                    if (!evt) return null;
+                    return (
+                      <div style={{ flex: "1 1 280px" }}>
+                        <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#6b7280", marginBottom: 4 }}>
+                          {evt.emoji} {evt.label} vocab:
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {evt.vocab.map((w) => (
+                            <span key={w} style={{ padding: "3px 8px", borderRadius: 999, border: "1px solid #e5e7eb", background: "#fff", fontSize: "0.76rem", color: "#374151" }}>{w}</span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Custom content */}
+              <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
+                Add custom content{" "}
+                <span style={{ fontWeight: 400, color: "#6b7280" }}>
+                  (keynote takeaways, company jargon, team inside jokes...)
+                </span>
+              </label>
+              <textarea
+                value={eventCustomWords}
+                onChange={(e) => setEventCustomWords(e.target.value)}
+                rows={3}
+                placeholder={"e.g.\nour north star metric\nProject Phoenix\n\"move fast and break things\"\nthe Jenkins incident"}
+                style={{
+                  width: "100%",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  padding: 8,
+                  fontSize: "0.9rem",
+                  resize: "vertical",
+                }}
+              />
+              <p style={{ marginTop: 4, fontSize: "0.78rem", color: "#6b7280" }}>
+                These get woven into the games alongside industry and event-type vocabulary. One per line or comma-separated.
               </p>
             </div>
           )}

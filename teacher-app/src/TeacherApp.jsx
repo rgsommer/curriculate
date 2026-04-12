@@ -419,6 +419,9 @@ function TeacherApp() {
           <NavLinkButton to="/teacher/ai-tasksets?mode=party" active={false}>
             🎉 Party Games
           </NavLinkButton>
+          <NavLinkButton to="/teacher/ai-tasksets?mode=event" active={false}>
+            🏢 Event Games
+          </NavLinkButton>
 
           {/* Admin link (only for admins) */}
           {isAdmin && (

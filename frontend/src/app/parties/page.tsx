@@ -437,6 +437,29 @@ export default function PartiesPage() {
         </div>
       </section>
 
+      {/* CROSS-LINK: Events */}
+      <section className="mx-auto max-w-6xl px-6 py-10">
+        <Link
+          href="/events"
+          className="group block rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-6 hover:shadow-md transition-all"
+        >
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <div className="text-sm font-bold text-blue-600 mb-1">Looking for something more professional?</div>
+              <div className="text-slate-800 font-extrabold text-lg">
+                Curriculate for Corporate Events & Conferences
+              </div>
+              <div className="text-sm text-slate-600 mt-1">
+                Team building, conference breakouts, training sessions, and offsites — with industry-specific content.
+              </div>
+            </div>
+            <div className="text-blue-600 group-hover:translate-x-1 transition-transform">
+              <ChevronRight className="w-6 h-6" />
+            </div>
+          </div>
+        </Link>
+      </section>
+
       {/* CTA */}
       <section className="bg-gradient-to-r from-pink-600 to-purple-600">
         <div className="mx-auto max-w-4xl px-6 py-16 text-center">
