@@ -60,6 +60,9 @@ function _placeholderErrorIfAny(taskType, task) {
       structure: taskType === TASK_TYPES.MIND_MAPPER ? undefined : task?.structure,
       statements: task?.statements,
       rounds: task?.rounds,
+      leftItems: task?.leftItems,
+      rightItems: task?.rightItems,
+      secretAnswers: task?.secretAnswers,
     };
 
     const strs = _scanStringsDeep(base);
