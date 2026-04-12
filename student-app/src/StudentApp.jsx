@@ -4941,32 +4941,8 @@ function StudentApp() {
                   to   { width: 0%; }
                 }
               `}</style>
-              {/* ✅ pinned top bar — smooth CSS animation */}
-              <div
-                style={{
-                  position: "absolute",
-                  top: 12,
-                  left: 0,
-                  right: 0,
-                }}
-              >
-                <div
-                  style={{
-                    height: 3,
-                    borderRadius: 999,
-                    background: "rgba(255,255,255,0.18)",
-                    overflow: "hidden",
-                  }}
-                >
-                <div
-                  style={{
-                    height: "100%",
-                    background: "rgba(255,255,255,0.85)",
-                    animation: `shrinkBar ${lockTotal}s linear forwards`,
-                  }}
-                />
-              </div>
-            </div>
+              {/* Countdown bar removed from the overlay — the yellow/green
+                 countdown-bar-track below the h2 title already shows this. */}
             {/* centered message with optional catch-up badge */}
             <div
               style={{
