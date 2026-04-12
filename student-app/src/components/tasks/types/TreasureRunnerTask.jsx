@@ -10,6 +10,8 @@ const SOUNDS = {
   lane: "/sounds/lane.mp3",
 };
 
+const BG_MUSIC_SRC = "/sounds/TreasureRunnerIntro.mp3";
+
 export default function TreasureRunnerTask({
   socket,
   roomCode,
@@ -137,6 +139,54 @@ export default function TreasureRunnerTask({
       soundRefs.current[key] = audio;
     });
   }, []);
+
+  // ── Background music: loops while the game is running, fades out on finish ──
+  const bgMusicRef = useRef(null);
+  const bgFadeRef = useRef(null);
+
+  useEffect(() => {
+    const audio = new Audio(BG_MUSIC_SRC);
+    audio.loop = true;
+    audio.volume = 0.35;
+    audio.preload = "auto";
+    bgMusicRef.current = audio;
+    return () => {
+      // Cleanup on unmount
+      if (bgFadeRef.current) clearInterval(bgFadeRef.current);
+      try { audio.pause(); } catch {}
+      bgMusicRef.current = null;
+    };
+  }, []);
+
+  // Start music when permission is granted (first interaction)
+  useEffect(() => {
+    const audio = bgMusicRef.current;
+    if (!audio) return;
+    if (permission === "granted" && running && !result) {
+      audio.volume = 0.35;
+      audio.play().catch(() => {});
+    }
+  }, [permission, running, result]);
+
+  // Fade out when game ends
+  useEffect(() => {
+    const audio = bgMusicRef.current;
+    if (!audio) return;
+    if (!running || result) {
+      // Fade out over ~1.5s
+      if (bgFadeRef.current) clearInterval(bgFadeRef.current);
+      bgFadeRef.current = setInterval(() => {
+        if (audio.volume > 0.02) {
+          audio.volume = Math.max(0, audio.volume - 0.03);
+        } else {
+          clearInterval(bgFadeRef.current);
+          bgFadeRef.current = null;
+          try { audio.pause(); } catch {}
+          audio.volume = 0.35;
+        }
+      }, 50);
+    }
+  }, [running, result]);
 
   const playSound = (key, volume = 0.6) => {
     const sound = soundRefs.current[key];
