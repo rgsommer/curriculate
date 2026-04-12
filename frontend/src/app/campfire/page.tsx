@@ -23,6 +23,16 @@ type Screen =
   | "group"
   | "poll"
   | "challenge"
+  | "truth-dare"
+  | "photo"
+  | "share"
+  | "accountability"
+  | "game"
+  | "trivia"
+  | "judge"
+  | "guess"
+  | "surprise"
+  | "advice"
   | "favs"
   | "notifs"
   | "profile"
@@ -51,6 +61,7 @@ interface Engagement {
   submitted?: Member[];
   questions?: string[];
   winner?: string;
+  stakes?: string;
 }
 
 interface Group {
@@ -139,6 +150,26 @@ const groups: Group[] = [
         total: 4,
         desc: "Everyone record a 10-second video greeting! These will be mashed into one clip.",
       },
+      {
+        id: 11,
+        type: "photo",
+        title: "Silliest face you can make",
+        by: "KS",
+        time: "1d ago",
+        responses: 2,
+        total: 5,
+        desc: "Show us your goofiest expression!",
+      },
+      {
+        id: 12,
+        type: "truth-dare",
+        title: "Two Truths and a Lie",
+        by: "TS",
+        time: "2d ago",
+        responses: 3,
+        total: 5,
+        stakes: "Loser buys coffee",
+      },
     ],
   },
   {
@@ -174,6 +205,17 @@ const groups: Group[] = [
         time: "1d ago",
         responses: 3,
         total: 4,
+        desc: "I'm facing a difficult decision about accepting a promotion. What would you advise?",
+      },
+      {
+        id: 13,
+        type: "share",
+        title: "Share your favorite family recipe",
+        by: "BL",
+        time: "3d ago",
+        responses: 2,
+        total: 4,
+        desc: "Post the recipe and a photo of the dish if you have one!",
       },
     ],
   },
@@ -194,6 +236,7 @@ const groups: Group[] = [
         time: "12h ago",
         responses: 0,
         total: 2,
+        desc: "White (RS) to play. Current position: e4 e5, Nf3 Nc6...",
       },
       {
         id: 7,
@@ -203,6 +246,7 @@ const groups: Group[] = [
         time: "2d ago",
         responses: 5,
         total: 6,
+        desc: "Clue: I was on vacation somewhere tropical",
       },
       {
         id: 8,
@@ -214,6 +258,22 @@ const groups: Group[] = [
         total: 6,
         options: ["Beef jerky", "Trail mix", "Gas station sushi", "Gummy bears"],
         votes: [3, 2, 0, 1],
+      },
+      {
+        id: 14,
+        type: "trivia",
+        title: "Movie Quote Trivia",
+        by: "CM",
+        time: "1d ago",
+        responses: 4,
+        total: 6,
+        options: [
+          "The Shawshank Redemption",
+          "Forrest Gump",
+          "Pulp Fiction",
+          "The Matrix",
+        ],
+        votes: [2, 1, 1, 0],
       },
     ],
   },
@@ -254,6 +314,16 @@ const groups: Group[] = [
         recurring: "monthly",
         options: ["Romans", "Ecclesiastes", "James", "Philippians"],
         votes: [2, 0, 2, 1],
+      },
+      {
+        id: 15,
+        type: "judge",
+        title: "Best worship song mashup",
+        by: "SW",
+        time: "2d ago",
+        responses: 4,
+        total: 5,
+        desc: "Submit an audio clip or description of your mashup idea",
       },
     ],
   },
@@ -344,6 +414,8 @@ const templates: Template[] = [
         time: "now",
         responses: 0,
         total: 0,
+        options: ["Option A", "Option B", "Option C", "Option D"],
+        votes: [0, 0, 0, 0],
       },
       {
         id: 302,
@@ -474,6 +546,17 @@ export default function CampfirePage() {
   const [userReacted, setUserReacted] = useState<string | null>(null);
   const [recurringFreq, setRecurringFreq] = useState<"daily" | "weekly" | "monthly" | null>(null);
   const [allowSpectators, setAllowSpectators] = useState(false);
+  const [uploadMode, setUploadMode] = useState<"photo" | "voice" | null>(null);
+  const [truthDareChoice, setTruthDareChoice] = useState<"truth" | "dare" | null>(null);
+  const [accountabilityAnswers, setAccountabilityAnswers] = useState<Record<number, string>>({});
+  const [triviaAnswer, setTriviaAnswer] = useState<number | null>(null);
+  const [gameAccepted, setGameAccepted] = useState(false);
+  const [guessInput, setGuessInput] = useState("");
+  const [judgeVotes, setJudgeVotes] = useState<Record<number, number>>({});
+  const [adviceInput, setAdviceInput] = useState("");
+  const [shareInput, setShareInput] = useState("");
+  const [photoUploaded, setPhotoUploaded] = useState(false);
+  const [textResponse, setTextResponse] = useState("");
 
   function showToast(msg: string) {
     setToast(msg);
@@ -493,12 +576,43 @@ export default function CampfirePage() {
     setSimulatedAllIn(false);
     setUserReacted(null);
     setReactions({ "🔥": 0, "😂": 0, "❤️": 0, "👍": 0, "🤯": 0 });
-    if (eng.type === "poll" && eng.options) {
+    setUploadMode(null);
+    setTruthDareChoice(null);
+    setAccountabilityAnswers({});
+    setTriviaAnswer(null);
+    setGameAccepted(false);
+    setGuessInput("");
+    setJudgeVotes({});
+    setAdviceInput("");
+    setShareInput("");
+    setPhotoUploaded(false);
+    setTextResponse("");
+    setRecordingVoice(false);
+
+    if (eng.type === "poll") {
       setScreen("poll");
     } else if (eng.type === "challenge") {
       setScreen("challenge");
-    } else {
-      showToast(`${eng.type.charAt(0).toUpperCase() + eng.type.slice(1)} detail coming soon`);
+    } else if (eng.type === "truth-dare") {
+      setScreen("truth-dare");
+    } else if (eng.type === "photo") {
+      setScreen("photo");
+    } else if (eng.type === "share") {
+      setScreen("share");
+    } else if (eng.type === "accountability") {
+      setScreen("accountability");
+    } else if (eng.type === "game") {
+      setScreen("game");
+    } else if (eng.type === "trivia") {
+      setScreen("trivia");
+    } else if (eng.type === "judge") {
+      setScreen("judge");
+    } else if (eng.type === "guess") {
+      setScreen("guess");
+    } else if (eng.type === "surprise") {
+      setScreen("surprise");
+    } else if (eng.type === "advice") {
+      setScreen("advice");
     }
   }
 
@@ -552,6 +666,15 @@ export default function CampfirePage() {
           >
             RS
           </button>
+        </div>
+
+        <div className="px-4 pb-3">
+          <div className="rounded-xl bg-amber-50 border border-amber-200 p-3.5">
+            <div className="text-xs font-bold text-amber-900 flex items-center gap-2">
+              <span>🔒</span>
+              <span>Results stay sealed until everyone responds</span>
+            </div>
+          </div>
         </div>
 
         <div className="px-4 pb-3">
@@ -696,7 +819,7 @@ export default function CampfirePage() {
                 <span className="h-1 w-1 rounded-full bg-slate-400" />
                 <span>{eng.responses}/{eng.total} responded</span>
                 {eng.responses < eng.total && (
-                  <span className="ml-auto text-amber-600 text-[10px] font-semibold">🔒 Sealed</span>
+                  <span className="ml-auto rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px] font-bold">🔒 Sealed</span>
                 )}
                 {eng.responses >= eng.total && (
                   <span className="ml-auto text-emerald-600 text-[10px] font-semibold">✓ Revealed</span>
@@ -723,9 +846,8 @@ export default function CampfirePage() {
           <h3 className="text-base font-bold text-slate-900">Poll</h3>
         </div>
         <div className="p-5 flex-1 overflow-y-auto">
-          {/* Sealed / waiting banner */}
           {!allIn && (
-            <div className="flex items-center gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 mb-4">
+            <div className="flex items-center gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 mb-4 animate-pulse">
               <span className="text-lg">🔒</span>
               <div>
                 <div className="text-sm font-bold text-amber-900">Results are sealed</div>
@@ -736,7 +858,6 @@ export default function CampfirePage() {
             </div>
           )}
 
-          {/* All in — reveal banner */}
           {allIn && pollSubmitted && (
             <div className="flex items-center gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 mb-4">
               <span className="text-lg">🎉</span>
@@ -810,7 +931,6 @@ export default function CampfirePage() {
             </button>
           )}
 
-          {/* Waiting state after voting */}
           {pollSubmitted && !allIn && (
             <div className="text-center py-6 mb-4">
               <div className="text-4xl mb-3">🔐</div>
@@ -846,7 +966,6 @@ export default function CampfirePage() {
             </div>
           )}
 
-          {/* Results + reactions (only after all in) */}
           {showResults && (
             <>
               <div className="flex items-center justify-between mb-2">
@@ -883,7 +1002,6 @@ export default function CampfirePage() {
 
   function renderChallenge() {
     if (!currentEng) return null;
-    const [uploadMode, setUploadMode] = useState<"photo" | "voice" | null>(null);
     return (
       <>
         <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
@@ -980,7 +1098,6 @@ export default function CampfirePage() {
             const challAllIn = currentEng.responses >= currentEng.total || simulatedAllIn;
             return (
               <>
-                {/* Sealed state — show who's in but not what they submitted */}
                 {!challAllIn && (
                   <div className="flex items-center gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 mb-4">
                     <span className="text-lg">🔒</span>
@@ -1030,7 +1147,6 @@ export default function CampfirePage() {
                   ))}
                 </div>
 
-                {/* Nudge button when waiting */}
                 {challengeUploaded && !challAllIn && (
                   <div className="text-center mt-4">
                     <div className="flex justify-center gap-1.5 mb-3">
@@ -1062,7 +1178,6 @@ export default function CampfirePage() {
                   </div>
                 )}
 
-                {/* Reactions + export only after all in */}
                 {challAllIn && challengeUploaded && (
                   <>
                     <div className="flex items-center justify-between mt-4 mb-2">
@@ -1095,6 +1210,957 @@ export default function CampfirePage() {
               </>
             );
           })()}
+        </div>
+      </>
+    );
+  }
+
+  function renderTruthDare() {
+    if (!currentEng) return null;
+    const allIn = currentEng.responses >= currentEng.total || simulatedAllIn;
+    const responded = truthDareChoice !== null;
+    return (
+      <>
+        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+          <button onClick={() => setScreen("group")} className="text-lg text-orange-600 font-bold">
+            &larr;
+          </button>
+          <h3 className="text-base font-bold text-slate-900">Truth or Dare</h3>
+        </div>
+        <div className="p-5 flex-1 overflow-y-auto">
+          {!allIn && !responded && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 mb-4 animate-pulse">
+              <span className="text-lg">🔒</span>
+              <div>
+                <div className="text-sm font-bold text-amber-900">Results are sealed</div>
+                <div className="text-xs text-amber-700">
+                  {currentEng.responses}/{currentEng.total} responded
+                </div>
+              </div>
+            </div>
+          )}
+          {allIn && responded && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 mb-4">
+              <span className="text-lg">🎉</span>
+              <div>
+                <div className="text-sm font-bold text-emerald-900">All responses are in!</div>
+              </div>
+            </div>
+          )}
+          <h2 className="text-lg font-extrabold text-slate-900 mb-5">{currentEng.title}</h2>
+          {currentEng.stakes && (
+            <div className="rounded-lg bg-pink-50 border border-pink-200 px-3 py-2 mb-4 text-sm text-pink-700 font-medium">
+              Stakes: {currentEng.stakes}
+            </div>
+          )}
+          {!responded ? (
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => setTruthDareChoice("truth")}
+                className="rounded-xl border-2 border-blue-300 bg-blue-50 p-6 text-center transition hover:border-blue-500 hover:bg-blue-100"
+              >
+                <div className="text-3xl mb-2">🤔</div>
+                <div className="text-sm font-bold text-blue-700">Pick Truth</div>
+                <div className="text-xs text-blue-600 mt-1">Answer a personal question</div>
+              </button>
+              <button
+                onClick={() => setTruthDareChoice("dare")}
+                className="rounded-xl border-2 border-pink-300 bg-pink-50 p-6 text-center transition hover:border-pink-500 hover:bg-pink-100"
+              >
+                <div className="text-3xl mb-2">🎭</div>
+                <div className="text-sm font-bold text-pink-700">Pick Dare</div>
+                <div className="text-xs text-pink-600 mt-1">Take on a challenge</div>
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
+                <div className="text-sm font-bold text-orange-900">
+                  {truthDareChoice === "truth" ? "Your truth response:" : "Your dare:"}
+                </div>
+                <textarea
+                  value={textResponse}
+                  onChange={(e) => setTextResponse(e.target.value)}
+                  placeholder={truthDareChoice === "truth" ? "Type your answer..." : "Describe what you did..."}
+                  className="w-full mt-2 rounded border border-orange-200 bg-white p-2 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  rows={4}
+                />
+              </div>
+              {!allIn && (
+                <div className="text-center py-4 mb-4">
+                  <div className="flex justify-center gap-1.5 mb-3">
+                    {Array.from({ length: currentEng.total }).map((_, idx) => (
+                      <div
+                        key={idx}
+                        className={`h-2.5 w-2.5 rounded-full ${
+                          idx < currentEng.responses ? "bg-pink-500" : "bg-slate-200"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSimulatedAllIn(true);
+                      showToast("Everyone responded!");
+                    }}
+                    className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
+                  >
+                    Demo: Simulate everyone responds
+                  </button>
+                </div>
+              )}
+              {allIn && (
+                <>
+                  <div className="flex items-center justify-between mt-4 mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Reactions</span>
+                  </div>
+                  <div className="flex gap-2">
+                    {Object.entries(reactions).map(([emoji, count]) => (
+                      <button
+                        key={emoji}
+                        onClick={() => handleReaction(emoji)}
+                        className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                          userReacted === emoji
+                            ? "bg-pink-100 text-pink-700 border-2 border-pink-500"
+                            : "bg-slate-100 text-slate-600 border-2 border-transparent hover:bg-slate-200"
+                        }`}
+                      >
+                        <span>{emoji}</span>
+                        {count > 0 && <span className="text-xs">{count}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderPhoto() {
+    if (!currentEng) return null;
+    const allIn = currentEng.responses >= currentEng.total || simulatedAllIn;
+    return (
+      <>
+        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+          <button onClick={() => setScreen("group")} className="text-lg text-orange-600 font-bold">
+            &larr;
+          </button>
+          <h3 className="text-base font-bold text-slate-900">Photo Pose</h3>
+        </div>
+        <div className="p-5 flex-1 overflow-y-auto">
+          {!allIn && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 mb-4 animate-pulse">
+              <span className="text-lg">🔒</span>
+              <div>
+                <div className="text-sm font-bold text-amber-900">Photos are sealed</div>
+                <div className="text-xs text-amber-700">
+                  {currentEng.responses}/{currentEng.total} submitted
+                </div>
+              </div>
+            </div>
+          )}
+          {allIn && photoUploaded && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 mb-4">
+              <span className="text-lg">🎉</span>
+              <div>
+                <div className="text-sm font-bold text-emerald-900">All photos are in!</div>
+              </div>
+            </div>
+          )}
+          <h2 className="text-lg font-extrabold text-slate-900 mb-2">{currentEng.title}</h2>
+          {currentEng.desc && (
+            <p className="text-sm text-slate-600 mb-4">{currentEng.desc}</p>
+          )}
+          {!photoUploaded ? (
+            <button
+              onClick={() => {
+                setPhotoUploaded(true);
+                showToast("Photo submitted!");
+              }}
+              className="w-full rounded-2xl border-2 border-dashed border-slate-300 p-8 text-center transition hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer mb-4"
+            >
+              <div className="text-3xl mb-2">📷</div>
+              <div className="text-sm text-slate-600">Tap to take or upload photo</div>
+            </button>
+          ) : (
+            <div className="w-full rounded-xl border-2 border-indigo-400 bg-indigo-50 p-4 text-center mb-4">
+              <div className="text-4xl mb-2">📸</div>
+              <div className="text-sm font-bold text-indigo-700">Photo submitted!</div>
+            </div>
+          )}
+          {!allIn && photoUploaded && (
+            <div className="text-center py-4">
+              <div className="flex justify-center gap-1.5 mb-3">
+                {Array.from({ length: currentEng.total }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className={`h-2.5 w-2.5 rounded-full ${
+                      idx < currentEng.responses ? "bg-indigo-500" : "bg-slate-200"
+                    }`}
+                  />
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  setSimulatedAllIn(true);
+                  showToast("Everyone submitted!");
+                }}
+                className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
+              >
+                Demo: Simulate everyone responds
+              </button>
+            </div>
+          )}
+          {allIn && photoUploaded && (
+            <div className="flex gap-2">
+              {Object.entries(reactions).map(([emoji, count]) => (
+                <button
+                  key={emoji}
+                  onClick={() => handleReaction(emoji)}
+                  className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                    userReacted === emoji
+                      ? "bg-indigo-100 text-indigo-700 border-2 border-indigo-500"
+                      : "bg-slate-100 text-slate-600 border-2 border-transparent hover:bg-slate-200"
+                  }`}
+                >
+                  <span>{emoji}</span>
+                  {count > 0 && <span className="text-xs">{count}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderShare() {
+    if (!currentEng) return null;
+    const allIn = currentEng.responses >= currentEng.total || simulatedAllIn;
+    const responded = shareInput.length > 0;
+    return (
+      <>
+        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+          <button onClick={() => setScreen("group")} className="text-lg text-orange-600 font-bold">
+            &larr;
+          </button>
+          <h3 className="text-base font-bold text-slate-900">Share</h3>
+        </div>
+        <div className="p-5 flex-1 overflow-y-auto">
+          {!allIn && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 mb-4 animate-pulse">
+              <span className="text-lg">🔒</span>
+              <div>
+                <div className="text-sm font-bold text-amber-900">Shares are sealed</div>
+                <div className="text-xs text-amber-700">
+                  {currentEng.responses}/{currentEng.total} responded
+                </div>
+              </div>
+            </div>
+          )}
+          {allIn && responded && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 mb-4">
+              <span className="text-lg">🎉</span>
+              <div>
+                <div className="text-sm font-bold text-emerald-900">All responses revealed!</div>
+              </div>
+            </div>
+          )}
+          <h2 className="text-lg font-extrabold text-slate-900 mb-2">{currentEng.title}</h2>
+          {currentEng.desc && (
+            <p className="text-sm text-slate-600 mb-4">{currentEng.desc}</p>
+          )}
+          {!responded ? (
+            <>
+              <textarea
+                value={shareInput}
+                onChange={(e) => setShareInput(e.target.value)}
+                placeholder="Share your response here..."
+                className="w-full rounded-lg border border-slate-300 bg-white p-3 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500 mb-4"
+                rows={5}
+              />
+              <button
+                disabled={shareInput.length === 0}
+                onClick={() => {
+                  showToast("Response submitted!");
+                }}
+                className="w-full rounded-xl bg-gradient-to-r from-slate-600 to-slate-700 py-3.5 text-sm font-bold text-white shadow-md transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Submit Share
+              </button>
+            </>
+          ) : (
+            <>
+              {!allIn && (
+                <div className="text-center py-4">
+                  <div className="flex justify-center gap-1.5 mb-3">
+                    {Array.from({ length: currentEng.total }).map((_, idx) => (
+                      <div
+                        key={idx}
+                        className={`h-2.5 w-2.5 rounded-full ${
+                          idx < currentEng.responses ? "bg-slate-500" : "bg-slate-200"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSimulatedAllIn(true);
+                      showToast("Everyone submitted!");
+                    }}
+                    className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
+                  >
+                    Demo: Simulate everyone responds
+                  </button>
+                </div>
+              )}
+              {allIn && (
+                <div className="mt-4 p-3 rounded-lg bg-slate-50 border border-slate-200">
+                  <div className="text-xs font-bold text-slate-600 mb-2">Your share:</div>
+                  <div className="text-sm text-slate-700">{shareInput}</div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderAccountability() {
+    if (!currentEng || !currentEng.questions) return null;
+    const allIn = currentEng.responses >= currentEng.total || simulatedAllIn;
+    const allAnswered = currentEng.questions.every((_, idx) => accountabilityAnswers[idx]);
+    return (
+      <>
+        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+          <button onClick={() => setScreen("group")} className="text-lg text-orange-600 font-bold">
+            &larr;
+          </button>
+          <h3 className="text-base font-bold text-slate-900">Accountability</h3>
+        </div>
+        <div className="p-5 flex-1 overflow-y-auto">
+          {!allIn && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 mb-4 animate-pulse">
+              <span className="text-lg">🔒</span>
+              <div>
+                <div className="text-sm font-bold text-amber-900">Responses are sealed</div>
+                <div className="text-xs text-amber-700">
+                  {currentEng.responses}/{currentEng.total} responded
+                </div>
+              </div>
+            </div>
+          )}
+          {allIn && allAnswered && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 mb-4">
+              <span className="text-lg">🎉</span>
+              <div>
+                <div className="text-sm font-bold text-emerald-900">All answers revealed!</div>
+              </div>
+            </div>
+          )}
+          <h2 className="text-lg font-extrabold text-slate-900 mb-5">{currentEng.title}</h2>
+          <div className="space-y-4">
+            {currentEng.questions.map((q, idx) => (
+              <div key={idx} className="flex flex-col gap-2">
+                <label className="text-sm font-medium text-slate-700">{q}</label>
+                <textarea
+                  value={accountabilityAnswers[idx] || ""}
+                  onChange={(e) =>
+                    setAccountabilityAnswers({
+                      ...accountabilityAnswers,
+                      [idx]: e.target.value,
+                    })
+                  }
+                  placeholder="Your answer..."
+                  className="rounded border border-slate-300 bg-white p-2 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  rows={2}
+                />
+              </div>
+            ))}
+          </div>
+          {!allAnswered ? (
+            <button
+              disabled={!allAnswered}
+              onClick={() => {
+                showToast("Answers submitted!");
+              }}
+              className="w-full rounded-xl bg-gradient-to-r from-red-500 to-red-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:opacity-90 disabled:opacity-40 mt-4"
+            >
+              Submit Answers
+            </button>
+          ) : (
+            <>
+              {!allIn && (
+                <div className="text-center py-4 mt-4">
+                  <div className="flex justify-center gap-1.5 mb-3">
+                    {Array.from({ length: currentEng.total }).map((_, idx) => (
+                      <div
+                        key={idx}
+                        className={`h-2.5 w-2.5 rounded-full ${
+                          idx < currentEng.responses ? "bg-red-500" : "bg-slate-200"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSimulatedAllIn(true);
+                      showToast("Everyone submitted!");
+                    }}
+                    className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
+                  >
+                    Demo: Simulate everyone responds
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderGame() {
+    if (!currentEng) return null;
+    const allIn = currentEng.responses >= currentEng.total || simulatedAllIn;
+    return (
+      <>
+        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+          <button onClick={() => setScreen("group")} className="text-lg text-orange-600 font-bold">
+            &larr;
+          </button>
+          <h3 className="text-base font-bold text-slate-900">Game</h3>
+        </div>
+        <div className="p-5 flex-1 overflow-y-auto">
+          {!gameAccepted && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-blue-50 border border-blue-200 px-3.5 py-2.5 mb-4">
+              <span className="text-lg">♟️</span>
+              <div>
+                <div className="text-sm font-bold text-blue-900">New game invitation</div>
+                <div className="text-xs text-blue-700">
+                  {currentEng.by} challenged you
+                </div>
+              </div>
+            </div>
+          )}
+          <h2 className="text-lg font-extrabold text-slate-900 mb-4">{currentEng.title}</h2>
+          {currentEng.desc && (
+            <p className="text-sm text-slate-600 mb-4">{currentEng.desc}</p>
+          )}
+          {!gameAccepted ? (
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  setGameAccepted(true);
+                  showToast("You accepted the challenge!");
+                }}
+                className="w-full rounded-xl bg-blue-500 text-white py-3 font-bold hover:bg-blue-600 transition"
+              >
+                Accept Challenge
+              </button>
+              <button
+                onClick={() => {
+                  setScreen("group");
+                  showToast("Challenge declined");
+                }}
+                className="w-full rounded-xl border border-slate-300 bg-white text-slate-700 py-3 font-bold hover:bg-slate-50 transition"
+              >
+                Decline
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="rounded-lg border-2 border-blue-300 bg-blue-50 p-4 mb-4">
+                <div className="text-xs font-bold text-blue-700 mb-2">Game Board (e.g., Chess)</div>
+                <div className="w-full aspect-square bg-gradient-to-br from-amber-50 to-amber-100 rounded flex items-center justify-center text-4xl">
+                  ♟️
+                </div>
+              </div>
+              <div className="text-sm font-medium text-slate-700 mb-3">
+                {currentEng.by} to play
+              </div>
+              <button
+                onClick={() => showToast("Move submitted!")}
+                className="w-full rounded-xl bg-blue-500 text-white py-3 font-bold hover:bg-blue-600 transition"
+              >
+                Make Your Move
+              </button>
+            </>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderTrivia() {
+    if (!currentEng || !currentEng.options || !currentEng.votes) return null;
+    const allIn = currentEng.responses >= currentEng.total || simulatedAllIn;
+    const answered = triviaAnswer !== null;
+    const totalVotes = currentEng.votes.reduce((a, b) => a + b, 0);
+    return (
+      <>
+        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+          <button onClick={() => setScreen("group")} className="text-lg text-orange-600 font-bold">
+            &larr;
+          </button>
+          <h3 className="text-base font-bold text-slate-900">Trivia</h3>
+        </div>
+        <div className="p-5 flex-1 overflow-y-auto">
+          {!allIn && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 mb-4 animate-pulse">
+              <span className="text-lg">🔒</span>
+              <div>
+                <div className="text-sm font-bold text-amber-900">Answers are sealed</div>
+                <div className="text-xs text-amber-700">
+                  {currentEng.responses}/{currentEng.total} answered
+                </div>
+              </div>
+            </div>
+          )}
+          {allIn && answered && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 mb-4">
+              <span className="text-lg">🎉</span>
+              <div>
+                <div className="text-sm font-bold text-emerald-900">Results revealed!</div>
+              </div>
+            </div>
+          )}
+          <h2 className="text-lg font-extrabold text-slate-900 mb-5">{currentEng.title}</h2>
+          <div className="flex flex-col gap-2.5">
+            {currentEng.options.map((opt, i) => {
+              const pct = totalVotes ? Math.round((currentEng.votes![i] / totalVotes) * 100) : 0;
+              const isSelected = triviaAnswer === i;
+              return (
+                <button
+                  key={i}
+                  onClick={() => !answered && setTriviaAnswer(i)}
+                  disabled={answered}
+                  className={`relative flex items-center gap-3 rounded-xl border-2 px-4 py-3.5 text-left transition overflow-hidden ${
+                    isSelected && !answered
+                      ? "border-cyan-500 bg-cyan-50"
+                      : answered && !allIn
+                        ? "border-slate-100 bg-slate-50 opacity-70"
+                        : "border-slate-200"
+                  }`}
+                >
+                  {allIn && answered && (
+                    <div
+                      className="absolute inset-y-0 left-0 bg-cyan-500/10 transition-all duration-700"
+                      style={{ width: `${pct}%` }}
+                    />
+                  )}
+                  <div
+                    className={`relative z-10 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 transition ${
+                      isSelected
+                        ? "border-cyan-500 bg-cyan-500"
+                        : "border-slate-300"
+                    }`}
+                  >
+                    {isSelected && <div className="h-2 w-2 rounded-full bg-white" />}
+                  </div>
+                  <span className="relative z-10 text-sm font-medium text-slate-800">
+                    {opt}
+                  </span>
+                  {allIn && answered && (
+                    <span className="relative z-10 ml-auto text-sm font-bold text-cyan-600">
+                      {pct}%
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {!answered ? (
+            <button
+              disabled={triviaAnswer === null}
+              onClick={() => {
+                showToast("Answer submitted!");
+              }}
+              className="w-full rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:opacity-90 disabled:opacity-40 mt-4"
+            >
+              Submit Answer
+            </button>
+          ) : (
+            <>
+              {!allIn && (
+                <div className="text-center py-4 mt-4">
+                  <div className="flex justify-center gap-1.5 mb-3">
+                    {Array.from({ length: currentEng.total }).map((_, idx) => (
+                      <div
+                        key={idx}
+                        className={`h-2.5 w-2.5 rounded-full ${
+                          idx < currentEng.responses ? "bg-cyan-500" : "bg-slate-200"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSimulatedAllIn(true);
+                      showToast("Everyone answered!");
+                    }}
+                    className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
+                  >
+                    Demo: Simulate everyone responds
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderJudge() {
+    if (!currentEng) return null;
+    const allIn = currentEng.responses >= currentEng.total || simulatedAllIn;
+    const responded = Object.keys(judgeVotes).length > 0;
+    return (
+      <>
+        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+          <button onClick={() => setScreen("group")} className="text-lg text-orange-600 font-bold">
+            &larr;
+          </button>
+          <h3 className="text-base font-bold text-slate-900">Judge</h3>
+        </div>
+        <div className="p-5 flex-1 overflow-y-auto">
+          {!allIn && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 mb-4 animate-pulse">
+              <span className="text-lg">🔒</span>
+              <div>
+                <div className="text-sm font-bold text-amber-900">Votes are sealed</div>
+                <div className="text-xs text-amber-700">
+                  {currentEng.responses}/{currentEng.total} submitted
+                </div>
+              </div>
+            </div>
+          )}
+          {allIn && responded && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 mb-4">
+              <span className="text-lg">🎉</span>
+              <div>
+                <div className="text-sm font-bold text-emerald-900">Voting complete!</div>
+              </div>
+            </div>
+          )}
+          <h2 className="text-lg font-extrabold text-slate-900 mb-5">{currentEng.title}</h2>
+          {currentEng.desc && (
+            <p className="text-sm text-slate-600 mb-4">{currentEng.desc}</p>
+          )}
+          <div className="space-y-3">
+            {[1, 2, 3].map((entry) => (
+              <div key={entry} className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <div className="text-3xl mb-2 text-center">📝</div>
+                <div className="text-xs text-amber-700 font-bold mb-2">Entry {entry}</div>
+                {!allIn ? (
+                  <div className="text-xs text-amber-600">Anonymous submission</div>
+                ) : (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        const votes = { ...judgeVotes };
+                        votes[entry] = (votes[entry] || 0) + 1;
+                        setJudgeVotes(votes);
+                        showToast("Vote counted!");
+                      }}
+                      className="flex-1 rounded bg-amber-300 text-amber-900 py-1 text-xs font-bold hover:bg-amber-400 transition"
+                    >
+                      👍 {judgeVotes[entry] || 0}
+                    </button>
+                    <button
+                      onClick={() => showToast("Rating saved!")}
+                      className="flex-1 rounded bg-amber-200 text-amber-900 py-1 text-xs font-bold hover:bg-amber-300 transition"
+                    >
+                      ⭐ Rate
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  function renderGuess() {
+    if (!currentEng) return null;
+    const allIn = currentEng.responses >= currentEng.total || simulatedAllIn;
+    const answered = guessInput.length > 0;
+    return (
+      <>
+        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+          <button onClick={() => setScreen("group")} className="text-lg text-orange-600 font-bold">
+            &larr;
+          </button>
+          <h3 className="text-base font-bold text-slate-900">Guess</h3>
+        </div>
+        <div className="p-5 flex-1 overflow-y-auto">
+          {!allIn && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 mb-4 animate-pulse">
+              <span className="text-lg">🔒</span>
+              <div>
+                <div className="text-sm font-bold text-amber-900">Guesses are sealed</div>
+                <div className="text-xs text-amber-700">
+                  {currentEng.responses}/{currentEng.total} guessed
+                </div>
+              </div>
+            </div>
+          )}
+          {allIn && answered && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 mb-4">
+              <span className="text-lg">🎉</span>
+              <div>
+                <div className="text-sm font-bold text-emerald-900">Answer revealed!</div>
+              </div>
+            </div>
+          )}
+          <h2 className="text-lg font-extrabold text-slate-900 mb-5">{currentEng.title}</h2>
+          {currentEng.desc && (
+            <p className="text-sm text-slate-600 mb-4">{currentEng.desc}</p>
+          )}
+          <div className="rounded-lg border-2 border-dashed border-yellow-300 bg-yellow-50 p-6 mb-4 text-center">
+            <div className="text-5xl mb-2">🖼️</div>
+            <div className="text-sm text-yellow-700 font-medium">Mystery image</div>
+          </div>
+          {!answered ? (
+            <>
+              <input
+                type="text"
+                value={guessInput}
+                onChange={(e) => setGuessInput(e.target.value)}
+                placeholder="What is it? Make your guess..."
+                className="w-full rounded-lg border border-slate-300 bg-white p-3 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-yellow-500 mb-4"
+              />
+              <button
+                disabled={guessInput.length === 0}
+                onClick={() => {
+                  showToast("Guess submitted!");
+                }}
+                className="w-full rounded-xl bg-gradient-to-r from-yellow-500 to-yellow-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:opacity-90 disabled:opacity-40"
+              >
+                Submit Guess
+              </button>
+            </>
+          ) : (
+            <>
+              {!allIn && (
+                <div className="text-center py-4">
+                  <div className="flex justify-center gap-1.5 mb-3">
+                    {Array.from({ length: currentEng.total }).map((_, idx) => (
+                      <div
+                        key={idx}
+                        className={`h-2.5 w-2.5 rounded-full ${
+                          idx < currentEng.responses ? "bg-yellow-500" : "bg-slate-200"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSimulatedAllIn(true);
+                      showToast("Everyone guessed!");
+                    }}
+                    className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
+                  >
+                    Demo: Simulate everyone responds
+                  </button>
+                </div>
+              )}
+              {allIn && (
+                <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3 text-center">
+                  <div className="text-xs font-bold text-yellow-700 mb-2">The answer was:</div>
+                  <div className="text-sm font-bold text-yellow-900">Tokyo, Japan</div>
+                  <div className="text-xs text-yellow-700 mt-2">You guessed: {guessInput}</div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderSurprise() {
+    if (!currentEng) return null;
+    const allIn = currentEng.responses >= currentEng.total || simulatedAllIn;
+    return (
+      <>
+        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+          <button onClick={() => setScreen("group")} className="text-lg text-orange-600 font-bold">
+            &larr;
+          </button>
+          <h3 className="text-base font-bold text-slate-900">Surprise</h3>
+        </div>
+        <div className="p-5 flex-1 overflow-y-auto">
+          {!allIn && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-green-50 border border-green-200 px-3.5 py-2.5 mb-4 animate-pulse">
+              <span className="text-lg">🤫</span>
+              <div>
+                <div className="text-sm font-bold text-green-900">Shhh! Keep it secret</div>
+                <div className="text-xs text-green-700">
+                  {currentEng.responses}/{currentEng.total} submitted
+                </div>
+              </div>
+            </div>
+          )}
+          {allIn && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-green-50 border border-green-200 px-3.5 py-2.5 mb-4">
+              <span className="text-lg">🎉</span>
+              <div>
+                <div className="text-sm font-bold text-green-900">Ready to reveal!</div>
+              </div>
+            </div>
+          )}
+          <h2 className="text-lg font-extrabold text-slate-900 mb-2">{currentEng.title}</h2>
+          {currentEng.desc && (
+            <p className="text-sm text-slate-600 mb-4">{currentEng.desc}</p>
+          )}
+          <button
+            onClick={() => {
+              setPhotoUploaded(true);
+              showToast("Submission recorded! (This is hidden from the recipient)");
+            }}
+            disabled={photoUploaded}
+            className={`w-full rounded-2xl border-2 p-8 text-center transition cursor-pointer mb-4 ${
+              photoUploaded
+                ? "border-green-400 bg-green-50"
+                : "border-dashed border-slate-300 hover:border-green-400 hover:bg-green-50"
+            }`}
+          >
+            <div className="text-3xl mb-2">🎥</div>
+            <div className="text-sm text-slate-600">
+              {photoUploaded ? "Your submission is in!" : "Tap to upload video or photo"}
+            </div>
+          </button>
+          {!allIn && photoUploaded && (
+            <div className="text-center py-4">
+              <div className="flex justify-center gap-1.5 mb-3">
+                {Array.from({ length: currentEng.total }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className={`h-2.5 w-2.5 rounded-full ${
+                      idx < currentEng.responses ? "bg-green-500" : "bg-slate-200"
+                    }`}
+                  />
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  setSimulatedAllIn(true);
+                  showToast("Everyone submitted! Ready to reveal to the recipient.");
+                }}
+                className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
+              >
+                Demo: Simulate everyone responds
+              </button>
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderAdvice() {
+    if (!currentEng) return null;
+    const allIn = currentEng.responses >= currentEng.total || simulatedAllIn;
+    const answered = adviceInput.length > 0;
+    return (
+      <>
+        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+          <button onClick={() => setScreen("group")} className="text-lg text-orange-600 font-bold">
+            &larr;
+          </button>
+          <h3 className="text-base font-bold text-slate-900">Advice</h3>
+        </div>
+        <div className="p-5 flex-1 overflow-y-auto">
+          {!allIn && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 mb-4 animate-pulse">
+              <span className="text-lg">🔒</span>
+              <div>
+                <div className="text-sm font-bold text-amber-900">Advice is sealed</div>
+                <div className="text-xs text-amber-700">
+                  {currentEng.responses}/{currentEng.total} responded
+                </div>
+              </div>
+            </div>
+          )}
+          {allIn && answered && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 mb-4">
+              <span className="text-lg">🎉</span>
+              <div>
+                <div className="text-sm font-bold text-emerald-900">All advice revealed!</div>
+              </div>
+            </div>
+          )}
+          <h2 className="text-lg font-extrabold text-slate-900 mb-2">{currentEng.title}</h2>
+          {currentEng.desc && (
+            <p className="text-sm text-slate-600 mb-4">{currentEng.desc}</p>
+          )}
+          {!answered ? (
+            <>
+              <textarea
+                value={adviceInput}
+                onChange={(e) => setAdviceInput(e.target.value)}
+                placeholder="Share your advice here..."
+                className="w-full rounded-lg border border-slate-300 bg-white p-3 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 mb-4"
+                rows={5}
+              />
+              <button
+                disabled={adviceInput.length === 0}
+                onClick={() => {
+                  showToast("Advice submitted!");
+                }}
+                className="w-full rounded-xl bg-gradient-to-r from-teal-500 to-teal-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:opacity-90 disabled:opacity-40"
+              >
+                Submit Advice
+              </button>
+            </>
+          ) : (
+            <>
+              {!allIn && (
+                <div className="text-center py-4">
+                  <div className="flex justify-center gap-1.5 mb-3">
+                    {Array.from({ length: currentEng.total }).map((_, idx) => (
+                      <div
+                        key={idx}
+                        className={`h-2.5 w-2.5 rounded-full ${
+                          idx < currentEng.responses ? "bg-teal-500" : "bg-slate-200"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSimulatedAllIn(true);
+                      showToast("Everyone submitted!");
+                    }}
+                    className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
+                  >
+                    Demo: Simulate everyone responds
+                  </button>
+                </div>
+              )}
+              {allIn && (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((idx) => (
+                    <div key={idx} className="rounded-lg bg-teal-50 border border-teal-200 p-3">
+                      <div className="text-xs font-bold text-teal-700 mb-1">Member {idx}'s advice</div>
+                      <div className="text-sm text-teal-900 mb-2">Sample advice text here...</div>
+                      <button className="text-sm font-bold text-teal-600 hover:text-teal-700">
+                        👍 Upvote
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
       </>
     );
@@ -1339,6 +2405,16 @@ export default function CampfirePage() {
               {screen === "group" && renderGroupDetail()}
               {screen === "poll" && renderPoll()}
               {screen === "challenge" && renderChallenge()}
+              {screen === "truth-dare" && renderTruthDare()}
+              {screen === "photo" && renderPhoto()}
+              {screen === "share" && renderShare()}
+              {screen === "accountability" && renderAccountability()}
+              {screen === "game" && renderGame()}
+              {screen === "trivia" && renderTrivia()}
+              {screen === "judge" && renderJudge()}
+              {screen === "guess" && renderGuess()}
+              {screen === "surprise" && renderSurprise()}
+              {screen === "advice" && renderAdvice()}
               {screen === "templates" && renderTemplates()}
               {screen === "template-detail" && renderTemplateDetail()}
               {screen === "favs" && renderFavourites()}
@@ -1429,11 +2505,14 @@ export default function CampfirePage() {
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-slate-700">Reveal mode</span>
                   <select className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm bg-white">
-                    <option>All at once</option>
+                    <option>Sealed (recommended)</option>
                     <option>First in</option>
                     <option>As they come</option>
                     <option>Instant</option>
                   </select>
+                </div>
+                <div className="text-xs text-slate-500 px-2 py-1.5 bg-amber-50 rounded border border-amber-200">
+                  Nobody sees results until everyone responds
                 </div>
                 <ToggleRow label="Offer a reward" desc="For the winner" defaultOn={false} />
                 <ToggleRow label="Add random guest" desc="" defaultOn={false} />
