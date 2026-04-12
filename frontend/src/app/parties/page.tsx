@@ -186,6 +186,33 @@ export default function PartiesPage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-purple-50">
+      {/* Structured data for rich search results */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "WebPage",
+            name: "Birthday Party Games — AI-Powered Party Activities",
+            description:
+              "Turn any birthday party into an epic game show. AI generates themed interactive team games that run on phones.",
+            url: "https://curriculate.net/parties",
+            mainEntity: {
+              "@type": "SoftwareApplication",
+              name: "Curriculate Party Mode",
+              applicationCategory: "EntertainmentApplication",
+              operatingSystem: "Web",
+              offers: {
+                "@type": "Offer",
+                price: "0",
+                priceCurrency: "USD",
+                description: "Free plan includes party mode",
+              },
+            },
+          }),
+        }}
+      />
+
       {/* HERO */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-pink-100/40 via-transparent to-purple-100/40 pointer-events-none" />

@@ -4223,6 +4223,58 @@ function StudentApp() {
         Join another room
       </button>
     </div>
+
+    {/* Share with a teacher nudge */}
+    <div
+      style={{
+        marginTop: 20,
+        padding: "14px 18px",
+        borderRadius: 16,
+        background: "linear-gradient(135deg, #fdf2f8 0%, #eff6ff 100%)",
+        border: "1px solid #e5e7eb",
+        textAlign: "center",
+      }}
+    >
+      <div style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: 6 }}>
+        🎉 Had fun? Know a teacher who&apos;d love this?
+      </div>
+      <div style={{ fontSize: "0.82rem", color: "#4b5563", marginBottom: 10 }}>
+        Curriculate works for classrooms too — interactive stations, team games, and live reporting.
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          const shareText = "I just played some awesome team games on Curriculate — it would be amazing for your classroom! Check it out: https://curriculate.net?ref=party";
+          if (navigator.share) {
+            navigator.share({ title: "Curriculate", text: shareText, url: "https://curriculate.net?ref=party" }).catch(() => {});
+          } else {
+            navigator.clipboard.writeText(shareText).then(() => {
+              const btn = document.getElementById("share-teacher-btn");
+              if (btn) { btn.textContent = "Copied! 🎉"; setTimeout(() => { btn.textContent = "Share with a Teacher"; }, 2000); }
+            }).catch(() => {
+              window.open("https://curriculate.net?ref=party", "_blank");
+            });
+          }
+        }}
+        id="share-teacher-btn"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "8px 18px",
+          borderRadius: 999,
+          border: "none",
+          background: "linear-gradient(135deg, #db2777, #7c3aed)",
+          color: "#fff",
+          fontWeight: 700,
+          fontSize: "0.88rem",
+          cursor: "pointer",
+          boxShadow: "0 4px 12px rgba(219,39,119,0.25)",
+        }}
+      >
+        Share with a Teacher
+      </button>
+    </div>
   </section>
 )}
 
