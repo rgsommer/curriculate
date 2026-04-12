@@ -312,6 +312,23 @@ export function normalizeTaskByType(taskType, rawTask) {
         };
       });
 
+      // --- GUARDRAIL: Shuffle answer positions so correct answer isn't always in the same slot ---
+      items = items.map((item) => {
+        if (!Array.isArray(item.options) || item.options.length < 2) return item;
+        const correctText = item.options[item.correctAnswer] ?? item.options[0];
+        // Fisher-Yates shuffle
+        const shuffled = [...item.options];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return {
+          ...item,
+          options: shuffled,
+          correctAnswer: shuffled.indexOf(correctText),
+        };
+      });
+
       task.items = items;
 
       // For MC/Physical MC, schema forbids config.items (use top-level items[] only)
@@ -545,8 +562,17 @@ export function normalizeTaskByType(taskType, rawTask) {
         .map((s) => String(s).trim())
         .filter(Boolean);
 
-      if (items.length < 3) items = ["Step 1", "Step 2", "Step 3"];
-      while (items.length < 4) items.push(`Step ${items.length + 1}`);
+      // --- GUARDRAIL: Reject placeholder/vague sequence items instead of padding ---
+      if (items.length < 3) {
+        task._validationError = `Sequence/timeline must have at least 3 real items, got ${items.length}`;
+        items = items.length > 0 ? items : ["Placeholder — regenerate this task"];
+      }
+      // Flag vague pattern items (e.g. "Impact of...", "Settlement of...", "Growth of...")
+      const vaguePattern = /^(Impact|Effect|Growth|Rise|Spread|Settlement|Development|Influence|Role)\s+of\b/i;
+      const vagueCount = items.filter((s) => vaguePattern.test(s)).length;
+      if (vagueCount > items.length * 0.5) {
+        task._validationWarning = `${vagueCount}/${items.length} sequence items are vague patterns — prefer specific datable events`;
+      }
 
       cfg.items = items;
       cfg.sequence = items;

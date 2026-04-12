@@ -158,7 +158,12 @@ export const TASK_TYPE_META = {
     
     Task-specific guidance:
     - Create 3–5 multiple-choice items. Each item must include a clear question prompt, 4 answer options (A–D), and a correctAnswer index that matches the options array. Avoid trick wording; make exactly one option clearly correct.
-    
+
+    ANSWER POSITION RULE (MANDATORY):
+    - VARY the position of the correct answer across items. Do NOT place the correct answer in the same index for every question.
+    - Across your items, the correctAnswer index should use at least 3 different positions (0, 1, 2, 3).
+    - Example distribution for 4 items: correctAnswer values of [2, 0, 3, 1] — NOT [1, 1, 1, 1].
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
@@ -204,7 +209,12 @@ export const TASK_TYPE_META = {
     - After each successful scan, auto-advance to the next question. The final scan auto-submits.
     - Color-to-letter mapping is randomized each time the task is played (and may vary per question).
     - Include 3–5 questions (config.items). Keep questions quick and unambiguous.
-    
+
+    ANSWER POSITION RULE (MANDATORY):
+    - VARY the position of the correct answer across items. Do NOT place the correct answer in the same index for every question.
+    - Across your items, the correctAnswer index should use at least 3 different positions (0, 1, 2, 3).
+    - Example distribution for 4 items: correctAnswer values of [2, 0, 3, 1] — NOT [1, 1, 1, 1].
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
@@ -333,7 +343,14 @@ export const TASK_TYPE_META = {
     - The student action is: write ONE sentence that summarizes/shows understanding of the paragraph.
     - Keep the prompt student-facing and very explicit (Grade 7 reading level).
     - Do NOT generate multiple-choice questions for this task.
-    
+
+    COHERENCE RULE (MANDATORY):
+    - The passage MUST be about ONE unified topic with a clear through-line.
+    - Do NOT stitch together summaries of multiple unrelated subjects into one paragraph.
+    - BAD: A paragraph that jumps from fur trade → Indigenous governance → religion → settlement patterns → economy.
+    - GOOD: A paragraph that explores ONE topic (e.g., the fur trade) in depth — its origins, key players, effects, and legacy.
+    - If the vocabulary list spans many topics, pick ONE and go deep rather than touching all of them shallowly.
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
@@ -425,6 +442,13 @@ export const TASK_TYPE_META = {
     - Items MUST come from the provided vocabulary / concept list — do NOT invent generic steps.
     - NEVER use placeholder text like "Step 1", "Event 2", "Item 3", etc.
 
+    SPECIFICITY RULE (MANDATORY):
+    - Each item must be a SPECIFIC, datable event or concrete step — NOT a vague concept.
+    - BAD examples: "Impact of the fur trade", "Growth of settlement", "Rise of colonial power"
+    - GOOD examples: "French establish Quebec City (1608)", "Treaty of Paris cedes New France to Britain (1763)", "Constitutional Act divides Upper and Lower Canada (1791)"
+    - If the topic is historical, include approximate dates or time periods in parentheses.
+    - If the topic is a process, each step must describe a specific action, not a broad phase.
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
@@ -468,6 +492,12 @@ export const TASK_TYPE_META = {
     3. Provide event labels and correct chronological order. Dates can be approximate if appropriate, but order must be clear.
     - Events MUST be drawn from the provided vocabulary / concept list — do NOT invent generic events.
     - NEVER use placeholder text like "Event 1", "Date 2", "Item 3", etc.
+
+    SPECIFICITY RULE (MANDATORY):
+    - Every event MUST include a date or date range in parentheses — e.g. "Stamp Act (1765)", "War of 1812 begins (June 1812)".
+    - Do NOT use vague labels like "Impact of colonization", "Growth of trade", "Settlement patterns change".
+    - Each event must be a real, historically anchored occurrence with a defensible date.
+    - The chronological order must be unambiguous — no two events should have the same date unless they genuinely co-occurred.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -620,6 +650,14 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
       }
     - Each item in config.items MUST also have a "categories" array matching its correctAnswer entry.
 
+    UNAMBIGUITY RULE (MANDATORY):
+    - Every item's category placement MUST be clearly defensible — a knowledgeable student should not be able to reasonably argue a different placement.
+    - Choose categories that create CLEAR, non-overlapping distinctions for the items you select.
+    - BAD: Categories "Farming" vs "Industry" with item "Wool production" (could be either).
+    - GOOD: Categories "Candle-Making" vs "Wool Spinning" with item "Tallow" (clearly candle-making).
+    - If an item genuinely belongs to multiple categories, place it in "both" — but do NOT create tasks where MOST items are ambiguous.
+    - Test each item mentally: "Could a student defend placing this elsewhere?" If yes, pick a different item or different categories.
+
     Common failure prevention:
     - Do NOT omit the correctAnswer field — the task WILL be rejected without it.
     - Do not omit required arrays/fields; satisfy minimum item counts (≥5 items, ≥2 categories).
@@ -735,7 +773,14 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     
     Task-specific guidance:
     - Prompt students to record a 20–45 second response. Include 2–3 speaking cues and 2–4 simple assessment criteria (clarity, accuracy, evidence, etc.) if schema supports.
-    
+
+    FOCUS RULE (MANDATORY):
+    - The prompt MUST ask students to discuss ONE specific topic — NOT multiple topics.
+    - BAD: "Discuss the fur trade, Indigenous governance, and the impact of European settlement."
+    - GOOD: "Explain how the fur trade shaped relationships between Indigenous peoples and European settlers."
+    - If providing bullet-point speaking cues, all cues should relate to the SAME single topic.
+    - 20–45 seconds is SHORT — one focused topic is enough. Multiple topics lead to shallow, rushed responses.
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.

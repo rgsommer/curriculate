@@ -1867,6 +1867,31 @@ export async function createAiTaskset(req, res) {
       coverage = computeCoverageReport(aiWordBank, finalized);
     }
 
+    // ✅ GUARDRAIL: Cross-task term repetition detection & warning
+    // Flag when the same vocabulary term dominates too many tasks (>3)
+    const termTaskCount = {};
+    for (const task of finalized) {
+      if (!task) continue;
+      const titleLower = (task.title || "").toLowerCase();
+      const promptLower = (task.prompt || "").toLowerCase();
+      const combined = `${titleLower} ${promptLower}`;
+      for (const word of aiWordBank || []) {
+        const termLower = String(word.term || word).toLowerCase();
+        if (termLower.length < 3) continue; // skip trivial terms
+        if (combined.includes(termLower)) {
+          termTaskCount[termLower] = (termTaskCount[termLower] || 0) + 1;
+        }
+      }
+    }
+    const overusedTerms = Object.entries(termTaskCount)
+      .filter(([, count]) => count > 3)
+      .map(([term, count]) => ({ term, count }));
+    if (overusedTerms.length > 0) {
+      console.warn(`[Quality Guardrail] Over-represented terms across tasks:`,
+        overusedTerms.map((t) => `"${t.term}" in ${t.count} tasks`).join(", ")
+      );
+    }
+
     // ✅ Teacher-facing report (actual coverage + Bloom + efficiency)
     const generationReport = buildGenerationReport({
       aiWordBank,
@@ -1898,6 +1923,7 @@ export async function createAiTaskset(req, res) {
         coverageFixes: fixes,
         generation: {
           report: generationReport,
+          ...(overusedTerms.length > 0 && { qualityWarnings: { overusedTerms } }),
         },
         // nice for teacher-facing "what was planned"
         conceptAllocation: {

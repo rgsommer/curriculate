@@ -892,9 +892,9 @@ export function assertValidAiTask(expectedType, task) {
 
 export const retryMustHave = {
   [TASK_TYPES.MULTIPLE_CHOICE]:
-    'MULTIPLE_CHOICE must include items[] with 3–5 questions. Put questions ONLY in top-level items[] (do NOT include config.items). Each item: { id, prompt, options[], correctAnswer } (correctAnswer is an index).',
+    'MULTIPLE_CHOICE must include items[] with 3–5 questions. Put questions ONLY in top-level items[] (do NOT include config.items). Each item: { id, prompt, options[], correctAnswer } (correctAnswer is an index). IMPORTANT: Vary the correctAnswer position — use at least 3 different index values across items. Do NOT put the correct answer in the same position for every question.',
   [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]:
-    'PHYSICAL_MULTIPLE_CHOICE must include items[] with EXACTLY 4 questions. Put questions ONLY in top-level items[] (do NOT include config.items). Each item: { id, prompt, options[4], correctAnswer } where correctAnswer is a 0-based index.',
+    'PHYSICAL_MULTIPLE_CHOICE must include items[] with EXACTLY 4 questions. Put questions ONLY in top-level items[] (do NOT include config.items). Each item: { id, prompt, options[4], correctAnswer } where correctAnswer is a 0-based index. IMPORTANT: Vary the correctAnswer position — use at least 3 different index values across items.',
   [TASK_TYPES.TRUE_FALSE]:
     "TRUE_FALSE must include items[] with at least 3 statements. Each item: { id, prompt, correctAnswer: 0|1 } where 1=True, 0=False.",
   [TASK_TYPES.MUSICAL_CHAIRS]:
@@ -930,13 +930,13 @@ export const retryMustHave = {
   [TASK_TYPES.SORT]:
     'SORT: Pick 8–14 terms from the vocabulary list as items. Create 2–4 clearly labelled categories (config.buckets as plain strings, e.g. ["Key Figures","Major Events"]). Each item: { text: string, bucketIndex: number }. Items MUST be real vocabulary terms — NEVER use placeholder text like "Item 1". IMPORTANT: buckets MUST be plain strings — do NOT return objects like { label: "..." }.',
   [TASK_TYPES.SEQUENCE]:
-   "SEQUENCE: Pick 6–10 terms/events from the vocabulary list that have a natural order. Include an ordered items array and correctOrder (array of ids) OR answerKey mapping itemId -> position. Items MUST be real vocabulary terms — NEVER use placeholder text like 'Step 1'. Do not omit.",
+   "SEQUENCE: Pick 6–10 terms/events from the vocabulary list that have a natural order. Include an ordered items array and correctOrder (array of ids) OR answerKey mapping itemId -> position. Items MUST be real vocabulary terms — NEVER use placeholder text like 'Step 1'. Each item must be a SPECIFIC datable event or concrete step, NOT a vague concept like 'Impact of...' or 'Growth of...'. Do not omit.",
   [TASK_TYPES.TIMELINE]:
-    "TIMELINE: Pick 6–10 events from the vocabulary list that can be placed chronologically. Include an ordered items array and correctOrder (array of ids) OR answerKey mapping itemId -> position. Items MUST be real vocabulary terms — NEVER use placeholder text like 'Event 1'. Do not omit.",
+    "TIMELINE: Pick 6–10 events from the vocabulary list that can be placed chronologically. Include an ordered items array and correctOrder (array of ids) OR answerKey mapping itemId -> position. Items MUST be real vocabulary terms — NEVER use placeholder text like 'Event 1'. Every event MUST include a date or date range in parentheses. Do NOT use vague labels like 'Impact of colonization'. Do not omit.",
   [TASK_TYPES.MATCHING]:
     'MATCHING: Pick 6 terms from the vocabulary list and use them as leftItems (plain string array). For each term, write a short definition (8-20 words) and use those as rightItems (plain string array). Include correctMatches map {"L1":"R1","L2":"R2",...} at root level. Do NOT use empty arrays. Do NOT use "items", "options", or "config" — only leftItems, rightItems, correctMatches at root. NEVER output placeholder text like "Term 1" or "Definition 2".',
   [TASK_TYPES.VENNSORT]:
-    'VENNSORT: Pick 10–16 terms from the vocabulary list as items. Create 2–3 meaningful categories (config.categories). config.items (5–10 objects). Also include correctAnswer map: { "itemId": ["CategoryA"] }. Items MUST be real vocabulary terms — NEVER use placeholder text like "Item 1".',
+    'VENNSORT: Pick 10–16 terms from the vocabulary list as items. Create 2–3 meaningful categories (config.categories). config.items (5–10 objects). Also include correctAnswer map: { "itemId": ["CategoryA"] }. Items MUST be real vocabulary terms — NEVER use placeholder text like "Item 1". IMPORTANT: Every item placement must be clearly defensible — choose categories that create unambiguous distinctions. If a student could reasonably argue a different placement, pick different items or categories.',
   [TASK_TYPES.JEOPARDY]:
     'JEOPARDY (BrainBlitz) must include clues[] with at least 5 SHORT clue STRINGS and a correctAnswer string (the single target answer). Also include config.clues and config.correctAnswer mirroring the root fields.',
   [TASK_TYPES.HANGMAN_DUEL]:
@@ -973,6 +973,10 @@ export const retryMustHave = {
     "SCRIPT_PLAY must include lines/dialogue as an array of at least 8 lines. Each line should be a string or { speaker, text }. Do not omit.",
   [TASK_TYPES.TRUE_FALSE_TICTACTOE]:
     "TRUE_FALSE_TICTACTOE must include at least 12 statements (so the game can fill a 3x3 board). Each statement must include a boolean answer.",
+  [TASK_TYPES.READING_COMP]:
+    "READING_COMP must include a paragraph (generatedParagraph or paragraph field) about ONE unified topic. Do NOT stitch together summaries of multiple unrelated subjects. Go deep on one topic rather than touching many shallowly.",
+  [TASK_TYPES.RECORD_AUDIO]:
+    "RECORD_AUDIO must include a prompt asking students to discuss ONE specific topic in 20–45 seconds. Do NOT ask about multiple topics — one focused topic is enough for a short recording.",
 
 };
 
