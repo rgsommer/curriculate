@@ -1284,6 +1284,20 @@ function taskMustIncludeTermsOrThrow(task, terms, options) {
       if (reLoose.test(looseHay)) ok = true;
     }
 
+    // 3) Compound term match: for terms with ":" or "–" or " - ",
+    // check if ALL sub-parts appear somewhere in the task (even in different fields).
+    // e.g. "schooling: one room schoolhouses" → both "schooling" and "one room schoolhouses" must appear.
+    if (!ok) {
+      const parts = t.split(/\s*[:–—\-]\s*/).map(makeLoose).filter((p) => p.length > 2);
+      if (parts.length >= 2) {
+        const allPartsFound = parts.every((part) => {
+          const escPart = _escapeRegex(part);
+          return new RegExp(`(^| )${escPart}($| )`, "i").test(looseHay);
+        });
+        if (allPartsFound) ok = true;
+      }
+    }
+
     if (!ok) missing.push(t);
   }
 
