@@ -1512,8 +1512,14 @@ export async function createAiTaskset(req, res) {
     const effectiveSpecialConsiderations =
       [specialConsiderations, topicDescription].map(s => String(s || "").trim()).filter(Boolean).join("\n\n");
 
-    // Accept either key the frontend might send for count
-    let safeCount = clampInt(count || numberOfTasks, 1, 30, 12);
+    // Accept either key the frontend might send for count.
+    // If no explicit count given, derive from duration (~5 min per task, min 4, max 20).
+    const explicitCount = count || numberOfTasks;
+    const durationDerivedCount =
+      durationMinutes && !explicitCount
+        ? Math.max(4, Math.min(20, Math.round(durationMinutes / 5)))
+        : null;
+    let safeCount = clampInt(explicitCount || durationDerivedCount, 1, 30, 12);
 
     const eligible = getGenerationEligibleTypes(subject);
 
