@@ -280,9 +280,9 @@ export function assessTaskPlayability(rawTask) {
     }
 
     case TASK_TYPES.GUESS_WHO: {
-      // Needs a concept pool / suspects list depending on your implementation
-      const pool = arrLen(() => t.items, () => t.config?.items, () => t.characters, () => t.config?.characters);
-      if (pool < 6) issues.push(`need at least 6 candidates/items (got ${pool})`);
+      // Component uses config.secretAnswers (array of words for each round)
+      const sa = Array.isArray(t.config?.secretAnswers) ? t.config.secretAnswers : [];
+      if (sa.length < 2) issues.push(`need at least 2 secretAnswers (got ${sa.length})`);
       break;
     }
 

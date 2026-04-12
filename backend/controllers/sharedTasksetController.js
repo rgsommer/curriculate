@@ -199,8 +199,8 @@ function validatePlayabilityByType(type, task) {
   }
 
   if (type === TASK_TYPES.GUESS_WHO) {
-    const pool = cfg.items ?? task.items ?? cfg.characters ?? task.characters ?? [];
-    if (_len(pool) < 6) errors.push("need at least 6 candidates/items");
+    const sa = cfg.secretAnswers ?? task.secretAnswers ?? [];
+    if (_len(sa) < 2) errors.push("need at least 2 secretAnswers");
   }
 
   if (type === TASK_TYPES.FAKE_OUT) {
