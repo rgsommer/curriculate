@@ -3828,32 +3828,6 @@ function StudentApp() {
                   />
                 </div>
               )}
-              {/* Countdown bar: ONLY shows during the answer/review overlay */}
-              {(() => {
-                const reviewTotal = typeof reviewState?.secondsLeft === "number"
-                  ? reviewState.secondsLeft
-                  : DEFAULT_POST_SUBMIT_SECONDS;
-                const inReview = taskLocked && postSubmitSecondsLeft != null && reviewTotal > 0;
-
-                if (inReview) {
-                  const pct = Math.max(0, Math.min(100, (postSubmitSecondsLeft / reviewTotal) * 100));
-                  return (
-                    <div className="countdown-bar-track">
-                      <div
-                        className="countdown-bar-inner"
-                        style={{
-                          width: `${pct}%`,
-                          background: reviewState?.accepted
-                            ? "linear-gradient(90deg, #22c55e, #4ade80)"
-                            : "linear-gradient(90deg, #f59e0b, #fbbf24)",
-                          transition: "width 0.9s linear",
-                        }}
-                      />
-                    </div>
-                  );
-                }
-                return null;
-              })()}
             </section>
           )}
 
@@ -4391,6 +4365,32 @@ function StudentApp() {
       {/* Progress label now shown above noise bar; removed duplicate here */}
       {currentTask.title || currentTask.name || "Task"}
     </h2>
+    {/* Countdown bar: shows during the answer/review overlay, below the title */}
+    {(() => {
+      const reviewTotal = typeof reviewState?.secondsLeft === "number"
+        ? reviewState.secondsLeft
+        : DEFAULT_POST_SUBMIT_SECONDS;
+      const inReview = taskLocked && postSubmitSecondsLeft != null && reviewTotal > 0;
+
+      if (inReview) {
+        const pct = Math.max(0, Math.min(100, (postSubmitSecondsLeft / reviewTotal) * 100));
+        return (
+          <div className="countdown-bar-track" style={{ marginBottom: 8 }}>
+            <div
+              className="countdown-bar-inner"
+              style={{
+                width: `${pct}%`,
+                background: reviewState?.accepted
+                  ? "linear-gradient(90deg, #22c55e, #4ade80)"
+                  : "linear-gradient(90deg, #f59e0b, #fbbf24)",
+                transition: "width 0.9s linear",
+              }}
+            />
+          </div>
+        );
+      }
+      return null;
+    })()}
     <div
       className="task-content-inner"
       style={{
