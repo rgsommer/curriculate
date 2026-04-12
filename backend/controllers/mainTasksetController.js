@@ -1669,8 +1669,12 @@ export async function createAiTaskset(req, res) {
 
           const fin = finalizeTask(expectedType, attemptTask);
 
-          // ✅ Check assigned concepts per-task — warn but don't block on missing ones
-          const missingTerms = taskMustIncludeTermsOrThrow(fin, assignedTerms, { warnOnly: true });
+          // ✅ Check assigned concepts per-task.
+          // For content-rich types (cap > 2), retry if concepts are missing (first 2 attempts).
+          // For simple types (draw, mime, photo — cap ≤ 2), warn but don't block.
+          const isSimpleType = getConceptCapForType(expectedType) <= 2;
+          const warnOnly = isSimpleType || attempt > 2;
+          taskMustIncludeTermsOrThrow(fin, assignedTerms, { warnOnly });
 
           finalized.push(fin);
           success = true;
