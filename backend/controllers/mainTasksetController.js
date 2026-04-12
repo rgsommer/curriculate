@@ -581,13 +581,14 @@ function matchingIsValid(task) {
   const cm = task?.correctMatches && typeof task.correctMatches === "object" ? task.correctMatches : null;
   if (left.length < 5 || right.length < 5 || !cm) return false;
 
-  // Reject if ALL items look like generic padded placeholders (e.g. "Left 1", "Right 3", "Term 1", "Definition 2")
-  const isPlaceholder = (text) => /^(left|right|term|definition|item|word|concept|option)\s*\d+$/i.test(String(text || "").trim());
-  const leftTexts = left.map((x) => (typeof x === "object" ? x?.text : x) || "");
-  const rightTexts = right.map((x) => (typeof x === "object" ? x?.text : x) || "");
-  const allLeftPlaceholders = leftTexts.every(isPlaceholder);
-  const allRightPlaceholders = rightTexts.every(isPlaceholder);
-  if (allLeftPlaceholders || allRightPlaceholders) return false;
+  // Reject if ANY item looks like a generic placeholder (e.g. "Left 1", "Term 3", "Definition 2")
+  // Previously checked "every" which let tasks through if even one item had real text.
+  const isPlaceholder = (text) => /^(left|right|term|definition|item|word|concept|option|key\s*term|match)\s*\d+$/i.test(String(text || "").trim());
+  const leftTexts = left.map((x) => (typeof x === "object" ? (x?.text || x?.label) : x) || "");
+  const rightTexts = right.map((x) => (typeof x === "object" ? (x?.text || x?.label) : x) || "");
+  const anyLeftPlaceholder = leftTexts.some(isPlaceholder);
+  const anyRightPlaceholder = rightTexts.some(isPlaceholder);
+  if (anyLeftPlaceholder || anyRightPlaceholder) return false;
 
   return true;
 }

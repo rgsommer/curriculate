@@ -284,15 +284,23 @@ export default function MatchingTask({
     };
   }, [computeLines]);
 
-  if (!leftItems.length || !rightItems.length) {
+  // Detect placeholder / generic labels that the AI sometimes produces
+  const _isPlaceholder = (s) =>
+    /^(left|right|term|definition|item|word|concept|option|match|key\s*term)\s*\d+$/i.test(
+      String(s || "").trim()
+    );
+  const hasPlaceholders =
+    leftItems.some((it) => _isPlaceholder(it.label)) ||
+    rightItems.some((it) => _isPlaceholder(it.label));
+
+  if (!leftItems.length || !rightItems.length || hasPlaceholders) {
     return (
       <div className="p-6">
         <div className="text-xl font-bold mb-2 text-red-600">
-          No matching items found.
+          {hasPlaceholders
+            ? "This matching task has placeholder content. Please regenerate the task set."
+            : "No matching items found."}
         </div>
-        <pre className="mt-4 text-xs bg-slate-100 p-3 rounded overflow-auto">
-          {JSON.stringify(task, null, 2)}
-        </pre>
       </div>
     );
   }

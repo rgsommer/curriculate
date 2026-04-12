@@ -812,18 +812,14 @@ export function normalizeTaskByType(taskType, rawTask) {
         }
       }
 
-      while (task.leftItems.length < 5) {
-        const i = task.leftItems.length + 1;
-        task.leftItems.push({ id: `L${i}`, text: `Left ${i}` });
-      }
-      while (task.rightItems.length < 5) {
-        const i = task.rightItems.length + 1;
-        task.rightItems.push({ id: `R${i}`, text: `Right ${i}` });
-      }
+      // Do NOT pad with placeholder items — let validation reject if < 5.
+      // Padding with "Left 1"/"Right 1" creates unplayable tasks that slip past checks.
 
       if (!isObject(task.correctMatches)) task.correctMatches = {};
 
-      for (let i = 0; i < 5; i++) {
+      // Only auto-fill correctMatches if both sides have real items
+      const minLen = Math.min(task.leftItems.length, task.rightItems.length);
+      for (let i = 0; i < minLen; i++) {
         const l = task.leftItems[i];
         const r = task.rightItems[i];
         if (l && r && task.correctMatches[l.id] == null) task.correctMatches[l.id] = r.id;
