@@ -1220,12 +1220,23 @@ function planConceptAllocation(aiWordBank, pool, safeCount) {
     if (!placed) break; // all tasks at capacity
   }
 
-  // ── Pass 3: Reinforce — repeat concepts to fill remaining capacity ──
-  // Tasks with room get additional (duplicate) concepts so more tasks
-  // reference the vocabulary, improving student reinforcement.
+  // ── Pass 3: Reinforce — fill remaining capacity with ALL concepts ──
+  // Overlap is fine: every task should reference as many concepts as its
+  // cap allows.  Walk the FULL concept list (not just leftovers) so
+  // content-hungry types (Brain Blitz cap 5, Tower Builder cap 5, etc.)
+  // get a rich variety even when the unique allocation was thin.
   if (concepts.length > 0) {
-    let rIdx = 0;
     for (const slot of slotsByCapDesc) {
+      const already = new Set(plan[slot.idx].map(c => c.toLowerCase()));
+      // First add any concepts NOT already in this task
+      for (let ci = 0; ci < concepts.length && plan[slot.idx].length < slot.cap; ci++) {
+        if (!already.has(concepts[ci].toLowerCase())) {
+          plan[slot.idx].push(concepts[ci]);
+          already.add(concepts[ci].toLowerCase());
+        }
+      }
+      // Then cycle through all concepts if still under cap
+      let rIdx = 0;
       while (plan[slot.idx].length < slot.cap) {
         plan[slot.idx].push(concepts[rIdx % concepts.length]);
         rIdx++;
