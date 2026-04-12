@@ -566,6 +566,8 @@ export function normalizeTaskByType(taskType, rawTask) {
       if (items.length < 3) {
         task._validationError = `Sequence/timeline must have at least 3 real items, got ${items.length}`;
         items = items.length > 0 ? items : ["Placeholder — regenerate this task"];
+      } else if (items.length < 6) {
+        task._validationWarning = `Sequence/timeline has only ${items.length} items — prefer 6+ for meaningful ordering`;
       }
       // Flag vague pattern items (e.g. "Impact of...", "Settlement of...", "Growth of...")
       const vaguePattern = /^(Impact|Effect|Growth|Rise|Spread|Settlement|Development|Influence|Role)\s+of\b/i;
@@ -850,6 +852,11 @@ export function normalizeTaskByType(taskType, rawTask) {
         const r = task.rightItems[i];
         if (l && r && task.correctMatches[l.id] == null) task.correctMatches[l.id] = r.id;
       }
+
+      // --- GUARDRAIL: Reject matching tasks with empty content ---
+      if (!task.leftItems.length || !task.rightItems.length || !Object.keys(task.correctMatches).length) {
+        task._validationError = `Matching task has no content: ${task.leftItems.length} left items, ${task.rightItems.length} right items, ${Object.keys(task.correctMatches).length} matches — must have at least 4 pairs`;
+      }
       break;
     }
 
@@ -1119,6 +1126,29 @@ export function normalizeTaskByType(taskType, rawTask) {
       delete task.text;
 
       task.config = cfg;
+
+      // --- GUARDRAIL: Detect topic-bouncing passages (shallow survey of many topics) ---
+      // A good passage goes deep on 1-2 topics. If the passage mentions 5+ distinct
+      // sentence-level topic shifts (approximated by counting sentences that introduce
+      // new subjects with abrupt transitions), flag it.
+      if (finalPassage && finalPassage.length > 50) {
+        const sentences = finalPassage.split(/[.!?]+/).filter((s) => s.trim().length > 10);
+        // Count how many sentences start with a topic-shifting pattern
+        const shiftPatterns = /^(The|In|Life|Many|Settlers|The 1793|Middle|Sewing|Together|Meanwhile|Additionally|Furthermore|Another|Also,)/i;
+        let topicShifts = 0;
+        const mentionedSubjects = new Set();
+        for (const sent of sentences) {
+          const trimmed = sent.trim();
+          // Extract rough subject (first 3 significant words)
+          const words = trimmed.split(/\s+/).slice(0, 4).join(" ").toLowerCase();
+          if (mentionedSubjects.has(words)) continue; // revisiting same subject = not a new shift
+          mentionedSubjects.add(words);
+          if (shiftPatterns.test(trimmed)) topicShifts++;
+        }
+        if (topicShifts >= 5 && sentences.length >= 6) {
+          task._validationWarning = `Reading passage may be topic-bouncing: ${topicShifts} apparent topic shifts across ${sentences.length} sentences — prefer a unified passage about ONE topic`;
+        }
+      }
 
       task.title = asNonEmptyString(task.title, "Reading Comprehension");
       task.prompt = asNonEmptyString(task.prompt, "Read the passage and answer the questions.");
@@ -1653,6 +1683,17 @@ export function normalizeTaskByType(taskType, rawTask) {
       // Normalize correctAnswer / answerKey
       if (!vCfg.correctAnswer && !vCfg.answerKey) {
         vCfg.correctAnswer = task.correctAnswer || task.answerKey || null;
+      }
+
+      // --- GUARDRAIL: Flag overly generic vennsort items ---
+      // Items like "Social disruption", "Economic impact", "Cultural change" are too vague
+      // and could plausibly fit any category, making the task unfair.
+      if (Array.isArray(vCfg.items) && vCfg.items.length > 0) {
+        const genericPattern = /^(social|economic|cultural|political|environmental|historical|general|overall|various)\s+(disruption|impact|change|effects?|factors?|issues?|aspects?|developments?|influences?)$/i;
+        const genericItems = vCfg.items.filter((it) => genericPattern.test(String(it?.text || "").trim()));
+        if (genericItems.length >= 3) {
+          task._validationWarning = `Vennsort has ${genericItems.length} overly generic items (e.g. "${genericItems[0]?.text}") — items should be specific terms with defensible category placements`;
+        }
       }
       break;
     }

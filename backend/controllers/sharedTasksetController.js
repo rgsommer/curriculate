@@ -928,13 +928,13 @@ export const retryMustHave = {
   [TASK_TYPES.DRAW_MIME]:
     'DRAW_MIME MUST include a "clues" array of EXACTLY 4 short drawable/actable concepts (1-3 words each, max 5 words). Pick 4 words from the vocabulary list. Set "prompt" to clues[0]. Do NOT put instructions or sentences in prompt — only the first clue word(s). Example: { "taskType":"draw-mime", "title":"Draw: Key Concepts", "prompt":"gravity", "clues":["gravity","water cycle","photosynthesis","food chain"], "config":{"mode":"EITHER"} }. Optional: config.mode "DRAW"|"MIME"|"EITHER".',
   [TASK_TYPES.SORT]:
-    'SORT: Pick 8–14 terms from the vocabulary list as items. Create 2–4 clearly labelled categories (config.buckets as plain strings, e.g. ["Key Figures","Major Events"]). Each item: { text: string, bucketIndex: number }. Items MUST be real vocabulary terms — NEVER use placeholder text like "Item 1". IMPORTANT: buckets MUST be plain strings — do NOT return objects like { label: "..." }.',
+    'SORT: Pick 8–14 terms from the vocabulary list as items. Create 2–4 clearly labelled categories (config.buckets as plain strings, e.g. ["Key Figures","Major Events"]). Each item: { text: string, bucketIndex: number }. Items MUST be real vocabulary terms — NEVER use placeholder text like "Item 1". IMPORTANT: buckets MUST be plain strings — do NOT return objects like { label: "..." }. Each item.text must be a SPECIFIC term/name/event, NOT a generic description like "Emphasis on personal faith" or "Provided social services". Categories should both be thematic groupings — do NOT use a person as one category and an abstract concept as the other.',
   [TASK_TYPES.SEQUENCE]:
-   "SEQUENCE: Pick 6–10 terms/events from the vocabulary list that have a natural order. Include an ordered items array and correctOrder (array of ids) OR answerKey mapping itemId -> position. Items MUST be real vocabulary terms — NEVER use placeholder text like 'Step 1'. Each item must be a SPECIFIC datable event or concrete step, NOT a vague concept like 'Impact of...' or 'Growth of...'. Do not omit.",
+   "SEQUENCE: Pick 6–10 terms/events from the vocabulary list that have a natural order. MINIMUM 6 items — sequences with fewer than 6 will be REJECTED. Include an ordered items array and correctOrder (array of ids) OR answerKey mapping itemId -> position. Items MUST be real vocabulary terms — NEVER use placeholder text like 'Step 1'. Each item must be a SPECIFIC datable event or concrete step, NOT a vague concept like 'Impact of...' or 'Growth of...' or 'Settlement of...'. Do not omit.",
   [TASK_TYPES.TIMELINE]:
-    "TIMELINE: Pick 6–10 events from the vocabulary list that can be placed chronologically. Include an ordered items array and correctOrder (array of ids) OR answerKey mapping itemId -> position. Items MUST be real vocabulary terms — NEVER use placeholder text like 'Event 1'. Every event MUST include a date or date range in parentheses. Do NOT use vague labels like 'Impact of colonization'. Do not omit.",
+    "TIMELINE: Pick 6–10 events from the vocabulary list that can be placed chronologically. MINIMUM 6 events — timelines with fewer than 6 will be REJECTED. Include an ordered items array and correctOrder (array of ids) OR answerKey mapping itemId -> position. Items MUST be real vocabulary terms — NEVER use placeholder text like 'Event 1'. Every event MUST include a date or date range in parentheses. Do NOT use vague labels like 'Impact of colonization'. Do not omit.",
   [TASK_TYPES.MATCHING]:
-    'MATCHING: Pick 6 terms from the vocabulary list and use them as leftItems (plain string array). For each term, write a short definition (8-20 words) and use those as rightItems (plain string array). Include correctMatches map {"L1":"R1","L2":"R2",...} at root level. Do NOT use empty arrays. Do NOT use "items", "options", or "config" — only leftItems, rightItems, correctMatches at root. NEVER output placeholder text like "Term 1" or "Definition 2".',
+    'MATCHING: Pick at least 6 terms from the vocabulary list and use them as leftItems (plain string array). For each term, write a short definition (8-20 words) and use those as rightItems (plain string array). Include correctMatches map {"L1":"R1","L2":"R2",...} at root level. Do NOT use empty arrays — a matching task with no items will be REJECTED. Do NOT use "items", "options", or "config" — only leftItems, rightItems, correctMatches at root. NEVER output placeholder text like "Term 1" or "Definition 2".',
   [TASK_TYPES.VENNSORT]:
     'VENNSORT: Pick 10–16 terms from the vocabulary list as items. Create 2–3 meaningful categories (config.categories). config.items (5–10 objects). Also include correctAnswer map: { "itemId": ["CategoryA"] }. Items MUST be real vocabulary terms — NEVER use placeholder text like "Item 1". IMPORTANT: Every item placement must be clearly defensible — choose categories that create unambiguous distinctions. If a student could reasonably argue a different placement, pick different items or categories.',
   [TASK_TYPES.JEOPARDY]:
@@ -1205,6 +1205,17 @@ export async function regenerateSingleTask({
 
     // 2.5) Sanitize common drift (e.g., MC config.items) before validation
     normalized = sanitizeTaskShapeByType(allowedType, normalized);
+
+    // 2.6) GUARDRAIL: Check for quality issues flagged during normalization
+    if (normalized._validationError) {
+      const errMsg = normalized._validationError;
+      delete normalized._validationError;
+      throw new Error(`[Quality Guardrail] ${errMsg}`);
+    }
+    if (normalized._validationWarning) {
+      console.warn(`[Quality Guardrail] ${allowedType}: ${normalized._validationWarning}`);
+      delete normalized._validationWarning;
+    }
 
     // 3) Validate exactly once, against the expected type
     assertValidAiTask(allowedType, normalized);

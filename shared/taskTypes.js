@@ -397,6 +397,14 @@ export const TASK_TYPE_META = {
     - Items MUST be real vocabulary terms from the provided list — do NOT invent generic items.
     - NEVER use placeholder text like "Item 1", "Term 2", "Word 3", etc.
 
+    ITEM QUALITY RULE (MANDATORY):
+    - Each item.text MUST be a specific term, name, event, or concept — NOT a generic description or attribute.
+    - BAD: "Great Awakening preacher", "Emphasis on personal faith", "Provided social services" (these are descriptions, not terms).
+    - GOOD: "Jonathan Edwards", "George Whitefield", "Clergy Reserve", "Pemmican" (these are actual vocabulary terms).
+    - Categories should group TERMS, not describe attributes of one thing.
+    - BAD categories: "Jonathan Edwards" vs "Positive Contributions of the Church" (one is a person, one is an abstract concept — items end up being descriptions, not terms).
+    - GOOD categories: "Religious Figures" vs "Government Policies" vs "Daily Life" (both are thematic groupings that real terms sort into).
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
@@ -436,7 +444,7 @@ export const TASK_TYPE_META = {
     Task-specific guidance:
     HOW TO BUILD THE SEQUENCE:
     1. Look at the Vocabulary / Concept list provided in the user message.
-    2. Pick 6–10 terms, events, or concepts from that list that have a natural logical or chronological order.
+    2. Pick 6–10 terms, events, or concepts from that list that have a natural logical or chronological order. MINIMUM 6 items — sequences with fewer than 6 are too easy and will be rejected.
     3. Provide them in the correct order; the student will see them shuffled.
     - Steps must be unambiguous and clearly distinct.
     - Items MUST come from the provided vocabulary / concept list — do NOT invent generic steps.
@@ -488,7 +496,7 @@ export const TASK_TYPE_META = {
     Task-specific guidance:
     HOW TO BUILD THE TIMELINE:
     1. Look at the Vocabulary / Concept list provided in the user message.
-    2. Pick 6–10 terms or events from that list that can be placed in chronological order.
+    2. Pick 6–10 terms or events from that list that can be placed in chronological order. MINIMUM 6 events — timelines with fewer than 6 are too easy and will be rejected.
     3. Provide event labels and correct chronological order. Dates can be approximate if appropriate, but order must be clear.
     - Events MUST be drawn from the provided vocabulary / concept list — do NOT invent generic events.
     - NEVER use placeholder text like "Event 1", "Date 2", "Item 3", etc.

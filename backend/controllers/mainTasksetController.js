@@ -637,6 +637,17 @@ function finalizeTask(expectedType, rawTask) {
   // Sanitize known drift (e.g., MC config.items) before strict validation
   normalized = sanitizeTaskShapeByType(expectedType, normalized);
 
+  // GUARDRAIL: Check for quality issues flagged during normalization
+  if (normalized._validationError) {
+    const errMsg = normalized._validationError;
+    delete normalized._validationError;
+    throw new Error(`[Quality Guardrail] ${errMsg}`);
+  }
+  if (normalized._validationWarning) {
+    console.warn(`[Quality Guardrail] ${expectedType}: ${normalized._validationWarning}`);
+    delete normalized._validationWarning;
+  }
+
   // Validate by type (strict)
   assertValidAiTask(expectedType, normalized);
 

@@ -28,6 +28,17 @@ export async function generateUntilValid({
         taskType,
       });
 
+      // GUARDRAIL: Check for quality issues flagged during normalization
+      if (normalized._validationError) {
+        const errMsg = normalized._validationError;
+        delete normalized._validationError;
+        throw new Error(`[Quality Guardrail] ${errMsg}`);
+      }
+      if (normalized._validationWarning) {
+        console.warn(`[Quality Guardrail] ${taskType}: ${normalized._validationWarning}`);
+        delete normalized._validationWarning;
+      }
+
       // HARD REQUIREMENTS
       assertValidAiTask(taskType, normalized);
       assertPlayable(normalized, taskType);
