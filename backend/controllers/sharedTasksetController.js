@@ -934,7 +934,7 @@ export const retryMustHave = {
   [TASK_TYPES.TIMELINE]:
     "TIMELINE must include an ordered items array and the correct order, as either correctOrder (array of ids) OR answerKey mapping itemId -> position. Do not omit.",
   [TASK_TYPES.MATCHING]:
-    'MATCHING must include leftItems[] and rightItems[] arrays (5–7 items each) and a correctMatches map {"L1":"R1","L2":"R2",...}. Each item is { "id": "L1", "text": "Term" } for left and { "id": "R1", "text": "Definition" } for right. Do NOT use empty arrays. Do NOT put matching data in "items" or "options" — use leftItems and rightItems.',
+    'MATCHING: Pick 6 terms from the vocabulary list and use them as leftItems (plain string array). For each term, write a short definition (8-20 words) and use those as rightItems (plain string array). Include correctMatches map {"L1":"R1","L2":"R2",...} at root level. Do NOT use empty arrays. Do NOT use "items", "options", or "config" — only leftItems, rightItems, correctMatches at root. NEVER output placeholder text like "Term 1" or "Definition 2".',
   [TASK_TYPES.VENNSORT]:
     'VENNSORT must include config.categories (2–3) and config.items (5–10). Also include correctAnswer map: { "itemId": ["CategoryA"] }.',
   [TASK_TYPES.JEOPARDY]:

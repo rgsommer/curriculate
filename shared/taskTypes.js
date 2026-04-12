@@ -502,21 +502,28 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
 
-    Task-specific guidance:
-    - Create exactly 6 pairs connecting left items to right items (term→definition, person→role, cause→effect, etc.).
-    - NEVER use fields named “options”, “items”, “pairs”, or “answers”. Use ONLY the exact field names shown below.
+    HOW TO BUILD THE MATCHING PAIRS:
+    1. Look at the Vocabulary / Concept list provided in the user message.
+    2. Pick 6 terms from that list. Put them in “leftItems” as plain strings.
+    3. For EACH term, write a short definition or description (8–20 words). Put those in “rightItems”.
+    4. leftItems[0] matches rightItems[0], leftItems[1] matches rightItems[1], etc.
+       Then set correctMatches as L1→R1, L2→R2, … L6→R6.
 
-    CRITICAL: leftItems and rightItems must contain REAL curriculum content.
-    NEVER use generic labels like “Term 1”, “Definition 2”, “Left 3”, “Right 4”, “Item 5”, “Concept 1”, etc.
-    Every string must be a real word, phrase, name, or description from the topic.
+    CRITICAL RULES:
+    - leftItems MUST be real vocabulary terms from the provided list — NOT invented labels.
+    - rightItems MUST be real definitions/descriptions — NOT placeholder text.
+    - NEVER output generic labels like “Term 1”, “Definition 2”, “Left 3”, “Right 4”, “Item 5”, “Concept 1”.
+    - NEVER use fields named “options”, “items”, “pairs”, or “answers”. Use ONLY the exact field names below.
+    - Do NOT wrap items in objects; leftItems and rightItems must be plain string arrays.
+    - Do NOT use a “config” wrapper; all fields at root level.
 
     REQUIRED OUTPUT FORMAT (use this exact structure, no deviations):
     {
       “taskType”: “matching”,
       “title”: “short title (3-7 words)”,
-      “prompt”: “Connect each item on the left to its match on the right.”,
-      “leftItems”: [“Actual Term Here”, “Another Real Term”, “Third Real Term”, “Fourth Real Term”, “Fifth Real Term”, “Sixth Real Term”],
-      “rightItems”: [“Real definition of first term”, “Real definition of second term”, “Real definition of third”, “Real definition of fourth”, “Real definition of fifth”, “Real definition of sixth”],
+      “prompt”: “Connect each term on the left to its definition on the right.”,
+      “leftItems”: [“backwoods”, “pemmican”, “clergy reserve”, “emancipation”, “Beothuk”, “working bee”],
+      “rightItems”: [“Remote forested areas settled by pioneers”, “Dried meat and fat food used by fur traders”, “Land set aside to support the church”, “The process of freeing people from slavery”, “Indigenous people of Newfoundland”, “Community event where neighbours helped with big tasks”],
       “correctMatches”: {
         “L1”: “R1”,
         “L2”: “R2”,
@@ -527,13 +534,7 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
       }
     }
 
-    Rules for correctMatches: use keys L1–L6 (matching index in leftItems) and values R1–R6 (matching index in rightItems). Each left item matches exactly one right item.
-
-    Common failure prevention:
-    - Do NOT wrap items in objects; leftItems and rightItems must be plain string arrays.
-    - Do NOT use “config” wrapper; all fields at root level.
-    - Ensure all 6 L/R keys appear in correctMatches.
-    - Do NOT output placeholder text like “Term 1” or “Definition 3” — use real content only.
+    Rules for correctMatches: L1 matches R1, L2 matches R2, etc. Each left item matches exactly one right item.
     `,
 },
 
