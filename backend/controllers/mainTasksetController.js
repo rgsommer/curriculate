@@ -1867,9 +1867,13 @@ export async function createAiTaskset(req, res) {
       coverage = computeCoverageReport(aiWordBank, finalized);
     }
 
-    // ✅ GUARDRAIL: Cross-task term repetition detection & warning
-    // Flag when the same vocabulary term dominates too many tasks (>3)
-    const termTaskCount = {};
+    // ✅ GUARDRAIL: Cross-task term *dominance* detection
+    // We WANT terms to appear across many tasks (that's vocabulary reinforcement).
+    // We only flag when one term is the PRIMARY FOCUS (appears in the task title)
+    // of too many tasks — meaning it's hogging slots other terms should get.
+    const termTitleCount = {};   // term appears as primary focus (in title)
+    const termMentionCount = {}; // term mentioned anywhere (title + prompt)
+    const totalTasks = finalized.filter(Boolean).length;
     for (const task of finalized) {
       if (!task) continue;
       const titleLower = (task.title || "").toLowerCase();
@@ -1877,18 +1881,23 @@ export async function createAiTaskset(req, res) {
       const combined = `${titleLower} ${promptLower}`;
       for (const word of aiWordBank || []) {
         const termLower = String(word.term || word).toLowerCase();
-        if (termLower.length < 3) continue; // skip trivial terms
+        if (termLower.length < 3) continue;
         if (combined.includes(termLower)) {
-          termTaskCount[termLower] = (termTaskCount[termLower] || 0) + 1;
+          termMentionCount[termLower] = (termMentionCount[termLower] || 0) + 1;
+        }
+        if (titleLower.includes(termLower)) {
+          termTitleCount[termLower] = (termTitleCount[termLower] || 0) + 1;
         }
       }
     }
-    const overusedTerms = Object.entries(termTaskCount)
-      .filter(([, count]) => count > 3)
-      .map(([term, count]) => ({ term, count }));
+    // Only warn when a term dominates task TITLES (primary focus) in >30% of tasks or >3 titles
+    const titleDominanceThreshold = Math.max(3, Math.ceil(totalTasks * 0.3));
+    const overusedTerms = Object.entries(termTitleCount)
+      .filter(([, count]) => count > titleDominanceThreshold)
+      .map(([term, count]) => ({ term, titleCount: count, mentionCount: termMentionCount[term] || count }));
     if (overusedTerms.length > 0) {
-      console.warn(`[Quality Guardrail] Over-represented terms across tasks:`,
-        overusedTerms.map((t) => `"${t.term}" in ${t.count} tasks`).join(", ")
+      console.warn(`[Quality Guardrail] Term(s) dominating too many task titles:`,
+        overusedTerms.map((t) => `"${t.term}" is primary focus in ${t.titleCount}/${totalTasks} tasks`).join(", ")
       );
     }
 
