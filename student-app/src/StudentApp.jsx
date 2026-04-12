@@ -5093,6 +5093,8 @@ function StudentApp() {
                Skip MC & TF — TaskRunner already highlights correct/incorrect in review mode */}
           {isObjectiveTask(currentTask) &&
            currentTask?.taskType !== "matching" &&
+           currentTask?.taskType !== "sort" &&
+           currentTask?.taskType !== "vennsort" &&
            currentTask?.taskType !== "multiple-choice" &&
            currentTask?.taskType !== "true-false" && (() => {
             const task = currentTask;
