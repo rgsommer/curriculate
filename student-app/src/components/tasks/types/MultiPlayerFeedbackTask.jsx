@@ -120,7 +120,7 @@ const RatingButton = ({ value, isSelected, onClick }) => {
         cursor: "pointer",
         transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
         transform: isSelected ? "scale(1.15) translateY(-4px)" : "scale(1)",
-        boxShadow: isSelected ? `0 16px 32px ${ratingColors[value - 1].split(", ")[0].match(/#\w+/)[0]}40` : "0 4px 8px rgba(0,0,0,0.04)",
+        boxShadow: isSelected ? `0 16px 32px ${(ratingColors[value - 1].match(/#\w+/) || ["#888"])[0]}40` : "0 4px 8px rgba(0,0,0,0.04)",
         minWidth: 54,
         display: "flex",
         alignItems: "center",
