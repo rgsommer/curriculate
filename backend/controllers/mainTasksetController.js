@@ -1160,7 +1160,7 @@ const CONCEPT_CAPS_BY_TYPE = {
 
   // Low-capacity: simple types with just title + prompt
   [TASK_TYPES.LIVE_DEBATE]: 3,
-  [TASK_TYPES.OPEN_TEXT]: 3,
+  [TASK_TYPES.OPEN_TEXT]: 5,              // vocabulary-paragraph variant needs ≥5 words
   [TASK_TYPES.RECORD_AUDIO]: 3,
   [TASK_TYPES.DRAW]: 2,
   [TASK_TYPES.DRAW_MIME]: 2,
