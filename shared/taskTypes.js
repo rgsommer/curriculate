@@ -506,13 +506,17 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
     - Create exactly 6 pairs connecting left items to right items (term→definition, person→role, cause→effect, etc.).
     - NEVER use fields named “options”, “items”, “pairs”, or “answers”. Use ONLY the exact field names shown below.
 
+    CRITICAL: leftItems and rightItems must contain REAL curriculum content.
+    NEVER use generic labels like “Term 1”, “Definition 2”, “Left 3”, “Right 4”, “Item 5”, “Concept 1”, etc.
+    Every string must be a real word, phrase, name, or description from the topic.
+
     REQUIRED OUTPUT FORMAT (use this exact structure, no deviations):
     {
       “taskType”: “matching”,
       “title”: “short title (3-7 words)”,
       “prompt”: “Connect each item on the left to its match on the right.”,
-      “leftItems”: [“Term A”, “Term B”, “Term C”, “Term D”, “Term E”, “Term F”],
-      “rightItems”: [“Definition A”, “Definition B”, “Definition C”, “Definition D”, “Definition E”, “Definition F”],
+      “leftItems”: [“Actual Term Here”, “Another Real Term”, “Third Real Term”, “Fourth Real Term”, “Fifth Real Term”, “Sixth Real Term”],
+      “rightItems”: [“Real definition of first term”, “Real definition of second term”, “Real definition of third”, “Real definition of fourth”, “Real definition of fifth”, “Real definition of sixth”],
       “correctMatches”: {
         “L1”: “R1”,
         “L2”: “R2”,
@@ -529,6 +533,7 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
     - Do NOT wrap items in objects; leftItems and rightItems must be plain string arrays.
     - Do NOT use “config” wrapper; all fields at root level.
     - Ensure all 6 L/R keys appear in correctMatches.
+    - Do NOT output placeholder text like “Term 1” or “Definition 3” — use real content only.
     `,
 },
 
