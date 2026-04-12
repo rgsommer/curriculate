@@ -372,8 +372,14 @@ export const TASK_TYPE_META = {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Create a sorting activity with 8–14 items and 2–4 categories. Categories must be clearly labeled; every item must belong to exactly one category.
-    
+    HOW TO BUILD THE SORT ITEMS:
+    1. Look at the Vocabulary / Concept list provided in the user message.
+    2. Pick 8–14 terms from that list as items.
+    3. Create 2–4 clearly labelled categories that meaningfully group those terms.
+    4. Assign every picked term to exactly one category.
+    - Items MUST be real vocabulary terms from the provided list — do NOT invent generic items.
+    - NEVER use placeholder text like "Item 1", "Term 2", "Word 3", etc.
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
@@ -411,8 +417,14 @@ export const TASK_TYPE_META = {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Create a sequencing task with 6–10 steps/events. Provide the correct order and shuffled items for display. Steps must be unambiguous and clearly distinct.
-    
+    HOW TO BUILD THE SEQUENCE:
+    1. Look at the Vocabulary / Concept list provided in the user message.
+    2. Pick 6–10 terms, events, or concepts from that list that have a natural logical or chronological order.
+    3. Provide them in the correct order; the student will see them shuffled.
+    - Steps must be unambiguous and clearly distinct.
+    - Items MUST come from the provided vocabulary / concept list — do NOT invent generic steps.
+    - NEVER use placeholder text like "Step 1", "Event 2", "Item 3", etc.
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
@@ -450,8 +462,13 @@ export const TASK_TYPE_META = {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Create a timeline task with 6–10 dated/ordered events. Provide event labels and correct chronological order. Dates can be approximate if appropriate, but order must be clear.
-    
+    HOW TO BUILD THE TIMELINE:
+    1. Look at the Vocabulary / Concept list provided in the user message.
+    2. Pick 6–10 terms or events from that list that can be placed in chronological order.
+    3. Provide event labels and correct chronological order. Dates can be approximate if appropriate, but order must be clear.
+    - Events MUST be drawn from the provided vocabulary / concept list — do NOT invent generic events.
+    - NEVER use placeholder text like "Event 1", "Date 2", "Item 3", etc.
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
@@ -586,7 +603,13 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
     - Avoid copyrighted passages; write original content.
 
     Task-specific guidance:
-    - Create a Venn sorting task with 10–16 items that fit into left-only, right-only, or both.
+    HOW TO BUILD THE VENN SORT:
+    1. Look at the Vocabulary / Concept list provided in the user message.
+    2. Pick 10–16 terms from that list as items.
+    3. Create 2–3 meaningful category labels that allow those terms to be sorted into left-only, right-only, or both.
+    4. Assign each term to the category/categories it belongs to.
+    - Items MUST be real vocabulary terms from the provided list — do NOT invent generic items.
+    - NEVER use placeholder text like "Item 1", "Term 2", "Word 3", etc.
     - config.categories: array of 2–3 category label strings (e.g. ["Mammals","Reptiles"]).
     - config.items: array of 5–10 objects, each with { "id": "item-0-Dog", "text": "Dog" }.
     - CRITICAL — you MUST include a top-level "correctAnswer" object mapping every item id to an array of category names it belongs to. Example:
@@ -1652,8 +1675,14 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Create 12–20 flashcards (front/back). Front is a term/question; back is a definition/answer. Keep cards brief and accurate.
-    
+    HOW TO BUILD THE FLASHCARDS:
+    1. Look at the Vocabulary / Concept list provided in the user message.
+    2. Pick 12–20 terms from that list as card fronts.
+    3. For EACH term, write a clear, concise definition or answer as the card back (8–20 words).
+    - Card fronts MUST be real vocabulary terms from the provided list — do NOT invent generic terms.
+    - NEVER use placeholder text like "Term 1", "Card 2", "Question 3", etc.
+    - Keep cards brief and accurate.
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
@@ -1719,9 +1748,15 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Avoid copyrighted passages; write original content.
 
     Task-specific guidance:
+    HOW TO BUILD THE FLASHCARDS RACE:
+    1. Look at the Vocabulary / Concept list provided in the user message.
+    2. Pick 8–15 terms from that list.
+    3. For EACH term, write a short clue, definition, or question as the "question" field.
+    4. The term itself (1–5 words, unambiguous) goes in the "answer" field.
+    - Questions and answers MUST be based on real vocabulary terms from the provided list — do NOT invent generic content.
+    - NEVER use placeholder text like "Question 1", "Answer 2", "Term 3", etc.
     - This is a buzzer-style competitive recall game. Students race to answer flashcard questions.
     - You MUST place flashcards inside config.items (NOT at the root level).
-    - Generate 8–15 flashcard objects inside config.items.
     - Each flashcard MUST have: { "question": "...", "answer": "..." }
     - "question" = the prompt shown on the card (short, clear — a definition, clue, or question).
     - "answer" = the expected correct response (1–5 words, unambiguous).

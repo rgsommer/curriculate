@@ -158,15 +158,29 @@ export default function TreasureRunnerTask({
     };
   }, []);
 
-  // Start music when permission is granted (first interaction)
-  useEffect(() => {
+  // Start music immediately on mount.
+  // Browsers may block autoplay until a user gesture, so we also retry on
+  // first touch and on permission grant as fallbacks.
+  const musicStartedRef = useRef(false);
+  const tryStartMusic = () => {
     const audio = bgMusicRef.current;
-    if (!audio) return;
-    if (permission === "granted" && running && !result) {
-      audio.volume = 0.35;
-      audio.play().catch(() => {});
-    }
-  }, [permission, running, result]);
+    if (!audio || musicStartedRef.current) return;
+    if (!running || result) return;
+    audio.volume = 0.35;
+    audio.play()
+      .then(() => { musicStartedRef.current = true; })
+      .catch(() => {}); // blocked by autoplay policy — will retry on touch
+  };
+
+  // Attempt autoplay as soon as component mounts
+  useEffect(() => {
+    tryStartMusic();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Retry when permission is granted (first touch) or running state changes
+  useEffect(() => {
+    tryStartMusic();
+  }, [permission, running, result]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fade out when game ends
   useEffect(() => {
@@ -505,9 +519,10 @@ export default function TreasureRunnerTask({
     canvas.addEventListener("touchend", handleTouchEnd);
     canvas.addEventListener("touchcancel", handleTouchEnd);
 
-    // Permission + tilt
+    // Permission + tilt + start music on first touch (autoplay fallback)
     const handleFirstTouch = () => {
       requestPermission();
+      tryStartMusic();
       canvas.removeEventListener("touchstart", handleFirstTouch);
     };
     canvas.addEventListener("touchstart", handleFirstTouch);
