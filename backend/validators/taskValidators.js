@@ -2160,8 +2160,8 @@ export function validateTaskByType(taskType, task) {
         (Array.isArray(task.items) && task.items) ||
         (Array.isArray(task.words) && task.words) ||
         [];
-      if (!Array.isArray(words) || words.length < 4) {
-        errors.push(`word-weaver-duel requires at least 4 words (got ${words.length})`);
+      if (!Array.isArray(words) || words.length < 6) {
+        errors.push(`word-weaver-duel requires at least 6 words (got ${words.length})`);
         break;
       }
       break;

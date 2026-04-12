@@ -1889,7 +1889,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       title: string,
       prompt: string (student-facing instruction),
       config: {
-        words: string[] (8–12 REAL vocabulary words from the provided vocabulary list)
+        words: string[] (6–12 REAL vocabulary words from the provided vocabulary list)
       }
     }
 
