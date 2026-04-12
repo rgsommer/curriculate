@@ -102,13 +102,12 @@ export function assessTaskPlayability(rawTask) {
     }
 
     case TASK_TYPES.ECHO_CHAIN:
-      // If you already have a narration-synthesize-ish check, reuse it;
-      // otherwise minimal playable rule: prompts >=2 and playerCount is a number.
+      // Component requires config.seedTerm (a single word/phrase to start the chain).
       {
-        const pc = t.config?.playerCount;
-        if (typeof pc !== "number") issues.push("config.playerCount must be a number");
-        const p = Array.isArray(t.config?.prompts) ? t.config.prompts.length : 0;
-        if (p < 2) issues.push(`config.prompts must have at least 2 items (got ${p})`);
+        const seed = t.config?.seedTerm;
+        if (!seed || typeof seed !== "string" || !seed.trim()) {
+          issues.push("config.seedTerm is required (a word or phrase to start the chain)");
+        }
         break;
       }
 
