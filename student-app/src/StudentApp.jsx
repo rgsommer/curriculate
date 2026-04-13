@@ -10,6 +10,7 @@ import TreasureRunner from "./components/tasks/types/TreasureRunnerTask";
 import MultiPlayerFeedbackTask from "./components/tasks/types/MultiPlayerFeedbackTask.jsx";
 
 import { API_BASE_URL } from "./config.js";
+import FeedbackButton from "./components/FeedbackButton.jsx";
 import { COLORS } from "@shared/colors.js";
 import AnimatedLeaderboard from "./components/Leaderboard.jsx";
 import AnimatedScore from "./components/ui/AnimatedScore.jsx";
@@ -5309,6 +5310,17 @@ function StudentApp() {
         ))}
       </div>
     )}
+
+    {/* STUDENT FEEDBACK BUTTON — always visible */}
+    <FeedbackButton
+      roomCode={roomCode}
+      teamName={teamName}
+      members={members}
+      tasksetName={roomState?.tasksetName}
+      currentTask={currentTask}
+      currentTaskIndex={currentTaskIndex}
+      totalTasks={tasksetTotalTasks}
+    />
 
     {/* FOOTER STRIP */}
     <div style={{
