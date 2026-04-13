@@ -70,8 +70,28 @@ function TeacherApp() {
   const [roomCode, setRoomCode] = useState(() => {
     const override = localStorage.getItem("curriculateRoomCodeOverride");
     if (override && override.trim()) return override.trim().toUpperCase();
-    return generateRoomCode();
+    // Check for an active room code persisted from another tab/window
+    const active = localStorage.getItem("curriculate.activeRoomCode");
+    if (active && active.trim()) return active.trim().toUpperCase();
+    const fresh = generateRoomCode();
+    try { localStorage.setItem("curriculate.activeRoomCode", fresh); } catch {}
+    return fresh;
   });
+
+  // Persist room code to localStorage so Host + Live tabs share it
+  useEffect(() => {
+    if (!roomCode) return;
+    try { localStorage.setItem("curriculate.activeRoomCode", roomCode); } catch {}
+    // Listen for changes from other tabs
+    const onStorage = (e) => {
+      if (e.key === "curriculate.activeRoomCode" && e.newValue) {
+        const code = e.newValue.trim().toUpperCase();
+        if (code && code !== roomCode) setRoomCode(code);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [roomCode]);
 
   const isSharedRoute = routeLocation.pathname.startsWith("/shared/");
 

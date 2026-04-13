@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { API_BASE_URL } from "../config.js";
 
 const FEEDBACK_TYPES = [
+  { value: "amazing", label: "This is amazing!" },
   { value: "task-problem", label: "Problem with this task" },
   { value: "confusing", label: "Something is confusing" },
   { value: "wrong-answer", label: "I think the answer is wrong" },
@@ -107,7 +108,7 @@ export default function FeedbackButton({
         aria-label="Send feedback"
         style={{
           position: "fixed",
-          bottom: 56,
+          top: 12,
           right: 12,
           zIndex: 10000,
           width: 44,

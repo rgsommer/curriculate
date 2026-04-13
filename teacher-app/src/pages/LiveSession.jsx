@@ -2770,7 +2770,7 @@ if (
         reportOwnerId,
         reportOwnerName,
         reportOwnerEmail,
-        runByPresenterId: user?.id || user?._id,
+        runByPresenterId: user?.userId || user?.id || user?._id,
         runByPresenterName: runByName,
         runByPresenterEmail: user?.email,
         sharedToken,
@@ -2794,7 +2794,7 @@ if (
 
     socket.emit("teacher:endSessionAndEmail", {
       roomCode: code, // ✅ must be roomCode (backend expects this)
-      ownerId: reportOwnerId || user?.id || user?._id,
+      ownerId: reportOwnerId || user?.userId || user?.id || user?._id,
       teacherEmail: reportOwnerEmail || user?.email, // optional but helpful
       includeIndividualReports,
       assessmentCategories: teacherAssessmentCategories,
@@ -4997,7 +4997,7 @@ Precipitation — rain, snow, hail`}
                         reportOwnerId,
                         reportOwnerName,
                         reportOwnerEmail,
-                        runByPresenterId: user?.id || user?._id,
+                        runByPresenterId: user?.userId || user?.id || user?._id,
                         runByPresenterName: runByName,
                         runByPresenterEmail: user?.email,
                         sharedToken,

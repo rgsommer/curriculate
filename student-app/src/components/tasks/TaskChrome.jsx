@@ -125,8 +125,8 @@ export default function TaskChrome({
   }, [task?.taskType]);
 
   const progressLabel = useMemo(() => {
-    const i = Math.max(0, index) + 1;
     const t = Math.max(1, total);
+    const i = Math.min(Math.max(0, index) + 1, t); // never exceed total
     return `Step ${i} of ${t}`;
   }, [index, total]);
 

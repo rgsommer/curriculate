@@ -387,8 +387,9 @@ export default function HostView({ roomCode: roomCodeProp }) {
   }, [roomState.playerScores]);
 
   // Task progress
-  const taskIndex = roomState.taskIndex;
+  const rawTaskIndex = roomState.taskIndex;
   const totalTasks = roomState.totalTasks || 0;
+  const taskIndex = totalTasks > 0 ? Math.min(rawTaskIndex, totalTasks - 1) : rawTaskIndex; // never exceed total
   const hasProgress = totalTasks > 0 && taskIndex >= 0;
   const progressPct = hasProgress ? Math.min(100, ((taskIndex + 1) / totalTasks) * 100) : 0;
 
