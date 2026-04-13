@@ -212,6 +212,123 @@ function clampInt(n, min, max, fallback) {
 
 
 // ------------------------------------------------------------
+// ============================================================
+//  POST-GENERATION AI REVIEW
+//  One final holistic pass over the entire taskset. The AI checks
+//  for cross-task issues (ambiguous sequences, wrong task type for
+//  content, missing required fields, duplicate questions, etc.)
+//  and returns a corrected JSON array.
+// ============================================================
+async function postGenerationReview(tasks, { subject, gradeLevel, sendSSE }) {
+  if (!tasks || tasks.length === 0) return tasks;
+  try {
+    const client = getClient();
+
+    // Build a concise representation — strip heavy fields the reviewer doesn't need
+    const slim = tasks.map((t, i) => {
+      const { aiMetadata, isPublic, requiresDrawing, ...rest } = t || {};
+      return { _index: i, ...rest };
+    });
+
+    const prompt = `You are a task-set quality reviewer for an educational platform called Curriculate.
+
+SUBJECT: ${subject || "General"}
+GRADE LEVEL: ${gradeLevel || "Unknown"}
+
+Below is a JSON array of ${tasks.length} AI-generated tasks. Review each task and fix any issues you find.
+
+COMMON ISSUES TO CHECK:
+1. FAKE_OUT: must have EXACTLY 3 options per round (not 4). correctIndex and jokeIndex must be valid.
+2. PET_FEEDING: must have "goodFoods" (6-8 true statements) and "badFoods" (6-8 false statements) at ROOT level.
+3. BODY_BREAK / MOTION_MISSION: must have "movement": true.
+4. SEQUENCE / TIMELINE: every item must have ONE clearly correct position — no ambiguous or overlapping ordering.
+5. VENNSORT: minimum 7 items, at least 2 items per category, item text under 60 chars.
+6. MULTIPLE_CHOICE: vary correctAnswer positions — don't put the answer in the same slot for every question.
+7. HANGMAN_DUEL: words must be pure alphabetic (A-Z only), 3-14 characters.
+8. COLLABORATION: should only have title + prompt (no config.roles — that's role-play-deck).
+9. ALL TASKS: must have non-empty "title" and "prompt" strings.
+10. Cross-task: no duplicate questions across different tasks. Content should be varied.
+
+RULES:
+- Return ONLY a JSON array (no markdown, no commentary).
+- Preserve the same number of tasks in the same order.
+- If a task is fine, return it unchanged.
+- If a task has issues, fix them in-place.
+- Do NOT add new tasks or remove tasks.
+- Do NOT change taskType unless it's clearly wrong for the content.
+- Keep fixes minimal and targeted — don't rewrite content that's already good.
+
+TASKS:
+${JSON.stringify(slim, null, 2)}`;
+
+    if (typeof sendSSE === "function") {
+      sendSSE({ type: "phase", phase: "review", message: "Final quality review…" });
+    }
+
+    const tokenBudget = Math.min(16384, Math.max(4096, tasks.length * 500));
+    const request = {
+      model: process.env.AI_REVIEW_MODEL || process.env.AI_MODEL || "gpt-4.1-mini",
+      temperature: 0.1, // low temperature for reliable fixes
+      max_completion_tokens: tokenBudget,
+      messages: [{ role: "user", content: prompt }],
+    };
+    if (!process.env.AI_DISABLE_JSON_RESPONSE_FORMAT) {
+      request.response_format = { type: "json_object" };
+    }
+
+    const completion = await client.chat.completions.create(request);
+    const raw = completion.choices?.[0]?.message?.content?.trim() || "";
+    const parsed = extractJsonFromText(raw);
+
+    if (!parsed) {
+      console.warn("[PostReview] Could not parse AI response — keeping original tasks.");
+      return tasks;
+    }
+
+    // The AI might return { tasks: [...] } or just [...]
+    const reviewed = Array.isArray(parsed) ? parsed : Array.isArray(parsed.tasks) ? parsed.tasks : null;
+    if (!reviewed || reviewed.length !== tasks.length) {
+      console.warn(`[PostReview] AI returned ${reviewed?.length ?? "null"} tasks (expected ${tasks.length}) — keeping originals.`);
+      return tasks;
+    }
+
+    // Merge reviewed tasks back: re-run sanitizer on each, keep original if review broke it
+    let fixCount = 0;
+    const merged = tasks.map((original, i) => {
+      const rev = reviewed[i];
+      if (!rev || typeof rev !== "object") return original;
+      // Strip the _index helper we added
+      const { _index, ...cleaned } = rev;
+      // Ensure taskType didn't change unexpectedly
+      if (cleaned.taskType && cleaned.taskType !== original.taskType) {
+        console.warn(`[PostReview] Task ${i}: taskType changed from "${original.taskType}" to "${cleaned.taskType}" — keeping original type.`);
+        cleaned.taskType = original.taskType;
+      }
+      // Quick diff: did the review actually change anything?
+      const origStr = JSON.stringify(original);
+      const revStr = JSON.stringify(cleaned);
+      if (origStr === revStr) return original; // no change
+
+      fixCount++;
+      // Re-run sanitizer on the reviewed task
+      const type = normalizeSelectedType(cleaned.taskType || original.taskType) || original.taskType;
+      const sanitized = sanitizeTaskShapeByType(type, cleaned);
+      return sanitized;
+    });
+
+    if (fixCount > 0) {
+      console.log(`[PostReview] Applied fixes to ${fixCount}/${tasks.length} tasks.`);
+    } else {
+      console.log(`[PostReview] All ${tasks.length} tasks passed review — no changes.`);
+    }
+
+    return merged;
+  } catch (err) {
+    console.error("[PostReview] Review failed — keeping original tasks:", err?.message || err);
+    return tasks; // never break generation if review fails
+  }
+}
+
 // Task-shape sanitizer
 // Key rule: Multiple Choice & Physical Multiple Choice must NOT use config.items.
 // Promote config.items -> top-level items[] if needed, then delete config.items.
@@ -2098,6 +2215,18 @@ export async function createAiTaskset(req, res) {
       attemptsByTask,
       errors,
     });
+
+    // ✅ POST-GENERATION AI REVIEW: one final holistic pass
+    if (!process.env.AI_SKIP_POST_REVIEW) {
+      try {
+        const reviewed = await postGenerationReview(finalized, { subject, gradeLevel, sendSSE });
+        if (reviewed && reviewed.length === finalized.length) {
+          finalized.splice(0, finalized.length, ...reviewed);
+        }
+      } catch (e) {
+        console.warn("[PostReview] Skipped due to error:", e?.message || e);
+      }
+    }
 
     // Use the user-entered title first, fall back to topic/subject — never prefix with "Taskset:"
     const displayName = String(tasksetName || topicTitle || title || topicLabel || subject || "Task Set").trim();
