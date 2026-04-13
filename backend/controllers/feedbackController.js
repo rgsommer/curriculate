@@ -2,7 +2,7 @@
 import FeedbackMessage from "../models/FeedbackMessage.js";
 import { sendSystemEmail } from "../email/shareInviteEmailer.js";
 
-const ADMIN_EMAIL = "admin@www.curriculate.net";
+const ADMIN_EMAIL = "admin@curriculate.net";
 
 export async function createFeedback(req, res) {
   try {
