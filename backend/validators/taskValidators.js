@@ -544,6 +544,17 @@ export function normalizeTaskByType(taskType, rawTask) {
         }
       }
 
+      // --- GUARDRAIL: Flag sort items that are descriptions rather than vocabulary terms ---
+      // Items like "Missionary work", "Education establishment", "Community support" are
+      // generic descriptions, not terms from a vocabulary list.
+      if (items.length >= 4) {
+        const descriptionPattern = /^(missionary|education|church|religious|community|moral|spiritual)\s+(work|establishment|building|guidance|support|leadership|revival|teaching)$/i;
+        const descItems = items.filter((it) => descriptionPattern.test(String(it?.text || "").trim()));
+        if (descItems.length >= items.length * 0.5) {
+          task._validationError = `Sort items are generic descriptions, not vocabulary terms: ${descItems.map((it) => `"${it.text}"`).join(", ")}. Items must be specific terms from the vocabulary list (e.g. "Clergy Reserve", "Jonathan Edwards", "Pemmican").`;
+        }
+      }
+
       break;
     }
 
@@ -577,12 +588,10 @@ export function normalizeTaskByType(taskType, rawTask) {
         .map((s) => String(s).trim())
         .filter(Boolean);
 
-      // --- GUARDRAIL: Reject placeholder/vague sequence items instead of padding ---
-      if (items.length < 3) {
-        task._validationError = `Sequence/timeline must have at least 3 real items, got ${items.length}`;
-        items = items.length > 0 ? items : ["Placeholder — regenerate this task"];
-      } else if (items.length < 6) {
-        task._validationWarning = `Sequence/timeline has only ${items.length} items — prefer 6+ for meaningful ordering`;
+      // --- GUARDRAIL: Reject sequences/timelines with fewer than 6 items ---
+      if (items.length < 6) {
+        task._validationError = `Sequence/timeline must have at least 6 items for meaningful ordering, got ${items.length}. Add more specific datable events.`;
+        if (items.length === 0) items = ["Placeholder — regenerate this task"];
       }
       // Flag vague pattern items (e.g. "Impact of...", "Settlement of...", "Growth of...")
       const vaguePattern = /^(Impact|Effect|Growth|Rise|Spread|Settlement|Development|Influence|Role)\s+of\b/i;
@@ -1142,26 +1151,27 @@ export function normalizeTaskByType(taskType, rawTask) {
 
       task.config = cfg;
 
-      // --- GUARDRAIL: Detect topic-bouncing passages (shallow survey of many topics) ---
-      // A good passage goes deep on 1-2 topics. If the passage mentions 5+ distinct
-      // sentence-level topic shifts (approximated by counting sentences that introduce
-      // new subjects with abrupt transitions), flag it.
-      if (finalPassage && finalPassage.length > 50) {
-        const sentences = finalPassage.split(/[.!?]+/).filter((s) => s.trim().length > 10);
-        // Count how many sentences start with a topic-shifting pattern
-        const shiftPatterns = /^(The|In|Life|Many|Settlers|The 1793|Middle|Sewing|Together|Meanwhile|Additionally|Furthermore|Another|Also,)/i;
-        let topicShifts = 0;
-        const mentionedSubjects = new Set();
-        for (const sent of sentences) {
-          const trimmed = sent.trim();
-          // Extract rough subject (first 3 significant words)
-          const words = trimmed.split(/\s+/).slice(0, 4).join(" ").toLowerCase();
-          if (mentionedSubjects.has(words)) continue; // revisiting same subject = not a new shift
-          mentionedSubjects.add(words);
-          if (shiftPatterns.test(trimmed)) topicShifts++;
-        }
-        if (topicShifts >= 5 && sentences.length >= 6) {
-          task._validationWarning = `Reading passage may be topic-bouncing: ${topicShifts} apparent topic shifts across ${sentences.length} sentences — prefer a unified passage about ONE topic`;
+      // --- GUARDRAIL: Reject topic-bouncing passages (shallow survey of many topics) ---
+      // Strategy: count how many DISTINCT multi-word topic phrases appear in the passage.
+      // A coherent passage about one topic might mention 1-2 other things in passing,
+      // but a passage that names 4+ distinct topics is a survey, not a focused text.
+      if (finalPassage && finalPassage.length > 100) {
+        const passageLower = finalPassage.toLowerCase();
+        // Common multi-word topic phrases that signal distinct subjects
+        const topicSignals = [
+          /\bsoap[- ]?making\b/, /\bcandle[- ]?making\b/, /\bwool\s+spinning\b/,
+          /\bbackwoods\b/, /\bcrown\s+reserve\b/, /\bclergy\s+reserve\b/,
+          /\b1793\s+act\b/, /\bslavery\b/, /\bemancipation\b/,
+          /\bfur\s+trade\b/, /\bgreat\s+awakening\b/, /\bindigenous\s+governance\b/,
+          /\bsewing\b/, /\btown\s+life\b/, /\blife\s+in\s+a?\s*town\b/,
+          /\bschooling\b/, /\bone[- ]?room\s+school/,
+          /\bgovernor\s+simcoe\b/, /\bloyalist/i, /\bm[eé]tis\b/,
+          /\bpemmican\b/, /\bsmallpox\b/, /\bepidemic/,
+          /\bdebtors['']?\s*prison\b/, /\bfire\s+safety\b/,
+        ];
+        const matchedTopics = topicSignals.filter((rx) => rx.test(passageLower));
+        if (matchedTopics.length >= 4) {
+          task._validationError = `Reading passage covers ${matchedTopics.length} distinct topics — must focus on 1-2 topics max for coherence. Detected: ${matchedTopics.map((rx) => rx.source.replace(/\\[bs]/g, "")).join(", ")}`;
         }
       }
 
@@ -1674,7 +1684,22 @@ export function normalizeTaskByType(taskType, rawTask) {
 
     // ─── Simple types: only need title + prompt (already normalized globally) ───
     case TASK_TYPES.OPEN_TEXT:
-    case TASK_TYPES.RECORD_AUDIO:
+    case TASK_TYPES.RECORD_AUDIO: {
+      // --- GUARDRAIL: Reject multi-topic audio prompts ---
+      // The AI stubbornly generates prompts asking about 2-3 topics in 20-45 seconds.
+      // Detect listing patterns: "X, Y, and Z", "X and Y each", comma-separated topics.
+      const audioPrompt = (task.prompt || "").toLowerCase();
+      // Count topic-listing signals: "and the", comma-separated clauses, "each"
+      const andTheCount = (audioPrompt.match(/,\s*(and\s+)?the\s+/g) || []).length;
+      const eachCount = (audioPrompt.match(/\beach\b/g) || []).length;
+      // Detect the explicit pattern: "topic A, topic B, and topic C"
+      const listPattern = /\b(explain|discuss|describe|talk about)\b.+,.+,?\s*(and|&)\s+/i;
+      if (listPattern.test(task.prompt || "") || (andTheCount >= 2) || (eachCount >= 1 && andTheCount >= 1)) {
+        task._validationError = `Record-audio prompt asks about multiple topics — must focus on exactly ONE topic for a 20-45 second response. Detected listing pattern in: "${(task.prompt || "").slice(0, 100)}..."`;
+      }
+      break;
+    }
+
     case TASK_TYPES.DRAW:
     case TASK_TYPES.MIME:
     case TASK_TYPES.PHOTO:

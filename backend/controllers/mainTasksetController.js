@@ -1665,7 +1665,8 @@ export async function createAiTaskset(req, res) {
       }
 
       const mustHave = retryMustHave[expectedType] || "";
-      const maxAttempts = expectedType === TASK_TYPES.MUSICAL_CHAIRS ? 6 : 4;
+      // Give matching and other structurally-tricky types more retries
+      const maxAttempts = (expectedType === TASK_TYPES.MUSICAL_CHAIRS || expectedType === TASK_TYPES.MATCHING) ? 6 : 4;
 
       // Concepts this task MUST include
       const assignedTerms = Array.isArray(conceptPlan[i]) ? conceptPlan[i] : [];
