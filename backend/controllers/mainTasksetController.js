@@ -1151,6 +1151,10 @@ const CONCEPT_CAPS_BY_TYPE = {
   [TASK_TYPES.FAKE_OUT]: 5,
   [TASK_TYPES.MIND_MAPPER]: 5,
 
+  // Rich writing tasks: students weave concepts into extended prose
+  [TASK_TYPES.LETTER]: 5,                // Letter writing — more concepts = richer letter content
+  [TASK_TYPES.CASE_STUDY]: 5,            // Case study — needs multiple concepts to build a realistic scenario
+
   // Medium-capacity: can work with several terms
   [TASK_TYPES.MULTIPLE_CHOICE]: 4,
   [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]: 4,
