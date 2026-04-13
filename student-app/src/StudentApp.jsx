@@ -137,6 +137,15 @@ function StudentApp() {
       return ["", "", ""];
     }
   });
+  const [emails, setEmails] = useState(() => {
+    try {
+      const raw = lsGet(LS_KEYS.emails);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return Array.isArray(parsed) && parsed.length ? parsed : [""];
+    } catch {
+      return [""];
+    }
+  });
   const [roomIsActive, setRoomIsActive] = useState(false);
   const [roomState, setRoomState] = useState(null);
 
@@ -1498,10 +1507,14 @@ function StudentApp() {
     members.some((m) => m.trim().length > 0);
 
   const handleJoinRoom = () => {
+    const cleanEmails = Array.isArray(emails)
+      ? emails.map((e) => String(e || "").trim().toLowerCase()).filter((e) => e && e.includes("@"))
+      : [];
     const payload = {
       roomCode: roomCode.trim().toUpperCase(),
       teamName: (teamName || "").trim(),
       members: Array.isArray(members) ? members : [],
+      emails: cleanEmails,
       // Optional: a single displayName helps auto-team assignment when teamName is blank
       displayName: (Array.isArray(members) ? (members.find((m) => String(m || '').trim().length > 0) || '') : ''),
       maxTeamSize: 8,
@@ -1551,6 +1564,9 @@ function StudentApp() {
       lsSet(LS_KEYS.teamName, response?.teamName || payload.teamName || '');
       try {
         lsSet(LS_KEYS.members, JSON.stringify(payload.members || []));
+      } catch {}
+      try {
+        lsSet(LS_KEYS.emails, JSON.stringify(cleanEmails));
       } catch {}
       userDroppedRoomRef.current = false;
       resumeAttemptedRef.current = false;
@@ -3811,6 +3827,53 @@ function StudentApp() {
                 ))}
               </div>
 
+              <div style={{ marginBottom: 10 }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "0.8rem",
+                    marginBottom: 4,
+                  }}
+                >
+                  Email for Report{" "}
+                  <span style={{ color: "#9ca3af", fontWeight: 400 }}>(optional)</span>
+                </label>
+                {emails.map((em, idx) => (
+                  <div key={idx} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                    <input
+                      type="email"
+                      value={em}
+                      onChange={(e) => {
+                        const copy = [...emails];
+                        copy[idx] = e.target.value;
+                        setEmails(copy);
+                      }}
+                      placeholder="your.email@school.edu"
+                      style={{ flex: 1 }}
+                    />
+                    {idx === emails.length - 1 && emails.length < 3 && (
+                      <button
+                        type="button"
+                        onClick={() => setEmails([...emails, ""])}
+                        style={{
+                          padding: "4px 10px",
+                          fontSize: "0.8rem",
+                          background: "#f1f5f9",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: 6,
+                          cursor: "pointer",
+                        }}
+                      >
+                        +
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <small style={{ color: "#9ca3af" }}>
+                  Get a personal session report emailed to you after class.
+                </small>
+              </div>
+
               <button type="submit" disabled={!canJoin || joiningRoom}>
                 {joiningRoom ? "Joining…" : "Join Room"}
               </button>
@@ -4157,6 +4220,11 @@ function StudentApp() {
       teamId={teamId}
       teamName={teamName}
       socket={socket}
+      savedEmails={emails}
+      onEmailsChange={(updated) => {
+        setEmails(updated);
+        try { lsSet(LS_KEYS.emails, JSON.stringify(updated)); } catch {}
+      }}
       onSubmit={(payload) => {
         // send to server if it's listening
         try {

@@ -40,6 +40,7 @@ import ReferralProgramSettings from "./models/ReferralProgramSettings.js";
 import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
 import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
+import { sendStudentReportEmail } from "./email/studentReportEmailer.js";
 import { sendSystemEmail } from "./email/shareInviteEmailer.js";
 import OpenAI, { toFile } from "openai";
 
@@ -1585,9 +1586,21 @@ socket.on("task:force-advance", ({ roomCode }) => {
             : typeof payload.whatILearned === "string"
             ? payload.whatILearned.slice(0, 500)
             : "",
+        reportEmail:
+          typeof payload.reportEmail === "string" && payload.reportEmail.includes("@")
+            ? payload.reportEmail.trim().toLowerCase().slice(0, 120)
+            : null,
       };
 
       room.feedback[String(effectiveTeamId)] = safe;
+
+      // Also merge this email into the team's email list for report distribution
+      if (safe.reportEmail && room.teams?.[effectiveTeamId]) {
+        const prevEmails = Array.isArray(room.teams[effectiveTeamId].emails) ? room.teams[effectiveTeamId].emails : [];
+        if (!prevEmails.includes(safe.reportEmail)) {
+          room.teams[effectiveTeamId].emails = [...prevEmails, safe.reportEmail].slice(0, 10);
+        }
+      }
 
       io.to(code).emit("feedback:update", {
         roomCode: code,
@@ -1728,7 +1741,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
   // ----------------------------------------------------
   const handleStudentJoinRoom = async (payload = {}, ack) => {
     try {
-      const { roomCode, teamName, members, displayName, maxTeamSize } = payload || {};
+      const { roomCode, teamName, members, emails, displayName, maxTeamSize } = payload || {};
       const code = (roomCode || "").toUpperCase().trim();
       const cleanName = (teamName || "").trim();
 
@@ -1737,6 +1750,15 @@ socket.on("task:force-advance", ({ roomCode }) => {
             .filter((m) => typeof m === "string")
             .map((m) => m.trim())
             .filter((m) => m.length > 0)
+        : [];
+
+      // Collect valid email addresses (optional, for student reports)
+      const emailList = Array.isArray(emails)
+        ? emails
+            .filter((e) => typeof e === "string")
+            .map((e) => e.trim().toLowerCase())
+            .filter((e) => e.length > 0 && e.includes("@"))
+            .slice(0, 5)
         : [];
 
       // Team name is OPTIONAL now. If not provided, the server will auto-assign
@@ -1850,6 +1872,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
           teamId,
           teamName: resolvedTeamName,
           members: memberList,
+          emails: emailList,
           createdAt: new Date().toISOString(),
           score: 0,
           status: "online",
@@ -1864,6 +1887,9 @@ socket.on("task:force-advance", ({ roomCode }) => {
         room.teams[teamId].teamName = resolvedTeamName;
         const prevMembers = Array.isArray(room.teams[teamId].members) ? room.teams[teamId].members : [];
         room.teams[teamId].members = Array.from(new Set([...prevMembers, ...memberList]));
+        // Merge emails (deduplicate)
+        const prevEmails = Array.isArray(room.teams[teamId].emails) ? room.teams[teamId].emails : [];
+        room.teams[teamId].emails = Array.from(new Set([...prevEmails, ...emailList])).slice(0, 10);
         room.teams[teamId].status = "online";
         room.teams[teamId].connected = true;
         room.teams[teamId].stale = false;
@@ -5609,6 +5635,81 @@ socket.on(
           roomCode: code,
           reportId: String(reportDoc._id),
         });
+      }
+
+      // ── Student report emails (fire-and-forget) ──
+      // Collect all student emails from team objects + feedback submissions
+      try {
+        const studentCC = "admin@curriculate.net";
+        const teamsMap = room.teams && typeof room.teams === "object" ? room.teams : {};
+        const feedbackMap = room.feedback && typeof room.feedback === "object" ? room.feedback : {};
+
+        // Compute team rankings for the report
+        const rankedTeams = Object.entries(teamsMap)
+          .map(([tid, t]) => ({ tid, name: t.teamName || "Team", score: t.score ?? 0 }))
+          .sort((a, b) => b.score - a.score);
+
+        for (const [tid, team] of Object.entries(teamsMap)) {
+          const teamEmails = Array.isArray(team.emails) ? team.emails.filter((e) => e && e.includes("@")) : [];
+          // Also check feedback for a reportEmail
+          const fbEmail = feedbackMap[tid]?.reportEmail;
+          if (fbEmail && !teamEmails.includes(fbEmail)) teamEmails.push(fbEmail);
+
+          if (!teamEmails.length) continue;
+
+          const teamRankEntry = rankedTeams.findIndex((r) => r.tid === tid);
+          const teamRank = teamRankEntry >= 0 ? teamRankEntry + 1 : null;
+
+          // Find per-participant AI summaries for this team
+          const teamParticipants = perParticipant.filter(
+            (p) => String(p.teamId || "") === String(tid) || String(p.teamName || "").toLowerCase() === String(team.teamName || "").toLowerCase()
+          );
+
+          // Gather per-task evidence for this team from submissions
+          const teamSubs = (Array.isArray(room.submissions) ? room.submissions : [])
+            .filter((s) => String(s?.teamId) === String(tid));
+          const perTaskEvidence = teamSubs.map((s) => {
+            const task = room?.taskset?.tasks?.[s.taskIndex] || {};
+            return {
+              taskIndex: s.taskIndex,
+              type: task.taskType || task.type || "",
+              title: task.title || `Task ${(s.taskIndex ?? 0) + 1}`,
+              pointsEarned: Number(s.points ?? 0),
+              maxPoints: Number(task.points ?? 100) * 10,
+              isCorrect: s.correct ?? s.isCorrect ?? null,
+              aiFeedback: s.aiFeedback || s.feedback || "",
+            };
+          });
+
+          // Team score percent
+          const teamPtsPossible = perTaskEvidence.reduce((sum, t) => sum + (t.maxPoints || 0), 0);
+          const teamPtsEarned = perTaskEvidence.reduce((sum, t) => sum + (t.pointsEarned || 0), 0);
+          const teamScorePct = teamPtsPossible > 0 ? Math.round((teamPtsEarned / teamPtsPossible) * 100) : null;
+
+          const fb = feedbackMap[tid] || {};
+
+          for (const email of teamEmails) {
+            sendStudentReportEmail({
+              to: email,
+              cc: studentCC,
+              roomCode: code,
+              className: safeClass,
+              taskSetName: room?.taskset?.name || room?.taskset?.title || "",
+              teamName: team.teamName || "Your Team",
+              teamScore: team.score ?? 0,
+              teamScorePercent: teamScorePct,
+              teamRank,
+              totalTeams: rankedTeams.length,
+              members: Array.isArray(team.members) ? team.members : [],
+              perTask: perTaskEvidence,
+              feedback: fb,
+              participantSummaries: teamParticipants,
+              aiSummary: summary,
+            }).catch((err) => console.warn(`[studentReport] Failed to send to ${email}:`, err?.message || err));
+          }
+        }
+      } catch (studentReportErr) {
+        console.warn("[studentReport] Error sending student reports:", studentReportErr?.message || studentReportErr);
       }
 
       socket.emit("transcript:sent", {

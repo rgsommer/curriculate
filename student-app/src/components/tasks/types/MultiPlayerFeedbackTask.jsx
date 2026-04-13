@@ -185,12 +185,18 @@ export default function MultiPlayerFeedbackTask({
   teamName,
   socket,
   onSubmit,
+  savedEmails = [],
+  onEmailsChange,
 }) {
   const [rating, setRating] = useState(4);
   const [favorite, setFavorite] = useState("");
   const [improve, setImprove] = useState("");
   const [note, setNote] = useState("");
   const [learned, setLearned] = useState("");
+  const [reportEmail, setReportEmail] = useState(() => {
+    const first = Array.isArray(savedEmails) ? savedEmails.find((e) => e && e.includes("@")) : "";
+    return first || "";
+  });
   const [sending, setSending] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
@@ -224,8 +230,14 @@ export default function MultiPlayerFeedbackTask({
       bonusLearned: String(learned || "").trim().length > 0,
       bonusPoints: String(learned || "").trim().length > 0 ? 1 : 0,
       bonusReason: String(learned || "").trim().length > 0 ? "learned" : null,
+      reportEmail: String(reportEmail || "").trim().toLowerCase() || null,
       submittedAt: new Date().toISOString(),
     };
+
+    // Update parent emails state so it persists
+    if (payload.reportEmail && onEmailsChange) {
+      onEmailsChange([payload.reportEmail]);
+    }
 
     try {
       socket?.emit?.("feedback:submit", payload);
@@ -473,6 +485,14 @@ export default function MultiPlayerFeedbackTask({
           placeholder="Write something you discovered or understood..."
           isTextarea
           bonus
+        />
+
+        <FeedbackCard
+          icon="📧"
+          title={reportEmail ? "Report will be sent to:" : "Want a session report?"}
+          value={reportEmail}
+          onChange={setReportEmail}
+          placeholder="your.email@school.edu"
         />
       </div>
 

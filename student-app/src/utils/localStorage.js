@@ -14,6 +14,7 @@ export const LS_KEYS = {
   stationId: "curriculate.stationId",
   stationColor: "curriculate.stationColor",
   warmupDone: "curriculate.warmupDone",
+  emails: "curriculate.emails",
 };
 
 /**
@@ -59,4 +60,5 @@ export function clearSavedJoin() {
   lsDel(LS_KEYS.stationId);
   lsDel(LS_KEYS.stationColor);
   lsDel(LS_KEYS.warmupDone);
+  lsDel(LS_KEYS.emails);
 }
