@@ -617,12 +617,12 @@ export function normalizeTaskByType(taskType, rawTask) {
         .filter(Boolean);
 
       // --- GUARDRAIL: Reject sequences/timelines with too few items ---
-      // Hard reject at <6 (matching sort). A 4-item timeline is trivially easy.
-      if (items.length < 6 && items.length > 0) {
-        task._validationError = `Sequence/timeline must have at least 6 items (got ${items.length}). Include 6-8 specific, datable events with distinct dates — do NOT reuse the same time period for multiple items.`;
+      // Hard reject at <4 (unplayable). Warn at 4-5 (playable but shallow).
+      if (items.length < 4) {
+        task._validationError = `Sequence/timeline must have at least 4 items, got ${items.length}.`;
         if (items.length === 0) items = ["Placeholder — regenerate this task"];
-      } else if (items.length < 8) {
-        task._validationWarning = `Sequence/timeline has only ${items.length} items — 8+ preferred`;
+      } else if (items.length < 6) {
+        task._validationWarning = `Sequence/timeline has only ${items.length} items — 6+ preferred`;
       }
       // Flag vague pattern items (e.g. "Impact of...", "Settlement of...", "Growth of...")
       const vaguePattern = /^(Impact|Effect|Growth|Rise|Spread|Settlement|Development|Influence|Role)\s+of\b/i;
