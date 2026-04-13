@@ -1619,6 +1619,10 @@ export default function TaskRunner({
   showPartnerReply,
   onPartnerReply,
 
+  // Student email state for feedback report emails
+  savedEmails,
+  onEmailsChange,
+
   // Inline scanner element (e.g. <QrScanner>) to embed inside task UIs
   // that have their own scanner chrome (e.g. PhysicalMultipleChoiceTask)
   scannerSlot = null,
@@ -2265,6 +2269,8 @@ case "multi_player_feedback":
       }
       socket={socket}
       onSubmit={handleTaskSubmit}
+      savedEmails={savedEmails}
+      onEmailsChange={onEmailsChange}
     />
   );
   break;

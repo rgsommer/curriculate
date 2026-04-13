@@ -4885,6 +4885,8 @@ function StudentApp() {
         roomCode={roomCode}
         playerTeam={{ id: teamId, teamName }}
         memberNames={members}
+        savedEmails={emails}
+        onEmailsChange={setEmails}
         remainingMs={remainingMs}
         partnerAnswer={partnerAnswer}
         showPartnerReply={showPartnerReply}
