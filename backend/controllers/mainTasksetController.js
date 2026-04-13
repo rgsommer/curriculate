@@ -1567,17 +1567,24 @@ export async function createAiTaskset(req, res) {
 
     const eligible = getGenerationEligibleTypes(subject);
 
-    // Accept either key the frontend might send for the type pool
+    // Accept either key the frontend might send for the type pool.
+    // Teacher-selected types bypass the eligible filter (e.g. languageOnly
+    // types like pronunciation chosen for a non-language subject).
     const rawPool = taskTypePool || requiredTaskTypes;
+    const allImplemented = Object.values(TASK_TYPES).filter((t) => {
+      const m = TASK_TYPE_META?.[t];
+      return m && m.implemented !== false && m.generatorEligible !== false;
+    });
     const userPool =
       Array.isArray(rawPool) && rawPool.length
-        ? rawPool.map(normalizeSelectedType).filter(Boolean).filter((t) => eligible.includes(t))
+        ? rawPool.map(normalizeSelectedType).filter(Boolean).filter((t) => allImplemented.includes(t))
         : null;
 
-    // Resolve guaranteed types (must appear in pool regardless of limit setting)
+    // Resolve guaranteed types (must appear in pool regardless of limit setting).
+    // These are teacher-chosen so they skip the languageOnly / subject filter.
     const guaranteed =
       Array.isArray(guaranteedTaskTypes) && guaranteedTaskTypes.length
-        ? guaranteedTaskTypes.map(normalizeSelectedType).filter(Boolean).filter((t) => eligible.includes(t))
+        ? guaranteedTaskTypes.map(normalizeSelectedType).filter(Boolean).filter((t) => allImplemented.includes(t))
         : [];
 
     // Task count must be at least the number of explicitly selected types —
