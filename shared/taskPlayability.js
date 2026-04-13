@@ -182,7 +182,9 @@ export function assessTaskPlayability(rawTask) {
     case TASK_TYPES.PHOTO_JOURNAL:
     case TASK_TYPES.DRAW:
     case TASK_TYPES.MIME:
-    case TASK_TYPES.RECORD_AUDIO: {
+    case TASK_TYPES.RECORD_AUDIO:
+    case TASK_TYPES.LETTER:
+    case TASK_TYPES.CASE_STUDY: {
       // Generally playable if title+prompt exist.
       break;
     }
