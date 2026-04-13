@@ -1743,12 +1743,20 @@ socket.on("task:force-advance", ({ roomCode }) => {
     try {
       const { roomCode, teamName, members, emails, displayName, maxTeamSize } = payload || {};
       const code = (roomCode || "").toUpperCase().trim();
-      const cleanName = (teamName || "").trim();
+
+      // Cap emoji/symbol usage in names (allow up to 2)
+      const EMOJI_RE = /\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu;
+      const capEmojis = (str, max = 2) => {
+        let count = 0;
+        return str.replace(EMOJI_RE, (m) => { count++; return count <= max ? m : ""; });
+      };
+
+      const cleanName = capEmojis((teamName || "").trim());
 
       const memberList = Array.isArray(members)
         ? members
             .filter((m) => typeof m === "string")
-            .map((m) => m.trim())
+            .map((m) => capEmojis(m.trim()))
             .filter((m) => m.length > 0)
         : [];
 

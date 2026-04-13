@@ -53,6 +53,17 @@ console.log("StudentApp Build:", BUILD_MARKER);
 // For now, LiveSession-launched tasks are assumed to use "Classroom"
 const DEFAULT_LOCATION = "Classroom";
 
+// Cap emoji/symbol usage in names to prevent spammy display names.
+// Allows up to `max` emoji/symbols; strips extras while keeping all regular text.
+const EMOJI_RE = /\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu;
+function capEmojis(str, max = 2) {
+  let count = 0;
+  return str.replace(EMOJI_RE, (match) => {
+    count += 1;
+    return count <= max ? match : "";
+  });
+}
+
 const DEFAULT_POST_SUBMIT_SECONDS = 15;
 
 // ---------------------------------------------------------------------
@@ -3797,7 +3808,7 @@ function StudentApp() {
                 </label>
                 <input
                   value={teamName}
-                  onChange={(e) => setTeamName(e.target.value)}
+                  onChange={(e) => setTeamName(capEmojis(e.target.value))}
                   placeholder="Your epic team name"
                 />
               </div>
@@ -3818,7 +3829,7 @@ function StudentApp() {
                     value={m}
                     onChange={(e) => {
                       const copy = [...members];
-                      copy[idx] = e.target.value;
+                      copy[idx] = capEmojis(e.target.value);
                       setMembers(copy);
                     }}
                     placeholder={`Member ${idx + 1}`}
