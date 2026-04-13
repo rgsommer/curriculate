@@ -5592,6 +5592,24 @@ socket.on(
 
     // 6) Persist immutable report snapshot
     emitProgress(3, 6, "Computing grades…");
+
+    // Compute class averages for the overview card
+    let classAverageScore = null;
+    let classAverageEngagement = null;
+    if (Array.isArray(perParticipant) && perParticipant.length > 0) {
+      const withScores = perParticipant.filter((p) => p.pointsPossible > 0);
+      if (withScores.length > 0) {
+        const totalPct = withScores.reduce((s, p) => s + (p.pointsPossible > 0 ? (p.pointsEarned / p.pointsPossible) * 100 : 0), 0);
+        classAverageScore = Math.round(totalPct / withScores.length);
+      }
+      // Engagement: percentage of tasks attempted (attempts / total tasks)
+      const totalTasks = transcript?.tasks?.length || 0;
+      if (totalTasks > 0) {
+        const avgAttemptRate = perParticipant.reduce((s, p) => s + Math.min(1, (p.attempts || 0) / totalTasks), 0) / perParticipant.length;
+        classAverageEngagement = Math.round(avgAttemptRate * 100);
+      }
+    }
+
     let reportDoc = null;
     emitProgress(4, 6, "Saving report…");
     try {
@@ -5601,6 +5619,8 @@ socket.on(
           roomCode: code,
           className: safeClass,
           gradeLevel: safeGrade,
+          startedAt: room.startedAt || Date.now(),
+          taskSetName: room.taskset?.name || room.taskSetName || "",
           planTierUsed: String(planTierUsed || "").trim(),
           sharedToken: room.sharedToken || "",
           sharedFromTeacherId: room.reportOwnerId || safeOwnerId || "",
@@ -5622,6 +5642,8 @@ socket.on(
           studentGrades,
           assessmentCategories: safeAssessmentCategories,
           includeIndividualReports: !!includeIndividualReports,
+          classAverageScore,
+          classAverageEngagement,
         });
       }
     } catch (e) {
@@ -9190,7 +9212,7 @@ app.get("/api/reports", authRequired, async (req, res) => {
 
     const rows = await SessionReport.find({ ownerId })
       .sort({ createdAt: -1 })
-      .select("_id roomCode className gradeLevel headline createdAt planTierUsed taskSetName runByPresenterName sharedFromTeacherName sharedFromTeacherEmail")
+      .select("_id roomCode className gradeLevel headline createdAt startedAt planTierUsed taskSetName runByPresenterName sharedFromTeacherName sharedFromTeacherEmail classAverageScore classAverageEngagement noiseSummary")
       .lean();
 
     return res.json({ ok: true, reports: rows || [] });

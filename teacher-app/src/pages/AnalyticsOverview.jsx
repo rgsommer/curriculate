@@ -32,43 +32,34 @@ export default function AnalyticsOverview() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const fetchReports = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await api.get("/api/reports");
+      setSessions(res.data.reports || []);
+    } catch (err) {
+      console.error("Analytics load error", err?.message, "status:", err?.response?.status, "data:", err?.response?.data);
+      const serverMsg = err.response?.data?.error;
+      const status = err.response?.status;
+      const detail = serverMsg
+        ? `${serverMsg} (${status})`
+        : err.message?.includes("Network Error")
+          ? "Network error — is the backend running?"
+          : `We couldn't load your reports right now. (${status || err.message || "unknown"})`;
+      setError(detail);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const onReady = () => {
-      // re-fetch reports list
-      fetchReports();
-    };
-    socket.on("report:ready", onReady);
-    return () => socket.off("report:ready", onReady);
+    fetchReports();
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadSessions() {
-      setLoading(true);
-      setError("");
-      try {
-        const res = await api.get("/api/reports");
-        if (!cancelled) {
-          setSessions(res.data.reports || []);
-        }
-      } catch (err) {
-        console.error("Analytics load error", err);
-        if (!cancelled) {
-          setError(
-            err.response?.data?.error ||
-              "We couldn't load your reports right now."
-          );
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    loadSessions();
-    return () => {
-      cancelled = true;
-    };
+    socket.on("report:ready", fetchReports);
+    return () => socket.off("report:ready", fetchReports);
   }, []);
 
   const handleBack = () => {
@@ -144,6 +135,13 @@ export default function AnalyticsOverview() {
             You can keep using Curriculate; reports will appear here once
             they've been generated for your live sessions.
           </div>
+          <button
+            type="button"
+            onClick={fetchReports}
+            className="mt-2 border rounded px-3 py-1 text-xs text-gray-700 hover:bg-gray-100"
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -175,7 +173,7 @@ export default function AnalyticsOverview() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div>
                   <div className="font-semibold text-sm sm:text-base">
-                    {s.classroomName} – {s.taskSetName}
+                    {s.className || s.classroomName || "Class"} – {s.taskSetName || s.headline || "Session"}
                     {(s.sharedFromTeacherName || s.sharedFromTeacherEmail) && (
                       <span className="ml-2 inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
                         TaskSet from {s.sharedFromTeacherName || s.sharedFromTeacherEmail}
@@ -188,8 +186,8 @@ export default function AnalyticsOverview() {
                     )}
                   </div>
                   <div className="text-[11px] sm:text-xs text-gray-500">
-                    {s.startedAt
-                      ? new Date(s.startedAt).toLocaleString()
+                    {(s.startedAt || s.createdAt)
+                      ? new Date(s.startedAt || s.createdAt).toLocaleString()
                       : "Date unknown"}
                   </div>
                 </div>

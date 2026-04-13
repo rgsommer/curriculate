@@ -1,0 +1,355 @@
+[
+  {
+    "title": "Sorting Bible Concepts: Early Christian Themes",
+    "prompt": "Sort the following Bible-related terms into categories based on their meanings and roles. Some terms may belong to more than one category. Use the categories to help you understand how these concepts connect.",
+    "taskType": "vennsort",
+    "options": [],
+    "correctAnswer": {
+      "item-0-certainty": ["Beliefs"],
+      "item-1-kingdom-of-god": ["Beliefs"],
+      "item-2-resurrection": ["Beliefs"],
+      "item-3-theophilus": ["People"],
+      "item-4-disciple": ["People", "Beliefs"],
+      "item-5-gentiles": ["People", "Groups"],
+      "item-6-apostle": ["People"],
+      "item-7-gospel": ["Beliefs"],
+      "item-8-pharisees": ["People", "Groups"],
+      "item-9-salvation": ["Beliefs"]
+    },
+    "timeLimitSeconds": 120,
+    "points": 10,
+    "config": {
+      "categories": ["People", "Beliefs", "Groups"],
+      "items": [
+        { "id": "item-0-certainty", "text": "certainty", "categories": ["Beliefs"] },
+        { "id": "item-1-kingdom-of-god", "text": "kingdom of god", "categories": ["Beliefs"] },
+        { "id": "item-2-resurrection", "text": "resurrection", "categories": ["Beliefs"] },
+        { "id": "item-3-theophilus", "text": "Theophilus", "categories": ["People"] },
+        { "id": "item-4-disciple", "text": "disciple", "categories": ["People", "Beliefs"] },
+        { "id": "item-5-gentiles", "text": "gentiles", "categories": ["People", "Groups"] },
+        { "id": "item-6-apostle", "text": "apostle", "categories": ["People"] },
+        { "id": "item-7-gospel", "text": "gospel", "categories": ["Beliefs"] },
+        { "id": "item-8-pharisees", "text": "Pharisees", "categories": ["People", "Groups"] },
+        { "id": "item-9-salvation", "text": "salvation", "categories": ["Beliefs"] }
+      ],
+      "correctAnswer": {
+        "item-0-certainty": ["Beliefs"],
+        "item-1-kingdom-of-god": ["Beliefs"],
+        "item-2-resurrection": ["Beliefs"],
+        "item-3-theophilus": ["People"],
+        "item-4-disciple": ["People", "Beliefs"],
+        "item-5-gentiles": ["People", "Groups"],
+        "item-6-apostle": ["People"],
+        "item-7-gospel": ["Beliefs"],
+        "item-8-pharisees": ["People", "Groups"],
+        "item-9-salvation": ["Beliefs"]
+      }
+    },
+    "items": [
+      { "id": "item-0-certainty", "text": "certainty", "categories": ["Beliefs"] },
+      { "id": "item-1-kingdom-of-god", "text": "kingdom of god", "categories": ["Beliefs"] },
+      { "id": "item-2-resurrection", "text": "resurrection", "categories": ["Beliefs"] },
+      { "id": "item-3-theophilus", "text": "Theophilus", "categories": ["People"] },
+      { "id": "item-4-disciple", "text": "disciple", "categories": ["People", "Beliefs"] },
+      { "id": "item-5-gentiles", "text": "gentiles", "categories": ["People", "Groups"] },
+      { "id": "item-6-apostle", "text": "apostle", "categories": ["People"] },
+      { "id": "item-7-gospel", "text": "gospel", "categories": ["Beliefs"] },
+      { "id": "item-8-pharisees", "text": "Pharisees", "categories": ["People", "Groups"] },
+      { "id": "item-9-salvation", "text": "salvation", "categories": ["Beliefs"] }
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Review of Key Bible Concepts",
+    "prompt": "Choose the best answer for each question about important Bible concepts.",
+    "taskType": "multiple-choice",
+    "options": [],
+    "timeLimitSeconds": 60,
+    "points": 10,
+    "items": [
+      {
+        "id": "q1",
+        "prompt": "What does the term 'gospel' primarily refer to in the Bible?",
+        "options": [
+          "A collection of prayers",
+          "A book of laws",
+          "A type of religious festival",
+          "The good news about Jesus Christ"
+        ],
+        "correctAnswer": 3
+      },
+      {
+        "id": "q2",
+        "prompt": "Which Gospels are called 'synoptic' because they share a similar viewpoint?",
+        "options": [
+          "Matthew, Mark, and Luke",
+          "John, Paul, and Peter",
+          "Acts, Romans, and Corinthians",
+          "Genesis, Exodus, and Leviticus"
+        ],
+        "correctAnswer": 0
+      },
+      {
+        "id": "q3",
+        "prompt": "In biblical times, who would be considered an 'outcast'?",
+        "options": [
+          "A person rejected by society",
+          "A king or ruler",
+          "A respected priest",
+          "A wealthy merchant"
+        ],
+        "correctAnswer": 0
+      },
+      {
+        "id": "q4",
+        "prompt": "What does 'certainty' mean when reading the Bible?",
+        "options": [
+          "Doubt about the stories",
+          "Confusion about the meaning",
+          "Confidence in the truth of the message",
+          "Ignoring the teachings"
+        ],
+        "correctAnswer": 2
+      }
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Exploring Incarnation and Praise Through Photography",
+    "prompt": "Take a photo of something that represents the concept of 'incarnation' from the Bible, such as a symbol or scene that shows God becoming human. Then, find or create an image that shows 'praise,' like people expressing gratitude or worship. In your caption, explain why you chose these images and how they help you understand the ideas of incarnation and praise in the Bible. Write 2–4 sentences connecting your photos to these concepts.",
+    "taskType": "photo-journal",
+    "options": [],
+    "timeLimitSeconds": 90,
+    "points": 10,
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Bible Concepts Review: Spot the Real Answer!",
+    "prompt": "Read each question carefully and choose the real answer. Watch out for the silly joke option trying to trick you!",
+    "taskType": "fake-out",
+    "options": [],
+    "timeLimitSeconds": 90,
+    "points": 10,
+    "config": {
+      "rounds": [
+        {
+          "prompt": "In the Bible, what is a disciple?",
+          "options": [
+            "A follower of Jesus who learns from him",
+            "A leader of a lost and found department",
+            "A superhero with a cape and sandals"
+          ],
+          "jokeOption": "A superhero with a cape and sandals",
+          "correctOption": "A follower of Jesus who learns from him",
+          "jokeIndex": 2,
+          "correctIndex": 0
+        },
+        {
+          "prompt": "What does the parable of 'lost and found' teach us?",
+          "options": [
+            "That lost socks always find their way home",
+            "God's joy when a sinner returns",
+            "How to organize lost items in a temple"
+          ],
+          "jokeOption": "That lost socks always find their way home",
+          "correctOption": "God's joy when a sinner returns",
+          "jokeIndex": 0,
+          "correctIndex": 1
+        },
+        {
+          "prompt": "What is meant by 'reversal' in many Bible stories?",
+          "options": [
+            "A new way to tie sandals",
+            "A change where the humble are lifted up",
+            "Turning water into coffee instantly"
+          ],
+          "jokeOption": "Turning water into coffee instantly",
+          "correctOption": "A change where the humble are lifted up",
+          "jokeIndex": 2,
+          "correctIndex": 1
+        },
+        {
+          "prompt": "What does 'universal' mean in the Bible context?",
+          "options": [
+            "Something that applies to all people everywhere",
+            "A spaceship that visits all planets",
+            "A brand of ancient scrolls"
+          ],
+          "jokeOption": "A spaceship that visits all planets",
+          "correctOption": "Something that applies to all people everywhere",
+          "jokeIndex": 1,
+          "correctIndex": 0
+        },
+        {
+          "prompt": "What does 'certainty' refer to in faith?",
+          "options": [
+            "Knowing the lottery numbers in advance",
+            "The exact date of the Bible's writing",
+            "Confidence in God's promises"
+          ],
+          "jokeOption": "Knowing the lottery numbers in advance",
+          "correctOption": "Confidence in God's promises",
+          "jokeIndex": 0,
+          "correctIndex": 2
+        }
+      ],
+      "pointsPerCorrect": 10,
+      "readerBonusPoints": 0,
+      "interTeamEnabled": false,
+      "intraTeamEnabled": true,
+      "playerCount": 4
+    },
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Joyful Prayer Stretch",
+    "prompt": "Stand up tall and take a deep breath. Raise your arms high above your head as you think about a joyful prayer. Slowly bend forward to touch your toes, then rise back up stretching your arms wide like you're embracing joy. Repeat this stretch two more times, breathing deeply and feeling thankful.",
+    "taskType": "body-break",
+    "options": [],
+    "timeLimitSeconds": 75,
+    "points": 10,
+    "items": [],
+    "movement": true,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Feed the Pet: Bible Concepts Review",
+    "prompt": "Feed your pet only the TRUE statements about Bible concepts! Avoid the false ones or your pet will get sick!",
+    "taskType": "pet-feeding",
+    "options": [],
+    "timeLimitSeconds": 90,
+    "points": 10,
+    "goodFoods": [
+      "The gospel means 'good news' about Jesus Christ.",
+      "Disciples were followers who learned from Jesus.",
+      "The resurrection refers to Jesus rising from the dead.",
+      "Gentiles are non-Jewish people mentioned in the Bible.",
+      "Parables are stories Jesus told to teach moral lessons.",
+      "The Holy Spirit is described as God's guiding presence."
+    ],
+    "badFoods": [
+      "The gospel is a type of ancient musical instrument.",
+      "Tax collectors were the most popular people in biblical times.",
+      "Pharisees were known for breaking all the religious laws.",
+      "The kingdom of God refers to a physical castle in Jerusalem.",
+      "Incarnation means turning invisible permanently.",
+      "Theophilus was the name of a famous Roman emperor."
+    ],
+    "config": {
+      "goal": 4,
+      "pack": "classic"
+    },
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Synthesizing Key Concepts from the Bible",
+    "prompt": "Read the following points carefully. Then write a 3–5 sentence synthesis that includes a clear claim and evidence using all the concepts: good news, messiah, sinners, women, and certainty.",
+    "taskType": "narration-synthesize",
+    "options": [],
+    "timeLimitSeconds": 180,
+    "points": 10,
+    "config": {
+      "playerCount": 4,
+      "prompts": [
+        "The Bible shares the good news that the messiah came to save sinners and offer hope to all people.",
+        "Women played important roles in spreading the message and witnessing the life of the messiah.",
+        "Believers have certainty in the promises given through the messiah, which brings comfort and faith.",
+        "The good news emphasizes forgiveness and salvation, showing that even sinners are welcomed."
+      ]
+    },
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Sequencing Key Events in Early Christianity",
+    "prompt": "Put the following events in the correct chronological order based on Bible history.",
+    "taskType": "sequence",
+    "options": [],
+    "timeLimitSeconds": 120,
+    "points": 10,
+    "config": {
+      "items": [
+        "Old Testament prophecies about the Messiah written (circa 700 BC)",
+        "John the Baptist begins preaching in the wilderness (circa 26 AD)",
+        "Jesus calls his first disciples to follow him (circa 27 AD)",
+        "Jesus teaches the Parable of the Lost Son (circa 29 AD)",
+        "Jesus is crucified and resurrected in Jerusalem (circa 30 AD)",
+        "The Holy Spirit comes at Pentecost and the early Church begins (circa 30 AD)"
+      ]
+    },
+    "items": [
+      { "id": "seq1", "text": "Old Testament prophecies about the Messiah written (circa 700 BC)" },
+      { "id": "seq2", "text": "John the Baptist begins preaching in the wilderness (circa 26 AD)" },
+      { "id": "seq3", "text": "Jesus calls his first disciples to follow him (circa 27 AD)" },
+      { "id": "seq4", "text": "Jesus teaches the Parable of the Lost Son (circa 29 AD)" },
+      { "id": "seq5", "text": "Jesus is crucified and resurrected in Jerusalem (circa 30 AD)" },
+      { "id": "seq6", "text": "The Holy Spirit comes at Pentecost and the early Church begins (circa 30 AD)" }
+    ],
+    "correctOrder": ["seq1", "seq2", "seq3", "seq4", "seq5", "seq6"],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Sharing Our Understanding: Bible Concepts Review",
+    "prompt": "In your team, each member will receive a unique role with a clue about a Bible concept. Share your clues with each other and work together to create one clear explanation that connects all four concepts.",
+    "taskType": "role-play-deck",
+    "options": [],
+    "timeLimitSeconds": 150,
+    "points": 10,
+    "config": {
+      "scenario": "Your team of Bible scholars has been asked to present a brief explanation connecting four key concepts from your studies. Each of you has been given one concept to research. Combine your findings into a unified presentation.",
+      "roles": [
+        {
+          "name": "Holy Spirit Scholar",
+          "goal": "Explain how the Holy Spirit guides and comforts believers",
+          "constraint": "You must connect the Holy Spirit to at least one other team member's concept"
+        },
+        {
+          "name": "Poverty & Justice Researcher",
+          "goal": "Explain the Bible's teachings about caring for the poor",
+          "constraint": "Reference a specific parable or teaching about the poor"
+        },
+        {
+          "name": "Testimony Witness",
+          "goal": "Explain what testimony means and why personal faith stories matter",
+          "constraint": "Give an example of how testimony strengthens a community"
+        },
+        {
+          "name": "Certainty Defender",
+          "goal": "Explain what certainty in faith means and how believers find confidence",
+          "constraint": "Connect certainty to at least one of the other three concepts"
+        }
+      ]
+    },
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  }
+]

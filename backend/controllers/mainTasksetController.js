@@ -394,11 +394,33 @@ function sanitizeTaskShapeByType(type, task) {
             return true;
           });
 
+        // Trim to exactly 3 options if AI generated more
+        if (round.options.length > 3) {
+          const correctOpt = String(round.correctOption || "").trim().toLowerCase();
+          const jokeOpt = String(round.jokeOption || "").trim().toLowerCase();
+          // Keep correctOption and jokeOption, pick one more
+          const keep = new Set();
+          round.options.forEach((o, i) => {
+            if (o.toLowerCase() === correctOpt || o.toLowerCase() === jokeOpt) keep.add(i);
+          });
+          // Fill remaining slot(s) with non-kept options
+          for (let i = 0; i < round.options.length && keep.size < 3; i++) {
+            if (!keep.has(i)) keep.add(i);
+          }
+          round.options = round.options.filter((_, i) => keep.has(i));
+        }
+
         // Fix correctOption / correctIndex consistency
         const correctOpt = String(round.correctOption || "").trim();
         if (correctOpt) {
           const idx = round.options.findIndex((o) => o.toLowerCase() === correctOpt.toLowerCase());
           if (idx >= 0) round.correctIndex = idx;
+        }
+        // Fix jokeIndex too
+        const jokeOpt = String(round.jokeOption || "").trim();
+        if (jokeOpt) {
+          const jIdx = round.options.findIndex((o) => o.toLowerCase() === jokeOpt.toLowerCase());
+          if (jIdx >= 0) round.jokeIndex = jIdx;
         }
       }
       return round;
@@ -430,6 +452,20 @@ function sanitizeTaskShapeByType(type, task) {
       if (cleaned.length > 0) {
         t.wordsByStation = cleaned;
         if (t.config && typeof t.config === "object") t.config.wordsByStation = cleaned;
+      }
+    }
+  }
+
+  // ── PET_FEEDING: promote goodFoods/badFoods from config to root ──
+  if (type === TASK_TYPES.PET_FEEDING) {
+    if (!Array.isArray(t.goodFoods) || t.goodFoods.length === 0) {
+      if (Array.isArray(t.config?.goodFoods) && t.config.goodFoods.length > 0) {
+        t.goodFoods = t.config.goodFoods;
+      }
+    }
+    if (!Array.isArray(t.badFoods) || t.badFoods.length === 0) {
+      if (Array.isArray(t.config?.badFoods) && t.config.badFoods.length > 0) {
+        t.badFoods = t.config.badFoods;
       }
     }
   }

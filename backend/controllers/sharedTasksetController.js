@@ -977,7 +977,7 @@ export const retryMustHave = {
   [TASK_TYPES.ECHO_CHAIN]:
     "ECHO_CHAIN must include seedTerm (from aiWordBank) and a clear turn-by-turn prompt.",
   [TASK_TYPES.FAKE_OUT]:
-    "FAKE_OUT must include config.rounds with 3+ rounds. Each round: { prompt, options: string[3], correctIndex: 0..2, jokeOption: string }. IMPORTANT: options must contain EXACTLY 3 UNIQUE strings (2 real answers + 1 joke). Do NOT duplicate the joke in options. correctOption must match options[correctIndex] exactly.",
+    "FAKE_OUT must include config.rounds with 3+ rounds. Each round: { prompt, options: string[3], correctIndex: 0..2, jokeOption: string }. CRITICAL: options must contain EXACTLY 3 UNIQUE strings — not 4, not 2, EXACTLY 3 (2 real answers + 1 joke). Do NOT add a 4th option. Do NOT duplicate the joke in options. correctOption must match options[correctIndex] exactly. Vary the correctIndex across rounds — do NOT always put the correct answer at index 0.",
   [TASK_TYPES.MAD_DASH]:
     "MAD_DASH must include sequence (or config.sequence) as an array of 3–5 station/color names (strings). No correctOrder/answerKey is required.",
   [TASK_TYPES.MAD_DASH_SEQUENCE]:
@@ -1004,6 +1004,8 @@ export const retryMustHave = {
     'PET_FEEDING MUST include "goodFoods" (array of 6-8 TRUE/PRO statements) and "badFoods" (array of 6-8 FALSE/CON statements) at the ROOT level of the task object. Total must be at least 12 items. Each item is a short factual claim (1 sentence). Do NOT return empty arrays. Also include config: { goal: 4-5, pack: "classic"|"farm"|"ocean"|"dino"|"fantasy" }. Example: { "goodFoods":["The sun is a star","Water boils at 100°C"], "badFoods":["The moon is larger than Earth","Fish live on land"] }',
   [TASK_TYPES.SPEECH_RECOGNITION]:
     'SPEECH_RECOGNITION must include "referenceText" as a ROOT-level string field (10-40 words). This is the expected spoken answer or reading-aloud passage. Do NOT generate a "phrases" array — only referenceText is used by the component.',
+  [TASK_TYPES.COLLABORATION]:
+    'COLLABORATION is a pair-and-respond task between two teams. It only needs taskType, title, and a clear prompt. The prompt should ask teams to write an initial response, then they will view and reply to another team\'s answer. Do NOT include config.roles, config.clues, or role-play content — this is NOT a role-play task. If the task requires individual roles within a team, use "role-play-deck" instead.',
 };
 
 /* ============================================================

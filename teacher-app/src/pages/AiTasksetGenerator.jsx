@@ -1689,16 +1689,19 @@ export default function AiTasksetGenerator() {
             )}
           </div>
 
-          <div>
+          <div style={{ opacity: (isPartyMode || isEventMode) ? 0.4 : 1, pointerEvents: (isPartyMode || isEventMode) ? "none" : "auto" }}>
             <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-              Vocabulary / key terms <span style={{ color: "#b91c1c" }}>*</span>
+              Vocabulary / key terms {!(isPartyMode || isEventMode) && <span style={{ color: "#b91c1c" }}>*</span>}
             </label>
             <textarea
               value={wordListText}
               onChange={(e) => setWordListText(e.target.value)}
               rows={8}
+              disabled={isPartyMode || isEventMode}
               placeholder={
-                "One term per line or separated by commas, e.g.\nLouisbourg\nPlains of Abraham\nTreaty of Paris\nSeven Years' War"
+                (isPartyMode || isEventMode)
+                  ? "Not needed — vocabulary is provided by the theme above."
+                  : "One term per line or separated by commas, e.g.\nLouisbourg\nPlains of Abraham\nTreaty of Paris\nSeven Years' War"
               }
               style={{
                 width: "100%",
@@ -1707,10 +1710,13 @@ export default function AiTasksetGenerator() {
                 padding: 8,
                 fontSize: "0.9rem",
                 resize: "vertical",
+                background: (isPartyMode || isEventMode) ? "#f3f4f6" : undefined,
               }}
             />
             <p style={{ marginTop: 4, fontSize: "0.8rem", color: "#6b7280" }}>
-              These words define the topic. After generation, you'll see which concepts were covered vs missing.
+              {(isPartyMode || isEventMode)
+                ? "Vocabulary is supplied by the theme/event settings above."
+                : "These words define the topic. After generation, you'll see which concepts were covered vs missing."}
             </p>
           </div>
         </div>
