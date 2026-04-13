@@ -2771,8 +2771,9 @@ export function validateTaskByType(taskType, task) {
     }
 
     case TASK_TYPES.PRONUNCIATION: {
-      const prItems = Array.isArray(task.items) ? task.items : [];
-      if (prItems.length < 3) errors.push("pronunciation requires at least 3 items");
+      // Component needs referenceText (a word/phrase to pronounce), not items[]
+      const refText = task.referenceText || task.config?.referenceText || "";
+      if (!String(refText).trim()) errors.push("pronunciation requires referenceText");
       break;
     }
 
