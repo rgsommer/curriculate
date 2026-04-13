@@ -186,12 +186,12 @@ export default function FeaturesPage() {
                 ]}
               />
               <FeatureCard
-                title="🎨 Expression & Creativity"
-                body="Let students show understanding in more than one modality."
+                title=”🎨 Expression & Creativity”
+                body=”Let students show understanding in more than one modality.”
                 bullets={[
-                  "Drawing/visual response formats",
-                  "Narration/synthesis prompts",
-                  "Photo journal & “make and snap” options",
+                  “Letter writing — write to a historical character, get an AI reply back”,
+                  “Drawing/visual response and photo journal formats”,
+                  “Narration/synthesis and vocabulary paragraph prompts”,
                 ]}
               />
               <FeatureCard
@@ -217,18 +217,18 @@ export default function FeaturesPage() {
                 title="🧾 Teacher-Friendly Notes & Clarity"
                 body="Tasks are generated with fields the student UI can actually use."
                 bullets={[
-                  "Less prompt chaos; more classroom-ready structure",
-                  "Consistent formatting across task types",
-                  "Designed for predictable student experience",
+                  "In-session student feedback button — issues emailed to admin instantly",
+                  "Consistent formatting and quality guardrails across all task types",
+                  "Celebration sounds and smooth transitions between tasks",
                 ]}
               />
               <FeatureCard
-                title="🔒 Only Implemented & Supported Tasks"
-                body="Your generated set avoids formats that don’t exist in the student app (enforced server-side)."
+                title=”🔒 Quality Guardrails & Validation”
+                body=”AI-generated tasks are automatically validated and fixed before reaching students.”
                 bullets={[
-                  "No “broken task type” surprises",
-                  "Only generator-eligible, implemented tasks",
-                  "System-enforced guardrails",
+                  “Deterministic auto-fixes for chronology, answer keys, and item counts”,
+                  “Tied-date detection, description-item filtering, and dangling reference checks”,
+                  “Only generator-eligible, implemented task types make it through”,
                 ]}
               />
             </div>
