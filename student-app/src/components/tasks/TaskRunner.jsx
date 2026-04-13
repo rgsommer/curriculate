@@ -8,6 +8,7 @@ import MakeAndSnapTask from "./types/MakeAndSnapTask";
 import MultipleChoiceTask from "./types/MultipleChoiceTask";
 import OpenTextTask from "./types/OpenTextTask";
 import LetterTask from "./types/LetterTask";
+import CaseStudyTask from "./types/CaseStudyTask";
 import VocabularyTask from "./types/VocabularyTask";
 import PhotoTask from "./types/PhotoTask";
 import RecordAudioTask from "./types/RecordAudioTask";
@@ -2421,6 +2422,25 @@ case "multi_player_feedback":
     case TASK_TYPES.LETTER:
       content = (
         <LetterTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled || isReview}
+          answered={effectiveDisabled || isReview}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+          roomCode={roomCode}
+          teamId={derivedTeamId}
+          memberNames={memberNames}
+        />
+      );
+      break;
+
+    case TASK_TYPES.CASE_STUDY:
+    case "case-study":
+    case "case_study":
+    case "caseStudy":
+      content = (
+        <CaseStudyTask
           task={tp}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled || isReview}

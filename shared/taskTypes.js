@@ -101,6 +101,9 @@ export const TASK_TYPES = {
   // Letter writing with AI reply
   LETTER: "letter",
 
+  // Case study with AI feedback
+  CASE_STUDY: "case-study",
+
   // Physical / scavenger
   HIDENSEEK: "hidenseek",
   MULTI_ROOM_SCAVENGER_HUNT: "hidenseek"
@@ -753,6 +756,50 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Do not omit config or any required config fields.
     - Character must be specific and named (not generic like "a person").
     - relevantConcepts must be real terms from the vocabulary list, not made-up phrases.
+    `,
+  },
+
+  [TASK_TYPES.CASE_STUDY]: {
+    label: "Case Study",
+    category: CATEGORY.CREATIVE,
+    implemented: true,
+    demoEligible: true,
+    generatorEligible: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: true,
+    maxTimeSeconds: 300,
+    interTeamEnabled: false,
+    intraTeamEnabled: false,
+    description:
+      "Students are presented with a real-world scenario or dilemma rooted in the topic. " +
+      "They write a response explaining how they would solve the case. " +
+      "Bonus points for weaving in vocabulary terms. " +
+      "After submitting, an AI expert evaluates their solution with feedback. " +
+      "Word target: 20 × grade level.",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "case-study".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt, config.
+    - config MUST include: scenario (2-4 sentences describing a realistic problem/dilemma/situation related to the topic),
+      expertRole (string — who evaluates, e.g. "History Professor", "Environmental Scientist"),
+      expertDescription (1 sentence about the expert's perspective),
+      relevantConcepts (array of 4-8 vocabulary terms the student could weave in for bonus points).
+    - The prompt should set the scene and ask students to propose a solution or analysis.
+    - The scenario should feel like a real case — use specific details, dates, names, places.
+    - Make the dilemma open-ended enough that multiple good approaches exist.
+
+    Common failure prevention:
+    - Do not omit config or any required config fields.
+    - Expert must be a specific role/title, not generic like "a person".
+    - relevantConcepts must be real terms from the vocabulary list, not made-up phrases.
+    - Scenario must present a genuine problem to solve, not just background info.
     `,
   },
 

@@ -1972,6 +1972,40 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
+    case TASK_TYPES.CASE_STUDY: {
+      const cfg = isObject(task.config) ? task.config : (task.config = {});
+
+      cfg.scenario = asNonEmptyString(cfg.scenario,
+        asNonEmptyString(cfg.caseDescription,
+          asNonEmptyString(cfg.problem,
+            asNonEmptyString(cfg.situation, ""))));
+      cfg.expertRole = asNonEmptyString(cfg.expertRole,
+        asNonEmptyString(cfg.expert, asNonEmptyString(cfg.evaluator, "Subject Expert")));
+      cfg.expertDescription = asNonEmptyString(cfg.expertDescription,
+        asNonEmptyString(cfg.expertDesc, ""));
+
+      if (!Array.isArray(cfg.relevantConcepts)) {
+        cfg.relevantConcepts = Array.isArray(cfg.concepts) ? cfg.concepts
+          : Array.isArray(cfg.keywords) ? cfg.keywords
+          : Array.isArray(cfg.vocabTerms) ? cfg.vocabTerms
+          : [];
+      }
+      cfg.relevantConcepts = cfg.relevantConcepts
+        .map((c) => String(c || "").trim())
+        .filter(Boolean)
+        .slice(0, 12);
+
+      if (!cfg.scenario) {
+        task._validationError = "Case study task must include config.scenario (the problem/dilemma to solve).";
+      }
+      if (cfg.relevantConcepts.length < 2) {
+        task._validationWarning = `Case study has only ${cfg.relevantConcepts.length} relevantConcepts — 4-8 preferred for scoring.`;
+      }
+
+      task.config = cfg;
+      break;
+    }
+
     case TASK_TYPES.RECORD_AUDIO: {
       // --- GUARDRAIL: AUTO-FIX multi-topic audio prompts ---
       // The AI stubbornly generates prompts asking about 2-3 topics in 20-45 seconds.
@@ -2637,6 +2671,7 @@ export function validateTaskByType(taskType, task) {
     // ─── Simple types: only need title + prompt (global checks cover these) ───
     case TASK_TYPES.OPEN_TEXT:
     case TASK_TYPES.LETTER:
+    case TASK_TYPES.CASE_STUDY:
     case TASK_TYPES.RECORD_AUDIO:
     case TASK_TYPES.DRAW:
     case TASK_TYPES.MIME:

@@ -6314,6 +6314,68 @@ Write a reply letter back to the student, IN CHARACTER as ${charName}. Guideline
   }
 });
 
+/* ------------------------------------------------------------------ */
+/*  Case Study — AI expert feedback on student's solution              */
+/* ------------------------------------------------------------------ */
+app.post("/api/evaluate/case-study-feedback", async (req, res) => {
+  try {
+    const {
+      studentResponse, scenario, expertRole, expertDescription,
+      gradeLevel, relevantConcepts,
+    } = req.body || {};
+
+    const response = String(studentResponse || "").trim().slice(0, 3000);
+    const scene = String(scenario || "").slice(0, 800);
+    const role = String(expertRole || "Subject Expert").slice(0, 100);
+    const roleDesc = String(expertDescription || "").slice(0, 300);
+    const grade = parseInt(gradeLevel, 10) || 7;
+    const concepts = Array.isArray(relevantConcepts)
+      ? relevantConcepts.slice(0, 12).map((c) => String(c).trim()).filter(Boolean)
+      : [];
+
+    if (!response) return res.status(400).json({ error: "Missing studentResponse" });
+
+    const prompt = `
+You are a ${role}. ${roleDesc}
+
+A student (grade ${grade}) was presented with this case study:
+---
+${scene}
+---
+
+Here is their proposed solution/analysis:
+---
+${response}
+---
+
+Provide expert feedback on their solution. Guidelines:
+- Acknowledge what they got right — be encouraging first.
+- Point out 1-2 things they could improve or didn't consider.
+- If they used any of these key concepts well, praise that: ${concepts.join(", ") || "relevant domain terms"}.
+- Suggest one follow-up question to deepen their thinking.
+- Keep language appropriate for grade ${grade}.
+- Be warm but substantive — this is a learning moment.
+- Keep the feedback 80-150 words.
+- Sign off with your title/role.
+- Return ONLY the feedback text, no JSON wrapping or markdown.
+    `.trim();
+
+    const aiResponse = await openai.chat.completions.create({
+      model: process.env.AI_MODEL || "gpt-4.1-mini",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.7,
+      max_tokens: 400,
+    });
+
+    const feedback = (aiResponse.choices?.[0]?.message?.content || "").trim();
+
+    return res.json({ feedback: feedback || `Good analysis! You raised some solid points.\n\n— ${role}` });
+  } catch (err) {
+    console.error("Case study feedback error:", err);
+    return res.status(500).json({ error: "Feedback generation failed" });
+  }
+});
+
 // Grading start
 
 async function extractStudentWorkFromLink(url) {
