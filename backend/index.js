@@ -5306,6 +5306,53 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
   });
 
   // --------------------------
+  // Behavior dings (teacher awards +/− points to a team)
+  // --------------------------
+  socket.on("teacher:behaviorDing", (payload = {}) => {
+    const { roomCode, teamId, delta, reason } = payload;
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+
+    const team = room.teams?.[teamId];
+    if (!team) return;
+
+    const pts = Number(delta) || 0;
+    if (!Number.isFinite(pts) || pts === 0) return;
+
+    // Store ding in room for report inclusion
+    if (!Array.isArray(room.behaviorDings)) room.behaviorDings = [];
+    const ding = {
+      teamId,
+      teamName: team.teamName || "Team",
+      delta: pts,
+      reason: String(reason || "").trim().slice(0, 120) || (pts > 0 ? "Good behavior" : "Behavior warning"),
+      timestamp: Date.now(),
+    };
+    room.behaviorDings.push(ding);
+
+    // Apply the points via submission so it appears in scores
+    addBonusSubmission(room, teamId, pts, "behavior-ding", {
+      reason: ding.reason,
+      behaviorDing: true,
+    });
+
+    // Broadcast updated room state (leaderboard updates)
+    const state = buildRoomState(room);
+    io.to(code).emit("room:state", state);
+
+    // Send targeted notification to the team's student devices
+    io.to(code).emit("behavior:ding", {
+      teamId,
+      teamName: ding.teamName,
+      delta: pts,
+      reason: ding.reason,
+    });
+
+    console.log(`[behaviorDing] ${ding.teamName} ${pts > 0 ? "+" : ""}${pts} — ${ding.reason}`);
+  });
+
+  // --------------------------
   // Noise samples from student/teacher devices
   // --------------------------
   socket.on("noise:sample", (payload = {}) => {

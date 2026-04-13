@@ -366,6 +366,7 @@ export function createRoomEngine(io) {
       tasks: taskRecords,
       scores: teamScores,
       submissions: room.submissions,
+      behaviorDings: Array.isArray(room.behaviorDings) ? room.behaviorDings : [],
     };
   }
 

@@ -508,6 +508,11 @@ useEffect(() => {
   const autoEndFiredRef = React.useRef(false);
   const [reportProgress, setReportProgress] = useState(null); // { step, total, label }
 
+  // Behavior ding popup state
+  const [dingPopup, setDingPopup] = useState(null); // { teamId, teamName } or null
+  const [dingReason, setDingReason] = useState("");
+  const DING_AMOUNT = 10; // points per ding
+
   // Join & treat sounds
   const joinSoundRef = useRef(null);
   const treatSoundRef = useRef(null);
@@ -2854,6 +2859,19 @@ if (
     socket.emit("teacher:giveTreat", { roomCode: code });
   };
 
+  const sendBehaviorDing = (positive) => {
+    if (!roomCode || !dingPopup?.teamId) return;
+    const code = roomCode.toUpperCase();
+    socket.emit("teacher:behaviorDing", {
+      roomCode: code,
+      teamId: dingPopup.teamId,
+      delta: positive ? DING_AMOUNT : -DING_AMOUNT,
+      reason: dingReason.trim() || (positive ? "Good behavior" : "Behavior warning"),
+    });
+    setDingPopup(null);
+    setDingReason("");
+  };
+
   const handleToggleNoise = () => {
     if (!roomCode) return;
     const code = roomCode.toUpperCase();
@@ -3227,7 +3245,11 @@ if (
               gap: 6,
             }}
           >
-            <span>{team.teamName || "Team"}</span>
+            <span
+              onClick={() => setDingPopup({ teamId, teamName: team.teamName || "Team" })}
+              style={{ cursor: "pointer", textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 3 }}
+              title="Click to give behavior ding"
+            >{team.teamName || "Team"}</span>
             {team.members && team.members.length > 0 && (
               <span
                 style={{
@@ -4948,6 +4970,69 @@ Precipitation — rain, snow, hail`}
       </div>
 
       {/* Hide & Seek modal */}
+      {/* ── Behavior Ding Popup ── */}
+      {dingPopup && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 9998,
+          background: "rgba(0,0,0,0.35)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }} onClick={() => { setDingPopup(null); setDingReason(""); }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff", borderRadius: 16, padding: 24, width: 320,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.25)", textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 4 }}>
+              Behavior Ding
+            </div>
+            <div style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: 16 }}>
+              {dingPopup.teamName}
+            </div>
+            <input
+              type="text"
+              placeholder="Reason (optional)"
+              value={dingReason}
+              onChange={(e) => setDingReason(e.target.value)}
+              style={{
+                width: "100%", padding: "8px 12px", borderRadius: 10,
+                border: "1px solid #d1d5db", fontSize: "0.85rem", marginBottom: 16,
+                boxSizing: "border-box",
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") sendBehaviorDing(true);
+              }}
+              autoFocus
+            />
+            <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+              <button
+                onClick={() => sendBehaviorDing(false)}
+                style={{
+                  padding: "10px 20px", borderRadius: 10, border: "none",
+                  background: "linear-gradient(135deg, #ef4444, #dc2626)",
+                  color: "#fff", fontWeight: 700, fontSize: "1rem", cursor: "pointer",
+                  minWidth: 100,
+                }}
+              >
+                -{DING_AMOUNT}
+              </button>
+              <button
+                onClick={() => sendBehaviorDing(true)}
+                style={{
+                  padding: "10px 20px", borderRadius: 10, border: "none",
+                  background: "linear-gradient(135deg, #10b981, #059669)",
+                  color: "#fff", fontWeight: 700, fontSize: "1rem", cursor: "pointer",
+                  minWidth: 100,
+                }}
+              >
+                +{DING_AMOUNT}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showHideNSeekModal && pendingHideTaskset && (
         <div
           style={{

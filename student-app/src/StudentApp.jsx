@@ -1122,6 +1122,28 @@ function StudentApp() {
       setPartnerAnswer(payload.answer ?? null);
     };
 
+    const handleBehaviorDing = (payload) => {
+      if (!payload || payload.teamId !== teamId) return;
+      const pts = payload.delta || 0;
+      const reason = payload.reason || "";
+      const positive = pts > 0;
+
+      // Update score immediately
+      if (typeof pts === "number") {
+        setScoreTotal((prev) => prev + pts);
+      }
+
+      // Show a prominent toast
+      const msg = positive
+        ? `+${pts} ${reason}`
+        : `${pts} ${reason}`;
+      setPointToast({ message: msg, positive });
+      if (positive) tryPlayCorrectSound();
+      else tryPlayWrongSound();
+
+      setTimeout(() => setPointToast(null), 3500);
+    };
+
     const handleCollabReply = (payload) => {
       if (!payload || payload.teamId !== teamId) return;
       setShowPartnerReply(true);
@@ -1179,6 +1201,7 @@ function StudentApp() {
     socket.on("treat:event", handleTreat);
     socket.on("collab:partner-answer", handleCollabPartner);
     socket.on("collab:reply", handleCollabReply);
+    socket.on("behavior:ding", handleBehaviorDing);
     socket.on("team:pacing-hold", handlePacingHold);
     socket.on("team:pacing-released", handlePacingRelease);
     socket.on("session:complete", handleSessionComplete);
@@ -1197,6 +1220,7 @@ function StudentApp() {
       socket.off("treat:event", handleTreat);
       socket.off("collab:partner-answer", handleCollabPartner);
       socket.off("collab:reply", handleCollabReply);
+      socket.off("behavior:ding", handleBehaviorDing);
       socket.off("team:pacing-hold", handlePacingHold);
       socket.off("team:pacing-released", handlePacingRelease);
       socket.off("session:complete", handleSessionComplete);
