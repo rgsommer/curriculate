@@ -555,12 +555,18 @@ export function normalizeTaskByType(taskType, rawTask) {
       }
 
       // --- GUARDRAIL: Flag sort items that are descriptions rather than vocabulary terms ---
-      // Items like "Missionary work", "Education establishment", "Community support" are
-      // generic descriptions, not terms from a vocabulary list.
+      // Items like "Missionary work", "Education establishment", "Community support", "Social services"
+      // are generic category descriptions, not terms from a vocabulary list.
       if (items.length >= 4) {
-        const descriptionPattern = /^(missionary|education|church|religious|community|moral|spiritual)\s+(work|establishment|building|guidance|support|leadership|revival|teaching)$/i;
-        const descItems = items.filter((it) => descriptionPattern.test(String(it?.text || "").trim()));
-        if (descItems.length >= items.length * 0.5) {
+        const descriptionPattern = /^(missionary|education|church|religious|community|moral|spiritual|social|political|economic|cultural|agricultural|colonial|domestic)\s+(work|establishment|building|guidance|support|leadership|revival|teaching|services|reform|development|practices|activities|contributions|influence|movements|traditions|efforts)$/i;
+        // Also catch "X-run Y" patterns like "Church-run schools"
+        const compoundPattern = /^[A-Za-z]+-(?:run|based|led|driven|funded|sponsored)\s+\w+$/i;
+        const descItems = items.filter((it) => {
+          const txt = String(it?.text || "").trim();
+          return descriptionPattern.test(txt) || compoundPattern.test(txt);
+        });
+        // Lowered threshold from 50% to 35% — even 3/9 generic items degrades quality
+        if (descItems.length >= Math.max(3, Math.ceil(items.length * 0.35))) {
           task._validationError = `Sort items are generic descriptions, not vocabulary terms: ${descItems.map((it) => `"${it.text}"`).join(", ")}. Items must be specific terms from the vocabulary list (e.g. "Clergy Reserve", "Jonathan Edwards", "Pemmican").`;
         }
       }
@@ -619,9 +625,11 @@ export function normalizeTaskByType(taskType, rawTask) {
       // This fixes the AI returning events in wrong order without needing retries.
       const extractDateValue = (text) => {
         // Match parenthesized date hints like (1713), (early 1700s), (mid-1800s), (late 18th century), (1790s)
+        // Falls back to scanning the full text if no parenthesized hint is found.
         const parenMatch = text.match(/\(([^)]+)\)/);
-        if (!parenMatch) return null;
-        const hint = parenMatch[1].toLowerCase().trim();
+        const hint = parenMatch
+          ? parenMatch[1].toLowerCase().trim()
+          : text.toLowerCase().trim();
 
         // Try exact year: (1713)
         const exactYear = hint.match(/\b(\d{4})\b/);
@@ -683,7 +691,11 @@ export function normalizeTaskByType(taskType, rawTask) {
 
       task.items = items.map((text, i) => ({ id: `seq${i + 1}`, text }));
 
-      if (!Array.isArray(task.correctOrder) || task.correctOrder.length < 3) {
+      // Always regenerate correctOrder from actual item IDs.
+      // The AI often provides correctOrder with mismatched IDs (e.g. "item1" vs "seq1"),
+      // which breaks scoring. Since items are already in correct order (post auto-sort),
+      // the correct order IS the current item order.
+      {
         const ids = task.items.map((it) => it.id);
         task.correctOrder = ids;
         cfg.correctOrder = ids;
@@ -1851,16 +1863,24 @@ export function normalizeTaskByType(taskType, rawTask) {
       const andTheCount = (audioLower.match(/,\s*(and\s+)?the\s+/g) || []).length;
       const eachCount = (audioLower.match(/\beach\b/g) || []).length;
       const listPattern = /\b(explain|discuss|describe|talk about)\b.+,.+,?\s*(and|&)\s+/i;
-      const isMultiTopic = listPattern.test(audioPrompt) || (andTheCount >= 2) || (eachCount >= 1 && andTheCount >= 1);
+      // Detect "Include how...", "Also discuss...", "Also explain..." — secondary instruction blocks
+      const secondaryInstructionPattern = /\b(include\s+how|also\s+(?:discuss|explain|describe|mention|talk)|in\s+addition|additionally|furthermore)\b/i;
+      // Count distinct topic-introducing verbs (e.g. "explaining X. Include how Y" = 2 verbs = 2 topics)
+      const topicVerbCount = (audioLower.match(/\b(explain(?:ing)?|discuss(?:ing)?|describ(?:e|ing)|includ(?:e|ing)\s+how|mention(?:ing)?)\b/g) || []).length;
+      const isMultiTopic = listPattern.test(audioPrompt)
+        || (andTheCount >= 2)
+        || (eachCount >= 1 && andTheCount >= 1)
+        || secondaryInstructionPattern.test(audioPrompt)
+        || topicVerbCount >= 3;
 
       if (isMultiTopic) {
-        // Extract the first topic: look for the verb phrase and take up to the first comma or "and"
+        // Extract the first topic: look for the verb phrase and take up to the first separator
         const verbMatch = audioPrompt.match(/\b(explain(?:ing)?|discuss(?:ing)?|describe|talk(?:ing)?\s+about)\s+(how\s+)?/i);
         if (verbMatch) {
           const afterVerb = audioPrompt.slice(verbMatch.index + verbMatch[0].length);
-          // Take everything up to the first comma, semicolon, "and the", or "and how"
-          const firstTopicMatch = afterVerb.match(/^(.+?)(?:\s*,\s*|\s+and\s+(?:the|how|why)|;\s*)/i);
-          const firstTopic = firstTopicMatch ? firstTopicMatch[1].trim() : afterVerb.split(",")[0].trim();
+          // Take everything up to: comma, semicolon, "and the/how/why", "Include", "Also", period+space
+          const firstTopicMatch = afterVerb.match(/^(.+?)(?:\s*[,;]\s*|\s+and\s+(?:the|how|why)|\.\s+(?:Include|Also|In addition|Additionally|Furthermore|Mention)|\.\s*$)/i);
+          const firstTopic = firstTopicMatch ? firstTopicMatch[1].trim() : afterVerb.split(/[,;]/)[0].trim();
           // Strip trailing period
           const cleanTopic = firstTopic.replace(/\.\s*$/, "").trim();
           if (cleanTopic.length > 10) {
