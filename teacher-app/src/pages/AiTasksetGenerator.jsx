@@ -516,7 +516,8 @@ export default function AiTasksetGenerator() {
         }
         // Auto-merge guaranteed types into the limit pool so there's no contradiction
         const mergedTypes = Array.from(new Set([...selectedTaskTypes, ...guaranteedTypes_payload]));
-        estimatedTaskCount = Math.min(estimatedTaskCount, mergedTypes.length);
+        // Ensure we have at least as many slots as merged types so none get silently dropped
+        estimatedTaskCount = Math.max(estimatedTaskCount, mergedTypes.length);
         requiredTaskTypes = mergedTypes;
       }
 
