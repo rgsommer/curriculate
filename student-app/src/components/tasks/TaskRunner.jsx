@@ -1661,7 +1661,6 @@ export default function TaskRunner({
     activeTaskScanHandlerRef.current = null;
   };
 
-  const t = task || null;
   const type = t ? normalizeTaskType(t.taskType || t.type) : null;
   const taskKey = buildStableTaskKey(t, type);
 
