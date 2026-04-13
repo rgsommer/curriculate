@@ -1580,6 +1580,13 @@ export async function createAiTaskset(req, res) {
         ? guaranteedTaskTypes.map(normalizeSelectedType).filter(Boolean).filter((t) => eligible.includes(t))
         : [];
 
+    // Task count must be at least the number of explicitly selected types —
+    // the teacher's type selection always trumps the duration-based estimate.
+    if (userPool && userPool.length > safeCount) {
+      console.log(`[AI] Expanding safeCount from ${safeCount} to ${userPool.length} to fit all selected task types`);
+      safeCount = userPool.length;
+    }
+
     // Build the actual N-slot pool with enforced variety + guaranteed types first.
     // buildDiversePool may expand the pool if guaranteed types exceed safeCount.
     const pool = buildDiversePool(userPool || eligible, safeCount, guaranteed);
