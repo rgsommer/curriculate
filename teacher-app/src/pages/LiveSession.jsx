@@ -2843,6 +2843,21 @@ if (
     }, 90000);
   };
 
+  // Team completion tracking: how many teams finished all tasks
+  // (must be defined before the auto-end useEffect that depends on it)
+  const teamCompletionStats = React.useMemo(() => {
+    const teamEntries = Object.values(teams);
+    const total = teamEntries.length;
+    if (total === 0 || !totalTasksInActiveSet || totalTasksInActiveSet <= 0) {
+      return { total: 0, completed: 0, pct: 0 };
+    }
+    const completed = teamEntries.filter(
+      (t) => typeof t.taskIndex === "number" && t.taskIndex >= totalTasksInActiveSet
+    ).length;
+    const pct = Math.round((completed / total) * 100);
+    return { total, completed, pct };
+  }, [teams, totalTasksInActiveSet]);
+
   // Auto-end session and generate reports when 100% of teams complete
   React.useEffect(() => {
     if (
@@ -2937,20 +2952,6 @@ if (
   const teamIdsForGrid = teamOrder.filter((id) => teams[id]);
   const taskFlowActive =
     typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0;
-
-  // Team completion tracking: how many teams finished all tasks
-  const teamCompletionStats = React.useMemo(() => {
-    const teamEntries = Object.values(teams);
-    const total = teamEntries.length;
-    if (total === 0 || !totalTasksInActiveSet || totalTasksInActiveSet <= 0) {
-      return { total: 0, completed: 0, pct: 0 };
-    }
-    const completed = teamEntries.filter(
-      (t) => typeof t.taskIndex === "number" && t.taskIndex >= totalTasksInActiveSet
-    ).length;
-    const pct = Math.round((completed / total) * 100);
-    return { total, completed, pct };
-  }, [teams, totalTasksInActiveSet]);
 
   const isGuessWhoQuick = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
   const isEchoChainQuick = taskType === TASK_TYPES.ECHO_CHAIN || taskType === "echo-chain";
