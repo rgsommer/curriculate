@@ -90,7 +90,11 @@ export function createRoomEngine(io) {
   async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom") {
     const stations = {};
     const NUM_STATIONS = 8;
-    const shuffledColors = shuffle(COLORS);
+    // IMPORTANT: Do NOT shuffle — the client-side normalizeStationId uses a
+    // hardcoded index (station-1 = COLORS[0], station-2 = COLORS[1], etc.)
+    // and the QR posters embed color names. Shuffling creates a mismatch
+    // between what the student sees and what the server expects.
+    const shuffledColors = [...COLORS];
     for (let i = 1; i <= NUM_STATIONS; i++) {
       const id = `station-${i}`;
       stations[id] = {

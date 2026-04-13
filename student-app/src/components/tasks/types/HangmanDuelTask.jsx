@@ -685,6 +685,9 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
   // "Steal" mode: allow current player to use one letter from another player's row this turn.
   const [stealActive, setStealActive] = useState(false);
 
+  // Currently selected letter (tap-to-place mode on touch devices)
+  const [selectedLetter, setSelectedLetter] = useState(null);
+
   // Drag state (used for tray highlight)
   const [dragging, setDragging] = useState(false);
 

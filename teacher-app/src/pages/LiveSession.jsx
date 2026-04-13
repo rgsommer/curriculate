@@ -505,6 +505,8 @@ useEffect(() => {
   const [endSessionIsError, setEndSessionIsError] = useState(false);
   const [includeIndividualReports, setIncludeIndividualReports] = useState(false);
   const [teacherAssessmentCategories, setTeacherAssessmentCategories] = useState([]);
+  const autoEndFiredRef = React.useRef(false);
+  const [reportProgress, setReportProgress] = useState(null); // { step, total, label }
 
   // Join & treat sounds
   const joinSoundRef = useRef(null);
@@ -863,13 +865,20 @@ useEffect(() => {
 
 // Transcript result events from backend
     const handleTranscriptSent = (payload) => {
+      setReportProgress({ step: 6, total: 6, label: "Done! Report sent." });
       handleEndSessionAck({ ok: true, ...payload });
     };
     const handleTranscriptError = (payload) => {
+      setReportProgress(null);
       handleEndSessionAck({
         ok: false,
         error: payload?.message,
       });
+    };
+    const handleReportProgress = (payload) => {
+      if (payload && typeof payload.step === "number") {
+        setReportProgress(payload);
+      }
     };
 
     socket.on("roomState", handleRoom);
@@ -894,6 +903,7 @@ useEffect(() => {
 
     socket.on("transcript:sent", handleTranscriptSent);
     socket.on("transcript:error", handleTranscriptError);
+    socket.on("report:progress", handleReportProgress);
 
     socket.on("team-update", (data) => {
       console.log("Team update received:", data);
@@ -921,6 +931,7 @@ useEffect(() => {
       socket.off("taskset:error");
       socket.off("transcript:sent", handleTranscriptSent);
       socket.off("transcript:error", handleTranscriptError);
+      socket.off("report:progress", handleReportProgress);
 
       socket.off("team-update");
     };
@@ -2806,7 +2817,8 @@ if (
 
     const code = roomCode.toUpperCase();
     setIsEndingSession(true);
-    setEndSessionMessage("Generating reports… this may take up to 30 seconds.");
+    setReportProgress({ step: 0, total: 6, label: "Starting report generation…" });
+    setEndSessionMessage("");
     setEndSessionIsError(false);
 
     socket.emit("teacher:endSessionAndEmail", {
@@ -2817,17 +2829,37 @@ if (
       assessmentCategories: teacherAssessmentCategories,
     });
 
-    // Safety timeout: if the backend never responds, unlock after 60s
+    // Safety timeout: if the backend never responds, unlock after 90s
+    // (AI summary can take 20-30s, plus DB save + email)
     setTimeout(() => {
       setIsEndingSession((prev) => {
         if (prev) {
           setEndSessionMessage("Report generation timed out. Check your email — it may still arrive.");
           setEndSessionIsError(true);
+          setReportProgress(null);
         }
         return false;
       });
-    }, 60000);
+    }, 90000);
   };
+
+  // Auto-end session and generate reports when 100% of teams complete
+  React.useEffect(() => {
+    if (
+      taskFlowActive &&
+      teamCompletionStats.total > 0 &&
+      teamCompletionStats.pct === 100 &&
+      !isEndingSession &&
+      !autoEndFiredRef.current
+    ) {
+      autoEndFiredRef.current = true;
+      // Short delay so the UI can show 100% before triggering
+      const timer = setTimeout(() => {
+        handleEndSessionAndEmail();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [teamCompletionStats.pct, taskFlowActive, isEndingSession]);
 
   const handleGiveTreat = () => {
     if (!roomCode || !canGiveTreat) return;
@@ -2905,6 +2937,20 @@ if (
   const teamIdsForGrid = teamOrder.filter((id) => teams[id]);
   const taskFlowActive =
     typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0;
+
+  // Team completion tracking: how many teams finished all tasks
+  const teamCompletionStats = React.useMemo(() => {
+    const teamEntries = Object.values(teams);
+    const total = teamEntries.length;
+    if (total === 0 || !totalTasksInActiveSet || totalTasksInActiveSet <= 0) {
+      return { total: 0, completed: 0, pct: 0 };
+    }
+    const completed = teamEntries.filter(
+      (t) => typeof t.taskIndex === "number" && t.taskIndex >= totalTasksInActiveSet
+    ).length;
+    const pct = Math.round((completed / total) * 100);
+    return { total, completed, pct };
+  }, [teams, totalTasksInActiveSet]);
 
   const isGuessWhoQuick = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
   const isEchoChainQuick = taskType === TASK_TYPES.ECHO_CHAIN || taskType === "echo-chain";
@@ -3342,6 +3388,38 @@ if (
               </span>
             </div>
           )}
+          {/* Report generation progress bar */}
+          {isEndingSession && reportProgress && (
+            <div style={{ margin: "8px 0 0", maxWidth: 360 }}>
+              <div style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontSize: "0.78rem",
+                fontWeight: 600,
+                color: reportProgress.step >= reportProgress.total ? "#059669" : "#4b5563",
+                marginBottom: 3,
+              }}>
+                <span>{reportProgress.label}</span>
+                <span>{reportProgress.step}/{reportProgress.total}</span>
+              </div>
+              <div style={{
+                height: 6,
+                borderRadius: 3,
+                background: "#e5e7eb",
+                overflow: "hidden",
+              }}>
+                <div style={{
+                  height: "100%",
+                  width: `${Math.round((reportProgress.step / reportProgress.total) * 100)}%`,
+                  borderRadius: 3,
+                  background: reportProgress.step >= reportProgress.total
+                    ? "linear-gradient(90deg, #10b981, #059669)"
+                    : "linear-gradient(90deg, #6366f1, #4f46e5)",
+                  transition: "width 0.4s ease-out",
+                }} />
+              </div>
+            </div>
+          )}
           {endSessionMessage && (
             <p
               style={{
@@ -3351,6 +3429,25 @@ if (
               }}
             >
               {endSessionMessage}
+              {endSessionIsError && !isEndingSession && (
+                <button
+                  type="button"
+                  onClick={() => { autoEndFiredRef.current = false; handleEndSessionAndEmail(); }}
+                  style={{
+                    marginLeft: 8,
+                    padding: "2px 10px",
+                    borderRadius: 6,
+                    border: "1px solid #dc2626",
+                    background: "#fef2f2",
+                    color: "#dc2626",
+                    fontWeight: 700,
+                    fontSize: "0.78rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  Retry
+                </button>
+              )}
             </p>
           )}
         </div>
@@ -4511,6 +4608,49 @@ Precipitation — rain, snow, hail`}
             >
               Leaderboard
             </h2>
+
+            {/* Team completion progress bar */}
+            {taskFlowActive && teamCompletionStats.total > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  fontSize: "0.8rem",
+                  fontWeight: 700,
+                  color: teamCompletionStats.pct === 100 ? "#059669" : "#4b5563",
+                  marginBottom: 4,
+                }}>
+                  <span>
+                    {teamCompletionStats.pct === 100
+                      ? "All teams finished!"
+                      : `${teamCompletionStats.completed} of ${teamCompletionStats.total} teams done`}
+                  </span>
+                  <span>{teamCompletionStats.pct}%</span>
+                </div>
+                <div style={{
+                  height: 8,
+                  borderRadius: 4,
+                  background: "#e5e7eb",
+                  overflow: "hidden",
+                }}>
+                  <div style={{
+                    height: "100%",
+                    width: `${teamCompletionStats.pct}%`,
+                    borderRadius: 4,
+                    background: teamCompletionStats.pct === 100
+                      ? "linear-gradient(90deg, #10b981, #059669)"
+                      : "linear-gradient(90deg, #3b82f6, #2563eb)",
+                    transition: "width 0.5s ease-out",
+                  }} />
+                </div>
+                {teamCompletionStats.pct === 100 && !isEndingSession && (
+                  <div style={{ fontSize: "0.75rem", color: "#059669", marginTop: 4 }}>
+                    Auto-generating reports…
+                  </div>
+                )}
+              </div>
+            )}
 
             <div style={{ fontSize: "0.9rem", color: "#4b5563" }}>
               {leaderboard.length > 0 ? (

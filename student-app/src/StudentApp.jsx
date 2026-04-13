@@ -419,10 +419,12 @@ function StudentApp() {
           const stationId = resp.assignedStationId || resp.stationId || null;
           if (stationId) {
             const stationInfo = normalizeStationId(stationId);
+            // Prefer server-provided color over hardcoded index mapping
+            const resolvedColor = resp.assignedColor || stationInfo.color || null;
             setAssignedStationId(stationInfo.id);
-            setAssignedColor(stationInfo.color || null);
+            setAssignedColor(resolvedColor);
             setDisplayAssignedStationId(stationInfo.id);
-            setDisplayAssignedColor(stationInfo.color || null);
+            setDisplayAssignedColor(resolvedColor);
             lastStationIdRef.current = stationInfo.id;
           }
 
@@ -550,10 +552,12 @@ function StudentApp() {
         const stationId = resp.assignedStationId || resp.stationId || null;
         if (stationId) {
           const stationInfo = normalizeStationId(stationId);
+          // Prefer server-provided color over hardcoded index mapping
+          const resolvedColor = resp.assignedColor || stationInfo.color || null;
           setAssignedStationId(stationInfo.id);
-          setAssignedColor(stationInfo.color || null);
+          setAssignedColor(resolvedColor);
           setDisplayAssignedStationId(stationInfo.id);
-          setDisplayAssignedColor(stationInfo.color || null);
+          setDisplayAssignedColor(resolvedColor);
         }
 
         const state = resp.roomState || null;
@@ -643,8 +647,14 @@ function StudentApp() {
       if (newStationId && newStationId !== lastStationIdRef.current) {
         lastStationIdRef.current = newStationId;
         const stationInfo = normalizeStationId(newStationId);
+        // Prefer the server's authoritative color from the stations array
+        // (the server may shuffle colors, so hardcoded index mapping can be wrong)
+        const serverStation = Array.isArray(state.stations)
+          ? state.stations.find((s) => s?.id === stationInfo.id)
+          : null;
+        const resolvedColor = serverStation?.color || stationInfo.color || null;
         setAssignedStationId(stationInfo.id);
-        setAssignedColor(stationInfo.color || null);
+        setAssignedColor(resolvedColor);
       }
 
       const loc =
@@ -1588,10 +1598,12 @@ function StudentApp() {
       const joinStationId = response?.stationId || response?.assignedStationId;
       if (joinStationId) {
         const stationInfo = normalizeStationId(joinStationId);
+        // Prefer server-provided color over hardcoded index mapping
+        const resolvedColor = response?.assignedColor || stationInfo.color || null;
         setAssignedStationId(stationInfo.id);
-        setAssignedColor(stationInfo.color || response?.assignedColor || null);
+        setAssignedColor(resolvedColor);
         setDisplayAssignedStationId(stationInfo.id);
-        setDisplayAssignedColor(stationInfo.color || response?.assignedColor || null);
+        setDisplayAssignedColor(resolvedColor);
         lastStationIdRef.current = stationInfo.id;
       } else if (response?.assignedColor) {
         setAssignedColor(String(response.assignedColor).toLowerCase());
@@ -1974,7 +1986,8 @@ function StudentApp() {
         if (response?.nextStationId) {
           const nextNorm = normalizeStationId(response.nextStationId);
           if (nextNorm?.id) {
-            const nextColor = nextNorm.color || response.nextStationColor || null;
+            // Prefer server-provided color over hardcoded index mapping
+            const nextColor = response.nextStationColor || nextNorm.color || null;
             setAssignedStationId(nextNorm.id);
             setAssignedColor(nextColor);
             assignedStationIdRef.current = nextNorm.id;
@@ -4509,9 +4522,10 @@ function StudentApp() {
         boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
         maxWidth: "90vw",
       }}>
-        {scannerActive && (
+        {/* Always mount QrScanner to keep camera warm; toggle via active prop */}
           <div style={{ position: "relative", width: "100%" }}>
             <QrScanner
+              active={scannerActive}
               onScan={(d) => { console.log("[QrScanner] onScan fired", d); return handleScan(d); }}
               onError={(e) => { console.log("[QrScanner] error", e); setScanError(e); }}
             />
@@ -4538,7 +4552,6 @@ function StudentApp() {
             </div>
           )}
         </div>
-      )}
         {scanError && (
           <div className="scan-error" style={{ marginTop: 12, color: "#ef4444", fontWeight: 600 }}>
             ⚠ {scanError}

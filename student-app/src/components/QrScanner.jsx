@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import jsQR from "jsqr";
 
 /**
@@ -9,12 +9,16 @@ import jsQR from "jsqr";
  *        • If handler returns true, we stop scanning
  *        • If handler returns false, we keep scanning
  *   - onError?: (msg: string) => void
+ *
+ * IMPORTANT: The camera stream stays alive across active/inactive cycles to
+ * avoid the black flash / cycling on slower tablets. The stream is only stopped
+ * when the component fully unmounts.
  */
 export default function QrScanner({ active = true, onCode, onScan, onError }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
-  // ✅ Keep latest handler without re-starting camera
+  // Keep latest handler without re-starting camera
   const handlerRef = useRef(null);
   useEffect(() => {
     handlerRef.current = onCode || onScan || null;
@@ -23,21 +27,22 @@ export default function QrScanner({ active = true, onCode, onScan, onError }) {
   const [cameraError, setCameraError] = useState(null);
   const [manualValue, setManualValue] = useState("");
 
-  // Hold IDs separately so stop() truly cancels everything
+  // Persistent refs for stream and scan-loop control
+  const streamRef = useRef(null);
+  const scanningRef = useRef(false);
   const rafIdRef = useRef(null);
   const timeoutIdRef = useRef(null);
+  const mountedRef = useRef(true);
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
+  // Start the camera stream (only once, reused across active cycles)
   useEffect(() => {
-    let stream = null;
-    let stopped = false;
-    let isMounted = true;
+    mountedRef.current = true;
 
-    async function start() {
-      if (!active || !isMounted) return;
+    async function initCamera() {
       if (typeof window === "undefined" || typeof navigator === "undefined") return;
-
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        if (!isMounted) return;
         setCameraError(
           "This device does not support camera access in the browser. Please type the code instead."
         );
@@ -45,135 +50,152 @@ export default function QrScanner({ active = true, onCode, onScan, onError }) {
       }
 
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
+        const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment" },
           audio: false,
         });
+
+        if (!mountedRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+
+        const video = videoRef.current;
+        if (!video) {
+          stream.getTracks().forEach((t) => t.stop());
+          streamRef.current = null;
+          return;
+        }
+
+        video.srcObject = stream;
+        video.muted = true;
+        video.setAttribute("playsInline", "true");
+
+        // Wait for metadata so videoWidth/Height exist
+        await new Promise((resolve) => {
+          if (video.readyState >= 1) return resolve();
+          const handleLoaded = () => {
+            video.removeEventListener("loadedmetadata", handleLoaded);
+            resolve();
+          };
+          video.addEventListener("loadedmetadata", handleLoaded);
+        });
+
+        try {
+          const p = video.play();
+          if (p && typeof p.then === "function") await p;
+        } catch (err) {
+          console.warn("[QrScanner] video.play() failed:", err);
+        }
+
+        // If active at init time, start scanning immediately
+        if (activeRef.current && mountedRef.current) {
+          startScanning();
+        }
       } catch (err) {
         console.error("[QrScanner] getUserMedia error:", err);
-        if (!isMounted) return;
+        if (!mountedRef.current) return;
         setCameraError(
           "We couldn't access the camera. Check permissions and try again, or type the code instead."
         );
+      }
+    }
+
+    initCamera();
+
+    // Cleanup: stop stream only on full unmount
+    return () => {
+      mountedRef.current = false;
+      stopScanning();
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []); // ← only runs once on mount
+
+  // Start/stop the scanning loop when `active` changes
+  function startScanning() {
+    if (scanningRef.current) return;
+    scanningRef.current = true;
+
+    const loop = () => {
+      if (!scanningRef.current || !mountedRef.current) return;
+
+      const v = videoRef.current;
+      const c = canvasRef.current;
+      if (!v || !c) {
+        rafIdRef.current = requestAnimationFrame(loop);
         return;
       }
 
-      if (!isMounted || !active) {
-        if (stream) stream.getTracks().forEach((t) => t.stop());
-        stream = null;
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      const vw = v.videoWidth || 0;
+      const vh = v.videoHeight || 0;
+
+      if (!vw || !vh) {
+        rafIdRef.current = requestAnimationFrame(loop);
         return;
       }
 
-      const video = videoRef.current;
-      if (!video) {
-        console.warn("[QrScanner] videoRef missing after getUserMedia (component changed)");
-        if (stream) stream.getTracks().forEach((t) => t.stop());
-        stream = null;
-        return;
-      }
-
-      video.srcObject = stream;
-      video.muted = true;
-      video.setAttribute("playsInline", "true");
-
-      // Wait for metadata so videoWidth/Height exist
-      await new Promise((resolve) => {
-        const handleLoaded = () => {
-          video.removeEventListener("loadedmetadata", handleLoaded);
-          resolve();
-        };
-        if (video.readyState >= 1) resolve();
-        else video.addEventListener("loadedmetadata", handleLoaded);
-      });
+      c.width = vw;
+      c.height = vh;
+      ctx.drawImage(v, 0, 0, c.width, c.height);
 
       try {
-        const p = video.play();
-        if (p && typeof p.then === "function") await p;
-      } catch (err) {
-        console.warn("[QrScanner] video.play() failed:", err);
-      }
+        const imageData = ctx.getImageData(0, 0, c.width, c.height);
+        const qr = jsQR(imageData.data, c.width, c.height);
 
-      const loop = () => {
-        if (stopped || !isMounted) return;
+        if (qr && qr.data) {
+          const rawValue = qr.data;
 
-        const v = videoRef.current;
-        const c = canvasRef.current;
-        if (!v || !c) {
-          rafIdRef.current = requestAnimationFrame(loop);
-          return;
-        }
+          let accepted = true;
+          const handler = handlerRef.current;
+          if (handler) accepted = handler(rawValue);
 
-        const ctx = c.getContext("2d", { willReadFrequently: true });
-        const vw = v.videoWidth || 0;
-        const vh = v.videoHeight || 0;
-
-        if (!vw || !vh) {
-          rafIdRef.current = requestAnimationFrame(loop);
-          return;
-        }
-
-        c.width = vw;
-        c.height = vh;
-        ctx.drawImage(v, 0, 0, c.width, c.height);
-
-        try {
-          const imageData = ctx.getImageData(0, 0, c.width, c.height);
-          const qr = jsQR(imageData.data, c.width, c.height);
-
-          if (qr && qr.data) {
-            const rawValue = qr.data;
-
-            let accepted = true;
-            const handler = handlerRef.current;
-            if (handler) accepted = handler(rawValue);
-
-            // ✅ Only stop if handler didn't explicitly return false
-            if (accepted !== false) {
-              stop();
-              return;
-            }
+          // Only pause scanning if handler didn't explicitly return false
+          if (accepted !== false) {
+            stopScanning();
+            return;
           }
-        } catch (err) {
-          console.warn("[QrScanner] jsQR detect error:", err);
-          onError?.("There was a problem reading that code. Try holding it steady and closer.");
         }
-
-        // ~10fps to keep CPU sane
-        timeoutIdRef.current = window.setTimeout(() => {
-          rafIdRef.current = requestAnimationFrame(loop);
-        }, 100);
-      };
-
-      rafIdRef.current = requestAnimationFrame(loop);
-    }
-
-    function stop() {
-      stopped = true;
-
-      if (timeoutIdRef.current) {
-        clearTimeout(timeoutIdRef.current);
-        timeoutIdRef.current = null;
-      }
-      if (rafIdRef.current) {
-        cancelAnimationFrame(rafIdRef.current);
-        rafIdRef.current = null;
+      } catch (err) {
+        console.warn("[QrScanner] jsQR detect error:", err);
+        onError?.("There was a problem reading that code. Try holding it steady and closer.");
       }
 
-      if (stream) {
-        stream.getTracks().forEach((t) => t.stop());
-        stream = null;
-      }
-    }
-
-    if (active) start();
-
-    return () => {
-      isMounted = false;
-      stop();
+      // ~10fps to keep CPU sane
+      timeoutIdRef.current = window.setTimeout(() => {
+        rafIdRef.current = requestAnimationFrame(loop);
+      }, 100);
     };
-  }, [active, onError]); // ✅ IMPORTANT: do NOT depend on onScan/onCode
 
-  if (!active) return null;
+    rafIdRef.current = requestAnimationFrame(loop);
+  }
+
+  function stopScanning() {
+    scanningRef.current = false;
+    if (timeoutIdRef.current) {
+      clearTimeout(timeoutIdRef.current);
+      timeoutIdRef.current = null;
+    }
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    // NOTE: we do NOT stop the stream here — camera stays warm
+  }
+
+  // React to `active` prop changes: start/stop scanning loop
+  useEffect(() => {
+    if (active && streamRef.current) {
+      startScanning();
+    } else {
+      stopScanning();
+    }
+  }, [active]);
 
   const handler = onCode || onScan;
   const showManualOnly = !!cameraError;

@@ -944,7 +944,7 @@ export const retryMustHave = {
   [TASK_TYPES.JEOPARDY]:
     'JEOPARDY (BrainBlitz) must include clues[] with at least 5 SHORT clue STRINGS and a correctAnswer string (the single target answer). Also include config.clues and config.correctAnswer mirroring the root fields.',
   [TASK_TYPES.HANGMAN_DUEL]:
-    "HANGMAN_DUEL must include wordsByStation[] (4–8). Each entry: { word, hint }. Words must come ONLY from aiWordBank.",
+    "HANGMAN_DUEL must include wordsByStation[] (4–8). Each entry: { word, hint }. Words must be PURE ALPHABETIC (only A-Z letters, no numbers, hyphens, apostrophes, or special characters) and come from aiWordBank.",
   [TASK_TYPES.FLASHCARDS]:
     'FLASHCARDS: Pick 12–20 terms from the vocabulary list as card fronts (question field). Write a clear definition for each as the card back (answer field). config.items (>=5). Each item: { question, answer }. NEVER use placeholder text like "Term 1" or "Card 2".',
   [TASK_TYPES.FLASHCARDS_RACE]:

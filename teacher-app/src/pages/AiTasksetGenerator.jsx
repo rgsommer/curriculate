@@ -5,6 +5,22 @@ import { fetchMyProfile } from "../api/profile";
 import { apiFetch, apiFetchJson } from "../api/apiFetch";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../shared/taskTypes.js";
 
+// Category → color mapping for task type badges
+const CATEGORY_COLORS = {
+  "question":      { bg: "#dbeafe", fg: "#1e40af", border: "#93c5fd" },
+  "ordering":      { bg: "#fef3c7", fg: "#92400e", border: "#fcd34d" },
+  "creative":      { bg: "#ede9fe", fg: "#5b21b6", border: "#c4b5fd" },
+  "movement":      { bg: "#fce7f3", fg: "#9d174d", border: "#f9a8d4" },
+  "competitive":   { bg: "#fee2e2", fg: "#991b1b", border: "#fca5a5" },
+  "deduction":     { bg: "#e0e7ff", fg: "#3730a3", border: "#a5b4fc" },
+  "collaboration": { bg: "#d1fae5", fg: "#065f46", border: "#6ee7b7" },
+  "feedback/meta": { bg: "#f3f4f6", fg: "#374151", border: "#d1d5db" },
+  "synthesis":     { bg: "#fef9c3", fg: "#854d0e", border: "#fde047" },
+  "other":         { bg: "#f5f5f4", fg: "#57534e", border: "#d6d3d1" },
+  "recall":        { bg: "#ccfbf1", fg: "#0f766e", border: "#5eead4" },
+  "role-play":     { bg: "#fbcfe8", fg: "#86198f", border: "#f0abfc" },
+};
+
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
 
@@ -992,7 +1008,27 @@ export default function AiTasksetGenerator() {
                   }}
                 >
                   <div style={{ color: "#6b7280", fontWeight: 800 }}>{row.index + 1}</div>
-                  <div style={{ fontWeight: 800 }}>{TASK_TYPE_META[row.taskType]?.label || row.taskType}</div>
+                  <div style={{ fontWeight: 800 }}>
+                    {(() => {
+                      const meta = TASK_TYPE_META[row.taskType];
+                      const label = meta?.label || row.taskType;
+                      const cat = meta?.category || "other";
+                      const colors = CATEGORY_COLORS[cat] || CATEGORY_COLORS["other"];
+                      return (
+                        <span style={{
+                          display: "inline-block",
+                          padding: "1px 8px",
+                          borderRadius: 10,
+                          background: colors.bg,
+                          color: colors.fg,
+                          border: `1px solid ${colors.border}`,
+                          fontSize: "0.78rem",
+                        }}>
+                          {label}
+                        </span>
+                      );
+                    })()}
+                  </div>
                   <div style={{ color: "#374151" }}>
                     {row.terms && row.terms.length ? row.terms.join(", ") : <span style={{ color: "#9ca3af" }}>—</span>}
                   </div>

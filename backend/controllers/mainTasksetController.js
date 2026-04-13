@@ -375,6 +375,33 @@ function sanitizeTaskShapeByType(type, task) {
     }
   }
 
+  // ── HANGMAN_DUEL: strip non-alpha words from wordsByStation ──
+  if (type === TASK_TYPES.HANGMAN_DUEL) {
+    const isAlpha = (w) => /^[A-Za-z]{3,14}$/.test(w);
+    const wbs = Array.isArray(t.wordsByStation) ? t.wordsByStation : Array.isArray(t.config?.wordsByStation) ? t.config.wordsByStation : null;
+    if (wbs) {
+      const cleaned = wbs
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return entry;
+          const w = String(entry.word || "").trim();
+          if (!isAlpha(w)) {
+            // Strip non-alpha chars as best-effort fix
+            const stripped = w.replace(/[^A-Za-z]/g, "");
+            if (isAlpha(stripped)) {
+              return { ...entry, word: stripped };
+            }
+            return null; // drop entirely
+          }
+          return entry;
+        })
+        .filter(Boolean);
+      if (cleaned.length > 0) {
+        t.wordsByStation = cleaned;
+        if (t.config && typeof t.config === "object") t.config.wordsByStation = cleaned;
+      }
+    }
+  }
+
   // ── SPEECH_RECOGNITION / PRONUNCIATION: promote config.referenceText to root ──
   if (type === TASK_TYPES.SPEECH_RECOGNITION || type === TASK_TYPES.PRONUNCIATION) {
     if (!t.referenceText && t.config?.referenceText) {
@@ -1837,8 +1864,8 @@ export async function createAiTaskset(req, res) {
       const hangmanCoverage = computeCoverageReport(aiWordBank, liveTasksForCoverage);
       const allWords = _parseConceptList(aiWordBank);
 
-      // Prefer single words (no spaces/hyphens) — much better for Hangman
-      const isHangmanFriendly = (w) => !/[\s\-]/.test(w) && w.length >= 3 && w.length <= 14;
+      // Only allow pure alphabetic words (no numbers, hyphens, apostrophes, etc.)
+      const isHangmanFriendly = (w) => /^[A-Za-z]{3,14}$/.test(w);
 
       for (const slotIdx of deferredHangmanSlots) {
         // Prioritize uncovered words, then fill from covered words to reach 8
@@ -1861,12 +1888,11 @@ export async function createAiTaskset(req, res) {
         if (picked.length < TARGET) {
           picked.push(...covered.slice(0, TARGET - picked.length));
         }
-        // Last resort: if still < TARGET, fill from allWords (prefer hangman-friendly, then any)
+        // Last resort: if still < TARGET, fill from allWords (only hangman-friendly — never use words with non-alpha chars)
         if (picked.length < TARGET) {
           const used = new Set(picked.map((w) => w.toLowerCase()));
           const friendly = allWords.filter((w) => isHangmanFriendly(w) && !used.has(w.toLowerCase()));
-          const unfriendly = allWords.filter((w) => !isHangmanFriendly(w) && !used.has(w.toLowerCase()));
-          for (const w of [...friendly, ...unfriendly]) {
+          for (const w of friendly) {
             if (picked.length >= TARGET) break;
             if (!used.has(w.toLowerCase())) {
               picked.push(w);

@@ -5384,7 +5384,14 @@ socket.on(
       }
     }
 
+    // Helper: emit progress to teacher UI
+    const emitProgress = (step, total, label) => {
+      socket.emit("report:progress", { step, total, label });
+      io.to(code).emit("report:progress", { step, total, label });
+    };
+
     // 1) Build transcript + stats
+    emitProgress(1, 6, "Building transcript…");
     const transcript = buildTranscript(room);
     const perParticipant = computePerParticipantStats(room, transcript);
 
@@ -5425,6 +5432,7 @@ socket.on(
       .map((p) => ({ name: p.studentName || "Player", team: p.teamName || "", points: p.pointsEarned ?? 0 }));
 
     // 3) Generate AI summary (overview + engagement) — non-fatal if it fails
+    emitProgress(2, 6, "Generating AI summary…");
     let summary = {};
     try {
       summary = await generateSessionSummaries({
@@ -5536,7 +5544,9 @@ socket.on(
     });
 
     // 6) Persist immutable report snapshot
+    emitProgress(3, 6, "Computing grades…");
     let reportDoc = null;
+    emitProgress(4, 6, "Saving report…");
     try {
       if (safeOwnerId) {
         reportDoc = await SessionReport.create({
@@ -5594,6 +5604,7 @@ socket.on(
     }
 
     // 7) Send email (includes report teaser; emailer may attach PDF)
+    emitProgress(5, 6, "Sending email report…");
     try {
       await sendTranscriptEmail({
         to: toEmail,
@@ -5728,6 +5739,7 @@ socket.on(
         console.warn("[studentReport] Error sending student reports:", studentReportErr?.message || studentReportErr);
       }
 
+      emitProgress(6, 6, "Done! Report sent.");
       socket.emit("transcript:sent", {
         ok: true,
         email: toEmail || teacherEmail || "",

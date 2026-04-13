@@ -2,6 +2,69 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetchJson } from "../api/apiFetch";
+import { TASK_TYPE_META } from "../../../shared/taskTypes.js";
+
+// Category → color mapping for task type badges
+const CATEGORY_COLORS = {
+  "question":      { bg: "#dbeafe", fg: "#1e40af", border: "#93c5fd" },
+  "ordering":      { bg: "#fef3c7", fg: "#92400e", border: "#fcd34d" },
+  "creative":      { bg: "#ede9fe", fg: "#5b21b6", border: "#c4b5fd" },
+  "movement":      { bg: "#fce7f3", fg: "#9d174d", border: "#f9a8d4" },
+  "competitive":   { bg: "#fee2e2", fg: "#991b1b", border: "#fca5a5" },
+  "deduction":     { bg: "#e0e7ff", fg: "#3730a3", border: "#a5b4fc" },
+  "collaboration": { bg: "#d1fae5", fg: "#065f46", border: "#6ee7b7" },
+  "feedback/meta": { bg: "#f3f4f6", fg: "#374151", border: "#d1d5db" },
+  "synthesis":     { bg: "#fef9c3", fg: "#854d0e", border: "#fde047" },
+  "other":         { bg: "#f5f5f4", fg: "#57534e", border: "#d6d3d1" },
+  "recall":        { bg: "#ccfbf1", fg: "#0f766e", border: "#5eead4" },
+  "role-play":     { bg: "#fbcfe8", fg: "#86198f", border: "#f0abfc" },
+};
+
+// Subject → card background tint for the task set card
+const SUBJECT_COLORS_MAP = {
+  "math":        { bg: "#eff6ff", border: "#bfdbfe" },
+  "mathematics": { bg: "#eff6ff", border: "#bfdbfe" },
+  "science":     { bg: "#ecfdf5", border: "#a7f3d0" },
+  "english":     { bg: "#fefce8", border: "#fde68a" },
+  "language":    { bg: "#fefce8", border: "#fde68a" },
+  "language arts": { bg: "#fefce8", border: "#fde68a" },
+  "ela":         { bg: "#fefce8", border: "#fde68a" },
+  "french":      { bg: "#fdf4ff", border: "#f0abfc" },
+  "spanish":     { bg: "#fff7ed", border: "#fdba74" },
+  "history":     { bg: "#fef2f2", border: "#fecaca" },
+  "social studies": { bg: "#fef2f2", border: "#fecaca" },
+  "geography":   { bg: "#f0fdf4", border: "#86efac" },
+  "bible":       { bg: "#f5f3ff", border: "#c4b5fd" },
+  "religion":    { bg: "#f5f3ff", border: "#c4b5fd" },
+  "music":       { bg: "#fdf2f8", border: "#f9a8d4" },
+  "art":         { bg: "#faf5ff", border: "#d8b4fe" },
+  "pe":          { bg: "#fff1f2", border: "#fda4af" },
+  "health":      { bg: "#f0fdfa", border: "#99f6e4" },
+  "technology":  { bg: "#f0f9ff", border: "#7dd3fc" },
+  "computer science": { bg: "#f0f9ff", border: "#7dd3fc" },
+};
+
+// Stable hash-based fallback palette for subjects not in the map
+const SUBJECT_FALLBACK_PALETTE = [
+  { bg: "#fef3c7", border: "#fcd34d" },
+  { bg: "#dbeafe", border: "#93c5fd" },
+  { bg: "#ede9fe", border: "#c4b5fd" },
+  { bg: "#d1fae5", border: "#6ee7b7" },
+  { bg: "#fce7f3", border: "#f9a8d4" },
+  { bg: "#e0e7ff", border: "#a5b4fc" },
+  { bg: "#ccfbf1", border: "#5eead4" },
+  { bg: "#fee2e2", border: "#fca5a5" },
+];
+
+function getSubjectColor(subject) {
+  const key = (subject || "").trim().toLowerCase();
+  if (!key) return null;
+  if (SUBJECT_COLORS_MAP[key]) return SUBJECT_COLORS_MAP[key];
+  // Stable hash
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+  return SUBJECT_FALLBACK_PALETTE[Math.abs(hash) % SUBJECT_FALLBACK_PALETTE.length];
+}
 
 function getStoredAuthToken() {
   const candidates = [
@@ -1177,6 +1240,21 @@ export default function TaskSets() {
               .map(([label, n]) => `${label}${n > 1 ? ` ×${n}` : ""}`)
               .join("\n");
 
+            // Build colored badge data from raw task types
+            const taskTypeBadges = [];
+            const badgeCounts = {};
+            (ts?.tasks || []).forEach((t) => {
+              const raw = t?.taskType || t?.type || "unknown";
+              badgeCounts[raw] = (badgeCounts[raw] || 0) + 1;
+            });
+            Object.entries(badgeCounts).forEach(([raw, n]) => {
+              const meta = TASK_TYPE_META[raw];
+              const label = meta?.label || raw.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+              const cat = meta?.category || "other";
+              const colors = CATEGORY_COLORS[cat] || CATEGORY_COLORS["other"];
+              taskTypeBadges.push({ label, n, colors });
+            });
+
             const dur = Number(ts?.durationMinutes);
             const durLabel = Number.isFinite(dur) && dur > 0 ? `~${dur} min` : "";
 
@@ -1215,8 +1293,15 @@ export default function TaskSets() {
               last ? `Last played ${last}` : "Never played",
             ].filter(Boolean);
 
+            const subjectColor = getSubjectColor(subject);
+
             return (
-              <div key={id} title={taskTypeTooltip} style={{ ...card, display: "flex", gap: 12 }}>
+              <div key={id} title={taskTypeTooltip} style={{
+                ...card,
+                display: "flex",
+                gap: 12,
+                ...(subjectColor ? { background: subjectColor.bg, borderColor: subjectColor.border } : {}),
+              }}>
                 <div style={{ paddingTop: 2 }}>
                   <input
                     type="checkbox"
@@ -1261,6 +1346,31 @@ export default function TaskSets() {
                   <div style={{ marginTop: 6, color: "#6b7280", fontSize: "0.9rem" }}>
                     {secondLineParts.join(" \u00B7 ")}
                   </div>
+
+                  {taskTypeBadges.length > 0 && (
+                    <div style={{ marginTop: 8, display: "flex", gap: 5, flexWrap: "wrap" }}>
+                      {taskTypeBadges.map(({ label, n, colors }, i) => (
+                        <span
+                          key={i}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 3,
+                            padding: "2px 8px",
+                            borderRadius: 12,
+                            fontSize: "0.72rem",
+                            fontWeight: 700,
+                            background: colors.bg,
+                            color: colors.fg,
+                            border: `1px solid ${colors.border}`,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {label}{n > 1 ? ` ×${n}` : ""}
+                        </span>
+                      ))}
+                    </div>
+                  )}
 
                   <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button type="button" onClick={() => navigate(`/tasksets/${encodeURIComponent(id)}`)} style={btn("secondary")}>
