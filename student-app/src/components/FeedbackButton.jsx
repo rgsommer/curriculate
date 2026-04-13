@@ -56,9 +56,12 @@ export default function FeedbackButton({
     };
 
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
       await fetch(`${API_BASE_URL}/feedback/student`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           roomCode: roomCode || "unknown",
           teamName: teamName || "unknown",
@@ -73,6 +76,7 @@ export default function FeedbackButton({
           deviceInfo,
         }),
       });
+      clearTimeout(timeout);
       setSent(true);
       setTimeout(() => {
         setOpen(false);
@@ -81,7 +85,15 @@ export default function FeedbackButton({
         setMessage("");
       }, 1800);
     } catch (err) {
+      // Show success anyway — feedback is best-effort, don't frustrate students
       console.error("Feedback send failed:", err);
+      setSent(true);
+      setTimeout(() => {
+        setOpen(false);
+        setSent(false);
+        setType("");
+        setMessage("");
+      }, 1800);
     } finally {
       setSending(false);
     }
