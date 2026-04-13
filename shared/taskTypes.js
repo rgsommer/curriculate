@@ -157,18 +157,9 @@ export const TASK_TYPE_META = {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Create 3–5 multiple-choice items. Each item must include a clear question prompt, 4 answer options (A–D), and a correctAnswer index that matches the options array. Avoid trick wording; make exactly one option clearly correct.
-
-    ANSWER POSITION RULE (MANDATORY):
-    - VARY the position of the correct answer across items. Do NOT place the correct answer in the same index for every question.
-    - Across your items, the correctAnswer index should use at least 3 different positions (0, 1, 2, 3).
-    - Example distribution for 4 items: correctAnswer values of [2, 0, 3, 1] — NOT [1, 1, 1, 1].
-
-    DISTRACTOR QUALITY RULE (MANDATORY):
-    - All wrong answers (distractors) must be PLAUSIBLE — a student who hasn't studied should find them tempting.
-    - BAD distractors: "Online classes taught by distant teachers" (anachronistic/absurd), "A type of Indigenous dance" (random/unrelated).
-    - GOOD distractors: "Church-run schools for boys only", "Apprenticeship programs run by tradesmen" (plausible but wrong for the period/context).
-    - Each distractor should be the same length and style as the correct answer. Don't make the correct answer obviously longer or more detailed.
+    - Create 3–5 multiple-choice items. Each item: clear question, 4 options, one correctAnswer index.
+    - Vary the correctAnswer position across items (the system shuffles options, but varied input helps).
+    - Make all wrong answers plausible — same length/style as the correct answer, not absurd or anachronistic.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -209,21 +200,9 @@ export const TASK_TYPE_META = {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Same as Multiple Choice, but students must NOT tap an option to submit.
-    - Each option A/B/C/D must be shown with a clearly visible COLOR chip (from the 8 permanent station colors).
-    - Students submit by walking to the station whose color matches their chosen option and scanning that QR.
-    - After each successful scan, auto-advance to the next question. The final scan auto-submits.
-    - Color-to-letter mapping is randomized each time the task is played (and may vary per question).
-    - Include 3–5 questions (config.items). Keep questions quick and unambiguous.
-
-    ANSWER POSITION RULE (MANDATORY):
-    - VARY the position of the correct answer across items. Do NOT place the correct answer in the same index for every question.
-    - Across your items, the correctAnswer index should use at least 3 different positions (0, 1, 2, 3).
-    - Example distribution for 4 items: correctAnswer values of [2, 0, 3, 1] — NOT [1, 1, 1, 1].
-
-    DISTRACTOR QUALITY RULE (MANDATORY):
-    - All wrong answers must be PLAUSIBLE — not obviously absurd or anachronistic.
-    - Each distractor should be the same length and style as the correct answer.
+    - Same as Multiple Choice, but students submit by scanning a colored QR station instead of tapping.
+    - Include EXACTLY 4 questions. Keep questions quick and unambiguous.
+    - Vary the correctAnswer position. Make all distractors plausible.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -348,20 +327,10 @@ export const TASK_TYPE_META = {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Create an ORIGINAL paragraph of X sentences, where X equals the grade level (if grade is not given, use 10 sentences).
-    - Provide the paragraph as a single string field (e.g., paragraph or generatedParagraph) so the student UI can render it.
-    - The student action is: write ONE sentence that summarizes/shows understanding of the paragraph.
-    - Keep the prompt student-facing and very explicit (Grade 7 reading level).
-    - Do NOT generate multiple-choice questions for this task.
-
-    COHERENCE RULE (MANDATORY — WILL BE REJECTED IF VIOLATED):
-    - The passage MUST be about ONE unified topic with a clear through-line. Maximum 2 closely related ideas.
-    - Count the distinct subjects in your passage. If it's more than 2, REWRITE IT.
-    - BAD: "Life in early Canadian towns involved soap-making... settlers lived near the backwoods... the crown reserve was land... the 1793 act to limit slavery was passed... sewing was important..." ← This touches 5 different topics. REJECTED.
-    - BAD: A paragraph that jumps from fur trade → Indigenous governance → religion → settlement patterns → economy. REJECTED.
-    - GOOD: A paragraph that explores ONE topic (e.g., life in the backwoods) in depth — what it was like, why people moved there, the challenges they faced, how they survived, and how it shaped Canadian settlement. ONE TOPIC, MULTIPLE ANGLES.
-    - If the vocabulary list spans many topics, pick ONE and go deep rather than touching all of them shallowly.
-    - The passage should read like a coherent mini-essay, NOT like a textbook glossary stitched into paragraph form.
+    - Create an ORIGINAL paragraph of X sentences (X = grade level, default 10).
+    - The student writes ONE sentence showing understanding. Keep the prompt explicit (Grade 7 level).
+    - The passage must be about ONE unified topic with a clear through-line. Pick one topic from the vocabulary list and go deep — don't try to touch every term.
+    - Every sentence must have clear referents. Don't write "This law affected..." without naming the law first.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -401,21 +370,9 @@ export const TASK_TYPE_META = {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    HOW TO BUILD THE SORT ITEMS:
-    1. Look at the Vocabulary / Concept list provided in the user message.
-    2. Pick 8–14 terms from that list as items.
-    3. Create 2–4 clearly labelled categories that meaningfully group those terms.
-    4. Assign every picked term to exactly one category.
-    - Items MUST be real vocabulary terms from the provided list — do NOT invent generic items.
-    - NEVER use placeholder text like "Item 1", "Term 2", "Word 3", etc.
-
-    ITEM QUALITY RULE (MANDATORY):
-    - Each item.text MUST be a specific term, name, event, or concept — NOT a generic description or attribute.
-    - BAD: "Great Awakening preacher", "Emphasis on personal faith", "Provided social services" (these are descriptions, not terms).
-    - GOOD: "Jonathan Edwards", "George Whitefield", "Clergy Reserve", "Pemmican" (these are actual vocabulary terms).
-    - Categories should group TERMS, not describe attributes of one thing.
-    - BAD categories: "Jonathan Edwards" vs "Positive Contributions of the Church" (one is a person, one is an abstract concept — items end up being descriptions, not terms).
-    - GOOD categories: "Religious Figures" vs "Government Policies" vs "Daily Life" (both are thematic groupings that real terms sort into).
+    1. Pick 8–14 terms from the vocabulary list. Create 2–4 categories that group them.
+    2. Items must be specific terms/names/events (e.g. "Jonathan Edwards", "Clergy Reserve") — NOT descriptions (e.g. "Missionary work", "Social services").
+    3. Categories should be thematic groupings (e.g. "Religious Figures" vs "Government Policies") — not a person vs an abstract concept.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -454,20 +411,9 @@ export const TASK_TYPE_META = {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    HOW TO BUILD THE SEQUENCE:
-    1. Look at the Vocabulary / Concept list provided in the user message.
-    2. Pick 6–10 terms, events, or concepts from that list that have a natural logical or chronological order. MINIMUM 6 items — sequences with fewer than 6 are too easy and will be rejected.
-    3. Provide them in the correct order; the student will see them shuffled.
-    - Steps must be unambiguous and clearly distinct.
-    - Items MUST come from the provided vocabulary / concept list — do NOT invent generic steps.
-    - NEVER use placeholder text like "Step 1", "Event 2", "Item 3", etc.
-
-    SPECIFICITY RULE (MANDATORY):
-    - Each item must be a SPECIFIC, datable event or concrete step — NOT a vague concept.
-    - BAD examples: "Impact of the fur trade", "Growth of settlement", "Rise of colonial power"
-    - GOOD examples: "French establish Quebec City (1608)", "Treaty of Paris cedes New France to Britain (1763)", "Constitutional Act divides Upper and Lower Canada (1791)"
-    - If the topic is historical, include approximate dates or time periods in parentheses.
-    - If the topic is a process, each step must describe a specific action, not a broad phase.
+    1. Pick 6–10 events/steps from the vocabulary list that have a clear chronological or logical order.
+    2. Each item should be specific and datable — include dates in parentheses for historical topics.
+    3. Provide items in the correct order; the student sees them shuffled.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -506,18 +452,9 @@ export const TASK_TYPE_META = {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    HOW TO BUILD THE TIMELINE:
-    1. Look at the Vocabulary / Concept list provided in the user message.
-    2. Pick 6–10 terms or events from that list that can be placed in chronological order. MINIMUM 6 events — timelines with fewer than 6 are too easy and will be rejected.
-    3. Provide event labels and correct chronological order. Dates can be approximate if appropriate, but order must be clear.
-    - Events MUST be drawn from the provided vocabulary / concept list — do NOT invent generic events.
-    - NEVER use placeholder text like "Event 1", "Date 2", "Item 3", etc.
-
-    SPECIFICITY RULE (MANDATORY):
-    - Every event MUST include a date or date range in parentheses — e.g. "Stamp Act (1765)", "War of 1812 begins (June 1812)".
-    - Do NOT use vague labels like "Impact of colonization", "Growth of trade", "Settlement patterns change".
-    - Each event must be a real, historically anchored occurrence with a defensible date.
-    - The chronological order must be unambiguous — no two events should have the same date unless they genuinely co-occurred.
+    1. Pick 6–10 events from the vocabulary list that can be placed chronologically.
+    2. Every event must include a date or date range in parentheses — e.g. "Stamp Act (1765)".
+    3. Provide events in correct chronological order; the student sees them shuffled.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -569,22 +506,12 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
 
-    HOW TO BUILD THE MATCHING PAIRS:
-    1. Look at the Vocabulary / Concept list provided in the user message.
-    2. Pick 6 terms from that list. Put them in “leftItems” as plain strings.
-    3. For EACH term, write a short definition or description (8–20 words). Put those in “rightItems”.
-    4. leftItems[0] matches rightItems[0], leftItems[1] matches rightItems[1], etc.
-       Then set correctMatches as L1→R1, L2→R2, … L6→R6.
+    1. Pick 6 terms from the vocabulary list → “leftItems” (plain strings).
+    2. Write a short definition (8–20 words) for each → “rightItems” (plain strings).
+    3. Set correctMatches as L1→R1, L2→R2, … L6→R6.
+    - Use ONLY leftItems, rightItems, correctMatches at root level (no “config”, “items”, or “pairs”).
 
-    CRITICAL RULES:
-    - leftItems MUST be real vocabulary terms from the provided list — NOT invented labels.
-    - rightItems MUST be real definitions/descriptions — NOT placeholder text.
-    - NEVER output generic labels like “Term 1”, “Definition 2”, “Left 3”, “Right 4”, “Item 5”, “Concept 1”.
-    - NEVER use fields named “options”, “items”, “pairs”, or “answers”. Use ONLY the exact field names below.
-    - Do NOT wrap items in objects; leftItems and rightItems must be plain string arrays.
-    - Do NOT use a “config” wrapper; all fields at root level.
-
-    REQUIRED OUTPUT FORMAT (use this exact structure, no deviations):
+    Required output format:
     {
       “taskType”: “matching”,
       “title”: “short title (3-7 words)”,
@@ -653,35 +580,13 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
     - Avoid copyrighted passages; write original content.
 
     Task-specific guidance:
-    HOW TO BUILD THE VENN SORT:
-    1. Look at the Vocabulary / Concept list provided in the user message.
-    2. Pick 10–16 terms from that list as items.
-    3. Create 2–3 meaningful category labels that allow those terms to be sorted into left-only, right-only, or both.
-    4. Assign each term to the category/categories it belongs to.
-    - Items MUST be real vocabulary terms from the provided list — do NOT invent generic items.
-    - NEVER use placeholder text like "Item 1", "Term 2", "Word 3", etc.
-    - config.categories: array of 2–3 category label strings (e.g. ["Mammals","Reptiles"]).
-    - config.items: array of 5–10 objects, each with { "id": "item-0-Dog", "text": "Dog" }.
-    - CRITICAL — you MUST include a top-level "correctAnswer" object mapping every item id to an array of category names it belongs to. Example:
-      "correctAnswer": {
-        "item-0-Dog": ["Mammals"],
-        "item-1-Bat": ["Mammals","Reptiles"],
-        "item-2-Snake": ["Reptiles"]
-      }
-    - Each item in config.items MUST also have a "categories" array matching its correctAnswer entry.
-    - CRITICAL: Every item MUST have at least one category. An item with categories:[] (empty array) means the student CANNOT place it — the task will be REJECTED.
-    - If an item doesn't fit any of your categories, either: change the categories so it fits, or don't include that item. NEVER include an item with no valid placement.
-
-    UNAMBIGUITY RULE (MANDATORY):
-    - Every item's category placement MUST be clearly defensible — a knowledgeable student should not be able to reasonably argue a different placement.
-    - Choose categories that create CLEAR, non-overlapping distinctions for the items you select.
-    - BAD: Categories "Farming" vs "Industry" with item "Wool production" (could be either).
-    - GOOD: Categories "Candle-Making" vs "Wool Spinning" with item "Tallow" (clearly candle-making).
-    - If an item genuinely belongs to multiple categories, place it in "both" — but do NOT create tasks where MOST items are ambiguous.
-    - Test each item mentally: "Could a student defend placing this elsewhere?" If yes, pick a different item or different categories.
+    1. Pick 10–16 terms from the vocabulary list. Create 2–3 categories.
+    2. config.items: array of objects with { "id": "item-0-Dog", "text": "Dog", "categories": ["Mammals"] }.
+    3. Include a top-level "correctAnswer" mapping every item id to its category array.
+    4. Every item must have at least one category. Choose categories where placements are unambiguous.
 
     Common failure prevention:
-    - Do NOT omit the correctAnswer field — the task WILL be rejected without it.
+    - Do not omit the correctAnswer field.
     - Do not omit required arrays/fields; satisfy minimum item counts (≥5 items, ≥2 categories).
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
     - Ensure prompts are student-facing instructions (what to do).
@@ -794,16 +699,8 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Prompt students to record a 20–45 second response. Include 2–3 speaking cues and 2–4 simple assessment criteria (clarity, accuracy, evidence, etc.) if schema supports.
-
-    FOCUS RULE (MANDATORY — WILL BE REJECTED IF VIOLATED):
-    - The prompt MUST ask students to discuss exactly ONE specific topic — NOT two, NOT three. ONE.
-    - Count the number of distinct subjects in your prompt. If it's more than 1, REWRITE IT.
-    - BAD: "Explain the 1793 Act to Limit Slavery, the hymns from the 1700s, and the sermon 'Sinners in the Hands of an Angry God'." ← This asks about THREE topics. REJECTED.
-    - BAD: "Discuss the fur trade and Indigenous governance." ← This asks about TWO topics. REJECTED.
-    - GOOD: "Explain how the 1793 Act to Limit Slavery changed attitudes toward freedom in Upper Canada." ← ONE topic. ACCEPTED.
-    - GOOD: "Describe how hymns from the 1700s reflected religious values during the Great Awakening." ← ONE topic. ACCEPTED.
-    - 20–45 seconds is SHORT. Students can only meaningfully discuss ONE thing. Listing multiple topics guarantees shallow, rushed responses.
+    - Prompt students to record a 20–45 second response about exactly ONE topic.
+    - 20–45 seconds is short — one topic only. Don't ask about multiple subjects.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
