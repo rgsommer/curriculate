@@ -190,6 +190,7 @@ export default function FeaturesPage() {
                 body=”Let students show understanding in more than one modality.”
                 bullets={[
                   “Letter writing — write to a historical character, get an AI reply back”,
+                  “Case study — solve a real-world scenario, get AI expert feedback”,
                   “Drawing/visual response and photo journal formats”,
                   “Narration/synthesis and vocabulary paragraph prompts”,
                 ]}

@@ -160,6 +160,10 @@ export async function renderSessionReportPdfBuffer(reportDoc) {
           pushSample({ type: "open-text", taskTitle: title, teamName, participantName, text: directText });
         } else if (type.includes("short-answer") || type.includes("short_answer") || type.includes("shortanswer")) {
           pushSample({ type: "short-answer", taskTitle: title, teamName, participantName, text: directText });
+        } else if (type.includes("letter")) {
+          pushSample({ type: "letter", taskTitle: title, teamName, participantName, text: directText });
+        } else if (type.includes("case") && type.includes("study") || type.includes("casestudy")) {
+          pushSample({ type: "case-study", taskTitle: title, teamName, participantName, text: directText });
         }
       }
 
@@ -213,7 +217,17 @@ export async function renderSessionReportPdfBuffer(reportDoc) {
       .sort((a, b) => (b.text.length || 0) - (a.text.length || 0))
       .slice(0, 5);
 
-    if (openText.length === 0 && shortAns.length === 0) return;
+    const letterSamples = rawSamples
+      .filter((s) => s.type === "letter" && s.text && s.text.length >= 20)
+      .sort((a, b) => (b.text.length || 0) - (a.text.length || 0))
+      .slice(0, 3);
+
+    const caseSamples = rawSamples
+      .filter((s) => s.type === "case-study" && s.text && s.text.length >= 20)
+      .sort((a, b) => (b.text.length || 0) - (a.text.length || 0))
+      .slice(0, 3);
+
+    if (openText.length === 0 && shortAns.length === 0 && letterSamples.length === 0 && caseSamples.length === 0) return;
 
     doc.addPage();
     sectionTitle("Sample Written Responses");
@@ -245,6 +259,22 @@ export async function renderSessionReportPdfBuffer(reportDoc) {
         .stroke();
       doc.moveDown(0.4);
     };
+
+    if (letterSamples.length > 0) {
+      ensureSpace(700);
+      doc.font("Helvetica-Bold").fontSize(12).fillColor("#111111").text("✉️ Letter Writing (Top 3)");
+      doc.moveDown(0.35);
+      letterSamples.forEach((s, i) => renderSample(s, i + 1));
+      doc.moveDown(0.2);
+    }
+
+    if (caseSamples.length > 0) {
+      ensureSpace(700);
+      doc.font("Helvetica-Bold").fontSize(12).fillColor("#111111").text("🔬 Case Study (Top 3)");
+      doc.moveDown(0.35);
+      caseSamples.forEach((s, i) => renderSample(s, i + 1));
+      doc.moveDown(0.2);
+    }
 
     if (openText.length > 0) {
       doc.font("Helvetica-Bold").fontSize(12).fillColor("#111111").text("📝 Open-text (Top 3)");
@@ -307,6 +337,15 @@ function taskTypeEmoji(typeRaw) {
   // Paper-based, photographed
   if (t.includes("brain") || t.includes("spark") || t.includes("notes")) return "🧠";
   if (t.includes("mind") || t.includes("mapper") || t.includes("mind-mapper") || t.includes("mind_mapper")) return "🕸️";
+
+  // Written / AI-feedback types
+  if (t.includes("letter")) return "✉️";
+  if (t.includes("case") && t.includes("study")) return "🔬";
+  if (t.includes("case-study") || t.includes("casestudy") || t.includes("case_study")) return "🔬";
+
+  // Reading comp & vocabulary
+  if (t.includes("reading") && (t.includes("comp") || t.includes("comprehension"))) return "📖";
+  if (t.includes("vocab")) return "📚";
 
   if (t.includes("photo")) return "📷";
   if (t.includes("audio")) return "🎧";
@@ -471,6 +510,25 @@ function formatDate(d) {
       if (norm === "treasure-runner") {
         bulletsLines.push("Arcade sprint: dodge obstacles, grab coins, and finish strong before time runs out.");
         bulletsLines.push("Skill focus: attention control, quick decision-making, and perseverance under pressure.");
+      }
+
+      if (norm === "letter") {
+        const cfg = t.config && typeof t.config === "object" ? t.config : {};
+        const recipient = String(cfg.recipientName || cfg.recipient || "").trim();
+        const era = String(cfg.era || cfg.timePeriod || "").trim();
+        if (recipient) bulletsLines.push(`Recipient: ${recipient}${era ? ` (${era})` : ""}.`);
+        bulletsLines.push("Write a letter to a historical/fictional character; receive an AI-generated reply.");
+        bulletsLines.push("Skill focus: perspective-taking, creative writing, vocabulary in context.");
+      }
+
+      if (norm === "case-study") {
+        const cfg = t.config && typeof t.config === "object" ? t.config : {};
+        const expertRole = String(cfg.expertRole || "Subject Expert").trim();
+        const concepts = Array.isArray(cfg.relevantConcepts) ? cfg.relevantConcepts : [];
+        bulletsLines.push(`Expert reviewer: ${expertRole}.`);
+        if (concepts.length) bulletsLines.push(`Key concepts: ${concepts.slice(0, 6).join(", ")}${concepts.length > 6 ? "…" : ""}.`);
+        bulletsLines.push("Analyze a real-world scenario; receive AI expert feedback on your solution.");
+        bulletsLines.push("Skill focus: critical thinking, applied reasoning, vocabulary usage.");
       }
 
       if (bulletsLines.length) {
