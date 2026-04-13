@@ -6255,6 +6255,65 @@ app.post("/api/evaluate/short-answer", async (req, res) => {
         }
       });
 
+/* ------------------------------------------------------------------ */
+/*  Letter task — real-time AI reply from character                    */
+/* ------------------------------------------------------------------ */
+app.post("/api/evaluate/letter-reply", async (req, res) => {
+  try {
+    const {
+      studentLetter, character, characterDescription,
+      letterStyle, topicContext, gradeLevel, relevantConcepts,
+    } = req.body || {};
+
+    const letter = String(studentLetter || "").trim().slice(0, 3000);
+    const charName = String(character || "Historical Figure").slice(0, 100);
+    const charDesc = String(characterDescription || "").slice(0, 300);
+    const style = letterStyle === "business" ? "business" : "friendly";
+    const topic = String(topicContext || "").slice(0, 500);
+    const grade = parseInt(gradeLevel, 10) || 7;
+    const concepts = Array.isArray(relevantConcepts)
+      ? relevantConcepts.slice(0, 12).map((c) => String(c).trim()).filter(Boolean)
+      : [];
+
+    if (!letter) return res.status(400).json({ error: "Missing studentLetter" });
+
+    const prompt = `
+You are ${charName}. ${charDesc}
+
+A student (grade ${grade}) has written you a ${style} letter about: ${topic || "your life and times"}.
+
+Here is their letter:
+---
+${letter}
+---
+
+Write a reply letter back to the student, IN CHARACTER as ${charName}. Guidelines:
+- Use a ${style} letter format (${style === "business" ? "formal greeting, structured paragraphs, professional closing" : "warm greeting, conversational tone, friendly closing"}).
+- Respond to specific things the student mentioned — show you read their letter.
+- Naturally weave in 1-3 of these key concepts if relevant: ${concepts.join(", ") || "any relevant historical details"}.
+- Keep language appropriate for grade ${grade}.
+- Be encouraging about their writing. If they included good details, mention that.
+- Keep the reply 80-150 words — concise but warm.
+- Sign off as ${charName}.
+- Return ONLY the letter text, no JSON wrapping or markdown.
+    `.trim();
+
+    const response = await openai.chat.completions.create({
+      model: process.env.AI_MODEL || "gpt-4.1-mini",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.7,
+      max_tokens: 400,
+    });
+
+    const reply = (response.choices?.[0]?.message?.content || "").trim();
+
+    return res.json({ reply: reply || `Dear student,\n\nThank you for your thoughtful letter!\n\nSincerely,\n${charName}` });
+  } catch (err) {
+    console.error("Letter reply error:", err);
+    return res.status(500).json({ error: "Reply generation failed" });
+  }
+});
+
 // Grading start
 
 async function extractStudentWorkFromLink(url) {

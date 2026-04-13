@@ -7,6 +7,7 @@ import BodyBreakTask from "./types/BodyBreakTask";
 import MakeAndSnapTask from "./types/MakeAndSnapTask";
 import MultipleChoiceTask from "./types/MultipleChoiceTask";
 import OpenTextTask from "./types/OpenTextTask";
+import LetterTask from "./types/LetterTask";
 import VocabularyTask from "./types/VocabularyTask";
 import PhotoTask from "./types/PhotoTask";
 import RecordAudioTask from "./types/RecordAudioTask";
@@ -2414,6 +2415,21 @@ case "multi_player_feedback":
       break;
     }
     
+    case TASK_TYPES.LETTER:
+      content = (
+        <LetterTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled || isReview}
+          answered={effectiveDisabled || isReview}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+          roomCode={roomCode}
+          teamId={derivedTeamId}
+        />
+      );
+      break;
+
     case TASK_TYPES.RECORD_AUDIO:
       content = (
         <RecordAudioTask

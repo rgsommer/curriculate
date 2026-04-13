@@ -98,6 +98,9 @@ export const TASK_TYPES = {
   PRONUNCIATION: "pronunciation",
   SPEECH_RECOGNITION: "speech-recognition",
 
+  // Letter writing with AI reply
+  LETTER: "letter",
+
   // Physical / scavenger
   HIDENSEEK: "hidenseek",
   MULTI_ROOM_SCAVENGER_HUNT: "hidenseek"
@@ -708,6 +711,50 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Ensure prompts are student-facing instructions (what to do).
     `,
 },
+
+  [TASK_TYPES.LETTER]: {
+    label: "Letter Writing",
+    category: CATEGORY.CREATIVE,
+    implemented: true,
+    demoEligible: true,
+    generatorEligible: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: true,
+    maxTimeSeconds: 300,
+    interTeamEnabled: false,
+    intraTeamEnabled: false,
+    description:
+      "Students write a letter to a historical/fictional character related to the topic. " +
+      "The AI picks an appropriate character and suggests a letter style (business or friendly). " +
+      "After submitting, students receive a real-time AI-generated reply letter from the character. " +
+      "Points scale with relevant vocabulary concepts mentioned. " +
+      "Word target: 20 × grade level (e.g., grade 7 = 140 words).",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "letter".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt, config.
+    - config MUST include: character (string — full name), characterDescription (1-2 sentences about who they are),
+      letterStyle ("business" or "friendly" — pick whichever fits the topic and character),
+      topicContext (1-2 sentences about the historical/topical context the student should address),
+      relevantConcepts (array of 4-8 vocabulary terms the student could weave in for bonus points).
+    - The prompt should tell the student who they are writing to, what style of letter to use,
+      and what topic to address. Mention they will receive a reply.
+    - Pick a character that fits the vocabulary/topic naturally — can be a real historical figure,
+      a role (e.g. "a settler in Upper Canada"), or a fictional persona that makes sense.
+
+    Common failure prevention:
+    - Do not omit config or any required config fields.
+    - Character must be specific and named (not generic like "a person").
+    - relevantConcepts must be real terms from the vocabulary list, not made-up phrases.
+    `,
+  },
 
   [TASK_TYPES.PHOTO]: {
     label: "Photo Evidence",

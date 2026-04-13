@@ -933,6 +933,8 @@ export const retryMustHave = {
    "SEQUENCE: Pick 6–10 terms/events that have a natural order. MINIMUM 6 items — fewer will be REJECTED. Each item must be a specific datable event with a DISTINCT date in parentheses — every item must resolve to a different year or narrow period. Do NOT reuse the same time band (e.g. 'early 1800s') for multiple items. Do not omit.",
   [TASK_TYPES.TIMELINE]:
     "TIMELINE: Pick 6–10 events that can be placed chronologically. MINIMUM 6 events — fewer will be REJECTED. Every event MUST include a DISTINCT date or narrow date range in parentheses — no two items should share the same time period. Do NOT reuse 'early 1800s' or 'late 1700s' for multiple items. Do not omit.",
+  [TASK_TYPES.LETTER]:
+    'LETTER: config MUST include character (full name), characterDescription (1-2 sentences), letterStyle ("business" or "friendly"), topicContext (what to write about), and relevantConcepts (4-8 vocab terms students can use for bonus points). Pick a character that fits the topic naturally.',
   [TASK_TYPES.MATCHING]:
     'MATCHING: Pick at least 6 terms from the vocabulary list and use them as leftItems (plain string array). For each term, write a short definition (8-20 words) and use those as rightItems (plain string array). Include correctMatches map {"L1":"R1","L2":"R2",...} at root level. Do NOT use empty arrays — a matching task with no items will be REJECTED. Do NOT use "items", "options", or "config" — only leftItems, rightItems, correctMatches at root. NEVER output placeholder text like "Term 1" or "Definition 2".',
   [TASK_TYPES.VENNSORT]:

@@ -1926,6 +1926,52 @@ export function normalizeTaskByType(taskType, rawTask) {
     case TASK_TYPES.OPEN_TEXT:
       break;
 
+    case TASK_TYPES.LETTER: {
+      const cfg = isObject(task.config) ? task.config : (task.config = {});
+
+      // Normalize character from common field names
+      cfg.character = asNonEmptyString(cfg.character,
+        asNonEmptyString(cfg.characterName,
+          asNonEmptyString(cfg.recipient,
+            asNonEmptyString(task.character, ""))));
+      cfg.characterDescription = asNonEmptyString(cfg.characterDescription,
+        asNonEmptyString(cfg.charDesc, asNonEmptyString(cfg.description, "")));
+      cfg.letterStyle = asNonEmptyString(cfg.letterStyle,
+        asNonEmptyString(cfg.style, "friendly"));
+      cfg.topicContext = asNonEmptyString(cfg.topicContext,
+        asNonEmptyString(cfg.context, asNonEmptyString(cfg.topic, "")));
+
+      // Normalize relevantConcepts
+      if (!Array.isArray(cfg.relevantConcepts)) {
+        cfg.relevantConcepts = Array.isArray(cfg.concepts) ? cfg.concepts
+          : Array.isArray(cfg.keywords) ? cfg.keywords
+          : Array.isArray(cfg.vocabTerms) ? cfg.vocabTerms
+          : [];
+      }
+      cfg.relevantConcepts = cfg.relevantConcepts
+        .map((c) => String(c || "").trim())
+        .filter(Boolean)
+        .slice(0, 12);
+
+      // Validate letter style
+      if (!["business", "friendly"].includes(cfg.letterStyle)) {
+        cfg.letterStyle = "friendly";
+      }
+
+      // Hard reject: must have a character
+      if (!cfg.character) {
+        task._validationError = "Letter task must include config.character (the name of who students write to).";
+      }
+
+      // Warn if no relevant concepts for scoring
+      if (cfg.relevantConcepts.length < 2) {
+        task._validationWarning = `Letter task has only ${cfg.relevantConcepts.length} relevantConcepts — 4-8 preferred for concept-based scoring.`;
+      }
+
+      task.config = cfg;
+      break;
+    }
+
     case TASK_TYPES.RECORD_AUDIO: {
       // --- GUARDRAIL: AUTO-FIX multi-topic audio prompts ---
       // The AI stubbornly generates prompts asking about 2-3 topics in 20-45 seconds.
@@ -2590,6 +2636,7 @@ export function validateTaskByType(taskType, task) {
 
     // ─── Simple types: only need title + prompt (global checks cover these) ───
     case TASK_TYPES.OPEN_TEXT:
+    case TASK_TYPES.LETTER:
     case TASK_TYPES.RECORD_AUDIO:
     case TASK_TYPES.DRAW:
     case TASK_TYPES.MIME:
