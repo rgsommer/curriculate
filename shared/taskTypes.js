@@ -3173,12 +3173,16 @@ config: {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Create a speech-recognition practice set: 8–12 target phrases plus acceptable variations. Include guidance for enunciation and success criteria.
-    
+    - The prompt should be a question or instruction for the student to answer aloud.
+    - Set "referenceText" to the expected spoken answer or reading-aloud passage (a sentence or short paragraph, 10–40 words).
+    - The system will transcribe the student's speech and AI-score it against the referenceText for meaning and accuracy.
+    - Do NOT generate a "phrases" or "variations" array — the component only uses referenceText.
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
     - Ensure prompts are student-facing instructions (what to do).
+    - MUST include referenceText as a root-level string field.
     `,
 }
 

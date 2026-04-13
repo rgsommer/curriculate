@@ -375,6 +375,20 @@ function sanitizeTaskShapeByType(type, task) {
     }
   }
 
+  // ── SPEECH_RECOGNITION / PRONUNCIATION: promote config.referenceText to root ──
+  if (type === TASK_TYPES.SPEECH_RECOGNITION || type === TASK_TYPES.PRONUNCIATION) {
+    if (!t.referenceText && t.config?.referenceText) {
+      t.referenceText = t.config.referenceText;
+    }
+    // AI sometimes generates config.phrases[] — collapse into a single referenceText
+    if (!t.referenceText && Array.isArray(t.config?.phrases) && t.config.phrases.length > 0) {
+      t.referenceText = t.config.phrases
+        .map((p) => (typeof p === "string" ? p : p?.target || p?.text || ""))
+        .filter(Boolean)
+        .join(". ");
+    }
+  }
+
   return t;
 }
 
@@ -698,6 +712,24 @@ function finalizeTask(expectedType, rawTask) {
     } else {
       normalized.timeLimitSeconds = 90;
     }
+  }
+
+  // Enforce minimum time floors for writing-heavy / performance task types.
+  // The AI often defaults everything to 90s which is far too short for extended responses.
+  const TIME_FLOORS = {
+    [TASK_TYPES.LETTER]: 240,
+    [TASK_TYPES.CASE_STUDY]: 240,
+    [TASK_TYPES.OPEN_TEXT]: 150,
+    [TASK_TYPES.SCRIPT_PLAY]: 180,
+    [TASK_TYPES.ROLE_PLAY_DECK]: 180,
+    [TASK_TYPES.NARRATION_SYNTHESIZE]: 180,
+    [TASK_TYPES.READING_COMP]: 180,
+    [TASK_TYPES.COLLABORATION]: 150,
+    [TASK_TYPES.LIVE_DEBATE]: 180,
+  };
+  const floor = TIME_FLOORS[expectedType];
+  if (floor && normalized.timeLimitSeconds < floor) {
+    normalized.timeLimitSeconds = floor;
   }
 
   // Ensure points default
