@@ -207,6 +207,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
     tasksetName: "",
     locationCode: "Classroom",
     isActive: false,
+    moodCheckins: {},
   });
 
   const [activeTab, setActiveTab] = useState("leaderboard");
@@ -299,6 +300,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
         tasksetName: safe.tasksetName || safe.taskset?.name || prev.tasksetName || "",
         locationCode: safe.locationCode || prev.locationCode || "Classroom",
         isActive: safe.isActive ?? prev.isActive,
+        moodCheckins: safe.moodCheckins && typeof safe.moodCheckins === "object" ? safe.moodCheckins : prev.moodCheckins || {},
       }));
     };
 
@@ -334,12 +336,24 @@ export default function HostView({ roomCode: roomCodeProp }) {
       setTimeout(() => setShowConfetti(false), 8000);
     };
 
+    const handleMoodUpdate = (data) => {
+      if (!data) return;
+      setRoomState((prev) => ({
+        ...prev,
+        moodCheckins: {
+          ...prev.moodCheckins,
+          [data.teamId]: data,
+        },
+      }));
+    };
+
     socket.on("roomState", handleRoom);
     socket.on("room:state", handleRoom);
     socket.on("teamJoined", handleTeamJoined);
     socket.on("team:joined", handleTeamJoined);
     socket.on("taskSubmission", handleTaskSubmission);
     socket.on("session-ended", handleEnded);
+    socket.on("mood-checkin:update", handleMoodUpdate);
 
     socket.emit("room:request-state", { roomCode: code });
 
@@ -350,6 +364,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
       socket.off("team:joined", handleTeamJoined);
       socket.off("taskSubmission", handleTaskSubmission);
       socket.off("session-ended", handleEnded);
+      socket.off("mood-checkin:update", handleMoodUpdate);
     };
   }, [roomCode, playSound, addScorePopup]);
 
@@ -385,6 +400,27 @@ export default function HostView({ roomCode: roomCodeProp }) {
     const ps = roomState.playerScores || [];
     return ps.slice(0, 3); // already sorted desc by backend
   }, [roomState.playerScores]);
+
+  // Mood summary
+  const MOOD_EMOJIS = ["😄", "🙂", "😐", "😴", "😔"];
+  const MOOD_LABELS = ["Super excited", "Feeling good", "Okay", "A bit tired", "Not great"];
+  const moodSummary = useMemo(() => {
+    const checkins = roomState.moodCheckins || {};
+    const entries = Object.values(checkins);
+    if (entries.length === 0) return null;
+    // Flatten all mood indices from all teams
+    const allMoods = entries.flatMap((e) => Array.isArray(e.moods) ? e.moods : []);
+    if (allMoods.length === 0) return null;
+    // Count per mood index
+    const counts = [0, 0, 0, 0, 0];
+    for (const m of allMoods) {
+      if (typeof m === "number" && m >= 0 && m <= 4) counts[m]++;
+    }
+    // Find dominant mood
+    let topIdx = 0;
+    for (let i = 1; i < 5; i++) { if (counts[i] > counts[topIdx]) topIdx = i; }
+    return { counts, total: allMoods.length, topIdx, teamCount: entries.length };
+  }, [roomState.moodCheckins]);
 
   // Task progress
   const rawTaskIndex = roomState.taskIndex;
@@ -482,6 +518,24 @@ export default function HostView({ roomCode: roomCodeProp }) {
           {roomState.tasksetName && (
             <div className="mt-2 text-base md:text-lg font-semibold opacity-80 tracking-wide">
               📚 {roomState.tasksetName}
+            </div>
+          )}
+
+          {/* Mood summary */}
+          {moodSummary && (
+            <div className="mt-2 flex items-center justify-center gap-3 text-lg font-bold opacity-90">
+              <span>Class mood:</span>
+              {MOOD_EMOJIS.map((emoji, i) => (
+                moodSummary.counts[i] > 0 && (
+                  <span key={i} className="inline-flex items-center gap-1" title={MOOD_LABELS[i]}>
+                    <span className="text-2xl">{emoji}</span>
+                    <span className="text-sm font-black opacity-80">{moodSummary.counts[i]}</span>
+                  </span>
+                )
+              ))}
+              <span className="text-base opacity-75">
+                — mostly {MOOD_LABELS[moodSummary.topIdx].toLowerCase()} today!
+              </span>
             </div>
           )}
 

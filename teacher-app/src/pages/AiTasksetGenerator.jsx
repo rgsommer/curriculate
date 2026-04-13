@@ -203,17 +203,25 @@ export default function AiTasksetGenerator() {
   const [profile, setProfile] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
-  const [form, setForm] = useState({
-    name: "",
-    roomLocation: "Classroom",
-    gradeLevel: "",
-    subject: "",
-    difficulty: "MEDIUM",
-    learningGoal: "REVIEW",
-    topicDescription: "", // special considerations
-    durationMinutes: 45,
-    isFixedStation: false,
-    isMultiRoomScavenger: false,
+  const [form, setForm] = useState(() => {
+    let savedGrade = "";
+    let savedSubject = "";
+    try {
+      savedGrade = localStorage.getItem("curriculate.gen.gradeLevel") || "";
+      savedSubject = localStorage.getItem("curriculate.gen.subject") || "";
+    } catch {}
+    return {
+      name: "",
+      roomLocation: "Classroom",
+      gradeLevel: savedGrade,
+      subject: savedSubject,
+      difficulty: "MEDIUM",
+      learningGoal: "REVIEW",
+      topicDescription: "", // special considerations
+      durationMinutes: 45,
+      isFixedStation: false,
+      isMultiRoomScavenger: false,
+    };
   });
 
   const [displays, setDisplays] = useState([]);
@@ -291,6 +299,14 @@ export default function AiTasksetGenerator() {
       cancelled = true;
     };
   }, []);
+
+  // Persist grade + subject so they survive page reloads
+  useEffect(() => {
+    try {
+      if (form.gradeLevel) localStorage.setItem("curriculate.gen.gradeLevel", form.gradeLevel);
+      if (form.subject) localStorage.setItem("curriculate.gen.subject", form.subject);
+    } catch {}
+  }, [form.gradeLevel, form.subject]);
 
   const handleChange = (field, value) =>
     setForm((prev) => ({ ...prev, [field]: value }));
