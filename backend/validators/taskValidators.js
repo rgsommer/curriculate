@@ -331,6 +331,19 @@ export function normalizeTaskByType(taskType, rawTask) {
 
       task.items = items;
 
+      // --- GUARDRAIL: Flag likely-wrong MC answers using absolute language ---
+      // In history/social studies, "correct" answers with absolute terms like
+      // "immediately freed all", "completely eliminated", "had no effect" are
+      // almost always factually wrong — the real answer is usually nuanced.
+      const absolutePattern = /\b(immediately|completely|entirely|totally|never|always|all\s+(?:people|slaves|settlers|citizens)|had\s+no\s+(?:effect|impact|influence)|no\s+(?:one|people|settlers))\b/i;
+      for (const item of items) {
+        if (!Array.isArray(item.options) || typeof item.correctAnswer !== "number") continue;
+        const correctOption = item.options[item.correctAnswer];
+        if (correctOption && absolutePattern.test(correctOption)) {
+          task._validationWarning = `MC question "${item.prompt?.slice(0, 60)}..." has a correct answer with absolute language: "${correctOption.slice(0, 60)}". In history, absolute claims are usually wrong — verify this answer key.`;
+        }
+      }
+
       // For MC/Physical MC, schema forbids config.items (use top-level items[] only)
       if (task.config && Array.isArray(task.config.items)) delete task.config.items;
       break;
@@ -530,13 +543,12 @@ export function normalizeTaskByType(taskType, rawTask) {
       task.config.categories = task.config.buckets;
 
       // --- GUARDRAIL: Reject sort tasks with too few items ---
-      // A good sort has 8-14 items across 2-3 buckets. Below 6 is too easy.
+      // A good sort has 8-14 items across 2-3 buckets. Below 6 is too easy/trivial.
+      // Hard reject at <6 so the AI retries with more items.
       if (items.length < 6 && items.length > 0) {
-        if (items.length < 4) {
-          task._validationError = `Sort must have at least 6 items (got ${items.length}). Aim for 8-14 items spread across all buckets.`;
-        } else {
-          task._validationWarning = `Sort has only ${items.length} items — 8-14 preferred for a challenging activity`;
-        }
+        task._validationError = `Sort must have at least 6 items (got ${items.length}). You MUST include 8-14 specific vocabulary terms spread across all buckets. Do NOT use topic headings or category descriptions as items.`;
+      } else if (items.length < 8) {
+        task._validationWarning = `Sort has only ${items.length} items — 8-14 preferred for a challenging activity`;
       }
 
       // --- GUARDRAIL: Flag lopsided sort buckets ---
@@ -1342,6 +1354,36 @@ export function normalizeTaskByType(taskType, rawTask) {
         }
       }
 
+      // --- GUARDRAIL: Detect dangling references in passage ---
+      // The AI sometimes generates "This law affected..." without naming the law,
+      // or "These changes..." without specifying what changed. This confuses students.
+      {
+        const passageText = cfg.text || cfg.passage || "";
+        const sentences = passageText.match(/[^.!?]+[.!?]+/g) || [];
+        if (sentences.length >= 2) {
+          // Check if early sentences (1st or 2nd) use dangling demonstratives
+          // without a prior sentence establishing the referent
+          const danglingPattern = /\b(this|these|that|those)\s+(law|act|event|change|movement|policy|practice|development|issue|conflict|situation|problem|decision|reform|rule|treaty|agreement)\b/i;
+          for (let si = 0; si < Math.min(sentences.length, 3); si++) {
+            const sent = sentences[si].trim();
+            const dm = sent.match(danglingPattern);
+            if (dm) {
+              // Check if ANY prior sentence mentions a specific noun that could be the referent
+              const referentText = sentences.slice(0, si).join(" ").toLowerCase();
+              const referent = dm[2].toLowerCase(); // e.g. "law"
+              // Look for a SPECIFIC instance: "the 1793 Act", "the Clergy Reserve", a capitalized proper noun + referent type
+              const hasSpecificReferent = /\b(the\s+)?(\d{4}\s+)?[A-Z][a-z]/.test(sentences.slice(0, si).join(" "))
+                && referentText.includes(referent);
+              if (!hasSpecificReferent && si <= 1) {
+                // Dangling ref in first 2 sentences = hard reject (confusing for students)
+                task._validationError = `Reading passage has a dangling reference: "${dm[0]}" in sentence ${si + 1} without naming what "${dm[2]}" refers to. The passage must introduce specific nouns before using "this/these/that".`;
+                break;
+              }
+            }
+          }
+        }
+      }
+
       task.title = asNonEmptyString(task.title, "Reading Comprehension");
       task.prompt = asNonEmptyString(task.prompt, "Read the passage and answer the questions.");
       break;
@@ -1878,14 +1920,16 @@ export function normalizeTaskByType(taskType, rawTask) {
         const verbMatch = audioPrompt.match(/\b(explain(?:ing)?|discuss(?:ing)?|describe|talk(?:ing)?\s+about)\s+(how\s+)?/i);
         if (verbMatch) {
           const afterVerb = audioPrompt.slice(verbMatch.index + verbMatch[0].length);
+          // Preserve "how" if the original prompt used it (e.g. "explaining how X influenced Y")
+          const howPrefix = verbMatch[2] ? "how " : "";
           // Take everything up to: comma, semicolon, "and the/how/why", "Include", "Also", period+space
           const firstTopicMatch = afterVerb.match(/^(.+?)(?:\s*[,;]\s*|\s+and\s+(?:the|how|why)|\.\s+(?:Include|Also|In addition|Additionally|Furthermore|Mention)|\.\s*$)/i);
           const firstTopic = firstTopicMatch ? firstTopicMatch[1].trim() : afterVerb.split(/[,;]/)[0].trim();
           // Strip trailing period
           const cleanTopic = firstTopic.replace(/\.\s*$/, "").trim();
           if (cleanTopic.length > 10) {
-            task.prompt = `Record a 20–45 second response explaining ${cleanTopic}. Speak clearly, give at least one specific example, and explain why this matters.`;
-            console.warn(`[Quality Auto-Fix] Record-audio prompt rewritten to single topic: "${cleanTopic}"`);
+            task.prompt = `Record a 20–45 second response explaining ${howPrefix}${cleanTopic}. Speak clearly, give at least one specific example, and explain why this matters.`;
+            console.warn(`[Quality Auto-Fix] Record-audio prompt rewritten to single topic: "${howPrefix}${cleanTopic}"`);
           }
         }
       }
