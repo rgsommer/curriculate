@@ -656,25 +656,33 @@ export function normalizeTaskByType(taskType, rawTask) {
           return base + 5;
         }
 
-        // Try century phrases: (early 1700s), (mid-1800s), (late 1700s)
-        const centuryMatch = hint.match(/\b(\d{4})s\b/);
-        if (centuryMatch) {
-          const base = parseInt(centuryMatch[1], 10);
-          if (hint.includes("early")) return base + 15;
-          if (hint.includes("late")) return base + 75;
-          if (hint.includes("mid")) return base + 50;
+        // Try century phrases with qualifier: (early 1700s), (mid-1800s), (late 1700s)
+        // Match qualifier + century as a unit to avoid cross-contamination
+        // in ranges like "late 1700s to early 1800s"
+        const qualCentury = hint.match(/\b(early|late|mid)[- ]?(\d{4})s\b/);
+        if (qualCentury) {
+          const base = parseInt(qualCentury[2], 10);
+          if (qualCentury[1] === "early") return base + 15;
+          if (qualCentury[1] === "late") return base + 75;
+          return base + 50; // mid
+        }
+
+        // Try bare century without qualifier: (1700s)
+        const bareCentury = hint.match(/\b(\d{4})s\b/);
+        if (bareCentury) return parseInt(bareCentury[1], 10) + 50;
+
+        // Try ordinal century with qualifier: (early 19th century)
+        const qualOrd = hint.match(/\b(early|late|mid)[- ]?(\d{1,2})(?:st|nd|rd|th)\s+century\b/);
+        if (qualOrd) {
+          const base = (parseInt(qualOrd[2], 10) - 1) * 100;
+          if (qualOrd[1] === "early") return base + 15;
+          if (qualOrd[1] === "late") return base + 75;
           return base + 50;
         }
 
-        // Try ordinal century: (18th century), (early 19th century)
-        const ordCentury = hint.match(/\b(\d{1,2})(?:st|nd|rd|th)\s+century\b/);
-        if (ordCentury) {
-          const base = (parseInt(ordCentury[1], 10) - 1) * 100;
-          if (hint.includes("early")) return base + 15;
-          if (hint.includes("late")) return base + 75;
-          if (hint.includes("mid")) return base + 50;
-          return base + 50;
-        }
+        // Try bare ordinal century: (18th century)
+        const bareOrd = hint.match(/\b(\d{1,2})(?:st|nd|rd|th)\s+century\b/);
+        if (bareOrd) return (parseInt(bareOrd[1], 10) - 1) * 100 + 50;
 
         return null;
       };
