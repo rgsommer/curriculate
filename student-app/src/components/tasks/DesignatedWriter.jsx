@@ -1,6 +1,6 @@
 // student-app/src/components/tasks/DesignatedWriter.jsx
-// Shows which team member should type/dictate for writing tasks.
-// Uses a simple hash of the task title to pick consistently.
+// Shows which team member's turn it is for the current task.
+// Uses a simple hash of the task title to rotate consistently.
 import React, { useMemo } from "react";
 
 function simpleHash(str) {
@@ -11,7 +11,16 @@ function simpleHash(str) {
   return Math.abs(h);
 }
 
-export default function DesignatedWriter({ memberNames = [], taskTitle = "" }) {
+const ROLE_PRESETS = {
+  writer:   { emoji: "🖊️", action: "you're the writer!" },
+  answerer: { emoji: "👆", action: "your turn to answer!" },
+  reader:   { emoji: "📖", action: "read this one aloud!" },
+  speaker:  { emoji: "🎤", action: "your turn to speak!" },
+  photo:    { emoji: "📸", action: "your turn to snap the photo!" },
+  default:  { emoji: "⭐", action: "it's your turn!" },
+};
+
+export default function DesignatedWriter({ memberNames = [], taskTitle = "", role = "writer" }) {
   const names = useMemo(
     () => (Array.isArray(memberNames) ? memberNames.filter(Boolean) : []),
     [memberNames]
@@ -25,6 +34,8 @@ export default function DesignatedWriter({ memberNames = [], taskTitle = "" }) {
   }, [names, taskTitle]);
 
   if (!chosen) return null;
+
+  const preset = ROLE_PRESETS[role] || ROLE_PRESETS.default;
 
   return (
     <div
@@ -42,9 +53,9 @@ export default function DesignatedWriter({ memberNames = [], taskTitle = "" }) {
         color: "#4338ca",
       }}
     >
-      <span style={{ fontSize: 18 }}>🖊️</span>
+      <span style={{ fontSize: 18 }}>{preset.emoji}</span>
       <span>
-        <strong>{chosen}</strong> — you're the writer!
+        <strong>{chosen}</strong> — {preset.action}
         {names.length > 1 && (
           <span style={{ fontWeight: 400, color: "#6366f1", marginLeft: 4 }}>
             (team: help them out!)

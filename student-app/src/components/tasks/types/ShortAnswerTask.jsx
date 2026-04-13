@@ -1,4 +1,5 @@
 import React from "react";
+import DesignatedWriter from "../DesignatedWriter";
 
 // Confetti particle component
 function Confetti() {
@@ -121,6 +122,7 @@ export default function ShortAnswerTask({
   disabled,
   onAnswerChange,
   answerDraft,
+  memberNames = [],
 }) {
   const theme = task?.uiTheme || "modern";
   const hasItems = Array.isArray(task.items) && task.items.length > 0;
@@ -974,6 +976,8 @@ export default function ShortAnswerTask({
       }}
     >
       {showConfetti && <Confetti />}
+
+      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} role="answerer" />
 
       <div
         style={{

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import TaskChrome from "../TaskChrome";
 import { CHROME_THEME } from "../taskChrome.theme";
+import DesignatedWriter from "../DesignatedWriter";
 
 /**
  * MultipleChoiceTask
@@ -25,7 +26,7 @@ function getCacheKey(task) {
   return `mc:${id || `${type}:${title}:${itemCount}`}`;
 }
 
-export default function MultipleChoiceTask({ task, onComplete }) {
+export default function MultipleChoiceTask({ task, onComplete, memberNames = [] }) {
   const items = Array.isArray(task?.items) ? task.items : [];
   const cacheKey = useMemo(() => getCacheKey(task), [task]);
 
@@ -140,6 +141,7 @@ export default function MultipleChoiceTask({ task, onComplete }) {
       // Keep user's selection stable across chrome transitions.
     >
       <div style={{ maxWidth: 920, margin: "0 auto", padding: 16 }}>
+        <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} role="answerer" />
         {/* Header */}
         <div
           style={{

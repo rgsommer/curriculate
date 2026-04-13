@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/TrueFalseTask.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import DesignatedWriter from "../DesignatedWriter";
 
 // Inline animation styles
 const animationStyles = `
@@ -108,6 +109,7 @@ export default function TrueFalseTask({
   disabled,
   onAnswerChange,
   answerDraft,
+  memberNames = [],
 }) {
   const theme = task?.uiTheme || "modern";
   const hasItems = Array.isArray(task?.items) && task.items.length > 0;
@@ -445,6 +447,7 @@ export default function TrueFalseTask({
           background: "linear-gradient(135deg, #f0f9ff 0%, #f0fdff 100%)",
         }}
       >
+        <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} role="answerer" />
         {/* Celebration overlay */}
         {showCelebration && (
           <div
@@ -760,6 +763,7 @@ export default function TrueFalseTask({
         background: "linear-gradient(135deg, #f0f9ff 0%, #f0fdff 100%)",
       }}
     >
+      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} role="answerer" />
       {/* Celebration overlay */}
       {showCelebration && (
         <div

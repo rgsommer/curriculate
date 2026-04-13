@@ -2159,6 +2159,7 @@ export default function TaskRunner({
           answerDraft={answerDraft}
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
+          memberNames={memberNames}
         />
       );
       break;
@@ -2210,6 +2211,7 @@ export default function TaskRunner({
             disabled={effectiveDisabled}
             onAnswerChange={onAnswerChange}
             answerDraft={answerDraft}
+            memberNames={memberNames}
           />
         );
       }
@@ -2520,6 +2522,7 @@ case "multi_player_feedback":
           answerDraft={answerDraft}
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
+          memberNames={memberNames}
         />
       );
       break;
