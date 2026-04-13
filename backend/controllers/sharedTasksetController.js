@@ -981,7 +981,10 @@ export const retryMustHave = {
     "READING_COMP must include a paragraph (generatedParagraph or paragraph field) about ONE unified topic. Do NOT stitch together summaries of multiple unrelated subjects. Go deep on one topic rather than touching many shallowly.",
   [TASK_TYPES.RECORD_AUDIO]:
     "RECORD_AUDIO must include a prompt asking students to discuss ONE specific topic in 20–45 seconds. Do NOT ask about multiple topics — one focused topic is enough for a short recording.",
-
+  [TASK_TYPES.PET_FEEDING]:
+    'PET_FEEDING MUST include "goodFoods" (array of 6-8 TRUE/PRO statements) and "badFoods" (array of 6-8 FALSE/CON statements) at the ROOT level of the task object. Total must be at least 12 items. Each item is a short factual claim (1 sentence). Do NOT return empty arrays. Also include config: { goal: 4-5, pack: "classic"|"farm"|"ocean"|"dino"|"fantasy" }. Example: { "goodFoods":["The sun is a star","Water boils at 100°C"], "badFoods":["The moon is larger than Earth","Fish live on land"] }',
+  [TASK_TYPES.SPEECH_RECOGNITION]:
+    'SPEECH_RECOGNITION must include "referenceText" as a ROOT-level string field (10-40 words). This is the expected spoken answer or reading-aloud passage. Do NOT generate a "phrases" array — only referenceText is used by the component.',
 };
 
 /* ============================================================
