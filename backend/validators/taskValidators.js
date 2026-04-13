@@ -588,10 +588,14 @@ export function normalizeTaskByType(taskType, rawTask) {
         .map((s) => String(s).trim())
         .filter(Boolean);
 
-      // --- GUARDRAIL: Reject sequences/timelines with fewer than 6 items ---
-      if (items.length < 6) {
-        task._validationError = `Sequence/timeline must have at least 6 items for meaningful ordering, got ${items.length}. Add more specific datable events.`;
+      // --- GUARDRAIL: Reject sequences/timelines with too few items ---
+      // Hard reject at <4 (unplayable). Warn at 4-5 (playable but shallow).
+      // Prompt still asks for 6+, but the AI frequently returns 4-5 and retrying doesn't help.
+      if (items.length < 4) {
+        task._validationError = `Sequence/timeline must have at least 4 items, got ${items.length}.`;
         if (items.length === 0) items = ["Placeholder — regenerate this task"];
+      } else if (items.length < 6) {
+        task._validationWarning = `Sequence/timeline has only ${items.length} items — 6+ preferred`;
       }
       // Flag vague pattern items (e.g. "Impact of...", "Settlement of...", "Growth of...")
       const vaguePattern = /^(Impact|Effect|Growth|Rise|Spread|Settlement|Development|Influence|Role)\s+of\b/i;
@@ -1151,27 +1155,73 @@ export function normalizeTaskByType(taskType, rawTask) {
 
       task.config = cfg;
 
-      // --- GUARDRAIL: Reject topic-bouncing passages (shallow survey of many topics) ---
-      // Strategy: count how many DISTINCT multi-word topic phrases appear in the passage.
-      // A coherent passage about one topic might mention 1-2 other things in passing,
-      // but a passage that names 4+ distinct topics is a survey, not a focused text.
+      // --- GUARDRAIL: AUTO-FIX topic-bouncing passages ---
+      // Instead of rejecting (AI keeps producing the same thing on retry),
+      // programmatically strip the passage down to the dominant topic.
       if (finalPassage && finalPassage.length > 100) {
-        const passageLower = finalPassage.toLowerCase();
-        // Common multi-word topic phrases that signal distinct subjects
         const topicSignals = [
-          /\bsoap[- ]?making\b/, /\bcandle[- ]?making\b/, /\bwool\s+spinning\b/,
-          /\bbackwoods\b/, /\bcrown\s+reserve\b/, /\bclergy\s+reserve\b/,
-          /\b1793\s+act\b/, /\bslavery\b/, /\bemancipation\b/,
-          /\bfur\s+trade\b/, /\bgreat\s+awakening\b/, /\bindigenous\s+governance\b/,
-          /\bsewing\b/, /\btown\s+life\b/, /\blife\s+in\s+a?\s*town\b/,
-          /\bschooling\b/, /\bone[- ]?room\s+school/,
-          /\bgovernor\s+simcoe\b/, /\bloyalist/i, /\bm[eé]tis\b/,
-          /\bpemmican\b/, /\bsmallpox\b/, /\bepidemic/,
-          /\bdebtors['']?\s*prison\b/, /\bfire\s+safety\b/,
+          { rx: /\bsoap[- ]?making\b/i, label: "soap-making" },
+          { rx: /\bcandle[- ]?making\b/i, label: "candle-making" },
+          { rx: /\bwool\s+spinning\b/i, label: "wool spinning" },
+          { rx: /\bbackwoods\b/i, label: "backwoods" },
+          { rx: /\bcrown\s+reserve\b/i, label: "crown reserve" },
+          { rx: /\bclergy\s+reserve\b/i, label: "clergy reserve" },
+          { rx: /\b1793\s+act\b/i, label: "1793 act" },
+          { rx: /\bslavery\b/i, label: "slavery" },
+          { rx: /\bemancipation\b/i, label: "emancipation" },
+          { rx: /\bfur\s+trade\b/i, label: "fur trade" },
+          { rx: /\bgreat\s+awakening\b/i, label: "great awakening" },
+          { rx: /\bsewing\b/i, label: "sewing" },
+          { rx: /\bschooling\b/i, label: "schooling" },
+          { rx: /\bone[- ]?room\s+school/i, label: "one-room school" },
+          { rx: /\bgovernor\s+simcoe\b/i, label: "governor simcoe" },
+          { rx: /\bloyalist/i, label: "loyalist" },
+          { rx: /\bm[eé]tis\b/i, label: "métis" },
+          { rx: /\bpemmican\b/i, label: "pemmican" },
+          { rx: /\bsmallpox\b/i, label: "smallpox" },
+          { rx: /\bepidemic/i, label: "epidemic" },
+          { rx: /\bdebtors['']?\s*prison\b/i, label: "debtors prison" },
+          { rx: /\bfire\s+safety\b/i, label: "fire safety" },
         ];
-        const matchedTopics = topicSignals.filter((rx) => rx.test(passageLower));
-        if (matchedTopics.length >= 4) {
-          task._validationError = `Reading passage covers ${matchedTopics.length} distinct topics — must focus on 1-2 topics max for coherence. Detected: ${matchedTopics.map((rx) => rx.source.replace(/\\[bs]/g, "")).join(", ")}`;
+
+        // Split into sentences and tag each with the topics it mentions
+        const sentences = finalPassage.match(/[^.!?]+[.!?]+/g) || [finalPassage];
+        const sentenceTopics = sentences.map((sent) => ({
+          text: sent.trim(),
+          topics: topicSignals.filter((t) => t.rx.test(sent)).map((t) => t.label),
+        }));
+
+        // Count which topics appear across ALL sentences
+        const topicCounts = {};
+        for (const st of sentenceTopics) {
+          for (const t of st.topics) topicCounts[t] = (topicCounts[t] || 0) + 1;
+        }
+        const distinctTopics = Object.keys(topicCounts);
+
+        if (distinctTopics.length >= 4) {
+          // Find the dominant topic (most sentence mentions)
+          const dominant = distinctTopics.sort((a, b) => topicCounts[b] - topicCounts[a])[0];
+          // Also allow closely related topics (mentioned in same sentences as dominant)
+          const relatedTopics = new Set([dominant]);
+          for (const st of sentenceTopics) {
+            if (st.topics.includes(dominant)) {
+              for (const t of st.topics) relatedTopics.add(t);
+            }
+          }
+
+          // Keep sentences that mention the dominant/related topics, OR are topic-free (connective tissue)
+          const filtered = sentenceTopics.filter((st) =>
+            st.topics.length === 0 || st.topics.some((t) => relatedTopics.has(t))
+          );
+
+          if (filtered.length >= 4) {
+            const newPassage = filtered.map((s) => s.text).join(" ");
+            cfg.text = newPassage;
+            cfg.passage = newPassage;
+            task.passage = newPassage;
+            console.warn(`[Quality Auto-Fix] Reading passage trimmed from ${sentences.length} sentences (${distinctTopics.length} topics) to ${filtered.length} sentences focused on "${dominant}"`);
+          }
+          // If filtering left too few sentences, keep original — imperfect but playable
         }
       }
 
@@ -1684,18 +1734,35 @@ export function normalizeTaskByType(taskType, rawTask) {
 
     // ─── Simple types: only need title + prompt (already normalized globally) ───
     case TASK_TYPES.OPEN_TEXT:
+      break;
+
     case TASK_TYPES.RECORD_AUDIO: {
-      // --- GUARDRAIL: Reject multi-topic audio prompts ---
+      // --- GUARDRAIL: AUTO-FIX multi-topic audio prompts ---
       // The AI stubbornly generates prompts asking about 2-3 topics in 20-45 seconds.
-      // Detect listing patterns: "X, Y, and Z", "X and Y each", comma-separated topics.
-      const audioPrompt = (task.prompt || "").toLowerCase();
-      // Count topic-listing signals: "and the", comma-separated clauses, "each"
-      const andTheCount = (audioPrompt.match(/,\s*(and\s+)?the\s+/g) || []).length;
-      const eachCount = (audioPrompt.match(/\beach\b/g) || []).length;
-      // Detect the explicit pattern: "topic A, topic B, and topic C"
+      // Instead of rejecting (retries produce the same thing), extract the first topic
+      // and rewrite the prompt to focus on it.
+      const audioPrompt = (task.prompt || "");
+      const audioLower = audioPrompt.toLowerCase();
+      const andTheCount = (audioLower.match(/,\s*(and\s+)?the\s+/g) || []).length;
+      const eachCount = (audioLower.match(/\beach\b/g) || []).length;
       const listPattern = /\b(explain|discuss|describe|talk about)\b.+,.+,?\s*(and|&)\s+/i;
-      if (listPattern.test(task.prompt || "") || (andTheCount >= 2) || (eachCount >= 1 && andTheCount >= 1)) {
-        task._validationError = `Record-audio prompt asks about multiple topics — must focus on exactly ONE topic for a 20-45 second response. Detected listing pattern in: "${(task.prompt || "").slice(0, 100)}..."`;
+      const isMultiTopic = listPattern.test(audioPrompt) || (andTheCount >= 2) || (eachCount >= 1 && andTheCount >= 1);
+
+      if (isMultiTopic) {
+        // Extract the first topic: look for the verb phrase and take up to the first comma or "and"
+        const verbMatch = audioPrompt.match(/\b(explain(?:ing)?|discuss(?:ing)?|describe|talk(?:ing)?\s+about)\s+(how\s+)?/i);
+        if (verbMatch) {
+          const afterVerb = audioPrompt.slice(verbMatch.index + verbMatch[0].length);
+          // Take everything up to the first comma, semicolon, "and the", or "and how"
+          const firstTopicMatch = afterVerb.match(/^(.+?)(?:\s*,\s*|\s+and\s+(?:the|how|why)|;\s*)/i);
+          const firstTopic = firstTopicMatch ? firstTopicMatch[1].trim() : afterVerb.split(",")[0].trim();
+          // Strip trailing period
+          const cleanTopic = firstTopic.replace(/\.\s*$/, "").trim();
+          if (cleanTopic.length > 10) {
+            task.prompt = `Record a 20–45 second response explaining ${cleanTopic}. Speak clearly, give at least one specific example, and explain why this matters.`;
+            console.warn(`[Quality Auto-Fix] Record-audio prompt rewritten to single topic: "${cleanTopic}"`);
+          }
+        }
       }
       break;
     }

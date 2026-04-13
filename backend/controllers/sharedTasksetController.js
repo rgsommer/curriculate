@@ -1130,9 +1130,14 @@ export async function regenerateSingleTask({
   vocabularyLines,
   specialConsiderations,
   previousTask,
+  previousError,
   temperature,
 }) {
   const system = buildSingleTaskPrompt(allowedType, mustHave);
+
+  const errorContext = previousError
+    ? `\n\n    ⚠️ REASON THE PREVIOUS ATTEMPT WAS REJECTED:\n    ${previousError}\n    You MUST fix this specific issue. Do NOT repeat the same mistake.`
+    : "";
 
   const user = `
     Create ONE task of type "${allowedType}".
@@ -1152,7 +1157,7 @@ export async function regenerateSingleTask({
     ${specialConsiderations || "none"}
 
     Previous failed attempt (do NOT repeat):
-    ${JSON.stringify(previousTask || {}, null, 2)}
+    ${JSON.stringify(previousTask || {}, null, 2)}${errorContext}
     `.trim();
 
   // Optional debug hook (used by demo stream / sim tooling)

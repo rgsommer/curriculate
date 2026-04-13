@@ -1741,6 +1741,7 @@ export async function createAiTaskset(req, res) {
             vocabularyLines: scopedLines,
             specialConsiderations: scopedConsiderations,
             previousTask: attemptTask,
+            previousError: String(e?.message || e),
           });
         }
       }
