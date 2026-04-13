@@ -621,44 +621,81 @@ export default function HostView({ roomCode: roomCodeProp }) {
                   }}
                   className="flex flex-col items-center"
                 >
-                  <div className="text-7xl md:text-8xl mb-5">{trophyEmojis[idx] || "\uD83C\uDFC5"}</div>
+                  {/* Rank-based sizing: 1st biggest, 2nd mid, 3rd current */}
+                  {(() => {
+                    const sizeClasses = [
+                      "w-80 md:w-96",   // 1st — biggest
+                      "w-64 md:w-72",   // 2nd — mid
+                      "w-56 md:w-64",   // 3rd — current / small
+                    ];
+                    const trophySizes = [
+                      "text-8xl md:text-9xl",
+                      "text-6xl md:text-7xl",
+                      "text-5xl md:text-6xl",
+                    ];
+                    const rankSizes = [
+                      "text-5xl md:text-6xl",
+                      "text-3xl md:text-4xl",
+                      "text-2xl md:text-3xl",
+                    ];
+                    const nameSizes = [
+                      "text-3xl md:text-4xl",
+                      "text-xl md:text-2xl",
+                      "text-lg md:text-xl",
+                    ];
+                    const ptsSizes = [
+                      "text-6xl md:text-7xl",
+                      "text-4xl md:text-5xl",
+                      "text-3xl md:text-4xl",
+                    ];
+                    const paddings = [
+                      "px-8 py-12",
+                      "px-6 py-8",
+                      "px-5 py-6",
+                    ];
+                    return (
+                      <>
+                        <div className={`${trophySizes[idx]} mb-5`}>{trophyEmojis[idx] || "\uD83C\uDFC5"}</div>
 
-                  <div
-                    className={`relative overflow-hidden w-72 md:w-80 rounded-t-3xl px-8 py-10 text-center text-white font-black shadow-2xl ring-1 ring-white/20 ${podiumColors[idx]}`}
-                  >
-                    {/* Shine sweep */}
-                    <motion.div
-                      aria-hidden="true"
-                      className="pointer-events-none absolute -top-10 -left-40 h-40 w-40 rotate-12 bg-white/20 blur-xl"
-                      animate={{ x: [-120, 520] }}
-                      transition={{
-                        duration: 3.6,
-                        repeat: Infinity,
-                        repeatDelay: 1.4,
-                        ease: "easeInOut",
-                      }}
-                    />
+                        <div
+                          className={`relative overflow-hidden ${sizeClasses[idx]} rounded-t-3xl ${paddings[idx]} text-center text-white font-black shadow-2xl ring-1 ring-white/20 ${podiumColors[idx]}`}
+                        >
+                          {/* Shine sweep */}
+                          <motion.div
+                            aria-hidden="true"
+                            className="pointer-events-none absolute -top-10 -left-40 h-40 w-40 rotate-12 bg-white/20 blur-xl"
+                            animate={{ x: [-120, 520] }}
+                            transition={{
+                              duration: 3.6,
+                              repeat: Infinity,
+                              repeatDelay: 1.4,
+                              ease: "easeInOut",
+                            }}
+                          />
 
-                    <div className="text-4xl md:text-5xl mb-3">{idx + 1}</div>
+                          <div className={`${rankSizes[idx]} mb-3`}>{idx + 1}</div>
 
-                    <div className="text-2xl md:text-3xl truncate px-2 underline decoration-white/40">
-                      <span
-                        style={{ cursor: "pointer" }}
-                        title="Delete/kick this team"
-                        onClick={() => openDeleteTeamModal(row.teamId)}
-                      >
-                        {row.name}
-                      </span>
-                    </div>
+                          <div className={`${nameSizes[idx]} truncate px-2 underline decoration-white/40`}>
+                            <span
+                              style={{ cursor: "pointer" }}
+                              title="Delete/kick this team"
+                              onClick={() => openDeleteTeamModal(row.teamId)}
+                            >
+                              {row.name}
+                            </span>
+                          </div>
 
-                    <div className="text-5xl md:text-6xl mt-6">
-                      <AnimatedPts value={row.pts} /> pts
-                    </div>
-                  </div>
+                          <div className={`${ptsSizes[idx]} mt-6`}>
+                            <AnimatedPts value={row.pts} /> pts
+                          </div>
+                        </div>
 
-                  <div
-                    className={`w-full h-10 md:h-12 ${podiumColors[idx]} rounded-b-3xl shadow-2xl`}
-                  />
+                        <div
+                          className={`w-full h-10 md:h-12 ${podiumColors[idx]} rounded-b-3xl shadow-2xl`}
+                        />
+                      </>
+                    );
+                  })()}
                 </motion.div>
               );
             })}
