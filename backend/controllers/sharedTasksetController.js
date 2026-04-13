@@ -214,6 +214,9 @@ function validatePlayabilityByType(type, task) {
       if (!prompt) errors.push(`rounds[${i}].prompt is required`);
       const optCount = options.filter(Boolean).length;
       if (optCount !== 3 && optCount !== 4) errors.push(`rounds[${i}].options must be 3 or 4 items (got ${optCount})`);
+      // Check for duplicate options
+      const uniqueOpts = new Set(options.map((o) => String(o || "").trim().toLowerCase()).filter(Boolean));
+      if (uniqueOpts.size < optCount) errors.push(`rounds[${i}].options has duplicates — all options must be unique`);
       if (!joke) errors.push(`rounds[${i}].jokeOption is required`);
     }
   }
@@ -958,7 +961,7 @@ export const retryMustHave = {
   [TASK_TYPES.ECHO_CHAIN]:
     "ECHO_CHAIN must include seedTerm (from aiWordBank) and a clear turn-by-turn prompt.",
   [TASK_TYPES.FAKE_OUT]:
-    "FAKE_OUT must include config.rounds with 3+ rounds. Each round: { prompt, options: string[3], correctIndex: 0..2, jokeOption: string, jokeIndex: 0..3 }.",
+    "FAKE_OUT must include config.rounds with 3+ rounds. Each round: { prompt, options: string[3], correctIndex: 0..2, jokeOption: string }. IMPORTANT: options must contain EXACTLY 3 UNIQUE strings (2 real answers + 1 joke). Do NOT duplicate the joke in options. correctOption must match options[correctIndex] exactly.",
   [TASK_TYPES.MAD_DASH]:
     "MAD_DASH must include sequence (or config.sequence) as an array of 3–5 station/color names (strings). No correctOrder/answerKey is required.",
   [TASK_TYPES.MAD_DASH_SEQUENCE]:

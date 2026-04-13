@@ -375,6 +375,38 @@ function sanitizeTaskShapeByType(type, task) {
     }
   }
 
+  // ── FAKE_OUT: deduplicate options, fix correctIndex/correctOption mismatches ──
+  if (type === TASK_TYPES.FAKE_OUT) {
+    const rounds = Array.isArray(t.config?.rounds) ? t.config.rounds : Array.isArray(t.rounds) ? t.rounds : [];
+    const cleanedRounds = rounds.map((r) => {
+      if (!r || typeof r !== "object") return r;
+      const round = { ...r };
+      if (Array.isArray(round.options)) {
+        // Deduplicate options (case-insensitive), preserving order
+        const seen = new Set();
+        round.options = round.options
+          .map((o) => String(o || "").trim())
+          .filter(Boolean)
+          .filter((o) => {
+            const key = o.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+
+        // Fix correctOption / correctIndex consistency
+        const correctOpt = String(round.correctOption || "").trim();
+        if (correctOpt) {
+          const idx = round.options.findIndex((o) => o.toLowerCase() === correctOpt.toLowerCase());
+          if (idx >= 0) round.correctIndex = idx;
+        }
+      }
+      return round;
+    });
+    if (t.config && typeof t.config === "object") t.config.rounds = cleanedRounds;
+    if (Array.isArray(t.rounds)) t.rounds = cleanedRounds;
+  }
+
   // ── HANGMAN_DUEL: strip non-alpha words from wordsByStation ──
   if (type === TASK_TYPES.HANGMAN_DUEL) {
     const isAlpha = (w) => /^[A-Za-z]{3,14}$/.test(w);

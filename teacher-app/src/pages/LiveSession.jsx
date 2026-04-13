@@ -869,10 +869,15 @@ useEffect(() => {
       handleEndSessionAck({ ok: true, ...payload });
     };
     const handleTranscriptError = (payload) => {
-      setReportProgress(null);
+      // Show error state in the progress bar instead of hiding it
+      setReportProgress((prev) => prev
+        ? { ...prev, label: payload?.message || "Email failed — report was saved.", error: true }
+        : { step: 5, total: 6, label: payload?.message || "Email failed — report was saved.", error: true }
+      );
       handleEndSessionAck({
         ok: false,
         error: payload?.message,
+        reportId: payload?.reportId,
       });
     };
     const handleReportProgress = (payload) => {
@@ -3395,7 +3400,8 @@ if (
                 justifyContent: "space-between",
                 fontSize: "0.78rem",
                 fontWeight: 600,
-                color: reportProgress.step >= reportProgress.total ? "#059669" : "#4b5563",
+                color: reportProgress.error ? "#dc2626"
+                  : reportProgress.step >= reportProgress.total ? "#059669" : "#4b5563",
                 marginBottom: 3,
               }}>
                 <span>{reportProgress.label}</span>
@@ -3411,9 +3417,11 @@ if (
                   height: "100%",
                   width: `${Math.round((reportProgress.step / reportProgress.total) * 100)}%`,
                   borderRadius: 3,
-                  background: reportProgress.step >= reportProgress.total
-                    ? "linear-gradient(90deg, #10b981, #059669)"
-                    : "linear-gradient(90deg, #6366f1, #4f46e5)",
+                  background: reportProgress.error
+                    ? "linear-gradient(90deg, #ef4444, #dc2626)"
+                    : reportProgress.step >= reportProgress.total
+                      ? "linear-gradient(90deg, #10b981, #059669)"
+                      : "linear-gradient(90deg, #6366f1, #4f46e5)",
                   transition: "width 0.4s ease-out",
                 }} />
               </div>

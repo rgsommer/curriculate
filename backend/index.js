@@ -5606,25 +5606,28 @@ socket.on(
     // 7) Send email (includes report teaser; emailer may attach PDF)
     emitProgress(5, 6, "Sending email report…");
     try {
-      await sendTranscriptEmail({
-        to: toEmail,
-        roomCode: code,
-        schoolName,
-        aiSummary: summary,
-        transcript,
-        perParticipant,
-        assessmentCategories: safeAssessmentCategories,
-        includeIndividualReports,
-        // New: include parent note + media list for the email template if supported
-        parentNote,
-        mediaSubmissions,
-        // New: include reportId so email can point teacher to Reports page
-        reportId: reportDoc?._id ? String(reportDoc._id) : null,
-        planName: planTierUsed,
-        // Gradebook data for email + PDF
-        studentGrades,
-        gradingConfig: gc,
-      });
+      // Wrap email send in a 45-second timeout so the progress bar never hangs
+      await Promise.race([
+        sendTranscriptEmail({
+          to: toEmail,
+          roomCode: code,
+          schoolName,
+          aiSummary: summary,
+          transcript,
+          perParticipant,
+          assessmentCategories: safeAssessmentCategories,
+          includeIndividualReports,
+          parentNote,
+          mediaSubmissions,
+          reportId: reportDoc?._id ? String(reportDoc._id) : null,
+          planName: planTierUsed,
+          studentGrades,
+          gradingConfig: gc,
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Email send timed out after 45 seconds")), 45_000)
+        ),
+      ]);
 
       // 8) If this was a shared run, also email the original teacher
       const sharedFromTeacherId = reportDoc?.sharedFromTeacherId || room.reportOwnerId;
@@ -5747,8 +5750,15 @@ socket.on(
       });
     } catch (e) {
       console.error("Transcript emailing failed:", e);
+      const isTimeout = /timed? ?out/i.test(e?.message || "");
+      emitProgress(5, 6, isTimeout
+        ? "Email timed out — report saved, but email could not be delivered."
+        : "Email failed — report saved, check your email settings.");
       socket.emit("transcript:error", {
-        message: "Failed to send transcript email",
+        message: isTimeout
+          ? "Email send timed out. Your report was saved — you can view it on the Reports page."
+          : "Failed to send transcript email. Your report was saved — you can view it on the Reports page.",
+        reportId: reportDoc?._id ? String(reportDoc._id) : null,
       });
     }
 
