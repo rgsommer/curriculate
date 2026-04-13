@@ -162,17 +162,80 @@ export const ENGAGEMENT_TYPES: Record<
 export interface Database {
   public: {
     Tables: {
-      profiles: { Row: Profile; Insert: Partial<Profile> & { id: string; display_name: string }; Update: Partial<Profile> };
-      groups: { Row: Group; Insert: Partial<Group> & { name: string; creator_id: string }; Update: Partial<Group> };
-      group_members: { Row: GroupMember; Insert: GroupMember; Update: Partial<GroupMember> };
-      engagements: { Row: Engagement; Insert: Partial<Engagement> & { group_id: string; creator_id: string; type: EngagementType; title: string }; Update: Partial<Engagement> };
-      responses: { Row: Response; Insert: Partial<Response> & { engagement_id: string; user_id: string; content: Record<string, unknown> }; Update: Partial<Response> };
-      reactions: { Row: Reaction; Insert: Partial<Reaction> & { response_id: string; user_id: string; emoji: string }; Update: Partial<Reaction> };
-      comments: { Row: Comment; Insert: Partial<Comment> & { engagement_id: string; user_id: string; content: string }; Update: Partial<Comment> };
-      nudges: { Row: Nudge; Insert: Partial<Nudge> & { engagement_id: string; from_user_id: string; to_user_id: string }; Update: Partial<Nudge> };
-      streaks: { Row: Streak; Insert: Streak; Update: Partial<Streak> };
-      milestones: { Row: Milestone; Insert: Partial<Milestone> & { group_id: string; type: string; value: number }; Update: Partial<Milestone> };
-      favourites: { Row: Favourite; Insert: Favourite; Update: Partial<Favourite> };
+      profiles: {
+        Row: Profile;
+        Insert: Partial<Profile> & { id: string; display_name: string };
+        Update: Partial<Profile>;
+        Relationships: [];
+      };
+      groups: {
+        Row: Group;
+        Insert: Partial<Group> & { name: string; creator_id: string };
+        Update: Partial<Group>;
+        Relationships: [];
+      };
+      group_members: {
+        Row: GroupMember;
+        Insert: GroupMember;
+        Update: Partial<GroupMember>;
+        Relationships: [];
+      };
+      engagements: {
+        Row: Engagement;
+        Insert: Partial<Engagement> & { group_id: string; creator_id: string; type: EngagementType; title: string };
+        Update: Partial<Engagement>;
+        Relationships: [];
+      };
+      responses: {
+        Row: Response;
+        Insert: Partial<Response> & { engagement_id: string; user_id: string; content: Record<string, unknown> };
+        Update: Partial<Response>;
+        Relationships: [];
+      };
+      reactions: {
+        Row: Reaction;
+        Insert: Partial<Reaction> & { response_id: string; user_id: string; emoji: string };
+        Update: Partial<Reaction>;
+        Relationships: [];
+      };
+      comments: {
+        Row: Comment;
+        Insert: Partial<Comment> & { engagement_id: string; user_id: string; content: string };
+        Update: Partial<Comment>;
+        Relationships: [];
+      };
+      nudges: {
+        Row: Nudge;
+        Insert: Partial<Nudge> & { engagement_id: string; from_user_id: string; to_user_id: string };
+        Update: Partial<Nudge>;
+        Relationships: [];
+      };
+      streaks: {
+        Row: Streak;
+        Insert: Streak;
+        Update: Partial<Streak>;
+        Relationships: [];
+      };
+      milestones: {
+        Row: Milestone;
+        Insert: Partial<Milestone> & { group_id: string; type: string; value: number };
+        Update: Partial<Milestone>;
+        Relationships: [];
+      };
+      favourites: {
+        Row: Favourite;
+        Insert: Favourite;
+        Update: Partial<Favourite>;
+        Relationships: [];
+      };
     };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: {
+      engagement_type: EngagementType;
+      engagement_status: EngagementStatus;
+      reveal_mode: RevealMode;
+    };
+    CompositeTypes: Record<string, never>;
   };
 }

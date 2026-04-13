@@ -1,10 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "./types";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+// Using untyped client for now — run `supabase gen types` to generate proper types
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   realtime: {
     params: { eventsPerSecond: 10 },
   },

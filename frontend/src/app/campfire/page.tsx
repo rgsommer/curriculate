@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 
 // ── Types ──
@@ -557,11 +557,20 @@ export default function CampfirePage() {
   const [shareInput, setShareInput] = useState("");
   const [photoUploaded, setPhotoUploaded] = useState(false);
   const [textResponse, setTextResponse] = useState("");
+  const [revealAnimating, setRevealAnimating] = useState(false);
 
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 2500);
   }
+
+  const triggerReveal = useCallback(() => {
+    setRevealAnimating(true);
+    setTimeout(() => {
+      setSimulatedAllIn(true);
+      setTimeout(() => setRevealAnimating(false), 600);
+    }, 2200);
+  }, []);
 
   function openGroup(g: Group) {
     setCurrentGroup(g);
@@ -956,8 +965,7 @@ export default function CampfirePage() {
               </button>
               <button
                 onClick={() => {
-                  setSimulatedAllIn(true);
-                  showToast("Everyone responded! Results revealed!");
+                  triggerReveal();
                 }}
                 className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
               >
@@ -1168,8 +1176,7 @@ export default function CampfirePage() {
                     <br />
                     <button
                       onClick={() => {
-                        setSimulatedAllIn(true);
-                        showToast("Everyone responded! Responses revealed!");
+                        triggerReveal();
                       }}
                       className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
                     >
@@ -1300,8 +1307,7 @@ export default function CampfirePage() {
                   </div>
                   <button
                     onClick={() => {
-                      setSimulatedAllIn(true);
-                      showToast("Everyone responded!");
+                      triggerReveal();
                     }}
                     className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
                   >
@@ -1405,8 +1411,7 @@ export default function CampfirePage() {
               </div>
               <button
                 onClick={() => {
-                  setSimulatedAllIn(true);
-                  showToast("Everyone submitted!");
+                  triggerReveal();
                 }}
                 className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
               >
@@ -1508,8 +1513,7 @@ export default function CampfirePage() {
                   </div>
                   <button
                     onClick={() => {
-                      setSimulatedAllIn(true);
-                      showToast("Everyone submitted!");
+                      triggerReveal();
                     }}
                     className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
                   >
@@ -1608,8 +1612,7 @@ export default function CampfirePage() {
                   </div>
                   <button
                     onClick={() => {
-                      setSimulatedAllIn(true);
-                      showToast("Everyone submitted!");
+                      triggerReveal();
                     }}
                     className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
                   >
@@ -1800,8 +1803,7 @@ export default function CampfirePage() {
                   </div>
                   <button
                     onClick={() => {
-                      setSimulatedAllIn(true);
-                      showToast("Everyone answered!");
+                      triggerReveal();
                     }}
                     className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
                   >
@@ -1963,8 +1965,7 @@ export default function CampfirePage() {
                   </div>
                   <button
                     onClick={() => {
-                      setSimulatedAllIn(true);
-                      showToast("Everyone guessed!");
+                      triggerReveal();
                     }}
                     className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
                   >
@@ -2052,8 +2053,7 @@ export default function CampfirePage() {
               </div>
               <button
                 onClick={() => {
-                  setSimulatedAllIn(true);
-                  showToast("Everyone submitted! Ready to reveal to the recipient.");
+                  triggerReveal();
                 }}
                 className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
               >
@@ -2137,8 +2137,7 @@ export default function CampfirePage() {
                   </div>
                   <button
                     onClick={() => {
-                      setSimulatedAllIn(true);
-                      showToast("Everyone submitted!");
+                      triggerReveal();
                     }}
                     className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition"
                   >
@@ -2568,6 +2567,34 @@ export default function CampfirePage() {
         </div>
       )}
 
+      {/* ── Reveal Animation Overlay ── */}
+      {revealAnimating && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center reveal-overlay">
+          <div className="absolute inset-0 bg-black/70 reveal-backdrop" />
+          <div className="relative flex flex-col items-center gap-4 reveal-content">
+            <div className="reveal-envelope">
+              <div className="text-7xl reveal-lock">🔒</div>
+              <div className="text-7xl reveal-unlock">🔓</div>
+            </div>
+            <div className="reveal-text text-white text-center">
+              <div className="text-2xl font-extrabold tracking-tight">The seal is breaking...</div>
+              <div className="text-sm text-white/70 mt-1">Everyone responded!</div>
+            </div>
+            <div className="reveal-particles">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <div key={i} className="reveal-particle" style={{
+                  left: `${50 + 40 * Math.cos((i * Math.PI * 2) / 12)}%`,
+                  top: `${50 + 40 * Math.sin((i * Math.PI * 2) / 12)}%`,
+                  animationDelay: `${0.8 + i * 0.06}s`,
+                }}>
+                  {["🔥", "✨", "🎉", "⭐", "💫", "🌟"][i % 6]}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <Toast msg={toast} />
 
       <style jsx>{`
@@ -2581,6 +2608,86 @@ export default function CampfirePage() {
           to   { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
         .animate-fade-in { animation: fade-in 0.3s ease; }
+
+        /* ── Reveal Animation ── */
+        .reveal-overlay {
+          animation: reveal-overlay-in 0.3s ease forwards;
+        }
+        @keyframes reveal-overlay-in {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        .reveal-backdrop {
+          animation: reveal-backdrop-in 0.4s ease forwards;
+        }
+        @keyframes reveal-backdrop-in {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        .reveal-envelope {
+          position: relative;
+          width: 80px;
+          height: 80px;
+        }
+        .reveal-lock {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          animation: reveal-lock-shake 0.8s ease-in-out forwards;
+        }
+        @keyframes reveal-lock-shake {
+          0%   { transform: rotate(0deg) scale(1); opacity: 1; }
+          15%  { transform: rotate(-12deg) scale(1.05); }
+          30%  { transform: rotate(12deg) scale(1.1); }
+          45%  { transform: rotate(-8deg) scale(1.15); }
+          60%  { transform: rotate(8deg) scale(1.2); }
+          75%  { transform: rotate(-4deg) scale(1.1); opacity: 1; }
+          85%  { transform: rotate(0deg) scale(1.3); opacity: 0.5; }
+          100% { transform: rotate(0deg) scale(2); opacity: 0; }
+        }
+        .reveal-unlock {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          opacity: 0;
+          animation: reveal-unlock-pop 0.6s ease forwards;
+          animation-delay: 0.85s;
+        }
+        @keyframes reveal-unlock-pop {
+          0%   { opacity: 0; transform: scale(0.3) rotate(-20deg); }
+          50%  { opacity: 1; transform: scale(1.4) rotate(5deg); }
+          100% { opacity: 1; transform: scale(1) rotate(0deg); }
+        }
+        .reveal-text {
+          opacity: 0;
+          animation: reveal-text-in 0.5s ease forwards;
+          animation-delay: 1s;
+        }
+        @keyframes reveal-text-in {
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .reveal-particles {
+          position: absolute;
+          width: 300px;
+          height: 300px;
+          pointer-events: none;
+        }
+        .reveal-particle {
+          position: absolute;
+          font-size: 1.5rem;
+          opacity: 0;
+          animation: reveal-particle-burst 0.8s ease forwards;
+        }
+        @keyframes reveal-particle-burst {
+          0%   { opacity: 0; transform: translate(-50%, -50%) scale(0); }
+          40%  { opacity: 1; transform: translate(-50%, -50%) scale(1.3); }
+          100% { opacity: 0; transform: translate(-50%, -50%) scale(0.5) translateY(-20px); }
+        }
       `}</style>
     </main>
   );
