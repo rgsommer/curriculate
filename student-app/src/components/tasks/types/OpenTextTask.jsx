@@ -432,7 +432,7 @@ export default function OpenTextTask({
           </div>
 
           {/* Designated writer banner */}
-          <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} />
+          <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} taskIndex={task?._taskIndex} />
 
           {/* Tips card */}
           <div

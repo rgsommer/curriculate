@@ -3,12 +3,26 @@
 // Uses a simple hash of the task title to rotate consistently.
 import React, { useMemo } from "react";
 
-function simpleHash(str) {
+export function simpleHash(str) {
   let h = 0;
   for (let i = 0; i < str.length; i++) {
     h = ((h << 5) - h + str.charCodeAt(i)) | 0;
   }
   return Math.abs(h);
+}
+
+/**
+ * Given member names and a task index, return who is designated.
+ * Uses simple round-robin by index for predictable rotation.
+ * Exported so other components (e.g. handoff prompt) can compute this
+ * without rendering the banner.
+ */
+export function getDesignatedName(memberNames, taskIndex) {
+  const names = Array.isArray(memberNames) ? memberNames.filter(Boolean) : [];
+  if (names.length === 0) return null;
+  if (names.length === 1) return names[0];
+  const idx = typeof taskIndex === "number" ? taskIndex : simpleHash(String(taskIndex || "task"));
+  return names[Math.abs(idx) % names.length];
 }
 
 const ROLE_PRESETS = {
@@ -20,7 +34,7 @@ const ROLE_PRESETS = {
   default:  { emoji: "⭐", action: "it's your turn!" },
 };
 
-export default function DesignatedWriter({ memberNames = [], taskTitle = "", role = "writer" }) {
+export default function DesignatedWriter({ memberNames = [], taskTitle = "", taskIndex, role = "writer" }) {
   const names = useMemo(
     () => (Array.isArray(memberNames) ? memberNames.filter(Boolean) : []),
     [memberNames]
@@ -29,9 +43,13 @@ export default function DesignatedWriter({ memberNames = [], taskTitle = "", rol
   const chosen = useMemo(() => {
     if (names.length === 0) return null;
     if (names.length === 1) return names[0];
+    // Prefer taskIndex for consistent rotation; fall back to title hash
+    if (typeof taskIndex === "number" && taskIndex >= 0) {
+      return names[taskIndex % names.length];
+    }
     const idx = simpleHash(taskTitle || "task") % names.length;
     return names[idx];
-  }, [names, taskTitle]);
+  }, [names, taskTitle, taskIndex]);
 
   if (!chosen) return null;
 

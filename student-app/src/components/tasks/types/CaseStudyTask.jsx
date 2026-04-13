@@ -256,7 +256,7 @@ export default function CaseStudyTask({
         </div>
       )}
 
-      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} />
+      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} taskIndex={task?._taskIndex} />
 
       {/* Text area */}
       <textarea

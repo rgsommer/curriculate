@@ -447,7 +447,7 @@ export default function TrueFalseTask({
           background: "linear-gradient(135deg, #f0f9ff 0%, #f0fdff 100%)",
         }}
       >
-        <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} role="answerer" />
+        <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} taskIndex={task?._taskIndex} role="answerer" />
         {/* Celebration overlay */}
         {showCelebration && (
           <div
@@ -763,7 +763,7 @@ export default function TrueFalseTask({
         background: "linear-gradient(135deg, #f0f9ff 0%, #f0fdff 100%)",
       }}
     >
-      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} role="answerer" />
+      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} taskIndex={task?._taskIndex} role="answerer" />
       {/* Celebration overlay */}
       {showCelebration && (
         <div

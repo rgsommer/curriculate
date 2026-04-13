@@ -235,7 +235,7 @@ export default function VocabularyTask({
         </div>
       </div>
 
-      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} />
+      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} taskIndex={task?._taskIndex} />
 
       <div className={`mt-4 rounded-2xl border ${inputAreaBg} p-3 md:p-4 shadow-sm`}>
         <textarea

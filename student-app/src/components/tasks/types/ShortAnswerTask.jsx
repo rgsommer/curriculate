@@ -977,7 +977,7 @@ export default function ShortAnswerTask({
     >
       {showConfetti && <Confetti />}
 
-      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} role="answerer" />
+      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} taskIndex={task?._taskIndex} role="answerer" />
 
       <div
         style={{

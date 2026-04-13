@@ -141,7 +141,7 @@ export default function MultipleChoiceTask({ task, onComplete, memberNames = [] 
       // Keep user's selection stable across chrome transitions.
     >
       <div style={{ maxWidth: 920, margin: "0 auto", padding: 16 }}>
-        <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} role="answerer" />
+        <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} taskIndex={task?._taskIndex} role="answerer" />
         {/* Header */}
         <div
           style={{

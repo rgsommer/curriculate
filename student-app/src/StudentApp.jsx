@@ -4834,6 +4834,7 @@ function StudentApp() {
           "task"
         }
         task={themedTask}
+        taskIndex={currentTaskIndex}
         taskTypes={TASK_TYPES}
         scannerSlot={
           isPhysicalMultipleChoice && scannerActive
@@ -5103,12 +5104,24 @@ function StudentApp() {
           const isCatchingUp = reviewState?.isCatchingUp === true;
           const hasPacingHold = reviewState?.pacingHold === true;
 
+          // Compute the next task's designated handler for the handoff prompt.
+          // Uses simple index-based round-robin matching DesignatedWriter.
+          const activeMembers = Array.isArray(members) ? members.filter(Boolean) : [];
+          const nextIdx = typeof currentTaskIndex === "number" ? currentTaskIndex + 1 : 0;
+          const nextHandlerName = activeMembers.length > 1
+            ? activeMembers[nextIdx % activeMembers.length]
+            : null;
+
           return (
             <div style={{ width: "100%", position: "relative", minHeight: 120 }}>
               <style>{`
                 @keyframes shrinkBar {
                   from { width: 100%; }
                   to   { width: 0%; }
+                }
+                @keyframes handoffPulse {
+                  0%, 100% { transform: scale(1); }
+                  50% { transform: scale(1.03); }
                 }
               `}</style>
               {/* Countdown bar removed from the overlay — the yellow/green
@@ -5157,6 +5170,29 @@ function StudentApp() {
               >
                 {postSubmitSecondsLeft}s
               </div>
+
+              {/* Handoff prompt — pass the device to the next player */}
+              {nextHandlerName && (
+                <div
+                  style={{
+                    marginTop: 14,
+                    padding: "12px 20px",
+                    borderRadius: 16,
+                    background: "linear-gradient(135deg, rgba(139,92,246,0.35), rgba(59,130,246,0.3))",
+                    border: "1px solid rgba(139,92,246,0.5)",
+                    textAlign: "center",
+                    animation: "handoffPulse 2s ease-in-out infinite",
+                  }}
+                >
+                  <div style={{ fontSize: "1.6rem", marginBottom: 4 }}>👋</div>
+                  <div style={{ fontSize: "0.95rem", fontWeight: 700, color: "#fff" }}>
+                    Hand the device to
+                  </div>
+                  <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#e0e7ff", marginTop: 2 }}>
+                    {nextHandlerName}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           );

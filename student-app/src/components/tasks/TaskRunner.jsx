@@ -1598,6 +1598,7 @@ Main TaskRunner
 
 export default function TaskRunner({
   task,
+  taskIndex,
   taskTypes,
   onSubmit,
   submitting = false,
@@ -1623,6 +1624,15 @@ export default function TaskRunner({
   scannerSlot = null,
 }) {
   if (!task) return null;
+
+  // Inject taskIndex into task object so DesignatedWriter can use it for
+  // consistent index-based rotation (matches the handoff prompt in StudentApp)
+  const t = useMemo(() => {
+    if (typeof taskIndex === "number" && taskIndex >= 0) {
+      return { ...task, _taskIndex: taskIndex };
+    }
+    return task;
+  }, [task, taskIndex]);
 
   // -------------------------------------------------------------------
   // TaskRunner Presenter Overlay (shared, reusable across tasks)

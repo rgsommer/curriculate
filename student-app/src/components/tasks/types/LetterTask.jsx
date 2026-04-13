@@ -289,7 +289,7 @@ export default function LetterTask({
         </div>
       )}
 
-      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} />
+      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} taskIndex={task?._taskIndex} />
 
       {/* Text area */}
       <textarea

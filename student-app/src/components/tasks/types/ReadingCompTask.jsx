@@ -690,7 +690,7 @@ export default function ReadingCompTask({
         )}
       </div>
 
-      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} />
+      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} taskIndex={task?._taskIndex} />
 
       {/* Progress bar for questions */}
       {!isTeamVariation && (
