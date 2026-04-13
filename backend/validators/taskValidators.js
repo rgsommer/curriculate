@@ -529,6 +529,16 @@ export function normalizeTaskByType(taskType, rawTask) {
       task.categories = task.config.buckets;
       task.config.categories = task.config.buckets;
 
+      // --- GUARDRAIL: Reject sort tasks with too few items ---
+      // A good sort has 8-14 items across 2-3 buckets. Below 6 is too easy.
+      if (items.length < 6 && items.length > 0) {
+        if (items.length < 4) {
+          task._validationError = `Sort must have at least 6 items (got ${items.length}). Aim for 8-14 items spread across all buckets.`;
+        } else {
+          task._validationWarning = `Sort has only ${items.length} items — 8-14 preferred for a challenging activity`;
+        }
+      }
+
       // --- GUARDRAIL: Flag lopsided sort buckets ---
       // If one bucket has <2 items while another has 5+, the sort is trivially easy
       if (buckets.length >= 2 && items.length >= 4) {
@@ -602,6 +612,68 @@ export function normalizeTaskByType(taskType, rawTask) {
       const vagueCount = items.filter((s) => vaguePattern.test(s)).length;
       if (vagueCount > items.length * 0.5) {
         task._validationWarning = `${vagueCount}/${items.length} sequence items are vague patterns — prefer specific datable events`;
+      }
+
+      // --- GUARDRAIL: Deterministic chronological auto-sort ---
+      // When items contain parenthesized dates/periods, sort them chronologically.
+      // This fixes the AI returning events in wrong order without needing retries.
+      const extractDateValue = (text) => {
+        // Match parenthesized date hints like (1713), (early 1700s), (mid-1800s), (late 18th century), (1790s)
+        const parenMatch = text.match(/\(([^)]+)\)/);
+        if (!parenMatch) return null;
+        const hint = parenMatch[1].toLowerCase().trim();
+
+        // Try exact year: (1713)
+        const exactYear = hint.match(/\b(\d{4})\b/);
+        if (exactYear) return parseInt(exactYear[1], 10);
+
+        // Try decade: (1790s)
+        const decade = hint.match(/\b(\d{3})0s\b/);
+        if (decade) {
+          const base = parseInt(decade[1], 10) * 10;
+          if (hint.includes("early")) return base + 2;
+          if (hint.includes("late")) return base + 8;
+          if (hint.includes("mid")) return base + 5;
+          return base + 5;
+        }
+
+        // Try century phrases: (early 1700s), (mid-1800s), (late 1700s)
+        const centuryMatch = hint.match(/\b(\d{4})s\b/);
+        if (centuryMatch) {
+          const base = parseInt(centuryMatch[1], 10);
+          if (hint.includes("early")) return base + 15;
+          if (hint.includes("late")) return base + 75;
+          if (hint.includes("mid")) return base + 50;
+          return base + 50;
+        }
+
+        // Try ordinal century: (18th century), (early 19th century)
+        const ordCentury = hint.match(/\b(\d{1,2})(?:st|nd|rd|th)\s+century\b/);
+        if (ordCentury) {
+          const base = (parseInt(ordCentury[1], 10) - 1) * 100;
+          if (hint.includes("early")) return base + 15;
+          if (hint.includes("late")) return base + 75;
+          if (hint.includes("mid")) return base + 50;
+          return base + 50;
+        }
+
+        return null;
+      };
+
+      const dateValues = items.map(extractDateValue);
+      const datedCount = dateValues.filter((v) => v !== null).length;
+
+      // Only auto-sort if most items (≥60%) have extractable dates
+      if (datedCount >= Math.ceil(items.length * 0.6) && items.length >= 3) {
+        const indexed = items.map((text, i) => ({ text, date: dateValues[i] ?? Infinity }));
+        indexed.sort((a, b) => a.date - b.date);
+        const sorted = indexed.map((x) => x.text);
+        // Check if order actually changed
+        const changed = sorted.some((s, i) => s !== items[i]);
+        if (changed) {
+          items = sorted;
+          // Don't warn — this is an expected auto-fix
+        }
       }
 
       cfg.items = items;
@@ -1222,6 +1294,39 @@ export function normalizeTaskByType(taskType, rawTask) {
             console.warn(`[Quality Auto-Fix] Reading passage trimmed from ${sentences.length} sentences (${distinctTopics.length} topics) to ${filtered.length} sentences focused on "${dominant}"`);
           }
           // If filtering left too few sentences, keep original — imperfect but playable
+        }
+      }
+
+      // --- GUARDRAIL: Auto-fix prompt/passage content mismatch ---
+      // When the prompt references specific topics not found in the passage,
+      // rewrite the prompt to be generic so students aren't confused.
+      const currentPassage = cfg.text || cfg.passage || "";
+      const currentPrompt = asNonEmptyString(task.prompt, "");
+      if (currentPassage.length > 50 && currentPrompt.length > 10) {
+        // Extract quoted terms, capitalized phrases, and specific references from the prompt
+        const promptTerms = [];
+        // Match phrases like "crown reserve", "1793 act", multi-word capitalized terms
+        const termPatterns = [
+          /\b(?:the\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/g,  // "Crown Reserve", "Great Awakening"
+          /\b(\d{4}\s+[Aa]ct)\b/g,                             // "1793 Act"
+          /\b([A-Z][a-z]+(?:\s+[a-z]+){0,2}\s+(?:Act|Treaty|Law|Bill|Reserve))\b/g,
+        ];
+        for (const rx of termPatterns) {
+          let m;
+          while ((m = rx.exec(currentPrompt)) !== null) {
+            const term = m[1].trim();
+            if (term.length > 3) promptTerms.push(term);
+          }
+        }
+
+        if (promptTerms.length > 0) {
+          const passageLower = currentPassage.toLowerCase();
+          const missing = promptTerms.filter((t) => !passageLower.includes(t.toLowerCase()));
+          // If most prompt-specific terms are missing from the passage, rewrite the prompt
+          if (missing.length > 0 && missing.length >= promptTerms.length * 0.5) {
+            task.prompt = "Read the passage and answer the questions.";
+            console.warn(`[Quality Auto-Fix] Reading prompt rewritten — referenced terms not in passage: ${missing.join(", ")}`);
+          }
         }
       }
 

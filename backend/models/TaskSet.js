@@ -54,6 +54,20 @@ const TaskSchema = new Schema(
         default: [],
       },
 
+      // 🔹 Sequence / Timeline fields (set by normalizer, must be in schema to persist)
+      correctOrder: { type: [String], default: undefined },  // ordered item IDs for scoring
+      sequence: { type: [Schema.Types.Mixed], default: undefined }, // alias for items in seq/timeline
+
+      // 🔹 Matching task fields (set by normalizer)
+      leftItems: { type: [Schema.Types.Mixed], default: undefined },
+      rightItems: { type: [Schema.Types.Mixed], default: undefined },
+      correctMatches: { type: Schema.Types.Mixed, default: undefined },
+
+      // 🔹 Reading-comp / sort / draw-mime fields (set by normalizer)
+      passage: { type: String },              // reading passage text
+      categories: { type: [Schema.Types.Mixed], default: undefined }, // sort bucket labels
+      clues: { type: [String], default: undefined }, // draw-mime clue words
+
     // Link this task to a physical display (optional)
     // Should match one of TaskSet.displays[].key if used
     displayKey: { type: String },

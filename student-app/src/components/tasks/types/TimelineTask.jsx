@@ -37,15 +37,29 @@ export default function TimelineTask({ task, onSubmit, disabled }) {
       .filter(Boolean);
   };
 
+  // Robust item extraction — check all possible locations with explicit length checks
+  // (mirrors SequenceTask's extraction pattern for consistency)
   const sourceItems =
-    t.shuffledItems ||
-    t.items ||
-    t.events ||
-    t.config?.items ||
-    t.config?.events ||
+    (Array.isArray(t.shuffledItems) && t.shuffledItems.length > 0 && t.shuffledItems) ||
+    (Array.isArray(t.items) && t.items.length > 0 && t.items) ||
+    (Array.isArray(t.events) && t.events.length > 0 && t.events) ||
+    (Array.isArray(t.config?.items) && t.config.items.length > 0 && t.config.items) ||
+    (Array.isArray(t.config?.events) && t.config.events.length > 0 && t.config.events) ||
+    (Array.isArray(t.config?.sequence) && t.config.sequence.length > 0 && t.config.sequence) ||
+    (Array.isArray(t.sequence) && t.sequence.length > 0 && t.sequence) ||
+    (Array.isArray(t.steps) && t.steps.length > 0 && t.steps) ||
+    (Array.isArray(t.options) && t.options.length > 0 && t.options) ||
     [];
 
-  const baseItems = useMemo(() => normalizeItems(sourceItems), [taskKey]);
+  const baseItems = useMemo(() => {
+    const result = normalizeItems(sourceItems);
+    if (result.length < 2) {
+      console.warn("[TimelineTask] No usable items found. Task keys:", Object.keys(t),
+        "| items:", t.items, "| config.items:", t.config?.items,
+        "| config.sequence:", t.config?.sequence);
+    }
+    return result;
+  }, [taskKey]);
 
   // Never show a dead-end screen if the generator forgets items.
   // Make a simple playable placeholder using whatever context we have.
