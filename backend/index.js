@@ -5358,6 +5358,8 @@ socket.on(
       return;
     }
 
+    try {
+
     const safeOwnerId = String((ownerId || room.reportOwnerId || "").trim());
 
     // If ownerId isn't provided, try to infer from the connected teacher profile (best-effort)
@@ -5422,19 +5424,25 @@ socket.on(
       .slice(0, 3)
       .map((p) => ({ name: p.studentName || "Player", team: p.teamName || "", points: p.pointsEarned ?? 0 }));
 
-    // 3) Generate AI summary (overview + engagement)
-    const summary = await generateSessionSummaries({
-      roomCode: code,
-      transcript,
-      perParticipantStats: perParticipant,
-      assessmentCategories: safeAssessmentCategories,
-      perspectives,
-      className,
-      gradeLevel,
-      planTierUsed,
-      topTeams,
-      topPlayers,
-    });
+    // 3) Generate AI summary (overview + engagement) — non-fatal if it fails
+    let summary = {};
+    try {
+      summary = await generateSessionSummaries({
+        roomCode: code,
+        transcript,
+        perParticipantStats: perParticipant,
+        assessmentCategories: safeAssessmentCategories,
+        perspectives,
+        className,
+        gradeLevel,
+        planTierUsed,
+        topTeams,
+        topPlayers,
+      });
+    } catch (aiErr) {
+      console.error("[report] AI summary generation failed (continuing without it):", aiErr?.message || aiErr);
+      summary = { groupSummary: "AI summary unavailable.", keyConcepts: [], perParticipant: [] };
+    }
 
     // 3.5) Merge AI per-participant summaries into raw stats for enriched reports
     const aiPerParticipant = Array.isArray(summary?.perParticipant) ? summary.perParticipant : [];
@@ -5729,6 +5737,13 @@ socket.on(
       console.error("Transcript emailing failed:", e);
       socket.emit("transcript:error", {
         message: "Failed to send transcript email",
+      });
+    }
+
+    } catch (outerErr) {
+      console.error("teacher:endSessionAndEmail crashed:", outerErr);
+      socket.emit("transcript:error", {
+        message: outerErr?.message || "Report generation failed unexpectedly.",
       });
     }
   }

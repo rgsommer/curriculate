@@ -489,6 +489,7 @@ useEffect(() => {
     // End-session / email reports logic
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [endSessionMessage, setEndSessionMessage] = useState("");
+  const [endSessionIsError, setEndSessionIsError] = useState(false);
   const [includeIndividualReports, setIncludeIndividualReports] = useState(false);
   const [teacherAssessmentCategories, setTeacherAssessmentCategories] = useState([]);
 
@@ -778,11 +779,13 @@ useEffect(() => {
       if (!payload) return;
       if (payload.ok) {
         setEndSessionMessage("Reports are being generated and emailed.");
+        setEndSessionIsError(false);
       } else {
         setEndSessionMessage(
           payload.error ||
             "There was a problem generating or emailing the reports."
         );
+        setEndSessionIsError(true);
       }
       setIsEndingSession(false);
     };
@@ -2790,7 +2793,8 @@ if (
 
     const code = roomCode.toUpperCase();
     setIsEndingSession(true);
-    setEndSessionMessage("");
+    setEndSessionMessage("Generating reports… this may take up to 30 seconds.");
+    setEndSessionIsError(false);
 
     socket.emit("teacher:endSessionAndEmail", {
       roomCode: code, // ✅ must be roomCode (backend expects this)
@@ -2799,6 +2803,17 @@ if (
       includeIndividualReports,
       assessmentCategories: teacherAssessmentCategories,
     });
+
+    // Safety timeout: if the backend never responds, unlock after 60s
+    setTimeout(() => {
+      setIsEndingSession((prev) => {
+        if (prev) {
+          setEndSessionMessage("Report generation timed out. Check your email — it may still arrive.");
+          setEndSessionIsError(true);
+        }
+        return false;
+      });
+    }, 60000);
   };
 
   const handleGiveTreat = () => {
@@ -3319,7 +3334,7 @@ if (
               style={{
                 margin: "4px 0 0",
                 fontSize: "0.8rem",
-                color: "#16a34a",
+                color: endSessionIsError ? "#dc2626" : "#16a34a",
               }}
             >
               {endSessionMessage}
