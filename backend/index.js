@@ -3159,7 +3159,7 @@ socket.on("station:scan", handleStationScan);
 
   const meta = TASK_TYPE_META?.[task.taskType] || {};
   const isObjective = meta.objectiveScoring === true;
-  const basePoints = task.points ?? 100;
+  const basePoints = (task.points ?? 100) * 10; // 10× multiplier for dramatic scores & fewer ties
 
   // Detect multi-question pack answers from TaskRunner
   const isMultiPack =
