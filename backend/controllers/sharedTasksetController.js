@@ -10,6 +10,7 @@
 import OpenAI from "openai";
 import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
 import { normalizeTaskByType, validateTaskByType } from "../validators/taskValidators.js";
+import { sanitizeTaskShapeByType } from "./sanitizeTaskShape.js";
 
 /* ============================================================
    OpenAI client
@@ -54,81 +55,7 @@ function _len(x) { return Array.isArray(x) ? x.length : 0; }
 function _isObj(x) { return x && typeof x === "object" && !Array.isArray(x); }
 
 
-// ------------------------------------------------------------
-// Task-shape sanitizers (pre-validation)
-// Prevents model drift from causing avoidable retries.
-// Key rule: Multiple Choice & Physical Multiple Choice must NOT use config.items.
-// If the model (or a normalizer) puts items under config.items, promote it to top-level items[].
-// ------------------------------------------------------------
-function sanitizeTaskShapeByType(type, task) {
-  if (!task || typeof task !== "object") return task;
-  const t = { ...task };
-
-  if (type === TASK_TYPES.MULTIPLE_CHOICE || type === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) {
-    const cfg = t.config && typeof t.config === "object" ? { ...t.config } : null;
-
-    // If items are missing at top-level but exist in config, promote them.
-    if ((!Array.isArray(t.items) || t.items.length === 0) && Array.isArray(cfg?.items) && cfg.items.length > 0) {
-      t.items = cfg.items;
-    }
-
-    // Never allow config.items for MC types (single source of truth is top-level items[]).
-    if (cfg && "items" in cfg) {
-      delete cfg.items;
-    }
-
-    // If config is now empty, remove it.
-    if (cfg) {
-      const keys = Object.keys(cfg).filter((k) => cfg[k] !== undefined);
-      if (keys.length === 0) delete t.config;
-      else t.config = cfg;
-    }
-  }
-  if (type === TASK_TYPES.BRAIN_SPARK_NOTES) {
-    const cfg = _isObj(t.config) ? { ...t.config } : null;
-
-    if (!t.notes && _isObj(cfg?.notes)) {
-      t.notes = cfg.notes;
-      delete cfg.notes;
-    }
-    if (!t.notes && _isObj(cfg?.content)) {
-      t.notes = cfg.content;
-      delete cfg.content;
-    }
-
-    if (cfg) {
-      const keys = Object.keys(cfg).filter((k) => cfg[k] !== undefined);
-      if (keys.length === 0) delete t.config;
-      else t.config = cfg;
-    }
-  }
-
-  // If we got 2-level mainPoints, optionally promote to 3-level sections
-  if (type === TASK_TYPES.BRAIN_SPARK_NOTES && _isObj(t.notes)) {
-    const mp = Array.isArray(t.notes.mainPoints) ? t.notes.mainPoints : [];
-    t.notes.mainPoints = mp.map((m) => {
-      if (!_isObj(m)) return m;
-      // already 3-level
-      if (Array.isArray(m.sections) && m.sections.length) return m;
-
-      // promote 2-level bullets -> one section
-      if (Array.isArray(m.bullets) && m.bullets.length) {
-        return {
-          ...m,
-          sections: [
-            {
-              title: "Key details",
-              bullets: m.bullets,
-            },
-          ],
-        };
-      }
-      return m;
-    });
-  }
-
-  return t;
-}
+// sanitizeTaskShapeByType is now imported from ./sanitizeTaskShape.js (canonical single source)
 
 function validatePlayabilityByType(type, task) {
   const errors = [];
