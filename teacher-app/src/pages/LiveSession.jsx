@@ -486,6 +486,19 @@ useEffect(() => {
     }
   }
 
+    // Socket connection tracking for offline banner
+  const [socketConnected, setSocketConnected] = useState(socket.connected);
+  useEffect(() => {
+    const onConnect = () => setSocketConnected(true);
+    const onDisconnect = () => setSocketConnected(false);
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+    return () => {
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+    };
+  }, []);
+
     // End-session / email reports logic
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [endSessionMessage, setEndSessionMessage] = useState("");
@@ -3355,6 +3368,32 @@ if (
           </div>
         )}
       </header>
+
+      {/* ── Offline / Reconnecting banner ── */}
+      {!socketConnected && (
+        <div
+          style={{
+            background: "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)",
+            color: "#fff",
+            textAlign: "center",
+            padding: "12px 16px",
+            borderRadius: 8,
+            fontSize: "0.95rem",
+            fontWeight: 700,
+            boxShadow: "0 2px 12px rgba(220,38,38,0.3)",
+            animation: "offlinePulse 2s ease-in-out infinite",
+          }}
+        >
+          <span style={{ marginRight: 8 }}>📡</span>
+          Wi-Fi lost — reconnecting to server…
+          <style>{`
+            @keyframes offlinePulse {
+              0%, 100% { opacity: 1; }
+              50% { opacity: 0.7; }
+            }
+          `}</style>
+        </div>
+      )}
 
       {/* Location override selection */}
       {locationOptions.length > 0 && (

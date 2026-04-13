@@ -3752,6 +3752,36 @@ function StudentApp() {
         </div>
       </header>
 
+      {/* ── Offline / Reconnecting banner ── */}
+      {!connected && joined && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 9999,
+            background: "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)",
+            color: "#fff",
+            textAlign: "center",
+            padding: "14px 16px",
+            fontSize: "1.05rem",
+            fontWeight: 700,
+            boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+            animation: "offlinePulse 2s ease-in-out infinite",
+          }}
+        >
+          <span style={{ fontSize: "1.3rem", marginRight: 8 }}>📡</span>
+          Wi-Fi lost — reconnecting…
+          <style>{`
+            @keyframes offlinePulse {
+              0%, 100% { opacity: 1; }
+              50% { opacity: 0.7; }
+            }
+          `}</style>
+        </div>
+      )}
+
       {/* JOIN CARD */}
       {!joined && (
         <main style={{ flex: 1, display: "flex", alignItems: "flex-start" }}>
