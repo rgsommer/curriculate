@@ -259,6 +259,7 @@ function StudentApp() {
     tryPlayYaySound,
     tryPlayTaskArrivalSound,
     tryPlayTimerWarningSound,
+    tryPlaySessionEndSound,
   } = useSoundEffects();
 
   const [audioContext, setAudioContext] = useState(null);
@@ -1136,6 +1137,7 @@ function StudentApp() {
       setWaitingForLaunch(false);
       setScannerActive(false);
       setPostPhase("feedback");
+      tryPlaySessionEndSound();
       // Don't set tasksetComplete yet — feedback form should show first
     };
 
@@ -1734,6 +1736,7 @@ function StudentApp() {
         setTasksetComplete(false);
         setScannerActive(false);
         setWaitingForLaunch(false);
+        tryPlaySessionEndSound();
 
         socket.emit("room:request-state", {
           roomCode: roomCode.trim().toUpperCase(),

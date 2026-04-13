@@ -16,6 +16,7 @@ const SFX = {
   powerUp:       "/sounds/power-up.mp3",      // task-type launch cues (roleplay, fakeout, hunt, debate)
   scanAlert:     "/sounds/scan-alert.mp3",    // scan waiting / alert
   timerWarning:  "/sounds/timer-warning.mp3", // countdown warning beep
+  sessionEnd:    "/sounds/TreasureRunnerIntro.mp3", // end-of-taskset celebration fanfare
 };
 
 /**
@@ -117,6 +118,9 @@ export function useSoundEffects() {
   // Timer warning
   const tryPlayTimerWarningSound = useCallback(() => play("timerWarning"), [play]);
 
+  // Session end fanfare (feedback screen)
+  const tryPlaySessionEndSound = useCallback(() => play("sessionEnd"), [play]);
+
   // Setup global window functions for external access
   useEffect(() => {
     window.__curriculatePlayWrongSound = () => play("wrong");
@@ -151,5 +155,6 @@ export function useSoundEffects() {
     tryPlayYaySound,
     tryPlayTaskArrivalSound,
     tryPlayTimerWarningSound,
+    tryPlaySessionEndSound,
   };
 }
