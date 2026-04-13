@@ -1,0 +1,668 @@
+[
+  {
+    "title": "Timeline of Rules for Combining Signs and Solving",
+    "prompt": "Arrange the following math concepts in the order you would learn them, from basic to advanced.",
+    "taskType": "timeline",
+    "options": [],
+    "timeLimitSeconds": 120,
+    "points": 10,
+    "config": {
+      "items": [
+        "Same signs give a positive result",
+        "Different signs give a negative result",
+        "Combine signs side by side before solving",
+        "Re-group terms to simplify and solve equations"
+      ],
+      "sequence": [
+        "Same signs give a positive result",
+        "Different signs give a negative result",
+        "Combine signs side by side before solving",
+        "Re-group terms to simplify and solve equations"
+      ],
+      "correctOrder": [
+        "seq1",
+        "seq2",
+        "seq3",
+        "seq4"
+      ]
+    },
+    "items": [
+      {
+        "id": "seq1",
+        "text": "Same signs give a positive result"
+      },
+      {
+        "id": "seq2",
+        "text": "Different signs give a negative result"
+      },
+      {
+        "id": "seq3",
+        "text": "Combine signs side by side before solving"
+      },
+      {
+        "id": "seq4",
+        "text": "Re-group terms to simplify and solve equations"
+      }
+    ],
+    "correctOrder": [
+      "seq1",
+      "seq2",
+      "seq3",
+      "seq4"
+    ],
+    "sequence": [
+      "Same signs give a positive result",
+      "Different signs give a negative result",
+      "Combine signs side by side before solving",
+      "Re-group terms to simplify and solve equations"
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Reviewing Fractions: Adding, Subtracting, and Using Visual Tools",
+    "prompt": "Take careful notes on the key concepts about adding and subtracting fractions with different denominators, understanding mixed numbers, solving equations of the form t = an + be, and using counters or grids to solve fraction addition or multiplication. Use these notes to help you review and master these important math skills.",
+    "taskType": "brain-spark-notes",
+    "options": [],
+    "timeLimitSeconds": 90,
+    "points": 10,
+    "config": {
+      "notes": {
+        "heading": "Key Concepts in Fraction Operations and Equations",
+        "keyTerms": [
+          {
+            "term": "Adding or Subtracting Fractions with Different Denominators",
+            "definition": "Combining fractions that do not share the same bottom number by finding a common denominator first.",
+            "points": [
+              "Find the least common denominator (LCD) to rewrite fractions with the same denominator.",
+              "Convert each fraction to an equivalent fraction with the LCD before adding or subtracting."
+            ]
+          },
+          {
+            "term": "Mixed Number",
+            "definition": "A number made up of a whole number and a proper fraction combined.",
+            "points": [
+              "Mixed numbers can be converted to improper fractions to simplify calculations.",
+              "They often appear in answers when adding or subtracting fractions."
+            ]
+          },
+          {
+            "term": "t = an + be (Finding a and b)",
+            "definition": "An equation expressing t as a combination of multiples of n and e, where a and b are integers to be found.",
+            "points": [
+              "To find a and b, use methods like the Euclidean algorithm or trial and error to solve for integer solutions.",
+              "This equation helps in solving problems involving linear combinations and divisibility."
+            ]
+          }
+        ],
+        "mainPoints": [
+          {
+            "heading": "Adding or Subtracting Fractions with Different Denominators",
+            "sections": [
+              {
+                "title": "Key details",
+                "bullets": [
+                  "Identify the least common denominator (LCD) of the fractions involved.",
+                  "Rewrite each fraction as an equivalent fraction with the LCD before performing addition or subtraction."
+                ]
+              }
+            ]
+          },
+          {
+            "heading": "Understanding Mixed Numbers",
+            "sections": [
+              {
+                "title": "Key details",
+                "bullets": [
+                  "Convert mixed numbers to improper fractions to make calculations easier.",
+                  "After calculation, convert improper fractions back to mixed numbers for final answers."
+                ]
+              }
+            ]
+          },
+          {
+            "heading": "Using Counters or Grids to Solve Fraction Addition or Multiplication",
+            "sections": [
+              {
+                "title": "Key details",
+                "bullets": [
+                  "Counters can represent parts of a whole to visualize fraction operations.",
+                  "Grids help divide shapes into equal parts, making it easier to add or multiply fractions visually."
+                ]
+              }
+            ]
+          },
+          {
+            "heading": "Solving t = an + be: Finding a and b",
+            "sections": [
+              {
+                "title": "Key details",
+                "bullets": [
+                  "Use the Euclidean algorithm to find integers a and b that satisfy the equation.",
+                  "These values help express t as a combination of multiples of n and e, useful in number theory."
+                ]
+              }
+            ]
+          }
+        ],
+        "summary": [
+          "Adding or subtracting fractions with different denominators requires finding a common denominator first.",
+          "Mixed numbers combine whole numbers and fractions and can be converted back and forth for easier calculations.",
+          "Visual tools like counters and grids make fraction operations clearer, while equations like t = an + be help find integer solutions in problems."
+        ]
+      },
+      "bullets": [
+        "Adding or subtracting fractions with different denominators requires finding a common denominator first.",
+        "Mixed numbers combine whole numbers and fractions and can be converted back and forth for easier calculations.",
+        "Visual tools like counters and grids make fraction operations clearer, while equations like t = an + be help find integer solutions in problems."
+      ]
+    },
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Math Review: Equations, Symbols, and Fractions Fake-Out",
+    "prompt": "One person reads the prompt aloud. Everyone votes for the real answer. Watch out: a silly joke option may appear!",
+    "taskType": "fake-out",
+    "options": [],
+    "timeLimitSeconds": 90,
+    "points": 10,
+    "config": {
+      "rounds": [
+        {
+          "prompt": "In the equation 9 + w = 14, what is the value of w?",
+          "options": [
+            "5",
+            "6",
+            "A magic number that solves everything"
+          ],
+          "jokeOption": "A magic number that solves everything",
+          "correctOption": "5",
+          "correctIndex": 0
+        },
+        {
+          "prompt": "According to the rule 'same gives plus', what happens when you subtract a negative number?",
+          "options": [
+            "It changes to addition",
+            "It remains subtraction",
+            "It turns into a pizza party"
+          ],
+          "jokeOption": "It turns into a pizza party",
+          "correctOption": "It changes to addition",
+          "correctIndex": 0
+        },
+        {
+          "prompt": "Which symbol in math means multiplication?",
+          "options": [
+            "x",
+            "+",
+            "A dancing robot"
+          ],
+          "jokeOption": "A dancing robot",
+          "correctOption": "x",
+          "correctIndex": 0
+        },
+        {
+          "prompt": "When using models for adding or subtracting fractions, what do you usually use?",
+          "options": [
+            "Fraction bars or circles",
+            "Number lines",
+            "Invisible wands"
+          ],
+          "jokeOption": "Invisible wands",
+          "correctOption": "Fraction bars or circles",
+          "correctIndex": 0
+        },
+        {
+          "prompt": "What does the symbol '-' represent in the equation 7 - 3 = 4?",
+          "options": [
+            "Subtraction",
+            "Multiplication",
+            "Secret handshake"
+          ],
+          "jokeOption": "Secret handshake",
+          "correctOption": "Subtraction",
+          "correctIndex": 0
+        }
+      ],
+      "pointsPerCorrect": 10,
+      "readerBonusPoints": 0,
+      "interTeamEnabled": false,
+      "intraTeamEnabled": true,
+      "playerCount": 4
+    },
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Fraction Fun Duel: Master the Concepts",
+    "prompt": "Place vocabulary words onto the grid crossword-style. Focus on terms related to fractions, variables, and solving equations.",
+    "taskType": "word-weaver-duel",
+    "options": [],
+    "timeLimitSeconds": 90,
+    "points": 10,
+    "config": {
+      "words": [
+        "fraction",
+        "denominator",
+        "numerator",
+        "variable",
+        "solution",
+        "equivalent",
+        "improper",
+        "reciprocal"
+      ],
+      "gridSize": 12,
+      "items": [
+        "fraction",
+        "denominator",
+        "numerator",
+        "variable",
+        "solution",
+        "equivalent",
+        "improper",
+        "reciprocal"
+      ]
+    },
+    "items": [
+      "fraction",
+      "denominator",
+      "numerator",
+      "variable",
+      "solution",
+      "equivalent",
+      "improper",
+      "reciprocal"
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Order the Steps to Solve an Equation",
+    "prompt": "Figure out the correct order to solve the equation 3z - 16 = 74. Then scan each step in that order.",
+    "taskType": "mad-dash-sequence",
+    "options": [],
+    "timeLimitSeconds": 120,
+    "points": 10,
+    "config": {
+      "items": [
+        "Read the equation: 3z - 16 = 74",
+        "Add 16 to both sides: 3z = 90",
+        "Divide both sides by 3: z = 30",
+        "Check: 3(30) - 16 = 74 ✓"
+      ],
+      "correctOrder": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "items": [
+      "Read the equation: 3z - 16 = 74",
+      "Add 16 to both sides: 3z = 90",
+      "Divide both sides by 3: z = 30",
+      "Check: 3(30) - 16 = 74 ✓"
+    ],
+    "correctOrder": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "sequence": [
+      "Read the equation: 3z - 16 = 74",
+      "Add 16 to both sides: 3z = 90",
+      "Divide both sides by 3: z = 30",
+      "Check: 3(30) - 16 = 74 ✓"
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Math Review: Solving Shirt Price Problems with Equations, Fractions, and Systematic Trial",
+    "prompt": "Get ready for a three-round brainstorm battle! You will solve problems like this: A store buys shirts for $14.99 each. The selling price is 3 times the cost. You will write an equation for the selling price of a shirt, find the selling price and markup, and use systematic trial with integers and proper fractions to explore pricing.",
+    "taskType": "brainstorm-battle",
+    "options": [],
+    "timeLimitSeconds": 90,
+    "points": 10,
+    "config": {
+      "rounds": [
+        {
+          "prompt": "Round 1: Write an equation to represent the selling price of a shirt if the cost is $14.99 and the selling price is 3 times the cost. Use integers and proper fractions if it helps.",
+          "scoringRule": "Earn points for writing a clear, correct equation that shows the selling price as 3 times the cost, including use of integers or proper fractions.",
+          "exampleAnswers": [
+            "S = 3 × 14.99",
+            "Selling price = 3 × cost",
+            "S = 3 × 14 99/100 dollars"
+          ]
+        },
+        {
+          "prompt": "Round 2: Calculate the selling price and the markup on one shirt using your equation. Show your work using integers and proper fractions where needed.",
+          "scoringRule": "Earn points for accurate calculations and clear explanations of the selling price and markup using integers and proper fractions.",
+          "exampleAnswers": [
+            "Selling price = 3 × 14.99 = 44.97 dollars",
+            "Markup = 44.97 - 14.99 = 29.98 dollars",
+            "Selling price is $44.97 and markup is $29.98"
+          ]
+        },
+        {
+          "prompt": "Round 3: Use systematic trial to test if 3 times the cost is a good selling price. Try multipliers like 2 1/2 or 3 1/4 and explain your reasoning about the selling price and markup.",
+          "scoringRule": "Earn points for using systematic trial with integers and proper fractions, and for explaining your reasoning about pricing and markup.",
+          "exampleAnswers": [
+            "Try 2 1/2: 2.5 × 14.99 = 37.48, markup 22.49",
+            "Try 3 1/4: 3.25 × 14.99 = 48.72, markup 33.73",
+            "Systematic trial helps find a fair selling price and good markup"
+          ]
+        }
+      ]
+    },
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Sorting Math Concepts: Equations and Expressions",
+    "prompt": "Sort the following math terms and problem types into the correct categories based on their characteristics. Some items may belong in more than one category.",
+    "taskType": "vennsort",
+    "options": [],
+    "correctAnswer": {
+      "item-0-negative-becomes-positive": [
+        "Equation Components"
+      ],
+      "item-1-left-equals-right": [
+        "Equation Components"
+      ],
+      "item-2-simplest-form": [
+        "Problem Solving Steps"
+      ],
+      "item-3-solve-9-plus-w": [
+        "Equation Types",
+        "Problem Solving Steps"
+      ],
+      "item-4-solve-3z-minus-16": [
+        "Equation Types",
+        "Problem Solving Steps"
+      ],
+      "item-5-systematic-trial": [
+        "Problem Solving Steps"
+      ],
+      "item-6-write-equation-for-price": [
+        "Equation Types"
+      ],
+      "item-7-isolate-the-variable": [
+        "Problem Solving Steps"
+      ]
+    },
+    "timeLimitSeconds": 120,
+    "points": 10,
+    "config": {
+      "categories": [
+        "Equation Components",
+        "Equation Types",
+        "Problem Solving Steps"
+      ],
+      "items": [
+        {
+          "id": "item-0-negative-becomes-positive",
+          "text": "Subtracting a negative gives a positive",
+          "categories": [
+            "Equation Components"
+          ]
+        },
+        {
+          "id": "item-1-left-equals-right",
+          "text": "Left side = Right side",
+          "categories": [
+            "Equation Components"
+          ]
+        },
+        {
+          "id": "item-2-simplest-form",
+          "text": "Reduce to simplest form",
+          "categories": [
+            "Problem Solving Steps"
+          ]
+        },
+        {
+          "id": "item-3-solve-9-plus-w",
+          "text": "Solve 9 + w = 14",
+          "categories": [
+            "Equation Types",
+            "Problem Solving Steps"
+          ]
+        },
+        {
+          "id": "item-4-solve-3z-minus-16",
+          "text": "Solve 3z - 16 = 74",
+          "categories": [
+            "Equation Types",
+            "Problem Solving Steps"
+          ]
+        },
+        {
+          "id": "item-5-systematic-trial",
+          "text": "Use systematic trial",
+          "categories": [
+            "Problem Solving Steps"
+          ]
+        },
+        {
+          "id": "item-6-write-equation-for-price",
+          "text": "Write an equation for selling price",
+          "categories": [
+            "Equation Types"
+          ]
+        },
+        {
+          "id": "item-7-isolate-the-variable",
+          "text": "Isolate the variable",
+          "categories": [
+            "Problem Solving Steps"
+          ]
+        }
+      ],
+      "correctAnswer": {
+        "item-0-negative-becomes-positive": [
+          "Equation Components"
+        ],
+        "item-1-left-equals-right": [
+          "Equation Components"
+        ],
+        "item-2-simplest-form": [
+          "Problem Solving Steps"
+        ],
+        "item-3-solve-9-plus-w": [
+          "Equation Types",
+          "Problem Solving Steps"
+        ],
+        "item-4-solve-3z-minus-16": [
+          "Equation Types",
+          "Problem Solving Steps"
+        ],
+        "item-5-systematic-trial": [
+          "Problem Solving Steps"
+        ],
+        "item-6-write-equation-for-price": [
+          "Equation Types"
+        ],
+        "item-7-isolate-the-variable": [
+          "Problem Solving Steps"
+        ]
+      }
+    },
+    "items": [
+      {
+        "id": "item-0-negative-becomes-positive",
+        "text": "Subtracting a negative gives a positive",
+        "categories": [
+          "Equation Components"
+        ]
+      },
+      {
+        "id": "item-1-left-equals-right",
+        "text": "Left side = Right side",
+        "categories": [
+          "Equation Components"
+        ]
+      },
+      {
+        "id": "item-2-simplest-form",
+        "text": "Reduce to simplest form",
+        "categories": [
+          "Problem Solving Steps"
+        ]
+      },
+      {
+        "id": "item-3-solve-9-plus-w",
+        "text": "Solve 9 + w = 14",
+        "categories": [
+          "Equation Types",
+          "Problem Solving Steps"
+        ]
+      },
+      {
+        "id": "item-4-solve-3z-minus-16",
+        "text": "Solve 3z - 16 = 74",
+        "categories": [
+          "Equation Types",
+          "Problem Solving Steps"
+        ]
+      },
+      {
+        "id": "item-5-systematic-trial",
+        "text": "Use systematic trial",
+        "categories": [
+          "Problem Solving Steps"
+        ]
+      },
+      {
+        "id": "item-6-write-equation-for-price",
+        "text": "Write an equation for selling price",
+        "categories": [
+          "Equation Types"
+        ]
+      },
+      {
+        "id": "item-7-isolate-the-variable",
+        "text": "Isolate the variable",
+        "categories": [
+          "Problem Solving Steps"
+        ]
+      }
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Math Review: Equations and Fractions",
+    "prompt": "Review these key math concepts and problem-solving steps for Grade 7.",
+    "taskType": "flashcards",
+    "options": [],
+    "timeLimitSeconds": 60,
+    "points": 10,
+    "config": {
+      "items": [
+        {
+          "question": "+ x - = -",
+          "answer": "Multiplying a positive by a negative results in a negative."
+        },
+        {
+          "question": "Proper fraction",
+          "answer": "A fraction where the numerator is less than the denominator."
+        },
+        {
+          "question": "Solve equation: 9 + w = 14",
+          "answer": "Subtract 9 from both sides; w = 5."
+        },
+        {
+          "question": "Solve equation: 3z - 16 = 74",
+          "answer": "Add 16 to both sides, then divide by 3; z = 30."
+        },
+        {
+          "question": "Solving by systematic trial",
+          "answer": "Testing values step-by-step to find the solution to an equation."
+        },
+        {
+          "question": "Write an equation: store buys shirts for $14.99, selling price is 3 times cost",
+          "answer": "Selling price = 3 × 14.99."
+        },
+        {
+          "question": "What is the selling price of the shirts?",
+          "answer": "Selling price is $44.97 (3 times $14.99)."
+        },
+        {
+          "question": "What is the markup on the shirts?",
+          "answer": "Markup is $29.98 (selling price minus cost)."
+        }
+      ]
+    },
+    "items": [
+      {
+        "question": "+ x - = -",
+        "answer": "Multiplying a positive by a negative results in a negative."
+      },
+      {
+        "question": "Proper fraction",
+        "answer": "A fraction where the numerator is less than the denominator."
+      },
+      {
+        "question": "Solve equation: 9 + w = 14",
+        "answer": "Subtract 9 from both sides; w = 5."
+      },
+      {
+        "question": "Solve equation: 3z - 16 = 74",
+        "answer": "Add 16 to both sides, then divide by 3; z = 30."
+      },
+      {
+        "question": "Solving by systematic trial",
+        "answer": "Testing values step-by-step to find the solution to an equation."
+      },
+      {
+        "question": "Write an equation: store buys shirts for $14.99, selling price is 3 times cost",
+        "answer": "Selling price = 3 × 14.99."
+      },
+      {
+        "question": "What is the selling price of the shirts?",
+        "answer": "Selling price is $44.97 (3 times $14.99)."
+      },
+      {
+        "question": "What is the markup on the shirts?",
+        "answer": "Markup is $29.98 (selling price minus cost)."
+      }
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Explain Key Algebra Concepts",
+    "prompt": "Record a 20–45 second explanation about how to isolate the variable in an equation. Be sure to include what a reciprocal is and how egyptian fractions relate to expressing numbers.",
+    "taskType": "record-audio",
+    "options": [],
+    "timeLimitSeconds": 150,
+    "points": 10,
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  }
+]

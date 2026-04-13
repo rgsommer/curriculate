@@ -434,6 +434,37 @@ function sanitizeTaskShapeByType(type, task) {
     }
   }
 
+  // ── VENNSORT: truncate long item text, validate balance ──
+  if (type === TASK_TYPES.VENNSORT) {
+    const items = Array.isArray(t.config?.items) ? t.config.items : [];
+    if (items.length > 0) {
+      t.config.items = items.map((it) => {
+        if (!it || typeof it !== "object") return it;
+        const text = String(it.text || "").trim();
+        if (text.length > 80) return { ...it, text: text.slice(0, 77) + "..." };
+        return it;
+      });
+    }
+  }
+
+  // ── MAD_DASH_SEQUENCE: normalize correctOrder to integers ──
+  if (type === TASK_TYPES.MAD_DASH_SEQUENCE) {
+    const order = t.config?.correctOrder || t.correctOrder;
+    if (Array.isArray(order)) {
+      const intOrder = order.map((v) => parseInt(v, 10)).filter((v) => Number.isFinite(v));
+      if (intOrder.length === order.length) {
+        if (t.config && typeof t.config === "object") t.config.correctOrder = intOrder;
+        if (Array.isArray(t.correctOrder)) t.correctOrder = intOrder;
+      }
+    }
+  }
+
+  // ── BODY_BREAK / MOTION_MISSION: force movement flag ──
+  if (type === TASK_TYPES.BODY_BREAK || type === TASK_TYPES.MOTION_MISSION) {
+    t.movement = true;
+    if (t.config && typeof t.config === "object") t.config.movement = true;
+  }
+
   // ── SPEECH_RECOGNITION / PRONUNCIATION: promote config.referenceText to root ──
   if (type === TASK_TYPES.SPEECH_RECOGNITION || type === TASK_TYPES.PRONUNCIATION) {
     if (!t.referenceText && t.config?.referenceText) {

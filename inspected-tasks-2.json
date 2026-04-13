@@ -1,0 +1,442 @@
+[
+  {
+    "title": "Math Review: Algebra and Fractions",
+    "prompt": "Study these key terms and problem-solving steps to review algebraic expressions and fraction operations.",
+    "taskType": "flashcards",
+    "options": [],
+    "timeLimitSeconds": 60,
+    "points": 10,
+    "config": {
+      "items": [
+        {
+          "question": "Adding or subtracting fractions with same denominators",
+          "answer": "Add or subtract the numerators and keep the denominator the same."
+        },
+        {
+          "question": "Algebraic expression",
+          "answer": "A mathematical phrase with numbers, variables, and operations."
+        },
+        {
+          "question": "Write an equation: store buys shirts for $14.99; selling price is 3 times cost",
+          "answer": "Selling price = 3 × 14.99 or s = 3 × 14.99"
+        },
+        {
+          "question": "What is the selling price of the shirts in the problem?",
+          "answer": "The selling price is $44.97 (3 × 14.99)."
+        },
+        {
+          "question": "What is the markup on the shirts?",
+          "answer": "Markup is selling price minus cost: $44.97 - $14.99 = $29.98."
+        },
+        {
+          "question": "Isolate the variable",
+          "answer": "Rewrite an equation to get the variable alone on one side."
+        },
+        {
+          "question": "Solve by re-grouping",
+          "answer": "Change equation parts to simplify and isolate the variable."
+        },
+        {
+          "question": "Solve the equation 9 + w = 14",
+          "answer": "Subtract 9 from both sides; w = 5."
+        }
+      ]
+    },
+    "items": [
+      {
+        "question": "Adding or subtracting fractions with same denominators",
+        "answer": "Add or subtract the numerators and keep the denominator the same."
+      },
+      {
+        "question": "Algebraic expression",
+        "answer": "A mathematical phrase with numbers, variables, and operations."
+      },
+      {
+        "question": "Write an equation: store buys shirts for $14.99; selling price is 3 times cost",
+        "answer": "Selling price = 3 × 14.99 or s = 3 × 14.99"
+      },
+      {
+        "question": "What is the selling price of the shirts in the problem?",
+        "answer": "The selling price is $44.97 (3 × 14.99)."
+      },
+      {
+        "question": "What is the markup on the shirts?",
+        "answer": "Markup is selling price minus cost: $44.97 - $14.99 = $29.98."
+      },
+      {
+        "question": "Isolate the variable",
+        "answer": "Rewrite an equation to get the variable alone on one side."
+      },
+      {
+        "question": "Solve by re-grouping",
+        "answer": "Change equation parts to simplify and isolate the variable."
+      },
+      {
+        "question": "Solve the equation 9 + w = 14",
+        "answer": "Subtract 9 from both sides; w = 5."
+      }
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Understanding Integer Addition Signs",
+    "prompt": "Read each clue carefully. After the last clue, type your best guess for the concept being described.",
+    "taskType": "brain-blitz",
+    "options": [],
+    "correctAnswer": "Integer addition sign rules",
+    "timeLimitSeconds": 90,
+    "points": 10,
+    "config": {
+      "clues": [
+        "When you add two positive integers, the result is always positive.",
+        "When you add two negative integers, the result is always negative.",
+        "Adding integers with different signs depends on which has greater magnitude.",
+        "If the negative integer has greater magnitude, the sum is negative.",
+        "If the positive integer has greater magnitude, the sum is positive."
+      ],
+      "correctAnswer": "Integer addition sign rules"
+    },
+    "items": [],
+    "clues": [
+      "When you add two positive integers, the result is always positive.",
+      "When you add two negative integers, the result is always negative.",
+      "Adding integers with different signs depends on which has greater magnitude.",
+      "If the negative integer has greater magnitude, the sum is negative.",
+      "If the positive integer has greater magnitude, the sum is positive."
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Sorting Math Concepts: Equations and Fractions",
+    "prompt": "Sort the following math terms and problem types into the correct categories based on their characteristics. Some items may fit into more than one category.",
+    "taskType": "vennsort",
+    "options": [],
+    "correctAnswer": {
+      "item-0-subtracting-negative": ["Equation Properties"],
+      "item-1-left-equals-right": ["Equation Properties"],
+      "item-2-isolate-variable": ["Equation Properties", "Equations with Variables"],
+      "item-3-proper-fraction": ["Fractions and Numbers"],
+      "item-4-improper-fraction": ["Fractions and Numbers"],
+      "item-5-equivalent-fractions": ["Fractions and Numbers"],
+      "item-6-solve-9-plus-w": ["Equations with Variables"],
+      "item-7-solve-3z-minus-16": ["Equations with Variables"],
+      "item-8-selling-price-equation": ["Equations with Variables"]
+    },
+    "timeLimitSeconds": 120,
+    "points": 10,
+    "config": {
+      "categories": [
+        "Equations with Variables",
+        "Equation Properties",
+        "Fractions and Numbers"
+      ],
+      "items": [
+        {
+          "id": "item-0-subtracting-negative",
+          "text": "Subtracting a negative gives a positive",
+          "categories": ["Equation Properties"]
+        },
+        {
+          "id": "item-1-left-equals-right",
+          "text": "Left side = Right side",
+          "categories": ["Equation Properties"]
+        },
+        {
+          "id": "item-2-isolate-variable",
+          "text": "Isolate the variable",
+          "categories": ["Equation Properties", "Equations with Variables"]
+        },
+        {
+          "id": "item-3-proper-fraction",
+          "text": "Proper fraction",
+          "categories": ["Fractions and Numbers"]
+        },
+        {
+          "id": "item-4-improper-fraction",
+          "text": "Improper fraction",
+          "categories": ["Fractions and Numbers"]
+        },
+        {
+          "id": "item-5-equivalent-fractions",
+          "text": "Equivalent fractions",
+          "categories": ["Fractions and Numbers"]
+        },
+        {
+          "id": "item-6-solve-9-plus-w",
+          "text": "Solve 9 + w = 14",
+          "categories": ["Equations with Variables"]
+        },
+        {
+          "id": "item-7-solve-3z-minus-16",
+          "text": "Solve 3z - 16 = 74",
+          "categories": ["Equations with Variables"]
+        },
+        {
+          "id": "item-8-selling-price-equation",
+          "text": "Write an equation for selling price",
+          "categories": ["Equations with Variables"]
+        }
+      ],
+      "correctAnswer": {
+        "item-0-subtracting-negative": ["Equation Properties"],
+        "item-1-left-equals-right": ["Equation Properties"],
+        "item-2-isolate-variable": ["Equation Properties", "Equations with Variables"],
+        "item-3-proper-fraction": ["Fractions and Numbers"],
+        "item-4-improper-fraction": ["Fractions and Numbers"],
+        "item-5-equivalent-fractions": ["Fractions and Numbers"],
+        "item-6-solve-9-plus-w": ["Equations with Variables"],
+        "item-7-solve-3z-minus-16": ["Equations with Variables"],
+        "item-8-selling-price-equation": ["Equations with Variables"]
+      }
+    },
+    "items": [
+      {
+        "id": "item-0-subtracting-negative",
+        "text": "Subtracting a negative gives a positive",
+        "categories": ["Equation Properties"]
+      },
+      {
+        "id": "item-1-left-equals-right",
+        "text": "Left side = Right side",
+        "categories": ["Equation Properties"]
+      },
+      {
+        "id": "item-2-isolate-variable",
+        "text": "Isolate the variable",
+        "categories": ["Equation Properties", "Equations with Variables"]
+      },
+      {
+        "id": "item-3-proper-fraction",
+        "text": "Proper fraction",
+        "categories": ["Fractions and Numbers"]
+      },
+      {
+        "id": "item-4-improper-fraction",
+        "text": "Improper fraction",
+        "categories": ["Fractions and Numbers"]
+      },
+      {
+        "id": "item-5-equivalent-fractions",
+        "text": "Equivalent fractions",
+        "categories": ["Fractions and Numbers"]
+      },
+      {
+        "id": "item-6-solve-9-plus-w",
+        "text": "Solve 9 + w = 14",
+        "categories": ["Equations with Variables"]
+      },
+      {
+        "id": "item-7-solve-3z-minus-16",
+        "text": "Solve 3z - 16 = 74",
+        "categories": ["Equations with Variables"]
+      },
+      {
+        "id": "item-8-selling-price-equation",
+        "text": "Write an equation for selling price",
+        "categories": ["Equations with Variables"]
+      }
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Review: Fractions and Algebra with Real-World Problems",
+    "prompt": "In this task, you will review important math concepts including equivalent fractions, lowest terms, and reciprocals, as well as solving algebraic problems involving multiplication and subtraction with negative numbers.\n\n1. Explain what it means when we say \"- + - = - if - magnitude is greater\" and give an example.\n2. Write an equation to represent the selling price of a shirt if a store buys shirts for $14.99 each and sells them at 3 times the cost. Then calculate the selling price and the markup.\n3. Describe how to find equivalent fractions and how to simplify a fraction to its lowest terms.\n4. What is the reciprocal of a fraction, and how is it used in division problems?\n\nBe sure to provide clear explanations and show your work where appropriate.",
+    "taskType": "open-text",
+    "options": [],
+    "timeLimitSeconds": 240,
+    "points": 10,
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Steps to Solve 3z - 16 = 74",
+    "prompt": "Figure out the correct order to solve this equation step by step, then scan them in that order.",
+    "taskType": "mad-dash-sequence",
+    "options": [],
+    "timeLimitSeconds": 120,
+    "points": 10,
+    "config": {
+      "items": [
+        "Read the equation: 3z - 16 = 74",
+        "Add 16 to both sides: 3z = 90",
+        "Divide both sides by 3: z = 30",
+        "Check your answer: 3(30) - 16 = 74"
+      ],
+      "correctOrder": [0, 1, 2, 3]
+    },
+    "items": [
+      "Read the equation: 3z - 16 = 74",
+      "Add 16 to both sides: 3z = 90",
+      "Divide both sides by 3: z = 30",
+      "Check your answer: 3(30) - 16 = 74"
+    ],
+    "correctOrder": [0, 1, 2, 3],
+    "sequence": [
+      "Read the equation: 3z - 16 = 74",
+      "Add 16 to both sides: 3z = 90",
+      "Divide both sides by 3: z = 30",
+      "Check your answer: 3(30) - 16 = 74"
+    ],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Math Review Battle: Expressions, Fractions, and Pattern Rules",
+    "prompt": "Get ready for a three-round brainstorm battle! Use your knowledge of algebraic expressions, improper fractions, pattern rules, and equations like 3z - 16 = 74 to share your best ideas. Each round has a different focus and scoring rule. Think carefully and be creative!",
+    "taskType": "brainstorm-battle",
+    "options": [],
+    "timeLimitSeconds": 90,
+    "points": 10,
+    "config": {
+      "rounds": [
+        {
+          "prompt": "Round 1: Brainstorm various algebraic expressions, including ones like 3z - 16 = 74. Focus on expressions and equations with variables and constants.",
+          "scoringRule": "Points for unique, correct algebraic expressions and equations that include variables, constants, and operations.",
+          "exampleAnswers": [
+            "3z - 16 = 74",
+            "4x + 7 = 39",
+            "2a - 5 = 13",
+            "5y + 10 = 35",
+            "7m - 9 = 50"
+          ]
+        },
+        {
+          "prompt": "Round 2: List examples of improper fractions and explain how to convert them into mixed numbers.",
+          "scoringRule": "Points for relevant improper fractions and clear, accurate explanations of how to convert them to mixed numbers.",
+          "exampleAnswers": [
+            "9/4 is an improper fraction because the numerator is greater than the denominator.",
+            "7/3 converts to 2 1/3 by dividing 7 by 3.",
+            "11/5 equals 2 1/5 when written as a mixed number.",
+            "13/6 can be rewritten as 2 1/6 after division."
+          ]
+        },
+        {
+          "prompt": "Round 3: Think of pattern rules that use algebraic expressions or equations like 3z - 16 = 74. Describe the rule and explain the pattern it creates.",
+          "scoringRule": "Points for relevant pattern rules using algebraic expressions and clear explanations of the patterns they generate.",
+          "exampleAnswers": [
+            "The pattern rule n → 3n - 16 creates a sequence increasing by 3 each time, starting at -13.",
+            "Using 3z - 16 = 74, solving for z helps find a specific term in the pattern.",
+            "Pattern rule: y = 2x + 5 increases by 2 each step, starting at 5.",
+            "The rule 4n - 10 generates numbers growing by 4 each time."
+          ]
+        }
+      ]
+    },
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Writing to Your Math Tutor: Explaining Algebra Concepts",
+    "prompt": "Write a friendly letter to your math tutor explaining what you have learned about the equation t = an + be. Use the letter style to describe how to find the values of a and b, explain the meaning of '+ x - = -' and 'same gives plus', and discuss how you use markup to organize your work and find the solution. You will receive a reply with helpful feedback.",
+    "taskType": "letter",
+    "options": [],
+    "timeLimitSeconds": 240,
+    "points": 10,
+    "config": {
+      "character": "Sophia Martinez",
+      "characterDescription": "Sophia is a patient and encouraging math tutor who helps students understand algebra concepts clearly.",
+      "letterStyle": "friendly",
+      "topicContext": "You have been reviewing algebraic expressions and equations, focusing on understanding the equation t = an + be, how to find the coefficients a and b, and using key concepts like '+ x - = -' and 'same gives plus' to solve problems.",
+      "relevantConcepts": [
+        "+ x - = -",
+        "same gives plus",
+        "markup",
+        "solution",
+        "t=an+be know how to find a and how to find b"
+      ]
+    },
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Fraction Skills Review: Spot the Real Answer!",
+    "prompt": "Read each question carefully about adding or subtracting fractions with different denominators. Pick the correct answer, but watch out for the silly joke option trying to trick you!",
+    "taskType": "fake-out",
+    "options": [],
+    "timeLimitSeconds": 90,
+    "points": 10,
+    "config": {
+      "rounds": [
+        {
+          "prompt": "What is the first step when adding fractions with different denominators?",
+          "options": [
+            "Find the least common denominator",
+            "Add the numerators and denominators directly",
+            "Convert fractions to decimals first",
+            "Ask the fractions to dance until they match"
+          ],
+          "jokeOption": "Ask the fractions to dance until they match",
+          "correctOption": "Find the least common denominator",
+          "correctIndex": 0
+        },
+        {
+          "prompt": "How do you solve a subtraction problem involving a mixed number using regrouping?",
+          "options": [
+            "Convert the mixed number to an improper fraction and regroup",
+            "Subtract whole numbers and fractions separately without regrouping",
+            "Borrow a magic wand to make fractions disappear",
+            "Just ignore the fraction part"
+          ],
+          "jokeOption": "Borrow a magic wand to make fractions disappear",
+          "correctOption": "Convert the mixed number to an improper fraction and regroup",
+          "correctIndex": 0
+        },
+        {
+          "prompt": "How can you use a number line for adding or subtracting fractions?",
+          "options": [
+            "Mark fractions as points and count the spaces between them",
+            "Hop on the number line and sing a fraction song",
+            "Draw smiley faces on the number line",
+            "Use the number line to multiply fractions"
+          ],
+          "jokeOption": "Hop on the number line and sing a fraction song",
+          "correctOption": "Mark fractions as points and count the spaces between them",
+          "correctIndex": 0
+        }
+      ],
+      "pointsPerCorrect": 10,
+      "readerBonusPoints": 0,
+      "interTeamEnabled": false,
+      "intraTeamEnabled": true,
+      "playerCount": 4
+    },
+    "items": [],
+    "movement": false,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  },
+  {
+    "title": "Math Movement Mission: Egyptian Fractions and Variables",
+    "prompt": "1. Stand up and stretch your arms wide to represent the whole number in an Egyptian fraction.\n2. Now, take small steps forward to show breaking the whole into unit fractions (like 1/2, 1/3).\n3. Next, pretend to write an equation in the air and mime isolating the variable by moving your hands to separate it from other terms.\n4. Finally, freeze in a pose that shows you have isolated the variable successfully.\nMove safely and be aware of your space!",
+    "taskType": "motion-mission",
+    "options": [],
+    "timeLimitSeconds": 75,
+    "points": 10,
+    "items": [],
+    "movement": true,
+    "requiresDrawing": false,
+    "isPublic": false,
+    "aiMetadata": null
+  }
+]

@@ -177,6 +177,22 @@ function validatePlayabilityByType(type, task) {
     if (_len(cfg.categories) < 2) errors.push("config.categories[] must have at least 2 items");
     if (_len(cfg.items) < 5) errors.push("config.items[] must have at least 5 items");
     if (!_isObj(task?.correctAnswer)) errors.push("correctAnswer mapping is required");
+    // Check balance: each category should have at least 2 items
+    if (_isObj(task?.correctAnswer) && Array.isArray(cfg.categories) && cfg.categories.length >= 2) {
+      const catCounts = {};
+      for (const cats of Object.values(task.correctAnswer)) {
+        if (Array.isArray(cats)) cats.forEach((c) => { catCounts[c] = (catCounts[c] || 0) + 1; });
+      }
+      for (const cat of cfg.categories) {
+        const name = typeof cat === "string" ? cat : cat?.name || cat?.label || "";
+        if (name && (catCounts[name] || 0) < 2) errors.push(`Category "${name}" has fewer than 2 items — distribution is unbalanced`);
+      }
+    }
+    // Check item text length
+    if (Array.isArray(cfg.items)) {
+      const longItems = cfg.items.filter((it) => String(it?.text || it || "").length > 80);
+      if (longItems.length > 0) errors.push(`${longItems.length} item(s) exceed 80 characters — keep item text short`);
+    }
   }
 
   if (type === TASK_TYPES.SEQUENCE || type === TASK_TYPES.TIMELINE) {
@@ -943,9 +959,9 @@ export const retryMustHave = {
   [TASK_TYPES.MATCHING]:
     'MATCHING: Pick at least 6 terms from the vocabulary list and use them as leftItems (plain string array). For each term, write a short definition (8-20 words) and use those as rightItems (plain string array). Include correctMatches map {"L1":"R1","L2":"R2",...} at root level. Do NOT use empty arrays — a matching task with no items will be REJECTED. Do NOT use "items", "options", or "config" — only leftItems, rightItems, correctMatches at root. NEVER output placeholder text like "Term 1" or "Definition 2".',
   [TASK_TYPES.VENNSORT]:
-    'VENNSORT: Pick 10–16 terms from the vocabulary list as items. Create 2–3 meaningful categories (config.categories). config.items (5–10 objects). Also include correctAnswer map: { "itemId": ["CategoryA"] }. Items MUST be real vocabulary terms — NEVER use placeholder text like "Item 1". CRITICAL: Every item MUST have at least one category assigned — items with categories:[] (empty) will be REJECTED because students cannot place them. If an item does not fit your categories, either change categories or remove the item. Every item placement must be clearly defensible and unambiguous.',
+    'VENNSORT: Pick 7–14 terms from the vocabulary list as items. Create 2–3 meaningful categories (config.categories). config.items (7–14 objects). Also include correctAnswer map: { "itemId": ["CategoryA"] }. Items MUST be real vocabulary terms — NEVER use placeholder text like "Item 1". CRITICAL: Every item MUST have at least one category assigned — items with categories:[] (empty) will be REJECTED because students cannot place them. If an item does not fit your categories, either change categories or remove the item. Every item placement must be clearly defensible and unambiguous. BALANCE: distribute items so each category has at least 2 items — do NOT put all items in one category. Keep item text SHORT (max 60 characters each) — truncate or rephrase long descriptions.',
   [TASK_TYPES.JEOPARDY]:
-    'JEOPARDY (BrainBlitz) must include clues[] with at least 5 SHORT clue STRINGS and a correctAnswer string (the single target answer). Also include config.clues and config.correctAnswer mirroring the root fields.',
+    'JEOPARDY (BrainBlitz) must include clues[] with at least 5 SHORT clue STRINGS and a correctAnswer string (the single target answer). Also include config.clues and config.correctAnswer mirroring the root fields. CRITICAL: ALL clues must describe the SAME single concept/answer. Do NOT mix clues about different topics (e.g. do NOT have some clues about multiplication and others about addition). Every clue must be a valid hint for correctAnswer.',
   [TASK_TYPES.HANGMAN_DUEL]:
     "HANGMAN_DUEL must include wordsByStation[] (4–8). Each entry: { word, hint }. Words must be PURE ALPHABETIC (only A-Z letters, no numbers, hyphens, apostrophes, or special characters) and come from aiWordBank.",
   [TASK_TYPES.FLASHCARDS]:
@@ -965,7 +981,7 @@ export const retryMustHave = {
   [TASK_TYPES.MAD_DASH]:
     "MAD_DASH must include sequence (or config.sequence) as an array of 3–5 station/color names (strings). No correctOrder/answerKey is required.",
   [TASK_TYPES.MAD_DASH_SEQUENCE]:
-    "MAD_DASH_SEQUENCE must include config.items (array of 3–5 strings) AND config.correctOrder (a permutation of indexes 0..items.length-1). Do NOT include colors; colors are assigned at runtime.",
+    "MAD_DASH_SEQUENCE must include config.items (array of 3–5 strings) AND config.correctOrder (a permutation of indexes 0..items.length-1). Do NOT include colors; colors are assigned at runtime. IMPORTANT: The items must be sequential STEPS for solving ONE specific problem or completing ONE specific process (e.g. steps of photosynthesis, stages of cell division). Each item is ONE step — do NOT mix unrelated facts or topics. correctOrder values must be INTEGERS (not strings).",
   [TASK_TYPES.MIND_MAPPER]:
     "MIND_MAPPER must include structure (organizer with blanks) and items[] (>=4).",
   [TASK_TYPES.MAKE_AND_SNAP]:
