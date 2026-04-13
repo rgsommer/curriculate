@@ -659,83 +659,125 @@ export default function HostView({ roomCode: roomCodeProp }) {
         {/* Main content */}
         <div className="bg-black/20 border border-white/20 rounded-3xl p-6 md:p-8 shadow-2xl backdrop-blur">
           {activeTab === "leaderboard" ? (
-            <>
-              <div className="flex items-center gap-2 mb-5 opacity-95">
-                <Trophy className="w-6 h-6" />
-                <div className="text-2xl md:text-3xl font-extrabold">Full Leaderboard</div>
+            <div className="flex gap-6">
+              {/* Left: Team Leaderboard */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-5 opacity-95">
+                  <Trophy className="w-6 h-6" />
+                  <div className="text-2xl md:text-3xl font-extrabold">Team Leaderboard</div>
+                </div>
+
+                {leaderboard.length === 0 ? (
+                  <div className="text-center text-2xl opacity-90 py-10">
+                    No scores yet. Waiting for teams to join...
+                  </div>
+                ) : (
+                  <ol className="space-y-4 text-xl md:text-2xl">
+                    <AnimatePresence>
+                      {leaderboard.map((row, i) => (
+                        <motion.li
+                          key={row.teamId}
+                          layout
+                          initial={{ opacity: 0, x: 60 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -60 }}
+                          transition={{ duration: 0.25 }}
+                          className="group relative overflow-hidden bg-white/10 border border-white/20 rounded-2xl px-5 py-4 flex items-center shadow-lg hover:bg-white/15 hover:shadow-2xl hover:-translate-y-0.5 transition"
+                          style={{ cursor: "default" }}
+                        >
+                          {/* Hover glow + shimmer */}
+                          <div
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-300"
+                            style={{
+                              backgroundImage:
+                                "radial-gradient(600px circle at 20% 10%, rgba(255,255,255,0.14), transparent 60%), radial-gradient(500px circle at 85% 40%, rgba(34,211,238,0.16), transparent 55%)",
+                            }}
+                          />
+                          <motion.div
+                            aria-hidden="true"
+                            className="pointer-events-none absolute -top-10 -left-52 h-24 w-52 rotate-12 bg-white/10 blur-lg"
+                            animate={{ x: [-120, 820] }}
+                            transition={{
+                              duration: 5.5,
+                              repeat: Infinity,
+                              repeatDelay: 1.2,
+                              ease: "easeInOut",
+                            }}
+                          />
+
+                          <span className="font-black text-2xl md:text-3xl w-14 text-white/95 relative">
+                            {i + 1}.
+                          </span>
+
+                          {row.thumb ? (
+                            <img
+                              src={row.thumb}
+                              alt={row.name}
+                              className="w-11 h-11 md:w-12 md:h-12 rounded-full object-cover border-2 border-white/60 shadow-lg mr-4 relative"
+                            />
+                          ) : (
+                            <div className="w-11 h-11 md:w-12 md:h-12 rounded-full bg-white/10 border border-white/25 mr-4 relative" />
+                          )}
+
+                          <span
+                            className="font-extrabold flex-1 truncate relative"
+                            title="Delete/kick this team"
+                            style={{ cursor: "pointer" }}
+                            onClick={() => openDeleteTeamModal(row.teamId)}
+                          >
+                            {row.name}
+                          </span>
+
+                          <span className="font-black text-2xl md:text-3xl ml-4 relative">
+                            <AnimatedPts value={row.pts} /> pts
+                          </span>
+                        </motion.li>
+                      ))}
+                    </AnimatePresence>
+                  </ol>
+                )}
               </div>
 
-              {leaderboard.length === 0 ? (
-                <div className="text-center text-2xl opacity-90 py-10">
-                  No scores yet. Waiting for teams to join...
-                </div>
-              ) : (
-                <ol className="space-y-4 text-xl md:text-2xl">
-                  <AnimatePresence>
-                    {leaderboard.map((row, i) => (
-                      <motion.li
-                        key={row.teamId}
-                        layout
-                        initial={{ opacity: 0, x: 60 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -60 }}
-                        transition={{ duration: 0.25 }}
-                        className="group relative overflow-hidden bg-white/10 border border-white/20 rounded-2xl px-5 py-4 flex items-center shadow-lg hover:bg-white/15 hover:shadow-2xl hover:-translate-y-0.5 transition"
-                        style={{ cursor: "default" }}
-                      >
-                        {/* Hover glow + shimmer */}
-                        <div
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-300"
-                          style={{
-                            backgroundImage:
-                              "radial-gradient(600px circle at 20% 10%, rgba(255,255,255,0.14), transparent 60%), radial-gradient(500px circle at 85% 40%, rgba(34,211,238,0.16), transparent 55%)",
-                          }}
-                        />
+              {/* Right: Players sidebar */}
+              {(roomState.playerScores || []).length > 0 && (
+                <div className="w-72 md:w-80 flex-shrink-0">
+                  <div className="flex items-center gap-2 mb-5 opacity-95">
+                    <Sparkles className="w-5 h-5" />
+                    <div className="text-xl md:text-2xl font-extrabold">Players</div>
+                  </div>
+                  <div className="space-y-2">
+                    <AnimatePresence>
+                      {(roomState.playerScores || []).map((p, i) => (
                         <motion.div
-                          aria-hidden="true"
-                          className="pointer-events-none absolute -top-10 -left-52 h-24 w-52 rotate-12 bg-white/10 blur-lg"
-                          animate={{ x: [-120, 820] }}
-                          transition={{
-                            duration: 5.5,
-                            repeat: Infinity,
-                            repeatDelay: 1.2,
-                            ease: "easeInOut",
-                          }}
-                        />
-
-                        <span className="font-black text-2xl md:text-3xl w-14 text-white/95 relative">
-                          {i + 1}.
-                        </span>
-
-                        {row.thumb ? (
-                          <img
-                            src={row.thumb}
-                            alt={row.name}
-                            className="w-11 h-11 md:w-12 md:h-12 rounded-full object-cover border-2 border-white/60 shadow-lg mr-4 relative"
-                          />
-                        ) : (
-                          <div className="w-11 h-11 md:w-12 md:h-12 rounded-full bg-white/10 border border-white/25 mr-4 relative" />
-                        )}
-
-                        <span
-                          className="font-extrabold flex-1 truncate relative"
-                          title="Delete/kick this team"
-                          style={{ cursor: "pointer" }}
-                          onClick={() => openDeleteTeamModal(row.teamId)}
+                          key={p.name}
+                          layout
+                          initial={{ opacity: 0, x: 30 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: 30 }}
+                          transition={{ duration: 0.2 }}
+                          className="bg-white/10 border border-white/15 rounded-xl px-3 py-2 flex items-center gap-2 shadow"
                         >
-                          {row.name}
-                        </span>
-
-                        <span className="font-black text-2xl md:text-3xl ml-4 relative">
-                          <AnimatedPts value={row.pts} /> pts
-                        </span>
-                      </motion.li>
-                    ))}
-                  </AnimatePresence>
-                </ol>
+                          <span className="font-black text-base w-8 text-white/90">
+                            {i < 3 ? trophyEmojis[i] : `${i + 1}.`}
+                          </span>
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-indigo-500 border border-white/30 flex items-center justify-center text-sm font-black shadow">
+                            {(p.name || "?").charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-sm truncate">{p.name}</div>
+                            <div className="text-xs font-semibold opacity-60">{p.teamName || "—"}</div>
+                          </div>
+                          <div className="font-black text-base ml-1">
+                            <AnimatedPts value={p.pts} />
+                          </div>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                </div>
               )}
-            </>
+            </div>
           ) : activeTab === "players" ? (
             <>
               <div className="flex items-center gap-2 mb-5 opacity-95">
