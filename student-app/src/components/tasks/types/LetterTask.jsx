@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/LetterTask.jsx
 import React, { useState, useMemo, useEffect } from "react";
 import { API_BASE_URL } from "../../../config.js";
+import DesignatedWriter from "../DesignatedWriter";
 
 export default function LetterTask({
   task,
@@ -11,6 +12,7 @@ export default function LetterTask({
   answerDraft,
   roomCode,
   teamId,
+  memberNames = [],
 }) {
   const isDisabled = disabled || answered;
 
@@ -286,6 +288,8 @@ export default function LetterTask({
           ))}
         </div>
       )}
+
+      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} />
 
       {/* Text area */}
       <textarea

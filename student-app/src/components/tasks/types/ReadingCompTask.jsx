@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/ReadingCompTask.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { TaskCardFrame, Pill, PrimaryButton, GhostButton, TextArea } from "../taskStyles";
+import DesignatedWriter from "../DesignatedWriter";
 
 /**
  * ReadingCompTask - Premium Gaming-Quality UX
@@ -688,6 +689,8 @@ export default function ReadingCompTask({
           </div>
         )}
       </div>
+
+      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} />
 
       {/* Progress bar for questions */}
       {!isTeamVariation && (

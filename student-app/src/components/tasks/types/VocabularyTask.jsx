@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/VocabularyTask.jsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useThemeMode } from "../../../utils/ThemeModeContext.js";
+import DesignatedWriter from "../DesignatedWriter";
 
 function escapeRegex(s) {
   return String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -35,6 +36,7 @@ export default function VocabularyTask({
   onSubmit,
   onAnswerChange,
   answerDraft,
+  memberNames = [],
 }) {
   const themeMode = useThemeMode();
   const isDark = themeMode === "dark";
@@ -232,6 +234,8 @@ export default function VocabularyTask({
           {statusLine}
         </div>
       </div>
+
+      <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} />
 
       <div className={`mt-4 rounded-2xl border ${inputAreaBg} p-3 md:p-4 shadow-sm`}>
         <textarea

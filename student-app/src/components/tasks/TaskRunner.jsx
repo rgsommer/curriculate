@@ -2400,16 +2400,17 @@ case "multi_player_feedback":
           answered={effectiveDisabled || isReview}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
+          memberNames={memberNames}
         />
       ) : (
         <OpenTextTask
           task={tp}
           onSubmit={handleTaskSubmit}
-          // OpenTextTask historically used `answered`; we support both.
           disabled={effectiveDisabled || isReview}
           answered={effectiveDisabled || isReview}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
+          memberNames={memberNames}
         />
       );
       break;
@@ -2426,6 +2427,7 @@ case "multi_player_feedback":
           answerDraft={answerDraft}
           roomCode={roomCode}
           teamId={derivedTeamId}
+          memberNames={memberNames}
         />
       );
       break;

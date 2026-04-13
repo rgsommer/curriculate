@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/OpenTextTask.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import DesignatedWriter from "../DesignatedWriter";
 
 /**
  * Open-text response task.
@@ -90,6 +91,7 @@ export default function OpenTextTask({
   disabled,
   onAnswerChange,
   answerDraft,
+  memberNames,
 }) {
   const initial = useMemo(() => {
     if (
@@ -428,6 +430,9 @@ export default function OpenTextTask({
               </p>
             )}
           </div>
+
+          {/* Designated writer banner */}
+          <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} />
 
           {/* Tips card */}
           <div
