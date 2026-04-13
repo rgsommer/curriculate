@@ -1099,6 +1099,8 @@ function StudentApp() {
       if (!payload) return;
       setNoiseState((prev) => ({
         ...prev,
+        enabled: typeof payload.enabled === "boolean" ? payload.enabled : prev.enabled,
+        threshold: typeof payload.threshold === "number" ? payload.threshold : prev.threshold,
         level: typeof payload.level === "number" ? payload.level : prev.level,
         brightness: typeof payload.brightness === "number" ? payload.brightness : prev.brightness,
       }));
@@ -5479,6 +5481,15 @@ function StudentApp() {
       >
         {pointToast.message}
       </div>
+    )}
+
+    {/* NOISE SENSOR — invisible; captures mic samples and emits to backend */}
+    {roomCode && noiseState.enabled && (
+      <NoiseSensor
+        active={noiseState.enabled}
+        roomCode={roomCode.trim().toUpperCase()}
+        socket={socket}
+      />
     )}
 
     {/* CONFETTI LAYER */}

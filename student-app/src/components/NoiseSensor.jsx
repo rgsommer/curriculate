@@ -1,61 +1,78 @@
 // student-app/src/components/NoiseSensor.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef } from "react";
 
-function NoiseSensor({ active, roomCode, socket, ignoreNoise }) {
-  const [audioContext, setAudioContext] = useState(null);
-  const [analyser, setAnalyser] = useState(null);
-  const [microphone, setMicrophone] = useState(null);
-  const [javascriptNode, setJavascriptNode] = useState(null);
-  const [level, setLevel] = useState(0);
+/**
+ * Invisible component that captures microphone level and emits
+ * throttled noise:sample events to the backend via socket.
+ *
+ * Props:
+ *   active   – whether to capture (mic only opens when true)
+ *   roomCode – current room code
+ *   socket   – socket.io instance
+ */
+function NoiseSensor({ active, roomCode, socket }) {
+  const cleanupRef = useRef(null);
+  const lastEmitRef = useRef(0);
 
   useEffect(() => {
-    if (!active || ignoreNoise) return;
+    if (!active || !roomCode || !socket) return;
 
-    const setupAudio = async () => {
+    let cancelled = false;
+    let audioCtx = null;
+    let stream = null;
+    let analyser = null;
+    let rafId = null;
+
+    async function start() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const context = new (window.AudioContext || window.webkitAudioContext)();
-        const mic = context.createMediaStreamSource(stream);
-        const analyserNode = context.createAnalyser();
-        analyserNode.fftSize = 256;
-        const jsNode = context.createScriptProcessor(1024, 1, 1);
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
 
-        mic.connect(analyserNode);
-        analyserNode.connect(jsNode);
-        jsNode.connect(context.destination);
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioCtx.createMediaStreamSource(stream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
 
-        jsNode.onaudioprocess = () => {
-          const data = new Uint8Array(analyserNode.frequencyBinCount);
-          analyserNode.getByteFrequencyData(data);
-          let sum = 0;
-          for (let i = 0; i < data.length; i++) {
-            sum += data[i];
+        const buf = new Uint8Array(analyser.frequencyBinCount);
+
+        // Poll ~4 times/second (every 250ms via rAF + timestamp check)
+        function loop() {
+          if (cancelled) return;
+
+          const now = Date.now();
+          if (now - lastEmitRef.current >= 250) {
+            analyser.getByteFrequencyData(buf);
+            let sum = 0;
+            for (let i = 0; i < buf.length; i++) sum += buf[i];
+            const avg = sum / buf.length;
+            const level = Math.min(100, Math.floor(avg * 0.5));
+
+            socket.emit("noise:sample", { roomCode, level });
+            lastEmitRef.current = now;
           }
-          const avg = sum / data.length;
-          const clamped = Math.min(100, Math.floor(avg * 0.5)); // Scale to 0-100
-          setLevel(clamped);
 
-          socket.emit("noise:sample", { roomCode, level: clamped });
-        };
-
-        setAudioContext(context);
-        setMicrophone(mic);
-        setAnalyser(analyserNode);
-        setJavascriptNode(jsNode);
+          rafId = requestAnimationFrame(loop);
+        }
+        rafId = requestAnimationFrame(loop);
       } catch (err) {
-        console.error("NoiseSensor setup error:", err);
+        console.error("[NoiseSensor] setup error:", err);
       }
-    };
+    }
 
-    setupAudio();
+    start();
+
+    cleanupRef.current = () => {
+      cancelled = true;
+      if (rafId) cancelAnimationFrame(rafId);
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      if (audioCtx) audioCtx.close().catch(() => {});
+    };
 
     return () => {
-      if (javascriptNode) javascriptNode.disconnect();
-      if (analyser) analyser.disconnect();
-      if (microphone) microphone.disconnect();
-      if (audioContext) audioContext.close();
+      if (cleanupRef.current) cleanupRef.current();
     };
-  }, [active, ignoreNoise, roomCode, socket]);
+  }, [active, roomCode, socket]);
 
   return null; // Invisible component — no UI
 }
