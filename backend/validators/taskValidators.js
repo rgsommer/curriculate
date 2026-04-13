@@ -617,13 +617,12 @@ export function normalizeTaskByType(taskType, rawTask) {
         .filter(Boolean);
 
       // --- GUARDRAIL: Reject sequences/timelines with too few items ---
-      // Hard reject at <4 (unplayable). Warn at 4-5 (playable but shallow).
-      // Prompt still asks for 6+, but the AI frequently returns 4-5 and retrying doesn't help.
-      if (items.length < 4) {
-        task._validationError = `Sequence/timeline must have at least 4 items, got ${items.length}.`;
+      // Hard reject at <6 (matching sort). A 4-item timeline is trivially easy.
+      if (items.length < 6 && items.length > 0) {
+        task._validationError = `Sequence/timeline must have at least 6 items (got ${items.length}). Include 6-8 specific, datable events with distinct dates — do NOT reuse the same time period for multiple items.`;
         if (items.length === 0) items = ["Placeholder — regenerate this task"];
-      } else if (items.length < 6) {
-        task._validationWarning = `Sequence/timeline has only ${items.length} items — 6+ preferred`;
+      } else if (items.length < 8) {
+        task._validationWarning = `Sequence/timeline has only ${items.length} items — 8+ preferred`;
       }
       // Flag vague pattern items (e.g. "Impact of...", "Settlement of...", "Growth of...")
       const vaguePattern = /^(Impact|Effect|Growth|Rise|Spread|Settlement|Development|Influence|Role)\s+of\b/i;
@@ -693,6 +692,30 @@ export function normalizeTaskByType(taskType, rawTask) {
         if (changed) {
           items = sorted;
           // Don't warn — this is an expected auto-fix
+        }
+      }
+
+      // --- GUARDRAIL: Reject sequences/timelines with tied dates ---
+      // When 2+ items resolve to the same date value, the "correct" order is
+      // arbitrary and students get marked wrong for a defensible answer.
+      if (!task._validationError && items.length >= 4) {
+        const dv = items.map(extractDateValue);
+        const seen = {};
+        const ties = [];
+        dv.forEach((v, i) => {
+          if (v === null) return;
+          if (seen[v] !== undefined) {
+            // Only report the pair once
+            if (!ties.some((t) => t.date === v)) {
+              ties.push({ date: v, a: items[seen[v]], b: items[i] });
+            }
+          } else {
+            seen[v] = i;
+          }
+        });
+        if (ties.length > 0) {
+          const desc = ties.map((t) => `"${t.a}" and "${t.b}" both resolve to ~${t.date}`).join("; ");
+          task._validationError = `Sequence/timeline has items with identical or overlapping dates: ${desc}. Every item must have a distinct, unambiguous date so there is exactly one correct order.`;
         }
       }
 
