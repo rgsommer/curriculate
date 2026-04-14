@@ -36,7 +36,7 @@ export default function AnalyticsOverview() {
     setLoading(true);
     setError("");
     try {
-      const res = await api.get("/api/reports");
+      const res = await api.get("/reports");
       setSessions(res.data.reports || []);
     } catch (err) {
       console.error("Analytics load error", err?.message, "status:", err?.response?.status, "data:", err?.response?.data);
