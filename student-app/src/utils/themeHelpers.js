@@ -57,9 +57,9 @@ export const THEMES = {
     label: "Bold",
     emoji: "⚡",
     pageBg: "#0a0a1a",
-    cardBg: "rgba(15,15,35,0.9)",
-    cardBorder: "1px solid rgba(139,92,246,0.4)",
-    text: "#e0e7ff",
+    cardBg: "rgba(15,15,35,0.95)",
+    cardBorder: "1px solid rgba(139,92,246,0.7)",
+    text: "#f0f0ff",
     accent: "#8b5cf6",
     animationCSS: `
       @keyframes bold-pulse {
@@ -94,9 +94,9 @@ export const THEMES = {
       }
     `,
     shapes: [
-      { size: 400, top: "60%", left: "5%", color: "rgba(99,102,241,0.15)", duration: 8 },
-      { size: 250, top: "10%", left: "70%", color: "rgba(168,85,247,0.12)", duration: 11 },
-      { size: 180, top: "80%", left: "50%", color: "rgba(59,130,246,0.1)", duration: 7 },
+      { size: 400, top: "60%", left: "5%", color: "rgba(99,102,241,0.2)", duration: 8 },
+      { size: 250, top: "10%", left: "70%", color: "rgba(168,85,247,0.18)", duration: 11 },
+      { size: 180, top: "80%", left: "50%", color: "rgba(59,130,246,0.15)", duration: 7 },
     ],
   },
 

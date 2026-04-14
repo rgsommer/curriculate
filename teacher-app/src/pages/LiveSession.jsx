@@ -525,10 +525,15 @@ useEffect(() => {
   const joinSoundRef = useRef(null);
   const treatSoundRef = useRef(null);
 
-  // Noise-control local UI state
+  // Noise-control local UI state (defaults: enabled, light mode threshold=30)
+  // Persist to localStorage so it's sticky across sessions
   const [noiseLevel, setNoiseLevel] = useState(0);
-  const [noiseThreshold, setNoiseThreshold] = useState(0);
-  const [noiseEnabled, setNoiseEnabled] = useState(false);
+  const [noiseThreshold, setNoiseThreshold] = useState(() => {
+    try { const v = localStorage.getItem("curriculate.teacher.noiseThreshold"); return v != null ? Number(v) : 30; } catch { return 30; }
+  });
+  const [noiseEnabled, setNoiseEnabled] = useState(() => {
+    try { const v = localStorage.getItem("curriculate.teacher.noiseEnabled"); return v != null ? v === "true" : true; } catch { return true; }
+  });
   const [noiseBrightness, setNoiseBrightness] = useState(1);
 
   // Treats UI state (mirrors roomState.treatsConfig)
@@ -2943,11 +2948,13 @@ if (
     });
 
     setNoiseEnabled(nextEnabled);
+    try { localStorage.setItem("curriculate.teacher.noiseEnabled", String(nextEnabled)); } catch {}
   };
 
   const handleNoiseThresholdChange = (e) => {
     const value = Number(e.target.value) || 0;
     setNoiseThreshold(value);
+    try { localStorage.setItem("curriculate.teacher.noiseThreshold", String(value)); } catch {}
     if (!roomCode) return;
     const code = roomCode.toUpperCase();
 
@@ -3863,6 +3870,25 @@ if (
                   End task → unlock next
                 </button>
               </div>
+
+              {/* Completion % bar */}
+              {taskFlowActive && teamCompletionStats.total > 0 && (
+                <div style={{ marginTop: 8, fontSize: "0.8rem", color: "#374151" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                    <span>Teams complete: {teamCompletionStats.completed}/{teamCompletionStats.total}</span>
+                    <span style={{ fontWeight: 600 }}>{teamCompletionStats.pct}%</span>
+                  </div>
+                  <div style={{ width: "100%", height: 6, borderRadius: 3, background: "#e5e7eb", overflow: "hidden" }}>
+                    <div style={{
+                      width: `${teamCompletionStats.pct}%`,
+                      height: "100%",
+                      borderRadius: 3,
+                      background: teamCompletionStats.pct === 100 ? "#22c55e" : "#3b82f6",
+                      transition: "width 0.4s ease",
+                    }} />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

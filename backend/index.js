@@ -5547,6 +5547,10 @@ socket.on(
       }
     }
 
+    // Immediately signal ALL students that the session is complete.
+    // This triggers the feedback form on student devices before reports are generated.
+    io.to(code).emit("session:complete");
+
     // Helper: emit progress to teacher UI
     const emitProgress = (step, total, label) => {
       socket.emit("report:progress", { step, total, label });
@@ -9597,12 +9601,33 @@ app.post("/api/sessions/:roomCode/end", authRequired, async (req, res) => {
 app.get("/api/reports", authRequired, async (req, res) => {
   try {
     const ownerId = getOwnerId(req);
-    if (!ownerId) return res.status(401).json({ ok: false, error: "Unauthorized" });
+    if (!ownerId) {
+      console.warn("[reports] GET /api/reports — empty ownerId. user:", req.user?._id, "guest:", req.user?.guest);
+      return res.status(401).json({ ok: false, error: "Unauthorized — no owner identity found. Are you logged in?" });
+    }
 
-    const rows = await SessionReport.find({ ownerId })
+    // Try exact ownerId match first, then fall back to teacherEmail match
+    let rows = await SessionReport.find({ ownerId })
       .sort({ createdAt: -1 })
       .select("_id roomCode className gradeLevel headline createdAt startedAt planTierUsed taskSetName runByPresenterName sharedFromTeacherName sharedFromTeacherEmail classAverageScore classAverageEngagement noiseSummary")
       .lean();
+
+    // If no reports found by ownerId, try matching by teacher email
+    if ((!rows || rows.length === 0) && req.user?.email) {
+      const email = String(req.user.email).trim().toLowerCase();
+      rows = await SessionReport.find({
+        $or: [
+          { teacherEmail: { $regex: new RegExp(`^${email}$`, "i") } },
+          { sharedFromTeacherEmail: { $regex: new RegExp(`^${email}$`, "i") } },
+        ],
+      })
+        .sort({ createdAt: -1 })
+        .select("_id roomCode className gradeLevel headline createdAt startedAt planTierUsed taskSetName runByPresenterName sharedFromTeacherName sharedFromTeacherEmail classAverageScore classAverageEngagement noiseSummary")
+        .lean();
+      if (rows?.length) {
+        console.log(`[reports] Found ${rows.length} reports via email fallback for ${email} (ownerId ${ownerId} had 0)`);
+      }
+    }
 
     return res.json({ ok: true, reports: rows || [] });
   } catch (err) {
@@ -9615,11 +9640,32 @@ app.get("/api/reports", authRequired, async (req, res) => {
 app.get("/api/reports/:id", authRequired, async (req, res) => {
   try {
     const ownerId = getOwnerId(req);
-    if (!ownerId) return res.status(401).json({ ok: false, error: "Unauthorized" });
+    if (!ownerId) {
+      console.warn("[reports] GET /api/reports/:id — empty ownerId. user:", req.user?._id, "guest:", req.user?.guest);
+      return res.status(401).json({ ok: false, error: "Unauthorized — no owner identity found. Are you logged in?" });
+    }
 
     const id = String(req.params.id || "").trim();
-    const doc = await SessionReport.findOne({ _id: id, ownerId }).lean();
-    if (!doc) return res.status(404).json({ ok: false, error: "Report not found" });
+    let doc = await SessionReport.findOne({ _id: id, ownerId }).lean();
+
+    // If not found by ownerId, check if the user is the report's sharedFromTeacherEmail
+    if (!doc) {
+      const email = req.user?.email || "";
+      if (email) {
+        doc = await SessionReport.findOne({
+          _id: id,
+          $or: [
+            { teacherEmail: email },
+            { sharedFromTeacherEmail: email },
+          ],
+        }).lean();
+      }
+    }
+
+    if (!doc) {
+      console.warn(`[reports] Report ${id} not found for ownerId=${ownerId}`);
+      return res.status(404).json({ ok: false, error: "Report not found. It may belong to a different account." });
+    }
 
     return res.json({ ok: true, report: doc });
   } catch (err) {

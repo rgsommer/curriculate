@@ -24,7 +24,32 @@ import {
 export default function BrainSparkNotesTask({ task, onAdvance, onSkip }) {
   const notes = useMemo(() => {
     // Prefer explicit notes payload; fallback to config.notes; final fallback empty object
-    return task?.notes || task?.config?.notes || {};
+    const raw = task?.notes || task?.config?.notes || {};
+
+    // If the AI generated a flat "bullets" array instead of structured notes, convert it
+    if (
+      (!raw?.keyTerms || raw.keyTerms.length === 0) &&
+      (!raw?.mainPoints || raw.mainPoints.length === 0) &&
+      Array.isArray(task?.bullets) && task.bullets.length > 0
+    ) {
+      const bullets = task.bullets.map((b) => String(b).trim()).filter(Boolean);
+      // Try to split "Term: definition" bullets into keyTerms
+      const converted = bullets.map((b) => {
+        const colonIdx = b.indexOf(":");
+        if (colonIdx > 0 && colonIdx < 60) {
+          return { term: b.slice(0, colonIdx).trim(), definition: b.slice(colonIdx + 1).trim(), points: [] };
+        }
+        return { term: "", definition: b, points: [] };
+      });
+      return {
+        ...raw,
+        heading: raw?.heading || task?.title || "Brain Spark Notes",
+        keyTerms: converted,
+        mainPoints: raw?.mainPoints || [],
+        summary: raw?.summary || [],
+      };
+    }
+    return raw;
   }, [task]);
 
   const heading = notes?.heading || task?.title || "Brain Spark Notes";

@@ -64,6 +64,17 @@ function capEmojis(str, max = 2) {
   });
 }
 
+// Collapse runs of 3+ identical consecutive letters down to 2.
+// e.g. "Sammmm" → "Samm", "Aaaron" → "Aaron"
+function collapseTripleLetters(str) {
+  return str.replace(/(.)\1{2,}/g, "$1$1");
+}
+
+// Combined name sanitiser: caps emojis + collapses triple letters
+function sanitizeName(str) {
+  return collapseTripleLetters(capEmojis(str));
+}
+
 const DEFAULT_POST_SUBMIT_SECONDS = 15;
 
 // ---------------------------------------------------------------------
@@ -3140,6 +3151,10 @@ function StudentApp() {
           35% { transform: scaleY(1.35); }
           100% { transform: scaleY(1); }
         }
+        @keyframes noiseWarnFade {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
 .scan-error {
           color: #fee2e2;
           background: rgba(127,29,29,0.9);
@@ -3877,7 +3892,7 @@ function StudentApp() {
                 </label>
                 <input
                   value={teamName}
-                  onChange={(e) => setTeamName(capEmojis(e.target.value))}
+                  onChange={(e) => setTeamName(sanitizeName(e.target.value))}
                   placeholder="Your epic team name"
                 />
               </div>
@@ -3898,7 +3913,7 @@ function StudentApp() {
                     value={m}
                     onChange={(e) => {
                       const copy = [...members];
-                      copy[idx] = capEmojis(e.target.value);
+                      copy[idx] = sanitizeName(e.target.value);
                       setMembers(copy);
                     }}
                     placeholder={`Member ${idx + 1}`}
@@ -4047,6 +4062,23 @@ function StudentApp() {
                 }}
               />
             </div>
+            {/* Prominent noise warning banner when threshold exceeded */}
+            {noiseOver && (
+              <div style={{
+                marginTop: 6,
+                padding: "6px 12px",
+                borderRadius: 10,
+                background: "rgba(239,68,68,0.15)",
+                border: "1px solid rgba(239,68,68,0.4)",
+                color: "#fca5a5",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                textAlign: "center",
+                animation: "noiseWarnFade 1.5s ease-in-out infinite",
+              }}>
+                Too loud! Bring the volume down.
+              </div>
+            )}
           </section>
 
     {!tasksStarted && postPhase === "mood" && warmupStep === "mood" && !currentTask && (
@@ -4312,6 +4344,8 @@ function StudentApp() {
         } catch {}
         setPostPhase("trophy");
         setTasksetComplete(true);
+        // Clear saved join data so shared tablets start fresh next session
+        clearSavedJoin();
         // refresh scores for final trophy
         socket.emit("room:request-state", {
           roomCode: roomCode.trim().toUpperCase(),

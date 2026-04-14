@@ -754,7 +754,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       "The AI picks an appropriate character and suggests a letter style (business or friendly). " +
       "After submitting, students receive a real-time AI-generated reply letter from the character. " +
       "Points scale with relevant vocabulary concepts mentioned. " +
-      "Word target: 20 × grade level (e.g., grade 7 = 140 words).",
+      "Word target: 10 × grade level (e.g., grade 7 = 70 words).",
 
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "letter".
@@ -2774,22 +2774,47 @@ config: {
     - Avoid copyrighted passages; write original content.
 
     Task-specific guidance:
-    - Create a note-taking task with a clear topic title and a model set of notes.
-    - Provide task.bullets as an array of concise jot-notes/definitions that students will COPY (no blanks).
-    - Bullet count: 3–5 for Grades 3–7; 6–10 for Grades 8+ (if grade is unknown, use 5–7).
-    - Each bullet should be a specific definition or key point (not generic advice).
+    - Create a note-taking task with a clear topic title and structured notes.
+    - The task MUST include a "notes" object at the root level with the following structure:
+      {
+        "heading": "Topic Title Here",
+        "keyTerms": [
+          { "term": "Actual Term", "definition": "Real definition", "points": ["Supporting detail 1", "Supporting detail 2"] }
+        ],
+        "mainPoints": [
+          { "title": "Main Point Title", "content": "Explanation of the main point", "details": ["Detail 1", "Detail 2"] }
+        ],
+        "summary": ["A concise summary sentence about the topic."]
+      }
+    - keyTerms: 3–5 items for Grades 3–7; 4–8 for Grades 8+.
+    - mainPoints: 2–4 items explaining the key concepts.
+    - summary: 1–3 sentences summarising the topic.
+    - Each keyTerm MUST have a real term and definition, NOT generic placeholders.
 
     CRITICAL — NO PLACEHOLDER TEXT:
-    - NEVER write "Key Term 1", "Key Term 2", "Definition 1", "Concept 1", "Bullet 1", or any generic filler.
-    - Every bullet MUST be a real, specific fact, definition, or jot-note drawn from the actual subject and concept.
-    - If you are unsure of exact content, invent plausible age-appropriate content for the subject — but NEVER use numbered placeholders.
-    - Bad example: "Key Term 1: Definition of Key Term 1"
-    - Good example: "Photosynthesis: the process by which plants convert sunlight into glucose using water and CO₂"
+    - NEVER write "Key Term 1", "Key Term 2", "Definition 1", "Concept 1", "Main Point 1", or any generic filler.
+    - Every term, definition, and point MUST be a real, specific fact drawn from the actual subject.
+    - If you are unsure of exact content, invent plausible age-appropriate content — but NEVER use numbered placeholders.
+    - Bad example: { "term": "Key Term 1", "definition": "Definition of Key Term 1" }
+    - Good example: { "term": "Photosynthesis", "definition": "The process by which plants convert sunlight into glucose using water and CO₂", "points": ["Occurs in chloroplasts", "Requires chlorophyll"] }
+
+    REQUIRED STRUCTURE:
+    {
+      "taskType": "brain-spark-notes",
+      "title": "Notes: Topic Title",
+      "prompt": "Copy these notes into your notebook carefully.",
+      "notes": {
+        "heading": "Topic Title",
+        "keyTerms": [ { "term": "...", "definition": "...", "points": ["..."] } ],
+        "mainPoints": [ { "title": "...", "content": "...", "details": ["..."] } ],
+        "summary": ["..."]
+      }
+    }
 
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - The "notes" field MUST be at the root level of the task object (NOT inside config).
+    - Do not omit keyTerms, mainPoints, or summary — all three are required.
+    - Do not use "bullets" — use the structured "notes" format above.
     `,
 },
 

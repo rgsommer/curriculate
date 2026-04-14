@@ -421,13 +421,9 @@ export default function TrueFalseConnectFourTask({
 
     if (mapped.length) return mapped;
 
-    const seed = String(task?.prompt || task?.title || "this topic").trim();
-    return [
-      { id: "ph1", text: `"${seed}" is the topic for this round.`, isFalse: false },
-      { id: "ph2", text: `"${seed}" happened in the year 3000.`, isFalse: true },
-      { id: "ph3", text: `"${seed}" has a cause and an effect.`, isFalse: false },
-      { id: "ph4", text: `"${seed}" was invented by a talking penguin.`, isFalse: true },
-    ];
+    // No statements available — return an empty array.
+    // The UI will show a "no statements" message instead of fake placeholders.
+    return [];
   }, [task?.statements, task?.items, task?.config?.statements, task?.prompt, task?.title]);
 
   const instructions = gameOver
@@ -494,9 +490,9 @@ export default function TrueFalseConnectFourTask({
                 onMouseEnter={() => !inputDisabled && setDroppingCol(c)}
                 onMouseLeave={() => setDroppingCol(null)}
                 className={[
-                  "flex items-center justify-center h-10 rounded-t-lg text-2xl font-bold transition-all duration-200 select-none",
+                  "flex items-center justify-center h-12 rounded-t-lg text-2xl font-bold transition-all duration-200 select-none",
                   canDrop
-                    ? "cursor-pointer text-yellow-300 hover:text-yellow-100 hover:bg-indigo-500/40"
+                    ? "cursor-pointer text-yellow-300 hover:text-yellow-100 hover:bg-indigo-500/40 active:bg-indigo-500/60"
                     : isFull
                       ? "text-indigo-800/30 cursor-not-allowed"
                       : "text-indigo-400/50 cursor-pointer",
@@ -569,6 +565,11 @@ export default function TrueFalseConnectFourTask({
         >
           Tap a statement, then tap a column to drop it.
         </p>
+        {statements.length === 0 && (
+          <div className="p-4 rounded-xl bg-amber-50 border-2 border-amber-300 text-amber-800 text-center font-semibold">
+            No statements were generated for this round. Ask your teacher to regenerate this task.
+          </div>
+        )}
         {statements.filter((stmt) => !usedStatementIds.has(stmt.id)).map((stmt, i) => {
           const isActive = activeStatement && activeStatement.id === stmt.id;
           return (
@@ -580,10 +581,10 @@ export default function TrueFalseConnectFourTask({
               onTouchEnd={handleTouchEnd}
               onClick={() => handleStatementClick(stmt)}
               className={[
-                "p-3 rounded-lg text-base font-medium text-center transition-all duration-200 cursor-pointer select-none",
+                "p-4 rounded-xl text-base font-medium text-center transition-all duration-200 cursor-pointer select-none",
                 "bg-amber-50 border-2 border-amber-400",
-                inputDisabled ? "opacity-50" : "hover:scale-105 active:scale-95",
-                isActive ? "ring-4 ring-indigo-500 scale-105 shadow-lg" : "",
+                inputDisabled ? "opacity-50" : "hover:scale-[1.02] active:scale-95",
+                isActive ? "ring-4 ring-indigo-500 scale-[1.02] shadow-lg bg-indigo-50 border-indigo-400" : "",
               ].join(" ")}
             >
               {stmt.text}

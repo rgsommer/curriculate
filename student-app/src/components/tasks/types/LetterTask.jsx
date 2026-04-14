@@ -23,9 +23,9 @@ export default function LetterTask({
   const topicContext = cfg.topicContext || "";
   const relevantConcepts = Array.isArray(cfg.relevantConcepts) ? cfg.relevantConcepts : [];
 
-  // Grade-scaled word target: 20 × grade level
+  // Grade-scaled word target: 10 × grade level (e.g., grade 7 = 70 words)
   const gradeLevel = parseInt(task?.gradeLevel || task?.config?.gradeLevel || task?.settings?.gradeLevel || "7", 10);
-  const minWords = gradeLevel * 20;
+  const minWords = gradeLevel * 10;
 
   const [value, setValue] = useState(answerDraft?.response || "");
   const [isSubmitting, setIsSubmitting] = useState(false);
