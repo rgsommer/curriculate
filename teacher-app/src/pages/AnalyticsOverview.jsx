@@ -167,7 +167,7 @@ export default function AnalyticsOverview() {
           {sessions.map((s) => (
             <Link
               key={s._id}
-              to={`/analytics/sessions/${s._id}`}
+              to={`/reports/${s._id}`}
               className="block border rounded-lg bg-white hover:bg-gray-50 p-3 sm:p-4"
             >
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">

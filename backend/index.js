@@ -5794,9 +5794,14 @@ socket.on(
     })();
 
     try {
-      if (safeOwnerId) {
+      // Always save the report — use ownerId if available, fallback to "anonymous"
+      {
+        const reportOwnerId = safeOwnerId || "anonymous";
+        if (!safeOwnerId) {
+          console.warn("[report] ⚠️ No ownerId — saving report with ownerId='anonymous'. It may not appear on the teacher's Reports page.");
+        }
         reportDoc = await SessionReport.create({
-          ownerId: safeOwnerId,
+          ownerId: reportOwnerId,
           roomCode: code,
           className: safeClass,
           gradeLevel: safeGrade,

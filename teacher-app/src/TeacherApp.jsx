@@ -497,7 +497,7 @@ function TeacherApp() {
           {/* Reports / analytics */}
           <Route path="/reports" element={requireAuth(<AnalyticsOverview />)} />
           <Route
-            path="/reports/:sessionId"
+            path="/reports/:id"
             element={requireAuth(<SessionAnalyticsPage />)}
           />
 

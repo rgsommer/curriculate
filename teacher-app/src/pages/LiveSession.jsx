@@ -461,6 +461,10 @@ useEffect(() => {
       : null) ||
     (Array.isArray(activeTasksetMeta?.taskList) &&
       activeTasksetMeta.taskList.length) ||
+    // Fallback: use totalTasks from room state (sent by backend buildRoomState)
+    (typeof roomState?.totalTasks === "number" && roomState.totalTasks > 0
+      ? roomState.totalTasks
+      : null) ||
     null;
 
   const isFixedStationTaskset =
