@@ -392,13 +392,16 @@ export default function TrueFalseConnectFourTask({
 
   // ─── Statements pool ───
   const statements = useMemo(() => {
-    const raw = Array.isArray(task?.statements)
-      ? task.statements
-      : Array.isArray(task?.items)
-        ? task.items
-        : Array.isArray(task?.config?.statements)
-          ? task.config.statements
-          : [];
+    // Check every possible location where statements might live
+    const sources = [
+      task?.statements, task?.items,
+      task?.config?.statements, task?.config?.items,
+      task?.clues, task?.config?.clues,
+    ];
+    let raw = [];
+    for (const src of sources) {
+      if (Array.isArray(src) && src.length > 0) { raw = src; break; }
+    }
 
     const mapped = Array.isArray(raw)
       ? raw

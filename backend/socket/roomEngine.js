@@ -859,6 +859,23 @@ export function createRoomEngine(io) {
         nextTask?.stationColor || nextTask?.config?.stationColor || null;
     }
 
+    // Runtime sanitiser: ensure Connect Four / TF TicTacToe tasks have statements
+    // in the top-level `task.statements` array (may be nested in config from older tasks).
+    if (task.taskType === "true-false-connect-four" || task.taskType === "true-false-tictactoe") {
+      if (!Array.isArray(task.statements) || task.statements.length === 0) {
+        const sources = [
+          task.config?.statements, task.items, task.config?.items,
+          task.clues, task.config?.clues,
+        ];
+        for (const src of sources) {
+          if (Array.isArray(src) && src.length > 0) {
+            task.statements = src;
+            break;
+          }
+        }
+      }
+    }
+
     // Runtime sanitiser: ensure draw-mime clues are short (1-5 words each, ≥3 chars).
     // Older tasks in the DB may have long instruction text in prompt/clues.
     if (task.taskType === "draw-mime") {
