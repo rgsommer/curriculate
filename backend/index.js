@@ -374,10 +374,9 @@ app.use("/api/shared", sharedRoutes);
 
 // 6) Previously-unregistered route files
 app.use("/api/sessions", sessionsRouter);
-// NOTE: reportsRouter (routes/reports.js) is intentionally NOT mounted here.
-// Its listReports/getReport exports are missing from sessionReportController.js.
-// The working inline implementations for GET /api/reports and GET /api/reports/:id
-// remain below until that controller is completed.
+// Reports router — mounted early so it's available regardless of file length
+import reportsRouter from "./routes/reports.js";
+app.use("/api", reportsRouter);
 app.use("/api", analyticsRouter);
 app.use("/api", billingHandoffRouter);
 app.use("/api/speech", speechRouter);
