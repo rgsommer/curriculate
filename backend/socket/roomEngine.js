@@ -123,10 +123,11 @@ export function createRoomEngine(io) {
       // Random-treats state
       treatsConfig: {
         enabled: true,
-        total: 4,
+        total: 2,
         given: 0,
       },
       pendingTreats: {}, // teamId -> true
+      treatedTeamIds: new Set(), // teams that already got a treat this session
 
       // Noise-control state
       noiseControl: {
@@ -471,10 +472,11 @@ export function createRoomEngine(io) {
 
         treatsConfig: {
           enabled: true,
-          total: 4,
+          total: 2,
           given: 0,
         },
         pendingTreatTeams: [],
+        treatedTeamIds: [],
 
         noise: {
           enabled: false,
@@ -680,6 +682,7 @@ export function createRoomEngine(io) {
             : 0,
       },
       pendingTreatTeams: Object.keys(room.pendingTreats || {}),
+      treatedTeamIds: room.treatedTeamIds ? Array.from(room.treatedTeamIds) : [],
 
       // Noise-control state (for LiveSession + StudentApp)
       noise: {
@@ -955,12 +958,16 @@ export function createRoomEngine(io) {
     if (!room.treatsConfig) {
       room.treatsConfig = {
         enabled: true,
-        total: 4,
+        total: 2,
         given: 0,
       };
     }
     if (!room.pendingTreats) {
       room.pendingTreats = {};
+    }
+    // Track which teams have already received a treat (never same group twice)
+    if (!room.treatedTeamIds) {
+      room.treatedTeamIds = new Set();
     }
   }
 
@@ -1004,6 +1011,14 @@ export function createRoomEngine(io) {
     if (cfg.total <= 0) return;
     if (cfg.given >= cfg.total) return;
 
+    // Never give a treat to the same group more than once per session
+    if (room.treatedTeamIds.has(teamId)) return;
+
+    // 30% taskset completion gate
+    const totalTasks = Array.isArray(room.taskset?.tasks) ? room.taskset.tasks.length : 0;
+    const currentIndex = typeof room.taskIndex === "number" ? room.taskIndex : 0;
+    if (totalTasks > 0 && currentIndex < Math.ceil(totalTasks * 0.3)) return;
+
     // Simple probability model:
     const remaining = cfg.total - cfg.given;
     const base = Math.min(0.15 * remaining, 0.6); // 0.15, 0.3, 0.45, 0.6...
@@ -1014,6 +1029,7 @@ export function createRoomEngine(io) {
 
     cfg.given += 1;
     room.pendingTreats[teamId] = true;
+    room.treatedTeamIds.add(teamId);
 
     const team = room.teams?.[teamId];
     const teamName = team?.teamName || `Team-${String(teamId).slice(-4)}`;

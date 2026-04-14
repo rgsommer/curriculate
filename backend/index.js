@@ -4530,18 +4530,20 @@ if (!isMultiPack && task.taskType === "guess-who") {
       speedBonusEligible.has(task.taskType) &&
       !clientSpeedBonusTypes.has(task.taskType)
     ) {
-      const elapsedSec = elapsedMs / 1000;
-      const FAST_THRESHOLD  = 5;   // seconds — full bonus at or below
-      const SLOW_THRESHOLD  = 60;  // seconds — no bonus at or above
-      const MAX_SPEED_BONUS = Math.round(basePoints * 0.5); // up to +50%
+      const FAST_THRESHOLD_MS  = 5000;   // ms — full bonus at or below
+      const SLOW_THRESHOLD_MS  = 60000;  // ms — no bonus at or above
+      const MAX_SPEED_BONUS = basePoints * 0.5; // up to +50%
 
-      if (elapsedSec <= FAST_THRESHOLD) {
+      if (elapsedMs <= FAST_THRESHOLD_MS) {
         speedBonus = MAX_SPEED_BONUS;
-      } else if (elapsedSec < SLOW_THRESHOLD) {
-        const fraction = 1 - (elapsedSec - FAST_THRESHOLD) / (SLOW_THRESHOLD - FAST_THRESHOLD);
-        speedBonus = Math.round(MAX_SPEED_BONUS * fraction);
+      } else if (elapsedMs < SLOW_THRESHOLD_MS) {
+        // Use ms directly to preserve full precision (no rounding until final display)
+        const fraction = 1 - (elapsedMs - FAST_THRESHOLD_MS) / (SLOW_THRESHOLD_MS - FAST_THRESHOLD_MS);
+        speedBonus = MAX_SPEED_BONUS * fraction;
       }
-      pointsEarned += speedBonus;
+      // Keep fractional precision so different response times always produce different scores
+      // Round to 2 decimal places — enough to break ties while keeping scores clean
+      pointsEarned = Math.round((pointsEarned + speedBonus) * 100) / 100;
     }
 
     // ==== Diff Detective race mechanics (first correct team wins bonus) ====

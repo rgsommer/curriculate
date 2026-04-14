@@ -544,11 +544,16 @@ useEffect(() => {
   const [noiseBrightness, setNoiseBrightness] = useState(1);
 
   // Treats UI state (mirrors roomState.treatsConfig)
-  const [treatsConfig, setTreatsConfig] = useState({
-    enabled: true,
-    total: 4,
-    given: 0,
+  const [treatsConfig, setTreatsConfig] = useState(() => {
+    let savedTotal = 2;
+    try {
+      const v = localStorage.getItem("curriculate.teacher.treatsTotal");
+      if (v != null) savedTotal = Math.max(0, Math.min(20, Number(v) || 2));
+    } catch {}
+    return { enabled: true, total: savedTotal, given: 0 };
   });
+  // Track which teams already got a treat this session (never same group twice)
+  const [treatedTeamIds, setTreatedTeamIds] = useState(new Set());
 
   // Location override (multi-room presets from Presenter Profile)
   const [locationOptions, setLocationOptions] = useState([]);
@@ -872,6 +877,10 @@ useEffect(() => {
         if (payload.roomCode.toUpperCase() !== roomCode.toUpperCase()) {
           return;
         }
+      }
+      // Track which team got treated (never same group twice enforced in backend)
+      if (payload?.teamId) {
+        setTreatedTeamIds((prev) => new Set(prev).add(payload.teamId));
       }
       if (treatSoundRef.current) {
         treatSoundRef.current.currentTime = 0;
@@ -4625,11 +4634,13 @@ Precipitation — rain, snow, hail`}
                     const v = Number(e.target.value);
                     // Update local state immediately so the slider feels responsive
                     setTreatsConfig((prev) => ({ ...prev, total: v }));
+                    // Persist to localStorage
+                    try { localStorage.setItem("curriculate.teacher.treatsTotal", String(v)); } catch {}
                     if (!roomCode) return;
                     const code = roomCode.toUpperCase();
                     socket.emit("teacher:updateTreatsConfig", {
                       roomCode: code,
-                      total: v,
+                      totalTreats: v,
                     });
                   }}
                   style={{
@@ -4640,7 +4651,7 @@ Precipitation — rain, snow, hail`}
                     outline: "none",
                     appearance: "none",
                   }}
-                  aria-label="Total treats available"
+                  aria-label="Treats per session"
                 />
                 <div
                   style={{
@@ -4651,8 +4662,8 @@ Precipitation — rain, snow, hail`}
                     justifyContent: "space-between",
                   }}
                 >
-                  <span>Total: {treatsConfig.total}</span>
-                  <span>Given: {treatsConfig.given}</span>
+                  <span>Per session: {treatsConfig.total}</span>
+                  <span>Remaining: {Math.max(0, treatsConfig.total - treatsConfig.given)}</span>
                 </div>
               </div>
 
@@ -4666,7 +4677,12 @@ Precipitation — rain, snow, hail`}
               >
                 {treatsConfig.enabled ? (
                   <>
-                    {treatsConfig.given} of {treatsConfig.total} treats given
+                    {treatsConfig.given} of {treatsConfig.total} treats used
+                    {treatedTeamIds.size > 0 && (
+                      <span style={{ display: "block", fontSize: "0.75rem", color: "#9ca3af", marginTop: 2 }}>
+                        {treatedTeamIds.size} team{treatedTeamIds.size !== 1 ? "s" : ""} already treated
+                      </span>
+                    )}
                   </>
                 ) : (
                   <>Treats are currently disabled</>
@@ -5134,7 +5150,7 @@ Precipitation — rain, snow, hail`}
                           <span style={{ marginLeft: 4 }}>{correctIcon}</span>
                         </span>
                         <span>
-                          {pts > 0 ? `+${pts} pts` : `${pts} pts`}
+                          {pts > 0 ? `+${Math.round(pts)} pts` : `${Math.round(pts)} pts`}
                         </span>
                       </div>
                       {packSummary && (

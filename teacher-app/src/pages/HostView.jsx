@@ -148,11 +148,11 @@ function ScorePopup({ teamName, points, speedBonus, correct, id }) {
     >
       <span style={{ marginRight: 8 }}>{teamName}</span>
       <span style={{ fontSize: "1.8em", verticalAlign: "middle" }}>
-        {isPositive ? "+" : ""}{points}
+        {isPositive ? "+" : ""}{Math.round(points)}
       </span>
       {speedBonus > 0 && (
         <span style={{ fontSize: "0.75em", marginLeft: 8, opacity: 0.9 }}>
-          (+{speedBonus} speed)
+          (+{Math.round(speedBonus)} speed)
         </span>
       )}
     </motion.div>
