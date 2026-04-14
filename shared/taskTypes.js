@@ -590,6 +590,7 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
     2. config.items: array of objects with { "id": "item-0-Dog", "text": "Dog", "categories": ["Mammals"] }.
     3. Include a top-level "correctAnswer" mapping every item id to its category array.
     4. Every item must have at least one category. Choose categories where placements are unambiguous.
+    5. BALANCE: Every category MUST have at least 2 items. If a category is underpopulated, add extra relevant terms (even beyond the vocabulary list) until balanced.
 
     Common failure prevention:
     - Do not omit the correctAnswer field.
