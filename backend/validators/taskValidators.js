@@ -2744,8 +2744,9 @@ export function validateTaskByType(taskType, task) {
     }
 
     case TASK_TYPES.COLLABORATION: {
-      const colRoles = task.config?.roles || [];
-      if (!Array.isArray(colRoles) || colRoles.length < 2) errors.push("collaboration requires config.roles[] with at least 2 roles");
+      // Collaboration only needs taskType, title, and a prompt.
+      // No config.roles required — the frontend doesn't use them.
+      if (!String(task.prompt || "").trim()) errors.push("collaboration requires a non-empty prompt");
       break;
     }
 
