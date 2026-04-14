@@ -2917,6 +2917,35 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
 
     } catch (_) {}
   }
+// --- Skip task feature ---
+// Non-skippable task types (meta/feedback tasks that aren't real academic tasks)
+const SKIP_EXCLUDED_TYPES = new Set([
+  TASK_TYPES.MOOD_CHECKIN, "mood-checkin",
+  TASK_TYPES.MULTI_PLAYER_FEEDBACK, "multi-player-feedback", "feedback",
+  TASK_TYPES.BODY_BREAK, "body-break",
+]);
+const canSkip = mode === "play" && !isReview && !effectiveDisabled && !SKIP_EXCLUDED_TYPES.has(type);
+const [showSkipDialog, setShowSkipDialog] = useState(false);
+const [skipReason, setSkipReason] = useState("");
+const [skipSubmitting, setSkipSubmitting] = useState(false);
+
+const handleSkipTask = async () => {
+  if (!skipReason.trim()) return;
+  setSkipSubmitting(true);
+  try {
+    await handleTaskSubmit({
+      skipped: true,
+      skipReason: skipReason.trim().slice(0, 300),
+      points: 0,
+      answer: null,
+      isCorrect: false,
+    });
+  } catch {}
+  setSkipSubmitting(false);
+  setShowSkipDialog(false);
+  setSkipReason("");
+};
+
 const showVictory = (taskVictory?.key || tasksetVictoryKey) && mode !== "review";
 const showStageVideo = categoryVideoSrc && !stageDone && mode === "play";
 
@@ -3136,6 +3165,123 @@ return (
         </TaskErrorBoundary>
       ) : null}
     </div>
+
+    {/* Skip task button — small, bottom-right, requires a reason */}
+    {canSkip && !showSkipDialog && (
+      <button
+        onClick={() => setShowSkipDialog(true)}
+        style={{
+          position: "absolute",
+          bottom: 10,
+          right: 10,
+          zIndex: 50,
+          padding: "6px 14px",
+          borderRadius: 999,
+          border: "1px solid rgba(15,23,42,0.15)",
+          background: "rgba(255,255,255,0.85)",
+          backdropFilter: "blur(4px)",
+          color: "#64748b",
+          fontSize: 12,
+          fontWeight: 700,
+          cursor: "pointer",
+          opacity: 0.7,
+          transition: "opacity 0.15s",
+        }}
+        onMouseEnter={(e) => (e.target.style.opacity = "1")}
+        onMouseLeave={(e) => (e.target.style.opacity = "0.7")}
+      >
+        Skip task
+      </button>
+    )}
+
+    {/* Skip reason dialog */}
+    {showSkipDialog && (
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 100,
+          background: "rgba(2,6,23,0.45)",
+          backdropFilter: "blur(4px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 16,
+        }}
+      >
+        <div
+          style={{
+            width: "min(420px, 92vw)",
+            borderRadius: 20,
+            background: "#fff",
+            border: "1px solid rgba(15,23,42,0.12)",
+            boxShadow: "0 16px 50px rgba(2,6,23,0.25)",
+            padding: 20,
+          }}
+        >
+          <div style={{ fontWeight: 950, fontSize: 17, marginBottom: 4 }}>
+            Skip this task?
+          </div>
+          <div style={{ fontSize: 13, color: "#64748b", marginBottom: 14, lineHeight: 1.4 }}>
+            You'll receive <strong>0 points</strong> for this task.
+            Your teacher will see that you skipped and your reason why.
+          </div>
+          <textarea
+            value={skipReason}
+            onChange={(e) => setSkipReason(e.target.value)}
+            placeholder="Why are you skipping? (required)"
+            maxLength={300}
+            rows={3}
+            style={{
+              width: "100%",
+              padding: 12,
+              borderRadius: 12,
+              border: "1.5px solid rgba(15,23,42,0.18)",
+              fontSize: 14,
+              fontFamily: "inherit",
+              resize: "vertical",
+              outline: "none",
+            }}
+            autoFocus
+          />
+          <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4, textAlign: "right" }}>
+            {skipReason.length}/300
+          </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" }}>
+            <button
+              onClick={() => { setShowSkipDialog(false); setSkipReason(""); }}
+              style={{
+                padding: "8px 18px",
+                borderRadius: 10,
+                border: "1px solid rgba(15,23,42,0.15)",
+                background: "#fff",
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              Go back
+            </button>
+            <button
+              onClick={handleSkipTask}
+              disabled={!skipReason.trim() || skipSubmitting}
+              style={{
+                padding: "8px 18px",
+                borderRadius: 10,
+                border: "none",
+                background: !skipReason.trim() ? "#e2e8f0" : "#ef4444",
+                color: !skipReason.trim() ? "#94a3b8" : "#fff",
+                fontWeight: 800,
+                fontSize: 13,
+                cursor: !skipReason.trim() ? "not-allowed" : "pointer",
+              }}
+            >
+              {skipSubmitting ? "Skipping…" : "Skip — 0 points"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   </div>
 );
 };

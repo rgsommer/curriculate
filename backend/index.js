@@ -3233,6 +3233,53 @@ socket.on("station:scan", handleStationScan);
   const isObjective = meta.objectiveScoring === true;
   const basePoints = (task.points ?? 100) * 10; // 10× multiplier for dramatic scores & fewer ties
 
+  // ─── Skip task: student chose to skip with a reason ───
+  if (answer && typeof answer === "object" && answer.skipped === true) {
+    const skipReason = String(answer.skipReason || "No reason given").trim().slice(0, 300);
+    const submittedAt = Date.now();
+
+    if (!Array.isArray(room.submissions)) room.submissions = [];
+    room.submissions.push({
+      roomCode: code,
+      teamId: effectiveTeamId,
+      teamName,
+      playerId: socket.data.playerId || null,
+      taskIndex: idx,
+      answer: null,
+      photoUrl: null,
+      correct: false,
+      points: 0,
+      aiScore: { strategy: "skipped", skipReason },
+      skipped: true,
+      skipReason,
+      timeMs: timeMs ?? null,
+      submittedAt,
+    });
+
+    // Advance team to next task
+    if (room.teams[effectiveTeamId]) {
+      room.teams[effectiveTeamId].taskIndex = idx;
+      room.teams[effectiveTeamId].nextTaskIndex = idx + 1;
+    }
+
+    // Broadcast leaderboard update (0 points for skip)
+    io.to(code).emit("score-update", {
+      roomCode: code,
+      teamId: effectiveTeamId,
+      teamName,
+      points: 0,
+      isCorrect: false,
+      taskIndex: idx,
+      skipped: true,
+      skipReason,
+    });
+
+    if (typeof ack === "function") {
+      ack({ ok: true, correct: false, points: 0, skipped: true });
+    }
+    return;
+  }
+
   // Detect multi-question pack answers from TaskRunner
   const isMultiPack =
     answer &&

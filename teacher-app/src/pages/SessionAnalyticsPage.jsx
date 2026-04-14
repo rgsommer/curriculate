@@ -549,15 +549,22 @@ export default function SessionAnalyticsPage() {
                     {pt.prompt} –{" "}
                     <span
                       className={
-                        pt.isCorrect == null
+                        pt.skipped
+                          ? "text-amber-600"
+                          : pt.isCorrect == null
                           ? "text-slate-600"
                           : pt.isCorrect
                           ? "text-green-600"
                           : "text-red-600"
                       }
                     >
-                      {pt.isCorrect == null ? "Completed" : pt.isCorrect ? "Correct" : "Incorrect"}
-                    </span>{" "}
+                      {pt.skipped ? "Skipped" : pt.isCorrect == null ? "Completed" : pt.isCorrect ? "Correct" : "Incorrect"}
+                    </span>
+                    {pt.skipped && pt.skipReason && (
+                      <span className="ml-1 text-[10px] text-amber-500 italic">
+                        — "{pt.skipReason}"
+                      </span>
+                    )}{" "}
                     ({pt.points != null ? `${pt.points} pts` : "—"}, 
                     {(() => {
                       const t = String(pt.type || "").toLowerCase().replace(/_/g, "-");

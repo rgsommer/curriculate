@@ -40,7 +40,11 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
   // Confetti moment on a correct guess
   const [celebrateKey, setCelebrateKey] = useState(null);
 
+  // Interim transcript (shows what the mic is hearing in real time)
+  const [interimTranscript, setInterimTranscript] = useState("");
+
   const recognitionRef = useRef(null);
+  const listeningTimeoutRef = useRef(null);
 
   const clues = useMemo(() => {
     const raw =
@@ -121,12 +125,27 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
     setMicSupported(true);
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.continuous = true;       // keep listening for multiple results
+    recognition.interimResults = true;   // show partial transcripts while speaking
     recognition.lang = "en-US";
+    recognition.maxAlternatives = 3;     // consider alternative transcriptions
 
     recognition.onresult = (event) => {
-      const spoken = event?.results?.[0]?.[0]?.transcript?.trim?.() || "";
+      // Gather the latest final result
+      let spoken = "";
+      let isFinal = false;
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0]?.transcript?.trim() || "";
+        if (event.results[i].isFinal) {
+          spoken = transcript;
+          isFinal = true;
+        } else {
+          // Show interim transcript so the student sees what's being heard
+          setInterimTranscript(transcript);
+        }
+      }
+      if (!isFinal) return; // wait for final result
+      setInterimTranscript("");
 
       const clueObj =
         currentClueIndex >= 0 && currentClueIndex < clues.length
@@ -136,9 +155,18 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
       const correctAnswer = (clueObj?.answer || "").toLowerCase();
       const spokenLower = String(spoken).toLowerCase();
 
-      const isCorrect =
-        !!correctAnswer &&
-        (spokenLower.includes(correctAnswer) || correctAnswer.includes(spokenLower));
+      // Also check all alternative transcriptions for a match
+      let isCorrect = false;
+      if (correctAnswer) {
+        const alternatives = [];
+        const lastResult = event.results[event.results.length - 1];
+        for (let a = 0; a < (lastResult?.length || 0); a++) {
+          alternatives.push((lastResult[a]?.transcript || "").trim().toLowerCase());
+        }
+        isCorrect = alternatives.some(
+          (alt) => alt.includes(correctAnswer) || correctAnswer.includes(alt)
+        ) || spokenLower.includes(correctAnswer) || correctAnswer.includes(spokenLower);
+      }
 
       // Render the guess immediately (local)
       pushGuess({ by: "You", spoken, correct: isCorrect, clueIndex: currentClueIndex });
@@ -160,6 +188,9 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
         });
       }
 
+      // Stop listening, move to next clue
+      try { recognition.stop(); } catch {}
+      if (listeningTimeoutRef.current) { clearTimeout(listeningTimeoutRef.current); listeningTimeoutRef.current = null; }
       setCountdown(null);
       setIsListening(false);
 
@@ -168,12 +199,24 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
     };
 
     recognition.onerror = (event) => {
-      // Common: 'not-allowed' (permission), 'service-not-allowed', 'no-speech'
-      try { setMicError(event?.error || "mic-error"); } catch {}
+      const err = event?.error || "mic-error";
+      // "no-speech" just means silence — restart listening instead of failing
+      if (err === "no-speech") {
+        try { recognition.stop(); } catch {}
+        setTimeout(() => {
+          try { recognition.start(); setIsListening(true); } catch {}
+        }, 200);
+        return;
+      }
+      try { setMicError(err); } catch {}
       setIsListening(false);
     };
 
-    recognition.onend = () => setIsListening(false);
+    recognition.onend = () => {
+      // Only mark as not listening if we didn't intentionally stop
+      // (continuous mode may fire onend unexpectedly)
+      setIsListening(false);
+    };
 
     recognitionRef.current = recognition;
 
@@ -214,6 +257,9 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
   }, [socket]);
 
   // Auto-start listening for each new clue (with countdown)
+  // Listens for up to 30 seconds before auto-advancing
+  const LISTEN_DURATION_MS = 30_000;
+
   useEffect(() => {
     if (!currentClue || disabled) return;
     if (showAnswerOverlay) return;
@@ -221,6 +267,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
 
     setCountdown(3);
     setIsListening(false);
+    setInterimTranscript("");
 
     const tick = () => {
       setCountdown((c) => {
@@ -237,6 +284,24 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
         recognitionRef.current.start();
         setIsListening(true);
       } catch {}
+
+      // Auto-stop after LISTEN_DURATION_MS if no answer captured
+      listeningTimeoutRef.current = setTimeout(() => {
+        try { recognitionRef.current?.stop?.(); } catch {}
+        setIsListening(false);
+        setInterimTranscript("");
+        // Auto-advance: count as no answer (wrong)
+        pushGuess({ by: "You", spoken: "(no answer)", correct: false, clueIndex: currentClueIndex });
+        if (socket) {
+          socket.emit("brain-blitz-answer", {
+            roomCode: task?.roomCode,
+            clueIndex: currentClueIndex,
+            spoken: "(timed out)",
+            correct: false,
+          });
+        }
+        setCurrentClueIndex((prev) => prev + 1);
+      }, LISTEN_DURATION_MS);
     }, 2100);
 
     const clear = setTimeout(() => {
@@ -248,6 +313,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
       clearTimeout(start);
       clearTimeout(clear);
       clearInterval(timer);
+      if (listeningTimeoutRef.current) clearTimeout(listeningTimeoutRef.current);
     };
   }, [currentClue, disabled, showAnswerOverlay]);
 
@@ -477,6 +543,15 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
           15% { transform: scale(1); opacity: 1; }
           100% { transform: scale(1); opacity: 0; }
         }
+        @keyframes bbMicPulse {
+          0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
+          50% { transform: scale(1.06); box-shadow: 0 0 0 12px rgba(239,68,68,0); }
+        }
+        @keyframes bbMicWave {
+          0% { height: 4px; }
+          50% { height: 18px; }
+          100% { height: 4px; }
+        }
       `}</style>
 
 
@@ -644,29 +719,85 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <Pill subtle>
-            🎤 {isListening ? "Listening for your shout…" : "Ready for your shout"}
-          </Pill>
+        {/* Prominent listening indicator */}
+        {isListening ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+              padding: "14px 18px",
+              borderRadius: 18,
+              background: "rgba(239,68,68,0.08)",
+              border: "2px solid rgba(239,68,68,0.35)",
+              animation: "bbMicPulse 1.5s ease-in-out infinite",
+            }}
+          >
+            <div
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: "50%",
+                background: "linear-gradient(135deg, #ef4444, #dc2626)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 22,
+                flexShrink: 0,
+              }}
+            >
+              🎤
+            </div>
+            {/* Audio waveform bars */}
+            <div style={{ display: "flex", gap: 3, alignItems: "center", height: 24 }}>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div
+                  key={i}
+                  style={{
+                    width: 4,
+                    borderRadius: 2,
+                    background: "#ef4444",
+                    animation: `bbMicWave ${600 + i * 120}ms ease-in-out ${i * 80}ms infinite`,
+                  }}
+                />
+              ))}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 950, fontSize: 15, color: "#dc2626" }}>
+                LISTENING — Shout your answer!
+              </div>
+              {interimTranscript && (
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#6b7280", marginTop: 2, fontStyle: "italic" }}>
+                  Hearing: "{interimTranscript}"
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <Pill subtle>
+              🎤 Ready for your shout
+            </Pill>
 
-          {!isListening && recognitionRef.current && (
-            <PrimaryButton onClick={handleManualStart} disabled={disabled}>
-              Start Mic
-            </PrimaryButton>
-          )}
+            {recognitionRef.current && (
+              <PrimaryButton onClick={handleManualStart} disabled={disabled}>
+                Start Mic
+              </PrimaryButton>
+            )}
 
-          {!micSupported && (
-            <Pill>Mic not supported in this browser</Pill>
-          )}
+            {!micSupported && (
+              <Pill>Mic not supported in this browser</Pill>
+            )}
 
-          {micSupported && !recognitionRef.current && (
-            <Pill>Mic initializing…</Pill>
-          )}
+            {micSupported && !recognitionRef.current && (
+              <Pill>Mic initializing…</Pill>
+            )}
 
-          {micSupported && recognitionRef.current && micError && (
-            <Pill>Mic blocked or unavailable ({String(micError)}) — tap Start Mic</Pill>
-          )}
-        </div>
+            {micSupported && recognitionRef.current && micError && (
+              <Pill>Mic blocked or unavailable ({String(micError)}) — tap Start Mic</Pill>
+            )}
+          </div>
+        )}
 
         {/* Guess feed */}
         <div

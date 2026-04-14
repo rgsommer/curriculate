@@ -8,6 +8,8 @@ const PerTaskSchema = new Schema({
   points: Number,
   isCorrect: Boolean,
   latencyMs: Number,
+  skipped: { type: Boolean, default: false },
+  skipReason: { type: String, default: "" },
 });
 
 const StudentSessionAnalyticsSchema = new Schema(
