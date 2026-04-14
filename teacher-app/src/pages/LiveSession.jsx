@@ -4537,9 +4537,11 @@ Precipitation — rain, snow, hail`}
 
                 <button
                   onClick={() => {
+                    const nextEnabled = !treatsConfig.enabled;
+                    // Update local state immediately so the UI feels responsive
+                    setTreatsConfig((prev) => ({ ...prev, enabled: nextEnabled }));
                     if (!roomCode) return;
                     const code = roomCode.toUpperCase();
-                    const nextEnabled = !treatsConfig.enabled;
                     socket.emit("teacher:updateTreatsConfig", {
                       roomCode: code,
                       enabled: nextEnabled,
@@ -4568,9 +4570,11 @@ Precipitation — rain, snow, hail`}
                   max="20"
                   value={treatsConfig.total}
                   onChange={(e) => {
+                    const v = Number(e.target.value);
+                    // Update local state immediately so the slider feels responsive
+                    setTreatsConfig((prev) => ({ ...prev, total: v }));
                     if (!roomCode) return;
                     const code = roomCode.toUpperCase();
-                    const v = Number(e.target.value);
                     socket.emit("teacher:updateTreatsConfig", {
                       roomCode: code,
                       total: v,
