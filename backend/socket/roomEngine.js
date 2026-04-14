@@ -728,6 +728,20 @@ export function createRoomEngine(io) {
           totalTasks: progress.totalTasks,
         };
       })(),
+
+      // Mystery box mode
+      navigationMode: room.navigationMode || "linear",
+      mysteryBox: room.mysteryBox ? {
+        enabled: true,
+        taskCount: room.mysteryBox.taskCount,
+        globalTimerEnd: room.mysteryBox.globalTimerEnd,
+        globalTimerMs: room.mysteryBox.globalTimerMs,
+        // Per-team completion counts for teacher progress view
+        teamProgress: Object.entries(room.mysteryBox.teamBoxes || {}).reduce((acc, [tid, tb]) => {
+          acc[tid] = { completed: tb.completed.length, total: room.mysteryBox.taskCount };
+          return acc;
+        }, {}),
+      } : null,
     };
   }
 

@@ -79,6 +79,12 @@ import voiceRouter from "./routes/voice.js";
 // 11) Extracted modules for room engine, game handlers, and routes
 import { createRoomEngine } from "./socket/roomEngine.js";
 import { registerGameHandlers } from "./socket/gameHandlers.js";
+import {
+  initMysteryBox, startMysteryTimer, buildTeamBoxGrid,
+  openBox, completeBox, getMysteryProgress,
+  createChallenge, acceptChallenge, expireChallenge,
+  popQueuedChallenge, addTeamToMysteryBox,
+} from "./socket/mysteryBoxEngine.js";
 import profileInlineRouter from "./routes/profileInline.js";
 import adminCrudRouter from "./routes/adminCrud.js";
 
@@ -4835,7 +4841,72 @@ if (!isMultiPack && task.taskType === "guess-who") {
 
       const isQuickTaskset = isQuick; // same condition
 
-      if (room.taskset && Array.isArray(room.taskset.tasks)) {
+      // ── Mystery Box mode: complete box and return to grid ──
+      if (room.navigationMode === "mystery" && room.mysteryBox) {
+        // Find which box this team had active
+        const tb = room.mysteryBox.teamBoxes?.[effectiveTeamId];
+        if (tb && tb.activeBox !== null) {
+          const boxPos = tb.activeBox;
+          const bonus = tb.bonuses[boxPos] || 1;
+
+          // Apply box bonus multiplier to earned points
+          const bonusedPoints = Math.round(pointsEarned * bonus);
+
+          // If this was a challenge match, apply challenge bonus
+          const challengeQueued = tb.challengeQueued;
+          let finalPoints = bonusedPoints;
+          if (challengeQueued && challengeQueued.taskIndex === idx) {
+            finalPoints = Math.round(bonusedPoints * 1.5);
+            tb.challengeQueued = null;
+          }
+
+          // Update the score delta (add bonus portion)
+          const extraPoints = finalPoints - pointsEarned;
+          if (extraPoints > 0 && room.teams[effectiveTeamId]) {
+            room.teams[effectiveTeamId].score = (room.teams[effectiveTeamId].score || 0) + extraPoints;
+          }
+
+          completeBox(room, effectiveTeamId, boxPos, finalPoints);
+
+          // Check if team has a queued challenge to do next
+          const nextChallenge = popQueuedChallenge(room, effectiveTeamId);
+          if (nextChallenge) {
+            // Auto-open the challenge box after review period
+            setTimeout(() => {
+              const cResult = openBox(room, effectiveTeamId, nextChallenge.boxPos);
+              if (!cResult.error && cResult.task) {
+                io.to(effectiveTeamId).emit("task:assigned", {
+                  task: cResult.task,
+                  taskIndex: cResult.taskIndex,
+                  totalTasks: room.mysteryBox.taskCount,
+                  timeLimitSeconds: cResult.task.timeLimitSeconds || 240,
+                  mysteryBox: {
+                    boxPos: nextChallenge.boxPos,
+                    bonusMultiplier: nextChallenge.bonusMultiplier || 1,
+                    pointValue: cResult.pointValue,
+                    isInterTeam: true,
+                    challengeId: nextChallenge.challengeId,
+                  },
+                });
+                if (room.teams[effectiveTeamId]) {
+                  room.teams[effectiveTeamId].taskIndex = cResult.taskIndex;
+                }
+              }
+            }, 3000); // short delay after review
+          } else {
+            // Send updated box grid so team returns to grid view
+            setTimeout(() => {
+              const grid = buildTeamBoxGrid(room, effectiveTeamId);
+              io.to(effectiveTeamId).emit("mystery:boxGrid", grid);
+            }, 100);
+          }
+        }
+
+        // Broadcast updated room state
+        const mbState = buildRoomState(room);
+        io.to(code).emit("room:state", mbState);
+        io.to(code).emit("roomState", mbState);
+      } else if (room.taskset && Array.isArray(room.taskset.tasks)) {
         const currentIndex = idx;
         const nextIndex = currentIndex + 1;
 
@@ -5040,6 +5111,8 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
         runByPresenterName,
         runByPresenterEmail,
         sharedToken,
+        navigationMode, // "linear" (default) | "mystery"
+        mysteryTimerMinutes, // global timer for mystery mode
       } = payload || {};
     const code = (roomCode || "").toUpperCase();
 
@@ -5109,6 +5182,18 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
       room.taskIndex = -1;
       room.isActive = false;
       room.startedAt = null;
+      room.navigationMode = navigationMode === "mystery" ? "mystery" : "linear";
+
+      // Initialise mystery box state if in mystery mode
+      if (room.navigationMode === "mystery") {
+        initMysteryBox(room, tasks);
+        if (mysteryTimerMinutes) {
+          room.mysteryBox.globalTimerMs = mysteryTimerMinutes * 60 * 1000;
+        }
+        console.log(`[MysteryBox] Initialized for room ${code} with ${tasks.length} boxes`);
+      } else {
+        room.mysteryBox = null;
+      }
 
       // ── Auto-start configuration ──
       // Modes: "immediate" (legacy: start now), "first_ready", "all_ready", "timer"
@@ -5301,10 +5386,42 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
       team.taskIndex = -1;
     });
 
-    // Send task 0 to every joined team
-    Object.keys(room.teams || {}).forEach((teamId) => {
-      sendTaskToTeam(room, teamId, 0);
-    });
+    // Mystery box mode: send box grid instead of first task
+    if (room.navigationMode === "mystery") {
+      // Start the global timer
+      const timerMs = room.mysteryBox?.globalTimerMs || 30 * 60 * 1000;
+      startMysteryTimer(room, timerMs / 60000);
+
+      // Ensure any teams that joined after init are added
+      Object.keys(room.teams || {}).forEach((teamId) => {
+        addTeamToMysteryBox(room, teamId);
+      });
+
+      // Send each team their personalized box grid
+      Object.keys(room.teams || {}).forEach((teamId) => {
+        const grid = buildTeamBoxGrid(room, teamId);
+        io.to(teamId).emit("mystery:boxGrid", grid);
+      });
+
+      // Schedule global timer end
+      if (room.mysteryBox?.globalTimerEnd) {
+        const remaining = room.mysteryBox.globalTimerEnd - Date.now();
+        if (remaining > 0) {
+          room._mysteryTimerHandle = setTimeout(() => {
+            // Time's up — end the session
+            io.to(code).emit("mystery:timeUp", {});
+            console.log(`[MysteryBox] Time up for room ${code}`);
+          }, remaining);
+        }
+      }
+
+      console.log(`[MysteryBox] Session started for room ${code}`);
+    } else {
+      // Linear mode: send task 0 to every joined team
+      Object.keys(room.teams || {}).forEach((teamId) => {
+        sendTaskToTeam(room, teamId, 0);
+      });
+    }
 
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
@@ -6193,6 +6310,151 @@ socket.on(
         message: `Email retry failed: ${e?.message || "Unknown error"}. Your report is still saved — view it on the Reports page.`,
         reportId,
       });
+    }
+  });
+
+  // ─────────────────────────────────────────────
+  // Mystery Box socket handlers
+  // ─────────────────────────────────────────────
+
+  socket.on("mystery:openBox", (payload, ack) => {
+    try {
+      const code = (payload?.roomCode || "").toUpperCase();
+      const teamId = payload?.teamId || socket.data?.teamId;
+      const boxPos = payload?.boxPos;
+      const room = rooms[code];
+      if (!room || !room.mysteryBox || !teamId) {
+        if (typeof ack === "function") ack({ ok: false, error: "Invalid room or mode" });
+        return;
+      }
+
+      const result = openBox(room, teamId, boxPos);
+      if (result.error) {
+        if (typeof ack === "function") ack({ ok: false, error: result.error });
+        return;
+      }
+
+      const { task, taskIndex, bonusMultiplier, pointValue } = result;
+      const isInterTeam = (room.mysteryBox.interTeamIndices || []).includes(taskIndex);
+
+      // If inter-team, create a challenge beacon
+      let challenge = null;
+      if (isInterTeam) {
+        challenge = createChallenge(room, teamId, taskIndex, boxPos);
+        if (challenge) {
+          // Broadcast beacon to all OTHER teams
+          const teamIds = Object.keys(room.teams || {});
+          for (const tid of teamIds) {
+            if (tid === teamId) continue;
+            io.to(tid).emit("mystery:challengeBeacon", {
+              challengeId: challenge.challengeId,
+              taskType: task.taskType,
+              taskTitle: task.title,
+              pointBonus: "1.5×",
+              expiresAt: Date.now() + 45000,
+            });
+          }
+          // Set timeout to expire challenge
+          challenge.timeoutHandle = setTimeout(() => {
+            if (challenge.status === "pending") {
+              expireChallenge(room, challenge.challengeId);
+              // Notify challenger they can proceed solo
+              io.to(teamId).emit("mystery:challengeExpired", {
+                challengeId: challenge.challengeId,
+              });
+            }
+          }, 45000);
+        }
+      }
+
+      // Send the task to the team via the standard task:assigned event
+      const timeLimitSeconds = task.timeLimitSeconds || 240;
+      io.to(teamId).emit("task:assigned", {
+        task,
+        taskIndex,
+        totalTasks: room.mysteryBox.taskCount,
+        timeLimitSeconds,
+        mysteryBox: {
+          boxPos,
+          bonusMultiplier,
+          pointValue,
+          isInterTeam,
+          challengeId: challenge?.challengeId || null,
+        },
+      });
+
+      // Update team's taskIndex for scoring compatibility
+      if (room.teams[teamId]) {
+        room.teams[teamId].taskIndex = taskIndex;
+      }
+
+      // Broadcast updated state
+      const state = buildRoomState(room);
+      io.to(code).emit("room:state", state);
+
+      if (typeof ack === "function") ack({ ok: true, boxPos, taskIndex });
+    } catch (err) {
+      console.error("[mystery:openBox] Error:", err);
+      if (typeof ack === "function") ack({ ok: false, error: err.message });
+    }
+  });
+
+  socket.on("mystery:acceptChallenge", (payload, ack) => {
+    try {
+      const code = (payload?.roomCode || "").toUpperCase();
+      const teamId = payload?.teamId || socket.data?.teamId;
+      const challengeId = payload?.challengeId;
+      const room = rooms[code];
+      if (!room || !room.mysteryBox || !teamId || !challengeId) {
+        if (typeof ack === "function") ack({ ok: false });
+        return;
+      }
+
+      const match = acceptChallenge(room, challengeId, teamId);
+      if (!match) {
+        if (typeof ack === "function") ack({ ok: false, error: "Challenge no longer available" });
+        return;
+      }
+
+      // Notify the challenger that someone accepted
+      io.to(match.fromTeamId).emit("mystery:challengeAccepted", {
+        challengeId,
+        opponentTeamName: room.teams[teamId]?.teamName || "A team",
+      });
+
+      // Notify the acceptor — they'll get this task next
+      io.to(teamId).emit("mystery:challengeQueued", {
+        challengeId,
+        taskType: room.taskset?.tasks[match.taskIndex]?.taskType,
+        message: "Challenge accepted! This will be your next task.",
+      });
+
+      if (typeof ack === "function") ack({ ok: true, challengeId });
+    } catch (err) {
+      console.error("[mystery:acceptChallenge] Error:", err);
+      if (typeof ack === "function") ack({ ok: false, error: err.message });
+    }
+  });
+
+  socket.on("mystery:requestGrid", (payload, ack) => {
+    try {
+      const code = (payload?.roomCode || "").toUpperCase();
+      const teamId = payload?.teamId || socket.data?.teamId;
+      const room = rooms[code];
+      if (!room || !room.mysteryBox || !teamId) {
+        if (typeof ack === "function") ack({ ok: false });
+        return;
+      }
+
+      // Ensure team has box state (late joiner)
+      addTeamToMysteryBox(room, teamId);
+
+      const grid = buildTeamBoxGrid(room, teamId);
+      io.to(teamId).emit("mystery:boxGrid", grid);
+      if (typeof ack === "function") ack({ ok: true });
+    } catch (err) {
+      console.error("[mystery:requestGrid] Error:", err);
+      if (typeof ack === "function") ack({ ok: false });
     }
   });
 

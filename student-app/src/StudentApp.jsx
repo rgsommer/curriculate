@@ -9,6 +9,7 @@ import MoodCheckInTask from "./components/tasks/types/MoodCheckInTask";
 import TreasureRunner from "./components/tasks/types/TreasureRunnerTask";
 import MultiPlayerFeedbackTask from "./components/tasks/types/MultiPlayerFeedbackTask.jsx";
 
+import MysteryBoxGrid from "./components/MysteryBoxGrid.jsx";
 import { API_BASE_URL } from "./config.js";
 import FeedbackButton from "./components/FeedbackButton.jsx";
 import { COLORS } from "@shared/colors.js";
@@ -148,6 +149,11 @@ function StudentApp() {
   const [postPhase, setPostPhase] = useState("tasks"); // "tasks" | "feedback" | "trophy"
   const [taskRenderError, setTaskRenderError] = useState(null);
   const [bumped, setBumped] = useState(null); // { reason } if team was bumped by presenter
+
+  // Mystery Box mode state
+  const [mysteryBoxGrid, setMysteryBoxGrid] = useState(null);
+  const [challengeBeacon, setChallengeBeacon] = useState(null);
+  const [isMysteryMode, setIsMysteryMode] = useState(false);
   
   const [roomCode, setRoomCode] = useState(() => lsGet(LS_KEYS.roomCode) || "");
   const [teamName, setTeamName] = useState(() => lsGet(LS_KEYS.teamName) || "");
@@ -655,6 +661,18 @@ function StudentApp() {
       // ✅ store full roomState (instead of setSelectedRooms which doesn't exist)
       setRoomState(state);
 
+      // ── Mystery box mode detection ──
+      if (state.navigationMode === "mystery" && state.isActive) {
+        setIsMysteryMode(true);
+        // Request grid if we don't have one yet
+        if (!mysteryBoxGrid) {
+          socket.emit("mystery:requestGrid", {
+            roomCode: roomCode.trim().toUpperCase(),
+            teamId,
+          });
+        }
+      }
+
       const newStationId = myTeam.currentStationId || myTeam.stationId;
       if (newStationId && newStationId !== lastStationIdRef.current) {
         lastStationIdRef.current = newStationId;
@@ -744,6 +762,12 @@ function StudentApp() {
       lsSet(LS_KEYS.warmupDone, "1");
       setPostPhase("tasks");
       setWaitingForLaunch(false);
+
+      // In mystery mode, hide the grid while working on a task
+      if (isMysteryMode) {
+        setMysteryBoxGrid(null);
+        setChallengeBeacon(null);
+      }
 
       const payloadIsTestMode = payload?.testMode === true;
 
@@ -1234,6 +1258,55 @@ function StudentApp() {
     };
     socket.on("team:bumped", handleBumped);
 
+    // ── Mystery Box mode listeners ──
+    const handleMysteryBoxGrid = (grid) => {
+      if (!grid) return;
+      console.log("[StudentApp] mystery:boxGrid received", grid);
+      setMysteryBoxGrid(grid);
+      setIsMysteryMode(true);
+      // Clear current task so grid shows
+      setCurrentTask(null);
+      setWaitingForLaunch(false);
+      tasksStartedRef.current = true;
+      setWarmupStep("done");
+      lsSet(LS_KEYS.warmupDone, "1");
+      setPostPhase("tasks");
+    };
+    const handleChallengeBeacon = (beacon) => {
+      console.log("[StudentApp] mystery:challengeBeacon", beacon);
+      setChallengeBeacon(beacon);
+      // Auto-clear after expiry
+      if (beacon?.expiresAt) {
+        const remaining = beacon.expiresAt - Date.now();
+        if (remaining > 0) {
+          setTimeout(() => setChallengeBeacon((prev) => prev?.challengeId === beacon.challengeId ? null : prev), remaining);
+        }
+      }
+    };
+    const handleChallengeExpired = (payload) => {
+      console.log("[StudentApp] mystery:challengeExpired", payload);
+      // Challenger can proceed solo now — no special UI needed, they already have the task
+    };
+    const handleChallengeAccepted = (payload) => {
+      console.log("[StudentApp] mystery:challengeAccepted", payload);
+      // Show brief notification to challenger
+    };
+    const handleChallengeQueued = (payload) => {
+      console.log("[StudentApp] mystery:challengeQueued", payload);
+      // Acceptor sees "queued" info — grid will show it
+    };
+    const handleMysteryTimeUp = () => {
+      console.log("[StudentApp] mystery:timeUp");
+      setTasksetComplete(true);
+    };
+
+    socket.on("mystery:boxGrid", handleMysteryBoxGrid);
+    socket.on("mystery:challengeBeacon", handleChallengeBeacon);
+    socket.on("mystery:challengeExpired", handleChallengeExpired);
+    socket.on("mystery:challengeAccepted", handleChallengeAccepted);
+    socket.on("mystery:challengeQueued", handleChallengeQueued);
+    socket.on("mystery:timeUp", handleMysteryTimeUp);
+
     socket.emit("room:request-state", {
       roomCode: roomCode.trim().toUpperCase(),
       teamId,
@@ -1253,6 +1326,12 @@ function StudentApp() {
       socket.off("team:pacing-released", handlePacingRelease);
       socket.off("session:complete", handleSessionComplete);
       socket.off("team:bumped", handleBumped);
+      socket.off("mystery:boxGrid", handleMysteryBoxGrid);
+      socket.off("mystery:challengeBeacon", handleChallengeBeacon);
+      socket.off("mystery:challengeExpired", handleChallengeExpired);
+      socket.off("mystery:challengeAccepted", handleChallengeAccepted);
+      socket.off("mystery:challengeQueued", handleChallengeQueued);
+      socket.off("mystery:timeUp", handleMysteryTimeUp);
     };
   }, [teamId, roomCode]
   );
@@ -4672,8 +4751,34 @@ function StudentApp() {
 </section>
 )}
 
+{/* MYSTERY BOX GRID (when in mystery mode and no active task) */}
+{joined && postPhase === "tasks" && isMysteryMode && mysteryBoxGrid && !currentTask && !tasksetComplete && (
+  <section style={{ marginTop: 10 }}>
+    <MysteryBoxGrid
+      grid={mysteryBoxGrid}
+      onOpenBox={(boxPos) => {
+        socket.emit("mystery:openBox", {
+          roomCode: roomCode.trim().toUpperCase(),
+          teamId,
+          boxPos,
+        });
+      }}
+      challengeBeacon={challengeBeacon}
+      onAcceptChallenge={(challengeId) => {
+        socket.emit("mystery:acceptChallenge", {
+          roomCode: roomCode.trim().toUpperCase(),
+          teamId,
+          challengeId,
+        });
+        setChallengeBeacon(null);
+      }}
+      teamName={teamName}
+    />
+  </section>
+)}
+
 {/* TASK CARD (only when not gated) */}
-{joined && postPhase === "tasks" && !currentTask && (!mustScan || taskLocked || taskNeedsGlobalScanner) && !tasksetComplete && waitingForLaunch && (
+{joined && postPhase === "tasks" && !currentTask && (!mustScan || taskLocked || taskNeedsGlobalScanner) && !tasksetComplete && waitingForLaunch && !isMysteryMode && (
   <section
     style={{
       marginTop: 10,

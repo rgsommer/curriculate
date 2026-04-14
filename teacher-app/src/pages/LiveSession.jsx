@@ -333,6 +333,8 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
   const [quickStatus, setQuickStatus] = useState("");
   const [selectedRooms, setSelectedRooms] = useState([]);
   const [teacherRooms, setTeacherRooms] = useState([]);
+  const [navigationMode, setNavigationMode] = useState("linear"); // "linear" | "mystery"
+  const [mysteryTimerMinutes, setMysteryTimerMinutes] = useState(30);
 
   // NEW dynamic system — only these
   const [taskType, setTaskType] = useState(
@@ -2892,6 +2894,8 @@ if (
         roomCode: code,
         tasksetId: data._id || activeTasksetMeta._id,
         selectedRooms,
+        navigationMode,
+        mysteryTimerMinutes: navigationMode === "mystery" ? mysteryTimerMinutes : undefined,
         reportOwnerId,
         reportOwnerName,
         reportOwnerEmail,
@@ -3888,6 +3892,54 @@ if (
                   >
                     Cancel
                   </button>
+                </div>
+              )}
+
+              {/* Navigation mode toggle — Linear vs Mystery Box */}
+              {activeTasksetMeta && !taskFlowActive && (
+                <div style={{ marginBottom: 6, padding: "6px 8px", background: navigationMode === "mystery" ? "#fdf4ff" : "transparent", borderRadius: 8, border: navigationMode === "mystery" ? "1px solid #e9d5ff" : "1px solid transparent" }}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <button
+                      type="button"
+                      onClick={() => setNavigationMode("linear")}
+                      style={{
+                        flex: 1, padding: "4px 8px", borderRadius: 6, fontSize: "0.8rem", cursor: "pointer",
+                        border: navigationMode === "linear" ? "2px solid #7c3aed" : "1px solid #d1d5db",
+                        background: navigationMode === "linear" ? "#f5f3ff" : "#fff",
+                        color: navigationMode === "linear" ? "#7c3aed" : "#6b7280",
+                        fontWeight: navigationMode === "linear" ? 700 : 400,
+                      }}
+                    >
+                      Linear
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNavigationMode("mystery")}
+                      style={{
+                        flex: 1, padding: "4px 8px", borderRadius: 6, fontSize: "0.8rem", cursor: "pointer",
+                        border: navigationMode === "mystery" ? "2px solid #7c3aed" : "1px solid #d1d5db",
+                        background: navigationMode === "mystery" ? "#f5f3ff" : "#fff",
+                        color: navigationMode === "mystery" ? "#7c3aed" : "#6b7280",
+                        fontWeight: navigationMode === "mystery" ? 700 : 400,
+                      }}
+                    >
+                      Mystery Box
+                    </button>
+                  </div>
+                  {navigationMode === "mystery" && (
+                    <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6, fontSize: "0.78rem", color: "#6b21a8" }}>
+                      <label>Timer:</label>
+                      <input
+                        type="number"
+                        min={5}
+                        max={90}
+                        value={mysteryTimerMinutes}
+                        onChange={(e) => setMysteryTimerMinutes(Math.max(5, Math.min(90, Number(e.target.value) || 30)))}
+                        style={{ width: 48, padding: "2px 4px", borderRadius: 4, border: "1px solid #d8b4fe", textAlign: "center", fontSize: "0.78rem" }}
+                      />
+                      <span>min</span>
+                    </div>
+                  )}
                 </div>
               )}
 
