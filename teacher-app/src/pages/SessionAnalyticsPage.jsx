@@ -151,13 +151,12 @@ export default function SessionAnalyticsPage() {
           teams: (doc.teams || []).map((t) => ({
             ...t,
             name: t.teamName || t.name,
-            score: t.teamPoints ?? t.scorePercent ?? 0,
+            score: t.scorePercent ?? Math.min(100, Math.round(Number(t.teamPoints) || 0)) ?? 0,
           })),
           sharedFromTeacherName: doc.sharedFromTeacherName || "",
           sharedFromTeacherEmail: doc.sharedFromTeacherEmail || "",
           runByPresenterName: doc.runByPresenterName || "",
-          totalTasks: doc.summary?.totalTasks ?? (doc.teams?.[0]?.tasksCompleted ?? 0),
-          completedTasks: doc.summary?.completedTasks ?? (doc.teams || []).reduce((s, t) => s + (t.tasksCompleted || 0), 0),
+          totalTasks: doc.summary?.totalTasks ?? doc.summary?.tasks?.length ?? 0,
           roomCode: doc.roomCode || "",
           planTierUsed: doc.planTierUsed || "",
         });
@@ -224,9 +223,9 @@ export default function SessionAnalyticsPage() {
             </div>
           )}
           <p className="mt-2 text-xs sm:text-sm">
-            <strong>Class Avg Score:</strong> {session.classAverageScore}%{" "}
+            <strong>Class Avg Score:</strong> {Math.min(100, Math.round(Number(session.classAverageScore) || 0))}%{" "}
             &nbsp;|&nbsp;
-            <strong>Accuracy:</strong> {session.classAverageAccuracy != null ? `${session.classAverageAccuracy}%` : "—"}
+            <strong>Accuracy:</strong> {session.classAverageAccuracy != null ? `${Math.min(100, Math.round(Number(session.classAverageAccuracy) || 0))}%` : "—"}
           </p>
           <div className="mt-3">
             <NoiseSummaryCard noiseSummary={session.noiseSummary || session.noise} />
@@ -247,31 +246,15 @@ export default function SessionAnalyticsPage() {
 
       <div className="text-xs sm:text-sm space-y-1">
         <p>
-          Tasks Completed: {session.totalTasks} → {session.completedTasks} (
-          {Math.round(
-            (session.completedTasks / session.totalTasks) * 100
-          )}
-          %)
+          <strong>Teams:</strong> {session.teams.length}
+          &nbsp;&nbsp;|&nbsp;&nbsp;
+          <strong>Tasks in set:</strong> {session.totalTasks || session.tasks?.length || "—"}
         </p>
-        <p>
-          Fastest Average Response:{" "}
-          {Math.min(
-            ...session.teams.map((t) => t.avgResponseTime || 999)
-          ).toFixed(1)}
-          s
-        </p>
-        <p>
-          Perfect Task Rate:{" "}
-          {(
-            (session.teams.reduce(
-              (s, t) => s + t.perfectTasks,
-              0
-            ) /
-              session.completedTasks) *
-            100
-          ).toFixed(1)}
-          %
-        </p>
+        {session.classAverageEngagement != null && (
+          <p>
+            <strong>Avg Engagement:</strong> {Math.min(100, Math.round(Number(session.classAverageEngagement) || 0))}%
+          </p>
+        )}
       </div>
 
       {/* Class Chat Blurb */}

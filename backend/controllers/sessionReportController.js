@@ -248,7 +248,9 @@ function computePointsPossible(tasks, attemptedIdxs) {
   let sum = 0;
   for (const idx of attemptedIdxs) {
     const task = arr[idx] || {};
-    sum += Number(task.points) || 10;
+    // Must match the 10× multiplier used in scoring: basePoints = (task.points ?? 100) * 10
+    const rawPts = Number(task.points) || 100;
+    sum += rawPts * 10;
   }
   return sum;
 }
