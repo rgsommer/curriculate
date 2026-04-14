@@ -3280,7 +3280,6 @@ socket.on("station:scan", handleStationScan);
     // Advance team to next task
     if (room.teams[effectiveTeamId]) {
       room.teams[effectiveTeamId].taskIndex = idx;
-      room.teams[effectiveTeamId].nextTaskIndex = idx + 1;
     }
 
     // Broadcast leaderboard update (0 points for skip)
@@ -3298,6 +3297,27 @@ socket.on("station:scan", handleStationScan);
     if (typeof ack === "function") {
       ack({ ok: true, correct: false, points: 0, skipped: true });
     }
+
+    // Actually send the next task to the team (was missing — students
+    // saw the dialog but never received the next task)
+    const nextIdx = idx + 1;
+    if (room.navigationMode === "mystery" && room.mysteryBox) {
+      // Mystery mode: return to box grid
+      const tb = room.mysteryBox.teamBoxes?.[effectiveTeamId];
+      if (tb && tb.activeBox !== null) {
+        completeBox(room, effectiveTeamId, tb.activeBox, 0);
+      }
+      const grid = buildTeamBoxGrid(room, effectiveTeamId);
+      io.to(effectiveTeamId).emit("mystery:boxGrid", grid);
+    } else {
+      sendTaskToTeam(room, effectiveTeamId, nextIdx);
+    }
+
+    // Broadcast updated room state
+    const skipState = buildRoomState(room);
+    io.to(code).emit("room:state", skipState);
+    io.to(code).emit("roomState", skipState);
+
     return;
   }
 

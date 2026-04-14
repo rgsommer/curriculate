@@ -964,6 +964,34 @@ export function createRoomEngine(io) {
       }
     }
 
+    // ── Mystery Clues: mark isFinal on the last mystery-clues task in the set ──
+    if (task.taskType === "mystery-clues" || task.taskType === "physical-mystery-clues") {
+      // Find the last mystery-clues task index in the entire set
+      let lastMysteryIdx = -1;
+      for (let mi = tasks.length - 1; mi >= 0; mi--) {
+        const mt = tasks[mi];
+        if (mt && (mt.taskType === "mystery-clues" || mt.taskType === "physical-mystery-clues")) {
+          lastMysteryIdx = mi;
+          break;
+        }
+      }
+      task.isFinal = (index === lastMysteryIdx);
+
+      // For the final task, compile all clues from earlier mystery-clues tasks
+      if (task.isFinal) {
+        const allClues = [];
+        for (let mi = 0; mi < tasks.length; mi++) {
+          const mt = tasks[mi];
+          if (mi === index) continue; // skip self
+          if (mt && (mt.taskType === "mystery-clues" || mt.taskType === "physical-mystery-clues")) {
+            const clues = mt.clues || mt.clueCards || mt.config?.clues || [];
+            allClues.push(...clues);
+          }
+        }
+        task.allRevealedClues = allClues; // client can use for verification
+      }
+    }
+
     const payload = {
       taskIndex: index, // preferred
       index,            // legacy

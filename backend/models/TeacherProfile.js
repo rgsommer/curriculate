@@ -111,6 +111,12 @@ const TeacherProfileSchema = new Schema(
     // When enabled, text-heavy tasks show a camera for paper-based work instead of on-screen input
     minimizeOnScreen: { type: Boolean, default: false },
 
+    // Auto-inject a riddle (comic relief) into each generated taskset
+    includeRiddleInSets: { type: Boolean, default: false },
+
+    // Auto-inject mystery-clue interleave tasks across each generated taskset
+    includeMysteryCluesInSets: { type: Boolean, default: false },
+
     // ✅ Voice settings (your UI has these fields)
     voiceId: { type: String, default: "" },
     voiceSampleUrl: { type: String, default: "" },

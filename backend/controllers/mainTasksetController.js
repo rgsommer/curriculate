@@ -228,6 +228,9 @@ function getGenerationEligibleTypes(subject) {
     // avoid special meta-only types unless you explicitly want them
     if (t === TASK_TYPES.TASK_RUNNER) continue;
 
+    // profile-injected types are added separately based on teacher profile toggles
+    if (meta.profileInjectedOnly) continue;
+
     // language-only tasks (pronunciation, speech recognition) excluded for non-language subjects
     if (meta.languageOnly && !isLanguage) continue;
 
@@ -1643,7 +1646,29 @@ export async function createAiTaskset(req, res) {
     };
     const subjectBucket = detectSubjectBucket(subject);
     const pool = buildDiversePool(userPool || eligible, safeCount, guaranteed, diversityMins, subjectBucket);
-    // Update safeCount to match actual pool size (may have grown to fit all guaranteed types)
+
+    // ── Profile-injected types (not user-selectable, auto-added via teacher toggles) ──
+    if (teacherProfile?.includeRiddleInSets) {
+      // Insert one riddle roughly in the middle of the set as a comic-relief breather
+      const riddlePos = Math.max(1, Math.floor(pool.length / 2));
+      pool.splice(riddlePos, 0, TASK_TYPES.RIDDLE);
+      console.log(`[AI] Profile toggle: injected riddle at position ${riddlePos}`);
+    }
+    if (teacherProfile?.includeMysteryCluesInSets && pool.length >= 4) {
+      // Interleave mystery-clues reveal tasks at ~1/3 and ~2/3 through the set,
+      // then a final recall task at the end.
+      const revealCount = Math.min(3, Math.max(2, Math.floor(pool.length / 4)));
+      const spacing = Math.floor(pool.length / (revealCount + 1));
+      for (let ri = revealCount; ri >= 1; ri--) {
+        const pos = Math.min(pool.length, ri * spacing);
+        pool.splice(pos, 0, TASK_TYPES.MYSTERY_CLUES);
+      }
+      // Final recall task at the very end
+      pool.push(TASK_TYPES.MYSTERY_CLUES);
+      console.log(`[AI] Profile toggle: injected ${revealCount} mystery-clues reveals + 1 final recall`);
+    }
+
+    // Update safeCount to match actual pool size (may have grown to fit all guaranteed types + injected)
     safeCount = pool.length;
     if (!pool.length) {
       if (wantsStream) {

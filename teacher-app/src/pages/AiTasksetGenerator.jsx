@@ -163,13 +163,14 @@ OPEN-TEXT (VOCAB WEAVE) TASK GENERATION RULES (USE THIS MODE WHEN APPROPRIATE):
 };
 
 // Generator-eligible task types (mirror backend intent)
+// Exclude profileInjectedOnly types — those are auto-injected via teacher profile toggles, not selectable.
 const GENERATOR_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
-  .filter(([, meta]) => meta.implemented !== false && meta.generatorEligible !== false)
+  .filter(([, meta]) => meta.implemented !== false && meta.generatorEligible !== false && !meta.profileInjectedOnly)
   .map(([type]) => type);
 
 // Subset that likely benefits from AI-generated content (UI-only hints)
 const AI_GENERATED_TYPES = Object.entries(TASK_TYPE_META)
-  .filter(([, meta]) => meta.implemented !== false && meta.generatorEligible !== false)
+  .filter(([, meta]) => meta.implemented !== false && meta.generatorEligible !== false && !meta.profileInjectedOnly)
   .filter(([, meta]) => (meta.scoringMode ? String(meta.scoringMode).toLowerCase() : "") !== "none")
   .map(([type]) => type);
 

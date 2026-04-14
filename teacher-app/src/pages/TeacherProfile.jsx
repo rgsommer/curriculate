@@ -43,6 +43,10 @@ export default function TeacherProfile() {
 
     // Paper mode
     minimizeOnScreen: false,
+
+    // Auto-inject toggles
+    includeRiddleInSets: false,
+    includeMysteryCluesInSets: false,
   });
 
 
@@ -107,6 +111,16 @@ export default function TeacherProfile() {
           minimizeOnScreen:
             typeof data.minimizeOnScreen === "boolean"
               ? data.minimizeOnScreen
+              : false,
+
+          // Auto-inject toggles
+          includeRiddleInSets:
+            typeof data.includeRiddleInSets === "boolean"
+              ? data.includeRiddleInSets
+              : false,
+          includeMysteryCluesInSets:
+            typeof data.includeMysteryCluesInSets === "boolean"
+              ? data.includeMysteryCluesInSets
               : false,
         };
 
@@ -494,6 +508,70 @@ export default function TeacherProfile() {
             />
             <span style={{ fontSize: "0.95rem", fontWeight: 600 }}>
               Minimize on-screen activities (use paper + camera)
+            </span>
+          </label>
+        </section>
+
+        {/* Auto-Inject Task Types */}
+        <section style={{ marginBottom: 24 }}>
+          <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
+            Auto-Inject Tasks
+          </h2>
+          <p style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: 12 }}>
+            These task types will be automatically added to every AI-generated taskset.
+          </p>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              cursor: "pointer",
+              padding: "8px 0",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={!!profile.includeRiddleInSets}
+              onChange={(e) =>
+                handleChange("includeRiddleInSets", e.target.checked)
+              }
+              style={{
+                width: 20,
+                height: 20,
+                accentColor: "#6366f1",
+                cursor: "pointer",
+              }}
+            />
+            <span style={{ fontSize: "0.95rem", fontWeight: 600 }}>
+              Include a riddle in each set (comic relief breather)
+            </span>
+          </label>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              cursor: "pointer",
+              padding: "8px 0",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={!!profile.includeMysteryCluesInSets}
+              onChange={(e) =>
+                handleChange("includeMysteryCluesInSets", e.target.checked)
+              }
+              style={{
+                width: 20,
+                height: 20,
+                accentColor: "#6366f1",
+                cursor: "pointer",
+              }}
+            />
+            <span style={{ fontSize: "0.95rem", fontWeight: 600 }}>
+              Include mystery clue cards (cross-taskset memory challenge)
             </span>
           </label>
         </section>

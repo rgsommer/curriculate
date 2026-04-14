@@ -464,6 +464,18 @@ export function assessTaskPlayability(rawTask) {
     }
 
     // =========================
+    // Comic relief / no-score
+    // =========================
+    case TASK_TYPES.RIDDLE: {
+      // Just needs prompt or config.riddle + config.answer
+      const riddleText = t.config?.riddle ?? t.prompt;
+      if (!isNonEmptyString(riddleText)) issues.push("riddle text is required (config.riddle or prompt)");
+      const riddleAnswer = t.config?.answer;
+      if (!isNonEmptyString(riddleAnswer)) issues.push("config.answer is required");
+      break;
+    }
+
+    // =========================
     // Demo-only / meta
     // =========================
     case TASK_TYPES.TASK_RUNNER:

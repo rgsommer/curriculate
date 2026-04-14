@@ -59,6 +59,7 @@ import RolePlayDeckTask from "./types/RolePlayDeckTask";
 import TowerBuilderTask from "./types/TowerBuilderTask";
 import ArtViewTask from "./types/ArtViewTask";
 import HistoricalDocTask from "./types/HistoricalDocTask";
+import RiddleTask from "./types/RiddleTask";
 import PaperModeCamera from "./PaperModeCamera.jsx";
 
 
@@ -2889,6 +2890,18 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
           socket={socketRef}
           roomCode={roomCode}
           teamId={effectiveTeamId}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.RIDDLE:
+    case "riddle": {
+      content = (
+        <RiddleTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
         />
       );
       break;

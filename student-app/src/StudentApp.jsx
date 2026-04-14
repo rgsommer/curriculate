@@ -3715,6 +3715,73 @@ function StudentApp() {
           currentTeamName={yourTeamName}
         />
       )}
+      {/* ── Sticky game-essentials banner ── */}
+      {joined && postPhase === "tasks" && !tasksetComplete && (
+        <div
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 200,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "6px 10px",
+            background: "rgba(15,23,42,0.85)",
+            backdropFilter: "blur(10px)",
+            WebkitBackdropFilter: "blur(10px)",
+            borderBottom: "1px solid rgba(148,163,184,0.2)",
+            fontSize: "0.78rem",
+            color: "#e2e8f0",
+            gap: 8,
+            flexWrap: "nowrap",
+            minHeight: 32,
+          }}
+        >
+          {/* Team + Station */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flex: "0 1 auto", overflow: "hidden" }}>
+            <span style={{ fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 100 }}>{teamName || "Team"}</span>
+            {stationInfo.color && (
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: stationInfo.color, flexShrink: 0 }} />
+            )}
+          </div>
+
+          {/* Timer (task or review) */}
+          <div style={{ flex: "0 0 auto" }}>
+            {(() => {
+              const inReview = taskLocked && postSubmitSecondsLeft != null;
+              if (inReview) {
+                const reviewMs = postSubmitSecondsLeft * 1000;
+                return (
+                  <span style={{ fontVariantNumeric: "tabular-nums", color: reviewMs <= 5000 ? "#f87171" : "#94a3b8" }}>
+                    {formatRemainingMs(reviewMs)}
+                  </span>
+                );
+              }
+              if (timerDisplay) {
+                return (
+                  <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: remainingMs <= 15000 ? "#f87171" : remainingMs <= 30000 ? "#fbbf24" : "#e2e8f0" }}>
+                    {timerDisplay}
+                  </span>
+                );
+              }
+              return null;
+            })()}
+          </div>
+
+          {/* Task progress */}
+          {typeof currentTaskIndex === "number" && currentTaskIndex >= 0 && typeof tasksetTotalTasks === "number" && tasksetTotalTasks > 0 && (
+            <div style={{ flex: "0 0 auto", fontSize: "0.72rem", color: "#94a3b8" }}>
+              {currentTaskIndex + 1}/{tasksetTotalTasks}
+            </div>
+          )}
+
+          {/* Score */}
+          <div style={{ flex: "0 0 auto", fontWeight: 800, color: "#fbbf24", whiteSpace: "nowrap" }}>
+            <AnimatedScore value={scoreTotal} />
+          </div>
+        </div>
+      )}
+
       <header
         style={{
           display: "flex",

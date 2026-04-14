@@ -110,7 +110,10 @@ export const TASK_TYPES = {
 
   // Physical / scavenger
   HIDENSEEK: "hidenseek",
-  MULTI_ROOM_SCAVENGER_HUNT: "hidenseek"
+  MULTI_ROOM_SCAVENGER_HUNT: "hidenseek",
+
+  // Comic relief / no-score
+  RIDDLE: "riddle",
 };
 
 // Category labels (for grouping & UI)
@@ -2519,6 +2522,19 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
   [TASK_TYPES.MYSTERY_CLUES]: {
     label: "Mystery Clue Cards (Digital)",
     category: "memory",
+    implemented: true,
+    demoEligible: true,
+    demoSelectable: true,
+    generatorEligible: true,
+    profileInjectedOnly: true,   // not user-selectable; injected via teacher profile toggle
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
+    quickTaskEligible: false,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 30,
+    estimatedMinutes: 1,
     intraTeamEnabled: false,
     interTeamEnabled: false,
     description: `
@@ -2549,21 +2565,39 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
         
     aiPrompt: `
       Generate ONE Curriculate task object with taskType "mystery-clues".
-      
+
       Hard requirements:
       - Output ONLY a single JSON object (no markdown, no commentary).
       - Include non-empty root fields: taskType, title, prompt.
-      - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
       - Keep language age-appropriate and classroom-safe.
-      - Avoid copyrighted passages; write original content.
-      
+
+      This is a CROSS-TASKSET memory challenge. Multiple mystery-clues tasks
+      are scattered throughout a taskset. Each reveals 2-4 clue cards for 8
+      seconds. The LAST mystery-clues task is the final recall challenge.
+
       Task-specific guidance:
-      - Create a mystery with 6–10 clues and a single final solution. Provide clue order and the final answer. Keep it solvable and classroom-appropriate.
-      
+      - Set isFinal: false (reveal phase) or isFinal: true (recall phase).
+        The system auto-marks the final one, but include the field anyway.
+      - For reveal tasks (isFinal: false):
+        - "clues": array of 2-4 simple, memorable labels (emoji-friendly nouns).
+          e.g. ["Apple", "Cat", "Rocket", "Star"]
+        - "prompt": "Memorize these clue cards! They disappear in 8 seconds."
+        - "title": Something fun like "Mystery Clue Reveal #1"
+        - Optional: "revealMs": 8000 (default, ms to show cards)
+      - For recall tasks (isFinal: true):
+        - "clues": the FULL cumulative set of all clues from prior reveal tasks.
+        - "prompt": "Select ONLY the cards you saw earlier. No more, no less!"
+        - "title": "Mystery Clue Challenge!"
+        - "bonusPoints": 10 (default bonus for perfect recall)
+        - "grid": array of 16-20 items including ALL correct clues plus
+          plausible distractors. e.g. ["Apple","Cat","Rocket","Star","Moon",
+          "Tree","Fish","Car","Book","Hat","Dog","Sun","Key","Pen","Cup","Bell"]
+      - Keep total accumulated clues under 8 across the whole taskset.
+
       Common failure prevention:
-      - Do not omit required arrays/fields; satisfy minimum item counts.
-      - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-      - Ensure prompts are student-facing instructions (what to do).
+      - "clues" array is required and must have at least 2 items.
+      - For the final task, "grid" must contain ALL the revealed clues.
+      - Labels should be short (1-2 words), common nouns, no punctuation.
       `,
 },
 
@@ -2705,6 +2739,7 @@ config: {
   [TASK_TYPES.PHYSICAL_MYSTERY_CLUES]: {
     label: "Mystery Clue Cards (Alias)",
     category: "memory",
+    profileInjectedOnly: true,
     intraTeamEnabled: false,
     interTeamEnabled: false,
     description: `
@@ -3402,6 +3437,66 @@ config: {
 }
 
   // =========================
+  // COMIC RELIEF / NO-SCORE
+  // =========================
+
+  [TASK_TYPES.RIDDLE]: {
+    label: "Riddle",
+    category: CATEGORY.OTHER,
+    implemented: true,
+    demoEligible: true,
+    demoSelectable: true,
+    generatorEligible: true,
+    profileInjectedOnly: true,   // not user-selectable; injected via teacher profile toggle
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 60,
+    estimatedMinutes: 1,
+    interTeamEnabled: false,
+    intraTeamEnabled: false,
+    isOffTablet: false,
+    description:
+      "A quick comic-relief task. The AI generates a fun riddle related to the topic. Students read the riddle, try to guess, then tap to reveal the answer. No scoring, no input — just a lighthearted breather between heavier tasks. Keeps energy up and gives a mental reset.\n\nAI MUST output:\n- taskType: \"riddle\"\n- title (short, fun)\n- prompt (the riddle question itself)\n- config.riddle (the riddle text, same as or elaboration of prompt)\n- config.answer (the punchline / answer)\n- config.hint (optional one-line hint)",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "riddle".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt.
+    - The riddle should be clever, fun, and loosely related to the lesson topic.
+    - Keep it age-appropriate and classroom-safe. Puns encouraged!
+
+    Required config fields:
+    - config.riddle  — the riddle question (string). Can be same as prompt or more elaborate.
+    - config.answer  — the answer / punchline (string). Keep it short and satisfying.
+    - config.hint    — a one-line hint (string, optional but encouraged).
+
+    Example output:
+    {
+      "taskType": "riddle",
+      "title": "Brain Teaser Break",
+      "prompt": "I have cities but no houses, forests but no trees, and water but no fish. What am I?",
+      "points": 0,
+      "config": {
+        "riddle": "I have cities but no houses, forests but no trees, and water but no fish. What am I?",
+        "answer": "A map!",
+        "hint": "You might find me folded in a glove compartment."
+      }
+    }
+
+    Common failure prevention:
+    - Do not include scoring fields — this is a zero-point comic relief task.
+    - Keep the riddle to 1-3 sentences max.
+    - The answer should be a single short phrase or word.
+    `,
+  },
+
+  // =========================
   // COMPETITIVE (placeholder type)
   // =========================
 };
@@ -3901,6 +3996,7 @@ export const SUBJECT_AFFINITY = {
   [TASK_TYPES.TASK_RUNNER]:            { math: 0.8, science: 0.8, history: 0.8, language: 0.8, arts: 0.8, health: 0.8, business: 0.8, religion: 0.8, general: 0.8 },
   [TASK_TYPES.TOWER_BUILDER]:          { math: 0.9, science: 0.8, history: 0.6, language: 0.5, arts: 0.7, health: 0.6, business: 0.6, religion: 0.5, general: 0.7 },
   [TASK_TYPES.PET_FEEDING]:            { math: 0.7, science: 0.7, history: 0.6, language: 0.7, arts: 0.7, health: 0.7, business: 0.5, religion: 0.6, general: 0.7 },
+  [TASK_TYPES.RIDDLE]:                 { math: 0.9, science: 0.9, history: 0.9, language: 1.0, arts: 1.0, health: 0.9, business: 0.9, religion: 0.9, general: 1.0 },
 };
 
 // Subject-detection: map freeform subject strings to affinity bucket keys
