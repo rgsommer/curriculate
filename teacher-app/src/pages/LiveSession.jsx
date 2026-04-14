@@ -3998,24 +3998,32 @@ if (
                 )}
               </div>
 
-              {/* Completion % bar */}
-              {taskFlowActive && teamCompletionStats.total > 0 && (
-                <div style={{ marginTop: 8, fontSize: "0.8rem", color: "#374151" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                    <span>Teams complete: {teamCompletionStats.completed}/{teamCompletionStats.total}</span>
-                    <span style={{ fontWeight: 600 }}>{teamCompletionStats.pct}%</span>
+              {/* Avg progress bar */}
+              {taskFlowActive && (() => {
+                const teamEntries = Object.values(teams);
+                const teamCount = teamEntries.length;
+                const totalTasks = totalTasksInActiveSet || 0;
+                if (teamCount === 0 || totalTasks === 0) return null;
+                const sum = teamEntries.reduce((acc, t) => acc + Math.min(totalTasks, Math.max(0, typeof t.taskIndex === "number" ? t.taskIndex : 0)), 0);
+                const avgPct = Math.round((sum / (teamCount * totalTasks)) * 100);
+                return (
+                  <div style={{ marginTop: 8, fontSize: "0.8rem", color: "#374151" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                      <span>Progress</span>
+                      <span style={{ fontWeight: 600 }}>{avgPct}%</span>
+                    </div>
+                    <div style={{ width: "100%", height: 6, borderRadius: 3, background: "#e5e7eb", overflow: "hidden" }}>
+                      <div style={{
+                        width: `${avgPct}%`,
+                        height: "100%",
+                        borderRadius: 3,
+                        background: avgPct === 100 ? "#22c55e" : "#3b82f6",
+                        transition: "width 0.4s ease",
+                      }} />
+                    </div>
                   </div>
-                  <div style={{ width: "100%", height: 6, borderRadius: 3, background: "#e5e7eb", overflow: "hidden" }}>
-                    <div style={{
-                      width: `${teamCompletionStats.pct}%`,
-                      height: "100%",
-                      borderRadius: 3,
-                      background: teamCompletionStats.pct === 100 ? "#22c55e" : "#3b82f6",
-                      transition: "width 0.4s ease",
-                    }} />
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           </div>
 
