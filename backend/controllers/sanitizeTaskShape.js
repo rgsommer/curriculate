@@ -378,6 +378,38 @@ export function sanitizeTaskShapeByType(type, task) {
     }
   }
 
+  // ── ROLE_PLAY_DECK: auto-fill empty goal/constraint from role description ──
+  if (type === TASK_TYPES.ROLE_PLAY_DECK) {
+    const roles = Array.isArray(t.config?.roles) ? t.config.roles : [];
+    if (roles.length > 0) {
+      t.config.roles = roles.map((r) => {
+        if (!r || typeof r !== "object") return r;
+        const role = { ...r };
+        const desc = String(role.role || role.description || "").trim();
+        const chars = Array.isArray(role.characteristics) ? role.characteristics : [];
+
+        if (!String(role.goal || "").trim()) {
+          // Synthesize goal from description or first characteristic
+          if (desc) {
+            role.goal = desc;
+          } else if (chars.length > 0) {
+            role.goal = String(chars[0] || "").trim();
+          }
+        }
+        if (!String(role.constraint || "").trim()) {
+          // Synthesize constraint from last characteristic or a generic one
+          if (chars.length >= 2) {
+            role.constraint = String(chars[chars.length - 1] || "").trim();
+          } else if (desc) {
+            role.constraint = "Must stay in character and support the group discussion";
+          }
+        }
+        return role;
+      });
+      console.log(`[sanitize] Auto-filled ROLE_PLAY_DECK goal/constraint from role data`);
+    }
+  }
+
   return t;
 }
 
