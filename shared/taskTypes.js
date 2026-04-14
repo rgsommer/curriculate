@@ -3210,11 +3210,12 @@ IMPORTANT:
     
     Task-specific guidance:
     - Create 8–12 mime-only prompts tied to the topic. Prompts must be actable without props and be classroom-appropriate.
-    
+    - Put the prompts in a top-level "clues" array of strings. Example: "clues": ["photosynthesis", "mitosis", "gravity"]
+    - Do NOT use config.rounds, config.statements, or config.items — use "clues" at the root level.
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - Do not omit the "clues" array — it is required.
+    - Ensure prompts are student-facing (single words or short phrases to act out).
     `,
 },
 

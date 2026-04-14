@@ -2049,7 +2049,30 @@ export function normalizeTaskByType(taskType, rawTask) {
     }
 
     case TASK_TYPES.DRAW:
-    case TASK_TYPES.MIME:
+    case TASK_TYPES.MIME: {
+      // Normalise misplaced clues: AI sometimes puts them in config.rounds, config.statements, items, etc.
+      if (!Array.isArray(task.clues) || task.clues.length === 0) {
+        const cfg = task.config || {};
+        const candidates = [task.items, cfg.items, cfg.rounds, cfg.statements, cfg.prompts, cfg.clues];
+        for (const src of candidates) {
+          if (Array.isArray(src) && src.length > 0) {
+            task.clues = src.map((c) => (typeof c === "string" ? c : (c && (c.text || c.prompt || c.clue || c.word || c.name)) || "").trim()).filter(Boolean);
+            if (task.clues.length > 0) break;
+          }
+        }
+      }
+      // Clean config fields that belong to other types so the validator doesn't reject
+      if (task.config) {
+        delete task.config.statements;
+        delete task.config.rounds;
+        delete task.config.prompts;
+        delete task.config.wordsByStation;
+        delete task.config.secretAnswers;
+        delete task.config.seedTerm;
+        delete task.config.goodFoods;
+      }
+      break;
+    }
     case TASK_TYPES.PHOTO:
     case TASK_TYPES.MAKE_AND_SNAP:
     case TASK_TYPES.PHOTO_JOURNAL:
