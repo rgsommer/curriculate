@@ -1629,6 +1629,22 @@ socket.on("task:force-advance", ({ roomCode }) => {
     );
   });
 
+  // HostView display joins a room channel (read-only — just needs state broadcasts)
+  socket.on("host:join", (payload, ack) => {
+    const code = (payload?.roomCode || "").toUpperCase().trim();
+    if (!code) return;
+    socket.join(code);
+    socket.data.role = "host";
+    socket.data.roomCode = code;
+    const room = rooms[code];
+    if (room) {
+      const state = buildRoomState(room);
+      socket.emit("room:state", state);
+      socket.emit("roomState", state);
+    }
+    if (typeof ack === "function") ack({ ok: true });
+  });
+
   // Teacher creates room
   socket.on("teacher:createRoom", async ({ roomCode, teacherInstanceId, sharedFromTeacherId, sharedFromTeacherEmail }, callback) => {
     const code = roomCode?.toUpperCase()?.trim();
@@ -6197,7 +6213,7 @@ socket.on(
         // teacher:join for the same instanceId can cancel it.
         const pruneTimeout = setTimeout(() => {
           pruneTeacherRoomsByInstance(instId, null);
-        }, 10_000); // 10-second grace period
+        }, 120_000); // 2-minute grace period — network blips, browser refreshes, etc.
 
         // Tag every room this teacher owns with the pending prune so join can cancel it
         for (const room of Object.values(rooms)) {
@@ -6207,7 +6223,7 @@ socket.on(
           }
         }
 
-        console.log(`[ROOM] Teacher ${instId} disconnected — will prune rooms in 10 s if not reconnected`);
+        console.log(`[ROOM] Teacher ${instId} disconnected — will prune rooms in 120s if not reconnected`);
         return;
       }
 

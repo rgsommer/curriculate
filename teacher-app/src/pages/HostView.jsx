@@ -282,18 +282,40 @@ export default function HostView({ roomCode: roomCodeProp }) {
   }, []);
 
   // ── Socket events ────────────────────────────────────────
+  // Track the best-known team count so we never overwrite a populated leaderboard
+  // with an empty/stale state broadcast (the #1 cause of the "wipe" bug).
+  const bestTeamCountRef = useRef(0);
+
   useEffect(() => {
     if (!roomCode) return;
     const code = String(roomCode).toUpperCase().trim();
 
-    socket.emit("joinRoom", { roomCode: code, role: "host", name: "Host" });
+    // Join the room channel properly (backend registers us as a "host" socket)
+    const joinRoom = () => {
+      socket.emit("host:join", { roomCode: code });
+      socket.emit("room:request-state", { roomCode: code });
+    };
+    joinRoom();
 
     const handleRoom = (state) => {
       const safe = state || {};
+      const incomingTeamCount = safe.teams ? Object.keys(safe.teams).length : 0;
+
+      // GUARD: If we already have teams on screen and the incoming state has zero
+      // teams, this is almost certainly a stale/empty broadcast after a reconnect
+      // or room-not-found. Keep the existing leaderboard instead of wiping it.
+      if (bestTeamCountRef.current > 0 && incomingTeamCount === 0) {
+        console.warn("[HostView] Ignoring empty state — keeping existing leaderboard with", bestTeamCountRef.current, "teams");
+        return;
+      }
+      if (incomingTeamCount > bestTeamCountRef.current) {
+        bestTeamCountRef.current = incomingTeamCount;
+      }
+
       setRoomState((prev) => ({
         ...prev,
-        teams: safe.teams || {},
-        scores: safe.scores || {},
+        teams: safe.teams || prev.teams || {},
+        scores: safe.scores || prev.scores || {},
         playerScores: Array.isArray(safe.playerScores) ? safe.playerScores : prev.playerScores || [],
         submissions: Array.isArray(safe.submissions) ? safe.submissions : prev.submissions || [],
         taskIndex: typeof safe.taskIndex === "number" ? safe.taskIndex : prev.taskIndex,
@@ -362,12 +384,23 @@ export default function HostView({ roomCode: roomCodeProp }) {
       setShowConfetti(true);
       setTaskEndCelebration(true);
       setTimeout(() => setShowConfetti(false), 6000);
-      // Keep "Winner" label visible for 10s
       setTimeout(() => setTaskEndCelebration(false), 10000);
     };
     socket.on("task:advance", handleTaskAdvance);
 
-    socket.emit("room:request-state", { roomCode: code });
+    // On reconnect: re-join the room and re-request state
+    const handleReconnect = () => {
+      console.log("[HostView] Socket reconnected — re-joining room", code);
+      joinRoom();
+    };
+    socket.on("connect", handleReconnect);
+
+    // Periodic heartbeat: re-request state every 15s as a safety net
+    const heartbeat = setInterval(() => {
+      if (socket.connected) {
+        socket.emit("room:request-state", { roomCode: code });
+      }
+    }, 15_000);
 
     return () => {
       socket.off("roomState", handleRoom);
@@ -378,6 +411,8 @@ export default function HostView({ roomCode: roomCodeProp }) {
       socket.off("session-ended", handleEnded);
       socket.off("mood-checkin:update", handleMoodUpdate);
       socket.off("task:advance", handleTaskAdvance);
+      socket.off("connect", handleReconnect);
+      clearInterval(heartbeat);
     };
   }, [roomCode, playSound, addScorePopup]);
 
