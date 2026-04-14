@@ -305,15 +305,57 @@ export function sanitizeTaskShapeByType(type, task) {
     }
   }
 
-  // ── MAD_DASH_SEQUENCE: normalize correctOrder to integers ──
+  // ── MAD_DASH_SEQUENCE: normalize correctOrder to integers + auto-scramble ──
   if (type === TASK_TYPES.MAD_DASH_SEQUENCE) {
-    const order = t.config?.correctOrder || t.correctOrder;
+    const items = Array.isArray(t.config?.items) ? t.config.items : Array.isArray(t.items) ? t.items : [];
+    let order = t.config?.correctOrder || t.correctOrder;
+
+    // Normalize to integers
     if (Array.isArray(order)) {
-      const intOrder = order.map((v) => parseInt(v, 10)).filter((v) => Number.isFinite(v));
-      if (intOrder.length === order.length) {
-        if (t.config && typeof t.config === "object") t.config.correctOrder = intOrder;
-        if (Array.isArray(t.correctOrder)) t.correctOrder = intOrder;
+      order = order.map((v) => parseInt(v, 10)).filter((v) => Number.isFinite(v));
+    }
+
+    // Auto-scramble: AI naturally lists items in correct order (correctOrder = [0,1,2,...]).
+    // We shuffle the items array and compute the inverse mapping for correctOrder.
+    if (Array.isArray(order) && items.length >= 3 && order.length === items.length) {
+      const isTrivial = order.every((v, i) => v === i);
+      if (isTrivial) {
+        // Fisher-Yates shuffle of indices
+        const indices = items.map((_, i) => i);
+        for (let i = indices.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [indices[i], indices[j]] = [indices[j], indices[i]];
+        }
+        // Ensure it's actually shuffled (not accidentally identity)
+        if (indices.every((v, i) => v === i)) {
+          [indices[0], indices[1]] = [indices[1], indices[0]];
+        }
+        // Reorder items according to shuffled indices
+        const shuffledItems = indices.map((i) => items[i]);
+        // correctOrder[scrambledPos] = originalPos, but we need:
+        // "what position in the scrambled list does the i-th correct item occupy?"
+        // inverseMap[originalIdx] = scrambledIdx
+        const inverseMap = new Array(items.length);
+        indices.forEach((origIdx, scrambledIdx) => { inverseMap[origIdx] = scrambledIdx; });
+        // correctOrder = the order to read scrambled items to get the original sequence
+        // i.e. [inverseMap[0], inverseMap[1], ...] tells us: "correct item 0 is at scrambled position X"
+        const newOrder = items.map((_, origIdx) => inverseMap[origIdx]);
+
+        if (t.config && typeof t.config === "object") {
+          t.config.items = shuffledItems;
+          t.config.correctOrder = newOrder;
+        }
+        if (Array.isArray(t.items)) t.items = shuffledItems;
+        if (Array.isArray(t.correctOrder)) t.correctOrder = newOrder;
+        console.log(`[sanitize] Auto-scrambled MAD_DASH_SEQUENCE items (was trivial [0,1,2,...])`);
+        order = newOrder; // update for the assignment below
       }
+    }
+
+    // Assign normalized order
+    if (Array.isArray(order) && order.length > 0) {
+      if (t.config && typeof t.config === "object") t.config.correctOrder = order;
+      if (Array.isArray(t.correctOrder)) t.correctOrder = order;
     }
   }
 

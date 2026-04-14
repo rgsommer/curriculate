@@ -2603,13 +2603,7 @@ export function validateTaskByType(taskType, task) {
       }
 
       const order = cfg.correctOrder ?? task.correctOrder ?? cfg.answerKey ?? task.answerKey;
-      if (!order) {
-        errors.push("correct order is required (config.correctOrder / correctOrder / answerKey)");
-      } else if (Array.isArray(order)) {
-        // Reject trivial ordering [0,1,2,...] — items must be scrambled
-        const isTrivial = order.every((v, i) => Number(v) === i);
-        if (isTrivial) errors.push("correctOrder is trivial [0,1,2,...] — items must be listed in scrambled order");
-      }
+      if (!order) errors.push("correct order is required (config.correctOrder / correctOrder / answerKey)");
       break;
     }
 
