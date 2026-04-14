@@ -202,13 +202,20 @@ export function sanitizeTaskShapeByType(type, task) {
             return true;
           });
 
-        // Trim to exactly 3 options if AI generated more
+        // Contract: options must be exactly 3 strings that do NOT include jokeOption.
+        // The normalizer inserts jokeOption at jokeIndex later, making 4 for gameplay.
+        // AI frequently puts the jokeOption inside options — strip it out first.
+        const jokeOpt = String(round.jokeOption || "").trim().toLowerCase();
+        if (jokeOpt) {
+          round.options = round.options.filter((o) => o.toLowerCase() !== jokeOpt);
+        }
+
+        // Trim to exactly 3 options if AI generated more (keep correctOption)
         if (round.options.length > 3) {
           const correctOpt = String(round.correctOption || "").trim().toLowerCase();
-          const jokeOpt = String(round.jokeOption || "").trim().toLowerCase();
           const keep = new Set();
           round.options.forEach((o, i) => {
-            if (o.toLowerCase() === correctOpt || o.toLowerCase() === jokeOpt) keep.add(i);
+            if (o.toLowerCase() === correctOpt) keep.add(i);
           });
           for (let i = 0; i < round.options.length && keep.size < 3; i++) {
             if (!keep.has(i)) keep.add(i);
@@ -221,12 +228,6 @@ export function sanitizeTaskShapeByType(type, task) {
         if (correctOpt) {
           const idx = round.options.findIndex((o) => o.toLowerCase() === correctOpt.toLowerCase());
           if (idx >= 0) round.correctIndex = idx;
-        }
-        // Fix jokeIndex too
-        const jokeOpt = String(round.jokeOption || "").trim();
-        if (jokeOpt) {
-          const jIdx = round.options.findIndex((o) => o.toLowerCase() === jokeOpt.toLowerCase());
-          if (jIdx >= 0) round.jokeIndex = jIdx;
         }
       }
       return round;
