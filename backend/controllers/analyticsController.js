@@ -94,7 +94,7 @@ export async function getSessionDetails(req, res) {
         roomCode: session.code,
         ownerId: teacherId,
       })
-        .select("studentGrades gradingConfig summary.classChatBlurb summary.skillsDeveloped summary.activityHighlights summary.engagementLevel summary.overallProficiency")
+        .select("studentGrades gradingConfig teams summary.classChatBlurb summary.skillsDeveloped summary.activityHighlights summary.engagementLevel summary.overallProficiency")
         .lean();
       if (report) {
         studentGrades = report.studentGrades || [];
@@ -137,6 +137,16 @@ export async function getSessionDetails(req, res) {
       classChatBlurb,
       skillsDeveloped,
       activityHighlights,
+      // Exit feedback + mood checkins from the SessionReport teams snapshot
+      teamFeedback: (report?.teams || []).filter(
+        (t) => (t.exitFeedback && (t.exitFeedback.rating != null || t.exitFeedback.highlights)) ||
+               (t.moodEntry && t.moodEntry.moods?.length > 0)
+      ).map((t) => ({
+        teamName: t.teamName,
+        members: t.members || [],
+        exitFeedback: t.exitFeedback || null,
+        moodEntry: t.moodEntry || null,
+      })),
     };
 
     return res.json(response);

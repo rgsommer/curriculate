@@ -311,6 +311,7 @@ export default function TaskSets() {
   const [error, setError] = useState("");
 
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [expandedIds, setExpandedIds] = useState(() => new Set());
   const allIds = useMemo(
     () =>
       Array.isArray(sets)
@@ -422,6 +423,17 @@ export default function TaskSets() {
     const sid = String(id || "");
     if (!sid) return;
     setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sid)) next.delete(sid);
+      else next.add(sid);
+      return next;
+    });
+  };
+
+  const toggleExpanded = (id) => {
+    const sid = String(id || "");
+    if (!sid) return;
+    setExpandedIds((prev) => {
       const next = new Set(prev);
       if (next.has(sid)) next.delete(sid);
       else next.add(sid);
@@ -1224,6 +1236,7 @@ export default function TaskSets() {
             const count = getTasksCount(ts);
             const times = getTimesPlayed(ts);
             const last = fmtDate(getLastPlayed(ts));
+            const isExpanded = expandedIds.has(id);
 
             const listReport = extractGenerationReport(ts);
             const blooms = listReport ? extractBloomsLabel(listReport) : "";
@@ -1313,73 +1326,91 @@ export default function TaskSets() {
                 </div>
 
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                    <div
-                      style={{
-                        fontWeight: 900,
-                        fontSize: "1.02rem",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {diffFlag && (
-                        <span title={diffTip} style={{ cursor: "default", marginRight: 6 }}>
-                          {diffFlag}
+                  {/* Clickable header row — always visible */}
+                  <div
+                    onClick={() => toggleExpanded(id)}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                      <div
+                        style={{
+                          fontWeight: 900,
+                          fontSize: "1.02rem",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {diffFlag && (
+                          <span title={diffTip} style={{ cursor: "default", marginRight: 6 }}>
+                            {diffFlag}
+                          </span>
+                        )}
+                        <span style={{ marginRight: 6, fontSize: "0.8rem", color: "#9ca3af" }}>
+                          {isExpanded ? "\u25BC" : "\u25B6"}
                         </span>
+                        {title}
+                      </div>
+                      {/* Quick-action buttons always visible */}
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}
+                      >
+                        <button type="button" onClick={() => launchNow(ts)} style={btn("primary")}>
+                          Launch
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 6, color: "#6b7280", fontSize: "0.9rem" }}>
+                      {secondLineParts.join(" \u00B7 ")}
+                    </div>
+                  </div>
+
+                  {/* Expandable detail section */}
+                  {isExpanded && (
+                    <>
+                      {taskTypeBadges.length > 0 && (
+                        <div style={{ marginTop: 8, display: "flex", gap: 5, flexWrap: "wrap" }}>
+                          {taskTypeBadges.map(({ label, n, colors }, i) => (
+                            <span
+                              key={i}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 3,
+                                padding: "2px 8px",
+                                borderRadius: 12,
+                                fontSize: "0.72rem",
+                                fontWeight: 700,
+                                background: colors.bg,
+                                color: colors.fg,
+                                border: `1px solid ${colors.border}`,
+                                lineHeight: 1.5,
+                              }}
+                            >
+                              {label}{n > 1 ? ` ×${n}` : ""}
+                            </span>
+                          ))}
+                        </div>
                       )}
-                      {title}
-                    </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      <button type="button" onClick={() => openReport(ts)} style={btn("secondary")}>
-                        Report
-                      </button>
-                      <button type="button" onClick={() => copyShareLink(ts)} style={btn("secondary")}>
-                        Share
-                      </button>
-                      <button type="button" onClick={() => launchNow(ts)} style={btn("primary")}>
-                        Launch
-                      </button>
-                    </div>
-                  </div>
 
-                  <div style={{ marginTop: 6, color: "#6b7280", fontSize: "0.9rem" }}>
-                    {secondLineParts.join(" \u00B7 ")}
-                  </div>
-
-                  {taskTypeBadges.length > 0 && (
-                    <div style={{ marginTop: 8, display: "flex", gap: 5, flexWrap: "wrap" }}>
-                      {taskTypeBadges.map(({ label, n, colors }, i) => (
-                        <span
-                          key={i}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 3,
-                            padding: "2px 8px",
-                            borderRadius: 12,
-                            fontSize: "0.72rem",
-                            fontWeight: 700,
-                            background: colors.bg,
-                            color: colors.fg,
-                            border: `1px solid ${colors.border}`,
-                            lineHeight: 1.5,
-                          }}
-                        >
-                          {label}{n > 1 ? ` ×${n}` : ""}
-                        </span>
-                      ))}
-                    </div>
+                      <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button type="button" onClick={() => openReport(ts)} style={btn("secondary")}>
+                          Report
+                        </button>
+                        <button type="button" onClick={() => copyShareLink(ts)} style={btn("secondary")}>
+                          Share
+                        </button>
+                        <button type="button" onClick={() => navigate(`/tasksets/${encodeURIComponent(id)}`)} style={btn("secondary")}>
+                          Edit
+                        </button>
+                        <button type="button" onClick={() => deleteOne(id)} style={btn("danger")}>
+                          Delete
+                        </button>
+                      </div>
+                    </>
                   )}
-
-                  <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button type="button" onClick={() => navigate(`/tasksets/${encodeURIComponent(id)}`)} style={btn("secondary")}>
-                      Edit
-                    </button>
-                    <button type="button" onClick={() => deleteOne(id)} style={btn("danger")}>
-                      Delete
-                    </button>
-                  </div>
                 </div>
               </div>
             );

@@ -104,6 +104,10 @@ export const TASK_TYPES = {
   // Case study with AI feedback
   CASE_STUDY: "case-study",
 
+  // Observation / visual analysis
+  ART_VIEW: "art-view",
+  HISTORICAL_DOC: "historical-doc",
+
   // Physical / scavenger
   HIDENSEEK: "hidenseek",
   MULTI_ROOM_SCAVENGER_HUNT: "hidenseek"
@@ -144,6 +148,7 @@ export const TASK_TYPE_META = {
     hasOptions: true,
     expectsText: false,
     maxTimeSeconds: 60,
+    estimatedMinutes: 3,
     correctAnswerShape: "single-option-index",
     multiItemCapable: true,
     preferredItemsPerTask: { min: 3, max: 5 },
@@ -187,6 +192,8 @@ export const TASK_TYPE_META = {
     hasOptions: true,
     expectsText: false,
     maxTimeSeconds: 90,
+    estimatedMinutes: 4,
+    isOffTablet: true,
     correctAnswerShape: "single-option-index",
     multiItemCapable: true,
     preferredItemsPerTask: { min: 3, max: 5 },
@@ -230,6 +237,7 @@ export const TASK_TYPE_META = {
     hasOptions: true,
     expectsText: false,
     maxTimeSeconds: 45,
+    estimatedMinutes: 2,
     correctAnswerShape: "single-option-index",
     multiItemCapable: true,
     preferredItemsPerTask: { min: 3, max: 6 },
@@ -271,6 +279,7 @@ export const TASK_TYPE_META = {
     hasOptions: false,
     expectsText: true,
     maxTimeSeconds: 90,
+    estimatedMinutes: 4,
     correctAnswerShape: "string-or-list",
     multiItemCapable: true,
     preferredItemsPerTask: { min: 3, max: 5 },
@@ -315,6 +324,7 @@ export const TASK_TYPE_META = {
     hasOptions: false,
     expectsText: true,
     maxTimeSeconds: 180,
+    estimatedMinutes: 6,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
@@ -359,6 +369,7 @@ export const TASK_TYPE_META = {
     hasOptions: true,
     expectsText: false,
     maxTimeSeconds: 120,
+    estimatedMinutes: 4,
     correctAnswerShape: "bucket-mapping",
     interTeamEnabled: false,
     intraTeamEnabled: false,
@@ -400,6 +411,7 @@ export const TASK_TYPE_META = {
     hasOptions: true,
     expectsText: false,
     maxTimeSeconds: 120,
+    estimatedMinutes: 4,
     correctAnswerShape: "ordered-array",
     interTeamEnabled: false,
     intraTeamEnabled: false,
@@ -441,6 +453,7 @@ export const TASK_TYPE_META = {
     hasOptions: true,
     expectsText: false,
     maxTimeSeconds: 120,
+    estimatedMinutes: 4,
     correctAnswerShape: "ordered-array",
     interTeamEnabled: false,
     intraTeamEnabled: false,
@@ -482,6 +495,7 @@ export const TASK_TYPE_META = {
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 120,
+    estimatedMinutes: 4,
     correctAnswerShape: "left-to-right-map",
     interTeamEnabled: false,
     intraTeamEnabled: false,
@@ -617,6 +631,7 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
     hasOptions: false,
     expectsText: true,
     maxTimeSeconds: 300,
+    estimatedMinutes: 7,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
@@ -690,6 +705,8 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 240,
+    estimatedMinutes: 6,
+    isOffTablet: true,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
@@ -729,6 +746,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     hasOptions: false,
     expectsText: true,
     maxTimeSeconds: 300,
+    estimatedMinutes: 7,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
@@ -773,6 +791,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     hasOptions: false,
     expectsText: true,
     maxTimeSeconds: 300,
+    estimatedMinutes: 8,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
@@ -817,6 +836,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 180,
+    isOffTablet: true,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
@@ -855,6 +875,8 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 240,
+    estimatedMinutes: 6,
+    isOffTablet: true,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
@@ -898,6 +920,8 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     hasOptions: false,
     expectsText: true,
     maxTimeSeconds: 300,
+    estimatedMinutes: 7,
+    isOffTablet: true,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
@@ -943,6 +967,8 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 60,
+    estimatedMinutes: 2,
+    isOffTablet: true,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
@@ -987,6 +1013,8 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 180,
+    estimatedMinutes: 4,
+    isOffTablet: true,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description: `
@@ -1042,6 +1070,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     aiScoringDefaultOn: false,
     objectiveKeyed: true,
     scoringMode: "objective",
+    isOffTablet: true,
 
     description: `
       A fast, station-based tap game (like “multiple choice, but musical chairs”).
@@ -1147,6 +1176,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     timed: true,
     timeBonus: true,
 
+    estimatedMinutes: 4,
     interTeamEnabled: true,
     intraTeamEnabled: true,
 
@@ -1174,6 +1204,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
   timed: true,
   timeBonus: true,
 
+  estimatedMinutes: 4,
   interTeamEnabled: true,
   intraTeamEnabled: true,
 
@@ -1209,6 +1240,121 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     `.trim(),
     },
 
+  // =========================
+  // OBSERVATION / VISUAL ANALYSIS
+  // =========================
+
+  [TASK_TYPES.ART_VIEW]: {
+    label: "Art View",
+    category: CATEGORY.CREATIVE,
+    implemented: true,
+    demoEligible: true,
+    demoSelectable: true,
+    generatorEligible: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "hybrid",
+    quickTaskEligible: false,
+    hasOptions: false,
+    expectsText: true,
+    maxTimeSeconds: 180,
+    estimatedMinutes: 5,
+    interTeamEnabled: false,
+    intraTeamEnabled: false,
+    description:
+      "Two-phase visual observation task using HISTORICAL ART or PRIMARY SOURCES directly related to the lesson topic. Phase 1: A full-screen image is displayed for a fixed viewing period (default 60 seconds). Students study the image carefully. Phase 2: The image disappears and students type as many observations as they can before time runs out. Hybrid scoring: base points for quantity of unique/valid observations, bonus points from AI for quality, specificity, and analytical depth.\n\nThe image MUST be a well-known historical artwork, photograph, map, or primary source that connects to the lesson topic. The system validates the image URL at runtime and can auto-replace broken links.\n\nAI MUST output:\n- taskType: \"art-view\"\n- title, prompt (student-facing instructions)\n- config.imageUrl: Wikimedia Commons URL to the image (MUST be a direct file link ending in .jpg/.png, e.g. https://upload.wikimedia.org/wikipedia/commons/...)\n- config.imageDescription: ALWAYS include a detailed description of the artwork (title, artist, year, medium, what it depicts) — used as fallback if URL breaks\n- config.imageTitle: the artwork's title (e.g. \"Starry Night\")\n- config.imageArtist: the artist's name (e.g. \"Vincent van Gogh\")\n- config.imageYear: approximate year or period (e.g. \"1889\" or \"15th century\")\n- config.viewingSeconds: how long to show the image (default 60)\n- config.responseSeconds: how long students have to type observations (default 120)\n- config.minObservations: minimum observations expected (default 5)\n- Optional: config.focusHints (array of 2-4 guiding prompts)\nStudent submission: { observations: string[] }",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "art-view".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt.
+    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
+    - Keep language age-appropriate and classroom-safe.
+
+    Task-specific guidance:
+    - The image MUST be a HISTORICAL artwork, photograph, map, or primary source that is DIRECTLY RELEVANT to the lesson topic.
+      Examples: studying the Renaissance → use a Raphael or da Vinci painting; studying WWI → use a period photograph or propaganda poster;
+      studying geography/aid → use a historical map or documentary photograph of aid work.
+    - config.imageUrl: provide a Wikimedia Commons DIRECT file URL (must end in .jpg or .png).
+      Format: https://upload.wikimedia.org/wikipedia/commons/thumb/HASH/FILENAME/800px-FILENAME
+      Do NOT use gallery pages or non-image URLs.
+    - config.imageDescription: ALWAYS provide this — a rich description of the artwork including title, artist, year, subject matter, medium, and what it depicts. This is the fallback if the URL breaks years later.
+    - config.imageTitle: the artwork's title.
+    - config.imageArtist: the artist or photographer.
+    - config.imageYear: year or period string.
+    - config.viewingSeconds: default 60 (adjust based on image complexity — more detail = more time).
+    - config.responseSeconds: default 120.
+    - config.minObservations: default 5.
+    - config.focusHints: array of 2-4 observation prompts tied to the curriculum topic (e.g., "What does this tell us about life in that period?", "Notice the use of light and shadow").
+    - The prompt should tell students: "Study this artwork carefully. When it disappears, write down as many observations as you can."
+
+    Common failure prevention:
+    - ALWAYS include BOTH imageUrl AND imageDescription.
+    - viewingSeconds and responseSeconds must be positive integers.
+    - The image must be historically significant and clearly connected to the lesson topic.
+    `,
+  },
+
+  [TASK_TYPES.HISTORICAL_DOC]: {
+    label: "Historical Document",
+    category: CATEGORY.CREATIVE,
+    implemented: true,
+    demoEligible: true,
+    demoSelectable: true,
+    generatorEligible: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "hybrid",
+    quickTaskEligible: false,
+    hasOptions: false,
+    expectsText: true,
+    maxTimeSeconds: 240,
+    estimatedMinutes: 6,
+    interTeamEnabled: false,
+    intraTeamEnabled: false,
+    isOffTablet: false,
+    description:
+      "Two-phase primary source analysis task using HISTORICAL DOCUMENTS (treaties, letters, speeches, proclamations, newspaper articles, maps, political cartoons, legal documents, diary entries, etc.) directly related to the lesson topic. Phase 1: A full-screen image of the document is displayed for a fixed reading period (default 90 seconds). Students read and study the document carefully. Phase 2: The image disappears and students write commentary on the document's relevance, impact, and historical significance at the time it was created.\n\nThe document MUST be a real, historically significant primary source that connects to the lesson topic. The system validates the image URL at runtime and can auto-replace broken links via Wikimedia Commons.\n\nAI MUST output:\n- taskType: \"historical-doc\"\n- title, prompt (student-facing instructions)\n- config.imageUrl: Wikimedia Commons URL to the document image (MUST be a direct file link ending in .jpg/.png)\n- config.imageDescription: ALWAYS include a detailed description of the document (what it is, who wrote/created it, when, context, what it says/shows) — used as fallback if URL breaks\n- config.docTitle: the document's title or name (e.g. \"The Emancipation Proclamation\")\n- config.docAuthor: author or creator (e.g. \"Abraham Lincoln\")\n- config.docYear: year or date (e.g. \"1863\" or \"January 1, 1863\")\n- config.docType: type of document (e.g. \"presidential proclamation\", \"treaty\", \"personal letter\", \"political cartoon\", \"newspaper front page\")\n- config.historicalContext: 1-2 sentence context students see before viewing (e.g. \"This document was issued during the American Civil War...\")\n- config.viewingSeconds: how long to show the document (default 90 — longer than art because reading takes longer)\n- config.responseSeconds: how long students have to write their analysis (default 150)\n- config.analysisPrompts: array of 2-4 guided analysis questions (e.g. \"What was the immediate impact of this document?\", \"Who was the intended audience?\", \"How does this connect to what we learned about...?\")\nStudent submission: { responses: Array<{ prompt: string, response: string }> }",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "historical-doc".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt.
+    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
+    - Keep language age-appropriate and classroom-safe.
+
+    Task-specific guidance:
+    - The document MUST be a REAL historical primary source that is DIRECTLY RELEVANT to the lesson topic.
+      Examples: studying the American Revolution → use the Declaration of Independence or a Paul Revere engraving;
+      studying WWII → use a wartime propaganda poster, Rosie the Riveter, or a period newspaper front page;
+      studying civil rights → use the text of Brown v. Board of Education or a photograph from the March on Washington.
+    - Prefer documents with visual interest: handwritten letters, illustrated broadsides, political cartoons, maps, newspaper front pages, illuminated manuscripts, signed treaties.
+    - config.imageUrl: provide a Wikimedia Commons DIRECT file URL (must end in .jpg or .png).
+      Format: https://upload.wikimedia.org/wikipedia/commons/thumb/HASH/FILENAME/800px-FILENAME
+      Do NOT use gallery pages or non-image URLs.
+    - config.imageDescription: ALWAYS provide this — a thorough description of the document including what it looks like, what text it contains (key excerpts if legible), who created it, when, and why it matters. This is the fallback if the URL breaks.
+    - config.docTitle: the document's name.
+    - config.docAuthor: author, creator, or issuing body.
+    - config.docYear: year or date string.
+    - config.docType: classification of the document type.
+    - config.historicalContext: 1-2 sentences of context shown to students BEFORE viewing (to orient them — do not give away the analysis).
+    - config.viewingSeconds: default 90 (documents need more reading time than art).
+    - config.responseSeconds: default 150.
+    - config.analysisPrompts: array of 2-4 targeted analysis questions that push students beyond description into evaluation of relevance and impact. At least one should ask about the document's impact AT THE TIME it was created, and at least one should connect to the broader lesson topic.
+    - The prompt should tell students: "Read this historical document carefully. When it disappears, you will answer analysis questions about its significance and impact."
+
+    Common failure prevention:
+    - ALWAYS include BOTH imageUrl AND imageDescription.
+    - viewingSeconds and responseSeconds must be positive integers.
+    - The document must be a real, well-known historical primary source directly connected to the lesson topic.
+    - analysisPrompts should ask about relevance and impact, not just description.
+    `,
+  },
+
   [TASK_TYPES.HIDENSEEK]: {
     label: "Hide & Seek",
     category: CATEGORY.MOVEMENT,
@@ -1223,6 +1369,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     hasOptions: false,
     expectsText: true,
     maxTimeSeconds: 300,
+    estimatedMinutes: 7,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
@@ -1361,6 +1508,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     objectiveKeyed: false,
     aiScoringDefaultOn: false,
     demoSelectable: true,
+    estimatedMinutes: 4,
     description: "Demo-only intro / walkthrough video.",
   
     aiPrompt: `
@@ -1400,6 +1548,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     quickTaskEligible: true,
     expectsText: true,
     maxTimeSeconds: 90,
+    estimatedMinutes: 3,
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description: "Brain Blitz (Jeopardy-style): the device shows an answer/term and students must respond with the correct question (Jeopardy format).\nStudent flow:\n- Prompt shows a clue/answer (word/name/phrase).\n- Players respond quickly by voice (preferred) or typing.\n- AI checks meaning and Jeopardy-style phrasing (strictness adjustable by difficulty).\nScoring: AI-scored; fast, competitive retrieval + reformulation.\nAI generation should produce:\n- clue (string) OR prompt (string)\n- expectedQuestion (string) OR expectedKeyPoints (array)\n- allowTyping (boolean, optional)\n- timeLimitSeconds (optional; usually 30\u201390)\nInter-team: YES. Intra-team: YES.",
@@ -1538,6 +1687,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 300,
+    estimatedMinutes: 7,
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
@@ -1719,6 +1869,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     quickTaskEligible: true,
     expectsText: false,
     maxTimeSeconds: 120,
+    estimatedMinutes: 4,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     correctAnswerShape: "string-or-list",
@@ -1765,6 +1916,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     hasOptions: false,
     expectsText: true, // buzzer winner types the answer
     maxTimeSeconds: 420, // ~5–7 min typical, but depends on deck size + pace
+    estimatedMinutes: 7,
     interTeamEnabled: false,
     intraTeamEnabled: true, // per spec: inter-team YES, intra-team NO
     correctAnswerShape: "string-or-list",
@@ -1857,6 +2009,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     aiScoringDefaultOn: false,
     scoringMode: "objective",
     maxTimeSeconds: 60,
+    estimatedMinutes: 2,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
@@ -1908,6 +2061,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     aiScoringDefaultOn: false,
     scoringMode: "none",
     maxTimeSeconds: 300,
+    estimatedMinutes: 6,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
@@ -1977,6 +2131,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     scoringMode: "none",
     expectsText: true,
     maxTimeSeconds: 240,
+    estimatedMinutes: 6,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
@@ -2114,6 +2269,8 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     aiScoringDefaultOn: false,
     scoringMode: "none",
     maxTimeSeconds: 180,
+    estimatedMinutes: 4,
+    isOffTablet: true,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description: [
@@ -2200,6 +2357,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     scoringMode: "ai",
     expectsText: true,
     maxTimeSeconds: 180,
+    estimatedMinutes: 6,
     interTeamEnabled: true,
     intraTeamEnabled: false,
     description:
@@ -2236,6 +2394,8 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     scoringMode: "ai",
     expectsText: true,
     maxTimeSeconds: 600,
+    estimatedMinutes: 10,
+    isOffTablet: true,
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
@@ -2287,6 +2447,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     scoringMode: "ai",
     // 2:00 main + 0:30 overtime grace = 150s hard-stop
     maxTimeSeconds: 150,
+    estimatedMinutes: 4,
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
@@ -2322,6 +2483,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     aiScoringDefaultOn: false,
     scoringMode: "none",
     maxTimeSeconds: 120,
+    estimatedMinutes: 4,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description: "Fast-paced team brainstorm to activate prior knowledge and generate ideas without fear of being wrong.\nStudent flow:\n- A topic/seed prompt appears.\n- Team rapidly contributes short ideas (spoken aloud and/or typed as quick entries).\n- Optional quick vote/rank at the end to highlight the strongest ideas.\nScoring: Not single-correct; typically completion-based (optionally +bonus for voting).\nAI generation should produce:\n- prompt (string)\n- seedTopic (string, optional)\n- ideaSlots (number, optional; default 8\u201312)\n- enableVoting (boolean, optional)\n- timeLimitSeconds (optional; usually 60\u2013120)\nInter-team: NO. Intra-team: YES.",
@@ -2408,6 +2570,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     aiScoringDefaultOn: false,
     scoringMode: "objective",
     maxTimeSeconds: 90,
+    estimatedMinutes: 3,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description: `
@@ -2578,6 +2741,7 @@ config: {
     aiScoringDefaultOn: true,
     scoringMode: "ai",
     maxTimeSeconds: 240,
+    estimatedMinutes: 6,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
@@ -2632,6 +2796,7 @@ config: {
     aiScoringDefaultOn: true,
     scoringMode: "ai",
     maxTimeSeconds: 300,
+    estimatedMinutes: 7,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description: `
@@ -2694,6 +2859,7 @@ IMPORTANT:
     aiScoringDefaultOn: false,
     scoringMode: "none",
     maxTimeSeconds: 60,
+    estimatedMinutes: 2,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description: `
@@ -2743,6 +2909,8 @@ IMPORTANT:
     aiScoringDefaultOn: false,
     scoringMode: "none",
     maxTimeSeconds: 300,
+    estimatedMinutes: 7,
+    isOffTablet: true,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description: `
@@ -2820,6 +2988,8 @@ IMPORTANT:
     aiScoringDefaultOn: false,
     scoringMode: "none",
     maxTimeSeconds: 300,
+    estimatedMinutes: 8,
+    isOffTablet: true,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
@@ -2880,6 +3050,8 @@ IMPORTANT:
     aiScoringDefaultOn: false,
     scoringMode: "none",
     maxTimeSeconds: 240,
+    estimatedMinutes: 6,
+    isOffTablet: true,
     intraTeamEnabled: false,
     interTeamEnabled: false,
     description: `
@@ -2951,6 +3123,8 @@ IMPORTANT:
     aiScoringDefaultOn: false,
     scoringMode: "none",
     maxTimeSeconds: 240,
+    estimatedMinutes: 6,
+    isOffTablet: true,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
@@ -2986,6 +3160,7 @@ IMPORTANT:
     aiScoringDefaultOn: false,
     scoringMode: "none",
     maxTimeSeconds: 180,
+    isOffTablet: true,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
@@ -3024,6 +3199,8 @@ IMPORTANT:
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 0,
+    estimatedMinutes: 4,
+    isOffTablet: true,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description: `
@@ -3090,6 +3267,8 @@ config: {
     aiScoringDefaultOn: true,
     scoringMode: "ai",
     maxTimeSeconds: 90,
+    estimatedMinutes: 2,
+    isOffTablet: true,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
@@ -3142,6 +3321,8 @@ config: {
     aiScoringDefaultOn: true,
     scoringMode: "ai",
     maxTimeSeconds: 90,
+    estimatedMinutes: 2,
+    isOffTablet: true,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
@@ -3229,7 +3410,15 @@ const __TASK_TYPE_META_DEFAULTS = {
   maxTimeSeconds: 0,
   correctAnswerShape: null,
   multiItemCapable: false,
-  preferredItemsPerTask: null
+  preferredItemsPerTask: null,
+
+  // Estimated total classroom minutes per task (includes timer + transition + reading).
+  // Used to derive task count from session duration. Default 5 if not overridden.
+  estimatedMinutes: 5,
+
+  // True if the primary interaction is physical, verbal, or camera-based (not screen-tapping).
+  // Used by the pool builder to enforce off-tablet diversity minimums.
+  isOffTablet: false,
 };
 
 for (const [k, meta] of Object.entries(TASK_TYPE_META)) {
@@ -3580,6 +3769,142 @@ export function categoryLabelFor(typeValue) {
 }
 
 // Simple normalization helper – keeps AI / editor / backend in sync
+// ═══════════════════════════════════════════════════════════════════════
+// SUBJECT AFFINITY — weighted preference for task types per subject area
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Each value is 0.0–1.0:  1.0 = perfect fit,  0.5 = usable but not ideal,
+// 0.1 = rare/last-resort,  0.0 = never.
+//
+// During generation the backend multiplies each candidate type's affinity
+// by a random draw, then picks highest-weighted types.  Lower-affinity
+// types can still appear (keeps variety) but are much less likely.
+//
+// Subject buckets: math, science, history, language, arts, health,
+// business, religion, general (catch-all).
+//
+// "universal" types (flashcards, brain-blitz, body-break, etc.) get 1.0
+// across the board so they always stay in the mix.
+
+const _DEFAULT_AFFINITY = { math: 0.7, science: 0.7, history: 0.7, language: 0.7, arts: 0.7, health: 0.7, business: 0.7, religion: 0.7, general: 0.7 };
+
+export const SUBJECT_AFFINITY = {
+  // ── Universal / every-subject types ───────────────────────────────
+  [TASK_TYPES.MULTIPLE_CHOICE]:        { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 0.8, health: 0.9, business: 1.0, religion: 1.0, general: 1.0 },
+  [TASK_TYPES.TRUE_FALSE]:             { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 0.8, health: 0.9, business: 1.0, religion: 1.0, general: 1.0 },
+  [TASK_TYPES.SHORT_ANSWER]:           { math: 0.9, science: 1.0, history: 1.0, language: 1.0, arts: 0.8, health: 0.8, business: 1.0, religion: 1.0, general: 1.0 },
+  [TASK_TYPES.FLASHCARDS]:             { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 0.9, health: 0.9, business: 1.0, religion: 1.0, general: 1.0 },
+  [TASK_TYPES.FLASHCARDS_RACE]:        { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 0.9, health: 0.9, business: 1.0, religion: 1.0, general: 1.0 },
+  [TASK_TYPES.JEOPARDY]:               { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 0.9, health: 0.9, business: 1.0, religion: 1.0, general: 1.0 }, // Brain Blitz
+  [TASK_TYPES.MATCHING]:               { math: 0.9, science: 1.0, history: 1.0, language: 1.0, arts: 0.8, health: 0.8, business: 0.9, religion: 0.9, general: 0.9 },
+  [TASK_TYPES.SORT]:                   { math: 0.9, science: 1.0, history: 0.9, language: 0.8, arts: 0.6, health: 0.7, business: 0.8, religion: 0.7, general: 0.8 },
+  [TASK_TYPES.SEQUENCE]:               { math: 1.0, science: 0.9, history: 1.0, language: 0.7, arts: 0.5, health: 0.6, business: 0.7, religion: 0.7, general: 0.8 },
+  [TASK_TYPES.TIMELINE]:               { math: 0.4, science: 0.7, history: 1.0, language: 0.5, arts: 0.6, health: 0.3, business: 0.6, religion: 0.8, general: 0.6 },
+  [TASK_TYPES.VENNSORT]:               { math: 0.7, science: 1.0, history: 0.9, language: 0.8, arts: 0.6, health: 0.7, business: 0.8, religion: 0.7, general: 0.8 },
+  [TASK_TYPES.HANGMAN_DUEL]:           { math: 0.3, science: 0.6, history: 0.7, language: 1.0, arts: 0.7, health: 0.5, business: 0.5, religion: 0.6, general: 0.7 },
+  [TASK_TYPES.WORD_WEAVER_DUEL]:       { math: 0.2, science: 0.5, history: 0.6, language: 1.0, arts: 0.7, health: 0.4, business: 0.5, religion: 0.5, general: 0.6 },
+  [TASK_TYPES.TRUE_FALSE_TICTACTOE]:   { math: 1.0, science: 1.0, history: 1.0, language: 0.9, arts: 0.7, health: 0.8, business: 0.9, religion: 0.9, general: 0.9 },
+  [TASK_TYPES.TRUE_FALSE_CONNECT_FOUR]:{ math: 1.0, science: 1.0, history: 1.0, language: 0.9, arts: 0.7, health: 0.8, business: 0.9, religion: 0.9, general: 0.9 },
+
+  // ── Movement / body-break types (universal energizers) ────────────
+  [TASK_TYPES.BODY_BREAK]:             { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 1.0, health: 1.0, business: 1.0, religion: 1.0, general: 1.0 },
+  [TASK_TYPES.MUSICAL_CHAIRS]:         { math: 0.8, science: 0.8, history: 0.8, language: 0.8, arts: 1.0, health: 1.0, business: 0.7, religion: 0.7, general: 0.8 },
+  [TASK_TYPES.MOTION_MISSION]:         { math: 0.6, science: 0.8, history: 0.7, language: 0.7, arts: 0.9, health: 1.0, business: 0.5, religion: 0.6, general: 0.7 },
+  [TASK_TYPES.MAD_DASH]:               { math: 0.8, science: 0.8, history: 0.8, language: 0.8, arts: 0.8, health: 1.0, business: 0.7, religion: 0.7, general: 0.8 },
+  [TASK_TYPES.MAD_DASH_SEQUENCE]:      { math: 1.0, science: 0.9, history: 0.9, language: 0.7, arts: 0.6, health: 0.8, business: 0.7, religion: 0.7, general: 0.8 },
+  [TASK_TYPES.TREASURE_RUNNER]:        { math: 0.9, science: 0.9, history: 0.9, language: 0.9, arts: 0.9, health: 1.0, business: 0.8, religion: 0.8, general: 0.9 },
+  [TASK_TYPES.HIDENSEEK]:              { math: 0.7, science: 0.8, history: 0.8, language: 0.7, arts: 0.7, health: 0.9, business: 0.6, religion: 0.7, general: 0.8 },
+
+  // ── Creative / language-heavy types ───────────────────────────────
+  [TASK_TYPES.OPEN_TEXT]:              { math: 0.3, science: 0.6, history: 0.9, language: 1.0, arts: 0.8, health: 0.5, business: 0.7, religion: 0.8, general: 0.7 },
+  [TASK_TYPES.READING_COMP]:          { math: 0.2, science: 0.6, history: 0.9, language: 1.0, arts: 0.7, health: 0.4, business: 0.6, religion: 0.8, general: 0.6 },
+  [TASK_TYPES.LETTER]:                { math: 0.1, science: 0.3, history: 0.9, language: 1.0, arts: 0.8, health: 0.2, business: 0.6, religion: 0.7, general: 0.5 },
+  [TASK_TYPES.ROLE_PLAY]:             { math: 0.1, science: 0.4, history: 1.0, language: 0.9, arts: 1.0, health: 0.4, business: 0.7, religion: 0.8, general: 0.6 },
+  [TASK_TYPES.ROLE_PLAY_DECK]:        { math: 0.1, science: 0.4, history: 1.0, language: 0.9, arts: 1.0, health: 0.4, business: 0.7, religion: 0.8, general: 0.6 },
+  [TASK_TYPES.SCRIPT_PLAY]:           { math: 0.1, science: 0.3, history: 0.9, language: 1.0, arts: 1.0, health: 0.3, business: 0.5, religion: 0.7, general: 0.5 },
+  [TASK_TYPES.NARRATION_SYNTHESIZE]:   { math: 0.2, science: 0.5, history: 0.9, language: 1.0, arts: 0.9, health: 0.4, business: 0.6, religion: 0.8, general: 0.6 },
+  [TASK_TYPES.ECHO_CHAIN]:            { math: 0.3, science: 0.5, history: 0.6, language: 1.0, arts: 0.8, health: 0.4, business: 0.5, religion: 0.5, general: 0.6 },
+
+  // ── Visual / hands-on types ───────────────────────────────────────
+  [TASK_TYPES.DRAW]:                   { math: 0.5, science: 0.8, history: 0.6, language: 0.5, arts: 1.0, health: 0.6, business: 0.4, religion: 0.5, general: 0.6 },
+  [TASK_TYPES.SPEED_DRAW]:            { math: 0.5, science: 0.7, history: 0.6, language: 0.6, arts: 1.0, health: 0.6, business: 0.4, religion: 0.5, general: 0.6 },
+  [TASK_TYPES.DRAW_MIME]:             { math: 0.3, science: 0.6, history: 0.5, language: 0.7, arts: 1.0, health: 0.7, business: 0.4, religion: 0.5, general: 0.6 },
+  [TASK_TYPES.PHOTO]:                 { math: 0.4, science: 0.9, history: 0.7, language: 0.5, arts: 1.0, health: 0.8, business: 0.5, religion: 0.5, general: 0.6 },
+  [TASK_TYPES.PHOTO_JOURNAL]:         { math: 0.3, science: 0.9, history: 0.8, language: 0.7, arts: 1.0, health: 0.7, business: 0.5, religion: 0.6, general: 0.7 },
+  [TASK_TYPES.MAKE_AND_SNAP]:         { math: 0.5, science: 1.0, history: 0.6, language: 0.4, arts: 1.0, health: 0.7, business: 0.4, religion: 0.5, general: 0.6 },
+  [TASK_TYPES.ART_VIEW]:              { math: 0.1, science: 0.3, history: 0.8, language: 0.5, arts: 1.0, health: 0.2, business: 0.2, religion: 0.6, general: 0.4 },
+  [TASK_TYPES.HISTORICAL_DOC]:        { math: 0.1, science: 0.3, history: 1.0, language: 0.6, arts: 0.4, health: 0.1, business: 0.4, religion: 0.8, general: 0.4 },
+
+  // ── Deduction / strategy types ────────────────────────────────────
+  [TASK_TYPES.MYSTERY_CLUES]:          { math: 0.7, science: 0.9, history: 0.9, language: 0.7, arts: 0.6, health: 0.5, business: 0.7, religion: 0.7, general: 0.8 },
+  [TASK_TYPES.PHYSICAL_MYSTERY_CLUES]: { math: 0.7, science: 0.9, history: 0.9, language: 0.6, arts: 0.6, health: 0.7, business: 0.6, religion: 0.7, general: 0.7 },
+  [TASK_TYPES.FAKE_OUT]:               { math: 0.6, science: 0.8, history: 0.9, language: 1.0, arts: 0.7, health: 0.6, business: 0.7, religion: 0.7, general: 0.8 },
+  [TASK_TYPES.GUESS_WHO]:              { math: 0.5, science: 0.7, history: 0.8, language: 0.8, arts: 0.7, health: 0.5, business: 0.6, religion: 0.6, general: 0.7 },
+  [TASK_TYPES.DIFF_DETECTIVE]:         { math: 0.8, science: 0.9, history: 0.7, language: 0.7, arts: 0.8, health: 0.5, business: 0.7, religion: 0.6, general: 0.7 },
+
+  // ── Synthesis / higher-order thinking ─────────────────────────────
+  [TASK_TYPES.BRAIN_SPARK_NOTES]:      { math: 0.5, science: 0.7, history: 0.9, language: 0.9, arts: 0.8, health: 0.5, business: 0.7, religion: 0.8, general: 0.7 },
+  [TASK_TYPES.MIND_MAPPER]:            { math: 0.6, science: 0.9, history: 0.9, language: 0.7, arts: 0.7, health: 0.5, business: 0.8, religion: 0.7, general: 0.8 },
+  [TASK_TYPES.CASE_STUDY]:             { math: 0.4, science: 0.8, history: 1.0, language: 0.6, arts: 0.4, health: 0.6, business: 1.0, religion: 0.7, general: 0.7 },
+  [TASK_TYPES.BRAINSTORM_BATTLE]:      { math: 0.5, science: 0.8, history: 0.8, language: 0.8, arts: 0.9, health: 0.6, business: 0.8, religion: 0.7, general: 0.8 },
+
+  // ── Collaboration / debate types ──────────────────────────────────
+  [TASK_TYPES.COLLABORATION]:          { math: 0.6, science: 0.8, history: 0.9, language: 0.8, arts: 0.8, health: 0.6, business: 0.9, religion: 0.8, general: 0.8 },
+  [TASK_TYPES.LIVE_DEBATE]:            { math: 0.3, science: 0.6, history: 1.0, language: 0.9, arts: 0.7, health: 0.5, business: 0.8, religion: 0.9, general: 0.7 },
+  [TASK_TYPES.AI_DEBATE_JUDGE]:        { math: 0.3, science: 0.6, history: 1.0, language: 0.9, arts: 0.7, health: 0.5, business: 0.8, religion: 0.9, general: 0.7 },
+
+  // ── Language-specific types ───────────────────────────────────────
+  [TASK_TYPES.PRONUNCIATION]:          { math: 0.0, science: 0.0, history: 0.0, language: 1.0, arts: 0.2, health: 0.0, business: 0.0, religion: 0.0, general: 0.1 },
+  [TASK_TYPES.SPEECH_RECOGNITION]:     { math: 0.0, science: 0.0, history: 0.0, language: 1.0, arts: 0.2, health: 0.0, business: 0.0, religion: 0.0, general: 0.1 },
+  [TASK_TYPES.RECORD_AUDIO]:           { math: 0.1, science: 0.3, history: 0.5, language: 1.0, arts: 0.8, health: 0.2, business: 0.3, religion: 0.4, general: 0.4 },
+
+  // ── Physical station types ────────────────────────────────────────
+  [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]:{ math: 0.9, science: 0.9, history: 0.9, language: 0.8, arts: 0.7, health: 0.9, business: 0.8, religion: 0.8, general: 0.9 },
+
+  // ── Meta / utility types ──────────────────────────────────────────
+  [TASK_TYPES.MOOD_CHECKIN]:           { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 1.0, health: 1.0, business: 1.0, religion: 1.0, general: 1.0 },
+  [TASK_TYPES.MULTI_PLAYER_FEEDBACK]:  { math: 0.8, science: 0.8, history: 0.8, language: 0.9, arts: 0.9, health: 0.8, business: 0.8, religion: 0.8, general: 0.8 },
+  [TASK_TYPES.MIME]:                   { math: 0.2, science: 0.5, history: 0.5, language: 0.8, arts: 1.0, health: 0.7, business: 0.3, religion: 0.4, general: 0.5 },
+  [TASK_TYPES.TASK_RUNNER]:            { math: 0.8, science: 0.8, history: 0.8, language: 0.8, arts: 0.8, health: 0.8, business: 0.8, religion: 0.8, general: 0.8 },
+  [TASK_TYPES.TOWER_BUILDER]:          { math: 0.9, science: 0.8, history: 0.6, language: 0.5, arts: 0.7, health: 0.6, business: 0.6, religion: 0.5, general: 0.7 },
+  [TASK_TYPES.PET_FEEDING]:            { math: 0.7, science: 0.7, history: 0.6, language: 0.7, arts: 0.7, health: 0.7, business: 0.5, religion: 0.6, general: 0.7 },
+};
+
+// Subject-detection: map freeform subject strings to affinity bucket keys
+const SUBJECT_PATTERNS = [
+  { bucket: "math",     pattern: /math|arithmetic|algebra|geometry|calculus|statistics|trig/i },
+  { bucket: "science",  pattern: /science|biology|chemistry|physics|ecology|environ|anatomy|astro/i },
+  { bucket: "history",  pattern: /hist|social.?studies|geograph|civics|politic|government/i },
+  { bucket: "language", pattern: /english|fran[cç]|french|spanish|esl|ell|liter|reading|writing|lang|grammar|immersion/i },
+  { bucket: "arts",     pattern: /art(?!h)|music|drama|theater|theatre|creative|visual/i },
+  { bucket: "health",   pattern: /health|phys\w*\s*ed|^pe$|fitness|wellness|gym|sport/i },
+  { bucket: "business", pattern: /business|economics?|financ|account|market/i },
+  { bucket: "religion", pattern: /bible|relig|theolog|faith|church|spirit/i },
+];
+
+/**
+ * Detect the affinity bucket for a freeform subject string.
+ * Returns one of: math, science, history, language, arts, health, business, religion, general.
+ */
+export function detectSubjectBucket(subject) {
+  if (!subject) return "general";
+  const s = String(subject).trim();
+  for (const { bucket, pattern } of SUBJECT_PATTERNS) {
+    if (pattern.test(s)) return bucket;
+  }
+  return "general";
+}
+
+/**
+ * Get the affinity weight (0–1) for a task type in a given subject bucket.
+ * Falls back to 0.7 (decent universal default) if no entry exists.
+ */
+export function getSubjectAffinity(taskType, subjectBucket) {
+  const entry = SUBJECT_AFFINITY[taskType];
+  if (!entry) return 0.7; // unknown type → moderate default
+  return entry[subjectBucket] ?? entry.general ?? 0.7;
+}
+
 export function normalizeTaskType(value) {
   if (!value) return TASK_TYPES.SHORT_ANSWER;
   const v = String(value).toLowerCase().replace(/_/g, "-").trim();

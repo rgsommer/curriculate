@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { fetchMyProfile } from "../api/profile";
 import { apiFetch, apiFetchJson } from "../api/apiFetch";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../shared/taskTypes.js";
+import SpotlightTour, { TourHelpButton, resetTour } from "../components/SpotlightTour";
 
 // Category → color mapping for task type badges
 const CATEGORY_COLORS = {
@@ -219,6 +220,16 @@ export default function AiTasksetGenerator() {
   const [profile, setProfile] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
+  // Progressive disclosure: first-time users see simplified view
+  const [showAdvanced, setShowAdvanced] = useState(() => {
+    try {
+      return localStorage.getItem("curriculate.gen.showAdvanced") === "true";
+    } catch { return false; }
+  });
+
+  // Spotlight tour state
+  const [showTour, setShowTour] = useState(false);
+
   const [form, setForm] = useState(() => {
     let savedGrade = "";
     let savedSubject = "";
@@ -324,6 +335,11 @@ export default function AiTasksetGenerator() {
     } catch {}
   }, [form.gradeLevel, form.subject]);
 
+  // Persist advanced toggle
+  useEffect(() => {
+    try { localStorage.setItem("curriculate.gen.showAdvanced", showAdvanced ? "true" : "false"); } catch {}
+  }, [showAdvanced]);
+
   const handleChange = (field, value) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
@@ -339,18 +355,24 @@ export default function AiTasksetGenerator() {
     );
   };
 
+  const STATION_COLORS = ["Red", "Orange", "Yellow", "Green", "Blue", "Teal", "Purple", "Pink"];
+
   const addDisplay = () => {
-    setDisplays((prev) => [
-      ...prev,
-      {
-        key: `display-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        name: "",
-        description: "",
-        stationColor: "",
-        notesForTeacher: "",
-        imageUrl: "",
-      },
-    ]);
+    setDisplays((prev) => {
+      const usedColors = new Set(prev.map((d) => (d.stationColor || "").toLowerCase()));
+      const nextColor = STATION_COLORS.find((c) => !usedColors.has(c.toLowerCase())) || "";
+      return [
+        ...prev,
+        {
+          key: `display-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          name: "",
+          description: "",
+          stationColor: nextColor,
+          notesForTeacher: "",
+          imageUrl: "",
+        },
+      ];
+    });
   };
 
   const updateDisplay = (index, field, value) => {
@@ -1053,13 +1075,56 @@ export default function AiTasksetGenerator() {
     );
   };
 
+  // Spotlight tour steps for this page
+  const generatorTourSteps = [
+    {
+      target: "#gen-title-field",
+      title: "Name your lesson",
+      body: "Enter a descriptive title — this becomes the topic the AI builds all tasks around.",
+    },
+    {
+      target: "#gen-essentials-row",
+      title: "Set the basics",
+      body: "Grade level and subject help the AI pitch content at the right level.",
+    },
+    {
+      target: "#gen-vocab-field",
+      title: "Add your vocabulary",
+      body: "Paste your key terms here — one per line. The AI weaves these into every task and reports which ones it covered.",
+    },
+    {
+      target: "#gen-advanced-toggle",
+      title: "Fine-tune (when you're ready)",
+      body: "Difficulty, duration, task types, fixed stations, and more live here. You can skip this — the defaults work great.",
+    },
+    {
+      target: "#gen-submit-btn",
+      title: "Hit Generate!",
+      body: "That's it — the AI builds a complete task set in about 30 seconds. You'll see a live progress bar.",
+    },
+  ];
+
   return (
     <div style={{ padding: 24, maxWidth: 960, margin: "0 auto" }}>
-      <h1 style={{ marginBottom: 4 }}>AI Task Set Generator</h1>
-      <p style={{ marginTop: 0, color: "#4b5563", fontSize: "0.95rem" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        <h1 style={{ margin: 0 }}>AI Task Set Generator</h1>
+        <TourHelpButton
+          tourId="generator-v1"
+          onClick={() => setShowTour((v) => !v)}
+        />
+      </div>
+      <p style={{ marginTop: 4, color: "#4b5563", fontSize: "0.95rem" }}>
         Give the AI your topic, vocabulary list, and any special considerations.
         It will build a station-based task set that stays on that exact content.
       </p>
+
+      {/* Spotlight tour overlay */}
+      <SpotlightTour
+        tourId="generator-v1"
+        steps={generatorTourSteps}
+        forceShow={showTour}
+        onComplete={() => setShowTour(false)}
+      />
 
       {error && (
         <div
@@ -1078,6 +1143,158 @@ export default function AiTasksetGenerator() {
       )}
 
       <form onSubmit={handleSubmit}>
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* ESSENTIALS — always visible                                */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+
+        {/* TITLE */}
+        <div id="gen-title-field" style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+            Task set title (topic)
+          </label>
+          <input
+            type="text"
+            value={form.name}
+            onChange={(e) => handleChange("name", e.target.value)}
+            placeholder="Hist7 Ch3: The Seven Years' War and the Conquest of New France"
+            style={{
+              width: "100%",
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+              padding: 10,
+              fontSize: "1rem",
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
+
+        {/* GRADE + SUBJECT (essential row) */}
+        <div
+          id="gen-essentials-row"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 12,
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+              Grade level
+            </label>
+            <input
+              type="text"
+              value={form.gradeLevel}
+              onChange={(e) => handleChange("gradeLevel", e.target.value)}
+              placeholder="7, 8, 7/8 split..."
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+              Subject
+            </label>
+            <input
+              type="text"
+              value={form.subject}
+              onChange={(e) => handleChange("subject", e.target.value)}
+              placeholder="History, Geography, Bible..."
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* VOCABULARY (essential) */}
+        <div id="gen-vocab-field" style={{ marginBottom: 16, opacity: (isPartyMode || isEventMode) ? 0.4 : 1, pointerEvents: (isPartyMode || isEventMode) ? "none" : "auto" }}>
+          <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+            Vocabulary / key terms {!(isPartyMode || isEventMode) && <span style={{ color: "#b91c1c" }}>*</span>}
+          </label>
+          <textarea
+            value={wordListText}
+            onChange={(e) => setWordListText(e.target.value)}
+            rows={6}
+            disabled={isPartyMode || isEventMode}
+            placeholder={
+              (isPartyMode || isEventMode)
+                ? "Not needed — vocabulary is provided by the theme above."
+                : "One term per line or separated by commas, e.g.\nLouisbourg\nPlains of Abraham\nTreaty of Paris\nSeven Years' War"
+            }
+            style={{
+              width: "100%",
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+              padding: 8,
+              fontSize: "0.9rem",
+              resize: "vertical",
+              boxSizing: "border-box",
+              background: (isPartyMode || isEventMode) ? "#f3f4f6" : undefined,
+            }}
+          />
+          <p style={{ marginTop: 4, fontSize: "0.8rem", color: "#6b7280" }}>
+            {(isPartyMode || isEventMode)
+              ? "Vocabulary is supplied by the theme/event settings above."
+              : "These words define the topic. After generation, you'll see which concepts were covered vs missing."}
+          </p>
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* MORE OPTIONS TOGGLE                                        */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+        <div id="gen-advanced-toggle" style={{ marginBottom: 16 }}>
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 14px",
+              borderRadius: 10,
+              border: "1px solid #d1d5db",
+              background: showAdvanced ? "#f0f9ff" : "#f9fafb",
+              cursor: "pointer",
+              fontSize: "0.88rem",
+              fontWeight: 600,
+              color: "#374151",
+              width: "100%",
+              justifyContent: "center",
+              transition: "all 0.2s",
+            }}
+          >
+            <span style={{
+              display: "inline-block",
+              transform: showAdvanced ? "rotate(90deg)" : "rotate(0deg)",
+              transition: "transform 0.2s",
+              fontSize: "0.75rem",
+            }}>
+              ▶
+            </span>
+            {showAdvanced ? "Hide options" : "More options"}
+            <span style={{ fontSize: "0.78rem", fontWeight: 400, color: "#9ca3af" }}>
+              — difficulty, duration, task types, stations, party/event mode
+            </span>
+          </button>
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* ADVANCED OPTIONS — collapsible                             */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {showAdvanced && (<>
+
         {/* PARTY MODE TOGGLE */}
         <div
           style={{
@@ -1449,34 +1666,15 @@ export default function AiTasksetGenerator() {
           )}
         </div>
 
-        {/* TOP ROW: title + base room */}
+        {/* ROOM / LOCATION + DIFFICULTY / GOAL ROW */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1.5fr)",
-            gap: 16,
+            gridTemplateColumns: "1fr 1fr 1fr 1fr",
+            gap: 12,
             marginBottom: 16,
           }}
         >
-          <div>
-            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-              Task set title (topic)
-            </label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => handleChange("name", e.target.value)}
-              placeholder="Hist7 Ch3: The Seven Years' War and the Conquest of New France"
-              style={{
-                width: "100%",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                padding: 8,
-                fontSize: "0.95rem",
-              }}
-            />
-          </div>
-
           <div>
             <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
               Default room / location
@@ -1485,87 +1683,20 @@ export default function AiTasksetGenerator() {
               type="text"
               value={form.roomLocation}
               onChange={(e) => handleChange("roomLocation", e.target.value)}
-              placeholder="Classroom, Gym, Hallway..."
+              placeholder="Classroom, Gym..."
               style={{
                 width: "100%",
                 borderRadius: 8,
                 border: "1px solid #d1d5db",
                 padding: 8,
                 fontSize: "0.9rem",
+                boxSizing: "border-box",
               }}
             />
-
-            {/* Multi-room switch */}
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                marginTop: 6,
-                fontSize: "0.85rem",
-                cursor: "pointer",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={form.isMultiRoomScavenger}
-                onChange={(e) => handleChange("isMultiRoomScavenger", e.target.checked)}
-              />
-              <span>Multi-room scavenger hunt</span>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: "0.82rem", cursor: "pointer" }}>
+              <input type="checkbox" checked={form.isMultiRoomScavenger} onChange={(e) => handleChange("isMultiRoomScavenger", e.target.checked)} />
+              Multi-room scavenger hunt
             </label>
-            <p style={{ marginTop: 2, fontSize: "0.75rem", color: "#6b7280" }}>
-              Leave unchecked if the whole activity stays in one room. When checked,
-              you can specify multiple locations (e.g., Classroom, Hallway, Library)
-              for a multi-room scavenger hunt.
-            </p>
-          </div>
-        </div>
-
-        {/* SECOND ROW: grade, subject, difficulty, goal */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-            gap: 12,
-            marginBottom: 12,
-          }}
-        >
-          <div>
-            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-              Grade level
-            </label>
-            <input
-              type="text"
-              value={form.gradeLevel}
-              onChange={(e) => handleChange("gradeLevel", e.target.value)}
-              placeholder="7, 8, 7/8 split..."
-              style={{
-                width: "100%",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                padding: 8,
-                fontSize: "0.9rem",
-              }}
-            />
-          </div>
-
-          <div>
-            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-              Subject
-            </label>
-            <input
-              type="text"
-              value={form.subject}
-              onChange={(e) => handleChange("subject", e.target.value)}
-              placeholder="History, Geography, Bible..."
-              style={{
-                width: "100%",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                padding: 8,
-                fontSize: "0.9rem",
-              }}
-            />
           </div>
 
           <div>
@@ -1575,18 +1706,10 @@ export default function AiTasksetGenerator() {
             <select
               value={form.difficulty}
               onChange={(e) => handleChange("difficulty", e.target.value)}
-              style={{
-                width: "100%",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                padding: 8,
-                fontSize: "0.9rem",
-              }}
+              style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.9rem", boxSizing: "border-box" }}
             >
               {DIFFICULTIES.map((d) => (
-                <option key={d} value={d}>
-                  {d.charAt(0) + d.slice(1).toLowerCase()}
-                </option>
+                <option key={d} value={d}>{d.charAt(0) + d.slice(1).toLowerCase()}</option>
               ))}
             </select>
           </div>
@@ -1598,35 +1721,17 @@ export default function AiTasksetGenerator() {
             <select
               value={form.learningGoal}
               onChange={(e) => handleChange("learningGoal", e.target.value)}
-              style={{
-                width: "100%",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                padding: 8,
-                fontSize: "0.9rem",
-              }}
+              style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.9rem", boxSizing: "border-box" }}
             >
               {LEARNING_GOALS.map((g) => (
-                <option key={g} value={g}>
-                  {g.charAt(0) + g.slice(1).toLowerCase()}
-                </option>
+                <option key={g} value={g}>{g.charAt(0) + g.slice(1).toLowerCase()}</option>
               ))}
             </select>
           </div>
-        </div>
 
-        {/* TIME + CONSIDERATIONS + VOCAB + MULTI-ROOM ROOM LIST */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 1.3fr)",
-            gap: 16,
-            marginBottom: 16,
-          }}
-        >
           <div>
             <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-              Approx lesson duration (minutes)
+              Duration (min)
             </label>
             <input
               type="number"
@@ -1634,91 +1739,38 @@ export default function AiTasksetGenerator() {
               max={120}
               value={form.durationMinutes}
               onChange={(e) => handleChange("durationMinutes", Number(e.target.value))}
-              style={{
-                width: "100%",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                padding: 8,
-                fontSize: "0.9rem",
-              }}
+              style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.9rem", boxSizing: "border-box" }}
             />
-
-            <div style={{ height: 8 }} />
-
-            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-              Special considerations (optional)
-            </label>
-            <textarea
-              value={form.topicDescription}
-              onChange={(e) => handleChange("topicDescription", e.target.value)}
-              rows={5}
-              placeholder="e.g., 'Reviewing for a test', 'Keep it low-noise', 'They just did a quiz—keep it lighter'..."
-              style={{
-                width: "100%",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                padding: 8,
-                fontSize: "0.9rem",
-                resize: "vertical",
-              }}
-            />
-
-            {form.isMultiRoomScavenger && (
-              <div style={{ marginTop: 10 }}>
-                <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-                  Rooms / locations for this scavenger hunt
-                </label>
-                <textarea
-                  value={multiRoomText}
-                  onChange={(e) => setMultiRoomText(e.target.value)}
-                  rows={4}
-                  placeholder={"One per line or separated by commas, e.g.\nClassroom\nHallway\nLibrary\nGym"}
-                  style={{
-                    width: "100%",
-                    borderRadius: 8,
-                    border: "1px solid #d1d5db",
-                    padding: 8,
-                    fontSize: "0.9rem",
-                    resize: "vertical",
-                  }}
-                />
-                <p style={{ marginTop: 4, fontSize: "0.8rem", color: "#6b7280" }}>
-                  These rooms are options for where stations might be located.
-                </p>
-              </div>
-            )}
           </div>
+        </div>
 
-          <div style={{ opacity: (isPartyMode || isEventMode) ? 0.4 : 1, pointerEvents: (isPartyMode || isEventMode) ? "none" : "auto" }}>
-            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-              Vocabulary / key terms {!(isPartyMode || isEventMode) && <span style={{ color: "#b91c1c" }}>*</span>}
-            </label>
-            <textarea
-              value={wordListText}
-              onChange={(e) => setWordListText(e.target.value)}
-              rows={8}
-              disabled={isPartyMode || isEventMode}
-              placeholder={
-                (isPartyMode || isEventMode)
-                  ? "Not needed — vocabulary is provided by the theme above."
-                  : "One term per line or separated by commas, e.g.\nLouisbourg\nPlains of Abraham\nTreaty of Paris\nSeven Years' War"
-              }
-              style={{
-                width: "100%",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                padding: 8,
-                fontSize: "0.9rem",
-                resize: "vertical",
-                background: (isPartyMode || isEventMode) ? "#f3f4f6" : undefined,
-              }}
-            />
-            <p style={{ marginTop: 4, fontSize: "0.8rem", color: "#6b7280" }}>
-              {(isPartyMode || isEventMode)
-                ? "Vocabulary is supplied by the theme/event settings above."
-                : "These words define the topic. After generation, you'll see which concepts were covered vs missing."}
-            </p>
-          </div>
+        {/* SPECIAL CONSIDERATIONS + MULTI-ROOM ROOMS */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+            Special considerations (optional)
+          </label>
+          <textarea
+            value={form.topicDescription}
+            onChange={(e) => handleChange("topicDescription", e.target.value)}
+            rows={3}
+            placeholder="e.g., 'Reviewing for a test', 'Keep it low-noise', 'They just did a quiz—keep it lighter'..."
+            style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.9rem", resize: "vertical", boxSizing: "border-box" }}
+          />
+
+          {form.isMultiRoomScavenger && (
+            <div style={{ marginTop: 10 }}>
+              <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+                Rooms / locations for this scavenger hunt
+              </label>
+              <textarea
+                value={multiRoomText}
+                onChange={(e) => setMultiRoomText(e.target.value)}
+                rows={3}
+                placeholder={"One per line or separated by commas, e.g.\nClassroom\nHallway\nLibrary\nGym"}
+                style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.9rem", resize: "vertical", boxSizing: "border-box" }}
+              />
+            </div>
+          )}
         </div>
 
         {/* LIMIT TASK TYPES */}
@@ -1989,74 +2041,84 @@ export default function AiTasksetGenerator() {
                     </button>
                   </div>
 
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                      gap: 6,
-                    }}
-                  >
-                    <div>
-                      <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>
-                        Name
-                      </label>
-                      <input
-                        type="text"
-                        value={d.name || ""}
-                        onChange={(e) => updateDisplay(index, "name", e.target.value)}
-                        style={{
-                          width: "100%",
-                          borderRadius: 6,
-                          border: "1px solid #d1d5db",
-                          padding: 6,
-                          fontSize: "0.8rem",
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>
-                        Station color
-                      </label>
-                      <input
-                        type="text"
-                        value={d.stationColor || ""}
-                        onChange={(e) => updateDisplay(index, "stationColor", e.target.value)}
-                        placeholder="red, blue..."
-                        style={{
-                          width: "100%",
-                          borderRadius: 6,
-                          border: "1px solid #d1d5db",
-                          padding: 6,
-                          fontSize: "0.8rem",
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>
-                        Notes for you
-                      </label>
-                      <input
-                        type="text"
-                        value={d.notesForTeacher || ""}
-                        onChange={(e) => updateDisplay(index, "notesForTeacher", e.target.value)}
-                        style={{
-                          width: "100%",
-                          borderRadius: 6,
-                          border: "1px solid #d1d5db",
-                          padding: 6,
-                          fontSize: "0.8rem",
-                        }}
-                      />
-                    </div>
+                  {/* Station color picker — tap to assign which QR station this item is near */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+                    {STATION_COLORS.map((color) => {
+                      const hex = {
+                        Red: "#ef4444", Orange: "#f97316", Yellow: "#eab308",
+                        Green: "#22c55e", Blue: "#3b82f6", Teal: "#14b8a6",
+                        Purple: "#8b5cf6", Pink: "#ec4899",
+                      }[color];
+                      const isSelected = (d.stationColor || "").toLowerCase() === color.toLowerCase();
+                      const usedByOther = displays.some(
+                        (other, oi) => oi !== index && (other.stationColor || "").toLowerCase() === color.toLowerCase()
+                      );
+                      return (
+                        <button
+                          key={color}
+                          type="button"
+                          title={usedByOther ? `${color} (used by another display)` : color}
+                          onClick={() => updateDisplay(index, "stationColor", color)}
+                          style={{
+                            width: isSelected ? 26 : 20,
+                            height: isSelected ? 26 : 20,
+                            borderRadius: 13,
+                            background: hex,
+                            border: isSelected ? "3px solid #111" : "2px solid rgba(0,0,0,0.1)",
+                            cursor: "pointer",
+                            opacity: usedByOther && !isSelected ? 0.3 : 1,
+                            transition: "all 0.15s",
+                            padding: 0,
+                            flexShrink: 0,
+                          }}
+                        />
+                      );
+                    })}
+                    <span style={{ fontSize: "0.75rem", color: "#9ca3af", marginLeft: 4 }}>
+                      {d.stationColor || "pick a color"}
+                    </span>
                   </div>
+                  <input
+                    type="text"
+                    value={d.name || ""}
+                    onChange={(e) => updateDisplay(index, "name", e.target.value)}
+                    placeholder="What's at this station? (e.g., Microscope, Eye diagram)"
+                    style={{
+                      width: "100%",
+                      borderRadius: 6,
+                      border: "1px solid #d1d5db",
+                      padding: 6,
+                      fontSize: "0.85rem",
+                      marginBottom: 4,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                  <input
+                    type="text"
+                    value={d.notesForTeacher || ""}
+                    onChange={(e) => updateDisplay(index, "notesForTeacher", e.target.value)}
+                    placeholder="Setup notes for yourself (optional)"
+                    style={{
+                      width: "100%",
+                      borderRadius: 6,
+                      border: "1px solid #d1d5db",
+                      padding: 6,
+                      fontSize: "0.8rem",
+                      color: "#6b7280",
+                      boxSizing: "border-box",
+                    }}
+                  />
                 </div>
               ))}
             </div>
           )}
         </div>
 
+        {/* Close advanced options fragment */}
+        </>)}
+
         {/* ACTION BUTTONS */}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+        <div id="gen-submit-btn" style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
           <button
             type="button"
             onClick={() => navigate("/tasksets")}

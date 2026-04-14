@@ -2711,6 +2711,52 @@ export function validateTaskByType(taskType, task) {
       break;
     }
 
+    case TASK_TYPES.ART_VIEW: {
+      const avCfg = task.config || {};
+      // imageDescription is REQUIRED (serves as fallback when URLs break)
+      if (!avCfg.imageDescription) {
+        errors.push("art-view requires config.imageDescription (detailed description of the artwork for fallback)");
+      }
+      // imageUrl is strongly recommended but not hard-rejected (description-only mode works)
+      if (!avCfg.imageUrl) {
+        console.warn("[validate] art-view is missing config.imageUrl — will display description-only mode");
+      }
+      const vs = Number(avCfg.viewingSeconds);
+      if (vs && (vs < 10 || vs > 300)) {
+        errors.push("config.viewingSeconds must be between 10 and 300");
+      }
+      const rs = Number(avCfg.responseSeconds);
+      if (rs && (rs < 30 || rs > 600)) {
+        errors.push("config.responseSeconds must be between 30 and 600");
+      }
+      break;
+    }
+
+    case TASK_TYPES.HISTORICAL_DOC: {
+      const hdCfg = task.config || {};
+      if (!hdCfg.imageDescription) {
+        errors.push("historical-doc requires config.imageDescription (detailed description of the document for fallback)");
+      }
+      if (!hdCfg.imageUrl) {
+        console.warn("[validate] historical-doc is missing config.imageUrl — will display description-only mode");
+      }
+      if (!hdCfg.docTitle) {
+        errors.push("historical-doc requires config.docTitle");
+      }
+      const hdVs = Number(hdCfg.viewingSeconds);
+      if (hdVs && (hdVs < 10 || hdVs > 300)) {
+        errors.push("config.viewingSeconds must be between 10 and 300");
+      }
+      const hdRs = Number(hdCfg.responseSeconds);
+      if (hdRs && (hdRs < 30 || hdRs > 600)) {
+        errors.push("config.responseSeconds must be between 30 and 600");
+      }
+      if (!Array.isArray(hdCfg.analysisPrompts) || hdCfg.analysisPrompts.length < 2) {
+        errors.push("config.analysisPrompts must have at least 2 analysis questions");
+      }
+      break;
+    }
+
     case TASK_TYPES.VENNSORT: {
       const vCfg = task.config || {};
       if (!Array.isArray(vCfg.categories) || vCfg.categories.length < 2) errors.push("config.categories must have at least 2 categories");

@@ -410,6 +410,37 @@ export function sanitizeTaskShapeByType(type, task) {
     }
   }
 
+  // ── ART_VIEW: ensure config defaults ──
+  if (type === TASK_TYPES.ART_VIEW) {
+    const cfg = t.config && typeof t.config === "object" ? t.config : {};
+    if (!cfg.viewingSeconds || typeof cfg.viewingSeconds !== "number") cfg.viewingSeconds = 60;
+    if (!cfg.responseSeconds || typeof cfg.responseSeconds !== "number") cfg.responseSeconds = 120;
+    if (!cfg.minObservations || typeof cfg.minObservations !== "number") cfg.minObservations = 5;
+    // Clamp to valid ranges
+    cfg.viewingSeconds = Math.max(10, Math.min(300, cfg.viewingSeconds));
+    cfg.responseSeconds = Math.max(30, Math.min(600, cfg.responseSeconds));
+    cfg.minObservations = Math.max(1, Math.min(20, cfg.minObservations));
+    t.config = cfg;
+  }
+
+  // ── HISTORICAL_DOC: ensure config defaults ──
+  if (type === TASK_TYPES.HISTORICAL_DOC) {
+    const cfg = t.config && typeof t.config === "object" ? t.config : {};
+    if (!cfg.viewingSeconds || typeof cfg.viewingSeconds !== "number") cfg.viewingSeconds = 90;
+    if (!cfg.responseSeconds || typeof cfg.responseSeconds !== "number") cfg.responseSeconds = 150;
+    if (!Array.isArray(cfg.analysisPrompts) || cfg.analysisPrompts.length === 0) {
+      cfg.analysisPrompts = [
+        "What is the main purpose or message of this document?",
+        "Who was the intended audience?",
+        "What was the historical significance of this document at the time?",
+      ];
+    }
+    // Clamp to valid ranges
+    cfg.viewingSeconds = Math.max(10, Math.min(300, cfg.viewingSeconds));
+    cfg.responseSeconds = Math.max(30, Math.min(600, cfg.responseSeconds));
+    t.config = cfg;
+  }
+
   return t;
 }
 

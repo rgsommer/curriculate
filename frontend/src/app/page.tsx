@@ -58,22 +58,22 @@ const taskCategories = [
   {
     label: "Core Q&A",
     color: "bg-blue-100 text-blue-700",
-    tasks: ["Multiple Choice", "True / False", "Short Answer", "Reading Comp"],
+    tasks: ["Multiple Choice", "Physical Multiple Choice", "True / False", "Short Answer", "Reading Comp", "Open Text"],
   },
   {
     label: "Creative & Media",
     color: "bg-purple-100 text-purple-700",
-    tasks: ["Draw", "Photo Evidence", "Record Audio", "Photo Journal", "Make It & Snap It"],
+    tasks: ["Draw", "Photo Evidence", "Record Audio", "Photo Journal", "Make It & Snap It", "Speed Draw", "Draw & Mime"],
   },
   {
     label: "Movement & Body",
     color: "bg-emerald-100 text-emerald-700",
-    tasks: ["Body Break", "Musical Chairs", "Motion Mission", "Mad Dash", "Mime"],
+    tasks: ["Body Break", "Musical Chairs", "Motion Mission", "Mad Dash", "Mad Dash Sequence", "Treasure Runner", "Hide & Seek"],
   },
   {
     label: "Games & Competition",
     color: "bg-amber-100 text-amber-700",
-    tasks: ["Brain Blitz!", "Tic-Tac-Toe", "Connect Four", "Flashcards Race", "Hangman Duel", "Speed Draw"],
+    tasks: ["Brain Blitz!", "Tic-Tac-Toe", "Connect Four", "Flashcards", "Flashcards Race", "Hangman Duel", "Tower Builder", "Pet Feeding"],
   },
   {
     label: "Ordering & Sorting",
@@ -88,12 +88,32 @@ const taskCategories = [
   {
     label: "Deduction & Mystery",
     color: "bg-teal-100 text-teal-700",
-    tasks: ["Mystery Clue Cards", "Fake Out", "Diff Detective", "Guess Who"],
+    tasks: ["Mystery Clue Cards", "Physical Mystery Clues", "Fake Out", "Diff Detective", "Guess Who"],
   },
   {
-    label: "Synthesis & Language",
+    label: "Synthesis & Thinking",
     color: "bg-orange-100 text-orange-700",
-    tasks: ["Brain Spark Notes", "Mind Mapper", "Role Play Deck", "Pronunciation", "Script Play"],
+    tasks: ["Brain Spark Notes", "Mind Mapper", "Narration Synthesize", "Case Study", "Echo Chain"],
+  },
+  {
+    label: "Role Play & Performance",
+    color: "bg-pink-100 text-pink-700",
+    tasks: ["Role Play", "Role Play Deck", "Script Play", "Mime", "Letter Writing"],
+  },
+  {
+    label: "Language & Speech",
+    color: "bg-cyan-100 text-cyan-700",
+    tasks: ["Pronunciation", "Speech Recognition", "Word Weaver Duel", "Hangman Duel"],
+  },
+  {
+    label: "Visual Analysis",
+    color: "bg-violet-100 text-violet-700",
+    tasks: ["Art View", "Historical Document Analysis"],
+  },
+  {
+    label: "Feedback & Meta",
+    color: "bg-gray-100 text-gray-700",
+    tasks: ["Mood Check-In", "Multi-Player Feedback"],
   },
 ];
 
@@ -122,7 +142,7 @@ const reportFeatures = [
 
 const pricingFeatures = [
   { name: "AI task set generation", free: true, plus: true, pro: true },
-  { name: "30+ task types", free: true, plus: true, pro: true },
+  { name: "65+ task types", free: true, plus: true, pro: true },
   { name: "Station rotation engine", free: true, plus: true, pro: true },
   { name: "QR station posters", free: true, plus: true, pro: true },
   { name: "Session summary reports", free: true, plus: true, pro: true },
@@ -167,7 +187,7 @@ const why = [
 const steps = [
   { n: "1", title: "Launch a task set", desc: "Start from the Teacher Dashboard in one click." },
   { n: "2", title: "Teams join fast", desc: "No accounts — just a room code + team name." },
-  { n: "3", title: "Rotate stations", desc: "QR or color stations guide movement with clarity." },
+  { n: "3", title: "Rotate stations", desc: "Color-coded QR stations guide movement. Teachers pick which color matches each physical object." },
   { n: "4", title: "Submit together", desc: "Text, photos, drawings, audio — evidence included." },
   { n: "5", title: "Reports generated", desc: "Teacher + student reports appear automatically." },
 ];
@@ -481,6 +501,8 @@ function SmartPlanning() {
     "Chooses task types appropriate for grade, purpose, topic, and key concepts.",
     "Includes movement/body-break tasks intentionally (never overused, never back-to-back).",
     "Only uses task types that are implemented and supported in the student app.",
+    "Selects task types appropriate to the subject — debates for history, logic for math, pronunciation for languages.",
+    "Supports Party Mode and Event Mode for birthdays, team-building, and corporate events.",
   ];
 
   return (
@@ -752,7 +774,7 @@ export default function Home() {
         <div className="mx-auto max-w-7xl">
           <div className="text-center mb-10">
             <div className="inline-flex items-center gap-2 rounded-full bg-purple-100 px-4 py-1.5 text-sm font-bold text-purple-800 mb-4">
-              <Gamepad2 className="w-4 h-4" /> 60+ Task Types
+              <Gamepad2 className="w-4 h-4" /> 65+ Task Types
             </div>
             <h2 className="text-3xl sm:text-4xl font-black text-gray-900 mb-3">
               Way more than multiple choice
@@ -845,6 +867,77 @@ export default function Home() {
       </section>
 
       <SmartPlanning />
+
+      {/* ============================================================ */}
+      {/*  NEW FEATURES HIGHLIGHT                                      */}
+      {/* ============================================================ */}
+      <section className="px-6 py-14">
+        <div className="mx-auto max-w-7xl">
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-4 py-1.5 text-sm font-bold text-emerald-800 mb-4">
+              <Zap className="w-4 h-4" /> What&apos;s New
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-black text-gray-900 mb-3">
+              Built for how real classrooms work
+            </h2>
+            <p className="text-lg text-gray-600 font-medium max-w-2xl mx-auto">
+              Recent additions that teachers asked for — and students love.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[
+              {
+                title: "Subject-Smart Task Selection",
+                desc: "The AI now knows which task types fit each subject. Math gets logic puzzles; history gets debates and document analysis. Movement breaks stay for everyone.",
+                tag: "AI",
+                tagColor: "bg-blue-100 text-blue-700",
+              },
+              {
+                title: "Historical Document Analysis",
+                desc: "Students view a primary source full-screen, then answer guided analysis prompts from memory. Perfect for history and social studies.",
+                tag: "New Task",
+                tagColor: "bg-purple-100 text-purple-700",
+              },
+              {
+                title: "Fixed Station Color Picker",
+                desc: "Teachers assign colored QR stations to physical objects — microscopes, maps, models — and the AI generates tasks specific to each station.",
+                tag: "Stations",
+                tagColor: "bg-emerald-100 text-emerald-700",
+              },
+              {
+                title: "Auto-Start Modes",
+                desc: "Load a task set before students arrive. It launches automatically when the first team joins, when enough teams are ready, or on a timer.",
+                tag: "Launch",
+                tagColor: "bg-amber-100 text-amber-700",
+              },
+              {
+                title: "Station Setup Checklist",
+                desc: "Before launch, a checklist confirms each physical station is in place — with color, object name, and a checkbox. No more forgotten stations.",
+                tag: "UX",
+                tagColor: "bg-rose-100 text-rose-700",
+              },
+              {
+                title: "Guided Onboarding Tour",
+                desc: "First-time users get a spotlight tour of both the AI Generator and Presenter Console. Advanced options stay hidden until needed.",
+                tag: "Onboarding",
+                tagColor: "bg-indigo-100 text-indigo-700",
+              },
+            ].map((f) => (
+              <div
+                key={f.title}
+                className="rounded-2xl border border-gray-200 bg-white p-6 shadow-lg hover:shadow-xl transition-shadow"
+              >
+                <span className={`inline-block rounded-full px-3 py-1 text-xs font-bold ${f.tagColor} mb-3`}>
+                  {f.tag}
+                </span>
+                <h3 className="text-lg font-extrabold text-gray-900 mb-2">{f.title}</h3>
+                <p className="text-sm text-gray-600 font-medium leading-relaxed">{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* ============================================================ */}
       {/*  REPORTS & ANALYTICS SHOWCASE                                */}

@@ -101,6 +101,13 @@ const TeacherProfileSchema = new Schema(
     // ✅ Multi-room location labels (your UI saves this)
     locationOptions: { type: [String], default: ["Classroom"] },
 
+    // Minimum diversity guarantees per generated taskset.
+    // The pool builder will ensure at least this many of each interaction style.
+    // Set to 0 to disable a particular guarantee.
+    minInterTeamTasks: { type: Number, default: 1 },
+    minIntraTeamTasks: { type: Number, default: 1 },
+    minOffTabletTasks: { type: Number, default: 2 },
+
     // When enabled, text-heavy tasks show a camera for paper-based work instead of on-screen input
     minimizeOnScreen: { type: Boolean, default: false },
 

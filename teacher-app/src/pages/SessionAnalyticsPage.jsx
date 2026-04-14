@@ -1,8 +1,9 @@
 // teacher-app/src/pages/SessionAnalyticsPage.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import api from "../api/client";
 import { TASK_TYPE_META } from "../../../shared/taskTypes";
+import { socket } from "../socket";
 
 
 function typeBadge(typeRaw) {
@@ -114,7 +115,21 @@ export default function SessionAnalyticsPage() {
   const [skillsDeveloped, setSkillsDeveloped] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [teamFeedback, setTeamFeedback] = useState([]);
   const [error, setError] = useState("");
+  const [emailStatus, setEmailStatus] = useState(""); // "sending" | "sent" | "failed"
+
+  const handleResendEmail = useCallback(() => {
+    setEmailStatus("sending");
+    socket.emit("report:retryEmail", { reportId: id });
+    const onSent = () => { setEmailStatus("sent"); cleanup(); };
+    const onError = (p) => { setEmailStatus(`failed: ${p?.message || "Unknown error"}`); cleanup(); };
+    const cleanup = () => { socket.off("transcript:sent", onSent); socket.off("transcript:error", onError); };
+    socket.on("transcript:sent", onSent);
+    socket.on("transcript:error", onError);
+    // Safety timeout
+    setTimeout(() => { setEmailStatus((s) => s === "sending" ? "failed: timed out" : s); cleanup(); }, 60000);
+  }, [id]);
 
   useEffect(() => {
     api
@@ -126,6 +141,7 @@ export default function SessionAnalyticsPage() {
         setGradingConfig(res.data.gradingConfig || null);
         setClassChatBlurb(res.data.classChatBlurb || "");
         setSkillsDeveloped(res.data.skillsDeveloped || []);
+        setTeamFeedback(res.data.teamFeedback || []);
       })
       .catch((err) => {
         console.error(err);
@@ -176,6 +192,17 @@ export default function SessionAnalyticsPage() {
           </p>
           <div className="mt-3">
             <NoiseSummaryCard noiseSummary={session.noiseSummary || session.noise} />
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              onClick={handleResendEmail}
+              disabled={emailStatus === "sending"}
+              className="text-xs px-3 py-1.5 rounded-md border border-blue-300 bg-blue-50 text-blue-700 font-semibold hover:bg-blue-100 disabled:opacity-50"
+            >
+              {emailStatus === "sending" ? "Sending…" : "Resend Email Report"}
+            </button>
+            {emailStatus === "sent" && <span className="text-xs text-green-600 font-medium">Email sent!</span>}
+            {emailStatus.startsWith("failed") && <span className="text-xs text-red-600 font-medium">{emailStatus}</span>}
           </div>
         </div>
       </div>
@@ -248,6 +275,61 @@ export default function SessionAnalyticsPage() {
                 {skill}
               </span>
             ))}
+          </div>
+        </section>
+      )}
+
+      {/* Student Exit Feedback */}
+      {teamFeedback.length > 0 && (
+        <section className="border rounded-lg overflow-hidden bg-purple-50 border-purple-200">
+          <div className="p-3 sm:p-4">
+            <h2 className="text-sm sm:text-base font-bold text-purple-900 mb-3">
+              Student Feedback ({teamFeedback.length} {teamFeedback.length === 1 ? "team" : "teams"})
+            </h2>
+            <div className="space-y-3">
+              {teamFeedback.map((t, idx) => (
+                <div key={idx} className="bg-white rounded-md border border-purple-100 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="font-semibold text-xs text-purple-800">{t.teamName}</span>
+                    {t.members?.length > 0 && (
+                      <span className="text-[10px] text-gray-500">({t.members.join(", ")})</span>
+                    )}
+                    {t.exitFeedback?.rating != null && (
+                      <span className="ml-auto text-sm">
+                        {"⭐".repeat(Math.min(5, Math.max(1, t.exitFeedback.rating)))}
+                      </span>
+                    )}
+                  </div>
+                  {t.moodEntry?.moods?.length > 0 && (
+                    <p className="text-[11px] text-gray-600 mb-1">
+                      <strong>Mood:</strong>{" "}
+                      {t.moodEntry.moods.map((m) => ["😢","😕","😐","🙂","😄"][Math.max(0,Math.min(4,m-1))] || m).join(" ")}
+                      {t.moodEntry.excitement && ` — "${t.moodEntry.excitement}"`}
+                    </p>
+                  )}
+                  {t.exitFeedback?.highlights && (
+                    <p className="text-[11px] text-gray-700 mb-1">
+                      <strong>Highlights:</strong> {t.exitFeedback.highlights}
+                    </p>
+                  )}
+                  {t.exitFeedback?.improvements && (
+                    <p className="text-[11px] text-gray-700 mb-1">
+                      <strong>Could improve:</strong> {t.exitFeedback.improvements}
+                    </p>
+                  )}
+                  {t.exitFeedback?.favoriteTask && (
+                    <p className="text-[11px] text-gray-700 mb-1">
+                      <strong>Favorite:</strong> {t.exitFeedback.favoriteTask}
+                    </p>
+                  )}
+                  {t.exitFeedback?.learned && (
+                    <p className="text-[11px] text-gray-700">
+                      <strong>Learned:</strong> {t.exitFeedback.learned}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </section>
       )}

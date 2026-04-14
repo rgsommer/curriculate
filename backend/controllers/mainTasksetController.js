@@ -2,7 +2,7 @@
 import TaskSet from "../models/TaskSet.js";
 import TeacherProfile from "../models/TeacherProfile.js";
 import OpenAI from "openai";
-import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
+import { TASK_TYPES, TASK_TYPE_META, detectSubjectBucket, getSubjectAffinity } from "../../shared/taskTypes.js";
 import { assessTaskPlayability } from "../../shared/taskPlayability.js";
 import { normalizeTaskByType } from "../validators/taskValidators.js";
 import {
@@ -40,17 +40,18 @@ const client = new Proxy({}, { get: (_, prop) => getClient()[prop] });
  * - No more than 2 consecutive tasks from the same category
  * - Unique types preferred (no repeats until the full set is exhausted)
  */
-function buildDiversePool(availableTypes, count, guaranteedTypes = []) {
+function buildDiversePool(availableTypes, count, guaranteedTypes = [], diversityMins = {}, subjectBucket = "general") {
+  // diversityMins: { minInterTeam: 1, minIntraTeam: 1, minOffTablet: 2 }
+  const { minInterTeam = 0, minIntraTeam = 0, minOffTablet = 0 } = diversityMins;
+
   const PHYSICAL_BODY_BREAK_TYPES = new Set([
     TASK_TYPES.BODY_BREAK,
     TASK_TYPES.MAD_DASH,
     TASK_TYPES.MAD_DASH_SEQUENCE,
   ]);
 
-  const catOf = (t) => {
-    const meta = TASK_TYPE_META?.[t];
-    return String(meta?.category || "other").toLowerCase();
-  };
+  const metaOf = (t) => TASK_TYPE_META?.[t] || {};
+  const catOf = (t) => String(metaOf(t).category || "other").toLowerCase();
 
   const shuffle = (arr) => {
     for (let i = arr.length - 1; i > 0; i--) {
@@ -60,7 +61,9 @@ function buildDiversePool(availableTypes, count, guaranteedTypes = []) {
     return arr;
   };
 
-  // ── Step 1: Start with ALL guaranteed types ──
+  // ── Step 1: Start with ALL guaranteed types (bypass subject affinity) ──
+  // Teacher explicitly chose these — they go in unconditionally regardless
+  // of whether they fit the subject.  Affinity only governs filler slots.
   const uniqueGuaranteed = [...new Set(guaranteedTypes)];
 
   // If there are more guaranteed types than slots, expand count to fit them all.
@@ -77,51 +80,84 @@ function buildDiversePool(availableTypes, count, guaranteedTypes = []) {
     console.log(`[AI] Guaranteed types fill the pool (${uniqueGuaranteed.length} guaranteed, ${count} slots)`);
   }
 
+  // ── Step 1b: Enforce diversity minimums ──
+  // Before general filling, inject types needed to meet inter-team / intra-team / off-tablet minimums.
+  // Only draw from availableTypes not already in pool.
+  const diversityNeeds = [
+    { label: "inter-team", min: minInterTeam, test: (t) => !!metaOf(t).interTeamEnabled },
+    { label: "intra-team", min: minIntraTeam, test: (t) => !!metaOf(t).intraTeamEnabled },
+    { label: "off-tablet", min: minOffTablet, test: (t) => !!metaOf(t).isOffTablet },
+  ];
+
+  for (const need of diversityNeeds) {
+    if (need.min <= 0) continue;
+    const alreadyHave = pool.filter(need.test).length;
+    let deficit = need.min - alreadyHave;
+    if (deficit <= 0) continue;
+
+    const candidates = shuffle(availableTypes.filter((t) => !inPool.has(t) && need.test(t)));
+    for (const t of candidates) {
+      if (deficit <= 0 || pool.length >= count) break;
+      pool.push(t);
+      inPool.add(t);
+      deficit--;
+    }
+    if (deficit > 0) {
+      console.warn(`[AI] Could only satisfy ${need.min - deficit}/${need.min} ${need.label} minimum (not enough eligible types in pool)`);
+    } else {
+      console.log(`[AI] Diversity: injected ${need.min - alreadyHave} ${need.label} type(s) to meet minimum of ${need.min}`);
+    }
+  }
+
   // ── Step 2: Fill remaining slots with diverse non-guaranteed types ──
+  //    Uses subject affinity to prefer types that fit the subject.
   if (pool.length < count) {
     const remaining = count - pool.length;
     const fillerTypes = availableTypes.filter((t) => !inPool.has(t));
     const physicalFillers = fillerTypes.filter((t) => PHYSICAL_BODY_BREAK_TYPES.has(t));
     const academicFillers = fillerTypes.filter((t) => !PHYSICAL_BODY_BREAK_TYPES.has(t));
 
-    // Group academic fillers by category for variety
-    const byCat = {};
-    for (const t of academicFillers) {
-      const cat = catOf(t);
-      if (!byCat[cat]) byCat[cat] = [];
-      byCat[cat].push(t);
-    }
-    for (const arr of Object.values(byCat)) shuffle(arr);
     shuffle(physicalFillers);
 
-    // Round-robin across categories
-    const catKeys = shuffle(Object.keys(byCat));
-    const catIdx = {};
-    for (const k of catKeys) catIdx[k] = 0;
+    // Weighted-random sort: score = affinity(type, subject) * random().
+    // Higher-affinity types land near the front more often, but low-affinity
+    // types can still appear (keeps variety).  Types with affinity 0 are excluded.
+    const scoredAcademic = academicFillers
+      .map((t) => {
+        const aff = getSubjectAffinity(t, subjectBucket);
+        return { type: t, score: aff * (0.3 + Math.random() * 0.7), aff };
+      })
+      .filter((e) => e.aff > 0)
+      .sort((a, b) => b.score - a.score);
 
+    // Build academic queue — ensure category diversity within the weighted order
+    // by skipping types whose category already appeared in the last 2 picks.
     const academicQueue = [];
     const usedTypes = new Set();
-    let round = 0;
-    while (academicQueue.length < remaining * 2 && round < 20) {
-      let added = false;
-      for (const cat of catKeys) {
-        const arr = byCat[cat];
-        if (catIdx[cat] < arr.length) {
-          const t = arr[catIdx[cat]];
-          if (!usedTypes.has(t)) {
-            academicQueue.push(t);
-            usedTypes.add(t);
-            added = true;
-          }
-          catIdx[cat]++;
-        }
-      }
-      if (!added) {
-        for (const cat of catKeys) catIdx[cat] = 0;
-        usedTypes.clear();
-        round++;
+    const recentCats = [];
+
+    for (const entry of scoredAcademic) {
+      if (academicQueue.length >= remaining * 2) break;
+      if (usedTypes.has(entry.type)) continue;
+      const cat = catOf(entry.type);
+      // Allow if category hasn't appeared in last 2 picks (soft diversity)
+      if (recentCats.length >= 2 && recentCats[recentCats.length - 1] === cat && recentCats[recentCats.length - 2] === cat) continue;
+      academicQueue.push(entry.type);
+      usedTypes.add(entry.type);
+      recentCats.push(cat);
+    }
+
+    // If we still need more, do a second pass without the category constraint
+    if (academicQueue.length < remaining * 2) {
+      for (const entry of scoredAcademic) {
+        if (academicQueue.length >= remaining * 2) break;
+        if (usedTypes.has(entry.type)) continue;
+        academicQueue.push(entry.type);
+        usedTypes.add(entry.type);
       }
     }
+
+    console.log(`[AI] Subject bucket: "${subjectBucket}" — top filler affinities: ${scoredAcademic.slice(0, 5).map(e => `${e.type}(${e.aff})`).join(", ")}`);
 
     // Interleave physical breaks every 4–5 academic tasks
     let academicSincePhysical = 0;
@@ -165,6 +201,12 @@ function buildDiversePool(availableTypes, count, guaranteedTypes = []) {
       }
     }
   }
+
+  // ── Step 4: Log diversity audit ──
+  const interCount = pool.filter((t) => !!metaOf(t).interTeamEnabled).length;
+  const intraCount = pool.filter((t) => !!metaOf(t).intraTeamEnabled).length;
+  const offTabCount = pool.filter((t) => !!metaOf(t).isOffTablet).length;
+  console.log(`[AI] Diversity audit: ${interCount} inter-team, ${intraCount} intra-team, ${offTabCount} off-tablet out of ${pool.length} tasks`);
 
   console.log(`[AI] Built diverse pool (${count} slots):`, pool.map((t) => `${t} [${catOf(t)}]`).join(", "));
   return pool;
@@ -1519,7 +1561,17 @@ export async function createAiTaskset(req, res) {
       topicDescription = "",
       totalDurationMinutes,
       durationMinutes: durationMinutesBody,
+      isFixedStationTaskset,
+      displays: rawDisplays,
     } = req.body || {};
+
+    // ── Fixed station / display support ──
+    // Teacher may assign physical objects/topics to colored stations.
+    // Each display: { key, name, stationColor, description, notesForTeacher, imageUrl }
+    const displays = Array.isArray(rawDisplays)
+      ? rawDisplays.filter((d) => d && (d.name || d.description || d.stationColor))
+      : [];
+    const hasFixedStations = !!(isFixedStationTaskset || displays.length > 0);
 
     // Accept either key the frontend might send
     const durationMinutes = Number(totalDurationMinutes || durationMinutesBody) || null;
@@ -1529,13 +1581,7 @@ export async function createAiTaskset(req, res) {
       [specialConsiderations, topicDescription].map(s => String(s || "").trim()).filter(Boolean).join("\n\n");
 
     // Accept either key the frontend might send for count.
-    // If no explicit count given, derive from duration (~5 min per task, min 4, max 20).
     const explicitCount = count || numberOfTasks;
-    const durationDerivedCount =
-      durationMinutes && !explicitCount
-        ? Math.max(4, Math.min(20, Math.round(durationMinutes / 5)))
-        : null;
-    let safeCount = clampInt(explicitCount || durationDerivedCount, 1, 30, 12);
 
     const eligible = getGenerationEligibleTypes(subject);
 
@@ -1559,6 +1605,20 @@ export async function createAiTaskset(req, res) {
         ? guaranteedTaskTypes.map(normalizeSelectedType).filter(Boolean).filter((t) => allImplemented.includes(t))
         : [];
 
+    // If no explicit count, derive from duration using per-type estimated minutes.
+    // Average the estimatedMinutes across the candidate pool so heavier task mixes
+    // yield fewer tasks and lighter mixes yield more.
+    let durationDerivedCount = null;
+    if (durationMinutes && !explicitCount) {
+      const candidatePool = userPool || eligible;
+      const avgMinutes = candidatePool.length
+        ? candidatePool.reduce((sum, t) => sum + (TASK_TYPE_META?.[t]?.estimatedMinutes || 5), 0) / candidatePool.length
+        : 5;
+      durationDerivedCount = Math.max(4, Math.min(20, Math.round(durationMinutes / avgMinutes)));
+      console.log(`[AI] Duration ${durationMinutes}min ÷ avg ${avgMinutes.toFixed(1)}min/task → ${durationDerivedCount} tasks`);
+    }
+    let safeCount = clampInt(explicitCount || durationDerivedCount, 1, 30, 12);
+
     // Task count must be at least the number of explicitly selected types —
     // the teacher's type selection always trumps the duration-based estimate.
     if (userPool && userPool.length > safeCount) {
@@ -1566,9 +1626,23 @@ export async function createAiTaskset(req, res) {
       safeCount = userPool.length;
     }
 
+    // ✅ Load teacher profile early — needed for both diversity minimums and worldview lens.
+    let teacherProfile = null;
+    try {
+      teacherProfile = await loadTeacherProfileForRequest(req);
+    } catch (e) {
+      console.warn("[AI] TeacherProfile lookup failed:", String(e?.message || e));
+    }
+
     // Build the actual N-slot pool with enforced variety + guaranteed types first.
-    // buildDiversePool may expand the pool if guaranteed types exceed safeCount.
-    const pool = buildDiversePool(userPool || eligible, safeCount, guaranteed);
+    // Diversity minimums come from the teacher profile (defaults: 1 inter, 1 intra, 2 off-tablet).
+    const diversityMins = {
+      minInterTeam: teacherProfile?.minInterTeamTasks ?? 1,
+      minIntraTeam: teacherProfile?.minIntraTeamTasks ?? 1,
+      minOffTablet: teacherProfile?.minOffTabletTasks ?? 2,
+    };
+    const subjectBucket = detectSubjectBucket(subject);
+    const pool = buildDiversePool(userPool || eligible, safeCount, guaranteed, diversityMins, subjectBucket);
     // Update safeCount to match actual pool size (may have grown to fit all guaranteed types)
     safeCount = pool.length;
     if (!pool.length) {
@@ -1582,7 +1656,6 @@ export async function createAiTaskset(req, res) {
     // ✅ Profile-driven "lens" injection (NOT Christian-only; teacher profile determines lens)
     let mergedSpecialConsiderations = String(effectiveSpecialConsiderations || "").trim();
     try {
-      const teacherProfile = await loadTeacherProfileForRequest(req);
       const worldviewBlock = worldviewBlockFromProfile(teacherProfile);
       mergedSpecialConsiderations = [worldviewBlock, mergedSpecialConsiderations]
         .map((s) => String(s || "").trim())
@@ -1636,6 +1709,11 @@ export async function createAiTaskset(req, res) {
 
     sendSSE({ type: "phase", phase: "generating", message: "Generating tasks one-by-one…" });
 
+    if (hasFixedStations) {
+      console.log(`[AI] Fixed station mode: ${displays.length} display(s) assigned across ${safeCount} tasks`);
+      displays.forEach((d, idx) => console.log(`  Station ${idx + 1}: ${d.stationColor || "?"} → "${d.name}"`));
+    }
+
     const finalized = [];
     const errors = [];
     const attemptsByTask = [];
@@ -1662,8 +1740,29 @@ export async function createAiTaskset(req, res) {
       const assignedTerms = Array.isArray(conceptPlan[i]) ? conceptPlan[i] : [];
       const scopedLines = buildVocabularyLinesFromConcepts(assignedTerms);
 
+      // ── Fixed station context for this task ──
+      // Round-robin assign displays to tasks so each station gets roughly equal coverage.
+      let displayContext = "";
+      let assignedDisplayKey = null;
+      if (hasFixedStations && displays.length > 0) {
+        const display = displays[i % displays.length];
+        assignedDisplayKey = display.key || display.name || `display-${i % displays.length}`;
+        const stationLines = [
+          "FIXED STATION CONTEXT",
+          `This task is assigned to a physical station with color: ${display.stationColor || "unspecified"}.`,
+          display.name ? `Station display/object: "${display.name}"` : "",
+          display.description ? `Description: ${display.description}` : "",
+          "The task content MUST directly reference or relate to whatever is physically present at this station.",
+          "Students will be standing at this station looking at the physical object/display when they do this task.",
+          display.stationColor ? `Include stationColor: "${display.stationColor}" in the task config.` : "",
+          `Include displayKey: "${assignedDisplayKey}" in the task output.`,
+        ].filter(Boolean).join("\n");
+        displayContext = stationLines;
+      }
+
       const scopedConsiderations = [
         mergedSpecialConsiderations,
+        displayContext,
         assignedTerms.length
           ? [
               "CONCEPT REQUIREMENTS",
@@ -1706,6 +1805,18 @@ export async function createAiTaskset(req, res) {
           const isSimpleType = getConceptCapForType(expectedType) <= 2;
           const warnOnly = isSimpleType || attempt > 2;
           taskMustIncludeTermsOrThrow(fin, assignedTerms, { warnOnly });
+
+          // ── Stamp fixed-station metadata onto finalized task ──
+          if (hasFixedStations && assignedDisplayKey) {
+            fin.displayKey = assignedDisplayKey;
+            const display = displays[i % displays.length];
+            if (display?.stationColor) {
+              fin.stationColor = display.stationColor;
+              if (fin.config && typeof fin.config === "object") {
+                fin.config.stationColor = display.stationColor;
+              }
+            }
+          }
 
           finalized.push(fin);
           success = true;
@@ -1938,6 +2049,7 @@ export async function createAiTaskset(req, res) {
       topicLabel,
       durationMinutes: durationMinutes || undefined,
       tasks: finalized,
+      ...(displays.length > 0 ? { displays } : {}),
       meta: {
         pool,
         regeneratedCount: errors.length,

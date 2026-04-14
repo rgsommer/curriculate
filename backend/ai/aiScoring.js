@@ -742,6 +742,73 @@ function buildStudentWorkDescription(task, submission) {
     };
   }
 
+  // Art View – observation-based scoring (hybrid: quantity + quality)
+  if (type === TASK_TYPES.ART_VIEW || type === "art-view" || type === "art_view") {
+    const rawAnswer = submission?.answer ?? submission ?? null;
+    let observations = [];
+
+    if (rawAnswer && typeof rawAnswer === "object") {
+      observations = Array.isArray(rawAnswer.observations)
+        ? rawAnswer.observations
+        : Array.isArray(rawAnswer)
+        ? rawAnswer
+        : [];
+    }
+    if (!observations.length && Array.isArray(submission?.observations)) {
+      observations = submission.observations;
+    }
+
+    const minObs = Number(task?.config?.minObservations) || 5;
+    const focusHints = Array.isArray(task?.config?.focusHints) ? task.config.focusHints : [];
+
+    return {
+      summary: `Art View observation task: student viewed an image for ${task?.config?.viewingSeconds || 60}s then wrote ${observations.length} observations from memory.`,
+      prompt: task.prompt,
+      observations,
+      observationCount: observations.length,
+      minObservations: minObs,
+      focusHints,
+      imageDescription: task?.config?.imageDescription || task?.config?.imageUrl || "",
+      scoringGuidance: `HYBRID SCORING: (1) Quantity: ${observations.length}/${minObs} minimum observations. (2) Quality: evaluate specificity, analytical depth, and variety. Deduct for vague/trivial entries like "it's nice" or exact duplicates. Award bonus for insightful connections, use of art vocabulary, or noticing subtle details.`,
+    };
+  }
+
+  // Historical Document – analysis-based scoring (hybrid: completeness + quality)
+  if (type === TASK_TYPES.HISTORICAL_DOC || type === "historical-doc" || type === "historical_doc") {
+    const rawAnswer = submission?.answer ?? submission ?? null;
+    let responses = [];
+
+    if (rawAnswer && typeof rawAnswer === "object") {
+      responses = Array.isArray(rawAnswer.responses)
+        ? rawAnswer.responses
+        : Array.isArray(rawAnswer)
+        ? rawAnswer
+        : [];
+    }
+    if (!responses.length && Array.isArray(submission?.responses)) {
+      responses = submission.responses;
+    }
+
+    const analysisPrompts = Array.isArray(task?.config?.analysisPrompts) ? task.config.analysisPrompts : [];
+    const answeredCount = responses.filter((r) => r?.response?.trim?.()).length;
+    const totalPrompts = analysisPrompts.length || responses.length;
+
+    return {
+      summary: `Historical Document analysis task: student studied "${task?.config?.docTitle || "a document"}" (${task?.config?.docYear || "unknown date"}) for ${task?.config?.viewingSeconds || 90}s then answered ${answeredCount}/${totalPrompts} analysis questions.`,
+      prompt: task.prompt,
+      responses,
+      answeredCount,
+      totalPrompts,
+      docTitle: task?.config?.docTitle || "",
+      docAuthor: task?.config?.docAuthor || "",
+      docYear: task?.config?.docYear || "",
+      docType: task?.config?.docType || "",
+      historicalContext: task?.config?.historicalContext || "",
+      imageDescription: task?.config?.imageDescription || "",
+      scoringGuidance: `HYBRID SCORING: (1) Completeness: ${answeredCount}/${totalPrompts} prompts answered. (2) Quality: evaluate depth of historical analysis, use of evidence from the document, understanding of historical context, and connection to the lesson topic. Deduct for vague/generic answers that could apply to any document. Award bonus for specific references to document content, insightful analysis of historical impact, and connections to broader themes.`,
+    };
+  }
+
   // Photo / Make-and-Snap / Draw-Mime and related media tasks
   if (
     type === TASK_TYPES.PHOTO ||

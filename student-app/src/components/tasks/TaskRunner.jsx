@@ -57,6 +57,8 @@ import PhysicalMultipleChoiceTask from "./types/PhysicalMultipleChoiceTask";
 import ScriptPlayTask from "./types/ScriptPlayTask";
 import RolePlayDeckTask from "./types/RolePlayDeckTask";
 import TowerBuilderTask from "./types/TowerBuilderTask";
+import ArtViewTask from "./types/ArtViewTask";
+import HistoricalDocTask from "./types/HistoricalDocTask";
 import PaperModeCamera from "./PaperModeCamera.jsx";
 
 
@@ -508,6 +510,18 @@ case "feedback":
     case "photo_journal":
     case "photojournal":
       return TASK_TYPES.PHOTO_JOURNAL;
+
+    // Art View (observation task)
+    case "art-view":
+    case "art_view":
+    case "artview":
+      return TASK_TYPES.ART_VIEW;
+
+    // Historical Document (primary source analysis)
+    case "historical-doc":
+    case "historical_doc":
+    case "historicaldoc":
+      return TASK_TYPES.HISTORICAL_DOC;
 
     case "record-audio":
     case "record_audio":
@@ -2343,6 +2357,26 @@ case "multi_player_feedback":
           playerTeam={playerTeam}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
+        />
+      );
+      break;
+
+    case TASK_TYPES.ART_VIEW:
+      content = (
+        <ArtViewTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
+      break;
+
+    case TASK_TYPES.HISTORICAL_DOC:
+      content = (
+        <HistoricalDocTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
         />
       );
       break;

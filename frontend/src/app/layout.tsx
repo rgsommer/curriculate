@@ -27,6 +27,17 @@ export const metadata: Metadata = {
     "formative assessment",
     "interactive learning",
     "teacher tools",
+    "team-based learning",
+    "QR code classroom",
+    "AI grading",
+    "student reports",
+    "movement in classroom",
+    "birthday party games for kids",
+    "corporate team building games",
+    "role play classroom",
+    "formative assessment tools",
+    "classroom gamification",
+    "subject-specific activities",
   ],
 };
 

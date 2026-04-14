@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Sitemap: https://curriculate.net/sitemap.xml
+
+User-agent: GPTBot
+Disallow: /dashboard
+Disallow: /api/

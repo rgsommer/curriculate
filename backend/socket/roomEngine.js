@@ -834,22 +834,10 @@ export function createRoomEngine(io) {
         ? task.time_limit
         : null;
 
-    // Default timer for tasks that don't have one explicitly set
+    // Fallback: 4 minutes when the AI didn't set a timer.
+    // TODO: replace with actual per-type average completion times from analytics.
     if (!timeLimitSeconds) {
-      const t = (task.taskType || task.type || "").toLowerCase();
-      if (t.includes("choice") || t.includes("true-false") || t.includes("flashcard")) {
-        timeLimitSeconds = 60;
-      } else if (t.includes("open") || t.includes("text") || t.includes("record")) {
-        timeLimitSeconds = 150;
-      } else if (t.includes("sequence") || t.includes("sort") || t.includes("matching") || t.includes("timeline")) {
-        timeLimitSeconds = 120;
-      } else if (t.includes("body") || t.includes("motion") || t.includes("draw-mime")) {
-        timeLimitSeconds = 75;
-      } else if (t.includes("reading")) {
-        timeLimitSeconds = 180;
-      } else {
-        timeLimitSeconds = 90;
-      }
+      timeLimitSeconds = 240;
     }
 
     // Determine if team is in catch-up mode

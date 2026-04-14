@@ -1924,6 +1924,44 @@ socket.on("task:force-advance", ({ roomCode }) => {
         reassignStationForTeam(room, teamId);
       }
 
+      // ── Auto-start trigger check ──
+      // If taskset is loaded and armed (not yet active), check if we should auto-start.
+      if (
+        !room.isActive &&
+        room.autoStart?.armed &&
+        room.taskset &&
+        Array.isArray(room.taskset.tasks) &&
+        room.taskset.tasks.length > 0
+      ) {
+        const teamCount = Object.keys(room.teams || {}).length;
+        const mode = room.autoStart.mode;
+
+        if (mode === "first_ready" && teamCount >= 1) {
+          // First team joined — start immediately
+          console.log(`[AutoStart] first_ready triggered for room ${code} (${teamCount} team(s))`);
+          room.autoStart.armed = false;
+          if (room._autoStartTimer) { clearTimeout(room._autoStartTimer); room._autoStartTimer = null; }
+          // Defer start slightly so the join ack reaches the client first
+          setTimeout(() => {
+            startTasksetForRoom(code);
+            io.to(code).emit("autoStart:triggered", { mode: "first_ready" });
+          }, 1500);
+        } else if (mode === "all_ready") {
+          const minTeams = room.autoStart.minTeams || 2;
+          if (teamCount >= minTeams) {
+            console.log(`[AutoStart] all_ready triggered for room ${code} (${teamCount}/${minTeams} teams)`);
+            room.autoStart.armed = false;
+            if (room._autoStartTimer) { clearTimeout(room._autoStartTimer); room._autoStartTimer = null; }
+            // Give a few seconds for last team to settle
+            setTimeout(() => {
+              startTasksetForRoom(code);
+              io.to(code).emit("autoStart:triggered", { mode: "all_ready" });
+            }, 3000);
+          }
+        }
+        // "timer" mode is handled by the setTimeout set during loadTaskset
+      }
+
       // If taskset is active, do NOT auto-push a task on join.
       // Keep scan as the gate. We only prepare the team state so the
       // next accepted station scan can unlock/re-send the correct task.
@@ -4984,6 +5022,37 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
       room.isActive = false;
       room.startedAt = null;
 
+      // ── Auto-start configuration ──
+      // Modes: "immediate" (legacy: start now), "first_ready", "all_ready", "timer"
+      const autoStartMode = payload.autoStartMode || "immediate";
+      if (autoStartMode !== "immediate") {
+        room.autoStart = {
+          mode: autoStartMode,
+          timerSeconds: Number(payload.autoStartTimerSeconds) || 180,
+          armed: true,
+          armedAt: Date.now(),
+          minTeams: Number(payload.autoStartMinTeams) || 1,
+        };
+        console.log(`[AutoStart] Taskset armed for room ${code}, mode=${autoStartMode}`);
+
+        // Timer mode: schedule auto-start after N seconds
+        if (autoStartMode === "timer") {
+          const delaySec = room.autoStart.timerSeconds;
+          if (room._autoStartTimer) clearTimeout(room._autoStartTimer);
+          room._autoStartTimer = setTimeout(() => {
+            if (room.autoStart?.armed && !room.isActive) {
+              console.log(`[AutoStart] Timer expired for room ${code} — starting taskset`);
+              startTasksetForRoom(code);
+              room.autoStart.armed = false;
+              io.to(code).emit("autoStart:triggered", { mode: "timer" });
+            }
+          }, delaySec * 1000);
+          console.log(`[AutoStart] Timer set: ${delaySec}s for room ${code}`);
+        }
+      } else {
+        room.autoStart = null;
+      }
+
       // Increment play counter (covers both direct launches and shared-link plays)
       TaskSet.updateOne(
         { _id: tasksetId },
@@ -5612,6 +5681,67 @@ socket.on(
 
     let reportDoc = null;
     emitProgress(4, 6, "Saving report…");
+
+    // Build teams array with exit feedback + mood checkins from in-memory room state.
+    // This data only lives in memory during the session and must be captured now.
+    const reportTeams = (() => {
+      const teamsMap = room.teams && typeof room.teams === "object" ? room.teams : {};
+      const moods = room.moodCheckins && typeof room.moodCheckins === "object" ? room.moodCheckins : {};
+      const feedbacks = room.feedback && typeof room.feedback === "object" ? room.feedback : {};
+      const submissions = Array.isArray(room.submissions) ? room.submissions : [];
+      const totalTasks = transcript?.tasks?.length || 0;
+
+      return Object.entries(teamsMap).map(([teamId, team]) => {
+        const teamName = String(team?.teamName || team?.name || `Team-${String(teamId).slice(-4)}`);
+        const members = Array.isArray(team?.members) ? team.members.map(String).filter(Boolean) : [];
+
+        const teamSubs = submissions.filter((s) => String(s?.teamId) === String(teamId));
+        const attemptedIdxs = [...new Set(teamSubs.map((s) => s?.taskIndex).filter((n) => Number.isFinite(n) && n >= 0))];
+        const tasksCompleted = attemptedIdxs.length;
+        const teamPoints = teamSubs.reduce((sum, s) => sum + (Number(s?.points) || 0), 0);
+        const pointsPossible = totalTasks > 0
+          ? attemptedIdxs.reduce((sum, idx) => {
+              const t = transcript?.tasks?.[idx];
+              return sum + (Number(t?.points) || Number(t?.maxPoints) || 10);
+            }, 0)
+          : 0;
+        const scorePercent = pointsPossible > 0 ? Math.max(0, Math.min(100, Math.round((teamPoints / pointsPossible) * 100))) : 0;
+        const engagementScore = totalTasks > 0 ? Math.max(0, Math.min(100, Math.round((tasksCompleted / totalTasks) * 100))) : 0;
+
+        const mood = moods[String(teamId)] || null;
+        const fb = feedbacks[String(teamId)] || null;
+
+        return {
+          teamId: String(teamId),
+          teamName,
+          members,
+          moodEntry: mood
+            ? {
+                moods: Array.isArray(mood?.moods) ? mood.moods.filter((n) => Number.isInteger(n)) : [],
+                excitement: String(mood?.excitement || ""),
+                submittedAt: mood?.submittedAt ? new Date(mood.submittedAt) : null,
+              }
+            : { moods: [], excitement: "", submittedAt: null },
+          tasksCompleted,
+          engagementScore,
+          scorePercent,
+          teamPoints,
+          pointsPossible,
+          exitFeedback: fb
+            ? {
+                rating: Number.isFinite(fb?.rating) ? Number(fb.rating) : null,
+                highlights: String(fb?.highlights || ""),
+                improvements: String(fb?.improvements || ""),
+                favoriteTask: String(fb?.favoriteTask || ""),
+                learned: String(fb?.learned || ""),
+                submittedAt: fb?.submittedAt ? new Date(fb.submittedAt) : null,
+              }
+            : { rating: null, highlights: "", improvements: "", favoriteTask: "", learned: "", submittedAt: null },
+          scoringBreakdown: { percent: scorePercent, categories: [] },
+        };
+      });
+    })();
+
     try {
       if (safeOwnerId) {
         reportDoc = await SessionReport.create({
@@ -5634,6 +5764,7 @@ socket.on(
           parentNote,
           summary,
           transcript,
+          teams: reportTeams,
           noiseSummary: computeNoiseSummary(room?.noiseSamples || [], room?.noiseControl || {}),
           noiseSamples: Array.isArray(room?.noiseSamples) ? room.noiseSamples : [],
           perParticipant,
@@ -5648,6 +5779,15 @@ socket.on(
       }
     } catch (e) {
       console.error("Failed to persist SessionReport:", e);
+    }
+
+    // Emit report:ready immediately after save, regardless of email outcome.
+    // This ensures the Analytics page refreshes even if email times out.
+    if (reportDoc?._id) {
+      io.to(code).emit("report:ready", {
+        roomCode: code,
+        reportId: String(reportDoc._id),
+      });
     }
 
     // 5b) Aggregate per-task-type timing stats (fire-and-forget, non-blocking)
@@ -5726,14 +5866,6 @@ socket.on(
         } catch (e) {
           console.warn(`[shared] Failed to email original teacher (${sharedFromTeacherEmail}):`, e);
         }
-      }
-
-      // Notify teacher UI that the report is ready
-      if (reportDoc?._id) {
-        io.to(code).emit("report:ready", {
-          roomCode: code,
-          reportId: String(reportDoc._id),
-        });
       }
 
       // ── Student report emails (fire-and-forget) ──
@@ -5840,6 +5972,66 @@ socket.on(
   }
 );
 
+
+  // ─────────────────────────────────────────────
+  // Retry email for an already-saved report
+  // ─────────────────────────────────────────────
+  socket.on("report:retryEmail", async ({ reportId, roomCode: code }) => {
+    try {
+      if (!reportId) {
+        socket.emit("transcript:error", { message: "No saved report to retry." });
+        return;
+      }
+      const report = await SessionReport.findById(reportId).lean();
+      if (!report) {
+        socket.emit("transcript:error", { message: "Report not found in database." });
+        return;
+      }
+      // Look up teacher email
+      let toEmail = "";
+      try {
+        const profile = await TeacherProfile.findOne({ ownerId: report.ownerId }).lean();
+        if (profile?.email) toEmail = String(profile.email).trim();
+      } catch (_) {}
+
+      socket.emit("report:progress", { step: 5, total: 6, label: "Retrying email…" });
+
+      await Promise.race([
+        sendTranscriptEmail({
+          to: toEmail,
+          roomCode: report.roomCode,
+          schoolName: report.schoolName || "",
+          aiSummary: report.summary,
+          transcript: report.transcript,
+          perParticipant: report.perParticipant || [],
+          assessmentCategories: report.assessmentCategories || [],
+          includeIndividualReports: report.includeIndividualReports,
+          parentNote: report.parentNote || "",
+          mediaSubmissions: report.mediaSubmissions || [],
+          reportId: String(report._id),
+          planName: report.planTierUsed || "",
+          studentGrades: report.studentGrades || [],
+          gradingConfig: report.gradingConfig || null,
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Email retry timed out after 45 seconds")), 45_000)
+        ),
+      ]);
+
+      socket.emit("report:progress", { step: 6, total: 6, label: "Done! Email sent." });
+      socket.emit("transcript:sent", {
+        ok: true,
+        email: toEmail,
+        reportId: String(report._id),
+      });
+    } catch (e) {
+      console.error("report:retryEmail failed:", e);
+      socket.emit("transcript:error", {
+        message: `Email retry failed: ${e?.message || "Unknown error"}. Your report is still saved — view it on the Reports page.`,
+        reportId,
+      });
+    }
+  });
 
   // ─────────────────────────────────────────────
   // Disconnect / offline cleanup (team sockets)
@@ -6588,6 +6780,156 @@ Provide expert feedback on their solution. Guidelines:
   } catch (err) {
     console.error("Case study feedback error:", err);
     return res.status(500).json({ error: "Feedback generation failed" });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  Art View — image fallback lookup via Wikimedia Commons API          */
+/* ------------------------------------------------------------------ */
+app.post("/api/art-view/image-fallback", async (req, res) => {
+  try {
+    const { imageTitle, imageArtist, imageYear, imageDescription } = req.body || {};
+
+    // Build a search query from whatever metadata we have
+    const parts = [imageTitle, imageArtist, imageYear].map(s => String(s || "").trim()).filter(Boolean);
+    const query = parts.length ? parts.join(" ") : String(imageDescription || "").slice(0, 100);
+
+    if (!query.trim()) {
+      return res.status(400).json({ ok: false, error: "No image metadata provided for fallback lookup" });
+    }
+
+    // Search Wikimedia Commons for matching images
+    const searchUrl = `https://commons.wikimedia.org/w/api.php?` +
+      `action=query&list=search&srsearch=${encodeURIComponent(query)}&srnamespace=6` +
+      `&srlimit=5&format=json&origin=*`;
+
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 8000);
+
+    const searchRes = await fetch(searchUrl, { signal: ctrl.signal }).finally(() => clearTimeout(timeout));
+    if (!searchRes.ok) throw new Error(`Wikimedia search failed: ${searchRes.status}`);
+
+    const searchData = await searchRes.json();
+    const results = searchData?.query?.search || [];
+
+    if (!results.length) {
+      return res.json({ ok: false, error: "No matching images found on Wikimedia Commons", query });
+    }
+
+    // Get the direct image URL for the first result
+    const fileName = results[0].title; // e.g. "File:Starry Night.jpg"
+    const imageInfoUrl = `https://commons.wikimedia.org/w/api.php?` +
+      `action=query&titles=${encodeURIComponent(fileName)}&prop=imageinfo&iiprop=url|size|mime` +
+      `&format=json&origin=*`;
+
+    const ctrl2 = new AbortController();
+    const timeout2 = setTimeout(() => ctrl2.abort(), 8000);
+
+    const infoRes = await fetch(imageInfoUrl, { signal: ctrl2.signal }).finally(() => clearTimeout(timeout2));
+    if (!infoRes.ok) throw new Error(`Wikimedia imageinfo failed: ${infoRes.status}`);
+
+    const infoData = await infoRes.json();
+    const pages = infoData?.query?.pages || {};
+    const page = Object.values(pages)[0];
+    const imageInfo = page?.imageinfo?.[0];
+
+    if (!imageInfo?.url) {
+      return res.json({ ok: false, error: "Could not resolve image URL", fileName });
+    }
+
+    // For large images, use a thumbnail URL (800px wide) for faster loading
+    const thumbUrl = imageInfo.url.includes("upload.wikimedia.org")
+      ? imageInfo.url.replace(/\/commons\//, "/commons/thumb/") + "/800px-" + fileName.replace("File:", "")
+      : imageInfo.url;
+
+    console.log(`[ArtView] Fallback image found: ${fileName} → ${thumbUrl}`);
+
+    return res.json({
+      ok: true,
+      imageUrl: thumbUrl,
+      fullUrl: imageInfo.url,
+      fileName,
+      mime: imageInfo.mime,
+      width: imageInfo.width,
+      height: imageInfo.height,
+      query,
+    });
+  } catch (err) {
+    console.error("[ArtView] Image fallback error:", err);
+    return res.status(500).json({ ok: false, error: "Image fallback lookup failed" });
+  }
+});
+
+// ── Historical Document fallback (reuses same Wikimedia Commons strategy as ArtView) ──
+app.post("/api/historical-doc/image-fallback", async (req, res) => {
+  try {
+    const { docTitle, docAuthor, docYear, imageDescription, docType } = req.body || {};
+
+    // Build a search query from whatever metadata we have
+    const parts = [docTitle, docAuthor, docYear, docType].map(s => String(s || "").trim()).filter(Boolean);
+    const query = parts.length ? parts.join(" ") : String(imageDescription || "").slice(0, 100);
+
+    if (!query.trim()) {
+      return res.status(400).json({ ok: false, error: "No document metadata provided for fallback lookup" });
+    }
+
+    // Search Wikimedia Commons for matching images
+    const searchUrl = `https://commons.wikimedia.org/w/api.php?` +
+      `action=query&list=search&srsearch=${encodeURIComponent(query)}&srnamespace=6` +
+      `&srlimit=5&format=json&origin=*`;
+
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 8000);
+
+    const searchRes = await fetch(searchUrl, { signal: ctrl.signal }).finally(() => clearTimeout(timeout));
+    if (!searchRes.ok) throw new Error(`Wikimedia search failed: ${searchRes.status}`);
+
+    const searchData = await searchRes.json();
+    const results = searchData?.query?.search || [];
+
+    if (!results.length) {
+      return res.json({ ok: false, error: "No matching document images found on Wikimedia Commons", query });
+    }
+
+    const fileName = results[0].title;
+    const imageInfoUrl = `https://commons.wikimedia.org/w/api.php?` +
+      `action=query&titles=${encodeURIComponent(fileName)}&prop=imageinfo&iiprop=url|size|mime` +
+      `&format=json&origin=*`;
+
+    const ctrl2 = new AbortController();
+    const timeout2 = setTimeout(() => ctrl2.abort(), 8000);
+
+    const infoRes = await fetch(imageInfoUrl, { signal: ctrl2.signal }).finally(() => clearTimeout(timeout2));
+    if (!infoRes.ok) throw new Error(`Wikimedia imageinfo failed: ${infoRes.status}`);
+
+    const infoData = await infoRes.json();
+    const pages = infoData?.query?.pages || {};
+    const page = Object.values(pages)[0];
+    const imageInfo = page?.imageinfo?.[0];
+
+    if (!imageInfo?.url) {
+      return res.json({ ok: false, error: "Could not resolve document image URL", fileName });
+    }
+
+    const thumbUrl = imageInfo.url.includes("upload.wikimedia.org")
+      ? imageInfo.url.replace(/\/commons\//, "/commons/thumb/") + "/800px-" + fileName.replace("File:", "")
+      : imageInfo.url;
+
+    console.log(`[HistoricalDoc] Fallback image found: ${fileName} → ${thumbUrl}`);
+
+    return res.json({
+      ok: true,
+      imageUrl: thumbUrl,
+      fullUrl: imageInfo.url,
+      fileName,
+      mime: imageInfo.mime,
+      width: imageInfo.width,
+      height: imageInfo.height,
+      query,
+    });
+  } catch (err) {
+    console.error("[HistoricalDoc] Image fallback error:", err);
+    return res.status(500).json({ ok: false, error: "Document image fallback lookup failed" });
   }
 });
 

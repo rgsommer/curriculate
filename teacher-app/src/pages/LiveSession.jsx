@@ -10,6 +10,7 @@ import {
 } from "../../../shared/taskTypes.js";
 import { API_BASE_URL } from "../config";
 import { useAuth } from "../auth/useAuth";
+import SpotlightTour, { TourHelpButton, resetTour } from "../components/SpotlightTour";
 
 const API_BASE = API_BASE_URL || "";
 
@@ -434,6 +435,12 @@ useEffect(() => {
   // "tasksetLoaded" before calling teacher:launchNextTask.
   const [launchAfterLoad, setLaunchAfterLoad] = useState(false);
 
+  // Auto-start configuration for pre-armed launches
+  const [autoStartMode, setAutoStartMode] = useState("immediate"); // "immediate" | "first_ready" | "all_ready" | "timer"
+  const [autoStartTimerMinutes, setAutoStartTimerMinutes] = useState(3);
+  const [autoStartMinTeams, setAutoStartMinTeams] = useState(4);
+  const [tasksetArmed, setTasksetArmed] = useState(false); // true when taskset is loaded but waiting for trigger
+
   // Taskset launch progress (for the "Generate/Launch Taskset" green-fill button effect)
   const [tasksetLaunchProgress, setTasksetLaunchProgress] = useState(0); // 0..100
   const [tasksetLaunchAnimating, setTasksetLaunchAnimating] = useState(false);
@@ -507,6 +514,7 @@ useEffect(() => {
   const [teacherAssessmentCategories, setTeacherAssessmentCategories] = useState([]);
   const autoEndFiredRef = React.useRef(false);
   const [reportProgress, setReportProgress] = useState(null); // { step, total, label }
+  const [savedReportId, setSavedReportId] = useState(null);
 
   // Behavior ding popup state
   const [dingPopup, setDingPopup] = useState(null); // { teamId, teamName } or null
@@ -540,6 +548,14 @@ useEffect(() => {
   const [showHideNSeekModal, setShowHideNSeekModal] = useState(false);
   const [pendingHideTaskset, setPendingHideTaskset] = useState(null);
   const [launchingTaskset, setLaunchingTaskset] = useState(false);
+
+  // Fixed-station setup checklist
+  const [showLiveTour, setShowLiveTour] = useState(false);
+
+  const [showStationChecklist, setShowStationChecklist] = useState(false);
+  const [stationChecklistDisplays, setStationChecklistDisplays] = useState([]);
+  const [stationChecklistChecked, setStationChecklistChecked] = useState({});
+  const [pendingStationTaskset, setPendingStationTaskset] = useState(null);
 
   const [reviewPauseSeconds, setReviewPauseSeconds] = useState(30);
 
@@ -801,11 +817,16 @@ useEffect(() => {
         setEndSessionMessage("Reports are being generated and emailed.");
         setEndSessionIsError(false);
       } else {
+        // Report was likely saved even if email failed — include a link
+        const reportId = payload.reportId;
+        const viewLink = reportId ? ` <a href="/reports" style="color:#2563eb;text-decoration:underline">View your saved report →</a>` : "";
         setEndSessionMessage(
-          payload.error ||
-            "There was a problem generating or emailing the reports."
+          (payload.error || "There was a problem emailing the reports.") +
+          (reportId ? " Your report data was saved successfully." : "") +
+          viewLink
         );
         setEndSessionIsError(true);
+        if (reportId) setSavedReportId(reportId);
       }
       setIsEndingSession(false);
     };
@@ -894,6 +915,13 @@ useEffect(() => {
     socket.on("roomState", handleRoom);
     socket.on("room:state", handleRoom);
     socket.on("tasksetLoaded", handleTasksetLoaded);
+    socket.on("autoStart:triggered", (payload) => {
+      console.log("[LiveSession] Auto-start triggered:", payload);
+      setTasksetArmed(false);
+      setStatus("Taskset auto-started!");
+      setTasksetLaunchAnimating(false);
+      setTasksetLaunchProgress(0);
+    });
     socket.on("taskSubmission", handleSubmission);
     socket.on("teamJoined", handleTeamJoined);
     socket.on("scanEvent", handleScanEvent);
@@ -930,6 +958,7 @@ useEffect(() => {
       socket.off("roomState", handleRoom);
       socket.off("room:state", handleRoom);
       socket.off("tasksetLoaded", handleTasksetLoaded);
+      socket.off("autoStart:triggered");
       socket.off("taskSubmission", handleSubmission);
       socket.off("teamJoined", handleTeamJoined);
       socket.off("scanEvent", handleScanEvent);
@@ -2769,6 +2798,22 @@ if (
 
       const tasks = Array.isArray(data.tasks) ? data.tasks : [];
 
+      // ── Fixed-station setup checklist ──
+      // If this taskset has displays (physical objects at stations), show
+      // a setup checklist so the teacher can confirm everything is in place.
+      const displays = Array.isArray(data.displays) ? data.displays.filter((d) => d && d.name) : [];
+      if (displays.length > 0) {
+        setStationChecklistDisplays(displays);
+        setStationChecklistChecked({});
+        setPendingStationTaskset({ data, roomCode: code });
+        setShowStationChecklist(true);
+        setStatus("Confirm station setup before launching.");
+        setLaunchingTaskset(false);
+        setTasksetLaunchAnimating(false);
+        setTasksetLaunchProgress(0);
+        return;
+      }
+
       const hideTasks = tasks
         .map((t, idx) => ({ task: t, index: idx }))
         .filter(
@@ -2796,8 +2841,16 @@ if (
         return;
       }
 
-      setStatus("Loading taskset…");
-      setLaunchAfterLoad(true);
+      const isPreArmed = autoStartMode !== "immediate";
+
+      if (isPreArmed) {
+        setStatus("Taskset armed — waiting for students…");
+        setTasksetArmed(true);
+        setLaunchAfterLoad(false); // do NOT auto-launch on tasksetLoaded
+      } else {
+        setStatus("Loading taskset…");
+        setLaunchAfterLoad(true);
+      }
       setTasksetLaunchProgress(70);
 
       socket.emit("teacher:loadTaskset", {
@@ -2811,6 +2864,12 @@ if (
         runByPresenterName: runByName,
         runByPresenterEmail: user?.email,
         sharedToken,
+        // Auto-start config for pre-armed mode
+        ...(isPreArmed && {
+          autoStartMode,
+          autoStartTimerSeconds: autoStartMode === "timer" ? autoStartTimerMinutes * 60 : undefined,
+          autoStartMinTeams: autoStartMode === "all_ready" ? autoStartMinTeams : undefined,
+        }),
       });
     } catch (err) {
       console.error("[LiveSession] Launch taskset error:", err);
@@ -3387,14 +3446,20 @@ if (
         }}
       >
         <div>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "1.25rem",
-            }}
-          >
-            Presenter Console
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "1.25rem",
+              }}
+            >
+              Presenter Console
+            </h1>
+            <TourHelpButton
+              tourId="livesession-v1"
+              onClick={() => setShowLiveTour((v) => !v)}
+            />
+          </div>
           <p
             style={{
               margin: 0,
@@ -3450,34 +3515,63 @@ if (
             </div>
           )}
           {endSessionMessage && (
-            <p
+            <div
               style={{
                 margin: "4px 0 0",
                 fontSize: "0.8rem",
                 color: endSessionIsError ? "#dc2626" : "#16a34a",
               }}
             >
-              {endSessionMessage}
+              <span dangerouslySetInnerHTML={{ __html: endSessionMessage }} />
               {endSessionIsError && !isEndingSession && (
-                <button
-                  type="button"
-                  onClick={() => { autoEndFiredRef.current = false; handleEndSessionAndEmail(); }}
-                  style={{
-                    marginLeft: 8,
-                    padding: "2px 10px",
-                    borderRadius: 6,
-                    border: "1px solid #dc2626",
-                    background: "#fef2f2",
-                    color: "#dc2626",
-                    fontWeight: 700,
-                    fontSize: "0.78rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  Retry
-                </button>
+                <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {savedReportId && (
+                    <a
+                      href="/reports"
+                      style={{
+                        padding: "4px 14px",
+                        borderRadius: 6,
+                        border: "1px solid #2563eb",
+                        background: "#eff6ff",
+                        color: "#2563eb",
+                        fontWeight: 700,
+                        fontSize: "0.78rem",
+                        textDecoration: "none",
+                        cursor: "pointer",
+                      }}
+                    >
+                      View Saved Report
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (savedReportId) {
+                        // Just retry email for saved report
+                        socket.emit("report:retryEmail", { reportId: savedReportId, roomCode: roomCode?.toUpperCase() });
+                        setEndSessionMessage("Retrying email delivery…");
+                        setEndSessionIsError(false);
+                      } else {
+                        autoEndFiredRef.current = false;
+                        handleEndSessionAndEmail();
+                      }
+                    }}
+                    style={{
+                      padding: "4px 14px",
+                      borderRadius: 6,
+                      border: "1px solid #dc2626",
+                      background: "#fef2f2",
+                      color: "#dc2626",
+                      fontWeight: 700,
+                      fontSize: "0.78rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {savedReportId ? "Retry Email Only" : "Retry"}
+                  </button>
+                </div>
               )}
-            </p>
+            </div>
           )}
         </div>
         {(selectedLocation || roomState.locationCode) && (
@@ -3592,6 +3686,7 @@ if (
         >
           {/* Task controls */}
           <div
+            id="live-task-controls"
             style={{
               borderRadius: 12,
               border: "1px solid #e5e7eb",
@@ -3639,6 +3734,100 @@ if (
                 )}
               </div>
 
+              {/* Auto-start mode picker */}
+              {activeTasksetMeta && !taskFlowActive && !tasksetArmed && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.78rem", flexWrap: "wrap" }}>
+                  <span style={{ color: "#6b7280" }}>Start:</span>
+                  {[
+                    { value: "immediate", label: "Now" },
+                    { value: "first_ready", label: "When 1st team joins" },
+                    { value: "all_ready", label: "When all teams join" },
+                    { value: "timer", label: "On timer" },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setAutoStartMode(opt.value)}
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: 999,
+                        border: autoStartMode === opt.value ? "2px solid #2563eb" : "1px solid #d1d5db",
+                        background: autoStartMode === opt.value ? "#eff6ff" : "#fff",
+                        color: autoStartMode === opt.value ? "#2563eb" : "#6b7280",
+                        fontSize: "0.75rem",
+                        fontWeight: autoStartMode === opt.value ? 600 : 400,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                  {autoStartMode === "timer" && (
+                    <select
+                      value={autoStartTimerMinutes}
+                      onChange={(e) => setAutoStartTimerMinutes(Number(e.target.value))}
+                      style={{ fontSize: "0.75rem", padding: "1px 4px", borderRadius: 4 }}
+                    >
+                      {[1, 2, 3, 5, 10].map((m) => (
+                        <option key={m} value={m}>{m} min</option>
+                      ))}
+                    </select>
+                  )}
+                  {autoStartMode === "all_ready" && (
+                    <select
+                      value={autoStartMinTeams}
+                      onChange={(e) => setAutoStartMinTeams(Number(e.target.value))}
+                      style={{ fontSize: "0.75rem", padding: "1px 4px", borderRadius: 4 }}
+                    >
+                      {[2, 3, 4, 5, 6, 8, 10].map((n) => (
+                        <option key={n} value={n}>{n} teams</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
+
+              {/* Armed status indicator */}
+              {tasksetArmed && (
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "6px 10px",
+                  borderRadius: 8,
+                  background: "#fef3c7",
+                  border: "1px solid #fbbf24",
+                  fontSize: "0.8rem",
+                  color: "#92400e",
+                }}>
+                  <span style={{ fontSize: "1rem" }}>&#9201;</span>
+                  <span>
+                    Taskset armed — waiting for{" "}
+                    {autoStartMode === "first_ready" && "first team to join"}
+                    {autoStartMode === "all_ready" && `${autoStartMinTeams} teams to join`}
+                    {autoStartMode === "timer" && `${autoStartTimerMinutes}min timer`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTasksetArmed(false);
+                      setStatus("Auto-start cancelled. Use Launch to start manually.");
+                    }}
+                    style={{
+                      marginLeft: "auto",
+                      border: "none",
+                      background: "transparent",
+                      color: "#92400e",
+                      cursor: "pointer",
+                      fontSize: "0.75rem",
+                      textDecoration: "underline",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
               <div
                 style={{
                   display: "flex",
@@ -3653,7 +3842,7 @@ if (
                     padding: "6px 8px",
                     borderRadius: 6,
                     border: "none",
-                    background: tasksetLaunchAnimating ? `linear-gradient(90deg, #22c55e 0%, #22c55e ${tasksetLaunchProgress}%, ${launchBtnBg} ${tasksetLaunchProgress}%, ${launchBtnBg} 100%)` : launchBtnBg,
+                    background: tasksetLaunchAnimating ? `linear-gradient(90deg, #22c55e 0%, #22c55e ${tasksetLaunchProgress}%, ${launchBtnBg} ${tasksetLaunchProgress}%, ${launchBtnBg} 100%)` : tasksetArmed ? "#f59e0b" : launchBtnBg,
                     color: "#ffffff",
                     fontSize: "0.85rem",
                     cursor: launchBtnDisabled ? "not-allowed" : "pointer",
@@ -3661,7 +3850,7 @@ if (
                   }}
                   disabled={launchBtnDisabled}
                 >
-                  {launchBtnLabel}
+                  {tasksetArmed ? "Armed — waiting…" : launchBtnLabel}
                 </button>
               </div>
 
@@ -4190,6 +4379,7 @@ Precipitation — rain, snow, hail`}
 
           {/* Noise & Treats Controls */}
           <div
+            id="live-noise-treats"
             style={{
               background: "#ffffff",
               border: "1px solid #e5e7eb",
@@ -4443,6 +4633,7 @@ Precipitation — rain, snow, hail`}
 
         {/* MIDDLE 1/3: Teams grid */}
         <div
+          id="live-teams-grid"
           style={{
             flex: 1,
             minWidth: isNarrow ? "100%" : 0,
@@ -4473,6 +4664,7 @@ Precipitation — rain, snow, hail`}
 
         {/* RIGHT 1/3: Leaderboard + Submissions + Scan log */}
         <div
+          id="live-leaderboard"
           style={{
             flex: 1,
             minWidth: isNarrow ? "100%" : 0,
@@ -5033,6 +5225,183 @@ Precipitation — rain, snow, hail`}
         </div>
       )}
 
+      {/* ── Fixed-Station Setup Checklist Modal ── */}
+      {showStationChecklist && pendingStationTaskset && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 60,
+          }}
+          onClick={() => {
+            setShowStationChecklist(false);
+            setStationChecklistDisplays([]);
+            setStationChecklistChecked({});
+            setPendingStationTaskset(null);
+          }}
+        >
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: 16,
+              padding: 20,
+              maxWidth: 520,
+              width: "90%",
+              maxHeight: "80vh",
+              boxShadow: "0 20px 40px rgba(15,23,42,0.35)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700 }}>
+              Station Setup Checklist
+            </h2>
+            <p style={{ margin: 0, fontSize: "0.85rem", color: "#4b5563" }}>
+              This taskset uses fixed stations. Please place these items at the correct QR stations before launching.
+            </p>
+
+            <div style={{ marginTop: 4, overflowY: "auto", maxHeight: 320, display: "flex", flexDirection: "column", gap: 8 }}>
+              {stationChecklistDisplays.map((d, i) => {
+                const colorHex = {
+                  red: "#ef4444", orange: "#f97316", yellow: "#eab308",
+                  green: "#22c55e", blue: "#3b82f6", teal: "#14b8a6",
+                  purple: "#8b5cf6", pink: "#ec4899",
+                }[(d.stationColor || "").toLowerCase()] || "#9ca3af";
+                const isChecked = !!stationChecklistChecked[i];
+
+                return (
+                  <label
+                    key={d.key || i}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border: `2px solid ${isChecked ? colorHex : "#e5e7eb"}`,
+                      background: isChecked ? "#f0fdf4" : "#fafafa",
+                      cursor: "pointer",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => setStationChecklistChecked((prev) => ({ ...prev, [i]: !prev[i] }))}
+                      style={{ width: 18, height: 18, accentColor: colorHex, flexShrink: 0 }}
+                    />
+                    <div
+                      style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: 12,
+                        background: colorHex,
+                        border: "2px solid rgba(0,0,0,0.1)",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: "0.9rem", fontWeight: 600 }}>
+                        {d.name || "Unnamed display"}
+                      </div>
+                      <div style={{ fontSize: "0.78rem", color: "#6b7280" }}>
+                        Place at the <strong style={{ color: colorHex }}>{d.stationColor || "?"}</strong> station
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            <div style={{ marginTop: 12, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowStationChecklist(false);
+                  setStationChecklistDisplays([]);
+                  setStationChecklistChecked({});
+                  setPendingStationTaskset(null);
+                }}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: "#fff",
+                  fontSize: "0.85rem",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const { data, roomCode: code } = pendingStationTaskset;
+                  setShowStationChecklist(false);
+                  setStationChecklistDisplays([]);
+                  setStationChecklistChecked({});
+                  setPendingStationTaskset(null);
+
+                  // Resume the launch flow (respect auto-start mode)
+                  const isPreArmed = autoStartMode !== "immediate";
+                  if (isPreArmed) {
+                    setStatus("Taskset armed — waiting for students…");
+                    setTasksetArmed(true);
+                    setLaunchAfterLoad(false);
+                  } else {
+                    setStatus("Loading taskset…");
+                    setLaunchAfterLoad(true);
+                  }
+                  setTasksetLaunchProgress(70);
+
+                  socket.emit("teacher:loadTaskset", {
+                    roomCode: code,
+                    tasksetId: data._id || activeTasksetMeta?._id,
+                    selectedRooms,
+                    reportOwnerId,
+                    reportOwnerName,
+                    reportOwnerEmail,
+                    runByPresenterId: user?.userId || user?.id || user?._id,
+                    runByPresenterName: runByName,
+                    runByPresenterEmail: user?.email,
+                    sharedToken,
+                    ...(isPreArmed && {
+                      autoStartMode,
+                      autoStartTimerSeconds: autoStartMode === "timer" ? autoStartTimerMinutes * 60 : undefined,
+                      autoStartMinTeams: autoStartMode === "all_ready" ? autoStartMinTeams : undefined,
+                    }),
+                  });
+                }}
+                style={{
+                  padding: "6px 16px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: Object.keys(stationChecklistChecked).length === stationChecklistDisplays.length
+                    && stationChecklistDisplays.every((_, i) => stationChecklistChecked[i])
+                    ? "#10b981"
+                    : "#f59e0b",
+                  color: "#fff",
+                  fontSize: "0.85rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                {Object.keys(stationChecklistChecked).length === stationChecklistDisplays.length
+                  && stationChecklistDisplays.every((_, i) => stationChecklistChecked[i])
+                  ? "All set — Launch!"
+                  : "Launch anyway"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showHideNSeekModal && pendingHideTaskset && (
         <div
           style={{
@@ -5271,8 +5640,15 @@ Precipitation — rain, snow, hail`}
                       (roomCode ? roomCode.toUpperCase() : null);
 
                     if (codeToUse) {
-                      setStatus("Loading taskset…");
-                      setLaunchAfterLoad(true);
+                      const isPreArmed = autoStartMode !== "immediate";
+                      if (isPreArmed) {
+                        setStatus("Taskset armed — waiting for students…");
+                        setTasksetArmed(true);
+                        setLaunchAfterLoad(false);
+                      } else {
+                        setStatus("Loading taskset…");
+                        setLaunchAfterLoad(true);
+                      }
                       socket.emit("teacher:loadTaskset", {
                         roomCode: codeToUse,
                         tasksetId:
@@ -5287,6 +5663,11 @@ Precipitation — rain, snow, hail`}
                         runByPresenterName: runByName,
                         runByPresenterEmail: user?.email,
                         sharedToken,
+                        ...(isPreArmed && {
+                          autoStartMode,
+                          autoStartTimerSeconds: autoStartMode === "timer" ? autoStartTimerMinutes * 60 : undefined,
+                          autoStartMinTeams: autoStartMode === "all_ready" ? autoStartMinTeams : undefined,
+                        }),
                       });
                     }
                   } catch (err) {
@@ -5661,6 +6042,35 @@ Thomas | Soldier | loyal, brave, disciplined`}
           </div>
         </div>
       )}
+
+      {/* Spotlight tour for LiveSession */}
+      <SpotlightTour
+        tourId="livesession-v1"
+        steps={[
+          {
+            target: "#live-task-controls",
+            title: "Task Controls",
+            body: "Load a pre-built task set, launch quick AI tasks, or skip to the next task. This is your main control panel.",
+          },
+          {
+            target: "#live-teams-grid",
+            title: "Teams",
+            body: "Teams appear here as students scan QR codes and join. You'll see their status, current task, and connection state.",
+          },
+          {
+            target: "#live-leaderboard",
+            title: "Leaderboard & Submissions",
+            body: "Scores update in real time. You can also see individual submissions and a scan log of QR activity.",
+          },
+          {
+            target: "#live-noise-treats",
+            title: "Noise & Treats",
+            body: "Use Noise Control to dim screens when it's too loud. Award treats for good behavior — they appear on student devices.",
+          },
+        ]}
+        forceShow={showLiveTour}
+        onComplete={() => setShowLiveTour(false)}
+      />
     </div>
   );
 }
