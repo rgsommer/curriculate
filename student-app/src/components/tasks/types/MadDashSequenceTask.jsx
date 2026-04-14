@@ -69,7 +69,7 @@ function shuffle(arr, seed = Math.random()) {
   return a;
 }
 
-export default function MadDashSequenceTask({ task, onSubmit, disabled }) {
+export default function MadDashSequenceTask({ task, onSubmit, disabled, presenter }) {
   const palette = useMemo(() => {
     const p =
       (Array.isArray(task?.availableColors) && task.availableColors) ||
@@ -98,12 +98,12 @@ export default function MadDashSequenceTask({ task, onSubmit, disabled }) {
   }, [task]);
 
   const revealMs = Number(task?.config?.revealMs || 10000);
-  const goVideoSrc = String(task?.config?.goVideoSrc || "/1-2-3-go.mp4");
 
   const [phase, setPhase] = useState("instructions"); // instructions -> puzzle -> reveal -> go -> scan -> result -> complete
   const [turnIdx, setTurnIdx] = useState(0);
 
-  const [mapping, setMapping] = useState([]);
+  const [mapping, setMapping] = useState([]);       // shuffled display items
+  const [correctMapping, setCorrectMapping] = useState([]); // items in correct order with colors
   const [scanSeq, setScanSeq] = useState([]);
 
   const [scanIdx, setScanIdx] = useState(0);
@@ -116,10 +116,6 @@ export default function MadDashSequenceTask({ task, onSubmit, disabled }) {
 
   const [playerRuns, setPlayerRuns] = useState([]);
 
-  const goPreloadRef = useRef(null);
-  useEffect(() => {
-    try { goPreloadRef.current?.load?.(); } catch {}
-  }, [goVideoSrc]);
 
   const fmt = (ms) => {
     const s = Math.max(0, Number(ms) || 0) / 1000;
@@ -145,6 +141,10 @@ export default function MadDashSequenceTask({ task, onSubmit, disabled }) {
 
     const expectedColors = order.map((i) => map[i]?.color).filter(Boolean);
     setScanSeq(expectedColors);
+
+    // Build the correct-order display: items in the right sequence with their assigned colors
+    const correctItems = order.map((i) => map[i]).filter(Boolean);
+    setCorrectMapping(correctItems);
 
     setScanIdx(0);
     setErrorFlash(false);
@@ -174,8 +174,21 @@ export default function MadDashSequenceTask({ task, onSubmit, disabled }) {
     if (phase !== "reveal" || disabled) return;
 
     if (revealTimerRef.current) window.clearTimeout(revealTimerRef.current);
-    revealTimerRef.current = window.setTimeout(() => {
-      setPhase("go");
+    revealTimerRef.current = window.setTimeout(async () => {
+      // 1-2-3-GO! countdown before scanning begins
+      if (presenter?.showCountdown) {
+        try {
+          await presenter.showCountdown({
+            title: "Mad Dash Sequence",
+            seconds: 3,
+            subtext: "1–2–3… GO!",
+          });
+        } catch {}
+      }
+      setScanIdx(0);
+      setTimerMs(0);
+      startAtRef.current = performance.now();
+      setPhase("scan");
     }, Math.max(0, revealMs));
 
     return () => {
@@ -287,13 +300,17 @@ export default function MadDashSequenceTask({ task, onSubmit, disabled }) {
 
   return (
     <div className="w-full min-h-[520px] rounded-2xl overflow-hidden border border-slate-200 bg-white">
-      <video ref={goPreloadRef} src={goVideoSrc} preload="auto" style={{ display: "none" }} />
 
       <div className="p-6">
         <div className="text-4xl font-black">Mad Dash Sequence</div>
         <div className="text-slate-600 mt-1">
-          Determine the correct order, then scan the colours in that order. Wrong scan resets.
+          {task?.prompt || task?.config?.prompt || "Determine the correct order, then scan the colours in that order. Wrong scan resets."}
         </div>
+        {(task?.config?.orderingCriterion || task?.orderingCriterion) && (
+          <div className="mt-2 px-4 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 font-bold text-sm">
+            Ordering: {task?.config?.orderingCriterion || task?.orderingCriterion}
+          </div>
+        )}
 
         {phase === "instructions" && (
           <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -340,40 +357,38 @@ export default function MadDashSequenceTask({ task, onSubmit, disabled }) {
 
         {phase === "reveal" && (
           <div className="mt-6">
-            <div className="font-extrabold text-xl">Memorize the scan order:</div>
+            <div className="font-extrabold text-xl">Memorize the correct order, then scan the matching colors:</div>
+            <div className="mt-3 grid gap-2">
+              {correctMapping.map((m, i) => (
+                <div
+                  key={`${m.idx}-${i}`}
+                  className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-black text-sm">
+                      {i + 1}
+                    </span>
+                    <span className="font-bold">{m.text}</span>
+                  </div>
+                  <div className="px-3 py-1 rounded-full bg-slate-900 text-white font-black">
+                    {m.color}
+                  </div>
+                </div>
+              ))}
+            </div>
             <div className="mt-3 flex flex-wrap gap-2">
+              <span className="text-slate-500 font-semibold">Scan order:</span>
               {scanSeq.map((c, i) => (
-                <span key={i} className="px-3 py-2 rounded-full bg-slate-100 border border-slate-200 font-bold">
+                <span key={i} className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 font-bold text-sm">
                   {i + 1}. {c}
                 </span>
               ))}
             </div>
-            <div className="mt-4 text-slate-600">Starting in {Math.round(revealMs / 1000)}s…</div>
+            <div className="mt-4 text-slate-600 font-semibold">Starting in {Math.round(revealMs / 1000)}s…</div>
           </div>
         )}
 
-        {phase === "go" && (
-          <div className="mt-6">
-            <video
-              src={goVideoSrc}
-              autoPlay
-              muted
-              playsInline
-              style={{ width: "100%", maxWidth: 520, borderRadius: 14, background: "#000" }}
-              onEnded={() => {
-                setScanIdx(0);
-                setTimerMs(0);
-                startAtRef.current = performance.now();
-                setPhase("scan");
-              }}
-              onError={() => {
-                startAtRef.current = performance.now();
-                setPhase("scan");
-              }}
-            />
-            <div className="mt-2 text-slate-600">Timer starts when the video finishes.</div>
-          </div>
-        )}
+        {/* "go" phase removed — countdown is handled by presenter overlay before transitioning to "scan" */}
 
         {phase === "scan" && (
           <div className="mt-6">

@@ -1225,18 +1225,25 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     {
       "taskType": "mad-dash-sequence",
       "title": "string",
-      "prompt": "string",
+      "prompt": "Put these [topic] in order from [criterion]",
       "config": {
         "items": ["string","string","string"],
-        "correctOrder": [0,1,2]
+        "correctOrder": [0,1,2],
+        "orderingCriterion": "string — e.g. smallest to largest, earliest to latest, first step to last step"
       }
     }
 
+    CRITICAL — Items MUST form a clear logical sequence:
+    - Items MUST share an obvious ordering relationship (chronological, size, steps in a process, cause-and-effect chain, etc.).
+    - The "prompt" field MUST explicitly state what ordering criterion to use (e.g. "Put these historical events in chronological order", "Arrange these fractions from smallest to largest", "Order these steps of the water cycle").
+    - Do NOT use unrelated or random items. A student should be able to figure out the correct order from general knowledge of the subject.
+    - Good examples: steps of cell division, planets by distance from sun, stages of a butterfly lifecycle, presidents in chronological order.
+    - Bad examples: random vocabulary words, unrelated facts, items with no natural ordering.
+
     Content guidance:
     - Grade 3+ wording.
-    - Items should be short (3–8 words).
+    - Items should be short (3–8 words each).
     - Use simple sequences for easy; academic sequences for harder (process steps, timeline events, procedure order).
-    - Prompt should tell students: figure out the order, then scan in that order.
     `.trim(),
     },
 
