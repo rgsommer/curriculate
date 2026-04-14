@@ -43,6 +43,11 @@ export function sanitizeTaskShapeByType(type, task) {
       delete cfg.content;
     }
 
+    // Strip stale config.bullets — frontend reads from config.notes, not config.bullets
+    if (cfg && Array.isArray(cfg.bullets)) {
+      delete cfg.bullets;
+    }
+
     if (cfg) {
       const keys = Object.keys(cfg).filter((k) => cfg[k] !== undefined);
       if (keys.length === 0) delete t.config;
@@ -232,6 +237,32 @@ export function sanitizeTaskShapeByType(type, task) {
       }
       return round;
     });
+    // Fix monotone correctIndex — if all rounds have the same correctIndex, rotate them
+    if (cleanedRounds.length >= 3) {
+      const indices = cleanedRounds.map((r) => r.correctIndex);
+      const allSame = indices.every((i) => i === indices[0]);
+      if (allSame) {
+        const positions = [0, 1, 2]; // cycle through available positions
+        cleanedRounds.forEach((r, i) => {
+          if (!Array.isArray(r.options) || r.options.length < 2) return;
+          const newIdx = positions[i % positions.length];
+          if (newIdx >= r.options.length) return; // safety
+          if (newIdx !== r.correctIndex) {
+            // Swap the option at newIdx with the correct option
+            const oldIdx = r.correctIndex;
+            if (oldIdx >= 0 && oldIdx < r.options.length) {
+              [r.options[oldIdx], r.options[newIdx]] = [r.options[newIdx], r.options[oldIdx]];
+              r.correctIndex = newIdx;
+              if (r.correctOption) {
+                // correctOption text stays the same, just index changed
+              }
+            }
+          }
+        });
+        console.log(`[sanitize] Rotated monotone FAKE_OUT correctIndex across ${cleanedRounds.length} rounds`);
+      }
+    }
+
     if (t.config && typeof t.config === "object") t.config.rounds = cleanedRounds;
     if (Array.isArray(t.rounds)) t.rounds = cleanedRounds;
   }

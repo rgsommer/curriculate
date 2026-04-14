@@ -880,7 +880,7 @@ export const retryMustHave = {
   [TASK_TYPES.TIMELINE]:
     "TIMELINE: Pick 6–10 events that can be placed chronologically. MINIMUM 6 events — fewer will be REJECTED. Each event should include a date or narrow date range in parentheses when possible. CRITICAL: every event must have ONE clearly correct position in the timeline — if two events could reasonably swap, the timeline is ambiguous. Avoid bunching multiple events into the same time period. Do not omit.",
   [TASK_TYPES.LETTER]:
-    'LETTER: config MUST include character (full name), characterDescription (1-2 sentences), letterStyle ("business" or "friendly"), topicContext (what to write about), and relevantConcepts (4-8 vocab terms students can use for bonus points). Pick a character that fits the topic naturally.',
+    'LETTER: config MUST include character (full name), characterDescription (1-2 sentences), letterStyle ("business" or "friendly"), topicContext (what to write about), and relevantConcepts (MINIMUM 4, ideally 6-8 vocab terms students can use for bonus points — fewer than 4 will be REJECTED). Pick a character that fits the topic naturally.',
   [TASK_TYPES.CASE_STUDY]:
     'CASE_STUDY: config MUST include scenario (2-4 sentences describing a realistic problem/dilemma), expertRole (who evaluates, e.g. "History Professor"), expertDescription (1 sentence), and relevantConcepts (4-8 vocab terms for bonus points). Scenario must present a genuine open-ended problem to solve, not just background info.',
   [TASK_TYPES.MATCHING]:
@@ -908,7 +908,7 @@ export const retryMustHave = {
   [TASK_TYPES.MAD_DASH]:
     "MAD_DASH must include sequence (or config.sequence) as an array of 3–5 station/color names (strings). No correctOrder/answerKey is required.",
   [TASK_TYPES.MAD_DASH_SEQUENCE]:
-    "MAD_DASH_SEQUENCE must include config.items (array of 3–5 strings) AND config.correctOrder (a permutation of indexes 0..items.length-1). Do NOT include colors; colors are assigned at runtime. IMPORTANT: The items must be sequential STEPS for solving ONE specific problem or completing ONE specific process (e.g. steps of photosynthesis, stages of cell division). Each item is ONE step — do NOT mix unrelated facts or topics. correctOrder values must be INTEGERS (not strings).",
+    "MAD_DASH_SEQUENCE must include config.items (array of 3–5 strings) AND config.correctOrder (a permutation of indexes 0..items.length-1). Do NOT include colors; colors are assigned at runtime. IMPORTANT: The items must be sequential STEPS for solving ONE specific problem or completing ONE specific process (e.g. steps of photosynthesis, stages of cell division). Each item is ONE step — do NOT mix unrelated facts or topics. correctOrder values must be INTEGERS (not strings). CRITICAL: items must be listed in SCRAMBLED order, NOT already in the correct sequence. The correctOrder array tells the system how to unscramble them. If items are [A,B,C,D] and correct sequence is B,D,A,C then correctOrder is [1,3,0,2]. A trivial correctOrder of [0,1,2,3] means the items are already in order — that is NOT a puzzle and will be REJECTED.",
   [TASK_TYPES.MIND_MAPPER]:
     "MIND_MAPPER must include structure (organizer with blanks) and items[] (>=4).",
   [TASK_TYPES.MAKE_AND_SNAP]:
@@ -923,6 +923,8 @@ export const retryMustHave = {
     "SCRIPT_PLAY must include lines/dialogue as an array of at least 8 lines. Each line should be a string or { speaker, text }. Do not omit.",
   [TASK_TYPES.TRUE_FALSE_TICTACTOE]:
     "TRUE_FALSE_TICTACTOE must include at least 12 statements (so the game can fill a 3x3 board). Each statement must include a boolean answer.",
+  [TASK_TYPES.TRUE_FALSE_CONNECT_FOUR]:
+    'TRUE_FALSE_CONNECT_FOUR must include at least 10 statements (items[] or statements[]). Each statement: { text: string, isFalse: boolean }. Aim for a roughly 50/50 mix of true and false — at least 3 of each. Do NOT return an empty items array. Every statement must be content-specific (not generic) and clearly true or clearly false.',
   [TASK_TYPES.READING_COMP]:
     "READING_COMP must include a paragraph (generatedParagraph or paragraph field) about ONE unified topic. Do NOT stitch together summaries of multiple unrelated subjects. Go deep on one topic rather than touching many shallowly.",
   [TASK_TYPES.RECORD_AUDIO]:

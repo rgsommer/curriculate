@@ -2603,7 +2603,13 @@ export function validateTaskByType(taskType, task) {
       }
 
       const order = cfg.correctOrder ?? task.correctOrder ?? cfg.answerKey ?? task.answerKey;
-      if (!order) errors.push("correct order is required (config.correctOrder / correctOrder / answerKey)");
+      if (!order) {
+        errors.push("correct order is required (config.correctOrder / correctOrder / answerKey)");
+      } else if (Array.isArray(order)) {
+        // Reject trivial ordering [0,1,2,...] — items must be scrambled
+        const isTrivial = order.every((v, i) => Number(v) === i);
+        if (isTrivial) errors.push("correctOrder is trivial [0,1,2,...] — items must be listed in scrambled order");
+      }
       break;
     }
 
@@ -2668,9 +2674,17 @@ export function validateTaskByType(taskType, task) {
       break;
     }
 
+    case TASK_TYPES.LETTER: {
+      const letCfg = task.config || {};
+      if (!letCfg.character) errors.push("letter requires config.character");
+      if (!Array.isArray(letCfg.relevantConcepts) || letCfg.relevantConcepts.filter(Boolean).length < 4) {
+        errors.push(`letter requires at least 4 relevantConcepts (got ${(letCfg.relevantConcepts || []).filter(Boolean).length})`);
+      }
+      break;
+    }
+
     // ─── Simple types: only need title + prompt (global checks cover these) ───
     case TASK_TYPES.OPEN_TEXT:
-    case TASK_TYPES.LETTER:
     case TASK_TYPES.CASE_STUDY:
     case TASK_TYPES.RECORD_AUDIO:
     case TASK_TYPES.DRAW:
