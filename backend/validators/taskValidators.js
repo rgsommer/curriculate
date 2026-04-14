@@ -703,9 +703,11 @@ export function normalizeTaskByType(taskType, rawTask) {
         }
       }
 
-      // --- GUARDRAIL: Reject sequences/timelines with tied dates ---
-      // When 2+ items resolve to the same date value, the "correct" order is
-      // arbitrary and students get marked wrong for a defensible answer.
+      // --- GUARDRAIL: Warn (not reject) on coarse date ties ---
+      // When 2+ items resolve to the same extracted date, the ordering might
+      // rely on contextual knowledge rather than explicit dates. That's fine —
+      // many valid timelines have events in the same broad era that are still
+      // chronologically distinguishable. Downgraded to a warning only.
       if (!task._validationError && items.length >= 4) {
         const dv = items.map(extractDateValue);
         const seen = {};
@@ -713,7 +715,6 @@ export function normalizeTaskByType(taskType, rawTask) {
         dv.forEach((v, i) => {
           if (v === null) return;
           if (seen[v] !== undefined) {
-            // Only report the pair once
             if (!ties.some((t) => t.date === v)) {
               ties.push({ date: v, a: items[seen[v]], b: items[i] });
             }
@@ -723,7 +724,7 @@ export function normalizeTaskByType(taskType, rawTask) {
         });
         if (ties.length > 0) {
           const desc = ties.map((t) => `"${t.a}" and "${t.b}" both resolve to ~${t.date}`).join("; ");
-          task._validationError = `Sequence/timeline has items with identical or overlapping dates: ${desc}. Every item must have a distinct, unambiguous date so there is exactly one correct order.`;
+          task._validationWarning = `Timeline has items with similar date hints: ${desc}. Verify the intended order is unambiguous.`;
         }
       }
 
