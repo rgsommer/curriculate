@@ -2972,6 +2972,20 @@ if (
     setDingReason("");
   };
 
+  const handleBumpTeam = () => {
+    if (!roomCode || !dingPopup?.teamId) return;
+    const name = dingPopup.teamName || "this team";
+    if (!window.confirm(`Remove "${name}" from this session? They will be disconnected and cannot rejoin.`)) return;
+    const code = roomCode.toUpperCase();
+    socket.emit("teacher:bumpTeam", {
+      roomCode: code,
+      teamId: dingPopup.teamId,
+      reason: dingReason.trim() || "Inappropriate team name",
+    });
+    setDingPopup(null);
+    setDingReason("");
+  };
+
   const handleToggleNoise = () => {
     if (!roomCode) return;
     const code = roomCode.toUpperCase();
@@ -5319,6 +5333,17 @@ Precipitation — rain, snow, hail`}
                 +{DING_AMOUNT}
               </button>
             </div>
+            <button
+              onClick={handleBumpTeam}
+              style={{
+                marginTop: 14, padding: "8px 16px", borderRadius: 10,
+                border: "1px solid #fca5a5", background: "#fff",
+                color: "#b91c1c", fontWeight: 700, fontSize: "0.8rem",
+                cursor: "pointer", width: "100%",
+              }}
+            >
+              Bump from session
+            </button>
           </div>
         </div>
       )}

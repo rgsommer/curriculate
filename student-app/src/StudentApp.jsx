@@ -147,6 +147,7 @@ function StudentApp() {
   const [tasksetComplete, setTasksetComplete] = useState(false);
   const [postPhase, setPostPhase] = useState("tasks"); // "tasks" | "feedback" | "trophy"
   const [taskRenderError, setTaskRenderError] = useState(null);
+  const [bumped, setBumped] = useState(null); // { reason } if team was bumped by presenter
   
   const [roomCode, setRoomCode] = useState(() => lsGet(LS_KEYS.roomCode) || "");
   const [teamName, setTeamName] = useState(() => lsGet(LS_KEYS.teamName) || "");
@@ -1226,6 +1227,13 @@ function StudentApp() {
     socket.on("team:pacing-released", handlePacingRelease);
     socket.on("session:complete", handleSessionComplete);
 
+    const handleBumped = (payload) => {
+      if (payload?.teamId && payload.teamId !== teamId) return;
+      setBumped({ reason: payload?.reason || "Removed by presenter" });
+      setJoined(false);
+    };
+    socket.on("team:bumped", handleBumped);
+
     socket.emit("room:request-state", {
       roomCode: roomCode.trim().toUpperCase(),
       teamId,
@@ -1244,6 +1252,7 @@ function StudentApp() {
       socket.off("team:pacing-hold", handlePacingHold);
       socket.off("team:pacing-released", handlePacingRelease);
       socket.off("session:complete", handleSessionComplete);
+      socket.off("team:bumped", handleBumped);
     };
   }, [teamId, roomCode]
   );
@@ -3849,8 +3858,29 @@ function StudentApp() {
         </div>
       )}
 
+      {/* BUMPED SCREEN */}
+      {bumped && !joined && (
+        <main style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{
+            background: "#fff", borderRadius: 16, padding: 32, maxWidth: 400,
+            textAlign: "center", boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
+          }}>
+            <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>🚫</div>
+            <div style={{ fontSize: "1.2rem", fontWeight: 800, color: "#b91c1c", marginBottom: 8 }}>
+              Removed from Session
+            </div>
+            <div style={{ fontSize: "0.9rem", color: "#6b7280", marginBottom: 20 }}>
+              {bumped.reason}
+            </div>
+            <div style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
+              Please see your teacher.
+            </div>
+          </div>
+        </main>
+      )}
+
       {/* JOIN CARD */}
-      {!joined && (
+      {!joined && !bumped && (
         <main style={{ flex: 1, display: "flex", alignItems: "flex-start" }}>
           <div className="join-card">
             <h2

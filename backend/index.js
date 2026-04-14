@@ -5494,6 +5494,55 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
   });
 
   // --------------------------
+  // Teacher: bump (remove) a team from the session
+  // --------------------------
+  socket.on("teacher:bumpTeam", (payload = {}) => {
+    const { roomCode, teamId, reason } = payload;
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+
+    const team = room.teams?.[teamId];
+    if (!team) return;
+
+    const teamName = team.teamName || "Team";
+    console.log(`[bumpTeam] Removing "${teamName}" (${teamId}) from ${code} — ${reason || "no reason"}`);
+
+    // Remove team from room
+    delete room.teams[teamId];
+
+    // Remove their submissions so they don't appear on leaderboard
+    if (Array.isArray(room.submissions)) {
+      room.submissions = room.submissions.filter((s) => s.teamId !== teamId);
+    }
+
+    // Notify the bumped team's devices so they show a "removed" screen
+    io.to(teamId).emit("team:bumped", {
+      roomCode: code,
+      teamId,
+      teamName,
+      reason: String(reason || "Removed by presenter").slice(0, 200),
+    });
+
+    // Make the student socket(s) leave the room channel
+    const roomSockets = io.sockets.adapter.rooms.get(code);
+    if (roomSockets) {
+      for (const sid of roomSockets) {
+        const s = io.sockets.sockets.get(sid);
+        if (s && s.data?.teamId === teamId) {
+          s.leave(code);
+          s.leave(teamId);
+        }
+      }
+    }
+
+    // Broadcast updated state (team disappears from leaderboard)
+    const state = buildRoomState(room);
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
+  });
+
+  // --------------------------
   // Noise samples from student/teacher devices
   // --------------------------
   socket.on("noise:sample", (payload = {}) => {
