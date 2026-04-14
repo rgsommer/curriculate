@@ -247,7 +247,6 @@ export default function AiTasksetGenerator() {
       topicDescription: "", // special considerations
       durationMinutes: 45,
       isFixedStation: false,
-      isMultiRoomScavenger: false,
     };
   });
 
@@ -273,7 +272,6 @@ export default function AiTasksetGenerator() {
   const [wordListText, setWordListText] = useState(prefillWordText);
 
   // Multi-room list as text
-  const [multiRoomText, setMultiRoomText] = useState("");
 
   // Party mode
   const [isPartyMode, setIsPartyMode] = useState(
@@ -473,22 +471,6 @@ export default function AiTasksetGenerator() {
       return;
     }
 
-    // Multi-room rooms
-    let multiRoomRooms = [];
-    if (form.isMultiRoomScavenger) {
-      multiRoomRooms = multiRoomText
-        .split(/[\n,;]+/)
-        .map((r) => r.trim())
-        .filter(Boolean);
-
-      if (!multiRoomRooms.length) {
-        setError(
-          "For a multi-room scavenger hunt, please list at least one room/location."
-        );
-        setGenerating(false);
-        return;
-      }
-    }
 
     try {
       // Clean displays if using fixed-station mode
@@ -611,8 +593,6 @@ export default function AiTasksetGenerator() {
         isFixedStationTaskset: form.isFixedStation || cleanedDisplays.length > 0,
         displays: cleanedDisplays.length ? cleanedDisplays : undefined,
 
-        multiRoomScavenger: form.isMultiRoomScavenger,
-        multiRoomRooms,
       };
 
       // Use streaming fetch so we can show per-task progress
@@ -1693,10 +1673,6 @@ export default function AiTasksetGenerator() {
                 boxSizing: "border-box",
               }}
             />
-            <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: "0.82rem", cursor: "pointer" }}>
-              <input type="checkbox" checked={form.isMultiRoomScavenger} onChange={(e) => handleChange("isMultiRoomScavenger", e.target.checked)} />
-              Multi-room scavenger hunt
-            </label>
           </div>
 
           <div>
@@ -1757,20 +1733,6 @@ export default function AiTasksetGenerator() {
             style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.9rem", resize: "vertical", boxSizing: "border-box" }}
           />
 
-          {form.isMultiRoomScavenger && (
-            <div style={{ marginTop: 10 }}>
-              <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-                Rooms / locations for this scavenger hunt
-              </label>
-              <textarea
-                value={multiRoomText}
-                onChange={(e) => setMultiRoomText(e.target.value)}
-                rows={3}
-                placeholder={"One per line or separated by commas, e.g.\nClassroom\nHallway\nLibrary\nGym"}
-                style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.9rem", resize: "vertical", boxSizing: "border-box" }}
-              />
-            </div>
-          )}
         </div>
 
         {/* LIMIT TASK TYPES */}

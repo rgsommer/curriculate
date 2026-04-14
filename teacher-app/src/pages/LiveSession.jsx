@@ -3891,6 +3891,58 @@ if (
                 </div>
               )}
 
+              {/* Multi-room scavenger hunt toggle — shown before launch */}
+              {activeTasksetMeta && !taskFlowActive && locationOptions.length > 1 && (
+                <div style={{ marginBottom: 6, padding: "6px 8px", background: selectedRooms.length > 1 ? "#eff6ff" : "transparent", borderRadius: 8, border: selectedRooms.length > 1 ? "1px solid #bfdbfe" : "1px solid transparent" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.82rem", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedRooms.length > 1}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedRooms(locationOptions);
+                        } else {
+                          setSelectedRooms([]);
+                        }
+                      }}
+                    />
+                    Multi-room scavenger hunt
+                  </label>
+                  {selectedRooms.length > 1 && (
+                    <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {locationOptions.map((loc) => {
+                        const active = selectedRooms.includes(loc);
+                        return (
+                          <button
+                            key={loc}
+                            type="button"
+                            onClick={() => {
+                              setSelectedRooms((prev) => {
+                                const next = active
+                                  ? prev.filter((r) => r !== loc)
+                                  : [...prev, loc];
+                                return next.length > 1 ? next : prev;
+                              });
+                            }}
+                            style={{
+                              padding: "2px 8px",
+                              borderRadius: 999,
+                              border: active ? "none" : "1px solid #d1d5db",
+                              background: active ? "#3b82f6" : "#f9fafb",
+                              color: active ? "#fff" : "#6b7280",
+                              fontSize: "0.75rem",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {loc}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div
                 style={{
                   display: "flex",

@@ -443,6 +443,27 @@ export function assessTaskPlayability(rawTask) {
     }
 
     // =========================
+    // Visual observation / primary sources
+    // =========================
+    case TASK_TYPES.ART_VIEW: {
+      // Needs at least imageDescription (imageUrl validated at runtime with fallback)
+      const artCfg = t.config || {};
+      if (!artCfg.imageUrl && !artCfg.imageDescription) {
+        issues.push("art-view requires config.imageUrl or config.imageDescription");
+      }
+      break;
+    }
+
+    case TASK_TYPES.HISTORICAL_DOC: {
+      // Needs at least imageDescription (imageUrl validated at runtime with fallback)
+      const docCfg = t.config || {};
+      if (!docCfg.imageUrl && !docCfg.imageDescription) {
+        issues.push("historical-doc requires config.imageUrl or config.imageDescription");
+      }
+      break;
+    }
+
+    // =========================
     // Demo-only / meta
     // =========================
     case TASK_TYPES.TASK_RUNNER:
