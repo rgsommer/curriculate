@@ -516,6 +516,9 @@ useEffect(() => {
   const [reportProgress, setReportProgress] = useState(null); // { step, total, label }
   const [savedReportId, setSavedReportId] = useState(null);
 
+  // When a task is force-advanced, pause between tasks so teacher can "Launch" next
+  const [taskAdvancedPause, setTaskAdvancedPause] = useState(false);
+
   // Behavior ding popup state
   const [dingPopup, setDingPopup] = useState(null); // { teamId, teamName } or null
   const [dingReason, setDingReason] = useState("");
@@ -944,6 +947,18 @@ useEffect(() => {
       setTasksetLaunchProgress(0);
     });
 
+    // When a task is force-advanced (or auto-advanced), pause so teacher can launch next
+    const handleTaskAdvance = (payload) => {
+      console.log("[LiveSession] task:advance received:", payload);
+      setTaskAdvancedPause(true);
+    };
+    // When the whole taskset ends, clear pause
+    const handleTasksetEnded = () => {
+      setTaskAdvancedPause(false);
+    };
+    socket.on("task:advance", handleTaskAdvance);
+    socket.on("taskset:ended", handleTasksetEnded);
+
     socket.on("transcript:sent", handleTranscriptSent);
     socket.on("transcript:error", handleTranscriptError);
     socket.on("report:progress", handleReportProgress);
@@ -973,6 +988,8 @@ useEffect(() => {
       socket.off("mood-checkin:update", handleMoodCheckinUpdate);
 
       socket.off("taskset:error");
+      socket.off("task:advance", handleTaskAdvance);
+      socket.off("taskset:ended", handleTasksetEnded);
       socket.off("transcript:sent", handleTranscriptSent);
       socket.off("transcript:error", handleTranscriptError);
       socket.off("report:progress", handleReportProgress);
@@ -2895,10 +2912,16 @@ if (
     setEndSessionMessage("");
     setEndSessionIsError(false);
 
+    // Resolve teacher email — try multiple sources
+    const resolvedEmail = reportOwnerEmail || user?.email || "";
+    const resolvedOwnerId = reportOwnerId || user?.userId || user?.id || user?._id || "";
+
+    console.log("[LiveSession] endSessionAndEmail — ownerId:", resolvedOwnerId, "email:", resolvedEmail);
+
     socket.emit("teacher:endSessionAndEmail", {
-      roomCode: code, // ✅ must be roomCode (backend expects this)
-      ownerId: reportOwnerId || user?.userId || user?.id || user?._id,
-      teacherEmail: reportOwnerEmail || user?.email, // optional but helpful
+      roomCode: code,
+      ownerId: resolvedOwnerId,
+      teacherEmail: resolvedEmail,
       includeIndividualReports,
       assessmentCategories: teacherAssessmentCategories,
     });
@@ -3253,6 +3276,12 @@ if (
     launchBtnBg = "#9ca3af";
     launchBtnLabel = launchBtnLabelDefault;
     launchBtnOnClick = null;
+  } else if (taskFlowActive && taskAdvancedPause) {
+    // Task was force-ended; show "Launch next" so the teacher controls pacing
+    launchBtnLabel = "Launch next task";
+    launchBtnBg = "#10b981";
+    launchBtnOnClick = () => setTaskAdvancedPause(false);
+    launchBtnDisabled = false;
   } else if (taskFlowActive) {
     launchBtnLabel = "End Task Session & Generate Reports";
     launchBtnBg = "#dc2626";
@@ -3861,14 +3890,33 @@ if (
                 </button>
               </div>
 
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <button
                   type="button"
                   onClick={handleSkipTask}
-                  disabled={!taskFlowActive}
+                  disabled={!taskFlowActive || taskAdvancedPause}
                 >
                   End task → unlock next
                 </button>
+                {taskAdvancedPause && (
+                  <button
+                    type="button"
+                    onClick={handleEndSessionAndEmail}
+                    disabled={isEndingSession}
+                    style={{
+                      background: "#dc2626",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 6,
+                      padding: "6px 12px",
+                      fontSize: "0.8rem",
+                      cursor: isEndingSession ? "not-allowed" : "pointer",
+                      opacity: isEndingSession ? 0.5 : 1,
+                    }}
+                  >
+                    End Session & Reports
+                  </button>
+                )}
               </div>
 
               {/* Completion % bar */}

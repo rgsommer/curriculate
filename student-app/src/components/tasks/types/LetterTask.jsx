@@ -1,5 +1,5 @@
 // student-app/src/components/tasks/types/LetterTask.jsx
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { API_BASE_URL } from "../../../config.js";
 import DesignatedWriter from "../DesignatedWriter";
 
@@ -33,6 +33,10 @@ export default function LetterTask({
   const [loadingReply, setLoadingReply] = useState(false);
   const [replyError, setReplyError] = useState(false);
   const [conceptsFound, setConceptsFound] = useState([]);
+
+  // Undo history for accidental deletions
+  const [undoStack, setUndoStack] = useState([]);
+  const lastSnapshotRef = useRef({ text: answerDraft?.response || "", ts: Date.now() });
 
   const wordCount = useMemo(() => {
     const trimmed = String(value || "").trim();
@@ -291,10 +295,53 @@ export default function LetterTask({
 
       <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} taskIndex={task?._taskIndex} />
 
+      {/* Undo button */}
+      {undoStack.length > 0 && !isDisabled && (
+        <div style={{ marginBottom: 6, display: "flex", justifyContent: "flex-end" }}>
+          <button
+            onClick={() => {
+              if (undoStack.length === 0) return;
+              const prev = undoStack[undoStack.length - 1];
+              setUndoStack((s) => s.slice(0, -1));
+              setValue(prev);
+              lastSnapshotRef.current = { text: prev, ts: Date.now() };
+            }}
+            style={{
+              padding: "4px 12px",
+              borderRadius: 8,
+              border: "1px solid #cbd5e1",
+              background: "#f1f5f9",
+              color: "#475569",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            ↩ Undo
+          </button>
+        </div>
+      )}
+
       {/* Text area */}
       <textarea
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          const next = e.target.value;
+          const prev = value;
+          const now = Date.now();
+          const charDiff = prev.length - next.length;
+          const shouldSnapshot =
+            charDiff > 10 ||
+            (now - lastSnapshotRef.current.ts > 2000 && prev !== lastSnapshotRef.current.text);
+          if (shouldSnapshot && prev.trim()) {
+            setUndoStack((stack) => [...stack.slice(-19), prev]);
+            lastSnapshotRef.current = { text: next, ts: now };
+          }
+          setValue(next);
+        }}
         disabled={isDisabled}
         placeholder={
           letterStyle === "business"

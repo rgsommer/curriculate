@@ -212,6 +212,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
 
   const [activeTab, setActiveTab] = useState("leaderboard");
   const [showConfetti, setShowConfetti] = useState(false);
+  const [taskEndCelebration, setTaskEndCelebration] = useState(false); // true when task just ended
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [scorePopups, setScorePopups] = useState([]);
@@ -355,6 +356,17 @@ export default function HostView({ roomCode: roomCodeProp }) {
     socket.on("session-ended", handleEnded);
     socket.on("mood-checkin:update", handleMoodUpdate);
 
+    // Task force-advanced or auto-advanced → celebrate winner with confetti
+    const handleTaskAdvance = (payload) => {
+      playSound("cheer");
+      setShowConfetti(true);
+      setTaskEndCelebration(true);
+      setTimeout(() => setShowConfetti(false), 6000);
+      // Keep "Winner" label visible for 10s
+      setTimeout(() => setTaskEndCelebration(false), 10000);
+    };
+    socket.on("task:advance", handleTaskAdvance);
+
     socket.emit("room:request-state", { roomCode: code });
 
     return () => {
@@ -365,6 +377,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
       socket.off("taskSubmission", handleTaskSubmission);
       socket.off("session-ended", handleEnded);
       socket.off("mood-checkin:update", handleMoodUpdate);
+      socket.off("task:advance", handleTaskAdvance);
     };
   }, [roomCode, playSound, addScorePopup]);
 
@@ -691,8 +704,19 @@ export default function HostView({ roomCode: roomCodeProp }) {
                         </div>
 
                         <div
-                          className={`w-full h-10 md:h-12 ${podiumColors[idx]} rounded-b-3xl shadow-2xl`}
-                        />
+                          className={`w-full h-10 md:h-12 ${podiumColors[idx]} rounded-b-3xl shadow-2xl flex items-center justify-center`}
+                        >
+                          {idx === 1 && taskEndCelebration && (
+                            <motion.span
+                              initial={{ scale: 0, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              className="text-white font-black text-base md:text-lg tracking-wider drop-shadow-lg"
+                              style={{ textShadow: "0 2px 8px rgba(0,0,0,0.4)" }}
+                            >
+                              🏆 WINNER 🏆
+                            </motion.span>
+                          )}
+                        </div>
                       </>
                     );
                   })()}

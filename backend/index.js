@@ -5852,15 +5852,32 @@ socket.on(
       console.warn("[TaskTypeTimingAggregator] setup error:", e?.message || e);
     }
 
-    // 6) Determine teacher email (override -> profile -> payload)
+    // 6) Determine teacher email (override -> profile -> User model -> payload)
     let toEmail = (teacherEmail || "").toString().trim();
+    console.log(`[report] Email resolution: teacherEmail=${teacherEmail || "(none)"}, safeOwnerId=${safeOwnerId || "(none)"}`);
     try {
       if (!toEmail && safeOwnerId) {
         const profile = await TeacherProfile.findOne({ ownerId: safeOwnerId }).lean();
-        if (profile?.email) toEmail = String(profile.email).trim();
+        if (profile?.email) {
+          toEmail = String(profile.email).trim();
+          console.log(`[report] Resolved email from TeacherProfile: ${toEmail}`);
+        }
+      }
+      // Fallback: check User model directly
+      if (!toEmail && safeOwnerId) {
+        try {
+          const userDoc = await User.findById(safeOwnerId).select("email").lean();
+          if (userDoc?.email) {
+            toEmail = String(userDoc.email).trim();
+            console.log(`[report] Resolved email from User model: ${toEmail}`);
+          }
+        } catch {}
       }
     } catch (e) {
       console.warn("TeacherProfile email lookup failed:", e);
+    }
+    if (!toEmail) {
+      console.warn("[report] ⚠️ No teacher email found — email will fail. Payload teacherEmail:", teacherEmail, "ownerId:", safeOwnerId);
     }
 
     // 7) Send email (includes report teaser; emailer may attach PDF)

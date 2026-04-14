@@ -115,6 +115,10 @@ export default function OpenTextTask({
   const textareaRef = useRef(null);
   const prevWordCountRef = useRef(0);
 
+  // Undo history — snapshot every 2 seconds of typing or on large deletions
+  const [undoStack, setUndoStack] = useState([]);
+  const lastSnapshotRef = useRef({ text: initial, ts: Date.now() });
+
   const isDisabled = !!disabled || !!answered;
 
   const basePoints = task?.points || 0;
@@ -212,10 +216,36 @@ export default function OpenTextTask({
 
   const handleChange = (e) => {
     const next = e.target.value;
+    const prev = value;
+
+    // Snapshot for undo: on large deletions (>10 chars lost) or every 2s of typing
+    const now = Date.now();
+    const charDiff = prev.length - next.length;
+    const shouldSnapshot =
+      charDiff > 10 || // big deletion (accidental select-all + delete)
+      (now - lastSnapshotRef.current.ts > 2000 && prev !== lastSnapshotRef.current.text);
+
+    if (shouldSnapshot && prev.trim()) {
+      setUndoStack((stack) => [...stack.slice(-19), prev]); // keep last 20
+      lastSnapshotRef.current = { text: next, ts: now };
+    }
+
     setValue(next);
     if (errorMsg) setErrorMsg("");
     emitDraft(next);
   };
+
+  const handleUndo = () => {
+    if (undoStack.length === 0) return;
+    const restored = undoStack[undoStack.length - 1];
+    setUndoStack((stack) => stack.slice(0, -1));
+    setValue(restored);
+    emitDraft(restored);
+    lastSnapshotRef.current = { text: restored, ts: Date.now() };
+  };
+
+  // Track the text that existed before dictation started, so we append rather than replace
+  const preDictateTextRef = useRef("");
 
   const startListening = () => {
     if (typeof window === "undefined" || !window.SpeechRecognition) {
@@ -225,16 +255,27 @@ export default function OpenTextTask({
 
     try {
       const recognition = new window.SpeechRecognition();
-      recognition.lang = "en-US";
+      recognition.lang = task?.settings?.language || "en-US";
       recognition.interimResults = true;
+      recognition.continuous = true;
+
+      // Remember what was already typed so we APPEND dictated text
+      preDictateTextRef.current = value || "";
 
       recognition.onresult = (event) => {
-        let transcript = "";
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
+        let finalText = "";
+        let interimText = "";
+        for (let i = 0; i < event.results.length; i++) {
+          const t = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalText += t;
+          } else {
+            interimText += t;
+          }
         }
-        setValue(transcript);
-        emitDraft(transcript);
+        const combined = (preDictateTextRef.current + " " + finalText + interimText).replace(/^\s+/, "");
+        setValue(combined);
+        emitDraft(combined);
       };
 
       recognition.onerror = (event) => {
@@ -243,7 +284,11 @@ export default function OpenTextTask({
         if (event.error === "not-allowed") {
           setErrorMsg("Microphone access was denied. Please allow mic access and try again.");
         } else if (event.error === "no-speech") {
-          setErrorMsg("No speech detected. Try speaking more clearly.");
+          // Don't kill listening — just ignore
+          return;
+        } else if (event.error === "aborted") {
+          // Normal abort from stopListening, ignore
+          return;
         } else {
           setErrorMsg("Voice input isn't working right now. You can still type your answer.");
         }
@@ -268,11 +313,18 @@ export default function OpenTextTask({
 
   const stopListening = () => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try { recognitionRef.current.stop(); } catch {}
       recognitionRef.current = null;
     }
     setIsListening(false);
   };
+
+  // Auto-stop dictation when task becomes disabled (e.g. time's up / force-ended)
+  useEffect(() => {
+    if (isDisabled && isListening) {
+      stopListening();
+    }
+  }, [isDisabled, isListening]);
 
   const progressPercent = computedMinWords > 0 ? Math.min(100, (wordCount / computedMinWords) * 100) : (wordCount > 0 ? 100 : 0);
 
@@ -608,6 +660,29 @@ export default function OpenTextTask({
                   {charCount} chars
                 </div>
               </div>
+
+              {/* Undo button */}
+              {undoStack.length > 0 && !isDisabled && (
+                <button
+                  type="button"
+                  onClick={handleUndo}
+                  style={{
+                    fontSize: "12px",
+                    padding: "6px 12px",
+                    borderRadius: "20px",
+                    border: "none",
+                    cursor: "pointer",
+                    backgroundColor: "rgba(251,191,36,0.25)",
+                    color: "#fbbf24",
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                    transition: "all 0.2s ease",
+                  }}
+                  title="Undo last change"
+                >
+                  ↩ Undo
+                </button>
+              )}
 
               {/* Mic button */}
               <button

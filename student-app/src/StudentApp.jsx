@@ -1201,6 +1201,13 @@ function StudentApp() {
       setCurrentTaskIndex(null);
       setWaitingForLaunch(false);
       setScannerActive(false);
+      // Clear any post-submit review state so feedback form can render
+      setReviewState(null);
+      setPostSubmitSecondsLeft(null);
+      if (postSubmitTimerRef.current) {
+        clearInterval(postSubmitTimerRef.current);
+        postSubmitTimerRef.current = null;
+      }
       setPostPhase("feedback");
       tryPlaySessionEndSound();
       // Don't set tasksetComplete yet — feedback form should show first
