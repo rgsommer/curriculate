@@ -117,6 +117,8 @@ export default function MadDashTask({
   const [phase, setPhase] = useState(intraTeamEnabled ? "lobby" : "instructions");
   const [scanIdx, setScanIdx] = useState(0);
   const [errorFlash, setErrorFlash] = useState(false);
+  // Progressive hints: how many route colors have been revealed as hints
+  const [hintsUsed, setHintsUsed] = useState(0);
 
   const [runnerIdx, setRunnerIdx] = useState(0);
   const [runs, setRuns] = useState([]);
@@ -163,21 +165,30 @@ export default function MadDashTask({
     if (!ok) {
       setErrorFlash(true);
       window.setTimeout(() => setErrorFlash(false), 220);
+      // Wrong scan resets progress but timer keeps running (never resets)
       setScanIdx(0);
       return false;
+    }
+
+    // Start the clock on the very first correct scan
+    if (!startAtRef.current) {
+      startAtRef.current = performance.now();
     }
 
     const nextIdx = scanIdx + 1;
     setScanIdx(nextIdx);
 
     if (nextIdx >= route.length) {
-      const finalMs = performance.now() - (startAtRef.current || performance.now());
+      // Freeze timer at the exact moment of last scan
+      const finalMs = performance.now() - startAtRef.current;
+      setTimerMs(finalMs);
 
       const entry = {
         runnerIdx,
         runnerName: pickRunnerLabel(memberNames, runnerIdx),
         timeMs: finalMs,
         scans: route.length,
+        hintsUsed,
         atIso: new Date().toISOString(),
       };
       setRuns((prev) => [...(Array.isArray(prev) ? prev : []), entry]);
@@ -191,6 +202,8 @@ export default function MadDashTask({
           route,
           timeMs: finalMs,
           scans: route.length,
+          hintsUsed,
+          hintPenaltyPct: route.length > 0 ? Math.round((hintsUsed / route.length) * 50) : 0,
         });
         return true;
       }
@@ -257,7 +270,8 @@ export default function MadDashTask({
   const beginScanNow = () => {
     setScanIdx(0);
     setTimerMs(0);
-    startAtRef.current = performance.now();
+    // Don't start the clock yet — it starts on the FIRST successful scan
+    startAtRef.current = null;
     setPhase("scan");
   };
 
@@ -267,6 +281,7 @@ export default function MadDashTask({
     setRunnerIdx((i) => (i + 1) % n);
     setScanIdx(0);
     setTimerMs(0);
+    setHintsUsed(0);
     startAtRef.current = null;
     setPhase("lobby");
   };
@@ -285,6 +300,8 @@ export default function MadDashTask({
       runs,
       bestTimeMs: best?.timeMs ?? null,
       bestRunner: best?.runnerName ?? null,
+      hintsUsed,
+      hintPenaltyPct: route.length > 0 ? Math.round((hintsUsed / route.length) * 50) : 0,
 
       roomCode: roomCode || task?.roomCode || null,
       teamId: teamId || task?.teamId || null,
@@ -425,7 +442,9 @@ export default function MadDashTask({
                 </span>
               ))}
             </div>
-            <div className="mt-4 text-slate-600">Starting in {Math.round(revealMs / 1000)}s…</div>
+            <div className="mt-4 text-slate-600">
+              Starting in {Math.round(revealMs / 1000)}s… You can request hints during the run (costs points).
+            </div>
           </div>
         )}
 
@@ -440,7 +459,7 @@ export default function MadDashTask({
               onEnded={beginScanNow}
               onError={beginScanNow}
             />
-            <div className="mt-2 text-slate-600">Timer starts when the video finishes.</div>
+            <div className="mt-2 text-slate-600">Get ready — timer starts on your first scan!</div>
           </div>
         )}
 
@@ -459,13 +478,45 @@ export default function MadDashTask({
               Scan next: <span className="text-emerald-700">{route[scanIdx] || "—"}</span>
             </div>
 
+            {/* Progressive hints: show revealed colors */}
+            {hintsUsed > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2 items-center">
+                <span className="text-slate-500 font-bold text-sm">Hints:</span>
+                {route.slice(0, hintsUsed).map((c, i) => (
+                  <span key={i} className="px-2 py-1 rounded-full bg-amber-50 border border-amber-300 font-bold text-amber-800 text-sm">
+                    {i + 1}. {c}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {hintsUsed < route.length && (
+                <button
+                  className="px-4 py-2 rounded-full bg-amber-500 text-white font-bold text-sm"
+                  onClick={() => setHintsUsed((h) => h + 1)}
+                >
+                  Hint ({hintsUsed + 1}/{route.length}) — costs points
+                </button>
+              )}
+              {hintsUsed > 0 && (
+                <span className="text-amber-700 font-bold text-sm">
+                  −{Math.round((hintsUsed / route.length) * 50)}% points
+                </span>
+              )}
+            </div>
+
             <div
-              className={`mt-4 p-4 rounded-2xl border ${
+              className={`mt-3 p-4 rounded-2xl border ${
                 errorFlash ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50"
               }`}
             >
               <div className="text-slate-700 font-bold">Use the on-screen scanner.</div>
-              <div className="text-slate-600 text-sm mt-1">Wrong scan resets the route.</div>
+              <div className="text-slate-600 text-sm mt-1">
+                {!startAtRef.current && scanIdx === 0
+                  ? "Timer starts on your first scan."
+                  : "Wrong scan resets progress (timer keeps running)."}
+              </div>
             </div>
           </div>
         )}

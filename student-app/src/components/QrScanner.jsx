@@ -166,10 +166,10 @@ export default function QrScanner({ active = true, onCode, onScan, onError }) {
         onError?.("There was a problem reading that code. Try holding it steady and closer.");
       }
 
-      // ~10fps to keep CPU sane
+      // ~15fps — fast enough for fluid scanning, light enough for tablets
       timeoutIdRef.current = window.setTimeout(() => {
         rafIdRef.current = requestAnimationFrame(loop);
-      }, 100);
+      }, 66);
     };
 
     rafIdRef.current = requestAnimationFrame(loop);

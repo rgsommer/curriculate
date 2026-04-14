@@ -2382,7 +2382,13 @@ function StudentApp() {
 
     const now = Date.now();
     const last = lastScanKeyRef.current;
-    if (last?.key === scanKey && now - (last?.atMs || 0) < 1200) {
+    // Shorter dedup window during task-scanner types (MadDash/PMC) for snappier scanning;
+    // longer window for station navigation scans to avoid double-taps.
+    const liveTaskPeek = currentTaskRef.current;
+    const peekType = String(liveTaskPeek?.taskType || liveTaskPeek?.type || "").toLowerCase().replace(/_/g, "-");
+    const isTaskScanner = peekType === "physical-multiple-choice" || peekType === "mad-dash" || peekType === "mad-dash-sequence";
+    const dedupMs = isTaskScanner ? 400 : 1200;
+    if (last?.key === scanKey && now - (last?.atMs || 0) < dedupMs) {
       return false;
     }
     lastScanKeyRef.current = { key: scanKey, atMs: now };

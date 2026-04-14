@@ -4128,6 +4128,30 @@ if (!isMultiPack && task.taskType === "guess-who") {
       };
     }
 
+    // ✅ MAD DASH — full credit for completion, minus hint penalty
+    if (!isMultiPack && (task.taskType === "mad-dash" || task.taskType === "mad-dash-sequence") && answer && typeof answer === "object") {
+      const completed = answer.completed === true;
+      const hintPct = Math.max(0, Math.min(50, Number(answer.hintPenaltyPct) || 0));
+      if (completed) {
+        const multiplier = (100 - hintPct) / 100;
+        pointsEarned = Math.round(basePoints * multiplier);
+        correct = true;
+      } else {
+        pointsEarned = Math.round(basePoints * 0.15); // participation
+        correct = null;
+      }
+      aiScore = {
+        strategy: "mad-dash-client",
+        correct,
+        completed,
+        hintsUsed: Number(answer.hintsUsed) || 0,
+        hintPenaltyPct: hintPct,
+        timeMs: answer.timeMs || answer.bestTimeMs || null,
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+      };
+    }
+
     // ✅ TRUE-FALSE TIC-TAC-TOE — trust client scoring (per-player + team)
     if (!isMultiPack && task.taskType === "true-false-tictactoe" && answer && typeof answer === "object") {
       const clientTeamPts = Number(answer.teamPointsEarned || answer.pointsEarned) || 0;
