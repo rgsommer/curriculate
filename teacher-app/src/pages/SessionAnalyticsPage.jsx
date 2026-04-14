@@ -132,19 +132,57 @@ export default function SessionAnalyticsPage() {
   }, [id]);
 
   useEffect(() => {
+    // Try the reports endpoint first (immutable snapshot); fall back to legacy analytics
     api
-      .get(`/analytics/sessions/${id}`)
+      .get(`/reports/${id}`)
       .then((res) => {
-        setSession(res.data.sessionAnalytics);
-        setStudentAnalytics(res.data.studentAnalytics || []);
-        setStudentGrades(res.data.studentGrades || []);
-        setGradingConfig(res.data.gradingConfig || null);
-        setClassChatBlurb(res.data.classChatBlurb || "");
-        setSkillsDeveloped(res.data.skillsDeveloped || []);
-        setTeamFeedback(res.data.teamFeedback || []);
+        const doc = res.data.report || res.data;
+        // Map SessionReport fields to what the page expects
+        setSession({
+          _id: doc._id,
+          classroomName: doc.className || doc.classroomName || "Class",
+          taskSetName: doc.taskSetName || doc.headline || "Session",
+          startedAt: doc.startedAt || doc.createdAt,
+          classAverageScore: doc.classAverageScore,
+          classAverageAccuracy: doc.classAverageAccuracy ?? doc.classAverageScore ?? null,
+          classAverageEngagement: doc.classAverageEngagement ?? null,
+          noiseSummary: doc.noiseSummary ?? null,
+          tasks: doc.summary?.tasks || [],
+          teams: (doc.teams || []).map((t) => ({
+            ...t,
+            name: t.teamName || t.name,
+            score: t.teamPoints ?? t.scorePercent ?? 0,
+          })),
+          sharedFromTeacherName: doc.sharedFromTeacherName || "",
+          sharedFromTeacherEmail: doc.sharedFromTeacherEmail || "",
+          runByPresenterName: doc.runByPresenterName || "",
+          totalTasks: doc.summary?.totalTasks ?? (doc.teams?.[0]?.tasksCompleted ?? 0),
+          completedTasks: doc.summary?.completedTasks ?? (doc.teams || []).reduce((s, t) => s + (t.tasksCompleted || 0), 0),
+          roomCode: doc.roomCode || "",
+          planTierUsed: doc.planTierUsed || "",
+        });
+        setStudentAnalytics(doc.perParticipant || []);
+        setStudentGrades(doc.studentGrades || []);
+        setGradingConfig(doc.gradingConfig || null);
+        setClassChatBlurb(doc.summary?.classChatBlurb || "");
+        setSkillsDeveloped(doc.summary?.skillsDeveloped || []);
+        setTeamFeedback(
+          (doc.teams || [])
+            .filter(
+              (t) =>
+                (t.exitFeedback && (t.exitFeedback.rating != null || t.exitFeedback.highlights)) ||
+                (t.moodEntry && t.moodEntry.moods?.length > 0)
+            )
+            .map((t) => ({
+              teamName: t.teamName,
+              members: t.members || [],
+              exitFeedback: t.exitFeedback || null,
+              moodEntry: t.moodEntry || null,
+            }))
+        );
       })
       .catch((err) => {
-        console.error(err);
+        console.error("Report load error:", err);
         setError(err.response?.data?.error || "Unable to load session.");
       })
       .finally(() => setLoading(false));
