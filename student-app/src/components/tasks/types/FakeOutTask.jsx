@@ -40,7 +40,16 @@ function seededShuffle(array, seedStr) {
   return copy;
 }
 
+// Generate a random salt once per component instance so option order
+// varies between play-throughs but stays stable during a single game.
+const useStableSalt = () => {
+  const ref = React.useRef(null);
+  if (ref.current === null) ref.current = String(Math.random()).slice(2, 10);
+  return ref.current;
+};
+
 const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, memberNames = [] }) => {
+  const shuffleSalt = useStableSalt();
   const cfg = task?.config && typeof task.config === "object" ? task.config : {};
 
   // Use real team size when we have real names; fall back to config
@@ -137,7 +146,7 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
           { text: "", role: "bluff", isCorrect: false },
         ];
 
-        semantic = seededShuffle(semantic, `${taskKey}:round:${idx}:${statement}`);
+        semantic = seededShuffle(semantic, `${taskKey}:round:${idx}:${shuffleSalt}:${statement}`);
 
         // Extract for UI
         const options = semantic.map((o) => o.text);
@@ -182,7 +191,7 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
         blanks: fallbackOptions.map((o) => !normStr(o)),
       },
     ];
-  }, [cfg.rounds, task?._id, task?.id]);
+  }, [cfg.rounds, task?._id, task?.id, shuffleSalt]);
 
   const pointsPerCorrect = Math.max(1, Math.min(50, Number(cfg.pointsPerCorrect) || 10));
   const readerBonusPoints = Math.max(0, Math.min(50, Number(cfg.readerBonusPoints) || 5));
