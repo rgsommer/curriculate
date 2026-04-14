@@ -838,9 +838,9 @@ export function assertValidAiTask(expectedType, task) {
 
 export const retryMustHave = {
   [TASK_TYPES.MULTIPLE_CHOICE]:
-    'MULTIPLE_CHOICE must include items[] with 3–5 questions. Put questions ONLY in top-level items[] (do NOT include config.items). Each item: { id, prompt, options[], correctAnswer } (correctAnswer is an index). IMPORTANT: Vary the correctAnswer position — use at least 3 different index values across items. Do NOT put the correct answer in the same position for every question.',
+    'MULTIPLE_CHOICE must include items[] with 3–5 questions. Put questions ONLY in top-level items[] (do NOT include config.items). Each item: { id, prompt, options[], correctAnswer } (correctAnswer is an index). IMPORTANT: Vary the correctAnswer position — use at least 3 different index values across items. Do NOT put the correct answer in the same position for every question. DOUBLE-CHECK: For EACH question, verify that options[correctAnswer] is actually the factually correct answer.',
   [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]:
-    'PHYSICAL_MULTIPLE_CHOICE must include items[] with EXACTLY 4 questions. Put questions ONLY in top-level items[] (do NOT include config.items). Each item: { id, prompt, options[4], correctAnswer } where correctAnswer is a 0-based index. IMPORTANT: Vary the correctAnswer position — use at least 3 different index values across items.',
+    'PHYSICAL_MULTIPLE_CHOICE must include items[] with EXACTLY 4 questions. Put questions ONLY in top-level items[] (do NOT include config.items). Each item: { id, prompt, options[4], correctAnswer } where correctAnswer is a 0-based index. IMPORTANT: Vary the correctAnswer position — use at least 3 different index values across items. DOUBLE-CHECK: For EACH question, verify that options[correctAnswer] is actually the factually correct answer. Read back the question, read the option at the index you chose, and confirm it is right before finalizing.',
   [TASK_TYPES.TRUE_FALSE]:
     "TRUE_FALSE must include items[] with at least 3 statements. Each item: { id, prompt, correctAnswer: 0|1 } where 1=True, 0=False.",
   [TASK_TYPES.MUSICAL_CHAIRS]:
@@ -890,7 +890,7 @@ export const retryMustHave = {
   [TASK_TYPES.JEOPARDY]:
     'JEOPARDY (BrainBlitz) must include clues[] with at least 5 SHORT clue STRINGS and a correctAnswer string (the single target answer). Also include config.clues and config.correctAnswer mirroring the root fields. CRITICAL: ALL clues must describe the SAME single concept/answer. Do NOT mix clues about different topics (e.g. do NOT have some clues about multiplication and others about addition). Every clue must be a valid hint for correctAnswer.',
   [TASK_TYPES.HANGMAN_DUEL]:
-    "HANGMAN_DUEL must include wordsByStation[] (4–8). Each entry: { word, hint }. Words must be PURE ALPHABETIC (only A-Z letters, no numbers, hyphens, apostrophes, or special characters) and come from aiWordBank.",
+    "HANGMAN_DUEL must include wordsByStation[] (exactly 8). Each entry: { word, hint }. Words must be PURE ALPHABETIC (only A-Z letters, no numbers, hyphens, apostrophes, or special characters) and come from aiWordBank. CRITICAL: Each hint must be a real DEFINITION or CONTEXT CLUE for the word (e.g. 'The force that pulls objects toward Earth' for GRAVITY). Do NOT use lazy placeholders like 'Think about this N-letter word' — those will be REJECTED.",
   [TASK_TYPES.FLASHCARDS]:
     'FLASHCARDS: Pick 12–20 terms from the vocabulary list as card fronts (question field). Write a clear definition for each as the card back (answer field). config.items (>=5). Each item: { question, answer }. NEVER use placeholder text like "Term 1" or "Card 2".',
   [TASK_TYPES.FLASHCARDS_RACE]:
@@ -918,7 +918,7 @@ export const retryMustHave = {
   [TASK_TYPES.PRONUNCIATION]:
     "PRONUNCIATION must include referenceText (non-empty string) AND (optional) targetWords array. Do not omit referenceText.",
   [TASK_TYPES.ROLE_PLAY_DECK]:
-    "ROLE_PLAY_DECK must include config.scenario (non-empty string) and config.roles (array of at least 3 role objects). Each role needs name + goal + constraint. Do not omit.",
+    "ROLE_PLAY_DECK must include config.scenario (non-empty string) and config.roles (array of at least 3 role objects). Each role MUST have: name (string), goal (a specific objective the character pursues — NOT empty), and constraint (a limitation or conflict — NOT empty). Empty goal or constraint strings will be REJECTED. Do not omit any field.",
   [TASK_TYPES.SCRIPT_PLAY]:
     "SCRIPT_PLAY must include lines/dialogue as an array of at least 8 lines. Each line should be a string or { speaker, text }. Do not omit.",
   [TASK_TYPES.TRUE_FALSE_TICTACTOE]:

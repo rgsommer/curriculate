@@ -1710,7 +1710,7 @@ export function normalizeTaskByType(taskType, rawTask) {
               const obj = isObject(w) ? { ...w } : {};
               const word = asNonEmptyString(obj.word, asNonEmptyString(obj.answer, asNonEmptyString(obj.text, "")));
               const hint = asNonEmptyString(obj.hint, asNonEmptyString(obj.clue, asNonEmptyString(obj.category, "")));
-              return { word, hint: hint || (word ? `Think about this ${word.length}-letter word` : "") };
+              return { word, hint: hint || "" };
             })
             .filter((x) => x.word)
         : [];
@@ -2621,7 +2621,12 @@ export function validateTaskByType(taskType, task) {
       }
       for (const w of wb) {
         if (!isNonEmptyString(w?.word)) errors.push("hangman-duel: each wordsByStation.word must be non-empty");
-        if (!isNonEmptyString(w?.hint)) errors.push("hangman-duel: each wordsByStation.hint must be non-empty");
+        const hint = String(w?.hint || "").trim();
+        if (!hint) {
+          errors.push("hangman-duel: each wordsByStation.hint must be non-empty");
+        } else if (/^think about this \d+-letter word/i.test(hint)) {
+          errors.push(`hangman-duel: hint "${hint}" is a placeholder — hints must be real definitions or clues`);
+        }
       }
       break;
     }
@@ -2803,6 +2808,11 @@ export function validateTaskByType(taskType, task) {
       const rpCfg = task.config || {};
       if (!Array.isArray(rpCfg.roles) || rpCfg.roles.length < 2) {
         errors.push("role-play-deck requires config.roles[] with at least 2 named roles");
+      } else {
+        const emptyGoals = rpCfg.roles.filter((r) => !String(r?.goal || "").trim());
+        const emptyConstraints = rpCfg.roles.filter((r) => !String(r?.constraint || "").trim());
+        if (emptyGoals.length > 0) errors.push(`${emptyGoals.length} role(s) have empty goal — each role needs a specific goal`);
+        if (emptyConstraints.length > 0) errors.push(`${emptyConstraints.length} role(s) have empty constraint — each role needs a constraint`);
       }
       if (!isNonEmptyString(rpCfg.scenario)) {
         errors.push("role-play-deck requires config.scenario (non-empty)");
