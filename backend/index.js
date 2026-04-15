@@ -594,6 +594,7 @@ function getSessionByRoomCode(code) {
 // S3 Media Upload (Presigned URLs)
 // ------------------------------
 const AI_MODEL = process.env.AI_MODEL || "gpt-5.4-mini";
+const AI_MODEL_FULL = process.env.AI_MODEL_FULL || "gpt-4.1";
 
 const AWS_REGION = process.env.AWS_REGION || "us-east-2";
 const S3_BUCKET = process.env.S3_BUCKET || "";
@@ -9595,8 +9596,14 @@ function buildRubricInstructions({
         }
       }
 
+      // Use the full model for KITA grading (Ontario 9+) — it follows
+      // complex multi-step section-grouping instructions more reliably.
+      const useFullModel = standards === "canada" && (band === "9-10" || band === "11+");
+      const gradingModel = useFullModel ? AI_MODEL_FULL : AI_MODEL;
+      console.log(`[grade] model=${gradingModel} (full=${useFullModel}, standards=${standards}, band=${band})`);
+
       const response = await openai.responses.create({
-        model: AI_MODEL,
+        model: gradingModel,
         input: [{ role: "user", content: userContent }],
         text: { format: { type: "json_schema", name: schema.name, strict: true, schema: schema.schema } },
         max_output_tokens: 3000
