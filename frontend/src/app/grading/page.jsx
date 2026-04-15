@@ -2592,9 +2592,18 @@ export default function GradingPage() {
 
                 <button
                   onClick={clearAll}
+                  onDoubleClick={() => {
+                    clearAll();
+                    setStickyRubricText("");
+                    setStickyRubricSource("");
+                    setStickyRubricCapturedAt("");
+                    setStickyAnswerKeyText("");
+                    setStickyAnswerKeyCapturedAt("");
+                  }}
                   style={styles.secondaryBtn}
-                  disabled={submitting || busyCapture || busyUpload || (!photos.length && !serverText)}
+                  disabled={submitting || busyCapture || busyUpload || (!photos.length && !serverText && !stickyRubricText && !stickyAnswerKeyText)}
                   type="button"
+                  title="Click to clear photos & work. Double-click to also clear captured rubric & answer key."
                 >
                   Clear
                 </button>
