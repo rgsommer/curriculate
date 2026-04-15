@@ -9706,7 +9706,9 @@ function buildRubricInstructions({
       const userContent = [{ type: "input_text", text: instructionsWithInferenceFinal }];
 
       // Add answer key images first (if teacher tagged any) with clear label
-      if (hasAnswerKeyImages) {
+      // Skip raw images if extraction already produced answerKeyOverride text —
+      // the text is already embedded in the prompt and re-sending images wastes tokens/time
+      if (hasAnswerKeyImages && !effectiveAnswerKey) {
         userContent.push({
           type: "input_text",
           text: "ANSWER KEY / SOLUTION SHEET (provided by teacher — use this to grade the student work that follows):\nLook carefully at the margins for KITA category annotations (e.g., /2T, /3A, T/2) and point values.",

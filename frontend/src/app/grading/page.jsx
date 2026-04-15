@@ -1714,7 +1714,9 @@ export default function GradingPage() {
         const payload = {
           anonId,
           images: images || undefined,
-          answerKeyImages: answerKeyImages || undefined,
+          // Skip sending raw answer key images if extraction already produced text —
+          // avoids redundant image processing on the grading call
+          answerKeyImages: (effectiveAnswerKey.length ? undefined : answerKeyImages) || undefined,
           workInput: inputMode === "paste" && trimmedWork ? trimmedWork : undefined,
           rubricOverride: effectiveRubric.length ? effectiveRubric : null,
           answerKeyOverride: effectiveAnswerKey.length ? effectiveAnswerKey : null,
