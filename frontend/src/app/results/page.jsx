@@ -96,6 +96,7 @@ function parseTeacherBlock(payloadText) {
     nextSteps: [],
     overallComment: "",
     sections: [],
+    isKita: false,
     evidenceLinks: [],     // ✅ NEW
     evidenceText: "",      // ✅ NEW
     savedCaptures: [],
@@ -126,6 +127,7 @@ function parseTeacherBlock(payloadText) {
     "Next Steps:",
     "Overall Comment:",
     "Sections:",
+    "Achievement Categories (KITA):",
     "Saved captures (30-day links):",
   ]);
 
@@ -137,6 +139,7 @@ function parseTeacherBlock(payloadText) {
     "Next Steps:": "nextSteps",
     "Overall Comment:": "overallComment",
     "Sections:": "sections",
+    "Achievement Categories (KITA):": "sections",
     "Saved captures (30-day links):": "savedCaptures",
   };
 
@@ -157,6 +160,10 @@ function parseTeacherBlock(payloadText) {
       }
 
       current = h;
+
+      if (current === "Achievement Categories (KITA):") {
+        out.isKita = true;
+      }
 
       // start fresh for new overall comment block
       if (current === "Overall Comment:") {
@@ -191,18 +198,22 @@ function parseTeacherBlock(payloadText) {
       continue;
     }
 
-    if (current === "Sections:") {
+    if (current === "Sections:" || current === "Achievement Categories (KITA):") {
       const raw = ln;              // keep raw line
       const trimmed = raw.trim();
 
-      // Start a new section ONLY for bullets that look like section headers.
+      // Start a new section for bullets that look like section headers.
       // e.g. "- Part A — Matching: 10/10 — ..."
+      // or  "- K Knowledge & Understanding: 3.5/5 (25%) — comment"
+      // or  "- Category Name: 4/5 — comment"
       if (raw.startsWith("- ")) {
         const afterDash = raw.slice(2).trim();
 
+        // A section header if it matches Part/Section, or contains a score pattern like "3/5" or "10/20"
         const isSectionHeader =
           /^Part\s+[A-Z0-9]+\b/i.test(afterDash) ||          // Part A, Part 1, etc
-          /^Section\b/i.test(afterDash);                     // Section ...
+          /^Section\b/i.test(afterDash) ||                    // Section ...
+          /\d+\.?\d*\s*\/\s*\d+/.test(afterDash);            // any "score/outOf" pattern (e.g. 3.5/5, 10/20)
 
         // Also: if it's a numbered question bullet like "- 2. ...", treat as detail
         const isNumberedItem = /^\d+\./.test(afterDash);
@@ -215,6 +226,14 @@ function parseTeacherBlock(payloadText) {
 
         // otherwise, it's a detail line inside current section
         if (currentSection) currentSection.lines.push(afterDash);
+        continue;
+      }
+
+      // "Weighted Total: 78%" line — store as a special summary line
+      if (trimmed.startsWith("Weighted Total:")) {
+        if (currentSection) out.sections.push(currentSection);
+        currentSection = null;
+        out.sections.push({ title: trimmed, lines: [] });
         continue;
       }
 
@@ -661,7 +680,7 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
               ) : null}
 
               {parsed.sections.length ? (
-                <Card title="Sections">
+                <Card title={parsed.isKita ? "Achievement Categories (KITA)" : "Sections"}>
                   <div style={{ display: "grid", gap: 10 }}>
                     {parsed.sections.map((sec, i) => (
                       <div
