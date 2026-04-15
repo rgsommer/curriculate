@@ -79,7 +79,7 @@ export default function PrepTimePage() {
   const topRow = data.rows;
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       {/* Hero */}
       <section className="relative overflow-hidden px-6 pt-14 pb-10 sm:pt-16 sm:pb-12">
         <div className="mx-auto max-w-6xl">
@@ -306,7 +306,7 @@ export default function PrepTimePage() {
           </div>
         </div>
       </section>
-    </main>
+    </div>
   );
 }
 

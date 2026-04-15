@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function NotFound() {
   return (
-    <main style={{ padding: 22, maxWidth: 820, margin: "0 auto" }}>
+    <div style={{ padding: 22, maxWidth: 820, margin: "0 auto" }}>
       <h1 style={{ marginTop: 0 }}>Page not found</h1>
       <p style={{ opacity: 0.8 }}>
         If you scanned a station QR code, start with the demo.
@@ -23,6 +23,6 @@ export default function NotFound() {
       >
         Go to Demo
       </Link>
-    </main>
+    </div>
   );
 }

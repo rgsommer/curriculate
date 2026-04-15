@@ -58,7 +58,7 @@ function Table({ title, rightLabel, rows }: { title: string; rightLabel: string;
 
 export default function CompareOnePager() {
   return (
-    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 px-6 py-14">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 px-6 py-14">
       <div className="mx-auto max-w-7xl">
         <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-10">
           <div>
@@ -151,6 +151,6 @@ export default function CompareOnePager() {
           </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

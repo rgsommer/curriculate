@@ -125,7 +125,7 @@ function EngCard({
 
 export default function AboutCampfirePage() {
   return (
-    <main className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50">
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -692,6 +692,6 @@ export default function AboutCampfirePage() {
       <footer className="border-t border-slate-200 py-6 text-center text-xs text-slate-500">
         © {new Date().getFullYear()} Campfire. All rights reserved.
       </footer>
-    </main>
+    </div>
   );
 }
