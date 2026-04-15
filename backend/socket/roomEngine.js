@@ -399,14 +399,15 @@ export function createRoomEngine(io) {
       }
     }
 
-    // Compute pointsPossible per team using the 10× multiplier that scoring uses,
+    // Compute pointsPossible per team using the same formula as scoring:
+    //   basePoints = (task.points ?? 100) * 10
     // so that percentages come out correctly (submissions store 10× multiplied points).
     for (const ts of Object.values(teamStats)) {
       let possible = 0;
       for (const idx of ts.taskIndices) {
         const t = tasks[idx];
-        const rawPts = t ? (t.points ?? 10) : 10;
-        possible += rawPts * 10; // match the 10× scoring multiplier
+        const rawPts = t ? (t.points ?? 100) : 100;
+        possible += rawPts * 10; // match the 10× scoring multiplier in index.js
       }
       ts.pointsPossible = possible;
     }

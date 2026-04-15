@@ -8,7 +8,9 @@ const API_BASE = API_BASE_URL;
 const PLAN_LABELS = {
   FREE: "Free",
   TEACHER_PLUS: "Teacher Plus",
-  SCHOOL: "School / Campus",
+  TEACHER_PRO: "Teacher Pro",
+  SCHOOL_PLUS: "School Plus",
+  SCHOOL_PRO: "School Pro",
 };
 
 function formatPlanLabel(planName) {
@@ -21,7 +23,7 @@ export default function MyPlanPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-    useEffect(() => {
+  useEffect(() => {
     let cancelled = false;
 
     async function load() {
@@ -57,9 +59,16 @@ export default function MyPlanPage() {
   const planLabel = formatPlanLabel(tier);
   const used = sub?.aiTasksetsUsedThisMonth ?? 0;
 
-  // Simple defaults for now – you can tune later.
-  const maxAi =
-    tier === "FREE" ? 1 : tier === "TEACHER_PLUS" ? 10 : tier === "SCHOOL" ? 50 : null;
+  const AI_LIMITS = {
+    FREE: 25,
+    TEACHER_PLUS: 250,
+    TEACHER_PRO: 2000,
+    SCHOOL_PLUS: 20000,
+    SCHOOL_PRO: 100000,
+  };
+  const maxAi = AI_LIMITS[tier] ?? AI_LIMITS.FREE;
+
+  const isPaid = tier !== "FREE";
 
   return (
     <div
@@ -99,6 +108,7 @@ export default function MyPlanPage() {
             justifyContent: "space-between",
             alignItems: "flex-start",
             gap: 16,
+            flexWrap: "wrap",
           }}
         >
           <div>
@@ -107,12 +117,14 @@ export default function MyPlanPage() {
                 display: "inline-block",
                 padding: "4px 10px",
                 borderRadius: 999,
-                border: "1px solid #d1d5db",
+                border: isPaid ? "1px solid #0ea5e9" : "1px solid #d1d5db",
                 fontSize: "0.8rem",
-                background: "#ffffff",
+                background: isPaid ? "#f0f9ff" : "#ffffff",
+                color: isPaid ? "#0369a1" : undefined,
+                fontWeight: 700,
               }}
             >
-              Current plan: <strong>{planLabel}</strong>
+              Current plan: {planLabel}
             </div>
             {sub?.currentPeriodStart && sub?.currentPeriodEnd && (
               <p
@@ -130,27 +142,33 @@ export default function MyPlanPage() {
             )}
           </div>
 
-          {/* Upgrade CTA – just messaging for now */}
+          {/* Upgrade CTA */}
           {tier === "FREE" && (
             <div style={{ textAlign: "right" }}>
               <p style={{ fontSize: "0.8rem", color: "#4b5563", margin: 0 }}>
-                Ready to unlock more analytics and reports?
+                Ready to unlock more?
               </p>
-              <p style={{ fontSize: "0.8rem", color: "#4b5563", margin: 0 }}>
-                Teacher Plus adds richer reporting, individual student
-                snapshots, and more AI generation room.
+              <p style={{ fontSize: "0.8rem", color: "#4b5563", margin: "4px 0 0" }}>
+                Teacher Plus adds student-level reporting, PDF exports, AI-themed selfies, and more AI generation.
               </p>
-              <p
+              <a
+                href="https://www.curriculate.net/pricing"
+                target="_blank"
+                rel="noopener noreferrer"
                 style={{
-                  fontSize: "0.75rem",
-                  color: "#6b7280",
-                  marginTop: 4,
-                  marginBottom: 0,
+                  display: "inline-block",
+                  marginTop: 8,
+                  padding: "6px 14px",
+                  borderRadius: 999,
+                  background: "#0ea5e9",
+                  color: "#fff",
+                  fontSize: "0.8rem",
+                  fontWeight: 700,
+                  textDecoration: "none",
                 }}
               >
-                For now, upgrading is handled manually. Get in touch to upgrade
-                your account.
-              </p>
+                View plans &amp; pricing
+              </a>
             </div>
           )}
         </div>
@@ -169,8 +187,8 @@ export default function MyPlanPage() {
               {maxAi != null && (
                 <>
                   {" "}
-                  Your {planLabel} plan includes{" "}
-                  <strong>{maxAi}</strong> per month.
+                  Your {planLabel} plan includes up to{" "}
+                  <strong>{maxAi.toLocaleString()}</strong> per month.
                 </>
               )}
             </p>
@@ -178,7 +196,7 @@ export default function MyPlanPage() {
         </div>
       </section>
 
-      {/* Plan comparison – static marketing view */}
+      {/* Plan comparison */}
       <section>
         <h2 style={{ fontSize: "1rem", marginBottom: 8 }}>
           What each plan unlocks
@@ -199,77 +217,103 @@ export default function MyPlanPage() {
           >
             <thead style={{ background: "#f3f4f6" }}>
               <tr>
-                <th
-                  style={{
-                    textAlign: "left",
-                    padding: "8px 10px",
-                    borderBottom: "1px solid #e5e7eb",
-                  }}
-                >
+                <th style={{ textAlign: "left", padding: "8px 10px", borderBottom: "1px solid #e5e7eb" }}>
                   Feature
                 </th>
                 <th style={thStyle}>Free</th>
                 <th style={thStyle}>Teacher Plus</th>
+                <th style={thStyle}>Teacher Pro</th>
                 <th style={thStyle}>School</th>
               </tr>
             </thead>
             <tbody>
               <FeatureRow
-                label="Run live sessions with stations"
+                label="Live sessions with QR stations"
                 free="✓"
                 plus="✓"
+                pro="✓"
+                school="✓"
+              />
+              <FeatureRow
+                label="Fixed-station display assignment"
+                free="✓"
+                plus="✓"
+                pro="✓"
+                school="✓"
+              />
+              <FeatureRow
+                label="Multi-room scavenger hunts"
+                free="—"
+                plus="—"
+                pro="✓"
+                school="✓"
+              />
+              <FeatureRow
+                label="Team selfie"
+                free="First 2 sessions"
+                plus="✓"
+                pro="✓"
+                school="✓"
+              />
+              <FeatureRow
+                label="AI-themed selfie images"
+                free="—"
+                plus="✓"
+                pro="✓"
                 school="✓"
               />
               <FeatureRow
                 label="Basic session summary"
                 free="✓"
                 plus="✓"
+                pro="✓"
                 school="✓"
               />
               <FeatureRow
-                label="Individual student snapshot pages"
+                label="Student-level reporting &amp; grades"
                 free="—"
                 plus="✓"
-                school="✓"
-              />
-              <FeatureRow
-                label="Richer analytics dashboard"
-                free="—"
-                plus="✓"
+                pro="✓"
                 school="✓"
               />
               <FeatureRow
                 label="Email PDF transcripts"
                 free="Limited"
                 plus="✓"
+                pro="✓"
+                school="✓"
+              />
+              <FeatureRow
+                label="Student email reports"
+                free="—"
+                plus="✓"
+                pro="✓"
                 school="✓"
               />
               <FeatureRow
                 label="AI task sets per month"
-                free="Low"
-                plus="More"
-                school="Most / unlimited (admin-defined)"
+                free="25"
+                plus="250"
+                pro="2,000"
+                school="20,000+"
               />
               <FeatureRow
-                label="Advanced reporting & exports"
+                label="Advanced reporting &amp; exports"
                 free="—"
                 plus="Some"
+                pro="✓"
                 school="Full staff / school view"
+              />
+              <FeatureRow
+                label="Priority support"
+                free="—"
+                plus="—"
+                pro="✓"
+                school="✓"
               />
             </tbody>
           </table>
         </div>
-
-        <p
-          style={{
-            fontSize: "0.75rem",
-            color: "#6b7280",
-            marginTop: 8,
-          }}
-        >
-          Exact limits (AI calls, exports, etc.) can be tuned as we go, but
-          this gives you and future users a clear sense of the tiers.
-        </p>
       </section>
     </div>
   );
@@ -282,7 +326,7 @@ const thStyle = {
   minWidth: 80,
 };
 
-function FeatureRow({ label, free, plus, school }) {
+function FeatureRow({ label, free, plus, pro, school }) {
   return (
     <tr>
       <td
@@ -295,6 +339,7 @@ function FeatureRow({ label, free, plus, school }) {
       </td>
       <td style={tdCenterStyle}>{free}</td>
       <td style={tdCenterStyle}>{plus}</td>
+      <td style={tdCenterStyle}>{pro}</td>
       <td style={tdCenterStyle}>{school}</td>
     </tr>
   );

@@ -196,7 +196,7 @@ export default function SessionAnalyticsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
           <Link
-            to="/analytics"
+            to="/reports"
             className="text-xs text-blue-600 underline inline-block mb-1"
           >
             ← Back to Analytics
@@ -440,7 +440,7 @@ export default function SessionAnalyticsPage() {
                           : "text-red-700 bg-red-50";
                       return (
                         <tr key={idx} className="border-t hover:bg-gray-50">
-                          <td className="p-2 font-medium">{g.studentName}</td>
+                          <td className="p-2 font-medium">{g.studentName === "Unknown" && g.teamName ? g.teamName : g.studentName}</td>
                           <td className="p-2 text-gray-600">{g.teamName || "—"}</td>
                           <td className="p-2 text-right">
                             {g.pointsEarned}/{g.pointsPossible}
@@ -508,27 +508,37 @@ export default function SessionAnalyticsPage() {
                 </tr>
               </thead>
               <tbody>
-                {studentAnalytics.map((s) => (
-                  <tr
-                    key={s._id}
-                    className="border-t cursor-pointer hover:bg-gray-50"
-                    onClick={() => setSelectedStudent(s)}
-                  >
-                    <td className="p-2">{s.studentName}</td>
-                    <td className="p-2 text-right">
-                      {s.totalPoints}/{s.maxPoints}
-                    </td>
-                    <td className="p-2 text-right">
-                      {s.accuracyPct}%
-                    </td>
-                    <td className="p-2 text-right">
-                      {s.tasksCompleted}/{s.tasksAssigned}
-                    </td>
-                    <td className="p-2 text-right">
-                      {Math.round(s.avgLatencyMs)} ms
-                    </td>
-                  </tr>
-                ))}
+                {studentAnalytics.map((s, idx) => {
+                  // Support both legacy analytics fields and perParticipant report fields
+                  const name = s.studentName || s.name || "Unknown";
+                  const earned = s.totalPoints ?? s.pointsEarned ?? 0;
+                  const possible = s.maxPoints ?? s.pointsPossible ?? 0;
+                  const accuracy = s.accuracyPct ?? s.finalPercent ?? (possible > 0 ? Math.round((earned / possible) * 100) : 0);
+                  const completed = s.tasksCompleted ?? (s.taskIndices ? (Array.isArray(s.taskIndices) ? s.taskIndices.length : (s.taskIndices.size ?? 0)) : s.attempts ?? 0);
+                  const assigned = s.tasksAssigned ?? session?.totalTasks ?? 0;
+                  const latency = s.avgLatencyMs;
+                  return (
+                    <tr
+                      key={s._id || idx}
+                      className="border-t cursor-pointer hover:bg-gray-50"
+                      onClick={() => setSelectedStudent(s)}
+                    >
+                      <td className="p-2">{name}</td>
+                      <td className="p-2 text-right">
+                        {earned}/{possible}
+                      </td>
+                      <td className="p-2 text-right">
+                        {accuracy}%
+                      </td>
+                      <td className="p-2 text-right">
+                        {completed}/{assigned}
+                      </td>
+                      <td className="p-2 text-right">
+                        {latency != null && Number.isFinite(latency) ? `${Math.round(latency)} ms` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -540,8 +550,8 @@ export default function SessionAnalyticsPage() {
             <div className="bg-white rounded-lg shadow-lg max-w-xl w-full max-h-[80vh] overflow-auto p-4">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-base sm:text-lg font-semibold">
-                  {selectedStudent.studentName} –{" "}
-                  {selectedStudent.accuracyPct}%
+                  {selectedStudent.studentName || selectedStudent.name || "Unknown"} –{" "}
+                  {selectedStudent.accuracyPct ?? selectedStudent.finalPercent ?? 0}%
                 </h3>
                 <button
                   className="text-xs text-gray-600"
@@ -551,17 +561,17 @@ export default function SessionAnalyticsPage() {
                 </button>
               </div>
               <p className="text-[11px] sm:text-xs mb-2">
-                Total Points: {selectedStudent.totalPoints}/
-                {selectedStudent.maxPoints} &nbsp;|&nbsp; Tasks:{" "}
-                {selectedStudent.tasksCompleted}/
-                {selectedStudent.tasksAssigned} &nbsp;|&nbsp; Avg time:{" "}
-                {Math.round(selectedStudent.avgLatencyMs)} ms
+                Total Points: {selectedStudent.totalPoints ?? selectedStudent.pointsEarned ?? 0}/
+                {selectedStudent.maxPoints ?? selectedStudent.pointsPossible ?? 0} &nbsp;|&nbsp; Tasks:{" "}
+                {selectedStudent.tasksCompleted ?? selectedStudent.attempts ?? 0}/
+                {selectedStudent.tasksAssigned ?? session?.totalTasks ?? 0}
+                {selectedStudent.avgLatencyMs != null && Number.isFinite(selectedStudent.avgLatencyMs) ? <> &nbsp;|&nbsp; Avg time: {Math.round(selectedStudent.avgLatencyMs)} ms</> : null}
               </p>
               <h4 className="font-semibold mb-1 text-xs sm:text-sm">
                 Task Transcript
               </h4>
               <ul className="text-[11px] sm:text-xs space-y-1">
-                {selectedStudent.perTask.map((pt, idx) => (
+                {(selectedStudent.perTask || []).map((pt, idx) => (
                   <li key={idx}>
                     <strong>{idx + 1}.</strong>{" "}
                     <span className="uppercase text-[9px] text-gray-500 mr-1">
