@@ -1995,6 +1995,34 @@ export default function GradingPage() {
           </select>
         </label>
 
+        <button
+          type="button"
+          onClick={() => {
+            const note = `Dear Parents,\n\nI'm excited to share that we've started using Curriculate.net's grading tool to support our students. This tool helps me provide better, more consistent feedback on every assignment — highlighting each student's strengths, identifying what can be improved, and arriving at a fair grade.\n\nOne of the best parts for families: you'll receive a simple link where you can see the evidence behind your child's grade — the actual work, the rubric, and the detailed feedback — all in one place.\n\nI use this as a tool to help me help your students. The feedback is always reviewed by me, and my goal is to make sure every student gets the thoughtful, specific guidance they deserve.\n\nI'd love to hear your thoughts — if you have any feedback on how the reports look or ways we can make them more helpful for your family, please don't hesitate to let me know.\n\nWarm regards`;
+            navigator.clipboard.writeText(note).then(() => {
+              const btn = document.getElementById("note-to-parents-btn");
+              if (btn) { btn.textContent = "Copied!"; setTimeout(() => { btn.textContent = "Note to Parents"; }, 2000); }
+            }).catch(() => {});
+          }}
+          id="note-to-parents-btn"
+          style={{
+            padding: "5px 12px",
+            fontSize: "0.75rem",
+            fontWeight: 700,
+            background: "#f0f9ff",
+            color: "#0369a1",
+            border: "1px solid #bae6fd",
+            borderRadius: 8,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+            alignSelf: "flex-end",
+            marginBottom: 2,
+          }}
+          title="Copy an introductory note for parents about Curriculate grading"
+        >
+          Note to Parents
+        </button>
+
         <label style={styles.controlLabel}>
           Feedback Voice
 
