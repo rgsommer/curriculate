@@ -8841,7 +8841,8 @@ function buildRubricInstructions({
     Any section named after a question number instead of a KITA category name is WRONG.
 
     STEP C — IF NO KITA ANNOTATIONS FOUND:
-    Create four default KITA sections: "Knowledge & Understanding", "Thinking", "Communication", "Application", each scored out of 5.
+    Grade normally using standard section rules (test sections, rubric categories, or holistic /10).
+    Do NOT impose KITA categories when there are no annotations — only use KITA when the teacher has explicitly marked categories on the test or answer key.
 
     Decimals allowed: 3.5/5, 2.25/9, etc.
     ${gradeBand === "9-10"
@@ -9536,22 +9537,11 @@ function buildRubricInstructions({
         standards === "canada" &&
         (band === "9-10" || band === "11+")
       ) ? `
-        FINAL REMINDER — KITA SECTIONS (THIS OVERRIDES ALL OTHER SECTION RULES):
-        CHECK THE MARGINS of every page for KITA annotations in any format:
-        /2T, /5T, /3A, T/2, /2 T, 2T, T: 2, /2 Thinking, 2 marks T, etc.
+        FINAL REMINDER — KITA CHECK:
+        CHECK the margins of every page for KITA annotations (/2T, /5T, /3A, T/2, etc.).
 
-        If you see ANY such annotations, you MUST GROUP questions by category letter, NOT one section per question.
-
-        WRONG (one section per question):
-          [{ name: "Part a", out_of: 2 }, { name: "Part b", out_of: 2 }, { name: "Part c", out_of: 5 }, { name: "Part d", out_of: 3 }]
-
-        RIGHT (one section per KITA category):
-          [{ name: "Thinking", out_of: 9 }, { name: "Application", out_of: 3 }]
-          (Thinking = Q2a(/2T) + Q2b(/2T) + Q2c(/5T) = 9; Application = Q2d(/3A) = 3)
-
-        overall_out_of = 9 + 3 = 12. overall_score = sum of what student earned in each category.
-
-        THIS IS NOT OPTIONAL. KITA annotations on the page override all other section rules.
+        If KITA annotations are visible, GROUP questions by category (Thinking, Application, etc.) — not per-question.
+        If NO KITA annotations are visible and no answer key override provides KITA sections, grade normally without KITA.
       ` : "";
 
       const instructionsWithInferenceFinal = `
