@@ -97,7 +97,7 @@ function parseTeacherBlock(payloadText) {
     overallComment: "",
     sections: [],
     isKita: false,
-    kitaSummary: [],       // soft advisory KITA breakdown
+    achievementSummary: [],       // soft advisory achievement category breakdown
     evidenceLinks: [],
     evidenceText: "",
     savedCaptures: [],
@@ -142,7 +142,7 @@ function parseTeacherBlock(payloadText) {
     "Overall Comment:": "overallComment",
     "Sections:": "sections",
     "Achievement Categories (KITA):": "sections",
-    "Achievement Categories:": "kitaSummary",
+    "Achievement Categories:": "achievementSummary",
     "Saved captures (30-day links):": "savedCaptures",
   };
 
@@ -253,11 +253,11 @@ function parseTeacherBlock(payloadText) {
     const t = ln.trim();
     if (!t) continue;
 
-    // Parse kita_summary lines: "- K Knowledge & Understanding [strong]: comment"
-    if (target === "kitaSummary") {
-      const m = t.match(/^-?\s*[KTCA]\s+(.+?)\s*\[(\w+)\]:\s*(.+)$/);
+    // Parse achievement summary lines: "- AO1 Knowledge & Recall (AO1) [strong]: comment" or "- K Knowledge & Understanding [strong]: comment"
+    if (target === "achievementSummary") {
+      const m = t.match(/^-?\s*\S+\s+(.+?)\s*\[(\w+)\]:\s*(.+)$/);
       if (m) {
-        out.kitaSummary.push({ category: m[1].trim(), level: m[2].trim().toLowerCase(), comment: m[3].trim() });
+        out.achievementSummary.push({ category: m[1].trim(), level: m[2].trim().toLowerCase(), comment: m[3].trim() });
       }
       continue;
     }
@@ -280,7 +280,7 @@ function parseTeacherBlock(payloadText) {
     out.nextSteps.length ||
     out.overallComment ||
     out.sections.length ||
-    out.kitaSummary.length ||
+    out.achievementSummary.length ||
     out.evidenceLinks.length ||
     out.evidenceText.trim() ||         // ✅ NEW
     out.savedCaptures.length;
@@ -685,10 +685,10 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                 </Card>
               ) : null}
 
-              {parsed.kitaSummary.length > 0 ? (
+              {parsed.achievementSummary.length > 0 ? (
                 <Card title="Achievement Categories">
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {parsed.kitaSummary.map((k, i) => {
+                    {parsed.achievementSummary.map((k, i) => {
                       const levelColors = {
                         strong: { bg: "rgba(5,150,105,0.1)", border: "rgba(5,150,105,0.3)", text: "#059669" },
                         adequate: { bg: "rgba(37,99,235,0.08)", border: "rgba(37,99,235,0.25)", text: "#2563eb" },
@@ -696,7 +696,14 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                         limited: { bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)", text: "#dc2626" },
                       };
                       const c = levelColors[k.level] || levelColors.adequate;
-                      const shortName = { "Knowledge & Understanding": "K", "Thinking": "T", "Communication": "C", "Application": "A" }[k.category] || "?";
+                      const knownShort = {
+                        "Knowledge & Understanding": "K", "Thinking": "T", "Communication": "C", "Application": "A",
+                        "Knowledge & Recall (AO1)": "AO1", "Analysis & Application (AO2)": "AO2",
+                        "Evaluation & Context (AO3)": "AO3", "Technical Accuracy (AO4)": "AO4",
+                        "Content Knowledge": "CK", "Critical Thinking": "CT",
+                        "Subject Knowledge": "SK", "Analytical Thinking": "AT", "Applied Learning": "AL",
+                      };
+                      const shortName = knownShort[k.category] || k.category.split(/\s+/).map(w => w[0]).join("").slice(0, 3).toUpperCase();
                       return (
                         <div key={i} style={{
                           flex: "1 1 calc(50% - 8px)", minWidth: 140,

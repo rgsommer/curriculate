@@ -8792,7 +8792,7 @@ function buildRubricInstructions({
     - If overall_out_of !== 10: set score_out_of_10 = null and final_score_out_of_10 = null.
     - If overall_out_of === 10: set score_out_of_10 and final_score_out_of_10 as numbers and apply the deduction rule.
     - The overall_out_of value must match the total possible points defined in the rubric.
-    - kita_summary: set to null unless specifically instructed below to provide one (Ontario 9+ only).
+    - achievement_summary: set to null for grades 3-8. For grades 9+, see achievement summary instructions below.
 
     ${(standards === "canada" && (gradeBand === "9-10" || gradeBand === "11+")) ? `
     ############################################################
@@ -8822,7 +8822,7 @@ function buildRubricInstructions({
     - overall_out_of = sum of all section out_of values.
     - overall_score = sum of all section scores.
     - ONLY create sections for categories that actually appear. If only T and A are annotated, create exactly 2 sections.
-    - Set kita_summary = null (the sections[] already represent KITA categories).
+    - Set achievement_summary = null (the sections[] already represent KITA categories).
 
     CONCRETE EXAMPLE:
     You see: Q2a has /2T in margin, Q2b has /2T, Q2c has /5T, Q2d has /3A.
@@ -8846,25 +8846,49 @@ function buildRubricInstructions({
     Grade normally using standard section rules (test sections, rubric categories, or holistic /10).
     Do NOT impose KITA categories as sections when there are no annotations.
 
-    However, you MUST still provide a kita_summary (advisory, non-scoring) for Ontario 9+ work:
-    - Review the student's work and identify which KITA categories are demonstrated.
-    - ONLY include categories where you can confidently identify relevant work:
-      K = Knowledge & Understanding: recall of facts, definitions, formulas, terminology.
-      T = Thinking: problem-solving, reasoning, planning, multi-step analysis, critical thinking.
-      C = Communication: clarity of explanation, use of subject-specific language, organization of ideas.
-      A = Application: using knowledge in real-world or new contexts, transfer of learning.
-    - For each included category, assign a level: "strong", "adequate", "developing", or "limited".
-    - Write a brief comment (1 sentence) about the student's performance in that category.
-    - It is FINE to include only 1, 2, or 3 categories. Do NOT force all four.
-    - If a category genuinely does not apply to this work (e.g., no Communication element in a pure calculation), omit it.
-    - This is advisory only — it does NOT affect sections[] or scoring.
-
     Decimals allowed: 3.5/5, 2.25/9, etc.
     ${gradeBand === "9-10"
       ? "Weighting (when all 4 present): K=25%, T=25%, C=25%, A=25%."
       : "Weighting (when all 4 present): K=20%, T=30%, C=20%, A=30%."}
     If a rubricOverride has its own categories, rubric categories take priority over KITA.
     ############################################################
+    ` : ""}
+
+    ${(gradeBand === "9-10" || gradeBand === "11+") ? `
+    ACHIEVEMENT SUMMARY (advisory, non-scoring — grade 9+ only):
+    After grading, provide an achievement_summary that maps the student's work to your standards framework's assessment dimensions.
+    This is advisory only — it does NOT affect sections[] or scoring. Only include categories you can confidently identify.
+    For each category, assign a level: "strong", "adequate", "developing", or "limited" and write 1 brief sentence.
+    It is FINE to include only some categories. Omit any that don't apply to this work.
+    ${standards === "canada" ? `
+    If sections[] already use KITA category names (from annotations), set achievement_summary = null.
+    Otherwise, use Ontario KITA achievement categories:
+    - "Knowledge & Understanding": recall of facts, definitions, formulas, terminology.
+    - "Thinking": problem-solving, reasoning, planning, multi-step analysis, critical thinking.
+    - "Communication": clarity of explanation, use of subject-specific language, organization of ideas.
+    - "Application": using knowledge in real-world or new contexts, transfer of learning.
+    ` : ""}${standards === "uk" ? `
+    Use UK Assessment Objectives appropriate to the subject:
+    - "Knowledge & Recall (AO1)": demonstrate knowledge and understanding of subject content.
+    - "Analysis & Application (AO2)": analyse, interpret, and apply concepts; for English, analyse language/form/structure.
+    - "Evaluation & Context (AO3)": evaluate, make judgments, draw conclusions; consider context and relationships.
+    - "Technical Accuracy (AO4)": where applicable (e.g., English Language), accuracy of spelling, punctuation, grammar.
+    Only include AOs relevant to the subject. A maths paper may only have AO1-AO3. An English paper may use all four.
+    ` : ""}${standards === "us" ? `
+    Use standards-based proficiency dimensions:
+    - "Content Knowledge": recall and understanding of core concepts, facts, and vocabulary.
+    - "Critical Thinking": analysis, reasoning, problem-solving, drawing inferences.
+    - "Application": applying concepts to new situations, real-world contexts, transfer of learning.
+    - "Communication": clarity of expression, organization, use of subject-specific language and conventions.
+    Only include dimensions clearly demonstrated in the work.
+    ` : ""}${standards === "eu" ? `
+    Use EU key competence dimensions relevant to the subject:
+    - "Subject Knowledge": understanding of core concepts and content.
+    - "Analytical Thinking": reasoning, problem-solving, critical evaluation.
+    - "Communication": clarity, organization, use of appropriate language and conventions.
+    - "Applied Learning": connecting concepts to practical contexts, interdisciplinary transfer.
+    Only include dimensions clearly demonstrated in the work.
+    ` : ""}
     ` : ""}
     `.trim();
     }
@@ -9301,14 +9325,14 @@ function buildRubricInstructions({
 
           teacher_comment: { type: "string", minLength: 1 },
 
-          // --- soft KITA achievement category summary (Ontario 9+ only, advisory) ---
-          kita_summary: {
+          // --- soft achievement category summary (advisory, all standards) ---
+          achievement_summary: {
             type: ["array", "null"],
             items: {
               type: "object",
               additionalProperties: false,
               properties: {
-                category: { type: "string", enum: ["Knowledge & Understanding", "Thinking", "Communication", "Application"] },
+                category: { type: "string", maxLength: 50 },
                 level: { type: "string", enum: ["strong", "adequate", "developing", "limited"] },
                 comment: { type: "string", maxLength: 200 },
               },
@@ -9340,7 +9364,7 @@ function buildRubricInstructions({
           "strengths",
           "improvements",
           "teacher_comment",
-          "kita_summary",
+          "achievement_summary",
         ],
       };
       // 2) Optional wrapper if you like keeping it around locally

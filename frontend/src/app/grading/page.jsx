@@ -616,10 +616,18 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "", gradeBandForKit
   }
 
   // Soft KITA summary (advisory, non-scoring)
-  if (Array.isArray(assessment.kita_summary) && assessment.kita_summary.length) {
+  if (Array.isArray(assessment.achievement_summary) && assessment.achievement_summary.length) {
     lines.push("Achievement Categories:");
-    assessment.kita_summary.forEach((k) => {
-      const short = { "Knowledge & Understanding": "K", "Thinking": "T", "Communication": "C", "Application": "A" }[k.category] || "?";
+    assessment.achievement_summary.forEach((k) => {
+      // Generate short label: use known mappings, fall back to first letters of words
+      const knownShort = {
+        "Knowledge & Understanding": "K", "Thinking": "T", "Communication": "C", "Application": "A",
+        "Knowledge & Recall (AO1)": "AO1", "Analysis & Application (AO2)": "AO2",
+        "Evaluation & Context (AO3)": "AO3", "Technical Accuracy (AO4)": "AO4",
+        "Content Knowledge": "CK", "Critical Thinking": "CT",
+        "Subject Knowledge": "SK", "Analytical Thinking": "AT", "Applied Learning": "AL",
+      };
+      const short = knownShort[k.category] || k.category.split(/\s+/).map(w => w[0]).join("").slice(0, 3).toUpperCase();
       lines.push(`- ${short} ${k.category} [${k.level}]: ${k.comment}`);
     });
     lines.push("");
@@ -3308,11 +3316,11 @@ export default function GradingPage() {
                     </>
                   ) : null}
 
-                  {Array.isArray(assessment.kita_summary) && assessment.kita_summary.length > 0 ? (
+                  {Array.isArray(assessment.achievement_summary) && assessment.achievement_summary.length > 0 ? (
                     <>
                       <div style={styles.gradingSectionTitle}>Achievement Categories</div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-                        {assessment.kita_summary.map((k, i) => {
+                        {assessment.achievement_summary.map((k, i) => {
                           const levelColors = {
                             strong: { bg: "rgba(5,150,105,0.1)", border: "rgba(5,150,105,0.3)", text: "#059669" },
                             adequate: { bg: "rgba(37,99,235,0.08)", border: "rgba(37,99,235,0.25)", text: "#2563eb" },
@@ -3320,7 +3328,14 @@ export default function GradingPage() {
                             limited: { bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)", text: "#dc2626" },
                           };
                           const c = levelColors[k.level] || levelColors.adequate;
-                          const shortName = { "Knowledge & Understanding": "K", "Thinking": "T", "Communication": "C", "Application": "A" }[k.category] || "?";
+                          const knownShort = {
+                            "Knowledge & Understanding": "K", "Thinking": "T", "Communication": "C", "Application": "A",
+                            "Knowledge & Recall (AO1)": "AO1", "Analysis & Application (AO2)": "AO2",
+                            "Evaluation & Context (AO3)": "AO3", "Technical Accuracy (AO4)": "AO4",
+                            "Content Knowledge": "CK", "Critical Thinking": "CT",
+                            "Subject Knowledge": "SK", "Analytical Thinking": "AT", "Applied Learning": "AL",
+                          };
+                          const shortName = knownShort[k.category] || k.category.split(/\s+/).map(w => w[0]).join("").slice(0, 3).toUpperCase();
                           return (
                             <div key={i} style={{
                               flex: "1 1 calc(50% - 8px)", minWidth: 140,
