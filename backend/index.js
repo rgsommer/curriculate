@@ -9052,12 +9052,13 @@ function buildRubricInstructions({
   app.post("/grading", async (req, res) => {
     console.log("GRADING BODY keys:", Object.keys(req.body || {}));
     console.log("images?", Array.isArray(req.body?.images) ? req.body.images.length : 0);
+    console.log("answerKeyImages?", Array.isArray(req.body?.answerKeyImages) ? req.body.answerKeyImages.length : 0);
     console.log("workInput len:", String(req.body?.workInput || "").length);
     
     try {
       const startTime = Date.now();
 
-      const { images, workInput, rubricOverride, answerKeyOverride, gradeBand, standards: rawStandards } = req.body || {};
+      const { images, answerKeyImages, workInput, rubricOverride, answerKeyOverride, gradeBand, standards: rawStandards } = req.body || {};
       const standards = ["canada", "us", "uk", "eu"].includes(rawStandards) ? rawStandards : "canada";
 
       // ------------------------------------------------
@@ -9093,6 +9094,7 @@ function buildRubricInstructions({
       let submittedTextEvidence = null;
 
       const hasImages = Array.isArray(images) && images.length > 0;
+      const hasAnswerKeyImages = Array.isArray(answerKeyImages) && answerKeyImages.length > 0;
       const hasWorkInput = trimmed.length > 0;
 
       // ------------------------------------------------
@@ -9573,6 +9575,25 @@ function buildRubricInstructions({
           }));
         }
 
+        // Also upload answer key images to S3 if present
+        if (hasAnswerKeyImages) {
+          for (let i = 0; i < answerKeyImages.length; i++) {
+            const parsed = parseDataUrlImage(answerKeyImages[i]);
+            if (parsed) {
+              const key = `grading/${submissionId}/answer-key-${i + 1}.jpg`;
+              keys.push(key);
+              await s3.send(new PutObjectCommand({
+                Bucket: S3_BUCKET,
+                Key: key,
+                Body: parsed.buf,
+                ContentType: "image/jpeg",
+                CacheControl: "private, max-age=0, no-store",
+                Metadata: { submissionid: submissionId, kind: "answer-key" },
+              }));
+            }
+          }
+        }
+
         await GradingCapture.create({ submissionId, keys, createdAt: new Date() });
 
         imageRefs = images.map((_, i) => ({
@@ -9582,6 +9603,17 @@ function buildRubricInstructions({
       }
 
       const userContent = [{ type: "input_text", text: instructionsWithInferenceFinal }];
+
+      // Add answer key images first (if teacher tagged any) with clear label
+      if (hasAnswerKeyImages) {
+        userContent.push({
+          type: "input_text",
+          text: "ANSWER KEY / SOLUTION SHEET (provided by teacher — use this to grade the student work that follows):\nLook carefully at the margins for KITA category annotations (e.g., /2T, /3A, T/2) and point values.",
+        });
+        userContent.push(...answerKeyImages.map((img) => ({ type: "input_image", image_url: img })));
+        userContent.push({ type: "input_text", text: "END OF ANSWER KEY. STUDENT WORK follows below:" });
+      }
+
       if (hasImages) {
         userContent.push(...images.map((img) => ({ type: "input_image", image_url: img })));
       } else {

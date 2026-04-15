@@ -910,6 +910,8 @@ export default function GradingPage() {
 
     const [flash, setFlash] = useState(false);
     const [photos, setPhotos] = useState([]); // { id, dataUrl, createdAt }
+    const [answerKeyPhotoIds, setAnswerKeyPhotoIds] = useState(new Set()); // photos tagged as answer key / solution sheet
+    const [showAnswerKeyTagHint, setShowAnswerKeyTagHint] = useState(false);
     const [busyCapture, setBusyCapture] = useState(false);
     const [busyUpload, setBusyUpload] = useState(false);
     const photosRef = useRef([]);
@@ -1531,11 +1533,24 @@ export default function GradingPage() {
 
     function removePhoto(id) {
       setPhotos((prev) => prev.filter((p) => p.id !== id));
+      setAnswerKeyPhotoIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+    }
+
+    function toggleAnswerKey(id) {
+      setAnswerKeyPhotoIds((prev) => {
+        const n = new Set(prev);
+        if (n.has(id)) n.delete(id);
+        else n.add(id);
+        return n;
+      });
+      setShowAnswerKeyTagHint(false);
     }
 
     function clearAll() {
       setPhotos([]);
       photosRef.current = [];
+      setAnswerKeyPhotoIds(new Set());
+      setShowAnswerKeyTagHint(false);
       setSubmitError("");
       setServerText("");
       setCopied(false);
@@ -1598,10 +1613,11 @@ export default function GradingPage() {
 
       const rubricFingerprint = manualRubric.slice(0, 50) || stickyRubric.slice(0, 50) || "";
       const akFingerprint = (stickyAnswerKeyText || "").slice(0, 50);
+      const akPhotoIds = [...answerKeyPhotoIds].sort().join(",");
       const submitKey =
         inputMode === "photo"
-          ? `photo:${photosToUse.map((p) => p.id).join(",")}|gb:${gradeBand}|v:${voiceEffective}|r:${rubricFingerprint}|ak:${akFingerprint}|st:${standards}`
-          : `paste:${trimmedWork.slice(0, 200)}|len:${trimmedWork.length}|gb:${gradeBand}|v:${voiceEffective}|r:${rubricFingerprint}|ak:${akFingerprint}|st:${standards}`;
+          ? `photo:${photosToUse.map((p) => p.id).join(",")}|gb:${gradeBand}|v:${voiceEffective}|r:${rubricFingerprint}|ak:${akFingerprint}|akp:${akPhotoIds}|st:${standards}`
+          : `paste:${trimmedWork.slice(0, 200)}|len:${trimmedWork.length}|gb:${gradeBand}|v:${voiceEffective}|r:${rubricFingerprint}|ak:${akFingerprint}|akp:${akPhotoIds}|st:${standards}`;
           
       // ✅ 2) Compute the attempt + compression profile LOCALLY (don't rely on state timing)
       const isRetry = submitKey === lastSubmitKeyRef.current;
@@ -1630,10 +1646,18 @@ export default function GradingPage() {
           : (stickyRubric.length ? stickyRubric : "");
 
         let images = null;
+        let answerKeyImages = null;
 
-        // Compress photos if we have any (photo mode, or uploaded images in paste mode)
+        // Split photos into answer key vs student work, then compress
         if (photosToUse.length) {
-          images = await compressPhotosForSubmission(photosToUse, profileToUse);
+          const studentPhotos = photosToUse.filter((p) => !answerKeyPhotoIds.has(p.id));
+          const keyPhotos = photosToUse.filter((p) => answerKeyPhotoIds.has(p.id));
+          if (studentPhotos.length) {
+            images = await compressPhotosForSubmission(studentPhotos, profileToUse);
+          }
+          if (keyPhotos.length) {
+            answerKeyImages = await compressPhotosForSubmission(keyPhotos, profileToUse);
+          }
         }
 
         const anonId = getAnonId();
@@ -1643,6 +1667,7 @@ export default function GradingPage() {
         const payload = {
           anonId,
           images: images || undefined,
+          answerKeyImages: answerKeyImages || undefined,
           workInput: inputMode === "paste" && trimmedWork ? trimmedWork : undefined,
           rubricOverride: effectiveRubric.length ? effectiveRubric : null,
           answerKeyOverride: effectiveAnswerKey.length ? effectiveAnswerKey : null,
@@ -1722,6 +1747,12 @@ export default function GradingPage() {
                 setStickyAnswerKeyCapturedAt(String(Date.now()));
                 setShowRubricTip(false);
                 saveLS(RUBRIC_TIP_DISMISSED_KEY, "1");
+
+                // If the teacher didn't manually tag any photos as answer key,
+                // suggest they do so for better KITA grouping on next submissions
+                if (answerKeyPhotoIds.size === 0 && photos.length >= 2) {
+                  setShowAnswerKeyTagHint(true);
+                }
               }
             }
           }
@@ -2491,19 +2522,61 @@ export default function GradingPage() {
               <div style={styles.photoMeta}>
                 <div>
                   <b>Photos:</b> {photos.length}
+                  {answerKeyPhotoIds.size > 0 && (
+                    <span style={{ marginLeft: 10, color: "#059669", fontWeight: 700, fontSize: 12 }}>
+                      ({answerKeyPhotoIds.size} answer key)
+                    </span>
+                  )}
                 </div>
                 <div style={{ opacity: 0.8 }}>
-                  Tip: Capture with camera, or upload files from your device. Double tap for capture + submit.
+                  {photos.length >= 2
+                    ? "Tip: Tap a thumbnail to mark it as your answer key or solution sheet."
+                    : "Tip: Capture with camera, or upload files from your device. Double tap for capture + submit."}
                 </div>
               </div>
 
+              {showAnswerKeyTagHint && photos.length >= 2 && (
+                <div style={{
+                  marginTop: 10, padding: "10px 14px", borderRadius: 10,
+                  background: "linear-gradient(135deg, rgba(5,150,105,0.08), rgba(37,99,235,0.06))",
+                  border: "1px solid rgba(5,150,105,0.2)",
+                  fontSize: 13, lineHeight: 1.4,
+                  display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
+                }}>
+                  <span>
+                    <b style={{ color: "#059669" }}>Answer key detected!</b> Tap its thumbnail below to tag it — this improves grading accuracy for the rest of the stack.
+                  </span>
+                  <button
+                    onClick={() => setShowAnswerKeyTagHint(false)}
+                    style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 16, opacity: 0.6, padding: "2px 6px" }}
+                    type="button" title="Dismiss"
+                  >✕</button>
+                </div>
+              )}
+
               {photos.length > 0 && (
                 <div style={styles.thumbGrid}>
-                  {photos.map((p, idx) => (
-                    <div key={p.id} style={styles.thumb}>
-                      <img src={p.dataUrl} alt={`Captured ${idx + 1}`} style={styles.thumbImg} />
+                  {photos.map((p, idx) => {
+                    const isKey = answerKeyPhotoIds.has(p.id);
+                    return (
+                    <div key={p.id} style={{
+                      ...styles.thumb,
+                      ...(isKey ? { border: "2.5px solid #059669", boxShadow: "0 0 8px rgba(5,150,105,0.35)" } : {}),
+                    }}>
+                      <div style={{ position: "relative", cursor: "pointer" }} onClick={() => !submitting && toggleAnswerKey(p.id)} title={isKey ? "Unmark as answer key" : "Tap to mark as answer key / solution sheet"}>
+                        <img src={p.dataUrl} alt={`Captured ${idx + 1}`} style={styles.thumbImg} />
+                        {isKey && (
+                          <div style={{
+                            position: "absolute", top: 6, left: 6, background: "#059669", color: "white",
+                            fontSize: 10, fontWeight: 900, borderRadius: 6, padding: "2px 7px",
+                            letterSpacing: 0.5,
+                          }}>KEY</div>
+                        )}
+                      </div>
                       <div style={styles.thumbBar}>
-                        <div style={styles.thumbLabel}>#{idx + 1}</div>
+                        <div style={{ ...styles.thumbLabel, ...(isKey ? { color: "#059669" } : {}) }}>
+                          {isKey ? "Answer Key" : `#${idx + 1}`}
+                        </div>
                         <button
                           onClick={() => removePhoto(p.id)}
                           style={styles.thumbRemove}
@@ -2515,7 +2588,8 @@ export default function GradingPage() {
                         </button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </>
@@ -2597,11 +2671,27 @@ export default function GradingPage() {
                     Uploaded images ({photos.length}):
                   </div>
                   <div style={styles.thumbGrid}>
-                    {photos.map((p, idx) => (
-                      <div key={p.id} style={styles.thumb}>
-                        <img src={p.dataUrl} alt={`Upload ${idx + 1}`} style={styles.thumbImg} />
+                    {photos.map((p, idx) => {
+                      const isKey = answerKeyPhotoIds.has(p.id);
+                      return (
+                      <div key={p.id} style={{
+                        ...styles.thumb,
+                        ...(isKey ? { border: "2.5px solid #059669", boxShadow: "0 0 8px rgba(5,150,105,0.35)" } : {}),
+                      }}>
+                        <div style={{ position: "relative", cursor: "pointer" }} onClick={() => !submitting && toggleAnswerKey(p.id)} title={isKey ? "Unmark as answer key" : "Tap to mark as answer key / solution sheet"}>
+                          <img src={p.dataUrl} alt={`Upload ${idx + 1}`} style={styles.thumbImg} />
+                          {isKey && (
+                            <div style={{
+                              position: "absolute", top: 6, left: 6, background: "#059669", color: "white",
+                              fontSize: 10, fontWeight: 900, borderRadius: 6, padding: "2px 7px",
+                              letterSpacing: 0.5,
+                            }}>KEY</div>
+                          )}
+                        </div>
                         <div style={styles.thumbBar}>
-                          <div style={styles.thumbLabel}>#{idx + 1}</div>
+                          <div style={{ ...styles.thumbLabel, ...(isKey ? { color: "#059669" } : {}) }}>
+                            {isKey ? "Answer Key" : `#${idx + 1}`}
+                          </div>
                           <button
                             onClick={() => removePhoto(p.id)}
                             style={styles.thumbRemove}
@@ -2613,7 +2703,8 @@ export default function GradingPage() {
                           </button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
