@@ -378,7 +378,7 @@ export default function HowItWorksPage() {
               bullets={[
                 "Team answers are stored by station and task type.",
                 "Optional scoring and feedback can be generated automatically.",
-                "No "paper chase" after class—everything is already sorted.",
+                "No paper chase after class — everything is already sorted.",
                 "Grades ready for the grade book!",
               ]}
             />
