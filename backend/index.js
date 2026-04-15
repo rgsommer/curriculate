@@ -8831,7 +8831,7 @@ function buildRubricInstructions({
     - If overall_out_of !== 10: set score_out_of_10 = null and final_score_out_of_10 = null.
     - If overall_out_of === 10: set score_out_of_10 and final_score_out_of_10 as numbers and apply the deduction rule.
     - The overall_out_of value must match the total possible points defined in the rubric.
-    - achievement_summary: set to null for grades 3-8. For grades 9+, see achievement summary instructions below.
+    - achievement_summary: see achievement summary instructions below (all grade bands).
 
     ${(standards === "canada" && (gradeBand === "9-10" || gradeBand === "11+")) ? `
     ############################################################
@@ -8893,9 +8893,11 @@ function buildRubricInstructions({
     ############################################################
     ` : ""}
 
-    ${(gradeBand === "9-10" || gradeBand === "11+") ? `
-    ACHIEVEMENT SUMMARY (advisory — grade 9+ only):
-    After grading, provide an achievement_summary that maps the student's work to your standards framework's assessment dimensions.
+    ACHIEVEMENT SUMMARY (all grade bands):
+    After grading, provide an achievement_summary that maps the student's work to age-appropriate assessment dimensions.
+    This is used to generate a quality index — NOT merely a visual representation of the grade.
+    The quality index evaluates HOW the student achieved their score across meaningful learning dimensions,
+    giving parents and teachers insight into areas of strength and growth regardless of the raw score.
     Only include categories you can confidently identify. It is FINE to include only some categories.
     For each category provide:
     - level: "strong", "adequate", "developing", or "limited"
@@ -8905,37 +8907,59 @@ function buildRubricInstructions({
     The sum of all out_of values should equal overall_out_of, and the sum of all score values should equal the student's final score.
     ${standards === "canada" ? `
     If sections[] already use KITA category names (from annotations), set achievement_summary = null.
-    Otherwise, use the Ontario Achievement Chart categories and level descriptors provided above:
-    - "Knowledge & Understanding": use the chart criteria (knowledge of content, understanding of content).
-    - "Thinking": use the chart criteria (planning, processing, critical/creative thinking skills).
-    - "Communication": use the chart criteria (expression, organization, conventions).
-    - "Application": use the chart criteria (application in familiar contexts, transfer to new contexts).
-    Map levels: "strong" = Level 4 (high degree of effectiveness), "adequate" = Level 3 (considerable, provincial standard),
-    "developing" = Level 2 (some effectiveness), "limited" = Level 1 (limited effectiveness).
-    Use achievement chart language in the comment (e.g., "demonstrates considerable understanding of algebraic concepts").
-    ` : ""}${standards === "uk" ? `
-    Use UK Assessment Objectives appropriate to the subject:
+    ${(gradeBand === "9-10" || gradeBand === "11+") ? `Otherwise, use the Ontario Achievement Chart categories:
+    - "Knowledge & Understanding": knowledge of content, understanding of content.
+    - "Thinking": planning, processing, critical/creative thinking skills.
+    - "Communication": expression, organization, conventions.
+    - "Application": application in familiar contexts, transfer to new contexts.
+    Map levels: "strong" = Level 4, "adequate" = Level 3 (provincial standard), "developing" = Level 2, "limited" = Level 1.
+    Use achievement chart language (e.g., "demonstrates considerable understanding of algebraic concepts").
+    ` : `Use age-appropriate learning dimensions for grades ${gradeBand}:
+    - "Understanding": grasp of key concepts, ability to explain ideas in own words.
+    - "Problem Solving": ability to work through tasks, try strategies, and reason through challenges.
+    - "Communication": clarity of expression — written, oral, or visual; use of subject vocabulary.
+    - "Effort & Growth": evidence of care, persistence, and improvement in the work.
+    Keep comments encouraging and growth-oriented for younger learners.
+    `}` : ""}${standards === "uk" ? `
+    ${(gradeBand === "9-10" || gradeBand === "11+") ? `Use UK Assessment Objectives appropriate to the subject:
     - "Knowledge & Recall (AO1)": demonstrate knowledge and understanding of subject content.
-    - "Analysis & Application (AO2)": analyse, interpret, and apply concepts; for English, analyse language/form/structure.
-    - "Evaluation & Context (AO3)": evaluate, make judgments, draw conclusions; consider context and relationships.
-    - "Technical Accuracy (AO4)": where applicable (e.g., English Language), accuracy of spelling, punctuation, grammar.
-    Only include AOs relevant to the subject. A maths paper may only have AO1-AO3. An English paper may use all four.
-    ` : ""}${standards === "us" ? `
-    Use standards-based proficiency dimensions:
+    - "Analysis & Application (AO2)": analyse, interpret, and apply concepts.
+    - "Evaluation & Context (AO3)": evaluate, make judgments, draw conclusions.
+    - "Technical Accuracy (AO4)": where applicable, accuracy of spelling, punctuation, grammar.
+    Only include AOs relevant to the subject.
+    ` : `Use age-appropriate Key Stage assessment dimensions:
+    - "Understanding": grasp of key concepts and subject knowledge.
+    - "Skills & Application": ability to apply learned skills to tasks.
+    - "Communication": clarity of expression and use of subject language.
+    - "Progress & Effort": evidence of growth, care, and engagement.
+    Keep comments supportive and growth-focused for younger pupils.
+    `}` : ""}${standards === "us" ? `
+    ${(gradeBand === "9-10" || gradeBand === "11+") ? `Use standards-based proficiency dimensions:
     - "Content Knowledge": recall and understanding of core concepts, facts, and vocabulary.
     - "Critical Thinking": analysis, reasoning, problem-solving, drawing inferences.
     - "Application": applying concepts to new situations, real-world contexts, transfer of learning.
     - "Communication": clarity of expression, organization, use of subject-specific language and conventions.
     Only include dimensions clearly demonstrated in the work.
-    ` : ""}${standards === "eu" ? `
-    Use EU key competence dimensions relevant to the subject:
+    ` : `Use age-appropriate learning dimensions:
+    - "Understanding": grasp of grade-level concepts and ideas.
+    - "Problem Solving": ability to work through tasks and apply strategies.
+    - "Communication": expressing ideas clearly in writing, speaking, or diagrams.
+    - "Effort & Growth": evidence of persistence, care, and learning progress.
+    Keep comments encouraging and growth-oriented for younger students.
+    `}` : ""}${standards === "eu" ? `
+    ${(gradeBand === "9-10" || gradeBand === "11+") ? `Use EU key competence dimensions relevant to the subject:
     - "Subject Knowledge": understanding of core concepts and content.
     - "Analytical Thinking": reasoning, problem-solving, critical evaluation.
     - "Communication": clarity, organization, use of appropriate language and conventions.
     - "Applied Learning": connecting concepts to practical contexts, interdisciplinary transfer.
     Only include dimensions clearly demonstrated in the work.
-    ` : ""}
-    ` : ""}
+    ` : `Use age-appropriate learning dimensions:
+    - "Understanding": grasp of key concepts and subject content.
+    - "Thinking & Problem Solving": reasoning through tasks, trying strategies.
+    - "Communication": expressing ideas clearly and using subject vocabulary.
+    - "Effort & Growth": evidence of care, engagement, and learning progress.
+    Keep comments encouraging and growth-focused for younger learners.
+    `}` : ""}
     `.trim();
     }
 
