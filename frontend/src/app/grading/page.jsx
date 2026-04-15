@@ -624,7 +624,7 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "", gradeBandForKit
   // ✅ Sections + incorrect items (with KITA detection)
   const kita = detectKita(assessment);
   if (kita) {
-    const weights = getKitaWeights(gradeBandForKita);
+    const weights = getKitaWeights(gradeBandForKita, kita);
     const weightedPct = computeKitaWeightedPercent(kita, weights);
     lines.push("Achievement Categories (KITA):");
     kita.forEach((cat, i) => {
@@ -733,29 +733,51 @@ const RUBRIC_TIP_DISMISSED_KEY = "curriculate_rubric_tip_dismissed_v1";
   const KITA_SHORT = ["K", "T", "C", "A"];
 
   function detectKita(assessment) {
-    if (!assessment || !Array.isArray(assessment.sections) || assessment.sections.length !== 4) return null;
-    const names = assessment.sections.map((s) => (s?.name || "").trim());
-    const isKita = KITA_NAMES.every((k) => names.some((n) => n.toLowerCase().startsWith(k.toLowerCase().slice(0, 8))));
-    if (!isKita) return null;
-    return assessment.sections.map((s, i) => ({
-      name: KITA_NAMES[i],
-      short: KITA_SHORT[i],
-      score: Number(s.score) || 0,
-      outOf: Number(s.out_of) || 5,
-      comment: s.teacher_comment || "",
-    }));
+    if (!assessment || !Array.isArray(assessment.sections) || !assessment.sections.length) return null;
+    const secs = assessment.sections;
+
+    // Map each section to a KITA category (if it matches one)
+    const matched = [];
+    for (const s of secs) {
+      const n = (s?.name || "").trim().toLowerCase();
+      const idx = KITA_NAMES.findIndex((k) => n.startsWith(k.toLowerCase().slice(0, 8)));
+      if (idx === -1) return null; // non-KITA section found — not a KITA response
+      matched.push({
+        kitaIndex: idx,
+        name: KITA_NAMES[idx],
+        short: KITA_SHORT[idx],
+        score: Number(s.score) || 0,
+        outOf: Number(s.out_of) || 5,
+        comment: s.teacher_comment || "",
+      });
+    }
+    if (!matched.length) return null;
+    return matched;
   }
 
-  function getKitaWeights(band) {
-    if (band === "11+") return [20, 30, 20, 30]; // K, T, C, A
-    return [25, 25, 25, 25]; // equal for 9-10
+  // Full KITA weights by index: K=0, T=1, C=2, A=3
+  const KITA_WEIGHTS_ALL = {
+    "9-10": [25, 25, 25, 25],
+    "11+": [20, 30, 20, 30],
+  };
+
+  function getKitaWeights(band, kita) {
+    const allW = KITA_WEIGHTS_ALL[band] || [25, 25, 25, 25];
+    // Return weights for only the categories present
+    return kita.map((cat) => allW[cat.kitaIndex]);
   }
 
   function computeKitaWeightedPercent(kita, weights) {
     let totalWeighted = 0;
+    let totalWeight = 0;
     for (let i = 0; i < kita.length; i++) {
       const pct = kita[i].outOf > 0 ? (kita[i].score / kita[i].outOf) : 0;
       totalWeighted += pct * weights[i];
+      totalWeight += weights[i];
+    }
+    // Normalize to 0-100 when not all categories are present
+    if (totalWeight > 0 && totalWeight !== 100) {
+      return Math.round((totalWeighted / totalWeight) * 100);
     }
     return Math.round(totalWeighted); // 0-100
   }
@@ -3010,7 +3032,7 @@ export default function GradingPage() {
                   {(() => {
                     const kita = detectKita(assessment);
                     if (kita) {
-                      const weights = getKitaWeights(gradeBand);
+                      const weights = getKitaWeights(gradeBand, kita);
                       const weightedPct = computeKitaWeightedPercent(kita, weights);
                       return (
                         <>

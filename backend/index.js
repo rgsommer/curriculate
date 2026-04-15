@@ -8150,26 +8150,33 @@ function buildRubricInstructions({
     Use language like "demonstrates understanding," "applies concepts," "communicates effectively."
     ${(gradeBand === "9-10" || gradeBand === "11+") ? `
     KITA ACHIEVEMENT CATEGORIES (Ontario — mandatory for this grade band):
-    You MUST score the student across the four Ontario achievement categories.
-    Return EXACTLY four sections[] entries with these names and in this order:
+    By default, score the student across the four Ontario achievement categories.
+    Return sections[] entries using these names (in this order when all four are present):
       1. "Knowledge & Understanding" — facts, definitions, concepts the student knows
       2. "Thinking" — problem-solving, planning, critical/creative thinking
       3. "Communication" — clarity, organization, use of subject-specific language
       4. "Application" — using knowledge in new contexts, transfer of learning
 
-    Each category is scored out of 5 by default (unless the teacher rubric specifies a different denominator per category).
+    HOWEVER: If an answer key or solution sheet is provided (answerKeyOverride or detected) and it has
+    KITA category annotations (K, T, C, A, KU, TH, CO, AP) beside questions, create sections[] ONLY
+    for the categories that actually appear on the answer key. For example, if only T and A are annotated,
+    return only "Thinking" and "Application" sections — do NOT create Knowledge or Communication sections.
+    Use the point values from the answer key annotations for each category's out_of.
+
+    Each category is scored out of 5 by default (unless the answer key or teacher rubric specifies a different denominator per category).
     Decimals are allowed and encouraged for precision (e.g., 3.5/5, 2.25/5, 4.75/5). Do not round to whole numbers.
     ${gradeBand === "9-10"
-      ? "Weighting: K=25%, T=25%, C=25%, A=25% (equal)."
-      : "Weighting: K=20%, T=30%, C=20%, A=30% (heavier on Thinking and Application)."}
+      ? "Weighting (when all 4 present): K=25%, T=25%, C=25%, A=25% (equal)."
+      : "Weighting (when all 4 present): K=20%, T=30%, C=20%, A=30% (heavier on Thinking and Application)."}
 
     For each section:
     - Score based on visible evidence in the student work that maps to that category.
     - teacher_comment must cite specific evidence for that category.
-    - incorrect_items should be null (these are rubric categories, not test sections).
+    - For test-style questions with an answer key, include incorrect_items showing student vs correct answer.
+    - For non-test categories, incorrect_items should be null.
 
     Overall score:
-    - overall_out_of = sum of section out_of values (e.g., 20 if all are /5).
+    - overall_out_of = sum of section out_of values.
     - overall_score = sum of section scores.
     - The weighted percentage is for the teacher's gradebook (the frontend will display weights).
 
