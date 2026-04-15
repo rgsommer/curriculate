@@ -208,14 +208,20 @@ export default function SiteHeader() {
         <div className="flex items-center gap-3">
           {isGrading ? (
             <>
-              <span className="hidden sm:inline text-sm text-gray-500">
-                Free &mdash; no sign-up needed
+              <span className="hidden sm:inline text-xs text-gray-400">
+                Grading is free &mdash; no sign-up
               </span>
               <Link
-                href="/"
-                className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-800 hover:bg-gray-50"
+                href="/features"
+                className="hidden lg:inline text-sm font-semibold text-gray-600 hover:text-gray-900"
               >
-                About Curriculate
+                See Curriculate
+              </Link>
+              <Link
+                href="/freetrial"
+                className="rounded-full bg-gradient-to-br from-blue-600 to-violet-600 px-4 py-2 text-sm font-bold text-white hover:opacity-95"
+              >
+                Try Station Lessons
               </Link>
             </>
           ) : (
