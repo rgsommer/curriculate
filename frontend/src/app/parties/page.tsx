@@ -185,7 +185,7 @@ export default function PartiesPage() {
   const theme = partyThemes.find((t) => t.id === activeTheme) || partyThemes[0];
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-purple-50">
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-purple-50">
       {/* Structured data for rich search results */}
       <script
         type="application/ld+json"
@@ -487,6 +487,6 @@ export default function PartiesPage() {
           </div>
         </div>
       </section>
-    </main>
+    </div>
   );
 }

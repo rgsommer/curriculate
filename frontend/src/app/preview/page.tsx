@@ -90,7 +90,7 @@ export default function PreviewPage() {
   }, [isPaused, stations.length]);
 
   return (
-    <main className="preview-root">
+    <div className="preview-root">
       <div className="stage">
         <img
           src="/preview/stage.jpg"
@@ -131,6 +131,6 @@ export default function PreviewPage() {
           <img src="/preview/ui/arrow.png" alt="Next" />
         </button>
       </div>
-    </main>
+    </div>
   );
 }

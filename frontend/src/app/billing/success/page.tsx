@@ -31,7 +31,7 @@ export default function BillingSuccessPage() {
   }, [returnTo]);
 
   return (
-    <main style={{ padding: 18, maxWidth: 820, margin: "0 auto" }}>
+    <div style={{ padding: 18, maxWidth: 820, margin: "0 auto" }}>
       <h1 style={{ marginTop: 0 }}>Payment successful</h1>
       <p style={{ opacity: 0.8 }}>
         Thanks! Your Curriculate plan will update shortly. You can now return to
@@ -108,6 +108,6 @@ export default function BillingSuccessPage() {
         open={walkthroughOpen}
         onClose={() => setWalkthroughOpen(false)}
       />
-    </main>
+    </div>
   );
 }
