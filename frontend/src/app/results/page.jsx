@@ -386,6 +386,12 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
   const [copiedFeedback, setCopiedFeedback] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
 
+  // Results-page feedback
+  const [fbRole, setFbRole] = useState(""); // "student" | "parent" | ""
+  const [fbText, setFbText] = useState("");
+  const [fbSending, setFbSending] = useState(false);
+  const [fbDone, setFbDone] = useState(false);
+
   const code = useMemo(() => normalizeCode(codeInput), [codeInput]);
   useEffect(() => {
     if (!autoLookup) return;
@@ -430,6 +436,25 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
     } catch (err) {
       setStatus("error");
       setErrMsg(err?.message || "Code not found.");
+    }
+  }
+
+  async function submitResultsFeedback() {
+    const msg = (fbText || "").trim();
+    if (!msg || !fbRole) return;
+    setFbSending(true);
+    try {
+      const res = await fetch(`${API_BASE}/results/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: fbRole, message: msg, refCode: code }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setFbDone(true);
+    } catch (e) {
+      console.error("Results feedback error:", e);
+    } finally {
+      setFbSending(false);
     }
   }
 
@@ -904,6 +929,83 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                   </ul>
                 </Card>
               ) : null}
+
+              {/* ── Feedback widget ── */}
+              <div className="no-print" style={{
+                marginTop: 24, padding: 16, background: "#f8fafc",
+                borderRadius: 12, border: "1px solid #e2e8f0",
+              }}>
+                {fbDone ? (
+                  <div style={{ textAlign: "center", padding: "8px 0" }}>
+                    <div style={{ fontSize: 20, marginBottom: 6 }}>&#10003;</div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>Thanks for your feedback!</div>
+                    <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>This helps us improve.</div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>
+                      How was this experience?
+                    </div>
+                    <div style={{ fontSize: 13, opacity: 0.8, marginBottom: 10 }}>
+                      I am a…
+                    </div>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                      {[
+                        { key: "student", label: "Student", emoji: "\uD83C\uDF93" },
+                        { key: "parent", label: "Parent / Guardian", emoji: "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67" },
+                      ].map((r) => (
+                        <button
+                          key={r.key}
+                          type="button"
+                          onClick={() => setFbRole(r.key)}
+                          style={{
+                            flex: 1, padding: "8px 10px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                            border: fbRole === r.key ? "2px solid #2563eb" : "1px solid #cbd5e1",
+                            background: fbRole === r.key ? "#eff6ff" : "white",
+                            color: fbRole === r.key ? "#1d4ed8" : "#334155",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {r.emoji} {r.label}
+                        </button>
+                      ))}
+                    </div>
+                    {fbRole && (
+                      <>
+                        <textarea
+                          value={fbText}
+                          onChange={(e) => setFbText(e.target.value)}
+                          placeholder={
+                            fbRole === "student"
+                              ? "Was the feedback helpful? Anything confusing?"
+                              : "Is this report clear and useful? Any suggestions?"
+                          }
+                          style={{
+                            width: "100%", minHeight: 70, border: "1px solid #cbd5e1", borderRadius: 8,
+                            padding: 10, fontSize: 13, lineHeight: 1.5, resize: "vertical",
+                            fontFamily: "inherit", color: "#334155",
+                          }}
+                          autoFocus
+                        />
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                          <button
+                            type="button"
+                            onClick={submitResultsFeedback}
+                            disabled={fbSending || !(fbText || "").trim()}
+                            style={{
+                              padding: "7px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                              border: "none", background: "#2563eb", color: "white", cursor: "pointer",
+                              opacity: (fbText || "").trim() ? 1 : 0.5,
+                            }}
+                          >
+                            {fbSending ? "Sending…" : "Send feedback"}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
 
             </>
           ) : (

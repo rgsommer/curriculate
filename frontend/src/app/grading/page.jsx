@@ -98,6 +98,12 @@ const REFERRAL_SUBMITTED_KEY = "curriculate_referral_submitted_v1";
 
 const FEEDBACK_SUBMITTED_AT_KEY = "curriculate_feedback_submitted_at_v1";
 
+// Parent note prompt (localStorage) — reminds teachers to share info with parents
+const PARENT_NOTE_TRIGGER = 20;           // first show after 20 gradings
+const PARENT_NOTE_REPEAT_EVERY = 50;      // re-show every 50 gradings after that
+const PARENT_NOTE_DISMISSED_UNTIL_KEY = "curriculate_parent_note_dismissed_until_v1";
+const PARENT_NOTE_SNOOZE_DAYS = 30;       // if dismissed, don't show again for 30 days
+
 function submittedKeyForTrigger(t) {
   return `curriculate_feedback_submitted_for_${t}_v1`;
 }
@@ -1057,7 +1063,10 @@ export default function GradingPage() {
     const [referralSending, setReferralSending] = useState(false);
     const [referralDone, setReferralDone] = useState(false); // "applied" | "already" | false
     const [referralError, setReferralError] = useState("");
-       
+
+    // Parent note prompt state
+    const [showParentNote, setShowParentNote] = useState(false);
+
     const gradingUrl = useMemo(() => {
       if (!backendBase) return "";
       return `${backendBase.replace(/\/$/, "")}/grading`;
@@ -1440,6 +1449,24 @@ export default function GradingPage() {
       setReferralName("");
       setReferralEmail("");
       setReferralError("");
+    }
+
+    function shouldShowParentNote(nextUses) {
+      if (typeof window === "undefined") return false;
+      if (!PARENT_NOTE_TRIGGER || nextUses < PARENT_NOTE_TRIGGER) return false;
+      // Check snooze
+      const dismissedUntil = Number(readStrLS(PARENT_NOTE_DISMISSED_UNTIL_KEY, "0"));
+      if (dismissedUntil && Date.now() < dismissedUntil) return false;
+      // Show at trigger, then every REPEAT interval after
+      const past = nextUses - PARENT_NOTE_TRIGGER;
+      if (past === 0) return true;
+      if (PARENT_NOTE_REPEAT_EVERY && past > 0 && past % PARENT_NOTE_REPEAT_EVERY === 0) return true;
+      return false;
+    }
+
+    function dismissParentNote() {
+      writeStrLS(PARENT_NOTE_DISMISSED_UNTIL_KEY, daysFromNow(PARENT_NOTE_SNOOZE_DAYS));
+      setShowParentNote(false);
     }
 
     async function submitReferralApplication() {
@@ -1840,6 +1867,10 @@ export default function GradingPage() {
               setReferralDone(false);
               setReferralError("");
               setShowReferralPrompt(true);
+            }
+            // Parent note: periodic reminder to share results info with parents
+            else if (!showFeedbackPrompt && !showReferralPrompt && !showParentNote && shouldShowParentNote(nextUses)) {
+              setShowParentNote(true);
             }
           } catch {}
         } else {
@@ -3544,6 +3575,68 @@ export default function GradingPage() {
 
               <div style={feedbackStyles.finePrint}>
                 This takes 10 seconds and helps me improve the tool for teachers.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Parent note modal ── */}
+        {showParentNote && (
+          <div style={referralStyles.overlay} role="dialog" aria-modal="true">
+            <div style={{ ...referralStyles.modal, maxWidth: 480 }}>
+              <div style={referralStyles.icon}>&#128227;</div>
+              <div style={referralStyles.title}>Share results with parents</div>
+              <div style={{ fontSize: 14, lineHeight: 1.55, color: "#334155", marginBottom: 12, textAlign: "left" }}>
+                <p style={{ margin: "0 0 10px" }}>
+                  Parents and students can view detailed feedback for any graded assignment by visiting:
+                </p>
+                <div style={{
+                  background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8,
+                  padding: "10px 14px", fontWeight: 700, fontSize: 15, textAlign: "center",
+                  marginBottom: 10, color: "#0369a1",
+                }}>
+                  www.curriculate.net/results
+                </div>
+                <p style={{ margin: "0 0 10px" }}>
+                  They just enter the <b>reference code</b> written on the paper. The results page shows the grade, detailed feedback, rubric, and photos of the submitted work.
+                </p>
+                <p style={{ margin: 0, opacity: 0.85 }}>
+                  Feel free to copy the message below to share with parents — or just let them know the URL and code.
+                </p>
+              </div>
+              <textarea
+                readOnly
+                value={`Dear Parents,\n\nYour child's graded work includes a short reference code (e.g. AT534). To view the detailed feedback, grade, and photos of the submitted work, visit:\n\nwww.curriculate.net/results\n\nEnter the code and you'll see everything in one place. If you have any questions or feedback, please don't hesitate to reach out.`}
+                style={{
+                  width: "100%", minHeight: 130, border: "1px solid #cbd5e1", borderRadius: 8,
+                  padding: 10, fontSize: 13, lineHeight: 1.5, resize: "vertical",
+                  fontFamily: "inherit", color: "#334155", background: "#f8fafc",
+                }}
+                onClick={(e) => e.target.select()}
+              />
+              <div style={{ ...referralStyles.row, marginTop: 12 }}>
+                <button
+                  type="button"
+                  onClick={dismissParentNote}
+                  style={referralStyles.secondary}
+                >
+                  Got it
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(
+                      `Dear Parents,\n\nYour child's graded work includes a short reference code (e.g. AT534). To view the detailed feedback, grade, and photos of the submitted work, visit:\n\nwww.curriculate.net/results\n\nEnter the code and you'll see everything in one place. If you have any questions or feedback, please don't hesitate to reach out.`
+                    );
+                    dismissParentNote();
+                  }}
+                  style={referralStyles.primary}
+                >
+                  Copy &amp; close
+                </button>
+              </div>
+              <div style={referralStyles.finePrint}>
+                This reminder appears periodically. Dismiss to snooze for 30 days.
               </div>
             </div>
           </div>

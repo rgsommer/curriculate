@@ -42,6 +42,7 @@ export default function AdminUsageDashboard() {
   const [feedback, setFeedback] = useState([]);
   const [feedbackErr, setFeedbackErr] = useState("");
   const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackFilter, setFeedbackFilter] = useState("all"); // "all" | "teacher" | "student" | "results"
 
   async function loadFeedback() {
     setFeedbackLoading(true);
@@ -142,6 +143,8 @@ export default function AdminUsageDashboard() {
   const powerUsers = data?.derived?.powerUsers30d;
   const powerThreshold = data?.derived?.powerUserThreshold ?? 5;
 
+  const rpv = data?.resultsPageViews || {};
+
   return (
     <div className="min-h-screen bg-[#0b1220] text-white">
       <div className="mx-auto max-w-6xl p-6">
@@ -233,6 +236,22 @@ export default function AdminUsageDashboard() {
 
           <Card title="Submissions (7d)">
             <BigNumber value={activity.submissions7d} />
+          </Card>
+        </div>
+
+        {/* Results Page Views */}
+        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-4">
+          <Card title="Results published">
+            <BigNumber value={rpv.published} sub="Active result pages" />
+          </Card>
+          <Card title="Total page views">
+            <BigNumber value={rpv.totalViews} sub={`${rpv.resultsViewed || 0} results viewed at least once`} />
+          </Card>
+          <Card title="Avg views per result">
+            <BigNumber value={rpv.avgViewsPerResult} sub={`Max: ${rpv.maxViews || 0}`} />
+          </Card>
+          <Card title="Results viewed (30d)">
+            <BigNumber value={rpv.viewedLast30d} sub="Unique results viewed" />
           </Card>
         </div>
 
@@ -328,7 +347,7 @@ export default function AdminUsageDashboard() {
         </div>
 
         <div className="mt-6">
-          <Card title="Teacher feedback (most recent)">
+          <Card title="Feedback">
             <div className="flex items-center justify-between gap-2">
               <div className="text-xs text-white/60">
                 {feedbackLoading ? "Loading…" : `${feedback.length} message(s)`}
@@ -342,6 +361,39 @@ export default function AdminUsageDashboard() {
               </button>
             </div>
 
+            {/* Filter tabs */}
+            <div className="mt-3 flex gap-2">
+              {[
+                { key: "all", label: "All" },
+                { key: "teacher", label: "Teacher" },
+                { key: "student", label: "Student" },
+                { key: "results", label: "Results page" },
+              ].map((tab) => {
+                const count = tab.key === "all"
+                  ? feedback.length
+                  : feedback.filter((f) => {
+                      const src = f.meta?.source || "";
+                      if (tab.key === "teacher") return src === "grading-feedback-prompt";
+                      if (tab.key === "student") return src === "student-app";
+                      if (tab.key === "results") return src === "results-page";
+                      return false;
+                    }).length;
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setFeedbackFilter(tab.key)}
+                    className={`rounded-lg px-3 py-1 text-xs font-medium ${
+                      feedbackFilter === tab.key
+                        ? "bg-blue-500/20 border border-blue-400/40 text-blue-200"
+                        : "bg-white/5 border border-white/10 text-white/60 hover:bg-white/10"
+                    }`}
+                  >
+                    {tab.label} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
             {feedbackErr ? (
               <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">
                 {feedbackErr}
@@ -351,15 +403,38 @@ export default function AdminUsageDashboard() {
             <div className="mt-3 max-h-[420px] overflow-auto rounded-xl border border-white/10 bg-black/20">
               {feedback.length ? (
                 <ul className="divide-y divide-white/10">
-                  {feedback.map((f) => (
+                  {feedback
+                    .filter((f) => {
+                      if (feedbackFilter === "all") return true;
+                      const src = f.meta?.source || "";
+                      if (feedbackFilter === "teacher") return src === "grading-feedback-prompt";
+                      if (feedbackFilter === "student") return src === "student-app";
+                      if (feedbackFilter === "results") return src === "results-page";
+                      return true;
+                    })
+                    .map((f) => {
+                    const src = f.meta?.source || "";
+                    const badge = src === "results-page"
+                      ? { label: f.meta?.role === "parent" ? "Parent" : f.meta?.role === "student" ? "Student" : "Results", color: "bg-purple-500/20 text-purple-200 border-purple-400/30" }
+                      : src === "student-app"
+                      ? { label: "Student app", color: "bg-green-500/20 text-green-200 border-green-400/30" }
+                      : src === "grading-feedback-prompt"
+                      ? { label: "Teacher", color: "bg-blue-500/20 text-blue-200 border-blue-400/30" }
+                      : { label: "Other", color: "bg-white/10 text-white/60 border-white/10" };
+
+                    return (
                     <li key={f.id} className="p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="text-xs text-white/60">
+                        <div className="flex items-center gap-2 text-xs text-white/60">
+                          <span className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${badge.color}`}>
+                            {badge.label}
+                          </span>
                           {f.createdAt ? new Date(f.createdAt).toLocaleString() : "—"}
                           {typeof f.uses === "number" ? ` · uses: ${f.uses}` : ""}
                           {f.meta?.gradeBand ? ` · band: ${f.meta.gradeBand}` : ""}
                           {f.meta?.inputMode ? ` · mode: ${f.meta.inputMode}` : ""}
                           {f.meta?.voice ? ` · voice: ${f.meta.voice}` : ""}
+                          {f.meta?.refCode ? ` · ref: ${f.meta.refCode}` : ""}
                         </div>
                         <div className="text-[11px] text-white/50">
                           {f.anonId ? `anon: ${String(f.anonId).slice(0, 10)}…` : ""}
@@ -370,7 +445,7 @@ export default function AdminUsageDashboard() {
                         {f.message}
                       </div>
                     </li>
-                  ))}
+                  );})}
                 </ul>
               ) : (
                 <div className="p-3 text-sm text-white/60">

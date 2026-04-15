@@ -8,6 +8,8 @@ const PublishedResultSchema = new mongoose.Schema(
     meta: { type: mongoose.Schema.Types.Mixed },                        // optional (subject, grade, etc.)
     teacherId: { type: String },                                        // optional
     sessionId: { type: String },                                        // optional
+    viewCount: { type: Number, default: 0 },
+    lastViewedAt: { type: Date, default: null },
     createdAt: { type: Date, default: Date.now },
     expiresAt: { type: Date, required: true },
   },

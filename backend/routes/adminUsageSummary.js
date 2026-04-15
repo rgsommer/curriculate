@@ -1,6 +1,7 @@
 // backend/routes/adminUsageSummary.js
 import express from "express";
 import GradingUsage from "../models/GradingUsage.js";
+import PublishedResult from "../models/PublishedResult.js";
 
 const router = express.Router();
 
@@ -100,6 +101,11 @@ router.get("/usage-summary", requireAdminToken, async (req, res) => {
       repeatUsersMonthly12,
 
       latencyStats30d,
+
+      resultsPublished,
+      resultsTotalViewsAgg,
+      resultsViewedAgg,
+      resultsViewed30dAgg,
     ] = await Promise.all([
       GradingUsage.countDocuments({}),
       GradingUsage.countDocuments({ timestamp: { $gte: today } }),
@@ -211,6 +217,20 @@ router.get("/usage-summary", requireAdminToken, async (req, res) => {
           },
         },
       ]).catch(() => []),
+
+      // Results page view stats
+      PublishedResult.countDocuments({}).catch(() => 0),
+      PublishedResult.aggregate([
+        { $group: { _id: null, totalViews: { $sum: "$viewCount" } } },
+      ]).catch(() => []),
+      PublishedResult.aggregate([
+        { $match: { viewCount: { $gte: 1 } } },
+        { $group: { _id: null, count: { $sum: 1 }, avgViews: { $avg: "$viewCount" }, maxViews: { $max: "$viewCount" } } },
+      ]).catch(() => []),
+      PublishedResult.aggregate([
+        { $match: { lastViewedAt: { $gte: since30 } } },
+        { $group: { _id: null, totalViews: { $sum: "$viewCount" }, viewed: { $sum: 1 } } },
+      ]).catch(() => []),
     ]);
 
     const dailySubmissions30d = dailyCounts30d.map((x) => {
@@ -308,6 +328,15 @@ router.get("/usage-summary", requireAdminToken, async (req, res) => {
       },
 
       performance30d: { latency },
+
+      resultsPageViews: {
+        published: resultsPublished || 0,
+        totalViews: resultsTotalViewsAgg?.[0]?.totalViews || 0,
+        resultsViewed: resultsViewedAgg?.[0]?.count || 0,
+        avgViewsPerResult: Math.round((resultsViewedAgg?.[0]?.avgViews || 0) * 10) / 10,
+        maxViews: resultsViewedAgg?.[0]?.maxViews || 0,
+        viewedLast30d: resultsViewed30dAgg?.[0]?.viewed || 0,
+      },
 
       cache: { ttlMs: CACHE_TTL_MS },
     };
