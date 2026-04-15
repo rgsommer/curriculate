@@ -9270,6 +9270,10 @@ function buildRubricInstructions({
         - Preserve the exact structure: strand names, level descriptors, and point values.
         - Set rubricDetected = true.
         - Set rubricConfidence between 0.5 and 1.0 (0.8+ if clearly readable).
+        - MANDATORY: You MUST ALSO create sections[] matching the rubric categories and score each one.
+          Do NOT return sections=null when a rubric is detected. The rubric defines your sections.
+          Each rubric category/strand becomes a section with its own score, out_of, and teacher_comment.
+          This applies on FIRST detection — do not just extract the rubric for later, USE IT NOW to structure your grading.
 
         If no rubric is found:
         - rubricText = null
