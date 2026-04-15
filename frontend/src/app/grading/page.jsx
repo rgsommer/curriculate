@@ -2012,13 +2012,13 @@ export default function GradingPage() {
           }}
           id="note-to-parents-btn"
           style={{
-            padding: "5px 12px",
-            fontSize: "0.75rem",
+            padding: "7px 14px",
+            fontSize: "0.8rem",
             fontWeight: 700,
-            background: "#f0f9ff",
-            color: "#0369a1",
-            border: "1px solid #bae6fd",
-            borderRadius: 8,
+            background: "#2563eb",
+            color: "#fff",
+            border: "none",
+            borderRadius: 10,
             cursor: "pointer",
             whiteSpace: "nowrap",
             alignSelf: "flex-end",
