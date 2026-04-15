@@ -680,40 +680,137 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
               ) : null}
 
               {parsed.sections.length ? (
-                <Card title={parsed.isKita ? "Achievement Categories (KITA)" : "Sections"}>
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {parsed.sections.map((sec, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          border: "1px solid rgba(0,0,0,.08)",
-                          borderRadius: 12,
-                          padding: 12,
-                          background: "rgba(15,23,42,.02)",
-                        }}
-                      >
-                        <div>
-                          {renderSectionTitle(sec.title)}
-                        </div>
+                parsed.isKita ? (
+                  <Card title="Achievement Categories (KITA)">
+                    <div style={{
+                      border: "1px solid rgba(37,99,235,0.2)",
+                      borderRadius: 12,
+                      overflow: "hidden",
+                      background: "rgba(37,99,235,0.03)",
+                    }}>
+                      {parsed.sections.map((sec, i) => {
+                        // Parse KITA line: "K Knowledge & Understanding: 3.5/5 (25%) — comment"
+                        const kitaMatch = sec.title.match(/^([KTCA])\s+(.+?):\s*([\d.]+)\s*\/\s*([\d.]+)\s*\((\d+)%\)(?:\s*—\s*(.*))?$/);
+                        // Parse weighted total: "Weighted Total: 78%"
+                        const totalMatch = sec.title.match(/^Weighted Total:\s*(\d+)%$/);
 
-                        {sec.lines?.length ? (
+                        if (totalMatch) {
+                          return (
+                            <div key={i} style={{
+                              padding: "8px 12px",
+                              borderTop: "1px solid rgba(37,99,235,0.18)",
+                              background: "rgba(37,99,235,0.06)",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              fontWeight: 900,
+                            }}>
+                              <span>Weighted Total</span>
+                              <span style={{ fontSize: 18 }}>{totalMatch[1]}%</span>
+                            </div>
+                          );
+                        }
+
+                        if (kitaMatch) {
+                          const [, short, name, score, outOf, weight, comment] = kitaMatch;
+                          return (
+                            <div key={i} style={{
+                              padding: "10px 12px",
+                              borderTop: i === 0 ? "none" : "1px solid rgba(37,99,235,0.12)",
+                            }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                                <div style={{ fontWeight: 800 }}>
+                                  <span style={{
+                                    display: "inline-block",
+                                    width: 22,
+                                    height: 22,
+                                    borderRadius: 6,
+                                    background: "rgba(37,99,235,0.12)",
+                                    textAlign: "center",
+                                    lineHeight: "22px",
+                                    fontSize: 12,
+                                    fontWeight: 900,
+                                    marginRight: 8,
+                                    color: "#2563eb",
+                                  }}>{short}</span>
+                                  {name}
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <span style={{ fontSize: 11, opacity: 0.6 }}>{weight}%</span>
+                                  <span style={{ fontWeight: 900, minWidth: 36, textAlign: "right" }}>{score}/{outOf}</span>
+                                </div>
+                              </div>
+                              {comment ? (
+                                <div style={{ marginTop: 5, opacity: 0.85, lineHeight: 1.35, paddingLeft: 30 }}>
+                                  {linkifyTextToReactNodes(comment)}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        }
+
+                        // Fallback for unrecognized lines
+                        return (
+                          <div key={i} style={{ padding: "8px 12px", borderTop: i === 0 ? "none" : "1px solid rgba(37,99,235,0.12)" }}>
+                            {renderSectionTitle(sec.title)}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </Card>
+                ) : (
+                  <Card title="Sections">
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {parsed.sections.map((sec, i) => {
+                        // Parse "Name: score/outOf — comment" for rich display
+                        const secMatch = sec.title.match(/^(.+?):\s*([\d.]+)\s*\/\s*([\d.]+)(?:\s*—\s*(.*))?$/);
+
+                        return (
                           <div
+                            key={i}
                             style={{
-                              marginTop: 8,
-                              opacity: 0.9,
-                              lineHeight: 1.55,
-                              whiteSpace: "pre-wrap",
+                              border: "1px solid rgba(0,0,0,.08)",
+                              borderRadius: 12,
+                              padding: 12,
+                              background: "rgba(15,23,42,.02)",
                             }}
                           >
-                            {sec.lines.map((ln, idx) => (
-                              <div key={idx}>{linkifyTextToReactNodes(ln)}</div>
-                            ))}
+                            {secMatch ? (
+                              <>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                  <span style={{ fontWeight: 900 }}>{secMatch[1]}</span>
+                                  <span style={{ fontWeight: 900 }}>{secMatch[2]}/{secMatch[3]}</span>
+                                </div>
+                                {secMatch[4] ? (
+                                  <div style={{ marginTop: 6, opacity: 0.85, lineHeight: 1.45 }}>
+                                    {linkifyTextToReactNodes(secMatch[4])}
+                                  </div>
+                                ) : null}
+                              </>
+                            ) : (
+                              <div>{renderSectionTitle(sec.title)}</div>
+                            )}
+
+                            {sec.lines?.length ? (
+                              <div
+                                style={{
+                                  marginTop: 8,
+                                  opacity: 0.9,
+                                  lineHeight: 1.55,
+                                  whiteSpace: "pre-wrap",
+                                }}
+                              >
+                                {sec.lines.map((ln, idx) => (
+                                  <div key={idx}>{linkifyTextToReactNodes(ln)}</div>
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                </Card>
+                        );
+                      })}
+                    </div>
+                  </Card>
+                )
               ) : null}
 
               {(parsed.evidenceLinks.length || parsed.evidenceText.trim()) ? (
