@@ -5219,7 +5219,7 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
       // Tier gating: FREE gets selfie for first 2 sessions, then needs upgrade.
       // PLUS tiers get AI-themed selfie. PRO tiers get basic selfie.
       try {
-        const profileOwnerId = reportOwnerId || room.reportOwnerId || "";
+        const profileOwnerId = reportOwnerId || room.reportOwnerId || socket.data?.userId || socket.data?.user?._id || "";
         if (profileOwnerId) {
           const selfieProfile = await TeacherProfile.findOne({ ownerId: String(profileOwnerId) }).lean();
           if (selfieProfile?.includeTeamSelfie !== false) {
