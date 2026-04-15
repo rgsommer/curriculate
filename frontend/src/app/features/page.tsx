@@ -17,7 +17,7 @@ function FeatureCard({
       <ul className="mt-4 grid gap-2 text-slate-700">
         {bullets.map((b) => (
           <li key={b} className="flex gap-2">
-            <span className="text-green-600">✓</span>
+            <span className="text-green-600">&#10003;</span>
             <span>{b}</span>
           </li>
         ))}
@@ -40,7 +40,7 @@ function SectionHeader({ eyebrow, title, desc }: { eyebrow: string; title: strin
 
 export default function FeaturesPage() {
   return (
-    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       <section className="mx-auto max-w-6xl px-6 py-16">
         <div className="flex flex-col gap-6">
           <div className="max-w-3xl">
@@ -48,11 +48,11 @@ export default function FeaturesPage() {
               Features
             </div>
             <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-slate-900">
-              Curriculate is AI lesson planning — then AI task generation
+              Curriculate is AI lesson planning  -  then AI task generation
             </h1>
             <p className="mt-4 text-lg text-slate-600">
               Most "AI classroom tools" generate activities. Curriculate plans the learning experience first:
-              time-fit pacing, grade-appropriate task selection, intentional movement breaks, and station-ready delivery —
+              time-fit pacing, grade-appropriate task selection, intentional movement breaks, and station-ready delivery  - 
               then it generates tasks to match that plan.
             </p>
 
@@ -78,11 +78,11 @@ export default function FeaturesPage() {
             <SectionHeader
               eyebrow="Planning & Pacing"
               title="Time-aware, student-aware task sets"
-              desc="Pick a lesson length and learning goal. Teachers choose the time window; Curriculate chooses the task count and mix using expected task durations — without dead time or rushed endings."
+              desc="Pick a lesson length and learning goal. Teachers choose the time window; Curriculate chooses the task count and mix using expected task durations  -  without dead time or rushed endings."
             />
             <div className="grid gap-4 md:grid-cols-2">
               <FeatureCard
-                title="⏱️ Time-Aware Task Sets"
+                title="Time-Aware Task Sets"
                 body="Curriculate uses task definitions (expected completion time) to decide how many tasks to include and what mix fits."
                 bullets={[
                   "Lesson-length planning (e.g., 20, 35, 45, 60 minutes)",
@@ -92,7 +92,7 @@ export default function FeaturesPage() {
                 ]}
               />
               <FeatureCard
-                title="🏃 Movement, Done Right"
+                title="Movement, Done Right"
                 body="Movement tasks are intentionally placed, capped to a small portion of the set, and never stacked back-to-back."
                 bullets={[
                   "At least one movement break when appropriate",
@@ -111,18 +111,18 @@ export default function FeaturesPage() {
             />
             <div className="grid gap-4 md:grid-cols-2">
               <FeatureCard
-                title="📍 Station-Ready by Design"
+                title="Station-Ready by Design"
                 body="Print color-coded QR posters once, stick them around the room, and reuse them for every session. Students scan to arrive at a station and receive their next task."
                 bullets={[
                   "8 color-coded stations with printable QR posters",
                   "Automatic team-to-station assignment and rotation",
-                  "Students scan to arrive — no teacher direction needed",
+                  "Students scan to arrive  -  no teacher direction needed",
                   "Designed for quick launch and smooth transitions",
                 ]}
               />
               <FeatureCard
-                title="🔬 Fixed Stations with Physical Displays"
-                body='Attach real objects to stations — a microscope at Red, an art print at Blue, a map at Green — and the AI generates tasks that reference what students are actually looking at.'
+                title="Fixed Stations with Physical Displays"
+                body='Attach real objects to stations  -  a microscope at Red, an art print at Blue, a map at Green  -  and the AI generates tasks that reference what students are actually looking at.'
                 bullets={[
                   "Name and describe the physical display at each station",
                   "AI writes tasks tied to each object (observation, analysis, comparison)",
@@ -131,17 +131,17 @@ export default function FeaturesPage() {
                 ]}
               />
               <FeatureCard
-                title="🗺️ Multi-Room & Scavenger Hunts"
+                title="Multi-Room & Scavenger Hunts"
                 body="Spread stations across the hallway, library, gym, or campus. Define your room list in your profile and select which rooms to use each session."
                 bullets={[
                   "Configure room list once in your teacher profile",
-                  "Select rooms per session — single-room or multi-room",
+                  "Select rooms per session  -  single-room or multi-room",
                   "Location-aware scanning enforces correct station visits",
                   "Great for review days, field trips, and engagement boosts",
                 ]}
               />
               <FeatureCard
-                title="🎯 Zero-Prep Reuse"
+                title="Zero-Prep Reuse"
                 body="The station routine is the same every session. Students learn the scan-arrive-work loop once, and it works for any subject, any taskset, any day."
                 bullets={[
                   "Same QR posters, different tasks every session",
@@ -156,12 +156,12 @@ export default function FeaturesPage() {
             <SectionHeader
               eyebrow="Worldview Alignment"
               title="Specify the lens for prompts and scoring"
-              desc="Teachers can define a worldview lens and use it to shape how tasks are framed and how responses are evaluated — without outsourcing judgment. The teacher sets the criteria; the system helps apply it consistently."
+              desc="Teachers can define a worldview lens and use it to shape how tasks are framed and how responses are evaluated  -  without outsourcing judgment. The teacher sets the criteria; the system helps apply it consistently."
             />
 
             <div className="grid gap-4 md:grid-cols-2">
               <FeatureCard
-                title="🧭 Define a worldview lens"
+                title="Define a worldview lens"
                 body="Set the values, virtues, assumptions, or guiding principles you want reflected in tasks and discussion."
                 bullets={[
                   "Lens can be broad (values) or specific (a short statement)",
@@ -170,7 +170,7 @@ export default function FeaturesPage() {
                 ]}
               />
               <FeatureCard
-                title="✅ Score against your criteria"
+                title="Score against your criteria"
                 body="Use your worldview criteria as part of the scoring rubric, so feedback and evaluation match your intent."
                 bullets={[
                   "Rubric-driven scoring aligned to your stated lens",
@@ -185,11 +185,11 @@ export default function FeaturesPage() {
             <SectionHeader
               eyebrow="Task Variety"
               title="Task types grouped by learning intent"
-              desc="Rather than a static list, Curriculate selects task formats that match how students learn — and adapts the mix to your context."
+              desc="Rather than a static list, Curriculate selects task formats that match how students learn  -  and adapts the mix to your context."
             />
             <div className="grid gap-4 md:grid-cols-2">
               <FeatureCard
-                title="🎯 Retrieval & Review"
+                title="Retrieval & Review"
                 body="Fast, confidence-building checks for key facts and terms."
                 bullets={[
                   "Multiple choice and true/false formats",
@@ -198,7 +198,7 @@ export default function FeaturesPage() {
                 ]}
               />
               <FeatureCard
-                title="🧠 Reasoning & Thinking"
+                title="Reasoning & Thinking"
                 body="Tasks that require sorting, sequencing, comparing, and explaining."
                 bullets={[
                   "Sorting/categorizing and matching formats",
@@ -207,17 +207,17 @@ export default function FeaturesPage() {
                 ]}
               />
               <FeatureCard
-                title="🎨 Expression & Creativity"
+                title="Expression & Creativity"
                 body="Let students show understanding in more than one modality."
                 bullets={[
-                  "Letter writing — write to a historical character, get an AI reply back",
-                  "Case study — solve a real-world scenario, get AI expert feedback",
+                  "Letter writing  -  write to a historical character, get an AI reply back",
+                  "Case study  -  solve a real-world scenario, get AI expert feedback",
                   "Drawing/visual response and photo journal formats",
                   "Narration/synthesis and vocabulary paragraph prompts",
                 ]}
               />
               <FeatureCard
-                title="🤝 Collaboration & Communication"
+                title="Collaboration & Communication"
                 body="Structured discussion and team formats designed for real classrooms."
                 bullets={[
                   "Intra-team and inter-team options",
@@ -232,11 +232,11 @@ export default function FeaturesPage() {
             <SectionHeader
               eyebrow="Game Modes & Engagement"
               title="Keep energy high with built-in game elements"
-              desc="Curriculate adds moments of fun, team bonding, and surprise to every session — without losing focus."
+              desc="Curriculate adds moments of fun, team bonding, and surprise to every session  -  without losing focus."
             />
             <div className="grid gap-4 md:grid-cols-2">
               <FeatureCard
-                title="🎁 Mystery Box Navigation"
+                title="Mystery Box Navigation"
                 body="An alternative to linear task delivery: teams see shuffled gift boxes and choose their own path."
                 bullets={[
                   "Self-directed task navigation with star-rated difficulty hints",
@@ -246,7 +246,7 @@ export default function FeaturesPage() {
                 ]}
               />
               <FeatureCard
-                title="📸 Team Selfie & Themed Images"
+                title="Team Selfie & Themed Images"
                 body="Sessions start with a fun team photo. On Plus, AI generates a themed version matching the subject."
                 bullets={[
                   "Front-facing camera selfie before the game starts",
@@ -256,8 +256,8 @@ export default function FeaturesPage() {
                 ]}
               />
               <FeatureCard
-                title="🤔 Riddle Breathers"
-                body="AI-generated riddles related to the lesson topic — no scoring, just a fun mental reset."
+                title="Riddle Breathers"
+                body="AI-generated riddles related to the lesson topic  -  no scoring, just a fun mental reset."
                 bullets={[
                   "Automatically injected mid-set via teacher profile toggle",
                   "Topic-relevant riddles with optional hints",
@@ -265,7 +265,7 @@ export default function FeaturesPage() {
                 ]}
               />
               <FeatureCard
-                title="🔍 Mystery Clue Cards"
+                title="Mystery Clue Cards"
                 body="Cross-taskset memory challenge: clue cards appear throughout, then students recall them all at the end."
                 bullets={[
                   "Reveal tasks interleaved through the set",
@@ -279,12 +279,12 @@ export default function FeaturesPage() {
           <div className="mt-12">
             <SectionHeader
               eyebrow="Data & Reflection"
-              title="Useful outputs — not noise"
+              title="Useful outputs  -  not noise"
               desc="Curriculate emphasizes teacher usability: clear tasks, predictable pacing, and outputs that help you teach."
             />
             <div className="grid gap-4 md:grid-cols-2">
               <FeatureCard
-                title="📊 Session Reports & Parent Notes"
+                title="Session Reports & Parent Notes"
                 body="After each session, get a comprehensive report with AI-generated summaries and parent-ready blurbs."
                 bullets={[
                   "Per-student grades with team member names and letter grades",
@@ -295,7 +295,7 @@ export default function FeaturesPage() {
                 ]}
               />
               <FeatureCard
-                title="🔒 Quality Guardrails & Validation"
+                title="Quality Guardrails & Validation"
                 body="AI-generated tasks are automatically validated and fixed before reaching students."
                 bullets={[
                   "Deterministic auto-fixes for chronology, answer keys, and item counts",
@@ -328,6 +328,6 @@ export default function FeaturesPage() {
           </div>
         </div>
       </section>
-    </main>
+    </div>
   );
 }
