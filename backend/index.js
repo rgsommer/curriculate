@@ -8201,20 +8201,24 @@ function buildRubricInstructions({
 
       ANSWER KEY GRADING PROCEDURE (MANDATORY — follow these steps in order):
 
-      STEP 1: For EACH question listed in the answer key above, compare the student's answer to the correct answer.
-      - If the student's answer matches the correct answer (or is mathematically equivalent), that question earns full marks.
-      - If the student's answer does NOT match, that question earns 0 marks (or partial credit if work shown is partially correct).
-      - You MUST actually CHECK each answer. Do NOT assume the student is correct without comparing.
+      STEP 1: For EACH question listed in the answer key, evaluate the student's response:
+      - The answer key is a REFERENCE, not a rigid template. Use professional teacher judgment.
+      - Award full marks if the student's answer is correct — even if their method, notation, or wording differs from the key.
+      - For math: accept any mathematically equivalent answer (e.g., different valid approach, simplified differently, correct numerical result by alternate method).
+      - For written responses: check whether the student demonstrates the key concepts, ideas, or reasoning shown in the answer key. Exact wording is NOT required.
+      - Award partial credit when the student shows correct understanding or method but makes a computational error, or addresses some but not all required elements.
+      - Award 0 marks only when the student's answer is clearly wrong or missing.
+      - You MUST actually EVALUATE each answer against the key. Do NOT assume the student is correct without checking.
 
-      STEP 2: For each incorrect answer, add it to the appropriate section's incorrect_items:
+      STEP 2: For each incorrect or partially incorrect answer, add it to the appropriate section's incorrect_items:
       - Use the answer key's solution as "correct_answer".
       - Use the student's actual written answer as "student_answer".
 
-      STEP 3: Compute section scores by SUMMING only the marks the student actually earned on questions in that section.
+      STEP 3: Compute section scores by SUMMING the marks earned on each question in that section.
+      - Full marks for correct answers, partial marks where appropriate, 0 for wrong/missing.
       - A section score can NEVER exceed its out_of value.
-      - If the student got a question wrong, its marks are NOT counted toward the section score.
 
-      CRITICAL: The answer key takes priority over your own judgment. Even if the student's work "looks right", if their final answer differs from the key, they lose marks. Do NOT give full marks unless every answer matches the key.
+      IMPORTANT: The answer key defines WHAT is correct, but use common sense about HOW it can be expressed. A student who reaches the right answer via a different valid method deserves full marks. A student whose final answer is clearly wrong loses marks even if their setup looked reasonable.
 
       KITA ANNOTATIONS ON ANSWER KEY (critical — check for these):
       Look for letters or abbreviations written in the margins or beside questions on the answer key:
