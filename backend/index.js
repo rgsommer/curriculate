@@ -8456,19 +8456,24 @@ function buildRubricInstructions({
     - If implied section denominators are determined from clearly grouped numbered questions, you MUST NOT set overall_out_of to 10.
     - Visible or clearly implied test denominators override holistic /10 grading.
 
-    RUBRIC OVERRIDE RULE:
-    If a rubric override is provided and it specifies categories and point values:
-    - Create sections[] that match the rubric categories and totals.
-    - Use the rubric's totals for out_of values.
+    RUBRIC RULE (applies to BOTH rubricOverride AND detected rubrics in images):
+    If a rubric is provided via rubricOverride OR you detect a rubric in any image (rubricDetected=true),
+    you MUST grade according to that rubric:
+    - Create sections[] that match the rubric categories, strands, or criteria.
+    - Use the rubric's totals for out_of values per section.
     - Set overall_out_of to the rubric total (sum of section out_of, or stated total).
     - Set overall_score to the sum of section scores.
     - If the rubric conflicts with defaults, rubric wins.
     - For rubric-based sections, do NOT include incorrect_items; instead, cite specific evidence in teacher_comment for each section.
     - Never interpret unchecked boxes on a rubric sheet as missing work.
-    - If rubricDetected=true, you MUST align feedback to rubricText criteria, even if rubricText has no numbers.
-    
+    - Even if the rubric has no explicit numbers, you MUST create sections[] matching its categories and score each one.
+
+    CRITICAL: This rule applies on FIRST detection too. If you see a rubric in the images, you must
+    BOTH extract it as rubricText AND use it to structure your grading (sections, denominators, categories)
+    in the SAME response. Do not just extract it for later — use it NOW.
+
     RUBRIC DENOMINATOR REQUIREMENT:
-    If you are using rubricOverride or rubricText, you MUST identify the total possible points.
+    If you are using rubricOverride or rubricText (including self-detected rubrics), you MUST identify the total possible points.
     - If the rubric defines section totals, use them as section out_of and sum them.
     - If the rubric states a single total (e.g., "/25"), use that as overall_out_of.
     - If the rubric text does NOT contain any denominator at all, then and only then you may use /10.
