@@ -9491,10 +9491,28 @@ function buildRubricInstructions({
   .filter(Boolean)
   .join("\n\n");
 
+      const kitaAnswerKeyReminder = (
+        standards === "canada" &&
+        (band === "9-10" || band === "11+") &&
+        effectiveAnswerKey
+      ) ? `
+        FINAL REMINDER — KITA SECTIONS (THIS OVERRIDES ALL OTHER SECTION RULES):
+        An answer key is provided. Look at the answer key text for KITA annotations (K, T, C, A, /T, /A, etc.).
+        If ANY KITA annotations appear, you MUST name your sections[] using the full KITA names:
+          K → "Knowledge & Understanding"
+          T → "Thinking"
+          C → "Communication"
+          A → "Application"
+        Only include categories that are annotated. Do NOT use names like "Question 2" or "Part A".
+        Each section groups ALL questions tagged with that category, with out_of = sum of those question marks.
+        THIS IS NOT OPTIONAL. If you see /T and /A on the answer key, your sections MUST be "Thinking" and "Application".
+      ` : "";
+
       const instructionsWithInferenceFinal = `
         ${instructionsWithInference}
         ${denomOverrideBlock ? `\n\n${denomOverrideBlock}` : ""}
         ${countResultBlock ? `\n\n${countResultBlock}` : ""}
+        ${kitaAnswerKeyReminder}
         `.trim();
 
       let imageRefs = [];
