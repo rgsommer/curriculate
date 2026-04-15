@@ -61,6 +61,7 @@ const VOICE_OPTIONS = [
   { value: "pudewa_mastery", label: "Mastery / IEW-style (Pudewa)" },
 ];
 
+const GRADE_BAND_KEY = "curriculate_grading_band_v1";
 const VOICE_KEY = "curriculate_grading_voice_v1";
 const VOICE_OVERRIDE_KEY = "curriculate_grading_voice_override_v1";
 const VOICE_OVERRIDE_VALUE_KEY = "curriculate_grading_voice_override_value_v1";
@@ -814,7 +815,10 @@ export default function GradingPage() {
     // Optional rubric override UI
     const [showRubric, setShowRubric] = useState(false);
     const [rubricOverride, setRubricOverride] = useState("");
-    const [gradeBand, setGradeBand] = useState("6-8");
+    const [gradeBand, setGradeBand] = useState(() => {
+      if (typeof window === "undefined") return "6-8";
+      return loadLS(GRADE_BAND_KEY, "6-8");
+    });
 
     // Input mode: photo vs paste
     const [inputMode, setInputMode] = useState("photo"); // "photo" | "paste"
@@ -861,6 +865,7 @@ export default function GradingPage() {
     const prevVoiceBeforeIepRef = useRef(null);
 
     // Persist
+    useEffect(() => saveLS(GRADE_BAND_KEY, gradeBand), [gradeBand]);
     useEffect(() => {
       // Don't overwrite saved default with the temporary IEP voice
       if (voice !== "iep_supportive") saveLS(VOICE_KEY, voice);
