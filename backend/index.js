@@ -8158,11 +8158,24 @@ function buildRubricInstructions({
       A = "Application" — using knowledge in new contexts, transfer of learning
 
     KITA ANNOTATION DETECTION (LOOK FOR THIS ON EVERY PAGE — very important):
-    Ontario teachers print KITA marks in the RIGHT MARGIN of tests. Look for annotations like:
-      /2T  /3A  /5T  /2K  /4C  (slash + number + letter)
-    or:  T/2  A/3  T/5  (letter + slash + number)
-    or:  [2T]  [3A]  (number + letter in brackets)
-    The letter indicates the KITA category (K, T, C, or A).
+    Ontario teachers mark KITA categories on tests, usually in the margins. Many notation styles exist:
+      /2T  /3A  /5T  /2K  /4C           (slash + number + letter)
+      T/2  A/3  T/5  K/2                (letter + slash + number)
+      /2 T  /3 A  /5 T                  (slash + number + space + letter)
+      [2T]  [3A]                         (number + letter in brackets)
+      2T  3A  5T                         (just number + letter)
+      /2 Thinking  /3 Application        (slash + number + full word)
+      2 marks T  3 marks A               (number + "marks" + letter)
+      T: 2  A: 3  T: 5                  (letter + colon + number)
+      Thinking /2  Application /3        (full word + slash + number)
+      KU, TH, CO, AP variants           (two-letter abbreviations instead of single)
+
+    The letter or word indicates the KITA category:
+      K, KU, Knowledge, Knowledge & Understanding → "Knowledge & Understanding"
+      T, TH, Thinking → "Thinking"
+      C, CO, Comm, Communication → "Communication"
+      A, AP, App, Application → "Application"
+
     The number indicates how many marks that question is worth in that category.
 
     For example, if you see on a test page:
@@ -9512,8 +9525,9 @@ function buildRubricInstructions({
         (band === "9-10" || band === "11+")
       ) ? `
         FINAL REMINDER — KITA SECTIONS (THIS OVERRIDES ALL OTHER SECTION RULES):
-        CHECK THE RIGHT MARGIN of every page for KITA annotations like /2T, /5T, /3A, /2K, /4C.
-        These are printed marks showing which KITA category each question belongs to.
+        CHECK THE MARGINS of every page for KITA annotations in any format:
+        /2T, /5T, /3A, T/2, /2 T, 2T, T: 2, /2 Thinking, 2 marks T, etc.
+        These marks show which KITA category each question belongs to.
 
         If you see ANY such annotations:
         1. Group questions by their letter (K, T, C, or A).
