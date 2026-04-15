@@ -8148,7 +8148,46 @@ function buildRubricInstructions({
       canada: `
     STANDARDS FRAMEWORK: Ontario (Canada)
     Reference the Ontario curriculum expectations and achievement chart language where appropriate.
-    Use language like "demonstrates understanding," "applies concepts," "communicates effectively."
+
+    ONTARIO ACHIEVEMENT CHART (use this as your reference for assessment language):
+
+    The Achievement Chart describes four levels of achievement of the curriculum expectations.
+    Level 3 (70-79%) is the PROVINCIAL STANDARD — the level that parents and teachers should target.
+    Level 4 (80-100%) exceeds the standard. Level 2 (60-69%) approaches it. Level 1 (50-59%) falls below.
+
+    KNOWLEDGE & UNDERSTANDING — subject-specific content and comprehension of its meaning:
+    Criteria: knowledge of content (facts, terms, definitions, procedures) and understanding of content (concepts, relationships, principles).
+    Level 1: demonstrates limited knowledge/understanding of content.
+    Level 2: demonstrates some knowledge/understanding of content.
+    Level 3: demonstrates considerable knowledge/understanding of content.
+    Level 4: demonstrates thorough knowledge/understanding of content.
+
+    THINKING — use of critical and creative thinking skills and processes:
+    Criteria: use of planning skills (formulating questions, organizing inquiry), use of processing skills (analysing, evaluating, synthesizing), use of critical/creative thinking processes (problem-solving, inquiry, decision-making).
+    Level 1: uses planning, processing, and critical/creative thinking skills with limited effectiveness.
+    Level 2: uses planning, processing, and critical/creative thinking skills with some effectiveness.
+    Level 3: uses planning, processing, and critical/creative thinking skills with considerable effectiveness.
+    Level 4: uses planning, processing, and critical/creative thinking skills with a high degree of effectiveness.
+
+    COMMUNICATION — conveying meaning through various forms:
+    Criteria: expression and organization of ideas and information, communication for different audiences and purposes, use of conventions (subject-specific terminology, symbols, notation).
+    Level 1: expresses and organizes ideas with limited effectiveness; uses conventions with limited accuracy.
+    Level 2: expresses and organizes ideas with some effectiveness; uses conventions with some accuracy.
+    Level 3: expresses and organizes ideas with considerable effectiveness; uses conventions with considerable accuracy.
+    Level 4: expresses and organizes ideas with a high degree of effectiveness; uses conventions with a high degree of accuracy.
+
+    APPLICATION — use of knowledge and skills to make connections:
+    Criteria: application of knowledge and skills in familiar contexts, transfer of knowledge and skills to new contexts, making connections within and between various contexts.
+    Level 1: applies knowledge and skills in familiar contexts with limited effectiveness; transfers to new contexts with limited effectiveness.
+    Level 2: applies knowledge and skills in familiar contexts with some effectiveness; transfers to new contexts with some effectiveness.
+    Level 3: applies knowledge and skills in familiar contexts with considerable effectiveness; transfers to new contexts with considerable effectiveness.
+    Level 4: applies knowledge and skills in familiar contexts with a high degree of effectiveness; transfers to new contexts with a high degree of effectiveness.
+
+    When writing feedback, USE the achievement chart language above:
+    - Instead of "good job": "demonstrates considerable understanding of [concept]" (Level 3)
+    - Instead of "needs work": "demonstrates limited effectiveness in [skill]" (Level 1)
+    - Reference the specific criteria (e.g., "use of processing skills," "transfer to new contexts")
+    - Match the level descriptor to the student's actual performance
     `.trim(),
 
       us: `
@@ -8862,11 +8901,14 @@ function buildRubricInstructions({
     It is FINE to include only some categories. Omit any that don't apply to this work.
     ${standards === "canada" ? `
     If sections[] already use KITA category names (from annotations), set achievement_summary = null.
-    Otherwise, use Ontario KITA achievement categories:
-    - "Knowledge & Understanding": recall of facts, definitions, formulas, terminology.
-    - "Thinking": problem-solving, reasoning, planning, multi-step analysis, critical thinking.
-    - "Communication": clarity of explanation, use of subject-specific language, organization of ideas.
-    - "Application": using knowledge in real-world or new contexts, transfer of learning.
+    Otherwise, use the Ontario Achievement Chart categories and level descriptors provided above:
+    - "Knowledge & Understanding": use the chart criteria (knowledge of content, understanding of content).
+    - "Thinking": use the chart criteria (planning, processing, critical/creative thinking skills).
+    - "Communication": use the chart criteria (expression, organization, conventions).
+    - "Application": use the chart criteria (application in familiar contexts, transfer to new contexts).
+    Map levels: "strong" = Level 4 (high degree of effectiveness), "adequate" = Level 3 (considerable, provincial standard),
+    "developing" = Level 2 (some effectiveness), "limited" = Level 1 (limited effectiveness).
+    Use achievement chart language in the comment (e.g., "demonstrates considerable understanding of algebraic concepts").
     ` : ""}${standards === "uk" ? `
     Use UK Assessment Objectives appropriate to the subject:
     - "Knowledge & Recall (AO1)": demonstrate knowledge and understanding of subject content.
