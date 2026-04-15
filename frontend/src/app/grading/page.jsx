@@ -634,7 +634,8 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "", gradeBandForKit
         "Subject Knowledge": "SK", "Analytical Thinking": "AT", "Applied Learning": "AL",
       };
       const short = knownShort[k.category] || k.category.split(/\s+/).map(w => w[0]).join("").slice(0, 3).toUpperCase();
-      lines.push(`- ${short} ${k.category} [${k.level}]: ${k.comment}`);
+      const scoreStr = typeof k.score === "number" && typeof k.out_of === "number" ? ` ${k.score.toFixed(2)}/${k.out_of.toFixed(2)}` : "";
+      lines.push(`- ${short} ${k.category}${scoreStr} [${k.level}]: ${k.comment}`);
     });
     lines.push("");
   }
@@ -3375,15 +3376,22 @@ export default function GradingPage() {
                               borderRadius: 10, border: `1px solid ${c.border}`,
                               background: c.bg, padding: "8px 10px",
                             }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                                <span style={{
-                                  display: "inline-flex", alignItems: "center", justifyContent: "center",
-                                  width: 22, height: 22, borderRadius: 6, background: c.text, color: "white",
-                                  fontSize: 11, fontWeight: 900,
-                                }}>{shortName}</span>
-                                <span style={{ fontSize: 12, fontWeight: 800, color: c.text }}>
-                                  {k.category}
-                                </span>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginBottom: 4 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{
+                                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                    width: 22, height: 22, borderRadius: 6, background: c.text, color: "white",
+                                    fontSize: 11, fontWeight: 900,
+                                  }}>{shortName}</span>
+                                  <span style={{ fontSize: 12, fontWeight: 800, color: c.text }}>
+                                    {k.category}
+                                  </span>
+                                </div>
+                                {typeof k.score === "number" && typeof k.out_of === "number" ? (
+                                  <span style={{ fontSize: 13, fontWeight: 900, color: c.text }}>
+                                    {k.score.toFixed(2)}/{k.out_of.toFixed(2)}
+                                  </span>
+                                ) : null}
                               </div>
                               <div style={{ fontSize: 11, fontWeight: 700, color: c.text, textTransform: "capitalize", marginBottom: 2 }}>
                                 {k.level}
@@ -3395,6 +3403,85 @@ export default function GradingPage() {
                           );
                         })}
                       </div>
+                      {(() => {
+                        const items = assessment.achievement_summary.filter(k => typeof k.score === "number" && typeof k.out_of === "number");
+                        if (!items.length) return null;
+                        const totalScore = items.reduce((s, k) => s + k.score, 0);
+                        const totalOutOf = items.reduce((s, k) => s + k.out_of, 0);
+                        const pct = totalOutOf > 0 ? Math.min(100, Math.max(0, (totalScore / totalOutOf) * 100)) : 0;
+
+                        // Regional average benchmarks by grade band + standards
+                        const benchmarks = {
+                          "canada":  { "3-5": 73, "6-8": 70, "9-10": 68, "11+": 72 },
+                          "us":      { "3-5": 72, "6-8": 69, "9-10": 67, "11+": 70 },
+                          "uk":      { "3-5": 71, "6-8": 68, "9-10": 66, "11+": 69 },
+                          "eu":      { "3-5": 72, "6-8": 69, "9-10": 67, "11+": 70 },
+                        };
+                        const avgPct = benchmarks[standards]?.[gradeBand] || 70;
+
+                        // Quality zone labels
+                        const qualityLabel = pct >= 90 ? "Exceptional"
+                          : pct >= 80 ? "Excellent"
+                          : pct >= 70 ? "Proficient"
+                          : pct >= 60 ? "Developing"
+                          : pct >= 50 ? "Approaching"
+                          : "Needs Support";
+                        const qualityColor = pct >= 80 ? "#059669"
+                          : pct >= 70 ? "#22c55e"
+                          : pct >= 60 ? "#eab308"
+                          : pct >= 50 ? "#f59e0b"
+                          : "#ef4444";
+
+                        return (
+                          <div style={{ padding: "8px 10px", marginTop: -4, marginBottom: 8 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                              <div style={{ fontSize: 12, fontWeight: 800, color: qualityColor }}>{qualityLabel}</div>
+                              <div style={{ fontSize: 13, fontWeight: 900, color: "#1e293b" }}>
+                                <span style={{ opacity: 0.6, fontWeight: 600, marginRight: 6 }}>Total</span>
+                                {totalScore.toFixed(2)}/{totalOutOf.toFixed(2)}
+                              </div>
+                            </div>
+                            {/* Quality index gauge */}
+                            <div style={{ position: "relative", height: 16, borderRadius: 8, overflow: "visible", background: "#f1f5f9", border: "1px solid #e2e8f0" }}>
+                              {/* Gradient background — full scale */}
+                              <div style={{
+                                position: "absolute", top: 0, left: 0, bottom: 0, width: "100%", borderRadius: 8,
+                                background: "linear-gradient(90deg, #fecaca 0%, #fde68a 30%, #d9f99d 55%, #bbf7d0 75%, #6ee7b7 100%)",
+                              }} />
+                              {/* Regional average marker */}
+                              <div style={{
+                                position: "absolute", top: -4, bottom: -4,
+                                left: `${avgPct}%`, transform: "translateX(-50%)",
+                                width: 2, background: "#94a3b8",
+                                borderRadius: 1, zIndex: 2,
+                              }} />
+                              <div style={{
+                                position: "absolute", top: -16,
+                                left: `${avgPct}%`, transform: "translateX(-50%)",
+                                fontSize: 9, fontWeight: 700, color: "#64748b",
+                                whiteSpace: "nowrap",
+                              }}>
+                                Avg
+                              </div>
+                              {/* Student score indicator (red needle) */}
+                              <div style={{
+                                position: "absolute", top: -5, bottom: -5,
+                                left: `${pct}%`, transform: "translateX(-50%)",
+                                width: 4, borderRadius: 2, zIndex: 3,
+                                background: "#dc2626",
+                                boxShadow: "0 0 6px rgba(220,38,38,0.5)",
+                              }} />
+                            </div>
+                            {/* Zone labels */}
+                            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 9, fontWeight: 600, color: "#94a3b8" }}>
+                              <span>Needs Support</span>
+                              <span>Developing</span>
+                              <span>Proficient</span>
+                              <span>Excellent</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </>
                   ) : null}
 

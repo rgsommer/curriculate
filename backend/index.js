@@ -8894,11 +8894,15 @@ function buildRubricInstructions({
     ` : ""}
 
     ${(gradeBand === "9-10" || gradeBand === "11+") ? `
-    ACHIEVEMENT SUMMARY (advisory, non-scoring — grade 9+ only):
+    ACHIEVEMENT SUMMARY (advisory — grade 9+ only):
     After grading, provide an achievement_summary that maps the student's work to your standards framework's assessment dimensions.
-    This is advisory only — it does NOT affect sections[] or scoring. Only include categories you can confidently identify.
-    For each category, assign a level: "strong", "adequate", "developing", or "limited" and write 1 brief sentence.
-    It is FINE to include only some categories. Omit any that don't apply to this work.
+    Only include categories you can confidently identify. It is FINE to include only some categories.
+    For each category provide:
+    - level: "strong", "adequate", "developing", or "limited"
+    - score: a numeric score for this category (to 2 decimal places)
+    - out_of: the denominator for this category — distribute the overall_out_of proportionally across included categories
+    - comment: 1 brief sentence
+    The sum of all out_of values should equal overall_out_of, and the sum of all score values should equal the student's final score.
     ${standards === "canada" ? `
     If sections[] already use KITA category names (from annotations), set achievement_summary = null.
     Otherwise, use the Ontario Achievement Chart categories and level descriptors provided above:
@@ -9376,9 +9380,11 @@ function buildRubricInstructions({
               properties: {
                 category: { type: "string", maxLength: 50 },
                 level: { type: "string", enum: ["strong", "adequate", "developing", "limited"] },
+                score: { type: "number" },
+                out_of: { type: "number" },
                 comment: { type: "string", maxLength: 200 },
               },
-              required: ["category", "level", "comment"],
+              required: ["category", "level", "score", "out_of", "comment"],
             },
           },
         },
