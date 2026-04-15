@@ -8199,12 +8199,22 @@ function buildRubricInstructions({
       ANSWER KEY / SOLUTION SHEET (provided from previous detection):
       ${answerKeyOverride}
 
-      ANSWER KEY RULES (MANDATORY — these override all other section/scoring rules):
-      - Use this answer key as the DEFINITIVE correct answers when grading.
-      - Compare the student's work against these solutions question-by-question.
-      - For incorrect_items, use the answer key's solution as "correct_answer".
-      - The answer key takes priority over AI inference for correct answers.
-      - If the answer key shows point values per question or category, use those as denominators.
+      ANSWER KEY GRADING PROCEDURE (MANDATORY — follow these steps in order):
+
+      STEP 1: For EACH question listed in the answer key above, compare the student's answer to the correct answer.
+      - If the student's answer matches the correct answer (or is mathematically equivalent), that question earns full marks.
+      - If the student's answer does NOT match, that question earns 0 marks (or partial credit if work shown is partially correct).
+      - You MUST actually CHECK each answer. Do NOT assume the student is correct without comparing.
+
+      STEP 2: For each incorrect answer, add it to the appropriate section's incorrect_items:
+      - Use the answer key's solution as "correct_answer".
+      - Use the student's actual written answer as "student_answer".
+
+      STEP 3: Compute section scores by SUMMING only the marks the student actually earned on questions in that section.
+      - A section score can NEVER exceed its out_of value.
+      - If the student got a question wrong, its marks are NOT counted toward the section score.
+
+      CRITICAL: The answer key takes priority over your own judgment. Even if the student's work "looks right", if their final answer differs from the key, they lose marks. Do NOT give full marks unless every answer matches the key.
 
       KITA ANNOTATIONS ON ANSWER KEY (critical — check for these):
       Look for letters or abbreviations written in the margins or beside questions on the answer key:
@@ -9977,6 +9987,10 @@ Return valid JSON matching this exact schema.`;
         }
       }
 
+      // Add grading instructions
+      summaryLines.push("");
+      summaryLines.push("GRADING INSTRUCTIONS: Compare the student's answer for EACH question above against the correct answer. If the student's final answer does not match, they lose the marks for that question.");
+
       // Add KITA summary if categories found
       if (Object.keys(categoryGroups).length > 0) {
         summaryLines.push("");
@@ -9986,6 +10000,7 @@ Return valid JSON matching this exact schema.`;
         }
         summaryLines.push(`Total: /${extracted.total_marks}`);
         summaryLines.push("Create ONE section per category above. Do NOT create per-question sections.");
+        summaryLines.push("Section score = SUM of marks earned on correct answers within that category ONLY.");
       }
 
       const answerKeyText = summaryLines.join("\n");
