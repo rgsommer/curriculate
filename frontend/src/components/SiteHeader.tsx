@@ -49,7 +49,7 @@ export default function SiteHeader() {
         </Link>
 
         {/* Desktop nav */}
-        <nav className="hidden items-center gap-6 text-sm font-semibold text-gray-700 md:flex">
+        <nav className="hidden items-center gap-5 text-sm font-semibold text-gray-700 md:flex">
           <NavLink href="/features">Features</NavLink>
 
           {/* How it Works dropdown */}
@@ -146,17 +146,65 @@ export default function SiteHeader() {
           <NavLink href="/parties">Parties</NavLink>
           <NavLink href="/events">Events</NavLink>
           <NavLink href="/pricing">Pricing</NavLink>
-          <NavLink href="/about">About</NavLink>
-          <NavLink href="/faq">FAQ</NavLink>
-          <NavLink href="/contact">Contact</NavLink>
+
+          {/* More dropdown — keeps nav clean */}
+          <div className="relative group">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 hover:text-gray-900 focus:outline-none"
+              aria-haspopup="menu"
+            >
+              <span>More</span>
+              <svg
+                className="h-4 w-4 opacity-70 transition group-hover:rotate-180"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+
+            <div
+              className="
+                invisible absolute left-0 top-full h-3 w-full
+                group-hover:visible group-focus-within:visible
+              "
+              aria-hidden="true"
+            />
+
+            <div
+              className="
+                invisible opacity-0 translate-y-1
+                absolute right-0 top-full mt-3 w-[200px] z-50
+                rounded-2xl border border-gray-200 bg-white shadow-xl
+                p-2
+                transition
+                group-hover:visible group-hover:opacity-100 group-hover:translate-y-0
+                group-focus-within:visible group-focus-within:opacity-100 group-focus-within:translate-y-0
+              "
+              role="menu"
+            >
+              <div className="grid gap-1">
+                <DropdownItem href="/about" title="About" />
+                <DropdownItem href="/faq" title="FAQ" />
+                <DropdownItem href="/contact" title="Contact" />
+                <DropdownItem href="/pedagogy" title="Pedagogy" />
+              </div>
+            </div>
+          </div>
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Link
             href="/demo"
-            className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-800 hover:bg-gray-50"
+            className="hidden lg:inline text-sm font-semibold text-gray-600 hover:text-gray-900"
           >
-            Try Demo
+            Demo
           </Link>
           <Link
             href="/freetrial"
