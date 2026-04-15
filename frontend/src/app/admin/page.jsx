@@ -434,7 +434,9 @@ export default function AdminUsageDashboard() {
                           {f.meta?.gradeBand ? ` · band: ${f.meta.gradeBand}` : ""}
                           {f.meta?.inputMode ? ` · mode: ${f.meta.inputMode}` : ""}
                           {f.meta?.voice ? ` · voice: ${f.meta.voice}` : ""}
-                          {f.meta?.refCode ? ` · ref: ${f.meta.refCode}` : ""}
+                          {f.meta?.refCode ? (
+                            <> · ref: <a href={`/results/${f.meta.refCode}`} target="_blank" rel="noreferrer" className="text-blue-300 underline hover:text-blue-200">{f.meta.refCode}</a></>
+                          ) : ""}
                         </div>
                         <div className="text-[11px] text-white/50">
                           {f.anonId ? `anon: ${String(f.anonId).slice(0, 10)}…` : ""}
