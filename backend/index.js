@@ -8463,6 +8463,7 @@ function buildRubricInstructions({
     - You MUST return results by section, not only broad holistic feedback.
     - sections[] MUST be non-empty when visible sections or visible part totals exist.
     - Create one sections[] entry for each visible section or part.
+    - EXCEPTION: If KITA category annotations are visible (e.g., /2T, /3A in margins), group by KITA category instead — see KITA ACHIEVEMENT CATEGORIES rules.
     - Each section must include:
       - name
       - score
@@ -8520,6 +8521,7 @@ function buildRubricInstructions({
     - Do NOT treat this as a formatting deduction.
 
     SECTION REPORTING RULE:
+    - EXCEPTION: If KITA category annotations are visible (e.g., /2T, /3A), IGNORE this rule and use KITA grouping instead.
     - If the test provides named sections with out_of values, you MUST:
       1) create one sections[] entry per named section,
       2) use the printed out_of for each section,
@@ -8576,6 +8578,7 @@ function buildRubricInstructions({
     - If the section IS test-style: incorrect_items is either an array of incorrect question objects OR null (if none wrong).
 
     IMPLICIT SECTION RULE (worksheet style, mandatory when applicable):
+    NOTE: This rule does NOT apply if KITA annotations are visible — use KITA grouping instead.
     Some worksheets do not label sections or provide section score boxes, but are clearly split by page/side.
 
     If ALL of the following are true:
