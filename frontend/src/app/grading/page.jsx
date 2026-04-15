@@ -632,6 +632,9 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "", gradeBandForKit
         "Evaluation & Context (AO3)": "AO3", "Technical Accuracy (AO4)": "AO4",
         "Content Knowledge": "CK", "Critical Thinking": "CT",
         "Subject Knowledge": "SK", "Analytical Thinking": "AT", "Applied Learning": "AL",
+        "Understanding": "U", "Problem Solving": "PS", "Effort & Growth": "EG",
+        "Skills & Application": "SA", "Progress & Effort": "PE",
+        "Thinking & Problem Solving": "TPS",
       };
       const short = knownShort[k.category] || k.category.split(/\s+/).map(w => w[0]).join("").slice(0, 3).toUpperCase();
       const scoreStr = typeof k.score === "number" && typeof k.out_of === "number" ? ` ${k.score.toFixed(2)}/${k.out_of.toFixed(2)}` : "";

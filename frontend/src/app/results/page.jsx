@@ -737,6 +737,9 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                         "Evaluation & Context (AO3)": "AO3", "Technical Accuracy (AO4)": "AO4",
                         "Content Knowledge": "CK", "Critical Thinking": "CT",
                         "Subject Knowledge": "SK", "Analytical Thinking": "AT", "Applied Learning": "AL",
+                        "Understanding": "U", "Problem Solving": "PS", "Effort & Growth": "EG",
+                        "Skills & Application": "SA", "Progress & Effort": "PE",
+                        "Thinking & Problem Solving": "TPS",
                       };
                       const shortName = knownShort[k.category] || k.category.split(/\s+/).map(w => w[0]).join("").slice(0, 3).toUpperCase();
                       return (
