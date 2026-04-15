@@ -478,6 +478,7 @@ export function assessTaskPlayability(rawTask) {
     // =========================
     // Demo-only / meta
     // =========================
+    case TASK_TYPES.TEAM_SELFIE:
     case TASK_TYPES.TASK_RUNNER:
     case TASK_TYPES.MOOD_CHECKIN:
     case TASK_TYPES.TREASURE_RUNNER:

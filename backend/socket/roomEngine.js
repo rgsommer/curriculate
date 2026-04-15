@@ -373,47 +373,87 @@ export function createRoomEngine(io) {
 
   function computePerParticipantStats(room, transcript) {
     const tasks = transcript.tasks || [];
-    const tasksByIndex = {};
-    tasks.forEach((t) => (tasksByIndex[t.index] = t));
+    const totalTasks = tasks.length;
 
-    const participants = {};
+    // Build per-team stats from submissions
+    const teamStats = {};
 
     for (const sub of room.submissions) {
-      const key = `${sub.teamId}::${sub.playerId}`;
-      if (!participants[key]) {
-        participants[key] = {
-          teamId: sub.teamId,
-          teamName: sub.teamName,
-          studentName: sub.playerId,
+      const tid = sub.teamId;
+      if (!teamStats[tid]) {
+        teamStats[tid] = {
+          teamId: tid,
+          teamName: sub.teamName || "",
           attempts: 0,
           correctCount: 0,
           pointsEarned: 0,
-          pointsPossible: 0,
+          taskIndices: new Set(),
         };
       }
-
-      const entry = participants[key];
+      const entry = teamStats[tid];
       entry.attempts += 1;
       if (sub.correct) entry.correctCount += 1;
       entry.pointsEarned += sub.points ?? 0;
-
-      const taskMeta = tasksByIndex[sub.taskIndex];
-      if (taskMeta) {
-        entry.pointsPossible += taskMeta.points ?? 10;
+      if (Number.isFinite(sub.taskIndex) && sub.taskIndex >= 0) {
+        entry.taskIndices.add(sub.taskIndex);
       }
     }
 
-    const totalTasks = tasks.length;
+    // Compute pointsPossible per team using the 10× multiplier that scoring uses,
+    // so that percentages come out correctly (submissions store 10× multiplied points).
+    for (const ts of Object.values(teamStats)) {
+      let possible = 0;
+      for (const idx of ts.taskIndices) {
+        const t = tasks[idx];
+        const rawPts = t ? (t.points ?? 10) : 10;
+        possible += rawPts * 10; // match the 10× scoring multiplier
+      }
+      ts.pointsPossible = possible;
+    }
 
-    return Object.values(participants).map((p) => ({
-      ...p,
-      engagementPercent:
-        totalTasks > 0 ? Math.round((p.attempts / totalTasks) * 100) : 0,
-      finalPercent:
-        p.pointsPossible > 0
-          ? Math.round((p.pointsEarned / p.pointsPossible) * 100)
-          : 0,
-    }));
+    // Expand team stats into per-student entries using team members list.
+    // If a team has no recorded members, fall back to a single "Team X" entry.
+    const teamsMap = room.teams && typeof room.teams === "object" ? room.teams : {};
+    const results = [];
+
+    for (const ts of Object.values(teamStats)) {
+      const team = teamsMap[ts.teamId];
+      const members = Array.isArray(team?.members) ? team.members.filter(Boolean) : [];
+
+      if (members.length === 0) {
+        // No individual members recorded — use team name
+        results.push({
+          teamId: ts.teamId,
+          teamName: ts.teamName,
+          studentName: ts.teamName || "Unknown",
+          members: [],
+          attempts: ts.attempts,
+          correctCount: ts.correctCount,
+          pointsEarned: ts.pointsEarned,
+          pointsPossible: ts.pointsPossible,
+          engagementPercent: totalTasks > 0 ? Math.round((ts.taskIndices.size / totalTasks) * 100) : 0,
+          finalPercent: ts.pointsPossible > 0 ? Math.round((ts.pointsEarned / ts.pointsPossible) * 100) : 0,
+        });
+      } else {
+        // Create one entry per member, sharing the team's stats
+        for (const memberName of members) {
+          results.push({
+            teamId: ts.teamId,
+            teamName: ts.teamName,
+            studentName: memberName,
+            members,
+            attempts: ts.attempts,
+            correctCount: ts.correctCount,
+            pointsEarned: ts.pointsEarned,
+            pointsPossible: ts.pointsPossible,
+            engagementPercent: totalTasks > 0 ? Math.round((ts.taskIndices.size / totalTasks) * 100) : 0,
+            finalPercent: ts.pointsPossible > 0 ? Math.round((ts.pointsEarned / ts.pointsPossible) * 100) : 0,
+          });
+        }
+      }
+    }
+
+    return results;
   }
 
   // ================================

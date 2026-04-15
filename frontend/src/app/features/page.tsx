@@ -209,18 +209,68 @@ export default function FeaturesPage() {
 
           <div className="mt-12">
             <SectionHeader
+              eyebrow="Game Modes & Engagement"
+              title="Keep energy high with built-in game elements"
+              desc="Curriculate adds moments of fun, team bonding, and surprise to every session — without losing focus."
+            />
+            <div className="grid gap-4 md:grid-cols-2">
+              <FeatureCard
+                title="🎁 Mystery Box Navigation"
+                body="An alternative to linear task delivery: teams see shuffled gift boxes and choose their own path."
+                bullets={[
+                  "Self-directed task navigation with star-rated difficulty hints",
+                  "Inter-team challenge beacons with bonus points",
+                  "Pre-queuing so the next task is ready instantly",
+                  "Global countdown timer for session pacing",
+                ]}
+              />
+              <FeatureCard
+                title="📸 Team Selfie & Themed Images"
+                body="Sessions start with a fun team photo. On Plus, AI generates a themed version matching the subject."
+                bullets={[
+                  "Front-facing camera selfie before the game starts",
+                  "AI-themed team card: history era, lab scene, movie poster, and more",
+                  "Selfie included in session reports as team photo",
+                  "Configurable in teacher profile (on by default)",
+                ]}
+              />
+              <FeatureCard
+                title="🤔 Riddle Breathers"
+                body="AI-generated riddles related to the lesson topic — no scoring, just a fun mental reset."
+                bullets={[
+                  "Automatically injected mid-set via teacher profile toggle",
+                  "Topic-relevant riddles with optional hints",
+                  "Zero-point comic relief between heavier tasks",
+                ]}
+              />
+              <FeatureCard
+                title="🔍 Mystery Clue Cards"
+                body="Cross-taskset memory challenge: clue cards appear throughout, then students recall them all at the end."
+                bullets={[
+                  "Reveal tasks interleaved through the set",
+                  "Final recall task tests observation and memory",
+                  "Auto-injected via teacher profile toggle",
+                ]}
+              />
+            </div>
+          </div>
+
+          <div className="mt-12">
+            <SectionHeader
               eyebrow="Data & Reflection"
               title="Useful outputs — not noise"
               desc="Curriculate emphasizes teacher usability: clear tasks, predictable pacing, and outputs that help you teach."
             />
             <div className="grid gap-4 md:grid-cols-2">
               <FeatureCard
-                title="🧾 Teacher-Friendly Notes & Clarity"
-                body="Tasks are generated with fields the student UI can actually use."
+                title="📊 Session Reports & Parent Notes"
+                body="After each session, get a comprehensive report with AI-generated summaries and parent-ready blurbs."
                 bullets={[
-                  "In-session student feedback button — issues emailed to admin instantly",
-                  "Consistent formatting and quality guardrails across all task types",
-                  "Celebration sounds and smooth transitions between tasks",
+                  "Per-student grades with team member names and letter grades",
+                  "AI-generated class chat blurb (copy-paste for Google Classroom or newsletters)",
+                  "Parent note with engagement level, skills practiced, and proficiency",
+                  "Skills developed badges, concepts covered, and activity highlights",
+                  "Team selfie photos included in reports",
                 ]}
               />
               <FeatureCard

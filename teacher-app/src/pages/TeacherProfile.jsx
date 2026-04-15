@@ -47,6 +47,7 @@ export default function TeacherProfile() {
     // Auto-inject toggles
     includeRiddleInSets: false,
     includeMysteryCluesInSets: false,
+    includeTeamSelfie: true,
   });
 
 
@@ -122,6 +123,10 @@ export default function TeacherProfile() {
             typeof data.includeMysteryCluesInSets === "boolean"
               ? data.includeMysteryCluesInSets
               : false,
+          includeTeamSelfie:
+            typeof data.includeTeamSelfie === "boolean"
+              ? data.includeTeamSelfie
+              : true,
         };
 
         setProfile(merged);
@@ -520,6 +525,33 @@ export default function TeacherProfile() {
           <p style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: 12 }}>
             These task types will be automatically added to every AI-generated taskset.
           </p>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              cursor: "pointer",
+              padding: "8px 0",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={profile.includeTeamSelfie !== false}
+              onChange={(e) =>
+                handleChange("includeTeamSelfie", e.target.checked)
+              }
+              style={{
+                width: 20,
+                height: 20,
+                accentColor: "#6366f1",
+                cursor: "pointer",
+              }}
+            />
+            <span style={{ fontSize: "0.95rem", fontWeight: 600 }}>
+              Team selfie before game starts (included in reports)
+            </span>
+          </label>
 
           <label
             style={{

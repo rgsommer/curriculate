@@ -4797,6 +4797,13 @@ if (!isMultiPack && task.taskType === "guess-who") {
       submittedAt,
     });
 
+    // Store team selfie URL on the team object for reports
+    if (task.taskType === "team-selfie" && extractedPhotoUrl && room.teams?.[effectiveTeamId]) {
+      room.teams[effectiveTeamId].selfieUrl = extractedPhotoUrl;
+      room.teams[effectiveTeamId].selfieKey = answer?.selfieKey || null;
+      console.log(`[Selfie] Stored selfie for team ${effectiveTeamId} in room ${code}`);
+    }
+
     if (task.taskType === "physical-multiple-choice") {
       const pmcLast = answer?.lastScannedColor || null;
 
@@ -5189,6 +5196,33 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
       }
 
       const tasks = Array.isArray(tasksetDoc.tasks) ? tasksetDoc.tasks : [];
+
+      // ── Auto-inject team selfie before treasure-runner if teacher profile toggle is on ──
+      try {
+        const profileOwnerId = reportOwnerId || room.reportOwnerId || "";
+        if (profileOwnerId) {
+          const selfieProfile = await TeacherProfile.findOne({ ownerId: String(profileOwnerId) }).lean();
+          if (selfieProfile?.includeTeamSelfie !== false) {
+            // Default ON: inject selfie before the first treasure-runner, or at position 0
+            const trIdx = tasks.findIndex(t => t && (t.taskType === "treasure-runner" || t.taskType === TASK_TYPES.TREASURE_RUNNER));
+            const insertAt = trIdx >= 0 ? trIdx : 0;
+            const selfieTask = {
+              taskType: "team-selfie",
+              title: "Team Selfie",
+              prompt: "Get everyone together and take a fun team selfie!",
+              points: 0,
+              config: {
+                subject: tasksetDoc.subject || "",
+                theme: tasksetDoc.topicDescription || tasksetDoc.name || "",
+              },
+            };
+            tasks.splice(insertAt, 0, selfieTask);
+            console.log(`[Selfie] Injected team-selfie at position ${insertAt} for room ${code}`);
+          }
+        }
+      } catch (e) {
+        console.warn("[Selfie] Profile lookup failed (non-blocking):", e?.message || e);
+      }
 
       console.log(
         `handleTeacherLoadTaskset: loaded taskset ${tasksetId} for room ${code} with ${tasks.length} tasks`
@@ -6016,6 +6050,8 @@ socket.on(
               }
             : { rating: null, highlights: "", improvements: "", favoriteTask: "", learned: "", submittedAt: null },
           scoringBreakdown: { percent: scorePercent, categories: [] },
+          selfieUrl: team?.selfieUrl || null,
+          selfieKey: team?.selfieKey || null,
         };
       });
     })();

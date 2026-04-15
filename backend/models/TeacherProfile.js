@@ -117,6 +117,9 @@ const TeacherProfileSchema = new Schema(
     // Auto-inject mystery-clue interleave tasks across each generated taskset
     includeMysteryCluesInSets: { type: Boolean, default: false },
 
+    // Auto-inject team selfie before treasure runner (default: on)
+    includeTeamSelfie: { type: Boolean, default: true },
+
     // ✅ Voice settings (your UI has these fields)
     voiceId: { type: String, default: "" },
     voiceSampleUrl: { type: String, default: "" },

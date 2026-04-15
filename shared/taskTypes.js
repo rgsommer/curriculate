@@ -49,6 +49,7 @@ export const TASK_TYPES = {
 
   // Pre-task / interstitial
   MOOD_CHECKIN: "mood-checkin",
+  TEAM_SELFIE: "team-selfie",
   TREASURE_RUNNER: "treasure-runner",
 
   // Demo-only intro / walkthrough
@@ -1431,6 +1432,29 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Ensure prompts are student-facing instructions (what to do).
     `,
 },
+
+  [TASK_TYPES.TEAM_SELFIE]: {
+    label: "Team Selfie",
+    category: CATEGORY.FEEDBACK,
+    implemented: true,
+    demoEligible: false,
+    demoSelectable: false,
+    generatorEligible: false,
+    profileInjectedOnly: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
+    quickTaskEligible: false,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 0,
+    estimatedMinutes: 1,
+    interTeamEnabled: false,
+    intraTeamEnabled: false,
+    isOffTablet: false,
+    description:
+      "Pre-game selfie task: teams take a fun group photo before the session starts. The photo is saved as the team card and included in session reports. On Plus tier, the AI generates a themed version of the photo based on the taskset subject (historical era, lab scene, etc.).",
+  },
 
   [TASK_TYPES.MULTI_PLAYER_FEEDBACK]: {
     label: "Multi-player Feedback",
@@ -3997,6 +4021,7 @@ export const SUBJECT_AFFINITY = {
   [TASK_TYPES.TOWER_BUILDER]:          { math: 0.9, science: 0.8, history: 0.6, language: 0.5, arts: 0.7, health: 0.6, business: 0.6, religion: 0.5, general: 0.7 },
   [TASK_TYPES.PET_FEEDING]:            { math: 0.7, science: 0.7, history: 0.6, language: 0.7, arts: 0.7, health: 0.7, business: 0.5, religion: 0.6, general: 0.7 },
   [TASK_TYPES.RIDDLE]:                 { math: 0.9, science: 0.9, history: 0.9, language: 1.0, arts: 1.0, health: 0.9, business: 0.9, religion: 0.9, general: 1.0 },
+  [TASK_TYPES.TEAM_SELFIE]:            { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 1.0, health: 1.0, business: 1.0, religion: 1.0, general: 1.0 },
 };
 
 // Subject-detection: map freeform subject strings to affinity bucket keys

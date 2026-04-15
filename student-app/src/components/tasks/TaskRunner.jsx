@@ -60,6 +60,7 @@ import TowerBuilderTask from "./types/TowerBuilderTask";
 import ArtViewTask from "./types/ArtViewTask";
 import HistoricalDocTask from "./types/HistoricalDocTask";
 import RiddleTask from "./types/RiddleTask";
+import TeamSelfieTask from "./types/TeamSelfieTask";
 import PaperModeCamera from "./PaperModeCamera.jsx";
 
 
@@ -2902,6 +2903,20 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
           task={tp}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.TEAM_SELFIE:
+    case "team-selfie": {
+      content = (
+        <TeamSelfieTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+          roomCode={roomCode}
+          teamId={derivedTeamId}
         />
       );
       break;

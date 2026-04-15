@@ -88,7 +88,7 @@ const taskCategories = [
   {
     label: "Deduction & Mystery",
     color: "bg-teal-100 text-teal-700",
-    tasks: ["Mystery Clue Cards", "Physical Mystery Clues", "Fake Out", "Diff Detective", "Guess Who"],
+    tasks: ["Mystery Clue Cards", "Fake Out", "Diff Detective", "Guess Who", "Riddle"],
   },
   {
     label: "Synthesis & Thinking",
@@ -143,6 +143,9 @@ const reportFeatures = [
 const pricingFeatures = [
   { name: "AI task set generation", free: true, plus: true, pro: true },
   { name: "65+ task types", free: true, plus: true, pro: true },
+  { name: "Mystery Box navigation mode", free: true, plus: true, pro: true },
+  { name: "Team selfie (2 free sessions)", free: "2 sessions", plus: true, pro: true },
+  { name: "AI-themed selfie images", free: false, plus: true, pro: false },
   { name: "Station rotation engine", free: true, plus: true, pro: true },
   { name: "QR station posters", free: true, plus: true, pro: true },
   { name: "Session summary reports", free: true, plus: true, pro: true },
