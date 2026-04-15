@@ -451,6 +451,33 @@ function extractDetectedRubric(anyObj) {
   return null;
 }
 
+function extractDetectedAnswerKey(anyObj) {
+  if (!anyObj) return null;
+
+  if (typeof anyObj.answerKeyText === "string" && anyObj.answerKeyText.trim()) {
+    return {
+      text: anyObj.answerKeyText.trim(),
+      confidence: Number(anyObj.answerKeyConfidence ?? 0),
+      detected: Boolean(anyObj.answerKeyDetected ?? true),
+    };
+  }
+
+  const candidates = [
+    anyObj.meta,
+    anyObj.data,
+    anyObj.assessment,
+    anyObj.result,
+    anyObj.raw,
+  ].filter(Boolean);
+
+  for (const c of candidates) {
+    const found = extractDetectedAnswerKey(c);
+    if (found) return found;
+  }
+
+  return null;
+}
+
 function formatIncorrectItemHtml(item, idx, escapeHtml) {
   if (!item || typeof item !== "object") return "";
 
@@ -645,6 +672,9 @@ const SESSION_KEY = "curriculate_grading_session_v1";
 const RUBRIC_STICKY_TEXT_KEY = "curriculate_grading_rubric_sticky_text_v1";
 const RUBRIC_STICKY_SRC_KEY = "curriculate_grading_rubric_sticky_src_v1"; // "captured" | "manual"
 const RUBRIC_STICKY_TS_KEY = "curriculate_grading_rubric_sticky_ts_v1";
+
+const ANSWERKEY_STICKY_TEXT_KEY = "curriculate_grading_answerkey_sticky_text_v1";
+const ANSWERKEY_STICKY_TS_KEY = "curriculate_grading_answerkey_sticky_ts_v1";
 
   function loadSession() {
     try {
@@ -910,6 +940,19 @@ export default function GradingPage() {
     useEffect(() => saveLS(RUBRIC_STICKY_TEXT_KEY, stickyRubricText || ""), [stickyRubricText]);
     useEffect(() => saveLS(RUBRIC_STICKY_SRC_KEY, stickyRubricSource || ""), [stickyRubricSource]);
     useEffect(() => saveLS(RUBRIC_STICKY_TS_KEY, stickyRubricCapturedAt || ""), [stickyRubricCapturedAt]);
+
+    // ✅ Sticky answer key captured from solution sheet (session-level)
+    const [stickyAnswerKeyText, setStickyAnswerKeyText] = useState(() => {
+      if (typeof window === "undefined") return "";
+      return loadLS(ANSWERKEY_STICKY_TEXT_KEY, "");
+    });
+    const [stickyAnswerKeyCapturedAt, setStickyAnswerKeyCapturedAt] = useState(() => {
+      if (typeof window === "undefined") return "";
+      return loadLS(ANSWERKEY_STICKY_TS_KEY, "");
+    });
+
+    useEffect(() => saveLS(ANSWERKEY_STICKY_TEXT_KEY, stickyAnswerKeyText || ""), [stickyAnswerKeyText]);
+    useEffect(() => saveLS(ANSWERKEY_STICKY_TS_KEY, stickyAnswerKeyCapturedAt || ""), [stickyAnswerKeyCapturedAt]);
 
     // Feedback Voice (tone/personality)
     const [voice, setVoice] = useState(() => {
@@ -1524,10 +1567,11 @@ export default function GradingPage() {
       const voiceEffective = voiceOverrideOn ? voiceOverride : voice;
 
       const rubricFingerprint = manualRubric.slice(0, 50) || stickyRubric.slice(0, 50) || "";
+      const akFingerprint = (stickyAnswerKeyText || "").slice(0, 50);
       const submitKey =
         inputMode === "photo"
-          ? `photo:${photosToUse.map((p) => p.id).join(",")}|gb:${gradeBand}|v:${voiceEffective}|r:${rubricFingerprint}|st:${standards}`
-          : `paste:${trimmedWork.slice(0, 200)}|len:${trimmedWork.length}|gb:${gradeBand}|v:${voiceEffective}|r:${rubricFingerprint}|st:${standards}`;
+          ? `photo:${photosToUse.map((p) => p.id).join(",")}|gb:${gradeBand}|v:${voiceEffective}|r:${rubricFingerprint}|ak:${akFingerprint}|st:${standards}`
+          : `paste:${trimmedWork.slice(0, 200)}|len:${trimmedWork.length}|gb:${gradeBand}|v:${voiceEffective}|r:${rubricFingerprint}|ak:${akFingerprint}|st:${standards}`;
           
       // ✅ 2) Compute the attempt + compression profile LOCALLY (don't rely on state timing)
       const isRetry = submitKey === lastSubmitKeyRef.current;
@@ -1564,11 +1608,14 @@ export default function GradingPage() {
 
         const anonId = getAnonId();
 
+        const effectiveAnswerKey = (stickyAnswerKeyText || "").trim();
+
         const payload = {
           anonId,
           images: images || undefined,
           workInput: inputMode === "paste" && trimmedWork ? trimmedWork : undefined,
           rubricOverride: effectiveRubric.length ? effectiveRubric : null,
+          answerKeyOverride: effectiveAnswerKey.length ? effectiveAnswerKey : null,
           gradeBand,
           standards,
 
@@ -1629,6 +1676,23 @@ export default function GradingPage() {
           }
         } catch (e) {
           console.warn("rubric capture parse failed", e);
+        }
+
+        // Sticky answer key capture (only if no sticky already)
+        try {
+          const foundKey = extractDetectedAnswerKey(parsed) || extractDetectedAnswerKey(norm?.assessment);
+
+          if (!(stickyAnswerKeyText || "").trim().length) {
+            if (foundKey?.text && foundKey.detected !== false) {
+              const conf = Number(foundKey.confidence || 0);
+              if (conf >= 0.3) {
+                setStickyAnswerKeyText(foundKey.text);
+                setStickyAnswerKeyCapturedAt(String(Date.now()));
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("answer key capture parse failed", e);
         }
 
         if (norm.assessment) {
@@ -2532,7 +2596,12 @@ export default function GradingPage() {
             <div style={styles.cardTitle}>Submit</div>
 
             {/* Rubric (collapsible) */}
-            <div style={styles.rubricCard}>
+            <div style={{
+              ...styles.rubricCard,
+              ...((stickyRubricText || "").trim() || (stickyAnswerKeyText || "").trim()
+                ? { border: "1px solid rgba(37,99,235,0.35)", boxShadow: "0 0 8px rgba(37,99,235,0.15)" }
+                : {}),
+            }}>
               {/* Collapsed/expanded header bar */}
               <button
                 type="button"
@@ -2549,10 +2618,13 @@ export default function GradingPage() {
                     {(() => {
                       const manual = (rubricOverride || "").trim();
                       const sticky = (stickyRubricText || "").trim();
-                      if (manual.length) return "Using pasted rubric override (this submission).";
-                      if (sticky.length && stickyRubricSource === "captured") return "Using captured rubric (sticky for this session).";
-                      if (sticky.length && stickyRubricSource === "manual") return "Using saved rubric (sticky for this session).";
-                      return;
+                      const ak = (stickyAnswerKeyText || "").trim();
+                      const parts = [];
+                      if (manual.length) parts.push("Using pasted rubric override.");
+                      else if (sticky.length && stickyRubricSource === "captured") parts.push("Captured rubric (sticky).");
+                      else if (sticky.length && stickyRubricSource === "manual") parts.push("Saved rubric (sticky).");
+                      if (ak.length) parts.push("Answer key captured (sticky).");
+                      return parts.join(" ") || null;
                     })()}
                   </div>
                 </div>
@@ -2582,15 +2654,17 @@ export default function GradingPage() {
                         setStickyRubricText("");
                         setStickyRubricSource("");
                         setStickyRubricCapturedAt("");
+                        setStickyAnswerKeyText("");
+                        setStickyAnswerKeyCapturedAt("");
                       }}
-                      disabled={disableClearCaptured}
+                      disabled={disableClearCaptured && !(stickyAnswerKeyText || "").trim().length}
                       style={{
                         ...styles.secondaryBtn,
-                        opacity: disableClearCaptured ? 0.5 : 1,
-                        cursor: disableClearCaptured ? "not-allowed" : "pointer",
+                        opacity: (disableClearCaptured && !(stickyAnswerKeyText || "").trim().length) ? 0.5 : 1,
+                        cursor: (disableClearCaptured && !(stickyAnswerKeyText || "").trim().length) ? "not-allowed" : "pointer",
                       }}
                       type="button"
-                      title="Clear the captured rubric for this session"
+                      title="Clear captured rubric and answer key for this session"
                     >
                       Clear Captured
                     </button>
@@ -2601,24 +2675,43 @@ export default function GradingPage() {
                       style={{
                         marginTop: 10,
                         borderRadius: 12,
-                        border: "1px solid rgba(15,23,42,0.12)",
+                        border: "1px solid rgba(37,99,235,0.2)",
                         padding: 10,
-                        background: "rgba(255,255,255,0.9)",
+                        background: "rgba(37,99,235,0.03)",
                         fontSize: 12,
                         whiteSpace: "pre-wrap",
                         lineHeight: 1.35,
                         opacity: 0.9,
                       }}
                     >
-                      <div style={{ fontWeight: 900, marginBottom: 6 }}>Captured rubric (sticky)</div>
+                      <div style={{ fontWeight: 900, marginBottom: 6, color: "#2563eb" }}>Captured rubric (sticky)</div>
                       {stickyRubricText}
+                    </div>
+                  ) : null}
+
+                  {(stickyAnswerKeyText || "").trim().length ? (
+                    <div
+                      style={{
+                        marginTop: 10,
+                        borderRadius: 12,
+                        border: "1px solid rgba(16,185,129,0.25)",
+                        padding: 10,
+                        background: "rgba(16,185,129,0.04)",
+                        fontSize: 12,
+                        whiteSpace: "pre-wrap",
+                        lineHeight: 1.35,
+                        opacity: 0.9,
+                      }}
+                    >
+                      <div style={{ fontWeight: 900, marginBottom: 6, color: "#059669" }}>Answer key captured (sticky)</div>
+                      {stickyAnswerKeyText}
                     </div>
                   ) : null}
 
                   <textarea
                     value={rubricOverride}
                     onChange={(e) => setRubricOverride(e.target.value)}
-                    placeholder={`Paste a teacher rubric here (optional)...\n\nExamples:\n- Mark out of 10\n- Focus on understanding, relevance, completion\n- Mechanics secondary\n- Deduct 1 total if any formatting missing\n- 2–3 sentence teacher comment\n`}
+                    placeholder={`Paste a teacher rubric here (optional)...\n\nExamples:\n- Mark out of 10\n- Focus on understanding, relevance, completion\n- Mechanics secondary\n- Deduct 1 total if any formatting missing\n\nTip: include a photo of your answer key or solution sheet with the student work — it will be auto-detected and used for grading.\n`}
                     rows={9}
                     style={styles.rubricTextarea}
                   />
@@ -2663,9 +2756,11 @@ export default function GradingPage() {
                   setStickyRubricText("");
                   setStickyRubricSource("");
                   setStickyRubricCapturedAt("");
+                  setStickyAnswerKeyText("");
+                  setStickyAnswerKeyCapturedAt("");
                   setRubricOverride("");
                 }}
-                disabled={!sessionItems.length && !(stickyRubricText || "").trim().length && !(rubricOverride || "").trim().length}
+                disabled={!sessionItems.length && !(stickyRubricText || "").trim().length && !(rubricOverride || "").trim().length && !(stickyAnswerKeyText || "").trim().length}
                 style={styles.ghostBtn}
               >
                 Clear

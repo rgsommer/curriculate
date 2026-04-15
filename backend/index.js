@@ -8108,6 +8108,7 @@ VOICE: Mastery / IEW-style (Andrew Pudewa)
 function buildRubricInstructions({
     gradeBand = "6-8",
     rubricOverride = "",
+    answerKeyOverride = "",
     feedbackVoice = "warm",
     feedbackVoiceMode = "default",
     standards = "canada",
@@ -8219,6 +8220,21 @@ function buildRubricInstructions({
       ${rubricOverride}
 
       If this rubric override includes categories, criteria, or denominators, it takes priority over default grading assumptions.
+      ` : ""}
+
+    ${answerKeyOverride ? `
+      ANSWER KEY / SOLUTION SHEET (provided from previous detection):
+      ${answerKeyOverride}
+
+      ANSWER KEY RULES:
+      - Use this answer key as the DEFINITIVE correct answers when grading.
+      - Compare the student's work against these solutions question-by-question.
+      - For incorrect_items, use the answer key's solution as "correct_answer".
+      - If the answer key has KITA category annotations (K, T, C, A marks beside questions),
+        create sections[] ONLY for the categories that appear. Do not create sections for categories not represented.
+        Assign each question to its annotated category and score that category based on student accuracy.
+      - If the answer key shows point values per question or category, use those as denominators.
+      - The answer key takes priority over AI inference for correct answers.
       ` : ""}
 
     VOICE APPLICATION (required):
@@ -8989,7 +9005,7 @@ function buildRubricInstructions({
     try {
       const startTime = Date.now();
 
-      const { images, workInput, rubricOverride, gradeBand, standards: rawStandards } = req.body || {};
+      const { images, workInput, rubricOverride, answerKeyOverride, gradeBand, standards: rawStandards } = req.body || {};
       const standards = ["canada", "us", "uk", "eu"].includes(rawStandards) ? rawStandards : "canada";
 
       // ------------------------------------------------
@@ -9180,6 +9196,10 @@ function buildRubricInstructions({
           rubricDetected: { type: "boolean" },
           rubricConfidence: { type: "number", minimum: 0, maximum: 1 },
 
+          answerKeyText: { type: ["string", "null"], maxLength: 3500 },
+          answerKeyDetected: { type: "boolean" },
+          answerKeyConfidence: { type: "number", minimum: 0, maximum: 1 },
+
           // --- feedback ---
           strengths: {
             type: "array",
@@ -9215,6 +9235,9 @@ function buildRubricInstructions({
           "rubricText",
           "rubricConfidence",
           "rubricDetected",
+          "answerKeyText",
+          "answerKeyDetected",
+          "answerKeyConfidence",
           "strengths",
           "improvements",
           "teacher_comment",
@@ -9230,9 +9253,12 @@ function buildRubricInstructions({
       const feedbackVoice = req.body?.meta?.feedbackVoice || "warm";
       const feedbackVoiceMode = req.body?.meta?.feedbackVoiceMode || "default";
 
+      const effectiveAnswerKey = String(answerKeyOverride || "").trim();
+
       const instructions = buildRubricInstructions({
         gradeBand: band,
         rubricOverride: effectiveRubricOverride,
+        answerKeyOverride: effectiveAnswerKey,
         feedbackVoice,
         feedbackVoiceMode,
         standards,
@@ -9280,6 +9306,38 @@ function buildRubricInstructions({
         - rubricText = null
         - rubricDetected = false
         - rubricConfidence = 0
+
+        ANSWER KEY / SOLUTION SHEET DETECTION (check EVERY image):
+        Scan ALL images for an ANSWER KEY or SOLUTION SHEET — a completed version of the test/assignment
+        showing the correct answers, often with teacher annotations.
+
+        How to identify an answer key vs student work:
+        - Answer keys are usually TYPED or printed cleanly (not handwritten by a student)
+        - They may say "Answer Key", "Solutions", "Answer Sheet" at the top
+        - They may show ALL answers filled in correctly with full working
+        - They may have KITA category annotations in the margins (K, T, C, A, or /K, /T, /C, /A, or KU, TH, CO, AP)
+          indicating which achievement category each question assesses
+        - They may have point values written beside questions (e.g., /3, /5)
+        - If the same test appears twice in the images — one clean/typed and one with student handwriting — the clean one is the key
+
+        If an answer key is found:
+        - Extract ALL correct answers, question by question, as concise text
+        - If KITA category annotations are visible, note which category each question belongs to
+        - If point values per question are visible, include them
+        - Set answerKeyDetected = true
+        - Set answerKeyConfidence between 0.5 and 1.0
+        - MANDATORY: Use the answer key to grade the student work in this SAME response.
+          Compare student answers against the key. For incorrect answers, include them in incorrect_items.
+          If KITA annotations are present, create sections[] ONLY for the categories that appear on the answer key.
+
+        ${effectiveAnswerKey ? `Note: An answer key was already detected and is provided as answerKeyOverride above.
+        You do NOT need to re-extract it. Set answerKeyDetected = true, answerKeyConfidence = 1.0,
+        and answerKeyText to the override text. Focus on grading the STUDENT work against it.` : ""}
+
+        If no answer key is found:
+        - answerKeyText = null
+        - answerKeyDetected = false
+        - answerKeyConfidence = 0
         `.trim();
 
       const countSchema = {
