@@ -8792,6 +8792,7 @@ function buildRubricInstructions({
     - If overall_out_of !== 10: set score_out_of_10 = null and final_score_out_of_10 = null.
     - If overall_out_of === 10: set score_out_of_10 and final_score_out_of_10 as numbers and apply the deduction rule.
     - The overall_out_of value must match the total possible points defined in the rubric.
+    - kita_summary: set to null unless specifically instructed below to provide one (Ontario 9+ only).
 
     ${(standards === "canada" && (gradeBand === "9-10" || gradeBand === "11+")) ? `
     ############################################################
@@ -8821,6 +8822,7 @@ function buildRubricInstructions({
     - overall_out_of = sum of all section out_of values.
     - overall_score = sum of all section scores.
     - ONLY create sections for categories that actually appear. If only T and A are annotated, create exactly 2 sections.
+    - Set kita_summary = null (the sections[] already represent KITA categories).
 
     CONCRETE EXAMPLE:
     You see: Q2a has /2T in margin, Q2b has /2T, Q2c has /5T, Q2d has /3A.
@@ -8842,7 +8844,20 @@ function buildRubricInstructions({
 
     STEP C — IF NO KITA ANNOTATIONS FOUND:
     Grade normally using standard section rules (test sections, rubric categories, or holistic /10).
-    Do NOT impose KITA categories when there are no annotations — only use KITA when the teacher has explicitly marked categories on the test or answer key.
+    Do NOT impose KITA categories as sections when there are no annotations.
+
+    However, you MUST still provide a kita_summary (advisory, non-scoring) for Ontario 9+ work:
+    - Review the student's work and identify which KITA categories are demonstrated.
+    - ONLY include categories where you can confidently identify relevant work:
+      K = Knowledge & Understanding: recall of facts, definitions, formulas, terminology.
+      T = Thinking: problem-solving, reasoning, planning, multi-step analysis, critical thinking.
+      C = Communication: clarity of explanation, use of subject-specific language, organization of ideas.
+      A = Application: using knowledge in real-world or new contexts, transfer of learning.
+    - For each included category, assign a level: "strong", "adequate", "developing", or "limited".
+    - Write a brief comment (1 sentence) about the student's performance in that category.
+    - It is FINE to include only 1, 2, or 3 categories. Do NOT force all four.
+    - If a category genuinely does not apply to this work (e.g., no Communication element in a pure calculation), omit it.
+    - This is advisory only — it does NOT affect sections[] or scoring.
 
     Decimals allowed: 3.5/5, 2.25/9, etc.
     ${gradeBand === "9-10"
@@ -9285,6 +9300,21 @@ function buildRubricInstructions({
           },
 
           teacher_comment: { type: "string", minLength: 1 },
+
+          // --- soft KITA achievement category summary (Ontario 9+ only, advisory) ---
+          kita_summary: {
+            type: ["array", "null"],
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                category: { type: "string", enum: ["Knowledge & Understanding", "Thinking", "Communication", "Application"] },
+                level: { type: "string", enum: ["strong", "adequate", "developing", "limited"] },
+                comment: { type: "string", maxLength: 200 },
+              },
+              required: ["category", "level", "comment"],
+            },
+          },
         },
 
         required: [
@@ -9310,6 +9340,7 @@ function buildRubricInstructions({
           "strengths",
           "improvements",
           "teacher_comment",
+          "kita_summary",
         ],
       };
       // 2) Optional wrapper if you like keeping it around locally

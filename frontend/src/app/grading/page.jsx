@@ -615,6 +615,16 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "", gradeBandForKit
     lines.push("");
   }
 
+  // Soft KITA summary (advisory, non-scoring)
+  if (Array.isArray(assessment.kita_summary) && assessment.kita_summary.length) {
+    lines.push("Achievement Categories:");
+    assessment.kita_summary.forEach((k) => {
+      const short = { "Knowledge & Understanding": "K", "Thinking": "T", "Communication": "C", "Application": "A" }[k.category] || "?";
+      lines.push(`- ${short} ${k.category} [${k.level}]: ${k.comment}`);
+    });
+    lines.push("");
+  }
+
   if (String(assessment.teacher_comment || "").trim()) {
     lines.push("Overall Comment:");
     lines.push(String(assessment.teacher_comment).trim());
@@ -3295,6 +3305,48 @@ export default function GradingPage() {
                           <li key={i}>{it}</li>
                         ))}
                       </ul>
+                    </>
+                  ) : null}
+
+                  {Array.isArray(assessment.kita_summary) && assessment.kita_summary.length > 0 ? (
+                    <>
+                      <div style={styles.gradingSectionTitle}>Achievement Categories</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+                        {assessment.kita_summary.map((k, i) => {
+                          const levelColors = {
+                            strong: { bg: "rgba(5,150,105,0.1)", border: "rgba(5,150,105,0.3)", text: "#059669" },
+                            adequate: { bg: "rgba(37,99,235,0.08)", border: "rgba(37,99,235,0.25)", text: "#2563eb" },
+                            developing: { bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.3)", text: "#d97706" },
+                            limited: { bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)", text: "#dc2626" },
+                          };
+                          const c = levelColors[k.level] || levelColors.adequate;
+                          const shortName = { "Knowledge & Understanding": "K", "Thinking": "T", "Communication": "C", "Application": "A" }[k.category] || "?";
+                          return (
+                            <div key={i} style={{
+                              flex: "1 1 calc(50% - 8px)", minWidth: 140,
+                              borderRadius: 10, border: `1px solid ${c.border}`,
+                              background: c.bg, padding: "8px 10px",
+                            }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                                <span style={{
+                                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                  width: 22, height: 22, borderRadius: 6, background: c.text, color: "white",
+                                  fontSize: 11, fontWeight: 900,
+                                }}>{shortName}</span>
+                                <span style={{ fontSize: 12, fontWeight: 800, color: c.text }}>
+                                  {k.category}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: c.text, textTransform: "capitalize", marginBottom: 2 }}>
+                                {k.level}
+                              </div>
+                              <div style={{ fontSize: 12, lineHeight: 1.35, opacity: 0.85 }}>
+                                {k.comment}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </>
                   ) : null}
 

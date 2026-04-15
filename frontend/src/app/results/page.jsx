@@ -97,8 +97,9 @@ function parseTeacherBlock(payloadText) {
     overallComment: "",
     sections: [],
     isKita: false,
-    evidenceLinks: [],     // ✅ NEW
-    evidenceText: "",      // ✅ NEW
+    kitaSummary: [],       // soft advisory KITA breakdown
+    evidenceLinks: [],
+    evidenceText: "",
     savedCaptures: [],
     raw: text,
   };
@@ -128,6 +129,7 @@ function parseTeacherBlock(payloadText) {
     "Overall Comment:",
     "Sections:",
     "Achievement Categories (KITA):",
+    "Achievement Categories:",
     "Saved captures (30-day links):",
   ]);
 
@@ -140,6 +142,7 @@ function parseTeacherBlock(payloadText) {
     "Overall Comment:": "overallComment",
     "Sections:": "sections",
     "Achievement Categories (KITA):": "sections",
+    "Achievement Categories:": "kitaSummary",
     "Saved captures (30-day links):": "savedCaptures",
   };
 
@@ -249,6 +252,16 @@ function parseTeacherBlock(payloadText) {
 
     const t = ln.trim();
     if (!t) continue;
+
+    // Parse kita_summary lines: "- K Knowledge & Understanding [strong]: comment"
+    if (target === "kitaSummary") {
+      const m = t.match(/^-?\s*[KTCA]\s+(.+?)\s*\[(\w+)\]:\s*(.+)$/);
+      if (m) {
+        out.kitaSummary.push({ category: m[1].trim(), level: m[2].trim().toLowerCase(), comment: m[3].trim() });
+      }
+      continue;
+    }
+
     // Keep list items, but also allow plain lines
     out[target].push(t);
   }
@@ -267,7 +280,8 @@ function parseTeacherBlock(payloadText) {
     out.nextSteps.length ||
     out.overallComment ||
     out.sections.length ||
-    out.evidenceLinks.length ||        // ✅ NEW
+    out.kitaSummary.length ||
+    out.evidenceLinks.length ||
     out.evidenceText.trim() ||         // ✅ NEW
     out.savedCaptures.length;
 
@@ -668,6 +682,47 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                       <li key={i}>{linkifyTextToReactNodes(x)}</li>
                     ))}
                   </ul>
+                </Card>
+              ) : null}
+
+              {parsed.kitaSummary.length > 0 ? (
+                <Card title="Achievement Categories">
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {parsed.kitaSummary.map((k, i) => {
+                      const levelColors = {
+                        strong: { bg: "rgba(5,150,105,0.1)", border: "rgba(5,150,105,0.3)", text: "#059669" },
+                        adequate: { bg: "rgba(37,99,235,0.08)", border: "rgba(37,99,235,0.25)", text: "#2563eb" },
+                        developing: { bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.3)", text: "#d97706" },
+                        limited: { bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)", text: "#dc2626" },
+                      };
+                      const c = levelColors[k.level] || levelColors.adequate;
+                      const shortName = { "Knowledge & Understanding": "K", "Thinking": "T", "Communication": "C", "Application": "A" }[k.category] || "?";
+                      return (
+                        <div key={i} style={{
+                          flex: "1 1 calc(50% - 8px)", minWidth: 140,
+                          borderRadius: 10, border: `1px solid ${c.border}`,
+                          background: c.bg, padding: "8px 10px",
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                            <span style={{
+                              display: "inline-flex", alignItems: "center", justifyContent: "center",
+                              width: 22, height: 22, borderRadius: 6, background: c.text, color: "white",
+                              fontSize: 11, fontWeight: 900,
+                            }}>{shortName}</span>
+                            <span style={{ fontSize: 12, fontWeight: 800, color: c.text }}>
+                              {k.category}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: c.text, textTransform: "capitalize", marginBottom: 2 }}>
+                            {k.level}
+                          </div>
+                          <div style={{ fontSize: 12, lineHeight: 1.35, opacity: 0.85 }}>
+                            {k.comment}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </Card>
               ) : null}
 
