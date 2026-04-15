@@ -797,6 +797,7 @@ export default function GradingPage() {
     const [cameraError, setCameraError] = useState("");
     const [usingFrontCamera, setUsingFrontCamera] = useState(false);
     const lastPhotoTapRef = useRef(0);
+    const responseRef = useRef(null);
     const [lastUsedCompression, setLastUsedCompression] = useState(null);
 
     const [flash, setFlash] = useState(false);
@@ -1486,6 +1487,11 @@ export default function GradingPage() {
         if (norm.assessment) {
           setCopyEnabled(true);
 
+          // Auto-scroll to the response so teacher doesn't have to scroll manually
+          setTimeout(() => {
+            responseRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }, 120);
+
           try {
             const uses = readIntLS(FEEDBACK_USES_KEY, 0);
             const nextUses = uses + 1;
@@ -2090,7 +2096,19 @@ export default function GradingPage() {
         )}
       </div>
 
-        <div style={styles.grid}>
+        <style>{`
+          @media (min-width: 820px) {
+            .grading-grid {
+              grid-template-columns: 1fr 1fr !important;
+            }
+            .grading-grid > .grading-submit-card {
+              position: sticky;
+              top: 12px;
+              align-self: start;
+            }
+          }
+        `}</style>
+        <div className="grading-grid" style={styles.grid}>
           {/* CAMERA CARD */}
           <div style={styles.card}>
             <div style={styles.cardTitleRow}>
@@ -2262,7 +2280,7 @@ export default function GradingPage() {
           </div>
 
           {/* SUBMIT + RESPONSE CARD */}
-          <div style={styles.card}>
+          <div className="grading-submit-card" style={styles.card}>
             <div style={styles.cardTitle}>Submit</div>
 
             {/* Rubric (collapsible) */}
@@ -2481,7 +2499,7 @@ export default function GradingPage() {
               </div>
             </label> */}
 
-            <div style={styles.responseTitleRow}>
+            <div ref={responseRef} style={styles.responseTitleRow}>
               <div style={styles.cardTitle}>Response</div>
 
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -2948,16 +2966,16 @@ export default function GradingPage() {
 
 const styles = {
   page: {
-    padding: "24px 18px 40px",
+    padding: "16px 18px 40px",
     maxWidth: 1200,
     margin: "0 auto",
     fontFamily:
       'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
     color: "#0b1220",
   },
-  header: { marginBottom: 16 },
-  h1: { margin: 0, fontSize: 28, letterSpacing: -0.3 },
-  sub: { marginTop: 6, opacity: 0.78 },
+  header: { marginBottom: 10 },
+  h1: { margin: 0, fontSize: 24, letterSpacing: -0.3 },
+  sub: { marginTop: 4, opacity: 0.78, fontSize: 13 },
 
   grid: { display: "grid", gridTemplateColumns: "1fr", gap: 14 },
 
@@ -3149,7 +3167,7 @@ const styles = {
     display: "flex",
     alignItems: "flex-end",
     gap: 12,
-    marginBottom: 12,
+    marginBottom: 10,
     flexWrap: "wrap",
   },
 
