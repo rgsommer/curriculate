@@ -26,12 +26,12 @@ function linkifyTextToReactNodes(text) {
     // Keep the original exactly (so spacing stays correct)
     const original = String(part);
 
-    // Trim whitespace for testing only (don’t lose it in output)
+    // Trim whitespace for testing only (don't lose it in output)
     const test = original.trim();
 
-    // If the split token has leading punctuation like "(" or "[" it won’t match,
+    // If the split token has leading punctuation like "(" or "[" it won't match,
     // but sometimes it sneaks in via copy/paste. Strip leading punct for detection.
-    const mLeadTrail = test.match(/^([(\[{<"'“”‘’]*)(.*?)([)\]}>"'“”‘’.,;:!?]+)?$/);
+    const mLeadTrail = test.match(/^([(\[{<"'""'']*)(.*?)([)\]}>"'""''.,;:!?]+)?$/);
     const leading = mLeadTrail?.[1] || "";
     const core = mLeadTrail?.[2] || test;
     const trailing = mLeadTrail?.[3] || "";
@@ -441,7 +441,7 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
             width: 100% !important;
           }
 
-          /* Remove “app UI” styling for print */
+          /* Remove "app UI" styling for print */
           #print-area * {
             box-shadow: none !important;
           }
@@ -534,7 +534,7 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                 fontSize: 14,
                 opacity: 0.8,
               }}
-              title="Opens print dialog (choose “Save as PDF”)"
+              title="Opens print dialog (choose "Save as PDF")"
             >
               Download as PDF
             </button>

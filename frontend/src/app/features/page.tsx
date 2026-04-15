@@ -51,7 +51,7 @@ export default function FeaturesPage() {
               Curriculate is AI lesson planning — then AI task generation
             </h1>
             <p className="mt-4 text-lg text-slate-600">
-              Most “AI classroom tools” generate activities. Curriculate plans the learning experience first:
+              Most "AI classroom tools" generate activities. Curriculate plans the learning experience first:
               time-fit pacing, grade-appropriate task selection, intentional movement breaks, and station-ready delivery —
               then it generates tasks to match that plan.
             </p>
@@ -207,13 +207,13 @@ export default function FeaturesPage() {
                 ]}
               />
               <FeatureCard
-                title=”🎨 Expression & Creativity”
-                body=”Let students show understanding in more than one modality.”
+                title="🎨 Expression & Creativity"
+                body="Let students show understanding in more than one modality."
                 bullets={[
-                  “Letter writing — write to a historical character, get an AI reply back”,
-                  “Case study — solve a real-world scenario, get AI expert feedback”,
-                  “Drawing/visual response and photo journal formats”,
-                  “Narration/synthesis and vocabulary paragraph prompts”,
+                  "Letter writing — write to a historical character, get an AI reply back",
+                  "Case study — solve a real-world scenario, get AI expert feedback",
+                  "Drawing/visual response and photo journal formats",
+                  "Narration/synthesis and vocabulary paragraph prompts",
                 ]}
               />
               <FeatureCard
@@ -295,12 +295,12 @@ export default function FeaturesPage() {
                 ]}
               />
               <FeatureCard
-                title=”🔒 Quality Guardrails & Validation”
-                body=”AI-generated tasks are automatically validated and fixed before reaching students.”
+                title="🔒 Quality Guardrails & Validation"
+                body="AI-generated tasks are automatically validated and fixed before reaching students."
                 bullets={[
-                  “Deterministic auto-fixes for chronology, answer keys, and item counts”,
-                  “Tied-date detection, description-item filtering, and dangling reference checks”,
-                  “Only generator-eligible, implemented task types make it through”,
+                  "Deterministic auto-fixes for chronology, answer keys, and item counts",
+                  "Tied-date detection, description-item filtering, and dangling reference checks",
+                  "Only generator-eligible, implemented task types make it through",
                 ]}
               />
             </div>

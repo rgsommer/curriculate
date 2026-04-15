@@ -30,7 +30,7 @@ export default function TermsOfServicePage() {
 
         <h2 className="text-2xl font-semibold">Limitation of Liability</h2>
         <p>
-          Curriculate is provided “as is.” We are not liable for instructional outcomes or
+          Curriculate is provided "as is." We are not liable for instructional outcomes or
           data loss resulting from misuse or external service interruptions.
         </p>
 

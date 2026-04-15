@@ -89,7 +89,7 @@ export default function InvestorsPage() {
             </h1>
 
             <p className="mt-4 text-lg text-slate-600">
-              Most “AI in education” products generate content. Curriculate plans an
+              Most "AI in education" products generate content. Curriculate plans an
               experience first — selecting grade-appropriate task formats, fitting the
               lesson time you specify, spacing movement breaks intentionally, and only
               generating formats the student app can run — then it generates the tasks
@@ -126,7 +126,7 @@ export default function InvestorsPage() {
                   TL;DR
                 </div>
                 <h2 className="mt-3 text-2xl font-bold text-slate-900">
-                  “Not AI worksheets — AI pacing + stations + task variety”
+                  "Not AI worksheets — AI pacing + stations + task variety"
                 </h2>
                 <p className="mt-2 text-slate-600">
                   Curriculate turns teacher intent (topic, vocab, grade, goal, and time)
@@ -137,7 +137,7 @@ export default function InvestorsPage() {
               </div>
               <div className="rounded-2xl bg-slate-50 p-5">
                 <div className="text-sm font-semibold text-slate-900">
-                  What’s defensible here
+                  What's defensible here
                 </div>
                 <ul className="mt-3 grid gap-2 text-slate-700">
                   <li className="flex gap-2">
@@ -169,8 +169,8 @@ export default function InvestorsPage() {
           <div>
             <SectionHeader
               eyebrow="Problem"
-              title="Teachers don’t need more content — they need better classroom flow"
-              desc="Most classrooms fail on pacing and engagement: too much dead time, rushed endings, and activities that don’t translate into station routines. Generic AI tools produce content, but not a coherent experience."
+              title="Teachers don't need more content — they need better classroom flow"
+              desc="Most classrooms fail on pacing and engagement: too much dead time, rushed endings, and activities that don't translate into station routines. Generic AI tools produce content, but not a coherent experience."
             />
             <div className="grid gap-4 md:grid-cols-2">
               <Card
@@ -180,12 +180,12 @@ export default function InvestorsPage() {
                   "Activity timing is unpredictable",
                   "Too many similar tasks in a row",
                   "Movement is either missing or chaotic",
-                  "Formats don’t match delivery (stations/QR/displays)",
+                  "Formats don't match delivery (stations/QR/displays)",
                   "Teachers spend time reworking AI output",
                 ]}
               />
               <Card
-                title="Curriculate’s solution"
+                title="Curriculate's solution"
                 desc="Plan first, generate second — with hard guardrails."
                 bullets={[
                   "Time-aware planning creates realistic task counts",
@@ -266,7 +266,7 @@ export default function InvestorsPage() {
                 </div>
                 <ul className="mt-4 grid gap-2 text-slate-700">
                   {[
-                    "Outputs content, but doesn’t plan an experience",
+                    "Outputs content, but doesn't plan an experience",
                     "Task count is guesswork",
                     "Timing often breaks in real classrooms",
                     "Movement is random (or missing)",
@@ -377,7 +377,7 @@ export default function InvestorsPage() {
               <p className="text-slate-600">
                 Curriculate is designed and built by an experienced teacher and school
                 administrator, with daily classroom iteration. The product emphasis is
-                not “cool AI,” but repeatable routines: pacing, stations, and structured
+                not "cool AI," but repeatable routines: pacing, stations, and structured
                 outputs that reduce teacher prep and increase student engagement.
               </p>
             </div>
@@ -392,7 +392,7 @@ export default function InvestorsPage() {
             </h2>
             <p className="mt-2 max-w-3xl text-slate-600">
               This page is intentionally not linked in site navigation. Share the URL
-              privately as needed. If you’d like, we can add a short “data room” section
+              privately as needed. If you'd like, we can add a short "data room" section
               (traction, pricing, pipeline, unit economics) once you share what you want public.
             </p>
             <div className="mt-5 flex flex-wrap gap-3">

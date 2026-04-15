@@ -27,7 +27,7 @@ If you see a rubric with checkboxes/levels, assume it is a teacher scoring rubri
 
 Formatting deduction (apply ONCE total, –1), if any are missing/unclear:
 - date (do not apply to posters or art work)
-- proper descriptive title (not just “check-in”; do not apply to art work)
+- proper descriptive title (not just "check-in"; do not apply to art work)
 - page/question reference (if there is one; do not apply to posters, tests or art work)
 
 Return JSON only with:
@@ -228,7 +228,7 @@ function safeJsonParse(text) {
     if (parsed) return parsed;
   }
 
-  // 3) handle “escaped JSON looking” payloads like: { \"overall_score\": 18, ... }
+  // 3) handle "escaped JSON looking" payloads like: { \"overall_score\": 18, ... }
   const looksEscaped =
     /\\\"(response_format_detected|overall_score|overall_out_of|sections|student_name|teacher_comment|strengths|improvements|deductions)\\\"/.test(s) ||
     /\\\"score_out_of_10\\\"|\\\"final_score_out_of_10\\\"/.test(s) ||
@@ -468,7 +468,7 @@ function toArrayStrings(v) {
 function formatPoints(p) {
   const n = Number(p);
   if (!Number.isFinite(n) || n === 0) return "";
-  return `(\u2013${Math.abs(n)})`; // always show as “–1”
+  return `(\u2013${Math.abs(n)})`; // always show as "–1"
 }
 
 function tightenCropToContent(canvas, { pad = 12, threshold = 245 } = {}) {
@@ -504,7 +504,7 @@ function tightenCropToContent(canvas, { pad = 12, threshold = 245 } = {}) {
   while (left < w && !colHasInk(left)) left++;
   while (right > 0 && !colHasInk(right)) right--;
 
-  // If we found nothing, don’t change
+  // If we found nothing, don't change
   if (top >= bottom || left >= right) return canvas;
 
   top = Math.max(0, top - pad);
@@ -686,7 +686,7 @@ const RUBRIC_STICKY_TS_KEY = "curriculate_grading_rubric_sticky_ts_v1";
     return p.replace(/\s+/g, " ").slice(0, 80);
   }
 
-  // Prefer the actual improvement bullet text as the “concept”
+  // Prefer the actual improvement bullet text as the "concept"
   function keyFromImprovement(s) {
     const t = String(s || "").trim();
     if (!t) return "";
@@ -920,7 +920,7 @@ export default function GradingPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          payload, // we’ll store a string so /results can show it nicely
+          payload, // we'll store a string so /results can show it nicely
           meta: meta || null,
           sessionId: getSessionId(),
         }),
@@ -1255,7 +1255,7 @@ export default function GradingPage() {
       const dismissedUntil = Number(readStrLS(FEEDBACK_DISMISSED_UNTIL_KEY, "0")) || 0;
       if (dismissedUntil && Date.now() < dismissedUntil) return false;
 
-      // Respect cooldown (don’t show more than once per week)
+      // Respect cooldown (don't show more than once per week)
       const lastShownAt = Number(readStrLS(FEEDBACK_LAST_SHOWN_AT_KEY, "0")) || 0;
       const cooldownDays = Number(FEEDBACK_COOLDOWN_DAYS) || 7;
       const cooldownMs = cooldownDays * 24 * 60 * 60 * 1000;
@@ -1266,7 +1266,7 @@ export default function GradingPage() {
       if (!pendingTrigger) return false;
 
       // Persistent mode:
-      // Once they’ve crossed the pending trigger, keep prompting occasionally
+      // Once they've crossed the pending trigger, keep prompting occasionally
       // (cooldown + snooze already prevent annoyance).
       return true;
     }
@@ -1383,7 +1383,7 @@ export default function GradingPage() {
           ? `photo:${photosToUse.map((p) => p.id).join(",")}|gb:${gradeBand}|v:${voiceEffective}`
           : `paste:${trimmedWork.slice(0, 200)}|len:${trimmedWork.length}|gb:${gradeBand}|v:${voiceEffective}`;
           
-      // ✅ 2) Compute the attempt + compression profile LOCALLY (don’t rely on state timing)
+      // ✅ 2) Compute the attempt + compression profile LOCALLY (don't rely on state timing)
       const isRetry = submitKey === lastSubmitKeyRef.current;
       const nextAttempt = isRetry ? Math.min(3, (submissionAttempt || 1) + 1) : 1;
       const profileToUse = getCompressionProfile(nextAttempt);
@@ -1726,7 +1726,7 @@ export default function GradingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...payload,
-          anonId, // fine to include, but don’t count it as a “submission” server-side
+          anonId, // fine to include, but don't count it as a "submission" server-side
         }),
       });
 
@@ -1937,7 +1937,7 @@ export default function GradingPage() {
       const htmlText = htmlParts.join("");
 
       try {
-        // IMPORTANT: This is what makes “Photo 1” clickable without showing URL
+        // IMPORTANT: This is what makes "Photo 1" clickable without showing URL
         if (navigator.clipboard?.write && window.ClipboardItem) {
           await navigator.clipboard.write([
             new ClipboardItem({
@@ -2246,7 +2246,7 @@ export default function GradingPage() {
                   <textarea
                     value={workInput}
                     onChange={(e) => setWorkInput(e.target.value)}
-                    placeholder="Paste the student’s writing/answers here… OR paste a link starting with https://"
+                    placeholder="Paste the student's writing/answers here… OR paste a link starting with https://"
                     rows={10}
                     style={styles.textarea}
                     autoCapitalize="none"
@@ -2495,7 +2495,7 @@ export default function GradingPage() {
                 title="Double-tap to clear"
               />
               <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
-                Tip: Can be “First L” or “First Last”.
+                Tip: Can be "First L" or "First Last".
               </div>
             </label> */}
 
@@ -2767,7 +2767,7 @@ export default function GradingPage() {
                 <div style={{ opacity: 0.75, lineHeight: 1.5 }}>
                   Results will appear here after submission.
                   <br />
-                  Write the grade and reference code (e.g., AA123) on the student’s paper.
+                  Write the grade and reference code (e.g., AA123) on the student's paper.
                   <br />
                   Students and parents can view full feedback at{" "}
                   <a
@@ -2785,8 +2785,8 @@ export default function GradingPage() {
             {!assessment && normalized.wrapperError && (
               <div style={styles.softWarn}>
                 {normalized.rawTextUsed?.trim()
-                  ? "We received a response but couldn’t parse it. Try again."
-                  : "Grading didn’t complete this time. Try again."}
+                  ? "We received a response but couldn't parse it. Try again."
+                  : "Grading didn't complete this time. Try again."}
               </div>
             )}
 

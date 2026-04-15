@@ -104,7 +104,7 @@ export default function WalkthroughModal({
               <b>Capture</b> → <b>Reports</b>.
             </p>
             <p className="text-slate-600">
-              This is a 60-second walkthrough. You’ll know the whole flow by the end.
+              This is a 60-second walkthrough. You'll know the whole flow by the end.
             </p>
           </div>
         ),
@@ -130,7 +130,7 @@ export default function WalkthroughModal({
               Start the session on the teacher screen. Teams join quickly (scan/code), and the flow is controlled automatically.
             </p>
             <p className="text-slate-600 text-sm">
-              Everything is tracked while students work — no extra “teacher busywork.”
+              Everything is tracked while students work — no extra "teacher busywork."
             </p>
           </div>
         ),
@@ -181,7 +181,7 @@ export default function WalkthroughModal({
                 href="/how-it-works"
                 className="rounded-2xl bg-white px-3 py-2 text-sm font-semibold text-slate-900 ring-1 ring-black/10 hover:bg-slate-50"
               >
-                See the visual “How it Works” page
+                See the visual "How it Works" page
               </Link>
               <Link
                 href="/demo"
@@ -331,7 +331,7 @@ export default function WalkthroughModal({
                     onChange={(e) => setDontShowAgain(e.target.checked)}
                     className="h-4 w-4"
                   />
-                  Don’t show this again
+                  Don't show this again
                 </label>
               )}
             </div>

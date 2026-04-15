@@ -239,7 +239,7 @@ export default function HowItWorksPage() {
               Curriculate plans the experience first — then generates tasks to match
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-slate-700 max-w-3xl">
-              When you request a 45-minute set, Curriculate uses each task type’s expected completion time to
+              When you request a 45-minute set, Curriculate uses each task type's expected completion time to
               choose how many tasks to include and what mix fits best — including an intentional movement break
               without overusing it.
             </p>
@@ -378,7 +378,7 @@ export default function HowItWorksPage() {
               bullets={[
                 "Team answers are stored by station and task type.",
                 "Optional scoring and feedback can be generated automatically.",
-                "No “paper chase” after class—everything is already sorted.",
+                "No "paper chase" after class—everything is already sorted.",
                 "Grades ready for the grade book!",
               ]}
             />
@@ -448,7 +448,7 @@ export default function HowItWorksPage() {
                       <span className="mt-1">
                         <Dot />
                       </span>
-                      <span>Phones still work for “extra hands,” quick look-ups, or accessibility needs.</span>
+                      <span>Phones still work for "extra hands," quick look-ups, or accessibility needs.</span>
                     </li>
                   </ul>
                 </div>
@@ -457,7 +457,7 @@ export default function HowItWorksPage() {
                   <div className="text-sm font-semibold text-slate-900">Reality check (and encouragement)</div>
                   <p className="mt-1 text-sm leading-relaxed text-slate-700">
                     Many schools already have tablets (classroom sets or carts). If not, Curriculate still works on
-                    student phones—just expect a slightly smaller, more “tap-heavy” experience for younger students.
+                    student phones—just expect a slightly smaller, more "tap-heavy" experience for younger students.
                   </p>
                 </div>
               </div>
@@ -486,7 +486,7 @@ export default function HowItWorksPage() {
               <h2 className="text-xl font-bold sm:text-2xl">Ready to try it with your class?</h2>
               <p className="mt-2 max-w-2xl text-sm text-white/80">
                 Start with one lesson, 4–6 stations, and teams of 3. If you have access to a tablet cart,
-                you’re basically set.
+                you're basically set.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">

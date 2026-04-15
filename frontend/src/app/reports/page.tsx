@@ -12,7 +12,7 @@ const docs = [
       "Encouraging, grade-appropriate language",
       "Participation + task highlights",
       "Strengths + growth focus",
-      "Optional reflection bonus (“What I learned”)",
+      "Optional reflection bonus ("What I learned")",
     ],
   },
   {
@@ -47,7 +47,7 @@ export default function ReportsPage() {
       <div className="mx-auto max-w-7xl">
         <h1 className="text-5xl sm:text-6xl font-black text-gray-900 mb-4">Sample Reports</h1>
         <p className="text-xl text-gray-700 font-medium max-w-3xl mb-10">
-          Reports aren’t just scores — they’re evidence. Clear enough for parents, actionable enough for teachers.
+          Reports aren't just scores — they're evidence. Clear enough for parents, actionable enough for teachers.
         </p>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -103,7 +103,7 @@ export default function ReportsPage() {
             </div>
             <div className="rounded-2xl bg-gray-50 border border-gray-200 p-6">
               <div className="font-black text-gray-900 mb-2">Immediate</div>
-              <div className="text-gray-700 font-medium">Generated right after the session — no “I’ll get to it later” grading pile.</div>
+              <div className="text-gray-700 font-medium">Generated right after the session — no "I'll get to it later" grading pile.</div>
             </div>
           </div>
 
