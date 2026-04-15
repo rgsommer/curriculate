@@ -534,7 +534,7 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                 fontSize: 14,
                 opacity: 0.8,
               }}
-              title="Opens print dialog (choose "Save as PDF")"
+              title="Opens print dialog (choose Save as PDF)"
             >
               Download as PDF
             </button>
