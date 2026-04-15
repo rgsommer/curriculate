@@ -1523,10 +1523,11 @@ export default function GradingPage() {
       // ✅ 1) Build submitKey BEFORE using it
       const voiceEffective = voiceOverrideOn ? voiceOverride : voice;
 
+      const rubricFingerprint = manualRubric.slice(0, 50) || stickyRubric.slice(0, 50) || "";
       const submitKey =
         inputMode === "photo"
-          ? `photo:${photosToUse.map((p) => p.id).join(",")}|gb:${gradeBand}|v:${voiceEffective}`
-          : `paste:${trimmedWork.slice(0, 200)}|len:${trimmedWork.length}|gb:${gradeBand}|v:${voiceEffective}`;
+          ? `photo:${photosToUse.map((p) => p.id).join(",")}|gb:${gradeBand}|v:${voiceEffective}|r:${rubricFingerprint}|st:${standards}`
+          : `paste:${trimmedWork.slice(0, 200)}|len:${trimmedWork.length}|gb:${gradeBand}|v:${voiceEffective}|r:${rubricFingerprint}|st:${standards}`;
           
       // ✅ 2) Compute the attempt + compression profile LOCALLY (don't rely on state timing)
       const isRetry = submitKey === lastSubmitKeyRef.current;
