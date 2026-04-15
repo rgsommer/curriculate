@@ -221,7 +221,7 @@ export default function SiteHeader() {
                 href="/freetrial"
                 className="rounded-full bg-gradient-to-br from-blue-600 to-violet-600 px-4 py-2 text-sm font-bold text-white hover:opacity-95"
               >
-                Try Station Lessons
+                Try Curriculate Free
               </Link>
             </>
           ) : (
