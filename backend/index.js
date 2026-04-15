@@ -22,6 +22,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 // 4) Shared constants (used across server)
 import { TASK_TYPE_META } from "../shared/taskTypes.js";
 import { COLORS } from "../shared/colors.js";
+import { computeUnlockedSkins, diffUnlocks } from "../shared/skins.js";
 
 // 5) Local utils
 import { recordNoiseSample, computeNoiseSummary } from "./utils/noiseTelemetry.js";
@@ -35,6 +36,7 @@ import TeacherProfile from "./models/TeacherProfile.js";
 import AccessCode from "./models/AccessCode.js";
 import SystemEmailTemplate from "./models/SystemEmailTemplate.js";
 import ReferralProgramSettings from "./models/ReferralProgramSettings.js";
+import StudentProfile from "./models/StudentProfile.js";
 
 // 7) AI / email services
 import { generateAIScore } from "./ai/aiScoring.js";
@@ -407,6 +409,83 @@ app.get("/api/version", (req, res) => {
 });
 
 app.get("/feedback", requireAdminJson, listFeedback);
+
+// ── Student Profile (public — no auth, keyed by email) ──
+app.get("/api/student-profile", async (req, res) => {
+  try {
+    const email = (req.query.email || "").trim().toLowerCase();
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ ok: false, error: "Valid email is required." });
+    }
+    const profile = await StudentProfile.findOne({ email }).lean();
+    if (!profile) {
+      return res.json({ ok: true, found: false, profile: null });
+    }
+    // Compute current unlocks (in case catalog changed since last save)
+    const stats = {
+      sessionsPlayed: profile.sessionsPlayed || 0,
+      currentStreak: profile.currentStreak || 0,
+      tasksCompleted: profile.tasksCompleted || 0,
+      totalPoints: profile.totalPoints || 0,
+    };
+    const allUnlocked = computeUnlockedSkins(stats);
+    res.json({
+      ok: true,
+      found: true,
+      profile: {
+        email: profile.email,
+        displayName: profile.displayName,
+        sessionsPlayed: profile.sessionsPlayed,
+        totalPoints: profile.totalPoints,
+        tasksCompleted: profile.tasksCompleted,
+        currentStreak: profile.currentStreak,
+        longestStreak: profile.longestStreak,
+        unlockedSkins: allUnlocked,
+        activeSkin: profile.activeSkin,
+        recentSessions: (profile.recentSessions || []).slice(-10),
+      },
+    });
+  } catch (err) {
+    console.error("/api/student-profile error:", err);
+    res.status(500).json({ ok: false, error: "Server error." });
+  }
+});
+
+app.post("/api/student-profile/skin", async (req, res) => {
+  try {
+    const email = (req.body.email || "").trim().toLowerCase();
+    const skinId = (req.body.skinId || "").trim();
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ ok: false, error: "Valid email is required." });
+    }
+    const profile = await StudentProfile.findOne({ email });
+    if (!profile) {
+      return res.status(404).json({ ok: false, error: "Profile not found." });
+    }
+    // skinId null/empty means "unequip"
+    if (!skinId) {
+      profile.activeSkin = null;
+    } else {
+      // Verify skin is unlocked
+      const stats = {
+        sessionsPlayed: profile.sessionsPlayed || 0,
+        currentStreak: profile.currentStreak || 0,
+        tasksCompleted: profile.tasksCompleted || 0,
+        totalPoints: profile.totalPoints || 0,
+      };
+      const allUnlocked = computeUnlockedSkins(stats);
+      if (!allUnlocked.includes(skinId)) {
+        return res.status(403).json({ ok: false, error: "Skin not unlocked." });
+      }
+      profile.activeSkin = skinId;
+    }
+    await profile.save();
+    res.json({ ok: true, activeSkin: profile.activeSkin });
+  } catch (err) {
+    console.error("/api/student-profile/skin error:", err);
+    res.status(500).json({ ok: false, error: "Server error." });
+  }
+});
 
 // Simple UUID generator
 function generateUUID() {
@@ -1775,7 +1854,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
   // ----------------------------------------------------
   const handleStudentJoinRoom = async (payload = {}, ack) => {
     try {
-      const { roomCode, teamName, members, emails, displayName, maxTeamSize } = payload || {};
+      const { roomCode, teamName, members, emails, displayName, maxTeamSize, memberDetails } = payload || {};
       const code = (roomCode || "").toUpperCase().trim();
 
       // Cap emoji/symbol usage in names (allow up to 2)
@@ -1801,6 +1880,17 @@ socket.on("task:force-advance", ({ roomCode }) => {
             .map((e) => e.trim().toLowerCase())
             .filter((e) => e.length > 0 && e.includes("@"))
             .slice(0, 5)
+        : [];
+
+      // Parse per-member details (NEW: name+email pairs for skin tracking)
+      const cleanMemberDetails = Array.isArray(memberDetails)
+        ? memberDetails
+            .filter((md) => md && typeof md.name === "string" && md.name.trim())
+            .map((md) => ({
+              name: capEmojis(md.name.trim()),
+              email: (md.email || "").trim().toLowerCase(),
+            }))
+            .slice(0, 8)
         : [];
 
       // Team name is OPTIONAL now. If not provided, the server will auto-assign
@@ -2043,6 +2133,34 @@ socket.on("task:force-advance", ({ roomCode }) => {
         members: memberList,
       });
 
+      // ── Store per-member details on the team for session-end crediting ──
+      if (cleanMemberDetails.length > 0) {
+        room.teams[teamId].memberDetails = cleanMemberDetails;
+      }
+
+      // ── Look up StudentProfiles for members with emails (non-blocking) ──
+      let memberSkins = {};
+      try {
+        const emailsToLookup = cleanMemberDetails
+          .filter((md) => md.email && md.email.includes("@"))
+          .map((md) => md.email);
+        if (emailsToLookup.length > 0) {
+          const profiles = await StudentProfile.find({ email: { $in: emailsToLookup } }).lean();
+          for (const p of profiles) {
+            memberSkins[p.email] = {
+              unlockedSkins: p.unlockedSkins || [],
+              activeSkin: p.activeSkin || null,
+              sessionsPlayed: p.sessionsPlayed || 0,
+              currentStreak: p.currentStreak || 0,
+              totalPoints: p.totalPoints || 0,
+              tasksCompleted: p.tasksCompleted || 0,
+            };
+          }
+        }
+      } catch (skinErr) {
+        console.warn("[skins] StudentProfile lookup failed (non-critical):", skinErr.message);
+      }
+
       if (typeof ack === "function") {
         ack({
           ok: true,
@@ -2052,6 +2170,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
           assignedStationId: room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null,
           assignedColor: normalizeStationId(room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null)?.color || null,
           roomState: state,
+          memberSkins,
         });
       }
     } catch (err) {
@@ -5215,7 +5334,7 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
 
       const tasks = Array.isArray(tasksetDoc.tasks) ? tasksetDoc.tasks : [];
 
-      // ── Auto-inject team selfie before treasure-runner if teacher profile toggle is on ──
+      // ── Auto-inject team selfie right after mood-checkin if teacher profile toggle is on ──
       // Tier gating: FREE gets selfie for first 2 sessions, then needs upgrade.
       // PLUS tiers get AI-themed selfie. PRO tiers get basic selfie.
       try {
@@ -5261,8 +5380,11 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
             }
 
             if (allowSelfie) {
-              const trIdx = tasks.findIndex(t => t && (t.taskType === "treasure-runner" || t.taskType === TASK_TYPES.TREASURE_RUNNER));
-              const insertAt = trIdx >= 0 ? trIdx : 0;
+              // Insert selfie right after mood-checkin (which is always the first task).
+              // Fallback: before treasure-runner, or at position 1 if neither found.
+              const moodIdx = tasks.findIndex(t => t && t.taskType === "mood-checkin");
+              const trIdx = tasks.findIndex(t => t && t.taskType === "treasure-runner");
+              const insertAt = moodIdx >= 0 ? moodIdx + 1 : (trIdx >= 0 ? trIdx : Math.min(1, tasks.length));
               const selfieTask = {
                 taskType: "team-selfie",
                 title: "Team Selfie",
@@ -6180,6 +6302,92 @@ socket.on(
       );
     } catch (e) {
       console.warn("[TaskTypeTimingAggregator] setup error:", e?.message || e);
+    }
+
+    // 5c) Credit StudentProfiles for members with emails (fire-and-forget)
+    try {
+      const teamsMap = room.teams && typeof room.teams === "object" ? room.teams : {};
+      const allSubs = Array.isArray(room.submissions) ? room.submissions : [];
+      const taskSetName = room?.taskset?.name || room?.tasksetName || "";
+      const sessionClassName = className || room?.className || "";
+
+      (async () => {
+        for (const [tId, team] of Object.entries(teamsMap)) {
+          const details = Array.isArray(team?.memberDetails) ? team.memberDetails : [];
+          const teamSubs = allSubs.filter((s) => String(s?.teamId) === String(tId));
+          const teamPoints = teamSubs.reduce((sum, s) => sum + (Number(s?.points) || 0), 0);
+          const teamTasksCompleted = [...new Set(teamSubs.map((s) => s?.taskIndex).filter((n) => Number.isFinite(n) && n >= 0))].length;
+
+          for (const md of details) {
+            if (!md.email || !md.email.includes("@")) continue;
+            try {
+              let profile = await StudentProfile.findOne({ email: md.email });
+              if (!profile) {
+                profile = new StudentProfile({ email: md.email, displayName: md.name || "" });
+              }
+              // Update display name to latest
+              if (md.name) profile.displayName = md.name;
+
+              // Increment cumulative stats (split evenly among team members with emails)
+              const emailCount = details.filter((d) => d.email && d.email.includes("@")).length || 1;
+              profile.sessionsPlayed += 1;
+              profile.totalPoints += Math.round(teamPoints / emailCount);
+              profile.tasksCompleted += teamTasksCompleted;
+
+              // Streak logic: 14-day gap tolerance
+              const now = new Date();
+              const lastDate = profile.lastSessionDate;
+              if (lastDate) {
+                const daysSince = Math.floor((now - new Date(lastDate)) / (1000 * 60 * 60 * 24));
+                if (daysSince <= 14) {
+                  // Same calendar day or within gap tolerance — extend streak
+                  if (daysSince >= 1) profile.currentStreak += 1;
+                  // daysSince === 0 means same day, don't double-count
+                } else {
+                  // Gap too large, reset streak
+                  profile.currentStreak = 1;
+                }
+              } else {
+                profile.currentStreak = 1;
+              }
+              if (profile.currentStreak > profile.longestStreak) {
+                profile.longestStreak = profile.currentStreak;
+              }
+              profile.lastSessionDate = now;
+
+              // Compute new skin unlocks
+              const stats = {
+                sessionsPlayed: profile.sessionsPlayed,
+                currentStreak: profile.currentStreak,
+                tasksCompleted: profile.tasksCompleted,
+                totalPoints: profile.totalPoints,
+              };
+              const { allUnlocked, newlyUnlocked } = diffUnlocks(profile.unlockedSkins, stats);
+              profile.unlockedSkins = allUnlocked;
+              if (newlyUnlocked.length > 0) {
+                console.log(`[skins] ${md.email} unlocked: ${newlyUnlocked.join(", ")}`);
+              }
+
+              // Add to recent sessions
+              profile.recentSessions.push({
+                roomCode: code,
+                className: sessionClassName,
+                taskSetName,
+                teamName: team?.teamName || "",
+                pointsEarned: Math.round(teamPoints / emailCount),
+                tasksCompleted: teamTasksCompleted,
+                playedAt: now,
+              });
+
+              await profile.save();
+            } catch (profileErr) {
+              console.warn(`[skins] Failed to credit ${md.email}:`, profileErr.message);
+            }
+          }
+        }
+      })().catch((err) => console.warn("[skins] StudentProfile crediting error:", err.message));
+    } catch (e) {
+      console.warn("[skins] StudentProfile crediting setup error:", e?.message || e);
     }
 
     // 6) Determine teacher email (override -> profile -> User model -> payload)

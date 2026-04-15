@@ -157,22 +157,32 @@ function StudentApp() {
   
   const [roomCode, setRoomCode] = useState(() => lsGet(LS_KEYS.roomCode) || "");
   const [teamName, setTeamName] = useState(() => lsGet(LS_KEYS.teamName) || "");
+  // Members: array of { name, email } objects. Email is optional per member.
   const [members, setMembers] = useState(() => {
     try {
       const raw = lsGet(LS_KEYS.members);
       const parsed = raw ? JSON.parse(raw) : null;
-      return Array.isArray(parsed) && parsed.length ? parsed : ["", "", ""];
+      if (Array.isArray(parsed) && parsed.length) {
+        // Migrate from old string[] format if needed
+        if (typeof parsed[0] === "string") {
+          // Old format: ["Alice", "Bob", ""]
+          const oldEmails = (() => {
+            try {
+              const e = lsGet(LS_KEYS.emails);
+              return e ? JSON.parse(e) : [];
+            } catch { return []; }
+          })();
+          return parsed.map((name, i) => ({
+            name: name || "",
+            email: (Array.isArray(oldEmails) ? oldEmails[i] : "") || "",
+          }));
+        }
+        // New format: [{name, email}, ...]
+        return parsed;
+      }
+      return [{ name: "", email: "" }, { name: "", email: "" }, { name: "", email: "" }];
     } catch {
-      return ["", "", ""];
-    }
-  });
-  const [emails, setEmails] = useState(() => {
-    try {
-      const raw = lsGet(LS_KEYS.emails);
-      const parsed = raw ? JSON.parse(raw) : null;
-      return Array.isArray(parsed) && parsed.length ? parsed : [""];
-    } catch {
-      return [""];
+      return [{ name: "", email: "" }, { name: "", email: "" }, { name: "", email: "" }];
     }
   });
   const [roomIsActive, setRoomIsActive] = useState(false);
@@ -1662,25 +1672,32 @@ function StudentApp() {
   const canJoin =
     roomCode.trim().length >= 2 &&
     // Team name can be blank (server will auto-assign for first-come teams).
-    members.some((m) => m.trim().length > 0);
+    members.some((m) => (m?.name || m || "").toString().trim().length > 0);
 
   const handleJoinRoom = () => {
-    const cleanEmails = Array.isArray(emails)
-      ? emails.map((e) => String(e || "").trim().toLowerCase()).filter((e) => e && e.includes("@"))
-      : [];
+    // Extract names and emails from the per-member objects
+    const memberNames = members
+      .map((m) => (typeof m === "string" ? m : m?.name || "").trim())
+      .filter(Boolean);
+    const memberEmails = members
+      .map((m) => {
+        const email = (typeof m === "string" ? "" : m?.email || "").trim().toLowerCase();
+        return email && email.includes("@") ? email : "";
+      });
+    // Also build a flat email list for backward compat (team-level)
+    const cleanEmails = memberEmails.filter(Boolean);
 
     // Clear cached selfie if player names changed (different team composition)
     try {
       const prevMembersRaw = lsGet(LS_KEYS.members);
-      const prevMembers = prevMembersRaw ? JSON.parse(prevMembersRaw) : [];
-      const prevNames = (Array.isArray(prevMembers) ? prevMembers : [])
-        .map((n) => String(n || "").trim().toLowerCase())
+      const prevParsed = prevMembersRaw ? JSON.parse(prevMembersRaw) : [];
+      const prevNames = (Array.isArray(prevParsed) ? prevParsed : [])
+        .map((n) => String(typeof n === "string" ? n : n?.name || "").trim().toLowerCase())
         .filter(Boolean)
         .sort()
         .join(",");
-      const newNames = (Array.isArray(members) ? members : [])
-        .map((n) => String(n || "").trim().toLowerCase())
-        .filter(Boolean)
+      const newNames = memberNames
+        .map((n) => n.toLowerCase())
         .sort()
         .join(",");
       if (prevNames && newNames && prevNames !== newNames) {
@@ -1690,13 +1707,21 @@ function StudentApp() {
       }
     } catch (_) { /* non-critical */ }
 
+    // Build memberDetails for per-member email tracking
+    const memberDetails = members
+      .filter((m) => (typeof m === "string" ? m : m?.name || "").trim())
+      .map((m) => ({
+        name: (typeof m === "string" ? m : m?.name || "").trim(),
+        email: (typeof m === "string" ? "" : m?.email || "").trim().toLowerCase() || "",
+      }));
+
     const payload = {
       roomCode: roomCode.trim().toUpperCase(),
       teamName: (teamName || "").trim(),
-      members: Array.isArray(members) ? members : [],
-      emails: cleanEmails,
-      // Optional: a single displayName helps auto-team assignment when teamName is blank
-      displayName: (Array.isArray(members) ? (members.find((m) => String(m || '').trim().length > 0) || '') : ''),
+      members: memberNames,          // backward compat: string[]
+      emails: cleanEmails,            // backward compat: string[]
+      memberDetails,                  // NEW: per-member {name, email} pairs
+      displayName: memberNames[0] || "",
       maxTeamSize: 8,
       locationSlug: roomLocation || DEFAULT_LOCATION,
     };
@@ -1743,10 +1768,8 @@ function StudentApp() {
       lsSet(LS_KEYS.teamSessionId, String(tid));
       lsSet(LS_KEYS.teamName, response?.teamName || payload.teamName || '');
       try {
-        lsSet(LS_KEYS.members, JSON.stringify(payload.members || []));
-      } catch {}
-      try {
-        lsSet(LS_KEYS.emails, JSON.stringify(cleanEmails));
+        // Save in new {name,email} format so next load picks it up directly
+        lsSet(LS_KEYS.members, JSON.stringify(memberDetails || []));
       } catch {}
       userDroppedRoomRef.current = false;
       resumeAttemptedRef.current = false;
@@ -4162,64 +4185,43 @@ function StudentApp() {
                   Team Members
                 </label>
                 {members.map((m, idx) => (
-                  <input
-                    key={idx}
-                    value={m}
-                    onChange={(e) => {
-                      const copy = [...members];
-                      copy[idx] = sanitizeName(e.target.value);
-                      setMembers(copy);
-                    }}
-                    placeholder={`Member ${idx + 1}`}
-                    style={{ marginBottom: 6 }}
-                  />
-                ))}
-              </div>
-
-              <div style={{ marginBottom: 10 }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.8rem",
-                    marginBottom: 4,
-                  }}
-                >
-                  Email for Report{" "}
-                  <span style={{ color: "#9ca3af", fontWeight: 400 }}>(optional)</span>
-                </label>
-                {emails.map((em, idx) => (
-                  <div key={idx} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                  <div key={idx} style={{ marginBottom: 8 }}>
+                    <input
+                      value={typeof m === "string" ? m : m?.name || ""}
+                      onChange={(e) => {
+                        const copy = [...members];
+                        const cur = typeof copy[idx] === "string" ? { name: copy[idx], email: "" } : { ...copy[idx] };
+                        cur.name = sanitizeName(e.target.value);
+                        copy[idx] = cur;
+                        setMembers(copy);
+                      }}
+                      placeholder={`Member ${idx + 1}`}
+                    />
                     <input
                       type="email"
-                      value={em}
+                      value={typeof m === "string" ? "" : m?.email || ""}
                       onChange={(e) => {
-                        const copy = [...emails];
-                        copy[idx] = e.target.value;
-                        setEmails(copy);
+                        const copy = [...members];
+                        const cur = typeof copy[idx] === "string" ? { name: copy[idx], email: "" } : { ...copy[idx] };
+                        cur.email = e.target.value;
+                        copy[idx] = cur;
+                        setMembers(copy);
                       }}
-                      placeholder="your.email@school.edu"
-                      style={{ flex: 1 }}
+                      placeholder="email (optional — for report & streak credits)"
+                      style={{
+                        marginTop: 3,
+                        fontSize: "0.78rem",
+                        padding: "5px 8px",
+                        color: "#6b7280",
+                        background: "#f9fafb",
+                        border: "1px solid #e5e7eb",
+                      }}
                     />
-                    {idx === emails.length - 1 && emails.length < 3 && (
-                      <button
-                        type="button"
-                        onClick={() => setEmails([...emails, ""])}
-                        style={{
-                          padding: "4px 10px",
-                          fontSize: "0.8rem",
-                          background: "#f1f5f9",
-                          border: "1px solid #e2e8f0",
-                          borderRadius: 6,
-                          cursor: "pointer",
-                        }}
-                      >
-                        +
-                      </button>
-                    )}
                   </div>
                 ))}
                 <small style={{ color: "#9ca3af" }}>
-                  Get a personal session report emailed to you after class.
+                  Emails are optional — add one to get your personal report
+                  &amp; earn streak/unlock credits across sessions.
                 </small>
               </div>
 
