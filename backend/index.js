@@ -8150,29 +8150,46 @@ function buildRubricInstructions({
     Use language like "demonstrates understanding," "applies concepts," "communicates effectively."
     ${(gradeBand === "9-10" || gradeBand === "11+") ? `
     KITA ACHIEVEMENT CATEGORIES (Ontario — mandatory for this grade band):
-    By default, score the student across the four Ontario achievement categories.
-    Return sections[] entries using these names (in this order when all four are present):
-      1. "Knowledge & Understanding" — facts, definitions, concepts the student knows
-      2. "Thinking" — problem-solving, planning, critical/creative thinking
-      3. "Communication" — clarity, organization, use of subject-specific language
-      4. "Application" — using knowledge in new contexts, transfer of learning
+    Score the student using Ontario KITA achievement categories.
+    The four categories are:
+      K = "Knowledge & Understanding" — facts, definitions, concepts
+      T = "Thinking" — problem-solving, planning, critical/creative thinking
+      C = "Communication" — clarity, organization, subject-specific language
+      A = "Application" — using knowledge in new contexts, transfer of learning
 
-    HOWEVER: If an answer key or solution sheet is provided (answerKeyOverride or detected) and it has
-    KITA category annotations (K, T, C, A, KU, TH, CO, AP) beside questions, create sections[] ONLY
-    for the categories that actually appear on the answer key. For example, if only T and A are annotated,
-    return only "Thinking" and "Application" sections — do NOT create Knowledge or Communication sections.
-    Use the point values from the answer key annotations for each category's out_of.
+    KITA ANNOTATION DETECTION (LOOK FOR THIS ON EVERY PAGE — very important):
+    Ontario teachers print KITA marks in the RIGHT MARGIN of tests. Look for annotations like:
+      /2T  /3A  /5T  /2K  /4C  (slash + number + letter)
+    or:  T/2  A/3  T/5  (letter + slash + number)
+    or:  [2T]  [3A]  (number + letter in brackets)
+    The letter indicates the KITA category (K, T, C, or A).
+    The number indicates how many marks that question is worth in that category.
 
-    Each category is scored out of 5 by default (unless the answer key or teacher rubric specifies a different denominator per category).
+    For example, if you see on a test page:
+      Q2a: /2T  (means question 2a is worth 2 marks in Thinking)
+      Q2b: /2T  (2 marks in Thinking)
+      Q2c: /5T  (5 marks in Thinking)
+      Q2d: /3A  (3 marks in Application)
+    Then T total = 2+2+5 = 9, A total = 3. Create TWO sections:
+      { name: "Thinking", out_of: 9, ... }
+      { name: "Application", out_of: 3, ... }
+
+    RULES:
+    - If KITA annotations are visible on ANY page, you MUST create sections[] using KITA category names.
+    - Create sections ONLY for categories that appear in the annotations.
+    - Do NOT create generic sections like "Question 2" or "Part A" when KITA annotations are visible.
+    - Group questions by their annotated category and sum their marks for out_of.
+    - If NO KITA annotations are visible, fall back to default: create all four KITA sections scored /5 each.
+
     Decimals are allowed and encouraged for precision (e.g., 3.5/5, 2.25/5, 4.75/5). Do not round to whole numbers.
     ${gradeBand === "9-10"
       ? "Weighting (when all 4 present): K=25%, T=25%, C=25%, A=25% (equal)."
       : "Weighting (when all 4 present): K=20%, T=30%, C=20%, A=30% (heavier on Thinking and Application)."}
 
     For each section:
-    - Score based on visible evidence in the student work that maps to that category.
+    - Score based on student accuracy for questions in that category.
     - teacher_comment must cite specific evidence for that category.
-    - For test-style questions with an answer key, include incorrect_items showing student vs correct answer.
+    - For test-style questions, include incorrect_items showing student vs correct answer.
     - For non-test categories, incorrect_items should be null.
 
     Overall score:
@@ -8180,7 +8197,6 @@ function buildRubricInstructions({
     - overall_score = sum of section scores.
     - The weighted percentage is for the teacher's gradebook (the frontend will display weights).
 
-    IMPORTANT: If the submission is clearly a test/quiz with printed section totals, you may STILL use KITA if the teacher has not provided a rubric override. Map test questions to the most relevant KITA category.
     If a rubricOverride IS provided with its own categories, the rubric categories take priority over KITA.
     ` : ""}
     `.trim(),
@@ -9491,28 +9507,32 @@ function buildRubricInstructions({
   .filter(Boolean)
   .join("\n\n");
 
-      const kitaAnswerKeyReminder = (
+      const kitaReminder = (
         standards === "canada" &&
-        (band === "9-10" || band === "11+") &&
-        effectiveAnswerKey
+        (band === "9-10" || band === "11+")
       ) ? `
         FINAL REMINDER — KITA SECTIONS (THIS OVERRIDES ALL OTHER SECTION RULES):
-        An answer key is provided. Look at the answer key text for KITA annotations (K, T, C, A, /T, /A, etc.).
-        If ANY KITA annotations appear, you MUST name your sections[] using the full KITA names:
-          K → "Knowledge & Understanding"
-          T → "Thinking"
-          C → "Communication"
-          A → "Application"
-        Only include categories that are annotated. Do NOT use names like "Question 2" or "Part A".
-        Each section groups ALL questions tagged with that category, with out_of = sum of those question marks.
-        THIS IS NOT OPTIONAL. If you see /T and /A on the answer key, your sections MUST be "Thinking" and "Application".
+        CHECK THE RIGHT MARGIN of every page for KITA annotations like /2T, /5T, /3A, /2K, /4C.
+        These are printed marks showing which KITA category each question belongs to.
+
+        If you see ANY such annotations:
+        1. Group questions by their letter (K, T, C, or A).
+        2. Sum the marks per letter to get out_of for each category.
+        3. Create sections[] using FULL names: K→"Knowledge & Understanding", T→"Thinking", C→"Communication", A→"Application".
+        4. ONLY include categories whose letter appears in annotations.
+        5. Do NOT use names like "Question 2" or "Part A" — use KITA names.
+
+        Example: /2T on Q2a, /2T on Q2b, /5T on Q2c, /3A on Q2d →
+        sections = [{ name: "Thinking", out_of: 9 }, { name: "Application", out_of: 3 }]
+
+        THIS IS NOT OPTIONAL. KITA annotations on the page override everything.
       ` : "";
 
       const instructionsWithInferenceFinal = `
         ${instructionsWithInference}
         ${denomOverrideBlock ? `\n\n${denomOverrideBlock}` : ""}
         ${countResultBlock ? `\n\n${countResultBlock}` : ""}
-        ${kitaAnswerKeyReminder}
+        ${kitaReminder}
         `.trim();
 
       let imageRefs = [];
