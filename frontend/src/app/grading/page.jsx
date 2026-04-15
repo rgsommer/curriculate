@@ -676,6 +676,8 @@ const RUBRIC_STICKY_TS_KEY = "curriculate_grading_rubric_sticky_ts_v1";
 const ANSWERKEY_STICKY_TEXT_KEY = "curriculate_grading_answerkey_sticky_text_v1";
 const ANSWERKEY_STICKY_TS_KEY = "curriculate_grading_answerkey_sticky_ts_v1";
 
+const RUBRIC_TIP_DISMISSED_KEY = "curriculate_rubric_tip_dismissed_v1";
+
   function loadSession() {
     try {
       const raw = localStorage.getItem(SESSION_KEY);
@@ -953,6 +955,12 @@ export default function GradingPage() {
 
     useEffect(() => saveLS(ANSWERKEY_STICKY_TEXT_KEY, stickyAnswerKeyText || ""), [stickyAnswerKeyText]);
     useEffect(() => saveLS(ANSWERKEY_STICKY_TS_KEY, stickyAnswerKeyCapturedAt || ""), [stickyAnswerKeyCapturedAt]);
+
+    // First-use rubric/answer key tip
+    const [showRubricTip, setShowRubricTip] = useState(() => {
+      if (typeof window === "undefined") return false;
+      return loadLS(RUBRIC_TIP_DISMISSED_KEY, "") !== "1";
+    });
 
     // Feedback Voice (tone/personality)
     const [voice, setVoice] = useState(() => {
@@ -1671,6 +1679,8 @@ export default function GradingPage() {
                 setStickyRubricText(found.text);
                 setStickyRubricSource("captured");
                 setStickyRubricCapturedAt(String(Date.now()));
+                setShowRubricTip(false);
+                saveLS(RUBRIC_TIP_DISMISSED_KEY, "1");
               }
             }
           }
@@ -1688,6 +1698,8 @@ export default function GradingPage() {
               if (conf >= 0.3) {
                 setStickyAnswerKeyText(foundKey.text);
                 setStickyAnswerKeyCapturedAt(String(Date.now()));
+                setShowRubricTip(false);
+                saveLS(RUBRIC_TIP_DISMISSED_KEY, "1");
               }
             }
           }
@@ -2594,6 +2606,48 @@ export default function GradingPage() {
           {/* SUBMIT + RESPONSE CARD */}
           <div className="grading-submit-card" style={styles.card}>
             <div style={styles.cardTitle}>Submit</div>
+
+            {/* First-use tip: rubric + answer key */}
+            {showRubricTip && (
+              <div style={{
+                marginTop: 12,
+                borderRadius: 12,
+                border: "1px solid rgba(37,99,235,0.25)",
+                background: "linear-gradient(135deg, rgba(37,99,235,0.06) 0%, rgba(16,185,129,0.06) 100%)",
+                padding: "12px 14px",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 10,
+              }}>
+                <div style={{ fontSize: 20, lineHeight: 1 }}>💡</div>
+                <div style={{ flex: 1, fontSize: 13, lineHeight: 1.45 }}>
+                  <div style={{ fontWeight: 800, marginBottom: 4 }}>Tip: Include a rubric or answer key</div>
+                  <div style={{ opacity: 0.85 }}>
+                    Snap a photo of your rubric, marking guide, or solution sheet alongside the student work.
+                    It will be auto-detected and used to grade the whole stack.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRubricTip(false);
+                    saveLS(RUBRIC_TIP_DISMISSED_KEY, "1");
+                  }}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: 16,
+                    opacity: 0.5,
+                    padding: "0 2px",
+                    lineHeight: 1,
+                  }}
+                  aria-label="Dismiss tip"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             {/* Rubric (collapsible) */}
             <div style={{
