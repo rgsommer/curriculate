@@ -8452,7 +8452,6 @@ function buildRubricInstructions({
     - Do NOT treat this as a formatting deduction.
 
     SECTION REPORTING RULE:
-    - EXCEPTION: If KITA category annotations are visible (e.g., /2T, /3A), IGNORE this rule and use KITA grouping instead.
     - If the test provides named sections with out_of values, you MUST:
       1) create one sections[] entry per named section,
       2) use the printed out_of for each section,
@@ -8509,7 +8508,6 @@ function buildRubricInstructions({
     - If the section IS test-style: incorrect_items is either an array of incorrect question objects OR null (if none wrong).
 
     IMPLICIT SECTION RULE (worksheet style, mandatory when applicable):
-    NOTE: This rule does NOT apply if KITA annotations are visible — use KITA grouping instead.
     Some worksheets do not label sections or provide section score boxes, but are clearly split by page/side.
 
     If ALL of the following are true:
@@ -8782,48 +8780,61 @@ function buildRubricInstructions({
     - The overall_out_of value must match the total possible points defined in the rubric.
 
     ${(standards === "canada" && (gradeBand === "9-10" || gradeBand === "11+")) ? `
-    ============================================================
-    KITA OVERRIDE — READ THIS LAST, IT OVERRIDES ALL SECTION RULES ABOVE
-    ============================================================
+    ############################################################
+    #  MANDATORY KITA PRE-PROCESSING — DO THIS BEFORE SECTIONS #
+    ############################################################
 
-    This is an Ontario grade ${gradeBand} submission. Ontario uses KITA achievement categories.
-    BEFORE creating sections, you MUST check every page margin for KITA category annotations.
+    STOP. Before you create ANY sections, you must complete this procedure:
 
-    WHAT TO LOOK FOR (printed in the margins beside questions):
-      /2T  /3A  /5T  /2K  /4C  or  T/2  A/3  or  /2 T  /3 A
-      or: 2T  3A  5T  or  T: 2  A: 3  or  /2 Thinking  /3 Application
-      or: KU, TH, CO, AP (two-letter abbreviations)
-    The letter = KITA category. The number = marks for that question in that category.
+    STEP A — SCAN FOR KITA ANNOTATIONS:
+    Look at EVERY page margin (right side, left side, beside questions) for marks like:
+      /2T  /3A  /5T  /2K  /4C  T/2  A/3  /2 T  /3 A
+      2T  3A  5T  T: 2  A: 3  /2 Thinking  /3 Application
+      KU  TH  CO  AP  (two-letter abbreviations)
+    These are KITA achievement category annotations. The letter/word = category, the number = marks.
+    Map: K/KU/Knowledge→"Knowledge & Understanding", T/TH/Thinking→"Thinking",
+         C/CO/Communication→"Communication", A/AP/Application→"Application"
 
-    IF YOU FIND ANY SUCH ANNOTATIONS, ALL SECTION RULES ABOVE ARE VOID. Instead:
-    1. Group ALL questions sharing the same letter into ONE section.
-    2. Name each section: K→"Knowledge & Understanding", T→"Thinking", C→"Communication", A→"Application".
-    3. out_of = SUM of mark values for all questions in that category.
-    4. score = marks the student earned across those questions.
-    5. teacher_comment covers ALL questions in that category.
-    6. incorrect_items lists wrong answers within that category.
-    7. overall_out_of = sum of all section out_of. overall_score = sum of all section scores.
-    8. ONLY include categories that appear in annotations. Do NOT add extra categories.
+    STEP B — IF ANY KITA ANNOTATIONS FOUND:
+    You MUST ignore ALL section rules above (SECTION REPORTING RULE, IMPLICIT SECTION RULE, etc.).
+    Instead, create sections as follows:
+    - ONE section per KITA category found (NOT one section per question).
+    - Section name = full category name (e.g., "Thinking", "Application").
+    - Section out_of = sum of all mark values for questions tagged with that category letter.
+    - Section score = total marks the student earned on those questions.
+    - Section teacher_comment = discusses performance across ALL questions in that category.
+    - Section incorrect_items = wrong answers from questions in that category.
+    - overall_out_of = sum of all section out_of values.
+    - overall_score = sum of all section scores.
+    - ONLY create sections for categories that actually appear. If only T and A are annotated, create exactly 2 sections.
 
-    DO NOT create one section per question (Part a, Part b, Q2a, Q2b, etc.).
-    DO create one section per KITA CATEGORY (Thinking, Application, etc.).
+    CONCRETE EXAMPLE:
+    You see: Q2a has /2T in margin, Q2b has /2T, Q2c has /5T, Q2d has /3A.
+    T questions: Q2a(2) + Q2b(2) + Q2c(5) = 9 marks total.
+    A questions: Q2d(3) = 3 marks total.
 
-    EXAMPLE — annotations: /2T on Q2a, /2T on Q2b, /5T on Q2c, /3A on Q2d
-    WRONG: [{ name: "Question 2a", out_of: 2 }, { name: "Question 2b", out_of: 2 }, ...]
-    CORRECT: [
-      { name: "Thinking", score: ?, out_of: 9, teacher_comment: "Covers Q2a, Q2b, Q2c...", incorrect_items: [...] },
-      { name: "Application", score: ?, out_of: 3, teacher_comment: "Covers Q2d...", incorrect_items: [...] }
+    sections MUST be:
+    [
+      { "name": "Thinking", "out_of": 9, "score": <earned>, "teacher_comment": "Evaluates Q2a, Q2b, Q2c..." },
+      { "name": "Application", "out_of": 3, "score": <earned>, "teacher_comment": "Evaluates Q2d..." }
     ]
-    (Thinking: 2+2+5=9 marks from Q2a+Q2b+Q2c. Application: 3 marks from Q2d.)
+    overall_out_of = 12, overall_score = sum of section scores.
 
-    Decimals allowed: 3.5/5, 2.25/5, etc.
+    FORBIDDEN (will be rejected):
+    - { "name": "Q2" ... } ← NO, this groups everything into one question section
+    - { "name": "Question 2a" ... } ← NO, this is per-question, not per-category
+    - { "name": "Part a" ... } ← NO, same problem
+    Any section named after a question number instead of a KITA category name is WRONG.
+
+    STEP C — IF NO KITA ANNOTATIONS FOUND:
+    Create four default KITA sections: "Knowledge & Understanding", "Thinking", "Communication", "Application", each scored out of 5.
+
+    Decimals allowed: 3.5/5, 2.25/9, etc.
     ${gradeBand === "9-10"
       ? "Weighting (when all 4 present): K=25%, T=25%, C=25%, A=25%."
       : "Weighting (when all 4 present): K=20%, T=30%, C=20%, A=30%."}
-
-    If NO annotations found on any page, create all four KITA sections scored /5 each.
     If a rubricOverride has its own categories, rubric categories take priority over KITA.
-    ============================================================
+    ############################################################
     ` : ""}
     `.trim();
     }
