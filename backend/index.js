@@ -8157,6 +8157,7 @@ function buildRubricInstructions({
       4. "Application" — using knowledge in new contexts, transfer of learning
 
     Each category is scored out of 5 by default (unless the teacher rubric specifies a different denominator per category).
+    Decimals are allowed and encouraged for precision (e.g., 3.5/5, 2.25/5, 4.75/5). Do not round to whole numbers.
     ${gradeBand === "9-10"
       ? "Weighting: K=25%, T=25%, C=25%, A=25% (equal)."
       : "Weighting: K=20%, T=30%, C=20%, A=30% (heavier on Thinking and Application)."}
