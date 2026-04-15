@@ -1466,8 +1466,8 @@ export default function GradingPage() {
           if (!manualRubric.length && !stickyRubric.length) {
             if (found?.text && found.detected !== false) {
               const conf = Number(found.confidence || 0);
-              const THRESH = 0.75;
-              if (conf >= THRESH || conf === 0) {
+              const THRESH = 0.5;
+              if (conf >= THRESH) {
                 setStickyRubricText(found.text);
                 setStickyRubricSource("captured");
                 setStickyRubricCapturedAt(String(Date.now()));

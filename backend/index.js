@@ -593,6 +593,8 @@ function getSessionByRoomCode(code) {
 // ------------------------------
 // S3 Media Upload (Presigned URLs)
 // ------------------------------
+const AI_MODEL = process.env.AI_MODEL || "gpt-5.4-mini";
+
 const AWS_REGION = process.env.AWS_REGION || "us-east-2";
 const S3_BUCKET = process.env.S3_BUCKET || "";
 const S3_URL_EXPIRY_SECONDS = Number(process.env.S3_URL_EXPIRY_SECONDS || 300); // 5 minutes
@@ -659,7 +661,7 @@ async function transcribeAndFeedbackRecordAudio(s3Key, task) {
     // 3) Generate AI feedback on the transcript
     const taskPrompt = task?.prompt || task?.title || task?.question || "";
     const rubric = task?.rubric || task?.criteria || task?.config?.rubric || "";
-    const model = process.env.AI_MODEL || "gpt-4.1-mini";
+    const model = AI_MODEL;
 
     const systemMsg = `You are a supportive classroom teacher giving brief feedback on a student's spoken response.
 Be encouraging but honest. Keep feedback to 2-3 sentences max.
@@ -3969,7 +3971,7 @@ if (!isMultiPack && task.taskType === "short-answer" && pointsEarned === 0 && co
         `.trim();
 
               const response = await openai.responses.create({
-                model: process.env.AI_MODEL || "gpt-4.1-mini",
+                model: AI_MODEL,
                 input: [
                   {
                     role: "user",
@@ -4085,7 +4087,7 @@ Rules:
 `.trim();
 
       const response = await openai.responses.create({
-        model: process.env.AI_MODEL || "gpt-4.1-mini",
+        model: AI_MODEL,
         input: [{ role: "user", content: [{ type: "input_text", text: evalPrompt }] }],
         text: {
           format: {
@@ -7119,7 +7121,7 @@ async function runReadingCompCheck({ paragraph, answer, gradeLevel }) {
       };
 
       const response = await openai.responses.create({
-        model: process.env.AI_MODEL || "gpt-4.1-mini",
+        model: AI_MODEL,
         input: [
           {
             role: "user",
@@ -7244,7 +7246,7 @@ async function evaluateMultiShortItem({
 
       try {
         const response = await openai.responses.create({
-          model: process.env.AI_MODEL || "gpt-4.1-mini",
+          model: AI_MODEL,
           input: [
             {
               role: "user",
@@ -7384,7 +7386,7 @@ app.post("/api/evaluate/short-answer", async (req, res) => {
       `.trim();
 
           const response = await openai.chat.completions.create({
-            model: process.env.AI_MODEL || "gpt-4.1-mini",
+            model: AI_MODEL,
             messages: [{ role: "user", content: prompt }],
             temperature: 0.2,
           });
@@ -7459,7 +7461,7 @@ Write a reply letter back to the student, IN CHARACTER as ${charName}. Guideline
     `.trim();
 
     const response = await openai.chat.completions.create({
-      model: process.env.AI_MODEL || "gpt-4.1-mini",
+      model: AI_MODEL,
       messages: [{ role: "user", content: prompt }],
       temperature: 0.7,
       max_tokens: 400,
@@ -7521,7 +7523,7 @@ Provide expert feedback on their solution. Guidelines:
     `.trim();
 
     const aiResponse = await openai.chat.completions.create({
-      model: process.env.AI_MODEL || "gpt-4.1-mini",
+      model: AI_MODEL,
       messages: [{ role: "user", content: prompt }],
       temperature: 0.7,
       max_tokens: 400,
@@ -9104,7 +9106,7 @@ function buildRubricInstructions({
           ai_suspected_cheating: { type: ["string", "null"] },
           copying_suspected: { type: ["string", "null"] },
 
-          rubricText: { type: ["string", "null"], maxLength: 2200 },
+          rubricText: { type: ["string", "null"], maxLength: 3500 },
           rubricDetected: { type: "boolean" },
           rubricConfidence: { type: "number", minimum: 0, maximum: 1 },
 
@@ -9177,18 +9179,29 @@ function buildRubricInstructions({
         - Do NOT guess wildly. If unsure, use Other / Unknown.
         - inferred_grade_level should usually match the provided grade band (${band}) unless the work clearly indicates otherwise.
 
-        RUBRIC DETECTION (very important):
-        You must determine whether any image contains a TEACHER GRADING RUBRIC TEMPLATE.
+        RUBRIC DETECTION (very important — check EVERY image):
+        Scan ALL images for a TEACHER RUBRIC — a scoring guide, assessment rubric, marking scheme,
+        or criteria chart that defines how student work should be evaluated.
 
-        If a teacher rubric template is clearly present:
-        - Extract only the rubric criteria and scoring structure.
-        - Do NOT include student writing.
-        - Summarize it as concise bullet points (max 12 lines).
-        - Preserve point values and levels if visible.
+        Common rubric formats:
+        - Grid/table with strands or categories (e.g., Knowledge, Thinking, Communication, Application)
+          and performance levels (e.g., Level 1–4, or descriptors per level)
+        - PEEL paragraph rubric with criteria per strand
+        - Checklist rubric with criteria and point values
+        - Scoring guide with descriptions of what earns each score level
+        - Any printed sheet titled "Rubric", "Assessment Criteria", "Marking Guide", etc.
+
+        A rubric may have checkmarks, circles, or highlights from a teacher — that is still a rubric.
+        A rubric is NOT the student's written work itself.
+
+        If a rubric is found in ANY image:
+        - Extract ALL criteria, strands/categories, scoring levels, and point values visible.
+        - Summarize as concise bullet points (max 15 lines).
+        - Preserve the exact structure: strand names, level descriptors, and point values.
         - Set rubricDetected = true.
-        - Set rubricConfidence between 0 and 1.
+        - Set rubricConfidence between 0.5 and 1.0 (0.8+ if clearly readable).
 
-        If no teacher rubric template is present:
+        If no rubric is found:
         - rubricText = null
         - rubricDetected = false
         - rubricConfidence = 0
@@ -9233,7 +9246,7 @@ function buildRubricInstructions({
         ];
 
         const countResp = await openai.responses.create({
-          model: process.env.AI_MODEL || "gpt-4.1-mini",
+          model: AI_MODEL,
           input: [{ role: "user", content: countingContent }],
           text: { format: { type: "json_schema", name: "count_result", strict: true, schema: countSchema } },
           max_output_tokens: 350,
@@ -9383,10 +9396,10 @@ function buildRubricInstructions({
       }
 
       const response = await openai.responses.create({
-        model: process.env.AI_MODEL || "gpt-4.1-mini",
+        model: AI_MODEL,
         input: [{ role: "user", content: userContent }],
         text: { format: { type: "json_schema", name: schema.name, strict: true, schema: schema.schema } },
-        max_output_tokens: 2500
+        max_output_tokens: 3000
       });
 
       const grade = safeJsonParse(response.output_text);
@@ -9652,7 +9665,7 @@ function buildRubricInstructions({
         `.trim();
 
       const response = await openai.responses.create({
-        model: process.env.AI_MODEL || "gpt-4.1-mini",
+        model: AI_MODEL,
         input: [
           {
             role: "user",
@@ -9888,7 +9901,7 @@ app.post("/api/audio/transcribe", audioUpload.single("audio"), async (req, res) 
     // 2) AI feedback on the transcript
     const taskPrompt = String(req.body?.taskPrompt || "").trim();
     const rubric = String(req.body?.rubric || "").trim();
-    const model = process.env.AI_MODEL || "gpt-4.1-mini";
+    const model = AI_MODEL;
 
     const systemMsg = `You are a supportive classroom teacher giving brief feedback on a student's spoken response.
 Be encouraging but honest. Keep feedback to 2-3 sentences max.
