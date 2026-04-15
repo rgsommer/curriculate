@@ -12,7 +12,7 @@ const docs = [
       "Encouraging, grade-appropriate language",
       "Participation + task highlights",
       "Strengths + growth focus",
-      "Optional reflection bonus ("What I learned")",
+      "Optional reflection bonus (What I learned)",
     ],
   },
   {
