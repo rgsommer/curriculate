@@ -49,7 +49,7 @@ function Cell({
 
 export default function ComparePage() {
   return (
-    <div className="mx-auto max-w-6xl px-6 py-16 print:max-w-none print:px-0 print:py-0">
+    <main className="mx-auto max-w-6xl px-6 py-16 print:max-w-none print:px-0 print:py-0">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between print:block">
         <div>
           <h1 className="text-4xl font-bold mb-3 print:mb-2">
@@ -194,6 +194,6 @@ export default function ComparePage() {
         <span className="font-semibold">Print</span> →{" "}
         <span className="font-semibold">Save as PDF</span>.
       </div>
-    </div>
+    </main>
   );
 }

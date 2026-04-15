@@ -182,7 +182,7 @@ export default function EventsPage() {
   const evtType = eventTypeThemes.find((t) => t.id === activeEventType) || eventTypeThemes[0];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
+    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
       {/* Structured data */}
       <script
         type="application/ld+json"
@@ -574,6 +574,6 @@ export default function EventsPage() {
           </div>
         </div>
       </section>
-    </div>
+    </main>
   );
 }

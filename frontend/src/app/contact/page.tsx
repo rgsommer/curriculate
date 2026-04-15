@@ -46,7 +46,7 @@ export default function ContactPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 px-6 py-14">
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 px-6 py-14">
       <div className="mx-auto max-w-3xl">
         <h1 className="text-5xl sm:text-6xl font-black text-gray-900 mb-4">
           Contact
@@ -124,6 +124,6 @@ export default function ContactPage() {
           </form>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

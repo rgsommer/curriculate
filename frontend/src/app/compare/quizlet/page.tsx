@@ -14,7 +14,7 @@ const rows = [
 
 export default function CompareQuizletPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 px-6 py-14">
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 px-6 py-14">
       <div className="mx-auto max-w-7xl">
         <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-10">
           <div>
@@ -126,6 +126,6 @@ export default function CompareQuizletPage() {
           </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

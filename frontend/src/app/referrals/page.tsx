@@ -171,7 +171,7 @@ function ApplicationForm() {
 
 export default function ReferralsPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 px-6 py-14">
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 px-6 py-14">
       <div className="mx-auto max-w-7xl">
         <h1 className="text-5xl sm:text-6xl font-black text-gray-900 mb-4">Referral Program</h1>
         <p className="text-xl text-gray-700 font-medium max-w-3xl mb-10">
@@ -247,6 +247,6 @@ export default function ReferralsPage() {
           </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
