@@ -260,7 +260,7 @@ function GradingDemo() {
 
 export default function AIGradingLanding() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       {/* -------- HERO -------- */}
       <section className="relative overflow-hidden px-6 py-16 sm:py-24">
         <div className="mx-auto max-w-7xl">
@@ -618,6 +618,6 @@ export default function AIGradingLanding() {
           </div>
         </div>
       </section>
-    </div>
+    </main>
   );
 }

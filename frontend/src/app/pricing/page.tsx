@@ -165,7 +165,7 @@ export default function PricingPage() {
   }, [returnTo]);
 
   return (
-    <div style={{ padding: 18, maxWidth: 1040, margin: "0 auto" }}>
+    <main style={{ padding: 18, maxWidth: 1040, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 32, letterSpacing: -0.4 }}>Curriculate Plans</h1>
@@ -370,6 +370,6 @@ export default function PricingPage() {
       <div style={{ marginTop: 16, opacity: 0.75, fontSize: 13 }}>
         Need invoices, cancellations, or plan changes? Use <b>Manage billing</b> (Stripe customer portal).
       </div>
-    </div>
+    </main>
   );
 }

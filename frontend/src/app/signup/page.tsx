@@ -11,12 +11,12 @@ function SignupRedirectInner() {
     window.location.replace(qs ? `/pricing?${qs}` : "/pricing");
   }, [params]);
 
-  return <div style={{ padding: 32 }}>Redirecting…</div>;
+  return <main style={{ padding: 32 }}>Redirecting…</main>;
 }
 
 export default function SignupRedirectPage() {
   return (
-    <Suspense fallback={<div style={{ padding: 32 }}>Redirecting…</div>}>
+    <Suspense fallback={<main style={{ padding: 32 }}>Redirecting…</main>}>
       <SignupRedirectInner />
     </Suspense>
   );

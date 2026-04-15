@@ -2358,7 +2358,7 @@ export default function CampfirePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50">
+    <main className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50">
       <div className="mx-auto max-w-6xl px-6 pt-10 pb-6">
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <span className="inline-flex items-center rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-3 py-1 text-xs font-semibold text-white">
@@ -2689,7 +2689,7 @@ export default function CampfirePage() {
           100% { opacity: 0; transform: translate(-50%, -50%) scale(0.5) translateY(-20px); }
         }
       `}</style>
-    </div>
+    </main>
   );
 }
 

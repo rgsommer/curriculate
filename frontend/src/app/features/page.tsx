@@ -40,7 +40,7 @@ function SectionHeader({ eyebrow, title, desc }: { eyebrow: string; title: strin
 
 export default function FeaturesPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       <section className="mx-auto max-w-6xl px-6 py-16">
         <div className="flex flex-col gap-6">
           <div className="max-w-3xl">
@@ -328,6 +328,6 @@ export default function FeaturesPage() {
           </div>
         </div>
       </section>
-    </div>
+    </main>
   );
 }

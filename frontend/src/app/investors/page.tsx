@@ -73,7 +73,7 @@ function Divider() {
 
 export default function InvestorsPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       <section className="mx-auto max-w-6xl px-6 py-16">
         <div className="flex flex-col gap-6">
           {/* Header */}
@@ -416,6 +416,6 @@ export default function InvestorsPage() {
           </p>
         </div>
       </section>
-    </div>
+    </main>
   );
 }

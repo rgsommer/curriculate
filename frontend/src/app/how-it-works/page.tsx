@@ -104,7 +104,7 @@ export default function HowItWorksPage() {
   const [walkthroughOpen, setWalkthroughOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-indigo-50">
+    <main className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-indigo-50">
       {/* Hero */}
       <section className="relative overflow-hidden px-6 pt-16 pb-10 sm:pt-20">
         <div className="absolute inset-0 opacity-60">
@@ -511,6 +511,6 @@ export default function HowItWorksPage() {
         onClose={() => setWalkthroughOpen(false)}
         showDontShowAgain={false}
       />
-    </div>
+    </main>
   );
 }

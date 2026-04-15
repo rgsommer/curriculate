@@ -574,7 +574,7 @@ export default function Home() {
   const [expandedCat, setExpandedCat] = React.useState<number | null>(null);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       <MobileNav />
 
       {/* ============================================================ */}
@@ -1242,6 +1242,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-    </div>
+    </main>
   );
 }
