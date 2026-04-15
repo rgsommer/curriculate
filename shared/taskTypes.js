@@ -3458,7 +3458,7 @@ config: {
     - Ensure prompts are student-facing instructions (what to do).
     - MUST include referenceText as a root-level string field.
     `,
-}
+},
 
   // =========================
   // COMIC RELIEF / NO-SCORE
