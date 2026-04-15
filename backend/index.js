@@ -8187,28 +8187,34 @@ function buildRubricInstructions({
       { name: "Thinking", out_of: 9, ... }
       { name: "Application", out_of: 3, ... }
 
-    RULES:
-    - If KITA annotations are visible on ANY page, you MUST create sections[] using KITA category names.
-    - Create sections ONLY for categories that appear in the annotations.
-    - Do NOT create generic sections like "Question 2" or "Part A" when KITA annotations are visible.
-    - Group questions by their annotated category and sum their marks for out_of.
-    - If NO KITA annotations are visible, fall back to default: create all four KITA sections scored /5 each.
+    RULES WHEN KITA ANNOTATIONS ARE VISIBLE (this is the most important rule for sections):
+    Step 1: Scan every page margin for KITA annotations (e.g., /2T, /5T, /3A).
+    Step 2: For each annotated question, note which letter (K, T, C, A) it belongs to and its mark value.
+    Step 3: GROUP all questions with the same letter into ONE section.
+    Step 4: Name each section using the full KITA name (e.g., "Thinking", "Application").
+    Step 5: Set out_of = sum of all mark values for questions in that group.
+    Step 6: Set score = total marks the student earned across questions in that group.
+    Step 7: In teacher_comment, discuss the student's performance across ALL questions in that group.
+    Step 8: In incorrect_items, list any questions the student got wrong within that group.
+
+    CRITICAL: Do NOT create one section per question. Create one section per KITA CATEGORY.
+    Multiple questions with the same letter get MERGED into a single section.
+
+    Example with /2T on Q2a, /2T on Q2b, /5T on Q2c, /3A on Q2d:
+    WRONG: sections = [{ name: "Part a", out_of: 2 }, { name: "Part b", out_of: 2 }, { name: "Part c", out_of: 5 }, { name: "Part d", out_of: 3 }]
+    RIGHT: sections = [{ name: "Thinking", out_of: 9, score: 7 }, { name: "Application", out_of: 3, score: 2 }]
+    (Thinking groups Q2a+Q2b+Q2c = 2+2+5 = 9 marks; Application is Q2d = 3 marks)
+
+    If NO KITA annotations are visible on any page, fall back to default: create all four KITA sections scored /5 each.
 
     Decimals are allowed and encouraged for precision (e.g., 3.5/5, 2.25/5, 4.75/5). Do not round to whole numbers.
     ${gradeBand === "9-10"
       ? "Weighting (when all 4 present): K=25%, T=25%, C=25%, A=25% (equal)."
       : "Weighting (when all 4 present): K=20%, T=30%, C=20%, A=30% (heavier on Thinking and Application)."}
 
-    For each section:
-    - Score based on student accuracy for questions in that category.
-    - teacher_comment must cite specific evidence for that category.
-    - For test-style questions, include incorrect_items showing student vs correct answer.
-    - For non-test categories, incorrect_items should be null.
-
     Overall score:
-    - overall_out_of = sum of section out_of values.
-    - overall_score = sum of section scores.
-    - The weighted percentage is for the teacher's gradebook (the frontend will display weights).
+    - overall_out_of = sum of ALL section out_of values (e.g., 9+3=12 if T=9 and A=3).
+    - overall_score = sum of ALL section scores.
 
     If a rubricOverride IS provided with its own categories, the rubric categories take priority over KITA.
     ` : ""}
@@ -9527,19 +9533,19 @@ function buildRubricInstructions({
         FINAL REMINDER — KITA SECTIONS (THIS OVERRIDES ALL OTHER SECTION RULES):
         CHECK THE MARGINS of every page for KITA annotations in any format:
         /2T, /5T, /3A, T/2, /2 T, 2T, T: 2, /2 Thinking, 2 marks T, etc.
-        These marks show which KITA category each question belongs to.
 
-        If you see ANY such annotations:
-        1. Group questions by their letter (K, T, C, or A).
-        2. Sum the marks per letter to get out_of for each category.
-        3. Create sections[] using FULL names: K→"Knowledge & Understanding", T→"Thinking", C→"Communication", A→"Application".
-        4. ONLY include categories whose letter appears in annotations.
-        5. Do NOT use names like "Question 2" or "Part A" — use KITA names.
+        If you see ANY such annotations, you MUST GROUP questions by category letter, NOT one section per question.
 
-        Example: /2T on Q2a, /2T on Q2b, /5T on Q2c, /3A on Q2d →
-        sections = [{ name: "Thinking", out_of: 9 }, { name: "Application", out_of: 3 }]
+        WRONG (one section per question):
+          [{ name: "Part a", out_of: 2 }, { name: "Part b", out_of: 2 }, { name: "Part c", out_of: 5 }, { name: "Part d", out_of: 3 }]
 
-        THIS IS NOT OPTIONAL. KITA annotations on the page override everything.
+        RIGHT (one section per KITA category):
+          [{ name: "Thinking", out_of: 9 }, { name: "Application", out_of: 3 }]
+          (Thinking = Q2a(/2T) + Q2b(/2T) + Q2c(/5T) = 9; Application = Q2d(/3A) = 3)
+
+        overall_out_of = 9 + 3 = 12. overall_score = sum of what student earned in each category.
+
+        THIS IS NOT OPTIONAL. KITA annotations on the page override all other section rules.
       ` : "";
 
       const instructionsWithInferenceFinal = `
