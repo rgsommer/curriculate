@@ -803,7 +803,9 @@ export default function GradingPage() {
     const [flash, setFlash] = useState(false);
     const [photos, setPhotos] = useState([]); // { id, dataUrl, createdAt }
     const [busyCapture, setBusyCapture] = useState(false);
+    const [busyUpload, setBusyUpload] = useState(false);
     const photosRef = useRef([]);
+    const fileInputRef = useRef(null);
     
     useEffect(() => { photosRef.current = photos; }, [photos]);
     
@@ -1122,6 +1124,89 @@ export default function GradingPage() {
       }
     }
 
+    /** Handle file upload from <input type="file"> — converts to same photo format as camera captures */
+    async function handleFileUpload(e) {
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+
+      setBusyUpload(true);
+      setSubmitError("");
+
+      try {
+        for (const file of files) {
+          if (!file.type.startsWith("image/")) continue;
+
+          const rawDataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+
+          const compressed = await compressDataUrlToJpeg(rawDataUrl, DEFAULT_MAX_W, DEFAULT_QUALITY);
+
+          const id =
+            (globalThis.crypto?.randomUUID && crypto.randomUUID()) ||
+            String(Date.now()) + "_" + Math.random().toString(16).slice(2);
+
+          setPhotos((prev) => [
+            ...prev,
+            { id, rawDataUrl, dataUrl: compressed, createdAt: Date.now(), source: "upload" },
+          ]);
+        }
+      } catch (err) {
+        console.error("File upload error:", err);
+        setSubmitError(err?.message || "Failed to process uploaded image.");
+      } finally {
+        setBusyUpload(false);
+        // Reset input so the same file can be re-selected
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    }
+
+    /** Handle image URL — fetches the image via canvas proxy to get a data URL */
+    async function handleImageUrl(url) {
+      setBusyUpload(true);
+      setSubmitError("");
+
+      try {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = url;
+
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error("Could not load image from URL. Make sure the link points directly to an image."));
+        });
+
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d", { alpha: false });
+        ctx.drawImage(img, 0, 0);
+
+        const rawDataUrl = canvas.toDataURL("image/jpeg", 0.95);
+        const compressed = await compressDataUrlToJpeg(rawDataUrl, DEFAULT_MAX_W, DEFAULT_QUALITY);
+
+        const id =
+          (globalThis.crypto?.randomUUID && crypto.randomUUID()) ||
+          String(Date.now()) + "_" + Math.random().toString(16).slice(2);
+
+        setPhotos((prev) => [
+          ...prev,
+          { id, rawDataUrl, dataUrl: compressed, createdAt: Date.now(), source: "url" },
+        ]);
+
+        return true;
+      } catch (err) {
+        console.error("Image URL error:", err);
+        setSubmitError(err?.message || "Failed to load image from URL.");
+        return false;
+      } finally {
+        setBusyUpload(false);
+      }
+    }
+
     async function sendUserFeedback() {
       const msg = (feedbackText || "").trim();
       
@@ -1359,13 +1444,13 @@ export default function GradingPage() {
       // Validate input first
       if (inputMode === "photo") {
         if (!photosToUse.length) {
-          setSubmitError("Capture at least one photo before submitting.");
+          setSubmitError("Capture or upload at least one photo before submitting.");
           return;
         }
       } else {
         const w = (workInput || "").trim();
-        if (!w) {
-          setSubmitError("Paste text or add a public link before submitting.");
+        if (!w && !photosToUse.length) {
+          setSubmitError("Paste text, add a link, or upload an image before submitting.");
           return;
         }
       }
@@ -1411,8 +1496,8 @@ export default function GradingPage() {
 
         let images = null;
 
-        if (inputMode === "photo") {
-          // ✅ Use the locally computed profile immediately
+        // Compress photos if we have any (photo mode, or uploaded images in paste mode)
+        if (photosToUse.length) {
           images = await compressPhotosForSubmission(photosToUse, profileToUse);
         }
 
@@ -1420,15 +1505,15 @@ export default function GradingPage() {
 
         const payload = {
           anonId,
-          images: inputMode === "photo" ? images : undefined,
-          workInput: inputMode === "paste" ? trimmedWork : undefined,
+          images: images || undefined,
+          workInput: inputMode === "paste" && trimmedWork ? trimmedWork : undefined,
           rubricOverride: effectiveRubric.length ? effectiveRubric : null,
           gradeBand,
 
           meta: {
             sessionId: getSessionId(),
             source: "web-grading-page",
-            capturedCount: inputMode === "photo" ? photosToUse.length : 0,
+            capturedCount: photosToUse.length,
             capturedAt: Date.now(),
             userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
 
@@ -2156,6 +2241,16 @@ export default function GradingPage() {
               </div>
             </div>
             
+          {/* Hidden file input for uploads — shared between both modes */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleFileUpload}
+            style={{ display: "none" }}
+          />
+
           {inputMode === "photo" ? (
             <>
               <div style={styles.cameraWrap}>
@@ -2198,9 +2293,19 @@ export default function GradingPage() {
                 </button>
 
                 <button
+                  onClick={() => fileInputRef.current?.click()}
+                  style={styles.secondaryBtn}
+                  disabled={submitting || busyCapture || busyUpload}
+                  type="button"
+                  title="Upload image files from your device"
+                >
+                  {busyUpload ? "Processing…" : "Upload"}
+                </button>
+
+                <button
                   onClick={clearAll}
                   style={styles.secondaryBtn}
-                  disabled={submitting || busyCapture || (!photos.length && !serverText)}
+                  disabled={submitting || busyCapture || busyUpload || (!photos.length && !serverText)}
                   type="button"
                 >
                   Clear
@@ -2212,7 +2317,7 @@ export default function GradingPage() {
                   <b>Photos:</b> {photos.length}
                 </div>
                 <div style={{ opacity: 0.8 }}>
-                  Tip: Keep pages flat, fill the frame, avoid glare. Double tap for capture + submit.
+                  Tip: Capture with camera, or upload files from your device. Double tap for capture + submit.
                 </div>
               </div>
 
@@ -2242,11 +2347,11 @@ export default function GradingPage() {
             <>
               {/* Paste mode */}
               <label style={{ ...styles.controlLabel, marginTop: 10 }}>
-                  Paste student work OR paste a link
+                  Paste student work, a link, or an image URL
                   <textarea
                     value={workInput}
                     onChange={(e) => setWorkInput(e.target.value)}
-                    placeholder="Paste the student's writing/answers here… OR paste a link starting with https://"
+                    placeholder={"Paste the student's writing/answers here...\nOR paste a link starting with https://\nOR paste a direct image URL (.jpg, .png, .jpeg)"}
                     rows={10}
                     style={styles.textarea}
                     autoCapitalize="none"
@@ -2255,12 +2360,49 @@ export default function GradingPage() {
                   />
                 </label>
 
+              {/* Image URL detected — offer to load it */}
+              {(() => {
+                const trimmed = (workInput || "").trim();
+                const isImgUrl = /^https?:\/\/.+\.(jpe?g|png|gif|webp|heic)(\?.*)?$/i.test(trimmed);
+                if (!isImgUrl) return null;
+                return (
+                  <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                    <button
+                      onClick={async () => {
+                        const ok = await handleImageUrl(trimmed);
+                        if (ok) {
+                          setWorkInput("");
+                          setInputMode("photo");
+                        }
+                      }}
+                      style={styles.primaryBtn}
+                      disabled={busyUpload || submitting}
+                      type="button"
+                    >
+                      {busyUpload ? "Loading image..." : "Load as Photo"}
+                    </button>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>
+                      Image URL detected - load it as a photo for grading
+                    </span>
+                  </div>
+                );
+              })()}
+
               <div style={styles.btnRow}>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  style={styles.secondaryBtn}
+                  disabled={submitting || busyUpload}
+                  type="button"
+                >
+                  {busyUpload ? "Processing..." : "Upload Image"}
+                </button>
+
                 <button
                   onClick={clearAll}
                   style={styles.secondaryBtn}
                   disabled={
-                    submitting ||
+                    submitting || busyUpload ||
                     (
                       (!photos || photos.length === 0) &&
                       !(workInput || "").trim()
@@ -2272,8 +2414,36 @@ export default function GradingPage() {
                 </button>
               </div>
 
+              {/* Show uploaded photo thumbnails in paste mode too */}
+              {photos.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
+                    Uploaded images ({photos.length}):
+                  </div>
+                  <div style={styles.thumbGrid}>
+                    {photos.map((p, idx) => (
+                      <div key={p.id} style={styles.thumb}>
+                        <img src={p.dataUrl} alt={`Upload ${idx + 1}`} style={styles.thumbImg} />
+                        <div style={styles.thumbBar}>
+                          <div style={styles.thumbLabel}>#{idx + 1}</div>
+                          <button
+                            onClick={() => removePhoto(p.id)}
+                            style={styles.thumbRemove}
+                            disabled={submitting}
+                            title="Remove"
+                            type="button"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div style={{ fontSize: 12, opacity: 0.75, marginTop: 8, lineHeight: 1.35 }}>
-                Tip: If a link is private, paste the text instead.
+                Tip: Upload photos of assignments, paste text, or paste a link. If a link is private, paste the text instead.
               </div>
             </>
           )}
@@ -2397,10 +2567,10 @@ export default function GradingPage() {
                 onClick={submitForGrading}
                 style={styles.primaryBtn}
                 disabled={
-                  submitting ||
+                  submitting || busyUpload ||
                   (inputMode === "photo"
                     ? !photos.length
-                    : !(workInput || "").trim()
+                    : (!(workInput || "").trim() && !photos.length)
                   )
                 }
               >
