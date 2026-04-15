@@ -61,6 +61,14 @@ const VOICE_OPTIONS = [
   { value: "pudewa_mastery", label: "Mastery / IEW-style (Pudewa)" },
 ];
 
+const STANDARDS_OPTIONS = [
+  { value: "canada", label: "Canada (Ontario)" },
+  { value: "us", label: "US (Common Core)" },
+  { value: "uk", label: "UK (National Curriculum)" },
+  { value: "eu", label: "EU (Key Competences)" },
+];
+
+const STANDARDS_KEY = "curriculate_grading_standards_v1";
 const GRADE_BAND_KEY = "curriculate_grading_band_v1";
 const VOICE_KEY = "curriculate_grading_voice_v1";
 const VOICE_OVERRIDE_KEY = "curriculate_grading_voice_override_v1";
@@ -523,7 +531,7 @@ function tightenCropToContent(canvas, { pad = 12, threshold = 245 } = {}) {
   return out;
 }
 
-function buildFullTeacherPayloadText(assessment, codeLocal = "") {
+function buildFullTeacherPayloadText(assessment, codeLocal = "", gradeBandForKita = "") {
   const links = Array.isArray(assessment?.assignment_images) ? assessment.assignment_images : [];
 
   const lines = [];
@@ -586,8 +594,22 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
     lines.push("");
   }
 
-  // ✅ Sections + incorrect items
-  if (Array.isArray(assessment.sections) && assessment.sections.length) {
+  // ✅ Sections + incorrect items (with KITA detection)
+  const kita = detectKita(assessment);
+  if (kita) {
+    const weights = getKitaWeights(gradeBandForKita);
+    const weightedPct = computeKitaWeightedPercent(kita, weights);
+    lines.push("Achievement Categories (KITA):");
+    kita.forEach((cat, i) => {
+      lines.push(
+        `- ${cat.short} ${cat.name}: ${cat.score}/${cat.outOf} (${weights[i]}%)${
+          cat.comment ? ` — ${cat.comment}` : ""
+        }`
+      );
+    });
+    lines.push(`Weighted Total: ${weightedPct}%`);
+    lines.push("");
+  } else if (Array.isArray(assessment.sections) && assessment.sections.length) {
     lines.push("Sections:");
     assessment.sections.forEach((sec) => {
       lines.push(
@@ -672,6 +694,38 @@ const RUBRIC_STICKY_TS_KEY = "curriculate_grading_rubric_sticky_ts_v1";
     if (s10 != null) return { score: s10, outOf: 10 };
 
     return { score: "", outOf: 10 };
+  }
+
+  // KITA (Ontario achievement categories) detection and weighting
+  const KITA_NAMES = ["Knowledge & Understanding", "Thinking", "Communication", "Application"];
+  const KITA_SHORT = ["K", "T", "C", "A"];
+
+  function detectKita(assessment) {
+    if (!assessment || !Array.isArray(assessment.sections) || assessment.sections.length !== 4) return null;
+    const names = assessment.sections.map((s) => (s?.name || "").trim());
+    const isKita = KITA_NAMES.every((k) => names.some((n) => n.toLowerCase().startsWith(k.toLowerCase().slice(0, 8))));
+    if (!isKita) return null;
+    return assessment.sections.map((s, i) => ({
+      name: KITA_NAMES[i],
+      short: KITA_SHORT[i],
+      score: Number(s.score) || 0,
+      outOf: Number(s.out_of) || 5,
+      comment: s.teacher_comment || "",
+    }));
+  }
+
+  function getKitaWeights(band) {
+    if (band === "11+") return [20, 30, 20, 30]; // K, T, C, A
+    return [25, 25, 25, 25]; // equal for 9-10
+  }
+
+  function computeKitaWeightedPercent(kita, weights) {
+    let totalWeighted = 0;
+    for (let i = 0; i < kita.length; i++) {
+      const pct = kita[i].outOf > 0 ? (kita[i].score / kita[i].outOf) : 0;
+      totalWeighted += pct * weights[i];
+    }
+    return Math.round(totalWeighted); // 0-100
   }
 
   // -----------------------------
@@ -823,6 +877,11 @@ export default function GradingPage() {
       return loadLS(GRADE_BAND_KEY, "6-8");
     });
 
+    const [standards, setStandards] = useState(() => {
+      if (typeof window === "undefined") return "canada";
+      return loadLS(STANDARDS_KEY, "canada");
+    });
+
     // Input mode: photo vs paste
     const [inputMode, setInputMode] = useState("photo"); // "photo" | "paste"
     
@@ -869,6 +928,7 @@ export default function GradingPage() {
 
     // Persist
     useEffect(() => saveLS(GRADE_BAND_KEY, gradeBand), [gradeBand]);
+    useEffect(() => saveLS(STANDARDS_KEY, standards), [standards]);
     useEffect(() => {
       // Don't overwrite saved default with the temporary IEP voice
       if (voice !== "iep_supportive") saveLS(VOICE_KEY, voice);
@@ -959,7 +1019,7 @@ export default function GradingPage() {
     const assessment = normalized.assessment;
 
     const formattedTeacherText = useMemo(() => {
-      return assessment ? buildFullTeacherPayloadText(assessment, refCode) : "";
+      return assessment ? buildFullTeacherPayloadText(assessment, refCode, gradeBand) : "";
     }, [assessment, refCode]);
 
     function triggerFlash() {
@@ -1509,6 +1569,7 @@ export default function GradingPage() {
           workInput: inputMode === "paste" && trimmedWork ? trimmedWork : undefined,
           rubricOverride: effectiveRubric.length ? effectiveRubric : null,
           gradeBand,
+          standards,
 
           meta: {
             sessionId: getSessionId(),
@@ -1557,7 +1618,7 @@ export default function GradingPage() {
           if (!manualRubric.length && !stickyRubric.length) {
             if (found?.text && found.detected !== false) {
               const conf = Number(found.confidence || 0);
-              const THRESH = 0.5;
+              const THRESH = 0.3;
               if (conf >= THRESH) {
                 setStickyRubricText(found.text);
                 setStickyRubricSource("captured");
@@ -1796,6 +1857,7 @@ export default function GradingPage() {
 
       const payload = {
         gradeBand,
+        standards,
         rubricOverride: effectiveRubric.length ? effectiveRubric : null,
         evidence,
         meta: {
@@ -1894,7 +1956,7 @@ export default function GradingPage() {
 
       if (!codeLocal) {
         try {
-          const payloadText = buildFullTeacherPayloadText(assessment, "");
+          const payloadText = buildFullTeacherPayloadText(assessment, "", gradeBand);
           const pub = await publishResultToPortal({
             payload: payloadText,
             meta: {
@@ -1913,7 +1975,7 @@ export default function GradingPage() {
         }
       }
       
-      const plainText = buildFullTeacherPayloadText(assessment, codeLocal);
+      const plainText = buildFullTeacherPayloadText(assessment, codeLocal, gradeBand);
       const htmlAssignmentLinks = getAssignmentLinksFromAssessment(assessment);
       const submittedText = String(assessment?.submitted_text || "").trim();
 
@@ -2081,6 +2143,21 @@ export default function GradingPage() {
             {GRADE_BANDS.map((g) => (
               <option key={g.value} value={g.value}>
                 {g.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label style={styles.controlLabel}>
+          Standards
+          <select
+            value={standards}
+            onChange={(e) => setStandards(e.target.value)}
+            style={styles.select}
+          >
+            {STANDARDS_OPTIONS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
               </option>
             ))}
           </select>
@@ -2780,49 +2857,120 @@ export default function GradingPage() {
                     </div>
                   </div>
 
-                  {Array.isArray(assessment.sections) && assessment.sections.length ? (
-                    <>
-                      <div style={styles.gradingSectionTitle}>Sections</div>
-                      <div style={{ border: "1px solid rgba(0,0,0,0.12)", borderRadius: 12, overflow: "hidden" }}>
-                        {assessment.sections.map((sec, i) => (
-                          <div
-                            key={`${sec.name}-${i}`}
-                            style={{
-                              padding: 10,
-                              borderTop: i === 0 ? "none" : "1px solid rgba(0,0,0,0.10)",
-                              background: "rgba(0,0,0,0.01)",
-                            }}
-                          >
-                            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                              <div style={{ fontWeight: 800 }}>{sec.name}</div>
-                              <div style={{ fontWeight: 900 }}>
-                                {sec.score}/{sec.out_of}
+                  {(() => {
+                    const kita = detectKita(assessment);
+                    if (kita) {
+                      const weights = getKitaWeights(gradeBand);
+                      const weightedPct = computeKitaWeightedPercent(kita, weights);
+                      return (
+                        <>
+                          <div style={styles.gradingSectionTitle}>Achievement Categories (KITA)</div>
+                          <div style={{
+                            border: "1px solid rgba(37,99,235,0.2)",
+                            borderRadius: 12,
+                            overflow: "hidden",
+                            background: "rgba(37,99,235,0.03)",
+                          }}>
+                            {kita.map((cat, i) => (
+                              <div
+                                key={cat.short}
+                                style={{
+                                  padding: "10px 12px",
+                                  borderTop: i === 0 ? "none" : "1px solid rgba(37,99,235,0.12)",
+                                }}
+                              >
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                                  <div style={{ fontWeight: 800 }}>
+                                    <span style={{
+                                      display: "inline-block",
+                                      width: 22,
+                                      height: 22,
+                                      borderRadius: 6,
+                                      background: "rgba(37,99,235,0.12)",
+                                      textAlign: "center",
+                                      lineHeight: "22px",
+                                      fontSize: 12,
+                                      fontWeight: 900,
+                                      marginRight: 8,
+                                      color: "#2563eb",
+                                    }}>{cat.short}</span>
+                                    {cat.name}
+                                  </div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <span style={{ fontSize: 11, opacity: 0.6 }}>{weights[i]}%</span>
+                                    <span style={{ fontWeight: 900, minWidth: 36, textAlign: "right" }}>{cat.score}/{cat.outOf}</span>
+                                  </div>
+                                </div>
+                                {cat.comment ? (
+                                  <div style={{ marginTop: 5, opacity: 0.85, lineHeight: 1.35, paddingLeft: 30 }}>
+                                    {cat.comment}
+                                  </div>
+                                ) : null}
                               </div>
+                            ))}
+                            <div style={{
+                              padding: "8px 12px",
+                              borderTop: "1px solid rgba(37,99,235,0.18)",
+                              background: "rgba(37,99,235,0.06)",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              fontWeight: 900,
+                            }}>
+                              <span>Weighted Total</span>
+                              <span style={{ color: "#2563eb" }}>{weightedPct}%</span>
                             </div>
-                            {String(sec.teacher_comment || "").trim() ? (
-                              <div style={{ marginTop: 6, opacity: 0.85, lineHeight: 1.35 }}>
-                                {String(sec.teacher_comment).trim()}
-                              </div>
-                            ) : null}
-
-                            {Array.isArray(sec.incorrect_items) && sec.incorrect_items.length ? (
-                              <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>
-                                <div style={{ fontWeight: 800, marginBottom: 4 }}>Incorrect</div>
-                                <ul style={{ margin: "0 0 0 18px", padding: 0, lineHeight: 1.35 }}>
-                                  {sec.incorrect_items.map((it, idx) => (
-                                    <li key={idx}>
-                                      <span style={{ fontWeight: 700 }}>{String(it.prompt || `Item ${idx + 1}`)}</span>
-                                      {` — you: ${String(it.student_answer || "—")}; correct: ${String(it.correct_answer || "—")}`}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            ) : null}
                           </div>
-                        ))}
-                      </div>
-                    </>
-                  ) : null}
+                        </>
+                      );
+                    }
+
+                    // Non-KITA sections (tests, quizzes, etc.)
+                    if (!Array.isArray(assessment.sections) || !assessment.sections.length) return null;
+                    return (
+                      <>
+                        <div style={styles.gradingSectionTitle}>Sections</div>
+                        <div style={{ border: "1px solid rgba(0,0,0,0.12)", borderRadius: 12, overflow: "hidden" }}>
+                          {assessment.sections.map((sec, i) => (
+                            <div
+                              key={`${sec.name}-${i}`}
+                              style={{
+                                padding: 10,
+                                borderTop: i === 0 ? "none" : "1px solid rgba(0,0,0,0.10)",
+                                background: "rgba(0,0,0,0.01)",
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                                <div style={{ fontWeight: 800 }}>{sec.name}</div>
+                                <div style={{ fontWeight: 900 }}>
+                                  {sec.score}/{sec.out_of}
+                                </div>
+                              </div>
+                              {String(sec.teacher_comment || "").trim() ? (
+                                <div style={{ marginTop: 6, opacity: 0.85, lineHeight: 1.35 }}>
+                                  {String(sec.teacher_comment).trim()}
+                                </div>
+                              ) : null}
+
+                              {Array.isArray(sec.incorrect_items) && sec.incorrect_items.length ? (
+                                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>
+                                  <div style={{ fontWeight: 800, marginBottom: 4 }}>Incorrect</div>
+                                  <ul style={{ margin: "0 0 0 18px", padding: 0, lineHeight: 1.35 }}>
+                                    {sec.incorrect_items.map((it, idx) => (
+                                      <li key={idx}>
+                                        <span style={{ fontWeight: 700 }}>{String(it.prompt || `Item ${idx + 1}`)}</span>
+                                        {` \u2014 you: ${String(it.student_answer || "\u2014")}; correct: ${String(it.correct_answer || "\u2014")}`}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    );
+                  })()}
 
                   {Array.isArray(assessment.deductions) && assessment.deductions.length ? (
                     <>

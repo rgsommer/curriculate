@@ -8110,6 +8110,7 @@ function buildRubricInstructions({
     rubricOverride = "",
     feedbackVoice = "warm",
     feedbackVoiceMode = "default",
+    standards = "canada",
   } = {}) {
   const gradeExpectations = {
       "3-5": `
@@ -8140,6 +8141,66 @@ function buildRubricInstructions({
     `.trim(),
     };
 
+    // Standards-specific prompt block
+    const standardsSpecs = {
+      canada: `
+    STANDARDS FRAMEWORK: Ontario (Canada)
+    Reference the Ontario curriculum expectations and achievement chart language where appropriate.
+    Use language like "demonstrates understanding," "applies concepts," "communicates effectively."
+    ${(gradeBand === "9-10" || gradeBand === "11+") ? `
+    KITA ACHIEVEMENT CATEGORIES (Ontario — mandatory for this grade band):
+    You MUST score the student across the four Ontario achievement categories.
+    Return EXACTLY four sections[] entries with these names and in this order:
+      1. "Knowledge & Understanding" — facts, definitions, concepts the student knows
+      2. "Thinking" — problem-solving, planning, critical/creative thinking
+      3. "Communication" — clarity, organization, use of subject-specific language
+      4. "Application" — using knowledge in new contexts, transfer of learning
+
+    Each category is scored out of 5 by default (unless the teacher rubric specifies a different denominator per category).
+    ${gradeBand === "9-10"
+      ? "Weighting: K=25%, T=25%, C=25%, A=25% (equal)."
+      : "Weighting: K=20%, T=30%, C=20%, A=30% (heavier on Thinking and Application)."}
+
+    For each section:
+    - Score based on visible evidence in the student work that maps to that category.
+    - teacher_comment must cite specific evidence for that category.
+    - incorrect_items should be null (these are rubric categories, not test sections).
+
+    Overall score:
+    - overall_out_of = sum of section out_of values (e.g., 20 if all are /5).
+    - overall_score = sum of section scores.
+    - The weighted percentage is for the teacher's gradebook (the frontend will display weights).
+
+    IMPORTANT: If the submission is clearly a test/quiz with printed section totals, you may STILL use KITA if the teacher has not provided a rubric override. Map test questions to the most relevant KITA category.
+    If a rubricOverride IS provided with its own categories, the rubric categories take priority over KITA.
+    ` : ""}
+    `.trim(),
+
+      us: `
+    STANDARDS FRAMEWORK: Common Core (US)
+    Reference Common Core State Standards language where appropriate.
+    Use language like "demonstrates mastery of," "meets grade-level expectations," "cites textual evidence."
+    For ELA: reference reading, writing, speaking/listening, and language standards.
+    For Math: reference mathematical practices (MP1-MP8) where relevant.
+    `.trim(),
+
+      uk: `
+    STANDARDS FRAMEWORK: National Curriculum (UK)
+    Reference UK National Curriculum assessment language where appropriate.
+    Use language like "working at expected standard," "working at greater depth," "emerging/developing/secure."
+    Reference Key Stage expectations appropriate to the grade band.
+    `.trim(),
+
+      eu: `
+    STANDARDS FRAMEWORK: European Key Competences
+    Reference the European Framework of Key Competences where appropriate.
+    Use language aligned to: literacy, multilingual, STEM, digital, personal/social/learning to learn,
+    citizenship, entrepreneurship, and cultural awareness competences as relevant to the assignment.
+    `.trim(),
+    };
+
+    const standardsBlock = standardsSpecs[standards] || standardsSpecs.canada;
+
     return `
     You are a teacher grading a specific student assignment based ONLY on the attached photos.
 
@@ -8147,6 +8208,8 @@ function buildRubricInstructions({
     When the task involves values, purpose, identity, morality, justice, meaning, or worldview-type reflection, respond from a respectful Christian perspective (grace + truth, human dignity). Do not preach; keep it classroom-appropriate and kind. For non-worldview questions, grade normally.
 
     ${gradeExpectations[gradeBand] || gradeExpectations["6-8"]}
+
+    ${standardsBlock}
 
     ${voiceStyleSpec(feedbackVoice)}
 
@@ -8920,7 +8983,8 @@ function buildRubricInstructions({
     try {
       const startTime = Date.now();
 
-      const { images, workInput, rubricOverride, gradeBand } = req.body || {};
+      const { images, workInput, rubricOverride, gradeBand, standards: rawStandards } = req.body || {};
+      const standards = ["canada", "us", "uk", "eu"].includes(rawStandards) ? rawStandards : "canada";
 
       // ------------------------------------------------
       // Parse teacher-provided rubric / denominator overrides
@@ -9165,6 +9229,7 @@ function buildRubricInstructions({
         rubricOverride: effectiveRubricOverride,
         feedbackVoice,
         feedbackVoiceMode,
+        standards,
       });
 
       const instructionsWithInference = `
