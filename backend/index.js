@@ -8148,76 +8148,6 @@ function buildRubricInstructions({
     STANDARDS FRAMEWORK: Ontario (Canada)
     Reference the Ontario curriculum expectations and achievement chart language where appropriate.
     Use language like "demonstrates understanding," "applies concepts," "communicates effectively."
-    ${(gradeBand === "9-10" || gradeBand === "11+") ? `
-    KITA ACHIEVEMENT CATEGORIES (Ontario — mandatory for this grade band):
-    Score the student using Ontario KITA achievement categories.
-    The four categories are:
-      K = "Knowledge & Understanding" — facts, definitions, concepts
-      T = "Thinking" — problem-solving, planning, critical/creative thinking
-      C = "Communication" — clarity, organization, subject-specific language
-      A = "Application" — using knowledge in new contexts, transfer of learning
-
-    KITA ANNOTATION DETECTION (LOOK FOR THIS ON EVERY PAGE — very important):
-    Ontario teachers mark KITA categories on tests, usually in the margins. Many notation styles exist:
-      /2T  /3A  /5T  /2K  /4C           (slash + number + letter)
-      T/2  A/3  T/5  K/2                (letter + slash + number)
-      /2 T  /3 A  /5 T                  (slash + number + space + letter)
-      [2T]  [3A]                         (number + letter in brackets)
-      2T  3A  5T                         (just number + letter)
-      /2 Thinking  /3 Application        (slash + number + full word)
-      2 marks T  3 marks A               (number + "marks" + letter)
-      T: 2  A: 3  T: 5                  (letter + colon + number)
-      Thinking /2  Application /3        (full word + slash + number)
-      KU, TH, CO, AP variants           (two-letter abbreviations instead of single)
-
-    The letter or word indicates the KITA category:
-      K, KU, Knowledge, Knowledge & Understanding → "Knowledge & Understanding"
-      T, TH, Thinking → "Thinking"
-      C, CO, Comm, Communication → "Communication"
-      A, AP, App, Application → "Application"
-
-    The number indicates how many marks that question is worth in that category.
-
-    For example, if you see on a test page:
-      Q2a: /2T  (means question 2a is worth 2 marks in Thinking)
-      Q2b: /2T  (2 marks in Thinking)
-      Q2c: /5T  (5 marks in Thinking)
-      Q2d: /3A  (3 marks in Application)
-    Then T total = 2+2+5 = 9, A total = 3. Create TWO sections:
-      { name: "Thinking", out_of: 9, ... }
-      { name: "Application", out_of: 3, ... }
-
-    RULES WHEN KITA ANNOTATIONS ARE VISIBLE (this is the most important rule for sections):
-    Step 1: Scan every page margin for KITA annotations (e.g., /2T, /5T, /3A).
-    Step 2: For each annotated question, note which letter (K, T, C, A) it belongs to and its mark value.
-    Step 3: GROUP all questions with the same letter into ONE section.
-    Step 4: Name each section using the full KITA name (e.g., "Thinking", "Application").
-    Step 5: Set out_of = sum of all mark values for questions in that group.
-    Step 6: Set score = total marks the student earned across questions in that group.
-    Step 7: In teacher_comment, discuss the student's performance across ALL questions in that group.
-    Step 8: In incorrect_items, list any questions the student got wrong within that group.
-
-    CRITICAL: Do NOT create one section per question. Create one section per KITA CATEGORY.
-    Multiple questions with the same letter get MERGED into a single section.
-
-    Example with /2T on Q2a, /2T on Q2b, /5T on Q2c, /3A on Q2d:
-    WRONG: sections = [{ name: "Part a", out_of: 2 }, { name: "Part b", out_of: 2 }, { name: "Part c", out_of: 5 }, { name: "Part d", out_of: 3 }]
-    RIGHT: sections = [{ name: "Thinking", out_of: 9, score: 7 }, { name: "Application", out_of: 3, score: 2 }]
-    (Thinking groups Q2a+Q2b+Q2c = 2+2+5 = 9 marks; Application is Q2d = 3 marks)
-
-    If NO KITA annotations are visible on any page, fall back to default: create all four KITA sections scored /5 each.
-
-    Decimals are allowed and encouraged for precision (e.g., 3.5/5, 2.25/5, 4.75/5). Do not round to whole numbers.
-    ${gradeBand === "9-10"
-      ? "Weighting (when all 4 present): K=25%, T=25%, C=25%, A=25% (equal)."
-      : "Weighting (when all 4 present): K=20%, T=30%, C=20%, A=30% (heavier on Thinking and Application)."}
-
-    Overall score:
-    - overall_out_of = sum of ALL section out_of values (e.g., 9+3=12 if T=9 and A=3).
-    - overall_score = sum of ALL section scores.
-
-    If a rubricOverride IS provided with its own categories, the rubric categories take priority over KITA.
-    ` : ""}
     `.trim(),
 
       us: `
@@ -8849,6 +8779,51 @@ function buildRubricInstructions({
     - If overall_out_of !== 10: set score_out_of_10 = null and final_score_out_of_10 = null.
     - If overall_out_of === 10: set score_out_of_10 and final_score_out_of_10 as numbers and apply the deduction rule.
     - The overall_out_of value must match the total possible points defined in the rubric.
+
+    ${(standards === "canada" && (gradeBand === "9-10" || gradeBand === "11+")) ? `
+    ============================================================
+    KITA OVERRIDE — READ THIS LAST, IT OVERRIDES ALL SECTION RULES ABOVE
+    ============================================================
+
+    This is an Ontario grade ${gradeBand} submission. Ontario uses KITA achievement categories.
+    BEFORE creating sections, you MUST check every page margin for KITA category annotations.
+
+    WHAT TO LOOK FOR (printed in the margins beside questions):
+      /2T  /3A  /5T  /2K  /4C  or  T/2  A/3  or  /2 T  /3 A
+      or: 2T  3A  5T  or  T: 2  A: 3  or  /2 Thinking  /3 Application
+      or: KU, TH, CO, AP (two-letter abbreviations)
+    The letter = KITA category. The number = marks for that question in that category.
+
+    IF YOU FIND ANY SUCH ANNOTATIONS, ALL SECTION RULES ABOVE ARE VOID. Instead:
+    1. Group ALL questions sharing the same letter into ONE section.
+    2. Name each section: K→"Knowledge & Understanding", T→"Thinking", C→"Communication", A→"Application".
+    3. out_of = SUM of mark values for all questions in that category.
+    4. score = marks the student earned across those questions.
+    5. teacher_comment covers ALL questions in that category.
+    6. incorrect_items lists wrong answers within that category.
+    7. overall_out_of = sum of all section out_of. overall_score = sum of all section scores.
+    8. ONLY include categories that appear in annotations. Do NOT add extra categories.
+
+    DO NOT create one section per question (Part a, Part b, Q2a, Q2b, etc.).
+    DO create one section per KITA CATEGORY (Thinking, Application, etc.).
+
+    EXAMPLE — annotations: /2T on Q2a, /2T on Q2b, /5T on Q2c, /3A on Q2d
+    WRONG: [{ name: "Question 2a", out_of: 2 }, { name: "Question 2b", out_of: 2 }, ...]
+    CORRECT: [
+      { name: "Thinking", score: ?, out_of: 9, teacher_comment: "Covers Q2a, Q2b, Q2c...", incorrect_items: [...] },
+      { name: "Application", score: ?, out_of: 3, teacher_comment: "Covers Q2d...", incorrect_items: [...] }
+    ]
+    (Thinking: 2+2+5=9 marks from Q2a+Q2b+Q2c. Application: 3 marks from Q2d.)
+
+    Decimals allowed: 3.5/5, 2.25/5, etc.
+    ${gradeBand === "9-10"
+      ? "Weighting (when all 4 present): K=25%, T=25%, C=25%, A=25%."
+      : "Weighting (when all 4 present): K=20%, T=30%, C=20%, A=30%."}
+
+    If NO annotations found on any page, create all four KITA sections scored /5 each.
+    If a rubricOverride has its own categories, rubric categories take priority over KITA.
+    ============================================================
+    ` : ""}
     `.trim();
     }
 
