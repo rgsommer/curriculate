@@ -9880,6 +9880,132 @@ function buildRubricInstructions({
   });
 
   // ====================================================================
+  //  Answer Key Extraction (Pass 1 of two-pass grading)
+  //  POST /grading/extract-answer-key
+  //  Sends ONLY the answer key image(s) to the AI for focused extraction
+  //  of correct answers, point values, and KITA category annotations.
+  // ====================================================================
+  app.post("/grading/extract-answer-key", async (req, res) => {
+    try {
+      const { answerKeyImages, standards: rawStandards, gradeBand } = req.body || {};
+      const standards = ["canada", "us", "uk", "eu"].includes(rawStandards) ? rawStandards : "canada";
+      const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
+
+      if (!Array.isArray(answerKeyImages) || !answerKeyImages.length) {
+        return res.status(400).json({ error: "No answer key images provided." });
+      }
+
+      const isKitaBand = standards === "canada" && (band === "9-10" || band === "11+");
+
+      const extractionPrompt = `You are analyzing a TEACHER'S ANSWER KEY or SOLUTION SHEET for a test/assignment.
+
+Your ONLY job is to extract structured information from this answer key. Do NOT grade anything.
+
+For EACH question or sub-question visible, extract:
+- question_id: the question label (e.g., "2a", "2b", "Q1", "3ii")
+- correct_answer: the correct answer shown (keep concise, max 80 chars)
+- marks: how many marks this question is worth (look for /2, /3, /5, etc.)
+${isKitaBand ? `- kita_category: Look VERY CAREFULLY at the margins (right side, left side, near the question).
+  Look for KITA achievement category annotations like:
+    /2T  /3A  /5T  /2K  /4C  (slash + number + letter)
+    T/2  A/3  (letter + slash + number)
+    /2 T  /3 A  (slash + number + space + letter)
+    2T  3A  (number + letter)
+    T: 2  A: 3  (letter colon number)
+    KU  TH  CO  AP  (two-letter codes)
+  The letter means: K or KU = "Knowledge & Understanding", T or TH = "Thinking",
+  C or CO = "Communication", A or AP = "Application".
+  Return the FULL category name. If no annotation visible for this question, return null.` : '- kita_category: null (not applicable for this standards framework)'}
+
+Return valid JSON matching this exact schema.`;
+
+      const extractionSchema = {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          questions: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                question_id: { type: "string", maxLength: 20 },
+                correct_answer: { type: "string", maxLength: 200 },
+                marks: { type: "number" },
+                kita_category: { type: ["string", "null"] },
+              },
+              required: ["question_id", "correct_answer", "marks", "kita_category"],
+            },
+          },
+          total_marks: { type: "number" },
+          notes: { type: ["string", "null"], maxLength: 500 },
+        },
+        required: ["questions", "total_marks", "notes"],
+      };
+
+      const content = [
+        { type: "input_text", text: extractionPrompt },
+        ...answerKeyImages.map((img) => ({ type: "input_image", image_url: img })),
+      ];
+
+      console.log(`[extract-answer-key] images=${answerKeyImages.length} standards=${standards} band=${band} kita=${isKitaBand}`);
+
+      const response = await openai.responses.create({
+        model: AI_MODEL_FULL,
+        input: [{ role: "user", content }],
+        text: { format: { type: "json_schema", name: "answer_key_extraction", strict: true, schema: extractionSchema } },
+        max_output_tokens: 2000,
+      });
+
+      const extracted = safeJsonParse(response.output_text);
+      if (!extracted) {
+        return res.status(500).json({ error: "Failed to parse extraction response." });
+      }
+
+      // Build a human-readable summary for use as answerKeyOverride in grading
+      let summaryLines = [];
+      const categoryGroups = {};
+
+      for (const q of extracted.questions || []) {
+        const line = `${q.question_id}: ${q.correct_answer} (/${q.marks}${q.kita_category ? ` ${q.kita_category}` : ""})`;
+        summaryLines.push(line);
+
+        if (q.kita_category) {
+          if (!categoryGroups[q.kita_category]) categoryGroups[q.kita_category] = { marks: 0, questions: [] };
+          categoryGroups[q.kita_category].marks += q.marks;
+          categoryGroups[q.kita_category].questions.push(q.question_id);
+        }
+      }
+
+      // Add KITA summary if categories found
+      if (Object.keys(categoryGroups).length > 0) {
+        summaryLines.push("");
+        summaryLines.push("KITA SECTIONS (use these as your sections[]):");
+        for (const [cat, info] of Object.entries(categoryGroups)) {
+          summaryLines.push(`  ${cat}: ${info.questions.join(", ")} = /${info.marks}`);
+        }
+        summaryLines.push(`Total: /${extracted.total_marks}`);
+        summaryLines.push("Create ONE section per category above. Do NOT create per-question sections.");
+      }
+
+      const answerKeyText = summaryLines.join("\n");
+
+      console.log(`[extract-answer-key] extracted ${(extracted.questions || []).length} questions, ${Object.keys(categoryGroups).length} KITA categories`);
+      console.log(`[extract-answer-key] summary:\n${answerKeyText}`);
+
+      res.json({
+        extraction: extracted,
+        answerKeyText,
+        kitaCategories: categoryGroups,
+        hasKita: Object.keys(categoryGroups).length > 0,
+      });
+    } catch (err) {
+      console.error("[extract-answer-key] error:", err);
+      res.status(500).json({ error: err.message || "Extraction failed." });
+    }
+  });
+
+  // ====================================================================
   //  Grading Session Summary (concept-level trends across a copied session)
   //  POST /grading/session-summary
   // ====================================================================

@@ -1662,7 +1662,36 @@ export default function GradingPage() {
 
         const anonId = getAnonId();
 
-        const effectiveAnswerKey = (stickyAnswerKeyText || "").trim();
+        // Two-pass answer key extraction: if teacher tagged photos, run extraction first
+        let effectiveAnswerKey = (stickyAnswerKeyText || "").trim();
+
+        if (answerKeyImages && answerKeyImages.length > 0 && !effectiveAnswerKey.length) {
+          try {
+            console.log("[submit] Running answer key extraction pass...");
+            const extractUrl = `${backendBase.replace(/\/$/, "")}/grading/extract-answer-key`;
+            const extractRes = await fetch(extractUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ answerKeyImages, standards, gradeBand }),
+            });
+            if (extractRes.ok) {
+              const extractData = await extractRes.json();
+              if (extractData.answerKeyText) {
+                effectiveAnswerKey = extractData.answerKeyText;
+                // Persist as sticky so subsequent papers skip extraction
+                setStickyAnswerKeyText(effectiveAnswerKey);
+                setStickyAnswerKeyCapturedAt(String(Date.now()));
+                setShowRubricTip(false);
+                saveLS(RUBRIC_TIP_DISMISSED_KEY, "1");
+                console.log("[submit] Answer key extracted:", effectiveAnswerKey.slice(0, 200));
+              }
+            } else {
+              console.warn("[submit] Answer key extraction failed, continuing with images only");
+            }
+          } catch (e) {
+            console.warn("[submit] Answer key extraction error:", e);
+          }
+        }
 
         const payload = {
           anonId,
