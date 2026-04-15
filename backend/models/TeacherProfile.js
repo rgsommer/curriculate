@@ -120,6 +120,9 @@ const TeacherProfileSchema = new Schema(
     // Auto-inject team selfie before treasure runner (default: on)
     includeTeamSelfie: { type: Boolean, default: true },
 
+    // Track free-tier selfie usage (allowed for first 2 sessions, then requires upgrade)
+    freeSelfieSessionsUsed: { type: Number, default: 0 },
+
     // ✅ Voice settings (your UI has these fields)
     voiceId: { type: String, default: "" },
     voiceSampleUrl: { type: String, default: "" },

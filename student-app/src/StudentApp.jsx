@@ -637,6 +637,11 @@ function StudentApp() {
       if (!state || !teamId) return;
       const myTeam = state.teams?.[teamId];
       if (!myTeam) return;
+
+      // 📸 Persist selfie URLs to localStorage for refresh survival
+      if (myTeam.selfieUrl) lsSet(LS_KEYS.selfieUrl, myTeam.selfieUrl);
+      if (myTeam.themedSelfieUrl) lsSet(LS_KEYS.themedSelfieUrl, myTeam.themedSelfieUrl);
+
       // 🔢 Update running total score from room-wide scores map
       if (state.scores && typeof state.scores[teamId] === "number") {
         setScoreTotal(state.scores[teamId]);
@@ -1663,6 +1668,28 @@ function StudentApp() {
     const cleanEmails = Array.isArray(emails)
       ? emails.map((e) => String(e || "").trim().toLowerCase()).filter((e) => e && e.includes("@"))
       : [];
+
+    // Clear cached selfie if player names changed (different team composition)
+    try {
+      const prevMembersRaw = lsGet(LS_KEYS.members);
+      const prevMembers = prevMembersRaw ? JSON.parse(prevMembersRaw) : [];
+      const prevNames = (Array.isArray(prevMembers) ? prevMembers : [])
+        .map((n) => String(n || "").trim().toLowerCase())
+        .filter(Boolean)
+        .sort()
+        .join(",");
+      const newNames = (Array.isArray(members) ? members : [])
+        .map((n) => String(n || "").trim().toLowerCase())
+        .filter(Boolean)
+        .sort()
+        .join(",");
+      if (prevNames && newNames && prevNames !== newNames) {
+        lsDel(LS_KEYS.selfieUrl);
+        lsDel(LS_KEYS.themedSelfieUrl);
+        console.log("[selfie] Cleared cached selfie — player names changed");
+      }
+    } catch (_) { /* non-critical */ }
+
     const payload = {
       roomCode: roomCode.trim().toUpperCase(),
       teamName: (teamName || "").trim(),
@@ -2792,6 +2819,15 @@ function StudentApp() {
   const yourTeamName = teamName || "";
   const recentlyScoredBig = false; // or compute from lastTaskResult/pointToast if you already track it
 
+  // Team selfie URL for banner avatar (themed preferred, fallback to original, then localStorage)
+  const myTeamState = roomState?.teams?.[teamId];
+  const teamSelfieUrl =
+    myTeamState?.themedSelfieUrl ||
+    myTeamState?.selfieUrl ||
+    lsGet(LS_KEYS.themedSelfieUrl) ||
+    lsGet(LS_KEYS.selfieUrl) ||
+    null;
+
   const isMultiRoom = Array.isArray(selectedRooms) && selectedRooms.length > 1;
 
   const noiseBarOpacity = noiseState.enabled ? noiseState.brightness : 0.08;
@@ -3737,8 +3773,23 @@ function StudentApp() {
             minHeight: 32,
           }}
         >
-          {/* Team + Station */}
+          {/* Team selfie avatar + Team name + Station */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flex: "0 1 auto", overflow: "hidden" }}>
+            {teamSelfieUrl && (
+              <img
+                src={teamSelfieUrl}
+                alt=""
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: "50%",
+                  objectFit: "cover",
+                  flexShrink: 0,
+                  border: "1.5px solid rgba(255,255,255,0.3)",
+                  boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                }}
+              />
+            )}
             <span style={{ fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 100 }}>{teamName || "Team"}</span>
             {stationInfo.color && (
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: stationInfo.color, flexShrink: 0 }} />
@@ -3813,7 +3864,21 @@ function StudentApp() {
             </p>
           </header>
 
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+            {joined && teamSelfieUrl && (
+              <img
+                src={teamSelfieUrl}
+                alt="Team selfie"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: "50%",
+                  objectFit: "cover",
+                  border: "2px solid rgba(255,255,255,0.2)",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                }}
+              />
+            )}
             {joined && (
               <span className="pill-muted">
                 Team: <strong>{teamName || "…"}</strong>
@@ -4558,6 +4623,22 @@ function StudentApp() {
       textAlign: "center",
     }}
   >
+    {teamSelfieUrl && (
+      <img
+        src={teamSelfieUrl}
+        alt="Team selfie"
+        style={{
+          width: 80,
+          height: 80,
+          borderRadius: "50%",
+          objectFit: "cover",
+          border: "3px solid #fbbf24",
+          boxShadow: "0 4px 16px rgba(251,191,36,0.3)",
+          margin: "0 auto 12px",
+          display: "block",
+        }}
+      />
+    )}
     <div style={{ fontSize: "1.6rem", fontWeight: 900, marginBottom: 6 }}>
       🎉 Victory!
     </div>

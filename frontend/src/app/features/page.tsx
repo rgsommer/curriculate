@@ -107,25 +107,46 @@ export default function FeaturesPage() {
             <SectionHeader
               eyebrow="Stations & Delivery"
               title="Built for station rotation, not worksheets"
-              desc="Curriculate is designed for real classrooms: station cards, QR-coded stations, multi-room scavenger options, and repeatable routines."
+              desc="Curriculate is designed for real classrooms: color-coded QR stations, physical display integration, multi-room scavenger hunts, and repeatable routines that students learn once and run every time."
             />
             <div className="grid gap-4 md:grid-cols-2">
               <FeatureCard
                 title="📍 Station-Ready by Design"
-                body="Generate station-based sets that are ready to run with minimal prep."
+                body="Print color-coded QR posters once, stick them around the room, and reuse them for every session. Students scan to arrive at a station and receive their next task."
                 bullets={[
-                  "Station-friendly task formats",
-                  "Supports fixed-station display assignment",
+                  "8 color-coded stations with printable QR posters",
+                  "Automatic team-to-station assignment and rotation",
+                  "Students scan to arrive — no teacher direction needed",
                   "Designed for quick launch and smooth transitions",
                 ]}
               />
               <FeatureCard
-                title="🗺️ Multi-Room & Scavenger Options"
-                body="Enable multi-room tasksets for hallway / library / gym / campus rotations."
+                title="🔬 Fixed Stations with Physical Displays"
+                body='Attach real objects to stations — a microscope at Red, an art print at Blue, a map at Green — and the AI generates tasks that reference what students are actually looking at.'
                 bullets={[
-                  "Optional room list for scavenger-style runs",
-                  "Works with station scanning routines",
-                  "Great for review days and engagement boosts",
+                  "Name and describe the physical display at each station",
+                  "AI writes tasks tied to each object (observation, analysis, comparison)",
+                  "Pre-launch checklist confirms everything is in place",
+                  "Works for science labs, art galleries, museum exhibits, and more",
+                ]}
+              />
+              <FeatureCard
+                title="🗺️ Multi-Room & Scavenger Hunts"
+                body="Spread stations across the hallway, library, gym, or campus. Define your room list in your profile and select which rooms to use each session."
+                bullets={[
+                  "Configure room list once in your teacher profile",
+                  "Select rooms per session — single-room or multi-room",
+                  "Location-aware scanning enforces correct station visits",
+                  "Great for review days, field trips, and engagement boosts",
+                ]}
+              />
+              <FeatureCard
+                title="🎯 Zero-Prep Reuse"
+                body="The station routine is the same every session. Students learn the scan-arrive-work loop once, and it works for any subject, any taskset, any day."
+                bullets={[
+                  "Same QR posters, different tasks every session",
+                  "No re-printing, no new instructions, no wasted time",
+                  "Works with all task types and game modes",
                 ]}
               />
             </div>

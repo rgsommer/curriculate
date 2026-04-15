@@ -48,6 +48,8 @@ router.get("/me", authRequired, async (req, res) => {
 });
 
 // GET /api/profile
+// Returns the full profile — same as GET /api/profile/me.
+// Previously this returned only a small subset of fields.
 router.get("/", authRequired, async (req, res) => {
   try {
     const ownerId = getOwnerId(req);
@@ -58,24 +60,15 @@ router.get("/", authRequired, async (req, res) => {
       email: req.user?.email || "",
     });
 
-    return res.json({
-      ok: true,
-      userId: ownerId,
-      email: (req.user?.email || profile.email || "").toLowerCase(),
-      name: req.user?.name || profile.presenterName || profile.displayName || "",
-      isAdmin: !!(profile.isAdmin || req.user?.isAdmin),
-      entryCode: profile.entryCode || "",     // IMPORTANT: your schema defaults to ""
-      planTier: null,
-      // ✅ Rooms for multi-room (fix: always return it)
-      locationOptions: Array.isArray(profile.locationOptions)
-        ? profile.locationOptions
-        : ["Classroom"],
-      // Optional passthrough
-      treatsPerSession:
-        typeof profile.treatsPerSession === "number"
-          ? profile.treatsPerSession
-          : undefined,
-    });
+    const plain = profile.toObject();
+    plain.presenterTitle = plain.presenterTitle || plain.title || "";
+    plain.title = plain.title || plain.presenterTitle || "";
+
+    // Include a few extra convenience fields
+    plain.userId = ownerId;
+    plain.isAdmin = !!(profile.isAdmin || req.user?.isAdmin);
+
+    return res.json(plain);
   } catch (e) {
     console.error("GET /api/profile failed:", e);
     return res.status(500).json({ ok: false, error: "Server error" });
@@ -106,29 +99,26 @@ router.put("/me", authRequired, async (req, res) => {
 });
 
 // PUT /api/profile
+// Legacy endpoint — delegates to the same logic as PUT /api/profile/me.
+// Previously this was broken (queried by userId instead of ownerId and only saved locationOptions).
 router.put("/", authRequired, async (req, res) => {
   try {
-    const userId = req.user?.id || req.user?._id || req.user?.userId;
-    if (!userId) return res.status(401).json({ ok: false, error: "Unauthorized" });
+    const ownerId = getOwnerId(req);
+    if (!ownerId) return res.status(401).json({ ok: false, error: "Unauthorized" });
 
-    const profile = await TeacherProfile.findOne({ userId });
-    if (!profile) return res.status(404).json({ ok: false, error: "Profile not found" });
+    const profile = await getOrCreateProfileForUser({ ownerId, email: req.user?.email });
 
-    // --- MULTI-ROOM: persist teacher-defined room list ---
-    if ("locationOptions" in (req.body || {})) {
-      const raw = Array.isArray(req.body.locationOptions) ? req.body.locationOptions : [];
-      const cleaned = Array.from(
-        new Set(
-          raw
-            .map((s) => (s || "").toString().trim())
-            .filter(Boolean)
-        )
-      );
-      profile.locationOptions = cleaned.length ? cleaned : ["Classroom"];
-    }
+    const body = { ...req.body };
+    if (body.presenterTitle && !body.title) body.title = body.presenterTitle;
+    if (body.title && !body.presenterTitle) body.presenterTitle = body.title;
 
+    Object.assign(profile, body);
     await profile.save();
-    return res.json(profile);
+
+    const plain = profile.toObject();
+    plain.presenterTitle = plain.presenterTitle || plain.title || "";
+    plain.title = plain.title || plain.presenterTitle || "";
+    return res.json(plain);
   } catch (err) {
     console.error("PUT /api/profile error:", err);
     return res.status(500).json({ ok: false, error: "Server error" });

@@ -39,6 +39,8 @@ import ReferralProgramSettings from "./models/ReferralProgramSettings.js";
 // 7) AI / email services
 import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
+import { generateThemedSelfie } from "./ai/selfieThemer.js";
+import { resolveAccessForUser, PLAN } from "./billing/planResolver.js";
 import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
 import { sendStudentReportEmail } from "./email/studentReportEmailer.js";
 import { sendSystemEmail } from "./email/shareInviteEmailer.js";
@@ -1688,6 +1690,17 @@ socket.on("task:force-advance", ({ roomCode }) => {
         const tp = await TeacherProfile.findOne({ ownerId: String(userId) }).lean();
         if (tp) {
           room.minimizeOnScreen = !!tp.minimizeOnScreen;
+
+          // Seed treats quota from profile (session slider overrides stay in-memory only)
+          if (typeof tp.treatsPerSession === "number" && Number.isFinite(tp.treatsPerSession)) {
+            if (!room.treatsConfig) room.treatsConfig = { enabled: true, total: 2, given: 0 };
+            room.treatsConfig.total = Math.max(0, Math.floor(tp.treatsPerSession));
+          }
+
+          // Seed available location/room labels from profile
+          if (Array.isArray(tp.locationOptions) && tp.locationOptions.length > 0) {
+            room.locationOptions = tp.locationOptions.filter((l) => typeof l === "string" && l.trim());
+          }
         }
       }
     } catch (e) {
@@ -4801,7 +4814,12 @@ if (!isMultiPack && task.taskType === "guess-who") {
     if (task.taskType === "team-selfie" && extractedPhotoUrl && room.teams?.[effectiveTeamId]) {
       room.teams[effectiveTeamId].selfieUrl = extractedPhotoUrl;
       room.teams[effectiveTeamId].selfieKey = answer?.selfieKey || null;
-      console.log(`[Selfie] Stored selfie for team ${effectiveTeamId} in room ${code}`);
+      // Also store themed selfie if provided
+      if (answer?.themedUrl) {
+        room.teams[effectiveTeamId].themedSelfieUrl = answer.themedUrl;
+        room.teams[effectiveTeamId].themedSelfieKey = answer.themedKey || null;
+      }
+      console.log(`[Selfie] Stored selfie for team ${effectiveTeamId} in room ${code} (themed=${!!answer?.themedUrl})`);
     }
 
     if (task.taskType === "physical-multiple-choice") {
@@ -5198,26 +5216,68 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
       const tasks = Array.isArray(tasksetDoc.tasks) ? tasksetDoc.tasks : [];
 
       // ── Auto-inject team selfie before treasure-runner if teacher profile toggle is on ──
+      // Tier gating: FREE gets selfie for first 2 sessions, then needs upgrade.
+      // PLUS tiers get AI-themed selfie. PRO tiers get basic selfie.
       try {
         const profileOwnerId = reportOwnerId || room.reportOwnerId || "";
         if (profileOwnerId) {
           const selfieProfile = await TeacherProfile.findOne({ ownerId: String(profileOwnerId) }).lean();
           if (selfieProfile?.includeTeamSelfie !== false) {
-            // Default ON: inject selfie before the first treasure-runner, or at position 0
-            const trIdx = tasks.findIndex(t => t && (t.taskType === "treasure-runner" || t.taskType === TASK_TYPES.TREASURE_RUNNER));
-            const insertAt = trIdx >= 0 ? trIdx : 0;
-            const selfieTask = {
-              taskType: "team-selfie",
-              title: "Team Selfie",
-              prompt: "Get everyone together and take a fun team selfie!",
-              points: 0,
-              config: {
-                subject: tasksetDoc.subject || "",
-                theme: tasksetDoc.topicDescription || tasksetDoc.name || "",
-              },
-            };
-            tasks.splice(insertAt, 0, selfieTask);
-            console.log(`[Selfie] Injected team-selfie at position ${insertAt} for room ${code}`);
+
+            // Resolve plan tier for feature gating
+            let tierLabel = "FREE";
+            let allowSelfie = true;
+            let allowThemed = false;
+            try {
+              const teacherUser = await User.findOne({ _id: profileOwnerId }).lean().catch(() => null);
+              if (teacherUser) {
+                const access = await resolveAccessForUser(teacherUser);
+                tierLabel = (access?.tier || "FREE").toUpperCase();
+              }
+            } catch (_) { /* default to FREE */ }
+
+            // Determine selfie + themed permissions by tier
+            if (tierLabel === "TEACHER_PLUS" || tierLabel === "SCHOOL_PLUS") {
+              allowSelfie = true;
+              allowThemed = true;
+            } else if (tierLabel === "TEACHER_PRO" || tierLabel === "SCHOOL_PRO") {
+              allowSelfie = true;
+              allowThemed = true; // Pro includes everything in Plus
+            } else {
+              // FREE tier: allow selfie for first 2 sessions only
+              const selfieCount = Number(selfieProfile.freeSelfieSessionsUsed || 0);
+              if (selfieCount >= 2) {
+                allowSelfie = false;
+                console.log(`[Selfie] FREE tier limit reached (${selfieCount}/2 sessions) for ${profileOwnerId}`);
+              } else {
+                // Increment the counter (best-effort, non-blocking)
+                TeacherProfile.updateOne(
+                  { ownerId: String(profileOwnerId) },
+                  { $inc: { freeSelfieSessionsUsed: 1 } }
+                ).catch(() => {});
+                console.log(`[Selfie] FREE tier session ${selfieCount + 1}/2 for ${profileOwnerId}`);
+              }
+              allowThemed = false;
+            }
+
+            if (allowSelfie) {
+              const trIdx = tasks.findIndex(t => t && (t.taskType === "treasure-runner" || t.taskType === TASK_TYPES.TREASURE_RUNNER));
+              const insertAt = trIdx >= 0 ? trIdx : 0;
+              const selfieTask = {
+                taskType: "team-selfie",
+                title: "Team Selfie",
+                prompt: "Get everyone together and take a fun team selfie!",
+                points: 0,
+                config: {
+                  subject: tasksetDoc.subject || "",
+                  theme: tasksetDoc.topicDescription || tasksetDoc.name || "",
+                  allowThemed, // passed to frontend to control AI theme button
+                  tierLabel,   // informational — which tier this teacher has
+                },
+              };
+              tasks.splice(insertAt, 0, selfieTask);
+              console.log(`[Selfie] Injected team-selfie at position ${insertAt} for room ${code} (tier=${tierLabel}, themed=${allowThemed})`);
+            }
           }
         }
       } catch (e) {
@@ -6052,6 +6112,8 @@ socket.on(
           scoringBreakdown: { percent: scorePercent, categories: [] },
           selfieUrl: team?.selfieUrl || null,
           selfieKey: team?.selfieKey || null,
+          themedSelfieUrl: team?.themedSelfieUrl || null,
+          themedSelfieKey: team?.themedSelfieKey || null,
         };
       });
     })();
@@ -6272,6 +6334,8 @@ socket.on(
               feedback: fb,
               participantSummaries: teamParticipants,
               aiSummary: summary,
+              selfieUrl: team.selfieUrl || null,
+              themedSelfieUrl: team.themedSelfieUrl || null,
             }).catch((err) => console.warn(`[studentReport] Failed to send to ${email}:`, err?.message || err));
           }
         }
@@ -9720,6 +9784,54 @@ app.post("/api/media/signed-get", async (req, res) => {
   } catch (err) {
     console.error("/api/media/signed-get error:", err);
     return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Selfie: AI-themed image generation
+// ──────────────────────────────────────────────────────────────────────
+app.post("/api/selfie/generate-themed", async (req, res) => {
+  try {
+    const { roomCode, teamId, selfieKey, subject, theme } = req.body || {};
+    if (!roomCode || !teamId || !selfieKey) {
+      return res.status(400).json({ ok: false, error: "roomCode, teamId, and selfieKey are required" });
+    }
+    if (!canTeamAccessRoom(roomCode, teamId)) {
+      return res.status(403).json({ ok: false, error: "Invalid roomCode/teamId" });
+    }
+
+    // Tier gate: resolve the teacher's plan to check if themed selfie is allowed
+    const room = getSessionByRoomCode(roomCode);
+    const ownerId = room?.reportOwnerId || "";
+    if (ownerId) {
+      const user = await User.findOne({ _id: ownerId }).lean().catch(() => null);
+      const access = await resolveAccessForUser(user);
+      const tier = (access?.tier || "FREE").toUpperCase();
+
+      // Only TEACHER_PLUS and SCHOOL_PLUS (and higher) get themed images
+      const allowThemed = ["TEACHER_PLUS", "SCHOOL_PLUS", "SCHOOL_PRO", "TEACHER_PRO"].includes(tier);
+      // Actually: user specified only PLUS gets themed. PRO gets basic selfie only.
+      // But PRO says "everything in Plus" so let's allow it for Pro too for consistency.
+      if (!allowThemed && tier !== "FREE") {
+        return res.status(403).json({ ok: false, error: "AI-themed selfie requires a Plus or Pro plan" });
+      }
+      if (tier === "FREE") {
+        return res.status(403).json({ ok: false, error: "AI-themed selfie requires a Plus or Pro plan" });
+      }
+    }
+
+    const result = await generateThemedSelfie({ selfieKey, subject, theme, roomCode, teamId });
+
+    // Store themed URL on team object if room exists
+    if (room?.teams?.[teamId]) {
+      room.teams[teamId].themedSelfieUrl = result.themedUrl;
+      room.teams[teamId].themedSelfieKey = result.themedKey;
+    }
+
+    return res.json({ ok: true, themedUrl: result.themedUrl, themedKey: result.themedKey });
+  } catch (err) {
+    console.error("[/api/selfie/generate-themed] error:", err?.message || err);
+    return res.status(500).json({ ok: false, error: err?.message || "Themed selfie generation failed" });
   }
 });
 

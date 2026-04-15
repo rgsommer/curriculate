@@ -15,6 +15,8 @@ export const LS_KEYS = {
   stationColor: "curriculate.stationColor",
   warmupDone: "curriculate.warmupDone",
   emails: "curriculate.emails",
+  selfieUrl: "curriculate.selfieUrl",
+  themedSelfieUrl: "curriculate.themedSelfieUrl",
 };
 
 /**

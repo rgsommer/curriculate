@@ -6,7 +6,10 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
  *
  * Opens front-facing camera, team takes a group selfie.
  * Photo is uploaded and becomes the team card + included in reports.
- * No scoring. Submits automatically after capture.
+ * On Plus/Pro tiers, after upload the AI generates a themed version
+ * based on the taskset subject (history era, lab scene, etc.).
+ *
+ * No scoring. Submits automatically after capture (+ optional theming).
  */
 
 const API = import.meta.env.VITE_API_URL || "";
@@ -16,11 +19,18 @@ export default function TeamSelfieTask({ task, onSubmit, disabled, roomCode, tea
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
-  const [phase, setPhase] = useState("camera"); // camera | countdown | preview | uploading | done
+  // camera | countdown | preview | uploading | theming | done
+  const [phase, setPhase] = useState("camera");
   const [photoDataUrl, setPhotoDataUrl] = useState(null);
   const [countdown, setCountdown] = useState(null);
   const [error, setError] = useState(null);
   const [themedUrl, setThemedUrl] = useState(null);
+  const [themingProgress, setThemingProgress] = useState("");
+
+  // Tier config from backend injection
+  const allowThemed = task?.config?.allowThemed === true;
+  const subject = task?.config?.subject || "";
+  const theme = task?.config?.theme || "";
 
   // Start camera on mount
   useEffect(() => {
@@ -96,6 +106,7 @@ export default function TeamSelfieTask({ task, onSubmit, disabled, roomCode, tea
 
   const retake = useCallback(() => {
     setPhotoDataUrl(null);
+    setThemedUrl(null);
     setPhase("camera");
     setError(null);
     // Restart camera
@@ -145,14 +156,57 @@ export default function TeamSelfieTask({ task, onSubmit, disabled, roomCode, tea
       });
 
       const photoUrl = presignData.signedGetUrl || presignData.key;
+      const selfieKey = presignData.key;
 
+      // If themed images are allowed, generate one
+      if (allowThemed && subject) {
+        setPhase("theming");
+        setThemingProgress("Creating your AI-themed team image...");
+
+        try {
+          const themeRes = await fetch(`${API}/api/selfie/generate-themed`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ roomCode, teamId, selfieKey, subject, theme }),
+          });
+          const themeData = await themeRes.json();
+
+          if (themeData.ok && themeData.themedUrl) {
+            setThemedUrl(themeData.themedUrl);
+            setThemingProgress("");
+
+            // Wait a moment to show the themed image before auto-submitting
+            setPhase("done");
+            setTimeout(() => {
+              if (onSubmit) {
+                onSubmit({
+                  photoUrl,
+                  selfieKey,
+                  themedUrl: themeData.themedUrl,
+                  themedKey: themeData.themedKey,
+                  autoComplete: true,
+                });
+              }
+            }, 3000); // Show themed image for 3 seconds
+            return;
+          } else {
+            console.warn("[selfie] Themed generation failed:", themeData.error);
+            setThemingProgress("");
+            // Fall through to submit without themed image
+          }
+        } catch (themeErr) {
+          console.warn("[selfie] Themed generation error:", themeErr);
+          setThemingProgress("");
+          // Fall through to submit without themed image
+        }
+      }
+
+      // Submit without themed image (or if theming failed)
       setPhase("done");
-
-      // Submit the task with the photo URL
       if (onSubmit) {
         onSubmit({
           photoUrl,
-          selfieKey: presignData.key,
+          selfieKey,
           autoComplete: true,
         });
       }
@@ -161,7 +215,7 @@ export default function TeamSelfieTask({ task, onSubmit, disabled, roomCode, tea
       setError("Upload failed — tap to try again.");
       setPhase("preview");
     }
-  }, [photoDataUrl, roomCode, teamId, onSubmit]);
+  }, [photoDataUrl, roomCode, teamId, onSubmit, allowThemed, subject, theme]);
 
   return (
     <div style={{
@@ -191,6 +245,14 @@ export default function TeamSelfieTask({ task, onSubmit, disabled, roomCode, tea
           10% { opacity: 0.8; }
           100% { opacity: 0; }
         }
+        @keyframes shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+        @keyframes fadeSlideUp {
+          0% { opacity: 0; transform: translateY(20px) scale(0.95); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
       `}</style>
 
       {/* Hidden canvas for capture */}
@@ -212,7 +274,9 @@ export default function TeamSelfieTask({ task, onSubmit, disabled, roomCode, tea
           color: "#94a3b8",
           marginTop: 4,
         }}>
-          Get everyone in the frame — be fun, be silly, be you!
+          {phase === "theming"
+            ? "Hold tight — AI is working its magic..."
+            : "Get everyone in the frame — be fun, be silly, be you!"}
         </div>
       </div>
 
@@ -268,40 +332,140 @@ export default function TeamSelfieTask({ task, onSubmit, disabled, roomCode, tea
         </div>
       )}
 
-      {/* Preview */}
-      {(phase === "preview" || phase === "uploading" || phase === "done") && photoDataUrl && (
+      {/* Photo preview (original + themed side by side when available) */}
+      {(phase === "preview" || phase === "uploading" || phase === "theming" || phase === "done") && photoDataUrl && (
         <div style={{
-          position: "relative",
+          display: "flex",
+          gap: 12,
+          justifyContent: "center",
+          flexWrap: "wrap",
           width: "100%",
-          maxWidth: 400,
-          borderRadius: 20,
-          overflow: "hidden",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+          maxWidth: themedUrl ? 600 : 400,
         }}>
-          <img
-            src={photoDataUrl}
-            alt="Team selfie"
-            style={{
-              width: "100%",
-              display: "block",
-              borderRadius: 20,
-            }}
-          />
-          {phase === "done" && (
+          {/* Original photo */}
+          <div style={{
+            position: "relative",
+            flex: themedUrl ? "1 1 45%" : "1 1 100%",
+            maxWidth: themedUrl ? 280 : 400,
+            borderRadius: 20,
+            overflow: "hidden",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+            transition: "max-width 0.5s ease",
+          }}>
+            <img
+              src={photoDataUrl}
+              alt="Team selfie"
+              style={{
+                width: "100%",
+                display: "block",
+                borderRadius: 20,
+              }}
+            />
+            {themedUrl && (
+              <div style={{
+                position: "absolute",
+                bottom: 8,
+                left: 8,
+                background: "rgba(0,0,0,0.6)",
+                color: "#fff",
+                padding: "4px 10px",
+                borderRadius: 8,
+                fontSize: "0.7rem",
+                fontWeight: 700,
+              }}>
+                Original
+              </div>
+            )}
+            {phase === "done" && !themedUrl && (
+              <div style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "rgba(0,0,0,0.25)",
+                borderRadius: 20,
+              }}>
+                <div style={{
+                  fontSize: "3rem",
+                  animation: "selfieBounce 1s ease-in-out infinite",
+                }}>
+                  ✅
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Themed image */}
+          {themedUrl && (
             <div style={{
-              position: "absolute",
-              inset: 0,
+              position: "relative",
+              flex: "1 1 45%",
+              maxWidth: 280,
+              borderRadius: 20,
+              overflow: "hidden",
+              boxShadow: "0 8px 32px rgba(14,165,233,0.3)",
+              border: "2px solid #0ea5e9",
+              animation: "fadeSlideUp 0.6s ease-out forwards",
+            }}>
+              <img
+                src={themedUrl}
+                alt="AI-themed team selfie"
+                style={{
+                  width: "100%",
+                  display: "block",
+                  borderRadius: 18,
+                }}
+              />
+              <div style={{
+                position: "absolute",
+                bottom: 8,
+                left: 8,
+                background: "linear-gradient(135deg, #0ea5e9, #8b5cf6)",
+                color: "#fff",
+                padding: "4px 10px",
+                borderRadius: 8,
+                fontSize: "0.7rem",
+                fontWeight: 700,
+              }}>
+                AI Themed ✨
+              </div>
+            </div>
+          )}
+
+          {/* Theming loading placeholder */}
+          {phase === "theming" && !themedUrl && (
+            <div style={{
+              flex: "1 1 45%",
+              maxWidth: 280,
+              aspectRatio: "1/1",
+              borderRadius: 20,
+              overflow: "hidden",
+              border: "2px dashed #0ea5e9",
               display: "flex",
+              flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
-              background: "rgba(0,0,0,0.25)",
-              borderRadius: 20,
+              background: "rgba(14,165,233,0.05)",
             }}>
               <div style={{
-                fontSize: "3rem",
-                animation: "selfieBounce 1s ease-in-out infinite",
+                width: "60%",
+                height: 6,
+                borderRadius: 3,
+                background: "linear-gradient(90deg, #0ea5e9 25%, #8b5cf6 50%, #0ea5e9 75%)",
+                backgroundSize: "200% 100%",
+                animation: "shimmer 2s linear infinite",
+                marginBottom: 12,
+              }} />
+              <div style={{ fontSize: "2rem", marginBottom: 8 }}>🎨</div>
+              <div style={{
+                fontSize: "0.75rem",
+                color: "#94a3b8",
+                fontWeight: 600,
+                padding: "0 12px",
+                textAlign: "center",
               }}>
-                ✅
+                {themingProgress || "Generating themed image..."}
               </div>
             </div>
           )}
@@ -394,6 +558,17 @@ export default function TeamSelfieTask({ task, onSubmit, disabled, roomCode, tea
           </div>
         )}
 
+        {phase === "theming" && (
+          <div style={{
+            fontSize: "0.9rem",
+            fontWeight: 600,
+            color: "#0ea5e9",
+            padding: "12px 24px",
+          }}>
+            AI is creating your themed team image...
+          </div>
+        )}
+
         {phase === "done" && (
           <div style={{
             fontSize: "1.1rem",
@@ -401,7 +576,7 @@ export default function TeamSelfieTask({ task, onSubmit, disabled, roomCode, tea
             color: "#22c55e",
             padding: "12px 24px",
           }}>
-            Selfie saved! Get ready to play...
+            {themedUrl ? "Looking great! Get ready to play..." : "Selfie saved! Get ready to play..."}
           </div>
         )}
       </div>

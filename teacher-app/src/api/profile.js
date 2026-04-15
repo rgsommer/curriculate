@@ -63,7 +63,7 @@ function authHeaders(extra = {}) {
 }
 
 export async function fetchMyProfile() {
-  const res = await fetch(`${API_BASE}/api/profile`, {
+  const res = await fetch(`${API_BASE}/api/profile/me`, {
     method: "GET",
     headers: authHeaders(),
     credentials: "include",
@@ -84,7 +84,7 @@ export async function fetchMyProfile() {
 }
 
 export async function updateMyProfile(payload) {
-  const res = await fetch(`${API_BASE}/api/profile`, {
+  const res = await fetch(`${API_BASE}/api/profile/me`, {
     method: "PUT",
     headers: authHeaders({ "Content-Type": "application/json" }),
     credentials: "include",

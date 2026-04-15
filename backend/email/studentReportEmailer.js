@@ -52,6 +52,8 @@ function pct(n, d) {
  * @param {Object} opts.feedback             – team exit feedback (rating, learned, etc.)
  * @param {Array}  opts.participantSummaries – AI-generated per-participant summaries for this team
  * @param {Object} opts.aiSummary            – session-level AI summary (keyConcepts, skillsDeveloped, etc.)
+ * @param {string} opts.selfieUrl            – team selfie photo URL (signed S3 URL)
+ * @param {string} opts.themedSelfieUrl      – AI-themed version of the team selfie (if available)
  */
 export async function sendStudentReportEmail({
   to,
@@ -69,6 +71,8 @@ export async function sendStudentReportEmail({
   feedback,
   participantSummaries,
   aiSummary,
+  selfieUrl,
+  themedSelfieUrl,
 }) {
   if (!to) return;
 
@@ -160,6 +164,12 @@ export async function sendStudentReportEmail({
 
       <!-- Team summary card -->
       <div style="background:linear-gradient(135deg,#f0f9ff,#ecfeff);border-radius:12px;padding:20px;margin-bottom:24px;border:1px solid #bae6fd;">
+        ${(themedSelfieUrl || selfieUrl) ? `
+        <div style="text-align:center;margin-bottom:16px;">
+          <img src="${escHtml(themedSelfieUrl || selfieUrl)}" alt="Team photo" style="width:120px;height:120px;border-radius:50%;object-fit:cover;border:3px solid #0ea5e9;box-shadow:0 4px 12px rgba(14,165,233,0.2);" />
+          ${themedSelfieUrl ? `<div style="font-size:10px;color:#0369a1;margin-top:4px;">AI-themed team image ✨</div>` : ""}
+        </div>
+        ` : ""}
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div>
             <div style="font-size:18px;font-weight:800;color:#0c4a6e;">🏆 ${safeTeam}</div>

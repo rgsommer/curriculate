@@ -690,6 +690,10 @@ export function createRoomEngine(io) {
             status: t.status || null,
             stale: !!t.stale,
             lastSeenAt: t.lastSeenAt || null,
+
+            // team selfie (for banner display)
+            selfieUrl: t.selfieUrl || null,
+            themedSelfieUrl: t.themedSelfieUrl || null,
           };
         }
         return out;
@@ -704,6 +708,7 @@ export function createRoomEngine(io) {
       startedAt: room.startedAt || null,
       isActive: !!room.isActive,
       selectedRooms: Array.isArray(room.selectedRooms) ? room.selectedRooms : [],
+      locationOptions: Array.isArray(room.locationOptions) ? room.locationOptions : [],
       moodCheckins: room.moodCheckins && typeof room.moodCheckins === "object" ? room.moodCheckins : {},
       submissions: Array.isArray(room.submissions) ? room.submissions : [],
 

@@ -545,15 +545,8 @@ useEffect(() => {
   });
   const [noiseBrightness, setNoiseBrightness] = useState(1);
 
-  // Treats UI state (mirrors roomState.treatsConfig)
-  const [treatsConfig, setTreatsConfig] = useState(() => {
-    let savedTotal = 2;
-    try {
-      const v = localStorage.getItem("curriculate.teacher.treatsTotal");
-      if (v != null) savedTotal = Math.max(0, Math.min(20, Number(v) || 2));
-    } catch {}
-    return { enabled: true, total: savedTotal, given: 0 };
-  });
+  // Treats UI state (mirrors roomState.treatsConfig — seeded from profile on room create)
+  const [treatsConfig, setTreatsConfig] = useState({ enabled: true, total: 2, given: 0 });
   // Track which teams already got a treat this session (never same group twice)
   const [treatedTeamIds, setTreatedTeamIds] = useState(new Set());
 
@@ -613,17 +606,6 @@ useEffect(() => {
 
       setTeacherRooms(profile.locationOptions || []);
       setLocationOptions(profile.locationOptions || []);
-
-      // Optional: use profile.treatsPerSession as the default treat quota
-      if (profile && typeof profile.treatsPerSession !== "undefined") {
-        const n = Number(profile.treatsPerSession);
-        if (Number.isFinite(n)) {
-          setTreatsConfig((prev) => ({
-            ...prev,
-            total: n,
-          }));
-        }
-      }
     }
     loadTeacherRooms();
   }, []);
@@ -737,6 +719,12 @@ useEffect(() => {
           ...prevCfg,
           ...state.treatsConfig,
         }));
+      }
+
+      // Sync location options from room state (covers reconnect scenarios)
+      if (Array.isArray(state.locationOptions) && state.locationOptions.length > 0) {
+        setLocationOptions((prev) => prev.length > 0 ? prev : state.locationOptions);
+        setTeacherRooms((prev) => prev.length > 0 ? prev : state.locationOptions);
       }
 
       if (state.noise) {
@@ -4760,8 +4748,6 @@ Precipitation — rain, snow, hail`}
                     const v = Number(e.target.value);
                     // Update local state immediately so the slider feels responsive
                     setTreatsConfig((prev) => ({ ...prev, total: v }));
-                    // Persist to localStorage
-                    try { localStorage.setItem("curriculate.teacher.treatsTotal", String(v)); } catch {}
                     if (!roomCode) return;
                     const code = roomCode.toUpperCase();
                     socket.emit("teacher:updateTreatsConfig", {

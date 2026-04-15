@@ -124,7 +124,7 @@ export default function PricingPage() {
         key: "teacher_plus",
         title: "Teacher Plus",
         price: "$6.99 CAD / month",
-        bullets: ["Student-level reporting", "PDF exports", "AI-themed team selfie images", "Great for small-group or class sessions"],
+        bullets: ["QR station rotation & fixed-station displays", "Student-level reporting", "PDF exports", "AI-themed team selfie images", "Great for small-group or class sessions"],
         priceId: prices.TEACHER_PLUS_MONTHLY,
         // Bug 5: Send plan tier to backend, let backend resolve priceId
         plan: "TEACHER_PLUS",
@@ -134,7 +134,7 @@ export default function PricingPage() {
         title: "Teacher Pro",
         price: "$12.99 CAD / month",
         featured: true,
-        bullets: ["Everything in Plus", "Higher student limits", "Expanded AI task generation", "Team selfie (no AI theming)", "Advanced session reports", "Built for full classrooms and multiple classes"],
+        bullets: ["Everything in Plus", "Higher student limits", "Multi-room scavenger hunts", "Expanded AI task generation", "AI-themed team selfie images", "Advanced session reports", "Built for full classrooms and multiple classes"],
         priceId: prices.TEACHER_PRO_MONTHLY,
         plan: "TEACHER_PRO",
       },

@@ -145,7 +145,7 @@ const pricingFeatures = [
   { name: "65+ task types", free: true, plus: true, pro: true },
   { name: "Mystery Box navigation mode", free: true, plus: true, pro: true },
   { name: "Team selfie (2 free sessions)", free: "2 sessions", plus: true, pro: true },
-  { name: "AI-themed selfie images", free: false, plus: true, pro: false },
+  { name: "AI-themed selfie images", free: false, plus: true, pro: true },
   { name: "Station rotation engine", free: true, plus: true, pro: true },
   { name: "QR station posters", free: true, plus: true, pro: true },
   { name: "Session summary reports", free: true, plus: true, pro: true },
