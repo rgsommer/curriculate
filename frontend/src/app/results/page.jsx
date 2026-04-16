@@ -413,6 +413,7 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
   const [reviewEmailError, setReviewEmailError] = useState("");
   const [reviewSending, setReviewSending] = useState(false);
   const [reviewDone, setReviewDone] = useState(false);
+  const [clipboardCopied, setClipboardCopied] = useState(false);
 
   const code = useMemo(() => normalizeCode(codeInput), [codeInput]);
   useEffect(() => {
@@ -1084,10 +1085,78 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                     <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>This helps us improve.</div>
                   </div>
                 ) : reviewDone ? (
-                  <div style={{ textAlign: "center", padding: "8px 0" }}>
-                    <div style={{ fontSize: 20, marginBottom: 6 }}>&#10003;</div>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>Review request submitted</div>
-                    <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>Your teacher will take another look at this grade.</div>
+                  <div style={{ padding: "8px 0" }}>
+                    <div style={{ textAlign: "center", marginBottom: 14 }}>
+                      <div style={{ fontSize: 20, marginBottom: 6 }}>&#10003;</div>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>Review request sent!</div>
+                      <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>
+                        We emailed {reviewTeacherName ? <strong>{reviewTeacherName}</strong> : "your teacher"} at <strong>{reviewEmail}</strong>.
+                      </div>
+                    </div>
+
+                    <div style={{
+                      background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10,
+                      padding: 14, fontSize: 13, color: "#92400e", lineHeight: 1.5, marginBottom: 12,
+                    }}>
+                      <strong>What happens next?</strong> Your teacher will review your result and get back to you directly.
+                      Curriculate does not change grades — only your teacher can do that.
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = `https://www.curriculate.net/results?code=${code}`;
+                        const name = (reviewStudentName || "").trim();
+                        const tch = (reviewTeacherName || "").trim();
+                        const sch = (reviewSchool || "").trim();
+                        const cls = (reviewClass || "").trim();
+                        const reason = (reviewText || "").trim();
+                        const lines = [
+                          tch ? `Dear ${tch},` : "Dear Teacher,",
+                          "",
+                          `My name is ${name || "a student"}${sch ? ` from ${sch}` : ""}${cls ? ` in ${cls}` : ""}. I recently completed an activity on Curriculate and received a grade for result code ${code}.`,
+                          "",
+                          "I would like to respectfully request a review of my grade. Here is my reason:",
+                          "",
+                          reason,
+                          "",
+                          `You can view my full result here: ${url}`,
+                          "",
+                          "Thank you for taking the time to look at this. I really appreciate it!",
+                          "",
+                          `${name || "Your student"}`,
+                          "",
+                          "---",
+                          "Sent via Curriculate — curriculate.net",
+                        ];
+                        const text = lines.join("\n");
+
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                          navigator.clipboard.writeText(text).then(() => {
+                            setClipboardCopied(true);
+                            setTimeout(() => setClipboardCopied(false), 3000);
+                          }).catch(() => {
+                            // Fallback
+                            window.prompt("Copy this message:", text);
+                          });
+                        } else {
+                          window.prompt("Copy this message:", text);
+                        }
+                      }}
+                      style={{
+                        width: "100%", padding: "10px 14px", borderRadius: 10,
+                        fontSize: 13, fontWeight: 700, cursor: "pointer", textAlign: "center",
+                        border: clipboardCopied ? "1px solid #22c55e" : "1px solid #2563eb",
+                        background: clipboardCopied ? "#dcfce7" : "#eff6ff",
+                        color: clipboardCopied ? "#15803d" : "#1d4ed8",
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      {clipboardCopied ? "Copied! Paste it in Google Classroom, Remind, email, etc." : "Copy message for your teacher"}
+                    </button>
+                    <div style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 6 }}>
+                      Paste into Google Classroom, Remind, email, or any messaging app
+                    </div>
                   </div>
                 ) : (
                   <>
