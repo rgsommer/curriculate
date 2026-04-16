@@ -346,6 +346,44 @@ export default function AdminUsageDashboard() {
           </Card>*/}
         </div>
 
+        {/* Schools & Teachers collected from grade review requests */}
+        {(() => {
+          const reviews = feedback.filter((f) => f.meta?.type === "grade-review");
+          const schools = [...new Set(reviews.map((f) => f.meta?.school).filter(Boolean))].sort();
+          const teachers = [...new Set(reviews.map((f) => {
+            const name = f.meta?.teacherName || "";
+            const email = f.meta?.teacherEmail || "";
+            return name && email ? `${name} (${email})` : name || email || "";
+          }).filter(Boolean))].sort();
+          if (!schools.length && !teachers.length) return null;
+          return (
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              {schools.length > 0 && (
+                <Card title={`Schools (${schools.length})`}>
+                  <div className="max-h-[200px] overflow-auto">
+                    <ul className="space-y-1">
+                      {schools.map((s) => (
+                        <li key={s} className="text-sm text-white/90">{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </Card>
+              )}
+              {teachers.length > 0 && (
+                <Card title={`Teachers (${teachers.length})`}>
+                  <div className="max-h-[200px] overflow-auto">
+                    <ul className="space-y-1">
+                      {teachers.map((t) => (
+                        <li key={t} className="text-sm text-white/90">{t}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </Card>
+              )}
+            </div>
+          );
+        })()}
+
         <div className="mt-6">
           <Card title="Feedback">
             <div className="flex items-center justify-between gap-2">
