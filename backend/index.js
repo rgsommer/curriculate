@@ -9690,7 +9690,18 @@ function buildRubricInstructions({
         }
 
       const countResultBlock = countResult
-          ? `
+          ? (overrideFixedOutOf
+            ? `
+        COUNT RESULT (server computed — FOR REFERENCE ONLY, overridden by teacher denominator):
+        - kind: ${countResult.kind}
+        - recommended_out_of: ${countResult.recommended_out_of ?? "null"} (IGNORED — teacher override sets overall_out_of = ${overrideFixedOutOf})
+        - confidence: ${countResult.confidence ?? 0}
+
+        The teacher provided an explicit denominator override of /${overrideFixedOutOf}.
+        This OVERRIDES the count result. Use overall_out_of = ${overrideFixedOutOf}.
+        Distribute ${overrideFixedOutOf} marks across the ${countResult.recommended_out_of ?? "visible"} questions.
+        `.trim()
+            : `
         COUNT RESULT (server computed):
         - kind: ${countResult.kind}
         - recommended_out_of: ${countResult.recommended_out_of ?? "null"}
@@ -9699,6 +9710,7 @@ function buildRubricInstructions({
         You MUST follow STEP 2 exactly using this countResult.
         Do not recalculate or override these values unless an explicit denominator is visible.
         `.trim()
+          )
           : "";
 
       function buildCountingInstructions() {
@@ -9992,6 +10004,35 @@ function buildRubricInstructions({
         : (hasTrustedCountedOutOf ? countedOutOf : null);
 
       if (finalFixedOutOf) {
+        // If the AI used a different denominator than the teacher override, rescale
+        const aiOutOf = Number(enforced.overall_out_of) || 0;
+        if (aiOutOf > 0 && aiOutOf !== finalFixedOutOf && Array.isArray(enforced.sections)) {
+          const scale = finalFixedOutOf / aiOutOf;
+          for (const sec of enforced.sections) {
+            if (sec && Number.isFinite(sec.out_of)) {
+              const oldOutOf = sec.out_of;
+              sec.out_of = Math.round(sec.out_of * scale * 100) / 100;
+              if (Number.isFinite(sec.score)) {
+                sec.score = Math.round(sec.score * scale * 100) / 100;
+              }
+            }
+          }
+          // Rescale achievement_summary too
+          if (Array.isArray(enforced.achievement_summary)) {
+            for (const cat of enforced.achievement_summary) {
+              if (cat && Number.isFinite(cat.out_of)) {
+                cat.out_of = Math.round(cat.out_of * scale * 100) / 100;
+                if (Number.isFinite(cat.score)) {
+                  cat.score = Math.round(cat.score * scale * 100) / 100;
+                }
+              }
+            }
+          }
+          // Recompute overall from rescaled sections
+          const sectionSum = enforced.sections.reduce((s, sec) => s + (Number(sec?.score) || 0), 0);
+          enforced.overall_score = Math.round(sectionSum * 100) / 100;
+        }
+
         enforced.overall_out_of = finalFixedOutOf;
         enforced.overall_score = clampNum(enforced.overall_score, 0, finalFixedOutOf) ?? 0;
         enforced.score_out_of_10 = null;
