@@ -42,11 +42,13 @@ export async function deleteFeedback(req, res) {
 
 export async function listFeedback(req, res) {
   try {
-    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 10));
+    const skip = Math.max(0, Number(req.query.skip) || 0);
     const showArchived = req.query.archived === "true";
     const filter = showArchived ? { archived: true } : { $or: [{ archived: { $exists: false } }, { archived: false }] };
     const items = await FeedbackMessage.find(filter)
       .sort({ createdAt: -1 })
+      .skip(skip)
       .limit(limit)
       .lean();
 

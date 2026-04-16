@@ -65,10 +65,11 @@ export async function GET(req) {
     }
 
     const { searchParams } = new URL(req.url);
-    const limit = searchParams.get("limit") || "80";
+    const limit = searchParams.get("limit") || "10";
+    const skip = searchParams.get("skip") || "0";
     const archived = searchParams.get("archived") === "true" ? "&archived=true" : "";
 
-    const url = `${backendBase}/admin/feedback?limit=${encodeURIComponent(limit)}${archived}`;
+    const url = `${backendBase}/admin/feedback?limit=${encodeURIComponent(limit)}&skip=${encodeURIComponent(skip)}${archived}`;
 
     const res = await fetch(url, {
       method: "GET",

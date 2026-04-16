@@ -39,9 +39,11 @@ export default function AdminUsageDashboard() {
   const [loading, setLoading] = useState(true);
   const [force, setForce] = useState(false);
 
+  const FEEDBACK_PAGE_SIZE = 10;
   const [feedback, setFeedback] = useState([]);
   const [feedbackErr, setFeedbackErr] = useState("");
   const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackHasMore, setFeedbackHasMore] = useState(false);
   const [feedbackFilter, setFeedbackFilter] = useState("all"); // "all" | "teacher" | "student" | "results"
 
   // Teacher outreach state
@@ -127,15 +129,15 @@ export default function AdminUsageDashboard() {
     }
   }
 
-  async function loadFeedback(archived = false) {
+  async function loadFeedback(archived = false, append = false) {
     setFeedbackLoading(true);
     setFeedbackErr("");
     try {
-      const res = await fetch(`/api/admin/feedback?limit=80${archived ? "&archived=true" : ""}`, {
+      const skip = append ? feedback.length : 0;
+      const qs = `limit=${FEEDBACK_PAGE_SIZE}&skip=${skip}${archived ? "&archived=true" : ""}`;
+      const res = await fetch(`/api/admin/feedback?${qs}`, {
         cache: "no-store",
-        headers: {
-          "x-admin-token": adminToken,
-        },
+        headers: { "x-admin-token": adminToken },
       });
 
       const raw = await res.text();
@@ -147,7 +149,9 @@ export default function AdminUsageDashboard() {
         throw new Error(msg);
       }
 
-      setFeedback(Array.isArray(j?.items) ? j.items : []);
+      const items = Array.isArray(j?.items) ? j.items : [];
+      setFeedbackHasMore(items.length >= FEEDBACK_PAGE_SIZE);
+      setFeedback(append ? (prev) => [...prev, ...items] : items);
     } catch (e) {
       setFeedbackErr(e?.message || String(e) || "Failed to load feedback");
     } finally {
@@ -826,6 +830,19 @@ export default function AdminUsageDashboard() {
               ) : (
                 <div className="p-3 text-sm text-white/60">
                   No feedback yet.
+                </div>
+              )}
+
+              {/* Load more */}
+              {feedbackHasMore && feedback.length > 0 && (
+                <div className="border-t border-white/10 p-2 text-center">
+                  <button
+                    onClick={() => loadFeedback(feedbackView === "archived", true)}
+                    disabled={feedbackLoading}
+                    className="rounded-lg border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-white/60 hover:bg-white/10 hover:text-white/80"
+                  >
+                    {feedbackLoading ? "Loading…" : "More"}
+                  </button>
                 </div>
               )}
             </div>
