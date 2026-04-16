@@ -1129,27 +1129,8 @@ export default function GradingPage() {
       if (tourPhase >= 2) writeStrLS(TOUR_PHASE2_SEEN_KEY, "1");
     }
 
-    // Phase 1: show tap-to-copy tip on first visit (once result appears)
     const tourPhase1Fired = useRef(false);
-    useEffect(() => {
-      if (tourPhase1Fired.current) return;
-      if (!assessment) return;
-      if (readStrLS(TOUR_SEEN_KEY, "0") === "1") return;
-      tourPhase1Fired.current = true;
-      // Small delay to let the result card render
-      setTimeout(() => startTour(1), 600);
-    }, [assessment]);
-
-    // Phase 2: show full tour after 2nd grading
     const tourPhase2Fired = useRef(false);
-    useEffect(() => {
-      if (tourPhase2Fired.current) return;
-      if (sessionItems.length < 2) return;
-      if (readStrLS(TOUR_PHASE2_SEEN_KEY, "0") === "1") return;
-      if (readStrLS(TOUR_SEEN_KEY, "0") !== "1") return; // phase 1 must be done first
-      tourPhase2Fired.current = true;
-      setTimeout(() => startTour(2), 600);
-    }, [sessionItems.length]);
 
     const gradingUrl = useMemo(() => {
       if (!backendBase) return "";
@@ -1203,6 +1184,25 @@ export default function GradingPage() {
     }, [serverText]);
 
     const assessment = normalized.assessment;
+
+    // Phase 1: show tap-to-copy tip on first visit (once result appears)
+    useEffect(() => {
+      if (tourPhase1Fired.current) return;
+      if (!assessment) return;
+      if (readStrLS(TOUR_SEEN_KEY, "0") === "1") return;
+      tourPhase1Fired.current = true;
+      setTimeout(() => startTour(1), 600);
+    }, [assessment]);
+
+    // Phase 2: show full tour after 2nd grading
+    useEffect(() => {
+      if (tourPhase2Fired.current) return;
+      if (sessionItems.length < 2) return;
+      if (readStrLS(TOUR_PHASE2_SEEN_KEY, "0") === "1") return;
+      if (readStrLS(TOUR_SEEN_KEY, "0") !== "1") return;
+      tourPhase2Fired.current = true;
+      setTimeout(() => startTour(2), 600);
+    }, [sessionItems.length]);
 
     const formattedTeacherText = useMemo(() => {
       return assessment ? buildFullTeacherPayloadText(assessment, refCode, gradeBand) : "";
