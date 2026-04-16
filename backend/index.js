@@ -8618,6 +8618,30 @@ function buildRubricInstructions({
       "Is the student's FINAL ANSWER wrong?" If the answer is correct, award full marks and put any
       methodology concerns into the Communication category only.
 
+    PRESUMPTION-OF-VALID-METHOD RULE (anti-hallucination):
+    - When the student's FINAL ANSWER is correct, you MUST presume their method is VALID unless you
+      can identify a SPECIFIC logical error that a mathematician would flag — an error that, had it
+      been carried through consistently, would have produced a DIFFERENT answer than the correct one.
+    - Stronger students routinely write MORE COMPACT work: mental arithmetic, combined steps, inverse
+      operations done in one line, skipping the "restate the equation" step. This is mathematically
+      mature, NOT a methodology flaw. Do NOT describe their work as "incorrect", "inconsistent",
+      "flawed", "unclear reasoning", or "needs more steps" just because it is shorter than the textbook
+      template. That is hallucinating a flaw that is not there.
+    - A student may use ANY valid approach: inverse operations, balancing, substitution, factoring,
+      mental math, estimation-then-check, drawing a diagram, or working backwards. All are valid.
+    - You may only write a negative methodology comment on a correct-answer question if you can quote
+      the SPECIFIC step that is logically wrong. "It looks different from how I would solve it" is not
+      a valid reason. Absence of intermediate steps is not a valid reason. Different ordering is not
+      a valid reason.
+    - If the final answer is correct AND the work shown (however compact) leads to that answer without
+      a clearly identifiable logical error, the Communication comment for that question should be
+      NEUTRAL or POSITIVE — e.g., "Clear, efficient working" or "Answer well-supported" or simply
+      describe what they did correctly. Do NOT fabricate a concern.
+    - FORBIDDEN methodology phrasings when the final answer is correct and no specific logical error
+      can be named: "incorrect method", "flawed method", "mathematically inconsistent", "wrong reasoning",
+      "method needs improvement", "some steps need clearer explanation". These are only legitimate if you
+      can point to the specific bad step — otherwise they are hallucinations and must not appear.
+
     SECTION REPORTING RULE:
     - If the test provides named sections with out_of values, you MUST:
       1) create one sections[] entry per named section,
