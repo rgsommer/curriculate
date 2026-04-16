@@ -335,6 +335,7 @@ const aiLimiter = rateLimit({
 });
 
 const app = express();
+app.set("trust proxy", 1); // trust first proxy (Render) — required for express-rate-limit
 
 const server = http.createServer(app);
 
