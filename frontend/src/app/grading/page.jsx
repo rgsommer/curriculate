@@ -104,6 +104,33 @@ const PARENT_NOTE_REPEAT_EVERY = 50;      // re-show every 50 gradings after tha
 const PARENT_NOTE_DISMISSED_UNTIL_KEY = "curriculate_parent_note_dismissed_until_v1";
 const PARENT_NOTE_SNOOZE_DAYS = 30;       // if dismissed, don't show again for 30 days
 
+// Feature tour (floating tooltips)
+const TOUR_SEEN_KEY = "curriculate_tour_seen_v1";
+const TOUR_PHASE2_SEEN_KEY = "curriculate_tour_phase2_seen_v1";
+const TOUR_STEPS = [
+  {
+    id: "tap-to-copy",
+    title: "Tap to Copy & Share",
+    body: "After grading, tap the result card to copy feedback to your clipboard. This also generates a unique reference code — write it on the student's paper so parents can view the full feedback online at curriculate.net/results.",
+    target: "tourTargetResult",
+    phase: 1,
+  },
+  {
+    id: "copy-session",
+    title: "Copy Session — Class Analysis",
+    body: "The number in brackets shows how many papers you've graded this session. Tap 'Copy Session' to get an AI-generated analysis of patterns across all papers — what the class understood well and where they struggled.",
+    target: "tourTargetCopySession",
+    phase: 2,
+  },
+  {
+    id: "note-to-parents",
+    title: "Note to Parents",
+    body: "Copies a ready-made message you can send home explaining how parents can view their child's feedback online using the reference code.",
+    target: "tourTargetParentNote",
+    phase: 2,
+  },
+];
+
 function submittedKeyForTrigger(t) {
   return `curriculate_feedback_submitted_for_${t}_v1`;
 }
@@ -1070,6 +1097,59 @@ export default function GradingPage() {
 
     // Parent note prompt state
     const [showParentNote, setShowParentNote] = useState(false);
+
+    // Feature tour state
+    const [tourStep, setTourStep] = useState(-1); // -1 = inactive
+    const [tourPhase, setTourPhase] = useState(0); // which phase triggered
+    const tourTargetResultRef = useRef(null);
+    const tourTargetCopySessionRef = useRef(null);
+    const tourTargetParentNoteRef = useRef(null);
+    const tourRefs = { tourTargetResult: tourTargetResultRef, tourTargetCopySession: tourTargetCopySessionRef, tourTargetParentNote: tourTargetParentNoteRef };
+
+    function startTour(phase) {
+      const steps = TOUR_STEPS.filter((s) => s.phase <= phase);
+      if (!steps.length) return;
+      setTourPhase(phase);
+      setTourStep(0);
+    }
+    function advanceTour() {
+      const steps = TOUR_STEPS.filter((s) => s.phase <= tourPhase);
+      const next = tourStep + 1;
+      if (next >= steps.length) {
+        setTourStep(-1);
+        if (tourPhase >= 1) writeStrLS(TOUR_SEEN_KEY, "1");
+        if (tourPhase >= 2) writeStrLS(TOUR_PHASE2_SEEN_KEY, "1");
+      } else {
+        setTourStep(next);
+      }
+    }
+    function dismissTour() {
+      setTourStep(-1);
+      if (tourPhase >= 1) writeStrLS(TOUR_SEEN_KEY, "1");
+      if (tourPhase >= 2) writeStrLS(TOUR_PHASE2_SEEN_KEY, "1");
+    }
+
+    // Phase 1: show tap-to-copy tip on first visit (once result appears)
+    const tourPhase1Fired = useRef(false);
+    useEffect(() => {
+      if (tourPhase1Fired.current) return;
+      if (!assessment) return;
+      if (readStrLS(TOUR_SEEN_KEY, "0") === "1") return;
+      tourPhase1Fired.current = true;
+      // Small delay to let the result card render
+      setTimeout(() => startTour(1), 600);
+    }, [assessment]);
+
+    // Phase 2: show full tour after 2nd grading
+    const tourPhase2Fired = useRef(false);
+    useEffect(() => {
+      if (tourPhase2Fired.current) return;
+      if (sessionItems.length < 2) return;
+      if (readStrLS(TOUR_PHASE2_SEEN_KEY, "0") === "1") return;
+      if (readStrLS(TOUR_SEEN_KEY, "0") !== "1") return; // phase 1 must be done first
+      tourPhase2Fired.current = true;
+      setTimeout(() => startTour(2), 600);
+    }, [sessionItems.length]);
 
     const gradingUrl = useMemo(() => {
       if (!backendBase) return "";
@@ -2387,6 +2467,7 @@ export default function GradingPage() {
             }).catch(() => {});
           }}
           id="note-to-parents-btn"
+          ref={tourTargetParentNoteRef}
           style={{
             padding: "7px 14px",
             fontSize: "0.8rem",
@@ -2602,11 +2683,17 @@ export default function GradingPage() {
                     setStickyRubricCapturedAt("");
                     setStickyAnswerKeyText("");
                     setStickyAnswerKeyCapturedAt("");
+                    setRubricOverride("");
                   }}
-                  style={styles.secondaryBtn}
-                  disabled={submitting || busyCapture || busyUpload || (!photos.length && !serverText && !stickyRubricText && !stickyAnswerKeyText)}
+                  style={{
+                    ...styles.secondaryBtn,
+                    ...((stickyRubricText || stickyAnswerKeyText || rubricOverride || serverText) ? {
+                      background: "#dbeafe", borderColor: "#93c5fd", color: "#1d4ed8",
+                    } : {}),
+                  }}
+                  disabled={submitting || busyCapture || busyUpload || (!photos.length && !serverText && !stickyRubricText && !stickyAnswerKeyText && !rubricOverride)}
                   type="button"
-                  title="Click to clear photos & work. Double-click to also clear captured rubric & answer key."
+                  title="Click to clear photos & work. Double-click to also clear captured rubric, answer key & override input."
                 >
                   Clear
                 </button>
@@ -3007,7 +3094,7 @@ export default function GradingPage() {
               >
                 {submitting ? "Submitting…" : "Submit for Grading"}
               </button>
-              <button onClick={copySession} disabled={!sessionItems.length || summarizingSession} style={styles.secondaryBtn}>
+              <button ref={tourTargetCopySessionRef} onClick={copySession} disabled={!sessionItems.length || summarizingSession} style={styles.secondaryBtn}>
                 {summarizingSession ? `Analyzing… (${sessionItems.length})` : `Copy Session (${sessionItems.length})`}
               </button>
               <button
@@ -3142,6 +3229,7 @@ export default function GradingPage() {
 
             {/* FORMATTED RENDER (tap-to-copy) */}
             <div
+              ref={tourTargetResultRef}
               style={{
                 ...styles.responseBox,
                 ...(assessment && copyEnabled ? styles.responseBoxClickable : null),
@@ -3831,6 +3919,112 @@ export default function GradingPage() {
             </div>
           </div>
         )}
+
+        {/* ── Feature tour floating tooltip ── */}
+        {tourStep >= 0 && (() => {
+          const steps = TOUR_STEPS.filter((s) => s.phase <= tourPhase);
+          const step = steps[tourStep];
+          if (!step) return null;
+          const targetRef = tourRefs[step.target];
+          const el = targetRef?.current;
+
+          // Calculate position relative to viewport
+          const rect = el?.getBoundingClientRect?.();
+          const hasRect = rect && rect.width > 0;
+
+          return (
+            <>
+              {/* Dimming overlay — click to dismiss */}
+              <div
+                onClick={dismissTour}
+                style={{
+                  position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+                  background: hasRect ? "transparent" : "rgba(0,0,0,0.35)",
+                  zIndex: 99998,
+                }}
+              />
+              {/* Highlight ring around target (box-shadow creates the dimming) */}
+              {hasRect && (
+                <div
+                  onClick={dismissTour}
+                  style={{
+                    position: "fixed",
+                    top: rect.top - 6, left: rect.left - 6,
+                    width: rect.width + 12, height: rect.height + 12,
+                    border: "3px solid #3b82f6",
+                    borderRadius: 12,
+                    boxShadow: "0 0 0 9999px rgba(0,0,0,0.4)",
+                    zIndex: 99999,
+                    background: "transparent",
+                  }}
+                />
+              )}
+              {/* Tooltip bubble */}
+              <div style={{
+                position: "fixed",
+                top: hasRect ? Math.min(rect.bottom + 12, window.innerHeight - 220) : "50%",
+                left: hasRect ? Math.max(12, Math.min(rect.left, window.innerWidth - 320)) : "50%",
+                transform: hasRect ? "none" : "translate(-50%, -50%)",
+                width: 300, maxWidth: "calc(100vw - 24px)",
+                background: "white", borderRadius: 14,
+                boxShadow: "0 8px 32px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.08)",
+                padding: "16px 18px", zIndex: 100000,
+              }}>
+                {/* Step counter */}
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", marginBottom: 6 }}>
+                  {tourStep + 1} of {steps.length}
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a", marginBottom: 6 }}>
+                  {step.title}
+                </div>
+                <div style={{ fontSize: 13, lineHeight: 1.5, color: "#475569", marginBottom: 14 }}>
+                  {step.body}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <button
+                    type="button"
+                    onClick={dismissTour}
+                    style={{
+                      background: "none", border: "none", padding: 0,
+                      fontSize: 13, color: "#94a3b8", cursor: "pointer", fontWeight: 600,
+                    }}
+                  >
+                    Skip tour
+                  </button>
+                  <button
+                    type="button"
+                    onClick={advanceTour}
+                    style={{
+                      background: "#3b82f6", color: "white", border: "none",
+                      borderRadius: 8, padding: "8px 18px",
+                      fontSize: 13, fontWeight: 700, cursor: "pointer",
+                    }}
+                  >
+                    {tourStep + 1 >= steps.length ? "Got it!" : "Next"}
+                  </button>
+                </div>
+              </div>
+            </>
+          );
+        })()}
+
+        {/* ── Help / replay tour button ── */}
+        <button
+          type="button"
+          onClick={() => startTour(2)}
+          title="Feature tour"
+          style={{
+            position: "fixed", bottom: 16, right: 16,
+            width: 36, height: 36, borderRadius: "50%",
+            background: "#e2e8f0", border: "1px solid #cbd5e1",
+            color: "#475569", fontSize: 16, fontWeight: 900,
+            cursor: "pointer", zIndex: 9990,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+          }}
+        >
+          ?
+        </button>
       </div>
     );
   }

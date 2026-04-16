@@ -8232,6 +8232,18 @@ function buildRubricInstructions({
       ${rubricOverride}
 
       If this rubric override includes categories, criteria, or denominators, it takes priority over default grading assumptions.
+
+      SHORTHAND DENOMINATOR OVERRIDE (e.g., "/8", "/12", "/20"):
+      If the rubric override is ONLY a denominator (like "/8"), this means:
+      - overall_out_of = that number (e.g., 8).
+      - DISTRIBUTE marks evenly across the questions/items you can identify in the student work.
+        Example: "/8" with 4 questions → each question is worth 2 marks.
+        Example: "/12" with 3 questions → each question is worth 4 marks.
+        Example: "/6" with 4 questions → distribute as evenly as possible (e.g., 1.5 each, or 2+2+1+1).
+      - ALWAYS allow PART MARKS (half marks, quarter marks, etc.) — especially with lower denominators.
+        A student who shows correct method but makes a small error deserves partial credit (e.g., 1.5/2, 0.75/1).
+      - The section out_of values MUST sum to overall_out_of exactly.
+      - Use your judgment to weight questions fairly — if one question is clearly more complex, it can receive more marks.
       ` : ""}
 
     ${answerKeyOverride ? `
