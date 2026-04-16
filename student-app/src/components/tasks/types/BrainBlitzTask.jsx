@@ -47,6 +47,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
   const listeningTimeoutRef = useRef(null);
   const clueIndexRef = useRef(currentClueIndex);
   clueIndexRef.current = currentClueIndex; // always mirrors latest state
+  const wantListeningRef = useRef(false); // true while mic should stay on (tap-on/tap-off)
 
   const clues = useMemo(() => {
     const raw =
@@ -189,40 +190,42 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
         });
       }
 
-      // Stop listening, move to next clue
-      try { recognition.stop(); } catch {}
-      if (listeningTimeoutRef.current) { clearTimeout(listeningTimeoutRef.current); listeningTimeoutRef.current = null; }
-      setCountdown(null);
-      setIsListening(false);
+      if (isCorrect) {
+        // Correct answer — stop mic, advance clue. User taps mic again for next clue.
+        wantListeningRef.current = false;
+        try { recognition.stop(); } catch {}
+        if (listeningTimeoutRef.current) { clearTimeout(listeningTimeoutRef.current); listeningTimeoutRef.current = null; }
+        setCountdown(null);
+        setIsListening(false);
+      }
+      // Wrong answer — mic stays on, keep listening for another attempt
 
-      // Move to the next clue after each attempt
+      // Move to the next clue
       setCurrentClueIndex((prev) => prev + 1);
     };
 
     recognition.onerror = (event) => {
       const err = event?.error || "mic-error";
-      // "no-speech" just means silence — restart listening instead of failing
-      if (err === "no-speech") {
-        try { recognition.stop(); } catch {}
-        setTimeout(() => {
-          try { recognition.start(); setIsListening(true); } catch {}
-        }, 200);
-        return;
-      }
+      // "no-speech" and "aborted" are harmless — onend will handle restart
+      if (err === "no-speech" || err === "aborted") return;
       try { setMicError(err); } catch {}
+      wantListeningRef.current = false;
       setIsListening(false);
     };
 
     recognition.onend = () => {
-      // continuous mode may fire onend unexpectedly (browser quirk).
-      // If we still have an active listening timeout, the mic SHOULD be on — restart it.
-      if (listeningTimeoutRef.current) {
-        try {
-          recognition.start();
-          setIsListening(true);
-        } catch {
-          setIsListening(false);
-        }
+      // If we still WANT to be listening (tap-on), auto-restart after a tiny gap.
+      // This handles all browser quirks: unexpected onend, no-speech cycling, etc.
+      if (wantListeningRef.current) {
+        setTimeout(() => {
+          try {
+            recognition.start();
+            // don't touch setIsListening — it's already true, avoid flicker
+          } catch {
+            wantListeningRef.current = false;
+            setIsListening(false);
+          }
+        }, 120);
         return;
       }
       setIsListening(false);
@@ -266,11 +269,10 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
 
-  // Mic is now tap-on / tap-off — no auto-start, no countdown, no auto-timeout.
-  // Clean up any stale listening state when clue changes or overlay appears.
+  // Clean up mic when no active clue or overlay is showing.
   useEffect(() => {
     if (!currentClue || disabled || showAnswerOverlay) {
-      // Stop mic when there's no active clue or overlay is up
+      wantListeningRef.current = false;
       if (listeningTimeoutRef.current) { clearTimeout(listeningTimeoutRef.current); listeningTimeoutRef.current = null; }
       try { recognitionRef.current?.stop?.(); } catch {}
       setIsListening(false);
@@ -278,6 +280,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
     }
 
     return () => {
+      wantListeningRef.current = false;
       if (listeningTimeoutRef.current) { clearTimeout(listeningTimeoutRef.current); listeningTimeoutRef.current = null; }
       try { recognitionRef.current?.stop?.(); } catch {}
       setIsListening(false);
@@ -321,12 +324,14 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
     if (!recognitionRef.current || disabled) return;
     if (isListening) {
       // Tap OFF
+      wantListeningRef.current = false;
       if (listeningTimeoutRef.current) { clearTimeout(listeningTimeoutRef.current); listeningTimeoutRef.current = null; }
       try { recognitionRef.current.stop(); } catch {}
       setIsListening(false);
       setInterimTranscript("");
     } else {
       // Tap ON
+      wantListeningRef.current = true;
       try { setMicError(null); } catch {}
       try {
         recognitionRef.current.start();
