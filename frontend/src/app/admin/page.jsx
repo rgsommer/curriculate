@@ -103,11 +103,35 @@ export default function AdminUsageDashboard() {
     }
   }
 
-  async function loadFeedback() {
+  const [feedbackView, setFeedbackView] = useState("active"); // "active" | "archived"
+
+  async function feedbackAction(id, action) {
+    if (!id) return;
+    try {
+      if (action === "delete") {
+        const res = await fetch(`/api/admin/feedback?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: { "x-admin-token": adminToken },
+        });
+        if (res.ok) setFeedback((prev) => prev.filter((f) => f.id !== id));
+      } else {
+        const res = await fetch("/api/admin/feedback", {
+          method: "PATCH",
+          headers: { "x-admin-token": adminToken, "content-type": "application/json" },
+          body: JSON.stringify({ id, action }),
+        });
+        if (res.ok) setFeedback((prev) => prev.filter((f) => f.id !== id));
+      }
+    } catch (e) {
+      console.error(`Failed to ${action} feedback:`, e);
+    }
+  }
+
+  async function loadFeedback(archived = false) {
     setFeedbackLoading(true);
     setFeedbackErr("");
     try {
-      const res = await fetch("/api/admin/feedback?limit=80", {
+      const res = await fetch(`/api/admin/feedback?limit=80${archived ? "&archived=true" : ""}`, {
         cache: "no-store",
         headers: {
           "x-admin-token": adminToken,
@@ -599,15 +623,36 @@ export default function AdminUsageDashboard() {
         <div className="mt-6">
           <Card title="Feedback">
             <div className="flex items-center justify-between gap-2">
-              <div className="text-xs text-white/60">
-                {feedbackLoading ? "Loading…" : `${feedback.length} message(s)`}
+              <div className="flex items-center gap-3">
+                <div className="text-xs text-white/60">
+                  {feedbackLoading ? "Loading…" : `${feedback.length} message(s)`}
+                </div>
+                {/* Active / Archived toggle */}
+                <div className="flex rounded-lg border border-white/10 overflow-hidden">
+                  {[
+                    { key: "active", label: "Active" },
+                    { key: "archived", label: "Archived" },
+                  ].map((v) => (
+                    <button
+                      key={v.key}
+                      onClick={() => { setFeedbackView(v.key); loadFeedback(v.key === "archived"); }}
+                      className={`px-3 py-1 text-xs font-medium ${
+                        feedbackView === v.key
+                          ? "bg-white/15 text-white"
+                          : "bg-white/5 text-white/50 hover:bg-white/10"
+                      }`}
+                    >
+                      {v.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <button
-                onClick={loadFeedback}
+                onClick={() => loadFeedback(feedbackView === "archived")}
                 className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
                 disabled={feedbackLoading}
               >
-                Refresh feedback
+                Refresh
               </button>
             </div>
 
@@ -747,6 +792,33 @@ export default function AdminUsageDashboard() {
 
                       <div className="mt-2 whitespace-pre-wrap text-sm text-white/90">
                         {f.message}
+                      </div>
+
+                      {/* Archive / Restore / Delete actions */}
+                      <div className="mt-2 flex gap-2">
+                        {feedbackView === "active" ? (
+                          <button
+                            onClick={() => feedbackAction(f.id, "archive")}
+                            className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-white/60 hover:bg-white/10 hover:text-white/80"
+                          >
+                            Archive
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => feedbackAction(f.id, "restore")}
+                            className="rounded-md border border-blue-400/20 bg-blue-500/10 px-2.5 py-1 text-[11px] font-medium text-blue-300 hover:bg-blue-500/20"
+                          >
+                            Restore
+                          </button>
+                        )}
+                        {feedbackView === "archived" && (
+                          <button
+                            onClick={() => { if (confirm("Permanently delete this entry?")) feedbackAction(f.id, "delete"); }}
+                            className="rounded-md border border-red-400/20 bg-red-500/10 px-2.5 py-1 text-[11px] font-medium text-red-300 hover:bg-red-500/20"
+                          >
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </li>
                   );})}
