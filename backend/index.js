@@ -8488,11 +8488,16 @@ function buildRubricInstructions({
     - If marks were lost, the section comment must make that understandable in plain language.
 
     INCORRECT_ITEMS RULE:
-    - Use incorrect_items wherever individual missed items can reasonably be identified.
+    - incorrect_items is ONLY for questions where the student's FINAL ANSWER is WRONG.
+    - If the student's final answer is correct, it MUST NOT appear in incorrect_items — even if the work shown is flawed.
+      Flawed work with a correct answer is a Communication/methodology issue, not an incorrect answer.
+      Discuss methodology problems in the section's teacher_comment and the Communication achievement category instead.
     - Keep prompts short.
-    - Include student_answer and correct_answer for each incorrect item.
-    - If all items are correct, return incorrect_items: null.
+    - Include student_answer and correct_answer for each truly incorrect item.
+    - If all final answers are correct, return incorrect_items: null.
     - Never include an item where student_answer and correct_answer are equivalent after normalization.
+    - SELF-CHECK: For each item you are about to add to incorrect_items, ask: "Is the student's final answer wrong?"
+      If the answer is "no" or "the answer is right but the work is wrong", do NOT add it.
 
     For multiple choice and true/false:
     - Read the student mark carefully.
@@ -9076,11 +9081,21 @@ function buildRubricInstructions({
       s = s.split("--")[0].trim();       // double hyphen
     }
 
-    // 2) If correct_answer contains alternatives, keep only the first
+    // 2) If correct_answer contains alternatives or parenthetical commentary, strip it
     if (isCorrectAnswer) {
       // Handles: "x (or y)" OR "x or y"
       s = s.split(/\(\s*or\s+/i)[0].trim();
       s = s.split(/\s+or\s+/i)[0].trim();
+      // Strip parenthetical commentary: "y = 12 (using subtraction: ...)" → "y = 12"
+      s = s.replace(/\s*\((?:using|but|correct|note|via|i\.?e\.?|however|should be)[\s\S]*?\)\s*/gi, "").trim();
+      // Strip trailing commentary after semicolons: "y = 12; correct work: ..." → "y = 12"
+      s = s.split(/;\s*/)[0].trim();
+    }
+
+    // 2b) Strip variable assignment prefix: "x = 4" → "4", "y = -3" → "-3"
+    const assignMatch = s.match(/^[a-z]\s*=\s*(.+)$/i);
+    if (assignMatch) {
+      s = assignMatch[1].trim();
     }
 
     // 3) Remove commas in numbers (1,000 -> 1000)
