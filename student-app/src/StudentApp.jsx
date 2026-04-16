@@ -2413,8 +2413,8 @@ function StudentApp() {
           tasksCompletedCountRef.current += 1;
 
           // Pick reader ONCE (stable across re-renders)
-          const namedMembers = Array.isArray(members)
-            ? members.map((m) => String(m || "").trim()).filter(Boolean)
+          const namedMembers = Array.isArray(memberNames)
+            ? memberNames.map((n) => String(n || "").trim()).filter(Boolean)
             : [];
           let pickedReader = null;
           if (namedMembers.length === 1) {
@@ -5632,10 +5632,10 @@ function StudentApp() {
 
           // Compute the next task's designated handler for the handoff prompt.
           // Uses simple index-based round-robin matching DesignatedWriter.
-          const activeMembers = Array.isArray(members) ? members.filter(Boolean) : [];
+          const activeNames = Array.isArray(memberNames) ? memberNames.filter((n) => n && n.trim()) : [];
           const nextIdx = typeof currentTaskIndex === "number" ? currentTaskIndex + 1 : 0;
-          const nextHandlerName = activeMembers.length > 1
-            ? activeMembers[nextIdx % activeMembers.length]
+          const nextHandlerName = activeNames.length > 1
+            ? activeNames[nextIdx % activeNames.length]
             : null;
 
           return (
