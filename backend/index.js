@@ -8235,14 +8235,19 @@ function buildRubricInstructions({
 
       SHORTHAND DENOMINATOR OVERRIDE (e.g., "/8", "/12", "/20"):
       If the rubric override is ONLY a denominator (like "/8"), this means:
-      - overall_out_of = that number (e.g., 8).
+      - overall_out_of = that number (e.g., 8). The Grade line MUST show "X / 8".
       - DISTRIBUTE the FULL denominator across the questions/items you can identify.
         CRITICAL: Each question's out_of must reflect its share of the TOTAL denominator, NOT just 1 mark each.
-        Example: "/8" with 4 questions → each question is worth 2 marks (section out_of values: 2, 2, 2, 2 → sum = 8).
-        Example: "/12" with 3 questions → each question is worth 4 marks (section out_of values: 4, 4, 4 → sum = 12).
-        Example: "/6" with 4 questions → distribute as evenly as possible (e.g., 1.5 each, or 2+2+1+1 → sum = 6).
-        WRONG: "/8" with 4 questions → giving each question 1 mark (sum = 4, not 8). This is WRONG.
-      - The section out_of values MUST sum to overall_out_of exactly. This is a hard constraint.
+        The math is simple: marks_per_question = denominator ÷ number_of_questions.
+        Example: "/8" with 4 questions → 8÷4 = 2 marks each → section out_of values: 2, 2, 2, 2 → sum = 8.
+        Example: "/12" with 3 questions → 12÷3 = 4 marks each → section out_of values: 4, 4, 4 → sum = 12.
+        Example: "/6" with 4 questions → 6÷4 = 1.5 marks each → section out_of values: 1.5, 1.5, 1.5, 1.5 → sum = 6.
+        WRONG: "/8" with 4 questions → giving each question 1 mark (sum = 4, not 8). This violates the constraint.
+      - HARD CONSTRAINT: sum of all section out_of values MUST equal overall_out_of.
+        If it doesn't, you have distributed marks incorrectly. Recalculate before responding.
+      - HARD CONSTRAINT: overall_score MUST equal the sum of section scores, and it MUST be out of overall_out_of.
+        If overall_out_of is 8, the grade must be "X / 8", never "X / 4".
+      - If you have only ONE section, that section's out_of = overall_out_of (the full denominator).
       - ALWAYS allow PART MARKS (half marks, quarter marks, etc.) — especially with lower denominators.
         A student who shows correct method but makes a small error deserves partial credit (e.g., 1.5/2, 0.75/1).
       - Use your judgment to weight questions fairly — if one question is clearly more complex, it can receive more marks.
@@ -8873,11 +8878,22 @@ function buildRubricInstructions({
     - In deductions[], points MUST be a positive number (e.g., 1, 0.5).
     - Total deductions are subtracted to compute final_score_out_of_10 (when overall_out_of is 10).
 
-    FINAL CONSISTENCY RULES (required):
+    FINAL CONSISTENCY RULES (required — verify ALL before outputting JSON):
     - If overall_out_of !== 10: set score_out_of_10 = null and final_score_out_of_10 = null.
     - If overall_out_of === 10: set score_out_of_10 and final_score_out_of_10 as numbers and apply the deduction rule.
     - The overall_out_of value must match the total possible points defined in the rubric.
     - achievement_summary: see achievement summary instructions below (all grade bands).
+
+    DENOMINATOR VERIFICATION (do this check before outputting):
+    1. Sum all sections[].out_of values. The result MUST equal overall_out_of.
+       If not, your section denominators are wrong — fix them.
+    2. Sum all sections[].score values. The result MUST equal overall_score.
+    3. If achievement_summary is present, sum all achievement_summary[].out_of values.
+       The result MUST equal overall_out_of.
+    4. If achievement_summary is present, sum all achievement_summary[].score values.
+       The result MUST equal overall_score.
+    Example: rubricOverride="/8", 4 questions, 1 section → section.out_of=8, NOT 4.
+    If the student got 3 of 4 questions fully correct at 2 marks each → section.score=6, overall_score=6, grade="6/8".
 
     ${(standards === "canada" && (gradeBand === "9-10" || gradeBand === "11+")) ? `
     ############################################################
@@ -8945,6 +8961,8 @@ function buildRubricInstructions({
     The quality index evaluates HOW the student achieved their score across meaningful learning dimensions,
     giving parents and teachers insight into areas of strength and growth regardless of the raw score.
     Only include categories you can confidently identify. It is FINE to include only some categories.
+    Do NOT include a category if you cannot assign it meaningful marks — never output score=0 with out_of=0.
+    If a category is not assessable from the work (e.g., "Effort & Growth" on a short quiz), simply omit it.
     For each category provide:
     - level: "strong", "adequate", "developing", or "limited"
     - score: a numeric score for this category (to 2 decimal places)
