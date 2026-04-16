@@ -1949,11 +1949,15 @@ export default function GradingPage() {
         const parsed = safeJsonParse(text);
         const norm = parsed ? normalizeFromAny(parsed) : normalizeFromAny(text);
 
-        // Sticky rubric capture (only if no manual/sticky already)
+        // Sticky rubric capture (only if no manual/sticky already AND we didn't
+        // just extract a structured rubric from tagged photos in this cycle).
+        // Without this guard, the less-structured grading-pass rubric would
+        // overwrite the clean per-criterion extraction from /grading/extract-rubric,
+        // which breaks multi-section grading on subsequent papers.
         try {
           const found = extractDetectedRubric(parsed) || extractDetectedRubric(norm?.assessment);
 
-          if (!manualRubric.length && !stickyRubric.length) {
+          if (!manualRubric.length && !stickyRubric.length && !effectiveRubricFromImages.length) {
             if (found?.text && found.detected !== false) {
               const conf = Number(found.confidence || 0);
               const THRESH = 0.3;
@@ -2732,11 +2736,20 @@ export default function GradingPage() {
               <div style={styles.btnRow}>
                 <button
                   onClick={handleCaptureTap}
-                  style={styles.primaryBtn}
+                  style={{
+                    ...styles.primaryBtn,
+                    // When a submission is in flight, visually confirm it here
+                    // so a teacher who double-tapped-to-submit doesn't have to
+                    // scroll down to see the "Submitting…" state.
+                    ...(submitting ? {
+                      background: "#93c5fd",
+                      color: "#1e3a8a",
+                    } : {}),
+                  }}
                   disabled={!cameraReady || submitting || busyCapture}
                   type="button"
                 >
-                  {busyCapture ? "Capturing…" : "Capture Photo"}
+                  {submitting ? "Submitting…" : busyCapture ? "Capturing…" : "Capture Photo"}
                 </button>
 
                 <button
