@@ -202,6 +202,7 @@ function StudentApp() {
   };
 
   const [roomIsActive, setRoomIsActive] = useState(false);
+  const [wantStreak, setWantStreak] = useState(false);
   const [roomState, setRoomState] = useState(null);
 
   // Collaboration
@@ -4194,6 +4195,26 @@ function StudentApp() {
                   onChange={(e) => setTeamName(sanitizeName(e.target.value))}
                   placeholder="Your epic team name"
                 />
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    marginTop: 6,
+                    fontSize: "0.78rem",
+                    color: "#9ca3af",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => setWantStreak((v) => !v)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={wantStreak}
+                    onChange={() => {}}
+                    style={{ accentColor: "#3b82f6", width: 16, height: 16, cursor: "pointer" }}
+                  />
+                  Earn streak points &amp; get personal reports
+                </label>
               </div>
 
               <div style={{ marginBottom: 10 }}>
@@ -4207,7 +4228,7 @@ function StudentApp() {
                   Team Members
                 </label>
                 {members.map((m, idx) => (
-                  <div key={idx} style={{ marginBottom: 8 }}>
+                  <div key={idx} style={{ marginBottom: wantStreak ? 8 : 4 }}>
                     <input
                       value={typeof m === "string" ? m : m?.name || ""}
                       onChange={(e) => {
@@ -4219,32 +4240,30 @@ function StudentApp() {
                       }}
                       placeholder={`Member ${idx + 1}`}
                     />
-                    <input
-                      type="email"
-                      value={typeof m === "string" ? "" : m?.email || ""}
-                      onChange={(e) => {
-                        const copy = [...members];
-                        const cur = typeof copy[idx] === "string" ? { name: copy[idx], email: "" } : { ...copy[idx] };
-                        cur.email = e.target.value;
-                        copy[idx] = cur;
-                        setMembers(copy);
-                      }}
-                      placeholder="email (optional — for report & streak credits)"
-                      style={{
-                        marginTop: 3,
-                        fontSize: "0.78rem",
-                        padding: "5px 8px",
-                        color: "#6b7280",
-                        background: "#f9fafb",
-                        border: "1px solid #e5e7eb",
-                      }}
-                    />
+                    {wantStreak && (
+                      <input
+                        type="email"
+                        value={typeof m === "string" ? "" : m?.email || ""}
+                        onChange={(e) => {
+                          const copy = [...members];
+                          const cur = typeof copy[idx] === "string" ? { name: copy[idx], email: "" } : { ...copy[idx] };
+                          cur.email = e.target.value;
+                          copy[idx] = cur;
+                          setMembers(copy);
+                        }}
+                        placeholder="email"
+                        style={{
+                          marginTop: 3,
+                          fontSize: "0.78rem",
+                          padding: "5px 8px",
+                          color: "#6b7280",
+                          background: "#f9fafb",
+                          border: "1px solid #e5e7eb",
+                        }}
+                      />
+                    )}
                   </div>
                 ))}
-                <small style={{ color: "#9ca3af" }}>
-                  Emails are optional — add one to get your personal report
-                  &amp; earn streak/unlock credits across sessions.
-                </small>
               </div>
 
               <button type="submit" disabled={!canJoin || joiningRoom}>
