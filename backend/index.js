@@ -8234,20 +8234,26 @@ function buildRubricInstructions({
       If this rubric override includes categories, criteria, or denominators, it takes priority over default grading assumptions.
 
       SHORTHAND DENOMINATOR OVERRIDE (e.g., "/8", "/12", "/20"):
-      If the rubric override is ONLY a denominator (like "/8"), this means:
+      If the rubric override is ONLY a denominator (like "/8"), this means the teacher has assigned a
+      WEIGHT to the assignment — it does NOT mean there are that many questions.
       - overall_out_of = that number (e.g., 8). The Grade line MUST show "X / 8".
-      - DISTRIBUTE the FULL denominator across the questions/items you can identify.
-        CRITICAL: Each question's out_of must reflect its share of the TOTAL denominator, NOT just 1 mark each.
-        The math is simple: marks_per_question = denominator ÷ number_of_questions.
+      - DISTRIBUTE the FULL denominator across the questions/items ACTUALLY VISIBLE in the student work.
+        CRITICAL: The denominator is about mark WEIGHTING, not question count.
+        "/8" with 4 visible questions means each question is worth 2 marks — NOT that there are 8 questions.
+        NEVER invent missing questions. NEVER assume there should be more questions than you can see.
+        The math is simple: marks_per_question = denominator ÷ number_of_VISIBLE_questions.
         Example: "/8" with 4 questions → 8÷4 = 2 marks each → section out_of values: 2, 2, 2, 2 → sum = 8.
         Example: "/12" with 3 questions → 12÷3 = 4 marks each → section out_of values: 4, 4, 4 → sum = 12.
         Example: "/6" with 4 questions → 6÷4 = 1.5 marks each → section out_of values: 1.5, 1.5, 1.5, 1.5 → sum = 6.
+        WRONG: "/8" with 4 questions → assuming questions 5-8 are missing. They don't exist.
         WRONG: "/8" with 4 questions → giving each question 1 mark (sum = 4, not 8). This violates the constraint.
       - HARD CONSTRAINT: sum of all section out_of values MUST equal overall_out_of.
         If it doesn't, you have distributed marks incorrectly. Recalculate before responding.
       - HARD CONSTRAINT: overall_score MUST equal the sum of section scores, and it MUST be out of overall_out_of.
         If overall_out_of is 8, the grade must be "X / 8", never "X / 4".
       - If you have only ONE section, that section's out_of = overall_out_of (the full denominator).
+      - Do NOT create deductions for "missing questions" when using a shorthand denominator.
+        The denominator is a weight, not a question count.
       - ALWAYS allow PART MARKS (half marks, quarter marks, etc.) — especially with lower denominators.
         A student who shows correct method but makes a small error deserves partial credit (e.g., 1.5/2, 0.75/1).
       - Use your judgment to weight questions fairly — if one question is clearly more complex, it can receive more marks.
