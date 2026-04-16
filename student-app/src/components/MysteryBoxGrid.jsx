@@ -31,7 +31,7 @@ const COMPLETED_BG = "linear-gradient(135deg, #d1d5db, #9ca3af)";
 function StarRating({ tier }) {
   const stars = Math.max(1, Math.min(3, tier || 1));
   return (
-    <div style={{ fontSize: "0.7rem", letterSpacing: 1, marginTop: 2 }}>
+    <div style={{ fontSize: "1rem", letterSpacing: 2, marginTop: 4 }}>
       {"★".repeat(stars)}{"☆".repeat(3 - stars)}
     </div>
   );
@@ -242,8 +242,8 @@ export default function MysteryBoxGrid({
                   background: "rgba(0,0,0,0.25)",
                   borderRadius: 14,
                 }}>
-                  <div style={{ fontSize: "1.6rem" }}>✓</div>
-                  <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#f9fafb" }}>
+                  <div style={{ fontSize: "2.4rem" }}>✓</div>
+                  <div style={{ fontSize: "1rem", fontWeight: 800, color: "#f9fafb" }}>
                     +{box.pointsEarned}
                   </div>
                 </div>
@@ -262,7 +262,7 @@ export default function MysteryBoxGrid({
               {/* Box content (when not completed) */}
               {!isCompleted && (
                 <>
-                  <div style={{ fontSize: "1.8rem" }}>
+                  <div style={{ fontSize: "3.2rem", lineHeight: 1 }}>
                     {isOpening ? "💫" : "🎁"}
                   </div>
                   <StarRating tier={box.starTier} />
