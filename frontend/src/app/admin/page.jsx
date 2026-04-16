@@ -368,14 +368,17 @@ export default function AdminUsageDashboard() {
                 { key: "teacher", label: "Teacher" },
                 { key: "student", label: "Student" },
                 { key: "results", label: "Results page" },
+                { key: "grade-review", label: "Grade reviews" },
               ].map((tab) => {
                 const count = tab.key === "all"
                   ? feedback.length
                   : feedback.filter((f) => {
                       const src = f.meta?.source || "";
+                      const tp = f.meta?.type || "";
+                      if (tab.key === "grade-review") return tp === "grade-review";
                       if (tab.key === "teacher") return src === "grading-feedback-prompt";
                       if (tab.key === "student") return src === "student-app";
-                      if (tab.key === "results") return src === "results-page";
+                      if (tab.key === "results") return src === "results-page" && tp !== "grade-review";
                       return false;
                     }).length;
                 return (
@@ -407,14 +410,20 @@ export default function AdminUsageDashboard() {
                     .filter((f) => {
                       if (feedbackFilter === "all") return true;
                       const src = f.meta?.source || "";
+                      const tp = f.meta?.type || "";
+                      if (feedbackFilter === "grade-review") return tp === "grade-review";
                       if (feedbackFilter === "teacher") return src === "grading-feedback-prompt";
                       if (feedbackFilter === "student") return src === "student-app";
-                      if (feedbackFilter === "results") return src === "results-page";
+                      if (feedbackFilter === "results") return src === "results-page" && tp !== "grade-review";
                       return true;
                     })
                     .map((f) => {
                     const src = f.meta?.source || "";
-                    const badge = src === "results-page"
+                    const tp = f.meta?.type || "";
+                    const isGradeReview = tp === "grade-review";
+                    const badge = isGradeReview
+                      ? { label: "Grade review", color: "bg-amber-500/20 text-amber-200 border-amber-400/30" }
+                      : src === "results-page"
                       ? { label: f.meta?.role === "parent" ? "Parent" : f.meta?.role === "student" ? "Student" : "Results", color: "bg-purple-500/20 text-purple-200 border-purple-400/30" }
                       : src === "student-app"
                       ? { label: "Student app", color: "bg-green-500/20 text-green-200 border-green-400/30" }
@@ -423,7 +432,7 @@ export default function AdminUsageDashboard() {
                       : { label: "Other", color: "bg-white/10 text-white/60 border-white/10" };
 
                     return (
-                    <li key={f.id} className="p-3">
+                    <li key={f.id} className={`p-3${isGradeReview ? " border-l-2 border-l-amber-400/60" : ""}`}>
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2 text-xs text-white/60">
                           <span className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${badge.color}`}>
@@ -442,6 +451,29 @@ export default function AdminUsageDashboard() {
                           {f.anonId ? `anon: ${String(f.anonId).slice(0, 10)}…` : ""}
                         </div>
                       </div>
+
+                      {/* Grade review detail card */}
+                      {isGradeReview && (
+                        <div className="mt-2 rounded-lg border border-amber-400/20 bg-amber-500/5 p-2.5 text-xs">
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                            {f.meta?.studentName && (
+                              <div><span className="text-white/50">Student:</span> <span className="text-white/90 font-medium">{f.meta.studentName}</span></div>
+                            )}
+                            {f.meta?.teacherName && (
+                              <div><span className="text-white/50">Teacher:</span> <span className="text-white/90 font-medium">{f.meta.teacherName}</span></div>
+                            )}
+                            {f.meta?.school && (
+                              <div><span className="text-white/50">School:</span> <span className="text-white/90">{f.meta.school}</span></div>
+                            )}
+                            {f.meta?.className && (
+                              <div><span className="text-white/50">Class:</span> <span className="text-white/90">{f.meta.className}</span></div>
+                            )}
+                            {f.meta?.teacherEmail && (
+                              <div className="col-span-2"><span className="text-white/50">Teacher email:</span> <span className="text-blue-300">{f.meta.teacherEmail}</span></div>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       <div className="mt-2 whitespace-pre-wrap text-sm text-white/90">
                         {f.message}
