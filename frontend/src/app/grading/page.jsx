@@ -71,6 +71,7 @@ const STANDARDS_OPTIONS = [
 const STANDARDS_KEY = "curriculate_grading_standards_v1";
 const GRADE_BAND_KEY = "curriculate_grading_band_v1";
 const VOICE_KEY = "curriculate_grading_voice_v1";
+const RUBRIC_OVERRIDE_KEY = "curriculate_rubric_override_v1";
 const VOICE_OVERRIDE_KEY = "curriculate_grading_voice_override_v1";
 const VOICE_OVERRIDE_VALUE_KEY = "curriculate_grading_voice_override_value_v1";
 const SESSION_ID_KEY = "curriculate_session_id_v1";
@@ -982,7 +983,7 @@ export default function GradingPage() {
 
     // Optional rubric override UI
     const [showRubric, setShowRubric] = useState(false);
-    const [rubricOverride, setRubricOverride] = useState("");
+    const [rubricOverride, setRubricOverride] = useState(() => loadLS(RUBRIC_OVERRIDE_KEY, ""));
     const [gradeBand, setGradeBand] = useState(() => {
       if (typeof window === "undefined") return "6-8";
       return loadLS(GRADE_BAND_KEY, "6-8");
@@ -1064,6 +1065,7 @@ export default function GradingPage() {
       if (voice !== "iep_supportive") saveLS(VOICE_KEY, voice);
     }, [voice]);
     useEffect(() => saveLS(VOICE_OVERRIDE_KEY, voiceOverrideOn ? "1" : "0"), [voiceOverrideOn]);
+    useEffect(() => saveLS(RUBRIC_OVERRIDE_KEY, rubricOverride), [rubricOverride]);
     useEffect(() => saveLS(VOICE_OVERRIDE_VALUE_KEY, voiceOverride), [voiceOverride]);
 
     // Learning Recommendations
