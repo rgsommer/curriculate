@@ -8256,6 +8256,8 @@ function buildRubricInstructions({
       - The answer key is a REFERENCE, not a rigid template. Use professional teacher judgment.
       - Award full marks if the student's answer is correct — even if their method, notation, or wording differs from the key.
       - For math: accept any mathematically equivalent answer (e.g., different valid approach, simplified differently, correct numerical result by alternate method).
+      - CRITICAL: "x=4" and "4" are the SAME correct answer. Do NOT mark wrong because the student included the variable name.
+        Similarly: "y=-3" = "-3", "x=2/3" = "2/3", "a=0.5" = "0.5" = "1/2". The value is what matters.
       - For written responses: check whether the student demonstrates the key concepts, ideas, or reasoning shown in the answer key. Exact wording is NOT required.
       - Award partial credit when the student shows correct understanding or method but makes a computational error, or addresses some but not all required elements.
       - Award 0 marks only when the student's answer is clearly wrong or missing.
@@ -8507,8 +8509,15 @@ function buildRubricInstructions({
       - case-insensitive compare
       - treat equivalent numeric forms as equal (e.g., "-8" == "-8.0", "8/1" == "8")
       - ignore thousands separators and extra spaces (e.g., "1,000" == "1000")
+      - MATH EXPRESSION EQUIVALENCE: strip variable assignments and compare the value.
+        "x=4" and "4" are the SAME answer. "y = -3" and "-3" are the SAME answer.
+        "x = 2/3" and "2/3" are the SAME answer. Do NOT mark these as incorrect.
+      - Accept any mathematically equivalent form: "0.5" = "1/2" = "50%", "3/6" = "1/2",
+        "x² + 2x + 1" = "(x+1)²", "-(-5)" = "5", "4.0" = "4", etc.
+      - Accept with or without units/labels when the VALUE is correct (deduct separately if units required).
+      - Accept reordered terms: "2 + x" = "x + 2", "ba" = "ab" in multiplication.
     - If normalized answers match, the item MUST NOT appear in incorrect_items.
-    - If the only difference is formatting, do NOT mark incorrect.
+    - If the only difference is formatting, presentation, or notation style, do NOT mark incorrect.
     - Do not use deductions to re-penalize wrong answers already reflected in section scores.
 
     MATH RULE:
