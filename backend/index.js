@@ -68,6 +68,7 @@ import SessionReport from "./models/SessionReport.js";
 import { aggregateTimingStats } from "./services/taskTypeTimingAggregator.js";
 import resultsRoutes from "./routes/resultsRoutes.js";
 import adminFeedbackRouter from "./routes/adminFeedback.js";
+import adminTeacherOutreachRouter from "./routes/adminTeacherOutreach.js";
 import feedbackRouter from "./routes/feedback.js";
 import { listFeedback } from "./controllers/adminFeedbackController.js";
 import { requireAdminJson } from "./middleware/requireAdminJson.js";
@@ -399,6 +400,7 @@ app.use("/api/admin", adminRouter);
 import adminUsageSummaryRouter from "./routes/adminUsageSummary.js";
 app.use("/admin", adminUsageSummaryRouter);
 app.use("/admin", adminFeedbackRouter);
+app.use("/admin", adminTeacherOutreachRouter);
 
 // Results sharing routes
 app.use("/results", resultsRoutes);
