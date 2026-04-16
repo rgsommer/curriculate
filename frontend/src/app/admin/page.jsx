@@ -44,6 +44,65 @@ export default function AdminUsageDashboard() {
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [feedbackFilter, setFeedbackFilter] = useState("all"); // "all" | "teacher" | "student" | "results"
 
+  // Teacher outreach state
+  const [outreachTeachers, setOutreachTeachers] = useState([]);
+  const [outreachTemplates, setOutreachTemplates] = useState([]);
+  const [outreachLoading, setOutreachLoading] = useState(false);
+  const [outreachSelected, setOutreachSelected] = useState(new Set());
+  const [outreachTemplate, setOutreachTemplate] = useState("");
+  const [outreachCustomSubject, setOutreachCustomSubject] = useState("");
+  const [outreachCustomBody, setOutreachCustomBody] = useState("");
+  const [outreachSending, setOutreachSending] = useState(false);
+  const [outreachResult, setOutreachResult] = useState(null);
+  const [outreachFilter, setOutreachFilter] = useState("all"); // "all" | "not-contacted" | "contacted"
+
+  async function loadOutreach() {
+    setOutreachLoading(true);
+    try {
+      const res = await fetch("/api/admin/teacher-outreach", { cache: "no-store" });
+      const j = await res.json();
+      if (j.ok) {
+        setOutreachTeachers(j.teachers || []);
+        setOutreachTemplates(j.templates || []);
+      }
+    } catch (e) {
+      console.error("Failed to load outreach:", e);
+    } finally {
+      setOutreachLoading(false);
+    }
+  }
+
+  async function sendOutreach() {
+    if (!outreachTemplate || outreachSelected.size === 0) return;
+    setOutreachSending(true);
+    setOutreachResult(null);
+    try {
+      const recipients = outreachTeachers
+        .filter((t) => outreachSelected.has(t.email))
+        .map((t) => ({ email: t.email, teacherName: t.teacherName }));
+      const res = await fetch("/api/admin/teacher-outreach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          emails: recipients,
+          template: outreachTemplate,
+          customSubject: outreachCustomSubject || undefined,
+          customBody: outreachCustomBody || undefined,
+        }),
+      });
+      const j = await res.json();
+      setOutreachResult(j);
+      if (j.ok) {
+        setOutreachSelected(new Set());
+        loadOutreach(); // refresh contact dates
+      }
+    } catch (e) {
+      setOutreachResult({ error: e.message });
+    } finally {
+      setOutreachSending(false);
+    }
+  }
+
   async function loadFeedback() {
     setFeedbackLoading(true);
     setFeedbackErr("");
@@ -116,6 +175,7 @@ export default function AdminUsageDashboard() {
   useEffect(() => {
     load(force);
     loadFeedback();
+    loadOutreach();
     // eslint-disable-next-line
   }, [force]);
 
@@ -346,43 +406,195 @@ export default function AdminUsageDashboard() {
           </Card>*/}
         </div>
 
-        {/* Schools & Teachers collected from grade review requests */}
-        {(() => {
-          const reviews = feedback.filter((f) => f.meta?.type === "grade-review");
-          const schools = [...new Set(reviews.map((f) => f.meta?.school).filter(Boolean))].sort();
-          const teachers = [...new Set(reviews.map((f) => {
-            const name = f.meta?.teacherName || "";
-            const email = f.meta?.teacherEmail || "";
-            return name && email ? `${name} (${email})` : name || email || "";
-          }).filter(Boolean))].sort();
-          if (!schools.length && !teachers.length) return null;
-          return (
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              {schools.length > 0 && (
-                <Card title={`Schools (${schools.length})`}>
-                  <div className="max-h-[200px] overflow-auto">
-                    <ul className="space-y-1">
-                      {schools.map((s) => (
-                        <li key={s} className="text-sm text-white/90">{s}</li>
+        {/* Teacher Outreach Panel */}
+        {outreachTeachers.length > 0 && (
+          <div className="mt-6">
+            <Card title={`Teacher Outreach (${outreachTeachers.length} teachers)`}>
+              {/* Filter tabs */}
+              <div className="flex items-center gap-2 mb-3">
+                {[
+                  { key: "all", label: "All" },
+                  { key: "not-contacted", label: "Not yet contacted" },
+                  { key: "contacted", label: "Previously contacted" },
+                ].map((tab) => {
+                  const count = tab.key === "all"
+                    ? outreachTeachers.length
+                    : outreachTeachers.filter((t) =>
+                        tab.key === "not-contacted" ? !t.lastContactedAt : !!t.lastContactedAt
+                      ).length;
+                  return (
+                    <button
+                      key={tab.key}
+                      onClick={() => setOutreachFilter(tab.key)}
+                      className={`rounded-lg px-3 py-1 text-xs font-medium ${
+                        outreachFilter === tab.key
+                          ? "bg-blue-500/20 border border-blue-400/40 text-blue-200"
+                          : "bg-white/5 border border-white/10 text-white/60 hover:bg-white/10"
+                      }`}
+                    >
+                      {tab.label} ({count})
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={() => {
+                    const visible = outreachTeachers.filter((t) => {
+                      if (outreachFilter === "not-contacted") return !t.lastContactedAt;
+                      if (outreachFilter === "contacted") return !!t.lastContactedAt;
+                      return true;
+                    });
+                    const allSelected = visible.every((t) => outreachSelected.has(t.email));
+                    const next = new Set(outreachSelected);
+                    visible.forEach((t) => allSelected ? next.delete(t.email) : next.add(t.email));
+                    setOutreachSelected(next);
+                  }}
+                  className="ml-auto rounded-lg px-3 py-1 text-xs font-medium bg-white/5 border border-white/10 text-white/60 hover:bg-white/10"
+                >
+                  {(() => {
+                    const visible = outreachTeachers.filter((t) => {
+                      if (outreachFilter === "not-contacted") return !t.lastContactedAt;
+                      if (outreachFilter === "contacted") return !!t.lastContactedAt;
+                      return true;
+                    });
+                    return visible.every((t) => outreachSelected.has(t.email)) ? "Deselect all" : "Select all";
+                  })()}
+                </button>
+              </div>
+
+              {/* Teacher list */}
+              <div className="max-h-[300px] overflow-auto rounded-xl border border-white/10 bg-black/20">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-white/10 text-white/50">
+                      <th className="p-2 text-left w-8"></th>
+                      <th className="p-2 text-left">Teacher</th>
+                      <th className="p-2 text-left">School</th>
+                      <th className="p-2 text-left">Reviews</th>
+                      <th className="p-2 text-left">Last contacted</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {outreachTeachers
+                      .filter((t) => {
+                        if (outreachFilter === "not-contacted") return !t.lastContactedAt;
+                        if (outreachFilter === "contacted") return !!t.lastContactedAt;
+                        return true;
+                      })
+                      .map((t) => (
+                        <tr
+                          key={t.email}
+                          className={`border-b border-white/5 cursor-pointer hover:bg-white/5 ${outreachSelected.has(t.email) ? "bg-blue-500/10" : ""}`}
+                          onClick={() => {
+                            const next = new Set(outreachSelected);
+                            next.has(t.email) ? next.delete(t.email) : next.add(t.email);
+                            setOutreachSelected(next);
+                          }}
+                        >
+                          <td className="p-2 text-center">
+                            <input
+                              type="checkbox"
+                              checked={outreachSelected.has(t.email)}
+                              readOnly
+                              className="accent-blue-500"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <div className="text-white/90 font-medium">{t.teacherName || "—"}</div>
+                            <div className="text-white/50">{t.email}</div>
+                          </td>
+                          <td className="p-2 text-white/70">{t.schools?.join(", ") || "—"}</td>
+                          <td className="p-2 text-white/70">{t.reviewCount}</td>
+                          <td className="p-2">
+                            {t.lastContactedAt ? (
+                              <span className="text-green-300">{new Date(t.lastContactedAt).toLocaleDateString()}</span>
+                            ) : (
+                              <span className="text-amber-300">Never</span>
+                            )}
+                            {t.emailsSent > 0 && <span className="text-white/40 ml-1">({t.emailsSent} sent)</span>}
+                          </td>
+                        </tr>
                       ))}
-                    </ul>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Send controls */}
+              {outreachSelected.size > 0 && (
+                <div className="mt-3 rounded-xl border border-blue-400/20 bg-blue-500/5 p-3">
+                  <div className="text-xs text-blue-200 font-medium mb-2">
+                    Send to {outreachSelected.size} teacher{outreachSelected.size !== 1 ? "s" : ""}
                   </div>
-                </Card>
-              )}
-              {teachers.length > 0 && (
-                <Card title={`Teachers (${teachers.length})`}>
-                  <div className="max-h-[200px] overflow-auto">
-                    <ul className="space-y-1">
-                      {teachers.map((t) => (
-                        <li key={t} className="text-sm text-white/90">{t}</li>
-                      ))}
-                    </ul>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {outreachTemplates.map((tmpl) => (
+                      <button
+                        key={tmpl.key}
+                        onClick={() => setOutreachTemplate(tmpl.key)}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                          outreachTemplate === tmpl.key
+                            ? "bg-blue-500/30 border border-blue-400/50 text-blue-100"
+                            : "bg-white/5 border border-white/10 text-white/60 hover:bg-white/10"
+                        }`}
+                      >
+                        {tmpl.label}
+                      </button>
+                    ))}
                   </div>
-                </Card>
+
+                  {outreachTemplate === "custom" && (
+                    <div className="space-y-2 mb-2">
+                      <input
+                        value={outreachCustomSubject}
+                        onChange={(e) => setOutreachCustomSubject(e.target.value)}
+                        placeholder="Custom subject line (optional)"
+                        className="w-full rounded-lg bg-black/30 border border-white/10 px-3 py-1.5 text-xs text-white/90 placeholder:text-white/30"
+                      />
+                      <textarea
+                        value={outreachCustomBody}
+                        onChange={(e) => setOutreachCustomBody(e.target.value)}
+                        placeholder="Write your message..."
+                        rows={4}
+                        className="w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-xs text-white/90 placeholder:text-white/30 resize-vertical"
+                      />
+                    </div>
+                  )}
+
+                  {outreachTemplate && outreachTemplate !== "custom" && (
+                    <input
+                      value={outreachCustomSubject}
+                      onChange={(e) => setOutreachCustomSubject(e.target.value)}
+                      placeholder="Override subject line (optional)"
+                      className="w-full rounded-lg bg-black/30 border border-white/10 px-3 py-1.5 text-xs text-white/90 placeholder:text-white/30 mb-2"
+                    />
+                  )}
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={sendOutreach}
+                      disabled={!outreachTemplate || outreachSending}
+                      className={`rounded-lg px-4 py-1.5 text-xs font-bold ${
+                        !outreachTemplate || outreachSending
+                          ? "bg-white/10 text-white/30 cursor-not-allowed"
+                          : "bg-blue-600 text-white hover:bg-blue-500 cursor-pointer"
+                      }`}
+                    >
+                      {outreachSending
+                        ? "Sending..."
+                        : `Send ${outreachTemplate ? `"${outreachTemplates.find((t) => t.key === outreachTemplate)?.label || outreachTemplate}"` : "..."} to ${outreachSelected.size}`}
+                    </button>
+
+                    {outreachResult && (
+                      <span className={`text-xs ${outreachResult.error ? "text-red-300" : "text-green-300"}`}>
+                        {outreachResult.error
+                          ? outreachResult.error
+                          : `Sent: ${outreachResult.sent}${outreachResult.failed ? `, failed: ${outreachResult.failed}` : ""}`}
+                      </span>
+                    )}
+                  </div>
+                </div>
               )}
-            </div>
-          );
-        })()}
+            </Card>
+          </div>
+        )}
 
         <div className="mt-6">
           <Card title="Feedback">
