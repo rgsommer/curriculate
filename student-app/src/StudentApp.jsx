@@ -4977,7 +4977,9 @@ function StudentApp() {
     <MysteryBoxGrid
       grid={mysteryBoxGrid}
       onOpenBox={(boxPos) => {
-        if (mustScan) {
+        // Only gate on scan if the session actually uses station scanning
+        // (assignedStationId means this room uses stations)
+        if (mustScan && assignedStationId) {
           setScanFirstPopup(true);
           setTimeout(() => setScanFirstPopup(false), 3000);
           return;

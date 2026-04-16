@@ -6708,7 +6708,7 @@ socket.on(
 
       // Send the task to the team via the standard task:assigned event
       const timeLimitSeconds = task.timeLimitSeconds || 240;
-      io.to(teamId).emit("task:assigned", {
+      const taskPayload = {
         task,
         taskIndex,
         totalTasks: room.mysteryBox.taskCount,
@@ -6720,7 +6720,11 @@ socket.on(
           isInterTeam,
           challengeId: challenge?.challengeId || null,
         },
-      });
+      };
+      io.to(teamId).emit("task:assigned", taskPayload);
+      // Also emit directly to the requesting socket (belt-and-suspenders
+      // in case the socket lost its teamId room membership on reconnect)
+      socket.emit("task:assigned", taskPayload);
 
       // Update team's taskIndex for scoring compatibility
       if (room.teams[teamId]) {
