@@ -379,7 +379,8 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
     setCurrentClueIndex((prev) => prev + 1);
   };
 
-  const showTypeFallback = !micSupported || (micError === "network" || micError === "not-allowed" || micError === "service-not-allowed");
+  // Always show type-in — works as primary input or fallback alongside mic
+  const showTypeFallback = true;
 
   const statusLabel = showAnswerOverlay
     ? "Round recap"
@@ -843,9 +844,9 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
               {micSupported && micError && (
                 <div style={{ fontSize: 12, color: "#ef4444", marginTop: 2 }}>
                   {micError === "network"
-                    ? "Mic needs internet — type your answer below"
+                    ? "Voice recognition unavailable — type your answer below"
                     : micError === "not-allowed" || micError === "service-not-allowed"
-                    ? "Mic blocked — type your answer below"
+                    ? "Mic permission denied — type your answer below"
                     : `Mic error: ${String(micError)} — tap to retry`}
                 </div>
               )}
