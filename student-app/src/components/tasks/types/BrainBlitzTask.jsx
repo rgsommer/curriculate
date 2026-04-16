@@ -43,6 +43,9 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
   // Interim transcript (shows what the mic is hearing in real time)
   const [interimTranscript, setInterimTranscript] = useState("");
 
+  // Manual type-in fallback (when mic fails due to network etc.)
+  const [manualInput, setManualInput] = useState("");
+
   const recognitionRef = useRef(null);
   const listeningTimeoutRef = useRef(null);
   const clueIndexRef = useRef(currentClueIndex);
@@ -342,6 +345,41 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
   };
   // Keep old name as alias for any other references
   const handleManualStart = handleMicToggle;
+
+  const handleManualSubmit = () => {
+    const spoken = manualInput.trim();
+    if (!spoken) return;
+    setManualInput("");
+
+    const ci = clueIndexRef.current;
+    const clueObj = ci >= 0 && ci < clues.length ? clues[ci] : null;
+    const correctAnswer = (clueObj?.answer || "").toLowerCase();
+    const spokenLower = spoken.toLowerCase();
+    const isCorrect = correctAnswer && (spokenLower.includes(correctAnswer) || correctAnswer.includes(spokenLower));
+
+    pushGuess({ by: "You", spoken, correct: isCorrect, clueIndex: ci });
+
+    if (isCorrect) {
+      setScore((prev) => prev + 100);
+      playSound("/sounds/correct.mp3");
+      triggerCelebrate();
+    } else {
+      playSound("/sounds/wrong.mp3");
+    }
+
+    if (socket) {
+      socket.emit("brain-blitz-answer", {
+        roomCode: task?.roomCode,
+        clueIndex: ci,
+        spoken,
+        correct: isCorrect,
+      });
+    }
+
+    setCurrentClueIndex((prev) => prev + 1);
+  };
+
+  const showTypeFallback = !micSupported || (micError === "network" || micError === "not-allowed" || micError === "service-not-allowed");
 
   const statusLabel = showAnswerOverlay
     ? "Round recap"
@@ -803,10 +841,60 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
                 <div style={{ fontSize: 12, color: "#ef4444", marginTop: 2 }}>Mic not supported in this browser</div>
               )}
               {micSupported && micError && (
-                <div style={{ fontSize: 12, color: "#ef4444", marginTop: 2 }}>Mic error: {String(micError)} — tap to retry</div>
+                <div style={{ fontSize: 12, color: "#ef4444", marginTop: 2 }}>
+                  {micError === "network"
+                    ? "Mic needs internet — type your answer below"
+                    : micError === "not-allowed" || micError === "service-not-allowed"
+                    ? "Mic blocked — type your answer below"
+                    : `Mic error: ${String(micError)} — tap to retry`}
+                </div>
               )}
             </div>
           </div>
+        )}
+
+        {/* Manual type-in fallback when mic is unavailable */}
+        {showTypeFallback && currentClue && (
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleManualSubmit(); }}
+            style={{
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+            }}
+          >
+            <input
+              value={manualInput}
+              onChange={(e) => setManualInput(e.target.value)}
+              placeholder="Type your answer and hit Enter"
+              autoFocus
+              style={{
+                flex: 1,
+                padding: "12px 14px",
+                fontSize: 16,
+                fontWeight: 700,
+                borderRadius: 14,
+                border: "2px solid rgba(99,102,241,0.3)",
+                outline: "none",
+              }}
+            />
+            <button
+              type="submit"
+              disabled={!manualInput.trim()}
+              style={{
+                padding: "12px 20px",
+                fontSize: 15,
+                fontWeight: 900,
+                borderRadius: 14,
+                border: "none",
+                background: manualInput.trim() ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "#e2e8f0",
+                color: manualInput.trim() ? "#fff" : "#94a3b8",
+                cursor: manualInput.trim() ? "pointer" : "default",
+              }}
+            >
+              Shout!
+            </button>
+          </form>
         )}
 
         {/* Guess feed */}

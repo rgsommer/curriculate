@@ -608,7 +608,14 @@ function flashcardsIsValid(task) {
 
 function jeopIsValid(task) {
   const clues = Array.isArray(task?.clues) ? task.clues : [];
-  return clues.length >= 3;
+  if (clues.length < 3) return false;
+
+  // Reject if correctAnswer is purely numeric / a calculation result
+  // (e.g. "42", "$10.00", "14.99%"). BrainBlitz answers must be shout-able words.
+  const answer = String(task?.correctAnswer || task?.config?.correctAnswer || "").trim();
+  if (answer && /^[\$%€£]?\d[\d.,\s/$%€£]*$/.test(answer)) return false;
+
+  return true;
 }
 
 function hangmanIsValid(task) {

@@ -1950,7 +1950,10 @@ function StudentApp() {
       // clear scan dedupe so the next state is fresh
       lastScanKeyRef.current = { key: null, atMs: 0 };
 
+      // In mystery mode, the server controls "all boxes done" via mystery:timeUp,
+      // so we never treat a single mystery task as "last" here.
       const isLastTask =
+        !isMysteryMode &&
         typeof currentTaskIndex === "number" &&
         typeof tasksetTotalTasks === "number" &&
         currentTaskIndex >= 0 &&
@@ -1989,6 +1992,19 @@ function StudentApp() {
       pendingTaskAssignedRef.current = null;
       if (queued) {
         handleTaskAssigned(queued);
+        return;
+      }
+
+      // Mystery mode: go back to box grid instead of scanning
+      if (isMysteryMode) {
+        setPostPhase("tasks");
+        setScannerActive(false);
+        setWaitingForLaunch(false);
+        // Request an updated grid from the server
+        socket.emit("mystery:requestGrid", {
+          roomCode: roomCode.trim().toUpperCase(),
+          teamId,
+        });
         return;
       }
 
