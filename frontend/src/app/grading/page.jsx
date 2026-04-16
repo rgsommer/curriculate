@@ -966,8 +966,23 @@ export default function GradingPage() {
 
     const [flash, setFlash] = useState(false);
     const [photos, setPhotos] = useState([]); // { id, dataUrl, createdAt }
-    const [answerKeyPhotoIds, setAnswerKeyPhotoIds] = useState(new Set()); // photos tagged as answer key / solution sheet
+    // photoTags: Map<id, "key" | "rubric"> — three-state cycle when tapping a thumbnail.
+    // (absent) -> "key" -> "rubric" -> (absent)
+    const [photoTags, setPhotoTags] = useState(new Map());
     const [showAnswerKeyTagHint, setShowAnswerKeyTagHint] = useState(false);
+
+    // Counts derived from photoTags (memoized-style recompute on each render — fine for small Maps)
+    const keyPhotoCount = (() => {
+      let n = 0;
+      for (const v of photoTags.values()) if (v === "key") n++;
+      return n;
+    })();
+    const rubricPhotoCount = (() => {
+      let n = 0;
+      for (const v of photoTags.values()) if (v === "rubric") n++;
+      return n;
+    })();
+    const taggedPhotoCount = keyPhotoCount + rubricPhotoCount;
     const [busyCapture, setBusyCapture] = useState(false);
     const [busyUpload, setBusyUpload] = useState(false);
     const photosRef = useRef([]);
@@ -1664,23 +1679,29 @@ export default function GradingPage() {
 
     function removePhoto(id) {
       setPhotos((prev) => prev.filter((p) => p.id !== id));
-      setAnswerKeyPhotoIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+      setPhotoTags((prev) => { const n = new Map(prev); n.delete(id); return n; });
     }
 
-    function toggleAnswerKey(id) {
-      setAnswerKeyPhotoIds((prev) => {
-        const n = new Set(prev);
-        if (n.has(id)) n.delete(id);
-        else n.add(id);
+    // Three-state cycle on thumbnail tap:
+    // (none) -> "key" -> "rubric" -> (none)
+    function cyclePhotoTag(id) {
+      setPhotoTags((prev) => {
+        const n = new Map(prev);
+        const current = n.get(id);
+        if (!current) n.set(id, "key");
+        else if (current === "key") n.set(id, "rubric");
+        else n.delete(id); // "rubric" -> clear
         return n;
       });
       setShowAnswerKeyTagHint(false);
     }
+    // Keep legacy name as an alias so we don't have to touch every call site in this pass.
+    const toggleAnswerKey = cyclePhotoTag;
 
     function clearAll() {
       setPhotos([]);
       photosRef.current = [];
-      setAnswerKeyPhotoIds(new Set());
+      setPhotoTags(new Map());
       setShowAnswerKeyTagHint(false);
       setSubmitError("");
       setServerText("");
@@ -1744,7 +1765,11 @@ export default function GradingPage() {
 
       const rubricFingerprint = manualRubric.slice(0, 50) || stickyRubric.slice(0, 50) || "";
       const akFingerprint = (stickyAnswerKeyText || "").slice(0, 50);
-      const akPhotoIds = [...answerKeyPhotoIds].sort().join(",");
+      // Fingerprint of tagged photos: id:tag pairs, stable order
+      const akPhotoIds = [...photoTags.entries()]
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([id, tag]) => `${id}:${tag}`)
+        .join(",");
       const submitKey =
         inputMode === "photo"
           ? `photo:${photosToUse.map((p) => p.id).join(",")}|gb:${gradeBand}|v:${voiceEffective}|r:${rubricFingerprint}|ak:${akFingerprint}|akp:${akPhotoIds}|st:${standards}`
@@ -1778,22 +1803,30 @@ export default function GradingPage() {
 
         let images = null;
         let answerKeyImages = null;
+        let rubricImages = null;
 
-        // Split photos into answer key vs student work, then compress
+        // Split photos into three buckets based on photoTags:
+        //   tagged "key"    -> answer key / solution sheet (two-pass extraction)
+        //   tagged "rubric" -> rubric / marking scheme (two-pass extraction -> rubricOverride)
+        //   untagged        -> student work (graded)
         if (photosToUse.length) {
-          const studentPhotos = photosToUse.filter((p) => !answerKeyPhotoIds.has(p.id));
-          const keyPhotos = photosToUse.filter((p) => answerKeyPhotoIds.has(p.id));
+          const studentPhotos = photosToUse.filter((p) => !photoTags.has(p.id));
+          const keyPhotos = photosToUse.filter((p) => photoTags.get(p.id) === "key");
+          const rubricPhotos = photosToUse.filter((p) => photoTags.get(p.id) === "rubric");
           if (studentPhotos.length) {
             images = await compressPhotosForSubmission(studentPhotos, profileToUse);
           }
           if (keyPhotos.length) {
             answerKeyImages = await compressPhotosForSubmission(keyPhotos, profileToUse);
           }
+          if (rubricPhotos.length) {
+            rubricImages = await compressPhotosForSubmission(rubricPhotos, profileToUse);
+          }
         }
 
         const anonId = getAnonId();
 
-        // Two-pass answer key extraction: if teacher tagged photos, run extraction first
+        // Two-pass answer key extraction: if teacher tagged photos as key, run extraction first
         let effectiveAnswerKey = (stickyAnswerKeyText || "").trim();
 
         if (answerKeyImages && answerKeyImages.length > 0 && !effectiveAnswerKey.length) {
@@ -1824,14 +1857,54 @@ export default function GradingPage() {
           }
         }
 
+        // Two-pass rubric extraction: if teacher tagged photos as rubric, run extraction
+        // and feed result into rubricOverride (unless teacher typed/captured one already).
+        let effectiveRubricFromImages = "";
+        if (rubricImages && rubricImages.length > 0 && !manualRubric.length && !stickyRubric.length) {
+          try {
+            console.log("[submit] Running rubric extraction pass...");
+            const extractRubricUrl = `${backendBase.replace(/\/$/, "")}/grading/extract-rubric`;
+            const extractRubricRes = await fetch(extractRubricUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ rubricImages, standards, gradeBand }),
+            });
+            if (extractRubricRes.ok) {
+              const extractRubricData = await extractRubricRes.json();
+              if (extractRubricData.rubricText) {
+                effectiveRubricFromImages = extractRubricData.rubricText;
+                // Persist as sticky so subsequent papers reuse it
+                setStickyRubricText(effectiveRubricFromImages);
+                setStickyRubricSource("captured-photo");
+                setStickyRubricCapturedAt(String(Date.now()));
+                setShowRubricTip(false);
+                saveLS(RUBRIC_TIP_DISMISSED_KEY, "1");
+                console.log("[submit] Rubric extracted:", effectiveRubricFromImages.slice(0, 200));
+              }
+            } else {
+              console.warn("[submit] Rubric extraction failed, continuing with images only");
+            }
+          } catch (e) {
+            console.warn("[submit] Rubric extraction error:", e);
+          }
+        }
+
+        // Priority for rubric sent to grading:
+        //   manual typed > sticky captured > rubric extracted from tagged photos
+        const rubricForSubmission = manualRubric.length
+          ? manualRubric
+          : (stickyRubric.length ? stickyRubric : effectiveRubricFromImages);
+
         const payload = {
           anonId,
           images: images || undefined,
           // Skip sending raw answer key images if extraction already produced text —
           // avoids redundant image processing on the grading call
           answerKeyImages: (effectiveAnswerKey.length ? undefined : answerKeyImages) || undefined,
+          // Skip sending raw rubric images if extraction already produced text
+          rubricImages: (effectiveRubricFromImages.length ? undefined : rubricImages) || undefined,
           workInput: inputMode === "paste" && trimmedWork ? trimmedWork : undefined,
-          rubricOverride: effectiveRubric.length ? effectiveRubric : null,
+          rubricOverride: (rubricForSubmission && rubricForSubmission.length) ? rubricForSubmission : null,
           answerKeyOverride: effectiveAnswerKey.length ? effectiveAnswerKey : null,
           gradeBand,
           standards,
@@ -1910,9 +1983,9 @@ export default function GradingPage() {
                 setShowRubricTip(false);
                 saveLS(RUBRIC_TIP_DISMISSED_KEY, "1");
 
-                // If the teacher didn't manually tag any photos as answer key,
+                // If the teacher didn't manually tag any photos,
                 // suggest they do so for better KITA grouping on next submissions
-                if (answerKeyPhotoIds.size === 0 && photos.length >= 2) {
+                if (taggedPhotoCount === 0 && photos.length >= 2) {
                   setShowAnswerKeyTagHint(true);
                 }
               }
@@ -2704,15 +2777,20 @@ export default function GradingPage() {
               <div style={styles.photoMeta}>
                 <div>
                   <b>Photos:</b> {photos.length}
-                  {answerKeyPhotoIds.size > 0 && (
+                  {keyPhotoCount > 0 && (
                     <span style={{ marginLeft: 10, color: "#059669", fontWeight: 700, fontSize: 12 }}>
-                      ({answerKeyPhotoIds.size} answer key)
+                      ({keyPhotoCount} key)
+                    </span>
+                  )}
+                  {rubricPhotoCount > 0 && (
+                    <span style={{ marginLeft: 8, color: "#b45309", fontWeight: 700, fontSize: 12 }}>
+                      ({rubricPhotoCount} rubric)
                     </span>
                   )}
                 </div>
                 <div style={{ opacity: 0.8 }}>
                   {photos.length >= 2
-                    ? "Tip: Tap a thumbnail to mark it as your answer key or solution sheet."
+                    ? "Tip: Tap a thumbnail — once for Key, again for Rubric, again to clear."
                     : "Tip: Capture with camera, or upload files from your device. Double tap for capture + submit."}
                 </div>
               </div>
@@ -2726,7 +2804,7 @@ export default function GradingPage() {
                   display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
                 }}>
                   <span>
-                    <b style={{ color: "#059669" }}>Answer key detected!</b> Tap its thumbnail below to tag it — this improves grading accuracy for the rest of the stack.
+                    <b style={{ color: "#059669" }}>Reference sheet detected!</b> Tap its thumbnail — once marks it as the Answer Key, again as the Rubric. This improves grading for the rest of the stack.
                   </span>
                   <button
                     onClick={() => setShowAnswerKeyTagHint(false)}
@@ -2739,25 +2817,36 @@ export default function GradingPage() {
               {photos.length > 0 && (
                 <div style={styles.thumbGrid}>
                   {photos.map((p, idx) => {
-                    const isKey = answerKeyPhotoIds.has(p.id);
+                    const tag = photoTags.get(p.id) || null; // "key" | "rubric" | null
+                    const isKey = tag === "key";
+                    const isRubric = tag === "rubric";
+                    // Color tokens: green for key, amber for rubric
+                    const keyColor = "#059669";
+                    const rubricColor = "#b45309";
+                    const accent = isKey ? keyColor : isRubric ? rubricColor : null;
+                    const tapTitle = !tag
+                      ? "Tap to mark as Answer Key. Tap again for Rubric. Tap again to clear."
+                      : isKey
+                        ? "Tagged as Answer Key. Tap for Rubric. Tap again to clear."
+                        : "Tagged as Rubric. Tap again to clear.";
                     return (
                     <div key={p.id} style={{
                       ...styles.thumb,
-                      ...(isKey ? { border: "2.5px solid #059669", boxShadow: "0 0 8px rgba(5,150,105,0.35)" } : {}),
+                      ...(accent ? { border: `2.5px solid ${accent}`, boxShadow: `0 0 8px ${accent}55` } : {}),
                     }}>
-                      <div style={{ position: "relative", cursor: "pointer" }} onClick={() => !submitting && toggleAnswerKey(p.id)} title={isKey ? "Unmark as answer key" : "Tap to mark as answer key / solution sheet"}>
+                      <div style={{ position: "relative", cursor: "pointer" }} onClick={() => !submitting && cyclePhotoTag(p.id)} title={tapTitle}>
                         <img src={p.dataUrl} alt={`Captured ${idx + 1}`} style={styles.thumbImg} />
-                        {isKey && (
+                        {tag && (
                           <div style={{
-                            position: "absolute", top: 6, left: 6, background: "#059669", color: "white",
+                            position: "absolute", top: 6, left: 6, background: accent, color: "white",
                             fontSize: 10, fontWeight: 900, borderRadius: 6, padding: "2px 7px",
                             letterSpacing: 0.5,
-                          }}>KEY</div>
+                          }}>{isKey ? "KEY" : "RUBRIC"}</div>
                         )}
                       </div>
                       <div style={styles.thumbBar}>
-                        <div style={{ ...styles.thumbLabel, ...(isKey ? { color: "#059669" } : {}) }}>
-                          {isKey ? "Answer Key" : `#${idx + 1}`}
+                        <div style={{ ...styles.thumbLabel, ...(accent ? { color: accent } : {}) }}>
+                          {isKey ? "Answer Key" : isRubric ? "Rubric" : `#${idx + 1}`}
                         </div>
                         <button
                           onClick={() => removePhoto(p.id)}
@@ -2854,25 +2943,35 @@ export default function GradingPage() {
                   </div>
                   <div style={styles.thumbGrid}>
                     {photos.map((p, idx) => {
-                      const isKey = answerKeyPhotoIds.has(p.id);
+                      const tag = photoTags.get(p.id) || null;
+                      const isKey = tag === "key";
+                      const isRubric = tag === "rubric";
+                      const keyColor = "#059669";
+                      const rubricColor = "#b45309";
+                      const accent = isKey ? keyColor : isRubric ? rubricColor : null;
+                      const tapTitle = !tag
+                        ? "Tap to mark as Answer Key. Tap again for Rubric. Tap again to clear."
+                        : isKey
+                          ? "Tagged as Answer Key. Tap for Rubric. Tap again to clear."
+                          : "Tagged as Rubric. Tap again to clear.";
                       return (
                       <div key={p.id} style={{
                         ...styles.thumb,
-                        ...(isKey ? { border: "2.5px solid #059669", boxShadow: "0 0 8px rgba(5,150,105,0.35)" } : {}),
+                        ...(accent ? { border: `2.5px solid ${accent}`, boxShadow: `0 0 8px ${accent}55` } : {}),
                       }}>
-                        <div style={{ position: "relative", cursor: "pointer" }} onClick={() => !submitting && toggleAnswerKey(p.id)} title={isKey ? "Unmark as answer key" : "Tap to mark as answer key / solution sheet"}>
+                        <div style={{ position: "relative", cursor: "pointer" }} onClick={() => !submitting && cyclePhotoTag(p.id)} title={tapTitle}>
                           <img src={p.dataUrl} alt={`Upload ${idx + 1}`} style={styles.thumbImg} />
-                          {isKey && (
+                          {tag && (
                             <div style={{
-                              position: "absolute", top: 6, left: 6, background: "#059669", color: "white",
+                              position: "absolute", top: 6, left: 6, background: accent, color: "white",
                               fontSize: 10, fontWeight: 900, borderRadius: 6, padding: "2px 7px",
                               letterSpacing: 0.5,
-                            }}>KEY</div>
+                            }}>{isKey ? "KEY" : "RUBRIC"}</div>
                           )}
                         </div>
                         <div style={styles.thumbBar}>
-                          <div style={{ ...styles.thumbLabel, ...(isKey ? { color: "#059669" } : {}) }}>
-                            {isKey ? "Answer Key" : `#${idx + 1}`}
+                          <div style={{ ...styles.thumbLabel, ...(accent ? { color: accent } : {}) }}>
+                            {isKey ? "Answer Key" : isRubric ? "Rubric" : `#${idx + 1}`}
                           </div>
                           <button
                             onClick={() => removePhoto(p.id)}
@@ -3060,7 +3159,7 @@ export default function GradingPage() {
                   <textarea
                     value={rubricOverride}
                     onChange={(e) => setRubricOverride(e.target.value)}
-                    placeholder={`Paste a teacher rubric here (optional)...\n\nExamples:\n- Mark out of 10\n- Focus on understanding, relevance, completion\n- Mechanics secondary\n- Deduct 1 total if any formatting missing\n\nTip: include a photo of your answer key or solution sheet with the student work — it will be auto-detected and used for grading.\n`}
+                    placeholder={`Paste a teacher rubric here (optional)...\n\nExamples:\n- Mark out of 10\n- Focus on understanding, relevance, completion\n- Mechanics secondary\n- Deduct 1 total if any formatting missing\n\nTip: include a photo of your answer key or rubric with the student work — tap the thumbnail to tag it (Key or Rubric) for best grading.\n`}
                     rows={9}
                     style={styles.rubricTextarea}
                   />
@@ -3094,7 +3193,7 @@ export default function GradingPage() {
                   )
                 }
               >
-                {submitting ? "Submitting…" : "Submit for Grading"}
+                {submitting ? "Submitting…" : "Submit"}
               </button>
               <button ref={tourTargetCopySessionRef} onClick={copySession} disabled={!sessionItems.length || summarizingSession} style={styles.secondaryBtn}>
                 {summarizingSession ? `Analyzing… (${sessionItems.length})` : `Copy Session (${sessionItems.length})`}

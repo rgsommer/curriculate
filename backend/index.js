@@ -8261,6 +8261,28 @@ function buildRubricInstructions({
         This is the whole point of weighting questions higher — it allows finer-grained assessment.
         A question worth 1 mark is binary (right or wrong). A question worth 2 marks should rarely be all-or-nothing.
       - Use your judgment to weight questions fairly — if one question is clearly more complex, it can receive more marks.
+
+      MULTI-CRITERION RUBRIC → MULTI-SECTION GRADING (mandatory when applicable):
+      If the rubric override (or extracted rubric) contains MULTIPLE named criteria / strands / categories
+      (e.g., "Ideas /5, Organization /5, Voice /5, Conventions /5", or "Content /10, Delivery /10"),
+      you MUST assess EACH criterion separately and create ONE section[] entry per criterion.
+
+      - Do NOT collapse multiple rubric criteria into a single combined section.
+      - Each sections[] entry MUST have:
+          name     = the exact criterion/strand title from the rubric (e.g., "Ideas", "Voice", "Delivery")
+          out_of   = the maximum marks for that criterion as stated in the rubric
+          score    = the student's score for that criterion (can be a decimal; use part marks)
+          teacher_comment = evidence-based justification specific to THAT criterion
+      - sum(sections[].out_of)  MUST equal overall_out_of.
+      - sum(sections[].score)   MUST equal overall_score.
+      - If the rubric lists N distinct criteria, sections[].length MUST be N (never 1 when N>1).
+      - Each criterion's teacher_comment should cite specific evidence from the student work that applies
+        to that criterion (not a general overview). Keep comments criterion-specific.
+
+      Example:
+        Rubric: "Ideas /5, Organization /5, Voice /5, Conventions /5" → total /20
+        sections[] MUST have 4 entries: Ideas (/5), Organization (/5), Voice (/5), Conventions (/5).
+        Each scored independently. overall_out_of = 20. overall_score = sum of the 4 section scores.
       ` : ""}
 
     ${answerKeyOverride ? `
@@ -10306,6 +10328,137 @@ Return valid JSON matching this exact schema.`;
     } catch (err) {
       console.error("[extract-answer-key] error:", err);
       res.status(500).json({ error: err.message || "Extraction failed." });
+    }
+  });
+
+  // ====================================================================
+  //  Rubric Extraction (companion to answer-key extraction)
+  //  POST /grading/extract-rubric
+  //  Takes teacher-tagged RUBRIC images (marking scheme / criteria sheet) and
+  //  extracts structured rubric text that gets fed into grading as
+  //  rubricOverride. Unlike answer keys (which contain specific correct
+  //  answers), rubrics describe the criteria, point distribution, and
+  //  performance descriptors used to score student work.
+  // ====================================================================
+  app.post("/grading/extract-rubric", async (req, res) => {
+    try {
+      const { rubricImages, standards: rawStandards, gradeBand } = req.body || {};
+      const standards = ["canada", "us", "uk", "eu"].includes(rawStandards) ? rawStandards : "canada";
+      const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
+
+      if (!Array.isArray(rubricImages) || !rubricImages.length) {
+        return res.status(400).json({ error: "No rubric images provided." });
+      }
+
+      const isKitaBand = standards === "canada" && (band === "9-10" || band === "11+");
+
+      const extractionPrompt = `You are analyzing a TEACHER'S RUBRIC or MARKING SCHEME for an assignment.
+
+Your ONLY job is to extract structured rubric information. Do NOT grade any student work.
+
+Extract ALL distinct SECTIONS / CRITERIA / STRANDS visible on the rubric — each row or criterion becomes its own section.
+
+For each section, extract:
+- title: the criterion name (e.g., "Ideas", "Organization", "Voice", "Conventions", "Knowledge", "Thinking")
+- out_of: the maximum marks for this section (look for /4, /5, /10, or level indicators like "Level 4 = 4 marks")
+- descriptor: a short phrase (<=120 chars) describing what excellent performance looks like for this section
+${isKitaBand ? `- kita_category: Map the section to a KITA achievement category if applicable:
+    K / KU = "Knowledge & Understanding"
+    T / TH = "Thinking"
+    C / CO = "Communication"
+    A / AP = "Application"
+  If the section title itself is one of these categories, return the full name. Otherwise null.` : '- kita_category: null (not applicable for this standards framework)'}
+
+Also extract:
+- total_marks: sum of all section out_of values (the overall denominator)
+- notes: any additional global rubric rules (e.g., "Late work: -1 per day", "Formatting required") — keep short (<=300 chars)
+
+IMPORTANT:
+- If the rubric shows a level-based scheme (Level 1-4), treat each criterion's Level 4 marks as its out_of.
+- If sections are not explicit, infer distinct criteria from headings or columns.
+- NEVER invent sections. Only extract what is clearly visible.
+
+Return valid JSON matching this exact schema.`;
+
+      const extractionSchema = {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          sections: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                title: { type: "string", maxLength: 80 },
+                out_of: { type: "number" },
+                descriptor: { type: "string", maxLength: 200 },
+                kita_category: { type: ["string", "null"] },
+              },
+              required: ["title", "out_of", "descriptor", "kita_category"],
+            },
+          },
+          total_marks: { type: "number" },
+          notes: { type: ["string", "null"], maxLength: 500 },
+        },
+        required: ["sections", "total_marks", "notes"],
+      };
+
+      const content = [
+        { type: "input_text", text: extractionPrompt },
+        ...rubricImages.map((img) => ({ type: "input_image", image_url: img })),
+      ];
+
+      console.log(`[extract-rubric] images=${rubricImages.length} standards=${standards} band=${band} kita=${isKitaBand}`);
+
+      const response = await openai.responses.create({
+        model: AI_MODEL_FULL,
+        input: [{ role: "user", content }],
+        text: { format: { type: "json_schema", name: "rubric_extraction", strict: true, schema: extractionSchema } },
+        max_output_tokens: 2000,
+      });
+
+      const extracted = safeJsonParse(response.output_text);
+      if (!extracted) {
+        return res.status(500).json({ error: "Failed to parse rubric extraction response." });
+      }
+
+      // Build a rubric text blob that the grading pass will consume.
+      // This becomes the effective rubricOverride for downstream /grading.
+      const lines = [];
+      lines.push("RUBRIC (extracted from teacher's marking scheme):");
+      lines.push("");
+      for (const s of extracted.sections || []) {
+        const kita = s.kita_category ? ` [${s.kita_category}]` : "";
+        lines.push(`- ${s.title} (/${s.out_of})${kita}: ${s.descriptor}`);
+      }
+      lines.push("");
+      lines.push(`Total: /${extracted.total_marks}`);
+      if (extracted.notes && extracted.notes.trim().length) {
+        lines.push("");
+        lines.push(`Notes: ${extracted.notes.trim()}`);
+      }
+      lines.push("");
+      lines.push("GRADING INSTRUCTIONS:");
+      lines.push("Create ONE section in sections[] for EACH rubric criterion above.");
+      lines.push("Each section's out_of MUST equal the rubric's out_of for that criterion.");
+      lines.push("The sum of all section out_of MUST equal the rubric total.");
+      lines.push("Do NOT collapse all criteria into one section.");
+
+      const rubricText = lines.join("\n");
+
+      console.log(`[extract-rubric] extracted ${(extracted.sections || []).length} sections, total /${extracted.total_marks}`);
+      console.log(`[extract-rubric] summary:\n${rubricText}`);
+
+      res.json({
+        extraction: extracted,
+        rubricText,
+        sectionCount: (extracted.sections || []).length,
+        totalMarks: extracted.total_marks,
+      });
+    } catch (err) {
+      console.error("[extract-rubric] error:", err);
+      res.status(500).json({ error: err.message || "Rubric extraction failed." });
     }
   });
 
