@@ -138,9 +138,9 @@ export default function TeamSelfieTask({ task, onSubmit, disabled, roomCode, tea
         body: JSON.stringify({
           roomCode,
           teamId,
-          category: "team-selfie",
+          taskType: "team-selfie",
+          purpose: "selfie",
           contentType: "image/jpeg",
-          ext: "jpg",
         }),
       });
       const presignData = await presignRes.json();

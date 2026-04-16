@@ -187,6 +187,8 @@ function StudentApp() {
       return [{ name: "", email: "" }, { name: "", email: "" }, { name: "", email: "" }];
     }
   });
+  // Derive flat name strings from members (backward compat for components expecting string[])
+  const memberNames = members.map((m) => (typeof m === "string" ? m : m?.name || ""));
   // Derive flat emails array from members (backward compat for components expecting emails[])
   const emails = members.map((m) => (typeof m === "string" ? "" : m?.email || "").trim()).filter(Boolean);
   const setEmails = (updated) => {
@@ -4372,7 +4374,7 @@ function StudentApp() {
           socket={socket}
           roomCode={roomCode}
           teamId={teamId}
-          memberNames={members}
+          memberNames={memberNames}
           onSubmit={(payload) => {
             // Ensure handleSubmitAnswer recognizes it as mood-checkin
             handleSubmitAnswer({ type: TASK_TYPES.MOOD_CHECKIN, ...payload })
@@ -5376,7 +5378,7 @@ function StudentApp() {
         socket={socket}
         roomCode={roomCode}
         playerTeam={{ id: teamId, teamName }}
-        memberNames={members}
+        memberNames={memberNames}
         savedEmails={emails}
         onEmailsChange={setEmails}
         remainingMs={remainingMs}

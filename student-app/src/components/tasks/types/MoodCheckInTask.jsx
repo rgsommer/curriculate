@@ -82,8 +82,11 @@ export default function MoodCheckInTask({
   const explicitCount =
     cfg.playerCount ?? task?.playerCount ?? cfg.players ?? task?.players ?? null;
 
+  // Normalize: members may be strings or {name, email} objects
+  const nameOf = (m) => (typeof m === "object" && m !== null ? m.name || "" : String(m || ""));
+
   const inferredFromNames = Array.isArray(memberNames)
-    ? memberNames.filter((n) => String(n || "").trim().length > 0).length
+    ? memberNames.filter((n) => nameOf(n).trim().length > 0).length
     : 0;
 
   const playerCountRaw =
@@ -111,7 +114,7 @@ export default function MoodCheckInTask({
   const allSelected = moods.every((m) => m !== null);
 
   const getDisplayName = (idx) => {
-    const raw = String(memberNames?.[idx] ?? "").trim();
+    const raw = nameOf(memberNames?.[idx]).trim();
     return raw || `Player ${idx + 1}`;
   };
 
