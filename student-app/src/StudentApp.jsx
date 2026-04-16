@@ -4976,10 +4976,21 @@ function StudentApp() {
     <MysteryBoxGrid
       grid={mysteryBoxGrid}
       onOpenBox={(boxPos) => {
+        console.log("[mystery] opening box", boxPos, "teamId", teamId);
         socket.emit("mystery:openBox", {
           roomCode: roomCode.trim().toUpperCase(),
           teamId,
           boxPos,
+        }, (ack) => {
+          console.log("[mystery] openBox ack:", ack);
+          if (ack && !ack.ok) {
+            // Server rejected — likely stale activeBox. Request fresh grid.
+            console.warn("[mystery] openBox rejected:", ack.error, "— requesting fresh grid");
+            socket.emit("mystery:requestGrid", {
+              roomCode: roomCode.trim().toUpperCase(),
+              teamId,
+            });
+          }
         });
       }}
       challengeBeacon={challengeBeacon}

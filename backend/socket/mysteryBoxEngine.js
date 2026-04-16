@@ -171,6 +171,12 @@ export function openBox(room, teamId, boxPos) {
     return { error: "Invalid box position" };
   }
 
+  // If activeBox is stuck on a COMPLETED box (stale state), auto-clear it
+  if (tb.activeBox !== null && tb.completed.includes(tb.activeBox)) {
+    console.warn(`[mysteryBox] Auto-clearing stale activeBox=${tb.activeBox} for team ${teamId}`);
+    tb.activeBox = null;
+  }
+
   // Can't open if already working on another box
   if (tb.activeBox !== null && tb.activeBox !== boxPos) {
     return { error: "Already working on another box" };

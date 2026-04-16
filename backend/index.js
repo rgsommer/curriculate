@@ -6668,6 +6668,7 @@ socket.on(
 
       const result = openBox(room, teamId, boxPos);
       if (result.error) {
+        console.warn(`[mystery:openBox] Rejected for team ${teamId} box ${boxPos}: ${result.error}`);
         if (typeof ack === "function") ack({ ok: false, error: result.error });
         return;
       }
