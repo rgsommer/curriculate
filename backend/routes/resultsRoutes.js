@@ -128,10 +128,14 @@ const gradeReviewLimiter = rateLimit({
 
 router.post("/grade-review", gradeReviewLimiter, async (req, res) => {
   try {
-    const { teacherEmail, reason, refCode, role } = req.body || {};
+    const { teacherEmail, reason, refCode, role, studentName, school, className, teacherName } = req.body || {};
     const email = String(teacherEmail || "").trim().toLowerCase();
     const msg = String(reason || "").trim();
     const code = refCode ? normalizeCode(refCode) : "";
+    const stuName = String(studentName || "").trim();
+    const schName = String(school || "").trim();
+    const clsName = String(className || "").trim();
+    const tchName = String(teacherName || "").trim();
 
     if (!email || !email.includes("@") || !email.includes(".")) {
       return res.status(400).json({ error: "Please provide a valid teacher email address." });
@@ -148,48 +152,97 @@ router.post("/grade-review", gradeReviewLimiter, async (req, res) => {
 
     // Save to feedback log
     await FeedbackMessage.create({
-      message: `[GRADE REVIEW — ${cleanRole}] Teacher: ${email} | Code: ${code} | Reason: ${msg}`,
+      message: `[GRADE REVIEW — ${cleanRole}] Teacher: ${tchName || email} | Student: ${stuName || "unknown"} | Code: ${code} | Reason: ${msg}`,
       meta: {
         source: "results-page",
         type: "grade-review",
         role: cleanRole,
         teacherEmail: email,
+        teacherName: tchName,
+        studentName: stuName,
+        school: schName,
+        className: clsName,
         refCode: code,
         submittedAt: new Date().toISOString(),
       },
     });
 
+    // Build context line for the email
+    const contextParts = [];
+    if (schName) contextParts.push(schName);
+    if (clsName) contextParts.push(clsName);
+    const contextLine = contextParts.length ? contextParts.join(" · ") : "";
+    const esc = (s) => s.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
     // Send email to teacher
     try {
       await sendSystemEmail({
         to: email,
-        subject: `Grade review requested — ${code}`,
+        subject: `Grade review request from ${stuName || "a student"} — ${code}`,
         html: `
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
-            <div style="background: #fffbeb; border: 1px solid #fbbf24; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
-              <h2 style="margin: 0 0 8px; font-size: 18px; color: #92400e;">Grade Review Requested</h2>
-              <p style="margin: 0; font-size: 14px; color: #78716c;">
-                A ${cleanRole} is requesting that you review their grade for result <strong>${code}</strong>.
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 0;">
+            <!-- Header -->
+            <div style="background: linear-gradient(135deg, #2563eb, #7c3aed); border-radius: 16px 16px 0 0; padding: 28px 24px; text-align: center;">
+              <div style="font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.3px;">Curriculate</div>
+              <div style="font-size: 13px; color: rgba(255,255,255,0.75); margin-top: 4px;">Grade Review Request</div>
+            </div>
+
+            <div style="background: #ffffff; padding: 28px 24px; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">
+              <!-- Greeting -->
+              <p style="margin: 0 0 16px; font-size: 15px; color: #1e293b; line-height: 1.6;">
+                Hi${tchName ? " " + esc(tchName) : ""},
+              </p>
+              <p style="margin: 0 0 20px; font-size: 15px; color: #1e293b; line-height: 1.6;">
+                ${stuName ? "<strong>" + esc(stuName) + "</strong>" : "A " + cleanRole} has submitted a request to review their grade for result <strong>${code}</strong>${contextLine ? " in <strong>" + esc(contextLine) + "</strong>" : ""}.
+              </p>
+
+              <!-- Reason card -->
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 24px;">
+                <div style="font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Reason for review</div>
+                <div style="font-size: 14px; color: #1e293b; line-height: 1.6; white-space: pre-wrap;">${esc(msg)}</div>
+              </div>
+
+              <!-- Student info -->
+              <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+                <tr>
+                  <td style="padding: 6px 12px 6px 0; font-size: 13px; color: #64748b; width: 110px;">Student</td>
+                  <td style="padding: 6px 0; font-size: 14px; color: #1e293b; font-weight: 600;">${esc(stuName || "Not provided")}</td>
+                </tr>
+                ${schName ? `<tr>
+                  <td style="padding: 6px 12px 6px 0; font-size: 13px; color: #64748b;">School</td>
+                  <td style="padding: 6px 0; font-size: 14px; color: #1e293b;">${esc(schName)}</td>
+                </tr>` : ""}
+                ${clsName ? `<tr>
+                  <td style="padding: 6px 12px 6px 0; font-size: 13px; color: #64748b;">Class / Subject</td>
+                  <td style="padding: 6px 0; font-size: 14px; color: #1e293b;">${esc(clsName)}</td>
+                </tr>` : ""}
+                <tr>
+                  <td style="padding: 6px 12px 6px 0; font-size: 13px; color: #64748b;">Result code</td>
+                  <td style="padding: 6px 0; font-size: 14px; color: #1e293b; font-weight: 600;">${code}</td>
+                </tr>
+              </table>
+
+              <!-- CTA -->
+              <div style="text-align: center; margin-bottom: 8px;">
+                <a href="${resultsUrl}" style="display: inline-block; padding: 12px 28px; background: linear-gradient(135deg, #2563eb, #7c3aed); color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: 700; font-size: 14px;">
+                  View result ${code}
+                </a>
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 16px 16px; padding: 18px 24px; text-align: center;">
+              <p style="margin: 0 0 6px; font-size: 12px; color: #94a3b8; line-height: 1.5;">
+                This email was sent via <a href="https://www.curriculate.net" style="color: #2563eb; text-decoration: none; font-weight: 600;">Curriculate</a> because a ${cleanRole} requested a grade review.
+              </p>
+              <p style="margin: 0; font-size: 11px; color: #cbd5e1;">
+                If you did not expect this message, you can safely ignore it.
               </p>
             </div>
-
-            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
-              <div style="font-size: 13px; font-weight: 700; color: #64748b; margin-bottom: 6px;">Their reason:</div>
-              <div style="font-size: 14px; color: #1e293b; line-height: 1.5; white-space: pre-wrap;">${msg.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
-            </div>
-
-            <a href="${resultsUrl}" style="display: inline-block; padding: 10px 20px; background: #2563eb; color: white; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 14px;">
-              View result ${code}
-            </a>
-
-            <p style="margin-top: 20px; font-size: 12px; color: #94a3b8; line-height: 1.4;">
-              This email was sent because a student or parent used the grade review feature on curriculate.net/results.
-              If you did not expect this, you can safely ignore it.
-            </p>
           </div>
         `,
       });
-      console.log(`[grade-review] Email sent to ${email} for code ${code}`);
+      console.log(`[grade-review] Email sent to ${email} for code ${code} from ${stuName || "anonymous"}`);
     } catch (emailErr) {
       console.error("[grade-review] Email send failed:", emailErr.message);
       // Still return success — the review is saved in the DB even if email fails
