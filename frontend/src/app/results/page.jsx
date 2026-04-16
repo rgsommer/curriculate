@@ -405,6 +405,8 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
   // Grade review request
   const [reviewMode, setReviewMode] = useState(false);
   const [reviewText, setReviewText] = useState("");
+  const [reviewEmail, setReviewEmail] = useState("");
+  const [reviewEmailError, setReviewEmailError] = useState("");
   const [reviewSending, setReviewSending] = useState(false);
   const [reviewDone, setReviewDone] = useState(false);
 
@@ -476,23 +478,31 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
 
   async function submitGradeReview() {
     const msg = (reviewText || "").trim();
+    const email = (reviewEmail || "").trim().toLowerCase();
     if (!msg) return;
+    if (!email || !email.includes("@") || !email.includes(".")) {
+      setReviewEmailError("Please enter your teacher's email address.");
+      return;
+    }
+    setReviewEmailError("");
     setReviewSending(true);
     try {
-      const res = await fetch(`${API_BASE}/results/feedback`, {
+      const res = await fetch(`${API_BASE}/results/grade-review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           role: fbRole || "student",
-          message: `[GRADE REVIEW REQUEST] ${msg}`,
+          reason: msg,
           refCode: code,
-          type: "grade-review",
+          teacherEmail: email,
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`);
       setReviewDone(true);
     } catch (e) {
       console.error("Grade review request error:", e);
+      setReviewEmailError(e.message || "Failed to send. Please try again.");
     } finally {
       setReviewSending(false);
     }
@@ -1119,23 +1129,48 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                           Request a grade review
                         </div>
                         <div style={{ fontSize: 12, color: "#78716c", marginBottom: 8, lineHeight: 1.4 }}>
-                          Please explain which question or section you think should be reviewed and why.
+                          We'll email your teacher with your request and a link to this result.
                         </div>
-                        <textarea
-                          value={reviewText}
-                          onChange={(e) => setReviewText(e.target.value)}
-                          placeholder="e.g. I think Q3 should be marked correct because…"
-                          style={{
-                            width: "100%", minHeight: 80, border: "1px solid #fbbf24", borderRadius: 8,
-                            padding: 10, fontSize: 13, lineHeight: 1.5, resize: "vertical",
-                            fontFamily: "inherit", color: "#334155", background: "white",
-                          }}
-                          autoFocus
-                        />
+
+                        <label style={{ display: "block", marginBottom: 8 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#92400e", marginBottom: 4 }}>
+                            Teacher's email address
+                          </div>
+                          <input
+                            type="email"
+                            value={reviewEmail}
+                            onChange={(e) => { setReviewEmail(e.target.value); setReviewEmailError(""); }}
+                            placeholder="teacher@school.edu"
+                            style={{
+                              width: "100%", padding: "8px 10px", border: reviewEmailError ? "1px solid #ef4444" : "1px solid #fbbf24",
+                              borderRadius: 8, fontSize: 13, fontFamily: "inherit", color: "#334155", background: "white",
+                            }}
+                          />
+                          {reviewEmailError && (
+                            <div style={{ fontSize: 12, color: "#ef4444", marginTop: 3 }}>{reviewEmailError}</div>
+                          )}
+                        </label>
+
+                        <label style={{ display: "block", marginBottom: 8 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#92400e", marginBottom: 4 }}>
+                            Why should this grade be reviewed?
+                          </div>
+                          <textarea
+                            value={reviewText}
+                            onChange={(e) => setReviewText(e.target.value)}
+                            placeholder="e.g. I think Q3 should be marked correct because…"
+                            style={{
+                              width: "100%", minHeight: 80, border: "1px solid #fbbf24", borderRadius: 8,
+                              padding: 10, fontSize: 13, lineHeight: 1.5, resize: "vertical",
+                              fontFamily: "inherit", color: "#334155", background: "white",
+                            }}
+                          />
+                        </label>
+
                         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
                           <button
                             type="button"
-                            onClick={() => setReviewMode(false)}
+                            onClick={() => { setReviewMode(false); setReviewEmailError(""); }}
                             style={{
                               padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600,
                               border: "1px solid #cbd5e1", background: "white", color: "#64748b",
@@ -1147,11 +1182,11 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                           <button
                             type="button"
                             onClick={submitGradeReview}
-                            disabled={reviewSending || !(reviewText || "").trim()}
+                            disabled={reviewSending || !(reviewText || "").trim() || !(reviewEmail || "").trim()}
                             style={{
                               padding: "7px 18px", borderRadius: 8, fontSize: 13, fontWeight: 700,
                               border: "none", background: "#f59e0b", color: "white", cursor: "pointer",
-                              opacity: (reviewText || "").trim() ? 1 : 0.5,
+                              opacity: ((reviewText || "").trim() && (reviewEmail || "").trim()) ? 1 : 0.5,
                             }}
                           >
                             {reviewSending ? "Sending…" : "Submit review request"}
