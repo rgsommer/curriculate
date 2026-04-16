@@ -155,7 +155,8 @@ function StudentApp() {
   const [mysteryBoxGrid, setMysteryBoxGrid] = useState(null);
   const [challengeBeacon, setChallengeBeacon] = useState(null);
   const [isMysteryMode, setIsMysteryMode] = useState(false);
-  
+  const [scanFirstPopup, setScanFirstPopup] = useState(false);
+
   const [roomCode, setRoomCode] = useState(() => lsGet(LS_KEYS.roomCode) || "");
   const [teamName, setTeamName] = useState(() => lsGet(LS_KEYS.teamName) || "");
   // Members: array of { name, email } objects. Email is optional per member.
@@ -4976,6 +4977,11 @@ function StudentApp() {
     <MysteryBoxGrid
       grid={mysteryBoxGrid}
       onOpenBox={(boxPos) => {
+        if (mustScan) {
+          setScanFirstPopup(true);
+          setTimeout(() => setScanFirstPopup(false), 3000);
+          return;
+        }
         console.log("[mystery] opening box", boxPos, "teamId", teamId);
         socket.emit("mystery:openBox", {
           roomCode: roomCode.trim().toUpperCase(),
@@ -5005,6 +5011,39 @@ function StudentApp() {
       teamName={teamName}
     />
   </section>
+)}
+
+{/* "Scan first" popup */}
+{scanFirstPopup && (
+  <div
+    onClick={() => setScanFirstPopup(false)}
+    style={{
+      position: "fixed",
+      top: 0, left: 0, right: 0, bottom: 0,
+      zIndex: 9999,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: "rgba(0,0,0,0.45)",
+    }}
+  >
+    <div style={{
+      background: "#fff",
+      borderRadius: 20,
+      padding: "28px 24px",
+      maxWidth: 320,
+      textAlign: "center",
+      boxShadow: "0 20px 50px rgba(0,0,0,0.3)",
+    }}>
+      <div style={{ fontSize: 36, marginBottom: 8 }}>📷</div>
+      <div style={{ fontSize: 18, fontWeight: 900, color: "#1e293b", marginBottom: 6 }}>
+        Scan your station first!
+      </div>
+      <div style={{ fontSize: 14, color: "#64748b", lineHeight: 1.4 }}>
+        Point your camera at the QR code on your station before opening a mystery box.
+      </div>
+    </div>
+  </div>
 )}
 
 {/* TASK CARD (only when not gated) */}
