@@ -9154,6 +9154,41 @@ function buildRubricInstructions({
     return result;
   }
 
+  function reconcileAchievementSummary(g) {
+    if (!g || typeof g !== "object") return g;
+    if (!Array.isArray(g.achievement_summary) || g.achievement_summary.length === 0) return g;
+
+    const overallOutOf = Number(g.overall_out_of) || 0;
+    const overallScore = Number(g.overall_score) || 0;
+    if (overallOutOf <= 0) return g;
+
+    const cats = g.achievement_summary.filter(c => c && Number.isFinite(c.out_of) && c.out_of > 0);
+    if (cats.length === 0) return g;
+
+    const sumOutOf = cats.reduce((s, c) => s + c.out_of, 0);
+    const sumScore = cats.reduce((s, c) => s + c.score, 0);
+
+    // If achievement out_of doesn't match overall_out_of, rescale out_of proportionally
+    if (Math.abs(sumOutOf - overallOutOf) > 0.01) {
+      const scale = overallOutOf / sumOutOf;
+      for (const c of cats) {
+        c.out_of = Math.round(c.out_of * scale * 100) / 100;
+      }
+    }
+
+    // If achievement scores don't match overall_score, rescale scores proportionally
+    if (sumScore > 0 && Math.abs(sumScore - overallScore) > 0.01) {
+      const scale = overallScore / sumScore;
+      for (const c of cats) {
+        if (Number.isFinite(c.score)) {
+          c.score = Math.round(c.score * scale * 100) / 100;
+        }
+      }
+    }
+
+    return g;
+  }
+
   function recomputeOverallFromSections(g) {
     if (!g || typeof g !== "object") return g;
     if (!Array.isArray(g.sections) || g.sections.length === 0) return g;
@@ -9990,6 +10025,7 @@ function buildRubricInstructions({
       // Remove bogus incorrect_items where student_answer == correct_answer (after normalization)
       scrubIncorrectItems(grade);
       recomputeOverallFromSections(grade);
+      reconcileAchievementSummary(grade);
 
       let enforced = enforceDenominatorRules(grade);
 
