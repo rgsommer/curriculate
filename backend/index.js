@@ -5009,6 +5009,13 @@ if (!isMultiPack && task.taskType === "guess-who") {
       const isQuickTaskset = isQuick; // same condition
 
       // ── Mystery Box mode: complete box and return to grid ──
+      if (room.navigationMode === "mystery" && !room.mysteryBox) {
+        // Safety net: mysteryBox lost — re-init rather than falling into linear mode
+        console.warn("[task:submit] mystery mode but mysteryBox missing — reinitializing for", code);
+        if (room.taskset?.tasks) {
+          initMysteryBox(room, room.taskset.tasks);
+        }
+      }
       if (room.navigationMode === "mystery" && room.mysteryBox) {
         // Find which box this team had active
         const tb = room.mysteryBox.teamBoxes?.[effectiveTeamId];

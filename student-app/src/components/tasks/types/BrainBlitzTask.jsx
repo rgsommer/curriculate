@@ -213,8 +213,17 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
     };
 
     recognition.onend = () => {
-      // Only mark as not listening if we didn't intentionally stop
-      // (continuous mode may fire onend unexpectedly)
+      // continuous mode may fire onend unexpectedly (browser quirk).
+      // If we still have an active listening timeout, the mic SHOULD be on — restart it.
+      if (listeningTimeoutRef.current) {
+        try {
+          recognition.start();
+          setIsListening(true);
+        } catch {
+          setIsListening(false);
+        }
+        return;
+      }
       setIsListening(false);
     };
 
@@ -287,6 +296,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
 
       // Auto-stop after LISTEN_DURATION_MS if no answer captured
       listeningTimeoutRef.current = setTimeout(() => {
+        listeningTimeoutRef.current = null; // clear so onend doesn't auto-restart
         try { recognitionRef.current?.stop?.(); } catch {}
         setIsListening(false);
         setInterimTranscript("");

@@ -1020,6 +1020,7 @@ useEffect(() => {
   };
 
   const handleSkipTask = () => {
+    setTaskAdvancedPause(true);          // optimistic UI — disable button immediately
     handleForceNextTask();
   };
 

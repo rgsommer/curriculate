@@ -6,6 +6,7 @@ import QrScanner from "./components/QrScanner.jsx";
 import NoiseSensor from "./components/NoiseSensor.jsx";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 import MoodCheckInTask from "./components/tasks/types/MoodCheckInTask";
+import TeamSelfieTask from "./components/tasks/types/TeamSelfieTask";
 import TreasureRunner from "./components/tasks/types/TreasureRunnerTask";
 import MultiPlayerFeedbackTask from "./components/tasks/types/MultiPlayerFeedbackTask.jsx";
 
@@ -2021,12 +2022,18 @@ function StudentApp() {
           (answerPayload.type || answerPayload.taskType)) ||
         null;
 
-      // Mood = advance pipeline only
+      // Mood = advance to selfie (or skip to treasure if selfie already cached)
       if (payloadType === TASK_TYPES.MOOD_CHECKIN) {
         setSubmitting(false);
         setStatusMessage("");
-        setWarmupStep("treasure");
-        setPostPhase("treasure");
+        const hasSelfie = !!(lsGet(LS_KEYS.selfieUrl));
+        if (hasSelfie) {
+          setWarmupStep("treasure");
+          setPostPhase("treasure");
+        } else {
+          setWarmupStep("selfie");
+          setPostPhase("selfie");
+        }
         return;
       }
 
@@ -4371,7 +4378,57 @@ function StudentApp() {
           }}
         />
       </section>
-    )}  
+    )}
+
+    {/* ── Selfie step (between mood and treasure) ── */}
+    {!tasksStarted && postPhase === "selfie" && warmupStep === "selfie" && !currentTask && (
+      <section
+        style={{
+          marginTop: 10,
+          padding: 16,
+          borderRadius: 18,
+          background: "rgba(255,255,255,0.92)",
+          border: "1px solid rgba(15,23,42,0.12)",
+          boxShadow: "0 16px 40px rgba(0,0,0,0.25)",
+        }}
+      >
+        <TeamSelfieTask
+          task={{ config: { allowThemed: false } }}
+          roomCode={roomCode}
+          teamId={teamId}
+          disabled={false}
+          onSubmit={(payload) => {
+            // Persist selfie URL
+            if (payload?.selfieUrl) {
+              lsSet(LS_KEYS.selfieUrl, payload.selfieUrl);
+            }
+            // Advance to treasure
+            setWarmupStep("treasure");
+            setPostPhase("treasure");
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            setWarmupStep("treasure");
+            setPostPhase("treasure");
+          }}
+          style={{
+            marginTop: 12,
+            width: "100%",
+            padding: "10px 0",
+            border: "none",
+            borderRadius: 12,
+            background: "transparent",
+            color: "#64748b",
+            fontSize: "0.9rem",
+            cursor: "pointer",
+          }}
+        >
+          Skip selfie
+        </button>
+      </section>
+    )}
 
       {joined && testMode && (
         <div
