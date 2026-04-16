@@ -8236,13 +8236,15 @@ function buildRubricInstructions({
       SHORTHAND DENOMINATOR OVERRIDE (e.g., "/8", "/12", "/20"):
       If the rubric override is ONLY a denominator (like "/8"), this means:
       - overall_out_of = that number (e.g., 8).
-      - DISTRIBUTE marks evenly across the questions/items you can identify in the student work.
-        Example: "/8" with 4 questions → each question is worth 2 marks.
-        Example: "/12" with 3 questions → each question is worth 4 marks.
-        Example: "/6" with 4 questions → distribute as evenly as possible (e.g., 1.5 each, or 2+2+1+1).
+      - DISTRIBUTE the FULL denominator across the questions/items you can identify.
+        CRITICAL: Each question's out_of must reflect its share of the TOTAL denominator, NOT just 1 mark each.
+        Example: "/8" with 4 questions → each question is worth 2 marks (section out_of values: 2, 2, 2, 2 → sum = 8).
+        Example: "/12" with 3 questions → each question is worth 4 marks (section out_of values: 4, 4, 4 → sum = 12).
+        Example: "/6" with 4 questions → distribute as evenly as possible (e.g., 1.5 each, or 2+2+1+1 → sum = 6).
+        WRONG: "/8" with 4 questions → giving each question 1 mark (sum = 4, not 8). This is WRONG.
+      - The section out_of values MUST sum to overall_out_of exactly. This is a hard constraint.
       - ALWAYS allow PART MARKS (half marks, quarter marks, etc.) — especially with lower denominators.
         A student who shows correct method but makes a small error deserves partial credit (e.g., 1.5/2, 0.75/1).
-      - The section out_of values MUST sum to overall_out_of exactly.
       - Use your judgment to weight questions fairly — if one question is clearly more complex, it can receive more marks.
       ` : ""}
 
@@ -8524,6 +8526,29 @@ function buildRubricInstructions({
     - If a numeric answer is correct but a required unit is missing, deduct 0.5 from that question.
     - Reflect this in the section score.
     - Do NOT treat this as a formatting deduction.
+
+    MATH METHODOLOGY RULE (Communication — showing work):
+    - For math papers, showing work is part of the COMMUNICATION dimension in the achievement summary.
+      It is not a separate penalty — it reflects how well the student communicates their mathematical thinking.
+    - The work shown must be REASONABLY CORRECT — not just present. A correct answer arrived at
+      through flawed reasoning or an incorrect method reflects weak communication even if the answer is right.
+    - A correct final answer with NO work shown reflects limited communication
+      (unless the question is trivially simple for the grade level, e.g., basic arithmetic for grade 9+).
+    - Grade-appropriate expectations (don't be overly rigorous for younger students):
+      - Grades 3-5: basic steps, drawings, counting, or number sentences. Accept informal methods
+        like tallying, skip counting, or pictures. The reasoning just needs to make sense for their age.
+      - Grades 6-8: working shown, formulas used, intermediate steps. Method should be sound but doesn't
+        need to be textbook-perfect. Accept valid alternative approaches.
+      - Grades 9+: complete mathematical reasoning, proper notation, logical steps. Expect appropriate
+        use of formulas, algebraic manipulation, and clear logical progression.
+    - If a student gets the right answer but the shown work is WRONG or contradicts the answer,
+      reflect this in both the section score (partial credit) and the Communication achievement category.
+    - If a student uses a method below their grade level (e.g., guess-and-check where algebraic
+      reasoning is expected at grade 9+), note it in Communication. For younger students,
+      informal methods that work are perfectly acceptable communication.
+    - If the question explicitly says "show your work" or "justify your answer", missing work = significant
+      impact on both the question score and the Communication category.
+    - Reflect methodology observations in the Communication achievement_summary comment.
 
     SECTION REPORTING RULE:
     - If the test provides named sections with out_of values, you MUST:
