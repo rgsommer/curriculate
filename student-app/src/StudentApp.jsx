@@ -4401,9 +4401,10 @@ function StudentApp() {
           teamId={teamId}
           disabled={false}
           onSubmit={(payload) => {
-            // Persist selfie URL
-            if (payload?.selfieUrl) {
-              lsSet(LS_KEYS.selfieUrl, payload.selfieUrl);
+            // Persist selfie URL (task sends photoUrl, not selfieUrl)
+            const url = payload?.photoUrl || payload?.selfieUrl || "";
+            if (url) {
+              lsSet(LS_KEYS.selfieUrl, url);
             }
             // Advance to treasure
             setWarmupStep("treasure");

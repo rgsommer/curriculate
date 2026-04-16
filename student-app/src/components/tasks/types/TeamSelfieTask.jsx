@@ -143,17 +143,25 @@ export default function TeamSelfieTask({ task, onSubmit, disabled, roomCode, tea
           contentType: "image/jpeg",
         }),
       });
-      const presignData = await presignRes.json();
+      let presignData;
+      try {
+        presignData = await presignRes.json();
+      } catch {
+        throw new Error(`Presign returned ${presignRes.status}: not JSON`);
+      }
       if (!presignData.ok || !presignData.uploadUrl) {
-        throw new Error(presignData.error || "Failed to get upload URL");
+        throw new Error(presignData.error || `Presign failed (${presignRes.status})`);
       }
 
       // Upload to S3
-      await fetch(presignData.uploadUrl, {
+      const putRes = await fetch(presignData.uploadUrl, {
         method: "PUT",
         headers: { "Content-Type": "image/jpeg" },
         body: blob,
       });
+      if (!putRes.ok) {
+        throw new Error(`S3 PUT failed: ${putRes.status} ${putRes.statusText}`);
+      }
 
       const photoUrl = presignData.signedGetUrl || presignData.key;
       const selfieKey = presignData.key;
@@ -211,9 +219,24 @@ export default function TeamSelfieTask({ task, onSubmit, disabled, roomCode, tea
         });
       }
     } catch (err) {
-      console.error("[selfie] Upload failed:", err);
-      setError("Upload failed — tap to try again.");
-      setPhase("preview");
+      console.error("[selfie] Upload failed:", err.message);
+      // Show error briefly, then fall back to local save so warmup continues
+      setError(`Upload issue: ${err.message}`);
+      setTimeout(() => {
+        try {
+          localStorage.setItem("curriculate_selfie_url", photoDataUrl);
+        } catch (_) { /* storage full — ignore */ }
+        setError("");
+        setPhase("done");
+        if (onSubmit) {
+          onSubmit({
+            photoUrl: photoDataUrl,
+            selfieKey: null,
+            autoComplete: true,
+            localOnly: true,
+          });
+        }
+      }, 2000); // Show error for 2s then proceed anyway
     }
   }, [photoDataUrl, roomCode, teamId, onSubmit, allowThemed, subject, theme]);
 

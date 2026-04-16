@@ -68,7 +68,7 @@ export default function StationPosters() {
         {`
           @page {
             size: letter portrait;
-            margin: 1in;
+            margin: 0.6in 0.75in;
           }
 
           @media print {
@@ -242,12 +242,12 @@ export default function StationPosters() {
             <div
               style={{
                 textAlign: "center",
-                marginBottom: "0.4in",
+                marginBottom: "0.2in",
               }}
             >
               <div
                 style={{
-                  fontSize: "2.8rem",
+                  fontSize: "2.6rem",
                   fontWeight: 900,
                   color: "#1e40af",
                 }}
@@ -256,10 +256,10 @@ export default function StationPosters() {
               </div>
               <div
                 style={{
-                  fontSize: "1.6rem",
+                  fontSize: "1.3rem",
                   fontWeight: 600,
                   color: "#475569",
-                  marginTop: "0.25in",
+                  marginTop: "0.1in",
                 }}
               >
                 {COPY.TAGLINE}
@@ -270,27 +270,27 @@ export default function StationPosters() {
             <div
               style={{
                 width: "86%",
-                maxWidth: "7.4in",
-                height: "3.6in",
+                maxWidth: "7in",
+                height: "2.8in",
                 background: color,
-                borderRadius: "36px",
+                borderRadius: "30px",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
                 color: textColor,
-                fontSize: "2.8rem",
+                fontSize: "2.6rem",
                 fontWeight: 900,
                 textTransform: "uppercase",
                 lineHeight: 1.1,
-                margin: "0.4in 0",
+                margin: "0.15in 0",
               }}
             >
               {upper} Station
               <div
                 style={{
-                  fontSize: "2.1rem",
-                  marginTop: "0.5rem",
+                  fontSize: "1.9rem",
+                  marginTop: "0.4rem",
                   fontWeight: 700,
                 }}
               >
@@ -302,14 +302,14 @@ export default function StationPosters() {
             <div
               style={{
                 textAlign: "center",
-                marginTop: "0.4in",
+                marginTop: "0.15in",
               }}
             >
               <div
                 style={{
-                  fontSize: "2rem",
+                  fontSize: "1.8rem",
                   fontWeight: 700,
-                  marginBottom: "0.4in",
+                  marginBottom: "0.2in",
                 }}
               >
                 Scan to Arrive
@@ -318,16 +318,16 @@ export default function StationPosters() {
                 src={qrUrl}
                 alt={`QR to ${upper} - ${location}`}
                 style={{
-                  width: "4.2in",
-                  height: "4.2in",
+                  width: "3.6in",
+                  height: "3.6in",
                 }}
               />
               <div
                 style={{
-                  fontSize: "1.4rem",
-                  color: "#666",
-                  marginTop: "0.4in",
-                  fontWeight: 500,
+                  fontSize: "1.8rem",
+                  color: "#1e40af",
+                  marginTop: "0.2in",
+                  fontWeight: 700,
                 }}
               >
                 {COPY.DOMAIN}
