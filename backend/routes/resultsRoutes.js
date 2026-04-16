@@ -84,18 +84,22 @@ const feedbackLimiter = rateLimit({
 
 router.post("/feedback", feedbackLimiter, async (req, res) => {
   try {
-    const { role, message, refCode } = req.body || {};
+    const { role, message, refCode, type } = req.body || {};
     const msg = String(message || "").trim();
     if (!msg) return res.status(400).json({ error: "Missing message" });
 
     const validRoles = ["student", "parent"];
     const cleanRole = validRoles.includes(role) ? role : "unknown";
+    const isGradeReview = type === "grade-review";
 
     const saved = await FeedbackMessage.create({
-      message: `[Results Feedback — ${cleanRole}] ${msg}`,
+      message: isGradeReview
+        ? `[GRADE REVIEW — ${cleanRole}] ${msg}`
+        : `[Results Feedback — ${cleanRole}] ${msg}`,
       meta: {
         source: "results-page",
         role: cleanRole,
+        type: isGradeReview ? "grade-review" : "feedback",
         refCode: refCode ? normalizeCode(refCode) : null,
         submittedAt: new Date().toISOString(),
       },

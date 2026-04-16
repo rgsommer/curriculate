@@ -402,6 +402,12 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
   const [fbSending, setFbSending] = useState(false);
   const [fbDone, setFbDone] = useState(false);
 
+  // Grade review request
+  const [reviewMode, setReviewMode] = useState(false);
+  const [reviewText, setReviewText] = useState("");
+  const [reviewSending, setReviewSending] = useState(false);
+  const [reviewDone, setReviewDone] = useState(false);
+
   const code = useMemo(() => normalizeCode(codeInput), [codeInput]);
   useEffect(() => {
     if (!autoLookup) return;
@@ -465,6 +471,30 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
       console.error("Results feedback error:", e);
     } finally {
       setFbSending(false);
+    }
+  }
+
+  async function submitGradeReview() {
+    const msg = (reviewText || "").trim();
+    if (!msg) return;
+    setReviewSending(true);
+    try {
+      const res = await fetch(`${API_BASE}/results/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role: fbRole || "student",
+          message: `[GRADE REVIEW REQUEST] ${msg}`,
+          refCode: code,
+          type: "grade-review",
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setReviewDone(true);
+    } catch (e) {
+      console.error("Grade review request error:", e);
+    } finally {
+      setReviewSending(false);
     }
   }
 
@@ -1022,11 +1052,17 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                 marginTop: 24, padding: 16, background: "#f8fafc",
                 borderRadius: 12, border: "1px solid #e2e8f0",
               }}>
-                {fbDone ? (
+                {(fbDone && reviewDone) || (fbDone && !reviewMode) ? (
                   <div style={{ textAlign: "center", padding: "8px 0" }}>
                     <div style={{ fontSize: 20, marginBottom: 6 }}>&#10003;</div>
                     <div style={{ fontWeight: 700, fontSize: 14 }}>Thanks for your feedback!</div>
                     <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>This helps us improve.</div>
+                  </div>
+                ) : reviewDone ? (
+                  <div style={{ textAlign: "center", padding: "8px 0" }}>
+                    <div style={{ fontSize: 20, marginBottom: 6 }}>&#10003;</div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>Review request submitted</div>
+                    <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>Your teacher will take another look at this grade.</div>
                   </div>
                 ) : (
                   <>
@@ -1044,12 +1080,12 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                         <button
                           key={r.key}
                           type="button"
-                          onClick={() => setFbRole(r.key)}
+                          onClick={() => { setFbRole(r.key); setReviewMode(false); }}
                           style={{
                             flex: 1, padding: "8px 10px", borderRadius: 8, fontSize: 13, fontWeight: 600,
-                            border: fbRole === r.key ? "2px solid #2563eb" : "1px solid #cbd5e1",
-                            background: fbRole === r.key ? "#eff6ff" : "white",
-                            color: fbRole === r.key ? "#1d4ed8" : "#334155",
+                            border: fbRole === r.key && !reviewMode ? "2px solid #2563eb" : "1px solid #cbd5e1",
+                            background: fbRole === r.key && !reviewMode ? "#eff6ff" : "white",
+                            color: fbRole === r.key && !reviewMode ? "#1d4ed8" : "#334155",
                             cursor: "pointer",
                           }}
                         >
@@ -1057,7 +1093,75 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                         </button>
                       ))}
                     </div>
-                    {fbRole && (
+
+                    {/* Grade review request button */}
+                    {!reviewMode && (
+                      <button
+                        type="button"
+                        onClick={() => { setReviewMode(true); if (!fbRole) setFbRole("student"); }}
+                        style={{
+                          width: "100%", padding: "10px 14px", borderRadius: 10, fontSize: 13, fontWeight: 700,
+                          border: "1px solid #fbbf24", background: "#fffbeb", color: "#92400e",
+                          cursor: "pointer", marginBottom: 10, textAlign: "center",
+                        }}
+                      >
+                        Please review my grade
+                      </button>
+                    )}
+
+                    {/* Grade review expansion */}
+                    {reviewMode && (
+                      <div style={{
+                        padding: 14, borderRadius: 10, background: "#fffbeb",
+                        border: "1px solid #fbbf24", marginBottom: 10,
+                      }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: "#92400e", marginBottom: 6 }}>
+                          Request a grade review
+                        </div>
+                        <div style={{ fontSize: 12, color: "#78716c", marginBottom: 8, lineHeight: 1.4 }}>
+                          Please explain which question or section you think should be reviewed and why.
+                        </div>
+                        <textarea
+                          value={reviewText}
+                          onChange={(e) => setReviewText(e.target.value)}
+                          placeholder="e.g. I think Q3 should be marked correct because…"
+                          style={{
+                            width: "100%", minHeight: 80, border: "1px solid #fbbf24", borderRadius: 8,
+                            padding: 10, fontSize: 13, lineHeight: 1.5, resize: "vertical",
+                            fontFamily: "inherit", color: "#334155", background: "white",
+                          }}
+                          autoFocus
+                        />
+                        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+                          <button
+                            type="button"
+                            onClick={() => setReviewMode(false)}
+                            style={{
+                              padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                              border: "1px solid #cbd5e1", background: "white", color: "#64748b",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={submitGradeReview}
+                            disabled={reviewSending || !(reviewText || "").trim()}
+                            style={{
+                              padding: "7px 18px", borderRadius: 8, fontSize: 13, fontWeight: 700,
+                              border: "none", background: "#f59e0b", color: "white", cursor: "pointer",
+                              opacity: (reviewText || "").trim() ? 1 : 0.5,
+                            }}
+                          >
+                            {reviewSending ? "Sending…" : "Submit review request"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Regular feedback textarea */}
+                    {fbRole && !reviewMode && (
                       <>
                         <textarea
                           value={fbText}
