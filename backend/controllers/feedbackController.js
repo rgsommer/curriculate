@@ -42,13 +42,19 @@ export async function createStudentFeedback(req, res) {
 
     const now = new Date();
     const membersArr = Array.isArray(members) ? members : [];
+    // Normalize member names — members may be strings or {name, email} objects
+    const memberNamesList = membersArr.map((m) => typeof m === "object" && m !== null ? m.name || "" : String(m || "")).filter(Boolean);
+    const teamLabel = teamName ? `Team "${teamName}"` : "";
+    const taskLabel = taskTitle || taskType || "";
 
-    // Save to DB
+    // Save to DB — include context in the message for quick scanning in admin
+    const contextParts = [teamLabel, memberNamesList.join(", "), taskLabel].filter(Boolean);
+    const contextStr = contextParts.length ? ` [${contextParts.join(" · ")}]` : "";
     const saved = await FeedbackMessage.create({
-      message: `[Student Feedback] ${feedbackTypeStr}: ${String(message || "").trim() || "(no details)"}`,
+      message: `[Student Feedback] ${feedbackTypeStr}:${contextStr} ${String(message || "").trim() || "(no details)"}`,
       meta: {
         source: "student-app",
-        roomCode, teamName, members: membersArr,
+        roomCode, teamName, memberNames: memberNamesList,
         tasksetName, taskTitle, taskType,
         taskIndex, totalTasks, feedbackType: feedbackTypeStr,
         deviceInfo: deviceInfo || null,
@@ -72,7 +78,7 @@ export async function createStudentFeedback(req, res) {
           <tr style="background:#f1f5f9"><td style="padding:6px 12px;color:#64748b;width:120px">Type</td><td style="padding:6px 12px;font-weight:600">${esc(feedbackTypeStr)}</td></tr>
           <tr><td style="padding:6px 12px;color:#64748b">Room Code</td><td style="padding:6px 12px">${esc(roomCode)}</td></tr>
           <tr style="background:#f1f5f9"><td style="padding:6px 12px;color:#64748b">Team</td><td style="padding:6px 12px">${esc(teamName)}</td></tr>
-          <tr><td style="padding:6px 12px;color:#64748b">Members</td><td style="padding:6px 12px">${membersArr.length ? membersArr.map(esc).join(", ") : "—"}</td></tr>
+          <tr><td style="padding:6px 12px;color:#64748b">Members</td><td style="padding:6px 12px">${memberNamesList.length ? memberNamesList.map(esc).join(", ") : "—"}</td></tr>
           <tr style="background:#f1f5f9"><td style="padding:6px 12px;color:#64748b">Taskset</td><td style="padding:6px 12px">${esc(tasksetName)}</td></tr>
           <tr><td style="padding:6px 12px;color:#64748b">Task</td><td style="padding:6px 12px">${esc(taskTitle)} (${esc(taskType)})${taskIndex != null ? ` — #${taskIndex}/${totalTasks || "?"}` : ""}</td></tr>
           ${deviceStr}

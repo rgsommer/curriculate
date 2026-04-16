@@ -452,6 +452,26 @@ export default function AdminUsageDashboard() {
                         </div>
                       </div>
 
+                      {/* Student app feedback context */}
+                      {src === "student-app" && (f.meta?.teamName || f.meta?.memberNames?.length || f.meta?.taskTitle) && (
+                        <div className="mt-2 rounded-lg border border-green-400/20 bg-green-500/5 p-2.5 text-xs">
+                          <div className="flex flex-wrap gap-x-4 gap-y-1">
+                            {f.meta?.teamName && (
+                              <div><span className="text-white/50">Team:</span> <span className="text-white/90 font-medium">{f.meta.teamName}</span></div>
+                            )}
+                            {f.meta?.memberNames?.length > 0 && (
+                              <div><span className="text-white/50">Members:</span> <span className="text-white/90">{f.meta.memberNames.join(", ")}</span></div>
+                            )}
+                            {f.meta?.taskTitle && (
+                              <div><span className="text-white/50">Task:</span> <span className="text-white/90">{f.meta.taskTitle}{f.meta?.taskType ? ` (${f.meta.taskType})` : ""}{f.meta?.taskIndex != null ? ` #${f.meta.taskIndex}/${f.meta?.totalTasks || "?"}` : ""}</span></div>
+                            )}
+                            {f.meta?.roomCode && (
+                              <div><span className="text-white/50">Room:</span> <span className="text-white/90">{f.meta.roomCode}</span></div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Grade review detail card */}
                       {isGradeReview && (
                         <div className="mt-2 rounded-lg border border-amber-400/20 bg-amber-500/5 p-2.5 text-xs">
