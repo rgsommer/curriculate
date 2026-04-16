@@ -185,6 +185,18 @@ function StudentApp() {
       return [{ name: "", email: "" }, { name: "", email: "" }, { name: "", email: "" }];
     }
   });
+  // Derive flat emails array from members (backward compat for components expecting emails[])
+  const emails = members.map((m) => (typeof m === "string" ? "" : m?.email || "").trim()).filter(Boolean);
+  const setEmails = (updated) => {
+    // updated is a string[] of emails — merge back into members
+    setMembers((prev) =>
+      prev.map((m, i) => ({
+        ...(typeof m === "string" ? { name: m } : m),
+        email: (Array.isArray(updated) ? updated[i] : "") || "",
+      }))
+    );
+  };
+
   const [roomIsActive, setRoomIsActive] = useState(false);
   const [roomState, setRoomState] = useState(null);
 
