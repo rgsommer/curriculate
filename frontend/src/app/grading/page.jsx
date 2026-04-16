@@ -993,6 +993,15 @@ export default function GradingPage() {
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState("");
 
+    // Total number of successful gradings this user has run (persisted across sessions).
+    // Used to hide introductory tips once the teacher clearly knows the workflow.
+    const [gradingUses, setGradingUses] = useState(() => {
+      if (typeof window === "undefined") return 0;
+      return readIntLS(FEEDBACK_USES_KEY, 0);
+    });
+    const TIPS_HIDDEN_AFTER = 10;
+    const tipsHidden = gradingUses >= TIPS_HIDDEN_AFTER;
+
     // ✅ One raw response string (always)
     const [serverText, setServerText] = useState("");
 
@@ -2011,6 +2020,7 @@ export default function GradingPage() {
             const uses = readIntLS(FEEDBACK_USES_KEY, 0);
             const nextUses = uses + 1;
             writeIntLS(FEEDBACK_USES_KEY, nextUses);
+            setGradingUses(nextUses);
 
             if (!showFeedbackPrompt && shouldShowFeedbackPrompt(nextUses)) {
               const triggers = [FEEDBACK_TRIGGER_1, FEEDBACK_TRIGGER_2]
@@ -2675,7 +2685,7 @@ export default function GradingPage() {
                   disabled={submitting}
                   title="Double-tap to flip camera"
                 >
-                  Photo
+                  {photos.length > 0 ? `Photo (${photos.length})` : "Photo"}
                 </button>
 
                 <button
@@ -2787,26 +2797,38 @@ export default function GradingPage() {
                 </button>
               </div>
 
-              <div style={styles.photoMeta}>
-                <div>
-                  <b>Photos:</b> {photos.length}
-                  {keyPhotoCount > 0 && (
-                    <span style={{ marginLeft: 10, color: "#059669", fontWeight: 700, fontSize: 12 }}>
-                      ({keyPhotoCount} key)
-                    </span>
+              {/* Only render the meta row when it has something to show. Once a teacher has
+                  done >10 gradings, we assume they know the workflow and drop the tip line.
+                  The "Photos: N" label is redundant (count is on the Photo toggle button above),
+                  so we keep only the key/rubric chips on the status line. */}
+              {(keyPhotoCount > 0 || rubricPhotoCount > 0 || !tipsHidden) && (
+                <div style={styles.photoMeta}>
+                  {(keyPhotoCount > 0 || rubricPhotoCount > 0) && (
+                    <div>
+                      {keyPhotoCount > 0 && (
+                        <span style={{ color: "#059669", fontWeight: 700, fontSize: 12 }}>
+                          {keyPhotoCount} key
+                        </span>
+                      )}
+                      {keyPhotoCount > 0 && rubricPhotoCount > 0 && (
+                        <span style={{ marginLeft: 8, opacity: 0.4 }}>·</span>
+                      )}
+                      {rubricPhotoCount > 0 && (
+                        <span style={{ marginLeft: keyPhotoCount > 0 ? 8 : 0, color: "#b45309", fontWeight: 700, fontSize: 12 }}>
+                          {rubricPhotoCount} rubric
+                        </span>
+                      )}
+                    </div>
                   )}
-                  {rubricPhotoCount > 0 && (
-                    <span style={{ marginLeft: 8, color: "#b45309", fontWeight: 700, fontSize: 12 }}>
-                      ({rubricPhotoCount} rubric)
-                    </span>
+                  {!tipsHidden && (
+                    <div style={{ opacity: 0.8 }}>
+                      {photos.length >= 2
+                        ? "Tip: Tap a thumbnail — once for Key, again for Rubric, again to clear."
+                        : "Tip: Capture with camera, or upload files from your device. Double tap for capture + submit."}
+                    </div>
                   )}
                 </div>
-                <div style={{ opacity: 0.8 }}>
-                  {photos.length >= 2
-                    ? "Tip: Tap a thumbnail — once for Key, again for Rubric, again to clear."
-                    : "Tip: Capture with camera, or upload files from your device. Double tap for capture + submit."}
-                </div>
-              </div>
+              )}
 
               {showAnswerKeyTagHint && photos.length >= 2 && (
                 <div style={{

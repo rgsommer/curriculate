@@ -8523,11 +8523,18 @@ function buildRubricInstructions({
     - incorrect_items is ONLY for questions where the student's FINAL ANSWER is WRONG.
     - If the student's final answer is correct, it MUST NOT appear in incorrect_items — even if the work shown is flawed.
       Flawed work with a correct answer is a Communication/methodology issue, not an incorrect answer.
-      Discuss methodology problems in the section's teacher_comment and the Communication achievement category instead.
+      Discuss methodology problems in the Communication achievement category only — NOT the score, NOT the deductions, NOT incorrect_items.
     - Keep prompts short.
     - Include student_answer and correct_answer for each truly incorrect item.
-    - If all final answers are correct, return incorrect_items: null.
+    - If all final answers are correct, return incorrect_items: null AND deductions: null.
     - Never include an item where student_answer and correct_answer are equivalent after normalization.
+
+    - FORBIDDEN PATTERNS — if you are about to write any of these, STOP and remove the item:
+      • "you wrote y=12 but the correct value is y=12 is incorrect…"  (self-contradicting)
+      • "the answer is right but the work is mathematically inconsistent" (methodology ≠ wrong answer)
+      • "correct answer but check the work" as justification for a deduction (not allowed)
+      • Listing a question as incorrect when student_answer equals correct_answer
+
     - SELF-CHECK: For each item you are about to add to incorrect_items, ask: "Is the student's final answer wrong?"
       If the answer is "no" or "the answer is right but the work is wrong", do NOT add it.
 
@@ -8571,26 +8578,45 @@ function buildRubricInstructions({
 
     MATH METHODOLOGY RULE (Communication — showing work):
     - For math papers, showing work is part of the COMMUNICATION dimension in the achievement summary.
-      It is not a separate penalty — it reflects how well the student communicates their mathematical thinking.
-    - The work shown must be REASONABLY CORRECT — not just present. A correct answer arrived at
-      through flawed reasoning or an incorrect method reflects weak communication even if the answer is right.
+      It is NOT a separate penalty — it reflects how well the student communicates their mathematical thinking.
+
+    - HARD RULE: If the student's FINAL ANSWER to a question is CORRECT, that question earns FULL MARKS.
+      You MUST NOT deduct marks from the question/section score because of imperfect notation,
+      sloppy intermediate steps, informal shorthand, skipped work, or non-textbook methodology.
+      Methodology observations go in the Communication achievement_summary comment ONLY — never in the score.
+
+    - Specifically, DO NOT deduct marks for any of the following when the final answer is correct:
+      • Informal inline notation such as "x+5=14-5" used as shorthand for "subtract 5 from both sides".
+        Students at grade 6-8 commonly write this even though it is not a strictly valid equation.
+        The meaning is clear; the final answer (x=9) is correct; award full marks.
+      • Typos or unconventional symbols (e.g., "·" instead of "+", "÷" instead of "/") as long as the
+        arithmetic carried out matches the intended operation and yields the correct answer.
+      • Skipped intermediate steps when the jump is small and the answer is correct.
+      • Using a less efficient method (e.g., guess-and-check, mental arithmetic) if the answer is right.
+      • Missing units when the question did not explicitly require them.
+
     - A correct final answer with NO work shown reflects limited communication
-      (unless the question is trivially simple for the grade level, e.g., basic arithmetic for grade 9+).
-    - Grade-appropriate expectations (don't be overly rigorous for younger students):
+      (note this in Communication, not in the score), UNLESS the question explicitly says
+      "show your work" or "justify your answer".
+
+    - Grade-appropriate expectations (used ONLY when commenting on Communication, never to deduct):
       - Grades 3-5: basic steps, drawings, counting, or number sentences. Accept informal methods
-        like tallying, skip counting, or pictures. The reasoning just needs to make sense for their age.
-      - Grades 6-8: working shown, formulas used, intermediate steps. Method should be sound but doesn't
-        need to be textbook-perfect. Accept valid alternative approaches.
-      - Grades 9+: complete mathematical reasoning, proper notation, logical steps. Expect appropriate
-        use of formulas, algebraic manipulation, and clear logical progression.
-    - If a student gets the right answer but the shown work is WRONG or contradicts the answer,
-      reflect this in both the section score (partial credit) and the Communication achievement category.
-    - If a student uses a method below their grade level (e.g., guess-and-check where algebraic
-      reasoning is expected at grade 9+), note it in Communication. For younger students,
-      informal methods that work are perfectly acceptable communication.
-    - If the question explicitly says "show your work" or "justify your answer", missing work = significant
-      impact on both the question score and the Communication category.
-    - Reflect methodology observations in the Communication achievement_summary comment.
+        like tallying, skip counting, or pictures.
+      - Grades 6-8: working shown, formulas used, intermediate steps. Method should be sound but does
+        NOT need to be textbook-perfect. Accept valid alternative approaches and informal notation.
+      - Grades 9+: complete mathematical reasoning, proper notation, logical steps.
+
+    - The ONLY scenarios where a correct-looking final answer may lose marks:
+      (a) The question EXPLICITLY says "show your work for full marks" / "method marks required" AND
+          no work is shown. Deduct a clearly stated method-mark amount (e.g., 0.5–1 of the question's marks).
+      (b) The "correct" answer is actually wrong under careful checking.
+      (c) A required unit was explicitly requested and is missing.
+
+    - Reflect all methodology observations in the Communication achievement_summary comment.
+
+    - SELF-CHECK (mandatory): Before you subtract marks from any math question, ask yourself:
+      "Is the student's FINAL ANSWER wrong?" If the answer is correct, award full marks and put any
+      methodology concerns into the Communication category only.
 
     SECTION REPORTING RULE:
     - If the test provides named sections with out_of values, you MUST:
