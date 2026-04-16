@@ -276,8 +276,6 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
       setIsListening(false);
       setInterimTranscript("");
     }
-    // No auto-start — user taps the mic button manually
-    }, 2300);
 
     return () => {
       if (listeningTimeoutRef.current) { clearTimeout(listeningTimeoutRef.current); listeningTimeoutRef.current = null; }
