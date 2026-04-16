@@ -4880,12 +4880,14 @@ function StudentApp() {
 )}
 
 {/* SCANNER PANEL (shows whenever scannerActive is true)
-    Hidden for PMC — the camera is embedded inside the task's own scanner UI */}
+    Hidden for PMC — the camera is embedded inside the task's own scanner UI
+    In mystery mode, hidden until a box is selected (currentTask is set) */}
 {scannerActive &&
   !tasksetComplete &&
   !isPhysicalMultipleChoice &&
   postSubmitSecondsLeft == null &&
   !taskLocked &&
+  !(isMysteryMode && !currentTask) &&
   (
     mustScan ||
     currentTask?.taskType === TASK_TYPES.MAD_DASH ||
@@ -5015,13 +5017,10 @@ function StudentApp() {
     <MysteryBoxGrid
       grid={mysteryBoxGrid}
       onOpenBox={(boxPos) => {
-        // Only gate on scan if the session actually uses station scanning
-        // (assignedStationId means this room uses stations)
-        if (mustScan && assignedStationId) {
-          setScanFirstPopup(true);
-          setTimeout(() => setScanFirstPopup(false), 3000);
-          return;
-        }
+        // In mystery mode: let the box open and task get assigned first.
+        // The scan requirement kicks in AFTER assignment — the task UI
+        // won't render until they scan (gated by mustScan in the task
+        // rendering condition). This gives the flow: Grid → Pick → Scan → Task.
         console.log("[mystery] opening box", boxPos, "teamId", teamId);
         socket.emit("mystery:openBox", {
           roomCode: roomCode.trim().toUpperCase(),
