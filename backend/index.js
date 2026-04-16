@@ -8254,8 +8254,12 @@ function buildRubricInstructions({
       - If you have only ONE section, that section's out_of = overall_out_of (the full denominator).
       - Do NOT create deductions for "missing questions" when using a shorthand denominator.
         The denominator is a weight, not a question count.
-      - ALWAYS allow PART MARKS (half marks, quarter marks, etc.) — especially with lower denominators.
-        A student who shows correct method but makes a small error deserves partial credit (e.g., 1.5/2, 0.75/1).
+      - PART MARKS ARE EXPECTED when questions are worth more than 1 mark.
+        If a question is worth 2 marks, valid scores are 0, 0.5, 1, 1.5, or 2 — not just 0 or 2.
+        Award part marks for: correct answer but no work shown (e.g., 1.5/2), partially correct method,
+        correct setup but arithmetic error, incomplete answer that shows understanding, etc.
+        This is the whole point of weighting questions higher — it allows finer-grained assessment.
+        A question worth 1 mark is binary (right or wrong). A question worth 2 marks should rarely be all-or-nothing.
       - Use your judgment to weight questions fairly — if one question is clearly more complex, it can receive more marks.
       ` : ""}
 
