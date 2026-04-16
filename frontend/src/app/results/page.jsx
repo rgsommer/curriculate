@@ -1105,7 +1105,7 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                     <button
                       type="button"
                       onClick={() => {
-                        const url = `https://www.curriculate.net/results?code=${code}`;
+                        const url = `https://www.curriculate.net/results/${code}`;
                         const name = (reviewStudentName || "").trim();
                         const tch = (reviewTeacherName || "").trim();
                         const sch = (reviewSchool || "").trim();

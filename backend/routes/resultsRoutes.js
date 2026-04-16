@@ -147,7 +147,7 @@ router.post("/grade-review", gradeReviewLimiter, async (req, res) => {
       return res.status(400).json({ error: "Missing result code." });
     }
 
-    const resultsUrl = `https://www.curriculate.net/results?code=${code}`;
+    const resultsUrl = `https://www.curriculate.net/results/${code}`;
     const cleanRole = ["student", "parent"].includes(role) ? role : "student";
 
     // Save to feedback log
