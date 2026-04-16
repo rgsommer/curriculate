@@ -45,6 +45,8 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
 
   const recognitionRef = useRef(null);
   const listeningTimeoutRef = useRef(null);
+  const clueIndexRef = useRef(currentClueIndex);
+  clueIndexRef.current = currentClueIndex; // always mirrors latest state
 
   const clues = useMemo(() => {
     const raw =
@@ -147,10 +149,9 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
       if (!isFinal) return; // wait for final result
       setInterimTranscript("");
 
-      const clueObj =
-        currentClueIndex >= 0 && currentClueIndex < clues.length
-          ? clues[currentClueIndex]
-          : null;
+      // Read from ref so this handler doesn't need to be recreated per clue
+      const ci = clueIndexRef.current;
+      const clueObj = ci >= 0 && ci < clues.length ? clues[ci] : null;
 
       const correctAnswer = (clueObj?.answer || "").toLowerCase();
       const spokenLower = String(spoken).toLowerCase();
@@ -169,7 +170,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
       }
 
       // Render the guess immediately (local)
-      pushGuess({ by: "You", spoken, correct: isCorrect, clueIndex: currentClueIndex });
+      pushGuess({ by: "You", spoken, correct: isCorrect, clueIndex: ci });
 
       if (isCorrect) {
         setScore((prev) => prev + 100);
@@ -182,7 +183,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
       if (socket) {
         socket.emit("brain-blitz-answer", {
           roomCode: task?.roomCode,
-          clueIndex: currentClueIndex,
+          clueIndex: ci,
           spoken,
           correct: isCorrect,
         });
@@ -234,7 +235,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
       recognitionRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clues, currentClueIndex, socket, task?.roomCode, disabled]);
+  }, [clues, socket, task?.roomCode, disabled]);
 
   // --- Socket listener: show guesses exactly as received -----------------------
   useEffect(() => {
@@ -265,65 +266,23 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
 
-  // Auto-start listening for each new clue (with countdown)
-  // Listens for up to 30 seconds before auto-advancing
-  const LISTEN_DURATION_MS = 30_000;
-
+  // Mic is now tap-on / tap-off — no auto-start, no countdown, no auto-timeout.
+  // Clean up any stale listening state when clue changes or overlay appears.
   useEffect(() => {
-    if (!currentClue || disabled) return;
-    if (showAnswerOverlay) return;
-    if (!recognitionRef.current) return;
-
-    setCountdown(3);
-    setIsListening(false);
-    setInterimTranscript("");
-
-    const tick = () => {
-      setCountdown((c) => {
-        if (c == null) return null;
-        if (c <= 1) return 0;
-        return c - 1;
-      });
-    };
-
-    const timer = setInterval(tick, 650);
-
-    const start = setTimeout(() => {
-      try {
-        recognitionRef.current.start();
-        setIsListening(true);
-      } catch {}
-
-      // Auto-stop after LISTEN_DURATION_MS if no answer captured
-      listeningTimeoutRef.current = setTimeout(() => {
-        listeningTimeoutRef.current = null; // clear so onend doesn't auto-restart
-        try { recognitionRef.current?.stop?.(); } catch {}
-        setIsListening(false);
-        setInterimTranscript("");
-        // Auto-advance: count as no answer (wrong)
-        pushGuess({ by: "You", spoken: "(no answer)", correct: false, clueIndex: currentClueIndex });
-        if (socket) {
-          socket.emit("brain-blitz-answer", {
-            roomCode: task?.roomCode,
-            clueIndex: currentClueIndex,
-            spoken: "(timed out)",
-            correct: false,
-          });
-        }
-        setCurrentClueIndex((prev) => prev + 1);
-      }, LISTEN_DURATION_MS);
-    }, 2100);
-
-    const clear = setTimeout(() => {
-      setCountdown(null);
-      clearInterval(timer);
+    if (!currentClue || disabled || showAnswerOverlay) {
+      // Stop mic when there's no active clue or overlay is up
+      if (listeningTimeoutRef.current) { clearTimeout(listeningTimeoutRef.current); listeningTimeoutRef.current = null; }
+      try { recognitionRef.current?.stop?.(); } catch {}
+      setIsListening(false);
+      setInterimTranscript("");
+    }
+    // No auto-start — user taps the mic button manually
     }, 2300);
 
     return () => {
-      clearTimeout(start);
-      clearTimeout(clear);
-      clearInterval(timer);
-      if (listeningTimeoutRef.current) clearTimeout(listeningTimeoutRef.current);
+      if (listeningTimeoutRef.current) { clearTimeout(listeningTimeoutRef.current); listeningTimeoutRef.current = null; }
+      try { recognitionRef.current?.stop?.(); } catch {}
+      setIsListening(false);
     };
   }, [currentClue, disabled, showAnswerOverlay]);
 
@@ -360,15 +319,26 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
     }
   }, [clues.length, currentClueIndex, hasSubmitted, onSubmit, score]);
 
-  const handleManualStart = () => {
+  const handleMicToggle = () => {
     if (!recognitionRef.current || disabled) return;
-    try { setMicError(null); } catch {}
-    try {
-      recognitionRef.current.start();
-      setIsListening(true);
-      setCountdown(null);
-    } catch {}
+    if (isListening) {
+      // Tap OFF
+      if (listeningTimeoutRef.current) { clearTimeout(listeningTimeoutRef.current); listeningTimeoutRef.current = null; }
+      try { recognitionRef.current.stop(); } catch {}
+      setIsListening(false);
+      setInterimTranscript("");
+    } else {
+      // Tap ON
+      try { setMicError(null); } catch {}
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+        setCountdown(null);
+      } catch {}
+    }
   };
+  // Keep old name as alias for any other references
+  const handleManualStart = handleMicToggle;
 
   const statusLabel = showAnswerOverlay
     ? "Round recap"
@@ -729,9 +699,12 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
           </div>
         </div>
 
-        {/* Prominent listening indicator */}
+        {/* Mic toggle — tap on / tap off */}
         {isListening ? (
           <div
+            onClick={handleMicToggle}
+            role="button"
+            tabIndex={0}
             style={{
               display: "flex",
               alignItems: "center",
@@ -741,6 +714,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
               background: "rgba(239,68,68,0.08)",
               border: "2px solid rgba(239,68,68,0.35)",
               animation: "bbMicPulse 1.5s ease-in-out infinite",
+              cursor: "pointer",
             }}
           >
             <div
@@ -776,6 +750,9 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
               <div style={{ fontWeight: 950, fontSize: 15, color: "#dc2626" }}>
                 LISTENING — Shout your answer!
               </div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#9ca3af", marginTop: 1 }}>
+                Tap to stop mic
+              </div>
               {interimTranscript && (
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#6b7280", marginTop: 2, fontStyle: "italic" }}>
                   Hearing: "{interimTranscript}"
@@ -784,28 +761,48 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
             </div>
           </div>
         ) : (
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <Pill subtle>
-              🎤 Ready for your shout
-            </Pill>
-
-            {recognitionRef.current && (
-              <PrimaryButton onClick={handleManualStart} disabled={disabled}>
-                Start Mic
-              </PrimaryButton>
-            )}
-
-            {!micSupported && (
-              <Pill>Mic not supported in this browser</Pill>
-            )}
-
-            {micSupported && !recognitionRef.current && (
-              <Pill>Mic initializing…</Pill>
-            )}
-
-            {micSupported && recognitionRef.current && micError && (
-              <Pill>Mic blocked or unavailable ({String(micError)}) — tap Start Mic</Pill>
-            )}
+          <div
+            onClick={handleMicToggle}
+            role="button"
+            tabIndex={0}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+              padding: "14px 18px",
+              borderRadius: 18,
+              background: "rgba(15,23,42,0.04)",
+              border: "2px solid rgba(15,23,42,0.15)",
+              cursor: recognitionRef.current && !disabled ? "pointer" : "default",
+              opacity: !micSupported ? 0.5 : 1,
+            }}
+          >
+            <div
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: "50%",
+                background: "linear-gradient(135deg, #6b7280, #4b5563)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 22,
+                flexShrink: 0,
+              }}
+            >
+              🎤
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 950, fontSize: 15, color: "#1e293b" }}>
+                Tap to start mic
+              </div>
+              {!micSupported && (
+                <div style={{ fontSize: 12, color: "#ef4444", marginTop: 2 }}>Mic not supported in this browser</div>
+              )}
+              {micSupported && micError && (
+                <div style={{ fontSize: 12, color: "#ef4444", marginTop: 2 }}>Mic error: {String(micError)} — tap to retry</div>
+              )}
+            </div>
           </div>
         )}
 
