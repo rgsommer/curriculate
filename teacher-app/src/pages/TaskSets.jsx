@@ -1577,7 +1577,7 @@ export default function TaskSets() {
           }}>
             <h2 style={{ marginTop: 0, marginBottom: 4, fontSize: 18 }}>🔧 Diagnose & Fix</h2>
             <p style={{ color: "#6b7280", marginBottom: 16, fontSize: 13, lineHeight: 1.5 }}>
-              This will validate every task, auto-fix what it can, and log a diagnostic report you can copy to share with developers.
+              This will validate every task, auto-fix structural issues, and use AI to regenerate any tasks that can't be fixed mechanically. Everything gets logged for developer review.
             </p>
 
             {!fixResult && (
@@ -1609,7 +1609,7 @@ export default function TaskSets() {
                     background: fixRunning ? "#94a3b8" : "#2563eb", color: "#fff",
                     fontWeight: 700, fontSize: 13, cursor: fixRunning ? "wait" : "pointer",
                   }}>
-                    {fixRunning ? "Diagnosing…" : "Run Diagnosis"}
+                    {fixRunning ? "Fixing…" : "🔧 Diagnose & Fix"}
                   </button>
                 </div>
               </>
@@ -1634,23 +1634,29 @@ export default function TaskSets() {
                 {/* Per-task details */}
                 {(fixResult.diagnostics || []).length > 0 && (
                   <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
-                    {fixResult.diagnostics.map((d, i) => (
-                      <div key={i} style={{
-                        background: d.fixed ? "#f0fdf4" : "#fffbeb",
-                        border: `1px solid ${d.fixed ? "#86efac" : "#fcd34d"}`,
-                        borderRadius: 10, padding: 12,
-                      }}>
-                        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>
-                          {d.fixed ? "✅" : "⚠️"} Task {d.taskIndex + 1}: {d.taskType}
+                    {fixResult.diagnostics.map((d, i) => {
+                      const statusIcon = d.aiRepaired ? "🤖" : d.fixed ? "✅" : "⚠️";
+                      const statusLabel = d.aiRepaired ? "AI-repaired" : d.fixed ? "Structural fix" : d.aiRepairError ? "AI repair failed" : "Needs attention";
+                      const bg = d.fixed || d.aiRepaired ? "#f0fdf4" : "#fffbeb";
+                      const border = d.fixed || d.aiRepaired ? "#86efac" : "#fcd34d";
+                      return (
+                        <div key={i} style={{ background: bg, border: `1px solid ${border}`, borderRadius: 10, padding: 12 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>
+                            {statusIcon} Task {d.taskIndex + 1}: {d.taskType}
+                            <span style={{ fontWeight: 500, fontSize: 11, marginLeft: 8, opacity: 0.7 }}>({statusLabel})</span>
+                          </div>
+                          <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6, fontStyle: "italic" }}>
+                            {d.title}
+                          </div>
+                          <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: "#374151", lineHeight: 1.6 }}>
+                            {d.errors.map((e, j) => <li key={j}>{e}</li>)}
+                          </ul>
+                          {d.aiRepairError && (
+                            <div style={{ fontSize: 11, color: "#dc2626", marginTop: 4 }}>AI error: {d.aiRepairError}</div>
+                          )}
                         </div>
-                        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6, fontStyle: "italic" }}>
-                          {d.title}
-                        </div>
-                        <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: "#374151", lineHeight: 1.6 }}>
-                          {d.errors.map((e, j) => <li key={j}>{e}</li>)}
-                        </ul>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 

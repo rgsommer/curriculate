@@ -10,14 +10,19 @@ const TaskDiagnosticLogSchema = new mongoose.Schema(
     totalTasks: { type: Number, default: 0 },
     issuesFound: { type: Number, default: 0 },
     issuesFixed: { type: Number, default: 0 },
+    aiRepaired: { type: Number, default: 0 },
     // Per-task diagnostic detail
     diagnostics: [
       {
         taskIndex: Number,
         taskType: String,
         title: String,
-        errors: [String],       // validation errors found
+        errors: [String],           // validation errors found (original)
+        postFixErrors: [String],    // errors remaining after structural fix
         fixed: { type: Boolean, default: false },
+        aiRepaired: { type: Boolean, default: false },
+        aiRepairError: String,      // if AI repair was attempted but failed
+        rawTask: { type: mongoose.Schema.Types.Mixed }, // original broken JSON
         _id: false,
       },
     ],

@@ -6,7 +6,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import TaskSet from "../models/TaskSet.js";
 import { sanitizeTaskShapeByType } from "../controllers/sanitizeTaskShape.js";
-import { validateAiTask } from "../controllers/sharedTasksetController.js";
+import { validateAiTask, regenerateSingleTask } from "../controllers/sharedTasksetController.js";
 import TaskDiagnosticLog from "../models/TaskDiagnosticLog.js";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 
@@ -204,45 +204,62 @@ router.post("/:id/sanitize", auth, async (req, res) => {
     const diagnostics = [];
     let issuesFound = 0;
     let issuesFixed = 0;
+    let aiRepaired = 0;
 
+    // Extract taskset metadata for AI repair context
+    const tsMeta = {
+      subject: doc.subject || doc.meta?.subject || "General",
+      gradeLevel: doc.gradeLevel || doc.meta?.gradeLevel || 7,
+      difficulty: doc.difficulty || doc.meta?.difficulty || "MEDIUM",
+      learningGoal: doc.learningGoal || doc.meta?.learningGoal || "",
+      topicLabel: doc.name || "Repair",
+    };
+
+    // ── Pass 1: Deterministic sanitize ──
     const sanitized = tasks.map((task, idx) => {
       if (!task || typeof task !== "object") return task;
       const raw = typeof task.toObject === "function" ? task.toObject() : { ...task };
       const type = raw.taskType || raw.type || "";
-      const title = raw.title || raw.prompt || `Task ${idx + 1}`;
+      const cleaned = sanitizeTaskShapeByType(type, raw);
+      return cleaned;
+    });
 
-      // Step 1: Validate BEFORE sanitizing to capture original errors
-      let errors = [];
+    // ── Pass 2: Validate everything, collect what's still broken ──
+    const needsAiRepair = []; // { idx, type, task, errors }
+
+    for (let idx = 0; idx < sanitized.length; idx++) {
+      const task = sanitized[idx];
+      if (!task || typeof task !== "object") continue;
+      const raw = typeof tasks[idx].toObject === "function" ? tasks[idx].toObject() : { ...tasks[idx] };
+      const type = task.taskType || task.type || "";
+      const title = task.title || task.prompt || `Task ${idx + 1}`;
+
+      // Validate original (for logging)
+      let originalErrors = [];
       try {
         const v = validateAiTask(type, raw);
-        if (!v.ok) errors = v.errors || [];
+        if (!v.ok) originalErrors = v.errors || [];
       } catch (e) {
-        errors = [e?.message || "Validation threw an error"];
+        originalErrors = [e?.message || "Validation error"];
       }
 
-      // Step 2: Sanitize
-      const cleaned = sanitizeTaskShapeByType(type, raw);
-      const wasChanged = JSON.stringify(cleaned) !== JSON.stringify(raw);
-
-      // Step 3: Validate AFTER sanitizing to see what's still broken
+      // Validate post-sanitize
       let postErrors = [];
       try {
-        const v2 = validateAiTask(type, cleaned);
+        const v2 = validateAiTask(type, task);
         if (!v2.ok) postErrors = v2.errors || [];
       } catch (e) {
-        postErrors = [e?.message || "Post-sanitize validation threw"];
+        postErrors = [e?.message || "Post-sanitize validation error"];
       }
 
-      const fixed = wasChanged && postErrors.length < errors.length;
+      const structurallyFixed = originalErrors.length > 0 && postErrors.length < originalErrors.length;
 
-      if (errors.length > 0) {
-        issuesFound += errors.length;
-        if (fixed) issuesFixed += (errors.length - postErrors.length);
+      if (originalErrors.length > 0) {
+        issuesFound += originalErrors.length;
+        if (structurallyFixed) issuesFixed += (originalErrors.length - postErrors.length);
 
-        // Capture the raw task JSON (pre-fix) so developers can see exactly
-        // what the AI produced. Strip huge fields to keep logs manageable.
+        // Snapshot for logging
         const snapshot = { ...raw };
-        // Trim media URLs and large text to keep it focused
         if (snapshot.mediaUrl) snapshot.mediaUrl = "(truncated)";
         if (snapshot.passage && snapshot.passage.length > 300) {
           snapshot.passage = snapshot.passage.slice(0, 300) + "…";
@@ -252,22 +269,72 @@ router.post("/:id/sanitize", auth, async (req, res) => {
           taskIndex: idx,
           taskType: type,
           title: title.slice(0, 120),
-          errors: errors.slice(0, 20),
+          errors: originalErrors.slice(0, 20),
           postFixErrors: postErrors.slice(0, 20),
-          fixed,
+          fixed: structurallyFixed && postErrors.length === 0,
+          aiRepaired: false,
           rawTask: snapshot,
         });
+
+        // If still broken after sanitize, queue for AI repair
+        if (postErrors.length > 0) {
+          needsAiRepair.push({ idx, type, task, postErrors });
+        }
       }
+    }
 
-      return cleaned;
-    });
+    // ── Pass 3: AI repair for tasks still broken after sanitize ──
+    // Run up to 5 AI repairs per request to avoid timeouts
+    const AI_REPAIR_LIMIT = 5;
+    const repairQueue = needsAiRepair.slice(0, AI_REPAIR_LIMIT);
 
-    // Save fixed tasks
+    for (const { idx, type, task, postErrors } of repairQueue) {
+      try {
+        console.log(`[sanitize] AI repairing task ${idx} (${type}): ${postErrors.join("; ")}`);
+        const repaired = await regenerateSingleTask({
+          allowedType: type,
+          subject: tsMeta.subject,
+          gradeLevel: tsMeta.gradeLevel,
+          difficulty: tsMeta.difficulty,
+          learningGoal: tsMeta.learningGoal,
+          topicLabel: tsMeta.topicLabel,
+          vocabularyLines: "",
+          specialConsiderations: teacherNote || "",
+          previousTask: task,
+          previousError: postErrors.join("; "),
+          temperature: 0.5,
+        });
+
+        if (repaired && typeof repaired === "object") {
+          // Preserve original title/prompt if AI didn't improve them
+          if (!repaired.title && task.title) repaired.title = task.title;
+          sanitized[idx] = repaired;
+          aiRepaired++;
+
+          // Update the diagnostic entry
+          const diagEntry = diagnostics.find((d) => d.taskIndex === idx);
+          if (diagEntry) {
+            diagEntry.aiRepaired = true;
+            diagEntry.fixed = true;
+            diagEntry.postFixErrors = [];
+          }
+        }
+      } catch (aiErr) {
+        console.error(`[sanitize] AI repair failed for task ${idx}:`, aiErr?.message);
+        // Update diagnostic to note AI repair was attempted but failed
+        const diagEntry = diagnostics.find((d) => d.taskIndex === idx);
+        if (diagEntry) {
+          diagEntry.aiRepairError = aiErr?.message || "AI repair failed";
+        }
+      }
+    }
+
+    // ── Save ──
     doc.tasks = sanitized;
     doc.updatedAt = new Date();
     await doc.save();
 
-    // Write diagnostic log (MongoDB + local JSONL file)
+    // ── Log (MongoDB + local JSONL) ──
     let logId = null;
     const logEntry = {
       ts: new Date().toISOString(),
@@ -277,6 +344,7 @@ router.post("/:id/sanitize", auth, async (req, res) => {
       totalTasks: tasks.length,
       issuesFound,
       issuesFixed,
+      aiRepaired,
       diagnostics,
     };
 
@@ -290,11 +358,24 @@ router.post("/:id/sanitize", auth, async (req, res) => {
       console.error("Failed to write diagnostic log to DB:", logErr?.message);
     }
 
-    // Append to local file so developer can read it directly
     try {
       fs.appendFileSync(DIAG_LOG_PATH, JSON.stringify(logEntry) + "\n");
     } catch (fileErr) {
       console.error("Failed to write diagnostic-logs.jsonl:", fileErr?.message);
+    }
+
+    // ── Response ──
+    const totalFixed = issuesFixed + aiRepaired;
+    let message;
+    if (issuesFound === 0) {
+      message = `All ${tasks.length} tasks passed validation.`;
+    } else if (totalFixed > 0 && needsAiRepair.length === aiRepaired) {
+      message = `Found ${issuesFound} issue(s). All fixed (${issuesFixed} structural, ${aiRepaired} AI-repaired).`;
+    } else if (totalFixed > 0) {
+      const remaining = diagnostics.filter((d) => !d.fixed).length;
+      message = `Found ${issuesFound} issue(s). Fixed ${totalFixed} (${issuesFixed} structural, ${aiRepaired} AI-repaired). ${remaining} task(s) still need attention.`;
+    } else {
+      message = `Found ${issuesFound} issue(s) across ${diagnostics.length} task(s). Could not auto-fix — logged for developer review.`;
     }
 
     return res.json({
@@ -302,13 +383,10 @@ router.post("/:id/sanitize", auth, async (req, res) => {
       taskCount: tasks.length,
       issuesFound,
       issuesFixed,
+      aiRepaired,
       diagnostics,
       logId,
-      message: issuesFound === 0
-        ? `All ${tasks.length} tasks passed validation.`
-        : issuesFixed > 0
-          ? `Found ${issuesFound} issue(s) across ${diagnostics.length} task(s). Auto-fixed ${issuesFixed}.`
-          : `Found ${issuesFound} issue(s) across ${diagnostics.length} task(s). Could not auto-fix — may need AI regeneration.`,
+      message,
     });
   } catch (err) {
     console.error("POST /api/tasksets/:id/sanitize error:", err);
