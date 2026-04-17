@@ -133,6 +133,9 @@ export default function BatchGrading({
   const [pdfName, setPdfName] = useState("");
   const [pageCount, setPageCount] = useState(0);
   const [pagesPerStudent, setPagesPerStudent] = useState(1);
+  const [answerKeyPages, setAnswerKeyPages] = useState(0); // leading pages that are the answer key
+  const [localRubric, setLocalRubric] = useState(rubricOverride || "");
+  const [extractedAnswerKey, setExtractedAnswerKey] = useState(answerKeyOverride || "");
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
 
@@ -180,7 +183,9 @@ export default function BatchGrading({
   }, []);
 
   // ---------- Student count ----------
-  const studentCount = pageCount > 0 ? Math.ceil(pageCount / pagesPerStudent) : 0;
+  // Pages available for student work (after answer key pages)
+  const studentPages = Math.max(0, pageCount - answerKeyPages);
+  const studentCount = studentPages > 0 ? Math.ceil(studentPages / pagesPerStudent) : 0;
 
   // ---------- Run batch grading ----------
   const runBatch = useCallback(async () => {
@@ -198,10 +203,47 @@ export default function BatchGrading({
     const batchSessionId = `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const batchResults = [];
 
+    // --- Extract answer key from leading pages if configured ---
+    let effectiveAnswerKey = extractedAnswerKey || "";
+    let answerKeyImages = null;
+
+    if (answerKeyPages > 0 && !effectiveAnswerKey) {
+      setProgress({ done: 0, total, current: "Extracting answer key..." });
+      try {
+        const akImages = [];
+        for (let p = 1; p <= Math.min(answerKeyPages, pageCount); p++) {
+          akImages.push(await renderPageToDataUrl(doc, p));
+        }
+        answerKeyImages = akImages;
+
+        // Call answer key extraction endpoint
+        const extractUrl = gradingUrl.replace(/\/grading$/, "/grading/extract-answer-key");
+        const extractRes = await fetch(extractUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answerKeyImages: akImages, standards, gradeBand }),
+        });
+        if (extractRes.ok) {
+          const extractData = await extractRes.json();
+          if (extractData.answerKeyText) {
+            effectiveAnswerKey = extractData.answerKeyText;
+            setExtractedAnswerKey(effectiveAnswerKey);
+          }
+        }
+      } catch (e) {
+        console.warn("[batch] answer key extraction failed:", e);
+      }
+    }
+
+    // Effective rubric: local override > prop
+    const effectiveRubric = (localRubric || "").trim() || rubricOverride || "";
+
     for (let i = 0; i < total; i++) {
       if (abortRef.current) break;
 
-      const startPage = i * pagesPerStudent + 1;
+      // Student pages start after answer key pages
+      const firstStudentPage = answerKeyPages + 1;
+      const startPage = firstStudentPage + i * pagesPerStudent;
       const endPage = Math.min(startPage + pagesPerStudent - 1, pageCount);
 
       setProgress({
@@ -221,8 +263,10 @@ export default function BatchGrading({
         // Call existing grading endpoint
         const payload = {
           images,
-          rubricOverride: rubricOverride || null,
-          answerKeyOverride: answerKeyOverride || null,
+          // Send raw answer key images only if extraction didn't produce text
+          answerKeyImages: (effectiveAnswerKey ? undefined : answerKeyImages) || undefined,
+          rubricOverride: effectiveRubric || null,
+          answerKeyOverride: effectiveAnswerKey || null,
           gradeBand,
           standards,
           meta: {
@@ -355,7 +399,11 @@ export default function BatchGrading({
     studentCount,
     pageCount,
     pagesPerStudent,
+    answerKeyPages,
+    extractedAnswerKey,
+    localRubric,
     gradingUrl,
+    resultsUrl,
     gradeBand,
     standards,
     feedbackVoice,
@@ -444,8 +492,13 @@ export default function BatchGrading({
 
     try {
       await navigator.clipboard.writeText(lines.join("\n"));
+      setCopiedSummary(true);
+      setTimeout(() => setCopiedSummary(false), 2000);
     } catch {}
   }, [results, classSummary, pdfName]);
+
+  // ---------- Copy ack ----------
+  const [copiedSummary, setCopiedSummary] = useState(false);
 
   // ---------- Expanded row ----------
   const [expandedIndex, setExpandedIndex] = useState(null);
@@ -529,7 +582,23 @@ export default function BatchGrading({
             {pdfName} — {pageCount} page{pageCount !== 1 ? "s" : ""}
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+            <label style={batchStyles.label}>
+              Answer key pages
+              <select
+                value={answerKeyPages}
+                onChange={(e) => setAnswerKeyPages(Number(e.target.value))}
+                style={batchStyles.select}
+              >
+                <option value={0}>None</option>
+                {Array.from({ length: Math.min(pageCount, 5) }, (_, i) => i + 1).map((n) => (
+                  <option key={n} value={n}>
+                    First {n} page{n > 1 ? "s" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <label style={batchStyles.label}>
               Pages per student
               <select
@@ -546,23 +615,48 @@ export default function BatchGrading({
             </label>
 
             <div style={{ fontSize: 13, opacity: 0.7, paddingTop: 20 }}>
-              = <strong>{studentCount}</strong> student{studentCount !== 1 ? "s" : ""}
-              {pageCount % pagesPerStudent !== 0 && (
-                <span style={{ color: "#ca8a04", marginLeft: 6 }}>
-                  (last student: {pageCount % pagesPerStudent} page{pageCount % pagesPerStudent !== 1 ? "s" : ""})
-                </span>
+              {answerKeyPages > 0 && (
+                <div style={{ color: "#059669", fontWeight: 600, marginBottom: 2 }}>
+                  Page{answerKeyPages > 1 ? `s 1–${answerKeyPages}` : " 1"} = answer key
+                </div>
               )}
+              <div>
+                {studentPages > 0 ? (
+                  <>
+                    = <strong>{studentCount}</strong> student{studentCount !== 1 ? "s" : ""}
+                    {studentPages % pagesPerStudent !== 0 && (
+                      <span style={{ color: "#ca8a04", marginLeft: 6 }}>
+                        (last student: {studentPages % pagesPerStudent} page{studentPages % pagesPerStudent !== 1 ? "s" : ""})
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span style={{ color: "#dc2626" }}>No pages left for students</span>
+                )}
+              </div>
             </div>
           </div>
 
-          {rubricOverride && (
-            <div style={batchStyles.sticky}>
-              Rubric/override active — will apply to all students
+          {/* Rubric override */}
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontWeight: 800, fontSize: 12, marginBottom: 4 }}>
+              Rubric / denominator override
+              {(localRubric || "").trim() ? (
+                <span style={{ fontWeight: 600, color: "#2563eb", marginLeft: 8 }}>active</span>
+              ) : null}
             </div>
-          )}
-          {answerKeyOverride && (
-            <div style={batchStyles.sticky}>
-              Answer key active — will apply to all students
+            <textarea
+              value={localRubric}
+              onChange={(e) => setLocalRubric(e.target.value)}
+              placeholder="Optional: paste rubric, denominator (/20), or grading instructions..."
+              rows={3}
+              style={batchStyles.textarea}
+            />
+          </div>
+
+          {extractedAnswerKey && (
+            <div style={{ ...batchStyles.sticky, marginTop: 8 }}>
+              Answer key extracted — will apply to all students
             </div>
           )}
 
@@ -580,6 +674,8 @@ export default function BatchGrading({
                 setPdfFile(null);
                 setPdfName("");
                 setPageCount(0);
+                setAnswerKeyPages(0);
+                setExtractedAnswerKey(answerKeyOverride || "");
                 pdfDocRef.current = null;
                 if (fileInputRef.current) fileInputRef.current.value = "";
               }}
@@ -626,7 +722,7 @@ export default function BatchGrading({
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={copySummary} style={batchStyles.smallBtn} type="button">
-                Copy Summary
+                {copiedSummary ? "Copied ✓" : "Copy Summary"}
               </button>
               <button onClick={exportCsv} style={batchStyles.smallBtn} type="button">
                 Export CSV
@@ -821,6 +917,8 @@ export default function BatchGrading({
                   setPdfFile(null);
                   setPdfName("");
                   setPageCount(0);
+                  setAnswerKeyPages(0);
+                  setExtractedAnswerKey(answerKeyOverride || "");
                   setResults([]);
                   setClassSummary(null);
                   setExpandedIndex(null);
@@ -912,6 +1010,18 @@ const batchStyles = {
     fontSize: 12,
     color: "#16a34a",
     fontWeight: 600,
+  },
+  textarea: {
+    width: "100%",
+    borderRadius: 10,
+    border: "1px solid rgba(15,23,42,0.12)",
+    padding: 10,
+    fontSize: 13,
+    lineHeight: 1.35,
+    outline: "none",
+    background: "white",
+    resize: "vertical",
+    fontFamily: "inherit",
   },
   runBtn: {
     background: "#2563eb",
