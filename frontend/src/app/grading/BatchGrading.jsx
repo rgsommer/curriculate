@@ -87,8 +87,40 @@ function letterGradeColor(letter) {
   return "#dc2626";
 }
 
+// Build a plain-text payload for the results portal (minimal version)
+function buildBatchPayloadText(result) {
+  const lines = [];
+  if (result.studentName) lines.push(`Student: ${result.studentName}`);
+  lines.push(`Grade: ${result.score}/${result.outOf}${result.pct != null ? ` (${result.pct}%)` : ""} ${result.letter}`);
+  lines.push("");
+  if (result.strengths.length) {
+    lines.push("Strengths:");
+    result.strengths.forEach((s) => lines.push(`- ${s}`));
+    lines.push("");
+  }
+  if (result.improvements.length) {
+    lines.push("Next Steps:");
+    result.improvements.forEach((s) => lines.push(`- ${s}`));
+    lines.push("");
+  }
+  if (result.comment) {
+    lines.push("Comment:");
+    lines.push(result.comment);
+    lines.push("");
+  }
+  if (Array.isArray(result.sections) && result.sections.length) {
+    lines.push("Sections:");
+    result.sections.forEach((sec) => {
+      lines.push(`- ${sec.name}: ${sec.score}/${sec.out_of}${sec.teacher_comment ? ` — ${sec.teacher_comment}` : ""}`);
+    });
+    lines.push("");
+  }
+  return lines.join("\n").trim();
+}
+
 export default function BatchGrading({
   gradingUrl,
+  resultsUrl,
   gradeBand,
   standards,
   feedbackVoice,
@@ -221,7 +253,7 @@ export default function BatchGrading({
             ? Math.round((score / outOf) * 100)
             : null;
 
-        batchResults.push({
+        const resultEntry = {
           index: i + 1,
           pages: `${startPage}–${endPage}`,
           studentName: data.student_name || `Student ${i + 1}`,
@@ -235,10 +267,33 @@ export default function BatchGrading({
           sections: data.sections || null,
           subject: data.inferred_subject || "",
           assessmentType: data.inferred_assessment_type || "",
-          refCode: data.meta?.refCode || null,
+          refCode: null,
           error: data.error || null,
           raw: data,
-        });
+        };
+
+        // Publish to results portal to get AB123 ref code
+        if (resultsUrl && !resultEntry.error) {
+          try {
+            const pubRes = await fetch(resultsUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                payload: buildBatchPayloadText(resultEntry),
+                meta: { source: "batch-grading", batchIndex: i, gradeBand },
+                sessionId: batchSessionId,
+              }),
+            });
+            const pubData = await pubRes.json().catch(() => ({}));
+            if (pubData.code) {
+              resultEntry.refCode = String(pubData.code).toUpperCase();
+            }
+          } catch (e) {
+            console.warn(`[batch] publish for student ${i + 1} failed:`, e);
+          }
+        }
+
+        batchResults.push(resultEntry);
       } catch (err) {
         batchResults.push({
           index: i + 1,
@@ -328,6 +383,7 @@ export default function BatchGrading({
       "Out Of",
       "Percent",
       "Letter",
+      "Code",
       "Subject",
       "Type",
       "Strengths",
@@ -341,6 +397,7 @@ export default function BatchGrading({
       r.outOf,
       r.pct != null ? `${r.pct}%` : "",
       r.letter,
+      r.refCode || "",
       r.subject,
       r.assessmentType,
       r.strengths.join("; "),
@@ -380,7 +437,7 @@ export default function BatchGrading({
 
     results.forEach((r) => {
       lines.push(
-        `${r.studentName}: ${r.score}/${r.outOf} (${r.pct != null ? r.pct + "%" : "?"}) ${r.letter}`
+        `${r.studentName}: ${r.score}/${r.outOf} (${r.pct != null ? r.pct + "%" : "?"}) ${r.letter}${r.refCode ? `  [${r.refCode}]` : ""}`
       );
       if (r.comment) lines.push(`  ${r.comment}`);
     });
@@ -632,6 +689,7 @@ export default function BatchGrading({
                   <th style={batchStyles.th}>Score</th>
                   <th style={batchStyles.th}>%</th>
                   <th style={batchStyles.th}>Grade</th>
+                  <th style={batchStyles.th}>Code</th>
                   <th style={{ ...batchStyles.th, textAlign: "left" }}>Comment</th>
                 </tr>
               </thead>
@@ -676,6 +734,18 @@ export default function BatchGrading({
                       <td
                         style={{
                           ...batchStyles.td,
+                          fontFamily: "monospace",
+                          fontWeight: 700,
+                          fontSize: 12,
+                          letterSpacing: 0.5,
+                          color: r.refCode ? "#2563eb" : "#999",
+                        }}
+                      >
+                        {r.refCode || "—"}
+                      </td>
+                      <td
+                        style={{
+                          ...batchStyles.td,
                           textAlign: "left",
                           maxWidth: 280,
                           overflow: "hidden",
@@ -694,7 +764,7 @@ export default function BatchGrading({
                     {/* Expanded detail row */}
                     {expandedIndex === r.index && !r.error && (
                       <tr>
-                        <td colSpan={7} style={batchStyles.expandedTd}>
+                        <td colSpan={8} style={batchStyles.expandedTd}>
                           <div style={batchStyles.expandedContent}>
                             {r.comment && (
                               <div style={{ marginBottom: 8 }}>

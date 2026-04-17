@@ -2724,6 +2724,7 @@ export default function GradingPage() {
           {inputMode === "batch" ? (
             <BatchGrading
               gradingUrl={gradingUrl}
+              resultsUrl={resultsCreateUrl}
               gradeBand={gradeBand}
               standards={standards}
               feedbackVoice={voiceOverrideOn ? voiceOverride : voice}
