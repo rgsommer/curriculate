@@ -780,10 +780,14 @@ function validateMindMapperTask(task) {
   if (!Array.isArray(items) || items.length < 4) {
     errors.push("items[] must be an array with at least 4 items");
   } else {
+    const placeholderRe = /^(concept|item|term|word|answer|option|placeholder|example|blank|entry)\s*\d+$/i;
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       const text = typeof it === "string" ? it : it?.text ?? it?.label ?? it?.prompt ?? it?.name;
       if (!_isNonEmptyString(text)) errors.push(`items[${i}].text is required`);
+      else if (placeholderRe.test(String(text).trim())) {
+        errors.push(`items[${i}] is placeholder text ("${text}") — must use real vocabulary terms`);
+      }
       if (typeof it === "object") {
         const ci = it?.correctIndex;
         if (typeof ci !== "number" || !Number.isFinite(ci)) errors.push(`items[${i}].correctIndex must be a number`);
@@ -910,7 +914,15 @@ export const retryMustHave = {
   [TASK_TYPES.MAD_DASH_SEQUENCE]:
     "MAD_DASH_SEQUENCE must include config.items (array of 3–5 strings) AND config.correctOrder (a permutation of indexes 0..items.length-1). Do NOT include colors; colors are assigned at runtime. IMPORTANT: The items must be sequential STEPS for solving ONE specific problem or completing ONE specific process (e.g. steps of photosynthesis, stages of cell division). Each item is ONE step — do NOT mix unrelated facts or topics. correctOrder values must be INTEGERS (not strings). CRITICAL: items must be listed in SCRAMBLED order, NOT already in the correct sequence. The correctOrder array tells the system how to unscramble them. If items are [A,B,C,D] and correct sequence is B,D,A,C then correctOrder is [1,3,0,2]. A trivial correctOrder of [0,1,2,3] means the items are already in order — that is NOT a puzzle and will be REJECTED.",
   [TASK_TYPES.MIND_MAPPER]:
-    "MIND_MAPPER must include structure (organizer with blanks) and items[] (>=4).",
+    `MIND_MAPPER must include ALL of these fields at the ROOT level (not only inside config):
+  - organizerType: one of "mind-map", "hierarchy", "fishbone", "flowchart", "venn", "web"
+  - structure: an object representing the graphic organizer layout with blank slots marked as "_____" where students drag items.
+    Example structure for a mind-map: { "center": "Photosynthesis", "branches": [ { "label": "Inputs", "slots": ["_____", "_____"] }, { "label": "Outputs", "slots": ["_____", "_____"] } ] }
+  - items: an array of 4-8 draggable word-bank items. Each item: { text: "real vocabulary term", correctIndex: <number> }.
+    CRITICAL: items MUST be REAL vocabulary terms or concepts from the subject matter. NEVER use placeholder text like "Concept 1", "Item 2", "Term 3" — these will be IMMEDIATELY REJECTED.
+    The correctIndex for each item corresponds to its correct blank position in the structure (0-based).
+  Also set config.structure and config.items as copies of the root-level fields.
+  The number of "_____" blanks in structure MUST equal the number of items.`,
   [TASK_TYPES.MAKE_AND_SNAP]:
     "MAKE_AND_SNAP must include config: { requiresPhoto: true, materials: string[] } and a clear prompt.",
   [TASK_TYPES.NARRATION_SYNTHESIZE]:

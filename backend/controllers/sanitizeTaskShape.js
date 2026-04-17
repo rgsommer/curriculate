@@ -359,6 +359,46 @@ export function sanitizeTaskShapeByType(type, task) {
     }
   }
 
+  // ── MIND_MAPPER: promote config.structure → structure, config.items → items ──
+  if (type === TASK_TYPES.MIND_MAPPER) {
+    const cfg = t.config && typeof t.config === "object" ? t.config : {};
+
+    // Promote structure from config if missing at top level
+    if (!t.structure && cfg.structure && typeof cfg.structure === "object") {
+      t.structure = cfg.structure;
+    }
+    // Also check organizerStructure
+    if (!t.structure && cfg.organizerStructure && typeof cfg.organizerStructure === "object") {
+      t.structure = cfg.organizerStructure;
+    }
+
+    // Promote items from config if missing at top level
+    if ((!Array.isArray(t.items) || t.items.length === 0) && Array.isArray(cfg.items) && cfg.items.length > 0) {
+      t.items = cfg.items;
+    }
+
+    // Promote organizerType
+    if (!t.organizerType && cfg.organizerType) {
+      t.organizerType = cfg.organizerType;
+    }
+    // Default organizerType if missing
+    if (!t.organizerType) {
+      t.organizerType = "mind-map";
+    }
+
+    // Reject placeholder items like "Concept 1", "Concept 2", etc.
+    if (Array.isArray(t.items)) {
+      const hasPlaceholder = t.items.some((it) => {
+        const text = typeof it === "string" ? it : it?.text ?? it?.label ?? "";
+        return /^(concept|item|term|word|answer|option|placeholder)\s*\d+$/i.test(String(text).trim());
+      });
+      if (hasPlaceholder) {
+        // Mark for quality guardrail — will cause validation to reject and trigger AI repair
+        t._validationError = "items[] contains placeholder text like 'Concept 1' — must use real vocabulary terms from the subject matter";
+      }
+    }
+  }
+
   // ── BODY_BREAK / MOTION_MISSION: force movement flag ──
   if (type === TASK_TYPES.BODY_BREAK || type === TASK_TYPES.MOTION_MISSION) {
     t.movement = true;
