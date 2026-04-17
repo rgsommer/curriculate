@@ -2055,7 +2055,21 @@ socket.on("task:force-advance", ({ roomCode }) => {
       } else {
         room.teams[teamId].teamName = resolvedTeamName;
         const prevMembers = Array.isArray(room.teams[teamId].members) ? room.teams[teamId].members : [];
-        room.teams[teamId].members = Array.from(new Set([...prevMembers, ...memberList]));
+        const newMerged = Array.from(new Set([...prevMembers, ...memberList]));
+
+        // Detect if team composition changed — clear selfie so the team is prompted for a new one
+        const normSort = (arr) => arr.map(n => String(n).trim().toLowerCase()).filter(Boolean).sort().join(",");
+        const prevKey = normSort(prevMembers);
+        const newKey = normSort(memberList);
+        if (prevKey && newKey && prevKey !== newKey) {
+          delete room.teams[teamId].selfieUrl;
+          delete room.teams[teamId].selfieKey;
+          delete room.teams[teamId].themedSelfieUrl;
+          delete room.teams[teamId].themedSelfieKey;
+          console.log(`[Selfie] Cleared selfie for team ${teamId} — members changed (was: ${prevKey}, now: ${newKey})`);
+        }
+
+        room.teams[teamId].members = newMerged;
         // Merge emails (deduplicate)
         const prevEmails = Array.isArray(room.teams[teamId].emails) ? room.teams[teamId].emails : [];
         room.teams[teamId].emails = Array.from(new Set([...prevEmails, ...emailList])).slice(0, 10);
