@@ -842,11 +842,11 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
                 <div style={{ fontSize: 12, color: "#ef4444", marginTop: 2 }}>Mic not supported in this browser</div>
               )}
               {micSupported && micError && (
-                <div style={{ fontSize: 12, color: "#ef4444", marginTop: 2 }}>
-                  {micError === "network"
+                <div style={{ fontSize: 12, color: "#ef4444", marginTop: 2, lineHeight: 1.4 }}>
+                  {micError === "not-allowed" || micError === "service-not-allowed"
+                    ? <>Mic blocked — tap the 🔒 in your address bar → Site settings → Microphone → Allow, then reload</>
+                    : micError === "network"
                     ? "Voice recognition unavailable — type your answer below"
-                    : micError === "not-allowed" || micError === "service-not-allowed"
-                    ? "Mic permission denied — type your answer below"
                     : `Mic error: ${String(micError)} — tap to retry`}
                 </div>
               )}
