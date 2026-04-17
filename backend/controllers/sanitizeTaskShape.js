@@ -386,14 +386,22 @@ export function sanitizeTaskShapeByType(type, task) {
       t.organizerType = "mind-map";
     }
 
-    // Reject placeholder items like "Concept 1", "Concept 2", etc.
-    if (Array.isArray(t.items)) {
-      const hasPlaceholder = t.items.some((it) => {
-        const text = typeof it === "string" ? it : it?.text ?? it?.label ?? "";
-        return /^(concept|item|term|word|answer|option|placeholder)\s*\d+$/i.test(String(text).trim());
-      });
-      if (hasPlaceholder) {
-        // Mark for quality guardrail — will cause validation to reject and trigger AI repair
+    // Detect placeholder items like "Concept 1", "Concept 2", etc.
+    const _isPlaceholder = (it) => {
+      const text = typeof it === "string" ? it : it?.text ?? it?.label ?? "";
+      return /^(concept|item|term|word|answer|option|placeholder)\s*\d+$/i.test(String(text).trim());
+    };
+
+    if (Array.isArray(t.items) && t.items.some(_isPlaceholder)) {
+      // If config.items has real content, auto-fix by promoting it
+      if (Array.isArray(cfg.items) && cfg.items.length > 0 && !cfg.items.some(_isPlaceholder)) {
+        // config.items may be flat strings (freeform) or objects (template) — normalize
+        t.items = cfg.items.map((it, i) => {
+          if (typeof it === "object" && it !== null) return it;
+          return { text: String(it), correctIndex: i };
+        });
+      } else {
+        // No good fallback — flag for AI repair
         t._validationError = "items[] contains placeholder text like 'Concept 1' — must use real vocabulary terms from the subject matter";
       }
     }

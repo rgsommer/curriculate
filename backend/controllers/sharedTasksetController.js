@@ -146,6 +146,30 @@ function validatePlayabilityByType(type, task) {
     if (_len(sa) < 2) errors.push("need at least 2 secretAnswers");
   }
 
+  // ── Brain Blitz (Jeopardy) quality checks ──
+  if (type === TASK_TYPES.JEOPARDY) {
+    const clues = Array.isArray(task?.clues) ? task.clues : Array.isArray(cfg?.clues) ? cfg.clues : [];
+    const answer = String(task?.correctAnswer || cfg?.correctAnswer || "").trim();
+
+    if (_len(clues) < 5) errors.push(`clues[] must have at least 5 clues (got ${_len(clues)})`);
+    if (!answer) errors.push("correctAnswer is required");
+
+    // Reject computed/numeric answers (should be a vocabulary concept, not a calculation result)
+    if (answer && /^\$?\d+[\d.,/%]*$/.test(answer.replace(/\s/g, ""))) {
+      errors.push(`correctAnswer "${answer}" looks like a computed number — brain-blitz answers must be a vocabulary word or concept, not a calculation result`);
+    }
+    if (answer && answer.length > 60) {
+      errors.push(`correctAnswer is too long (${answer.length} chars) — must be a short word or phrase students can shout out`);
+    }
+
+    // Reject worksheet-style directive clues
+    const directivePattern = /^(calculate|compute|find|solve|express|determine|evaluate|simplify|convert|write an? equation)\b/i;
+    const directiveClues = clues.filter((c) => directivePattern.test(String(c || "").trim()));
+    if (directiveClues.length >= 2) {
+      errors.push(`${directiveClues.length} clues start with directives like "Calculate…" or "Find…" — clues must be descriptive hints, not worksheet instructions`);
+    }
+  }
+
   if (type === TASK_TYPES.FAKE_OUT) {
     const rounds = Array.isArray(cfg.rounds) ? cfg.rounds : Array.isArray(task.rounds) ? task.rounds : [];
     if (_len(rounds) < 3) errors.push("config.rounds must have at least 3 rounds");
@@ -1060,6 +1084,19 @@ export function buildTasksetPrompt(
     - Do NOT put echo-chain config (seedTerm) on draw-mime tasks.
     - Simple types (open-text, record-audio, draw, mime, photo, make-and-snap, photo-journal, body-break, motion-mission) need ONLY title + prompt. Do NOT add items[], options[], config.items, or MC-style content.
     - Before writing each task, re-read the schema for THAT specific taskType and generate content that matches ONLY that schema.
+
+    ⚠️ BRAIN-BLITZ QUALITY (common failure — read carefully):
+    Brain-blitz is a Jeopardy-style guessing game. The correctAnswer MUST be a vocabulary
+    WORD or SHORT PHRASE that students can shout out — NEVER a computed number, equation result,
+    or multi-part answer. Clues must be descriptive HINTS that progressively reveal the answer
+    (like "20 Questions"), NOT step-by-step instructions ("Calculate…", "Find…", "Express…").
+    If the subject is math, the answer should be a math CONCEPT (e.g., "variable", "equation",
+    "denominator") — NOT a numerical solution.
+
+    ⚠️ MIND-MAPPER QUALITY:
+    The top-level items[] must contain REAL vocabulary terms from the subject matter — NEVER
+    placeholder text like "Concept 1", "Concept 2", "Item 1", etc. Use actual terms the
+    students are learning.
 
     CONTENT CONTEXT
     Subject: ${subject}

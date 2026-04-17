@@ -1764,39 +1764,81 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       You are generating ONE task object.
 
       MENTAL MODEL: This is Jeopardy-style clue → response, but implemented as a rapid “clue ladder.”
-      Students see several short clues and try to guess the single final answer.
+      Students see several short clues one at a time and try to guess the SINGLE target answer.
+      Think “20 Questions” or “Who Am I?” — each clue narrows it down.
 
       Return JSON ONLY. No markdown. No commentary.
 
       HARD REQUIREMENTS:
-      - taskType must be exactly "brain-blitz"
+      - taskType must be exactly “brain-blitz”
       - title: non-empty string
       - prompt: non-empty string (explain: read clues, then guess)
       - clues: array of AT LEAST 5 short clue strings (5–8 is ideal)
       - correctAnswer: a short string that is the single target answer
 
+      WHAT correctAnswer MUST BE:
+      - A single recognizable WORD or SHORT PHRASE — a concept, term, person, place, or vocabulary word.
+      - Something students can shout out loud in a classroom.
+      - Good: “photosynthesis”, “Ohio Valley”, “variable”, “denominator”, “Sir Isaac Newton”
+      - BAD: “$44.97”, “Selling price = $44.97, Markup = $29.98”, “42%”, “x = 7”
+      - NEVER a number that requires calculation. NEVER a computed result.
+
+      WHAT CLUES MUST BE:
+      - Each clue is a DESCRIPTIVE HINT that reveals a fact about the answer.
+      - Clues progress from vague → specific, helping students narrow down.
+      - ALL clues must describe the SAME single concept/answer.
+      - Good clues: “This process happens in the chloroplast”, “Plants use sunlight for this”
+      - BAD clues: “Calculate the selling price”, “Express this as an equation”, “Find the markup”
+      - NEVER step-by-step instructions. NEVER worksheet-style directives.
+      - NEVER “Calculate…”, “Find…”, “Express…”, “Solve…” — those are worksheet prompts, not game clues.
+
       VALID EXAMPLE (copy this SHAPE, change the content):
       {
-        "taskType": "brain-blitz",
-        "title": "Seven Years’ War: Mystery Term",
-        "prompt": "Read each clue. After the final clue, type your best guess for the answer.",
-        "clues": [
-          "This region was contested by Britain and France in North America.",
-          "Rivers and trade routes made it strategically valuable.",
-          "Conflicts here helped spark the wider Seven Years’ War.",
-          "It connects to Fort Duquesne and colonial expansion.",
-          "Many Indigenous nations were drawn into the struggle here."
+        “taskType”: “brain-blitz”,
+        “title”: “Seven Years’ War: Mystery Term”,
+        “prompt”: “Read each clue. After the final clue, type your best guess for the answer.”,
+        “clues”: [
+          “This region was contested by Britain and France in North America.”,
+          “Rivers and trade routes made it strategically valuable.”,
+          “Conflicts here helped spark the wider Seven Years’ War.”,
+          “It connects to Fort Duquesne and colonial expansion.”,
+          “Many Indigenous nations were drawn into the struggle here.”
         ],
-        "correctAnswer": "Ohio Valley",
-        "config": {
-          "clues": [
-            "This region was contested by Britain and France in North America.",
-            "Rivers and trade routes made it strategically valuable.",
-            "Conflicts here helped spark the wider Seven Years’ War.",
-            "It connects to Fort Duquesne and colonial expansion.",
-            "Many Indigenous nations were drawn into the struggle here."
+        “correctAnswer”: “Ohio Valley”,
+        “config”: {
+          “clues”: [
+            “This region was contested by Britain and France in North America.”,
+            “Rivers and trade routes made it strategically valuable.”,
+            “Conflicts here helped spark the wider Seven Years’ War.”,
+            “It connects to Fort Duquesne and colonial expansion.”,
+            “Many Indigenous nations were drawn into the struggle here.”
           ],
-          "correctAnswer": "Ohio Valley"
+          “correctAnswer”: “Ohio Valley”
+        }
+      }
+
+      MATH EXAMPLE (correct way to do math brain-blitz):
+      {
+        “taskType”: “brain-blitz”,
+        “title”: “Mystery Math Concept”,
+        “prompt”: “Read each clue. After the final clue, type your best guess for the answer.”,
+        “clues”: [
+          “In algebra, this is often represented by a letter like x, y, or n.”,
+          “It stands for a quantity that is not yet known.”,
+          “In the equation 9 + w = 14, the letter w is an example of this.”,
+          “It can change value depending on the problem.”,
+          “Its name comes from a word meaning ‘able to change.’”
+        ],
+        “correctAnswer”: “variable”,
+        “config”: {
+          “clues”: [
+            “In algebra, this is often represented by a letter like x, y, or n.”,
+            “It stands for a quantity that is not yet known.”,
+            “In the equation 9 + w = 14, the letter w is an example of this.”,
+            “It can change value depending on the problem.”,
+            “Its name comes from a word meaning ‘able to change.’”
+          ],
+          “correctAnswer”: “variable”
         }
       }
 
