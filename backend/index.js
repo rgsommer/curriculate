@@ -1630,7 +1630,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
   // Post-taskset feedback (between last task and trophy screen)
   // Student emits: "feedback:submit" with { roomCode, teamId, rating, ... }
   // ----------------------------------------------------
-  socket.on("feedback:submit", (payload = {}, ack) => {
+  socket.on("feedback:submit", async (payload = {}, ack) => {
     try {
       const { roomCode, teamId } = payload || {};
       const code = (roomCode || socket.data?.roomCode || "").toUpperCase();
