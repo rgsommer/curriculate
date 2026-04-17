@@ -470,12 +470,11 @@ export default function HostView({ roomCode: roomCodeProp }) {
     return { counts, total: allMoods.length, topIdx, teamCount: entries.length };
   }, [roomState.moodCheckins]);
 
-  // Task progress
-  const rawTaskIndex = roomState.taskIndex;
-  const totalTasks = roomState.totalTasks || 0;
-  const taskIndex = totalTasks > 0 ? Math.min(rawTaskIndex, totalTasks - 1) : rawTaskIndex; // never exceed total
-  const hasProgress = totalTasks > 0 && taskIndex >= 0;
-  const progressPct = hasProgress ? Math.min(100, ((taskIndex + 1) / totalTasks) * 100) : 0;
+  // Task progress — show average completion across all teams
+  const avgProgress = roomState.avgTaskProgress;
+  const totalTasks = avgProgress?.totalTasks || roomState.totalTasks || 0;
+  const hasProgress = avgProgress && totalTasks > 0;
+  const progressPct = hasProgress ? Math.min(100, avgProgress.avgPct) : 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-600 via-purple-700 to-cyan-600 text-white relative overflow-hidden">
@@ -593,7 +592,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
               <div className="flex items-center justify-between text-sm font-bold opacity-90 mb-1">
                 <span className="flex items-center gap-1">
                   <Zap className="w-4 h-4" />
-                  Task {taskIndex + 1} of {totalTasks}
+                  Class progress ({totalTasks} tasks)
                 </span>
                 <span>{Math.round(progressPct)}%</span>
               </div>

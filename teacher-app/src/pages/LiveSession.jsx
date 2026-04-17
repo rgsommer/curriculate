@@ -3052,19 +3052,43 @@ if (
   const taskFlowActive =
     typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0;
 
-  // Team completion tracking: how many teams finished all tasks
+  // Team completion tracking: how many teams finished all tasks + average progress
   const teamCompletionStats = React.useMemo(() => {
     const teamEntries = Object.values(teams);
     const total = teamEntries.length;
     if (total === 0 || !totalTasksInActiveSet || totalTasksInActiveSet <= 0) {
-      return { total: 0, completed: 0, pct: 0 };
+      return { total: 0, completed: 0, pct: 0, avgPct: 0 };
     }
     const completed = teamEntries.filter(
       (t) => typeof t.taskIndex === "number" && t.taskIndex >= totalTasksInActiveSet
     ).length;
     const pct = Math.round((completed / total) * 100);
-    return { total, completed, pct };
-  }, [teams, totalTasksInActiveSet]);
+
+    // Average progress: use server-computed avgTaskProgress when available,
+    // otherwise compute from per-team taskIndex (linear) or mysteryBox teamProgress
+    let avgPct = 0;
+    if (roomState.avgTaskProgress?.avgPct != null) {
+      avgPct = roomState.avgTaskProgress.avgPct;
+    } else if (roomState.navigationMode === "mystery" && roomState.mysteryBox?.teamProgress) {
+      const tp = roomState.mysteryBox.teamProgress;
+      const entries = Object.values(tp);
+      if (entries.length > 0) {
+        const sum = entries.reduce((s, e) => s + (e.total > 0 ? e.completed / e.total : 0), 0);
+        avgPct = Math.round((sum / entries.length) * 100);
+      }
+    } else {
+      // Linear fallback: compute from per-team taskIndex
+      let sum = 0, count = 0;
+      for (const t of teamEntries) {
+        if (typeof t.taskIndex !== "number" || t.taskIndex < 0) continue;
+        sum += Math.min(t.taskIndex, totalTasksInActiveSet) / totalTasksInActiveSet;
+        count++;
+      }
+      avgPct = count > 0 ? Math.round((sum / count) * 100) : 0;
+    }
+
+    return { total, completed, pct, avgPct };
+  }, [teams, totalTasksInActiveSet, roomState.avgTaskProgress, roomState.navigationMode, roomState.mysteryBox]);
 
   // Auto-end session and generate reports when 100% of teams complete
   React.useEffect(() => {
@@ -4039,18 +4063,13 @@ if (
                 )}
               </div>
 
-              {/* Avg progress bar */}
-              {taskFlowActive && (() => {
-                const teamEntries = Object.values(teams);
-                const teamCount = teamEntries.length;
-                const totalTasks = totalTasksInActiveSet || 0;
-                if (teamCount === 0 || totalTasks === 0) return null;
-                const sum = teamEntries.reduce((acc, t) => acc + Math.min(totalTasks, Math.max(0, typeof t.taskIndex === "number" ? t.taskIndex : 0)), 0);
-                const avgPct = Math.round((sum / (teamCount * totalTasks)) * 100);
+              {/* Avg progress bar — uses centralized teamCompletionStats.avgPct */}
+              {taskFlowActive && teamCompletionStats.total > 0 && (() => {
+                const avgPct = teamCompletionStats.avgPct;
                 return (
                   <div style={{ marginTop: 8, fontSize: "0.8rem", color: "#374151" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                      <span>Progress</span>
+                      <span>Avg progress</span>
                       <span style={{ fontWeight: 600 }}>{avgPct}%</span>
                     </div>
                     <div style={{ width: "100%", height: 6, borderRadius: 3, background: "#e5e7eb", overflow: "hidden" }}>
@@ -5041,7 +5060,7 @@ Precipitation — rain, snow, hail`}
               Leaderboard
             </h2>
 
-            {/* Team completion progress bar */}
+            {/* Team completion progress bar — average progress across all teams */}
             {taskFlowActive && teamCompletionStats.total > 0 && (
               <div style={{ marginBottom: 12 }}>
                 <div style={{
@@ -5050,15 +5069,17 @@ Precipitation — rain, snow, hail`}
                   alignItems: "center",
                   fontSize: "0.8rem",
                   fontWeight: 700,
-                  color: teamCompletionStats.pct === 100 ? "#059669" : "#4b5563",
+                  color: teamCompletionStats.avgPct === 100 ? "#059669" : "#4b5563",
                   marginBottom: 4,
                 }}>
                   <span>
-                    {teamCompletionStats.pct === 100
+                    {teamCompletionStats.avgPct === 100
                       ? "All teams finished!"
-                      : `${teamCompletionStats.completed} of ${teamCompletionStats.total} teams done`}
+                      : teamCompletionStats.completed > 0
+                      ? `Avg progress: ${teamCompletionStats.avgPct}% · ${teamCompletionStats.completed}/${teamCompletionStats.total} teams done`
+                      : `Avg progress: ${teamCompletionStats.avgPct}%`}
                   </span>
-                  <span>{teamCompletionStats.pct}%</span>
+                  <span>{teamCompletionStats.avgPct}%</span>
                 </div>
                 <div style={{
                   height: 8,
@@ -5068,9 +5089,9 @@ Precipitation — rain, snow, hail`}
                 }}>
                   <div style={{
                     height: "100%",
-                    width: `${teamCompletionStats.pct}%`,
+                    width: `${teamCompletionStats.avgPct}%`,
                     borderRadius: 4,
-                    background: teamCompletionStats.pct === 100
+                    background: teamCompletionStats.avgPct === 100
                       ? "linear-gradient(90deg, #10b981, #059669)"
                       : "linear-gradient(90deg, #3b82f6, #2563eb)",
                     transition: "width 0.5s ease-out",

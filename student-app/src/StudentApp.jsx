@@ -250,6 +250,11 @@ function StudentApp() {
   const [currentTask, setCurrentTask] = useState(null);
   const [currentTaskIndex, setCurrentTaskIndex] = useState(null);
   const [tasksetTotalTasks, setTasksetTotalTasks] = useState(null);
+  // Team-local progress: how many tasks THIS team has been assigned (1-based display).
+  // Unlike currentTaskIndex (global position in the taskset array), this always starts
+  // at 1 for a team's first task — even if they joined late and skipped earlier tasks.
+  const [teamTaskNumber, setTeamTaskNumber] = useState(0);
+  const teamTaskNumberRef = useRef(0);
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(null);
   const [remainingMs, setRemainingMs] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -509,6 +514,9 @@ function StudentApp() {
             setCurrentTask(ct.task);
             setCurrentTaskIndex(typeof ct.taskIndex === "number" ? ct.taskIndex : null);
             setTasksetTotalTasks(typeof ct.totalTasks === "number" ? ct.totalTasks : null);
+            // Team's first task on this join
+            teamTaskNumberRef.current = 1;
+            setTeamTaskNumber(1);
           } else {
             // Restore task index from localStorage as fallback
             const savedIdx = Number(lsGet(LS_KEYS.taskIndex));
@@ -1014,6 +1022,12 @@ function StudentApp() {
       setCurrentTask(assignedTaskWithMeta);
       taskStartedAtRef.current = Date.now();
       setPostPhase("tasks"); // Clear mood
+
+      // Increment team-local task counter (1-based: first task = 1)
+      const nextTeamNum = teamTaskNumberRef.current + 1;
+      teamTaskNumberRef.current = nextTeamNum;
+      setTeamTaskNumber(nextTeamNum);
+
       const idx =
         typeof payload.taskIndex === "number"
           ? payload.taskIndex
@@ -1838,6 +1852,9 @@ function StudentApp() {
         setTasksetTotalTasks(
           typeof response.currentTask.totalTasks === "number" ? response.currentTask.totalTasks : null
         );
+        // Team just joined and is seeing their first task
+        teamTaskNumberRef.current = 1;
+        setTeamTaskNumber(1);
 
         const limit = response.currentTask.timeLimitSeconds || null;
         setTimeLimitSeconds(limit);
@@ -1914,6 +1931,8 @@ function StudentApp() {
       setCurrentTask(null);
       setCurrentTaskIndex(null);
       setTasksetTotalTasks(null);
+      setTeamTaskNumber(0);
+      teamTaskNumberRef.current = 0;
       setTimeLimitSeconds(null);
       setRemainingMs(0);
       setSubmitting(false);
@@ -3093,17 +3112,16 @@ function StudentApp() {
     ? "linear-gradient(135deg, #0f172a 0%, #1d4ed8 32%, #f59e0b 70%, #fef3c7 100%)"
     : "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)";
 
-  // Taskset progress
-  const currentTaskNumber =
-    typeof currentTaskIndex === "number" && currentTaskIndex >= 0 ? currentTaskIndex + 1 : null;
-
+  // Taskset progress — use team-local counter so late-joining teams see "Task 1" for their first task
   const totalTasks =
     typeof tasksetTotalTasks === "number" && tasksetTotalTasks > 0 ? tasksetTotalTasks : null;
 
   const effectiveTaskNumber =
     typeof activeTestTaskIndex === "number"
       ? activeTestTaskIndex + 1
-      : currentTaskNumber;
+      : teamTaskNumber > 0
+      ? teamTaskNumber
+      : null;
 
   const progressLabel =
     effectiveTaskNumber && totalTasks
@@ -3885,10 +3903,10 @@ function StudentApp() {
             })()}
           </div>
 
-          {/* Task progress */}
-          {typeof currentTaskIndex === "number" && currentTaskIndex >= 0 && typeof tasksetTotalTasks === "number" && tasksetTotalTasks > 0 && (
+          {/* Task progress (team-local counter) */}
+          {effectiveTaskNumber && totalTasks && (
             <div style={{ flex: "0 0 auto", fontSize: "0.72rem", color: "#94a3b8" }}>
-              {currentTaskIndex + 1}/{tasksetTotalTasks}
+              {effectiveTaskNumber}/{totalTasks}
             </div>
           )}
 

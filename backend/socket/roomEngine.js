@@ -775,6 +775,37 @@ export function createRoomEngine(io) {
         };
       })(),
 
+      // Average task progress across all teams (works for both linear and mystery modes)
+      avgTaskProgress: (() => {
+        const teamEntries = Object.values(room.teams || {});
+        if (teamEntries.length === 0) return null;
+        const totalTasks = Array.isArray(room.taskset?.tasks) ? room.taskset.tasks.length : 0;
+        if (totalTasks === 0) return null;
+
+        if (room.navigationMode === "mystery" && room.mysteryBox?.teamBoxes) {
+          // Mystery box: use completed box count per team
+          const boxes = room.mysteryBox.teamBoxes;
+          const boxTotal = room.mysteryBox.taskCount || totalTasks;
+          let sum = 0, count = 0;
+          for (const tb of Object.values(boxes)) {
+            sum += (tb.completed?.length || 0) / boxTotal;
+            count++;
+          }
+          return count > 0 ? { avgPct: Math.round((sum / count) * 100), teamCount: count, totalTasks: boxTotal } : null;
+        }
+
+        // Linear: use team.taskIndex (index of task they're ON; completed = taskIndex)
+        // taskIndex >= totalTasks means finished all; taskIndex 0 means on first task (0 completed)
+        let sum = 0, count = 0;
+        for (const t of teamEntries) {
+          if (typeof t.taskIndex !== "number" || t.taskIndex < 0) continue;
+          const completed = Math.min(t.taskIndex, totalTasks);
+          sum += completed / totalTasks;
+          count++;
+        }
+        return count > 0 ? { avgPct: Math.round((sum / count) * 100), teamCount: count, totalTasks } : null;
+      })(),
+
       // Mystery box mode
       navigationMode: room.navigationMode || "linear",
       mysteryBox: room.mysteryBox ? {
