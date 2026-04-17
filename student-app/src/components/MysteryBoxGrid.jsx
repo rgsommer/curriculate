@@ -335,6 +335,25 @@ export default function MysteryBoxGrid({
                       ⚔️ {box.vsBonus ? `${box.vsBonus}×` : "VS"}
                     </div>
                   )}
+                  {box.isIntraTeam && !box.isInterTeam && (
+                    <div
+                      title="Team task — everyone on your team plays a role!"
+                      style={{
+                        position: "absolute",
+                        top: 4, left: 4,
+                        fontSize: "0.6rem",
+                        background: "linear-gradient(135deg, rgba(59,130,246,0.9), rgba(99,102,241,0.9))",
+                        borderRadius: 8,
+                        padding: "2px 5px",
+                        color: "#fff",
+                        fontWeight: 800,
+                        textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                        boxShadow: "0 1px 4px rgba(59,130,246,0.3)",
+                        letterSpacing: "0.03em",
+                      }}>
+                      🤝 Team
+                    </div>
+                  )}
                 </>
               )}
             </div>

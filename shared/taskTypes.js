@@ -117,6 +117,179 @@ export const TASK_TYPES = {
   RIDDLE: "riddle",
 };
 
+// ================================
+// BLOOM'S TAXONOMY MAPPING
+// ================================
+// Maps each task type to one or more Bloom's Taxonomy cognitive levels.
+// Levels (lowest → highest): Remember, Understand, Apply, Analyze, Evaluate, Create
+//
+// Many task types exercise multiple levels. The PRIMARY level is listed first;
+// additional levels reflect secondary cognitive demands.
+
+export const BLOOMS_LEVELS = {
+  REMEMBER:    { level: 1, label: "Remember",    verb: "Recall",     color: "#ef4444", description: "Retrieving relevant knowledge from long-term memory" },
+  UNDERSTAND:  { level: 2, label: "Understand",  verb: "Explain",    color: "#f97316", description: "Constructing meaning from instructional messages" },
+  APPLY:       { level: 3, label: "Apply",       verb: "Use",        color: "#eab308", description: "Carrying out or using a procedure in a given situation" },
+  ANALYZE:     { level: 4, label: "Analyze",     verb: "Distinguish", color: "#22c55e", description: "Breaking material into parts and detecting relationships" },
+  EVALUATE:    { level: 5, label: "Evaluate",    verb: "Judge",      color: "#3b82f6", description: "Making judgments based on criteria and standards" },
+  CREATE:      { level: 6, label: "Create",      verb: "Produce",    color: "#8b5cf6", description: "Putting elements together to form a novel, coherent whole" },
+};
+
+export const TASK_BLOOMS_MAP = {
+  // Remember — recall, recognition, listing
+  "multiple-choice":            ["REMEMBER", "UNDERSTAND"],
+  "physical-multiple-choice":   ["REMEMBER", "APPLY"],
+  "true-false":                 ["REMEMBER", "UNDERSTAND"],
+  "flashcards":                 ["REMEMBER"],
+  "flashcards-race":            ["REMEMBER", "APPLY"],
+  "hangman-duel":               ["REMEMBER"],
+  "riddle":                     ["REMEMBER"],
+
+  // Understand — explain, summarize, interpret
+  "short-answer":               ["UNDERSTAND", "REMEMBER"],
+  "reading-comp":               ["UNDERSTAND", "ANALYZE"],
+  "brain-spark-notes":          ["UNDERSTAND", "ANALYZE"],
+  "pronunciation":              ["UNDERSTAND", "APPLY"],
+  "speech-recognition":         ["UNDERSTAND", "APPLY"],
+
+  // Apply — use, execute, implement, demonstrate
+  "sort":                       ["APPLY", "ANALYZE"],
+  "sequence":                   ["APPLY", "ANALYZE"],
+  "matching":                   ["APPLY", "REMEMBER"],
+  "timeline":                   ["APPLY", "ANALYZE"],
+  "vennsort":                   ["APPLY", "ANALYZE"],
+  "mad-dash":                   ["APPLY", "REMEMBER"],
+  "mad-dash-sequence":          ["APPLY", "ANALYZE"],
+  "pet-feeding":                ["APPLY"],
+  "tower-builder":              ["APPLY", "EVALUATE"],
+  "musical-chairs":             ["APPLY", "REMEMBER"],
+  "word-weaver-duel":           ["APPLY", "CREATE"],
+  "mystery-clues":              ["APPLY", "REMEMBER"],
+  "physical-mystery-clues":     ["APPLY", "REMEMBER"],
+  "hidenseek":                  ["APPLY"],
+
+  // Analyze — compare, organize, deconstruct, attribute
+  "mind-mapper":                ["ANALYZE", "CREATE"],
+  "brain-blitz":                ["ANALYZE", "REMEMBER"],
+  "true-false-tictactoe":       ["ANALYZE", "EVALUATE"],
+  "true-false-connect-four":    ["ANALYZE", "EVALUATE"],
+  "diff-detective":             ["ANALYZE"],
+  "case-study":                 ["ANALYZE", "EVALUATE"],
+  "art-view":                   ["ANALYZE", "EVALUATE"],
+  "historical-doc":             ["ANALYZE", "EVALUATE"],
+  "fake-out":                   ["ANALYZE", "EVALUATE"],
+  "guess-who":                  ["ANALYZE"],
+
+  // Evaluate — critique, judge, argue, defend
+  "open-text":                  ["EVALUATE", "UNDERSTAND"],
+  "live-debate":                ["EVALUATE", "ANALYZE"],
+  "ai-debate-judge":            ["EVALUATE", "ANALYZE"],
+  "collaboration":              ["EVALUATE", "CREATE"],
+  "narration-synthesize":       ["EVALUATE", "CREATE"],
+  "letter":                     ["EVALUATE", "CREATE"],
+
+  // Create — design, construct, produce, invent
+  "draw":                       ["CREATE"],
+  "mime":                       ["CREATE", "APPLY"],
+  "draw-mime":                  ["CREATE", "APPLY"],
+  "speed-draw":                 ["CREATE", "APPLY"],
+  "photo":                      ["CREATE"],
+  "make-and-snap":              ["CREATE", "APPLY"],
+  "photo-journal":              ["CREATE", "EVALUATE"],
+  "echo-chain":                 ["CREATE", "UNDERSTAND"],
+  "brainstorm-battle":          ["CREATE", "ANALYZE"],
+  "role-play":                  ["CREATE", "EVALUATE"],
+  "role-play-deck":             ["CREATE", "EVALUATE"],
+  "script-play":                ["CREATE", "EVALUATE"],
+  "record-audio":               ["CREATE", "UNDERSTAND"],
+
+  // Meta / non-cognitive (excluded from analysis)
+  "mood-checkin":               null,
+  "team-selfie":                null,
+  "treasure-runner":            null,
+  "task-runner":                null,
+  "multi-player-feedback":      null,
+  "body-break":                 null,
+  "motion-mission":             null,
+};
+
+/**
+ * Analyze a taskset's cognitive profile using Bloom's Taxonomy.
+ * Returns a structured breakdown for reports.
+ *
+ * @param {Array} tasks - Array of task objects (must have .taskType)
+ * @returns {{ levels: Object[], taskDetails: Object[], summary: string }}
+ */
+export function analyzeBloomsTaxonomy(tasks) {
+  if (!Array.isArray(tasks) || tasks.length === 0) return null;
+
+  // Count primary and secondary hits per level
+  const primary = { REMEMBER: 0, UNDERSTAND: 0, APPLY: 0, ANALYZE: 0, EVALUATE: 0, CREATE: 0 };
+  const secondary = { ...primary };
+  const taskDetails = [];
+  let cognitiveTaskCount = 0;
+
+  for (const task of tasks) {
+    const type = task?.taskType || task?.type || "";
+    const mapping = TASK_BLOOMS_MAP[type];
+    if (!mapping) continue; // meta/non-cognitive task
+
+    cognitiveTaskCount++;
+    const [pri, sec] = mapping;
+    primary[pri]++;
+    if (sec) secondary[sec]++;
+
+    taskDetails.push({
+      title: task.title || type,
+      taskType: type,
+      primaryLevel: BLOOMS_LEVELS[pri].label,
+      secondaryLevel: sec ? BLOOMS_LEVELS[sec].label : null,
+    });
+  }
+
+  if (cognitiveTaskCount === 0) return null;
+
+  // Build level summaries
+  const levels = Object.entries(BLOOMS_LEVELS).map(([key, meta]) => {
+    const priCount = primary[key];
+    const secCount = secondary[key];
+    return {
+      key,
+      ...meta,
+      primaryCount: priCount,
+      secondaryCount: secCount,
+      totalCount: priCount + secCount,
+      primaryPercent: Math.round((priCount / cognitiveTaskCount) * 100),
+    };
+  });
+
+  // Determine the highest level reached (primary only)
+  const highestReached = [...levels].reverse().find(l => l.primaryCount > 0);
+
+  // Generate a narrative summary
+  const activeLabels = levels.filter(l => l.primaryCount > 0).map(l => `${l.label} (${l.primaryCount})`);
+  const dominant = levels.reduce((a, b) => a.primaryCount >= b.primaryCount ? a : b);
+
+  const summary =
+    `This activity set addressed ${activeLabels.length} of 6 Bloom's Taxonomy levels: ${activeLabels.join(", ")}. ` +
+    `The most emphasized level was ${dominant.label} (${dominant.primaryPercent}% of cognitive tasks). ` +
+    (highestReached && highestReached.level >= 5
+      ? `Students were challenged up to the ${highestReached.label} level — the higher-order thinking skills.`
+      : highestReached && highestReached.level >= 3
+        ? `The set reached the ${highestReached.label} level. Consider adding tasks at the Evaluate or Create level for deeper cognitive challenge.`
+        : `The set focused on foundational skills. Consider adding open-ended, creative, or evaluative tasks to push students into higher-order thinking.`);
+
+  return {
+    levels,
+    taskDetails,
+    cognitiveTaskCount,
+    totalTaskCount: tasks.length,
+    highestLevel: highestReached?.label || "None",
+    dominantLevel: dominant.label,
+    summary,
+  };
+}
+
 // Category labels (for grouping & UI)
 const CATEGORY = {
   QUESTION: "question",

@@ -144,6 +144,9 @@ const SessionReportSchema = new mongoose.Schema(
       default: [],
     },
 
+    // Bloom's Taxonomy cognitive skills analysis
+    bloomsTaxonomy: { type: mongoose.Schema.Types.Mixed, default: null },
+
     // Scoring rubric categories used
     assessmentCategories: { type: Array, default: [] },
 

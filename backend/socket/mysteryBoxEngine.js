@@ -147,6 +147,7 @@ export function buildTeamBoxGrid(room, teamId) {
     const isCompleted = tb.completed.includes(boxPos);
     const isActive = tb.activeBox === boxPos;
     const isInterTeam = mb.interTeamIndices.includes(taskIndex);
+    const isIntraTeam = !isInterTeam && meta?.intraTeamEnabled === true;
     const basePoints = (task?.points ?? 100) * 10;
     const bonus = tb.bonuses[boxPos];
     const pointValue = Math.round(basePoints * bonus);
@@ -160,6 +161,7 @@ export function buildTeamBoxGrid(room, teamId) {
       taskType: isOpened ? task?.taskType : null,
       taskTitle: isOpened ? task?.title : null,
       isInterTeam: isInterTeam, // hint shown on closed box
+      isIntraTeam: isIntraTeam, // collaborative within team (hint on closed box)
       vsBonus: isInterTeam && !isCompleted ? vsBonus : null, // declining VS bonus (shown on badge)
       // Point value shown as star tier (1-3) when closed, exact when opened
       starTier: pointValue <= 700 ? 1 : pointValue <= 1200 ? 2 : 3,

@@ -39,6 +39,7 @@ export async function generateSessionSummaries({
   perspectives,
   topTeams,
   topPlayers,
+  bloomsSummary,
 }) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("Missing OPENAI_API_KEY");
@@ -99,6 +100,29 @@ Your tasks:
    "mental math under time pressure", "evidence-based argumentation",
    "vocabulary recall", "team communication", "creative problem-solving".
 
+4b. "cognitiveProfile"
+   If "bloomsTaxonomySummary" is provided in the payload, write 2-3 sentences
+   referencing the Bloom's Taxonomy levels addressed. Mention specific task
+   examples that exercised higher-order thinking. If no Bloom's data is provided,
+   set this to null.
+
+4c. "standardsAlignment"
+   Based on the subject, grade level, and actual task content, identify 3–6
+   educational standards or competency areas that this session addresses.
+   Use the most widely recognized framework for the subject and region:
+     • For US K-12: reference Common Core (ELA/Math), NGSS (Science), or
+       C3 Framework (Social Studies) with standard codes where possible.
+     • For international / early childhood: reference KITA standards,
+       IB learner profiles, Cambridge stages, or equivalent local frameworks.
+     • For professional/adult: reference relevant competency frameworks.
+   Each entry should be:
+     { "code": string|null, "standard": string, "connection": string }
+   where "code" is the standard code if applicable (e.g., "CCSS.ELA-LITERACY.RL.5.2"),
+   "standard" is the standard name/description, and "connection" is one sentence
+   explaining how the session tasks relate to it.
+   If the subject or grade level is missing or unclear, make your best inference
+   from the task content. Never return an empty array — always find relevant standards.
+
 5. "activityHighlights"
    For each distinct task/activity in the session, return an object:
      { "taskType": string, "title": string, "description": string }
@@ -140,6 +164,7 @@ No Markdown. No explanation outside the JSON.
     perspectives,
     topTeams: topTeams || [],
     topPlayers: topPlayers || [],
+    bloomsTaxonomySummary: bloomsSummary || null,
   };
 
   const userPrompt = `
@@ -154,6 +179,8 @@ Return ONLY this JSON structure:
   "keyConcepts": string[],
   "classChatBlurb": string,
   "skillsDeveloped": string[],
+  "cognitiveProfile": string | null,
+  "standardsAlignment": [ { "code": string|null, "standard": string, "connection": string } ],
   "activityHighlights": [ { "taskType": string, "title": string, "description": string } ],
   "engagementLevel": string,
   "overallProficiency": string,

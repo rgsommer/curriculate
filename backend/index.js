@@ -20,7 +20,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 // 4) Shared constants (used across server)
-import { TASK_TYPE_META } from "../shared/taskTypes.js";
+import { TASK_TYPE_META, analyzeBloomsTaxonomy } from "../shared/taskTypes.js";
 import { COLORS } from "../shared/colors.js";
 import { computeUnlockedSkins, diffUnlocks } from "../shared/skins.js";
 
@@ -6154,6 +6154,9 @@ socket.on(
       .slice(0, 3)
       .map((p) => ({ name: p.studentName || "Player", team: p.teamName || "", points: p.pointsEarned ?? 0 }));
 
+    // 2.8) Bloom's Taxonomy analysis (deterministic, no AI needed)
+    const bloomsAnalysis = analyzeBloomsTaxonomy(room?.taskset?.tasks || []);
+
     // 3) Generate AI summary (overview + engagement) — non-fatal if it fails
     emitProgress(2, 6, "Generating AI summary…");
     let summary = {};
@@ -6169,6 +6172,7 @@ socket.on(
         planTierUsed,
         topTeams,
         topPlayers,
+        bloomsSummary: bloomsAnalysis?.summary || null,
       });
     } catch (aiErr) {
       console.error("[report] AI summary generation failed (continuing without it):", aiErr?.message || aiErr);
@@ -6353,6 +6357,12 @@ socket.on(
       });
     })();
 
+    // 5.5) Bloom's Taxonomy — reuse the analysis computed in step 2.8
+    const bloomsTaxonomy = bloomsAnalysis;
+    if (bloomsTaxonomy) {
+      console.log(`[report] Bloom's Taxonomy: ${bloomsTaxonomy.cognitiveTaskCount} cognitive tasks, highest=${bloomsTaxonomy.highestLevel}, dominant=${bloomsTaxonomy.dominantLevel}`);
+    }
+
     try {
       // Always save the report — use ownerId if available, fallback to "anonymous"
       {
@@ -6388,6 +6398,7 @@ socket.on(
           gradingConfig: gradingEnabled ? { enabled: true, maxGrade, letterGradeScale: letterScale } : null,
           studentGrades,
           assessmentCategories: safeAssessmentCategories,
+          bloomsTaxonomy,
           includeIndividualReports: !!includeIndividualReports,
           classAverageScore,
           classAverageEngagement,
@@ -6551,6 +6562,7 @@ socket.on(
           planName: planTierUsed,
           studentGrades,
           gradingConfig: gc,
+          bloomsTaxonomy,
         }),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Email send timed out after 45 seconds")), 45_000)
@@ -6580,6 +6592,7 @@ socket.on(
             isSharedRunCopy: true, // Optional flag for the emailer to customize the email
             studentGrades,
             gradingConfig: gc,
+            bloomsTaxonomy,
           });
           console.log(`[shared] Sent report email to original teacher: ${sharedFromTeacherEmail}`);
         } catch (e) {
@@ -6733,6 +6746,7 @@ socket.on(
           planName: report.planTierUsed || "",
           studentGrades: report.studentGrades || [],
           gradingConfig: report.gradingConfig || null,
+          bloomsTaxonomy: report.bloomsTaxonomy || null,
         }),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Email retry timed out after 45 seconds")), 45_000)

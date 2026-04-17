@@ -226,6 +226,7 @@ function buildEmailHtml({
   includeIndividualReports,
   studentGrades,
   gradingConfig,
+  bloomsTaxonomy,
 }) {
   const tier = planTier(planName);
   const overview = extractOverview({ transcript, aiSummary });
@@ -375,6 +376,65 @@ function buildEmailHtml({
           `;
         })()}
 
+        ${(() => {
+          if (!bloomsTaxonomy || !bloomsTaxonomy.levels) return "";
+          const bt = bloomsTaxonomy;
+          const activeLevels = bt.levels.filter(l => l.totalCount > 0);
+          if (!activeLevels.length) return "";
+
+          const maxCount = Math.max(...bt.levels.map(l => l.primaryCount), 1);
+          const bars = bt.levels.map(l => {
+            const pct = Math.round((l.primaryCount / maxCount) * 100);
+            const opacity = l.primaryCount > 0 ? 1 : 0.3;
+            return `
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; opacity:${opacity};">
+                <div style="width:80px; font-size:11px; font-weight:700; color:${l.color}; text-align:right;">${escHtml(l.label)}</div>
+                <div style="flex:1; height:18px; background:#f1f5f9; border-radius:9px; overflow:hidden;">
+                  <div style="width:${pct}%; min-width:${l.primaryCount > 0 ? '8px' : '0'}; height:100%; background:${l.color}; border-radius:9px; transition:width 0.3s;"></div>
+                </div>
+                <div style="width:28px; font-size:11px; color:#64748b; text-align:left;">${l.primaryCount}</div>
+              </div>`;
+          }).join("");
+
+          const cogProfile = aiSummary?.cognitiveProfile || "";
+          const profileHtml = cogProfile ? `<div style="margin-top:8px; font-size:13px; line-height:1.5; color:#334155;">${escHtml(cogProfile)}</div>` : "";
+
+          return `
+            <div style="margin-top:16px; padding:14px 16px; border-radius:14px; background:#faf5ff; border:1px solid #d8b4fe;">
+              <div style="font-weight:900; margin-bottom:2px;">
+                🧠 Cognitive Profile — Bloom's Taxonomy
+              </div>
+              <div style="font-size:12px; color:#6b7280; margin-bottom:10px;">
+                ${bt.cognitiveTaskCount} of ${bt.totalTaskCount} tasks mapped • Highest level: ${escHtml(bt.highestLevel)} • Dominant: ${escHtml(bt.dominantLevel)}
+              </div>
+              ${bars}
+              ${profileHtml}
+              <div style="margin-top:8px; font-size:12px; color:#64748b; line-height:1.45;">${escHtml(bt.summary)}</div>
+            </div>
+          `;
+        })()}
+
+        ${(() => {
+          const standards = asList(aiSummary?.standardsAlignment).filter(Boolean);
+          if (!standards.length) return "";
+          return `
+            <div style="margin-top:16px; padding:14px 16px; border-radius:14px; background:#eff6ff; border:1px solid #93c5fd;">
+              <div style="font-weight:900; margin-bottom:8px;">
+                📐 Standards Alignment
+              </div>
+              ${standards.map((s) => `
+                <div style="margin-bottom:8px; padding:8px 10px; background:#ffffff; border-radius:8px; border:1px solid #dbeafe;">
+                  <div style="font-weight:700; font-size:13px; color:#1e40af;">
+                    ${s.code ? `<span style="font-family:monospace; background:#dbeafe; padding:1px 6px; border-radius:4px; font-size:11px; margin-right:6px;">${escHtml(s.code)}</span>` : ""}
+                    ${escHtml(s.standard)}
+                  </div>
+                  <div style="font-size:12px; color:#475569; margin-top:3px; line-height:1.4;">${escHtml(s.connection)}</div>
+                </div>
+              `).join("")}
+            </div>
+          `;
+        })()}
+
         <div style="margin-top:14px;">
           <div style="font-weight:900;">Concepts Covered</div>
           ${conceptsHtml}
@@ -511,6 +571,7 @@ async function buildReportPdfBuffer({
   assessmentCategories,
   studentGrades,
   gradingConfig,
+  bloomsTaxonomy,
 }) {
   const overview = extractOverview({ transcript, aiSummary });
   const teams = extractTeams(transcript, aiSummary);
@@ -635,6 +696,81 @@ async function buildReportPdfBuffer({
       doc.font("Helvetica").fontSize(10).fillColor("#0f172a");
       skills.forEach((s) => doc.text(`• ${s}`, { lineGap: 1 }));
       doc.moveDown(0.4);
+    }
+
+    // Bloom's Taxonomy Cognitive Profile
+    if (bloomsTaxonomy && bloomsTaxonomy.levels) {
+      const bt = bloomsTaxonomy;
+      const activeLevels = bt.levels.filter(l => l.totalCount > 0);
+      if (activeLevels.length) {
+        ensureSpace(160);
+        sectionTitle("Cognitive Profile — Bloom's Taxonomy");
+
+        const subline = `${bt.cognitiveTaskCount} of ${bt.totalTaskCount} tasks mapped  •  Highest: ${bt.highestLevel}  •  Dominant: ${bt.dominantLevel}`;
+        doc.font("Helvetica").fontSize(9).fillColor("#64748b").text(subline);
+        doc.moveDown(0.3);
+
+        // Draw horizontal bar chart
+        const barLeft = doc.x;
+        const barMaxW = 260;
+        const maxCount = Math.max(...bt.levels.map(l => l.primaryCount), 1);
+        const rowH = 16;
+        const labelW = 70;
+
+        for (const lvl of bt.levels) {
+          const y = doc.y;
+          const barW = Math.max(lvl.primaryCount > 0 ? 6 : 0, Math.round((lvl.primaryCount / maxCount) * barMaxW));
+          const alpha = lvl.primaryCount > 0 ? 1 : 0.25;
+
+          // Label
+          doc.save();
+          doc.opacity(alpha);
+          doc.font("Helvetica-Bold").fontSize(9).fillColor(lvl.color).text(lvl.label, barLeft, y + 2, { width: labelW, align: "right" });
+
+          // Bar background
+          doc.rect(barLeft + labelW + 8, y + 1, barMaxW, rowH - 2).fill("#f1f5f9");
+          // Bar fill
+          if (barW > 0) {
+            doc.rect(barLeft + labelW + 8, y + 1, barW, rowH - 2).fill(lvl.color);
+          }
+
+          // Count
+          doc.font("Helvetica").fontSize(9).fillColor("#64748b").text(String(lvl.primaryCount), barLeft + labelW + barMaxW + 14, y + 2);
+          doc.restore();
+
+          doc.y = y + rowH + 1;
+        }
+
+        doc.moveDown(0.3);
+
+        // Cognitive profile narrative from AI
+        const cogProfile = aiSummary?.cognitiveProfile || "";
+        if (cogProfile) {
+          doc.font("Helvetica").fontSize(10).fillColor("#334155").text(cogProfile, { lineGap: 2 });
+          doc.moveDown(0.2);
+        }
+
+        // Deterministic summary
+        doc.font("Helvetica").fontSize(9).fillColor("#64748b").text(bt.summary, { lineGap: 1 });
+        doc.moveDown(0.4);
+      }
+    }
+
+    // Standards Alignment
+    const standards = asList(aiSummary?.standardsAlignment).filter(Boolean);
+    if (standards.length) {
+      ensureSpace(100);
+      sectionTitle("Standards Alignment");
+      doc.font("Helvetica").fontSize(10).fillColor("#0f172a");
+      standards.forEach((s) => {
+        const prefix = s.code ? `[${s.code}] ` : "";
+        doc.font("Helvetica-Bold").fontSize(10).fillColor("#1e40af").text(`${prefix}${s.standard || ""}`, { lineGap: 1 });
+        if (s.connection) {
+          doc.font("Helvetica").fontSize(9).fillColor("#475569").text(`  ${s.connection}`, { lineGap: 1 });
+        }
+        doc.moveDown(0.15);
+      });
+      doc.moveDown(0.3);
     }
 
     sectionTitle("Concepts Covered");
@@ -918,6 +1054,7 @@ export async function sendTranscriptEmail({
   assessmentCategories,
   studentGrades,
   gradingConfig,
+  bloomsTaxonomy,
 }) {
   if (!to) throw new Error("Missing destination email.");
   if (!transcript) throw new Error("Missing transcript payload.");
@@ -934,6 +1071,7 @@ export async function sendTranscriptEmail({
     includeIndividualReports,
     studentGrades,
     gradingConfig,
+    bloomsTaxonomy,
   });
 
   const pdfBuffer = await buildReportPdfBuffer({
@@ -948,6 +1086,7 @@ export async function sendTranscriptEmail({
     assessmentCategories,
     studentGrades,
     gradingConfig,
+    bloomsTaxonomy,
   });
 
   const roomCode = transcript?.roomCode || transcript?.code || "";
