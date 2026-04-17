@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 // Victory handling is centralized in TaskRunner (plays the correct victory video to completion).
 import { TaskCardFrame, Pill, PrimaryButton } from "../taskStyles";
+import { StepDesignatedWriter } from "../DesignatedWriter.jsx";
 
 /**
  * Brain Blitz (standard UI)
@@ -14,7 +15,7 @@ import { TaskCardFrame, Pill, PrimaryButton } from "../taskStyles";
  *   - "brain-blitz-answer"
  *   - "brain-blitz-answer-broadcast"
  */
-export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode = "play", review = null }) {
+export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode = "play", review = null, memberNames = [] }) {
   const [isListening, setIsListening] = useState(false);
   const [currentClueIndex, setCurrentClueIndex] = useState(0);
   const [score, setScore] = useState(0);
@@ -725,6 +726,15 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
       )}
 
       <div style={{ display: "grid", gap: 14 }}>
+        {/* Per-clue rotation: different team member reads/answers each clue */}
+        {memberNames.length >= 2 && (
+          <StepDesignatedWriter
+            memberNames={memberNames}
+            taskIndex={task?._taskIndex}
+            stepIndex={currentClueIndex}
+            role="reader"
+          />
+        )}
         <div
           style={{
             padding: 16,

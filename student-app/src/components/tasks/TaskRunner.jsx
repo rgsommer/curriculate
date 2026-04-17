@@ -62,7 +62,46 @@ import HistoricalDocTask from "./types/HistoricalDocTask";
 import RiddleTask from "./types/RiddleTask";
 import TeamSelfieTask from "./types/TeamSelfieTask";
 import PaperModeCamera from "./PaperModeCamera.jsx";
+import CoachPanel from "./CoachPanel.jsx";
 
+
+// Task types that SKIP coach mode (already have built-in turn mechanics, or non-academic)
+const COACH_MODE_SKIP = new Set([
+  "echo-chain",          // already turn-based
+  "hangman-duel",        // already turn-based
+  "fake-out",            // already has reader rotation
+  "script-play",         // already has speaker roles
+  "role-play-deck",      // already has speaker roles
+  "draw-mime",           // physical/visual — whole team participates
+  "body-break",          // physical — everyone moves
+  "motion-mission",      // physical — everyone moves
+  "team-selfie",         // everyone poses
+  "mood-checkin",        // everyone rates
+  "treasure-runner",     // scan task
+  "record-audio",        // voice task
+  "narration-synthesize",// voice task
+  "speech-recognition",  // voice task
+  "pronunciation",       // voice task
+  "ai-debate-judge",     // voice/debate task
+  "physical-multiple-choice", // movement task
+  "mad-dash",            // movement task
+  "mad-dash-sequence",   // movement task
+  "musical-chairs",      // movement task
+  "brain-blitz",             // has per-clue step rotation + everyone shouts
+  "true-false-connect-four", // already has per-turn rotation
+  "true-false-tictactoe",    // already has per-turn rotation
+  "flashcards-race",     // competitive — everyone taps
+  "brainstorm-battle",   // everyone contributes
+  "collaboration",       // shared writing
+  "multi-player-feedback", // everyone rates
+  "diff-detective",      // competitive race
+  "speed-draw",          // everyone draws
+  "make-and-snap",       // everyone builds
+  "photo",               // camera task
+  "photo-journal",       // camera task
+  "word-weaver-duel",    // turn-based duel
+  "live-debate",         // debate — everyone speaks
+]);
 
 // Task types eligible for paper mode (text-heavy tasks that can be done on paper)
 const PAPER_MODE_ELIGIBLE = new Set([
@@ -2642,6 +2681,7 @@ case "multi_player_feedback":
           socket={isReview ? null : socket}
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
+          memberNames={memberNames}
         />
       );
       break;
@@ -3286,6 +3326,14 @@ return (
     ) : null}
 
     <div className="flex-1 min-h-0 overflow-auto">
+      {/* Coach mode: non-writers get a tap-to-peek hint panel */}
+      {content && !isReview && !COACH_MODE_SKIP.has(type) && memberNames.length >= 2 && (
+        <CoachPanel
+          task={tp}
+          memberNames={memberNames}
+          taskIndex={typeof taskIndex === "number" ? taskIndex : undefined}
+        />
+      )}
       {content ? (
         <TaskErrorBoundary title={(tp?.title || tp?.name || type || "Task")}>
           {content}
