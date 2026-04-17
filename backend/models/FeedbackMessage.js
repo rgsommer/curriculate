@@ -8,6 +8,7 @@ const FeedbackMessageSchema = new mongoose.Schema(
     message: { type: String, required: true },
     uses: { type: Number, default: 0 },
     meta: { type: Object, default: {} },
+    archived: { type: Boolean, default: false },
   },
   { timestamps: true } // createdAt, updatedAt
 );

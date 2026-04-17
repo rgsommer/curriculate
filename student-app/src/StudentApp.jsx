@@ -2395,7 +2395,11 @@ function StudentApp() {
             dmType === "draw" ||
             dmType === "mime";
 
+          // Skipped tasks: no review overlay — advance immediately
+          const wasSkipped = response?.skipped === true;
+
           const shouldShowReview =
+            !wasSkipped &&
             !isPhysical &&
             !isDrawMimeTask &&
             (isObjCurrentTask || !accepted || hasMeaningfulFeedback);

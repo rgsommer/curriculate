@@ -67,6 +67,7 @@ const TaskSchema = new Schema(
       passage: { type: String },              // reading passage text
       categories: { type: [Schema.Types.Mixed], default: undefined }, // sort bucket labels
       clues: { type: [String], default: undefined }, // draw-mime clue words
+      notes: { type: Schema.Types.Mixed, default: undefined }, // brain-spark-notes content
 
     // Link this task to a physical display (optional)
     // Should match one of TaskSet.displays[].key if used

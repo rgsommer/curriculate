@@ -3,6 +3,7 @@ node_modules/
 *.log
 .env
 backend/backend-server.log
+diagnostic-logs.jsonl
 backend/backend-server.pid
 student-dev.log
 teacher-dev.log

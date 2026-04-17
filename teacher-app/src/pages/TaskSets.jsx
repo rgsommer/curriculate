@@ -465,6 +465,61 @@ export default function TaskSets() {
     }
   };
 
+  // Diagnose + fix taskset dialog
+  const [fixDialogId, setFixDialogId] = useState(null);
+  const [fixNote, setFixNote] = useState("");
+  const [fixRunning, setFixRunning] = useState(false);
+  const [fixResult, setFixResult] = useState(null);
+
+  const openFixDialog = (id) => {
+    setFixDialogId(String(id));
+    setFixNote("");
+    setFixResult(null);
+  };
+
+  const closeFixDialog = () => {
+    setFixDialogId(null);
+    setFixNote("");
+    setFixResult(null);
+    setFixRunning(false);
+  };
+
+  const runFix = async () => {
+    if (!fixDialogId || fixRunning) return;
+    setFixRunning(true);
+    setFixResult(null);
+    try {
+      const data = await apiFetchJson(`/api/tasksets/${encodeURIComponent(fixDialogId)}/sanitize`, {
+        method: "POST",
+        body: { note: fixNote },
+      });
+      setFixResult(data);
+      await loadSets();
+    } catch (e) {
+      setFixResult({ ok: false, message: e?.message || "Fix failed" });
+    } finally {
+      setFixRunning(false);
+    }
+  };
+
+  // Copy diagnostic report to clipboard for passing to developer
+  const copyDiagnosticReport = () => {
+    if (!fixResult) return;
+    const tsName = sets.find((s) => String(s._id || s.id) === fixDialogId)?.name || fixDialogId;
+    const lines = [
+      `DIAGNOSTIC REPORT — ${tsName}`,
+      `Date: ${new Date().toISOString()}`,
+      fixNote ? `Teacher note: ${fixNote}` : "",
+      `Tasks: ${fixResult.taskCount || 0} total, ${fixResult.issuesFound || 0} issues, ${fixResult.issuesFixed || 0} auto-fixed`,
+      fixResult.logId ? `Log ID: ${fixResult.logId}` : "",
+      "",
+      ...(fixResult.diagnostics || []).map((d) =>
+        `[Task ${d.taskIndex}] ${d.taskType} — "${d.title}"\n  ${d.fixed ? "✅ FIXED" : "❌ NEEDS MANUAL FIX"}\n  ${d.errors.map((e) => `  • ${e}`).join("\n")}`
+      ),
+    ].filter(Boolean).join("\n");
+    navigator.clipboard.writeText(lines).then(() => alert("Copied to clipboard!")).catch(() => {});
+  };
+
   const deleteSelected = async () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
@@ -1405,6 +1460,14 @@ export default function TaskSets() {
                         <button type="button" onClick={() => navigate(`/tasksets/${encodeURIComponent(id)}`)} style={btn("secondary")}>
                           Edit
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => openFixDialog(id)}
+                          title="Diagnose and fix AI-generated task issues"
+                          style={btn("secondary")}
+                        >
+                          🔧 Fix
+                        </button>
                         <button type="button" onClick={() => deleteOne(id)} style={btn("danger")}>
                           Delete
                         </button>
@@ -1491,6 +1554,123 @@ export default function TaskSets() {
                 Copy Link
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fix / Diagnose Dialog */}
+      {fixDialogId && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.5)", display: "flex",
+          alignItems: "center", justifyContent: "center", zIndex: 9999,
+          padding: 16,
+        }}>
+          <div style={{
+            background: "#fff", borderRadius: 16, padding: 24,
+            maxWidth: 560, width: "100%", boxShadow: "0 16px 50px rgba(0,0,0,0.2)",
+            maxHeight: "85vh", overflowY: "auto",
+          }}>
+            <h2 style={{ marginTop: 0, marginBottom: 4, fontSize: 18 }}>🔧 Diagnose & Fix</h2>
+            <p style={{ color: "#6b7280", marginBottom: 16, fontSize: 13, lineHeight: 1.5 }}>
+              This will validate every task, auto-fix what it can, and log a diagnostic report you can copy to share with developers.
+            </p>
+
+            {!fixResult && (
+              <>
+                <label style={{ fontWeight: 600, fontSize: 13, display: "block", marginBottom: 6 }}>
+                  What's wrong? (optional — helps track the issue)
+                </label>
+                <textarea
+                  value={fixNote}
+                  onChange={(e) => setFixNote(e.target.value)}
+                  placeholder='e.g. "Brain Spark Notes shows [object Object]" or "Sort task has only 2 items"'
+                  maxLength={1000}
+                  rows={3}
+                  style={{
+                    width: "100%", padding: 10, borderRadius: 10,
+                    border: "1.5px solid #d1d5db", fontSize: 13,
+                    fontFamily: "inherit", resize: "vertical",
+                  }}
+                />
+                <div style={{ display: "flex", gap: 10, marginTop: 14, justifyContent: "flex-end" }}>
+                  <button onClick={closeFixDialog} style={{
+                    padding: "8px 18px", borderRadius: 10, border: "1px solid #d1d5db",
+                    background: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer",
+                  }}>
+                    Cancel
+                  </button>
+                  <button onClick={runFix} disabled={fixRunning} style={{
+                    padding: "8px 18px", borderRadius: 10, border: "none",
+                    background: fixRunning ? "#94a3b8" : "#2563eb", color: "#fff",
+                    fontWeight: 700, fontSize: 13, cursor: fixRunning ? "wait" : "pointer",
+                  }}>
+                    {fixRunning ? "Diagnosing…" : "Run Diagnosis"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {fixResult && (
+              <div>
+                {/* Summary */}
+                <div style={{
+                  background: fixResult.issuesFound === 0 ? "#f0fdf4" : "#fef2f2",
+                  border: `1.5px solid ${fixResult.issuesFound === 0 ? "#86efac" : "#fca5a5"}`,
+                  borderRadius: 12, padding: 14, marginBottom: 14,
+                }}>
+                  <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>
+                    {fixResult.issuesFound === 0 ? "✅ All Clear" : `⚠️ ${fixResult.issuesFound} issue(s) found`}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.5 }}>
+                    {fixResult.message}
+                  </div>
+                </div>
+
+                {/* Per-task details */}
+                {(fixResult.diagnostics || []).length > 0 && (
+                  <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
+                    {fixResult.diagnostics.map((d, i) => (
+                      <div key={i} style={{
+                        background: d.fixed ? "#f0fdf4" : "#fffbeb",
+                        border: `1px solid ${d.fixed ? "#86efac" : "#fcd34d"}`,
+                        borderRadius: 10, padding: 12,
+                      }}>
+                        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>
+                          {d.fixed ? "✅" : "⚠️"} Task {d.taskIndex + 1}: {d.taskType}
+                        </div>
+                        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6, fontStyle: "italic" }}>
+                          {d.title}
+                        </div>
+                        <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: "#374151", lineHeight: 1.6 }}>
+                          {d.errors.map((e, j) => <li key={j}>{e}</li>)}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                  {fixResult.diagnostics?.length > 0 && (
+                    <button onClick={copyDiagnosticReport} style={{
+                      padding: "8px 18px", borderRadius: 10, border: "1.5px solid #2563eb",
+                      background: "#eff6ff", color: "#2563eb",
+                      fontWeight: 700, fontSize: 13, cursor: "pointer",
+                    }}>
+                      📋 Copy Report
+                    </button>
+                  )}
+                  <button onClick={closeFixDialog} style={{
+                    padding: "8px 18px", borderRadius: 10, border: "none",
+                    background: "#2563eb", color: "#fff",
+                    fontWeight: 700, fontSize: 13, cursor: "pointer",
+                  }}>
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

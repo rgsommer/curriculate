@@ -37,6 +37,7 @@ import AccessCode from "./models/AccessCode.js";
 import SystemEmailTemplate from "./models/SystemEmailTemplate.js";
 import ReferralProgramSettings from "./models/ReferralProgramSettings.js";
 import StudentProfile from "./models/StudentProfile.js";
+import FeedbackMessage from "./models/FeedbackMessage.js";
 
 // 7) AI / email services
 import { generateAIScore } from "./ai/aiScoring.js";
@@ -1700,6 +1701,36 @@ socket.on("task:force-advance", ({ roomCode }) => {
         teamName: room.teams?.[effectiveTeamId]?.teamName || null,
         ...safe,
       });
+
+      // Persist post-taskset feedback to MongoDB so it appears in admin panel
+      try {
+        const parts = [];
+        if (safe.rating) parts.push(`Rating: ${safe.rating}/5`);
+        if (safe.highlights) parts.push(`Highlights: ${safe.highlights}`);
+        if (safe.improvements) parts.push(`Improvements: ${safe.improvements}`);
+        if (safe.favoriteTask) parts.push(`Favorite: ${safe.favoriteTask}`);
+        if (safe.learned) parts.push(`Learned: ${safe.learned}`);
+        const msgText = parts.length > 0 ? parts.join(" | ") : "Post-taskset feedback (no text)";
+
+        await FeedbackMessage.create({
+          message: msgText,
+          anonId: String(effectiveTeamId),
+          sessionId: code,
+          uses: 0,
+          meta: {
+            source: "post-taskset",
+            rating: safe.rating,
+            highlights: safe.highlights,
+            improvements: safe.improvements,
+            favoriteTask: safe.favoriteTask,
+            learned: safe.learned,
+            reportEmail: safe.reportEmail,
+            teamName: room.teams?.[effectiveTeamId]?.teamName || null,
+          },
+        });
+      } catch (dbErr) {
+        console.error("feedback:submit DB persist failed:", dbErr?.message);
+      }
 
       if (typeof ack === "function") ack({ ok: true });
     } catch (err) {

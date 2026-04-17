@@ -130,54 +130,153 @@ const CONTRAST_ACCENT = "#0ea5e9";
 
 function BrainSparkNotesInline({ task, onSubmit, disabled }) {
   const notes = task?.notes ?? task?.config?.notes ?? null;
-  const heading = (notes?.heading || task?.title || "Notes").toString();
-  const keyTerms = Array.isArray(notes?.keyTerms) ? notes.keyTerms : [];
-  const mainPoints = Array.isArray(notes?.mainPoints) ? notes.mainPoints : [];
-  const summary = (notes?.summary || "").toString();
+  const heading = String(notes?.heading || notes?.title || task?.title || "Notes").trim();
+  const keyTerms = Array.isArray(notes?.keyTerms) ? notes.keyTerms : Array.isArray(notes?.terms) ? notes.terms : [];
+  const mainPoints = Array.isArray(notes?.mainPoints) ? notes.mainPoints : Array.isArray(notes?.sections) ? notes.sections : [];
+  const summaryArr = Array.isArray(notes?.summary) ? notes.summary : (typeof notes?.summary === "string" && notes.summary.trim() ? [notes.summary] : []);
+
+  // Helper: render a keyTerm item (object { term, definition, points } OR plain string)
+  const renderKeyTerm = (kt, i) => {
+    if (typeof kt === "string") return <li key={i} style={{ marginBottom: 8 }}>{kt}</li>;
+    const term = String(kt?.term ?? kt?.word ?? kt?.name ?? "").trim();
+    const def = String(kt?.definition ?? kt?.def ?? "").trim();
+    const pts = Array.isArray(kt?.points) ? kt.points : Array.isArray(kt?.bullets) ? kt.bullets : Array.isArray(kt?.facts) ? kt.facts : [];
+    return (
+      <li key={i} style={{ marginBottom: 12 }}>
+        <span style={{ fontWeight: 800, color: "#1e3a5f" }}>{term || `Term ${i + 1}`}</span>
+        {def && <span style={{ color: "#334155" }}> — {def}</span>}
+        {pts.length > 0 && (
+          <ul style={{ margin: "4px 0 0 0", paddingLeft: 16, listStyleType: "circle" }}>
+            {pts.map((p, j) => (
+              <li key={j} style={{ fontSize: 13, color: "#475569", lineHeight: 1.5 }}>{typeof p === "string" ? p : JSON.stringify(p)}</li>
+            ))}
+          </ul>
+        )}
+      </li>
+    );
+  };
+
+  // Helper: render a mainPoint item (object { heading, bullets/sections } OR plain string)
+  const renderMainPoint = (mp, i) => {
+    if (typeof mp === "string") return <li key={i} style={{ marginBottom: 8 }}>{mp}</li>;
+    const mpHeading = String(mp?.heading ?? mp?.title ?? "").trim();
+    const bullets = Array.isArray(mp?.bullets) ? mp.bullets : Array.isArray(mp?.points) ? mp.points : [];
+    const sections = Array.isArray(mp?.sections) ? mp.sections : [];
+    return (
+      <li key={i} style={{ marginBottom: 14 }}>
+        <span style={{ fontWeight: 800, color: "#1e3a5f" }}>{mpHeading || `Point ${i + 1}`}</span>
+        {bullets.length > 0 && (
+          <ul style={{ margin: "4px 0 0 0", paddingLeft: 16, listStyleType: "disc" }}>
+            {bullets.map((b, j) => (
+              <li key={j} style={{ fontSize: 13, color: "#475569", lineHeight: 1.5 }}>{typeof b === "string" ? b : JSON.stringify(b)}</li>
+            ))}
+          </ul>
+        )}
+        {sections.length > 0 && sections.map((sec, si) => {
+          const secTitle = String(sec?.title ?? sec?.heading ?? "").trim();
+          const secBullets = Array.isArray(sec?.bullets) ? sec.bullets : Array.isArray(sec?.points) ? sec.points : [];
+          return (
+            <div key={si} style={{ marginTop: 6, marginLeft: 4 }}>
+              {secTitle && <div style={{ fontWeight: 700, fontSize: 13, color: "#334155" }}>{secTitle}</div>}
+              {secBullets.length > 0 && (
+                <ul style={{ margin: "2px 0 0 0", paddingLeft: 16, listStyleType: "disc" }}>
+                  {secBullets.map((b, j) => (
+                    <li key={j} style={{ fontSize: 13, color: "#475569", lineHeight: 1.5 }}>{typeof b === "string" ? b : JSON.stringify(b)}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </li>
+    );
+  };
 
   return (
-    <div style={{ display: "grid", gap: 14 }}>
-      <div style={{ fontSize: 18, fontWeight: 800 }}>{heading}</div>
+    <div style={{ display: "grid", gap: 16, padding: "0 2px" }}>
+      {/* Title */}
+      <div style={{
+        fontSize: 20, fontWeight: 900, color: "#0f172a", lineHeight: 1.3,
+        borderBottom: "3px solid #3b82f6", paddingBottom: 8,
+      }}>
+        📝 {heading}
+      </div>
 
-      {keyTerms?.length ? (
-        <div>
-          <div style={{ fontWeight: 800, marginBottom: 6 }}>Key terms</div>
-          <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
-            {keyTerms.map((t, i) => (
-              <li key={i}>{String(t)}</li>
+      {/* Instruction pill */}
+      <div style={{
+        background: "linear-gradient(135deg, #fef3c7, #fde68a)", borderRadius: 12,
+        padding: "10px 14px", fontSize: 13, fontWeight: 700, color: "#92400e",
+        display: "flex", alignItems: "center", gap: 8,
+      }}>
+        <span style={{ fontSize: 18 }}>📖</span>
+        Copy these notes into your notebook — neat and complete!
+      </div>
+
+      {/* Key Terms */}
+      {keyTerms.length > 0 && (
+        <div style={{
+          background: "linear-gradient(135deg, #eff6ff, #dbeafe)", borderRadius: 14,
+          padding: "14px 16px", border: "1.5px solid #93c5fd",
+        }}>
+          <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 10, color: "#1e40af", display: "flex", alignItems: "center", gap: 6 }}>
+            <span>📚</span> Key Terms
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+            {keyTerms.map(renderKeyTerm)}
+          </ul>
+        </div>
+      )}
+
+      {/* Main Points */}
+      {mainPoints.length > 0 && (
+        <div style={{
+          background: "linear-gradient(135deg, #f0fdf4, #dcfce7)", borderRadius: 14,
+          padding: "14px 16px", border: "1.5px solid #86efac",
+        }}>
+          <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 10, color: "#166534", display: "flex", alignItems: "center", gap: 6 }}>
+            <span>⭐</span> Main Points
+          </div>
+          <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+            {mainPoints.map(renderMainPoint)}
+          </ol>
+        </div>
+      )}
+
+      {/* Summary */}
+      {summaryArr.length > 0 && (
+        <div style={{
+          background: "linear-gradient(135deg, #fdf2f8, #fce7f3)", borderRadius: 14,
+          padding: "14px 16px", border: "1.5px solid #f9a8d4",
+        }}>
+          <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8, color: "#9d174d", display: "flex", alignItems: "center", gap: 6 }}>
+            <span>✨</span> Summary
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, listStyleType: "disc", lineHeight: 1.6 }}>
+            {summaryArr.map((s, i) => (
+              <li key={i} style={{ fontSize: 13, color: "#831843", fontStyle: "italic" }}>
+                {typeof s === "string" ? s : JSON.stringify(s)}
+              </li>
             ))}
           </ul>
         </div>
-      ) : null}
+      )}
 
-      {mainPoints?.length ? (
-        <div>
-          <div style={{ fontWeight: 800, marginBottom: 6 }}>Main points</div>
-          <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
-            {mainPoints.map((p, i) => (
-              <li key={i}>{String(p)}</li>
-            ))}
-          </ol>
-        </div>
-      ) : null}
-
-      {summary ? (
-        <div style={{ opacity: 0.9, fontStyle: "italic" }}>
-          <span style={{ fontWeight: 800, fontStyle: "normal" }}>Summary: </span>
-          {summary}
-        </div>
-      ) : null}
-
-      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+      {/* Done button */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4 }}>
         <button
           type="button"
           disabled={!!disabled}
           onClick={() => onSubmit?.({ ok: true })}
-          style={{ padding: "10px 14px", borderRadius: 999, border: "1px solid rgba(0,0,0,0.12)", fontWeight: 800, cursor: "pointer" }}
+          style={{
+            padding: "12px 20px", borderRadius: 999, border: "none",
+            background: "linear-gradient(135deg, #3b82f6, #2563eb)", color: "#fff",
+            fontWeight: 800, fontSize: 15, cursor: disabled ? "not-allowed" : "pointer",
+            boxShadow: "0 4px 12px rgba(37,99,235,0.3)",
+          }}
         >
-          Done
+          ✅ Done
         </button>
-        <div style={{ opacity: 0.7, fontSize: 13 }}>Copy these notes into your notebook.</div>
+        <div style={{ opacity: 0.6, fontSize: 13 }}>Tap when you've written everything down.</div>
       </div>
     </div>
   );
