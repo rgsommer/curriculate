@@ -8,7 +8,7 @@
 // so controllers stay thin and we avoid patch-on-patch divergence.
 
 import OpenAI from "openai";
-import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
+import { TASK_TYPES, TASK_TYPE_META, TASK_SHELLS } from "../../shared/taskTypes.js";
 import { normalizeTaskByType, validateTaskByType } from "../validators/taskValidators.js";
 import { sanitizeTaskShapeByType } from "./sanitizeTaskShape.js";
 
@@ -1088,6 +1088,145 @@ ${timingContext ? `
     }
 
 /* ============================================================
+   TEMPLATE-BASED GENERATION (structure-locked, content-only AI)
+   ============================================================ */
+
+/**
+ * Generate a task using a pre-built JSON shell.
+ * AI receives the exact structure with {{PLACEHOLDER}} tokens and returns
+ * ONLY a flat map of { "PLACEHOLDER_NAME": "value" } — no structural invention.
+ *
+ * Falls back to freeform generation if no shell exists for the type.
+ */
+async function generateFromTemplate({
+  allowedType,
+  shellBuilder,
+  subject,
+  gradeLevel,
+  difficulty,
+  learningGoal,
+  topicLabel,
+  vocabularyLines,
+  specialConsiderations,
+  previousError,
+  temperature,
+  onPrompt,
+}) {
+  const client = getClient();
+
+  // Let the shell builder decide sizing based on difficulty
+  const itemCount = difficulty === "EASY" || difficulty === "easy" ? 4 : difficulty === "HARD" || difficulty === "hard" ? 8 : 6;
+  const branchCount = difficulty === "EASY" || difficulty === "easy" ? 2 : difficulty === "HARD" || difficulty === "hard" ? 4 : 3;
+
+  const { shell, fillInstructions, placeholderNames } = shellBuilder({ itemCount, branchCount });
+
+  const errorContext = previousError
+    ? `\n⚠️ PREVIOUS ATTEMPT WAS REJECTED: ${previousError}\nFix this specific issue. Do NOT repeat the same mistake.`
+    : "";
+
+  const system = `
+You are a JSON content filler for Curriculate classroom tasks.
+
+You will receive a JSON SHELL with {{PLACEHOLDER}} tokens.
+Your job is to return a FLAT JSON object mapping each placeholder name to its replacement value.
+
+RULES:
+- Output MUST be a single JSON object like: { "TITLE": "...", "ITEM_1": "...", ... }
+- Return ONLY the placeholder values. Do NOT return the full task structure.
+- Every value must be a non-empty string.
+- All content must be age-appropriate for grade ${gradeLevel}.
+- Use REAL vocabulary terms from the provided word list — NEVER use placeholder text like "Concept 1" or "Branch 2".
+- Keep language classroom-safe and factually accurate.
+${errorContext}
+`.trim();
+
+  const user = `
+CONTENT CONTEXT:
+Subject: ${subject}
+Grade: ${gradeLevel}
+Difficulty: ${difficulty}
+Learning goal: ${learningGoal}
+Topic: ${topicLabel}
+
+Vocabulary (use these terms for items — do not drift):
+${vocabularyLines || "(generate appropriate terms for the topic)"}
+
+Special considerations:
+${specialConsiderations || "none"}
+
+JSON SHELL (for reference — do NOT return this, just fill the placeholders):
+${shell}
+
+PLACEHOLDERS TO FILL:
+${fillInstructions}
+
+Return a JSON object with keys: ${placeholderNames.join(", ")}
+`.trim();
+
+  // Debug hook
+  try {
+    if (typeof onPrompt === "function") {
+      onPrompt({ taskType: allowedType, system, user, topicLabel, subject, gradeLevel, difficulty, learningGoal });
+    }
+  } catch { /* never fail due to debug hook */ }
+
+  const request = {
+    model: process.env.AI_MODEL || "gpt-4.1-mini",
+    temperature: typeof temperature === "number" ? temperature : 0.3,
+    max_completion_tokens: 1024,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  };
+
+  if (!process.env.AI_DISABLE_JSON_RESPONSE_FORMAT) {
+    request.response_format = { type: "json_object" };
+  }
+
+  const completion = await client.chat.completions.create(request);
+  const raw = completion.choices?.[0]?.message?.content?.trim() || "{}";
+  const values = extractJsonFromText(raw);
+
+  if (!values || typeof values !== "object" || Array.isArray(values)) {
+    throw new Error(`[Template] AI did not return a placeholder map for ${allowedType}. Raw: ${raw.slice(0, 200)}`);
+  }
+
+  // Check all placeholders were filled
+  const missing = placeholderNames.filter((k) => !values[k] || typeof values[k] !== "string" || !values[k].trim());
+  if (missing.length > 0) {
+    throw new Error(`[Template] AI left ${missing.length} placeholder(s) unfilled: ${missing.join(", ")}`);
+  }
+
+  // Stamp values into the shell
+  let filled = shell;
+  for (const key of placeholderNames) {
+    const val = values[key].trim();
+    // Escape for JSON string context (the placeholder is inside a JSON string already)
+    const escaped = val.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+    filled = filled.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), escaped);
+  }
+
+  // Parse the filled shell
+  let task;
+  try {
+    task = JSON.parse(filled);
+  } catch (parseErr) {
+    throw new Error(`[Template] Failed to parse filled shell: ${parseErr.message}. Filled: ${filled.slice(0, 300)}`);
+  }
+
+  // Copy root fields into config where marked
+  if (task.config) {
+    if (task.config.structure === "<<COPY_FROM_ROOT>>") task.config.structure = task.structure;
+    if (task.config.items === "<<COPY_FROM_ROOT>>") task.config.items = [...(task.items || [])];
+  }
+
+  console.log(`[Template] Successfully generated ${allowedType} via template (${placeholderNames.length} placeholders filled)`);
+  return task;
+}
+
+
+/* ============================================================
    SINGLE TASK REGENERATION (one task, one type)
    ============================================================ */
 
@@ -1106,6 +1245,49 @@ export async function regenerateSingleTask({
   previousError,
   temperature,
 }) {
+  // ── Template path: use pre-built JSON shell if available ──
+  const shellBuilder = TASK_SHELLS[allowedType];
+  if (shellBuilder && typeof shellBuilder === "function") {
+    try {
+      const task = await generateFromTemplate({
+        allowedType,
+        shellBuilder,
+        subject,
+        gradeLevel,
+        difficulty,
+        learningGoal,
+        topicLabel,
+        vocabularyLines,
+        specialConsiderations,
+        previousError,
+        temperature,
+        onPrompt,
+      });
+
+      // Still run through normalize + sanitize + validate as safety net
+      let normalized = normalizeTaskByType(allowedType, { ...task, taskType: allowedType });
+      normalized = sanitizeTaskShapeByType(allowedType, normalized);
+
+      if (normalized._validationError) {
+        const errMsg = normalized._validationError;
+        delete normalized._validationError;
+        throw new Error(`[Template Quality Guardrail] ${errMsg}`);
+      }
+      if (normalized._validationWarning) {
+        console.warn(`[Template Quality Guardrail] ${allowedType}: ${normalized._validationWarning}`);
+        delete normalized._validationWarning;
+      }
+
+      assertValidAiTask(allowedType, normalized);
+      return normalized;
+    } catch (templateErr) {
+      console.warn(`[Template] ${allowedType} template generation failed, falling back to freeform: ${templateErr.message}`);
+      // Fall through to freeform generation below
+    }
+  }
+
+  // ── Freeform path (original approach) ──
+  const client = getClient();
   const system = buildSingleTaskPrompt(allowedType, mustHave);
 
   const errorContext = previousError

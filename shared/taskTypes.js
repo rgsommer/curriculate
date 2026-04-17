@@ -4121,3 +4121,90 @@ export function normalizeTaskType(value) {
 export function normalizeTaskTypeId(raw) {
   return normalizeTaskType(raw);
 }
+
+/* ============================================================
+   JSON SHELL TEMPLATES — pre-built task structures with placeholders.
+
+   Instead of asking AI to invent both structure AND content,
+   we give it the exact JSON shell and ask it to fill in ONLY
+   the content values. This eliminates structural errors.
+
+   Each template function returns:
+     { shell: <JSON string with {{PLACEHOLDER}} tokens>,
+       fillInstructions: <string telling AI what to put in each placeholder> }
+
+   The generation code sends the shell + instructions to AI, gets
+   back a flat { "PLACEHOLDER_NAME": "value", ... } map, and does
+   simple string replacement.
+   ============================================================ */
+
+export const TASK_SHELLS = {
+  [TASK_TYPES.MIND_MAPPER]: function buildMindMapperShell({ itemCount = 6, branchCount = 3 } = {}) {
+    // Build branch structures with evenly distributed slots
+    const slotsPerBranch = Math.ceil(itemCount / branchCount);
+    const branches = [];
+    let slotIndex = 0;
+    for (let b = 0; b < branchCount; b++) {
+      const slots = [];
+      for (let s = 0; s < slotsPerBranch && slotIndex < itemCount; s++) {
+        slots.push("_____");
+        slotIndex++;
+      }
+      branches.push({
+        label: `{{BRANCH_${b + 1}}}`,
+        slots,
+      });
+    }
+
+    const items = [];
+    for (let i = 0; i < itemCount; i++) {
+      items.push({
+        text: `{{ITEM_${i + 1}}}`,
+        correctIndex: i,
+      });
+    }
+
+    const shell = {
+      taskType: "mind-mapper",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      organizerType: "{{ORGANIZER_TYPE}}",
+      structure: {
+        center: "{{CENTER_TOPIC}}",
+        branches,
+      },
+      items,
+      config: {
+        centralTopic: "{{CENTER_TOPIC}}",
+        difficulty: "{{DIFFICULTY}}",
+        structure: "<<COPY_FROM_ROOT>>",
+        items: "<<COPY_FROM_ROOT>>",
+      },
+    };
+
+    // Build the fill instructions
+    const placeholders = [
+      `TITLE: A short task title (3-7 words) describing this mind-mapping activity`,
+      `PROMPT: 1-2 sentence student-facing instructions (e.g., "Drag each term to its correct place in the concept web")`,
+      `ORGANIZER_TYPE: one of "mind-map", "hierarchy", "fishbone", "flowchart", "venn", "web" — pick whichever best fits the topic`,
+      `CENTER_TOPIC: The main topic label for the center of the organizer (e.g., "The Water Cycle", "Causes of WWI")`,
+      `DIFFICULTY: "easy", "medium", or "hard" — match the requested difficulty`,
+    ];
+    for (let b = 0; b < branchCount; b++) {
+      placeholders.push(`BRANCH_${b + 1}: A category/branch label — a real sub-topic name (e.g., "Evaporation", "Alliances"), NEVER "Branch ${b + 1}"`);
+    }
+    for (let i = 0; i < itemCount; i++) {
+      placeholders.push(`ITEM_${i + 1}: A real vocabulary term or concept that belongs in one of the branches — NEVER "Concept ${i + 1}" or any placeholder`);
+    }
+
+    return {
+      shell: JSON.stringify(shell, null, 2),
+      fillInstructions: placeholders.join("\n"),
+      placeholderNames: [
+        "TITLE", "PROMPT", "ORGANIZER_TYPE", "CENTER_TOPIC", "DIFFICULTY",
+        ...Array.from({ length: branchCount }, (_, i) => `BRANCH_${i + 1}`),
+        ...Array.from({ length: itemCount }, (_, i) => `ITEM_${i + 1}`),
+      ],
+    };
+  },
+};

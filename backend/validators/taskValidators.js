@@ -1435,10 +1435,9 @@ export function normalizeTaskByType(taskType, rawTask) {
             .filter((x) => x.text)
         : [];
 
-      while (task.items.length < 4) {
-        const i = task.items.length + 1;
-        task.items.push({ id: `mm${i}`, text: `Concept ${i}` });
-      }
+      // NOTE: Do NOT pad with placeholder text like "Concept N" — that triggers
+      // placeholder rejection in validation. If items < 4, let validation catch it.
+      // The template-based generator guarantees the correct count.
 
       task.items = task.items.map((it) => asNonEmptyString(it.text, "")).map((s) => String(s).trim()).filter(Boolean);
 
