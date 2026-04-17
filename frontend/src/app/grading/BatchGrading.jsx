@@ -413,7 +413,7 @@ export default function BatchGrading({
     }
 
     // Build student page groups (fixed or auto-detected)
-    const studentGroups = groups || (() => {
+    const studentGroups = (groups || (() => {
       const g = [];
       const firstStudentPage = answerKeyPages + 1;
       for (let i = 0; i < studentCount; i++) {
@@ -422,7 +422,15 @@ export default function BatchGrading({
         g.push({ startPage: start, endPage: end, pages: Array.from({ length: end - start + 1 }, (_, k) => start + k) });
       }
       return g;
-    })();
+    })()).filter(g => {
+      // Filter out groups where ALL pages are out of range
+      const validPages = g.pages.filter(p => p >= 1 && p <= pageCount);
+      if (validPages.length === 0) {
+        console.warn(`[batch] dropping group with pages ${g.pages.join(",")} — all out of range (PDF has ${pageCount} pages)`);
+        return false;
+      }
+      return true;
+    });
 
     const total = studentGroups.length;
     setProgress({ done: 0, total, current: "Preparing..." });
@@ -482,8 +490,25 @@ export default function BatchGrading({
         // Render pages to images (use group.pages for exact page list)
         const images = [];
         for (const p of group.pages) {
+          if (p < 1 || p > doc.numPages) {
+            console.warn(`[batch] skipping invalid page ${p} (PDF has ${doc.numPages} pages)`);
+            continue;
+          }
           const dataUrl = await renderPageToDataUrl(doc, p);
           images.push(dataUrl);
+        }
+        if (images.length === 0) {
+          batchResults.push({
+            index: i + 1,
+            pages: `${startPage}–${endPage}`,
+            studentName: group.name || `Student ${i + 1}`,
+            score: "?", outOf: "?", pct: null, letter: "?",
+            strengths: [], improvements: [], comment: "",
+            sections: null, subject: "", assessmentType: "",
+            refCode: null, error: `Invalid page request.`, raw: null,
+          });
+          setResults([...batchResults]);
+          continue;
         }
 
         // Call existing grading endpoint
@@ -1169,7 +1194,7 @@ export default function BatchGrading({
                       color: "#1e40af",
                     }}
                   >
-                    Student {i + 1}: p{g.pages.length === 1 ? g.pages[0] : `${g.startPage}–${g.endPage}`}
+                    {g.name || `Student ${i + 1}`}: p{g.pages.length === 1 ? g.pages[0] : `${g.startPage}–${g.endPage}`}
                   </span>
                 ))}
               </div>

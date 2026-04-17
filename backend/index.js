@@ -10590,34 +10590,42 @@ function buildRubricInstructions({
       const content = [
         {
           type: "input_text",
-          text: `You are analyzing scanned pages from a stack of student assignments that were fed through a copier's ADF scanner. The pages are in order.
+          text: `You are analyzing scanned pages from a stack of student assignments that were fed through a copier's ADF (automatic document feeder) scanner. The pages are in order.
+
+IMPORTANT CONTEXT: When assignments are scanned through an ADF, BOTH sides of each sheet may be captured. This means a single-sided worksheet may produce two scanned pages: the front (with the printed worksheet and student work) and the back (which may be blank, mostly blank, or contain overflow/continuation writing).
 
 ${answerKeyPages > 0 ? `The first ${answerKeyPages} page(s) are the ANSWER KEY — mark them as "key".` : "There is no answer key."}
 
 For each remaining page, decide if it is the FIRST page of a NEW student's work, or a CONTINUATION of the previous student's work.
 
-Clues that a page starts a new student:
-- A different student name or handwriting style at the top
-- A fresh copy of the same assignment/worksheet (same printed header, questions restart from #1)
-- A clear separation — the previous page looked complete or had mostly blank space at the bottom
-- Page numbering resets (e.g. "Page 1" again)
+STRONG clues that a page is a CONTINUATION (back of the previous student's sheet):
+- The page is BLANK or nearly blank (just scanner noise, shadows, or faint bleed-through)
+- The page has ONLY handwriting with NO printed worksheet template/header — this is likely overflow writing on the back of the previous student's sheet
+- The page has handwriting that looks like a continuation (e.g. "Reflective Writing" overflow) without the standard printed assignment header/questions
+- The page appears to be the reverse side of the previous page (similar paper tone, no fresh printed template)
+- Faint mirror-image bleed-through of the front side is visible
 
-Clues that a page continues the previous student:
-- Same handwriting continues from the previous page
-- Question numbers continue sequentially (e.g. previous ended at Q5, this starts at Q6)
-- "Page 2" or "continued" marker
-- The content flows naturally from the previous page
+STRONG clues that a page starts a NEW student:
+- The page has the SAME PRINTED worksheet template/header as other student pages (printed text, not handwritten) — this is a fresh copy of the assignment
+- A different student name is printed or written at the top
+- Questions restart from #1 with printed question text
+- It looks like a fresh, clean copy of the assignment form that a student has filled in
+
+KEY PRINCIPLE: If a page has a printed worksheet template (typed headers, printed questions, form fields), it is almost certainly a NEW student's copy. If a page lacks any printed template and only has handwriting or is blank, it is almost certainly a CONTINUATION or back side.
+
+For worksheets where the assignment says "use the other side" or "continue on back", expect that some students will have 2 scanned pages (front + back with extra writing) while others will have only 1 (front only, back is blank or not scanned).
 
 Respond with ONLY a JSON array of objects, one per page, in order:
 [
   { "page": 1, "type": "key" },
-  { "page": 2, "type": "new" },
+  { "page": 2, "type": "new", "name": "student name if visible" },
   { "page": 3, "type": "continuation" },
-  { "page": 4, "type": "new" },
+  { "page": 4, "type": "new", "name": "student name if visible" },
   ...
 ]
 
 type must be one of: "key", "new", "continuation"
+Include "name" field only for "new" pages if you can read the student's name.
 Do NOT include any text outside the JSON array.`,
         },
       ];
@@ -10635,7 +10643,7 @@ Do NOT include any text outside the JSON array.`,
       const response = await openai.responses.create({
         model: AI_MODEL,
         input: [{ role: "user", content }],
-        max_output_tokens: 800,
+        max_output_tokens: 1200,
       });
 
       const raw = String(response.output_text || "").trim();
@@ -10647,12 +10655,23 @@ Do NOT include any text outside the JSON array.`,
         return res.status(502).json({ error: "AI did not return valid page classifications" });
       }
 
-      const classifications = JSON.parse(jsonMatch[0]);
+      let classifications = JSON.parse(jsonMatch[0]);
 
       // Validate structure
       if (!Array.isArray(classifications) || classifications.length === 0) {
         return res.status(502).json({ error: "Empty classifications array" });
       }
+
+      // Clamp: AI sometimes hallucinates extra pages beyond what was sent
+      const totalPages = pageImages.length;
+      classifications = classifications.filter(c => {
+        const pn = Number(c.page);
+        if (pn < 1 || pn > totalPages) {
+          console.warn(`[classify-pages] dropping hallucinated page ${pn} (PDF has ${totalPages} pages)`);
+          return false;
+        }
+        return true;
+      });
 
       // Build student groups from classifications
       const groups = [];
@@ -10667,6 +10686,7 @@ Do NOT include any text outside the JSON array.`,
         if (type === "new") {
           if (currentGroup) groups.push(currentGroup);
           currentGroup = { startPage: pageNum, endPage: pageNum, pages: [pageNum] };
+          if (c.name) currentGroup.name = String(c.name).trim();
         } else if (type === "continuation" && currentGroup) {
           currentGroup.endPage = pageNum;
           currentGroup.pages.push(pageNum);
@@ -10674,6 +10694,7 @@ Do NOT include any text outside the JSON array.`,
           // First non-key page or unexpected — treat as new
           if (currentGroup) groups.push(currentGroup);
           currentGroup = { startPage: pageNum, endPage: pageNum, pages: [pageNum] };
+          if (c.name) currentGroup.name = String(c.name).trim();
         }
       }
       if (currentGroup) groups.push(currentGroup);

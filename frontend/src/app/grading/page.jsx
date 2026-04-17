@@ -3071,8 +3071,8 @@ export default function GradingPage() {
           )}
           </div>
 
-          {/* Rubric Options — visible in ALL modes (photo, paste, batch) */}
-          <div style={styles.card}>
+          {/* Rubric Options — visible in photo & paste modes (batch has its own rubric field) */}
+          <div style={{ ...styles.card, ...(inputMode === "batch" ? { display: "none" } : {}) }}>
             {/* First-use tip: rubric + answer key */}
             {showRubricTip && (
               <div style={{
