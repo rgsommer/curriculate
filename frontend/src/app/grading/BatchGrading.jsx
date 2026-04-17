@@ -1552,19 +1552,76 @@ export default function BatchGrading({
                                 );
                               }
 
-                              // Non-KITA sections
+                              // Non-KITA sections — styled card layout matching results portal
                               if (!Array.isArray(r.sections) || !r.sections.length) return null;
+                              const totalScore = r.sections.reduce((s, sec) => s + (Number(sec.score) || 0), 0);
+                              const totalOutOf = r.sections.reduce((s, sec) => s + (Number(sec.out_of) || 0), 0);
+                              const totalPct = totalOutOf > 0 ? Math.round((totalScore / totalOutOf) * 100) : null;
+                              const sectionColors = ["#059669", "#2563eb", "#7c3aed", "#d97706", "#dc2626", "#0891b2"];
                               return (
-                                <div>
-                                  <strong>Sections:</strong>
-                                  <ul style={batchStyles.ul}>
-                                    {r.sections.map((sec, si) => (
-                                      <li key={si}>
-                                        {sec.name}: {sec.score}/{sec.out_of}
-                                        {sec.teacher_comment ? ` — ${sec.teacher_comment}` : ""}
-                                      </li>
-                                    ))}
-                                  </ul>
+                                <div style={{ marginTop: 8 }}>
+                                  <strong>Rubric Breakdown</strong>
+                                  <div style={{
+                                    display: "grid",
+                                    gridTemplateColumns: r.sections.length <= 2 ? "1fr 1fr" : r.sections.length <= 4 ? "1fr 1fr" : "1fr 1fr 1fr",
+                                    gap: 8,
+                                    marginTop: 6,
+                                  }}>
+                                    {r.sections.map((sec, si) => {
+                                      const secPct = Number(sec.out_of) > 0 ? Math.round((Number(sec.score) / Number(sec.out_of)) * 100) : 0;
+                                      const accent = sectionColors[si % sectionColors.length];
+                                      const label = secPct >= 80 ? "Strong" : secPct >= 60 ? "Developing" : "Needs Support";
+                                      return (
+                                        <div key={si} style={{
+                                          padding: "10px 12px",
+                                          borderRadius: 10,
+                                          background: `${accent}10`,
+                                          border: `1px solid ${accent}30`,
+                                        }}>
+                                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                              <span style={{
+                                                display: "inline-flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                width: 22,
+                                                height: 22,
+                                                borderRadius: 6,
+                                                background: accent,
+                                                color: "#fff",
+                                                fontSize: 10,
+                                                fontWeight: 900,
+                                              }}>{(sec.name || "?").charAt(0).toUpperCase()}</span>
+                                              <span style={{ fontWeight: 800, fontSize: 13 }}>{sec.name}</span>
+                                            </div>
+                                            <span style={{ fontWeight: 900, fontSize: 13 }}>
+                                              {Number(sec.score).toFixed(sec.score % 1 ? 1 : 0)}/{Number(sec.out_of).toFixed(sec.out_of % 1 ? 1 : 0)}
+                                            </span>
+                                          </div>
+                                          <div style={{ fontSize: 11, fontWeight: 700, color: accent, marginTop: 2 }}>{label}</div>
+                                          {sec.teacher_comment && (
+                                            <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85, lineHeight: 1.35 }}>
+                                              {sec.teacher_comment}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                  {totalPct != null && (
+                                    <div style={{
+                                      marginTop: 8,
+                                      display: "flex",
+                                      justifyContent: "flex-end",
+                                      alignItems: "center",
+                                      gap: 8,
+                                      fontSize: 13,
+                                      fontWeight: 900,
+                                    }}>
+                                      <span>Total</span>
+                                      <span style={{ color: "#2563eb" }}>{totalScore}/{totalOutOf}</span>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })()}
