@@ -8546,11 +8546,38 @@ function buildRubricInstructions({
 
     ${voiceStyleSpec(feedbackVoice)}
 
-    ${rubricOverride ? `
-      TEACHER-PROVIDED RUBRIC OVERRIDE:
+    ${(() => {
+      if (!rubricOverride) return "";
+      // Auto-detect total from /N patterns in rubric (e.g., "/2 for showing work, /1 correct answer, /1 sentence")
+      const slashNums = rubricOverride.match(/\/(\d+(?:\.\d+)?)/g);
+      let computedTotal = 0;
+      let criterionCount = 0;
+      if (slashNums && slashNums.length > 1) {
+        // Multiple /N → multi-criterion rubric
+        for (const m of slashNums) {
+          computedTotal += parseFloat(m.slice(1));
+          criterionCount++;
+        }
+      } else if (slashNums && slashNums.length === 1) {
+        computedTotal = parseFloat(slashNums[0].slice(1));
+        criterionCount = 1;
+      }
+      const totalLine = computedTotal > 0
+        ? `\n      COMPUTED TOTAL FROM RUBRIC: overall_out_of MUST be exactly ${computedTotal}. There are ${criterionCount} criteria → exactly ${criterionCount} section(s).`
+        : "";
+      return `
+      *** TEACHER-PROVIDED RUBRIC OVERRIDE (MANDATORY — THIS IS THE HIGHEST PRIORITY INSTRUCTION): ***
       ${rubricOverride}
+      ${totalLine}
 
-      If this rubric override includes categories, criteria, or denominators, it takes priority over default grading assumptions.
+      YOU MUST FOLLOW THIS RUBRIC EXACTLY. The teacher wrote this rubric specifically for this assignment.
+      - The total marks (overall_out_of) MUST equal the sum of all denominators in the rubric above.
+      - You MUST create exactly one section per criterion listed in the rubric.
+      - Do NOT invent your own scoring scheme. Do NOT use a different denominator.
+      - Every student MUST be graded on the SAME scale defined by this rubric.
+
+      If this rubric override includes categories, criteria, or denominators, it takes ABSOLUTE priority over any default grading assumptions.`;
+    })()}
 
       SHORTHAND DENOMINATOR OVERRIDE (e.g., "/8", "/12", "/20"):
       If the rubric override is ONLY a denominator (like "/8"), this means the teacher has assigned a
