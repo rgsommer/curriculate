@@ -267,17 +267,22 @@ export default function MysteryBoxGrid({
                   </div>
                   <StarRating tier={box.starTier} />
                   {box.isInterTeam && (
-                    <div style={{
-                      position: "absolute",
-                      top: 4, right: 4,
-                      fontSize: "0.65rem",
-                      background: "rgba(0,0,0,0.3)",
-                      borderRadius: 8,
-                      padding: "1px 5px",
-                      color: "#fbbf24",
-                      fontWeight: 700,
-                    }}>
-                      VS
+                    <div
+                      title="Challenge box! Open to challenge another team for 1.5× bonus points"
+                      style={{
+                        position: "absolute",
+                        top: 4, right: 4,
+                        fontSize: "0.65rem",
+                        background: "linear-gradient(135deg, rgba(251,191,36,0.9), rgba(245,158,11,0.9))",
+                        borderRadius: 8,
+                        padding: "2px 6px",
+                        color: "#fff",
+                        fontWeight: 800,
+                        textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                        boxShadow: "0 2px 6px rgba(251,191,36,0.4)",
+                        letterSpacing: "0.05em",
+                      }}>
+                      ⚔️ VS
                     </div>
                   )}
                 </>

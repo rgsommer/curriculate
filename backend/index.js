@@ -38,6 +38,7 @@ import SystemEmailTemplate from "./models/SystemEmailTemplate.js";
 import ReferralProgramSettings from "./models/ReferralProgramSettings.js";
 import StudentProfile from "./models/StudentProfile.js";
 import FeedbackMessage from "./models/FeedbackMessage.js";
+import Submission from "./models/Submission.js";
 
 // 7) AI / email services
 import { generateAIScore } from "./ai/aiScoring.js";
@@ -4965,7 +4966,7 @@ if (!isMultiPack && task.taskType === "guess-who") {
       return;
     }
 
-    room.submissions.push({
+    const submissionDoc = {
       roomCode: code,
       teamId: effectiveTeamId,
       teamName,
@@ -4978,6 +4979,25 @@ if (!isMultiPack && task.taskType === "guess-who") {
       aiScore,
       timeMs: timeMs ?? null,
       submittedAt,
+    };
+    room.submissions.push(submissionDoc);
+
+    // Persist submission to MongoDB (fire-and-forget; errors logged but don't block student)
+    Submission.create({
+      roomCode: code,
+      taskIndex: idx,
+      teamId: effectiveTeamId,
+      teamName,
+      playerId: socket.data.playerId || null,
+      answer,
+      isCorrect: correct === true ? true : correct === false ? false : null,
+      points: pointsEarned,
+      aiScore,
+      photoUrl: extractedPhotoUrl,
+      responseTimeMs: timeMs ?? null,
+      submittedAt,
+    }).catch((dbErr) => {
+      console.error("[handleStudentSubmit] Failed to persist submission to DB:", dbErr?.message);
     });
 
     // Store team selfie URL on the team object for reports
@@ -6089,8 +6109,14 @@ socket.on(
       });
 
     // 2.5) Compute top teams and top players for AI blurb
-    const topTeams = Object.values(room.teams || {})
-      .map((t) => ({ name: t.teamName || t.name || "Team", score: t.score ?? 0 }))
+    // Use submission-based scores (not legacy team.score which is rarely updated)
+    const submissionScores = {};
+    for (const sub of room.submissions || []) {
+      if (!submissionScores[sub.teamId]) submissionScores[sub.teamId] = 0;
+      submissionScores[sub.teamId] += sub.points ?? 0;
+    }
+    const topTeams = Object.entries(room.teams || {})
+      .map(([tid, t]) => ({ name: t.teamName || t.name || "Team", score: submissionScores[tid] ?? 0 }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 3);
 
