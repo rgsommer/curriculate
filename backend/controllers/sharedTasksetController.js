@@ -1192,19 +1192,42 @@ Return a JSON object with keys: ${placeholderNames.join(", ")}
     throw new Error(`[Template] AI did not return a placeholder map for ${allowedType}. Raw: ${raw.slice(0, 200)}`);
   }
 
-  // Check all placeholders were filled
-  const missing = placeholderNames.filter((k) => !values[k] || typeof values[k] !== "string" || !values[k].trim());
+  // Check all placeholders were filled (allow numbers and booleans too)
+  const missing = placeholderNames.filter((k) => {
+    const v = values[k];
+    if (v === undefined || v === null) return true;
+    if (typeof v === "number" || typeof v === "boolean") return false;
+    return typeof v !== "string" || !String(v).trim();
+  });
   if (missing.length > 0) {
     throw new Error(`[Template] AI left ${missing.length} placeholder(s) unfilled: ${missing.join(", ")}`);
   }
 
   // Stamp values into the shell
+  // Two placeholder styles:
+  //   {{KEY}} = string value (inside JSON quotes) — gets escaped
+  //   <<KEY>> = raw value (number/boolean) — replaces the quoted placeholder including quotes
   let filled = shell;
   for (const key of placeholderNames) {
-    const val = values[key].trim();
-    // Escape for JSON string context (the placeholder is inside a JSON string already)
+    const rawVal = values[key];
+    const val = String(rawVal).trim();
+
+    // String placeholders: {{KEY}} — escape for JSON string context
     const escaped = val.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
     filled = filled.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), escaped);
+
+    // Numeric/boolean placeholders: "<<KEY>>" — replace the quoted placeholder with raw value
+    // Handles correctAnswer indices, isFalse booleans, etc.
+    const numVal = Number(val);
+    const boolVal = val === "true" ? true : val === "false" ? false : null;
+    if (!isNaN(numVal) && val !== "") {
+      filled = filled.replace(new RegExp(`"<<${key}>>"`, "g"), String(numVal));
+    } else if (boolVal !== null) {
+      filled = filled.replace(new RegExp(`"<<${key}>>"`, "g"), String(boolVal));
+    } else {
+      // If it's a string in a raw slot, keep it quoted
+      filled = filled.replace(new RegExp(`"<<${key}>>"`, "g"), `"${escaped}"`);
+    }
   }
 
   // Parse the filled shell
@@ -1215,10 +1238,12 @@ Return a JSON object with keys: ${placeholderNames.join(", ")}
     throw new Error(`[Template] Failed to parse filled shell: ${parseErr.message}. Filled: ${filled.slice(0, 300)}`);
   }
 
-  // Copy root fields into config where marked
+  // Copy root fields into config where marked with <<COPY_*>> sentinels
   if (task.config) {
     if (task.config.structure === "<<COPY_FROM_ROOT>>") task.config.structure = task.structure;
     if (task.config.items === "<<COPY_FROM_ROOT>>") task.config.items = [...(task.items || [])];
+    if (task.config.clues === "<<COPY_CLUES>>") task.config.clues = [...(task.clues || [])];
+    if (task.config.correctAnswer === "<<COPY_ANSWER>>") task.config.correctAnswer = task.correctAnswer;
   }
 
   console.log(`[Template] Successfully generated ${allowedType} via template (${placeholderNames.length} placeholders filled)`);

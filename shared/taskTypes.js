@@ -4207,4 +4207,686 @@ export const TASK_SHELLS = {
       ],
     };
   },
+
+  /* ── MULTIPLE CHOICE ── */
+  [TASK_TYPES.MULTIPLE_CHOICE]: function buildMultipleChoiceShell({ itemCount = 4 } = {}) {
+    const items = [];
+    const placeholders = [
+      "TITLE: Short quiz title (3-7 words)",
+      "PROMPT: 1-2 sentence student-facing instructions",
+    ];
+    const names = ["TITLE", "PROMPT"];
+
+    for (let i = 0; i < itemCount; i++) {
+      const n = i + 1;
+      items.push({
+        id: `mc${n}`,
+        prompt: `{{Q${n}_PROMPT}}`,
+        options: [`{{Q${n}_A}}`, `{{Q${n}_B}}`, `{{Q${n}_C}}`, `{{Q${n}_D}}`],
+        correctAnswer: `<<Q${n}_CORRECT_INDEX>>`,
+      });
+      placeholders.push(
+        `Q${n}_PROMPT: The question text for question ${n}`,
+        `Q${n}_A: Option A (a plausible answer)`,
+        `Q${n}_B: Option B (a plausible answer)`,
+        `Q${n}_C: Option C (a plausible answer)`,
+        `Q${n}_D: Option D (a plausible answer)`,
+        `Q${n}_CORRECT_INDEX: The 0-based index (0-3) of the correct option. IMPORTANT: vary across questions — do NOT always use 0`,
+      );
+      names.push(`Q${n}_PROMPT`, `Q${n}_A`, `Q${n}_B`, `Q${n}_C`, `Q${n}_D`, `Q${n}_CORRECT_INDEX`);
+    }
+
+    const shell = { taskType: "multiple-choice", title: "{{TITLE}}", prompt: "{{PROMPT}}", items };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── PHYSICAL MULTIPLE CHOICE ── */
+  [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]: function buildPhysicalMCShell() {
+    // Always exactly 4 questions — reuse MC shell but fix taskType
+    const result = TASK_SHELLS[TASK_TYPES.MULTIPLE_CHOICE]({ itemCount: 4 });
+    result.shell = result.shell.replace('"multiple-choice"', '"physical-multiple-choice"');
+    return result;
+  },
+
+  /* ── MATCHING ── */
+  [TASK_TYPES.MATCHING]: function buildMatchingShell({ itemCount = 6 } = {}) {
+    const leftItems = [];
+    const rightItems = [];
+    const correctMatches = {};
+    const placeholders = [
+      "TITLE: Short matching activity title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+    ];
+    const names = ["TITLE", "PROMPT"];
+
+    for (let i = 0; i < itemCount; i++) {
+      const n = i + 1;
+      leftItems.push(`{{TERM_${n}}}`);
+      rightItems.push(`{{DEF_${n}}}`);
+      correctMatches[`{{TERM_${n}}}`] = `{{DEF_${n}}}`;
+      placeholders.push(
+        `TERM_${n}: A real vocabulary term from the word list — NEVER "Term ${n}"`,
+        `DEF_${n}: A short definition (8-20 words) for TERM_${n}`,
+      );
+      names.push(`TERM_${n}`, `DEF_${n}`);
+    }
+
+    const shell = {
+      taskType: "matching",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      leftItems,
+      rightItems,
+      correctMatches,
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── VENNSORT ── */
+  [TASK_TYPES.VENNSORT]: function buildVennSortShell({ itemCount = 8, branchCount = 2 } = {}) {
+    const catCount = Math.max(2, Math.min(3, branchCount));
+    const placeholders = [
+      "TITLE: Short sorting activity title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+    ];
+    const names = ["TITLE", "PROMPT"];
+
+    for (let c = 0; c < catCount; c++) {
+      placeholders.push(`CAT_${c + 1}: Category name — a real grouping label, NEVER "Category ${c + 1}"`);
+      names.push(`CAT_${c + 1}`);
+    }
+
+    const categories = Array.from({ length: catCount }, (_, i) => `{{CAT_${i + 1}}}`);
+    const items = [];
+    const correctAnswer = {};
+
+    for (let i = 0; i < itemCount; i++) {
+      const n = i + 1;
+      const id = `vs-${n}`;
+      items.push({ id, text: `{{ITEM_${n}}}` });
+      correctAnswer[id] = [`<<ITEM_${n}_CAT>>`];
+      placeholders.push(
+        `ITEM_${n}: A real vocabulary term — NEVER "Item ${n}"`,
+        `ITEM_${n}_CAT: Which category this item belongs to (must be one of the CAT values). Use the EXACT category name.`,
+      );
+      names.push(`ITEM_${n}`, `ITEM_${n}_CAT`);
+    }
+
+    const shell = {
+      taskType: "vennsort",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      config: { categories, items },
+      correctAnswer,
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── JEOPARDY (BrainBlitz) ── */
+  [TASK_TYPES.JEOPARDY]: function buildJeopardyShell({ itemCount = 5 } = {}) {
+    const clueCount = Math.max(5, itemCount);
+    const clues = Array.from({ length: clueCount }, (_, i) => `{{CLUE_${i + 1}}}`);
+    const placeholders = [
+      "TITLE: Short BrainBlitz title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+      "ANSWER: The single target answer — a recognizable word or short phrase (NOT a number requiring calculation)",
+    ];
+    const names = ["TITLE", "PROMPT", "ANSWER"];
+
+    for (let i = 0; i < clueCount; i++) {
+      placeholders.push(`CLUE_${i + 1}: A progressive hint for ANSWER — all clues must describe the SAME concept. Earlier clues are harder, later ones easier.`);
+      names.push(`CLUE_${i + 1}`);
+    }
+
+    const shell = {
+      taskType: "jeopardy",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      clues,
+      correctAnswer: "{{ANSWER}}",
+      config: { clues: "<<COPY_CLUES>>", correctAnswer: "<<COPY_ANSWER>>" },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── FAKE OUT ── */
+  [TASK_TYPES.FAKE_OUT]: function buildFakeOutShell({ itemCount = 4 } = {}) {
+    const roundCount = Math.max(3, itemCount);
+    const rounds = [];
+    const placeholders = [
+      "TITLE: Short FakeOut game title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+    ];
+    const names = ["TITLE", "PROMPT"];
+
+    for (let r = 0; r < roundCount; r++) {
+      const n = r + 1;
+      rounds.push({
+        prompt: `{{R${n}_PROMPT}}`,
+        options: [`{{R${n}_OPT_A}}`, `{{R${n}_OPT_B}}`, `{{R${n}_OPT_C}}`],
+        correctIndex: `<<R${n}_CORRECT_INDEX>>`,
+        correctOption: `{{R${n}_CORRECT_OPT}}`,
+        jokeOption: `{{R${n}_JOKE}}`,
+        jokeIndex: `<<R${n}_JOKE_INDEX>>`,
+      });
+      placeholders.push(
+        `R${n}_PROMPT: The question for round ${n}`,
+        `R${n}_OPT_A: A plausible answer option`,
+        `R${n}_OPT_B: A plausible answer option`,
+        `R${n}_OPT_C: A plausible answer option`,
+        `R${n}_CORRECT_INDEX: 0-based index (0-2) of the correct option among OPT_A/B/C. Vary across rounds.`,
+        `R${n}_CORRECT_OPT: The text of the correct option (must match the option at CORRECT_INDEX exactly)`,
+        `R${n}_JOKE: A funny but clearly wrong option (will be inserted separately — must NOT match any of OPT_A/B/C)`,
+        `R${n}_JOKE_INDEX: 0-3, position where the joke option gets inserted into the displayed choices`,
+      );
+      names.push(`R${n}_PROMPT`, `R${n}_OPT_A`, `R${n}_OPT_B`, `R${n}_OPT_C`, `R${n}_CORRECT_INDEX`, `R${n}_CORRECT_OPT`, `R${n}_JOKE`, `R${n}_JOKE_INDEX`);
+    }
+
+    const shell = {
+      taskType: "fake-out",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      config: { rounds },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── MAD DASH SEQUENCE ── */
+  [TASK_TYPES.MAD_DASH_SEQUENCE]: function buildMadDashSequenceShell({ itemCount = 4 } = {}) {
+    const count = Math.max(3, Math.min(5, itemCount));
+    const items = Array.from({ length: count }, (_, i) => `{{STEP_${i + 1}}}`);
+    const placeholders = [
+      "TITLE: Short sequence puzzle title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+    ];
+    const names = ["TITLE", "PROMPT"];
+
+    for (let i = 0; i < count; i++) {
+      placeholders.push(`STEP_${i + 1}: One step in the process. List steps in the CORRECT order — the system will auto-scramble them.`);
+      names.push(`STEP_${i + 1}`);
+    }
+
+    // We give them in correct order with trivial correctOrder — the sanitizer auto-scrambles
+    const shell = {
+      taskType: "mad-dash-sequence",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      config: {
+        items,
+        correctOrder: Array.from({ length: count }, (_, i) => i),
+      },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── HANGMAN DUEL ── */
+  [TASK_TYPES.HANGMAN_DUEL]: function buildHangmanDuelShell() {
+    const wordsByStation = [];
+    const placeholders = [
+      "TITLE: Short hangman game title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+    ];
+    const names = ["TITLE", "PROMPT"];
+
+    for (let i = 0; i < 8; i++) {
+      const n = i + 1;
+      wordsByStation.push({ word: `{{WORD_${n}}}`, hint: `{{HINT_${n}}}` });
+      placeholders.push(
+        `WORD_${n}: A vocabulary word — PURE ALPHABETIC only (A-Z, no hyphens/numbers/apostrophes). Pick from the word list.`,
+        `HINT_${n}: A real definition or context clue for WORD_${n} (NOT "Think about this word")`,
+      );
+      names.push(`WORD_${n}`, `HINT_${n}`);
+    }
+
+    const shell = {
+      taskType: "hangman-duel",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      wordsByStation,
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── FLASHCARDS ── */
+  [TASK_TYPES.FLASHCARDS]: function buildFlashcardsShell({ itemCount = 12 } = {}) {
+    const count = Math.max(5, itemCount);
+    const items = [];
+    const placeholders = [
+      "TITLE: Short flashcard set title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+    ];
+    const names = ["TITLE", "PROMPT"];
+
+    for (let i = 0; i < count; i++) {
+      const n = i + 1;
+      items.push({ question: `{{FRONT_${n}}}`, answer: `{{BACK_${n}}}` });
+      placeholders.push(
+        `FRONT_${n}: A vocabulary term from the word list — NEVER "Term ${n}"`,
+        `BACK_${n}: A clear definition or explanation for FRONT_${n}`,
+      );
+      names.push(`FRONT_${n}`, `BACK_${n}`);
+    }
+
+    const shell = {
+      taskType: "flashcards",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      config: { items },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── FLASHCARDS RACE ── */
+  [TASK_TYPES.FLASHCARDS_RACE]: function buildFlashcardsRaceShell({ itemCount = 10 } = {}) {
+    const count = Math.max(5, itemCount);
+    const items = [];
+    const placeholders = [
+      "TITLE: Short flashcard race title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+    ];
+    const names = ["TITLE", "PROMPT"];
+
+    for (let i = 0; i < count; i++) {
+      const n = i + 1;
+      items.push({ question: `{{CLUE_${n}}}`, answer: `{{TERM_${n}}}` });
+      placeholders.push(
+        `CLUE_${n}: A definition or clue that describes TERM_${n}`,
+        `TERM_${n}: The vocabulary term (the answer students race to type)`,
+      );
+      names.push(`CLUE_${n}`, `TERM_${n}`);
+    }
+
+    const shell = {
+      taskType: "flashcards-race",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      config: { items },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── PET FEEDING ── */
+  [TASK_TYPES.PET_FEEDING]: function buildPetFeedingShell({ itemCount = 7 } = {}) {
+    const count = Math.max(6, itemCount);
+    const goodFoods = Array.from({ length: count }, (_, i) => `{{TRUE_${i + 1}}}`);
+    const badFoods = Array.from({ length: count }, (_, i) => `{{FALSE_${i + 1}}}`);
+    const placeholders = [
+      "TITLE: Short pet feeding game title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+    ];
+    const names = ["TITLE", "PROMPT"];
+
+    for (let i = 0; i < count; i++) {
+      const n = i + 1;
+      placeholders.push(`TRUE_${n}: A TRUE factual statement about the topic (1 sentence)`);
+      names.push(`TRUE_${n}`);
+    }
+    for (let i = 0; i < count; i++) {
+      const n = i + 1;
+      placeholders.push(`FALSE_${n}: A FALSE factual statement about the topic (1 sentence, clearly wrong)`);
+      names.push(`FALSE_${n}`);
+    }
+
+    const shell = {
+      taskType: "pet-feeding",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      goodFoods,
+      badFoods,
+      config: { goal: 5, pack: "classic" },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── MUSICAL CHAIRS ── */
+  [TASK_TYPES.MUSICAL_CHAIRS]: function buildMusicalChairsShell() {
+    const items = [];
+    const placeholders = [
+      "TITLE: Short musical chairs quiz title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+    ];
+    const names = ["TITLE", "PROMPT"];
+
+    for (let i = 0; i < 7; i++) {
+      const n = i + 1;
+      items.push({
+        id: `chair${n}`,
+        prompt: `{{Q${n}_PROMPT}}`,
+        options: [`{{Q${n}_A}}`, `{{Q${n}_B}}`, `{{Q${n}_C}}`],
+        correctAnswer: `<<Q${n}_CORRECT_INDEX>>`,
+      });
+      placeholders.push(
+        `Q${n}_PROMPT: A quick tap-style question`,
+        `Q${n}_A: Option A`,
+        `Q${n}_B: Option B`,
+        `Q${n}_C: Option C`,
+        `Q${n}_CORRECT_INDEX: 0-based index (0-2) of the correct option. Vary across questions.`,
+      );
+      names.push(`Q${n}_PROMPT`, `Q${n}_A`, `Q${n}_B`, `Q${n}_C`, `Q${n}_CORRECT_INDEX`);
+    }
+
+    const shell = {
+      taskType: "musical-chairs",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      items,
+      config: { rounds: 7, items: "<<COPY_FROM_ROOT>>" },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── ROLE PLAY DECK ── */
+  [TASK_TYPES.ROLE_PLAY_DECK]: function buildRolePlayDeckShell({ itemCount = 4 } = {}) {
+    const roleCount = Math.max(3, itemCount);
+    const roles = [];
+    const placeholders = [
+      "TITLE: Short role-play activity title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+      "SCENARIO: 2-4 sentences describing the situation students will role-play in",
+    ];
+    const names = ["TITLE", "PROMPT", "SCENARIO"];
+
+    for (let i = 0; i < roleCount; i++) {
+      const n = i + 1;
+      roles.push({
+        name: `{{ROLE_${n}_NAME}}`,
+        goal: `{{ROLE_${n}_GOAL}}`,
+        constraint: `{{ROLE_${n}_CONSTRAINT}}`,
+      });
+      placeholders.push(
+        `ROLE_${n}_NAME: Character name or role title`,
+        `ROLE_${n}_GOAL: A specific objective this character pursues — NOT empty`,
+        `ROLE_${n}_CONSTRAINT: A limitation or conflict for this character — NOT empty`,
+      );
+      names.push(`ROLE_${n}_NAME`, `ROLE_${n}_GOAL`, `ROLE_${n}_CONSTRAINT`);
+    }
+
+    const shell = {
+      taskType: "role-play-deck",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      config: { scenario: "{{SCENARIO}}", roles },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── BRAIN SPARK NOTES ── */
+  [TASK_TYPES.BRAIN_SPARK_NOTES]: function buildBrainSparkNotesShell({ itemCount = 4 } = {}) {
+    const keyTermCount = Math.max(3, Math.min(6, itemCount));
+    const mainPointCount = Math.max(3, Math.min(5, itemCount));
+
+    const keyTerms = [];
+    const mainPoints = [];
+    const placeholders = [
+      "TITLE: Short note-taking title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+      "HEADING: The heading for the notes (e.g., the topic name)",
+      "SUMMARY_1: First summary sentence — a key takeaway",
+      "SUMMARY_2: Second summary sentence — another key takeaway",
+    ];
+    const names = ["TITLE", "PROMPT", "HEADING", "SUMMARY_1", "SUMMARY_2"];
+
+    for (let i = 0; i < keyTermCount; i++) {
+      const n = i + 1;
+      keyTerms.push({
+        term: `{{KT_${n}_TERM}}`,
+        definition: `{{KT_${n}_DEF}}`,
+        points: [`{{KT_${n}_PT1}}`, `{{KT_${n}_PT2}}`],
+      });
+      placeholders.push(
+        `KT_${n}_TERM: A vocabulary term`,
+        `KT_${n}_DEF: Definition of KT_${n}_TERM`,
+        `KT_${n}_PT1: A key point or fact about this term`,
+        `KT_${n}_PT2: Another key point or fact about this term`,
+      );
+      names.push(`KT_${n}_TERM`, `KT_${n}_DEF`, `KT_${n}_PT1`, `KT_${n}_PT2`);
+    }
+
+    for (let i = 0; i < mainPointCount; i++) {
+      const n = i + 1;
+      mainPoints.push({
+        heading: `{{MP_${n}_HEADING}}`,
+        bullets: [`{{MP_${n}_B1}}`, `{{MP_${n}_B2}}`],
+      });
+      placeholders.push(
+        `MP_${n}_HEADING: A sub-topic heading for main point ${n}`,
+        `MP_${n}_B1: First bullet point under this heading`,
+        `MP_${n}_B2: Second bullet point under this heading`,
+      );
+      names.push(`MP_${n}_HEADING`, `MP_${n}_B1`, `MP_${n}_B2`);
+    }
+
+    const shell = {
+      taskType: "brain-spark-notes",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      notes: {
+        heading: "{{HEADING}}",
+        keyTerms,
+        mainPoints,
+        summary: ["{{SUMMARY_1}}", "{{SUMMARY_2}}"],
+      },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── TRUE FALSE CONNECT FOUR ── */
+  [TASK_TYPES.TRUE_FALSE_CONNECT_FOUR]: function buildTFConnectFourShell({ itemCount = 12 } = {}) {
+    const count = Math.max(9, itemCount); // 9 min for tic-tac-toe reuse, 10+ for connect four
+    const items = [];
+    const placeholders = [
+      "TITLE: Short Connect Four quiz title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+    ];
+    const names = ["TITLE", "PROMPT"];
+
+    for (let i = 0; i < count; i++) {
+      const n = i + 1;
+      items.push({ text: `{{STMT_${n}}}`, isFalse: `<<STMT_${n}_IS_FALSE>>` });
+      placeholders.push(
+        `STMT_${n}: A factual statement about the topic that is either clearly true or clearly false`,
+        `STMT_${n}_IS_FALSE: "true" if the statement is FALSE, "false" if the statement is TRUE. Aim for roughly 50/50 mix.`,
+      );
+      names.push(`STMT_${n}`, `STMT_${n}_IS_FALSE`);
+    }
+
+    const shell = {
+      taskType: "true-false-connect-four",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      items,
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── TRUE FALSE TIC TAC TOE ── */
+  [TASK_TYPES.TRUE_FALSE_TICTACTOE]: function buildTFTicTacToeShell() {
+    // TicTacToe requires EXACTLY 9 statements (3x3 board)
+    const result = TASK_SHELLS[TASK_TYPES.TRUE_FALSE_CONNECT_FOUR]({ itemCount: 9 });
+    const shell = JSON.parse(result.shell);
+    shell.taskType = "true-false-tictactoe";
+    return { ...result, shell: JSON.stringify(shell, null, 2) };
+  },
+
+  /* ── SORT ── */
+  [TASK_TYPES.SORT]: function buildSortShell({ itemCount = 8, branchCount = 2 } = {}) {
+    const bucketCount = Math.max(2, Math.min(4, branchCount));
+    const count = Math.max(6, itemCount);
+    const placeholders = [
+      "TITLE: Short sorting activity title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+    ];
+    const names = ["TITLE", "PROMPT"];
+
+    const buckets = [];
+    for (let b = 0; b < bucketCount; b++) {
+      buckets.push(`{{BUCKET_${b + 1}}}`);
+      placeholders.push(`BUCKET_${b + 1}: Category name — a real thematic grouping, NEVER "Category ${b + 1}"`);
+      names.push(`BUCKET_${b + 1}`);
+    }
+
+    const items = [];
+    for (let i = 0; i < count; i++) {
+      const n = i + 1;
+      items.push({ text: `{{SORT_ITEM_${n}}}`, bucketIndex: `<<SORT_ITEM_${n}_BUCKET>>` });
+      placeholders.push(
+        `SORT_ITEM_${n}: A specific vocabulary term — NEVER "Item ${n}"`,
+        `SORT_ITEM_${n}_BUCKET: 0-based index of which bucket this item belongs to (0-${bucketCount - 1}). Distribute items roughly evenly across buckets.`,
+      );
+      names.push(`SORT_ITEM_${n}`, `SORT_ITEM_${n}_BUCKET`);
+    }
+
+    const shell = {
+      taskType: "sort",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      config: { buckets },
+      items,
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── GUESS WHO ── */
+  [TASK_TYPES.GUESS_WHO]: function buildGuessWhoShell({ itemCount = 8 } = {}) {
+    const count = Math.max(8, itemCount);
+    const items = [];
+    // secretAnswers = the 2-3 candidates that could be "the answer" in each round
+    const secretAnswers = [];
+    const placeholders = [
+      "TITLE: Short Guess Who game title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+    ];
+    const names = ["TITLE", "PROMPT"];
+
+    for (let i = 0; i < count; i++) {
+      const n = i + 1;
+      items.push({
+        name: `{{CANDIDATE_${n}}}`,
+        facts: [`{{CANDIDATE_${n}_FACT1}}`, `{{CANDIDATE_${n}_FACT2}}`, `{{CANDIDATE_${n}_FACT3}}`],
+      });
+      // First 3 candidates are secret answers (the ones students try to guess)
+      if (i < 3) secretAnswers.push(`{{CANDIDATE_${n}}}`);
+      placeholders.push(
+        `CANDIDATE_${n}: A person, concept, or term name`,
+        `CANDIDATE_${n}_FACT1: First fact or clue about this candidate`,
+        `CANDIDATE_${n}_FACT2: Second fact or clue about this candidate`,
+        `CANDIDATE_${n}_FACT3: Third fact or clue about this candidate`,
+      );
+      names.push(`CANDIDATE_${n}`, `CANDIDATE_${n}_FACT1`, `CANDIDATE_${n}_FACT2`, `CANDIDATE_${n}_FACT3`);
+    }
+
+    const shell = {
+      taskType: "guess-who",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      config: { items, secretAnswers, maxGuesses: 10 },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── LETTER ── */
+  [TASK_TYPES.LETTER]: function buildLetterShell({ itemCount = 6 } = {}) {
+    const conceptCount = Math.max(4, itemCount);
+    const relevantConcepts = Array.from({ length: conceptCount }, (_, i) => `{{CONCEPT_${i + 1}}}`);
+    const placeholders = [
+      "TITLE: Short letter-writing task title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+      'CHARACTER: Full name of the character students write as (e.g., "Benjamin Franklin")',
+      "CHARACTER_DESC: 1-2 sentence description of who the character is",
+      'LETTER_STYLE: "business" or "friendly"',
+      "TOPIC_CONTEXT: What the letter should be about (1-2 sentences)",
+    ];
+    const names = ["TITLE", "PROMPT", "CHARACTER", "CHARACTER_DESC", "LETTER_STYLE", "TOPIC_CONTEXT"];
+
+    for (let i = 0; i < conceptCount; i++) {
+      placeholders.push(`CONCEPT_${i + 1}: A vocabulary term students can use for bonus points`);
+      names.push(`CONCEPT_${i + 1}`);
+    }
+
+    const shell = {
+      taskType: "letter",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      config: {
+        character: "{{CHARACTER}}",
+        characterDescription: "{{CHARACTER_DESC}}",
+        letterStyle: "{{LETTER_STYLE}}",
+        topicContext: "{{TOPIC_CONTEXT}}",
+        relevantConcepts,
+      },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── CASE STUDY ── */
+  [TASK_TYPES.CASE_STUDY]: function buildCaseStudyShell({ itemCount = 5 } = {}) {
+    const conceptCount = Math.max(4, itemCount);
+    const relevantConcepts = Array.from({ length: conceptCount }, (_, i) => `{{CONCEPT_${i + 1}}}`);
+    const placeholders = [
+      "TITLE: Short case study title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+      "SCENARIO: 2-4 sentences describing a realistic problem or dilemma — must present a genuine open-ended problem, not just background info",
+      'EXPERT_ROLE: Who evaluates the response (e.g., "History Professor", "Environmental Scientist")',
+      "EXPERT_DESC: 1 sentence describing the expert",
+    ];
+    const names = ["TITLE", "PROMPT", "SCENARIO", "EXPERT_ROLE", "EXPERT_DESC"];
+
+    for (let i = 0; i < conceptCount; i++) {
+      placeholders.push(`CONCEPT_${i + 1}: A vocabulary term relevant to the case`);
+      names.push(`CONCEPT_${i + 1}`);
+    }
+
+    const shell = {
+      taskType: "case-study",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      config: {
+        scenario: "{{SCENARIO}}",
+        expertRole: "{{EXPERT_ROLE}}",
+        expertDescription: "{{EXPERT_DESC}}",
+        relevantConcepts,
+      },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── DIFF DETECTIVE ── */
+  [TASK_TYPES.DIFF_DETECTIVE]: function buildDiffDetectiveShell() {
+    const placeholders = [
+      "TITLE: Short Diff Detective title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions",
+      "TEXT_A: Original text passage (3-6 sentences). Include real subject-matter content.",
+      "TEXT_B: Modified version of TEXT_A with 5-8 deliberate differences (changed words, added/removed details, altered facts). Differences should test understanding, not just spelling.",
+    ];
+    const names = ["TITLE", "PROMPT", "TEXT_A", "TEXT_B"];
+
+    const shell = {
+      taskType: "diff-detective",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      config: { textA: "{{TEXT_A}}", textB: "{{TEXT_B}}" },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── DRAW MIME ── */
+  [TASK_TYPES.DRAW_MIME]: function buildDrawMimeShell() {
+    const placeholders = [
+      "TITLE: Short draw/mime title (3-7 words, e.g., 'Draw: Key Concepts')",
+      "CLUE_1: First drawable/actable concept (1-3 words) — this will also be the prompt",
+      "CLUE_2: Second drawable/actable concept (1-3 words)",
+      "CLUE_3: Third drawable/actable concept (1-3 words)",
+      "CLUE_4: Fourth drawable/actable concept (1-3 words)",
+    ];
+    const names = ["TITLE", "CLUE_1", "CLUE_2", "CLUE_3", "CLUE_4"];
+
+    const shell = {
+      taskType: "draw-mime",
+      title: "{{TITLE}}",
+      prompt: "{{CLUE_1}}",
+      clues: ["{{CLUE_1}}", "{{CLUE_2}}", "{{CLUE_3}}", "{{CLUE_4}}"],
+      config: { mode: "EITHER" },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
 };

@@ -509,8 +509,10 @@ export default function EchoChainTask({ task }) {
           <h2 className="echo-title">
             🔗 Echo Chain
           </h2>
-          <div className="echo-subtitle">
-            Build a glorious chain together. No silent reading—everything is spoken.
+          <div className="echo-subtitle" style={{ lineHeight: 1.6 }}>
+            <strong>How to play:</strong> You'll see a starting word below.
+            On your turn, <strong>say the entire chain out loud from memory</strong>, then <strong>add one new related word</strong>.
+            Type only your new word in the box. Each player must remember and repeat the whole chain before adding theirs!
           </div>
         </div>
 
@@ -540,7 +542,11 @@ export default function EchoChainTask({ task }) {
               <span style={{ color: playerColor, animation: "bounce 1s ease-in-out infinite" }}>
                 {playerEmojis[currentPlayer - 1]}
               </span>
-              <span>Player {currentPlayer}'s turn to add to the chain!</span>
+              <span>
+                {isFirstTurn
+                  ? `Player ${currentPlayer}: Say "${seed}" out loud, then add a related word!`
+                  : `Player ${currentPlayer}: Say the whole chain from memory, then add a new word!`}
+              </span>
             </div>
           </div>
         )}
@@ -636,7 +642,7 @@ export default function EchoChainTask({ task }) {
               <input
                 type="text"
                 className="echo-input"
-                placeholder="Type the next word your team adds…"
+                placeholder={isFirstTurn ? `Say "${seed}" aloud, then type your new word here…` : "Say the whole chain aloud, then type your new word here…"}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
