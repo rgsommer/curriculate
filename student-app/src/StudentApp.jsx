@@ -1393,8 +1393,8 @@ function StudentApp() {
       return;
     }
 
-    const rawThr = Number(noiseState.threshold || 0);
-    const thr = rawThr > 1 ? rawThr / 100 : rawThr; // supports 0–1 or 0–100
+    // Both threshold and level are on the same 0–100 scale from the server
+    const thr = Number(noiseState.threshold || 0);
     const lvl = Number(noiseState.level || 0);
 
     const over = thr > 0 ? lvl >= thr : false;
@@ -2916,8 +2916,9 @@ function StudentApp() {
   const isMultiRoom = Array.isArray(selectedRooms) && selectedRooms.length > 1;
 
   const noiseBarOpacity = noiseState.enabled ? noiseState.brightness : 0.08;
+  // Dim screen when class is noisy — floor at 0.35 so the effect is very noticeable
   const uiBrightness = noiseState.enabled
-    ? Math.max(0.65, Math.min(typeof noiseState.brightness === "number" ? noiseState.brightness : 1, 1))
+    ? Math.max(0.35, Math.min(typeof noiseState.brightness === "number" ? noiseState.brightness : 1, 1))
     : 1;
 
   const timerDisplay = timeLimitSeconds ? formatRemainingMs(remainingMs) : null;
@@ -4392,7 +4393,7 @@ function StudentApp() {
               <div
                 className={`noise-bar-inner${noiseOver ? " noise-bar-hot" : ""}`}
                 style={{
-                  width: `${Math.min(Math.max(noiseState.level * 100, 0), 100)}%`,
+                  width: `${Math.min(Math.max(noiseState.level, 0), 100)}%`,
                   opacity: noiseBarOpacity,
                 }}
               />

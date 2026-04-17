@@ -430,12 +430,17 @@ export default function HostView({ roomCode: roomCodeProp }) {
     const teamsObj = roomState.teams || {};
     const scoresObj = roomState.scores || {};
     return Object.values(teamsObj)
-      .map((t) => ({
-        teamId: t.id || t.teamId || t._id,
-        name: t.teamName || t.name || "Team",
-        pts: scoresObj[t.id || t.teamId || t._id] || 0,
-        thumb: latestPhotos[t.id || t.teamId || t._id]?.url || null,
-      }))
+      .map((t) => {
+        const tid = t.id || t.teamId || t._id;
+        return {
+          teamId: tid,
+          name: t.teamName || t.name || "Team",
+          pts: scoresObj[tid] || 0,
+          thumb: latestPhotos[tid]?.url || null,
+          // Prefer AI-themed selfie, then original selfie, then latest photo submission
+          selfie: t.themedSelfieUrl || t.selfieUrl || latestPhotos[tid]?.url || null,
+        };
+      })
       .filter((r) => !!r.teamId)
       .sort((a, b) => b.pts - a.pts);
   }, [roomState.teams, roomState.scores, latestPhotos]);
@@ -704,6 +709,22 @@ export default function HostView({ roomCode: roomCodeProp }) {
                       <>
                         <div className={`${trophySizes[idx]} mb-5`}>{trophyEmojis[idx] || "\uD83C\uDFC5"}</div>
 
+                        {/* Team selfie (AI-themed preferred) */}
+                        {row.selfie && (
+                          <motion.img
+                            src={row.selfie}
+                            alt={`${row.name} team photo`}
+                            initial={{ scale: 0, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            transition={{ delay: pos * 0.12 + 0.3, type: "spring", stiffness: 80 }}
+                            className="mb-4 rounded-full object-cover border-4 border-white/40 shadow-xl"
+                            style={{
+                              width: idx === 0 ? 120 : idx === 1 ? 96 : 80,
+                              height: idx === 0 ? 120 : idx === 1 ? 96 : 80,
+                            }}
+                          />
+                        )}
+
                         <div
                           className={`relative overflow-hidden ${sizeClasses[idx]} rounded-t-3xl ${paddings[idx]} text-center text-white font-black shadow-2xl ring-1 ring-white/20 ${podiumColors[idx]}`}
                         >
@@ -859,9 +880,9 @@ export default function HostView({ roomCode: roomCodeProp }) {
                             {i + 1}.
                           </span>
 
-                          {row.thumb ? (
+                          {(row.selfie || row.thumb) ? (
                             <img
-                              src={row.thumb}
+                              src={row.selfie || row.thumb}
                               alt={row.name}
                               className="w-11 h-11 md:w-12 md:h-12 rounded-full object-cover border-2 border-white/60 shadow-lg mr-4 relative"
                             />
