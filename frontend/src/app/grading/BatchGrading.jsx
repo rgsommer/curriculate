@@ -473,48 +473,32 @@ export default function BatchGrading({
     // Effective rubric: local override > prop
     const effectiveRubric = (localRubric || "").trim() || rubricOverride || "";
 
-    for (let i = 0; i < total; i++) {
-      if (abortRef.current) break;
-
-      const group = studentGroups[i];
+    // Grade a single student — returns a result entry
+    const gradeOneStudent = async (i, group) => {
       const startPage = group.startPage;
       const endPage = group.endPage;
 
-      setProgress({
-        done: i,
-        total,
-        current: `Grading student ${i + 1} of ${total} (page${group.pages.length > 1 ? "s" : ""} ${startPage}${endPage !== startPage ? `–${endPage}` : ""})...`,
-      });
-
       try {
-        // Render pages to images (use group.pages for exact page list)
+        // Render pages to images
         const images = [];
         for (const p of group.pages) {
-          if (p < 1 || p > doc.numPages) {
-            console.warn(`[batch] skipping invalid page ${p} (PDF has ${doc.numPages} pages)`);
-            continue;
-          }
+          if (p < 1 || p > doc.numPages) continue;
           const dataUrl = await renderPageToDataUrl(doc, p);
           images.push(dataUrl);
         }
         if (images.length === 0) {
-          batchResults.push({
-            index: i + 1,
-            pages: `${startPage}–${endPage}`,
+          return {
+            index: i + 1, pages: `${startPage}–${endPage}`,
             studentName: group.name || `Student ${i + 1}`,
             score: "?", outOf: "?", pct: null, letter: "?",
             strengths: [], improvements: [], comment: "",
             sections: null, subject: "", assessmentType: "",
-            refCode: null, error: `Invalid page request.`, raw: null,
-          });
-          setResults([...batchResults]);
-          continue;
+            refCode: null, error: "Invalid page request.", raw: null,
+          };
         }
 
-        // Call existing grading endpoint
         const payload = {
           images,
-          // Send raw answer key images only if extraction didn't produce text
           answerKeyImages: (effectiveAnswerKey ? undefined : answerKeyImages) || undefined,
           rubricOverride: effectiveRubric || null,
           answerKeyOverride: effectiveAnswerKey || null,
@@ -545,13 +529,12 @@ export default function BatchGrading({
         const outOf = Number(data.overall_out_of);
         const pct =
           Number.isFinite(score) && Number.isFinite(outOf) && outOf > 0
-            ? Math.round((score / outOf) * 100)
-            : null;
+            ? Math.round((score / outOf) * 100) : null;
 
         const resultEntry = {
           index: i + 1,
           pages: `${startPage}–${endPage}`,
-          studentName: data.student_name || `Student ${i + 1}`,
+          studentName: data.student_name || group.name || `Student ${i + 1}`,
           score: Number.isFinite(score) ? score : "?",
           outOf: Number.isFinite(outOf) ? outOf : "?",
           pct,
@@ -567,10 +550,9 @@ export default function BatchGrading({
           raw: data,
         };
 
-        // Publish to results portal to get AB123 ref code
+        // Publish to results portal
         if (resultsUrl && !resultEntry.error) {
           try {
-            // Initial publish (without ref code — we don't have it yet)
             const pubRes = await fetch(resultsUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -583,8 +565,6 @@ export default function BatchGrading({
             const pubData = await pubRes.json().catch(() => ({}));
             if (pubData.code) {
               resultEntry.refCode = String(pubData.code).toUpperCase();
-
-              // Update the published result with the complete payload (now includes ref code)
               try {
                 const updateUrl = resultsUrl.replace(/\/$/, "") + "/" + resultEntry.refCode;
                 await fetch(updateUrl, {
@@ -603,29 +583,45 @@ export default function BatchGrading({
           }
         }
 
-        batchResults.push(resultEntry);
+        return resultEntry;
       } catch (err) {
-        batchResults.push({
-          index: i + 1,
-          pages: `${startPage}–${endPage}`,
-          studentName: `Student ${i + 1}`,
-          score: "?",
-          outOf: "?",
-          pct: null,
-          letter: "?",
-          strengths: [],
-          improvements: [],
-          comment: "",
-          sections: null,
-          subject: "",
-          assessmentType: "",
-          refCode: null,
-          error: err?.message || "Network error",
-          raw: null,
-        });
+        return {
+          index: i + 1, pages: `${startPage}–${endPage}`,
+          studentName: group.name || `Student ${i + 1}`,
+          score: "?", outOf: "?", pct: null, letter: "?",
+          strengths: [], improvements: [], comment: "",
+          sections: null, subject: "", assessmentType: "",
+          refCode: null, error: err?.message || "Network error", raw: null,
+        };
+      }
+    };
+
+    // Process students in parallel batches of 3 for ~3x speedup
+    const CONCURRENCY = 3;
+    for (let start = 0; start < total; start += CONCURRENCY) {
+      if (abortRef.current) break;
+
+      const batchEnd = Math.min(start + CONCURRENCY, total);
+      const batchSlice = studentGroups.slice(start, batchEnd);
+
+      setProgress({
+        done: start,
+        total,
+        current: `Grading students ${start + 1}–${batchEnd} of ${total}...`,
+      });
+
+      // Fire all requests in this batch concurrently
+      const promises = batchSlice.map((group, offset) =>
+        gradeOneStudent(start + offset, group)
+      );
+      const settled = await Promise.all(promises);
+
+      // Collect results in order
+      for (const entry of settled) {
+        if (abortRef.current) break;
+        batchResults.push(entry);
       }
 
-      // Update results live (one at a time)
       setResults([...batchResults]);
     }
 
@@ -1620,6 +1616,106 @@ export default function BatchGrading({
                                     }}>
                                       <span>Total</span>
                                       <span style={{ color: "#2563eb" }}>{totalScore}/{totalOutOf}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+
+                            {/* Achievement Categories (from achievement_summary) */}
+                            {Array.isArray(r.raw?.achievement_summary) && r.raw.achievement_summary.length > 0 && (() => {
+                              const cats = r.raw.achievement_summary;
+                              const levelColors = {
+                                strong: { bg: "rgba(5,150,105,0.1)", border: "rgba(5,150,105,0.3)", text: "#059669" },
+                                adequate: { bg: "rgba(37,99,235,0.08)", border: "rgba(37,99,235,0.25)", text: "#2563eb" },
+                                developing: { bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.3)", text: "#d97706" },
+                                limited: { bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)", text: "#dc2626" },
+                              };
+                              const knownShort = {
+                                "Knowledge & Understanding": "K", "Thinking": "T", "Communication": "C", "Application": "A",
+                                "Understanding": "U", "Problem Solving": "PS", "Effort & Growth": "EG",
+                                "Skills & Application": "SA", "Progress & Effort": "PE",
+                              };
+                              const scored = cats.filter(k => typeof k.score === "number" && typeof k.out_of === "number");
+                              const totalScore = scored.reduce((s, k) => s + k.score, 0);
+                              const totalOutOf = scored.reduce((s, k) => s + k.out_of, 0);
+                              const pct = totalOutOf > 0 ? Math.min(100, Math.max(0, (totalScore / totalOutOf) * 100)) : 0;
+                              const avgPct = 70;
+                              const qualityLabel = pct >= 90 ? "Exceptional" : pct >= 80 ? "Excellent" : pct >= 70 ? "Proficient" : pct >= 60 ? "Developing" : pct >= 50 ? "Approaching" : "Needs Support";
+                              const qualityColor = pct >= 80 ? "#059669" : pct >= 70 ? "#22c55e" : pct >= 60 ? "#eab308" : pct >= 50 ? "#f59e0b" : "#ef4444";
+
+                              return (
+                                <div style={{ marginTop: 10 }}>
+                                  <strong>Achievement Categories</strong>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+                                    {cats.map((k, i) => {
+                                      const lvl = String(k.level || "").toLowerCase();
+                                      const c = levelColors[lvl] || levelColors.adequate;
+                                      const short = knownShort[k.category] || (k.category || "").split(/\s+/).map(w => w[0]).join("").slice(0, 3).toUpperCase();
+                                      return (
+                                        <div key={i} style={{
+                                          flex: "1 1 calc(50% - 8px)", minWidth: 140,
+                                          borderRadius: 10, border: `1px solid ${c.border}`,
+                                          background: c.bg, padding: "8px 10px",
+                                        }}>
+                                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginBottom: 4 }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                              <span style={{
+                                                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                                width: 22, height: 22, borderRadius: 6, background: c.text, color: "white",
+                                                fontSize: 11, fontWeight: 900,
+                                              }}>{short}</span>
+                                              <span style={{ fontSize: 12, fontWeight: 800, color: c.text }}>{k.category}</span>
+                                            </div>
+                                            {typeof k.score === "number" && typeof k.out_of === "number" ? (
+                                              <span style={{ fontSize: 13, fontWeight: 900, color: c.text }}>
+                                                {k.score.toFixed(2)}/{k.out_of.toFixed(2)}
+                                              </span>
+                                            ) : null}
+                                          </div>
+                                          <div style={{ fontSize: 11, fontWeight: 700, color: c.text, textTransform: "capitalize", marginBottom: 2 }}>{k.level}</div>
+                                          {k.comment && <div style={{ fontSize: 12, lineHeight: 1.35, opacity: 0.85 }}>{k.comment}</div>}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                  {scored.length > 0 && (
+                                    <div style={{ padding: "8px 10px", marginTop: 4 }}>
+                                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                                        <div style={{ fontSize: 12, fontWeight: 800, color: qualityColor }}>{qualityLabel}</div>
+                                        <div style={{ fontSize: 13, fontWeight: 900 }}>
+                                          <span style={{ opacity: 0.6, fontWeight: 600, marginRight: 6 }}>Total</span>
+                                          {totalScore.toFixed(2)}/{totalOutOf.toFixed(2)}
+                                        </div>
+                                      </div>
+                                      <div style={{ position: "relative", height: 16, borderRadius: 8, overflow: "visible", background: "#f1f5f9", border: "1px solid #e2e8f0" }}>
+                                        <div style={{
+                                          position: "absolute", top: 0, left: 0, bottom: 0, width: "100%", borderRadius: 8,
+                                          background: "linear-gradient(90deg, #fecaca 0%, #fde68a 30%, #d9f99d 55%, #bbf7d0 75%, #6ee7b7 100%)",
+                                        }} />
+                                        <div style={{
+                                          position: "absolute", top: -4, bottom: -4,
+                                          left: `${avgPct}%`, transform: "translateX(-50%)",
+                                          width: 2, background: "#94a3b8", borderRadius: 1, zIndex: 2,
+                                        }} />
+                                        <div style={{
+                                          position: "absolute", top: -16,
+                                          left: `${avgPct}%`, transform: "translateX(-50%)",
+                                          fontSize: 9, fontWeight: 700, color: "#64748b", whiteSpace: "nowrap",
+                                        }}>Avg</div>
+                                        <div style={{
+                                          position: "absolute", top: -5, bottom: -5,
+                                          left: `${pct}%`, transform: "translateX(-50%)",
+                                          width: 4, borderRadius: 2, zIndex: 3,
+                                          background: "#dc2626", boxShadow: "0 0 6px rgba(220,38,38,0.5)",
+                                        }} />
+                                      </div>
+                                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 9, fontWeight: 600, color: "#94a3b8" }}>
+                                        <span>Needs Support</span>
+                                        <span>Developing</span>
+                                        <span>Proficient</span>
+                                        <span>Excellent</span>
+                                      </div>
                                     </div>
                                   )}
                                 </div>

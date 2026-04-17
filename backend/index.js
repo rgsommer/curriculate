@@ -8548,22 +8548,54 @@ function buildRubricInstructions({
 
     ${(() => {
       if (!rubricOverride) return "";
-      // Auto-detect total from /N patterns in rubric (e.g., "/2 for showing work, /1 correct answer, /1 sentence")
-      const slashNums = rubricOverride.match(/\/(\d+(?:\.\d+)?)/g);
+      // Auto-detect total from rubric patterns:
+      //   "/2 for showing work, /1 correct answer" → slash style
+      //   "2 marks for showing work, 1 for correct answer" → bare number style
+      //   "2 for showing work, 1 for correct" → bare with "for"
       let computedTotal = 0;
       let criterionCount = 0;
-      if (slashNums && slashNums.length > 1) {
-        // Multiple /N → multi-criterion rubric
+      let criteriaList = [];
+
+      // Try slash patterns first: /2, /1, /1
+      const slashNums = rubricOverride.match(/\/(\d+(?:\.\d+)?)\s+(?:marks?\s+)?(?:for\s+)?(\w[\w\s&,]*?)(?=,\s*\/|\s*$)/gi);
+      if (slashNums && slashNums.length > 0) {
         for (const m of slashNums) {
-          computedTotal += parseFloat(m.slice(1));
-          criterionCount++;
+          const numMatch = m.match(/^\/(\d+(?:\.\d+)?)/);
+          if (numMatch) {
+            computedTotal += parseFloat(numMatch[1]);
+            criterionCount++;
+            criteriaList.push(m.trim());
+          }
         }
-      } else if (slashNums && slashNums.length === 1) {
-        computedTotal = parseFloat(slashNums[0].slice(1));
-        criterionCount = 1;
       }
+
+      // Fallback: simpler slash extraction (just /N anywhere)
+      if (criterionCount === 0) {
+        const simpleSlash = rubricOverride.match(/\/(\d+(?:\.\d+)?)/g);
+        if (simpleSlash) {
+          for (const m of simpleSlash) {
+            computedTotal += parseFloat(m.slice(1));
+            criterionCount++;
+          }
+        }
+      }
+
+      // Fallback: bare number patterns "N marks for" or "N for"
+      if (criterionCount === 0) {
+        const bareNums = rubricOverride.match(/(\d+(?:\.\d+)?)\s+(?:marks?\s+)?for\s+/gi);
+        if (bareNums && bareNums.length > 0) {
+          for (const m of bareNums) {
+            const numMatch = m.match(/^(\d+(?:\.\d+)?)/);
+            if (numMatch) {
+              computedTotal += parseFloat(numMatch[1]);
+              criterionCount++;
+            }
+          }
+        }
+      }
+
       const totalLine = computedTotal > 0
-        ? `\n      COMPUTED TOTAL FROM RUBRIC: overall_out_of MUST be exactly ${computedTotal}. There are ${criterionCount} criteria → exactly ${criterionCount} section(s).`
+        ? `\n      COMPUTED TOTAL FROM RUBRIC: overall_out_of MUST be exactly ${computedTotal}. There are exactly ${criterionCount} scoring criteria. Do NOT add extra criteria beyond these ${criterionCount}. Do NOT split one criterion into multiple sections.`
         : "";
       return `
       *** TEACHER-PROVIDED RUBRIC OVERRIDE (MANDATORY — THIS IS THE HIGHEST PRIORITY INSTRUCTION): ***
@@ -8574,6 +8606,8 @@ function buildRubricInstructions({
       - The total marks (overall_out_of) MUST equal the sum of all denominators in the rubric above.
       - You MUST create exactly one section per criterion listed in the rubric.
       - Do NOT invent your own scoring scheme. Do NOT use a different denominator.
+      - Do NOT split a single criterion into multiple sections (e.g., "1 for heading, Date, Name" is ONE criterion worth 1, not three).
+      - Do NOT add criteria that are not in the rubric. Only score what the teacher listed.
       - Every student MUST be graded on the SAME scale defined by this rubric.
 
       If this rubric override includes categories, criteria, or denominators, it takes ABSOLUTE priority over any default grading assumptions.
@@ -10114,7 +10148,11 @@ function buildRubricInstructions({
       let countedOutOfConfidence = 0;
       let countResult = null;
 
-      if (hasImages) {
+      // Skip the counting pass in batch mode when rubric override already specifies the denominator —
+      // this eliminates an entire AI call per student and significantly speeds up batch grading.
+      const skipCounting = batchMode && (overrideFixedOutOf || (effectiveRubricOverride && effectiveRubricOverride.length > 3));
+
+      if (hasImages && !skipCounting) {
         const countingContent = [
           { type: "input_text", text: buildCountingInstructions() },
           ...images.map((img) => ({ type: "input_image", image_url: img })),
