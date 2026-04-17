@@ -261,65 +261,98 @@ const RIDDLE_POOL = [
 ];
 
 /**
- * Determine which milestone bonus cards should appear at which
- * completion counts for a given total box count.
- * Returns a Map<completionCount, bonusCard>.
- *
- * Positions:
- * - Never at position 1 (first completion) or totalBoxes (last)
- * - Riddle at ~25%, treat at ~50%, riddle at ~75%
- * - For small tasksets, ensure at least 1 riddle mid-way
+ * Build riddle milestone positions (fixed, fun, no engagement gate).
+ * Returns a Map<completionCount, riddleCard>.
  */
-function buildMilestoneSchedule(totalBoxes, ridSeed = 0) {
+function buildRiddleSchedule(totalBoxes, ridSeed = 0) {
   const schedule = new Map();
-  if (totalBoxes < 4) return schedule; // too few boxes for milestones
+  if (totalBoxes < 4) return schedule;
 
-  const last = totalBoxes; // completion count of final box
-  // Milestone positions (completion counts, 1-indexed)
   const positions = [];
-
   if (totalBoxes <= 6) {
-    // Small set: one riddle at ~50%
-    positions.push({ at: Math.round(totalBoxes * 0.5), type: "riddle" });
+    positions.push(Math.round(totalBoxes * 0.5));
   } else if (totalBoxes <= 10) {
-    // Medium set: riddle at ~30%, treat at ~55%, riddle at ~80%
-    positions.push({ at: Math.max(2, Math.round(totalBoxes * 0.3)), type: "riddle" });
-    positions.push({ at: Math.round(totalBoxes * 0.55), type: "treat" });
-    positions.push({ at: Math.min(totalBoxes - 1, Math.round(totalBoxes * 0.8)), type: "riddle" });
+    positions.push(Math.max(2, Math.round(totalBoxes * 0.3)));
+    positions.push(Math.min(totalBoxes - 1, Math.round(totalBoxes * 0.75)));
   } else {
-    // Large set: riddle at ~20%, treat at ~40%, riddle at ~60%, treat at ~80%
-    positions.push({ at: Math.max(2, Math.round(totalBoxes * 0.2)), type: "riddle" });
-    positions.push({ at: Math.round(totalBoxes * 0.4), type: "treat" });
-    positions.push({ at: Math.round(totalBoxes * 0.6), type: "riddle" });
-    positions.push({ at: Math.min(totalBoxes - 1, Math.round(totalBoxes * 0.8)), type: "treat" });
+    positions.push(Math.max(2, Math.round(totalBoxes * 0.25)));
+    positions.push(Math.round(totalBoxes * 0.55));
+    positions.push(Math.min(totalBoxes - 1, Math.round(totalBoxes * 0.8)));
   }
 
   let ridIdx = Math.abs(ridSeed) % RIDDLE_POOL.length;
-  for (const p of positions) {
-    // Clamp to valid range: 2 through totalBoxes - 1
-    const at = Math.max(2, Math.min(totalBoxes - 1, p.at));
-    if (schedule.has(at)) continue; // no duplicates
-
-    if (p.type === "riddle") {
-      schedule.set(at, {
-        type: "riddle",
-        ...RIDDLE_POOL[ridIdx % RIDDLE_POOL.length],
-      });
-      ridIdx++;
-    } else if (p.type === "treat") {
-      schedule.set(at, {
-        type: "treat",
-        message: "Your team earned a treat! See your teacher.",
-      });
-    }
+  for (const at of positions) {
+    const clamped = Math.max(2, Math.min(totalBoxes - 1, at));
+    if (schedule.has(clamped)) continue;
+    schedule.set(clamped, {
+      type: "riddle",
+      ...RIDDLE_POOL[ridIdx % RIDDLE_POOL.length],
+    });
+    ridIdx++;
   }
-
   return schedule;
 }
 
 /**
+ * Compute a team's live engagement score (0-100) from their submissions.
+ * Combines: accuracy (40%), effort/non-skip rate (30%), response pace (30%).
+ *
+ * A team that answers correctly and promptly scores high.
+ * A team that skips, guesses randomly, or stalls scores low.
+ */
+export function computeTeamEngagement(room, teamId) {
+  const subs = (room.submissions || []).filter(s => s.teamId === teamId);
+  if (subs.length === 0) return 0;
+
+  // 1) Accuracy: fraction of correct answers (40%)
+  const correctCount = subs.filter(s => s.correct === true).length;
+  const scoredCount = subs.filter(s => s.correct !== null && s.correct !== undefined).length;
+  const accuracy = scoredCount > 0 ? correctCount / scoredCount : 0.5; // neutral if unscored
+
+  // 2) Effort: fraction of submissions with meaningful answers (30%)
+  //    Skip/blank = low effort. Any real content = effort.
+  const effortCount = subs.filter(s => {
+    if (s.points > 0) return true; // earned points = effort
+    const a = s.answer;
+    if (!a) return false;
+    if (typeof a === "string") return a.trim().length > 0;
+    if (typeof a === "object") {
+      // Check for skip markers
+      if (a.skipped) return false;
+      if (a.autoComplete && !a.answer) return false;
+      return true;
+    }
+    return true;
+  }).length;
+  const effort = effortCount / subs.length;
+
+  // 3) Pace: are they answering within reasonable time? (30%)
+  //    Median response time < 90s = great, > 180s = sluggish
+  const times = subs.map(s => s.timeMs).filter(t => typeof t === "number" && t > 0);
+  let pace = 0.5; // neutral default
+  if (times.length > 0) {
+    const sorted = [...times].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    // 30s or less = 1.0, 180s+ = 0.0, linear between
+    pace = Math.max(0, Math.min(1, 1 - (median - 30000) / 150000));
+  }
+
+  const score = Math.round((accuracy * 40 + effort * 30 + pace * 30));
+  return Math.max(0, Math.min(100, score));
+}
+
+// Engagement threshold for treat eligibility (0-100)
+const TREAT_ENGAGEMENT_THRESHOLD = 40;
+
+/**
  * Check if a team just hit a milestone after completing a box.
  * Returns a bonus card object or null.
+ *
+ * Riddles: fire at fixed positions (just fun, no gate).
+ * Treats: randomly placed within 30%-80% window, gated by engagement.
+ *   - Team must have engagement score >= TREAT_ENGAGEMENT_THRESHOLD
+ *   - Position is randomized per team (seeded) so it's unpredictable
+ *   - Max 1 treat per team per session
  */
 export function checkMilestoneBonus(room, teamId) {
   const mb = room.mysteryBox;
@@ -330,20 +363,71 @@ export function checkMilestoneBonus(room, teamId) {
 
   const completedCount = tb.completed.length;
   const totalBoxes = mb.taskCount || 0;
-
-  // Build schedule (deterministic per team so riddles differ between teams)
-  const seed = teamId ? teamId.charCodeAt(0) + teamId.charCodeAt(teamId.length - 1) : 0;
-  const schedule = buildMilestoneSchedule(totalBoxes, seed);
+  if (totalBoxes < 4) return null;
 
   // Track which milestones this team has already seen
   if (!tb._seenMilestones) tb._seenMilestones = new Set();
-
-  const card = schedule.get(completedCount);
-  if (!card) return null;
   if (tb._seenMilestones.has(completedCount)) return null;
 
+  // 1) Check riddle schedule (fixed positions, always fires)
+  const seed = teamId ? teamId.charCodeAt(0) + teamId.charCodeAt(teamId.length - 1) : 0;
+  const riddleSchedule = buildRiddleSchedule(totalBoxes, seed);
+  const riddleCard = riddleSchedule.get(completedCount);
+  if (riddleCard) {
+    tb._seenMilestones.add(completedCount);
+    return { ...riddleCard, completedCount, totalBoxes };
+  }
+
+  // 2) Check treat eligibility (random position in 30%-80% window, engagement-gated)
+  if (tb._treatAwarded) return null; // max 1 treat per team
+
+  const minTreatBox = Math.max(2, Math.ceil(totalBoxes * 0.3));
+  const maxTreatBox = Math.floor(totalBoxes * 0.8);
+  if (completedCount < minTreatBox || completedCount > maxTreatBox) return null;
+
+  // Determine this team's randomized treat position (stable per team)
+  // Use a simple hash so it's the same every time but different per team.
+  // Avoids riddle positions so both can fire.
+  if (tb._treatTargetBox === undefined) {
+    const riddlePositions = new Set(buildRiddleSchedule(totalBoxes, seed).keys());
+    let h = 0;
+    const s = String(teamId || "treat");
+    for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+
+    // Build list of valid positions (in window, not a riddle position)
+    const valid = [];
+    for (let pos = minTreatBox; pos <= maxTreatBox; pos++) {
+      if (!riddlePositions.has(pos)) valid.push(pos);
+    }
+    if (valid.length > 0) {
+      tb._treatTargetBox = valid[Math.abs(h) % valid.length];
+    } else {
+      // Fallback: all positions in window are riddles — pick midpoint
+      tb._treatTargetBox = Math.round((minTreatBox + maxTreatBox) / 2);
+    }
+  }
+
+  if (completedCount !== tb._treatTargetBox) return null;
+
+  // Engagement gate — compute live engagement score
+  const engagement = computeTeamEngagement(room, teamId);
+  if (engagement < TREAT_ENGAGEMENT_THRESHOLD) {
+    // Not engaged enough — skip treat silently (don't block the position)
+    tb._seenMilestones.add(completedCount);
+    console.log(`[milestone] Team ${teamId} skipped treat — engagement ${engagement} < ${TREAT_ENGAGEMENT_THRESHOLD}`);
+    return null;
+  }
+
   tb._seenMilestones.add(completedCount);
-  return { ...card, completedCount, totalBoxes };
+  tb._treatAwarded = true;
+
+  return {
+    type: "treat",
+    message: "Your team earned a treat! See your teacher.",
+    engagement,
+    completedCount,
+    totalBoxes,
+  };
 }
 
 /**
