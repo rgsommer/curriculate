@@ -238,12 +238,24 @@ router.post("/:id/sanitize", auth, async (req, res) => {
       if (errors.length > 0) {
         issuesFound += errors.length;
         if (fixed) issuesFixed += (errors.length - postErrors.length);
+
+        // Capture the raw task JSON (pre-fix) so developers can see exactly
+        // what the AI produced. Strip huge fields to keep logs manageable.
+        const snapshot = { ...raw };
+        // Trim media URLs and large text to keep it focused
+        if (snapshot.mediaUrl) snapshot.mediaUrl = "(truncated)";
+        if (snapshot.passage && snapshot.passage.length > 300) {
+          snapshot.passage = snapshot.passage.slice(0, 300) + "…";
+        }
+
         diagnostics.push({
           taskIndex: idx,
           taskType: type,
           title: title.slice(0, 120),
           errors: errors.slice(0, 20),
+          postFixErrors: postErrors.slice(0, 20),
           fixed,
+          rawTask: snapshot,
         });
       }
 
@@ -323,6 +335,24 @@ router.get("/diagnostics/logs", auth, async (req, res) => {
   } catch (err) {
     console.error("GET /api/tasksets/diagnostics/logs error:", err);
     return res.status(500).json({ ok: false, error: "Failed to load logs" });
+  }
+});
+
+/**
+ * Clear all diagnostic logs (after developer has processed them).
+ * DELETE /api/tasksets/diagnostics/logs
+ */
+router.delete("/diagnostics/logs", auth, async (req, res) => {
+  try {
+    const result = await TaskDiagnosticLog.deleteMany({});
+    // Also clear the local JSONL file
+    try {
+      fs.writeFileSync(DIAG_LOG_PATH, "");
+    } catch {}
+    return res.json({ ok: true, deleted: result.deletedCount || 0 });
+  } catch (err) {
+    console.error("DELETE /api/tasksets/diagnostics/logs error:", err);
+    return res.status(500).json({ ok: false, error: "Failed to clear logs" });
   }
 });
 

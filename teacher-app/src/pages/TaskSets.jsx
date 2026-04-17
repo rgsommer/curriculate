@@ -513,9 +513,13 @@ export default function TaskSets() {
       `Tasks: ${fixResult.taskCount || 0} total, ${fixResult.issuesFound || 0} issues, ${fixResult.issuesFixed || 0} auto-fixed`,
       fixResult.logId ? `Log ID: ${fixResult.logId}` : "",
       "",
-      ...(fixResult.diagnostics || []).map((d) =>
-        `[Task ${d.taskIndex}] ${d.taskType} — "${d.title}"\n  ${d.fixed ? "✅ FIXED" : "❌ NEEDS MANUAL FIX"}\n  ${d.errors.map((e) => `  • ${e}`).join("\n")}`
-      ),
+      ...(fixResult.diagnostics || []).flatMap((d) => [
+        `--- Task ${d.taskIndex} | ${d.taskType} | "${d.title}" | ${d.fixed ? "AUTO-FIXED" : "NEEDS MANUAL FIX"} ---`,
+        `Errors: ${(d.errors || []).map((e) => `\n  - ${e}`).join("")}`,
+        d.postFixErrors?.length ? `Still broken after fix: ${d.postFixErrors.map((e) => `\n  - ${e}`).join("")}` : "",
+        d.rawTask ? `Raw task JSON:\n${JSON.stringify(d.rawTask, null, 2)}` : "",
+        "",
+      ]),
     ].filter(Boolean).join("\n");
     navigator.clipboard.writeText(lines).then(() => alert("Copied to clipboard!")).catch(() => {});
   };

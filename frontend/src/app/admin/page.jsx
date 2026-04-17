@@ -46,6 +46,78 @@ export default function AdminUsageDashboard() {
   const [feedbackHasMore, setFeedbackHasMore] = useState(false);
   const [feedbackFilter, setFeedbackFilter] = useState("all"); // "all" | "teacher" | "student" | "results"
 
+  // Diagnostic logs state
+  const [diagLogs, setDiagLogs] = useState([]);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diagLoaded, setDiagLoaded] = useState(false);
+
+  async function loadDiagLogs() {
+    setDiagLoading(true);
+    try {
+      const res = await fetch("/api/admin/diagnostics?limit=50", {
+        headers: { "x-admin-token": adminToken },
+      });
+      const j = await res.json().catch(() => ({}));
+      setDiagLogs(j?.logs || []);
+      setDiagLoaded(true);
+    } catch (e) {
+      console.error("Failed to load diagnostic logs:", e);
+    } finally {
+      setDiagLoading(false);
+    }
+  }
+
+  function formatDiagForClipboard() {
+    if (!diagLogs.length) return "No diagnostic logs.";
+    return diagLogs.map((log) => {
+      const lines = [
+        `=== ${log.tasksetName || log.tasksetId} ===`,
+        `Date: ${log.createdAt || log.ts}`,
+        log.teacherNote ? `Teacher note: ${log.teacherNote}` : "",
+        `Tasks: ${log.totalTasks}, Issues: ${log.issuesFound}, Auto-fixed: ${log.issuesFixed}`,
+        "",
+        ...(log.diagnostics || []).flatMap((d) => [
+          `--- Task ${d.taskIndex} | ${d.taskType} | "${d.title}" | ${d.fixed ? "AUTO-FIXED" : "NEEDS MANUAL FIX"} ---`,
+          `Errors: ${(d.errors || []).map((e) => `\n  - ${e}`).join("")}`,
+          d.postFixErrors?.length ? `Still broken after fix: ${d.postFixErrors.map((e) => `\n  - ${e}`).join("")}` : "",
+          d.rawTask ? `Raw task JSON:\n${JSON.stringify(d.rawTask, null, 2)}` : "",
+          "",
+        ]),
+      ];
+      return lines.filter(Boolean).join("\n");
+    }).join("\n\n---\n\n");
+  }
+
+  async function copyDiagLogs() {
+    const text = formatDiagForClipboard();
+    try {
+      await navigator.clipboard.writeText(text);
+      alert("Copied to clipboard!");
+    } catch {
+      // fallback
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      alert("Copied!");
+    }
+  }
+
+  async function clearDiagLogs() {
+    if (!confirm("Clear all diagnostic logs? This cannot be undone.")) return;
+    try {
+      await fetch("/api/admin/diagnostics", {
+        method: "DELETE",
+        headers: { "x-admin-token": adminToken },
+      });
+      setDiagLogs([]);
+    } catch (e) {
+      console.error("Failed to clear logs:", e);
+    }
+  }
+
   // Teacher outreach state
   const [outreachTeachers, setOutreachTeachers] = useState([]);
   const [outreachTemplates, setOutreachTemplates] = useState([]);
@@ -846,6 +918,68 @@ export default function AdminUsageDashboard() {
                 </div>
               )}
             </div>
+          </Card>
+
+          {/* Diagnostic Logs */}
+          <Card title="🔧 Task Diagnostic Logs">
+            <div className="flex items-center gap-2 mb-2">
+              <button
+                onClick={loadDiagLogs}
+                disabled={diagLoading}
+                className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/60 hover:bg-white/10 hover:text-white/80"
+              >
+                {diagLoading ? "Loading…" : diagLoaded ? "Refresh" : "Load Logs"}
+              </button>
+              {diagLogs.length > 0 && (
+                <>
+                  <button
+                    onClick={copyDiagLogs}
+                    className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-bold text-blue-400 hover:bg-blue-500/20"
+                  >
+                    📋 Copy All
+                  </button>
+                  <button
+                    onClick={clearDiagLogs}
+                    className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-bold text-red-400 hover:bg-red-500/20"
+                  >
+                    Clear
+                  </button>
+                </>
+              )}
+            </div>
+            {diagLoaded && diagLogs.length === 0 && (
+              <div className="text-xs text-white/40 py-2">No diagnostic logs — all clear.</div>
+            )}
+            {diagLogs.length > 0 && (
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {diagLogs.map((log, i) => (
+                  <div key={log._id || i} className="rounded-lg border border-white/10 bg-white/5 p-3 text-xs">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-white/90">{log.tasksetName || "Unnamed"}</span>
+                      <span className="text-white/40">{new Date(log.createdAt || log.ts).toLocaleDateString()}</span>
+                    </div>
+                    {log.teacherNote && (
+                      <div className="text-yellow-400/80 mb-1">💬 {log.teacherNote}</div>
+                    )}
+                    <div className="text-white/50">
+                      {log.totalTasks} tasks · {log.issuesFound} issues · {log.issuesFixed} auto-fixed
+                    </div>
+                    {(log.diagnostics || []).length > 0 && (
+                      <div className="mt-1 space-y-1">
+                        {log.diagnostics.map((d, j) => (
+                          <div key={j} className="pl-2 border-l-2 border-white/10 text-white/50">
+                            <span className={d.fixed ? "text-green-400" : "text-amber-400"}>
+                              {d.fixed ? "✅" : "⚠️"}
+                            </span>{" "}
+                            Task {d.taskIndex + 1} ({d.taskType}): {(d.errors || []).join("; ")}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
         </div>
       </div>
