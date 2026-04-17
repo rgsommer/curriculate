@@ -596,9 +596,21 @@ export default function BatchGrading({
       }
     };
 
-    // Process students in parallel batches of 3 for ~3x speedup
+    // Grade first student solo for fast initial feedback, then batches of 3
     const CONCURRENCY = 3;
-    for (let start = 0; start < total; start += CONCURRENCY) {
+    let start = 0;
+
+    // First student — solo so the teacher sees a result quickly
+    if (total > 0 && !abortRef.current) {
+      setProgress({ done: 0, total, current: `Grading student 1 of ${total}...` });
+      const first = await gradeOneStudent(0, studentGroups[0]);
+      batchResults.push(first);
+      setResults([...batchResults]);
+      start = 1;
+    }
+
+    // Remaining students in parallel batches of 3
+    for (; start < total; start += CONCURRENCY) {
       if (abortRef.current) break;
 
       const batchEnd = Math.min(start + CONCURRENCY, total);
@@ -610,13 +622,11 @@ export default function BatchGrading({
         current: `Grading students ${start + 1}–${batchEnd} of ${total}...`,
       });
 
-      // Fire all requests in this batch concurrently
       const promises = batchSlice.map((group, offset) =>
         gradeOneStudent(start + offset, group)
       );
       const settled = await Promise.all(promises);
 
-      // Collect results in order
       for (const entry of settled) {
         if (abortRef.current) break;
         batchResults.push(entry);
