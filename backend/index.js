@@ -91,6 +91,7 @@ import {
   openBox, completeBox, getMysteryProgress,
   createChallenge, acceptChallenge, expireChallenge,
   popQueuedChallenge, addTeamToMysteryBox, getChallengeBonus,
+  checkMilestoneBonus,
 } from "./socket/mysteryBoxEngine.js";
 import profileInlineRouter from "./routes/profileInline.js";
 import adminCrudRouter from "./routes/adminCrud.js";
@@ -5118,6 +5119,25 @@ if (!isMultiPack && task.taskType === "guess-who") {
           }
 
           completeBox(room, effectiveTeamId, boxPos, finalPoints);
+
+          // Check for milestone bonus card (riddle, treat, etc.)
+          const milestone = checkMilestoneBonus(room, effectiveTeamId);
+          if (milestone) {
+            // Emit milestone card to team — student app shows it before returning to grid
+            io.to(effectiveTeamId).emit("mystery:milestoneCard", milestone);
+
+            // If it's a treat milestone, also notify teacher
+            if (milestone.type === "treat") {
+              const mTeam = room.teams?.[effectiveTeamId];
+              const mTeamName = mTeam?.teamName || `Team-${String(effectiveTeamId).slice(-4)}`;
+              io.to(code).emit("teacher:treatAssigned", {
+                roomCode: code,
+                teamId: effectiveTeamId,
+                teamName: mTeamName,
+                source: "milestone",
+              });
+            }
+          }
 
           // Check if team has a queued challenge to do next
           const nextChallenge = popQueuedChallenge(room, effectiveTeamId);

@@ -154,6 +154,7 @@ function StudentApp() {
   // Mystery Box mode state
   const [mysteryBoxGrid, setMysteryBoxGrid] = useState(null);
   const [challengeBeacon, setChallengeBeacon] = useState(null);
+  const [milestoneCard, setMilestoneCard] = useState(null);
   const [isMysteryMode, setIsMysteryMode] = useState(false);
   const [scanFirstPopup, setScanFirstPopup] = useState(false);
 
@@ -1345,6 +1346,10 @@ function StudentApp() {
       console.log("[StudentApp] mystery:timeUp");
       setTasksetComplete(true);
     };
+    const handleMilestoneCard = (card) => {
+      console.log("[StudentApp] mystery:milestoneCard", card);
+      setMilestoneCard(card);
+    };
 
     socket.on("mystery:boxGrid", handleMysteryBoxGrid);
     socket.on("mystery:challengeBeacon", handleChallengeBeacon);
@@ -1352,6 +1357,7 @@ function StudentApp() {
     socket.on("mystery:challengeAccepted", handleChallengeAccepted);
     socket.on("mystery:challengeQueued", handleChallengeQueued);
     socket.on("mystery:timeUp", handleMysteryTimeUp);
+    socket.on("mystery:milestoneCard", handleMilestoneCard);
 
     socket.emit("room:request-state", {
       roomCode: roomCode.trim().toUpperCase(),
@@ -1378,6 +1384,7 @@ function StudentApp() {
       socket.off("mystery:challengeAccepted", handleChallengeAccepted);
       socket.off("mystery:challengeQueued", handleChallengeQueued);
       socket.off("mystery:timeUp", handleMysteryTimeUp);
+      socket.off("mystery:milestoneCard", handleMilestoneCard);
     };
   }, [teamId, roomCode]
   );
@@ -5032,6 +5039,94 @@ function StudentApp() {
     </div>
   )}
 </section>
+)}
+
+{/* MILESTONE BONUS CARD (riddle/treat popup between mystery boxes) */}
+{milestoneCard && (
+  <div style={{
+    position: "fixed", inset: 0, zIndex: 2000,
+    background: "rgba(0,0,0,0.85)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    padding: 20,
+  }}>
+    <div style={{
+      maxWidth: 380, width: "100%",
+      borderRadius: 24,
+      overflow: "hidden",
+      background: milestoneCard.type === "treat"
+        ? "linear-gradient(135deg, #065f46, #047857)"
+        : "linear-gradient(135deg, #1e1b4b, #312e81)",
+      boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+      textAlign: "center",
+      padding: "28px 24px",
+      animation: "milestonePopIn 0.4s ease-out",
+    }}>
+      <style>{`
+        @keyframes milestonePopIn {
+          0% { transform: scale(0.6) rotate(-5deg); opacity: 0; }
+          60% { transform: scale(1.05) rotate(1deg); }
+          100% { transform: scale(1) rotate(0); opacity: 1; }
+        }
+      `}</style>
+
+      {milestoneCard.type === "riddle" && (
+        <>
+          <div style={{ fontSize: "3rem" }}>🧩</div>
+          <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#c4b5fd", marginTop: 8 }}>
+            Riddle Break!
+          </div>
+          <div style={{
+            marginTop: 16, fontSize: "1.1rem", fontWeight: 600, color: "#e2e8f0",
+            lineHeight: 1.6, fontStyle: "italic",
+          }}>
+            "{milestoneCard.riddle}"
+          </div>
+          <div style={{
+            marginTop: 16, fontSize: "1.2rem", fontWeight: 800, color: "#fbbf24",
+            background: "rgba(251,191,36,0.15)", borderRadius: 12, padding: "10px 16px",
+          }}>
+            {milestoneCard.answer}
+          </div>
+        </>
+      )}
+
+      {milestoneCard.type === "treat" && (
+        <>
+          <div style={{ fontSize: "3rem" }}>🎁</div>
+          <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#6ee7b7", marginTop: 8 }}>
+            Treat Time!
+          </div>
+          <div style={{
+            marginTop: 12, fontSize: "1.1rem", fontWeight: 600, color: "#d1fae5",
+            lineHeight: 1.5,
+          }}>
+            Your team earned a treat!
+            <br />See your teacher to claim it.
+          </div>
+        </>
+      )}
+
+      <div style={{
+        marginTop: 8, fontSize: "0.75rem", color: "rgba(255,255,255,0.5)",
+      }}>
+        {milestoneCard.completedCount} of {milestoneCard.totalBoxes} boxes done
+      </div>
+
+      <button
+        onClick={() => setMilestoneCard(null)}
+        style={{
+          marginTop: 18, padding: "12px 32px",
+          borderRadius: 999, border: "none",
+          background: milestoneCard.type === "treat" ? "#10b981" : "#8b5cf6",
+          color: "#fff", fontWeight: 800, fontSize: "1rem",
+          cursor: "pointer",
+          boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+        }}
+      >
+        {milestoneCard.type === "treat" ? "Awesome!" : "Back to boxes!"}
+      </button>
+    </div>
+  </div>
 )}
 
 {/* MYSTERY BOX GRID (when in mystery mode and no active task) */}

@@ -1150,10 +1150,17 @@ export function createRoomEngine(io) {
     // Never give a treat to the same group more than once per session
     if (room.treatedTeamIds.has(teamId)) return;
 
-    // 30% taskset completion gate
+    // 30% completion gate — use THIS team's actual progress, not room-level index
     const totalTasks = Array.isArray(room.taskset?.tasks) ? room.taskset.tasks.length : 0;
-    const currentIndex = typeof room.taskIndex === "number" ? room.taskIndex : 0;
-    if (totalTasks > 0 && currentIndex < Math.ceil(totalTasks * 0.3)) return;
+    const teamCompleted = (() => {
+      // Mystery box: count completed boxes for this team
+      const tb = room.mysteryBox?.teamBoxes?.[teamId];
+      if (tb) return tb.completed?.length || 0;
+      // Linear: use team's taskIndex (= number of tasks completed)
+      const team = room.teams?.[teamId];
+      return typeof team?.taskIndex === "number" ? team.taskIndex : 0;
+    })();
+    if (totalTasks > 0 && teamCompleted < Math.ceil(totalTasks * 0.3)) return;
 
     // Simple probability model:
     const remaining = cfg.total - cfg.given;

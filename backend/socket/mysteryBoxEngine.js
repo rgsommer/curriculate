@@ -240,6 +240,112 @@ export function openBox(room, teamId, boxPos) {
   };
 }
 
+// ================================
+// MILESTONE BONUS CARDS
+// ================================
+// Riddles, treats, and mystery clues pop up at completion milestones
+// (positions 2 through totalBoxes-1). These fire based on how many
+// boxes a team has completed, not which box they picked.
+
+const RIDDLE_POOL = [
+  { riddle: "I have cities, but no houses live there. I have mountains, but no trees grow there. I have water, but no fish swim there. What am I?", answer: "A map!" },
+  { riddle: "The more you take, the more you leave behind. What am I?", answer: "Footsteps!" },
+  { riddle: "I speak without a mouth and hear without ears. I have no body, but I come alive with the wind. What am I?", answer: "An echo!" },
+  { riddle: "What has keys but can't open locks?", answer: "A piano!" },
+  { riddle: "I can be cracked, made, told, and played. What am I?", answer: "A joke!" },
+  { riddle: "What gets wetter the more it dries?", answer: "A towel!" },
+  { riddle: "I have hands but can't clap. What am I?", answer: "A clock!" },
+  { riddle: "What can travel around the world while staying in a corner?", answer: "A stamp!" },
+  { riddle: "What has a head and a tail but no body?", answer: "A coin!" },
+  { riddle: "What building has the most stories?", answer: "A library!" },
+];
+
+/**
+ * Determine which milestone bonus cards should appear at which
+ * completion counts for a given total box count.
+ * Returns a Map<completionCount, bonusCard>.
+ *
+ * Positions:
+ * - Never at position 1 (first completion) or totalBoxes (last)
+ * - Riddle at ~25%, treat at ~50%, riddle at ~75%
+ * - For small tasksets, ensure at least 1 riddle mid-way
+ */
+function buildMilestoneSchedule(totalBoxes, ridSeed = 0) {
+  const schedule = new Map();
+  if (totalBoxes < 4) return schedule; // too few boxes for milestones
+
+  const last = totalBoxes; // completion count of final box
+  // Milestone positions (completion counts, 1-indexed)
+  const positions = [];
+
+  if (totalBoxes <= 6) {
+    // Small set: one riddle at ~50%
+    positions.push({ at: Math.round(totalBoxes * 0.5), type: "riddle" });
+  } else if (totalBoxes <= 10) {
+    // Medium set: riddle at ~30%, treat at ~55%, riddle at ~80%
+    positions.push({ at: Math.max(2, Math.round(totalBoxes * 0.3)), type: "riddle" });
+    positions.push({ at: Math.round(totalBoxes * 0.55), type: "treat" });
+    positions.push({ at: Math.min(totalBoxes - 1, Math.round(totalBoxes * 0.8)), type: "riddle" });
+  } else {
+    // Large set: riddle at ~20%, treat at ~40%, riddle at ~60%, treat at ~80%
+    positions.push({ at: Math.max(2, Math.round(totalBoxes * 0.2)), type: "riddle" });
+    positions.push({ at: Math.round(totalBoxes * 0.4), type: "treat" });
+    positions.push({ at: Math.round(totalBoxes * 0.6), type: "riddle" });
+    positions.push({ at: Math.min(totalBoxes - 1, Math.round(totalBoxes * 0.8)), type: "treat" });
+  }
+
+  let ridIdx = Math.abs(ridSeed) % RIDDLE_POOL.length;
+  for (const p of positions) {
+    // Clamp to valid range: 2 through totalBoxes - 1
+    const at = Math.max(2, Math.min(totalBoxes - 1, p.at));
+    if (schedule.has(at)) continue; // no duplicates
+
+    if (p.type === "riddle") {
+      schedule.set(at, {
+        type: "riddle",
+        ...RIDDLE_POOL[ridIdx % RIDDLE_POOL.length],
+      });
+      ridIdx++;
+    } else if (p.type === "treat") {
+      schedule.set(at, {
+        type: "treat",
+        message: "Your team earned a treat! See your teacher.",
+      });
+    }
+  }
+
+  return schedule;
+}
+
+/**
+ * Check if a team just hit a milestone after completing a box.
+ * Returns a bonus card object or null.
+ */
+export function checkMilestoneBonus(room, teamId) {
+  const mb = room.mysteryBox;
+  if (!mb) return null;
+
+  const tb = mb.teamBoxes?.[teamId];
+  if (!tb) return null;
+
+  const completedCount = tb.completed.length;
+  const totalBoxes = mb.taskCount || 0;
+
+  // Build schedule (deterministic per team so riddles differ between teams)
+  const seed = teamId ? teamId.charCodeAt(0) + teamId.charCodeAt(teamId.length - 1) : 0;
+  const schedule = buildMilestoneSchedule(totalBoxes, seed);
+
+  // Track which milestones this team has already seen
+  if (!tb._seenMilestones) tb._seenMilestones = new Set();
+
+  const card = schedule.get(completedCount);
+  if (!card) return null;
+  if (tb._seenMilestones.has(completedCount)) return null;
+
+  tb._seenMilestones.add(completedCount);
+  return { ...card, completedCount, totalBoxes };
+}
+
 /**
  * Record box completion after submission.
  */
