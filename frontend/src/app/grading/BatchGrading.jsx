@@ -87,6 +87,53 @@ function letterGradeColor(letter) {
   return "#dc2626";
 }
 
+// KITA (Ontario achievement categories) detection and weighting
+const KITA_NAMES = ["Knowledge & Understanding", "Thinking", "Communication", "Application"];
+const KITA_SHORT = ["K", "T", "C", "A"];
+
+function detectKita(raw) {
+  if (!raw || !Array.isArray(raw.sections) || !raw.sections.length) return null;
+  const matched = [];
+  for (const s of raw.sections) {
+    const n = (s?.name || "").trim().toLowerCase();
+    const idx = KITA_NAMES.findIndex((k) => n.startsWith(k.toLowerCase().slice(0, 8)));
+    if (idx === -1) return null; // non-KITA section — not a KITA response
+    matched.push({
+      kitaIndex: idx,
+      name: KITA_NAMES[idx],
+      short: KITA_SHORT[idx],
+      score: Number(s.score) || 0,
+      outOf: Number(s.out_of) || 5,
+      comment: s.teacher_comment || "",
+    });
+  }
+  return matched.length ? matched : null;
+}
+
+const KITA_WEIGHTS_ALL = {
+  "9-10": [25, 25, 25, 25],
+  "11+": [20, 30, 20, 30],
+};
+
+function getKitaWeights(band, kita) {
+  const allW = KITA_WEIGHTS_ALL[band] || [25, 25, 25, 25];
+  return kita.map((cat) => allW[cat.kitaIndex]);
+}
+
+function computeKitaWeightedPercent(kita, weights) {
+  let totalWeighted = 0;
+  let totalWeight = 0;
+  for (let i = 0; i < kita.length; i++) {
+    const pct = kita[i].outOf > 0 ? (kita[i].score / kita[i].outOf) : 0;
+    totalWeighted += pct * weights[i];
+    totalWeight += weights[i];
+  }
+  if (totalWeight > 0 && totalWeight !== 100) {
+    return Math.round((totalWeighted / totalWeight) * 100);
+  }
+  return Math.round(totalWeighted);
+}
+
 // Build a plain-text payload for the results portal (minimal version)
 function buildBatchPayloadText(result) {
   const lines = [];
@@ -143,6 +190,7 @@ export default function BatchGrading({
   const [progress, setProgress] = useState({ done: 0, total: 0, current: "" });
   const [results, setResults] = useState([]); // { index, studentName, score, outOf, pct, letter, strengths, improvements, comment, error }
   const [classSummary, setClassSummary] = useState(null);
+  const [teacherAnalysis, setTeacherAnalysis] = useState(""); // AI-generated class analysis
 
   const pdfDocRef = useRef(null);
   const abortRef = useRef(false);
@@ -166,6 +214,7 @@ export default function BatchGrading({
     setPdfName(file.name);
     setResults([]);
     setClassSummary(null);
+    setTeacherAnalysis("");
 
     try {
       const pdfjsLib = await loadPdfJs();
@@ -393,6 +442,62 @@ export default function BatchGrading({
       });
     }
 
+    // --- Generate AI teacher analysis (class-level insights) ---
+    const validForAnalysis = batchResults.filter((r) => !r.error && r.raw);
+    if (validForAnalysis.length >= 2) {
+      setProgress({ done: total, total, current: "Generating class analysis..." });
+      try {
+        const evidence = validForAnalysis.map((r) => {
+          const a = r.raw || {};
+          const sections = Array.isArray(a.sections) ? a.sections : [];
+          return {
+            label: r.studentName,
+            score_line: `${r.score}/${r.outOf}`,
+            strengths: r.strengths.slice(0, 6),
+            improvements: r.improvements.slice(0, 6),
+            teacher_comment: (r.comment || "").slice(0, 260),
+            sections: sections.slice(0, 8).map((sec) => ({
+              name: (sec.name || "").slice(0, 80),
+              score: sec.score,
+              out_of: sec.out_of,
+              teacher_comment: (sec.teacher_comment || "").slice(0, 220),
+              incorrect_items: (Array.isArray(sec.incorrect_items) ? sec.incorrect_items : [])
+                .slice(0, 12)
+                .map((x) => ({
+                  prompt: (x?.prompt || "").slice(0, 120),
+                  student_answer: (x?.student_answer || "").slice(0, 80),
+                  correct_answer: (x?.correct_answer || "").slice(0, 80),
+                })),
+            })),
+          };
+        });
+
+        const summaryUrl = gradingUrl.replace(/\/grading$/, "/grading/session-summary");
+        const summaryRes = await fetch(summaryUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            gradeBand,
+            evidence,
+            rubricOverride: effectiveRubric || null,
+            meta: {
+              feedbackVoice: feedbackVoice || "warm",
+              feedbackVoiceMode: voiceMode || "default",
+              source: "batch-grading",
+            },
+          }),
+        });
+
+        if (summaryRes.ok) {
+          const summaryData = await summaryRes.json();
+          const analysis = summaryData.summary || summaryData.paragraph || "";
+          if (analysis) setTeacherAnalysis(analysis);
+        }
+      } catch (e) {
+        console.warn("[batch] session summary failed:", e);
+      }
+    }
+
     setProgress({ done: total, total, current: "Done!" });
     setGrading(false);
   }, [
@@ -463,39 +568,87 @@ export default function BatchGrading({
     URL.revokeObjectURL(url);
   }, [results]);
 
+  // ---------- Build summary text (shared by Copy + Email) ----------
+  const buildSummaryText = useCallback(
+    ({ includeFooter = false } = {}) => {
+      if (!results.length) return "";
+
+      const lines = [
+        `Batch Grading Results — ${pdfName || "uploaded PDF"}`,
+        `${results.length} student${results.length !== 1 ? "s" : ""} graded`,
+        "",
+      ];
+
+      if (classSummary) {
+        lines.push(
+          `Class average: ${classSummary.avg}%  |  Median: ${classSummary.median}%  |  Range: ${classSummary.low}%–${classSummary.high}%`
+        );
+        lines.push(
+          `Distribution: A: ${classSummary.dist.A}  B: ${classSummary.dist.B}  C: ${classSummary.dist.C}  D: ${classSummary.dist.D}  F: ${classSummary.dist.F}`
+        );
+        lines.push("");
+      }
+
+      if (teacherAnalysis) {
+        lines.push("--- Class Analysis ---");
+        lines.push(teacherAnalysis);
+        lines.push("");
+      }
+
+      results.forEach((r) => {
+        lines.push(
+          `${r.studentName}: ${r.score}/${r.outOf} (${r.pct != null ? r.pct + "%" : "?"}) ${r.letter}${r.refCode ? `  [${r.refCode}]` : ""}`
+        );
+        if (r.comment) lines.push(`  ${r.comment}`);
+        if (r.refCode) lines.push(`  For results & feedback: www.curriculate.net/results/${r.refCode}`);
+      });
+
+      if (includeFooter) {
+        lines.push("");
+        lines.push("—");
+        lines.push("Graded with Curriculate — AI-powered grading & feedback for teachers");
+        lines.push("www.curriculate.net");
+      }
+
+      return lines.join("\n");
+    },
+    [results, classSummary, teacherAnalysis, pdfName]
+  );
+
+  // ---------- Derive email subject from results ----------
+  const emailSubject = (() => {
+    if (!results.length) return "Grading Results";
+    // Try to find a subject/type from the first successful result
+    const first = results.find((r) => !r.error);
+    const parts = ["Grading:"];
+    if (first?.subject) parts.push(first.subject);
+    if (first?.assessmentType) parts.push(first.assessmentType);
+    // If we got nothing useful, fall back to file name
+    if (parts.length === 1) {
+      const clean = (pdfName || "").replace(/\.pdf$/i, "").replace(/[_-]+/g, " ").trim();
+      if (clean) parts.push(clean);
+      else parts.push("Batch Results");
+    }
+    return parts.join(" ");
+  })();
+
   // ---------- Copy summary ----------
   const copySummary = useCallback(async () => {
     if (!results.length) return;
-
-    const lines = [
-      `Batch Grading Results — ${pdfName || "uploaded PDF"}`,
-      `${results.length} student${results.length !== 1 ? "s" : ""} graded`,
-      "",
-    ];
-
-    if (classSummary) {
-      lines.push(
-        `Class average: ${classSummary.avg}%  |  Median: ${classSummary.median}%  |  Range: ${classSummary.low}%–${classSummary.high}%`
-      );
-      lines.push(
-        `Distribution: A: ${classSummary.dist.A}  B: ${classSummary.dist.B}  C: ${classSummary.dist.C}  D: ${classSummary.dist.D}  F: ${classSummary.dist.F}`
-      );
-      lines.push("");
-    }
-
-    results.forEach((r) => {
-      lines.push(
-        `${r.studentName}: ${r.score}/${r.outOf} (${r.pct != null ? r.pct + "%" : "?"}) ${r.letter}${r.refCode ? `  [${r.refCode}]` : ""}`
-      );
-      if (r.comment) lines.push(`  ${r.comment}`);
-    });
-
     try {
-      await navigator.clipboard.writeText(lines.join("\n"));
+      await navigator.clipboard.writeText(buildSummaryText());
       setCopiedSummary(true);
       setTimeout(() => setCopiedSummary(false), 2000);
     } catch {}
-  }, [results, classSummary, pdfName]);
+  }, [results, buildSummaryText]);
+
+  // ---------- Email summary ----------
+  const emailSummary = useCallback(() => {
+    if (!results.length) return;
+    const body = buildSummaryText({ includeFooter: true });
+    const mailto = `mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(body)}`;
+    window.open(mailto, "_blank");
+  }, [results, buildSummaryText, emailSubject]);
 
   // ---------- Copy ack ----------
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -724,6 +877,9 @@ export default function BatchGrading({
               <button onClick={copySummary} style={batchStyles.smallBtn} type="button">
                 {copiedSummary ? "Copied ✓" : "Copy Summary"}
               </button>
+              <button onClick={emailSummary} style={batchStyles.smallBtn} type="button">
+                Email Summary
+              </button>
               <button onClick={exportCsv} style={batchStyles.smallBtn} type="button">
                 Export CSV
               </button>
@@ -732,6 +888,7 @@ export default function BatchGrading({
                   onClick={() => {
                     setResults([]);
                     setClassSummary(null);
+                    setTeacherAnalysis("");
                     setExpandedIndex(null);
                   }}
                   style={batchStyles.smallBtn}
@@ -770,6 +927,18 @@ export default function BatchGrading({
                     {g}: {classSummary.dist[g]}
                   </span>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Teacher analysis (AI-generated class insights) */}
+          {teacherAnalysis && (
+            <div style={batchStyles.analysisCard}>
+              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6, color: "#1e40af" }}>
+                Class Analysis
+              </div>
+              <div style={{ fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
+                {teacherAnalysis}
               </div>
             </div>
           )}
@@ -887,16 +1056,110 @@ export default function BatchGrading({
                                 </ul>
                               </div>
                             )}
-                            {Array.isArray(r.sections) && r.sections.length > 0 && (
-                              <div>
-                                <strong>Sections:</strong>
+
+                            {/* KITA or generic sections */}
+                            {(() => {
+                              const kita = detectKita(r.raw);
+                              if (kita) {
+                                const weights = getKitaWeights(gradeBand, kita);
+                                const weightedPct = computeKitaWeightedPercent(kita, weights);
+                                return (
+                                  <div style={{ marginTop: 8 }}>
+                                    <strong>Achievement Categories (KITA)</strong>
+                                    <div style={{
+                                      border: "1px solid rgba(37,99,235,0.2)",
+                                      borderRadius: 10,
+                                      overflow: "hidden",
+                                      background: "rgba(37,99,235,0.03)",
+                                      marginTop: 6,
+                                    }}>
+                                      {kita.map((cat, ki) => (
+                                        <div
+                                          key={cat.short}
+                                          style={{
+                                            padding: "8px 10px",
+                                            borderTop: ki === 0 ? "none" : "1px solid rgba(37,99,235,0.12)",
+                                          }}
+                                        >
+                                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                                            <div style={{ fontWeight: 800 }}>
+                                              <span style={{
+                                                display: "inline-block",
+                                                width: 20,
+                                                height: 20,
+                                                borderRadius: 5,
+                                                background: "rgba(37,99,235,0.12)",
+                                                textAlign: "center",
+                                                lineHeight: "20px",
+                                                fontSize: 11,
+                                                fontWeight: 900,
+                                                marginRight: 6,
+                                                color: "#2563eb",
+                                              }}>{cat.short}</span>
+                                              {cat.name}
+                                            </div>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                              <span style={{ fontSize: 11, opacity: 0.6 }}>{weights[ki]}%</span>
+                                              <span style={{ fontWeight: 900, minWidth: 36, textAlign: "right" }}>{cat.score}/{cat.outOf}</span>
+                                            </div>
+                                          </div>
+                                          {cat.comment ? (
+                                            <div style={{ marginTop: 4, opacity: 0.85, lineHeight: 1.35, paddingLeft: 26, fontSize: 12 }}>
+                                              {cat.comment}
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      ))}
+                                      <div style={{
+                                        padding: "7px 10px",
+                                        borderTop: "1px solid rgba(37,99,235,0.18)",
+                                        background: "rgba(37,99,235,0.06)",
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
+                                        fontWeight: 900,
+                                        fontSize: 13,
+                                      }}>
+                                        <span>Weighted Total</span>
+                                        <span style={{ color: "#2563eb" }}>{weightedPct}%</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              // Non-KITA sections
+                              if (!Array.isArray(r.sections) || !r.sections.length) return null;
+                              return (
+                                <div>
+                                  <strong>Sections:</strong>
+                                  <ul style={batchStyles.ul}>
+                                    {r.sections.map((sec, si) => (
+                                      <li key={si}>
+                                        {sec.name}: {sec.score}/{sec.out_of}
+                                        {sec.teacher_comment ? ` — ${sec.teacher_comment}` : ""}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              );
+                            })()}
+
+                            {/* Incorrect items */}
+                            {Array.isArray(r.raw?.sections) && r.raw.sections.some((sec) => Array.isArray(sec.incorrect_items) && sec.incorrect_items.length > 0) && (
+                              <div style={{ marginTop: 8 }}>
+                                <strong>Items to Review:</strong>
                                 <ul style={batchStyles.ul}>
-                                  {r.sections.map((sec, si) => (
-                                    <li key={si}>
-                                      {sec.name}: {sec.score}/{sec.out_of}
-                                      {sec.teacher_comment ? ` — ${sec.teacher_comment}` : ""}
-                                    </li>
-                                  ))}
+                                  {r.raw.sections.flatMap((sec) =>
+                                    (Array.isArray(sec.incorrect_items) ? sec.incorrect_items : []).map((it, ii) => (
+                                      <li key={`${sec.name}-${ii}`} style={{ marginBottom: 3 }}>
+                                        <span style={{ opacity: 0.7 }}>{it.prompt}:</span>{" "}
+                                        <span style={{ color: "#dc2626", textDecoration: "line-through" }}>{it.student_answer}</span>
+                                        {" → "}
+                                        <span style={{ color: "#16a34a", fontWeight: 700 }}>{it.correct_answer}</span>
+                                      </li>
+                                    ))
+                                  )}
                                 </ul>
                               </div>
                             )}
@@ -921,6 +1184,7 @@ export default function BatchGrading({
                   setExtractedAnswerKey(answerKeyOverride || "");
                   setResults([]);
                   setClassSummary(null);
+                  setTeacherAnalysis("");
                   setExpandedIndex(null);
                   pdfDocRef.current = null;
                   if (fileInputRef.current) fileInputRef.current.value = "";
@@ -1117,6 +1381,13 @@ const batchStyles = {
   distBadge: {
     fontWeight: 800,
     fontSize: 13,
+  },
+  analysisCard: {
+    padding: 14,
+    borderRadius: 14,
+    background: "rgba(99,102,241,0.05)",
+    border: "1px solid rgba(99,102,241,0.15)",
+    marginBottom: 12,
   },
   tableWrap: {
     overflowX: "auto",
