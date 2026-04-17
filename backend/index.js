@@ -10635,6 +10635,39 @@ function buildRubricInstructions({
   });
 
   // ====================================================================
+  //  Send Batch Grading Summary Email (rich HTML)
+  //  POST /grading/send-email
+  //  Body: { to, subject, html }
+  // ====================================================================
+  app.post("/grading/send-email", async (req, res) => {
+    try {
+      const { to, subject, html } = req.body || {};
+      const email = String(to || "").trim().toLowerCase();
+      const subj = String(subject || "").trim();
+      const body = String(html || "").trim();
+
+      if (!email || !email.includes("@") || !email.includes(".")) {
+        return res.status(400).json({ error: "Invalid email address." });
+      }
+      if (!body) {
+        return res.status(400).json({ error: "Missing email body." });
+      }
+
+      await sendSystemEmail({
+        to: email,
+        subject: subj || "Batch Grading Results — Curriculate",
+        html: body,
+      });
+
+      console.log(`[grading] Batch summary email sent to ${email}`);
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("POST /grading/send-email error:", err?.message || err);
+      return res.status(500).json({ error: "Failed to send email." });
+    }
+  });
+
+  // ====================================================================
   //  Batch Page Classification — detect student boundaries in a PDF stack
   //  POST /grading/classify-pages
   //  Sends thumbnail images and asks AI to identify where each new

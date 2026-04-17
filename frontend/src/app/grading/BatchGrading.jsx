@@ -956,31 +956,43 @@ export default function BatchGrading({
   }, [results, classSummary, teacherAnalysis, pdfName]);
 
   // ---------- Email summary (rich HTML) ----------
+  const [emailTo, setEmailTo] = useState("");
+  const [showEmailPrompt, setShowEmailPrompt] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+
   const emailSummary = useCallback(async () => {
     if (!results.length) return;
-    const html = buildEmailHtml();
-    const plain = buildSummaryText({ includeFooter: true });
+    setShowEmailPrompt(true);
+  }, [results]);
 
-    // Copy rich HTML to clipboard so it can be pasted into the email body
+  const sendEmail = useCallback(async () => {
+    const to = emailTo.trim();
+    if (!to || !to.includes("@")) return;
+
+    setEmailSending(true);
     try {
-      if (navigator.clipboard?.write && window.ClipboardItem) {
-        await navigator.clipboard.write([
-          new ClipboardItem({
-            "text/html": new Blob([html], { type: "text/html" }),
-            "text/plain": new Blob([plain], { type: "text/plain" }),
-          }),
-        ]);
+      const html = buildEmailHtml();
+      const sendUrl = gradingUrl.replace(/\/grading$/, "/grading/send-email");
+      const res = await fetch(sendUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to, subject: emailSubject, html }),
+      });
+      if (res.ok) {
         setEmailCopied(true);
+        setShowEmailPrompt(false);
         setTimeout(() => setEmailCopied(false), 4000);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.warn("[batch] send email failed:", err);
+        alert(err.error || "Failed to send email. Please try again.");
       }
     } catch (e) {
-      console.warn("[batch] rich clipboard write failed:", e);
+      console.warn("[batch] send email error:", e);
+      alert("Failed to send email. Please try again.");
     }
-
-    // Always open mailto to launch email client (plain text in body as starting point)
-    const mailto = `mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(plain)}`;
-    window.open(mailto, "_blank");
-  }, [results, buildEmailHtml, buildSummaryText, emailSubject]);
+    setEmailSending(false);
+  }, [emailTo, buildEmailHtml, emailSubject, gradingUrl]);
 
   // ---------- Copy / email ack ----------
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -1292,7 +1304,7 @@ export default function BatchGrading({
                 {copiedSummary ? "Copied ✓" : "Copy Summary"}
               </button>
               <button onClick={emailSummary} style={batchStyles.smallBtn} type="button">
-                {emailCopied ? "Rich version copied — paste into email ✓" : "Email Summary"}
+                {emailCopied ? "Sent ✓" : "Email Summary"}
               </button>
               <button onClick={exportCsv} style={batchStyles.smallBtn} type="button">
                 Export CSV
@@ -1314,6 +1326,58 @@ export default function BatchGrading({
               )}
             </div>
           </div>
+
+          {/* Email send prompt */}
+          {showEmailPrompt && (
+            <div style={{
+              padding: "12px 14px",
+              borderRadius: 10,
+              border: "1px solid rgba(37,99,235,0.25)",
+              background: "rgba(37,99,235,0.04)",
+              marginBottom: 10,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>Send to:</span>
+              <input
+                type="email"
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                placeholder="recipient@school.ca"
+                onKeyDown={(e) => { if (e.key === "Enter") sendEmail(); }}
+                style={{
+                  flex: 1,
+                  padding: "7px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  fontSize: 13,
+                  outline: "none",
+                }}
+                autoFocus
+              />
+              <button
+                onClick={sendEmail}
+                disabled={emailSending || !emailTo.includes("@")}
+                style={{
+                  ...batchStyles.smallBtn,
+                  background: "#2563eb",
+                  color: "#fff",
+                  opacity: emailSending || !emailTo.includes("@") ? 0.5 : 1,
+                }}
+                type="button"
+              >
+                {emailSending ? "Sending..." : "Send"}
+              </button>
+              <button
+                onClick={() => setShowEmailPrompt(false)}
+                style={{ ...batchStyles.smallBtn, padding: "5px 10px" }}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
 
           {/* Class summary card */}
           {classSummary && (
