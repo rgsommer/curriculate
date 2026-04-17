@@ -76,6 +76,7 @@ export default function MysteryBoxGrid({
 }) {
   const [openingBox, setOpeningBox] = useState(null);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [vsIntroSeen, setVsIntroSeen] = useState(false);
 
   if (!grid || !grid.boxes) {
     return (
@@ -190,6 +191,50 @@ export default function MysteryBoxGrid({
           <div style={{ fontSize: "0.78rem", color: "#92400e", marginTop: 2 }}>
             {challengeBeacon.taskTitle || "A team wants to battle!"} — Tap to accept for {challengeBeacon.pointBonus} bonus!
           </div>
+        </div>
+      )}
+
+      {/* VS intro popup — one-time, shown if grid has VS boxes */}
+      {!vsIntroSeen && completedCount === 0 && boxes.some((b) => b.isInterTeam) && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: "14px 16px",
+            background: "linear-gradient(135deg, #1e1b4b, #312e81)",
+            borderRadius: 14,
+            border: "2px solid #fbbf24",
+            textAlign: "center",
+            position: "relative",
+          }}
+        >
+          <div style={{ fontSize: "1.6rem", marginBottom: 6 }}>⚔️</div>
+          <div style={{ fontSize: "1rem", fontWeight: 800, color: "#fbbf24" }}>
+            Challenge Boxes!
+          </div>
+          <div style={{ fontSize: "0.82rem", color: "#e2e8f0", lineHeight: 1.5, marginTop: 6 }}>
+            Some boxes have a <strong style={{ color: "#fbbf24" }}>VS</strong> badge —
+            open one to challenge another team!
+          </div>
+          <div style={{ fontSize: "0.82rem", color: "#fbbf24", fontWeight: 700, marginTop: 6 }}>
+            The bonus starts at 2× and drops as you complete more boxes.
+            <br />Do VS boxes early for the biggest reward!
+          </div>
+          <button
+            onClick={() => setVsIntroSeen(true)}
+            style={{
+              marginTop: 10,
+              padding: "8px 24px",
+              borderRadius: 999,
+              border: "none",
+              background: "#fbbf24",
+              color: "#1e1b4b",
+              fontWeight: 800,
+              fontSize: "0.9rem",
+              cursor: "pointer",
+            }}
+          >
+            Got it!
+          </button>
         </div>
       )}
 
