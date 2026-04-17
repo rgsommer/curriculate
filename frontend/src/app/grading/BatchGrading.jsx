@@ -251,7 +251,7 @@ export default function BatchGrading({
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfName, setPdfName] = useState("");
   const [pageCount, setPageCount] = useState(0);
-  const [pagesPerStudent, setPagesPerStudent] = useState(1);
+  const [pagesPerStudent, setPagesPerStudent] = useState("auto"); // number or "auto"
   const [answerKeyPages, setAnswerKeyPages] = useState(0); // leading pages that are the answer key
   const [localRubric, setLocalRubric] = useState(rubricOverride || "");
   const [extractedAnswerKey, setExtractedAnswerKey] = useState(answerKeyOverride || "");
@@ -263,6 +263,10 @@ export default function BatchGrading({
   const [results, setResults] = useState([]); // { index, studentName, score, outOf, pct, letter, strengths, improvements, comment, error }
   const [classSummary, setClassSummary] = useState(null);
   const [teacherAnalysis, setTeacherAnalysis] = useState(""); // AI-generated class analysis
+
+  // Auto-detect page grouping
+  const [detectedGroups, setDetectedGroups] = useState(null); // [{ startPage, endPage, pages: [...] }, ...]
+  const [detecting, setDetecting] = useState(false);
 
   const pdfDocRef = useRef(null);
   const abortRef = useRef(false);
@@ -287,6 +291,7 @@ export default function BatchGrading({
     setResults([]);
     setClassSummary(null);
     setTeacherAnalysis("");
+    setDetectedGroups(null);
 
     try {
       const pdfjsLib = await loadPdfJs();
@@ -304,9 +309,55 @@ export default function BatchGrading({
   }, []);
 
   // ---------- Student count ----------
+  const isAuto = pagesPerStudent === "auto";
+  const fixedPps = isAuto ? 1 : Number(pagesPerStudent);
   // Pages available for student work (after answer key pages)
   const studentPages = Math.max(0, pageCount - answerKeyPages);
-  const studentCount = studentPages > 0 ? Math.ceil(studentPages / pagesPerStudent) : 0;
+  const studentCount = detectedGroups
+    ? detectedGroups.length
+    : studentPages > 0
+    ? Math.ceil(studentPages / fixedPps)
+    : 0;
+
+  // ---------- Auto-detect page boundaries ----------
+  const runAutoDetect = useCallback(async () => {
+    const doc = pdfDocRef.current;
+    if (!doc || !gradingUrl) return;
+
+    setDetecting(true);
+    setDetectedGroups(null);
+
+    try {
+      // Render all pages as small thumbnails for classification
+      const thumbs = [];
+      for (let p = 1; p <= pageCount; p++) {
+        thumbs.push(await renderPageToDataUrl(doc, p, 0.6)); // lower res for speed
+      }
+
+      const classifyUrl = gradingUrl.replace(/\/grading$/, "/grading/classify-pages");
+      const res = await fetch(classifyUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pageImages: thumbs, answerKeyPages }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.warn("[batch] classify-pages failed:", err);
+        setDetecting(false);
+        return;
+      }
+
+      const data = await res.json();
+      if (Array.isArray(data.groups) && data.groups.length > 0) {
+        setDetectedGroups(data.groups);
+      }
+    } catch (e) {
+      console.warn("[batch] auto-detect failed:", e);
+    }
+
+    setDetecting(false);
+  }, [pageCount, answerKeyPages, gradingUrl]);
 
   // ---------- Run batch grading ----------
   const runBatch = useCallback(async () => {
@@ -318,7 +369,54 @@ export default function BatchGrading({
     setResults([]);
     setClassSummary(null);
 
-    const total = studentCount;
+    // --- Auto-detect if needed and not already done ---
+    let groups = detectedGroups;
+    if (isAuto && !groups) {
+      setProgress({ done: 0, total: 0, current: "Detecting student boundaries..." });
+      try {
+        const thumbs = [];
+        for (let p = 1; p <= pageCount; p++) {
+          thumbs.push(await renderPageToDataUrl(doc, p, 0.6));
+        }
+        const classifyUrl = gradingUrl.replace(/\/grading$/, "/grading/classify-pages");
+        const classifyRes = await fetch(classifyUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pageImages: thumbs, answerKeyPages }),
+        });
+        if (classifyRes.ok) {
+          const classifyData = await classifyRes.json();
+          if (Array.isArray(classifyData.groups) && classifyData.groups.length > 0) {
+            groups = classifyData.groups;
+            setDetectedGroups(groups);
+          }
+        }
+      } catch (e) {
+        console.warn("[batch] auto-detect during grading failed:", e);
+      }
+
+      // If detection failed, fall back to 1 page per student
+      if (!groups) {
+        groups = [];
+        for (let p = answerKeyPages + 1; p <= pageCount; p++) {
+          groups.push({ startPage: p, endPage: p, pages: [p] });
+        }
+      }
+    }
+
+    // Build student page groups (fixed or auto-detected)
+    const studentGroups = groups || (() => {
+      const g = [];
+      const firstStudentPage = answerKeyPages + 1;
+      for (let i = 0; i < studentCount; i++) {
+        const start = firstStudentPage + i * fixedPps;
+        const end = Math.min(start + fixedPps - 1, pageCount);
+        g.push({ startPage: start, endPage: end, pages: Array.from({ length: end - start + 1 }, (_, k) => start + k) });
+      }
+      return g;
+    })();
+
+    const total = studentGroups.length;
     setProgress({ done: 0, total, current: "Preparing..." });
 
     const batchSessionId = `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -362,21 +460,20 @@ export default function BatchGrading({
     for (let i = 0; i < total; i++) {
       if (abortRef.current) break;
 
-      // Student pages start after answer key pages
-      const firstStudentPage = answerKeyPages + 1;
-      const startPage = firstStudentPage + i * pagesPerStudent;
-      const endPage = Math.min(startPage + pagesPerStudent - 1, pageCount);
+      const group = studentGroups[i];
+      const startPage = group.startPage;
+      const endPage = group.endPage;
 
       setProgress({
         done: i,
         total,
-        current: `Grading student ${i + 1} of ${total} (pages ${startPage}–${endPage})...`,
+        current: `Grading student ${i + 1} of ${total} (page${group.pages.length > 1 ? "s" : ""} ${startPage}${endPage !== startPage ? `–${endPage}` : ""})...`,
       });
 
       try {
-        // Render pages to images
+        // Render pages to images (use group.pages for exact page list)
         const images = [];
-        for (let p = startPage; p <= endPage; p++) {
+        for (const p of group.pages) {
           const dataUrl = await renderPageToDataUrl(doc, p);
           images.push(dataUrl);
         }
@@ -575,7 +672,9 @@ export default function BatchGrading({
   }, [
     studentCount,
     pageCount,
-    pagesPerStudent,
+    fixedPps,
+    isAuto,
+    detectedGroups,
     answerKeyPages,
     extractedAnswerKey,
     localRubric,
@@ -947,12 +1046,17 @@ export default function BatchGrading({
               Pages per student
               <select
                 value={pagesPerStudent}
-                onChange={(e) => setPagesPerStudent(Number(e.target.value))}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setPagesPerStudent(v === "auto" ? "auto" : Number(v));
+                  if (v !== "auto") setDetectedGroups(null);
+                }}
                 style={batchStyles.select}
               >
+                <option value="auto">Auto-detect</option>
                 {[1, 2, 3, 4, 5, 6, 8, 10].map((n) => (
                   <option key={n} value={n}>
-                    {n} page{n > 1 ? "s" : ""}
+                    {n} page{n > 1 ? "s" : ""} each
                   </option>
                 ))}
               </select>
@@ -966,20 +1070,95 @@ export default function BatchGrading({
               )}
               <div>
                 {studentPages > 0 ? (
-                  <>
-                    = <strong>{studentCount}</strong> student{studentCount !== 1 ? "s" : ""}
-                    {studentPages % pagesPerStudent !== 0 && (
-                      <span style={{ color: "#ca8a04", marginLeft: 6 }}>
-                        (last student: {studentPages % pagesPerStudent} page{studentPages % pagesPerStudent !== 1 ? "s" : ""})
+                  isAuto ? (
+                    detectedGroups ? (
+                      <>
+                        = <strong>{detectedGroups.length}</strong> student{detectedGroups.length !== 1 ? "s" : ""} detected
+                        <span style={{ color: "#2563eb", marginLeft: 6 }}>
+                          ({detectedGroups.map((g) => g.pages.length).join(", ")} pages)
+                        </span>
+                      </>
+                    ) : (
+                      <span style={{ opacity: 0.6 }}>
+                        Will auto-detect student boundaries when grading starts
                       </span>
-                    )}
-                  </>
+                    )
+                  ) : (
+                    <>
+                      = <strong>{studentCount}</strong> student{studentCount !== 1 ? "s" : ""}
+                      {studentPages % fixedPps !== 0 && (
+                        <span style={{ color: "#ca8a04", marginLeft: 6 }}>
+                          (last student: {studentPages % fixedPps} page{studentPages % fixedPps !== 1 ? "s" : ""})
+                        </span>
+                      )}
+                    </>
+                  )
                 ) : (
                   <span style={{ color: "#dc2626" }}>No pages left for students</span>
                 )}
               </div>
             </div>
           </div>
+
+          {/* Auto-detect preview */}
+          {isAuto && !detectedGroups && studentPages > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <button
+                onClick={runAutoDetect}
+                disabled={detecting}
+                style={{
+                  ...batchStyles.ghostBtn,
+                  color: "#2563eb",
+                  borderColor: "rgba(37,99,235,0.3)",
+                }}
+                type="button"
+              >
+                {detecting ? "Detecting..." : "Preview detected splits"}
+              </button>
+              <span style={{ fontSize: 11, opacity: 0.5, marginLeft: 8 }}>
+                Optional — will run automatically when grading starts
+              </span>
+            </div>
+          )}
+
+          {/* Detected groups preview */}
+          {isAuto && detectedGroups && (
+            <div style={{
+              marginTop: 8,
+              padding: 10,
+              borderRadius: 10,
+              background: "rgba(37,99,235,0.04)",
+              border: "1px solid rgba(37,99,235,0.15)",
+              fontSize: 12,
+            }}>
+              <div style={{ fontWeight: 800, marginBottom: 6, color: "#1e40af" }}>
+                Detected {detectedGroups.length} student{detectedGroups.length !== 1 ? "s" : ""}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {detectedGroups.map((g, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      padding: "3px 8px",
+                      borderRadius: 6,
+                      background: "rgba(37,99,235,0.1)",
+                      fontWeight: 700,
+                      color: "#1e40af",
+                    }}
+                  >
+                    Student {i + 1}: p{g.pages.length === 1 ? g.pages[0] : `${g.startPage}–${g.endPage}`}
+                  </span>
+                ))}
+              </div>
+              <button
+                onClick={() => setDetectedGroups(null)}
+                style={{ ...batchStyles.ghostBtn, marginTop: 6, fontSize: 11, padding: "4px 10px" }}
+                type="button"
+              >
+                Re-detect
+              </button>
+            </div>
+          )}
 
           {/* Rubric override */}
           <div style={{ marginTop: 12 }}>
@@ -1020,6 +1199,7 @@ export default function BatchGrading({
                 setPageCount(0);
                 setAnswerKeyPages(0);
                 setExtractedAnswerKey(answerKeyOverride || "");
+                setDetectedGroups(null);
                 pdfDocRef.current = null;
                 if (fileInputRef.current) fileInputRef.current.value = "";
               }}
@@ -1080,6 +1260,7 @@ export default function BatchGrading({
                     setResults([]);
                     setClassSummary(null);
                     setTeacherAnalysis("");
+                    setDetectedGroups(null);
                     setExpandedIndex(null);
                   }}
                   style={batchStyles.smallBtn}
@@ -1376,6 +1557,7 @@ export default function BatchGrading({
                   setResults([]);
                   setClassSummary(null);
                   setTeacherAnalysis("");
+                  setDetectedGroups(null);
                   setExpandedIndex(null);
                   pdfDocRef.current = null;
                   if (fileInputRef.current) fileInputRef.current.value = "";

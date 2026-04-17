@@ -10569,6 +10569,127 @@ function buildRubricInstructions({
   });
 
   // ====================================================================
+  //  Batch Page Classification — detect student boundaries in a PDF stack
+  //  POST /grading/classify-pages
+  //  Sends thumbnail images and asks AI to identify where each new
+  //  student's work begins (first page vs continuation).
+  // ====================================================================
+  app.post("/grading/classify-pages", async (req, res) => {
+    try {
+      const { pageImages, answerKeyPages = 0 } = req.body || {};
+
+      if (!Array.isArray(pageImages) || pageImages.length === 0) {
+        return res.status(400).json({ error: "Missing pageImages array" });
+      }
+
+      if (pageImages.length > 60) {
+        return res.status(400).json({ error: "Too many pages (max 60)" });
+      }
+
+      const content = [
+        {
+          type: "input_text",
+          text: `You are analyzing scanned pages from a stack of student assignments that were fed through a copier's ADF scanner. The pages are in order.
+
+${answerKeyPages > 0 ? `The first ${answerKeyPages} page(s) are the ANSWER KEY — mark them as "key".` : "There is no answer key."}
+
+For each remaining page, decide if it is the FIRST page of a NEW student's work, or a CONTINUATION of the previous student's work.
+
+Clues that a page starts a new student:
+- A different student name or handwriting style at the top
+- A fresh copy of the same assignment/worksheet (same printed header, questions restart from #1)
+- A clear separation — the previous page looked complete or had mostly blank space at the bottom
+- Page numbering resets (e.g. "Page 1" again)
+
+Clues that a page continues the previous student:
+- Same handwriting continues from the previous page
+- Question numbers continue sequentially (e.g. previous ended at Q5, this starts at Q6)
+- "Page 2" or "continued" marker
+- The content flows naturally from the previous page
+
+Respond with ONLY a JSON array of objects, one per page, in order:
+[
+  { "page": 1, "type": "key" },
+  { "page": 2, "type": "new" },
+  { "page": 3, "type": "continuation" },
+  { "page": 4, "type": "new" },
+  ...
+]
+
+type must be one of: "key", "new", "continuation"
+Do NOT include any text outside the JSON array.`,
+        },
+      ];
+
+      // Add page images
+      pageImages.forEach((imgDataUrl, i) => {
+        content.push({
+          type: "input_image",
+          image_url: imgDataUrl,
+        });
+      });
+
+      console.log(`[classify-pages] classifying ${pageImages.length} pages (answerKeyPages=${answerKeyPages})`);
+
+      const response = await openai.responses.create({
+        model: AI_MODEL,
+        input: [{ role: "user", content }],
+        max_output_tokens: 800,
+      });
+
+      const raw = String(response.output_text || "").trim();
+
+      // Parse JSON array from response
+      const jsonMatch = raw.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) {
+        console.warn("[classify-pages] no JSON array found in response:", raw.slice(0, 300));
+        return res.status(502).json({ error: "AI did not return valid page classifications" });
+      }
+
+      const classifications = JSON.parse(jsonMatch[0]);
+
+      // Validate structure
+      if (!Array.isArray(classifications) || classifications.length === 0) {
+        return res.status(502).json({ error: "Empty classifications array" });
+      }
+
+      // Build student groups from classifications
+      const groups = [];
+      let currentGroup = null;
+
+      for (const c of classifications) {
+        const pageNum = Number(c.page);
+        const type = String(c.type || "").toLowerCase();
+
+        if (type === "key") continue; // skip answer key pages
+
+        if (type === "new") {
+          if (currentGroup) groups.push(currentGroup);
+          currentGroup = { startPage: pageNum, endPage: pageNum, pages: [pageNum] };
+        } else if (type === "continuation" && currentGroup) {
+          currentGroup.endPage = pageNum;
+          currentGroup.pages.push(pageNum);
+        } else {
+          // First non-key page or unexpected — treat as new
+          if (currentGroup) groups.push(currentGroup);
+          currentGroup = { startPage: pageNum, endPage: pageNum, pages: [pageNum] };
+        }
+      }
+      if (currentGroup) groups.push(currentGroup);
+
+      console.log(`[classify-pages] detected ${groups.length} students from ${pageImages.length} pages`);
+
+      res.json({ classifications, groups });
+    } catch (err) {
+      console.error("🔥 /grading/classify-pages failed:", err?.message || err);
+      return res.status(500).json({
+        error: "Page classification failed",
+        details: err?.message || "unknown error",
+      });
+    }
+  });
+
+  // ====================================================================
   //  Answer Key Extraction (Pass 1 of two-pass grading)
   //  POST /grading/extract-answer-key
   //  Sends ONLY the answer key image(s) to the AI for focused extraction
