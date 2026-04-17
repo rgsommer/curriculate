@@ -1423,7 +1423,12 @@ export default function BatchGrading({
                           fontSize: 12,
                           letterSpacing: 0.5,
                           color: r.refCode ? "#2563eb" : "#999",
+                          cursor: r.refCode ? "pointer" : "default",
                         }}
+                        onClick={() => {
+                          if (r.refCode) window.open(`https://www.curriculate.net/results/${r.refCode}`, "_blank");
+                        }}
+                        title={r.refCode ? `Open student results page for ${r.refCode}` : ""}
                       >
                         {r.refCode || "—"}
                       </td>
