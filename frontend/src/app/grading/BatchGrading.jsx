@@ -965,7 +965,7 @@ export default function BatchGrading({
     const html = buildEmailHtml();
     const plain = buildSummaryText({ includeFooter: true });
 
-    // Write rich HTML + plain text to clipboard
+    // Copy rich HTML to clipboard so it can be pasted into the email body
     try {
       if (navigator.clipboard?.write && window.ClipboardItem) {
         await navigator.clipboard.write([
@@ -975,14 +975,13 @@ export default function BatchGrading({
           }),
         ]);
         setEmailCopied(true);
-        setTimeout(() => setEmailCopied(false), 3000);
-        return;
+        setTimeout(() => setEmailCopied(false), 4000);
       }
     } catch (e) {
       console.warn("[batch] rich clipboard write failed:", e);
     }
 
-    // Fallback: open mailto with plain text
+    // Always open mailto to launch email client (plain text in body as starting point)
     const mailto = `mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(plain)}`;
     window.open(mailto, "_blank");
   }, [results, buildEmailHtml, buildSummaryText, emailSubject]);
@@ -1297,7 +1296,7 @@ export default function BatchGrading({
                 {copiedSummary ? "Copied ✓" : "Copy Summary"}
               </button>
               <button onClick={emailSummary} style={batchStyles.smallBtn} type="button">
-                {emailCopied ? "Copied — paste into email ✓" : "Email Summary"}
+                {emailCopied ? "Rich version copied — paste into email ✓" : "Email Summary"}
               </button>
               <button onClick={exportCsv} style={batchStyles.smallBtn} type="button">
                 Export CSV
