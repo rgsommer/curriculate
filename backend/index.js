@@ -10659,6 +10659,21 @@ function buildRubricInstructions({
         html: body,
       });
 
+      // Log teacher email for lead tracking
+      try {
+        await FeedbackMessage.create({
+          message: `[BATCH-EMAIL] Teacher sent batch grading summary to ${email}`,
+          meta: {
+            source: "batch-grading-email",
+            teacherEmail: email,
+            subject: subj,
+            sentAt: new Date().toISOString(),
+          },
+        });
+      } catch (logErr) {
+        console.warn("[grading] email log save failed:", logErr.message);
+      }
+
       console.log(`[grading] Batch summary email sent to ${email}`);
       return res.json({ ok: true });
     } catch (err) {
