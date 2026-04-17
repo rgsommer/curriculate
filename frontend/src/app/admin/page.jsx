@@ -366,7 +366,7 @@ export default function AdminUsageDashboard() {
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                   <Tooltip />
-                  <Bar dataKey="count" />
+                  <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -390,7 +390,7 @@ export default function AdminUsageDashboard() {
                       return [value, name];
                     }}
                   />
-                  <Line type="monotone" dataKey="repeatPct" dot={false} />
+                  <Line type="monotone" dataKey="repeatPct" stroke="#38bdf8" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -404,8 +404,8 @@ export default function AdminUsageDashboard() {
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                   <Tooltip />
-                  <Bar dataKey="activeUsers" />
-                  <Bar dataKey="repeatUsers" />
+                  <Bar dataKey="activeUsers" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="repeatUsers" fill="#22c55e" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -421,7 +421,7 @@ export default function AdminUsageDashboard() {
                   <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
                   <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11 }} />
                   <Tooltip />
-                  <Bar dataKey="count" />
+                  <Bar dataKey="count" fill="#f59e0b" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
