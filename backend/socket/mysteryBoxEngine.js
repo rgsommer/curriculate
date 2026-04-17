@@ -22,9 +22,38 @@ function shuffle(arr) {
 // CONSTANTS
 // ================================
 const CHALLENGE_TIMEOUT_MS = 45_000; // 45 seconds for teams to accept inter-team challenge
-const CHALLENGE_BONUS_MULTIPLIER = 1.5;
+const CHALLENGE_BONUS_MAX = 2.0;   // VS bonus when team has completed 0% of boxes
+const CHALLENGE_BONUS_MIN = 1.0;   // VS bonus when team has completed all non-VS boxes
 const MIN_BONUS = 0.9;
 const MAX_BONUS = 1.3;
+
+/**
+ * Compute the current VS challenge bonus multiplier for a team.
+ * Declines linearly from CHALLENGE_BONUS_MAX → CHALLENGE_BONUS_MIN
+ * as the team completes more boxes. Encourages tackling VS early.
+ */
+export function getChallengeBonus(room, teamId) {
+  const mb = room.mysteryBox;
+  if (!mb) return CHALLENGE_BONUS_MAX;
+
+  const tb = mb.teamBoxes?.[teamId];
+  if (!tb) return CHALLENGE_BONUS_MAX;
+
+  const totalBoxes = mb.taskCount || 1;
+  // Count non-VS boxes total and completed
+  const nonVsTotal = tb.order.filter((_, pos) => {
+    const taskIdx = tb.order[pos];
+    return !mb.interTeamIndices.includes(taskIdx);
+  }).length || 1;
+  const completedCount = tb.completed.length;
+
+  // Progress based on completed boxes (all types) vs non-VS total
+  const progress = Math.min(1, completedCount / nonVsTotal);
+
+  // Linear decline: 2.0 at 0% → 1.0 at 100%
+  const bonus = CHALLENGE_BONUS_MAX - progress * (CHALLENGE_BONUS_MAX - CHALLENGE_BONUS_MIN);
+  return Math.round(bonus * 100) / 100; // round to 2 decimals
+}
 
 // ================================
 // INITIALISE MYSTERY BOX STATE
@@ -122,12 +151,16 @@ export function buildTeamBoxGrid(room, teamId) {
     const bonus = tb.bonuses[boxPos];
     const pointValue = Math.round(basePoints * bonus);
 
+    // Compute the current VS bonus for this team (declines as they complete boxes)
+    const vsBonus = isInterTeam ? getChallengeBonus(room, teamId) : null;
+
     return {
       boxPos,
       // Only reveal task details if opened
       taskType: isOpened ? task?.taskType : null,
       taskTitle: isOpened ? task?.title : null,
       isInterTeam: isInterTeam, // hint shown on closed box
+      vsBonus: isInterTeam && !isCompleted ? vsBonus : null, // declining VS bonus (shown on badge)
       // Point value shown as star tier (1-3) when closed, exact when opened
       starTier: pointValue <= 700 ? 1 : pointValue <= 1200 ? 2 : 3,
       pointValue: isOpened ? pointValue : null,
@@ -266,12 +299,14 @@ export function createChallenge(room, fromTeamId, taskIndex, boxPos) {
   if (!mb) return null;
 
   const challengeId = `ch_${Date.now()}_${++challengeIdCounter}`;
+  const bonus = getChallengeBonus(room, fromTeamId);
 
   mb.challenges[challengeId] = {
     challengeId,
     fromTeamId,
     taskIndex,
     boxPos, // box position in the challenger's grid
+    bonusMultiplier: bonus, // declining bonus based on progress
     acceptedByTeamId: null,
     status: "pending", // pending | matched | expired | solo
     createdAt: Date.now(),
@@ -308,12 +343,13 @@ export function acceptChallenge(room, challengeId, acceptingTeamId) {
   // Find which box in the acceptor's grid maps to this taskIndex
   let acceptorBoxPos = tb.order.indexOf(ch.taskIndex);
 
-  // Queue this as the acceptor's next task
+  // Queue this as the acceptor's next task — use the challenge's bonus
+  // (locked in when the challenger opened the box, so both sides get same rate)
   tb.challengeQueued = {
     challengeId,
     taskIndex: ch.taskIndex,
     boxPos: acceptorBoxPos >= 0 ? acceptorBoxPos : null,
-    bonusMultiplier: CHALLENGE_BONUS_MULTIPLIER,
+    bonusMultiplier: ch.bonusMultiplier || 1.5,
   };
 
   return {

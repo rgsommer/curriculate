@@ -268,21 +268,26 @@ export default function MysteryBoxGrid({
                   <StarRating tier={box.starTier} />
                   {box.isInterTeam && (
                     <div
-                      title="Challenge box! Open to challenge another team for 1.5× bonus points"
+                      title={`Challenge box! Battle another team for ${box.vsBonus || 2}× bonus points. The bonus shrinks as you complete more boxes — do VS early!`}
                       style={{
                         position: "absolute",
                         top: 4, right: 4,
-                        fontSize: "0.65rem",
-                        background: "linear-gradient(135deg, rgba(251,191,36,0.9), rgba(245,158,11,0.9))",
+                        fontSize: "0.6rem",
+                        background: box.vsBonus && box.vsBonus < 1.3
+                          ? "linear-gradient(135deg, rgba(156,163,175,0.9), rgba(107,114,128,0.9))"
+                          : "linear-gradient(135deg, rgba(251,191,36,0.9), rgba(245,158,11,0.9))",
                         borderRadius: 8,
-                        padding: "2px 6px",
+                        padding: "2px 5px",
                         color: "#fff",
                         fontWeight: 800,
                         textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                        boxShadow: "0 2px 6px rgba(251,191,36,0.4)",
-                        letterSpacing: "0.05em",
+                        boxShadow: box.vsBonus && box.vsBonus >= 1.5
+                          ? "0 2px 8px rgba(251,191,36,0.5)"
+                          : "0 1px 4px rgba(0,0,0,0.2)",
+                        letterSpacing: "0.03em",
+                        transition: "all 0.3s ease",
                       }}>
-                      ⚔️ VS
+                      ⚔️ {box.vsBonus ? `${box.vsBonus}×` : "VS"}
                     </div>
                   )}
                 </>

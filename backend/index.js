@@ -90,7 +90,7 @@ import {
   initMysteryBox, startMysteryTimer, buildTeamBoxGrid,
   openBox, completeBox, getMysteryProgress,
   createChallenge, acceptChallenge, expireChallenge,
-  popQueuedChallenge, addTeamToMysteryBox,
+  popQueuedChallenge, addTeamToMysteryBox, getChallengeBonus,
 } from "./socket/mysteryBoxEngine.js";
 import profileInlineRouter from "./routes/profileInline.js";
 import adminCrudRouter from "./routes/adminCrud.js";
@@ -5094,12 +5094,21 @@ if (!isMultiPack && task.taskType === "guess-who") {
           // Apply box bonus multiplier to earned points
           const bonusedPoints = Math.round(pointsEarned * bonus);
 
-          // If this was a challenge match, apply challenge bonus
+          // Check if this is an inter-team task (challenger or acceptor gets VS bonus)
+          const taskIdx = tb.order[boxPos];
+          const isVsBox = (room.mysteryBox.interTeamIndices || []).includes(taskIdx);
           const challengeQueued = tb.challengeQueued;
           let finalPoints = bonusedPoints;
+
           if (challengeQueued && challengeQueued.taskIndex === idx) {
-            finalPoints = Math.round(bonusedPoints * 1.5);
+            // Acceptor path: use the bonus locked in when challenge was created
+            const challengeMultiplier = challengeQueued.bonusMultiplier || 1.5;
+            finalPoints = Math.round(bonusedPoints * challengeMultiplier);
             tb.challengeQueued = null;
+          } else if (isVsBox) {
+            // Challenger path: compute their own declining bonus
+            const vsBonus = getChallengeBonus(room, effectiveTeamId);
+            finalPoints = Math.round(bonusedPoints * vsBonus);
           }
 
           // Update the score delta (add bonus portion)
@@ -6763,7 +6772,8 @@ socket.on(
               challengeId: challenge.challengeId,
               taskType: task.taskType,
               taskTitle: task.title,
-              pointBonus: "1.5×",
+              pointBonus: `${challenge.bonusMultiplier}×`,
+              bonusMultiplier: challenge.bonusMultiplier,
               expiresAt: Date.now() + 45000,
             });
           }
