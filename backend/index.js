@@ -8431,6 +8431,7 @@ function buildRubricInstructions({
     feedbackVoice = "warm",
     feedbackVoiceMode = "default",
     standards = "canada",
+    batchMode = false,
   } = {}) {
   const gradeExpectations = {
       "3-5": `
@@ -8685,7 +8686,11 @@ function buildRubricInstructions({
     - Do not "hunt for faults." Deduct only for clear, visible, instruction-relevant issues.
 
     STUDENT NAME:
-    - Always set student_name to null.
+    ${batchMode ? `- Look carefully at the TOP of the first page for a handwritten student name.
+    - Common locations: top-left corner, top-center, or on a "Name:" line.
+    - If you can read a name (even partially), set student_name to your best reading of it.
+    - If no name is visible or legible, set student_name to null.
+    - IMPORTANT: Do NOT include the student's name in any feedback text.` : `- Always set student_name to null.`}
     - Do NOT personalize feedback.
     - Do NOT address the student by name in strengths, improvements, or teacher_comment.
 
@@ -9247,7 +9252,7 @@ function buildRubricInstructions({
 
     OUTPUT (JSON only; EXACT fields):
     - response_format_detected ("short-answer"|"paragraph"|"mixed"|"test")
-    - student_name (null)   // must always be null
+    - student_name (${batchMode ? "string or null — read from paper if visible" : "null — must always be null"})
     - overall_score (number)
     - overall_out_of (number)
     - sections (array of { name, score, out_of, teacher_comment, incorrect_items } OR null)
@@ -9955,6 +9960,7 @@ function buildRubricInstructions({
 
       const feedbackVoice = req.body?.meta?.feedbackVoice || "warm";
       const feedbackVoiceMode = req.body?.meta?.feedbackVoiceMode || "default";
+      const batchMode = req.body?.meta?.batchMode === true;
 
       const effectiveAnswerKey = String(answerKeyOverride || "").trim();
 
@@ -9965,6 +9971,7 @@ function buildRubricInstructions({
         feedbackVoice,
         feedbackVoiceMode,
         standards,
+        batchMode,
       });
 
       const instructionsWithInference = `

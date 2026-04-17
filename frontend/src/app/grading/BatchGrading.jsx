@@ -196,6 +196,7 @@ export default function BatchGrading({
           meta: {
             sessionId: batchSessionId,
             source: "batch-grading",
+            batchMode: true,
             capturedCount: images.length,
             capturedAt: Date.now(),
             feedbackVoiceMode: voiceMode || "default",
