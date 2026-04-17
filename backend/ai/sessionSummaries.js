@@ -9,6 +9,7 @@
 // ====================================================================
 
 import OpenAI from "openai";
+import { buildReportVoice } from "./perspectiveVoices.js";
 
 let _client = null;
 function getClient() {
@@ -48,26 +49,30 @@ export async function generateSessionSummaries({
   // --------------------------------------------------------------
   // SYSTEM PROMPT — critical instruction for safe, structured output
   // --------------------------------------------------------------
+  // Build rich perspective voice (or fall back to generic instruction)
+  const reportVoice = buildReportVoice(perspectives);
+
   const systemPrompt = `
 You are an assistant that generates structured session summaries for a teacher,
-conference leader, or facilitator. 
+conference leader, or facilitator.
 
-You ALWAYS output valid JSON (no commentary, no markdown). 
+You ALWAYS output valid JSON (no commentary, no markdown).
 
 You will be given:
 - A transcript of all tasks and submissions.
 - Numeric per-participant stats (engagementPercent, finalPercent, etc.).
 - Up to 4 custom assessment categories (name, description, weight).
-- A list of "perspectives" (strings). These describe the tone, worldview,
-  instructional lens, or organizational context. Examples might include:
-  • Christian/Biblical
-  • Character / Virtue Formation
-  • Leadership Development
-  • Business / Professional
-  • Team-Building
-  • Inquiry-Based Learning
+${reportVoice ? `
+${reportVoice}
+
+Apply the voice above throughout ALL sections — group summary, per-participant
+comments, encouragement, growth steps, and the class chat blurb. The voice should
+feel natural and integrated, not bolted on. Do NOT sermonize or moralize.
+` : `
+- A list of "perspectives" (strings) describing tone, worldview, or instructional lens.
 Blend these perspectives gently, professionally, and naturally into the tone of
 your summaries. Do NOT sermonize or moralize; apply them lightly and in context.
+`}
 
 Your tasks:
 

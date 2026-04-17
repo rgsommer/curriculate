@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
+import { buildScoringVoice } from "./perspectiveVoices.js";
 
 const DEFAULT_MODEL = process.env.AI_MODEL || "gpt-4.1-mini";
 
@@ -461,24 +462,14 @@ async function scoreSubmissionWithAI({
 
   const work = buildStudentWorkDescription(task, submission);
 
-  // Build worldview string — prefer explicit field, then build from perspectives array
-  const buildWorldviewFromPerspectives = (profile) => {
-    const raw = Array.isArray(profile?.perspectives) ? profile.perspectives : [];
-    const lenses = raw.map((s) => String(s || "").trim()).filter(Boolean);
-    if (!lenses.length) return null;
-    return [
-      "PERSPECTIVE LENS (from the teacher profile):",
-      ...lenses.map((p) => `- ${p}`),
-      "Apply these lenses in tone, framing, and how you interpret ambiguous student answers.",
-    ].join("\n");
-  };
-
-  const worldview =
+  // Build worldview string — prefer rich per-perspective voices, fall back to legacy fields
+  const richVoice = buildScoringVoice(teacherProfile?.perspectives);
+  const legacyWorldview =
     (teacherProfile && (teacherProfile.worldview || teacherProfile.worldView || teacherProfile.theologicalWorldview)) ||
-    (teacherProfile && buildWorldviewFromPerspectives(teacherProfile)) ||
     (submission && submission.teacherProfile && (submission.teacherProfile.worldview || submission.teacherProfile.worldView)) ||
     (submission && submission.worldview) ||
     null;
+  const worldview = richVoice || legacyWorldview;
 
   const systemPrompt = `
 You are an expert teacher evaluating a student team's work.
@@ -2190,18 +2181,13 @@ async function scoreReadingComp({ task, submission, rubric, teacherProfile }) {
           ],
         };
 
-  const _perspectivesWorldview2 = (() => {
-    const raw = Array.isArray(teacherProfile?.perspectives) ? teacherProfile.perspectives : [];
-    const lenses = raw.map((s) => String(s || "").trim()).filter(Boolean);
-    if (!lenses.length) return null;
-    return "PERSPECTIVE LENS:\n" + lenses.map((p) => `- ${p}`).join("\n");
-  })();
-  const worldview =
+  const _richVoice2 = buildScoringVoice(teacherProfile?.perspectives);
+  const _legacyWorldview2 =
     (teacherProfile && (teacherProfile.worldview || teacherProfile.worldView || teacherProfile.theologicalWorldview)) ||
-    _perspectivesWorldview2 ||
     (submission && submission.teacherProfile && (submission.teacherProfile.worldview || submission.teacherProfile.worldView)) ||
     (submission && submission.worldview) ||
     null;
+  const worldview = _richVoice2 || _legacyWorldview2;
 
   const systemPrompt = `
 You are an expert teacher evaluating reading-comprehension ONE-SENTENCE responses.
