@@ -71,6 +71,33 @@ router.post("/", createLimiter, async (req, res) => {
 });
 
 /**
+ * PUT /results/:code
+ * Body: { payload }
+ * Updates the payload for an existing result (used by batch grading to
+ * add the ref code and image links after initial publish).
+ */
+router.put("/:code", createLimiter, async (req, res) => {
+  try {
+    const code = normalizeCode(req.params.code);
+    if (code.length !== 5) return res.status(404).json({ error: "Code not found." });
+    const { payload } = req.body || {};
+    if (payload == null) return res.status(400).json({ error: "Missing payload." });
+
+    const doc = await PublishedResult.findOneAndUpdate(
+      { code },
+      { $set: { payload } },
+      { new: true }
+    );
+    if (!doc) return res.status(404).json({ error: "Code not found." });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("PUT /results/:code error:", err);
+    return res.status(500).json({ error: "Server error." });
+  }
+});
+
+/**
  * POST /results/feedback
  * Body: { role: "student"|"parent", message: string, refCode?: string }
  * Saves feedback from students/parents viewing results

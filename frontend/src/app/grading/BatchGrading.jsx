@@ -234,6 +234,14 @@ function buildBatchPayloadText(result, refCode, gradeBandForKita) {
     lines.push("");
   }
 
+  // Saved captures (image links from S3)
+  const imgLinks = Array.isArray(a.assignment_images) ? a.assignment_images : [];
+  if (imgLinks.length) {
+    lines.push("Saved captures (30-day links):");
+    imgLinks.forEach((img) => lines.push(`Photo ${img.index}: ${img.url}`));
+    lines.push("");
+  }
+
   return lines.join("\n").trim();
 }
 
@@ -537,6 +545,7 @@ export default function BatchGrading({
         // Publish to results portal to get AB123 ref code
         if (resultsUrl && !resultEntry.error) {
           try {
+            // Initial publish (without ref code — we don't have it yet)
             const pubRes = await fetch(resultsUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -549,6 +558,20 @@ export default function BatchGrading({
             const pubData = await pubRes.json().catch(() => ({}));
             if (pubData.code) {
               resultEntry.refCode = String(pubData.code).toUpperCase();
+
+              // Update the published result with the complete payload (now includes ref code)
+              try {
+                const updateUrl = resultsUrl.replace(/\/$/, "") + "/" + resultEntry.refCode;
+                await fetch(updateUrl, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    payload: buildBatchPayloadText(resultEntry, resultEntry.refCode, gradeBand),
+                  }),
+                });
+              } catch (e2) {
+                console.warn(`[batch] payload update for ${resultEntry.refCode} failed:`, e2);
+              }
             }
           } catch (e) {
             console.warn(`[batch] publish for student ${i + 1} failed:`, e);

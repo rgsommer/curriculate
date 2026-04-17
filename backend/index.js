@@ -8657,6 +8657,7 @@ function buildRubricInstructions({
 
     VOICE APPLICATION (required):
     - Apply the selected VOICE to: strengths, improvements, teacher_comment, and every sections[].teacher_comment.
+    - Keep all text fields CONCISE. Each sections[].teacher_comment should be 1-2 sentences max (never more than 40 words). The overall teacher_comment should be 2-3 sentences max. Do NOT write paragraph-length section comments — they waste tokens and get cut off.
     - Keep structure the same; only change phrasing and tone.
     - Do not add extra fields.
     - Do not add jokes unless VOICE allows light humor (and even then, max 0–1 brief phrase).
@@ -10308,7 +10309,7 @@ function buildRubricInstructions({
         model: gradingModel,
         input: [{ role: "user", content: userContent }],
         text: { format: { type: "json_schema", name: schema.name, strict: true, schema: schema.schema } },
-        max_output_tokens: 3000
+        max_output_tokens: 4000
       });
 
       const grade = safeJsonParse(response.output_text);
