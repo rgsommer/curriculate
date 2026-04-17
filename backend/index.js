@@ -8576,8 +8576,7 @@ function buildRubricInstructions({
       - Do NOT invent your own scoring scheme. Do NOT use a different denominator.
       - Every student MUST be graded on the SAME scale defined by this rubric.
 
-      If this rubric override includes categories, criteria, or denominators, it takes ABSOLUTE priority over any default grading assumptions.`;
-    })()}
+      If this rubric override includes categories, criteria, or denominators, it takes ABSOLUTE priority over any default grading assumptions.
 
       SHORTHAND DENOMINATOR OVERRIDE (e.g., "/8", "/12", "/20"):
       If the rubric override is ONLY a denominator (like "/8"), this means the teacher has assigned a
@@ -8587,12 +8586,12 @@ function buildRubricInstructions({
         CRITICAL: The denominator is about mark WEIGHTING, not question count.
         "/8" with 4 visible questions means each question is worth 2 marks — NOT that there are 8 questions.
         NEVER invent missing questions. NEVER assume there should be more questions than you can see.
-        The math is simple: marks_per_question = denominator ÷ number_of_VISIBLE_questions.
-        Example: "/8" with 4 questions → 8÷4 = 2 marks each → section out_of values: 2, 2, 2, 2 → sum = 8.
-        Example: "/12" with 3 questions → 12÷3 = 4 marks each → section out_of values: 4, 4, 4 → sum = 12.
-        Example: "/6" with 4 questions → 6÷4 = 1.5 marks each → section out_of values: 1.5, 1.5, 1.5, 1.5 → sum = 6.
-        WRONG: "/8" with 4 questions → assuming questions 5-8 are missing. They don't exist.
-        WRONG: "/8" with 4 questions → giving each question 1 mark (sum = 4, not 8). This violates the constraint.
+        The math is simple: marks_per_question = denominator / number_of_VISIBLE_questions.
+        Example: "/8" with 4 questions = 8/4 = 2 marks each = section out_of values: 2, 2, 2, 2 = sum = 8.
+        Example: "/12" with 3 questions = 12/3 = 4 marks each = section out_of values: 4, 4, 4 = sum = 12.
+        Example: "/6" with 4 questions = 6/4 = 1.5 marks each = section out_of values: 1.5, 1.5, 1.5, 1.5 = sum = 6.
+        WRONG: "/8" with 4 questions = assuming questions 5-8 are missing. They don't exist.
+        WRONG: "/8" with 4 questions = giving each question 1 mark (sum = 4, not 8). This violates the constraint.
       - HARD CONSTRAINT: sum of all section out_of values MUST equal overall_out_of.
         If it doesn't, you have distributed marks incorrectly. Recalculate before responding.
       - HARD CONSTRAINT: overall_score MUST equal the sum of section scores, and it MUST be out of overall_out_of.
@@ -8608,7 +8607,7 @@ function buildRubricInstructions({
         A question worth 1 mark is binary (right or wrong). A question worth 2 marks should rarely be all-or-nothing.
       - Use your judgment to weight questions fairly — if one question is clearly more complex, it can receive more marks.
 
-      MULTI-CRITERION RUBRIC → MULTI-SECTION GRADING (mandatory when applicable):
+      MULTI-CRITERION RUBRIC = MULTI-SECTION GRADING (mandatory when applicable):
       If the rubric override (or extracted rubric) contains MULTIPLE named criteria / strands / categories
       (e.g., "Ideas /5, Organization /5, Voice /5, Conventions /5", or "Content /10, Delivery /10"),
       you MUST assess EACH criterion separately and create ONE section[] entry per criterion.
@@ -8626,10 +8625,11 @@ function buildRubricInstructions({
         to that criterion (not a general overview). Keep comments criterion-specific.
 
       Example:
-        Rubric: "Ideas /5, Organization /5, Voice /5, Conventions /5" → total /20
+        Rubric: "Ideas /5, Organization /5, Voice /5, Conventions /5" = total /20
         sections[] MUST have 4 entries: Ideas (/5), Organization (/5), Voice (/5), Conventions (/5).
         Each scored independently. overall_out_of = 20. overall_score = sum of the 4 section scores.
-      ` : ""}
+      `;
+    })()}
 
     ${answerKeyOverride ? `
       ANSWER KEY / SOLUTION SHEET (provided from previous detection):
