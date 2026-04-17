@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import BatchGrading from "./BatchGrading";
 
 /**
  * app/grading/page.jsx
@@ -1018,8 +1019,8 @@ export default function GradingPage() {
       return loadLS(STANDARDS_KEY, "canada");
     });
 
-    // Input mode: photo vs paste
-    const [inputMode, setInputMode] = useState("photo"); // "photo" | "paste"
+    // Input mode: photo vs paste vs batch
+    const [inputMode, setInputMode] = useState("photo"); // "photo" | "paste" | "batch"
     
     const [workInput, setWorkInput] = useState("");
     useEffect(() => {
@@ -2704,9 +2705,39 @@ export default function GradingPage() {
                 >
                   Paste
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setInputMode("batch")}
+                  style={{
+                    ...styles.modeBtn,
+                    ...(inputMode === "batch" ? styles.modeBtnActive : null),
+                  }}
+                  disabled={submitting}
+                >
+                  Batch
+                </button>
               </div>
             </div>
             
+          {/* Batch mode: full-card takeover */}
+          {inputMode === "batch" ? (
+            <BatchGrading
+              gradingUrl={gradingUrl}
+              gradeBand={gradeBand}
+              standards={standards}
+              feedbackVoice={voiceOverrideOn ? voiceOverride : voice}
+              voiceMode={voiceOverrideOn ? "override" : "default"}
+              rubricOverride={
+                (rubricOverride || "").trim() ||
+                (stickyRubricText || "").trim() ||
+                ""
+              }
+              answerKeyOverride={(stickyAnswerKeyText || "").trim() || ""}
+              onClose={() => setInputMode("photo")}
+            />
+          ) : (
+          <>
           {/* Hidden file input for uploads — shared between both modes */}
           <input
             ref={fileInputRef}
@@ -3035,10 +3066,12 @@ export default function GradingPage() {
               </div>
             </>
           )}
+          </>
+          )}
           </div>
 
-          {/* SUBMIT + RESPONSE CARD */}
-          <div className="grading-submit-card" style={styles.card}>
+          {/* SUBMIT + RESPONSE CARD — hidden in batch mode */}
+          <div className="grading-submit-card" style={{ ...styles.card, ...(inputMode === "batch" ? { display: "none" } : {}) }}>
             <div style={styles.cardTitle}>Submit</div>
 
             {/* First-use tip: rubric + answer key */}
