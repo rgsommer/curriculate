@@ -3071,10 +3071,8 @@ export default function GradingPage() {
           )}
           </div>
 
-          {/* SUBMIT + RESPONSE CARD — hidden in batch mode */}
-          <div className="grading-submit-card" style={{ ...styles.card, ...(inputMode === "batch" ? { display: "none" } : {}) }}>
-            <div style={styles.cardTitle}>Submit</div>
-
+          {/* Rubric Options — visible in ALL modes (photo, paste, batch) */}
+          <div style={styles.card}>
             {/* First-use tip: rubric + answer key */}
             {showRubricTip && (
               <div style={{
@@ -3254,6 +3252,11 @@ export default function GradingPage() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* SUBMIT + RESPONSE CARD — hidden in batch mode */}
+          <div className="grading-submit-card" style={{ ...styles.card, ...(inputMode === "batch" ? { display: "none" } : {}) }}>
+            <div style={styles.cardTitle}>Submit</div>
 
             <div style={styles.btnRow}>
               <button

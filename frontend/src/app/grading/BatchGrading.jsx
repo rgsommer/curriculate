@@ -134,34 +134,106 @@ function computeKitaWeightedPercent(kita, weights) {
   return Math.round(totalWeighted);
 }
 
-// Build a plain-text payload for the results portal (minimal version)
-function buildBatchPayloadText(result) {
+// Build a rich text payload for the results portal (matches single-grading format)
+function buildBatchPayloadText(result, refCode, gradeBandForKita) {
+  const a = result.raw || {};
   const lines = [];
-  if (result.studentName) lines.push(`Student: ${result.studentName}`);
-  lines.push(`Grade: ${result.score}/${result.outOf}${result.pct != null ? ` (${result.pct}%)` : ""} ${result.letter}`);
+
+  // Grade line
+  lines.push(`Grade: ${result.score} / ${result.outOf}${refCode ? `  Ref: ${refCode}` : ""}`);
   lines.push("");
-  if (result.strengths.length) {
+
+  if (refCode) {
+    lines.push(`View feedback online: www.curriculate.net/results (code: ${refCode})`);
+    lines.push("");
+  }
+
+  // Deductions
+  if (Array.isArray(a.deductions) && a.deductions.length) {
+    const d0 = a.deductions[0];
+    const reason = String(d0?.reason || "").trim();
+    if (reason) {
+      const pts = d0?.points;
+      const ptsStr = typeof pts === "number" ? ` (${pts > 0 ? "+" : ""}${pts})` : "";
+      lines.push("Deduction:");
+      lines.push(`- ${reason}${ptsStr}`);
+      lines.push("");
+    }
+  }
+
+  // Strengths
+  if (Array.isArray(a.strengths) && a.strengths.length) {
     lines.push("Strengths:");
-    result.strengths.forEach((s) => lines.push(`- ${s}`));
+    a.strengths.forEach((s) => lines.push(`- ${s}`));
     lines.push("");
   }
-  if (result.improvements.length) {
+
+  // Next Steps (improvements)
+  if (Array.isArray(a.improvements) && a.improvements.length) {
     lines.push("Next Steps:");
-    result.improvements.forEach((s) => lines.push(`- ${s}`));
+    a.improvements.forEach((s) => lines.push(`- ${s}`));
     lines.push("");
   }
-  if (result.comment) {
-    lines.push("Comment:");
-    lines.push(result.comment);
-    lines.push("");
-  }
-  if (Array.isArray(result.sections) && result.sections.length) {
-    lines.push("Sections:");
-    result.sections.forEach((sec) => {
-      lines.push(`- ${sec.name}: ${sec.score}/${sec.out_of}${sec.teacher_comment ? ` — ${sec.teacher_comment}` : ""}`);
+
+  // Soft KITA summary (advisory, non-scoring)
+  if (Array.isArray(a.achievement_summary) && a.achievement_summary.length) {
+    const knownShort = {
+      "Knowledge & Understanding": "K", "Thinking": "T", "Communication": "C", "Application": "A",
+      "Knowledge & Recall (AO1)": "AO1", "Analysis & Application (AO2)": "AO2",
+      "Evaluation & Context (AO3)": "AO3", "Technical Accuracy (AO4)": "AO4",
+    };
+    lines.push("Achievement Categories:");
+    a.achievement_summary.forEach((k) => {
+      const short = knownShort[k.category] || (k.category || "").split(/\s+/).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
+      const scoreStr = typeof k.score === "number" && typeof k.out_of === "number" ? ` ${k.score.toFixed(2)}/${k.out_of.toFixed(2)}` : "";
+      lines.push(`- ${short} ${k.category}${scoreStr} [${k.level}]: ${k.comment}`);
     });
     lines.push("");
   }
+
+  // Overall comment
+  if (String(a.teacher_comment || "").trim()) {
+    lines.push("Overall Comment:");
+    lines.push(String(a.teacher_comment).trim());
+    lines.push("");
+  }
+
+  // Sections + incorrect items (with KITA detection)
+  const kita = detectKita(a);
+  if (kita) {
+    const weights = getKitaWeights(gradeBandForKita, kita);
+    const weightedPct = computeKitaWeightedPercent(kita, weights);
+    lines.push("Achievement Categories (KITA):");
+    kita.forEach((cat, i) => {
+      lines.push(
+        `- ${cat.short} ${cat.name}: ${cat.score}/${cat.outOf} (${weights[i]}%)${
+          cat.comment ? ` — ${cat.comment}` : ""
+        }`
+      );
+    });
+    lines.push(`Weighted Total: ${weightedPct}%`);
+    lines.push("");
+  } else if (Array.isArray(a.sections) && a.sections.length) {
+    lines.push("Sections:");
+    a.sections.forEach((sec) => {
+      lines.push(
+        `- ${sec.name}: ${sec.score}/${sec.out_of}${
+          sec.teacher_comment ? ` — ${String(sec.teacher_comment).trim()}` : ""
+        }`
+      );
+      if (Array.isArray(sec.incorrect_items) && sec.incorrect_items.length) {
+        lines.push("  Incorrect:");
+        sec.incorrect_items.forEach((it, idx) => {
+          const p = String(it?.prompt || `Item ${idx + 1}`).trim();
+          const sa = String(it?.student_answer || "—").trim();
+          const ca = String(it?.correct_answer || "—").trim();
+          lines.push(`  - ${p} (you: ${sa}; correct: ${ca})`);
+        });
+      }
+    });
+    lines.push("");
+  }
+
   return lines.join("\n").trim();
 }
 
@@ -372,7 +444,7 @@ export default function BatchGrading({
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                payload: buildBatchPayloadText(resultEntry),
+                payload: buildBatchPayloadText(resultEntry, null, gradeBand),
                 meta: { source: "batch-grading", batchIndex: i, gradeBand },
                 sessionId: batchSessionId,
               }),
@@ -489,9 +561,9 @@ export default function BatchGrading({
         });
 
         if (summaryRes.ok) {
-          const summaryData = await summaryRes.json();
-          const analysis = summaryData.summary || summaryData.paragraph || "";
-          if (analysis) setTeacherAnalysis(analysis);
+          // Backend returns plain text (not JSON) for session-summary
+          const analysisText = await summaryRes.text();
+          if (analysisText && analysisText.trim()) setTeacherAnalysis(analysisText.trim());
         }
       } catch (e) {
         console.warn("[batch] session summary failed:", e);
@@ -642,16 +714,135 @@ export default function BatchGrading({
     } catch {}
   }, [results, buildSummaryText]);
 
-  // ---------- Email summary ----------
-  const emailSummary = useCallback(() => {
-    if (!results.length) return;
-    const body = buildSummaryText({ includeFooter: true });
-    const mailto = `mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(body)}`;
-    window.open(mailto, "_blank");
-  }, [results, buildSummaryText, emailSubject]);
+  // ---------- Build rich HTML email body ----------
+  const buildEmailHtml = useCallback(() => {
+    if (!results.length) return "";
 
-  // ---------- Copy ack ----------
+    const gradeColor = (letter) => {
+      if (letter.startsWith("A")) return "#16a34a";
+      if (letter.startsWith("B")) return "#2563eb";
+      if (letter.startsWith("C")) return "#ca8a04";
+      if (letter.startsWith("D")) return "#ea580c";
+      return "#dc2626";
+    };
+
+    let html = `<div style="font-family: -apple-system, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 640px; color: #1e293b;">`;
+
+    // Header
+    html += `<h2 style="margin: 0 0 4px; font-size: 20px; color: #0f172a;">Batch Grading Results</h2>`;
+    html += `<p style="margin: 0 0 16px; font-size: 14px; color: #64748b;">${pdfName || "Uploaded PDF"} &mdash; ${results.length} student${results.length !== 1 ? "s" : ""} graded</p>`;
+
+    // Class summary
+    if (classSummary) {
+      html += `<table style="border-collapse: collapse; width: 100%; margin-bottom: 12px; border: 1px solid #e2e8f0; border-radius: 8px;">`;
+      html += `<tr style="background: #f8fafc;">`;
+      html += `<td style="padding: 10px 14px; text-align: center; border-right: 1px solid #e2e8f0;"><div style="font-size: 20px; font-weight: 800; color: #1e40af;">${classSummary.avg}%</div><div style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase;">Average</div></td>`;
+      html += `<td style="padding: 10px 14px; text-align: center; border-right: 1px solid #e2e8f0;"><div style="font-size: 20px; font-weight: 800; color: #1e40af;">${classSummary.median}%</div><div style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase;">Median</div></td>`;
+      html += `<td style="padding: 10px 14px; text-align: center; border-right: 1px solid #e2e8f0;"><div style="font-size: 20px; font-weight: 800; color: #1e40af;">${classSummary.high}%</div><div style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase;">High</div></td>`;
+      html += `<td style="padding: 10px 14px; text-align: center;"><div style="font-size: 20px; font-weight: 800; color: #1e40af;">${classSummary.low}%</div><div style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase;">Low</div></td>`;
+      html += `</tr></table>`;
+
+      // Distribution
+      html += `<p style="margin: 0 0 14px; font-size: 13px; color: #475569;">`;
+      ["A", "B", "C", "D", "F"].forEach((g) => {
+        html += `<strong style="color: ${gradeColor(g)};">${g}:</strong>&nbsp;${classSummary.dist[g]}&nbsp;&nbsp;`;
+      });
+      html += `</p>`;
+    }
+
+    // Teacher analysis
+    if (teacherAnalysis) {
+      html += `<div style="background: #f0f0ff; border: 1px solid #c7d2fe; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">`;
+      html += `<div style="font-weight: 800; font-size: 13px; color: #3730a3; margin-bottom: 6px;">Class Analysis</div>`;
+      html += `<div style="font-size: 13px; line-height: 1.5; color: #1e293b; white-space: pre-wrap;">${teacherAnalysis.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`;
+      html += `</div>`;
+    }
+
+    // Results table
+    html += `<table style="border-collapse: collapse; width: 100%; font-size: 13px; margin-bottom: 14px;">`;
+    html += `<thead><tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">`;
+    html += `<th style="padding: 8px 10px; text-align: left; font-size: 11px; text-transform: uppercase; color: #64748b;">#</th>`;
+    html += `<th style="padding: 8px 10px; text-align: left; font-size: 11px; text-transform: uppercase; color: #64748b;">Student</th>`;
+    html += `<th style="padding: 8px 10px; text-align: center; font-size: 11px; text-transform: uppercase; color: #64748b;">Score</th>`;
+    html += `<th style="padding: 8px 10px; text-align: center; font-size: 11px; text-transform: uppercase; color: #64748b;">%</th>`;
+    html += `<th style="padding: 8px 10px; text-align: center; font-size: 11px; text-transform: uppercase; color: #64748b;">Grade</th>`;
+    html += `<th style="padding: 8px 10px; text-align: center; font-size: 11px; text-transform: uppercase; color: #64748b;">Code</th>`;
+    html += `<th style="padding: 8px 10px; text-align: left; font-size: 11px; text-transform: uppercase; color: #64748b;">Comment</th>`;
+    html += `</tr></thead><tbody>`;
+
+    results.forEach((r, i) => {
+      const bg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
+      const esc = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      html += `<tr style="background: ${bg}; border-bottom: 1px solid #e2e8f0;">`;
+      html += `<td style="padding: 7px 10px;">${r.index}</td>`;
+      html += `<td style="padding: 7px 10px; font-weight: 700;">${esc(r.studentName)}</td>`;
+      html += `<td style="padding: 7px 10px; text-align: center;">${r.score}/${r.outOf}</td>`;
+      html += `<td style="padding: 7px 10px; text-align: center;">${r.pct != null ? r.pct + "%" : "—"}</td>`;
+      html += `<td style="padding: 7px 10px; text-align: center; font-weight: 800; color: ${r.letter !== "?" ? gradeColor(r.letter) : "#999"};">${r.letter}</td>`;
+      html += `<td style="padding: 7px 10px; text-align: center; font-family: monospace; font-weight: 700; font-size: 12px;">`;
+      if (r.refCode) {
+        html += `<a href="https://www.curriculate.net/results/${r.refCode}" style="color: #2563eb; text-decoration: none;">${r.refCode}</a>`;
+      } else {
+        html += `—`;
+      }
+      html += `</td>`;
+      html += `<td style="padding: 7px 10px; font-size: 12px; color: #475569;">${esc(r.comment).slice(0, 120)}</td>`;
+      html += `</tr>`;
+
+      // Per-student feedback link row
+      if (r.refCode) {
+        html += `<tr style="background: ${bg};">`;
+        html += `<td></td><td colspan="6" style="padding: 0 10px 7px; font-size: 12px;">`;
+        html += `<a href="https://www.curriculate.net/results/${r.refCode}" style="color: #2563eb;">Results &amp; feedback: www.curriculate.net/results/${r.refCode}</a>`;
+        html += `</td></tr>`;
+      }
+    });
+
+    html += `</tbody></table>`;
+
+    // Footer
+    html += `<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0 12px;" />`;
+    html += `<table style="width: 100%;"><tr>`;
+    html += `<td style="font-size: 12px; color: #94a3b8; line-height: 1.5;">`;
+    html += `Graded with <a href="https://www.curriculate.net" style="color: #2563eb; font-weight: 700; text-decoration: none;">Curriculate</a> &mdash; AI-powered grading &amp; feedback for teachers<br/>`;
+    html += `Save hours on marking. Try it free at <a href="https://www.curriculate.net" style="color: #2563eb; text-decoration: none;">curriculate.net</a>`;
+    html += `</td></tr></table>`;
+
+    html += `</div>`;
+    return html;
+  }, [results, classSummary, teacherAnalysis, pdfName]);
+
+  // ---------- Email summary (rich HTML) ----------
+  const emailSummary = useCallback(async () => {
+    if (!results.length) return;
+    const html = buildEmailHtml();
+    const plain = buildSummaryText({ includeFooter: true });
+
+    // Write rich HTML + plain text to clipboard
+    try {
+      if (navigator.clipboard?.write && window.ClipboardItem) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([plain], { type: "text/plain" }),
+          }),
+        ]);
+        setEmailCopied(true);
+        setTimeout(() => setEmailCopied(false), 3000);
+        return;
+      }
+    } catch (e) {
+      console.warn("[batch] rich clipboard write failed:", e);
+    }
+
+    // Fallback: open mailto with plain text
+    const mailto = `mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(plain)}`;
+    window.open(mailto, "_blank");
+  }, [results, buildEmailHtml, buildSummaryText, emailSubject]);
+
+  // ---------- Copy / email ack ----------
   const [copiedSummary, setCopiedSummary] = useState(false);
+  const [emailCopied, setEmailCopied] = useState(false);
 
   // ---------- Expanded row ----------
   const [expandedIndex, setExpandedIndex] = useState(null);
@@ -878,7 +1069,7 @@ export default function BatchGrading({
                 {copiedSummary ? "Copied ✓" : "Copy Summary"}
               </button>
               <button onClick={emailSummary} style={batchStyles.smallBtn} type="button">
-                Email Summary
+                {emailCopied ? "Copied — paste into email ✓" : "Email Summary"}
               </button>
               <button onClick={exportCsv} style={batchStyles.smallBtn} type="button">
                 Export CSV
