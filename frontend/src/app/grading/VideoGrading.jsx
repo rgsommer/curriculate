@@ -22,7 +22,6 @@ export default function VideoGrading({
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [studentName, setStudentName] = useState("");
-  const [localRubric, setLocalRubric] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState("");
   const [result, setResult] = useState(null);
@@ -143,7 +142,7 @@ export default function VideoGrading({
     try {
       const formData = new FormData();
       formData.append("video", file);
-      formData.append("rubricOverride", localRubric.trim() || rubricOverride || "");
+      formData.append("rubricOverride", rubricOverride || "");
       formData.append("gradeBand", gradeBand || "6-8");
       formData.append("standards", standards || "canada");
       formData.append("feedbackVoice", feedbackVoice || "coach");
@@ -508,31 +507,16 @@ export default function VideoGrading({
             />
           </div>
 
-          {/* Rubric input */}
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 4 }}>
-              Rubric (optional — leave blank for default speech/presentation rubric)
-            </label>
-            <textarea
-              value={localRubric}
-              onChange={(e) => setLocalRubric(e.target.value)}
-              placeholder={"e.g.\n/5 content and knowledge\n/5 delivery and eye contact\n/5 organization\n/5 visual aids"}
-              style={{
-                width: "100%", minHeight: 80, padding: "8px 12px", borderRadius: 8,
-                border: "1px solid #cbd5e1", fontSize: 13, boxSizing: "border-box",
-                fontFamily: "inherit", resize: "vertical",
-              }}
-              disabled={submitting}
-            />
-            {!localRubric && rubricOverride && (
-              <div style={{
-                padding: 6, background: "#fffbeb", borderRadius: 6,
-                border: "1px solid #fde68a", fontSize: 11, color: "#92400e", marginTop: 4,
-              }}>
-                Using rubric from main page: {rubricOverride.slice(0, 80)}{rubricOverride.length > 80 ? "..." : ""}
-              </div>
-            )}
-          </div>
+          {/* Rubric status indicator */}
+          {rubricOverride && (
+            <div style={{
+              padding: 8, background: "#eff6ff", borderRadius: 8,
+              border: "1px solid #bfdbfe", fontSize: 12, color: "#1e40af",
+              marginBottom: 12,
+            }}>
+              Rubric active (see Rubric Options above)
+            </div>
+          )}
 
           {/* Grade button */}
           <button
