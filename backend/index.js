@@ -137,6 +137,7 @@ const GradingUsage = mongoose.models.GradingUsage || mongoose.model(
       subject: String,
       assessmentType: String,
       gradeLevel: String,
+      inputMode: String,       // "photo" | "batch" | "video"
       imageCount: Number,
       overrideInputUsed: Boolean,
       responseTimeMs: Number,
@@ -9980,12 +9981,12 @@ function buildRubricInstructions({
 
           inferred_subject: {
             type: "string",
-            enum: ["Math", "English", "History", "Geography", "Science", "Bible", "Other"],
+            enum: ["Math", "English", "History", "Geography", "Science", "Bible", "Drama", "Speech", "Music", "Art", "French", "Other"],
           },
 
           inferred_assessment_type: {
             type: "string",
-            enum: ["Essay", "Test", "Quiz", "Homework", "Project", "Poster", "Worksheet", "Other"],
+            enum: ["Essay", "Test", "Quiz", "Homework", "Project", "Poster", "Worksheet", "Speech", "Performance", "Presentation", "Other"],
           },
 
           inferred_grade_level: {
@@ -10148,8 +10149,8 @@ function buildRubricInstructions({
         ${instructions}
 
         INFERENCE (required):
-        - inferred_subject: one of [Math, English, History, Geography, Science, Bible, Other]
-        - inferred_assessment_type: one of [Essay, Test, Quiz, Homework, Project, Poster, Worksheet, Other]
+        - inferred_subject: one of [Math, English, History, Geography, Science, Bible, Drama, Speech, Music, Art, French, Other]
+        - inferred_assessment_type: one of [Essay, Test, Quiz, Homework, Project, Poster, Worksheet, Speech, Performance, Presentation, Other]
         - inferred_grade_level: one of [3-5, 6-8, 9-10, 11+, Unknown]
 
         Rules:
@@ -10712,6 +10713,7 @@ function buildRubricInstructions({
             subject: inferredSubject,
             assessmentType: inferredAssessmentType,
             gradeLevel: inferredGradeLevel,
+            inputMode: batchMode ? "batch" : "photo",
 
             imageCount: Array.isArray(images) ? images.length : 0,
             overrideInputUsed: Boolean(String(rubricOverride || "").trim()),
@@ -11645,8 +11647,8 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
     ${transcript ? "" : "WARNING: No speech was detected in this video. Grade visual aspects only and note that no audio was captured."}
 
     INFERENCE (required):
-    - inferred_subject: one of [Math, English, History, Geography, Science, Bible, Other]
-    - inferred_assessment_type: "Other" (or "Project" if it seems like a project presentation)
+    - inferred_subject: one of [Math, English, History, Geography, Science, Bible, Drama, Speech, Music, Art, French, Other]
+    - inferred_assessment_type: best fit from [Speech, Performance, Presentation, Project, Other]
     - inferred_grade_level: one of [3-5, 6-8, 9-10, 11+, Unknown]
     - response_format_detected: "mixed"
 
@@ -11692,8 +11694,8 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
       additionalProperties: false,
       properties: {
         response_format_detected: { type: "string", enum: ["short-answer", "paragraph", "mixed", "test"] },
-        inferred_subject: { type: "string", enum: ["Math", "English", "History", "Geography", "Science", "Bible", "Other"] },
-        inferred_assessment_type: { type: "string", enum: ["Essay", "Test", "Quiz", "Homework", "Project", "Poster", "Worksheet", "Other"] },
+        inferred_subject: { type: "string", enum: ["Math", "English", "History", "Geography", "Science", "Bible", "Drama", "Speech", "Music", "Art", "French", "Other"] },
+        inferred_assessment_type: { type: "string", enum: ["Essay", "Test", "Quiz", "Homework", "Project", "Poster", "Worksheet", "Speech", "Performance", "Presentation", "Other"] },
         inferred_grade_level: { type: "string", enum: ["3-5", "6-8", "9-10", "11+", "Unknown"] },
         overall_score: { type: "number", minimum: 0 },
         overall_out_of: { type: "number", minimum: 1 },
@@ -11833,7 +11835,8 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
         await GradingUsage.create({
           timestamp: new Date(),
           subject: grade.inferred_subject || "Other",
-          assessmentType: "Video",
+          assessmentType: grade.inferred_assessment_type || "Performance",
+          inputMode: "video",
           gradeLevel: gradeBand,
           imageCount: frames.length,
           overrideInputUsed: Boolean(rubricOverride),

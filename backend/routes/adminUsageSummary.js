@@ -97,6 +97,7 @@ router.get("/usage-summary", requireAdminToken, async (req, res) => {
       topSubjects30d,
       topAssessmentTypes30d,
       topGradeLevels30d,
+      inputModes30d,
 
       repeatUsersMonthly12,
 
@@ -184,6 +185,13 @@ router.get("/usage-summary", requireAdminToken, async (req, res) => {
         { $group: { _id: "$gradeLevel", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: 10 },
+      ]),
+
+      // input modes 30d (photo / batch / video)
+      GradingUsage.aggregate([
+        { $match: { timestamp: { $gte: since30 } } },
+        { $group: { _id: { $ifNull: ["$inputMode", "photo"] }, count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
       ]),
 
       // Repeat users by month (last 12 months)
@@ -325,6 +333,7 @@ router.get("/usage-summary", requireAdminToken, async (req, res) => {
         topSubjects: topSubjects30d.map((x) => ({ subject: x._id, count: x.count })),
         topAssessmentTypes: topAssessmentTypes30d.map((x) => ({ assessmentType: x._id, count: x.count })),
         topGradeLevels: topGradeLevels30d.map((x) => ({ gradeLevel: x._id, count: x.count })),
+        inputModes: inputModes30d.map((x) => ({ mode: x._id, count: x.count })),
       },
 
       performance30d: { latency },

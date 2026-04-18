@@ -292,6 +292,17 @@ export default function AdminUsageDashboard() {
     return arr.slice(0, 8).map((x) => ({ name: x.subject || "Unknown", count: x.count || 0 }));
   }, [data]);
 
+  const topAssessmentTypes = useMemo(() => {
+    const arr = data?.breakdowns30d?.topAssessmentTypes || [];
+    return arr.slice(0, 8).map((x) => ({ name: x.assessmentType || "Unknown", count: x.count || 0 }));
+  }, [data]);
+
+  const inputModes = useMemo(() => {
+    const arr = data?.breakdowns30d?.inputModes || [];
+    const labels = { photo: "Photo/Paste", batch: "Batch PDF", video: "Video" };
+    return arr.map((x) => ({ name: labels[x.mode] || x.mode || "Unknown", count: x.count || 0 }));
+  }, [data]);
+
   const momGrowth = data?.derived?.monthOverMonth?.growthPercent;
   const momMethod = data?.derived?.monthOverMonth?.method;
 
@@ -499,11 +510,35 @@ export default function AdminUsageDashboard() {
             </div>
           </Card>
 
-          {/*<Card title="Raw JSON (sanity checks)">
-            <div className="max-h-64 overflow-auto rounded-xl bg-black/30 p-3 text-xs text-white/80">
-              <pre>{loading ? "Loading..." : JSON.stringify(data, null, 2)}</pre>
+          <Card title="Assessment types (30d)">
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topAssessmentTypes} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#38bdf8" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-          </Card>*/}
+          </Card>
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <Card title="Input mode (30d)">
+            <div className="h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={inputModes}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#a78bfa" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
         </div>
 
         {/* Teacher Outreach Panel */}
