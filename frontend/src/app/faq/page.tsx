@@ -19,7 +19,7 @@ const faqs = [
   },
   {
     q: "Schools are trying to reduce device use. Why does Curriculate require devices?",
-    a: "This is a fair concern—and one Curriculate was designed around intentionally. In Curriculate, the device is primarily a facilitator, not the activity itself. Students are not individually glued to screens. Instead, devices coordinate tasks, timers, prompts, and submissions while the learning happens through movement, discussion, collaboration, creation, and physical interaction.",
+    a: "This is a fair concern—and one Curriculate was designed around intentionally. Curriculate is driven by technology, but the student experience is more about movement and tasks that are prompted by the device, not on the device. Students are not individually glued to screens. Instead, devices coordinate tasks, timers, prompts, and submissions while the learning happens through movement, discussion, collaboration, creation, and physical interaction. Students write on paper, observe physical displays, move to stations, discuss with teammates, and create real evidence of learning. The screen is a launchpad, not the destination.",
   },
   {
     q: "So what are students actually doing during a task?",
@@ -68,6 +68,14 @@ const faqs = [
   {
     q: "How do teachers know students are actually engaged?",
     a: "Teachers see live indicators of participation, submissions, and progress. Evidence such as photos, drawings, written responses, and recordings provides visible proof of learning—not just clicks or guesses.",
+  },
+  {
+    q: "Can students write on paper instead of typing?",
+    a: "Yes! For written tasks (open-text, letter writing, case studies), students can choose to write on paper and snap a photo. The system reads their handwriting via OCR and fills in the answer field automatically. Students earn bonus points for choosing to write by hand—encouraging real pencil-and-paper engagement while still capturing the response digitally for reports.",
+  },
+  {
+    q: "Are photos, drawings, and recordings included in the reports?",
+    a: "Yes. Session reports include links to all physical evidence—handwriting photos, team selfies, photo journal entries, drawings, audio recordings, and more. These artifacts make learning visible to teachers, parents, and administrators, and provide authentic evidence that goes far beyond a score on a quiz.",
   },
 ];
 

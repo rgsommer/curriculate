@@ -475,6 +475,44 @@ export function assessTaskPlayability(rawTask) {
       break;
     }
 
+    case TASK_TYPES.TRIVIA: {
+      const rounds = t.config?.rounds;
+      if (!Array.isArray(rounds) || rounds.length < 1) {
+        issues.push("config.rounds must be an array with at least 1 round");
+      } else {
+        for (let i = 0; i < rounds.length; i++) {
+          const r = rounds[i];
+          if (!r.mode) issues.push(`round[${i}]: mode is required`);
+          if (r.mode === "bluff") {
+            if (!Array.isArray(r.facts) || r.facts.length !== 3) issues.push(`round[${i}]: bluff needs exactly 3 facts`);
+            if (typeof r.fakeIndex !== "number" || r.fakeIndex < 0 || r.fakeIndex > 2) issues.push(`round[${i}]: fakeIndex must be 0-2`);
+          } else if (r.mode === "truefalse") {
+            if (!isNonEmptyString(r.statement)) issues.push(`round[${i}]: truefalse needs statement`);
+            if (typeof r.answer !== "boolean") issues.push(`round[${i}]: truefalse answer must be boolean`);
+          } else if (r.mode === "closerto") {
+            if (!isNonEmptyString(r.question)) issues.push(`round[${i}]: closerto needs question`);
+            if (!Array.isArray(r.choices) || r.choices.length !== 2) issues.push(`round[${i}]: closerto needs exactly 2 choices`);
+            if (typeof r.correctChoice !== "number" || (r.correctChoice !== 0 && r.correctChoice !== 1)) issues.push(`round[${i}]: correctChoice must be 0 or 1`);
+          }
+        }
+      }
+      break;
+    }
+
+    case TASK_TYPES.SPINNER: {
+      const wedges = t.config?.wedges;
+      if (!Array.isArray(wedges) || wedges.length < 4) {
+        issues.push("config.wedges must be an array with at least 4 wedges");
+      } else {
+        for (let i = 0; i < wedges.length; i++) {
+          const w = wedges[i];
+          if (!isNonEmptyString(w.label)) issues.push(`wedge[${i}]: label is required`);
+          if (typeof w.points !== "number") issues.push(`wedge[${i}]: points must be a number`);
+        }
+      }
+      break;
+    }
+
     // =========================
     // Demo-only / meta
     // =========================

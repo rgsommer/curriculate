@@ -38,6 +38,13 @@ export const metadata: Metadata = {
     "formative assessment tools",
     "classroom gamification",
     "subject-specific activities",
+    "Kahoot alternative",
+    "Blooket alternative",
+    "Quizlet alternative",
+    "screen-free classroom learning",
+    "off-screen learning technology",
+    "handwriting bonus classroom",
+    "reduce screen time school",
   ],
 };
 

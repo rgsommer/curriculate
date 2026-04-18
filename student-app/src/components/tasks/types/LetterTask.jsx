@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { API_BASE_URL } from "../../../config.js";
 import DesignatedWriter from "../DesignatedWriter";
+import HandwritingCapture, { HANDWRITING_BONUS_POINTS } from "../HandwritingCapture";
 
 export default function LetterTask({
   task,
@@ -33,6 +34,8 @@ export default function LetterTask({
   const [loadingReply, setLoadingReply] = useState(false);
   const [replyError, setReplyError] = useState(false);
   const [conceptsFound, setConceptsFound] = useState([]);
+  const [handwritingUsed, setHandwritingUsed] = useState(false);
+  const [handwritingPhoto, setHandwritingPhoto] = useState(null);
 
   // Undo history for accidental deletions
   const [undoStack, setUndoStack] = useState([]);
@@ -89,6 +92,11 @@ export default function LetterTask({
       totalConcepts: relevantConcepts.length,
       character,
       letterStyle,
+      ...(handwritingUsed && {
+        handwritingBonus: true,
+        handwritingBonusPoints: HANDWRITING_BONUS_POINTS,
+        handwritingPhotoUrl: handwritingPhoto || undefined,
+      }),
     };
     onSubmit?.(payload);
 
@@ -291,6 +299,22 @@ export default function LetterTask({
             </span>
           ))}
         </div>
+      )}
+
+      {/* Handwriting capture — write on paper for bonus points */}
+      {!isDisabled && (
+        <HandwritingCapture
+          onTextExtracted={(text, photoUrl, allPlayerPhotos) => {
+            setValue((prev) => prev ? prev + "\n\n" + text : text);
+            setHandwritingUsed(true);
+            setHandwritingPhoto(allPlayerPhotos || photoUrl);
+          }}
+          disabled={isDisabled}
+          bonusPoints={HANDWRITING_BONUS_POINTS}
+          roomCode={roomCode}
+          teamId={teamId}
+          memberNames={memberNames}
+        />
       )}
 
       <DesignatedWriter memberNames={memberNames} taskTitle={task?.title} taskIndex={task?._taskIndex} />

@@ -25,6 +25,7 @@ import {
   Check,
   X,
   ChevronDown,
+  Smartphone,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -73,7 +74,7 @@ const taskCategories = [
   {
     label: "Games & Competition",
     color: "bg-amber-100 text-amber-700",
-    tasks: ["Brain Blitz!", "Tic-Tac-Toe", "Connect Four", "Flashcards", "Flashcards Race", "Hangman Duel", "Tower Builder", "Pet Feeding"],
+    tasks: ["Brain Blitz!", "Tic-Tac-Toe", "Connect Four", "Flashcards", "Flashcards Race", "Hangman Duel", "Tower Builder", "Pet Feeding", "Spinner"],
   },
   {
     label: "Ordering & Sorting",
@@ -88,7 +89,7 @@ const taskCategories = [
   {
     label: "Deduction & Mystery",
     color: "bg-teal-100 text-teal-700",
-    tasks: ["Mystery Clue Cards", "Fake Out", "Diff Detective", "Guess Who", "Riddle"],
+    tasks: ["Mystery Clue Cards", "Fake Out", "Diff Detective", "Guess Who", "Riddle", "Trivia"],
   },
   {
     label: "Synthesis & Thinking",
@@ -184,6 +185,11 @@ const why = [
     icon: <ShieldCheck className="w-6 h-6 text-indigo-600" />,
     title: "Teacher-controlled AI",
     desc: "AI plans pacing + task mix first — then generates. Always teacher-controlled and overrideable.",
+  },
+  {
+    icon: <Smartphone className="w-6 h-6 text-rose-500" />,
+    title: "Technology-driven, not screen-driven",
+    desc: "The device prompts and captures — students write on paper, observe, move, discuss, and create. The screen is a launchpad, not the destination.",
   },
 ];
 

@@ -11,6 +11,8 @@ export const metadata: Metadata = {
     "QR code classroom rotation",
     "team-based learning activities",
     "classroom management tool",
+    "screen-free classroom technology",
+    "off-screen learning",
   ],
   openGraph: {
     title: "How it Works — Curriculate",

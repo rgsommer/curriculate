@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/OpenTextTask.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import DesignatedWriter from "../DesignatedWriter";
+import HandwritingCapture, { HANDWRITING_BONUS_POINTS } from "../HandwritingCapture";
 
 /**
  * Open-text response task.
@@ -111,6 +112,8 @@ export default function OpenTextTask({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [milestone, setMilestone] = useState(null);
+  const [handwritingUsed, setHandwritingUsed] = useState(false);
+  const [handwritingPhoto, setHandwritingPhoto] = useState(null);
   const recognitionRef = useRef(null);
   const textareaRef = useRef(null);
   const prevWordCountRef = useRef(0);
@@ -205,6 +208,11 @@ export default function OpenTextTask({
         response: value,
         wordCount,
         minWords: computedMinWords || 0,
+        ...(handwritingUsed && {
+          handwritingBonus: true,
+          handwritingBonusPoints: HANDWRITING_BONUS_POINTS,
+          handwritingPhotoUrl: handwritingPhoto || undefined,
+        }),
       };
 
       onSubmit?.(payload);
@@ -503,6 +511,24 @@ export default function OpenTextTask({
             <div style={{ fontWeight: 700, color: "#1e293b", marginBottom: "4px" }}>💡 Tips:</div>
             <div>Use specific examples and explain your reasoning clearly.</div>
           </div>
+
+          {/* Handwriting capture — write on paper for bonus points */}
+          {!isDisabled && !answered && (
+            <HandwritingCapture
+              onTextExtracted={(text, photoUrl, allPlayerPhotos) => {
+                setValue((prev) => {
+                  const merged = prev ? prev + "\n\n" + text : text;
+                  emitDraft(merged);
+                  return merged;
+                });
+                setHandwritingUsed(true);
+                setHandwritingPhoto(allPlayerPhotos || photoUrl);
+              }}
+              disabled={isDisabled}
+              bonusPoints={HANDWRITING_BONUS_POINTS}
+              memberNames={memberNames}
+            />
+          )}
 
           {/* Error message */}
           {!!errorMsg && (

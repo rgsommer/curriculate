@@ -102,6 +102,65 @@ const REFERRAL_SUBMITTED_KEY = "curriculate_referral_submitted_v1";
 
 const FEEDBACK_SUBMITTED_AT_KEY = "curriculate_feedback_submitted_at_v1";
 
+// ── Freemium gating config ──────────────────────────────────────────
+// Mirrors shared/freemiumConfig.js — kept inline because Next.js can't
+// import from the shared/ directory without extra bundler config.
+const FREEMIUM_ACTIVATION_DATE = new Date("2026-11-30T00:00:00Z");
+const FREEMIUM_FREE_VOICE = "warm";
+const FREEMIUM_FREE_MODES = ["paste"];
+const FREEMIUM_GATED_VOICES = [
+  "professional", "direct", "coach", "gentle_firm",
+  "journal_response", "witty_light", "standards",
+  "student_friendly", "iep_supportive", "student_conference",
+  "pudewa_mastery", "tutor",
+];
+const FREEMIUM_GATED_MODES = ["photo", "batch", "video"];
+const FREEMIUM_UPGRADE_URL = "/pricing";
+const FREEMIUM_PLUS_PRICE = "$4.99 CAD/month";
+
+function isFreemiumActive() {
+  return new Date() >= FREEMIUM_ACTIVATION_DATE;
+}
+
+/** Padlock state: "unlocked" (preview), "locked" (enforced), or "none" */
+function getPadlockForFeature(/* userTier */) {
+  // Currently all grading users are anonymous / free
+  if (!isFreemiumActive()) return "unlocked";
+  return "locked";
+}
+
+/** Tiny padlock icon — unlocked or locked */
+function PadlockIcon({ locked, size = 13, style: extra }) {
+  const color = locked ? "#94a3b8" : "#94a3b8";
+  const opacity = locked ? 0.7 : 0.4;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ opacity, flexShrink: 0, ...extra }}
+      aria-hidden="true"
+    >
+      {locked ? (
+        <>
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </>
+      ) : (
+        <>
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+          <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 // Parent note prompt (localStorage) — reminds teachers to share info with parents
 const PARENT_NOTE_TRIGGER = 20;           // first show after 20 gradings
 const PARENT_NOTE_REPEAT_EVERY = 50;      // re-show every 50 gradings after that
@@ -995,6 +1054,7 @@ export default function GradingPage() {
     
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState("");
+    const [freemiumLimitHit, setFreemiumLimitHit] = useState(false);
 
     // Total number of successful gradings this user has run (persisted across sessions).
     // Used to hide introductory tips once the teacher clearly knows the workflow.
@@ -2059,6 +2119,16 @@ export default function GradingPage() {
         if (voiceOverrideOn) setVoiceOverrideOn(false);
 
         if (!res.ok) {
+          // Freemium gate: 403 with upgrade info
+          if (res.status === 403 && parsed?.error === "monthly_limit_reached") {
+            setSubmitError(parsed.message || "Monthly limit reached. Upgrade to continue.");
+            setFreemiumLimitHit(true);
+            return;
+          }
+          if (res.status === 403 && parsed?.error === "feature_locked") {
+            setSubmitError(parsed.message || "This feature requires a Plus subscription.");
+            return;
+          }
           if (norm.assessment) {
             setSubmitError("");
             return;
@@ -2614,11 +2684,16 @@ export default function GradingPage() {
               }}
               title="Sets the default tone of feedback"
             >
-              {VOICE_OPTIONS.map((v) => (
-                <option key={v.value} value={v.value}>
-                  {v.label}
-                </option>
-              ))}
+              {VOICE_OPTIONS.map((v) => {
+                const gated = FREEMIUM_GATED_VOICES.includes(v.value);
+                const padlock = gated ? getPadlockForFeature() : null;
+                const isLocked = padlock === "locked";
+                return (
+                  <option key={v.value} value={v.value} disabled={isLocked}>
+                    {v.label}{padlock === "unlocked" ? " \u{1F513}" : padlock === "locked" ? " \u{1F512}" : ""}
+                  </option>
+                );
+              })}
             </select>
 
             <VoiceBadge feedbackVoice={voice} />
@@ -2644,11 +2719,16 @@ export default function GradingPage() {
               style={styles.select}
               title="Overrides the voice for the next submission only"
             >
-              {VOICE_OPTIONS.map((v) => (
-                <option key={v.value} value={v.value}>
-                  {v.label}
-                </option>
-              ))}
+              {VOICE_OPTIONS.map((v) => {
+                const gated = FREEMIUM_GATED_VOICES.includes(v.value);
+                const padlock = gated ? getPadlockForFeature() : null;
+                const isLocked = padlock === "locked";
+                return (
+                  <option key={v.value} value={v.value} disabled={isLocked}>
+                    {v.label}{padlock === "unlocked" ? " \u{1F513}" : padlock === "locked" ? " \u{1F512}" : ""}
+                  </option>
+                );
+              })}
             </select>
           </label>
         )}
@@ -2673,68 +2753,44 @@ export default function GradingPage() {
               <div style={styles.cardTitle}>Input mode</div>
 
               <div style={{ display: "flex", gap: 10 }}>
-                <button
-                  type="button"
-                  // title="Double-tap to flip"
-                  onClick={() => {
-                    const now = Date.now();
-                    const delta = now - lastPhotoTapRef.current;
-
-                    if (delta < 300) {
-                      // Double tap → flip camera
-                      toggleCamera();
-                    } else {
-                      // Single tap → switch to photo mode
-                      setInputMode("photo");
-                    }
-
-                    lastPhotoTapRef.current = now;
-                  }}
-                  style={{
-                    ...styles.modeBtn,
-                    ...(inputMode === "photo" ? styles.modeBtnActive : null),
-                  }}
-                  disabled={submitting}
-                  title="Double-tap to flip camera"
-                >
-                  {photos.length > 0 ? `Photo (${photos.length})` : "Photo"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setInputMode("paste")}
-                  style={{
-                    ...styles.modeBtn,
-                    ...(inputMode === "paste" ? styles.modeBtnActive : null),
-                  }}
-                  disabled={submitting}
-                >
-                  Paste
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setInputMode("batch")}
-                  style={{
-                    ...styles.modeBtn,
-                    ...(inputMode === "batch" ? styles.modeBtnActive : null),
-                  }}
-                  disabled={submitting}
-                >
-                  Batch
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setInputMode("video")}
-                  style={{
-                    ...styles.modeBtn,
-                    ...(inputMode === "video" ? styles.modeBtnActive : null),
-                  }}
-                  disabled={submitting}
-                >
-                  Video
-                </button>
+                {/* ── Mode buttons with freemium padlocks ── */}
+                {[
+                  { mode: "photo", label: photos.length > 0 ? `Photo (${photos.length})` : "Photo",
+                    onClick: () => {
+                      const now = Date.now();
+                      const delta = now - lastPhotoTapRef.current;
+                      if (delta < 300) { toggleCamera(); }
+                      else { setInputMode("photo"); }
+                      lastPhotoTapRef.current = now;
+                    },
+                    title: "Double-tap to flip camera",
+                  },
+                  { mode: "paste", label: "Paste", onClick: () => setInputMode("paste") },
+                  { mode: "batch", label: "Batch", onClick: () => setInputMode("batch") },
+                  { mode: "video", label: "Video", onClick: () => setInputMode("video") },
+                ].map(({ mode, label, onClick, title }) => {
+                  const gated = FREEMIUM_GATED_MODES.includes(mode);
+                  const padlock = gated ? getPadlockForFeature() : null;
+                  const isLocked = padlock === "locked";
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={isLocked ? undefined : onClick}
+                      style={{
+                        ...styles.modeBtn,
+                        ...(inputMode === mode ? styles.modeBtnActive : null),
+                        ...(isLocked ? { opacity: 0.55, cursor: "not-allowed" } : null),
+                        display: "flex", alignItems: "center", gap: 4,
+                      }}
+                      disabled={submitting || isLocked}
+                      title={isLocked ? `Requires Plus (${FREEMIUM_PLUS_PRICE})` : (title || undefined)}
+                    >
+                      {label}
+                      {padlock && <PadlockIcon locked={isLocked} size={12} />}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -3365,6 +3421,25 @@ export default function GradingPage() {
             {submitError && (
               <div style={styles.errorBox}>
                 <b>Error:</b> {submitError}
+                {freemiumLimitHit && (
+                  <div style={{ marginTop: 8 }}>
+                    <a
+                      href={FREEMIUM_UPGRADE_URL}
+                      style={{
+                        display: "inline-block",
+                        padding: "8px 16px",
+                        borderRadius: 999,
+                        background: "#2563eb",
+                        color: "#fff",
+                        fontWeight: 800,
+                        fontSize: 13,
+                        textDecoration: "none",
+                      }}
+                    >
+                      Upgrade to Plus — {FREEMIUM_PLUS_PRICE}
+                    </a>
+                  </div>
+                )}
               </div>
             )}
 

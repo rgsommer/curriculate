@@ -660,6 +660,53 @@ const SAMPLE_TASKS = {
     prompt: "Say the answer to this question out loud: What is the capital of Italy?",
     correctAnswer: "Rome",
   },
+
+  [TASK_TYPES.TRIVIA]: {
+    taskType: "trivia",
+    title: "Quick Trivia Break",
+    prompt: "Test your knowledge with some fun facts!",
+    config: {
+      rounds: [
+        {
+          mode: "bluff",
+          category: "subject",
+          facts: [
+            "The human body has 206 bones",
+            "Your stomach acid can dissolve metal",
+            "The average person has 4 kidneys",
+          ],
+          fakeIndex: 2,
+          explanation: "Humans have 2 kidneys, not 4!",
+        },
+        {
+          mode: "truefalse",
+          category: "pop",
+          statement: "The first video game ever made was Pong",
+          answer: false,
+          explanation: "Tennis for Two (1958) came before Pong (1972).",
+        },
+      ],
+    },
+  },
+
+  [TASK_TYPES.SPINNER]: {
+    taskType: "spinner",
+    title: "Bonus Spin!",
+    prompt: "Your team earned a spin!",
+    config: {
+      spinPrompt: "Give it a spin and see what fortune brings!",
+      wedges: [
+        { label: "+50 pts", points: 50, type: "points" },
+        { label: "+100 pts", points: 100, type: "points" },
+        { label: "Team High Five!", points: 50, type: "perk" },
+        { label: "+200 pts", points: 200, type: "points" },
+        { label: "Double Next!", points: 0, type: "bonus" },
+        { label: "+150 pts", points: 150, type: "points" },
+        { label: "Silly Dance!", points: 75, type: "perk" },
+        { label: "JACKPOT +500!", points: 500, type: "jackpot" },
+      ],
+    },
+  },
 };
 
 // Types where the normalizer transforms data in a way the post-normalize

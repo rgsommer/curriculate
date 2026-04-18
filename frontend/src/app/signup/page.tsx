@@ -8,7 +8,8 @@ function SignupRedirectInner() {
 
   useEffect(() => {
     const qs = params?.toString();
-    window.location.replace(qs ? `/pricing?${qs}` : "/pricing");
+    // Redirect to the login/signup page (which has a Sign Up tab)
+    window.location.replace(qs ? `/login?${qs}` : "/login");
   }, [params]);
 
   return <main style={{ padding: 32 }}>Redirecting…</main>;

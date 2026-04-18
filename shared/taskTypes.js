@@ -115,6 +115,8 @@ export const TASK_TYPES = {
 
   // Comic relief / no-score
   RIDDLE: "riddle",
+  TRIVIA: "trivia",
+  SPINNER: "spinner",
 };
 
 // ================================
@@ -144,6 +146,8 @@ export const TASK_BLOOMS_MAP = {
   "flashcards-race":            ["REMEMBER", "APPLY"],
   "hangman-duel":               ["REMEMBER"],
   "riddle":                     ["REMEMBER"],
+  "trivia":                     ["REMEMBER", "UNDERSTAND"],
+  "spinner":                    ["REMEMBER"],
 
   // Understand — explain, summarize, interpret
   "short-answer":               ["UNDERSTAND", "REMEMBER"],
@@ -3679,6 +3683,167 @@ config: {
   // COMIC RELIEF / NO-SCORE
   // =========================
 
+  // =========================
+  // TRIVIA — Bluff Catcher / True-False / Closer To
+  // =========================
+  [TASK_TYPES.TRIVIA]: {
+    label: "Trivia",
+    category: CATEGORY.OTHER,
+    implemented: true,
+    demoEligible: true,
+    demoSelectable: true,
+    generatorEligible: true,
+    profileInjectedOnly: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 120,
+    estimatedMinutes: 2,
+    interTeamEnabled: false,
+    intraTeamEnabled: false,
+    isOffTablet: false,
+    description:
+      "Fun trivia break with three presentation modes. Bluff Catcher: 3 statements shown, 2 real and 1 fake — spot the bluff. True/False: rapid-fire fact statement. Closer To: estimation question with 2 choices. Each round has a subject-related fact and a pop culture / student-world fact.\n\nAI MUST output:\n- taskType: \"trivia\"\n- title, prompt\n- config.rounds: array of 2-4 round objects (mix modes)\n- Each round: { mode, category, ...mode-specific fields }\n- Modes: \"bluff\" needs facts[] (3 strings) + fakeIndex + explanation. \"truefalse\" needs statement + answer (bool) + explanation. \"closerto\" needs question + choices[] (2 strings) + correctChoice (0|1) + actualAnswer + explanation.",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "trivia".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt.
+    - config.rounds must be an array of 2-4 round objects.
+    - Mix at least 2 different modes across the rounds.
+    - Include at least one "subject" round related to the lesson topic and one "pop" round about sports, pop culture, movies, music, or student life.
+
+    Round modes:
+
+    1) "bluff" (Bluff Catcher):
+       { mode: "bluff", category: "subject"|"pop", facts: ["fact1", "fact2", "fact3"], fakeIndex: 0|1|2, explanation: "why the fake one is wrong" }
+       - Exactly 3 facts. Two must be true, one must be plausible but fake.
+       - fakeIndex is the 0-based index of the fake fact.
+
+    2) "truefalse" (True/False):
+       { mode: "truefalse", category: "subject"|"pop", statement: "...", answer: true|false, explanation: "the real fact" }
+       - Statement should be plausible either way.
+
+    3) "closerto" (Closer To / Estimation):
+       { mode: "closerto", category: "subject"|"pop", question: "How many...?", choices: ["150", "300"], correctChoice: 0|1, actualAnswer: "206", explanation: "..." }
+       - Two numeric-ish choices. One must be closer to the real answer.
+
+    Example output:
+    {
+      "taskType": "trivia",
+      "title": "Quick Trivia Break",
+      "prompt": "Test your knowledge with some fun facts!",
+      "points": 0,
+      "config": {
+        "rounds": [
+          {
+            "mode": "bluff",
+            "category": "subject",
+            "facts": [
+              "The human body has 206 bones",
+              "Your stomach acid can dissolve metal",
+              "The average person has 4 kidneys"
+            ],
+            "fakeIndex": 2,
+            "explanation": "Humans have 2 kidneys, not 4!"
+          },
+          {
+            "mode": "truefalse",
+            "category": "pop",
+            "statement": "The first video game ever made was Pong",
+            "answer": false,
+            "explanation": "Tennis for Two (1958) came before Pong (1972)."
+          }
+        ]
+      }
+    }
+
+    Common failure prevention:
+    - fakeIndex must be a valid index (0, 1, or 2) into the facts array.
+    - answer for truefalse must be a boolean (true or false), not a string.
+    - correctChoice for closerto must be 0 or 1.
+    - Make pop culture references age-appropriate and current.
+    - Keep explanations to 1-2 sentences.
+    `,
+  },
+
+  // =========================
+  // SPINNER — Wheel of Fortune reward spinner
+  // =========================
+  [TASK_TYPES.SPINNER]: {
+    label: "Spinner",
+    category: CATEGORY.OTHER,
+    implemented: true,
+    demoEligible: true,
+    demoSelectable: true,
+    generatorEligible: true,
+    profileInjectedOnly: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 30,
+    estimatedMinutes: 0.5,
+    interTeamEnabled: false,
+    intraTeamEnabled: false,
+    isOffTablet: false,
+    description:
+      "Wheel of Fortune style reward spinner. Students spin a colorful wheel and land on a random reward wedge. Wedges include bonus points, fun perks (\"Team High Five!\", \"Pick the next song\"), and a rare jackpot. Pure fun — builds anticipation and energy between heavier tasks.\n\nAI MUST output:\n- taskType: \"spinner\"\n- title, prompt\n- config.spinPrompt: fun text shown before spinning\n- config.wedges: array of 6-10 wedge objects\n- Each wedge: { label, points, type: \"points\"|\"bonus\"|\"perk\"|\"jackpot\" }",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "spinner".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt.
+    - config.spinPrompt: a fun, encouraging line shown before the spin.
+    - config.wedges: array of 6-10 wedge objects.
+
+    Wedge types:
+    - "points": bonus points for the team. Label like "+50 pts", "+100 pts", "+200 pts"
+    - "bonus": special bonus like "Double Next!" or "Free Pass"
+    - "perk": fun reward like "Team High Five!", "Pick the next song", "Silly dance break"
+    - "jackpot": rare big reward. Only 1 jackpot wedge. Label like "JACKPOT +500!"
+
+    Rules:
+    - Most wedges should be "points" type (4-6 of them).
+    - Include 1-2 "perk" wedges with fun classroom rewards.
+    - Include exactly 1 "jackpot" wedge with high points (400-500).
+    - Optionally include 1 "bonus" wedge.
+    - Point values should vary: mix of 50, 100, 150, 200.
+    - Keep labels short (fits on a wheel wedge).
+    - Make perks fun and classroom-appropriate.
+
+    Example output:
+    {
+      "taskType": "spinner",
+      "title": "Bonus Spin!",
+      "prompt": "Your team earned a spin! Let's see what you win!",
+      "points": 0,
+      "config": {
+        "spinPrompt": "Give it a spin and see what fortune brings!",
+        "wedges": [
+          { "label": "+50 pts", "points": 50, "type": "points" },
+          { "label": "+100 pts", "points": 100, "type": "points" },
+          { "label": "Team High Five!", "points": 50, "type": "perk" },
+          { "label": "+200 pts", "points": 200, "type": "points" },
+          { "label": "Double Next!", "points": 0, "type": "bonus" },
+          { "label": "+150 pts", "points": 150, "type": "points" },
+          { "label": "Silly Dance!", "points": 75, "type": "perk" },
+          { "label": "JACKPOT +500!", "points": 500, "type": "jackpot" }
+        ]
+      }
+    }
+    `,
+  },
+
   [TASK_TYPES.RIDDLE]: {
     label: "Riddle",
     category: CATEGORY.OTHER,
@@ -4236,6 +4401,8 @@ export const SUBJECT_AFFINITY = {
   [TASK_TYPES.TOWER_BUILDER]:          { math: 0.9, science: 0.8, history: 0.6, language: 0.5, arts: 0.7, health: 0.6, business: 0.6, religion: 0.5, general: 0.7 },
   [TASK_TYPES.PET_FEEDING]:            { math: 0.7, science: 0.7, history: 0.6, language: 0.7, arts: 0.7, health: 0.7, business: 0.5, religion: 0.6, general: 0.7 },
   [TASK_TYPES.RIDDLE]:                 { math: 0.9, science: 0.9, history: 0.9, language: 1.0, arts: 1.0, health: 0.9, business: 0.9, religion: 0.9, general: 1.0 },
+  [TASK_TYPES.TRIVIA]:                 { math: 0.9, science: 0.9, history: 1.0, language: 0.9, arts: 0.9, health: 0.9, business: 0.9, religion: 0.9, general: 1.0 },
+  [TASK_TYPES.SPINNER]:                { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 1.0, health: 1.0, business: 1.0, religion: 1.0, general: 1.0 },
   [TASK_TYPES.TEAM_SELFIE]:            { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 1.0, health: 1.0, business: 1.0, religion: 1.0, general: 1.0 },
 };
 

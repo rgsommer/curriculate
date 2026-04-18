@@ -194,6 +194,7 @@ export default function FeaturesPage() {
                 bullets={[
                   "Multiple choice and true/false formats",
                   "Flashcards and speed rounds",
+                  "Trivia breaks: bluff catcher, true/false rapid-fire, estimation",
                   "Quick feedback loops",
                 ]}
               />
@@ -214,6 +215,7 @@ export default function FeaturesPage() {
                   "Case study — solve a real-world scenario, get AI expert feedback",
                   "Drawing/visual response and photo journal formats",
                   "Narration/synthesis and vocabulary paragraph prompts",
+                  "Handwriting bonus — write on paper, snap a photo, earn extra points",
                 ]}
               />
               <FeatureCard
@@ -271,6 +273,26 @@ export default function FeaturesPage() {
                   "Reveal tasks interleaved through the set",
                   "Final recall task tests observation and memory",
                   "Auto-injected via teacher profile toggle",
+                ]}
+              />
+              <FeatureCard
+                title="🧠 Trivia Breaks"
+                body="Quick trivia rounds mixing subject facts with pop culture — three fun formats in one task."
+                bullets={[
+                  "Bluff Catcher: spot the fake fact among two real ones",
+                  "True/False rapid-fire with instant explanations",
+                  "Closer To: estimation game with two choices",
+                  "Each round mixes a subject fact with a pop culture / student-world fact",
+                ]}
+              />
+              <FeatureCard
+                title="🎰 Spinner Rewards"
+                body="Wheel of Fortune-style animated spinner — teams spin for bonus points, perks, and a rare jackpot."
+                bullets={[
+                  "Colorful animated wheel with smooth deceleration",
+                  "Point wedges (+50 to +200), fun perks, and a jackpot (+500)",
+                  "Perks like 'Team High Five!' and 'Pick the next song'",
+                  "Builds anticipation and energy between tasks",
                 ]}
               />
             </div>

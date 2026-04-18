@@ -23,6 +23,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { TASK_TYPE_META, analyzeBloomsTaxonomy } from "../shared/taskTypes.js";
 import { COLORS } from "../shared/colors.js";
 import { computeUnlockedSkins, diffUnlocks } from "../shared/skins.js";
+import { FREEMIUM, isFreemiumActive, canSubmitGrading, isVoiceGated, isModeGated } from "../shared/freemiumConfig.js";
 
 // 5) Local utils
 import { recordNoiseSample, computeNoiseSummary } from "./utils/noiseTelemetry.js";
@@ -4798,6 +4799,14 @@ if (!isMultiPack && task.taskType === "guess-who") {
       pointsEarned = Math.round((pointsEarned + speedBonus) * 100) / 100;
     }
 
+    // ==== Handwriting bonus — students who wrote on paper earn extra points ====
+    let handwritingBonus = 0;
+    if (answer && typeof answer === "object" && answer.handwritingBonus === true) {
+      handwritingBonus = Number(answer.handwritingBonusPoints) || 10;
+      pointsEarned += handwritingBonus;
+      console.log(`[Handwriting] +${handwritingBonus} bonus for team ${effectiveTeamId} on task ${idx} (${task.taskType})`);
+    }
+
     // ==== Diff Detective race mechanics (first correct team wins bonus) ====
     if (
       task.taskType === "diff-detective" &&
@@ -4981,6 +4990,10 @@ if (!isMultiPack && task.taskType === "guess-who") {
       aiScore,
       timeMs: timeMs ?? null,
       submittedAt,
+      ...(handwritingBonus > 0 && {
+        handwritingBonus,
+        handwritingPhotoUrl: answer?.handwritingPhotoUrl || null,
+      }),
     };
     room.submissions.push(submissionDoc);
 
@@ -7671,6 +7684,70 @@ Provide expert feedback on their solution. Guidelines:
 });
 
 /* ------------------------------------------------------------------ */
+/*  Handwriting OCR — GPT-4o vision extracts text from paper photos    */
+/* ------------------------------------------------------------------ */
+app.post("/api/ocr/handwriting", async (req, res) => {
+  try {
+    const { image, roomCode, teamId } = req.body || {};
+
+    if (!image || typeof image !== "string") {
+      return res.status(400).json({ error: "Missing image data URL" });
+    }
+
+    // Validate it looks like a data URL or base64
+    const isDataUrl = image.startsWith("data:image/");
+    if (!isDataUrl && image.length < 100) {
+      return res.status(400).json({ error: "Invalid image data" });
+    }
+
+    // Cap image size (roughly 10MB base64)
+    if (image.length > 15_000_000) {
+      return res.status(413).json({ error: "Image too large. Please use a smaller photo." });
+    }
+
+    console.log(`[OCR] Handwriting OCR request — room=${roomCode || "?"}, team=${teamId || "?"}, imageSize=${(image.length / 1024).toFixed(0)}KB`);
+
+    const ocrResponse = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `You are an OCR assistant. Extract ALL handwritten text from this photo of student work on paper. Rules:
+- Transcribe exactly what is written — do not correct spelling or grammar.
+- Preserve paragraph breaks with blank lines.
+- If text is partially illegible, make your best guess and include it.
+- If you cannot read any text at all, return an empty string.
+- Return ONLY the extracted text, nothing else — no commentary, no markdown, no quotes.`,
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: image,
+                detail: "high",
+              },
+            },
+          ],
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 2000,
+    });
+
+    const text = (ocrResponse.choices?.[0]?.message?.content || "").trim();
+
+    console.log(`[OCR] Extracted ${text.length} chars, ${text.split(/\s+/).filter(Boolean).length} words`);
+
+    return res.json({ text, success: true });
+  } catch (err) {
+    console.error("[OCR] Handwriting OCR error:", err);
+    return res.status(500).json({ error: "OCR processing failed. Please try again." });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  Art View — image fallback lookup via Wikimedia Commons API          */
 /* ------------------------------------------------------------------ */
 app.post("/api/art-view/image-fallback", async (req, res) => {
@@ -9916,13 +9993,103 @@ function buildRubricInstructions({
     return null;
   }
 
+  // ── Freemium usage helpers ─────────────────────────────────────────
+  async function getMonthlyUsageCount(sessionId) {
+    if (!sessionId) return 0;
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    return GradingUsage.countDocuments({
+      sessionId,
+      timestamp: { $gte: monthStart },
+    });
+  }
+
+  // GET /grading/freemium-status?sessionId=xxx
+  // Returns current freemium state so the frontend can show limits, padlocks, etc.
+  app.get("/grading/freemium-status", async (req, res) => {
+    try {
+      const sessionId = req.query.sessionId || null;
+      const active = isFreemiumActive();
+      const usedThisMonth = sessionId ? await getMonthlyUsageCount(sessionId) : 0;
+      const check = canSubmitGrading(usedThisMonth, "FREE"); // anonymous users are always FREE
+
+      res.json({
+        freemiumActive: active,
+        activationDate: FREEMIUM.ACTIVATION_DATE.toISOString(),
+        usedThisMonth,
+        monthlyLimit: FREEMIUM.FREE_MONTHLY_LIMIT,
+        remaining: active ? (check.remaining ?? null) : null,
+        allowed: check.allowed,
+        freeVoice: FREEMIUM.FREE_VOICE,
+        freeModes: FREEMIUM.FREE_MODES,
+        gatedVoices: FREEMIUM.GATED_VOICES,
+        gatedModes: FREEMIUM.GATED_MODES,
+        upgradeUrl: FREEMIUM.UPGRADE_URL,
+        plusPriceLabel: FREEMIUM.PLUS_PRICE_LABEL,
+      });
+    } catch (err) {
+      console.error("freemium-status error:", err);
+      res.status(500).json({ error: "Failed to check freemium status" });
+    }
+  });
+
+  // Freemium gate check — called at the top of grading endpoints
+  async function checkFreemiumGate(req, res) {
+    if (!isFreemiumActive()) return true; // not active yet, allow everything
+
+    const meta = req.body?.meta || {};
+    const sessionId = meta.sessionId || null;
+    const usedThisMonth = await getMonthlyUsageCount(sessionId);
+    const check = canSubmitGrading(usedThisMonth, "FREE");
+
+    if (!check.allowed) {
+      res.status(403).json({
+        error: "monthly_limit_reached",
+        message: check.reason,
+        usedThisMonth,
+        monthlyLimit: FREEMIUM.FREE_MONTHLY_LIMIT,
+        upgradeUrl: FREEMIUM.UPGRADE_URL,
+      });
+      return false;
+    }
+
+    // Check voice gating
+    const voice = req.body?.meta?.feedbackVoice || req.body?.feedbackVoice || null;
+    if (voice && isVoiceGated(voice)) {
+      res.status(403).json({
+        error: "feature_locked",
+        message: `The "${voice}" voice requires a Plus subscription.`,
+        upgradeUrl: FREEMIUM.UPGRADE_URL,
+      });
+      return false;
+    }
+
+    // Check mode gating
+    const inputMode = req.body?.meta?.inputMode || null;
+    if (inputMode && isModeGated(inputMode)) {
+      res.status(403).json({
+        error: "feature_locked",
+        message: `${inputMode} mode requires a Plus subscription.`,
+        upgradeUrl: FREEMIUM.UPGRADE_URL,
+      });
+      return false;
+    }
+
+    return true;
+  }
+
   app.post("/grading", async (req, res) => {
     console.log("GRADING BODY keys:", Object.keys(req.body || {}));
     console.log("images?", Array.isArray(req.body?.images) ? req.body.images.length : 0);
     console.log("answerKeyImages?", Array.isArray(req.body?.answerKeyImages) ? req.body.answerKeyImages.length : 0);
     console.log("workInput len:", String(req.body?.workInput || "").length);
-    
+
     try {
+      // ── Freemium gate ──
+      const allowed = await checkFreemiumGate(req, res);
+      if (!allowed) return; // 403 already sent
+
       const startTime = Date.now();
 
       const { images, answerKeyImages, workInput, rubricOverride, answerKeyOverride, gradeBand, standards: rawStandards } = req.body || {};
@@ -11506,9 +11673,36 @@ const videoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize
 //  Video Grading: Transcription + Frame Extraction + AI Grading
 //  POST /grading/video
 // ====================================================================
+// Module-level helper for freemium usage count (used by video endpoint outside mongoose .then)
+async function getMonthlyUsageCountGlobal(sessionId) {
+  if (!sessionId) return 0;
+  const GU = mongoose.models.GradingUsage;
+  if (!GU) return 0;
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  return GU.countDocuments({ sessionId, timestamp: { $gte: monthStart } });
+}
+
 app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
   let tmpDir = null;
   try {
+    // ── Freemium gate ──
+    // For video, meta comes as form fields (not JSON body)
+    if (isFreemiumActive()) {
+      const sessionId = req.body?.sessionId || null;
+      const usedThisMonth = await getMonthlyUsageCountGlobal(sessionId);
+      const check = canSubmitGrading(usedThisMonth, "FREE");
+      if (!check.allowed) {
+        return res.status(403).json({
+          ok: false,
+          error: "monthly_limit_reached",
+          message: check.reason,
+          upgradeUrl: FREEMIUM.UPGRADE_URL,
+        });
+      }
+    }
+
     if (!req.file || !req.file.buffer || req.file.buffer.length < 1000) {
       return res.status(400).json({ ok: false, error: "No video data or file too small." });
     }

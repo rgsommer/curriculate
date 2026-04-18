@@ -13,7 +13,7 @@ const top = [
 const kahootRows = [
   { label: "Primary format", c: "Station-based, physical + digital hybrid learning", r: "Whole-class quiz-show (everyone answers at once)" },
   { label: "Group structure", c: "1–4 players per station (teams collaborate)", r: "Unlimited players; mostly individual competition" },
-  { label: "Task variety", c: "40+ task types (movement, photo, debate, creation)", r: "Mostly quiz formats (MC, T/F, short answer)" },
+  { label: "Task variety", c: "65+ task types (movement, photo, debate, trivia, spinner, creation)", r: "Mostly quiz formats (MC, T/F, short answer)" },
   { label: "Noise & pacing", c: "Turn-based controls reduce chaos; teacher pacing", r: "Simultaneous answers can get loud/chaotic" },
   { label: "Depth of thinking", c: "Strong: explanation, synthesis, evidence tasks", r: "Best for fast recall review + excitement" },
   { label: "Reporting", c: "Student + teacher reports with artifacts", r: "Results/leaderboards; fewer artifacts" },
@@ -21,11 +21,20 @@ const kahootRows = [
 
 const quizletRows = [
   { label: "Core purpose", c: "Active stations + collaboration + evidence", r: "Flashcard study and recall review (self-paced)" },
-  { label: "Task variety", c: "40+ task types beyond recall", r: "Flashcards + a few recall-focused modes" },
+  { label: "Task variety", c: "65+ task types beyond recall", r: "Flashcards + a few recall-focused modes" },
   { label: "Group play", c: "Team submissions at stations", r: "Mostly individual; Live mode is class competition" },
   { label: "Physical integration", c: "Built-in station rotation + movement tasks", r: "Screen-only by design" },
   { label: "Depth of thinking", c: "Strong: explanation, speaking, creation", r: "Best for memorization and rapid review" },
   { label: "Reporting", c: "Teacher + student reports with artifacts", r: "Strong study analytics; fewer artifacts" },
+];
+
+const blooketRows = [
+  { label: "Primary format", c: "Station-based, physical + digital hybrid learning", r: "Screen-based game modes (Tower Defense, Gold Quest, etc.)" },
+  { label: "Group structure", c: "1–4 players per station (teams collaborate)", r: "Individual play; students compete on own device" },
+  { label: "Task variety", c: "65+ task types (movement, photo, debate, trivia, spinner, creation)", r: "Primarily multiple-choice quiz formats in game themes" },
+  { label: "Physical movement", c: "Built-in station rotation + movement breaks", r: "Screen-only — students stay seated" },
+  { label: "Depth of thinking", c: "Strong: explanation, synthesis, evidence tasks", r: "Best for fast recall via gamified repetition" },
+  { label: "Reporting", c: "Student + teacher reports with artifacts", r: "Basic performance data; limited artifacts" },
 ];
 
 function Table({ title, rightLabel, rows }: { title: string; rightLabel: string; rows: Array<{ label: string; c: string; r: string }> }) {
@@ -110,6 +119,7 @@ export default function CompareOnePager() {
         <div className="space-y-8">
           <Table title="Curriculate vs Kahoot" rightLabel="Kahoot" rows={kahootRows} />
           <Table title="Curriculate vs Quizlet" rightLabel="Quizlet" rows={quizletRows} />
+          <Table title="Curriculate vs Blooket" rightLabel="Blooket" rows={blooketRows} />
         </div>
 
         <div className="mt-10 bg-white rounded-3xl shadow-2xl border border-gray-200 p-10">
@@ -131,6 +141,12 @@ export default function CompareOnePager() {
               <div className="font-black text-gray-900 mb-2">Use Quizlet</div>
               <div className="text-gray-700 font-medium">
                 For flashcard study, homework, and individual recall practice outside class.
+              </div>
+            </div>
+            <div className="rounded-2xl bg-gray-50 border border-gray-200 p-6">
+              <div className="font-black text-gray-900 mb-2">Use Blooket</div>
+              <div className="text-gray-700 font-medium">
+                For gamified quiz review with creative game modes that students find addictive.
               </div>
             </div>
           </div>

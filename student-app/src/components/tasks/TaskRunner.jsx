@@ -60,6 +60,8 @@ import TowerBuilderTask from "./types/TowerBuilderTask";
 import ArtViewTask from "./types/ArtViewTask";
 import HistoricalDocTask from "./types/HistoricalDocTask";
 import RiddleTask from "./types/RiddleTask";
+import TriviaTask from "./types/TriviaTask";
+import SpinnerTask from "./types/SpinnerTask";
 import TeamSelfieTask from "./types/TeamSelfieTask";
 import PaperModeCamera from "./PaperModeCamera.jsx";
 import CoachPanel from "./CoachPanel.jsx";
@@ -101,6 +103,8 @@ const COACH_MODE_SKIP = new Set([
   "photo-journal",       // camera task
   "word-weaver-duel",    // turn-based duel
   "live-debate",         // debate — everyone speaks
+  "trivia",              // everyone answers together
+  "spinner",             // everyone watches the spin
 ]);
 
 // Task types eligible for paper mode (text-heavy tasks that can be done on paper)
@@ -3030,6 +3034,30 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
           socket={socketRef}
           roomCode={roomCode}
           teamId={effectiveTeamId}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.TRIVIA:
+    case "trivia": {
+      content = (
+        <TriviaTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.SPINNER:
+    case "spinner": {
+      content = (
+        <SpinnerTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
         />
       );
       break;
