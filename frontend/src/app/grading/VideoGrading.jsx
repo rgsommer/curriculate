@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState, useCallback } from "react";
+import React, { useRef, useState, useCallback, useEffect } from "react";
 
 /**
  * VideoGrading — Video upload + AI grading for speeches/presentations.
@@ -26,8 +26,10 @@ export default function VideoGrading({
   const [progress, setProgress] = useState("");
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [progressPct, setProgressPct] = useState(0);
   const fileInputRef = useRef(null);
   const abortRef = useRef(false);
+  const progressTimerRef = useRef(null);
 
   const backendBase = gradingUrl?.replace(/\/grading$/, "") || process.env.NEXT_PUBLIC_BACKEND_URL || "";
 
@@ -73,16 +75,68 @@ export default function VideoGrading({
     e.stopPropagation();
   }, []);
 
+  // Progress stages: each has a label, target percentage, and estimated duration (ms)
+  const PROGRESS_STAGES = [
+    { label: "Uploading video...", pct: 15, duration: 3000 },
+    { label: "Extracting audio...", pct: 30, duration: 5000 },
+    { label: "Transcribing speech...", pct: 50, duration: 8000 },
+    { label: "Extracting video frames...", pct: 65, duration: 5000 },
+    { label: "AI grading (transcript + frames)...", pct: 85, duration: 15000 },
+    { label: "Finalizing results...", pct: 95, duration: 5000 },
+  ];
+
+  const startProgressTimer = useCallback(() => {
+    setProgressPct(0);
+    let stageIdx = 0;
+    let currentPct = 0;
+
+    const advance = () => {
+      if (stageIdx >= PROGRESS_STAGES.length) return;
+      const stage = PROGRESS_STAGES[stageIdx];
+      setProgress(stage.label);
+
+      // Smoothly animate to target pct
+      const steps = Math.max(1, Math.floor(stage.duration / 200));
+      const increment = (stage.pct - currentPct) / steps;
+      let step = 0;
+
+      progressTimerRef.current = setInterval(() => {
+        step++;
+        currentPct = Math.min(stage.pct, currentPct + increment);
+        setProgressPct(Math.round(currentPct));
+
+        if (step >= steps) {
+          clearInterval(progressTimerRef.current);
+          stageIdx++;
+          if (stageIdx < PROGRESS_STAGES.length) {
+            advance();
+          }
+        }
+      }, 200);
+    };
+
+    advance();
+  }, []);
+
+  const stopProgressTimer = useCallback(() => {
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => () => stopProgressTimer(), [stopProgressTimer]);
+
   const gradeVideo = useCallback(async () => {
     if (!file) return;
     setSubmitting(true);
     setError("");
     setResult(null);
     abortRef.current = false;
+    startProgressTimer();
 
     try {
-      setProgress("Uploading video...");
-
       const formData = new FormData();
       formData.append("video", file);
       formData.append("rubricOverride", rubricOverride || "");
@@ -90,8 +144,6 @@ export default function VideoGrading({
       formData.append("standards", standards || "canada");
       formData.append("feedbackVoice", feedbackVoice || "coach");
       if (studentName.trim()) formData.append("studentName", studentName.trim());
-
-      setProgress("Processing video (transcribing audio + extracting frames)...");
 
       const resp = await fetch(`${backendBase}/grading/video`, {
         method: "POST",
@@ -103,7 +155,9 @@ export default function VideoGrading({
         throw new Error(errData.error || `Server error ${resp.status}`);
       }
 
-      setProgress("Analyzing results...");
+      stopProgressTimer();
+      setProgressPct(100);
+      setProgress("Done!");
       const data = await resp.json();
 
       if (data.error) {
@@ -114,10 +168,12 @@ export default function VideoGrading({
     } catch (err) {
       setError(err.message || "Video grading failed.");
     } finally {
+      stopProgressTimer();
       setSubmitting(false);
       setProgress("");
+      setProgressPct(0);
     }
-  }, [file, backendBase, rubricOverride, gradeBand, standards, feedbackVoice, studentName]);
+  }, [file, backendBase, rubricOverride, gradeBand, standards, feedbackVoice, studentName, startProgressTimer, stopProgressTimer]);
 
   const clearAll = useCallback(() => {
     setFile(null);
@@ -384,6 +440,31 @@ export default function VideoGrading({
           >
             {submitting ? progress || "Processing..." : "Grade Video"}
           </button>
+
+          {/* Progress bar */}
+          {submitting && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{
+                width: "100%", height: 8, borderRadius: 4,
+                background: "#e2e8f0", overflow: "hidden",
+              }}>
+                <div style={{
+                  width: `${progressPct}%`,
+                  height: "100%",
+                  borderRadius: 4,
+                  background: "linear-gradient(90deg, #3b82f6, #2563eb)",
+                  transition: "width 0.3s ease",
+                }} />
+              </div>
+              <div style={{
+                display: "flex", justifyContent: "space-between",
+                fontSize: 11, color: "#64748b", marginTop: 4,
+              }}>
+                <span>{progress}</span>
+                <span>{progressPct}%</span>
+              </div>
+            </div>
+          )}
 
           {file && !submitting && (
             <button
