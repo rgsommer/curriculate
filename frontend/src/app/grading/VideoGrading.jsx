@@ -79,13 +79,17 @@ export default function VideoGrading({
   }, []);
 
   // Progress stages: each has a label, target percentage, and estimated duration (ms)
+  // Total ~3 minutes of animation so the bar keeps moving during the full request.
+  // The AI grading step is the longest (bulk of the real work).
   const PROGRESS_STAGES = [
-    { label: "Uploading video...", pct: 15, duration: 3000 },
-    { label: "Extracting audio...", pct: 30, duration: 5000 },
-    { label: "Transcribing speech...", pct: 50, duration: 8000 },
-    { label: "Extracting video frames...", pct: 65, duration: 5000 },
-    { label: "AI grading (transcript + frames)...", pct: 85, duration: 15000 },
-    { label: "Finalizing results...", pct: 95, duration: 5000 },
+    { label: "Uploading video...",                  pct: 10,  duration: 5000 },
+    { label: "Extracting audio...",                 pct: 18,  duration: 6000 },
+    { label: "Transcribing speech...",              pct: 30,  duration: 15000 },
+    { label: "Extracting video frames...",          pct: 38,  duration: 8000 },
+    { label: "AI grading transcript...",            pct: 55,  duration: 30000 },
+    { label: "AI grading visual presentation...",   pct: 72,  duration: 30000 },
+    { label: "Compiling feedback & scores...",      pct: 85,  duration: 25000 },
+    { label: "Finalizing results...",               pct: 92,  duration: 20000 },
   ];
 
   const startProgressTimer = useCallback(() => {
@@ -94,12 +98,19 @@ export default function VideoGrading({
     let currentPct = 0;
 
     const advance = () => {
-      if (stageIdx >= PROGRESS_STAGES.length) return;
+      if (stageIdx >= PROGRESS_STAGES.length) {
+        // Slow crawl from 92 → 99 so bar never fully stops
+        progressTimerRef.current = setInterval(() => {
+          currentPct = Math.min(99, currentPct + 0.15);
+          setProgressPct(Math.round(currentPct));
+        }, 1000);
+        return;
+      }
       const stage = PROGRESS_STAGES[stageIdx];
       setProgress(stage.label);
 
       // Smoothly animate to target pct
-      const steps = Math.max(1, Math.floor(stage.duration / 200));
+      const steps = Math.max(1, Math.floor(stage.duration / 300));
       const increment = (stage.pct - currentPct) / steps;
       let step = 0;
 
@@ -113,9 +124,11 @@ export default function VideoGrading({
           stageIdx++;
           if (stageIdx < PROGRESS_STAGES.length) {
             advance();
+          } else {
+            advance(); // enter slow crawl
           }
         }
-      }, 200);
+      }, 300);
     };
 
     advance();
