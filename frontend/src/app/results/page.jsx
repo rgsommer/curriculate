@@ -1082,41 +1082,58 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                 </Card>
               ) : null}
 
-              {parsed.savedCaptures.length ? (
-                <Card title="Saved captures (30-day links)">
-                  <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.55 }}>
-                    {parsed.savedCaptures.map((x, i) => (
-                      <li key={i}>{linkifyTextToReactNodes(x)}</li>
-                    ))}
-                  </ul>
-                </Card>
-              ) : null}
+              {(() => {
+                // Separate video captures from photo captures
+                const videoCapture = parsed.savedCaptures.find(x => /\/video\.\w+/i.test(x));
+                const videoUrl = videoCapture ? (videoCapture.match(/https?:\/\/\S+/) || [])[0] : parsed.videoUrl;
+                const photoCaptures = parsed.savedCaptures.filter(x => !/\/video\.\w+/i.test(x));
 
-              {/* ── Video + Transcript (video grading) ── */}
-              {(parsed.videoUrl || parsed.transcript.trim()) ? (
-                <Card title="Video Performance">
-                  {parsed.videoUrl ? (
-                    <div style={{ marginBottom: parsed.transcript.trim() ? 12 : 0 }}>
-                      <video
-                        src={parsed.videoUrl}
-                        controls
-                        playsInline
-                        style={{ width: "100%", maxHeight: 360, borderRadius: 8, background: "#000" }}
-                      />
-                    </div>
-                  ) : null}
-                  {parsed.transcript.trim() ? (
-                    <details>
-                      <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 13, color: "#334155", marginTop: 4 }}>
-                        Transcript
-                      </summary>
-                      <div style={{ marginTop: 8, whiteSpace: "pre-wrap", lineHeight: 1.55, fontSize: 13, color: "#475569", background: "#f8fafc", padding: 12, borderRadius: 8 }}>
-                        {parsed.transcript.trim()}
-                      </div>
-                    </details>
-                  ) : null}
-                </Card>
-              ) : null}
+                return (
+                  <>
+                    {/* Photo captures (same as before) */}
+                    {photoCaptures.length ? (
+                      <Card title="Saved captures (30-day links)">
+                        <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.55 }}>
+                          {photoCaptures.map((x, i) => (
+                            <li key={i}>{linkifyTextToReactNodes(x)}</li>
+                          ))}
+                        </ul>
+                      </Card>
+                    ) : null}
+
+                    {/* Video + Transcript (video grading) */}
+                    {(videoUrl || parsed.transcript.trim()) ? (
+                      <Card title="Video Performance">
+                        {videoUrl ? (
+                          <div style={{ marginBottom: parsed.transcript.trim() ? 12 : 0 }}>
+                            <video
+                              src={videoUrl}
+                              controls
+                              playsInline
+                              style={{ width: "100%", maxHeight: 360, borderRadius: 8, background: "#000" }}
+                            />
+                            <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
+                              <a href={videoUrl} target="_blank" rel="noreferrer" style={{ color: "#2563eb", textDecoration: "underline" }}>
+                                Open video in new tab
+                              </a>
+                            </div>
+                          </div>
+                        ) : null}
+                        {parsed.transcript.trim() ? (
+                          <details>
+                            <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 13, color: "#334155", marginTop: 4 }}>
+                              View full transcript
+                            </summary>
+                            <div style={{ marginTop: 8, whiteSpace: "pre-wrap", lineHeight: 1.55, fontSize: 13, color: "#475569", background: "#f8fafc", padding: 12, borderRadius: 8 }}>
+                              {parsed.transcript.trim()}
+                            </div>
+                          </details>
+                        ) : null}
+                      </Card>
+                    ) : null}
+                  </>
+                );
+              })()}
 
               {/* ── Feedback widget ── */}
               <div className="no-print" style={{

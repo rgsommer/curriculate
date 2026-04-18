@@ -200,7 +200,6 @@ export default function VideoGrading({
     lines.push("");
     if (r.student_name) { lines.push(`Student: ${r.student_name}`); lines.push(""); }
     if (r.videoDuration) lines.push(`Video: ${Math.round(r.videoDuration)}s, ${r.frameCount || 0} frames analyzed`);
-    if (r.videoUrl) lines.push(`Video: ${r.videoUrl}`);
     lines.push("");
     if (Array.isArray(r.sections)) {
       lines.push("Sections:");
@@ -226,7 +225,12 @@ export default function VideoGrading({
       lines.push("");
     }
     if (r.teacher_comment) { lines.push("Overall Comment:"); lines.push(r.teacher_comment); lines.push(""); }
-    if (r.transcript) { lines.push("Transcript:"); lines.push(r.transcript); }
+    if (r.videoUrl) {
+      lines.push("Saved captures (30-day links):");
+      lines.push(`Video recording: ${r.videoUrl}`);
+      lines.push("");
+    }
+    if (r.transcript) { lines.push("Transcript:"); lines.push(r.transcript); lines.push(""); }
     return lines.join("\n");
   }
 
