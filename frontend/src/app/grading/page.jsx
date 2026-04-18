@@ -61,6 +61,7 @@ const VOICE_OPTIONS = [
   { value: "iep_supportive", label: "IEP-supportive (extra encouraging, partial-credit friendly)" },
   { value: "student_conference", label: "Student Conference (jot points)" },
   { value: "pudewa_mastery", label: "Mastery / IEW-style (Pudewa)" },
+  { value: "tutor", label: "Tutor (process-focused, step-by-step)" },
 ];
 
 const STANDARDS_OPTIONS = [
