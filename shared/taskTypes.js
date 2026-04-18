@@ -1153,7 +1153,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Team captures a photo AND writes a short caption/explanation/reflection connecting the image to the prompt. AI-scored using photo evidence + caption. Pedagogical benefits: connects visual evidence to verbal reasoning, supports metacognition, and improves explanation quality beyond "just a picture." Inter-team: NO. Intra-team: NO.\n\nAI MUST output:\n- taskType: \"photo-journal\"\n- prompt\n- Optional: config.captionPrompt, config.wordCountTarget\nStudent submission includes: { photoUrl|photo, caption }",
+      "Team captures a photo AND writes a short caption/explanation/reflection connecting the image to the prompt. AI-scored using photo evidence + caption. Pedagogical benefits: connects visual evidence to verbal reasoning, supports metacognition, and improves explanation quality beyond 'just a picture.' Inter-team: NO. Intra-team: NO.\n\nAI MUST output:\n- taskType: \"photo-journal\"\n- prompt\n- Optional: config.captionPrompt, config.wordCountTarget\nStudent submission includes: { photoUrl|photo, caption }",
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "photo-journal".
@@ -1437,7 +1437,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
   intraTeamEnabled: true,
 
   description:
-    "High-energy "sequence under pressure" physical/interactive race. Players are presented with 3–5 ordered terms/items. The task card associates each item with a color at runtime, randomizes display, and scores by accuracy + speed. Players must determine the correct order, then scan stations in that order.",
+    "High-energy 'sequence under pressure' physical/interactive race. Players are presented with 3–5 ordered terms/items. The task card associates each item with a color at runtime, randomizes display, and scores by accuracy + speed. Players must determine the correct order, then scan stations in that order.",
 
   aiPrompt: `
     Generate ONE Curriculate task object with taskType "mad-dash-sequence".
