@@ -101,6 +101,8 @@ function parseTeacherBlock(payloadText) {
     evidenceLinks: [],
     evidenceText: "",
     savedCaptures: [],
+    transcript: "",
+    videoUrl: "",
     raw: text,
   };
 
@@ -120,6 +122,12 @@ function parseTeacherBlock(payloadText) {
     }
   }
 
+  // Grab video URL if present (line like "Video: https://...")
+  for (const ln of lines) {
+    const m = ln.match(/^Video:\s*(https?:\/\/\S+)/);
+    if (m) { out.videoUrl = m[1]; break; }
+  }
+
   const headingSet = new Set([
     "Links / evidence:",
     "Submitted text (evidence):",
@@ -131,6 +139,7 @@ function parseTeacherBlock(payloadText) {
     "Achievement Categories (KITA):",
     "Achievement Categories:",
     "Saved captures (30-day links):",
+    "Transcript:",
   ]);
 
   const bucket = {
@@ -144,6 +153,7 @@ function parseTeacherBlock(payloadText) {
     "Achievement Categories (KITA):": "sections",
     "Achievement Categories:": "achievementSummary",
     "Saved captures (30-day links):": "savedCaptures",
+    "Transcript:": "transcript",
   };
 
   let current = null;
@@ -190,6 +200,13 @@ function parseTeacherBlock(payloadText) {
       // keep blank lines, but avoid leading empties
       if (!out.evidenceText && ln.trim() === "") continue;
       out.evidenceText += (out.evidenceText ? "\n" : "") + ln;
+      continue;
+    }
+
+    // Transcript is multi-line
+    if (current === "Transcript:") {
+      if (!out.transcript && ln.trim() === "") continue;
+      out.transcript += (out.transcript ? "\n" : "") + ln;
       continue;
     }
 
@@ -292,8 +309,10 @@ function parseTeacherBlock(payloadText) {
     out.sections.length ||
     out.achievementSummary.length ||
     out.evidenceLinks.length ||
-    out.evidenceText.trim() ||         // ✅ NEW
-    out.savedCaptures.length;
+    out.evidenceText.trim() ||
+    out.savedCaptures.length ||
+    out.transcript.trim() ||
+    out.videoUrl;
 
   return hasAny ? out : null;
 }
@@ -1070,6 +1089,32 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                       <li key={i}>{linkifyTextToReactNodes(x)}</li>
                     ))}
                   </ul>
+                </Card>
+              ) : null}
+
+              {/* ── Video + Transcript (video grading) ── */}
+              {(parsed.videoUrl || parsed.transcript.trim()) ? (
+                <Card title="Video Performance">
+                  {parsed.videoUrl ? (
+                    <div style={{ marginBottom: parsed.transcript.trim() ? 12 : 0 }}>
+                      <video
+                        src={parsed.videoUrl}
+                        controls
+                        playsInline
+                        style={{ width: "100%", maxHeight: 360, borderRadius: 8, background: "#000" }}
+                      />
+                    </div>
+                  ) : null}
+                  {parsed.transcript.trim() ? (
+                    <details>
+                      <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 13, color: "#334155", marginTop: 4 }}>
+                        Transcript
+                      </summary>
+                      <div style={{ marginTop: 8, whiteSpace: "pre-wrap", lineHeight: 1.55, fontSize: 13, color: "#475569", background: "#f8fafc", padding: 12, borderRadius: 8 }}>
+                        {parsed.transcript.trim()}
+                      </div>
+                    </details>
+                  ) : null}
                 </Card>
               ) : null}
 
