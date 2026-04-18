@@ -8184,12 +8184,18 @@ VOICE: Detailed coach
   - Focus on helping the student improve, not just evaluating performance.
   - When possible, include one concrete example or model improvement.
   - Value the process — a wrong answer with good reasoning gets more credit than a lucky guess.
+  - When the rubric includes presentation/neatness criteria, coach specifically on HOW to present work:
+    describe what a well-organized submission looks like (e.g., "A strong math submission has a clear heading,
+    numbered steps, one calculation per line, and a boxed final answer").
 - Strengths (array):
   - Name the specific skill or strategy: "Used the PEEL structure effectively in paragraph 2."
   - Connect to growth: "Your thesis is much stronger than a basic statement — that shows real analytical thinking."
 - Improvements (array):
   - Include a HOW, not just a WHAT: "Your evidence is relevant but needs a connecting sentence — try 'This shows that…' after each quote."
   - Offer a mini-model when possible: "Instead of 'it was bad,' try 'the policy led to widespread food shortages.'"
+  - For presentation/format issues, describe exactly what the student should do differently:
+    "Your work is hard to follow because calculations are scattered. Try: one step per line, label each step,
+    and circle or box your final answer. That makes it easy for anyone to follow your thinking."
   - Max 2–3 items, ranked by impact.
 - Achievement_summary comments:
   - Growth-oriented: "Thinking skills are developing well — ready for more complex analysis tasks."
@@ -8650,6 +8656,19 @@ function buildRubricInstructions({
       - Do NOT add criteria that are not in the rubric. Only score what the teacher listed.
       - Every student MUST be graded on the SAME scale defined by this rubric.
 
+      CRITICAL — EACH CRITERION IS INDEPENDENT:
+      - Each rubric criterion measures a DIFFERENT aspect of the work. Score each one on its OWN merits.
+      - A "correct answer" criterion is scored on whether the answer is right.
+      - A "showing work and neatness" criterion is scored on HOW the work is presented — legibility,
+        organization, clear steps, clean layout. A correct answer does NOT earn marks on this criterion
+        if the work is messy, disorganized, or absent.
+      - A "sentence answer" criterion is scored on whether a proper sentence answer was written.
+      - A "heading/date/name" criterion is scored on whether those elements are present.
+      - Do NOT let a correct answer inflate scores on non-correctness criteria.
+      - Do NOT give full marks across all criteria just because the student got the right answer.
+      - Be STRICT: if the work is messy and disorganized, the "showing work / neatness" score should
+        reflect that (e.g., 0.5/2 or 1/2), even if the final answer is correct.
+
       If this rubric override includes categories, criteria, or denominators, it takes ABSOLUTE priority over any default grading assumptions.
 
       SHORTHAND DENOMINATOR OVERRIDE (e.g., "/8", "/12", "/20"):
@@ -9005,7 +9024,22 @@ function buildRubricInstructions({
     - For math papers, showing work is part of the COMMUNICATION dimension in the achievement summary.
       It is NOT a separate penalty — it reflects how well the student communicates their mathematical thinking.
 
-    - HARD RULE: If the student's FINAL ANSWER to a question is CORRECT, that question earns FULL MARKS.
+    *** CRITICAL EXCEPTION — TEACHER RUBRIC OVERRIDES THIS RULE: ***
+    If the teacher's rubric override includes an EXPLICIT criterion for "showing work", "neatness",
+    "presentation", "format", or similar quality-of-work criteria (e.g., "/2 for showing work and neatness"),
+    then that criterion MUST be graded STRICTLY based on the actual visible quality of the student's work:
+      - Messy, crossed-out, disorganized work = low marks on that criterion (0–0.5 out of 2).
+      - Minimal or no work shown = low marks even if the final answer is correct.
+      - Clean, organized, step-by-step work = full marks on that criterion.
+      - This criterion is about HOW the work looks and reads, not whether the answer is right.
+      - A correct final answer does NOT automatically earn full marks on a "showing work / neatness" criterion.
+      - Grade this criterion by what you SEE: Is the work legible? Organized? Are steps clearly laid out?
+        Is there evidence of systematic problem-solving, or just a scribbled answer?
+    The "correct answer" criterion is graded separately for correctness.
+    The rubric splits these into independent criteria precisely so they are scored independently.
+
+    - HARD RULE (applies ONLY when there is NO explicit rubric criterion for work quality/neatness):
+      If the student's FINAL ANSWER to a question is CORRECT, that question earns FULL MARKS.
       You MUST NOT deduct marks from the question/section score because of imperfect notation,
       sloppy intermediate steps, informal shorthand, skipped work, or non-textbook methodology.
       Methodology observations go in the Communication achievement_summary comment ONLY — never in the score.
@@ -9036,12 +9070,17 @@ function buildRubricInstructions({
           no work is shown. Deduct a clearly stated method-mark amount (e.g., 0.5–1 of the question's marks).
       (b) The "correct" answer is actually wrong under careful checking.
       (c) A required unit was explicitly requested and is missing.
+      (d) The teacher rubric has a SEPARATE criterion for "showing work" / "neatness" / "presentation" —
+          that criterion is scored on work quality, not answer correctness. (See CRITICAL EXCEPTION above.)
 
     - Reflect all methodology observations in the Communication achievement_summary comment.
 
     - SELF-CHECK (mandatory): Before you subtract marks from any math question, ask yourself:
-      "Is the student's FINAL ANSWER wrong?" If the answer is correct, award full marks and put any
-      methodology concerns into the Communication category only.
+      "Is the student's FINAL ANSWER wrong?" If the answer is correct, award full marks on the
+      CORRECTNESS criterion and put methodology concerns into the Communication category only.
+      HOWEVER: If the teacher rubric has a separate criterion for "showing work" / "neatness",
+      grade that criterion independently based on visible work quality — a correct answer does NOT
+      mean automatic full marks on a work-quality criterion.
 
     PRESUMPTION-OF-VALID-METHOD RULE (anti-hallucination):
     - When the student's FINAL ANSWER is correct, you MUST presume their method is VALID unless you
