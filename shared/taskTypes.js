@@ -9,7 +9,7 @@
 // IMPORTANT DESIGN NOTES
 // - interTeamEnabled: teams can interact/compete against OTHER teams in the same room/session
 // - intraTeamEnabled: players WITHIN the same team can take different roles/turns (pass device, vote, etc.)
-// - Some entries are “defined but not implemented” to preserve forward-compatibility. They must be implemented in
+// - Some entries are "defined but not implemented" to preserve forward-compatibility. They must be implemented in
 //   TaskRunner + the corresponding Task component before being used in live sessions.
 
 // Canonical task type IDs used across backend, editor, and AI generator
@@ -59,7 +59,7 @@ export const TASK_TYPES = {
   MULTI_PLAYER_FEEDBACK: "multi-player-feedback",
 
   // Competitive / games
-  JEOPARDY: "brain-blitz", // historically “JEOPARDY” in code; UI label is Brain Blitz
+  JEOPARDY: "brain-blitz", // historically "JEOPARDY" in code; UI label is Brain Blitz
   TRUE_FALSE_TICTACTOE: "true-false-tictactoe",
   TRUE_FALSE_CONNECT_FOUR: "true-false-connect-four",
   TOWER_BUILDER: "tower-builder",
@@ -113,7 +113,7 @@ export const TASK_TYPES = {
   HIDENSEEK: "hidenseek",
   MULTI_ROOM_SCAVENGER_HUNT: "hidenseek",
 
-  // Storytelling — AI generates story from student-built characters
+  // Storytelling -- AI generates story from student-built characters
   STORYTELLING: "storytelling",
 
   // Comic relief / no-score
@@ -141,7 +141,7 @@ export const BLOOMS_LEVELS = {
 };
 
 export const TASK_BLOOMS_MAP = {
-  // Remember — recall, recognition, listing
+  // Remember -- recall, recognition, listing
   "multiple-choice":            ["REMEMBER", "UNDERSTAND"],
   "physical-multiple-choice":   ["REMEMBER", "APPLY"],
   "true-false":                 ["REMEMBER", "UNDERSTAND"],
@@ -152,14 +152,14 @@ export const TASK_BLOOMS_MAP = {
   "trivia":                     ["REMEMBER", "UNDERSTAND"],
   "spinner":                    ["REMEMBER"],
 
-  // Understand — explain, summarize, interpret
+  // Understand -- explain, summarize, interpret
   "short-answer":               ["UNDERSTAND", "REMEMBER"],
   "reading-comp":               ["UNDERSTAND", "ANALYZE"],
   "brain-spark-notes":          ["UNDERSTAND", "ANALYZE"],
   "pronunciation":              ["UNDERSTAND", "APPLY"],
   "speech-recognition":         ["UNDERSTAND", "APPLY"],
 
-  // Apply — use, execute, implement, demonstrate
+  // Apply -- use, execute, implement, demonstrate
   "sort":                       ["APPLY", "ANALYZE"],
   "sequence":                   ["APPLY", "ANALYZE"],
   "matching":                   ["APPLY", "REMEMBER"],
@@ -175,7 +175,7 @@ export const TASK_BLOOMS_MAP = {
   "physical-mystery-clues":     ["APPLY", "REMEMBER"],
   "hidenseek":                  ["APPLY"],
 
-  // Analyze — compare, organize, deconstruct, attribute
+  // Analyze -- compare, organize, deconstruct, attribute
   "mind-mapper":                ["ANALYZE", "CREATE"],
   "brain-blitz":                ["ANALYZE", "REMEMBER"],
   "true-false-tictactoe":       ["ANALYZE", "EVALUATE"],
@@ -187,7 +187,7 @@ export const TASK_BLOOMS_MAP = {
   "fake-out":                   ["ANALYZE", "EVALUATE"],
   "guess-who":                  ["ANALYZE"],
 
-  // Evaluate — critique, judge, argue, defend
+  // Evaluate -- critique, judge, argue, defend
   "open-text":                  ["EVALUATE", "UNDERSTAND"],
   "live-debate":                ["EVALUATE", "ANALYZE"],
   "ai-debate-judge":            ["EVALUATE", "ANALYZE"],
@@ -195,7 +195,7 @@ export const TASK_BLOOMS_MAP = {
   "narration-synthesize":       ["EVALUATE", "CREATE"],
   "letter":                     ["EVALUATE", "CREATE"],
 
-  // Create — design, construct, produce, invent
+  // Create -- design, construct, produce, invent
   "draw":                       ["CREATE"],
   "mime":                       ["CREATE", "APPLY"],
   "draw-mime":                  ["CREATE", "APPLY"],
@@ -281,7 +281,7 @@ export function analyzeBloomsTaxonomy(tasks) {
     `This activity set addressed ${activeLabels.length} of 6 Bloom's Taxonomy levels: ${activeLabels.join(", ")}. ` +
     `The most emphasized level was ${dominant.label} (${dominant.primaryPercent}% of cognitive tasks). ` +
     (highestReached && highestReached.level >= 5
-      ? `Students were challenged up to the ${highestReached.label} level — the higher-order thinking skills.`
+      ? `Students were challenged up to the ${highestReached.label} level -- the higher-order thinking skills.`
       : highestReached && highestReached.level >= 3
         ? `The set reached the ${highestReached.label} level. Consider adding tasks at the Evaluate or Create level for deeper cognitive challenge.`
         : `The set focused on foundational skills. Consider adding open-ended, creative, or evaluative tasks to push students into higher-order thinking.`);
@@ -313,7 +313,7 @@ const CATEGORY = {
   ROLE_PLAY: "role-play"
 };
 
-// Small helper: ensure all meta objects include the same “capability surface”.
+// Small helper: ensure all meta objects include the same "capability surface".
 export const TASK_TYPE_META = {
   // =========================
   // CORE Q&A / OBJECTIVE TASKS
@@ -354,7 +354,7 @@ export const TASK_TYPE_META = {
     Task-specific guidance:
     - Create 3–5 multiple-choice items. Each item: clear question, 4 options, one correctAnswer index.
     - Vary the correctAnswer position across items (the system shuffles options, but varied input helps).
-    - Make all wrong answers plausible — same length/style as the correct answer, not absurd or anachronistic.
+    - Make all wrong answers plausible -- same length/style as the correct answer, not absurd or anachronistic.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -529,7 +529,7 @@ export const TASK_TYPE_META = {
     Task-specific guidance:
     - Create an ORIGINAL paragraph of X sentences (X = grade level, default 10).
     - The student writes ONE sentence showing understanding. Keep the prompt explicit (Grade 7 level).
-    - The passage must be about ONE unified topic with a clear through-line. Pick one topic from the vocabulary list and go deep — don't try to touch every term.
+    - The passage must be about ONE unified topic with a clear through-line. Pick one topic from the vocabulary list and go deep -- don't try to touch every term.
     - Every sentence must have clear referents. Don't write "This law affected..." without naming the law first.
 
     Common failure prevention:
@@ -572,8 +572,8 @@ export const TASK_TYPE_META = {
     
     Task-specific guidance:
     1. Pick 8–14 terms from the vocabulary list. Create 2–4 categories that group them.
-    2. Items must be specific terms/names/events (e.g. "Jonathan Edwards", "Clergy Reserve") — NOT descriptions (e.g. "Missionary work", "Social services").
-    3. Categories should be thematic groupings (e.g. "Religious Figures" vs "Government Policies") — not a person vs an abstract concept.
+    2. Items must be specific terms/names/events (e.g. "Jonathan Edwards", "Clergy Reserve") -- NOT descriptions (e.g. "Missionary work", "Social services").
+    3. Categories should be thematic groupings (e.g. "Religious Figures" vs "Government Policies") -- not a person vs an abstract concept.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -600,7 +600,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Drag 4–8 steps/events into the correct order (process steps, life cycles, cause→effect chains, or historical chronology). Reinforces procedural understanding and ‘big picture’ structure.",
+      "Drag 4–8 steps/events into the correct order (process steps, life cycles, cause→effect chains, or historical chronology). Reinforces procedural understanding and 'big picture' structure.",
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "sequence".
@@ -614,7 +614,7 @@ export const TASK_TYPE_META = {
     
     Task-specific guidance:
     1. Pick 6–10 events/steps from the vocabulary list that have a clear chronological or logical order.
-    2. Each item should be specific and datable — include dates in parentheses for historical topics.
+    2. Each item should be specific and datable -- include dates in parentheses for historical topics.
     3. Provide items in the correct order; the student sees them shuffled.
 
     Common failure prevention:
@@ -656,7 +656,7 @@ export const TASK_TYPE_META = {
     
     Task-specific guidance:
     1. Pick 6–10 events from the vocabulary list that can be placed chronologically.
-    2. Every event must include a date or date range in parentheses — e.g. "Stamp Act (1765)".
+    2. Every event must include a date or date range in parentheses -- e.g. "Stamp Act (1765)".
     3. Provide events in correct chronological order; the student sees them shuffled.
 
     Common failure prevention:
@@ -702,7 +702,7 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
 `,
   
     aiPrompt: `
-    Generate ONE Curriculate task object with taskType “matching”.
+    Generate ONE Curriculate task object with taskType "matching".
 
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
@@ -710,25 +710,25 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
 
-    1. Pick 6 terms from the vocabulary list → “leftItems” (plain strings).
-    2. Write a short definition (8–20 words) for each → “rightItems” (plain strings).
+    1. Pick 6 terms from the vocabulary list → "leftItems" (plain strings).
+    2. Write a short definition (8–20 words) for each → "rightItems" (plain strings).
     3. Set correctMatches as L1→R1, L2→R2, … L6→R6.
-    - Use ONLY leftItems, rightItems, correctMatches at root level (no “config”, “items”, or “pairs”).
+    - Use ONLY leftItems, rightItems, correctMatches at root level (no "config", "items", or "pairs").
 
     Required output format:
     {
-      “taskType”: “matching”,
-      “title”: “short title (3-7 words)”,
-      “prompt”: “Connect each term on the left to its definition on the right.”,
-      “leftItems”: [“backwoods”, “pemmican”, “clergy reserve”, “emancipation”, “Beothuk”, “working bee”],
-      “rightItems”: [“Remote forested areas settled by pioneers”, “Dried meat and fat food used by fur traders”, “Land set aside to support the church”, “The process of freeing people from slavery”, “Indigenous people of Newfoundland”, “Community event where neighbours helped with big tasks”],
-      “correctMatches”: {
-        “L1”: “R1”,
-        “L2”: “R2”,
-        “L3”: “R3”,
-        “L4”: “R4”,
-        “L5”: “R5”,
-        “L6”: “R6”
+      "taskType": "matching",
+      "title": "short title (3-7 words)",
+      "prompt": "Connect each term on the left to its definition on the right.",
+      "leftItems": ["backwoods", "pemmican", "clergy reserve", "emancipation", "Beothuk", "working bee"],
+      "rightItems": ["Remote forested areas settled by pioneers", "Dried meat and fat food used by fur traders", "Land set aside to support the church", "The process of freeing people from slavery", "Indigenous people of Newfoundland", "Community event where neighbours helped with big tasks"],
+      "correctMatches": {
+        "L1": "R1",
+        "L2": "R2",
+        "L3": "R3",
+        "L4": "R4",
+        "L5": "R5",
+        "L6": "R6"
       }
     }
 
@@ -908,7 +908,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     
     Task-specific guidance:
     - Prompt students to record a 20–45 second response about exactly ONE topic.
-    - 20–45 seconds is short — one topic only. Don't ask about multiple subjects.
+    - 20–45 seconds is short -- one topic only. Don't ask about multiple subjects.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -946,13 +946,13 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt, config.
-    - config MUST include: character (string — full name), characterDescription (1-2 sentences about who they are),
-      letterStyle ("business" or "friendly" — pick whichever fits the topic and character),
+    - config MUST include: character (string -- full name), characterDescription (1-2 sentences about who they are),
+      letterStyle ("business" or "friendly" -- pick whichever fits the topic and character),
       topicContext (1-2 sentences about the historical/topical context the student should address),
       relevantConcepts (array of 4-8 vocabulary terms the student could weave in for bonus points).
     - The prompt should tell the student who they are writing to, what style of letter to use,
       and what topic to address. Mention they will receive a reply.
-    - Pick a character that fits the vocabulary/topic naturally — can be a real historical figure,
+    - Pick a character that fits the vocabulary/topic naturally -- can be a real historical figure,
       a role (e.g. "a settler in Upper Canada"), or a fictional persona that makes sense.
 
     Common failure prevention:
@@ -992,11 +992,11 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt, config.
     - config MUST include: scenario (2-4 sentences describing a realistic problem/dilemma/situation related to the topic),
-      expertRole (string — who evaluates, e.g. "History Professor", "Environmental Scientist"),
+      expertRole (string -- who evaluates, e.g. "History Professor", "Environmental Scientist"),
       expertDescription (1 sentence about the expert's perspective),
       relevantConcepts (array of 4-8 vocabulary terms the student could weave in for bonus points).
     - The prompt should set the scene and ask students to propose a solution or analysis.
-    - The scenario should feel like a real case — use specific details, dates, names, places.
+    - The scenario should feel like a real case -- use specific details, dates, names, places.
     - Make the dilemma open-ended enough that multiple good approaches exist.
 
     Common failure prevention:
@@ -1024,7 +1024,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      "Students build characters using their own names — picking gender, personality traits, roles in society, " +
+      "Students build characters using their own names -- picking gender, personality traits, roles in society, " +
       "and national backgrounds. AI then generates a fun, age-appropriate story featuring them in a setting " +
       "tied to the lesson topic. The story weaves in vocabulary words and concepts. " +
       "Students read the generated story together and it appears in their reports. " +
@@ -1039,10 +1039,10 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - config MUST include: setting (1-2 sentences describing the world/place/era the story takes place in),
       topicContext (1-2 sentences about the lesson topic the story should incorporate),
       genre (one of: "adventure", "mystery", "comedy", "historical fiction", "fantasy", "sci-fi"),
-      showNationality (boolean — true for history/literature topics, false for science/math),
+      showNationality (boolean -- true for history/literature topics, false for science/math),
       vocabWords (array of 4-8 vocabulary terms from the word bank that should be woven into the story).
     - The prompt should tell students they will build characters and AI will write a story featuring them.
-    - The setting should match the topic — e.g. for Roman history: "Ancient Rome during the height of the Empire".
+    - The setting should match the topic -- e.g. for Roman history: "Ancient Rome during the height of the Empire".
 
     Common failure prevention:
     - Do not omit config or any required config fields.
@@ -1126,7 +1126,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Good examples: "Draw a diagram of the water cycle labelling evaporation, condensation, and precipitation. Take a photo of your diagram."
     - Prompt students to tap the camera icon to submit when done.
 
-    SCHEMA RESTRICTION — NEVER include these fields:
+    SCHEMA RESTRICTION -- NEVER include these fields:
     - Do NOT include: items, options, leftItems, rightItems, correctMatches, correctAnswer, clues, pairs, bullets, categories
 
     Common failure prevention:
@@ -1153,7 +1153,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Team captures a photo AND writes a short caption/explanation/reflection connecting the image to the prompt. AI-scored using photo evidence + caption. Pedagogical benefits: connects visual evidence to verbal reasoning, supports metacognition, and improves explanation quality beyond “just a picture.” Inter-team: NO. Intra-team: NO.\n\nAI MUST output:\n- taskType: \"photo-journal\"\n- prompt\n- Optional: config.captionPrompt, config.wordCountTarget\nStudent submission includes: { photoUrl|photo, caption }",
+      "Team captures a photo AND writes a short caption/explanation/reflection connecting the image to the prompt. AI-scored using photo evidence + caption. Pedagogical benefits: connects visual evidence to verbal reasoning, supports metacognition, and improves explanation quality beyond "just a picture." Inter-team: NO. Intra-team: NO.\n\nAI MUST output:\n- taskType: \"photo-journal\"\n- prompt\n- Optional: config.captionPrompt, config.wordCountTarget\nStudent submission includes: { photoUrl|photo, caption }",
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "photo-journal".
@@ -1170,7 +1170,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Good examples: "Take a photo of something that reminds you of the concept of 'gravity' from today's lesson. In your caption, explain why you chose this object and how it relates to gravity."
     - Optionally include config.captionPrompt (a short sentence starter) and config.wordCountTarget (e.g., 30).
 
-    SCHEMA RESTRICTION — NEVER include these fields:
+    SCHEMA RESTRICTION -- NEVER include these fields:
     - Do NOT include: items, options, leftItems, rightItems, correctMatches, correctAnswer, clues, pairs, bullets, categories
 
     Common failure prevention:
@@ -1212,13 +1212,13 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Avoid copyrighted passages; write original content.
 
     Task-specific guidance:
-    - This is a MOVEMENT BREAK — no quiz, no answers, no scoring.
+    - This is a MOVEMENT BREAK -- no quiz, no answers, no scoring.
     - Write a fun 30–60 second classroom-safe physical activity (stretches, jumping jacks, dance moves, etc.).
     - The "prompt" field should describe the activity in 2–4 clear steps addressed to students.
     - Title example: "Energy Boost: Shake It Out!"
     - Prompt example: "Stand up and shake your arms for 10 seconds. Now do 10 jumping jacks. Stretch your arms above your head for 5 seconds. Sit back down and take a deep breath!"
 
-    SCHEMA RESTRICTION — NEVER include these fields (they belong to other task types):
+    SCHEMA RESTRICTION -- NEVER include these fields (they belong to other task types):
     - Do NOT include: items, options, leftItems, rightItems, correctMatches, correctAnswer, clues, pairs, bullets, categories, config.questions, config.pairs
 
     Common failure prevention:
@@ -1271,13 +1271,13 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       - Avoid copyrighted passages; write original content.
 
       Task-specific guidance:
-      - This is a MOVEMENT MISSION — no quiz, no answer options, no scoring.
+      - This is a MOVEMENT MISSION -- no quiz, no answer options, no scoring.
       - Create a quick physical challenge tied to the topic (e.g., act out a concept, mime an action, move to corners, use gestures).
       - The "prompt" field is displayed on screen to students. Write 2–4 clear steps addressed directly to the student (second-person).
       - IMPORTANT: Do NOT reference a teacher giving verbal cues. The student reads the prompt and taps DONE when finished.
       - Include a safety reminder (e.g., "Move safely and be aware of your space!").
 
-      SCHEMA RESTRICTION — NEVER include these fields (they belong to other task types):
+      SCHEMA RESTRICTION -- NEVER include these fields (they belong to other task types):
       - Do NOT include: items, options, leftItems, rightItems, correctMatches, correctAnswer, clues, pairs, bullets, categories, config.questions, config.pairs
 
       Common failure prevention:
@@ -1301,7 +1301,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     isOffTablet: true,
 
     description: `
-      A fast, station-based tap game (like “multiple choice, but musical chairs”).
+      A fast, station-based tap game (like "multiple choice, but musical chairs").
 
       ✅ REQUIREMENTS (strict)
       - taskType: "musical-chairs"
@@ -1320,7 +1320,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     aiPrompt: `
       You are generating ONE task object.
 
-      MENTAL MODEL: This is just multiple-choice / true-false, but used in “musical chairs” rounds.
+      MENTAL MODEL: This is just multiple-choice / true-false, but used in "musical chairs" rounds.
 
       Return JSON ONLY. No markdown. No extra keys.
 
@@ -1437,7 +1437,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
   intraTeamEnabled: true,
 
   description:
-    "High-energy “sequence under pressure” physical/interactive race. Players are presented with 3–5 ordered terms/items. The task card associates each item with a color at runtime, randomizes display, and scores by accuracy + speed. Players must determine the correct order, then scan stations in that order.",
+    "High-energy "sequence under pressure" physical/interactive race. Players are presented with 3–5 ordered terms/items. The task card associates each item with a color at runtime, randomizes display, and scores by accuracy + speed. Players must determine the correct order, then scan stations in that order.",
 
   aiPrompt: `
     Generate ONE Curriculate task object with taskType "mad-dash-sequence".
@@ -1447,7 +1447,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Include non-empty root fields: taskType, title, prompt.
     - Provide config.items (3–5 strings) and config.correctOrder (array of indices).
     - correctOrder must be a valid permutation of [0..items.length-1].
-    - Do NOT include colors — colors are assigned at runtime.
+    - Do NOT include colors -- colors are assigned at runtime.
 
     Task shape:
     {
@@ -1457,11 +1457,11 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       "config": {
         "items": ["string","string","string"],
         "correctOrder": [0,1,2],
-        "orderingCriterion": "string — e.g. smallest to largest, earliest to latest, first step to last step"
+        "orderingCriterion": "string -- e.g. smallest to largest, earliest to latest, first step to last step"
       }
     }
 
-    CRITICAL — Items MUST form a clear logical sequence:
+    CRITICAL -- Items MUST form a clear logical sequence:
     - Items MUST share an obvious ordering relationship (chronological, size, steps in a process, cause-and-effect chain, etc.).
     - The "prompt" field MUST explicitly state what ordering criterion to use (e.g. "Put these historical events in chronological order", "Arrange these fractions from smallest to largest", "Order these steps of the water cycle").
     - Do NOT use unrelated or random items. A student should be able to figure out the correct order from general knowledge of the subject.
@@ -1497,7 +1497,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Two-phase visual observation task using HISTORICAL ART or PRIMARY SOURCES directly related to the lesson topic. Phase 1: A full-screen image is displayed for a fixed viewing period (default 60 seconds). Students study the image carefully. Phase 2: The image disappears and students type as many observations as they can before time runs out. Hybrid scoring: base points for quantity of unique/valid observations, bonus points from AI for quality, specificity, and analytical depth.\n\nThe image MUST be a well-known historical artwork, photograph, map, or primary source that connects to the lesson topic. The system validates the image URL at runtime and can auto-replace broken links.\n\nAI MUST output:\n- taskType: \"art-view\"\n- title, prompt (student-facing instructions)\n- config.imageUrl: Wikimedia Commons URL to the image (MUST be a direct file link ending in .jpg/.png, e.g. https://upload.wikimedia.org/wikipedia/commons/...)\n- config.imageDescription: ALWAYS include a detailed description of the artwork (title, artist, year, medium, what it depicts) — used as fallback if URL breaks\n- config.imageTitle: the artwork's title (e.g. \"Starry Night\")\n- config.imageArtist: the artist's name (e.g. \"Vincent van Gogh\")\n- config.imageYear: approximate year or period (e.g. \"1889\" or \"15th century\")\n- config.viewingSeconds: how long to show the image (default 60)\n- config.responseSeconds: how long students have to type observations (default 120)\n- config.minObservations: minimum observations expected (default 5)\n- Optional: config.focusHints (array of 2-4 guiding prompts)\nStudent submission: { observations: string[] }",
+      "Two-phase visual observation task using HISTORICAL ART or PRIMARY SOURCES directly related to the lesson topic. Phase 1: A full-screen image is displayed for a fixed viewing period (default 60 seconds). Students study the image carefully. Phase 2: The image disappears and students type as many observations as they can before time runs out. Hybrid scoring: base points for quantity of unique/valid observations, bonus points from AI for quality, specificity, and analytical depth.\n\nThe image MUST be a well-known historical artwork, photograph, map, or primary source that connects to the lesson topic. The system validates the image URL at runtime and can auto-replace broken links.\n\nAI MUST output:\n- taskType: \"art-view\"\n- title, prompt (student-facing instructions)\n- config.imageUrl: Wikimedia Commons URL to the image (MUST be a direct file link ending in .jpg/.png, e.g. https://upload.wikimedia.org/wikipedia/commons/...)\n- config.imageDescription: ALWAYS include a detailed description of the artwork (title, artist, year, medium, what it depicts) -- used as fallback if URL breaks\n- config.imageTitle: the artwork's title (e.g. \"Starry Night\")\n- config.imageArtist: the artist's name (e.g. \"Vincent van Gogh\")\n- config.imageYear: approximate year or period (e.g. \"1889\" or \"15th century\")\n- config.viewingSeconds: how long to show the image (default 60)\n- config.responseSeconds: how long students have to type observations (default 120)\n- config.minObservations: minimum observations expected (default 5)\n- Optional: config.focusHints (array of 2-4 guiding prompts)\nStudent submission: { observations: string[] }",
 
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "art-view".
@@ -1515,11 +1515,11 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - config.imageUrl: provide a Wikimedia Commons DIRECT file URL (must end in .jpg or .png).
       Format: https://upload.wikimedia.org/wikipedia/commons/thumb/HASH/FILENAME/800px-FILENAME
       Do NOT use gallery pages or non-image URLs.
-    - config.imageDescription: ALWAYS provide this — a rich description of the artwork including title, artist, year, subject matter, medium, and what it depicts. This is the fallback if the URL breaks years later.
+    - config.imageDescription: ALWAYS provide this -- a rich description of the artwork including title, artist, year, subject matter, medium, and what it depicts. This is the fallback if the URL breaks years later.
     - config.imageTitle: the artwork's title.
     - config.imageArtist: the artist or photographer.
     - config.imageYear: year or period string.
-    - config.viewingSeconds: default 60 (adjust based on image complexity — more detail = more time).
+    - config.viewingSeconds: default 60 (adjust based on image complexity -- more detail = more time).
     - config.responseSeconds: default 120.
     - config.minObservations: default 5.
     - config.focusHints: array of 2-4 observation prompts tied to the curriculum topic (e.g., "What does this tell us about life in that period?", "Notice the use of light and shadow").
@@ -1551,7 +1551,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     intraTeamEnabled: false,
     isOffTablet: false,
     description:
-      "Two-phase primary source analysis task using HISTORICAL DOCUMENTS (treaties, letters, speeches, proclamations, newspaper articles, maps, political cartoons, legal documents, diary entries, etc.) directly related to the lesson topic. Phase 1: A full-screen image of the document is displayed for a fixed reading period (default 90 seconds). Students read and study the document carefully. Phase 2: The image disappears and students write commentary on the document's relevance, impact, and historical significance at the time it was created.\n\nThe document MUST be a real, historically significant primary source that connects to the lesson topic. The system validates the image URL at runtime and can auto-replace broken links via Wikimedia Commons.\n\nAI MUST output:\n- taskType: \"historical-doc\"\n- title, prompt (student-facing instructions)\n- config.imageUrl: Wikimedia Commons URL to the document image (MUST be a direct file link ending in .jpg/.png)\n- config.imageDescription: ALWAYS include a detailed description of the document (what it is, who wrote/created it, when, context, what it says/shows) — used as fallback if URL breaks\n- config.docTitle: the document's title or name (e.g. \"The Emancipation Proclamation\")\n- config.docAuthor: author or creator (e.g. \"Abraham Lincoln\")\n- config.docYear: year or date (e.g. \"1863\" or \"January 1, 1863\")\n- config.docType: type of document (e.g. \"presidential proclamation\", \"treaty\", \"personal letter\", \"political cartoon\", \"newspaper front page\")\n- config.historicalContext: 1-2 sentence context students see before viewing (e.g. \"This document was issued during the American Civil War...\")\n- config.viewingSeconds: how long to show the document (default 90 — longer than art because reading takes longer)\n- config.responseSeconds: how long students have to write their analysis (default 150)\n- config.analysisPrompts: array of 2-4 guided analysis questions (e.g. \"What was the immediate impact of this document?\", \"Who was the intended audience?\", \"How does this connect to what we learned about...?\")\nStudent submission: { responses: Array<{ prompt: string, response: string }> }",
+      "Two-phase primary source analysis task using HISTORICAL DOCUMENTS (treaties, letters, speeches, proclamations, newspaper articles, maps, political cartoons, legal documents, diary entries, etc.) directly related to the lesson topic. Phase 1: A full-screen image of the document is displayed for a fixed reading period (default 90 seconds). Students read and study the document carefully. Phase 2: The image disappears and students write commentary on the document's relevance, impact, and historical significance at the time it was created.\n\nThe document MUST be a real, historically significant primary source that connects to the lesson topic. The system validates the image URL at runtime and can auto-replace broken links via Wikimedia Commons.\n\nAI MUST output:\n- taskType: \"historical-doc\"\n- title, prompt (student-facing instructions)\n- config.imageUrl: Wikimedia Commons URL to the document image (MUST be a direct file link ending in .jpg/.png)\n- config.imageDescription: ALWAYS include a detailed description of the document (what it is, who wrote/created it, when, context, what it says/shows) -- used as fallback if URL breaks\n- config.docTitle: the document's title or name (e.g. \"The Emancipation Proclamation\")\n- config.docAuthor: author or creator (e.g. \"Abraham Lincoln\")\n- config.docYear: year or date (e.g. \"1863\" or \"January 1, 1863\")\n- config.docType: type of document (e.g. \"presidential proclamation\", \"treaty\", \"personal letter\", \"political cartoon\", \"newspaper front page\")\n- config.historicalContext: 1-2 sentence context students see before viewing (e.g. \"This document was issued during the American Civil War...\")\n- config.viewingSeconds: how long to show the document (default 90 -- longer than art because reading takes longer)\n- config.responseSeconds: how long students have to write their analysis (default 150)\n- config.analysisPrompts: array of 2-4 guided analysis questions (e.g. \"What was the immediate impact of this document?\", \"Who was the intended audience?\", \"How does this connect to what we learned about...?\")\nStudent submission: { responses: Array<{ prompt: string, response: string }> }",
 
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "historical-doc".
@@ -1571,12 +1571,12 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - config.imageUrl: provide a Wikimedia Commons DIRECT file URL (must end in .jpg or .png).
       Format: https://upload.wikimedia.org/wikipedia/commons/thumb/HASH/FILENAME/800px-FILENAME
       Do NOT use gallery pages or non-image URLs.
-    - config.imageDescription: ALWAYS provide this — a thorough description of the document including what it looks like, what text it contains (key excerpts if legible), who created it, when, and why it matters. This is the fallback if the URL breaks.
+    - config.imageDescription: ALWAYS provide this -- a thorough description of the document including what it looks like, what text it contains (key excerpts if legible), who created it, when, and why it matters. This is the fallback if the URL breaks.
     - config.docTitle: the document's name.
     - config.docAuthor: author, creator, or issuing body.
     - config.docYear: year or date string.
     - config.docType: classification of the document type.
-    - config.historicalContext: 1-2 sentences of context shown to students BEFORE viewing (to orient them — do not give away the analysis).
+    - config.historicalContext: 1-2 sentences of context shown to students BEFORE viewing (to orient them -- do not give away the analysis).
     - config.viewingSeconds: default 90 (documents need more reading time than art).
     - config.responseSeconds: default 150.
     - config.analysisPrompts: array of 2-4 targeted analysis questions that push students beyond description into evaluation of relevance and impact. At least one should ask about the document's impact AT THE TIME it was created, and at least one should connect to the broader lesson topic.
@@ -1635,7 +1635,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Pre-taskset vibe-setter: each player taps a mood emoji; team can optionally add what they’re excited about. No timer, no scoring. Improves classroom climate and engagement.",
+      "Pre-taskset vibe-setter: each player taps a mood emoji; team can optionally add what they're excited about. No timer, no scoring. Improves classroom climate and engagement.",
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "mood-checkin".
@@ -1746,7 +1746,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Create a game-like task where teams earn “treasure” by answering 6–10 quick questions. Provide clear scoring rules and answers where applicable.
+    - Create a game-like task where teams earn "treasure" by answering 6–10 quick questions. Provide clear scoring rules and answers where applicable.
     
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -1814,82 +1814,82 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     aiPrompt: `
       You are generating ONE task object.
 
-      MENTAL MODEL: This is Jeopardy-style clue → response, but implemented as a rapid “clue ladder.”
+      MENTAL MODEL: This is Jeopardy-style clue → response, but implemented as a rapid "clue ladder."
       Students see several short clues one at a time and try to guess the SINGLE target answer.
-      Think “20 Questions” or “Who Am I?” — each clue narrows it down.
+      Think "20 Questions" or "Who Am I?" -- each clue narrows it down.
 
       Return JSON ONLY. No markdown. No commentary.
 
       HARD REQUIREMENTS:
-      - taskType must be exactly “brain-blitz”
+      - taskType must be exactly "brain-blitz"
       - title: non-empty string
       - prompt: non-empty string (explain: read clues, then guess)
       - clues: array of AT LEAST 5 short clue strings (5–8 is ideal)
       - correctAnswer: a short string that is the single target answer
 
       WHAT correctAnswer MUST BE:
-      - A single recognizable WORD or SHORT PHRASE — a concept, term, person, place, or vocabulary word.
+      - A single recognizable WORD or SHORT PHRASE -- a concept, term, person, place, or vocabulary word.
       - Something students can shout out loud in a classroom.
-      - Good: “photosynthesis”, “Ohio Valley”, “variable”, “denominator”, “Sir Isaac Newton”
-      - BAD: “$44.97”, “Selling price = $44.97, Markup = $29.98”, “42%”, “x = 7”
+      - Good: "photosynthesis", "Ohio Valley", "variable", "denominator", "Sir Isaac Newton"
+      - BAD: "$44.97", "Selling price = $44.97, Markup = $29.98", "42%", "x = 7"
       - NEVER a number that requires calculation. NEVER a computed result.
 
       WHAT CLUES MUST BE:
       - Each clue is a DESCRIPTIVE HINT that reveals a fact about the answer.
       - Clues progress from vague → specific, helping students narrow down.
       - ALL clues must describe the SAME single concept/answer.
-      - Good clues: “This process happens in the chloroplast”, “Plants use sunlight for this”
-      - BAD clues: “Calculate the selling price”, “Express this as an equation”, “Find the markup”
+      - Good clues: "This process happens in the chloroplast", "Plants use sunlight for this"
+      - BAD clues: "Calculate the selling price", "Express this as an equation", "Find the markup"
       - NEVER step-by-step instructions. NEVER worksheet-style directives.
-      - NEVER “Calculate…”, “Find…”, “Express…”, “Solve…” — those are worksheet prompts, not game clues.
+      - NEVER "Calculate…", "Find…", "Express…", "Solve…" -- those are worksheet prompts, not game clues.
 
       VALID EXAMPLE (copy this SHAPE, change the content):
       {
-        “taskType”: “brain-blitz”,
-        “title”: “Seven Years’ War: Mystery Term”,
-        “prompt”: “Read each clue. After the final clue, type your best guess for the answer.”,
-        “clues”: [
-          “This region was contested by Britain and France in North America.”,
-          “Rivers and trade routes made it strategically valuable.”,
-          “Conflicts here helped spark the wider Seven Years’ War.”,
-          “It connects to Fort Duquesne and colonial expansion.”,
-          “Many Indigenous nations were drawn into the struggle here.”
+        "taskType": "brain-blitz",
+        "title": "Seven Years' War: Mystery Term",
+        "prompt": "Read each clue. After the final clue, type your best guess for the answer.",
+        "clues": [
+          "This region was contested by Britain and France in North America.",
+          "Rivers and trade routes made it strategically valuable.",
+          "Conflicts here helped spark the wider Seven Years' War.",
+          "It connects to Fort Duquesne and colonial expansion.",
+          "Many Indigenous nations were drawn into the struggle here."
         ],
-        “correctAnswer”: “Ohio Valley”,
-        “config”: {
-          “clues”: [
-            “This region was contested by Britain and France in North America.”,
-            “Rivers and trade routes made it strategically valuable.”,
-            “Conflicts here helped spark the wider Seven Years’ War.”,
-            “It connects to Fort Duquesne and colonial expansion.”,
-            “Many Indigenous nations were drawn into the struggle here.”
+        "correctAnswer": "Ohio Valley",
+        "config": {
+          "clues": [
+            "This region was contested by Britain and France in North America.",
+            "Rivers and trade routes made it strategically valuable.",
+            "Conflicts here helped spark the wider Seven Years' War.",
+            "It connects to Fort Duquesne and colonial expansion.",
+            "Many Indigenous nations were drawn into the struggle here."
           ],
-          “correctAnswer”: “Ohio Valley”
+          "correctAnswer": "Ohio Valley"
         }
       }
 
       MATH EXAMPLE (correct way to do math brain-blitz):
       {
-        “taskType”: “brain-blitz”,
-        “title”: “Mystery Math Concept”,
-        “prompt”: “Read each clue. After the final clue, type your best guess for the answer.”,
-        “clues”: [
-          “In algebra, this is often represented by a letter like x, y, or n.”,
-          “It stands for a quantity that is not yet known.”,
-          “In the equation 9 + w = 14, the letter w is an example of this.”,
-          “It can change value depending on the problem.”,
-          “Its name comes from a word meaning ‘able to change.’”
+        "taskType": "brain-blitz",
+        "title": "Mystery Math Concept",
+        "prompt": "Read each clue. After the final clue, type your best guess for the answer.",
+        "clues": [
+          "In algebra, this is often represented by a letter like x, y, or n.",
+          "It stands for a quantity that is not yet known.",
+          "In the equation 9 + w = 14, the letter w is an example of this.",
+          "It can change value depending on the problem.",
+          "Its name comes from a word meaning 'able to change.'"
         ],
-        “correctAnswer”: “variable”,
-        “config”: {
-          “clues”: [
-            “In algebra, this is often represented by a letter like x, y, or n.”,
-            “It stands for a quantity that is not yet known.”,
-            “In the equation 9 + w = 14, the letter w is an example of this.”,
-            “It can change value depending on the problem.”,
-            “Its name comes from a word meaning ‘able to change.’”
+        "correctAnswer": "variable",
+        "config": {
+          "clues": [
+            "In algebra, this is often represented by a letter like x, y, or n.",
+            "It stands for a quantity that is not yet known.",
+            "In the equation 9 + w = 14, the letter w is an example of this.",
+            "It can change value depending on the problem.",
+            "Its name comes from a word meaning 'able to change.'"
           ],
-          “correctAnswer”: “variable”
+          "correctAnswer": "variable"
         }
       }
 
@@ -1917,9 +1917,9 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
         "",
         "Core loop:",
         "• A 3×3 grid is shown.",
-        "• A stack of short statements appears as draggable/tappable ‘bubbles’.",
+        "• A stack of short statements appears as draggable/tappable 'bubbles'.",
         "• Each player is assigned a role: TRUE or FALSE (internally X/O).",
-        "• On your turn, pick a statement and place it on a square. If the statement matches your role’s truthiness, you claim the square; otherwise your opponent claims it.",
+        "• On your turn, pick a statement and place it on a square. If the statement matches your role's truthiness, you claim the square; otherwise your opponent claims it.",
         "• First to 3‑in‑a‑row wins the round.",
         "",
         "Rounds:",
@@ -1969,7 +1969,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     }
 
     Common failure prevention:
-    - You MUST include EXACTLY 9 items — not 8, not 10.
+    - You MUST include EXACTLY 9 items -- not 8, not 10.
     - correctAnswer must be boolean true or false, not a string.
     - Ensure prompts are student-facing instructions (what to do).
     `,
@@ -1992,7 +1992,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     intraTeamEnabled: true,
     description:
       [
-        "True/False Connect Four — a 7×6 drop-grid game using true/false statements. Designed as an end-of-session review round that recycles unused terms from earlier tasks.",
+        "True/False Connect Four -- a 7×6 drop-grid game using true/false statements. Designed as an end-of-session review round that recycles unused terms from earlier tasks.",
         "",
         "Core loop:",
         "• A 7-column × 6-row grid is displayed. Pieces drop to the lowest open row in a column (gravity).",
@@ -2036,7 +2036,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Aim for 20–30 statements. Mix of TRUE and FALSE (roughly 50/50 split).
     - Each statement must be a clear, factual claim that is unambiguously true or false.
 
-    REQUIRED STRUCTURE — statements array at ROOT level:
+    REQUIRED STRUCTURE -- statements array at ROOT level:
     {
       "taskType": "true-false-connect-four",
       "title": "Connect Four: The Water Cycle",
@@ -2050,7 +2050,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       ]
     }
 
-    CRITICAL — NO PLACEHOLDER TEXT:
+    CRITICAL -- NO PLACEHOLDER TEXT:
     - NEVER use "Statement 1", "True statement", "False statement", or any generic filler.
     - Every statement MUST be a real factual claim about the subject.
     - FALSE statements should be plausible-sounding but incorrect (not absurd jokes).
@@ -2059,7 +2059,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - statements[] MUST contain at least 15 items. 20–30 is ideal.
     - Each statement MUST have "text" (non-empty string) and "isFalse" (boolean).
     - Include roughly equal numbers of true and false statements.
-    - Do NOT put statements inside config — put them at the ROOT level of the task object.
+    - Do NOT put statements inside config -- put them at the ROOT level of the task object.
     `,
   },
 
@@ -2079,16 +2079,16 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     intraTeamEnabled: true,
     description:
       [
-        "Tower Builder — students build a tower by evaluating statements one at a time.",
+        "Tower Builder -- students build a tower by evaluating statements one at a time.",
         "",
         "Binary mode (true/false):",
-        "• TRUE statements become solid blocks — the tower grows.",
-        "• FALSE statements are 'mushy' — the tower partially collapses back to the last solid block.",
+        "• TRUE statements become solid blocks -- the tower grows.",
+        "• FALSE statements are 'mushy' -- the tower partially collapses back to the last solid block.",
         "",
         "Tri-state mode (benefit/harm/neutral):",
-        "• BENEFIT statements are solid blocks — full height.",
-        "• NEUTRAL statements are wobbly, smaller blocks — half height, but they hold.",
-        "• HARM statements are mushy — tower collapses back to last non-harm block.",
+        "• BENEFIT statements are solid blocks -- full height.",
+        "• NEUTRAL statements are wobbly, smaller blocks -- half height, but they hold.",
+        "• HARM statements are mushy -- tower collapses back to last non-harm block.",
         "",
         "Students see one statement at a time and decide: 'Stack it!' or 'Skip'.",
         "Skipping is safe but scores nothing. Stacking a good statement earns points; stacking a bad one destroys progress.",
@@ -2098,9 +2098,9 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
         "title: short (3–7 words)",
         "prompt: topic context for students",
         "items: [ { statement: string, category: \"benefit\"|\"harm\"|\"neutral\" } ]",
-        "  — For binary mode, use only \"benefit\" and \"harm\" (mapped from true/false).",
-        "  — For tri-state mode, include all three categories.",
-        "  — 10–15 items recommended.",
+        "  -- For binary mode, use only \"benefit\" and \"harm\" (mapped from true/false).",
+        "  -- For tri-state mode, include all three categories.",
+        "  -- 10–15 items recommended.",
         "",
         "Pedagogical benefits: critical evaluation under stakes, consequence-based learning (bad choices cost progress), deeper analysis with tri-state (benefit/harm/neutral requires nuance beyond binary true/false).",
       ].join("\n"),
@@ -2122,7 +2122,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Use tri-state categories when the topic involves evaluating impacts, consequences, or effects.
     - Use binary (benefit/harm only, no neutral) when the topic is factual true/false.
     - Mix categories so roughly 40% benefit, 30% harm, 30% neutral (for tri-state) or 50/50 (for binary).
-    - Statements should require genuine thought — avoid obviously true/false items.
+    - Statements should require genuine thought -- avoid obviously true/false items.
 
     Example structure (tri-state):
     {
@@ -2150,7 +2150,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     }
 
     Common failure prevention:
-    - category must be one of: "benefit", "harm", "neutral" — not true/false.
+    - category must be one of: "benefit", "harm", "neutral" -- not true/false.
     - Include 10–15 items, not fewer.
     - Ensure prompts are student-facing instructions (what to do).
     `,
@@ -2174,7 +2174,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     intraTeamEnabled: true,
     correctAnswerShape: "string-or-list",
     description:
-      "Standard flashcard review (8–12 cards) with {question, answer}. Intended flow is ‘shout to answer’ with optional speech recognition / AI transcription support. Focus is mastery and repeated retrieval, not competition. Intra-team play enabled; inter-team play disabled.",
+      "Standard flashcard review (8–12 cards) with {question, answer}. Intended flow is 'shout to answer' with optional speech recognition / AI transcription support. Focus is mastery and repeated retrieval, not competition. Intra-team play enabled; inter-team play disabled.",
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "flashcards".
@@ -2191,7 +2191,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     1. Look at the Vocabulary / Concept list provided in the user message.
     2. Pick 12–20 terms from that list as card fronts.
     3. For EACH term, write a clear, concise definition or answer as the card back (8–20 words).
-    - Card fronts MUST be real vocabulary terms from the provided list — do NOT invent generic terms.
+    - Card fronts MUST be real vocabulary terms from the provided list -- do NOT invent generic terms.
     - NEVER use placeholder text like "Term 1", "Card 2", "Question 3", etc.
     - Keep cards brief and accurate.
 
@@ -2229,7 +2229,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
         "Core loop:",
         "• A card shows a QUESTION (large, high-contrast).",
         "• 20s countdown per card (config.secondsPerCard; AI-adjustable).",
-        "• Players/teams BUZZ IN (tap) — first buzz earns the right to answer.",
+        "• Players/teams BUZZ IN (tap) -- first buzz earns the right to answer.",
         "• Correct → +10 points (optional +5 first-buzz bonus). Wrong → answer right passes.",
         "• Rounds continue until all cards are won or the round timer ends.",
         "• Live leaderboard / score banner updates after every point.",
@@ -2247,7 +2247,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
         "  points?: { correct?: 10, firstBuzzBonus?: 5 }",
         "}",
         "",
-        "Pedagogical benefits: retrieval practice + speed/automaticity (Bloom’s: Remember/Understand),",
+        "Pedagogical benefits: retrieval practice + speed/automaticity (Bloom's: Remember/Understand),",
         "with motivating game-show energy (sounds, confetti, live score).",
       ].join("\n"),
   
@@ -2266,15 +2266,15 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     2. Pick 8–15 terms from that list.
     3. For EACH term, write a short clue, definition, or question as the "question" field.
     4. The term itself (1–5 words, unambiguous) goes in the "answer" field.
-    - Questions and answers MUST be based on real vocabulary terms from the provided list — do NOT invent generic content.
+    - Questions and answers MUST be based on real vocabulary terms from the provided list -- do NOT invent generic content.
     - NEVER use placeholder text like "Question 1", "Answer 2", "Term 3", etc.
     - This is a buzzer-style competitive recall game. Students race to answer flashcard questions.
     - You MUST place flashcards inside config.items (NOT at the root level).
     - Each flashcard MUST have: { "question": "...", "answer": "..." }
-    - "question" = the prompt shown on the card (short, clear — a definition, clue, or question).
+    - "question" = the prompt shown on the card (short, clear -- a definition, clue, or question).
     - "answer" = the expected correct response (1–5 words, unambiguous).
 
-    CRITICAL — config.items structure:
+    CRITICAL -- config.items structure:
     {
       "taskType": "flashcards-race",
       "title": "Flashcards Race: The Water Cycle",
@@ -2287,14 +2287,14 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       }
     }
 
-    CRITICAL — NO PLACEHOLDER TEXT:
+    CRITICAL -- NO PLACEHOLDER TEXT:
     - NEVER use "Question 1", "Answer 1", "Term 1", "Card 1" or any generic filler.
     - Every question and answer MUST contain real subject-matter content.
 
     Common failure prevention:
     - config.items MUST contain at least 5 cards. 8–15 is ideal.
     - Each card MUST have both "question" (non-empty) and "answer" (non-empty).
-    - Do NOT put items at the root level — they MUST be inside config.items.
+    - Do NOT put items at the root level -- they MUST be inside config.items.
     `,
 },
 
@@ -2313,10 +2313,10 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      “Yes/No deduction game. One player privately views the secret person (hold-to-reveal). Others ask only yes/no questions, then make limited guesses (e.g., max 10). Timer (e.g., 60s) starts on first reveal. The answer should always be a PERSON — historical figure, scientist, author, leader, etc. Encourages logical elimination and strategic questioning.”,
+      "Yes/No deduction game. One player privately views the secret person (hold-to-reveal). Others ask only yes/no questions, then make limited guesses (e.g., max 10). Timer (e.g., 60s) starts on first reveal. The answer should always be a PERSON -- historical figure, scientist, author, leader, etc. Encourages logical elimination and strategic questioning.",
 
     aiPrompt: `
-    Generate ONE Curriculate task object with taskType “guess-who”.
+    Generate ONE Curriculate task object with taskType "guess-who".
 
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
@@ -2325,26 +2325,26 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Avoid copyrighted passages; write original content.
 
     Task-specific guidance:
-    - This is a YES/NO deduction game called “Guess Who” — the answer must ALWAYS be a PERSON.
+    - This is a YES/NO deduction game called "Guess Who" -- the answer must ALWAYS be a PERSON.
     - One player secretly sees the name of a person, and others ask yes/no questions to figure out who it is.
-    - Generate config.secretAnswers: an array of 3–6 PEOPLE relevant to the topic (historical figures, scientists, authors, leaders, inventors, artists, etc.). MINIMUM 3 — each secret answer is one round of play.
-    - CRITICAL: Every secretAnswer MUST be a real, named person — NEVER a concept, vocabulary word, or abstract term. The game is called “Guess WHO” for a reason.
-    - Set config.category to the topic/theme label (e.g., “Key Figures of the Renaissance”).
+    - Generate config.secretAnswers: an array of 3–6 PEOPLE relevant to the topic (historical figures, scientists, authors, leaders, inventors, artists, etc.). MINIMUM 3 -- each secret answer is one round of play.
+    - CRITICAL: Every secretAnswer MUST be a real, named person -- NEVER a concept, vocabulary word, or abstract term. The game is called "Guess WHO" for a reason.
+    - Set config.category to the topic/theme label (e.g., "Key Figures of the Renaissance").
     - Set config.maxGuesses to 10 (default).
 
     REQUIRED STRUCTURE:
     {
-      “taskType”: “guess-who”,
-      “title”: “Guess Who: Figures of the Revolution”,
-      “prompt”: “One player will secretly see the name of a historical figure. Ask yes/no questions to figure out who it is! You have 10 guesses.”,
-      “config”: {
-        “secretAnswers”: [“George Washington”, “Benjamin Franklin”, “Thomas Jefferson”, “King George III”, “Paul Revere”],
-        “category”: “American Revolution”,
-        “maxGuesses”: 10
+      "taskType": "guess-who",
+      "title": "Guess Who: Figures of the Revolution",
+      "prompt": "One player will secretly see the name of a historical figure. Ask yes/no questions to figure out who it is! You have 10 guesses.",
+      "config": {
+        "secretAnswers": ["George Washington", "Benjamin Franklin", "Thomas Jefferson", "King George III", "Paul Revere"],
+        "category": "American Revolution",
+        "maxGuesses": 10
       }
     }
 
-    CRITICAL — PEOPLE ONLY:
+    CRITICAL -- PEOPLE ONLY:
     - NEVER use concepts, vocabulary words, or abstract terms as secret answers.
     - Every secret answer MUST be a real, named person relevant to the topic.
     - If the topic doesn't have obvious people (e.g., math), use famous mathematicians, scientists, or inventors connected to the concepts.
@@ -2373,7 +2373,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
         "Hangman Duel (intra-team). Teams solve a mystery word shown as blanks by taking turns choosing letters (drag letter tiles/cubes into the blanks container).",
         "",
         "Gameplay expectations:",
-        "• Correct letters lock in and score; wrong letters move to a used pile and advance a playful ‘build’ (not grim).",
+        "• Correct letters lock in and score; wrong letters move to a used pile and advance a playful 'build' (not grim).",
         "• Students may attempt a full-word guess (risk/reward).",
         "• Strict turn rotation enforced by turnkeeper where available.",
         "",
@@ -2419,7 +2419,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
 
     Common failure prevention:
     - You MUST include EXACTLY 8 entries in wordsByStation.
-    - Every entry MUST have both "word" AND "hint" — do NOT omit hints.
+    - Every entry MUST have both "word" AND "hint" -- do NOT omit hints.
     - Ensure prompts are student-facing instructions (what to do).
     `,
 },
@@ -2454,7 +2454,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       }
     }
 
-    CRITICAL — NO PLACEHOLDERS:
+    CRITICAL -- NO PLACEHOLDERS:
     NEVER use generic labels like "WORD1", "WORD2", "word3", etc.
     Every word in config.words MUST be a real vocabulary term relevant to the topic.
     BAD: ["WORD1", "WORD2", "WORD3", "WORD4", "WORD5", "WORD6", "WORD7", "WORD8"]
@@ -2477,7 +2477,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     intraTeamEnabled: false,
     interTeamEnabled: false,
     description: `
-      “Spot the differences” between two versions (usually passages/lists; can be code/diagrams if UI supports it).
+      "Spot the differences" between two versions (usually passages/lists; can be code/diagrams if UI supports it).
       Students identify differences and submit them as a list. Can be objective-scored (if differences are known)
       or AI-assisted.
 
@@ -2512,7 +2512,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Create 6–10 pairs of very similar statements/images-descriptions where students must spot the difference. Provide the “difference” answer key.
+    - Create 6–10 pairs of very similar statements/images-descriptions where students must spot the difference. Provide the "difference" answer key.
     
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -2554,7 +2554,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Create 6–10 quick “draw it” prompts tied to content. Each prompt must be drawable in 30–60 seconds and include one required label.
+    - Create 6–10 quick "draw it" prompts tied to content. Each prompt must be drawable in 30–60 seconds and include one required label.
     
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -2616,7 +2616,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Generate two arrays:
       * "goodFoods": 6–8 TRUE or PRO statements about the topic (these grow the pet)
       * "badFoods": 6–8 FALSE or CON statements about the topic (these make the pet sick)
-    - Aim for at least 12 total items (6+ good, 6+ bad). More is better — up to 16 total.
+    - Aim for at least 12 total items (6+ good, 6+ bad). More is better -- up to 16 total.
     - Each statement should be a short factual claim (1 sentence) that is clearly true or false.
     - Set "pack" to one of: "classic", "farm", "ocean", "dino", "fantasy"
     - Set config.goal to the number of good feeds needed to win (typically 4).
@@ -2640,7 +2640,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       "config": { "goal": 4 }
     }
 
-    CRITICAL — NO PLACEHOLDER TEXT:
+    CRITICAL -- NO PLACEHOLDER TEXT:
     - NEVER use "Good Food 1", "Bad Food 1", "Statement 1", or any generic filler.
     - Every statement MUST be a real factual claim about the subject.
 
@@ -2666,7 +2666,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     intraTeamEnabled: false,
     description:
       "Pair-and-respond collaboration between two teams. One team writes an initial response, " +
-      "then views another team’s response and writes a thoughtful reply. AI-scored for quality and engagement.",
+      "then views another team's response and writes a thoughtful reply. AI-scored for quality and engagement.",
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "collaboration".
     
@@ -2721,7 +2721,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
 
       Task-specific guidance:
       - This is a live debate task. Students argue FOR or AGAINST a proposition.
-      - "postulate" is the debate topic/resolution — a clear, debatable statement.
+      - "postulate" is the debate topic/resolution -- a clear, debatable statement.
         MUST be a proposition, NOT an instruction. Good: "The fur trade did more harm than good for Indigenous peoples."
         Bad: "Debate the fur trade."
       - "prompt" is a brief student-facing instruction.
@@ -2735,7 +2735,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       }
 
       Common failure prevention:
-      - "postulate" MUST be a debatable statement — not a question, not an instruction.
+      - "postulate" MUST be a debatable statement -- not a question, not an instruction.
       `,
 },
 
@@ -2791,7 +2791,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description: "Fast-paced team brainstorm to activate prior knowledge and generate ideas without fear of being wrong.\nStudent flow:\n- A topic/seed prompt appears.\n- Team rapidly contributes short ideas (spoken aloud and/or typed as quick entries).\n- Optional quick vote/rank at the end to highlight the strongest ideas.\nScoring: Not single-correct; typically completion-based (optionally +bonus for voting).\nAI generation should produce:\n- prompt (string)\n- seedTopic (string, optional)\n- ideaSlots (number, optional; default 8\u201312)\n- enableVoting (boolean, optional)\n- timeLimitSeconds (optional; usually 60\u2013120)\nInter-team: NO. Intra-team: YES.",
-    pedagogyNotes: "Fast-paced ‘shout ideas’ collaborative brainstorm. The device shows a topic/seed prompt and your team rapidly contributes many ideas (spoken aloud and/or typed as short entries). No single correct answer — the goal is divergent thinking. Optional quick vote/rank at the end to highlight strongest ideas. Builds creative ideation, background knowledge, verbal participation, and lowers fear of being wrong.",
+    pedagogyNotes: "Fast-paced 'shout ideas' collaborative brainstorm. The device shows a topic/seed prompt and your team rapidly contributes many ideas (spoken aloud and/or typed as short entries). No single correct answer -- the goal is divergent thinking. Optional quick vote/rank at the end to highlight strongest ideas. Builds creative ideation, background knowledge, verbal participation, and lowers fear of being wrong.",
   
     aiPrompt: `
       Generate ONE Curriculate task object with taskType "brainstorm-battle".
@@ -2909,9 +2909,9 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description: `
-Turn-based oral reading + listening “truth vs fake” game (Balderdash-style).
+Turn-based oral reading + listening "truth vs fake" game (Balderdash-style).
 One player (the Reader) reads aloud; others LISTEN and vote. AI provides 3 plausible options where ONLY ONE is correct,
-plus one hilarious “obviously false” option. One additional slot is always a HUMAN-made-up option during play.
+plus one hilarious "obviously false" option. One additional slot is always a HUMAN-made-up option during play.
 
 AI generation / schema hints (for aiTaskSetGenerator):
 taskType: "fake-out"
@@ -2980,7 +2980,7 @@ config: {
 
       UNIQUE OPTIONS RULE (MANDATORY):
 
-      Every option in a round MUST be unique — no two options may have the same text (case-insensitive).
+      Every option in a round MUST be unique -- no two options may have the same text (case-insensitive).
       The jokeOption must also be different from all 3 options.
       If any duplicates exist, replace the duplicate with a new plausible-but-wrong answer.
 
@@ -3082,7 +3082,7 @@ config: {
     intraTeamEnabled: false,
     description:
       [
-        "Students see a clean, on-screen ‘model notes’ page (like real class notes): a title plus concise bullets.",
+        "Students see a clean, on-screen 'model notes' page (like real class notes): a title plus concise bullets.",
         "They copy the notes into a notebook/paper, then confirm completion (or submit a photo, if enabled in your flow).",
         "Bullets are short definitions/jot-notes that summarize key ideas from the topic/prompt.",
         "Suggested count: 3–5 bullets (Grades 8+ can use ~6–10).",
@@ -3120,10 +3120,10 @@ config: {
     - summary: 1–3 sentences summarising the topic.
     - Each keyTerm MUST have a real term and definition, NOT generic placeholders.
 
-    CRITICAL — NO PLACEHOLDER TEXT:
+    CRITICAL -- NO PLACEHOLDER TEXT:
     - NEVER write "Key Term 1", "Key Term 2", "Definition 1", "Concept 1", "Main Point 1", or any generic filler.
     - Every term, definition, and point MUST be a real, specific fact drawn from the actual subject.
-    - If you are unsure of exact content, invent plausible age-appropriate content — but NEVER use numbered placeholders.
+    - If you are unsure of exact content, invent plausible age-appropriate content -- but NEVER use numbered placeholders.
     - Bad example: { "term": "Key Term 1", "definition": "Definition of Key Term 1" }
     - Good example: { "term": "Photosynthesis", "definition": "The process by which plants convert sunlight into glucose using water and CO₂", "points": ["Occurs in chloroplasts", "Requires chlorophyll"] }
 
@@ -3142,8 +3142,8 @@ config: {
 
     Common failure prevention:
     - The "notes" field MUST be at the root level of the task object (NOT inside config).
-    - Do not omit keyTerms, mainPoints, or summary — all three are required.
-    - Do not use "bullets" — use the structured "notes" format above.
+    - Do not omit keyTerms, mainPoints, or summary -- all three are required.
+    - Do not use "bullets" -- use the structured "notes" format above.
     `,
 },
 
@@ -3193,9 +3193,9 @@ IMPORTANT:
 
     Task-specific guidance:
     - Create a graphic organizer / mind map structure with 1 central topic, 3–5 branches, and 2–4 sub-branches each. Include blank slots (_____ or empty strings) for students to fill.
-    - The items[] array must contain real subject-matter vocabulary/concepts from the topic — these are the idea-bank words students drag into the blanks.
+    - The items[] array must contain real subject-matter vocabulary/concepts from the topic -- these are the idea-bank words students drag into the blanks.
 
-    CRITICAL — NO PLACEHOLDER TEXT:
+    CRITICAL -- NO PLACEHOLDER TEXT:
     - NEVER write "Concept 1", "Concept 2", "Branch 1", "Item 1", "Sub-branch 1", or any numbered filler.
     - Every item in items[] MUST be a real vocabulary word, name, or concept drawn from the subject and topic.
     - config.centralTopic MUST be the actual topic name (e.g., "The Water Cycle", "World War I Causes"), never "Central Topic".
@@ -3322,7 +3322,7 @@ IMPORTANT:
       }
     }
 
-    CRITICAL — NO PLACEHOLDERS:
+    CRITICAL -- NO PLACEHOLDERS:
     Every role MUST have a specific, meaningful name related to the scenario.
     NEVER use generic labels like "Role A", "Role B", "Role 1", "Role 2".
     BAD: { name: "Role A", role: "Explain your perspective" }
@@ -3354,7 +3354,7 @@ IMPORTANT:
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      "AI-generated Script Play: a structured performance task. The device shows the CURRENT speaker’s line in large text, plus optional tone cues (e.g., serious, excited) and stage directions (e.g., whispering, pointing). It also shows brief context lines for ‘just before’ and ‘up next’ so the team understands the story flow. Students PASS the device from speaker to speaker and read/act their lines. Intra-team only (no inter-team). Pedagogical benefits: reading fluency, expressive oral language, comprehension, narrative reasoning, collaboration, and deeper retention through performance.",
+      "AI-generated Script Play: a structured performance task. The device shows the CURRENT speaker's line in large text, plus optional tone cues (e.g., serious, excited) and stage directions (e.g., whispering, pointing). It also shows brief context lines for 'just before' and 'up next' so the team understands the story flow. Students PASS the device from speaker to speaker and read/act their lines. Intra-team only (no inter-team). Pedagogical benefits: reading fluency, expressive oral language, comprehension, narrative reasoning, collaboration, and deeper retention through performance.",
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "script-play".
@@ -3370,7 +3370,7 @@ IMPORTANT:
 
     Task-specific guidance:
     - Write a short script for 2–4 speakers that teaches the assigned vocabulary/concepts through a meaningful story or scenario.
-    - The script should directly incorporate the topic and vocabulary — characters should discuss, explain, or demonstrate the concepts through dialogue.
+    - The script should directly incorporate the topic and vocabulary -- characters should discuss, explain, or demonstrate the concepts through dialogue.
     - Include light stage directions in parentheses within lines, e.g. "Ava: (whispering) Look at this old map..."
     - The script must tell a coherent mini-story with a beginning, middle, and end.
 
@@ -3383,7 +3383,7 @@ IMPORTANT:
       "roles": ["Narrator", "Ava", "Noah"],
       "lines": [
         "Narrator: The students gathered by the riverbank on a cool morning.",
-        "Ava: (pointing) Look — the water level is much lower than last year.",
+        "Ava: (pointing) Look -- the water level is much lower than last year.",
         "Noah: That's because of the drought. Less rainfall means less water flow.",
         "Ava: But what about the fish? They need deeper water to survive.",
         "Narrator: Noah knelt down and examined the muddy bank.",
@@ -3394,7 +3394,7 @@ IMPORTANT:
     }
 
     Common failure prevention:
-    - "lines" must be a FLAT array of strings — NOT nested objects, NOT beats.
+    - "lines" must be a FLAT array of strings -- NOT nested objects, NOT beats.
     - Minimum 8 lines. Each line must be a non-empty string.
     - "setting" must be a non-empty string that introduces characters and assigns roles to team members.
     - Ensure the script is meaningful and relevant to the assigned topic/vocabulary.
@@ -3426,7 +3426,7 @@ IMPORTANT:
       - timeLimitSeconds: usually 60
 
       Gameplay:
-      - “1-2-3 GO” starts the timer.
+      - "1-2-3 GO" starts the timer.
       - Teammates guess; UI can mark who guessed (name buttons).
       Scoring:
       - Usually participation/round-based (not objective).
@@ -3449,7 +3449,7 @@ IMPORTANT:
     - Avoid copyrighted passages; write original content.
 
     Task-specific guidance:
-    - This task has UP TO 4 ROUNDS — one per player. Each player will secretly choose to either DRAW or MIME their clue.
+    - This task has UP TO 4 ROUNDS -- one per player. Each player will secretly choose to either DRAW or MIME their clue.
     - Generate EXACTLY 4 unique clues, one per round, in the "clues" array.
     - Each clue must be a single word or very short phrase (≤ 5 words) that can be drawn OR mimed without speaking.
     - All 4 clues should relate to the subject/topic of the taskset.
@@ -3457,7 +3457,7 @@ IMPORTANT:
     - Set task.prompt to clues[0] (the first clue) for backward compatibility.
     - Optionally set timeLimitSeconds to 60.
 
-    CRITICAL — clues must NEVER:
+    CRITICAL -- clues must NEVER:
     - Be sort instructions, category lists, or multi-step instructions
     - Start with "Sort", "Arrange", "Match", "Categorize"
     - Contain quoted lists of items or definitions
@@ -3540,10 +3540,10 @@ IMPORTANT:
     Task-specific guidance:
     - Create 8–12 mime-only prompts tied to the topic. Prompts must be actable without props and be classroom-appropriate.
     - Put the prompts in a top-level "clues" array of strings. Example: "clues": ["photosynthesis", "mitosis", "gravity"]
-    - Do NOT use config.rounds, config.statements, or config.items — use "clues" at the root level.
+    - Do NOT use config.rounds, config.statements, or config.items -- use "clues" at the root level.
 
     Common failure prevention:
-    - Do not omit the "clues" array — it is required.
+    - Do not omit the "clues" array -- it is required.
     - Ensure prompts are student-facing (single words or short phrases to act out).
     `,
 },
@@ -3614,7 +3614,7 @@ config: {
 
     Common failure prevention:
     - config.seedTerm MUST be a single real vocabulary word or short phrase from the topic.
-    - NEVER use "startWord" — the field name is "seedTerm".
+    - NEVER use "startWord" -- the field name is "seedTerm".
     `,
 },
 
@@ -3698,7 +3698,7 @@ config: {
         "title: short (3–7 words)",
         "prompt: the question/instruction the student should answer",
         "timeLimitSeconds: 45–90 (default 60)",
-        "referenceText?: string  // optional reading-aloud text (if task is ‘read this aloud’ instead of ‘answer this’)",
+        "referenceText?: string  // optional reading-aloud text (if task is 'read this aloud' instead of 'answer this')",
         "language?: string       // UI label (e.g., \"English\")",
         "languageCode?: string   // e.g., \"en-US\" (preferred for browser recognition)",
         "rubric?: { focus?: string, points?: number } // optional scoring guidance",
@@ -3720,7 +3720,7 @@ config: {
     - The prompt should be a question or instruction for the student to answer aloud.
     - Set "referenceText" to the expected spoken answer or reading-aloud passage (a sentence or short paragraph, 10–40 words).
     - The system will transcribe the student's speech and AI-score it against the referenceText for meaning and accuracy.
-    - Do NOT generate a "phrases" or "variations" array — the component only uses referenceText.
+    - Do NOT generate a "phrases" or "variations" array -- the component only uses referenceText.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
@@ -3735,7 +3735,7 @@ config: {
   // =========================
 
   // =========================
-  // TRIVIA — Bluff Catcher / True-False / Closer To
+  // TRIVIA -- Bluff Catcher / True-False / Closer To
   // =========================
   [TASK_TYPES.TRIVIA]: {
     label: "Trivia",
@@ -3757,7 +3757,7 @@ config: {
     intraTeamEnabled: false,
     isOffTablet: false,
     description:
-      "Fun trivia break with three presentation modes. Bluff Catcher: 3 statements shown, 2 real and 1 fake — spot the bluff. True/False: rapid-fire fact statement. Closer To: estimation question with 2 choices. Each round has a subject-related fact and a pop culture / student-world fact.\n\nAI MUST output:\n- taskType: \"trivia\"\n- title, prompt\n- config.rounds: array of 2-4 round objects (mix modes)\n- Each round: { mode, category, ...mode-specific fields }\n- Modes: \"bluff\" needs facts[] (3 strings) + fakeIndex + explanation. \"truefalse\" needs statement + answer (bool) + explanation. \"closerto\" needs question + choices[] (2 strings) + correctChoice (0|1) + actualAnswer + explanation.",
+      "Fun trivia break with three presentation modes. Bluff Catcher: 3 statements shown, 2 real and 1 fake -- spot the bluff. True/False: rapid-fire fact statement. Closer To: estimation question with 2 choices. Each round has a subject-related fact and a pop culture / student-world fact.\n\nAI MUST output:\n- taskType: \"trivia\"\n- title, prompt\n- config.rounds: array of 2-4 round objects (mix modes)\n- Each round: { mode, category, ...mode-specific fields }\n- Modes: \"bluff\" needs facts[] (3 strings) + fakeIndex + explanation. \"truefalse\" needs statement + answer (bool) + explanation. \"closerto\" needs question + choices[] (2 strings) + correctChoice (0|1) + actualAnswer + explanation.",
 
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "trivia".
@@ -3824,7 +3824,7 @@ config: {
   },
 
   // =========================
-  // SPINNER — Wheel of Fortune reward spinner
+  // SPINNER -- Wheel of Fortune reward spinner
   // =========================
   [TASK_TYPES.SPINNER]: {
     label: "Spinner",
@@ -3846,7 +3846,7 @@ config: {
     intraTeamEnabled: false,
     isOffTablet: false,
     description:
-      "Wheel of Fortune style reward spinner. Students spin a colorful wheel and land on a random reward wedge. Wedges include bonus points, fun perks (\"Team High Five!\", \"Pick the next song\"), and a rare jackpot. Pure fun — builds anticipation and energy between heavier tasks.\n\nAI MUST output:\n- taskType: \"spinner\"\n- title, prompt\n- config.spinPrompt: fun text shown before spinning\n- config.wedges: array of 6-10 wedge objects\n- Each wedge: { label, points, type: \"points\"|\"bonus\"|\"perk\"|\"jackpot\" }",
+      "Wheel of Fortune style reward spinner. Students spin a colorful wheel and land on a random reward wedge. Wedges include bonus points, fun perks (\"Team High Five!\", \"Pick the next song\"), and a rare jackpot. Pure fun -- builds anticipation and energy between heavier tasks.\n\nAI MUST output:\n- taskType: \"spinner\"\n- title, prompt\n- config.spinPrompt: fun text shown before spinning\n- config.wedges: array of 6-10 wedge objects\n- Each wedge: { label, points, type: \"points\"|\"bonus\"|\"perk\"|\"jackpot\" }",
 
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "spinner".
@@ -3915,7 +3915,7 @@ config: {
     intraTeamEnabled: false,
     isOffTablet: false,
     description:
-      "A quick comic-relief task. The AI generates a fun riddle related to the topic. Students read the riddle, try to guess, then tap to reveal the answer. No scoring, no input — just a lighthearted breather between heavier tasks. Keeps energy up and gives a mental reset.\n\nAI MUST output:\n- taskType: \"riddle\"\n- title (short, fun)\n- prompt (the riddle question itself)\n- config.riddle (the riddle text, same as or elaboration of prompt)\n- config.answer (the punchline / answer)\n- config.hint (optional one-line hint)",
+      "A quick comic-relief task. The AI generates a fun riddle related to the topic. Students read the riddle, try to guess, then tap to reveal the answer. No scoring, no input -- just a lighthearted breather between heavier tasks. Keeps energy up and gives a mental reset.\n\nAI MUST output:\n- taskType: \"riddle\"\n- title (short, fun)\n- prompt (the riddle question itself)\n- config.riddle (the riddle text, same as or elaboration of prompt)\n- config.answer (the punchline / answer)\n- config.hint (optional one-line hint)",
 
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "riddle".
@@ -3927,9 +3927,9 @@ config: {
     - Keep it age-appropriate and classroom-safe. Puns encouraged!
 
     Required config fields:
-    - config.riddle  — the riddle question (string). Can be same as prompt or more elaborate.
-    - config.answer  — the answer / punchline (string). Keep it short and satisfying.
-    - config.hint    — a one-line hint (string, optional but encouraged).
+    - config.riddle  -- the riddle question (string). Can be same as prompt or more elaborate.
+    - config.answer  -- the answer / punchline (string). Keep it short and satisfying.
+    - config.hint    -- a one-line hint (string, optional but encouraged).
 
     Example output:
     {
@@ -3945,7 +3945,7 @@ config: {
     }
 
     Common failure prevention:
-    - Do not include scoring fields — this is a zero-point comic relief task.
+    - Do not include scoring fields -- this is a zero-point comic relief task.
     - Keep the riddle to 1-3 sentences max.
     - The answer should be a single short phrase or word.
     `,
@@ -4096,7 +4096,7 @@ const __DEMO_TEMPLATES = {
           cue: "Whispering, excited",
           stageDirections: ["(leans in)", "(speaks softly)"],
           lines: [
-            "Noah… look. This map has today’s date on it.",
+            "Noah… look. This map has today's date on it.",
             "Why would someone hide it here?",
           ],
           before: "You just discovered something important.",
@@ -4107,8 +4107,8 @@ const __DEMO_TEMPLATES = {
           cue: "Skeptical but curious",
           stageDirections: ["(raises an eyebrow)"],
           lines: [
-            "Either it’s a prank… or it’s a clue.",
-            "Let’s follow it—carefully.",
+            "Either it's a prank… or it's a clue.",
+            "Let's follow it--carefully.",
           ],
           before: "Respond to Ava and decide what to do.",
           after: "Group: act out the next step together.",
@@ -4353,7 +4353,7 @@ export function categoryLabelFor(typeValue) {
 
 // Simple normalization helper – keeps AI / editor / backend in sync
 // ═══════════════════════════════════════════════════════════════════════
-// SUBJECT AFFINITY — weighted preference for task types per subject area
+// SUBJECT AFFINITY -- weighted preference for task types per subject area
 // ═══════════════════════════════════════════════════════════════════════
 //
 // Each value is 0.0–1.0:  1.0 = perfect fit,  0.5 = usable but not ideal,
@@ -4556,7 +4556,7 @@ export function normalizeTaskTypeId(raw) {
 }
 
 /* ============================================================
-   JSON SHELL TEMPLATES — pre-built task structures with placeholders.
+   JSON SHELL TEMPLATES -- pre-built task structures with placeholders.
 
    Instead of asking AI to invent both structure AND content,
    we give it the exact JSON shell and ask it to fill in ONLY
@@ -4619,15 +4619,15 @@ export const TASK_SHELLS = {
     const placeholders = [
       `TITLE: A short task title (3-7 words) describing this mind-mapping activity`,
       `PROMPT: 1-2 sentence student-facing instructions (e.g., "Drag each term to its correct place in the concept web")`,
-      `ORGANIZER_TYPE: one of "mind-map", "hierarchy", "fishbone", "flowchart", "venn", "web" — pick whichever best fits the topic`,
+      `ORGANIZER_TYPE: one of "mind-map", "hierarchy", "fishbone", "flowchart", "venn", "web" -- pick whichever best fits the topic`,
       `CENTER_TOPIC: The main topic label for the center of the organizer (e.g., "The Water Cycle", "Causes of WWI")`,
-      `DIFFICULTY: "easy", "medium", or "hard" — match the requested difficulty`,
+      `DIFFICULTY: "easy", "medium", or "hard" -- match the requested difficulty`,
     ];
     for (let b = 0; b < branchCount; b++) {
-      placeholders.push(`BRANCH_${b + 1}: A category/branch label — a real sub-topic name (e.g., "Evaporation", "Alliances"), NEVER "Branch ${b + 1}"`);
+      placeholders.push(`BRANCH_${b + 1}: A category/branch label -- a real sub-topic name (e.g., "Evaporation", "Alliances"), NEVER "Branch ${b + 1}"`);
     }
     for (let i = 0; i < itemCount; i++) {
-      placeholders.push(`ITEM_${i + 1}: A real vocabulary term or concept that belongs in one of the branches — NEVER "Concept ${i + 1}" or any placeholder`);
+      placeholders.push(`ITEM_${i + 1}: A real vocabulary term or concept that belongs in one of the branches -- NEVER "Concept ${i + 1}" or any placeholder`);
     }
 
     return {
@@ -4664,7 +4664,7 @@ export const TASK_SHELLS = {
         `Q${n}_B: Option B (a plausible answer)`,
         `Q${n}_C: Option C (a plausible answer)`,
         `Q${n}_D: Option D (a plausible answer)`,
-        `Q${n}_CORRECT_INDEX: The 0-based index (0-3) of the correct option. IMPORTANT: vary across questions — do NOT always use 0`,
+        `Q${n}_CORRECT_INDEX: The 0-based index (0-3) of the correct option. IMPORTANT: vary across questions -- do NOT always use 0`,
       );
       names.push(`Q${n}_PROMPT`, `Q${n}_A`, `Q${n}_B`, `Q${n}_C`, `Q${n}_D`, `Q${n}_CORRECT_INDEX`);
     }
@@ -4675,7 +4675,7 @@ export const TASK_SHELLS = {
 
   /* ── PHYSICAL MULTIPLE CHOICE ── */
   [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]: function buildPhysicalMCShell() {
-    // Always exactly 4 questions — reuse MC shell but fix taskType
+    // Always exactly 4 questions -- reuse MC shell but fix taskType
     const result = TASK_SHELLS[TASK_TYPES.MULTIPLE_CHOICE]({ itemCount: 4 });
     result.shell = result.shell.replace('"multiple-choice"', '"physical-multiple-choice"');
     return result;
@@ -4698,7 +4698,7 @@ export const TASK_SHELLS = {
       rightItems.push(`{{DEF_${n}}}`);
       correctMatches[`{{TERM_${n}}}`] = `{{DEF_${n}}}`;
       placeholders.push(
-        `TERM_${n}: A real vocabulary term from the word list — NEVER "Term ${n}"`,
+        `TERM_${n}: A real vocabulary term from the word list -- NEVER "Term ${n}"`,
         `DEF_${n}: A short definition (8-20 words) for TERM_${n}`,
       );
       names.push(`TERM_${n}`, `DEF_${n}`);
@@ -4725,7 +4725,7 @@ export const TASK_SHELLS = {
     const names = ["TITLE", "PROMPT"];
 
     for (let c = 0; c < catCount; c++) {
-      placeholders.push(`CAT_${c + 1}: Category name — a real grouping label, NEVER "Category ${c + 1}"`);
+      placeholders.push(`CAT_${c + 1}: Category name -- a real grouping label, NEVER "Category ${c + 1}"`);
       names.push(`CAT_${c + 1}`);
     }
 
@@ -4739,7 +4739,7 @@ export const TASK_SHELLS = {
       items.push({ id, text: `{{ITEM_${n}}}` });
       correctAnswer[id] = [`<<ITEM_${n}_CAT>>`];
       placeholders.push(
-        `ITEM_${n}: A real vocabulary term — NEVER "Item ${n}"`,
+        `ITEM_${n}: A real vocabulary term -- NEVER "Item ${n}"`,
         `ITEM_${n}_CAT: Which category this item belongs to (must be one of the CAT values). Use the EXACT category name.`,
       );
       names.push(`ITEM_${n}`, `ITEM_${n}_CAT`);
@@ -4762,12 +4762,12 @@ export const TASK_SHELLS = {
     const placeholders = [
       "TITLE: Short BrainBlitz title (3-7 words)",
       "PROMPT: 1-2 sentence student instructions",
-      "ANSWER: The single target answer — a recognizable word or short phrase (NOT a number requiring calculation)",
+      "ANSWER: The single target answer -- a recognizable word or short phrase (NOT a number requiring calculation)",
     ];
     const names = ["TITLE", "PROMPT", "ANSWER"];
 
     for (let i = 0; i < clueCount; i++) {
-      placeholders.push(`CLUE_${i + 1}: A progressive hint for ANSWER — all clues must describe the SAME concept. Earlier clues are harder, later ones easier.`);
+      placeholders.push(`CLUE_${i + 1}: A progressive hint for ANSWER -- all clues must describe the SAME concept. Earlier clues are harder, later ones easier.`);
       names.push(`CLUE_${i + 1}`);
     }
 
@@ -4809,7 +4809,7 @@ export const TASK_SHELLS = {
         `R${n}_OPT_C: A plausible answer option`,
         `R${n}_CORRECT_INDEX: 0-based index (0-2) of the correct option among OPT_A/B/C. Vary across rounds.`,
         `R${n}_CORRECT_OPT: The text of the correct option (must match the option at CORRECT_INDEX exactly)`,
-        `R${n}_JOKE: A funny but clearly wrong option (will be inserted separately — must NOT match any of OPT_A/B/C)`,
+        `R${n}_JOKE: A funny but clearly wrong option (will be inserted separately -- must NOT match any of OPT_A/B/C)`,
         `R${n}_JOKE_INDEX: 0-3, position where the joke option gets inserted into the displayed choices`,
       );
       names.push(`R${n}_PROMPT`, `R${n}_OPT_A`, `R${n}_OPT_B`, `R${n}_OPT_C`, `R${n}_CORRECT_INDEX`, `R${n}_CORRECT_OPT`, `R${n}_JOKE`, `R${n}_JOKE_INDEX`);
@@ -4835,11 +4835,11 @@ export const TASK_SHELLS = {
     const names = ["TITLE", "PROMPT"];
 
     for (let i = 0; i < count; i++) {
-      placeholders.push(`STEP_${i + 1}: One step in the process. List steps in the CORRECT order — the system will auto-scramble them.`);
+      placeholders.push(`STEP_${i + 1}: One step in the process. List steps in the CORRECT order -- the system will auto-scramble them.`);
       names.push(`STEP_${i + 1}`);
     }
 
-    // We give them in correct order with trivial correctOrder — the sanitizer auto-scrambles
+    // We give them in correct order with trivial correctOrder -- the sanitizer auto-scrambles
     const shell = {
       taskType: "mad-dash-sequence",
       title: "{{TITLE}}",
@@ -4865,7 +4865,7 @@ export const TASK_SHELLS = {
       const n = i + 1;
       wordsByStation.push({ word: `{{WORD_${n}}}`, hint: `{{HINT_${n}}}` });
       placeholders.push(
-        `WORD_${n}: A vocabulary word — PURE ALPHABETIC only (A-Z, no hyphens/numbers/apostrophes). Pick from the word list.`,
+        `WORD_${n}: A vocabulary word -- PURE ALPHABETIC only (A-Z, no hyphens/numbers/apostrophes). Pick from the word list.`,
         `HINT_${n}: A real definition or context clue for WORD_${n} (NOT "Think about this word")`,
       );
       names.push(`WORD_${n}`, `HINT_${n}`);
@@ -4894,7 +4894,7 @@ export const TASK_SHELLS = {
       const n = i + 1;
       items.push({ question: `{{FRONT_${n}}}`, answer: `{{BACK_${n}}}` });
       placeholders.push(
-        `FRONT_${n}: A vocabulary term from the word list — NEVER "Term ${n}"`,
+        `FRONT_${n}: A vocabulary term from the word list -- NEVER "Term ${n}"`,
         `BACK_${n}: A clear definition or explanation for FRONT_${n}`,
       );
       names.push(`FRONT_${n}`, `BACK_${n}`);
@@ -5028,8 +5028,8 @@ export const TASK_SHELLS = {
       });
       placeholders.push(
         `ROLE_${n}_NAME: Character name or role title`,
-        `ROLE_${n}_GOAL: A specific objective this character pursues — NOT empty`,
-        `ROLE_${n}_CONSTRAINT: A limitation or conflict for this character — NOT empty`,
+        `ROLE_${n}_GOAL: A specific objective this character pursues -- NOT empty`,
+        `ROLE_${n}_CONSTRAINT: A limitation or conflict for this character -- NOT empty`,
       );
       names.push(`ROLE_${n}_NAME`, `ROLE_${n}_GOAL`, `ROLE_${n}_CONSTRAINT`);
     }
@@ -5054,8 +5054,8 @@ export const TASK_SHELLS = {
       "TITLE: Short note-taking title (3-7 words)",
       "PROMPT: 1-2 sentence student instructions",
       "HEADING: The heading for the notes (e.g., the topic name)",
-      "SUMMARY_1: First summary sentence — a key takeaway",
-      "SUMMARY_2: Second summary sentence — another key takeaway",
+      "SUMMARY_1: First summary sentence -- a key takeaway",
+      "SUMMARY_2: Second summary sentence -- another key takeaway",
     ];
     const names = ["TITLE", "PROMPT", "HEADING", "SUMMARY_1", "SUMMARY_2"];
 
@@ -5154,7 +5154,7 @@ export const TASK_SHELLS = {
     const buckets = [];
     for (let b = 0; b < bucketCount; b++) {
       buckets.push(`{{BUCKET_${b + 1}}}`);
-      placeholders.push(`BUCKET_${b + 1}: Category name — a real thematic grouping, NEVER "Category ${b + 1}"`);
+      placeholders.push(`BUCKET_${b + 1}: Category name -- a real thematic grouping, NEVER "Category ${b + 1}"`);
       names.push(`BUCKET_${b + 1}`);
     }
 
@@ -5163,7 +5163,7 @@ export const TASK_SHELLS = {
       const n = i + 1;
       items.push({ text: `{{SORT_ITEM_${n}}}`, bucketIndex: `<<SORT_ITEM_${n}_BUCKET>>` });
       placeholders.push(
-        `SORT_ITEM_${n}: A specific vocabulary term — NEVER "Item ${n}"`,
+        `SORT_ITEM_${n}: A specific vocabulary term -- NEVER "Item ${n}"`,
         `SORT_ITEM_${n}_BUCKET: 0-based index of which bucket this item belongs to (0-${bucketCount - 1}). Distribute items roughly evenly across buckets.`,
       );
       names.push(`SORT_ITEM_${n}`, `SORT_ITEM_${n}_BUCKET`);
@@ -5200,7 +5200,7 @@ export const TASK_SHELLS = {
       // First 3 candidates are secret answers (the ones students try to guess)
       if (i < 3) secretAnswers.push(`{{CANDIDATE_${n}}}`);
       placeholders.push(
-        `CANDIDATE_${n}: A real, named PERSON relevant to the topic (historical figure, scientist, author, leader, inventor, artist, etc.) — NEVER a concept or vocabulary word`,
+        `CANDIDATE_${n}: A real, named PERSON relevant to the topic (historical figure, scientist, author, leader, inventor, artist, etc.) -- NEVER a concept or vocabulary word`,
         `CANDIDATE_${n}_FACT1: First fact or clue about this candidate`,
         `CANDIDATE_${n}_FACT2: Second fact or clue about this candidate`,
         `CANDIDATE_${n}_FACT3: Third fact or clue about this candidate`,
@@ -5258,7 +5258,7 @@ export const TASK_SHELLS = {
     const placeholders = [
       "TITLE: Short case study title (3-7 words)",
       "PROMPT: 1-2 sentence student instructions",
-      "SCENARIO: 2-4 sentences describing a realistic problem or dilemma — must present a genuine open-ended problem, not just background info",
+      "SCENARIO: 2-4 sentences describing a realistic problem or dilemma -- must present a genuine open-ended problem, not just background info",
       'EXPERT_ROLE: Who evaluates the response (e.g., "History Professor", "Environmental Scientist")',
       "EXPERT_DESC: 1 sentence describing the expert",
     ];
@@ -5340,7 +5340,7 @@ export const TASK_SHELLS = {
   [TASK_TYPES.DRAW_MIME]: function buildDrawMimeShell() {
     const placeholders = [
       "TITLE: Short draw/mime title (3-7 words, e.g., 'Draw: Key Concepts')",
-      "CLUE_1: First drawable/actable concept (1-3 words) — this will also be the prompt",
+      "CLUE_1: First drawable/actable concept (1-3 words) -- this will also be the prompt",
       "CLUE_2: Second drawable/actable concept (1-3 words)",
       "CLUE_3: Third drawable/actable concept (1-3 words)",
       "CLUE_4: Fourth drawable/actable concept (1-3 words)",
