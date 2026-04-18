@@ -4699,8 +4699,14 @@ function StudentApp() {
         <TreasureRunner
           onSubmit={(payload) => {
             handleSubmitAnswer({ type: TASK_TYPES.TREASURE_RUNNER, ...payload })
-            setPostPhase("tasks");
-            
+            // After warmup pipeline, go to scan phase so student scans their station
+            // before receiving tasks or seeing mystery boxes
+            if (assignedColor && !scannedStationId) {
+              setPostPhase("scan");
+              setScannerActive(true);
+            } else {
+              setPostPhase("tasks");
+            }
           }}
         />
         <div style={{ marginTop: 10, fontWeight: 700, opacity: 0.8, textAlign: "center" }}>
@@ -4917,7 +4923,7 @@ function StudentApp() {
   !isPhysicalMultipleChoice &&
   postSubmitSecondsLeft == null &&
   !taskLocked &&
-  !(isMysteryMode && !currentTask) &&
+  !(isMysteryMode && !currentTask && scannedStationId) &&
   (
     mustScan ||
     currentTask?.taskType === TASK_TYPES.MAD_DASH ||
@@ -5129,8 +5135,8 @@ function StudentApp() {
   </div>
 )}
 
-{/* MYSTERY BOX GRID (when in mystery mode and no active task) */}
-{joined && postPhase === "tasks" && isMysteryMode && mysteryBoxGrid && !currentTask && !tasksetComplete && (
+{/* MYSTERY BOX GRID (when in mystery mode and no active task, only after initial scan) */}
+{joined && postPhase === "tasks" && isMysteryMode && mysteryBoxGrid && !currentTask && !tasksetComplete && (!assignedColor || scannedStationId) && (
   <section style={{ marginTop: 10 }}>
     <MysteryBoxGrid
       grid={mysteryBoxGrid}
