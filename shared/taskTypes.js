@@ -113,6 +113,9 @@ export const TASK_TYPES = {
   HIDENSEEK: "hidenseek",
   MULTI_ROOM_SCAVENGER_HUNT: "hidenseek",
 
+  // Storytelling — AI generates story from student-built characters
+  STORYTELLING: "storytelling",
+
   // Comic relief / no-score
   RIDDLE: "riddle",
   TRIVIA: "trivia",
@@ -1001,6 +1004,50 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Expert must be a specific role/title, not generic like "a person".
     - relevantConcepts must be real terms from the vocabulary list, not made-up phrases.
     - Scenario must present a genuine problem to solve, not just background info.
+    `,
+  },
+
+  [TASK_TYPES.STORYTELLING]: {
+    label: "Storytelling",
+    category: CATEGORY.CREATIVE,
+    implemented: true,
+    demoEligible: true,
+    generatorEligible: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "participation",
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 300,
+    estimatedMinutes: 6,
+    interTeamEnabled: false,
+    intraTeamEnabled: true,
+    description:
+      "Students build characters using their own names — picking gender, personality traits, roles in society, " +
+      "and national backgrounds. AI then generates a fun, age-appropriate story featuring them in a setting " +
+      "tied to the lesson topic. The story weaves in vocabulary words and concepts. " +
+      "Students read the generated story together and it appears in their reports. " +
+      "Optional randomize spinner picks traits/roles for extra fun.",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "storytelling".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt, config.
+    - config MUST include: setting (1-2 sentences describing the world/place/era the story takes place in),
+      topicContext (1-2 sentences about the lesson topic the story should incorporate),
+      genre (one of: "adventure", "mystery", "comedy", "historical fiction", "fantasy", "sci-fi"),
+      showNationality (boolean — true for history/literature topics, false for science/math),
+      vocabWords (array of 4-8 vocabulary terms from the word bank that should be woven into the story).
+    - The prompt should tell students they will build characters and AI will write a story featuring them.
+    - The setting should match the topic — e.g. for Roman history: "Ancient Rome during the height of the Empire".
+
+    Common failure prevention:
+    - Do not omit config or any required config fields.
+    - Setting must be specific and vivid, not generic like "a place".
+    - vocabWords must be real terms from the vocabulary list.
     `,
   },
 
@@ -5227,6 +5274,40 @@ export const TASK_SHELLS = {
         expertRole: "{{EXPERT_ROLE}}",
         expertDescription: "{{EXPERT_DESC}}",
         relevantConcepts,
+      },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── STORYTELLING ── */
+  [TASK_TYPES.STORYTELLING]: function buildStorytellingShell({ itemCount = 6 } = {}) {
+    const vocabCount = Math.max(4, itemCount);
+    const vocabWords = Array.from({ length: vocabCount }, (_, i) => `{{VOCAB_${i + 1}}}`);
+    const placeholders = [
+      "TITLE: Short storytelling task title (3-7 words, e.g., 'A Tale of Ancient Rome')",
+      "PROMPT: 1-2 sentence student instructions telling them to build characters and generate a story",
+      "SETTING: 1-2 sentences describing the world/place/era (e.g., 'Ancient Rome during the height of the Empire, where senators debate in marble halls and legions march along cobblestone roads')",
+      "TOPIC_CONTEXT: 1-2 sentences about the lesson topic the story should incorporate",
+      'GENRE: One of: "adventure", "mystery", "comedy", "historical fiction", "fantasy", "sci-fi"',
+      'SHOW_NATIONALITY: true for history/literature/social studies topics, false for science/math',
+    ];
+    const names = ["TITLE", "PROMPT", "SETTING", "TOPIC_CONTEXT", "GENRE", "SHOW_NATIONALITY"];
+
+    for (let i = 0; i < vocabCount; i++) {
+      placeholders.push(`VOCAB_${i + 1}: A vocabulary term from the word bank to weave into the story`);
+      names.push(`VOCAB_${i + 1}`);
+    }
+
+    const shell = {
+      taskType: "storytelling",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      config: {
+        setting: "{{SETTING}}",
+        topicContext: "{{TOPIC_CONTEXT}}",
+        genre: "{{GENRE}}",
+        showNationality: "<<SHOW_NATIONALITY>>",
+        vocabWords,
       },
     };
     return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };

@@ -7684,6 +7684,92 @@ Provide expert feedback on their solution. Guidelines:
 });
 
 /* ------------------------------------------------------------------ */
+/*  Storytelling — AI generates a fun story from student-built chars   */
+/* ------------------------------------------------------------------ */
+app.post("/api/evaluate/story-generate", async (req, res) => {
+  try {
+    const {
+      characters, setting, topicContext, genre, gradeLevel, vocabWords,
+    } = req.body || {};
+
+    const chars = Array.isArray(characters) ? characters.slice(0, 6) : [];
+    const place = String(setting || "a mysterious land").slice(0, 500);
+    const topic = String(topicContext || "").slice(0, 500);
+    const storyGenre = String(genre || "adventure").slice(0, 30);
+    const grade = parseInt(gradeLevel, 10) || 7;
+    const vocab = Array.isArray(vocabWords)
+      ? vocabWords.slice(0, 12).map((w) => String(w).trim()).filter(Boolean)
+      : [];
+
+    if (chars.length === 0) return res.status(400).json({ error: "Missing characters" });
+
+    const charList = chars.map((c) => {
+      let desc = `${c.name}: a ${c.trait}`;
+      if (c.nationality) desc += ` ${c.nationality}`;
+      if (c.gender) desc += ` ${c.gender.toLowerCase()}`;
+      desc += ` who is a ${c.role}`;
+      return desc;
+    }).join("\n");
+
+    const prompt = `
+You are a funny, creative storyteller writing for grade ${grade} students.
+
+Write a SHORT, entertaining ${storyGenre} story (200-350 words) set in: ${place}
+
+The story must feature these characters (use their EXACT names — these are real students!):
+${charList}
+
+${topic ? `The story should naturally incorporate this lesson topic: ${topic}` : ""}
+${vocab.length ? `Weave in these vocabulary words naturally: ${vocab.join(", ")}` : ""}
+
+Guidelines:
+- Make it FUNNY and age-appropriate — the students should laugh reading this about themselves
+- Each character's personality trait and role MUST clearly show in the story
+- Use the characters' real names throughout — this is what makes it special
+- Include dialogue — let the characters talk in ways that match their traits
+- The story should have a clear beginning, middle, and satisfying ending
+- Keep it classroom-appropriate but genuinely entertaining
+- Reference the setting and time period authentically
+- If vocabulary words are provided, bold them or use them in context that helps students understand them
+
+Return your response as JSON with two fields:
+{
+  "title": "A creative, fun title for the story",
+  "story": "The full story text here..."
+}
+
+Return ONLY the JSON, no markdown wrapping.
+    `.trim();
+
+    const response = await openai.chat.completions.create({
+      model: AI_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.9,
+      max_tokens: 800,
+    });
+
+    const raw = (response.choices?.[0]?.message?.content || "").trim();
+
+    // Parse JSON response
+    let title = "An Untold Story";
+    let story = raw;
+    try {
+      const cleaned = raw.replace(/^```json?\s*/i, "").replace(/```\s*$/, "").trim();
+      const parsed = JSON.parse(cleaned);
+      title = parsed.title || title;
+      story = parsed.story || story;
+    } catch {
+      // If JSON parse fails, use raw text as story
+    }
+
+    return res.json({ title, story });
+  } catch (err) {
+    console.error("Story generation error:", err);
+    return res.status(500).json({ error: "Story generation failed" });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  Handwriting OCR — GPT-4o vision extracts text from paper photos    */
 /* ------------------------------------------------------------------ */
 app.post("/api/ocr/handwriting", async (req, res) => {

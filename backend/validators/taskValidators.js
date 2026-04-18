@@ -2006,6 +2006,49 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
+    case TASK_TYPES.STORYTELLING: {
+      const cfg = isObject(task.config) ? task.config : (task.config = {});
+
+      cfg.setting = asNonEmptyString(cfg.setting,
+        asNonEmptyString(cfg.world, asNonEmptyString(cfg.place, "a mysterious land")));
+      cfg.topicContext = asNonEmptyString(cfg.topicContext,
+        asNonEmptyString(cfg.topic, asNonEmptyString(cfg.context, "")));
+      cfg.genre = asNonEmptyString(cfg.genre, "adventure");
+
+      // Normalize genre to allowed values
+      const allowedGenres = ["adventure", "mystery", "comedy", "historical fiction", "fantasy", "sci-fi"];
+      if (!allowedGenres.includes(cfg.genre.toLowerCase())) {
+        cfg.genre = "adventure";
+      }
+
+      // Normalize showNationality
+      if (typeof cfg.showNationality === "string") {
+        cfg.showNationality = cfg.showNationality.toLowerCase() === "true";
+      }
+      if (typeof cfg.showNationality !== "boolean") {
+        cfg.showNationality = true;
+      }
+
+      // Normalize vocabWords
+      if (!Array.isArray(cfg.vocabWords)) {
+        cfg.vocabWords = Array.isArray(cfg.vocab) ? cfg.vocab
+          : Array.isArray(cfg.words) ? cfg.words
+          : Array.isArray(cfg.vocabTerms) ? cfg.vocabTerms
+          : [];
+      }
+      cfg.vocabWords = cfg.vocabWords
+        .map((w) => String(w || "").trim())
+        .filter(Boolean)
+        .slice(0, 12);
+
+      if (!cfg.setting || cfg.setting === "a mysterious land") {
+        task._validationWarning = "Storytelling task has a generic setting — a vivid, specific setting improves the story.";
+      }
+
+      task.config = cfg;
+      break;
+    }
+
     case TASK_TYPES.RECORD_AUDIO: {
       // --- GUARDRAIL: AUTO-FIX multi-topic audio prompts ---
       // The AI stubbornly generates prompts asking about 2-3 topics in 20-45 seconds.

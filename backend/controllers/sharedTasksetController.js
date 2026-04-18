@@ -911,6 +911,8 @@ export const retryMustHave = {
     'LETTER: config MUST include character (full name), characterDescription (1-2 sentences), letterStyle ("business" or "friendly"), topicContext (what to write about), and relevantConcepts (MINIMUM 4, ideally 6-8 vocab terms students can use for bonus points — fewer than 4 will be REJECTED). Pick a character that fits the topic naturally.',
   [TASK_TYPES.CASE_STUDY]:
     'CASE_STUDY: config MUST include scenario (2-4 sentences describing a realistic problem/dilemma), expertRole (who evaluates, e.g. "History Professor"), expertDescription (1 sentence), and relevantConcepts (4-8 vocab terms for bonus points). Scenario must present a genuine open-ended problem to solve, not just background info.',
+  [TASK_TYPES.STORYTELLING]:
+    'STORYTELLING: config MUST include setting (1-2 vivid sentences describing the world/place/era), topicContext (what lesson topic to incorporate), genre (adventure/mystery/comedy/historical fiction/fantasy/sci-fi), showNationality (boolean — true for history/literature), and vocabWords (4-8 vocabulary terms to weave into the generated story). Setting must be specific and atmospheric, not generic.',
   [TASK_TYPES.MATCHING]:
     'MATCHING: Pick at least 6 terms from the vocabulary list and use them as leftItems (plain string array). For each term, write a short definition (8-20 words) and use those as rightItems (plain string array). Include correctMatches map {"L1":"R1","L2":"R2",...} at root level. Do NOT use empty arrays — a matching task with no items will be REJECTED. Do NOT use "items", "options", or "config" — only leftItems, rightItems, correctMatches at root. NEVER output placeholder text like "Term 1" or "Definition 2".',
   [TASK_TYPES.VENNSORT]:

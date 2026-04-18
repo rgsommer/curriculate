@@ -54,6 +54,7 @@ import GuessWhoTask from "./types/GuessWhoTask"; // ✅ NEW (Guess Who)
 import NarrationSynthesizeTask from "./types/NarrationSynthesizeTask";
 import PhysicalMultipleChoiceTask from "./types/PhysicalMultipleChoiceTask";
 
+import StorytellingTask from "./types/StorytellingTask";
 import ScriptPlayTask from "./types/ScriptPlayTask";
 import RolePlayDeckTask from "./types/RolePlayDeckTask";
 import TowerBuilderTask from "./types/TowerBuilderTask";
@@ -2634,6 +2635,23 @@ case "multi_player_feedback":
     case "caseStudy":
       content = (
         <CaseStudyTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled || isReview}
+          answered={effectiveDisabled || isReview}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+          roomCode={roomCode}
+          teamId={derivedTeamId}
+          memberNames={memberNames}
+        />
+      );
+      break;
+
+    case TASK_TYPES.STORYTELLING:
+    case "storytelling":
+      content = (
+        <StorytellingTask
           task={tp}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled || isReview}
