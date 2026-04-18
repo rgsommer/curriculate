@@ -94,6 +94,63 @@ const STATIC_DEMO_TASKS = {
     },
     categories: ["Forest", "Ocean", "Desert", "Grassland"],
   },
+
+  [TASK_TYPES.MIND_MAPPER]: {
+    taskType: TASK_TYPES.MIND_MAPPER,
+    title: "Parts of a Plant Cell",
+    prompt: "Drag each organelle to its correct position in the mind map.",
+    organizerType: "mind-map",
+    config: {
+      organizerType: "mind-map",
+      structure: {
+        center: "Plant Cell",
+        branches: [
+          { label: "Energy", slots: ["_____", "_____"] },
+          { label: "Protection", slots: ["_____"] },
+          { label: "Storage", slots: ["_____"] },
+          { label: "Control", slots: ["_____", "_____"] },
+        ],
+      },
+      items: [
+        { text: "Chloroplast", correctIndex: 0 },
+        { text: "Mitochondria", correctIndex: 1 },
+        { text: "Cell Wall", correctIndex: 2 },
+        { text: "Vacuole", correctIndex: 3 },
+        { text: "Nucleus", correctIndex: 4 },
+        { text: "DNA", correctIndex: 5 },
+      ],
+    },
+    items: [
+      { text: "Chloroplast", correctIndex: 0 },
+      { text: "Mitochondria", correctIndex: 1 },
+      { text: "Cell Wall", correctIndex: 2 },
+      { text: "Vacuole", correctIndex: 3 },
+      { text: "Nucleus", correctIndex: 4 },
+      { text: "DNA", correctIndex: 5 },
+    ],
+    structure: {
+      center: "Plant Cell",
+      branches: [
+        { label: "Energy", slots: ["_____", "_____"] },
+        { label: "Protection", slots: ["_____"] },
+        { label: "Storage", slots: ["_____"] },
+        { label: "Control", slots: ["_____", "_____"] },
+      ],
+    },
+  },
+
+  [TASK_TYPES.STORYTELLING]: {
+    taskType: TASK_TYPES.STORYTELLING,
+    title: "A Tale of Ancient Rome",
+    prompt: "Build your character and AI will write a story featuring your team in Ancient Rome! Pick your gender, personality, role, and nationality -- then read the adventure together.",
+    config: {
+      setting: "Ancient Rome during the height of the Empire, where senators debate in marble halls and legions march along cobblestone roads.",
+      topicContext: "The rise and fall of the Roman Republic, exploring how power, leadership, and civic duty shaped one of history's greatest civilizations.",
+      genre: "adventure",
+      showNationality: true,
+      vocabWords: ["republic", "senate", "legion", "aqueduct", "gladiator", "consul"],
+    },
+  },
 };
 
 function getDemoTasksetModel() {

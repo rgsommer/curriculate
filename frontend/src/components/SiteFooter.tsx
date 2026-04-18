@@ -36,7 +36,7 @@ export default function SiteFooter() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
             <FooterCol title="Product">
               <Link href="/how-it-works">How it Works</Link>
               <Link href="/ai-grading">AI Grading</Link>
@@ -64,6 +64,18 @@ export default function SiteFooter() {
               <Link className="hover:text-gray-900" href="/referrals">
                 Referral Program
               </Link>
+            </FooterCol>
+
+            <FooterCol title="Follow Us">
+              <a className="hover:text-gray-900" href="https://x.com/CurriculateNet" target="_blank" rel="noopener noreferrer">
+                X / Twitter
+              </a>
+              <a className="hover:text-gray-900" href="https://instagram.com/curriculategrading" target="_blank" rel="noopener noreferrer">
+                Instagram
+              </a>
+              <a className="hover:text-gray-900" href="https://tiktok.com/@curriculate_grading" target="_blank" rel="noopener noreferrer">
+                TikTok
+              </a>
             </FooterCol>
 
             <FooterCol title="Company & Legal">

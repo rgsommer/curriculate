@@ -123,6 +123,21 @@ export default function ContactPage() {
             )}
           </form>
         </div>
+
+        <div className="mt-10 text-center">
+          <p className="text-sm font-bold text-gray-800 mb-4">Follow us</p>
+          <div className="flex justify-center gap-6 text-sm font-semibold text-gray-600">
+            <a className="hover:text-blue-600 transition" href="https://x.com/CurriculateNet" target="_blank" rel="noopener noreferrer">
+              X / Twitter
+            </a>
+            <a className="hover:text-pink-600 transition" href="https://instagram.com/curriculategrading" target="_blank" rel="noopener noreferrer">
+              Instagram
+            </a>
+            <a className="hover:text-gray-900 transition" href="https://tiktok.com/@curriculate_grading" target="_blank" rel="noopener noreferrer">
+              TikTok
+            </a>
+          </div>
+        </div>
       </div>
     </main>
   );

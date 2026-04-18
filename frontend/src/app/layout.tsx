@@ -46,6 +46,16 @@ export const metadata: Metadata = {
     "handwriting bonus classroom",
     "reduce screen time school",
   ],
+  openGraph: {
+    siteName: "Curriculate",
+    type: "website",
+    url: "https://curriculate.net",
+  },
+  twitter: {
+    card: "summary_large_image",
+    site: "@CurriculateNet",
+    creator: "@CurriculateNet",
+  },
 };
 
 export default function RootLayout({
