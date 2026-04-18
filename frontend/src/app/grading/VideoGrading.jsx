@@ -8,7 +8,7 @@ import React, { useRef, useState, useCallback, useEffect } from "react";
  * extracts frames (ffmpeg), and grades via GPT vision.
  */
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
 const ACCEPTED_TYPES = ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v"];
 
 export default function VideoGrading({
@@ -45,7 +45,7 @@ export default function VideoGrading({
       return;
     }
     if (f.size > MAX_FILE_SIZE) {
-      setError(`Video is too large (${(f.size / 1024 / 1024).toFixed(0)}MB). Maximum is 100MB.`);
+      setError(`Video is too large (${(f.size / 1024 / 1024).toFixed(0)}MB). Maximum is 500MB.`);
       return;
     }
 
@@ -200,6 +200,7 @@ export default function VideoGrading({
     lines.push("");
     if (r.student_name) { lines.push(`Student: ${r.student_name}`); lines.push(""); }
     if (r.videoDuration) lines.push(`Video: ${Math.round(r.videoDuration)}s, ${r.frameCount || 0} frames analyzed`);
+    if (r.videoUrl) lines.push(`Video: ${r.videoUrl}`);
     lines.push("");
     if (Array.isArray(r.sections)) {
       lines.push("Sections:");
@@ -231,7 +232,7 @@ export default function VideoGrading({
 
   async function copyRefLink() {
     if (!refCode) return;
-    const url = `https://www.curriculate.net/results?code=${refCode}`;
+    const url = `https://www.curriculate.net/results/${refCode}`;
     try {
       await navigator.clipboard.writeText(url);
       setCopiedRef(true);
@@ -304,7 +305,7 @@ export default function VideoGrading({
                   {copiedRef ? "Link copied!" : `Ref: ${refCode}`}
                 </button>
                 <a
-                  href={`https://www.curriculate.net/results?code=${refCode}`}
+                  href={`https://www.curriculate.net/results/${refCode}`}
                   target="_blank"
                   rel="noreferrer"
                   style={{ fontSize: 12, color: "#2563eb", textDecoration: "underline" }}
@@ -483,7 +484,7 @@ export default function VideoGrading({
                   Drop a video here or tap to upload
                 </div>
                 <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>
-                  MP4, MOV, or WebM • Max 100MB
+                  MP4, MOV, or WebM • Max 500MB
                 </div>
               </div>
             )}
