@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import BatchGrading from "./BatchGrading";
+import VideoGrading from "./VideoGrading";
 
 /**
  * app/grading/page.jsx
@@ -1020,7 +1021,7 @@ export default function GradingPage() {
     });
 
     // Input mode: photo vs paste vs batch
-    const [inputMode, setInputMode] = useState("photo"); // "photo" | "paste" | "batch"
+    const [inputMode, setInputMode] = useState("photo"); // "photo" | "paste" | "batch" | "video"
     
     const [workInput, setWorkInput] = useState("");
     useEffect(() => {
@@ -2717,11 +2718,36 @@ export default function GradingPage() {
                 >
                   Batch
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setInputMode("video")}
+                  style={{
+                    ...styles.modeBtn,
+                    ...(inputMode === "video" ? styles.modeBtnActive : null),
+                  }}
+                  disabled={submitting}
+                >
+                  Video
+                </button>
               </div>
             </div>
-            
-          {/* Batch mode: full-card takeover */}
-          {inputMode === "batch" ? (
+
+          {/* Video mode: full-card takeover */}
+          {inputMode === "video" ? (
+            <VideoGrading
+              gradingUrl={gradingUrl}
+              gradeBand={gradeBand}
+              standards={standards}
+              feedbackVoice={voiceOverrideOn ? voiceOverride : voice}
+              rubricOverride={
+                (rubricOverride || "").trim() ||
+                (stickyRubricText || "").trim() ||
+                ""
+              }
+              onClose={() => setInputMode("photo")}
+            />
+          ) : inputMode === "batch" ? (
             <BatchGrading
               gradingUrl={gradingUrl}
               resultsUrl={resultsCreateUrl}
@@ -3072,7 +3098,7 @@ export default function GradingPage() {
           </div>
 
           {/* Rubric Options — visible in photo & paste modes (batch has its own rubric field) */}
-          <div style={{ ...styles.card, ...(inputMode === "batch" ? { display: "none" } : {}) }}>
+          <div style={{ ...styles.card, ...((inputMode === "batch" || inputMode === "video") ? { display: "none" } : {}) }}>
             {/* First-use tip: rubric + answer key */}
             {showRubricTip && (
               <div style={{
@@ -3255,7 +3281,7 @@ export default function GradingPage() {
           </div>
 
           {/* SUBMIT + RESPONSE CARD — hidden in batch mode */}
-          <div className="grading-submit-card" style={{ ...styles.card, ...(inputMode === "batch" ? { display: "none" } : {}) }}>
+          <div className="grading-submit-card" style={{ ...styles.card, ...((inputMode === "batch" || inputMode === "video") ? { display: "none" } : {}) }}>
             <div style={styles.cardTitle}>Submit</div>
 
             <div style={styles.btnRow}>

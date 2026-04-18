@@ -11431,7 +11431,438 @@ app.get("/api/tasksets-with-timing", async (req, res) => {
 // Accepts multipart audio upload, runs Whisper + GPT, returns feedback.
 // ------------------------------
 import multer from "multer";
+import fs from "fs";
+import path from "path";
+import os from "os";
+import { execFile } from "child_process";
+import { promisify } from "util";
+const execFileAsync = promisify(execFile);
 const audioUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+const videoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
+
+// ====================================================================
+//  Video Grading: Transcription + Frame Extraction + AI Grading
+//  POST /grading/video
+// ====================================================================
+app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
+  let tmpDir = null;
+  try {
+    if (!req.file || !req.file.buffer || req.file.buffer.length < 1000) {
+      return res.status(400).json({ ok: false, error: "No video data or file too small." });
+    }
+
+    // Check ffmpeg is available
+    try {
+      await execFileAsync("ffmpeg", ["-version"], { timeout: 5000 });
+    } catch {
+      return res.status(500).json({ ok: false, error: "Video grading requires ffmpeg, which is not installed on this server." });
+    }
+
+    const startTime = Date.now();
+    const oai = getOpenAIInstance();
+
+    // Parse request body fields
+    const rubricOverride = String(req.body?.rubricOverride || "").trim();
+    const gradeBand = ["3-5", "6-8", "9-10", "11+"].includes(req.body?.gradeBand) ? req.body.gradeBand : "6-8";
+    const standards = ["canada", "us", "uk", "eu"].includes(req.body?.standards) ? req.body.standards : "canada";
+    const feedbackVoice = req.body?.feedbackVoice || "coach";
+    const studentName = String(req.body?.studentName || "").trim() || null;
+
+    // Create temp directory
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "curriculate-video-"));
+    const ext = (req.file.mimetype || "").includes("quicktime") ? "mov"
+      : (req.file.mimetype || "").includes("webm") ? "webm"
+      : "mp4";
+    const videoPath = path.join(tmpDir, `input.${ext}`);
+    fs.writeFileSync(videoPath, req.file.buffer);
+
+    console.log(`[video-grade] Received ${(req.file.buffer.length / 1024 / 1024).toFixed(1)}MB ${ext} video`);
+
+    // ------------------------------------------------
+    // Step 1: Extract audio and transcribe with Whisper
+    // ------------------------------------------------
+    const audioPath = path.join(tmpDir, "audio.mp3");
+    try {
+      await execFileAsync("ffmpeg", [
+        "-i", videoPath,
+        "-vn", "-acodec", "libmp3lame", "-q:a", "4",
+        "-y", audioPath,
+      ], { timeout: 60000 });
+    } catch (ffErr) {
+      console.error("[video-grade] Audio extraction failed:", ffErr.message);
+      return res.status(400).json({ ok: false, error: "Could not extract audio from video. Is the file a valid video?" });
+    }
+
+    let transcript = "";
+    let transcriptWithTimestamps = "";
+    const audioBuffer = fs.readFileSync(audioPath);
+
+    if (audioBuffer.length > 500) {
+      const audioFile = await toFile(audioBuffer, "audio.mp3", { type: "audio/mpeg" });
+
+      // Get both plain text and verbose JSON (for timestamps)
+      const [textResp, verboseResp] = await Promise.all([
+        oai.audio.transcriptions.create({
+          model: "whisper-1",
+          file: await toFile(Buffer.from(audioBuffer), "audio.mp3", { type: "audio/mpeg" }),
+          response_format: "text",
+        }),
+        oai.audio.transcriptions.create({
+          model: "whisper-1",
+          file: audioFile,
+          response_format: "verbose_json",
+          timestamp_granularities: ["segment"],
+        }),
+      ]);
+
+      transcript = (typeof textResp === "string" ? textResp : textResp?.text || "").trim();
+
+      // Build timestamped transcript
+      if (verboseResp?.segments) {
+        transcriptWithTimestamps = verboseResp.segments.map(seg => {
+          const mins = Math.floor(seg.start / 60);
+          const secs = Math.floor(seg.start % 60);
+          const ts = `${mins}:${String(secs).padStart(2, "0")}`;
+          return `[${ts}] ${seg.text.trim()}`;
+        }).join("\n");
+      }
+    }
+
+    if (!transcript) {
+      console.log("[video-grade] No speech detected in video");
+    }
+
+    console.log(`[video-grade] Transcript: ${transcript.length} chars, ${transcriptWithTimestamps.split("\\n").length} segments`);
+
+    // ------------------------------------------------
+    // Step 2: Extract frames every ~10 seconds
+    // ------------------------------------------------
+    const framesDir = path.join(tmpDir, "frames");
+    fs.mkdirSync(framesDir);
+
+    // Get video duration first
+    let duration = 0;
+    try {
+      const { stdout } = await execFileAsync("ffprobe", [
+        "-v", "quiet",
+        "-show_entries", "format=duration",
+        "-of", "csv=p=0",
+        videoPath,
+      ], { timeout: 15000 });
+      duration = parseFloat(stdout.trim()) || 0;
+    } catch {}
+
+    console.log(`[video-grade] Video duration: ${duration.toFixed(1)}s`);
+
+    // Extract frames — every 10s, max 20 frames
+    const frameInterval = Math.max(10, duration / 20);
+    try {
+      await execFileAsync("ffmpeg", [
+        "-i", videoPath,
+        "-vf", `fps=1/${Math.round(frameInterval)}`,
+        "-q:v", "8",
+        "-frames:v", "20",
+        path.join(framesDir, "frame-%03d.jpg"),
+      ], { timeout: 60000 });
+    } catch (ffErr) {
+      console.warn("[video-grade] Frame extraction failed (may be audio-only):", ffErr.message);
+    }
+
+    // Read frames as base64
+    const frameFiles = fs.readdirSync(framesDir).filter(f => f.endsWith(".jpg")).sort();
+    const frames = [];
+    for (const f of frameFiles) {
+      const buf = fs.readFileSync(path.join(framesDir, f));
+      frames.push(`data:image/jpeg;base64,${buf.toString("base64")}`);
+    }
+
+    console.log(`[video-grade] Extracted ${frames.length} frames at ~${Math.round(frameInterval)}s intervals`);
+
+    // ------------------------------------------------
+    // Step 3: Build grading prompt
+    // ------------------------------------------------
+    const parsedOverride = parseRubricOrOverrides(rubricOverride);
+    const effectiveRubricOverride = parsedOverride.rubricOverrideText;
+    const overrideFixedOutOf = parsedOverride.fixedOutOf;
+
+    const instructions = buildRubricInstructions({
+      gradeBand,
+      rubricOverride: effectiveRubricOverride,
+      answerKeyOverride: "",
+      feedbackVoice,
+      feedbackVoiceMode: "default",
+      standards,
+      batchMode: false,
+    });
+
+    const videoPrompt = `
+    ${instructions}
+
+    *** VIDEO PERFORMANCE ASSESSMENT ***
+    You are grading a VIDEO recording of a student performance (speech, presentation, oral report, etc.).
+    You have two sources of evidence:
+    1. A TRANSCRIPT of what the student said (with timestamps)
+    2. FRAMES extracted from the video at regular intervals (showing the student's visual presentation)
+
+    ASSESSMENT DIMENSIONS (use these UNLESS a teacher rubric override specifies different criteria):
+    When no rubric is provided, assess using these 4 default dimensions (total /20):
+
+    1. CONTENT & KNOWLEDGE (/5):
+       - Accuracy and depth of subject matter
+       - Coverage of required topics/points
+       - Use of supporting evidence, examples, or details
+       - Understanding demonstrated through explanations
+
+    2. DELIVERY & PRESENTATION (/5):
+       - Speaking pace (too fast, too slow, or well-paced?)
+       - Volume and clarity of speech
+       - Filler words (count of "um", "uh", "like", "you know" — note frequency)
+       - Pauses — purposeful vs. awkward/lost
+       - Confidence and fluency
+
+    3. VISUAL PRESENTATION & BODY LANGUAGE (/5):
+       - Eye contact (looking at audience vs. reading from notes/screen)
+       - Posture and stance
+       - Gestures — natural and purposeful vs. fidgeting or stiff
+       - Use of visual aids (if applicable — slides, props, posters)
+       - Overall physical presence and engagement with audience
+
+    4. ORGANIZATION & STRUCTURE (/5):
+       - Clear introduction with topic/thesis statement
+       - Logical flow and transitions between points
+       - Conclusion that summarizes or closes effectively
+       - Time management (stayed within expected length, didn't rush/pad)
+
+    VIDEO-SPECIFIC RULES:
+    - Use the TRANSCRIPT to assess content, organization, and delivery (pace, filler words).
+    - Use the VIDEO FRAMES to assess eye contact, posture, gestures, visual aids.
+    - The frames are sampled every ~${Math.round(frameInterval)} seconds. Use them to identify PATTERNS,
+      not single moments (e.g., "mostly looked at notes" vs. "one frame caught them looking down").
+    - If the video has no speech (transcript empty), grade only visual aspects and note the absence of speech.
+    - If the video has no visual (frames empty), grade only from the transcript.
+    - Timestamps in the transcript help you assess pacing and time management.
+
+    ${transcript ? "" : "WARNING: No speech was detected in this video. Grade visual aspects only and note that no audio was captured."}
+
+    INFERENCE (required):
+    - inferred_subject: one of [Math, English, History, Geography, Science, Bible, Other]
+    - inferred_assessment_type: "Other" (or "Project" if it seems like a project presentation)
+    - inferred_grade_level: one of [3-5, 6-8, 9-10, 11+, Unknown]
+    - response_format_detected: "mixed"
+
+    Set rubricDetected = false, rubricText = null, rubricConfidence = 0.
+    Set answerKeyDetected = false, answerKeyText = null, answerKeyConfidence = 0.
+    ${studentName ? `Set student_name = "${studentName}".` : "Set student_name = null."}
+    `.trim();
+
+    // ------------------------------------------------
+    // Step 4: Build AI request content
+    // ------------------------------------------------
+    const userContent = [{ type: "input_text", text: videoPrompt }];
+
+    if (transcript) {
+      userContent.push({
+        type: "input_text",
+        text: `TRANSCRIPT (with timestamps):\n${transcriptWithTimestamps || transcript}`,
+      });
+    }
+
+    if (frames.length > 0) {
+      userContent.push({
+        type: "input_text",
+        text: `VIDEO FRAMES (${frames.length} frames, sampled every ~${Math.round(frameInterval)}s):`,
+      });
+      for (let i = 0; i < frames.length; i++) {
+        const timeSec = Math.round(i * frameInterval);
+        const mins = Math.floor(timeSec / 60);
+        const secs = timeSec % 60;
+        userContent.push({
+          type: "input_text",
+          text: `Frame at ${mins}:${String(secs).padStart(2, "0")}:`,
+        });
+        userContent.push({ type: "input_image", image_url: frames[i] });
+      }
+    }
+
+    // ------------------------------------------------
+    // Step 5: Call grading model
+    // ------------------------------------------------
+    const gradeResultSchema = {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        response_format_detected: { type: "string", enum: ["short-answer", "paragraph", "mixed", "test"] },
+        inferred_subject: { type: "string", enum: ["Math", "English", "History", "Geography", "Science", "Bible", "Other"] },
+        inferred_assessment_type: { type: "string", enum: ["Essay", "Test", "Quiz", "Homework", "Project", "Poster", "Worksheet", "Other"] },
+        inferred_grade_level: { type: "string", enum: ["3-5", "6-8", "9-10", "11+", "Unknown"] },
+        overall_score: { type: "number", minimum: 0 },
+        overall_out_of: { type: "number", minimum: 1 },
+        score_out_of_10: { type: ["number", "null"], minimum: 0, maximum: 10 },
+        final_score_out_of_10: { type: ["number", "null"], minimum: 0, maximum: 10 },
+        deductions: {
+          type: "array",
+          items: {
+            type: "object", additionalProperties: false,
+            properties: { reason: { type: "string", minLength: 1 }, points: { type: "number" } },
+            required: ["reason", "points"],
+          },
+        },
+        sections: {
+          type: ["array", "null"],
+          items: {
+            type: "object", additionalProperties: false,
+            properties: {
+              name: { type: "string", minLength: 1 },
+              score: { type: "number", minimum: 0 },
+              out_of: { type: "number", minimum: 1 },
+              teacher_comment: { type: "string", maxLength: 450 },
+              incorrect_items: { type: ["array", "null"],
+                items: {
+                  type: "object", additionalProperties: false,
+                  properties: {
+                    prompt: { type: "string", minLength: 1, maxLength: 140 },
+                    student_answer: { type: "string", maxLength: 60 },
+                    correct_answer: { type: "string", maxLength: 60 },
+                  },
+                  required: ["prompt", "student_answer", "correct_answer"],
+                },
+              },
+            },
+            required: ["name", "score", "out_of", "teacher_comment", "incorrect_items"],
+          },
+        },
+        student_name: { type: ["string", "null"] },
+        ai_suspected_cheating: { type: ["string", "null"] },
+        copying_suspected: { type: ["string", "null"] },
+        rubricText: { type: ["string", "null"], maxLength: 3500 },
+        rubricDetected: { type: "boolean" },
+        rubricConfidence: { type: "number", minimum: 0, maximum: 1 },
+        answerKeyText: { type: ["string", "null"], maxLength: 3500 },
+        answerKeyDetected: { type: "boolean" },
+        answerKeyConfidence: { type: "number", minimum: 0, maximum: 1 },
+        strengths: { type: "array", minItems: 2, maxItems: 4, items: { type: "string" } },
+        improvements: { type: "array", minItems: 1, maxItems: 3, items: { type: "string" } },
+        teacher_comment: { type: "string", minLength: 1 },
+        achievement_summary: {
+          type: ["array", "null"],
+          items: {
+            type: "object", additionalProperties: false,
+            properties: {
+              category: { type: "string", maxLength: 50 },
+              level: { type: "string", enum: ["strong", "adequate", "developing", "limited"] },
+              score: { type: "number" },
+              out_of: { type: "number" },
+              comment: { type: "string", maxLength: 200 },
+            },
+            required: ["category", "level", "score", "out_of", "comment"],
+          },
+        },
+      },
+      required: [
+        "response_format_detected", "inferred_subject", "inferred_assessment_type", "inferred_grade_level",
+        "overall_score", "overall_out_of", "score_out_of_10", "final_score_out_of_10",
+        "deductions", "sections", "student_name",
+        "ai_suspected_cheating", "copying_suspected",
+        "rubricText", "rubricConfidence", "rubricDetected",
+        "answerKeyText", "answerKeyDetected", "answerKeyConfidence",
+        "strengths", "improvements", "teacher_comment", "achievement_summary",
+      ],
+    };
+
+    const useFullModel = standards === "canada" && (gradeBand === "9-10" || gradeBand === "11+");
+    const gradingModel = useFullModel ? AI_MODEL_FULL : AI_MODEL;
+    console.log(`[video-grade] model=${gradingModel}, frames=${frames.length}, transcript=${transcript.length}chars`);
+
+    const response = await openai.responses.create({
+      model: gradingModel,
+      input: [{ role: "user", content: userContent }],
+      text: { format: { type: "json_schema", name: "grade_result", strict: true, schema: gradeResultSchema } },
+      max_output_tokens: 4000,
+    });
+
+    const grade = safeJsonParse(response.output_text);
+
+    if (!grade) {
+      return res.json({
+        ok: false,
+        error: "Video grading returned invalid JSON",
+        raw: response.output_text || "",
+      });
+    }
+
+    // ------------------------------------------------
+    // Step 6: Post-process (enforce denominator if rubric provided)
+    // ------------------------------------------------
+    if (overrideFixedOutOf && Number.isFinite(overrideFixedOutOf)) {
+      grade.overall_out_of = overrideFixedOutOf;
+      // Clamp score
+      if (grade.overall_score > overrideFixedOutOf) grade.overall_score = overrideFixedOutOf;
+    }
+
+    // Null out /10 fields when not on /10 scale
+    if (grade.overall_out_of !== 10) {
+      grade.score_out_of_10 = null;
+      grade.final_score_out_of_10 = null;
+    }
+
+    // Save to S3 + generate ref code (reuse existing grading save logic)
+    const submissionId = crypto.randomUUID();
+    const s3 = getS3Client();
+    let videoUrl = null;
+
+    if (s3) {
+      const videoKey = `grading/${submissionId}/video.${ext}`;
+      await s3.send(new PutObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: videoKey,
+        Body: req.file.buffer,
+        ContentType: req.file.mimetype || "video/mp4",
+        CacheControl: "private, max-age=0, no-store",
+        Metadata: { submissionid: submissionId, kind: "video-grading" },
+      }));
+      videoUrl = `https://www.curriculate.net/grading/capture/${submissionId}/video.${ext}`;
+    }
+
+    const responseTimeMs = Date.now() - startTime;
+    console.log(`[video-grade] Done in ${(responseTimeMs / 1000).toFixed(1)}s — score: ${grade.overall_score}/${grade.overall_out_of}`);
+
+    // Log usage
+    (async () => {
+      try {
+        await GradingUsage.create({
+          timestamp: new Date(),
+          subject: grade.inferred_subject || "Other",
+          assessmentType: "Video",
+          gradeLevel: gradeBand,
+          imageCount: frames.length,
+          overrideInputUsed: Boolean(rubricOverride),
+          responseTimeMs,
+          userAgent: req.headers["user-agent"] || null,
+        });
+      } catch {}
+    })();
+
+    // Return in the same shape as POST /grading so the frontend can handle it identically
+    return res.json({
+      ...grade,
+      videoUrl,
+      transcript,
+      transcriptWithTimestamps,
+      frameCount: frames.length,
+      videoDuration: duration,
+      meta: { submissionId, gradeBand, inputType: "video" },
+    });
+
+  } catch (err) {
+    console.error("[video-grade] Error:", err?.message || err);
+    return res.status(500).json({ ok: false, error: "Video grading failed: " + (err?.message || "unknown error") });
+  } finally {
+    // Cleanup temp files
+    if (tmpDir) {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  }
+});
 
 app.post("/api/audio/transcribe", audioUpload.single("audio"), async (req, res) => {
   try {
