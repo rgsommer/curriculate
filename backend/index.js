@@ -8135,6 +8135,8 @@ VOICE: Warm & encouraging (default)
 - Marking approach:
   - Maintain accuracy in grading while emphasizing encouragement.
   - On borderline cases, lean slightly generous — effort counts.
+  - EXCEPTION: When a teacher rubric override is provided, grade STRICTLY by the rubric. Do NOT inflate
+    scores out of encouragement. The rubric defines the standard — 0 is a valid score when criteria are unmet.
 - Strengths (array):
   - Lead with genuine enthusiasm: "Really strong use of examples to support your point!"
   - Name the skill AND the feeling: "Your conclusion ties everything together beautifully."
@@ -8656,18 +8658,25 @@ function buildRubricInstructions({
       - Do NOT add criteria that are not in the rubric. Only score what the teacher listed.
       - Every student MUST be graded on the SAME scale defined by this rubric.
 
-      CRITICAL — EACH CRITERION IS INDEPENDENT:
+      CRITICAL — EACH CRITERION IS INDEPENDENT (ZERO IS A VALID SCORE):
       - Each rubric criterion measures a DIFFERENT aspect of the work. Score each one on its OWN merits.
-      - A "correct answer" criterion is scored on whether the answer is right.
-      - A "showing work and neatness" criterion is scored on HOW the work is presented — legibility,
-        organization, clear steps, clean layout. A correct answer does NOT earn marks on this criterion
-        if the work is messy, disorganized, or absent.
-      - A "sentence answer" criterion is scored on whether a proper sentence answer was written.
-      - A "heading/date/name" criterion is scored on whether those elements are present.
+      - 0 marks is the CORRECT score when a criterion is completely unmet. Do NOT give pity marks.
+      - A "correct answer" criterion: 0 if the answer is wrong or absent. 1 if correct.
+      - A "showing work and neatness" criterion: Score ONLY on what you SEE.
+        0/2 = no work shown, or illegible scribbles/crossed-out mess with no clear steps.
+        0.5/2 = minimal work, very messy, hard to follow but something is attempted.
+        1/2 = some work shown but disorganized or sloppy.
+        1.5/2 = mostly clear work with minor neatness issues.
+        2/2 = clean, organized, step-by-step work that is easy to follow.
+        A correct answer does NOT earn marks here. Only the visible quality of work matters.
+      - A "sentence answer" criterion: 0 if no sentence answer is written. 1 if a proper sentence is present.
+        A number or calculation alone is NOT a sentence. The student must write words forming a sentence.
+      - A "heading/date/name" criterion: 0 if missing. Partial credit only if SOME elements are present.
       - Do NOT let a correct answer inflate scores on non-correctness criteria.
       - Do NOT give full marks across all criteria just because the student got the right answer.
-      - Be STRICT: if the work is messy and disorganized, the "showing work / neatness" score should
-        reflect that (e.g., 0.5/2 or 1/2), even if the final answer is correct.
+      - Do NOT give partial credit out of sympathy. If the criterion is not met, the score is 0.
+      - A student who writes only a scribbled number with no work, no sentence, and no heading
+        should score 0/2 + (0 or 1)/1 + 0/1 + 0/1 = 0 or 1 out of 5. This is correct and expected.
 
       If this rubric override includes categories, criteria, or denominators, it takes ABSOLUTE priority over any default grading assumptions.
 
@@ -9027,15 +9036,17 @@ function buildRubricInstructions({
     *** CRITICAL EXCEPTION — TEACHER RUBRIC OVERRIDES THIS RULE: ***
     If the teacher's rubric override includes an EXPLICIT criterion for "showing work", "neatness",
     "presentation", "format", or similar quality-of-work criteria (e.g., "/2 for showing work and neatness"),
-    then that criterion MUST be graded STRICTLY based on the actual visible quality of the student's work:
-      - Messy, crossed-out, disorganized work = low marks on that criterion (0–0.5 out of 2).
-      - Minimal or no work shown = low marks even if the final answer is correct.
-      - Clean, organized, step-by-step work = full marks on that criterion.
+    then that criterion MUST be graded STRICTLY based on the actual visible quality of the student's work.
+    0 IS A VALID AND EXPECTED SCORE when a criterion is not met:
+      - Scribbles, crossed-out mess, illegible work, no clear steps = 0 out of 2 (not 0.5, not 1 — ZERO).
+      - Minimal or no work shown = 0 even if the final answer happens to be correct.
+      - Some work but messy/disorganized = 0.5 or 1 out of 2.
+      - Clean, organized, step-by-step work = 1.5 or 2 out of 2.
       - This criterion is about HOW the work looks and reads, not whether the answer is right.
-      - A correct final answer does NOT automatically earn full marks on a "showing work / neatness" criterion.
-      - Grade this criterion by what you SEE: Is the work legible? Organized? Are steps clearly laid out?
-        Is there evidence of systematic problem-solving, or just a scribbled answer?
-    The "correct answer" criterion is graded separately for correctness.
+      - A correct final answer does NOT earn ANY marks on a "showing work / neatness" criterion.
+      - Grade this criterion ONLY by what you SEE: Is the work legible? Organized? Are steps laid out?
+      - Do NOT give pity marks. Do NOT give 1/2 just because the student tried. If the work is a mess, it's 0.
+    Similarly for other criteria: if no sentence answer exists, that criterion is 0. If no heading/date/name, 0.
     The rubric splits these into independent criteria precisely so they are scored independently.
 
     - HARD RULE (applies ONLY when there is NO explicit rubric criterion for work quality/neatness):
