@@ -7958,8 +7958,8 @@ function parseRubricOrOverrides(input) {
 
   const s = raw.toLowerCase();
 
-  // 1) page/side overrides
-  const pageMatches = [...s.matchAll(/\b(?:page|p|side)\s*(\d+)\s*[:\-]?\s*\/?\s*(\d+)\b/gi)];
+  // 1) page/side overrides (require "page", "p." or "side" — NOT bare "p" which matches words like "p297")
+  const pageMatches = [...s.matchAll(/\b(?:page|p\.|side)\s*(\d+)\s*[:\-]?\s*\/?\s*(\d+)\b/gi)];
   if (pageMatches.length) {
     const pageOutOfMap = {};
     for (const m of pageMatches) {
@@ -7997,9 +7997,37 @@ function parseRubricOrOverrides(input) {
     }
   }
 
-  // 3) otherwise treat as rubric text
+  // 3) otherwise treat as rubric text — but also extract total from criteria
+  //    so server-side enforcement can rescale if the AI ignores the rubric
+  let rubricFixedOutOf = null;
+
+  // Check for explicit total: "/5 as follows", "out of 5", "total: 5"
+  const totalDecl = raw.match(/(?:^|\n)\s*\/\s*(\d+(?:\.\d+)?)\s+(?:as follows|total|:)/i)
+    || raw.match(/(?:out of|total[:\s]*\/?\s*)(\d+(?:\.\d+)?)/i);
+  if (totalDecl) {
+    rubricFixedOutOf = parseFloat(totalDecl[1]);
+  }
+
+  // Sum individual criteria: "N mark(s) for/: ...", "/N for/: ..."
+  if (!rubricFixedOutOf) {
+    let criteriaSum = 0;
+    let criteriaFound = 0;
+    const lines = raw.split(/\n/).map(l => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      if (/^\/?(\d+)\s+(as follows|total)/i.test(line)) continue;
+      const m = line.match(/^(?:\/(\d+(?:\.\d+)?)\s|(\d+(?:\.\d+)?)\s+marks?\s*(?:for\s|:\s*|-)|(\d+(?:\.\d+)?)\s+for\s)/i);
+      if (m) {
+        criteriaSum += parseFloat(m[1] || m[2] || m[3]);
+        criteriaFound++;
+      }
+    }
+    if (criteriaFound >= 2 && criteriaSum > 0) {
+      rubricFixedOutOf = criteriaSum;
+    }
+  }
+
   return {
-    fixedOutOf: null,
+    fixedOutOf: rubricFixedOutOf,
     pageOutOfMap: null,
     rubricOverrideText: raw,
   };
@@ -8548,54 +8576,66 @@ function buildRubricInstructions({
 
     ${(() => {
       if (!rubricOverride) return "";
-      // Auto-detect total from rubric patterns:
-      //   "/2 for showing work, /1 correct answer" → slash style
-      //   "2 marks for showing work, 1 for correct answer" → bare number style
-      //   "2 for showing work, 1 for correct" → bare with "for"
+      // Parse rubric to extract total and criteria count.
+      // Handles many teacher rubric formats:
+      //   "/2 for showing work, /1 correct answer"       → slash style
+      //   "2 marks for showing work"                     → "N marks for"
+      //   "2 marks: showing work"                        → "N marks:"
+      //   "1 mark for correct answer"                    → "N mark for"
+      //   "1 mark: heading, date, name"                  → "N mark:"
+      //   "/5 as follows:" (standalone total)            → explicit total
+      //   "out of 5" or "total /5" or "/ 5"             → explicit total
       let computedTotal = 0;
       let criterionCount = 0;
-      let criteriaList = [];
+      let explicitTotal = 0; // from "/5 as follows" or "out of 5"
 
-      // Try slash patterns first: /2, /1, /1
-      const slashNums = rubricOverride.match(/\/(\d+(?:\.\d+)?)\s+(?:marks?\s+)?(?:for\s+)?(\w[\w\s&,]*?)(?=,\s*\/|\s*$)/gi);
-      if (slashNums && slashNums.length > 0) {
-        for (const m of slashNums) {
-          const numMatch = m.match(/^\/(\d+(?:\.\d+)?)/);
-          if (numMatch) {
-            computedTotal += parseFloat(numMatch[1]);
-            criterionCount++;
-            criteriaList.push(m.trim());
-          }
+      // Check for explicit total declaration: "/5 as follows", "out of 5", "total: 5", "total /5", "/ 5"
+      const totalDecl = rubricOverride.match(/(?:^|\n)\s*\/\s*(\d+(?:\.\d+)?)\s+(?:as follows|total|:)/i)
+        || rubricOverride.match(/(?:out of|total[:\s]*\/?\s*)(\d+(?:\.\d+)?)/i);
+      if (totalDecl) {
+        explicitTotal = parseFloat(totalDecl[1]);
+      }
+
+      // Extract individual criteria from lines/phrases
+      // Match patterns: "N mark(s) for ...", "N mark(s): ...", "/N for ...", "/N ..."
+      const lines = rubricOverride.split(/\n|(?:,\s*(?=\d|\/))/).map(l => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        // Skip total declarations
+        if (/^\/?(\d+)\s+(as follows|total)/i.test(line)) continue;
+        if (/^(out of|total)/i.test(line)) continue;
+
+        // "/N for ..." or "/N marks for ..." or "/N: ..."
+        const slashMatch = line.match(/^\/(\d+(?:\.\d+)?)\s+/);
+        if (slashMatch) {
+          computedTotal += parseFloat(slashMatch[1]);
+          criterionCount++;
+          continue;
+        }
+
+        // "N mark(s) for ..." or "N mark(s): ..."  or "N mark(s) -"
+        const markMatch = line.match(/^(\d+(?:\.\d+)?)\s+marks?\s*(?:for\s|:\s*|-\s*)/i);
+        if (markMatch) {
+          computedTotal += parseFloat(markMatch[1]);
+          criterionCount++;
+          continue;
+        }
+
+        // "N for ..." (bare number followed by "for")
+        const bareForMatch = line.match(/^(\d+(?:\.\d+)?)\s+for\s+/i);
+        if (bareForMatch) {
+          computedTotal += parseFloat(bareForMatch[1]);
+          criterionCount++;
+          continue;
         }
       }
 
-      // Fallback: simpler slash extraction (just /N anywhere)
-      if (criterionCount === 0) {
-        const simpleSlash = rubricOverride.match(/\/(\d+(?:\.\d+)?)/g);
-        if (simpleSlash) {
-          for (const m of simpleSlash) {
-            computedTotal += parseFloat(m.slice(1));
-            criterionCount++;
-          }
-        }
-      }
+      // Use explicit total if criteria parsing produced a matching or close sum,
+      // or if criteria parsing found nothing
+      const finalTotal = explicitTotal > 0 ? explicitTotal : computedTotal;
 
-      // Fallback: bare number patterns "N marks for" or "N for"
-      if (criterionCount === 0) {
-        const bareNums = rubricOverride.match(/(\d+(?:\.\d+)?)\s+(?:marks?\s+)?for\s+/gi);
-        if (bareNums && bareNums.length > 0) {
-          for (const m of bareNums) {
-            const numMatch = m.match(/^(\d+(?:\.\d+)?)/);
-            if (numMatch) {
-              computedTotal += parseFloat(numMatch[1]);
-              criterionCount++;
-            }
-          }
-        }
-      }
-
-      const totalLine = computedTotal > 0
-        ? `\n      COMPUTED TOTAL FROM RUBRIC: overall_out_of MUST be exactly ${computedTotal}. There are exactly ${criterionCount} scoring criteria. Do NOT add extra criteria beyond these ${criterionCount}. Do NOT split one criterion into multiple sections.`
+      // If we found criteria that sum to a total, use that; otherwise use explicit total
+      const totalLine = finalTotal > 0
+        ? `\n      COMPUTED TOTAL FROM RUBRIC: overall_out_of MUST be exactly ${finalTotal}.${criterionCount > 0 ? ` There are exactly ${criterionCount} scoring criteria. You MUST create exactly ${criterionCount} sections — one per criterion listed above. Do NOT add extra criteria. Do NOT split one criterion into multiple sections.` : ` Distribute this total across the criteria described in the rubric.`}`
         : "";
       return `
       *** TEACHER-PROVIDED RUBRIC OVERRIDE (MANDATORY — THIS IS THE HIGHEST PRIORITY INSTRUCTION): ***
