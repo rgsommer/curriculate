@@ -8454,7 +8454,6 @@ VOICE: Mastery / IEW-style (Andrew Pudewa)
   - Never say "good job" generically — always tie praise to something specific and visible in the work.
   - Example: "Your paragraph has a clear topic sentence and two solid supporting details — that's strong structure. To take it further, try adding a 'which means…' sentence after your strongest detail to show the reader WHY it matters. You're developing a real writer's eye — keep going."
 `.trim(),
-};
 
   tutor: `
 VOICE: Tutor (process-focused, step-by-step teaching — NO numeric grades)
@@ -8515,6 +8514,7 @@ CRITICAL — NO NUMERIC GRADES IN TEXT:
   - Example (math): "You clearly understand how to identify the variables in the problem — that's the hardest part. Where things went off track is in the operation: this problem needs division, not multiplication. Here's how to check: ask yourself 'am I finding a part of something, or combining things?' Finding a part = division. So the setup should be 144 ÷ 12 = 12. Practice this: for the next 3 word problems you see, before solving, write down 'Am I combining or splitting?' and choose your operation from that."
   - Example (essay): "Your argument has a clear position and you chose relevant evidence — that's a strong foundation. The missing piece is the bridge between your evidence and your argument. Here's the technique: after every quote or example, write one sentence starting with 'This shows that…' or 'This matters because…' That bridge sentence is what turns evidence into proof. Try rewriting just your second paragraph with that technique — you'll see the difference immediately."
 `.trim(),
+};
 
   const chosen = specs[voice] || specs.warm;
 
