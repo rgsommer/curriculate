@@ -8661,22 +8661,36 @@ function buildRubricInstructions({
       CRITICAL — EACH CRITERION IS INDEPENDENT (ZERO IS A VALID SCORE):
       - Each rubric criterion measures a DIFFERENT aspect of the work. Score each one on its OWN merits.
       - 0 marks is the CORRECT score when a criterion is completely unmet. Do NOT give pity marks.
-      - A "correct answer" criterion: 0 if the answer is wrong or absent. 1 if correct.
+
+      MANDATORY VERIFICATION STEP — for EACH criterion, you MUST:
+      1. State what SPECIFIC evidence you see (or don't see) in the student's work for this criterion.
+      2. If you cannot point to specific visible evidence, the score for that criterion MUST be 0.
+      3. Record this evidence in the section's teacher_comment BEFORE assigning the score.
+      Do NOT assume a criterion is met. LOOK for it. If it's not visibly there, score = 0.
+
+      Criterion scoring guide:
+      - A "correct answer" criterion: 0 if the answer is wrong, absent, or a different number. 1 if correct.
+        The answer must ACTUALLY BE correct — not "close" or "approximately right." 12.35 ≠ 12.
       - A "showing work and neatness" criterion: Score ONLY on what you SEE.
         0/2 = no work shown, or illegible scribbles/crossed-out mess with no clear steps.
         0.5/2 = minimal work, very messy, hard to follow but something is attempted.
-        1/2 = some work shown but disorganized or sloppy.
-        1.5/2 = mostly clear work with minor neatness issues.
-        2/2 = clean, organized, step-by-step work that is easy to follow.
+        1/2 = some work shown but disorganized or sloppy, OR work is neat but key steps are missing
+              (e.g., has a table but no formula/rule shown when the rubric says "showing work").
+        1.5/2 = clear work with minor neatness issues, most key steps present.
+        2/2 = clean, organized, step-by-step work with formula/rule shown, easy to follow.
         A correct answer does NOT earn marks here. Only the visible quality of work matters.
-      - A "sentence answer" criterion: 0 if no sentence answer is written. 1 if a proper sentence is present.
-        A number or calculation alone is NOT a sentence. The student must write words forming a sentence.
-      - A "heading/date/name" criterion: 0 if missing. Partial credit only if SOME elements are present.
+      - A "sentence answer" criterion: 0 if no sentence answer is written. 1 ONLY if a proper sentence
+        is visibly present. A number, calculation, table, or list is NOT a sentence.
+        The student must write actual words forming a complete sentence that answers the question.
+        If you cannot find a written sentence in the student's work, score = 0. Period.
+      - A "heading/date/name" criterion: 0 if ALL are missing. Partial credit only if SOME elements are present.
       - Do NOT let a correct answer inflate scores on non-correctness criteria.
       - Do NOT give full marks across all criteria just because the student got the right answer.
       - Do NOT give partial credit out of sympathy. If the criterion is not met, the score is 0.
       - A student who writes only a scribbled number with no work, no sentence, and no heading
         should score 0/2 + (0 or 1)/1 + 0/1 + 0/1 = 0 or 1 out of 5. This is correct and expected.
+      - A student with a neat table but no formula, no sentence answer, and a heading
+        should score around 1/2 + 1/1 + 0/1 + 1/1 = 3 out of 5. NOT 5/5.
 
       If this rubric override includes categories, criteria, or denominators, it takes ABSOLUTE priority over any default grading assumptions.
 
