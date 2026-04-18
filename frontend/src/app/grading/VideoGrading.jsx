@@ -230,7 +230,9 @@ export default function VideoGrading({
       lines.push(`Video recording: ${r.videoUrl}`);
       lines.push("");
     }
-    if (r.transcript) { lines.push("Transcript:"); lines.push(r.transcript); lines.push(""); }
+    // Prefer timestamped transcript, fall back to plain
+    const displayTranscript = r.transcriptWithTimestamps || r.transcript;
+    if (displayTranscript) { lines.push("Transcript:"); lines.push(displayTranscript); lines.push(""); }
     return lines.join("\n");
   }
 

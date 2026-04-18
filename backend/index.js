@@ -7868,8 +7868,8 @@ app.get("/grading/capture/:submissionId/:file", async (req, res) => {
   try {
     const { submissionId, file } = req.params;
     
-    // Validate file param early (right here)
-    if (!/^image-\d+\.jpg$/i.test(file)) {
+    // Validate file param early (allow images and video files)
+    if (!/^(image-\d+\.jpg|video\.\w+)$/i.test(file)) {
       return res
         .status(200)
         .set("Content-Type", "text/html")
@@ -11821,6 +11821,7 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
         Metadata: { submissionid: submissionId, kind: "video-grading" },
       }));
       videoUrl = `https://www.curriculate.net/grading/capture/${submissionId}/video.${ext}`;
+      await GradingCapture.create({ submissionId, keys: [videoKey], createdAt: new Date() });
     }
 
     const responseTimeMs = Date.now() - startTime;
