@@ -22,16 +22,20 @@ export default function VideoGrading({
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [studentName, setStudentName] = useState("");
+  const [localRubric, setLocalRubric] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState("");
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [progressPct, setProgressPct] = useState(0);
+  const [refCode, setRefCode] = useState("");
+  const [copiedRef, setCopiedRef] = useState(false);
   const fileInputRef = useRef(null);
   const abortRef = useRef(false);
   const progressTimerRef = useRef(null);
 
   const backendBase = gradingUrl?.replace(/\/grading$/, "") || process.env.NEXT_PUBLIC_BACKEND_URL || "";
+  const resultsUrl = backendBase ? `${backendBase.replace(/\/$/, "")}/results` : "";
 
   const handleFileSelect = useCallback((e) => {
     const f = e.target.files?.[0];
@@ -139,7 +143,7 @@ export default function VideoGrading({
     try {
       const formData = new FormData();
       formData.append("video", file);
-      formData.append("rubricOverride", rubricOverride || "");
+      formData.append("rubricOverride", localRubric.trim() || rubricOverride || "");
       formData.append("gradeBand", gradeBand || "6-8");
       formData.append("standards", standards || "canada");
       formData.append("feedbackVoice", feedbackVoice || "coach");
@@ -164,6 +168,22 @@ export default function VideoGrading({
         setError(data.error);
       } else {
         setResult(data);
+
+        // Auto-publish to get a ref code
+        if (resultsUrl) {
+          try {
+            const payload = buildVideoPayloadText(data);
+            const pubResp = await fetch(resultsUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ payload, meta: { source: "video-grading", gradeBand } }),
+            });
+            const pubData = await pubResp.json().catch(() => ({}));
+            if (pubData?.code) setRefCode(String(pubData.code).toUpperCase());
+          } catch (e) {
+            console.warn("Video result publish failed:", e);
+          }
+        }
       }
     } catch (err) {
       setError(err.message || "Video grading failed.");
@@ -175,12 +195,69 @@ export default function VideoGrading({
     }
   }, [file, backendBase, rubricOverride, gradeBand, standards, feedbackVoice, studentName, startProgressTimer, stopProgressTimer]);
 
+  function buildVideoPayloadText(r) {
+    const lines = [];
+    lines.push(`Grade: ${r.overall_score} / ${r.overall_out_of}`);
+    lines.push("");
+    if (r.student_name) { lines.push(`Student: ${r.student_name}`); lines.push(""); }
+    if (r.videoDuration) lines.push(`Video: ${Math.round(r.videoDuration)}s, ${r.frameCount || 0} frames analyzed`);
+    lines.push("");
+    if (Array.isArray(r.sections)) {
+      lines.push("Sections:");
+      r.sections.forEach(s => lines.push(`- ${s.name}: ${s.score}/${s.out_of} — ${s.teacher_comment || ""}`));
+      lines.push("");
+    }
+    if (Array.isArray(r.strengths)) {
+      lines.push("Strengths:");
+      r.strengths.forEach(s => lines.push(`- ${s}`));
+      lines.push("");
+    }
+    if (Array.isArray(r.improvements)) {
+      lines.push("Next Steps:");
+      r.improvements.forEach(s => lines.push(`- ${s}`));
+      lines.push("");
+    }
+    if (Array.isArray(r.achievement_summary)) {
+      lines.push("Achievement Categories:");
+      r.achievement_summary.forEach(k => {
+        const scoreStr = typeof k.score === "number" ? ` ${k.score.toFixed(2)}/${k.out_of.toFixed(2)}` : "";
+        lines.push(`- ${k.category}${scoreStr} [${k.level}]: ${k.comment}`);
+      });
+      lines.push("");
+    }
+    if (r.teacher_comment) { lines.push("Overall Comment:"); lines.push(r.teacher_comment); lines.push(""); }
+    if (r.transcript) { lines.push("Transcript:"); lines.push(r.transcript); }
+    return lines.join("\n");
+  }
+
+  async function copyRefLink() {
+    if (!refCode) return;
+    const url = `https://www.curriculate.net/results?code=${refCode}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedRef(true);
+      setTimeout(() => setCopiedRef(false), 2000);
+    } catch {
+      // fallback
+      const ta = document.createElement("textarea");
+      ta.value = url;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      setCopiedRef(true);
+      setTimeout(() => setCopiedRef(false), 2000);
+    }
+  }
+
   const clearAll = useCallback(() => {
     setFile(null);
     setPreview(null);
     setResult(null);
     setError("");
     setStudentName("");
+    setRefCode("");
+    setCopiedRef(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
@@ -206,7 +283,7 @@ export default function VideoGrading({
           }}>
             {r.overall_score}/{r.overall_out_of}
           </div>
-          <div>
+          <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 600, fontSize: 16 }}>
               {r.student_name || "Student"} — Video Assessment
             </div>
@@ -215,6 +292,28 @@ export default function VideoGrading({
               {r.videoDuration ? `${Math.round(r.videoDuration)}s video` : ""}
               {r.frameCount ? ` • ${r.frameCount} frames analyzed` : ""}
             </div>
+            {refCode && (
+              <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  onClick={copyRefLink}
+                  style={{
+                    padding: "4px 10px", borderRadius: 6, fontSize: 12, fontWeight: 700,
+                    border: "1px solid #cbd5e1", background: copiedRef ? "#dcfce7" : "#f8fafc",
+                    color: copiedRef ? "#16a34a" : "#334155", cursor: "pointer",
+                  }}
+                >
+                  {copiedRef ? "Link copied!" : `Ref: ${refCode}`}
+                </button>
+                <a
+                  href={`https://www.curriculate.net/results?code=${refCode}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ fontSize: 12, color: "#2563eb", textDecoration: "underline" }}
+                >
+                  View feedback
+                </a>
+              </div>
+            )}
           </div>
         </div>
 
@@ -409,17 +508,31 @@ export default function VideoGrading({
             />
           </div>
 
-          {/* Rubric preview */}
-          {rubricOverride && (
-            <div style={{
-              padding: 10, background: "#fffbeb", borderRadius: 8,
-              border: "1px solid #fde68a", fontSize: 12, color: "#92400e",
-              marginBottom: 12,
-            }}>
-              <strong>Rubric override active:</strong> {rubricOverride.slice(0, 120)}
-              {rubricOverride.length > 120 ? "..." : ""}
-            </div>
-          )}
+          {/* Rubric input */}
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 4 }}>
+              Rubric (optional — leave blank for default speech/presentation rubric)
+            </label>
+            <textarea
+              value={localRubric}
+              onChange={(e) => setLocalRubric(e.target.value)}
+              placeholder={"e.g.\n/5 content and knowledge\n/5 delivery and eye contact\n/5 organization\n/5 visual aids"}
+              style={{
+                width: "100%", minHeight: 80, padding: "8px 12px", borderRadius: 8,
+                border: "1px solid #cbd5e1", fontSize: 13, boxSizing: "border-box",
+                fontFamily: "inherit", resize: "vertical",
+              }}
+              disabled={submitting}
+            />
+            {!localRubric && rubricOverride && (
+              <div style={{
+                padding: 6, background: "#fffbeb", borderRadius: 6,
+                border: "1px solid #fde68a", fontSize: 11, color: "#92400e", marginTop: 4,
+              }}>
+                Using rubric from main page: {rubricOverride.slice(0, 80)}{rubricOverride.length > 80 ? "..." : ""}
+              </div>
+            )}
+          </div>
 
           {/* Grade button */}
           <button
