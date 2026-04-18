@@ -8670,7 +8670,11 @@ function buildRubricInstructions({
 
       Criterion scoring guide:
       - A "correct answer" criterion: 0 if the answer is wrong, absent, or a different number. 1 if correct.
-        The answer must ACTUALLY BE correct — not "close" or "approximately right." 12.35 ≠ 12.
+        The answer must ACTUALLY BE correct — not "close" or "approximately right." 12.5 ≠ 12. 12.35 ≠ 12.
+        When a problem has one definite answer (e.g., "which figure number uses 25 squares?"), only the
+        exact correct value earns the mark. A decimal approximation of a whole-number answer is WRONG.
+        If the student's arithmetic leads to a non-integer when the answer must be an integer, that is wrong.
+        Do NOT give partial credit on a 1-mark correct-answer criterion — it is binary: right (1) or wrong (0).
       - A "showing work and neatness" criterion: Score ONLY on what you SEE.
         0/2 = no work shown, or illegible scribbles/crossed-out mess with no clear steps.
         0.5/2 = minimal work, very messy, hard to follow but something is attempted.
