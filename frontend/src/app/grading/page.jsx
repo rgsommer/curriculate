@@ -1083,6 +1083,8 @@ export default function GradingPage() {
       return loadLS(VOICE_OVERRIDE_VALUE_KEY, "warm");
     });
     const prevVoiceBeforeIepRef = useRef(null);
+    const activeVoice = voiceOverrideOn ? voiceOverride : voice;
+    const isTutorMode = activeVoice === "tutor";
 
     // Persist
     useEffect(() => saveLS(GRADE_BAND_KEY, gradeBand), [gradeBand]);
@@ -2390,12 +2392,13 @@ export default function GradingPage() {
       }
 
       const g = getDisplayScore(assessment);
+      // isTutorMode is computed above in the component body
       const refUrl = codeLocal ? `https://www.curriculate.net/results/${encodeURIComponent(codeLocal)}` : "";
 
       htmlParts.push(
         `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
           <div>
-            <b>Grade:</b> ${escapeHtml(getDisplayScore(assessment).score)} / ${escapeHtml(getDisplayScore(assessment).outOf)}
+            ${isTutorMode ? "<b>Tutor Feedback</b>" : `<b>Grade:</b> ${escapeHtml(getDisplayScore(assessment).score)} / ${escapeHtml(getDisplayScore(assessment).outOf)}`}
             ${
               codeLocal
                 ? ` <span style="opacity:0.85; margin-left:10px;">
@@ -2429,8 +2432,9 @@ export default function GradingPage() {
               ${assessment.sections.map((sec) => {
                 const comment = String(sec.teacher_comment || "").trim();
                 const incorrect = Array.isArray(sec.incorrect_items) ? sec.incorrect_items : [];
+                const showSecScore = Number(sec.score) > 0 || Number(sec.out_of) > 0;
                 return `<li style="margin:6px 0;">
-                  <div><b>${escapeHtml(sec.name)}:</b> ${escapeHtml(sec.score)}/${escapeHtml(sec.out_of)}${comment ? ` — ${escapeHtml(comment)}` : ""}</div>
+                  <div><b>${escapeHtml(sec.name)}:</b>${showSecScore ? ` ${escapeHtml(sec.score)}/${escapeHtml(sec.out_of)}` : ""}${comment ? `${showSecScore ? " — " : " "}${escapeHtml(comment)}` : ""}</div>
                   ${incorrect.length ? `<div style="margin-top:6px; font-size:12px; opacity:0.9;">
                     <b>Incorrect:</b>
                     <ul style="margin:6px 0 0 18px; padding:0;">
@@ -3451,7 +3455,7 @@ export default function GradingPage() {
                         const g = getDisplayScore(assessment);
                         return (
                           <>
-                            Grade: {g.score !== "" ? g.score : "(not provided)"} / {g.outOf}
+                            {isTutorMode ? "Tutor Feedback" : <>Grade: {g.score !== "" ? g.score : "(not provided)"} / {g.outOf}</>}
 
                             {refCode ? (
                               <button
@@ -3591,9 +3595,11 @@ export default function GradingPage() {
                             >
                               <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
                                 <div style={{ fontWeight: 800 }}>{sec.name}</div>
-                                <div style={{ fontWeight: 900 }}>
-                                  {sec.score}/{sec.out_of}
-                                </div>
+                                {!isTutorMode && (Number(sec.score) > 0 || Number(sec.out_of) > 0) ? (
+                                  <div style={{ fontWeight: 900 }}>
+                                    {sec.score}/{sec.out_of}
+                                  </div>
+                                ) : null}
                               </div>
                               {String(sec.teacher_comment || "").trim() ? (
                                 <div style={{ marginTop: 6, opacity: 0.85, lineHeight: 1.35 }}>
@@ -3692,7 +3698,7 @@ export default function GradingPage() {
                                     {k.category}
                                   </span>
                                 </div>
-                                {typeof k.score === "number" && typeof k.out_of === "number" ? (
+                                {typeof k.score === "number" && typeof k.out_of === "number" && !isTutorMode ? (
                                   <span style={{ fontSize: 13, fontWeight: 900, color: c.text }}>
                                     {k.score.toFixed(2)}/{k.out_of.toFixed(2)}
                                   </span>
@@ -3709,6 +3715,7 @@ export default function GradingPage() {
                         })}
                       </div>
                       {(() => {
+                        // isTutorMode is computed above in the component body
                         const items = assessment.achievement_summary.filter(k => typeof k.score === "number" && typeof k.out_of === "number");
                         if (!items.length) return null;
                         const totalScore = items.reduce((s, k) => s + k.score, 0);
@@ -3741,10 +3748,16 @@ export default function GradingPage() {
                           <div style={{ padding: "8px 10px", marginTop: -4, marginBottom: 8 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                               <div style={{ fontSize: 12, fontWeight: 800, color: qualityColor }}>{qualityLabel}</div>
-                              <div style={{ fontSize: 13, fontWeight: 900, color: "#1e293b" }}>
-                                <span style={{ opacity: 0.6, fontWeight: 600, marginRight: 6 }}>Total</span>
-                                {totalScore.toFixed(2)}/{totalOutOf.toFixed(2)}
-                              </div>
+                              {!isTutorMode ? (
+                                <div style={{ fontSize: 13, fontWeight: 900, color: "#1e293b" }}>
+                                  <span style={{ opacity: 0.6, fontWeight: 600, marginRight: 6 }}>Total</span>
+                                  {totalScore.toFixed(2)}/{totalOutOf.toFixed(2)}
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b" }}>
+                                  Where this assignment is right now
+                                </div>
+                              )}
                             </div>
                             {/* Quality index gauge */}
                             <div style={{ position: "relative", height: 16, borderRadius: 8, overflow: "visible", background: "#f1f5f9", border: "1px solid #e2e8f0" }}>

@@ -209,14 +209,21 @@ export default function VideoGrading({
 
   function buildVideoPayloadText(r) {
     const lines = [];
-    lines.push(`Grade: ${r.overall_score} / ${r.overall_out_of}`);
+    if (r.overall_score > 0 || r.overall_out_of > 0) {
+      lines.push(`Grade: ${r.overall_score} / ${r.overall_out_of}`);
+    } else {
+      lines.push("Tutor Feedback");
+    }
     lines.push("");
     if (r.student_name) { lines.push(`Student: ${r.student_name}`); lines.push(""); }
     if (r.videoDuration) lines.push(`Video: ${Math.round(r.videoDuration)}s, ${r.frameCount || 0} frames analyzed`);
     lines.push("");
     if (Array.isArray(r.sections)) {
       lines.push("Sections:");
-      r.sections.forEach(s => lines.push(`- ${s.name}: ${s.score}/${s.out_of} — ${s.teacher_comment || ""}`));
+      r.sections.forEach(s => {
+        const showScore = Number(s.score) > 0 || Number(s.out_of) > 0;
+        lines.push(`- ${s.name}:${showScore ? ` ${s.score}/${s.out_of} —` : ""} ${s.teacher_comment || ""}`);
+      });
       lines.push("");
     }
     if (Array.isArray(r.strengths)) {
@@ -284,8 +291,9 @@ export default function VideoGrading({
   const renderResult = () => {
     if (!result) return null;
     const r = result;
+    const isTutor = feedbackVoice === "tutor";
     const pct = r.overall_out_of ? Math.round((r.overall_score / r.overall_out_of) * 100) : 0;
-    const color = pct >= 80 ? "#16a34a" : pct >= 60 ? "#ca8a04" : "#dc2626";
+    const color = isTutor ? "#2563eb" : pct >= 80 ? "#16a34a" : pct >= 60 ? "#ca8a04" : "#dc2626";
 
     return (
       <div style={{ marginTop: 20 }}>
@@ -294,14 +302,25 @@ export default function VideoGrading({
           display: "flex", alignItems: "center", gap: 16, marginBottom: 16,
           padding: 16, background: "#f8fafc", borderRadius: 12, border: "1px solid #e2e8f0"
         }}>
-          <div style={{
-            width: 72, height: 72, borderRadius: "50%", display: "flex",
-            alignItems: "center", justifyContent: "center",
-            background: color + "18", border: `3px solid ${color}`,
-            fontSize: 20, fontWeight: 700, color,
-          }}>
-            {r.overall_score}/{r.overall_out_of}
-          </div>
+          {!isTutor ? (
+            <div style={{
+              width: 72, height: 72, borderRadius: "50%", display: "flex",
+              alignItems: "center", justifyContent: "center",
+              background: color + "18", border: `3px solid ${color}`,
+              fontSize: 20, fontWeight: 700, color,
+            }}>
+              {r.overall_score}/{r.overall_out_of}
+            </div>
+          ) : (
+            <div style={{
+              width: 72, height: 72, borderRadius: "50%", display: "flex",
+              alignItems: "center", justifyContent: "center",
+              background: "#dbeafe", border: "3px solid #2563eb",
+              fontSize: 28, fontWeight: 700, color: "#2563eb",
+            }}>
+              &#x1F393;
+            </div>
+          )}
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 600, fontSize: 16 }}>
               {r.student_name || "Student"} — Video Assessment
@@ -356,6 +375,7 @@ export default function VideoGrading({
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>Sections</div>
             {r.sections.map((s, i) => {
+              const showSecScore = Number(s.score) > 0 || Number(s.out_of) > 0;
               const sPct = s.out_of ? (s.score / s.out_of) : 0;
               const sColor = sPct >= 0.8 ? "#16a34a" : sPct >= 0.6 ? "#ca8a04" : "#dc2626";
               return (
@@ -365,9 +385,11 @@ export default function VideoGrading({
                 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ fontWeight: 600, fontSize: 13 }}>{s.name}</span>
-                    <span style={{ fontWeight: 700, color: sColor, fontSize: 13 }}>
-                      {s.score}/{s.out_of}
-                    </span>
+                    {showSecScore && (
+                      <span style={{ fontWeight: 700, color: sColor, fontSize: 13 }}>
+                        {s.score}/{s.out_of}
+                      </span>
+                    )}
                   </div>
                   {s.teacher_comment && (
                     <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>{s.teacher_comment}</div>
