@@ -930,7 +930,7 @@ export const retryMustHave = {
   [TASK_TYPES.DIFF_DETECTIVE]:
     "DIFF_DETECTIVE must include config.textA and config.textB (3–6 sentences each) with 5–8 differences.",
   [TASK_TYPES.GUESS_WHO]:
-    "GUESS_WHO must include config.items (or items) with at least 8 candidates. Each candidate needs { name, facts: [>=3], isAnswer:boolean? }. Do not return fewer than 8.",
+    'GUESS_WHO must include config.secretAnswers with at least 3 PEOPLE (named historical figures, scientists, authors, leaders, etc.). The game is called "Guess WHO" — answers must ALWAYS be real named people relevant to the topic, NEVER concepts or vocabulary words. Also include config.category (topic label) and config.maxGuesses (default 10).',
   [TASK_TYPES.ECHO_CHAIN]:
     "ECHO_CHAIN must include seedTerm (from aiWordBank) and a clear turn-by-turn prompt.",
   [TASK_TYPES.FAKE_OUT]:

@@ -2313,8 +2313,8 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      "Yes/No deduction game. One player privately views the secret concept (hold-to-reveal). Others ask only yes/no questions, then make limited guesses (e.g., max 10). Timer (e.g., 60s) starts on first reveal. Encourages logical elimination and strategic questioning.",
-  
+      “Yes/No deduction game. One player privately views the secret person (hold-to-reveal). Others ask only yes/no questions, then make limited guesses (e.g., max 10). Timer (e.g., 60s) starts on first reveal. The answer should always be a PERSON — historical figure, scientist, author, leader, etc. Encourages logical elimination and strategic questioning.”,
+
     aiPrompt: `
     Generate ONE Curriculate task object with taskType “guess-who”.
 
@@ -2325,29 +2325,33 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Avoid copyrighted passages; write original content.
 
     Task-specific guidance:
-    - This is a YES/NO deduction game. One player secretly sees a concept, and others ask yes/no questions to figure out what it is.
-    - Generate config.secretAnswers: an array of 3–6 vocabulary words or concepts from the topic (one per round).
-    - Set config.category to the topic/theme label (e.g., “Early Canada Vocabulary”).
+    - This is a YES/NO deduction game called “Guess Who” — the answer must ALWAYS be a PERSON.
+    - One player secretly sees the name of a person, and others ask yes/no questions to figure out who it is.
+    - Generate config.secretAnswers: an array of 3–6 PEOPLE relevant to the topic (historical figures, scientists, authors, leaders, inventors, artists, etc.). MINIMUM 3 — each secret answer is one round of play.
+    - CRITICAL: Every secretAnswer MUST be a real, named person — NEVER a concept, vocabulary word, or abstract term. The game is called “Guess WHO” for a reason.
+    - Set config.category to the topic/theme label (e.g., “Key Figures of the Renaissance”).
     - Set config.maxGuesses to 10 (default).
 
     REQUIRED STRUCTURE:
     {
       “taskType”: “guess-who”,
-      “title”: “Guess Who: Key Concepts”,
-      “prompt”: “One player will secretly see a word. Ask yes/no questions to figure out what it is! You have 10 guesses.”,
+      “title”: “Guess Who: Figures of the Revolution”,
+      “prompt”: “One player will secretly see the name of a historical figure. Ask yes/no questions to figure out who it is! You have 10 guesses.”,
       “config”: {
-        “secretAnswers”: [“photosynthesis”, “mitosis”, “chloroplast”, “DNA”, “cell membrane”],
-        “category”: “Cell Biology”,
+        “secretAnswers”: [“George Washington”, “Benjamin Franklin”, “Thomas Jefferson”, “King George III”, “Paul Revere”],
+        “category”: “American Revolution”,
         “maxGuesses”: 10
       }
     }
 
-    CRITICAL — NO PLACEHOLDER TEXT:
-    - NEVER use “Concept 1”, “Term 1”, or generic filler.
-    - Every secret answer MUST be a real vocabulary word or concept from the subject.
+    CRITICAL — PEOPLE ONLY:
+    - NEVER use concepts, vocabulary words, or abstract terms as secret answers.
+    - Every secret answer MUST be a real, named person relevant to the topic.
+    - If the topic doesn't have obvious people (e.g., math), use famous mathematicians, scientists, or inventors connected to the concepts.
 
     Common failure prevention:
     - config.secretAnswers MUST contain at least 3 items.
+    - Each item must be a person's name, not a concept.
     `,
 },
 
@@ -5196,7 +5200,7 @@ export const TASK_SHELLS = {
       // First 3 candidates are secret answers (the ones students try to guess)
       if (i < 3) secretAnswers.push(`{{CANDIDATE_${n}}}`);
       placeholders.push(
-        `CANDIDATE_${n}: A person, concept, or term name`,
+        `CANDIDATE_${n}: A real, named PERSON relevant to the topic (historical figure, scientist, author, leader, inventor, artist, etc.) — NEVER a concept or vocabulary word`,
         `CANDIDATE_${n}_FACT1: First fact or clue about this candidate`,
         `CANDIDATE_${n}_FACT2: Second fact or clue about this candidate`,
         `CANDIDATE_${n}_FACT3: Third fact or clue about this candidate`,

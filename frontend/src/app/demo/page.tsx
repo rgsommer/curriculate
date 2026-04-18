@@ -85,7 +85,7 @@ const CATEGORIES = [
       { icon: "🔤", name: "Hangman Duel", desc: "Classic hangman with vocabulary words" },
       { icon: "📝", name: "Word Weaver Duel", desc: "Competitive word-building challenge" },
       { icon: "🕵️", name: "Diff Detective", desc: "Spot the differences between two text passages" },
-      { icon: "❓", name: "Guess Who", desc: "Narrow down clues to identify the mystery concept" },
+      { icon: "❓", name: "Guess Who", desc: "Ask yes/no questions to identify the mystery person" },
       { icon: "🔁", name: "Echo Chain", desc: "Pass the device — each player adds to the chain" },
     ],
   },

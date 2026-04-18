@@ -33,7 +33,7 @@ export default function GuessWhoTask({ task, onSubmit }) {
   const maxGuesses = clampInt(cfg.maxGuesses, 1, 50, DEFAULT_MAX_GUESSES);
   const timerSeconds = clampInt(task?.timeLimitSeconds ?? cfg.timerSeconds, 10, 600, DEFAULT_TIMER_SECONDS);
 
-  // Secret answers can be per-round (rotating answerer) or a single secret.
+  // Secret answers — each one is a round
   const secretAnswers = useMemo(() => {
     const raw =
       Array.isArray(cfg.secretAnswers) && cfg.secretAnswers.length
@@ -42,12 +42,17 @@ export default function GuessWhoTask({ task, onSubmit }) {
         ? [String(cfg.secretAnswer).trim()]
         : ["Mystery"];
 
-    // Ensure we have at least playerCount entries if you want "one per answerer/round"
-    // (If you only provide one, it just repeats.)
-    const out = [];
-    for (let i = 0; i < Math.max(1, playerCount); i++) out.push(raw[i] ?? raw[0]);
+    // Ensure at least 2 rounds
+    const out = [...raw];
+    while (out.length < 2) out.push(raw[0]);
     return out;
-  }, [cfg.secretAnswers, cfg.secretAnswer, playerCount]);
+  }, [cfg.secretAnswers, cfg.secretAnswer]);
+
+  // Total rounds = number of secret answers (not playerCount)
+  const totalRounds = secretAnswers.length;
+
+  // Instructions phase
+  const [showInstructions, setShowInstructions] = useState(true);
 
   // Optional category/theme label
   const categoryLabel = (cfg.category && String(cfg.category).trim()) || "";
@@ -162,11 +167,11 @@ export default function GuessWhoTask({ task, onSubmit }) {
     // Clear overlay
     setSubmissionFeedback(null);
 
-    // Advance rounds (answerer rotates)
+    // Advance rounds
     setCurrentRound((prev) => {
       const next = prev + 1;
 
-      if (next < playerCount) {
+      if (next < totalRounds) {
         queueMicrotask(() => resetRoundState(next));
         return prev; // resetRoundState will set it
       }
@@ -176,12 +181,12 @@ export default function GuessWhoTask({ task, onSubmit }) {
         onSubmit?.({
           type: task?.taskType || "guess-who",
           gameComplete: true,
-          roundsPlayed: playerCount,
+          roundsPlayed: totalRounds,
         });
       });
       return prev;
     });
-  }, [submissionFeedback, playerCount, onSubmit, resetRoundState, task?.taskType]);
+  }, [submissionFeedback, totalRounds, onSubmit, resetRoundState, task?.taskType]);
 
   // Audio stubs (replace with real useSound hooks when ready)
   const playYes = useCallback(() => {}, []);
@@ -371,13 +376,114 @@ export default function GuessWhoTask({ task, onSubmit }) {
   // UI helpers
   const topBadge = useMemo(() => {
     const parts = [];
-    parts.push(`Round ${currentRound + 1}/${playerCount}`);
+    parts.push(`Round ${currentRound + 1}/${totalRounds}`);
     parts.push(`Answerer: Player ${currentAnswerer}`);
-    if (categoryLabel) parts.push(`Category: ${categoryLabel}`);
+    if (categoryLabel) parts.push(categoryLabel);
     return parts.join(" • ");
-  }, [currentRound, playerCount, currentAnswerer, categoryLabel]);
+  }, [currentRound, totalRounds, currentAnswerer, categoryLabel]);
 
   const guessesLeft = Math.max(0, maxGuesses - guessCount);
+
+  // ── INSTRUCTIONS SCREEN ──
+  if (showInstructions) {
+    return (
+      <div style={{ padding: 16 }}>
+        <div
+          style={{
+            borderRadius: 16,
+            border: `1px solid ${CONTRAST_BORDER}`,
+            background: "#ffffff",
+            boxShadow: "0 6px 18px rgba(15,23,42,0.06)",
+            padding: 20,
+            maxWidth: 980,
+            margin: "0 auto",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: 40, marginBottom: 8 }}>🕵️</div>
+          <div
+            style={{
+              fontSize: "1.6rem",
+              fontWeight: 900,
+              color: CONTRAST_TEXT_DARK,
+              marginBottom: 16,
+            }}
+          >
+            Guess Who?
+          </div>
+
+          {categoryLabel && (
+            <div
+              style={{
+                display: "inline-block",
+                padding: "4px 14px",
+                borderRadius: 999,
+                background: "#ede9fe",
+                color: "#6d28d9",
+                fontWeight: 700,
+                fontSize: "0.9rem",
+                marginBottom: 16,
+              }}
+            >
+              {categoryLabel}
+            </div>
+          )}
+
+          <div
+            style={{
+              textAlign: "left",
+              maxWidth: 480,
+              margin: "0 auto",
+              background: CONTRAST_BG_LIGHT,
+              borderRadius: 14,
+              padding: 16,
+              border: `1px solid ${CONTRAST_BORDER}`,
+            }}
+          >
+            <div style={{ fontWeight: 800, fontSize: "1.05rem", color: CONTRAST_TEXT_DARK, marginBottom: 10 }}>
+              How to Play
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[
+                { step: "1", icon: "👀", text: "The Answerer holds the button to secretly see the mystery person's name." },
+                { step: "2", icon: "❓", text: "Teammates ask yes/no questions to narrow it down. (\"Are they a leader?\" \"Are they from Europe?\")" },
+                { step: "3", icon: "✅", text: "The Answerer taps Yes or No for each question." },
+                { step: "4", icon: "🎯", text: `When you think you know, type your guess! You get ${maxGuesses} guesses per round.` },
+                { step: "5", icon: "🔄", text: `There are ${totalRounds} rounds — a new mystery person each time!` },
+              ].map((s) => (
+                <div key={s.step} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <span style={{ fontSize: 20, flexShrink: 0, marginTop: 2 }}>{s.icon}</span>
+                  <span style={{ fontSize: "0.95rem", color: "#334155", lineHeight: 1.5 }}>{s.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 14, fontSize: "0.85rem", color: "#64748b", fontStyle: "italic" }}>
+            Tip: Ask broad questions first ("Is this person alive today?") then narrow down!
+          </div>
+
+          <button
+            onClick={() => setShowInstructions(false)}
+            style={{
+              marginTop: 18,
+              padding: "14px 32px",
+              borderRadius: 999,
+              border: "none",
+              background: ACCENT,
+              color: "#fff",
+              fontWeight: 900,
+              fontSize: "1.1rem",
+              cursor: "pointer",
+              boxShadow: "0 8px 18px rgba(99,102,241,0.25)",
+            }}
+          >
+            Let's Play! 🎯
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: 16 }}>
