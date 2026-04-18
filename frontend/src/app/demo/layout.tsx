@@ -1,20 +1,26 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Try the Demo — Interactive Station Experience",
+  title: "Try the Demo — 65+ Task Types, One Platform | Curriculate",
   description:
-    "Try Curriculate's student station experience right in your browser. No sign-up needed — see team-based tasks, photo submissions, and real-time collaboration in action.",
+    "Experience Curriculate's 65+ AI-generated task types: multiple choice, storytelling, debates, physical challenges, photo evidence, and more. Try the interactive demo — no sign-up needed.",
   keywords: [
     "Curriculate demo",
     "try station rotation",
     "classroom demo",
     "interactive learning demo",
     "free classroom tool demo",
+    "65 task types classroom",
+    "AI lesson planning demo",
+    "station rotation demo",
+    "screen-free classroom technology",
+    "Kahoot alternative demo",
+    "Blooket alternative demo",
   ],
   openGraph: {
-    title: "Try the Demo — Curriculate",
+    title: "65+ Task Types — Try the Curriculate Demo",
     description:
-      "Experience station-based learning in your browser. No sign-up required.",
+      "AI-generated station-based lessons with 65+ task types. Multiple choice, storytelling, debates, photo evidence, and more. Try it now — no sign-up required.",
     url: "https://curriculate.net/demo",
     siteName: "Curriculate",
     type: "website",
