@@ -241,10 +241,10 @@ const STATIC_DEMO_TASKS = {
     config: {
       playerCount: 4,
       prompts: [
-        { id: "p1", concept: "Evaporation", prompt: "Explain how water turns from liquid to gas. What causes it and where does it happen most?" },
-        { id: "p2", concept: "Condensation", prompt: "Explain what happens when water vapor rises and cools. How do clouds form?" },
-        { id: "p3", concept: "Precipitation", prompt: "Explain how water returns to Earth's surface. What are the different forms it can take?" },
-        { id: "p4", concept: "Collection", prompt: "Explain where water goes after it falls. How does it end up back in oceans, lakes, and underground?" },
+        "Explain how water turns from liquid to gas through evaporation. What causes it and where does it happen most?",
+        "Explain what happens when water vapor rises and cools. How do clouds form through condensation?",
+        "Explain how water returns to Earth's surface as precipitation. What are the different forms it can take?",
+        "Explain where water goes after it falls. How does it end up back in oceans, lakes, and underground through collection?",
       ],
       perTurnSeconds: 60,
       ratingScale: { min: 1, max: 5, label: "Clarity" },
@@ -466,12 +466,14 @@ const STATIC_DEMO_TASKS = {
       "Condensation causes clouds to form",
       "Precipitation returns water to Earth's surface",
       "Groundwater feeds into rivers and lakes",
+      "Transpiration releases water vapor from plant leaves",
     ],
     badFoods: [
       "Evaporation only happens in the ocean",
       "Clouds are made of cotton",
       "Rain falls upward during storms",
       "Ice is heavier than liquid water",
+      "Rivers flow from the ocean to the mountains",
     ],
     config: {
       goal: 4,
@@ -510,6 +512,11 @@ const STATIC_DEMO_TASKS = {
     title: "Invention Brainstorm: Solve a School Problem",
     prompt: "Invent something that solves a real problem at school. Think wild — the crazier the better!",
     timeLimitSeconds: 90,
+    config: {
+      rounds: [
+        { prompt: "Invent something that solves a real problem at school — wild ideas welcome!", timeLimitSeconds: 90 },
+      ],
+    },
   },
 
   [TASK_TYPES.MYSTERY_CLUES]: {
