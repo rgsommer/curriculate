@@ -257,6 +257,44 @@ function validatePlayabilityByType(type, task) {
     }
   }
 
+  // ── Mime / Draw-Mime clue quality checks ──
+  if (type === TASK_TYPES.MIME || type === TASK_TYPES.DRAW_MIME) {
+    const clues = Array.isArray(task?.clues) ? task.clues : Array.isArray(cfg?.clues) ? cfg.clues : [];
+    const mathPattern = /[=+\-x×÷\/]{1}/;
+    const unactable = clues.filter((c) => {
+      const s = String(c || "").trim();
+      return mathPattern.test(s) || s.length > 40;
+    });
+    if (unactable.length >= 2) {
+      errors.push(`${unactable.length} clues contain math notation or are too long to act out — mime clues must be short, physical, actable concepts (e.g. 'gravity', 'balancing a scale')`);
+    }
+  }
+
+  // ── Flashcards Race answer length check ──
+  if (type === TASK_TYPES.FLASHCARDS_RACE) {
+    const items = Array.isArray(task?.items) ? task.items : Array.isArray(cfg?.items) ? cfg.items : [];
+    const longAnswers = items.filter((it) => String(it?.answer || "").trim().length > 30);
+    if (longAnswers.length >= 2) {
+      errors.push(`${longAnswers.length} flashcard-race answers exceed 30 characters — race answers must be short terms students can type quickly`);
+    }
+  }
+
+  // ── Sort item length + minimum count checks ──
+  if (type === TASK_TYPES.SORT) {
+    const sortItems = Array.isArray(cfg?.items) ? cfg.items : [];
+    if (sortItems.length < 8) errors.push(`config.items[] must have at least 8 items for sort tasks (got ${sortItems.length})`);
+    const longSortItems = sortItems.filter((it) => String(it?.text || it || "").length > 80);
+    if (longSortItems.length > 0) errors.push(`${longSortItems.length} sort item(s) exceed 80 characters — keep item text short`);
+  }
+
+  // ── Photo prompt complexity check (warning only — does not block) ──
+  if (type === TASK_TYPES.PHOTO) {
+    const photoPrompt = String(task?.prompt || cfg?.prompt || "").trim();
+    const sentences = photoPrompt.split(/[.!?]+/).filter((s) => s.trim().length > 0);
+    if (sentences.length > 3 || photoPrompt.length > 200) {
+      task._validationWarning = "Photo prompt is very long — consider simplifying to a single clear instruction";
+    }
+  }
 
   return { ok: errors.length === 0, errors };
 }
