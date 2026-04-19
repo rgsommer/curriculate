@@ -1167,7 +1167,7 @@ const CONCEPT_CAPS_BY_TYPE = {
   [TASK_TYPES.TRUE_FALSE]: 6,
   [TASK_TYPES.READING_COMP]: 5,
   [TASK_TYPES.PET_FEEDING]: 5,
-  [TASK_TYPES.BRAIN_BLITZ]: 5,
+  [TASK_TYPES.JEOPARDY]: 5,          // Brain Blitz (enum key is JEOPARDY)
   [TASK_TYPES.GUESS_WHO]: 5,
   [TASK_TYPES.NARRATION_SYNTHESIZE]: 5,
   [TASK_TYPES.TOWER_BUILDER]: 5,         // Needs MC questions per layer — benefits from more concepts
