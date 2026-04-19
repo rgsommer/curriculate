@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/ArtViewTask.jsx
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "../../../config.js";
+import StepCircle from "../StepCircle";
 
 /**
  * Art View Task — Two-phase visual observation challenge with runtime image validation.
@@ -65,6 +66,7 @@ export default function ArtViewTask({ task, onSubmit, disabled }) {
   const [observations, setObservations] = useState([]);
   const [inputValue, setInputValue] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [useScreen, setUseScreen] = useState(false); // default: paper mode
   const inputRef = useRef(null);
 
   // ── Image preload + fallback ──
@@ -354,6 +356,10 @@ export default function ArtViewTask({ task, onSubmit, disabled }) {
   }
 
   // ─── RESPONDING PHASE + DONE ───
+
+  // Paper mode (default): show prompts on screen, students write on paper
+  const paperMode = !useScreen && phase === PHASE.RESPONDING && !submitted;
+
   return (
     <div style={{
       padding: 20,
@@ -373,7 +379,7 @@ export default function ArtViewTask({ task, onSubmit, disabled }) {
             {task?.title || "Art View"}
           </h2>
           <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: "0.9rem" }}>
-            Write as many observations as you can remember!
+            {paperMode ? "Write your observations on paper!" : "Write as many observations as you can remember!"}
           </p>
         </div>
         {phase !== PHASE.DONE && (
@@ -388,168 +394,246 @@ export default function ArtViewTask({ task, onSubmit, disabled }) {
         )}
       </div>
 
-      {/* Progress bar */}
-      <div style={{
-        height: 6,
-        borderRadius: 3,
-        background: "#e5e7eb",
-        marginBottom: 16,
-        overflow: "hidden",
-      }}>
-        <div style={{
-          height: "100%",
-          borderRadius: 3,
-          background: meetsMin ? "#22c55e" : "#3b82f6",
-          width: `${Math.min(100, (observations.length / minObs) * 100)}%`,
-          transition: "width 0.3s ease",
-        }} />
-      </div>
-      <div style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: 12, textAlign: "right" }}>
-        {observations.length} observation{observations.length !== 1 ? "s" : ""}
-        {!meetsMin && ` (need ${minObs})`}
-        {meetsMin && " — keep going!"}
-      </div>
+      {/* Paper mode: show prompts + write-on-paper message */}
+      {paperMode && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{
+            background: "linear-gradient(135deg, #fef3c7, #fde68a)",
+            border: "1px solid #f59e0b",
+            borderRadius: 16,
+            padding: "20px 22px",
+            marginBottom: 16,
+            textAlign: "center",
+          }}>
+            <div style={{ fontSize: "2rem", marginBottom: 6 }}>✍️</div>
+            <div style={{ fontSize: "1.1rem", fontWeight: 900, color: "#92400e", marginBottom: 4 }}>
+              Write your observations on paper
+            </div>
+            <div style={{ fontSize: "0.85rem", color: "#a16207" }}>
+              Describe what you saw — details about colors, composition, subjects, mood, and artistic techniques.
+              Write at least {minObs} observations.
+            </div>
+          </div>
 
-      {/* Input area */}
-      {phase === PHASE.RESPONDING && !submitted && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") addObservation(); }}
-            placeholder="Type an observation and press Enter..."
-            disabled={disabled || submitted}
-            style={{
-              flex: 1,
-              padding: "12px 16px",
-              borderRadius: 12,
-              border: "2px solid #d1d5db",
-              fontSize: "1rem",
-              outline: "none",
-              transition: "border-color 0.2s",
-            }}
-            onFocus={(e) => { e.target.style.borderColor = "#3b82f6"; }}
-            onBlur={(e) => { e.target.style.borderColor = "#d1d5db"; }}
-          />
+          {focusHints.length > 0 && (
+            <div style={{
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: 14,
+              padding: 16,
+              marginBottom: 16,
+            }}>
+              <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#334155", marginBottom: 10 }}>
+                Focus areas to consider:
+              </div>
+              {focusHints.map((hint, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <StepCircle n={i + 1} size={24} />
+                  <span style={{ fontSize: "0.9rem", color: "#475569" }}>{hint}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           <button
-            onClick={addObservation}
-            disabled={!inputValue.trim()}
+            onClick={() => { doSubmit(); }}
+            disabled={disabled}
             style={{
-              padding: "12px 20px",
-              borderRadius: 12,
+              width: "100%",
+              padding: "16px 24px",
+              borderRadius: 14,
               border: "none",
-              background: inputValue.trim() ? "#3b82f6" : "#e5e7eb",
-              color: inputValue.trim() ? "#fff" : "#9ca3af",
-              fontWeight: 800,
-              fontSize: "1rem",
-              cursor: inputValue.trim() ? "pointer" : "default",
+              background: "linear-gradient(135deg, #22c55e, #16a34a)",
+              color: "#fff",
+              fontSize: "1.1rem",
+              fontWeight: 900,
+              cursor: "pointer",
+              marginBottom: 10,
             }}
           >
-            Add
+            DONE ✅ — I've written my observations
+          </button>
+
+          <button
+            onClick={() => setUseScreen(true)}
+            style={{
+              width: "100%",
+              padding: "10px 16px",
+              borderRadius: 12,
+              border: "1px solid #d1d5db",
+              background: "transparent",
+              color: "#6b7280",
+              fontSize: "0.85rem",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Type on screen instead
           </button>
         </div>
       )}
 
-      {/* Observations list */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
-        {observations.map((obs, i) => (
-          <div
-            key={i}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "8px 12px",
-              borderRadius: 10,
-              background: "#f3f4f6",
-              animation: "popIn 0.2s ease",
-            }}
-          >
-            <span style={{
-              width: 24,
-              height: 24,
-              borderRadius: 12,
-              background: "#3b82f6",
-              color: "#fff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "0.75rem",
-              fontWeight: 800,
-              flexShrink: 0,
-            }}>
-              {i + 1}
-            </span>
-            <span style={{ flex: 1, fontSize: "0.95rem" }}>{obs}</span>
-            {phase === PHASE.RESPONDING && !submitted && (
-              <button
-                onClick={() => removeObservation(i)}
+      {/* Screen mode: digital input (shown if useScreen toggled or always in done state) */}
+      {(!paperMode || submitted) && (
+        <>
+          {/* Progress bar */}
+          {useScreen && (
+            <>
+              <div style={{
+                height: 6,
+                borderRadius: 3,
+                background: "#e5e7eb",
+                marginBottom: 16,
+                overflow: "hidden",
+              }}>
+                <div style={{
+                  height: "100%",
+                  borderRadius: 3,
+                  background: meetsMin ? "#22c55e" : "#3b82f6",
+                  width: `${Math.min(100, (observations.length / minObs) * 100)}%`,
+                  transition: "width 0.3s ease",
+                }} />
+              </div>
+              <div style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: 12, textAlign: "right" }}>
+                {observations.length} observation{observations.length !== 1 ? "s" : ""}
+                {!meetsMin && ` (need ${minObs})`}
+                {meetsMin && " — keep going!"}
+              </div>
+            </>
+          )}
+
+          {/* Input area */}
+          {phase === PHASE.RESPONDING && !submitted && useScreen && (
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") addObservation(); }}
+                placeholder="Type an observation and press Enter..."
+                disabled={disabled || submitted}
                 style={{
+                  flex: 1,
+                  padding: "12px 16px",
+                  borderRadius: 12,
+                  border: "2px solid #d1d5db",
+                  fontSize: "1rem",
+                  outline: "none",
+                  transition: "border-color 0.2s",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#3b82f6"; }}
+                onBlur={(e) => { e.target.style.borderColor = "#d1d5db"; }}
+              />
+              <button
+                onClick={addObservation}
+                disabled={!inputValue.trim()}
+                style={{
+                  padding: "12px 20px",
+                  borderRadius: 12,
                   border: "none",
-                  background: "transparent",
-                  color: "#9ca3af",
-                  cursor: "pointer",
-                  fontSize: "1.1rem",
-                  padding: 4,
+                  background: inputValue.trim() ? "#3b82f6" : "#e5e7eb",
+                  color: inputValue.trim() ? "#fff" : "#9ca3af",
+                  fontWeight: 800,
+                  fontSize: "1rem",
+                  cursor: inputValue.trim() ? "pointer" : "default",
                 }}
               >
-                ×
+                Add
               </button>
-            )}
-          </div>
-        ))}
-        {observations.length === 0 && phase === PHASE.RESPONDING && (
-          <div style={{ textAlign: "center", color: "#9ca3af", padding: 20, fontSize: "0.9rem" }}>
-            No observations yet. Start typing above!
-          </div>
-        )}
-      </div>
+            </div>
+          )}
 
-      {/* Submit button */}
-      {!submitted && phase === PHASE.RESPONDING && (
-        <button
-          onClick={doSubmit}
-          disabled={disabled || observations.length === 0}
-          style={{
-            width: "100%",
-            padding: "14px 24px",
-            borderRadius: 14,
-            border: "none",
-            background: meetsMin ? "#22c55e" : observations.length > 0 ? "#3b82f6" : "#e5e7eb",
-            color: observations.length > 0 ? "#fff" : "#9ca3af",
-            fontSize: "1.1rem",
-            fontWeight: 900,
-            cursor: observations.length > 0 ? "pointer" : "default",
-            transition: "background 0.2s",
-          }}
-        >
-          {meetsMin
-            ? `Submit ${observations.length} observations`
-            : observations.length > 0
-            ? `Submit (${minObs - observations.length} more needed for full points)`
-            : "Add observations to submit"}
-        </button>
-      )}
+          {/* Observations list */}
+          {useScreen && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
+              {observations.map((obs, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 12px",
+                    borderRadius: 10,
+                    background: "#f3f4f6",
+                    animation: "popIn 0.2s ease",
+                  }}
+                >
+                  <StepCircle n={i + 1} size={24} />
+                  <span style={{ flex: 1, fontSize: "0.95rem" }}>{obs}</span>
+                  {phase === PHASE.RESPONDING && !submitted && (
+                    <button
+                      onClick={() => removeObservation(i)}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        color: "#9ca3af",
+                        cursor: "pointer",
+                        fontSize: "1.1rem",
+                        padding: 4,
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
+              {observations.length === 0 && phase === PHASE.RESPONDING && (
+                <div style={{ textAlign: "center", color: "#9ca3af", padding: 20, fontSize: "0.9rem" }}>
+                  No observations yet. Start typing above!
+                </div>
+              )}
+            </div>
+          )}
 
-      {/* Done state */}
-      {submitted && (
-        <div style={{
-          textAlign: "center",
-          padding: 20,
-          background: "#ecfdf5",
-          borderRadius: 14,
-          border: "1px solid #bbf7d0",
-        }}>
-          <div style={{ fontSize: "2rem", marginBottom: 8 }}>
-            {meetsMin ? "Great work!" : "Submitted!"}
-          </div>
-          <div style={{ color: "#6b7280", fontSize: "0.9rem" }}>
-            You recorded {observations.length} observation{observations.length !== 1 ? "s" : ""}.
-            {!meetsMin && ` (Target was ${minObs})`}
-          </div>
-        </div>
+          {/* Submit button (screen mode) */}
+          {!submitted && phase === PHASE.RESPONDING && useScreen && (
+            <button
+              onClick={doSubmit}
+              disabled={disabled || observations.length === 0}
+              style={{
+                width: "100%",
+                padding: "14px 24px",
+                borderRadius: 14,
+                border: "none",
+                background: meetsMin ? "#22c55e" : observations.length > 0 ? "#3b82f6" : "#e5e7eb",
+                color: observations.length > 0 ? "#fff" : "#9ca3af",
+                fontSize: "1.1rem",
+                fontWeight: 900,
+                cursor: observations.length > 0 ? "pointer" : "default",
+                transition: "background 0.2s",
+              }}
+            >
+              {meetsMin
+                ? `Submit ${observations.length} observations`
+                : observations.length > 0
+                ? `Submit (${minObs - observations.length} more needed for full points)`
+                : "Add observations to submit"}
+            </button>
+          )}
+
+          {/* Done state */}
+          {submitted && (
+            <div style={{
+              textAlign: "center",
+              padding: 20,
+              background: "#ecfdf5",
+              borderRadius: 14,
+              border: "1px solid #bbf7d0",
+            }}>
+              <div style={{ fontSize: "2rem", marginBottom: 8 }}>
+                {useScreen && meetsMin ? "Great work!" : "Submitted!"}
+              </div>
+              <div style={{ color: "#6b7280", fontSize: "0.9rem" }}>
+                {useScreen
+                  ? <>You recorded {observations.length} observation{observations.length !== 1 ? "s" : ""}.{!meetsMin && ` (Target was ${minObs})`}</>
+                  : "Your paper observations have been noted. Great work!"
+                }
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

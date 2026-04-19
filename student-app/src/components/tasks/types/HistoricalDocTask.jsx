@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/HistoricalDocTask.jsx
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "../../../config.js";
+import StepCircle from "../StepCircle";
 
 /**
  * Historical Document Task — Two-phase primary source analysis with runtime image validation.
@@ -74,6 +75,7 @@ export default function HistoricalDocTask({ task, onSubmit, disabled }) {
     analysisPrompts.map((prompt) => ({ prompt, response: "" }))
   );
   const [submitted, setSubmitted] = useState(false);
+  const [useScreen, setUseScreen] = useState(false); // default: paper mode
   const firstInputRef = useRef(null);
 
   // ── Image preload + fallback ──
@@ -336,6 +338,10 @@ export default function HistoricalDocTask({ task, onSubmit, disabled }) {
   }
 
   // ─── ANALYSIS PHASE + DONE ───
+
+  // Paper mode (default): show questions on screen, students write on paper
+  const paperMode = !useScreen && phase === PHASE.ANALYSIS && !submitted;
+
   return (
     <div style={{
       padding: 20,
@@ -354,7 +360,7 @@ export default function HistoricalDocTask({ task, onSubmit, disabled }) {
             {task?.title || "Historical Document Analysis"}
           </h2>
           <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: "0.9rem" }}>
-            Answer the analysis questions based on what you read.
+            {paperMode ? "Answer these questions on paper!" : "Answer the analysis questions based on what you read."}
           </p>
         </div>
         {phase !== PHASE.DONE && (
@@ -369,151 +375,230 @@ export default function HistoricalDocTask({ task, onSubmit, disabled }) {
         )}
       </div>
 
-      {/* Progress bar */}
-      <div style={{
-        height: 6,
-        borderRadius: 3,
-        background: "#e5e7eb",
-        marginBottom: 16,
-        overflow: "hidden",
-      }}>
-        <div style={{
-          height: "100%",
-          borderRadius: 3,
-          background: allAnswered ? "#22c55e" : "#8b5e3c",
-          width: `${Math.min(100, (answeredCount / analysisPrompts.length) * 100)}%`,
-          transition: "width 0.3s ease",
-        }} />
-      </div>
-      <div style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: 16, textAlign: "right" }}>
-        {answeredCount}/{analysisPrompts.length} questions answered
-      </div>
+      {/* Paper mode: show questions + write-on-paper message */}
+      {paperMode && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{
+            background: "linear-gradient(135deg, #fef3c7, #fde68a)",
+            border: "1px solid #f59e0b",
+            borderRadius: 16,
+            padding: "20px 22px",
+            marginBottom: 16,
+            textAlign: "center",
+          }}>
+            <div style={{ fontSize: "2rem", marginBottom: 6 }}>📜 ✍️</div>
+            <div style={{ fontSize: "1.1rem", fontWeight: 900, color: "#92400e", marginBottom: 4 }}>
+              Write your analysis on paper
+            </div>
+            <div style={{ fontSize: "0.85rem", color: "#a16207" }}>
+              Answer each question below in your own words. Think about the document's purpose, audience, and historical impact.
+            </div>
+          </div>
 
-      {/* Analysis prompts */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 20, marginBottom: 20 }}>
-        {responses.map((item, i) => (
-          <div key={i} style={{
+          {/* Questions listed with numbered circles */}
+          <div style={{
             background: "#faf8f5",
             border: "1px solid #e5e0d8",
             borderRadius: 14,
-            padding: 16,
+            padding: 18,
+            marginBottom: 16,
           }}>
-            <div style={{
-              display: "flex",
-              gap: 10,
-              alignItems: "flex-start",
-              marginBottom: 10,
-            }}>
-              <span style={{
-                width: 28,
-                height: 28,
-                borderRadius: 14,
-                background: item.response.trim() ? "#8b5e3c" : "#d1ccc4",
-                color: "#fff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "0.8rem",
-                fontWeight: 800,
-                flexShrink: 0,
-              }}>
-                {i + 1}
-              </span>
-              <div style={{ fontSize: "0.95rem", fontWeight: 600, color: "#374151", lineHeight: 1.5 }}>
-                {item.prompt}
-              </div>
+            <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#374151", marginBottom: 14 }}>
+              Questions to answer:
             </div>
-            {phase === PHASE.ANALYSIS && !submitted ? (
-              <textarea
-                ref={i === 0 ? firstInputRef : null}
-                value={item.response}
-                onChange={(e) => updateResponse(i, e.target.value)}
-                placeholder="Write your analysis here..."
-                disabled={disabled || submitted}
-                rows={3}
-                style={{
-                  width: "100%",
-                  padding: "10px 14px",
-                  borderRadius: 10,
-                  border: "2px solid #e5e0d8",
-                  fontSize: "0.95rem",
-                  resize: "vertical",
-                  outline: "none",
-                  fontFamily: "inherit",
-                  transition: "border-color 0.2s",
-                  boxSizing: "border-box",
-                }}
-                onFocus={(e) => { e.target.style.borderColor = "#8b5e3c"; }}
-                onBlur={(e) => { e.target.style.borderColor = "#e5e0d8"; }}
-              />
-            ) : item.response.trim() ? (
-              <div style={{
-                padding: "10px 14px",
-                background: "#fff",
-                borderRadius: 10,
-                border: "1px solid #e5e0d8",
-                fontSize: "0.95rem",
-                color: "#374151",
-                lineHeight: 1.5,
-              }}>
-                {item.response}
+            {analysisPrompts.map((prompt, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
+                <StepCircle n={i + 1} />
+                <span style={{ fontSize: "0.95rem", fontWeight: 600, color: "#374151", lineHeight: 1.5 }}>
+                  {prompt}
+                </span>
               </div>
-            ) : (
-              <div style={{
-                padding: "10px 14px",
-                color: "#9ca3af",
-                fontStyle: "italic",
-                fontSize: "0.9rem",
-              }}>
-                No response
-              </div>
-            )}
+            ))}
           </div>
-        ))}
-      </div>
 
-      {/* Submit button */}
-      {!submitted && phase === PHASE.ANALYSIS && (
-        <button
-          onClick={doSubmit}
-          disabled={disabled || answeredCount === 0}
-          style={{
-            width: "100%",
-            padding: "14px 24px",
-            borderRadius: 14,
-            border: "none",
-            background: allAnswered ? "#22c55e" : answeredCount > 0 ? "#8b5e3c" : "#e5e7eb",
-            color: answeredCount > 0 ? "#fff" : "#9ca3af",
-            fontSize: "1.1rem",
-            fontWeight: 900,
-            cursor: answeredCount > 0 ? "pointer" : "default",
-            transition: "background 0.2s",
-          }}
-        >
-          {allAnswered
-            ? "Submit Analysis"
-            : answeredCount > 0
-            ? `Submit (${analysisPrompts.length - answeredCount} unanswered)`
-            : "Answer at least one question to submit"}
-        </button>
+          <button
+            onClick={() => { doSubmit(); }}
+            disabled={disabled}
+            style={{
+              width: "100%",
+              padding: "16px 24px",
+              borderRadius: 14,
+              border: "none",
+              background: "linear-gradient(135deg, #22c55e, #16a34a)",
+              color: "#fff",
+              fontSize: "1.1rem",
+              fontWeight: 900,
+              cursor: "pointer",
+              marginBottom: 10,
+            }}
+          >
+            DONE ✅ — I've written my analysis
+          </button>
+
+          <button
+            onClick={() => setUseScreen(true)}
+            style={{
+              width: "100%",
+              padding: "10px 16px",
+              borderRadius: 12,
+              border: "1px solid #d1d5db",
+              background: "transparent",
+              color: "#6b7280",
+              fontSize: "0.85rem",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Type on screen instead
+          </button>
+        </div>
       )}
 
-      {/* Done state */}
-      {submitted && (
-        <div style={{
-          textAlign: "center",
-          padding: 20,
-          background: "#faf5ee",
-          borderRadius: 14,
-          border: "1px solid #e5d5c0",
-        }}>
-          <div style={{ fontSize: "2rem", marginBottom: 8 }}>
-            {allAnswered ? "Excellent analysis!" : "Submitted!"}
-          </div>
-          <div style={{ color: "#6b7280", fontSize: "0.9rem" }}>
-            You answered {answeredCount} of {analysisPrompts.length} analysis question{analysisPrompts.length !== 1 ? "s" : ""}.
-          </div>
-        </div>
+      {/* Screen mode: digital input */}
+      {(!paperMode || submitted) && (
+        <>
+          {/* Progress bar */}
+          {useScreen && (
+            <>
+              <div style={{
+                height: 6,
+                borderRadius: 3,
+                background: "#e5e7eb",
+                marginBottom: 16,
+                overflow: "hidden",
+              }}>
+                <div style={{
+                  height: "100%",
+                  borderRadius: 3,
+                  background: allAnswered ? "#22c55e" : "#8b5e3c",
+                  width: `${Math.min(100, (answeredCount / analysisPrompts.length) * 100)}%`,
+                  transition: "width 0.3s ease",
+                }} />
+              </div>
+              <div style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: 16, textAlign: "right" }}>
+                {answeredCount}/{analysisPrompts.length} questions answered
+              </div>
+            </>
+          )}
+
+          {/* Analysis prompts (screen mode) */}
+          {useScreen && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 20, marginBottom: 20 }}>
+              {responses.map((item, i) => (
+                <div key={i} style={{
+                  background: "#faf8f5",
+                  border: "1px solid #e5e0d8",
+                  borderRadius: 14,
+                  padding: 16,
+                }}>
+                  <div style={{
+                    display: "flex",
+                    gap: 10,
+                    alignItems: "flex-start",
+                    marginBottom: 10,
+                  }}>
+                    <StepCircle n={i + 1} />
+                    <div style={{ fontSize: "0.95rem", fontWeight: 600, color: "#374151", lineHeight: 1.5 }}>
+                      {item.prompt}
+                    </div>
+                  </div>
+                  {phase === PHASE.ANALYSIS && !submitted ? (
+                    <textarea
+                      ref={i === 0 ? firstInputRef : null}
+                      value={item.response}
+                      onChange={(e) => updateResponse(i, e.target.value)}
+                      placeholder="Write your analysis here..."
+                      disabled={disabled || submitted}
+                      rows={3}
+                      style={{
+                        width: "100%",
+                        padding: "10px 14px",
+                        borderRadius: 10,
+                        border: "2px solid #e5e0d8",
+                        fontSize: "0.95rem",
+                        resize: "vertical",
+                        outline: "none",
+                        fontFamily: "inherit",
+                        transition: "border-color 0.2s",
+                        boxSizing: "border-box",
+                      }}
+                      onFocus={(e) => { e.target.style.borderColor = "#8b5e3c"; }}
+                      onBlur={(e) => { e.target.style.borderColor = "#e5e0d8"; }}
+                    />
+                  ) : item.response.trim() ? (
+                    <div style={{
+                      padding: "10px 14px",
+                      background: "#fff",
+                      borderRadius: 10,
+                      border: "1px solid #e5e0d8",
+                      fontSize: "0.95rem",
+                      color: "#374151",
+                      lineHeight: 1.5,
+                    }}>
+                      {item.response}
+                    </div>
+                  ) : (
+                    <div style={{
+                      padding: "10px 14px",
+                      color: "#9ca3af",
+                      fontStyle: "italic",
+                      fontSize: "0.9rem",
+                    }}>
+                      No response
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Submit button (screen mode) */}
+          {!submitted && phase === PHASE.ANALYSIS && useScreen && (
+            <button
+              onClick={doSubmit}
+              disabled={disabled || answeredCount === 0}
+              style={{
+                width: "100%",
+                padding: "14px 24px",
+                borderRadius: 14,
+                border: "none",
+                background: allAnswered ? "#22c55e" : answeredCount > 0 ? "#8b5e3c" : "#e5e7eb",
+                color: answeredCount > 0 ? "#fff" : "#9ca3af",
+                fontSize: "1.1rem",
+                fontWeight: 900,
+                cursor: answeredCount > 0 ? "pointer" : "default",
+                transition: "background 0.2s",
+              }}
+            >
+              {allAnswered
+                ? "Submit Analysis"
+                : answeredCount > 0
+                ? `Submit (${analysisPrompts.length - answeredCount} unanswered)`
+                : "Answer at least one question to submit"}
+            </button>
+          )}
+
+          {/* Done state */}
+          {submitted && (
+            <div style={{
+              textAlign: "center",
+              padding: 20,
+              background: "#faf5ee",
+              borderRadius: 14,
+              border: "1px solid #e5d5c0",
+            }}>
+              <div style={{ fontSize: "2rem", marginBottom: 8 }}>
+                {useScreen && allAnswered ? "Excellent analysis!" : "Submitted!"}
+              </div>
+              <div style={{ color: "#6b7280", fontSize: "0.9rem" }}>
+                {useScreen
+                  ? <>You answered {answeredCount} of {analysisPrompts.length} analysis question{analysisPrompts.length !== 1 ? "s" : ""}.</>
+                  : "Your paper analysis has been noted. Great work!"
+                }
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
