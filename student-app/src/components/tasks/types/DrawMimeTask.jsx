@@ -18,6 +18,12 @@ export default function DrawMimeTask({
   emitTaskEvent,
   playSfx,
 }) {
+  // ── Simple mode for standalone "draw" or "mime" tasks ──
+  // These are non-competitive, off-tablet activities: show prompt + clue list, done.
+  const taskType = String(task?.taskType || "").toLowerCase();
+  const isSimpleMode = taskType === "draw" || taskType === "mime";
+  const isDrawOnly = taskType === "draw";
+  const isMimeOnly = taskType === "mime";
   // ------------------------------
   // Small local helpers (safe fallback when TaskRunner doesn't inject BodyBreak helpers)
   // ------------------------------
@@ -49,6 +55,10 @@ export default function DrawMimeTask({
       // no-op
     }
   };
+
+  // Simple-mode state (for standalone "draw" or "mime" tasks)
+  const [simpleDone, setSimpleDone] = useState(false);
+  const [simpleCurrentIdx, setSimpleCurrentIdx] = useState(0);
 
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -686,6 +696,174 @@ export default function DrawMimeTask({
     boxShadow: "0 4px 12px rgba(0,0,0,0.2)", transition: "transform 0.1s",
   });
 
+  // ── SIMPLE MODE: standalone draw or mime ──
+  // No game wizard, no timer, no scoring — just show what to draw/mime and let them submit.
+  if (isSimpleMode) {
+    const simpleClues = clues.filter(c => c !== "Draw or Mime");
+    const simplePrompt = String(task?.prompt || "").trim();
+
+    const handleSimpleSubmit = () => {
+      if (disabled || simpleDone) return;
+      setSimpleDone(true);
+      onSubmit?.({
+        type: isDrawOnly ? "drawing" : "mime",
+        mode: isDrawOnly ? "draw" : "mime",
+        completed: true,
+        simple: true,
+      });
+    };
+
+    const hasMultipleClues = simpleClues.length > 1;
+
+    return (
+      <TaskCardFrame theme="dark" fullBleed showBackground={false}>
+        <div style={{
+          display: "flex", flexDirection: "column", height: "100%", overflow: "auto",
+          background: isDrawOnly
+            ? "linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #60a5fa 100%)"
+            : "linear-gradient(135deg, #7c3aed 0%, #a855f7 50%, #c084fc 100%)",
+          color: "#fff", padding: 24,
+        }}>
+          {/* Header */}
+          <div style={{ textAlign: "center", marginBottom: 20 }}>
+            <div style={{ fontSize: "3rem", marginBottom: 4 }}>
+              {isDrawOnly ? "🎨" : "🤫"}
+            </div>
+            <div style={{ fontSize: "1.8rem", fontWeight: 900, textShadow: "0 3px 12px rgba(0,0,0,0.3)" }}>
+              {task?.title || (isDrawOnly ? "Draw It!" : "Act It Out!")}
+            </div>
+            {simplePrompt && simplePrompt !== simpleClues[0] && (
+              <div style={{ fontSize: "1.1rem", opacity: 0.95, marginTop: 8, maxWidth: 480, marginInline: "auto" }}>
+                {simplePrompt}
+              </div>
+            )}
+          </div>
+
+          {/* Instructions */}
+          <div style={{
+            background: "rgba(0,0,0,0.2)",
+            borderRadius: 16,
+            padding: "14px 20px",
+            marginBottom: 20,
+            textAlign: "center",
+          }}>
+            {isDrawOnly ? (
+              <div style={{ fontSize: "1rem", lineHeight: 1.6 }}>
+                <strong>Grab paper and a pen.</strong> Draw each concept below — no words or letters allowed!
+              </div>
+            ) : (
+              <div style={{ fontSize: "1rem", lineHeight: 1.6 }}>
+                <strong>Stand up and act it out!</strong> No talking, no sounds — use only body movements and gestures.
+              </div>
+            )}
+          </div>
+
+          {/* Clue display */}
+          {hasMultipleClues ? (
+            // Multiple clues — show as a carousel so students go one at a time
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+              <div style={{ fontSize: "0.9rem", fontWeight: 700, opacity: 0.85, letterSpacing: 1, textTransform: "uppercase" }}>
+                {isDrawOnly ? "Draw" : "Act out"} {simpleCurrentIdx + 1} of {simpleClues.length}
+              </div>
+              <div style={{
+                background: "rgba(0,0,0,0.3)",
+                borderRadius: 24,
+                padding: "28px 36px",
+                fontSize: "2.2rem",
+                fontWeight: 900,
+                textAlign: "center",
+                maxWidth: 440,
+                width: "100%",
+                minHeight: 80,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                lineHeight: 1.3,
+              }}>
+                {simpleClues[simpleCurrentIdx]}
+              </div>
+              <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+                {simpleCurrentIdx > 0 && (
+                  <button
+                    onClick={() => setSimpleCurrentIdx(i => i - 1)}
+                    style={{
+                      padding: "12px 24px", borderRadius: 14, border: "none",
+                      background: "rgba(255,255,255,0.2)", color: "#fff",
+                      fontSize: "1rem", fontWeight: 700, cursor: "pointer",
+                    }}>
+                    ← Previous
+                  </button>
+                )}
+                {simpleCurrentIdx < simpleClues.length - 1 ? (
+                  <button
+                    onClick={() => setSimpleCurrentIdx(i => i + 1)}
+                    style={{
+                      padding: "12px 24px", borderRadius: 14, border: "none",
+                      background: "#22c55e", color: "#000",
+                      fontSize: "1rem", fontWeight: 800, cursor: "pointer",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+                    }}>
+                    Next {isDrawOnly ? "drawing" : "act"} →
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSimpleSubmit}
+                    disabled={disabled || simpleDone}
+                    style={{
+                      padding: "14px 28px", borderRadius: 14, border: "none",
+                      background: simpleDone ? "#6b7280" : "#22c55e", color: simpleDone ? "#fff" : "#000",
+                      fontSize: "1.1rem", fontWeight: 900, cursor: simpleDone ? "default" : "pointer",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+                    }}>
+                    {simpleDone ? "Done! ✅" : "All done — submit ✓"}
+                  </button>
+                )}
+              </div>
+              {/* Progress dots */}
+              <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                {simpleClues.map((_, i) => (
+                  <div key={i} style={{
+                    width: 10, height: 10, borderRadius: "50%",
+                    background: i === simpleCurrentIdx ? "#fff" : i < simpleCurrentIdx ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.25)",
+                    transition: "background 0.2s",
+                  }} />
+                ))}
+              </div>
+            </div>
+          ) : (
+            // Single clue — just show it big
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 24 }}>
+              <div style={{
+                background: "rgba(0,0,0,0.3)",
+                borderRadius: 24,
+                padding: "32px 40px",
+                fontSize: "2.5rem",
+                fontWeight: 900,
+                textAlign: "center",
+                maxWidth: 440,
+                lineHeight: 1.3,
+              }}>
+                {simpleClues[0] || simplePrompt || task?.title || "Go!"}
+              </div>
+              <button
+                onClick={handleSimpleSubmit}
+                disabled={disabled || simpleDone}
+                style={{
+                  padding: "16px 36px", borderRadius: 16, border: "none",
+                  background: simpleDone ? "#6b7280" : "#22c55e", color: simpleDone ? "#fff" : "#000",
+                  fontSize: "1.2rem", fontWeight: 900, cursor: simpleDone ? "default" : "pointer",
+                  boxShadow: "0 6px 20px rgba(0,0,0,0.25)",
+                }}>
+                {simpleDone ? "Done! ✅" : "Done — submit ✓"}
+              </button>
+            </div>
+          )}
+        </div>
+      </TaskCardFrame>
+    );
+  }
+
+  // ── FULL GAME MODE: draw-mime competitive team game ──
   return (
     <TaskCardFrame theme="dark" fullBleed showBackground={false}>
       <div style={{
