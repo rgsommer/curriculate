@@ -195,6 +195,27 @@ const STATIC_DEMO_TASKS = {
     },
   },
 
+  [TASK_TYPES.BRAIN_SPARK_NOTES]: {
+    taskType: TASK_TYPES.BRAIN_SPARK_NOTES,
+    title: "Notes: The Solar System",
+    prompt: "Copy these notes into your notebook — neat and complete!",
+    notes: {
+      heading: "The Solar System",
+      keyTerms: [
+        { term: "Orbit", definition: "The curved path a planet follows as it travels around the Sun due to gravity.", points: ["All 8 planets orbit the Sun", "Orbits are elliptical (oval-shaped)"] },
+        { term: "Gravity", definition: "The force of attraction between objects with mass — it keeps planets in orbit.", points: ["The Sun's gravity holds the solar system together", "Larger objects have stronger gravity"] },
+        { term: "Terrestrial Planet", definition: "A rocky planet with a solid surface, located in the inner solar system.", points: ["Mercury, Venus, Earth, Mars", "Smaller and denser than gas giants"] },
+        { term: "Gas Giant", definition: "A large planet made mostly of hydrogen and helium with no solid surface.", points: ["Jupiter, Saturn, Uranus, Neptune", "Much larger but less dense than terrestrial planets"] },
+      ],
+      mainPoints: [
+        { title: "Structure of the Solar System", content: "The solar system has 8 planets orbiting the Sun. The inner planets are rocky; the outer planets are gas giants.", details: ["The asteroid belt separates inner and outer planets", "Pluto was reclassified as a dwarf planet in 2006"] },
+        { title: "The Sun", content: "The Sun is a medium-sized star that provides light and heat to all planets. It contains 99.8% of the solar system's mass.", details: ["Surface temperature: about 5,500 degrees Celsius", "Energy comes from nuclear fusion of hydrogen"] },
+        { title: "Earth's Special Position", content: "Earth orbits in the habitable zone where liquid water can exist, making life possible.", details: ["The atmosphere protects us from harmful radiation", "The Moon stabilizes Earth's tilt and creates tides"] },
+      ],
+      summary: ["The solar system consists of the Sun and 8 planets held together by gravity. The inner rocky planets and outer gas giants each have unique characteristics. Earth's position in the habitable zone makes it uniquely suited for life."],
+    },
+  },
+
   [TASK_TYPES.NARRATION_SYNTHESIZE]: {
     taskType: TASK_TYPES.NARRATION_SYNTHESIZE,
     title: "Explain the Water Cycle",
