@@ -195,6 +195,23 @@ const STATIC_DEMO_TASKS = {
     },
   },
 
+  [TASK_TYPES.NARRATION_SYNTHESIZE]: {
+    taskType: TASK_TYPES.NARRATION_SYNTHESIZE,
+    title: "Explain the Water Cycle",
+    prompt: "Each team member explains one stage of the water cycle out loud. Speak clearly so your group can rate your explanation.",
+    config: {
+      playerCount: 4,
+      prompts: [
+        { id: "p1", concept: "Evaporation", prompt: "Explain how water turns from liquid to gas. What causes it and where does it happen most?" },
+        { id: "p2", concept: "Condensation", prompt: "Explain what happens when water vapor rises and cools. How do clouds form?" },
+        { id: "p3", concept: "Precipitation", prompt: "Explain how water returns to Earth's surface. What are the different forms it can take?" },
+        { id: "p4", concept: "Collection", prompt: "Explain where water goes after it falls. How does it end up back in oceans, lakes, and underground?" },
+      ],
+      perTurnSeconds: 60,
+      ratingScale: { min: 1, max: 5, label: "Clarity" },
+    },
+  },
+
   [TASK_TYPES.CASE_STUDY]: {
     taskType: TASK_TYPES.CASE_STUDY,
     title: "The Water Crisis of Milltown",
