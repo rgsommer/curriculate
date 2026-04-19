@@ -55,11 +55,15 @@ export default function SpinnerTask({ task, onSubmit, disabled }) {
     const won = wedges[winIndex];
 
     // Calculate rotation: multiple full spins + land on the winning wedge
-    // Wedge 0 is at the top. We need the pointer (at top) to point at the winning wedge.
+    // Wedge 0 starts at top (12 o'clock). Pointer is fixed at top.
+    // We need the wheel rotated so wedgeCenter aligns with the pointer (0°).
     const fullSpins = 5 + Math.floor(Math.random() * 3); // 5-7 full rotations
     const wedgeCenter = winIndex * segmentAngle + segmentAngle / 2;
-    // Rotate clockwise; pointer is at top (0°), so we spin to align wedgeCenter to top
-    const targetRotation = rotation + fullSpins * 360 + (360 - wedgeCenter);
+    // Add small random offset within the wedge so it doesn't always land dead-center
+    const jitter = (Math.random() - 0.5) * segmentAngle * 0.6;
+    // Snap to a clean base and compute the exact target angle
+    const baseRotation = rotation - (rotation % 360);
+    const targetRotation = baseRotation + fullSpins * 360 + (360 - wedgeCenter + jitter);
 
     setRotation(targetRotation);
 
@@ -112,7 +116,7 @@ export default function SpinnerTask({ task, onSubmit, disabled }) {
               : "none",
           }}
         >
-          <svg viewBox="0 0 200 200" width="280" height="280">
+          <svg viewBox="0 0 200 200" style={{ width: "80vw", maxWidth: 340, height: "auto" }}>
             {wedges.map((wedge, i) => {
               const startAngle = i * segmentAngle;
               const endAngle = startAngle + segmentAngle;

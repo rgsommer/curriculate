@@ -407,6 +407,7 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
             fontSize: "1.1rem",
             lineHeight: 1.7,
             border: "2px solid #e2e8f0",
+            color: "#1e293b",
           }}
         >
           <div>📣 One person is the <strong>Reader</strong> each round</div>

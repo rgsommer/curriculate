@@ -176,21 +176,21 @@ const STATIC_DEMO_TASKS = {
 
   [TASK_TYPES.ART_VIEW]: {
     taskType: TASK_TYPES.ART_VIEW,
-    title: "Starry Night by Vincent van Gogh",
+    title: "A Sunday on La Grande Jatte by Georges Seurat",
     prompt: "Study this painting carefully. When it disappears, you will answer questions about what you observed and its artistic significance.",
     config: {
-      imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/800px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg",
-      imageDescription: "The Starry Night by Vincent van Gogh (1889). A swirling night sky dominates the canvas with bold spiraling clouds and bright yellow stars and a crescent moon radiating light. Below the dramatic sky sits a quiet village with a prominent church steeple. Dark cypress trees flame upward in the foreground on the left. The painting uses thick, expressive brushstrokes in deep blues, vibrant yellows, and whites, creating a sense of movement and emotional intensity. Painted while van Gogh was staying at the Saint-Paul-de-Mausole asylum in Saint-Remy-de-Provence, France.",
-      artTitle: "The Starry Night",
-      artist: "Vincent van Gogh",
-      year: "1889",
+      imageUrl: "https://www.artic.edu/iiif/2/2d484387-2509-5e8e-2c43-22f6571e58cc/full/843,/0/default.jpg",
+      imageDescription: "A Sunday on La Grande Jatte by Georges Seurat (1884-1886). A large pointillist painting showing Parisians relaxing in a park on an island in the Seine River. Dozens of figures — men, women, children, and pets — are arranged across a sunlit green lawn leading down to the water. A woman with a parasol and a man in a top hat stand prominently in the foreground. The painting uses thousands of tiny dots of pure color (pointillism) that blend optically when viewed from a distance. The scene has a calm, almost frozen quality despite the many figures. Currently housed at the Art Institute of Chicago.",
+      artTitle: "A Sunday on La Grande Jatte",
+      artist: "Georges Seurat",
+      year: "1884–1886",
       medium: "Oil on canvas",
       viewingSeconds: 60,
       responseSeconds: 120,
       analysisPrompts: [
-        "Describe the use of color and brushwork in this painting. How do they contribute to the mood?",
-        "What contrast exists between the sky and the village below? What might this represent?",
-        "Why do you think this painting has become one of the most recognized artworks in the world?",
+        "Describe the technique used in this painting. How is it different from traditional brushstrokes?",
+        "What do you notice about how the people are positioned? Do they seem relaxed or stiff?",
+        "Why do you think the artist chose to paint an everyday scene like people in a park?",
       ],
     },
   },
@@ -260,6 +260,300 @@ const STATIC_DEMO_TASKS = {
       expertRole: "Environmental Scientist",
       expertDescription: "A water quality researcher who has studied lead contamination in urban infrastructure for over 15 years.",
       relevantConcepts: ["contamination", "infrastructure", "public health", "budget", "stakeholder", "intervention"],
+    },
+  },
+
+  [TASK_TYPES.TRIVIA]: {
+    taskType: TASK_TYPES.TRIVIA,
+    title: "Fun Facts Trivia Challenge",
+    prompt: "Test your general knowledge! Each round has a different twist -- spot the fake, judge true or false, or pick the closest answer.",
+    config: {
+      rounds: [
+        {
+          mode: "bluff",
+          category: "Animals",
+          facts: [
+            "A group of flamingos is called a flamboyance.",
+            "Octopuses have three hearts.",
+            "Elephants are the only animals that can jump.",
+          ],
+          fakeIndex: 2,
+          explanation: "Elephants are actually one of the few mammals that cannot jump at all due to their massive weight and bone structure.",
+        },
+        {
+          mode: "truefalse",
+          category: "Space",
+          statement: "A day on Venus is longer than a year on Venus.",
+          answer: true,
+          explanation: "Venus rotates so slowly on its axis that one full rotation (day) takes about 243 Earth days, while it orbits the Sun (year) in about 225 Earth days.",
+        },
+        {
+          mode: "closerto",
+          category: "Geography",
+          question: "How many countries are there in the world?",
+          choices: ["142", "195"],
+          correctChoice: 1,
+          actualAnswer: "195",
+          explanation: "There are 195 recognized countries in the world: 193 member states of the United Nations plus Vatican City and Palestine.",
+        },
+        {
+          mode: "bluff",
+          category: "Science",
+          facts: [
+            "Honey never spoils -- edible honey has been found in ancient Egyptian tombs.",
+            "Water can boil and freeze at the same time under the right conditions.",
+            "Lightning strikes produce a small amount of gold each time they hit sand.",
+          ],
+          fakeIndex: 2,
+          explanation: "Lightning striking sand creates fulgurites (glass tubes), not gold. However, both honey preservation and the triple point of water (simultaneous boiling and freezing) are real phenomena.",
+        },
+      ],
+    },
+  },
+
+  [TASK_TYPES.RIDDLE]: {
+    taskType: TASK_TYPES.RIDDLE,
+    title: "Mystery Riddle",
+    prompt: "Read the riddle carefully and figure out the answer. Think creatively!",
+    config: {
+      riddle: "I have cities, but no houses live there. I have mountains, but no trees grow on them. I have water, but no fish swim in it. I have roads, but no cars drive on them. What am I?",
+      answer: "A map",
+    },
+  },
+
+  [TASK_TYPES.FLASHCARDS_RACE]: {
+    taskType: TASK_TYPES.FLASHCARDS_RACE,
+    title: "Geography Speed Round: US States and Capitals",
+    prompt: "Race your teammates! Buzz in first and name the correct capital. Speed and accuracy both count!",
+    cards: [
+      { question: "What is the capital of California?", answer: "Sacramento" },
+      { question: "What is the capital of Texas?", answer: "Austin" },
+      { question: "What is the capital of New York?", answer: "Albany" },
+      { question: "What is the capital of Florida?", answer: "Tallahassee" },
+      { question: "What is the capital of Illinois?", answer: "Springfield" },
+      { question: "What is the capital of Alaska?", answer: "Juneau" },
+      { question: "What is the capital of Montana?", answer: "Helena" },
+      { question: "What is the capital of Pennsylvania?", answer: "Harrisburg" },
+      { question: "What is the capital of Georgia?", answer: "Atlanta" },
+      { question: "What is the capital of Oregon?", answer: "Salem" },
+    ],
+  },
+
+  [TASK_TYPES.ROLE_PLAY_DECK]: {
+    taskType: TASK_TYPES.ROLE_PLAY_DECK,
+    title: "The School Lunch Debate",
+    prompt: "Draw your role card and argue your position! Each person has a unique perspective on what the school cafeteria should serve.",
+    config: {
+      scenario: "The school board is holding a public meeting to decide on a completely new lunch menu for next year. Each stakeholder has strong opinions and must convince the board their plan is best.",
+      roles: [
+        {
+          name: "The Health-Conscious Nutritionist",
+          goal: "Convince the board to make every meal organic, plant-based, and sugar-free.",
+          constraint: "You cannot mention the word 'boring' or admit that any healthy food tastes bad.",
+        },
+        {
+          name: "The Student Body President",
+          goal: "Fight for pizza Fridays, a dessert bar, and more choices students actually want.",
+          constraint: "You must include at least one healthy option in every proposal you make.",
+        },
+        {
+          name: "The Budget-Minded Principal",
+          goal: "Keep lunch costs under $3 per student per day while still meeting nutrition standards.",
+          constraint: "You cannot reject any idea without offering a cheaper alternative.",
+        },
+        {
+          name: "The Celebrity Chef Consultant",
+          goal: "Propose a gourmet menu that introduces students to world cuisines every week.",
+          constraint: "Every dish you suggest must be something a 12-year-old could learn to cook at home.",
+        },
+      ],
+    },
+  },
+
+  [TASK_TYPES.ECHO_CHAIN]: {
+    taskType: TASK_TYPES.ECHO_CHAIN,
+    title: "Echo Chain: Vocabulary Builder",
+    prompt: "Say the word aloud, then add a related word. Each person builds the chain longer!",
+    config: {
+      seedTerm: "metamorphosis",
+    },
+  },
+
+  [TASK_TYPES.MATCHING]: {
+    taskType: TASK_TYPES.MATCHING,
+    title: "Match the Vocabulary to Its Definition",
+    prompt: "Draw a line between each word on the left and its correct definition on the right.",
+    leftItems: [
+      "Photosynthesis",
+      "Ecosystem",
+      "Erosion",
+      "Condensation",
+      "Habitat",
+      "Adaptation",
+    ],
+    rightItems: [
+      "The process by which plants convert sunlight into food",
+      "A community of living things and their environment",
+      "The wearing away of land by wind or water",
+      "Water vapor cooling and turning back into liquid",
+      "The natural home of an animal or plant",
+      "A trait that helps a living thing survive in its environment",
+    ],
+    correctMatches: {
+      "Photosynthesis": "The process by which plants convert sunlight into food",
+      "Ecosystem": "A community of living things and their environment",
+      "Erosion": "The wearing away of land by wind or water",
+      "Condensation": "Water vapor cooling and turning back into liquid",
+      "Habitat": "The natural home of an animal or plant",
+      "Adaptation": "A trait that helps a living thing survive in its environment",
+    },
+  },
+
+  [TASK_TYPES.MAD_DASH_SEQUENCE]: {
+    taskType: TASK_TYPES.MAD_DASH_SEQUENCE,
+    title: "Order the Steps: How a Bill Becomes a Law",
+    prompt: "Put these steps in the correct order from first to last.",
+    config: {
+      items: [
+        "A member of Congress introduces the bill",
+        "The bill is debated in committee",
+        "The full House or Senate votes on the bill",
+        "The other chamber votes on the bill",
+        "The President signs or vetoes the bill",
+      ],
+      correctOrder: [0, 1, 2, 3, 4],
+      orderingCriterion: "chronological",
+    },
+  },
+
+  [TASK_TYPES.VENNSORT]: {
+    taskType: TASK_TYPES.VENNSORT,
+    title: "Mammals vs. Reptiles",
+    prompt: "Sort these animals into the correct category. Some belong in both!",
+    config: {
+      categories: ["Mammals", "Reptiles"],
+      items: [
+        { id: "vs-1", text: "Dolphin" },
+        { id: "vs-2", text: "Crocodile" },
+        { id: "vs-3", text: "Platypus" },
+        { id: "vs-4", text: "Komodo Dragon" },
+        { id: "vs-5", text: "Bat" },
+        { id: "vs-6", text: "Sea Turtle" },
+        { id: "vs-7", text: "Whale" },
+        { id: "vs-8", text: "Chameleon" },
+      ],
+    },
+    correctAnswer: {
+      "vs-1": ["Mammals"],
+      "vs-2": ["Reptiles"],
+      "vs-3": ["Mammals"],
+      "vs-4": ["Reptiles"],
+      "vs-5": ["Mammals"],
+      "vs-6": ["Reptiles"],
+      "vs-7": ["Mammals"],
+      "vs-8": ["Reptiles"],
+    },
+  },
+
+  [TASK_TYPES.PET_FEEDING]: {
+    taskType: TASK_TYPES.PET_FEEDING,
+    title: "Feed the Pet: Water Cycle Facts",
+    prompt: "Feed your pet only the TRUE statements about the water cycle!",
+    pack: "classic",
+    goodFoods: [
+      "Evaporation turns liquid water into water vapor",
+      "The sun provides energy that drives the water cycle",
+      "Condensation causes clouds to form",
+      "Precipitation returns water to Earth's surface",
+      "Groundwater feeds into rivers and lakes",
+    ],
+    badFoods: [
+      "Evaporation only happens in the ocean",
+      "Clouds are made of cotton",
+      "Rain falls upward during storms",
+      "Ice is heavier than liquid water",
+    ],
+    config: {
+      goal: 4,
+      maxMistakes: 3,
+      pack: "classic",
+    },
+  },
+
+  [TASK_TYPES.PRONUNCIATION]: {
+    taskType: TASK_TYPES.PRONUNCIATION,
+    title: "Pronunciation Practice: Key Vocabulary",
+    prompt: "Read the sentence below clearly and naturally.",
+    referenceText: "The mitochondria is the powerhouse of the cell, converting nutrients into energy through cellular respiration.",
+    language: "English",
+    accentOptions: ["american", "british", "canadian", "australian", "neutral"],
+    targetAccent: "american",
+  },
+
+  [TASK_TYPES.MULTI_ROOM_SCAVENGER_HUNT]: {
+    taskType: TASK_TYPES.MULTI_ROOM_SCAVENGER_HUNT,
+    title: "Textbook Treasure Hunt: Find the Key Diagram",
+    prompt: "Find the diagram your teacher described and explain what it shows. Use the clues below!",
+    config: {
+      pageReference: "Page 47, Figure 3.1 — The Rock Cycle Diagram",
+      clueSource: "your teacher",
+      clues: [
+        "Look for a circular diagram with arrows",
+        "It shows three types of rocks and how they change",
+        "The words igneous, sedimentary, and metamorphic should appear",
+      ],
+    },
+  },
+
+  [TASK_TYPES.BRAINSTORM_BATTLE]: {
+    taskType: TASK_TYPES.BRAINSTORM_BATTLE,
+    title: "Invention Brainstorm: Solve a School Problem",
+    prompt: "Invent something that solves a real problem at school. Think wild — the crazier the better!",
+    timeLimitSeconds: 90,
+  },
+
+  [TASK_TYPES.MYSTERY_CLUES]: {
+    taskType: TASK_TYPES.MYSTERY_CLUES,
+    title: "Mystery Clues: Memory Challenge",
+    prompt: "Memorize these cards — they'll disappear soon.",
+    clues: ["🍎", "🚀", "🧩", "🌙"],
+    clueCards: ["🍎", "🚀", "🧩", "🌙"],
+    revealMs: 8000,
+    bonusPoints: 10,
+  },
+
+  [TASK_TYPES.SCRIPT_PLAY]: {
+    taskType: TASK_TYPES.SCRIPT_PLAY,
+    title: "The Boston Tea Party: Two Perspectives",
+    prompt: "Read your lines aloud with expression! Pass the device to the next speaker when it is their turn.",
+    config: {
+      scenes: [
+        {
+          title: "Scene 1: The Meeting at Old South Meeting House",
+          contextBefore: "December 16, 1773. Thousands of colonists have gathered to decide what to do about three ships loaded with British tea sitting in Boston Harbor. The British governor refuses to let the ships leave without paying the tea tax.",
+          speakers: ["Samuel Adams", "A Concerned Merchant"],
+          lines: [
+            { speakerIndex: 0, text: "Fellow citizens of Boston! For weeks we have petitioned Governor Hutchinson to send these tea ships back to England. And what has been his answer?", tone: "passionate" },
+            { speakerIndex: 1, text: "He refuses every time, Mr. Adams. But surely we must be cautious. If we act rashly, the Crown will punish all of us.", tone: "worried" },
+            { speakerIndex: 0, text: "Cautious? We have been cautious for years! We asked politely for representation. We wrote letters. We boycotted. And still Parliament taxes us without our consent!", tone: "defiant" },
+            { speakerIndex: 1, text: "I agree the tax is unjust. But that tea is worth a fortune. If anything happens to it, King George will make Boston pay dearly.", tone: "nervous" },
+            { speakerIndex: 0, text: "Then let him try. This meeting can do nothing more to save this country!", direction: "Raises fist. The crowd erupts in war whoops." },
+          ],
+        },
+        {
+          title: "Scene 2: Aboard the Dartmouth",
+          contextBefore: "Later that night. A group of colonists disguised as Mohawk Indians boards the tea ship Dartmouth. They work quickly and deliberately.",
+          speakers: ["Patriot Leader", "Young Volunteer", "British Sailor"],
+          lines: [
+            { speakerIndex: 0, text: "Listen carefully -- we are not here to steal or destroy anything besides the tea. No one touches the ship's other cargo. We are making a political statement, not committing robbery.", tone: "firm", direction: "Whispers to the group on deck" },
+            { speakerIndex: 1, text: "There must be over three hundred chests down in the hold! This is going to take all night.", tone: "amazed" },
+            { speakerIndex: 2, text: "I cannot believe what I am witnessing. Do you people understand that this tea belongs to the East India Company? This is treason!", tone: "shocked" },
+            { speakerIndex: 0, text: "No, sir. Taxation without representation is the real crime. We mean you no harm. Stand aside and let us work.", tone: "calm" },
+            { speakerIndex: 1, text: "The last chest is overboard! Every single one -- into the harbor!", tone: "triumphant", direction: "Cheers break out across all three ships" },
+            { speakerIndex: 0, text: "Now sweep the decks clean and put everything else back in its place. The world must know that the Sons of Liberty are honorable people who fight only for justice.", tone: "proud" },
+          ],
+        },
+      ],
     },
   },
 };

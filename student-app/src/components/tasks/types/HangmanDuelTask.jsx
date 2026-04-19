@@ -1188,13 +1188,20 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
   };
 
   const handleRematch = () => {
+    setRoundResult(null);
     const next = pickNewWord();
     setWord(next);
   };
 
   // Submit to TaskRunner
   const handleFinishTask = () => {
-    if (typeof onSubmit === "function") onSubmit();
+    setRoundResult(null);
+    if (typeof onSubmit === "function") {
+      onSubmit({
+        answer: "hangman-complete",
+        autoComplete: true,
+      });
+    }
   };
 
   if (!word) {
@@ -1720,9 +1727,11 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
             </button>
           </div>
 
-          <div style={{ marginTop: 14, fontSize: 12, opacity: 0.7 }}>
-            Note: The losing word is not revealed.
-          </div>
+          {roundResult.kind !== "win" && (
+            <div style={{ marginTop: 14, fontSize: 12, opacity: 0.7 }}>
+              Note: The losing word is not revealed.
+            </div>
+          )}
         </div>
       )}
 
