@@ -2512,6 +2512,7 @@ case "multi_player_feedback":
           task={tp}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled}
+          memberNames={memberNames}
         />
       );
       break;
@@ -2522,6 +2523,7 @@ case "multi_player_feedback":
           task={tp}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled}
+          memberNames={memberNames}
         />
       );
       break;

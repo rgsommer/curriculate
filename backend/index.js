@@ -630,6 +630,51 @@ function safeExtFromContentType(contentType = "") {
 }
 
 // ────────────────────────────────────────────────────────────
+// Paper photos: upload base64 data URLs to S3 and return keys
+// ────────────────────────────────────────────────────────────
+async function uploadPaperPhotosToS3(playerPhotos, roomCode, teamId, taskIndex) {
+  const s3 = getS3Client();
+  if (!s3 || !S3_BUCKET || !Array.isArray(playerPhotos)) return [];
+
+  const uploaded = [];
+  for (let i = 0; i < playerPhotos.length; i++) {
+    const photo = playerPhotos[i];
+    const dataUrl = photo?.photoDataUrl;
+    if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/")) continue;
+
+    try {
+      // Parse the base64 data URL
+      const matches = dataUrl.match(/^data:image\/([\w+]+);base64,(.+)$/);
+      if (!matches) continue;
+      const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
+      const buffer = Buffer.from(matches[2], "base64");
+      const playerName = (photo.name || `player-${i + 1}`).replace(/[^a-zA-Z0-9_-]/g, "_");
+      const key = `paper-photos/${roomCode}/${teamId}/task-${taskIndex}/${playerName}-${Date.now()}.${ext}`;
+
+      await s3.send(new PutObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: key,
+        Body: buffer,
+        ContentType: `image/${ext === "jpg" ? "jpeg" : ext}`,
+      }));
+
+      // Generate a signed GET URL for the report
+      const getCmd = new GetObjectCommand({ Bucket: S3_BUCKET, Key: key });
+      const signedUrl = await getSignedUrl(s3, getCmd, { expiresIn: 86400 }); // 24h
+
+      uploaded.push({
+        name: photo.name || `Player ${i + 1}`,
+        s3Key: key,
+        url: signedUrl,
+      });
+    } catch (err) {
+      console.error(`[PaperPhoto] Failed to upload photo for ${photo.name || i}:`, err?.message);
+    }
+  }
+  return uploaded;
+}
+
+// ────────────────────────────────────────────────────────────
 // Record-audio: transcribe via Whisper + generate AI feedback
 // ────────────────────────────────────────────────────────────
 async function transcribeAndFeedbackRecordAudio(s3Key, task) {
@@ -4874,6 +4919,30 @@ if (!isMultiPack && task.taskType === "guess-who") {
         (Array.isArray(answer?.data?.photos) ? answer.data.photos[0] : null) ||
         null;
 
+      // ── Paper mode photos: upload base64 images to S3 ──
+      let paperPhotoUrls = [];
+      if (answer?.paperMode && Array.isArray(answer?.playerPhotos) && answer.playerPhotos.length > 0) {
+        // Fire-and-forget upload, but attach URLs to the submission
+        try {
+          paperPhotoUrls = await uploadPaperPhotosToS3(
+            answer.playerPhotos, code, effectiveTeamId, idx
+          );
+          // Replace raw base64 data with S3 URLs in the answer to avoid storing huge blobs
+          if (paperPhotoUrls.length > 0) {
+            answer.playerPhotoUrls = paperPhotoUrls;
+            // Strip base64 data to save memory/DB space
+            if (Array.isArray(answer.playerPhotos)) {
+              answer.playerPhotos = answer.playerPhotos.map((p) => ({
+                name: p.name,
+                uploaded: true,
+              }));
+            }
+          }
+        } catch (err) {
+          console.error("[PaperPhoto] Upload failed:", err?.message);
+        }
+      }
+
     // ── Record-audio: transcribe + AI feedback (before building review) ──
     let audioTranscript = null;
     if (task.taskType === "record-audio") {
@@ -6126,30 +6195,48 @@ socket.on(
     const transcript = buildTranscript(room);
     const perParticipant = computePerParticipantStats(room, transcript);
 
-    // 2) Pull any photo/recording submissions (anything with photoUrl/mediaUrl)
-    const mediaSubmissions = (Array.isArray(room.submissions) ? room.submissions : [])
-      .filter((s) => !!(s && (s.photoUrl || s?.answer?.mediaUrl || s?.answer?.fileUrl || s?.answer?.recordingUrl)))
-      .map((s) => {
-        const url =
-          s.photoUrl ||
-          s?.answer?.recordingUrl ||
-          s?.answer?.mediaUrl ||
-          s?.answer?.fileUrl ||
-          "";
-        const task = room?.taskset?.tasks?.[s.taskIndex] || {};
-        const taskType = task?.taskType || "unknown";
-        const teamName = s.teamName || room?.teams?.[s.teamId]?.teamName || `Team-${String(s.teamId).slice(-4)}`;
-        const label = `${taskType} - ${teamName} - Task ${Number.isFinite(s.taskIndex) ? (s.taskIndex + 1) : ""}`.trim();
-        return {
+    // 2) Pull any photo/recording submissions (anything with photoUrl/mediaUrl/paper photos)
+    const mediaSubmissions = [];
+    for (const s of (Array.isArray(room.submissions) ? room.submissions : [])) {
+      if (!s) continue;
+      const task = room?.taskset?.tasks?.[s.taskIndex] || {};
+      const taskType = task?.taskType || "unknown";
+      const teamName = s.teamName || room?.teams?.[s.teamId]?.teamName || `Team-${String(s.teamId).slice(-4)}`;
+      const baseLabel = `${taskType} - ${teamName} - Task ${Number.isFinite(s.taskIndex) ? (s.taskIndex + 1) : ""}`.trim();
+
+      // Standard media (photos, recordings, etc.)
+      if (s.photoUrl || s?.answer?.mediaUrl || s?.answer?.fileUrl || s?.answer?.recordingUrl) {
+        const url = s.photoUrl || s?.answer?.recordingUrl || s?.answer?.mediaUrl || s?.answer?.fileUrl || "";
+        mediaSubmissions.push({
           teamId: String(s.teamId || ""),
           teamName,
           taskIndex: s.taskIndex ?? null,
           taskType,
-          label,
+          label: baseLabel,
           url,
           submittedAt: s.submittedAt || null,
-        };
-      });
+        });
+      }
+
+      // Paper mode photos (uploaded to S3 per-player)
+      const paperUrls = s?.answer?.playerPhotoUrls;
+      if (Array.isArray(paperUrls) && paperUrls.length > 0) {
+        for (const pp of paperUrls) {
+          mediaSubmissions.push({
+            teamId: String(s.teamId || ""),
+            teamName,
+            taskIndex: s.taskIndex ?? null,
+            taskType,
+            label: `${baseLabel} (${pp.name || "paper"})`,
+            url: pp.url || "",
+            s3Key: pp.s3Key || "",
+            isPaperPhoto: true,
+            playerName: pp.name || "",
+            submittedAt: s.submittedAt || null,
+          });
+        }
+      }
+    }
 
     // 2.5) Compute top teams and top players for AI blurb
     // Use submission-based scores (not legacy team.score which is rarely updated)

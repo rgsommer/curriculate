@@ -48,7 +48,8 @@ function inferAttachmentType(taskType) {
   const t = String(taskType || "").toLowerCase();
   if (t.includes("photo") || t.includes("snap")) return "photo";
   // Paper-based artifacts that are typically submitted as a photo.
-  // (e.g., BrainSparkNotes / MindMapper and similar hand-written tasks)
+  // (e.g., BrainSparkNotes / MindMapper and similar hand-written tasks,
+  //  or art-view / historical-doc paper mode submissions)
   if (
     t.includes("mind") ||
     t.includes("mapper") ||
@@ -58,7 +59,11 @@ function inferAttachmentType(taskType) {
     t.includes("spark") ||
     t.includes("notes") ||
     t.includes("graphic") ||
-    t.includes("organizer")
+    t.includes("organizer") ||
+    t.includes("art-view") ||
+    t.includes("art_view") ||
+    t.includes("historical-doc") ||
+    t.includes("historical_doc")
   ) {
     return "photo";
   }
@@ -484,14 +489,16 @@ export async function buildSessionReportSnapshot({
       const label = `${taskTitle}${teamName ? ` - ${teamName}` : ""}`;
 
       return {
-        type: inferAttachmentType(taskType),
+        type: m?.isPaperPhoto ? "photo" : inferAttachmentType(taskType),
         url: String(m.url),
-        label,
+        label: m?.isPaperPhoto ? `${taskTitle} - ${teamName} (${m.playerName || "paper"})` : label,
         teamId: String(m?.teamId || ""),
         teamName,
         taskIndex: idx,
         taskTitle,
         taskType,
+        isPaperPhoto: !!m?.isPaperPhoto,
+        playerName: m?.playerName || "",
         submittedAt: toDate(m?.submittedAt),
       };
     })

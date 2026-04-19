@@ -2,6 +2,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "../../../config.js";
 import StepCircle from "../StepCircle";
+import PaperPhotoSubmit from "../PaperPhotoSubmit";
+import PaperExemplar from "../PaperExemplar";
 
 /**
  * Historical Document Task — Two-phase primary source analysis with runtime image validation.
@@ -55,7 +57,7 @@ async function fetchFallbackImage(config) {
   }
 }
 
-export default function HistoricalDocTask({ task, onSubmit, disabled }) {
+export default function HistoricalDocTask({ task, onSubmit, disabled, memberNames = [] }) {
   const config = task?.config || {};
   const originalUrl = config.imageUrl || "";
   const viewingSec = Math.max(10, Number(config.viewingSeconds) || 90);
@@ -375,65 +377,44 @@ export default function HistoricalDocTask({ task, onSubmit, disabled }) {
         )}
       </div>
 
-      {/* Paper mode: show questions + write-on-paper message */}
+      {/* Paper mode: exemplar + per-player photo capture */}
       {paperMode && (
         <div style={{ marginBottom: 20 }}>
-          <div style={{
-            background: "linear-gradient(135deg, #fef3c7, #fde68a)",
-            border: "1px solid #f59e0b",
-            borderRadius: 16,
-            padding: "20px 22px",
-            marginBottom: 16,
-            textAlign: "center",
-          }}>
-            <div style={{ fontSize: "2rem", marginBottom: 6 }}>📜 ✍️</div>
-            <div style={{ fontSize: "1.1rem", fontWeight: 900, color: "#92400e", marginBottom: 4 }}>
-              Write your analysis on paper
-            </div>
-            <div style={{ fontSize: "0.85rem", color: "#a16207" }}>
-              Answer each question below in your own words. Think about the document's purpose, audience, and historical impact.
-            </div>
-          </div>
+          <PaperExemplar
+            memberNames={memberNames}
+            groupMode={false}
+            samplePrompts={analysisPrompts}
+            taskLabel={task?.title || "Historical Document"}
+          />
 
-          {/* Questions listed with numbered circles */}
-          <div style={{
-            background: "#faf8f5",
-            border: "1px solid #e5e0d8",
-            borderRadius: 14,
-            padding: 18,
-            marginBottom: 16,
-          }}>
-            <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#374151", marginBottom: 14 }}>
-              Questions to answer:
-            </div>
-            {analysisPrompts.map((prompt, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
-                <StepCircle n={i + 1} />
-                <span style={{ fontSize: "0.95rem", fontWeight: 600, color: "#374151", lineHeight: 1.5 }}>
-                  {prompt}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <button
-            onClick={() => { doSubmit(); }}
+          <PaperPhotoSubmit
+            memberNames={memberNames}
+            groupMode={false}
             disabled={disabled}
-            style={{
-              width: "100%",
-              padding: "16px 24px",
-              borderRadius: 14,
-              border: "none",
-              background: "linear-gradient(135deg, #22c55e, #16a34a)",
-              color: "#fff",
-              fontSize: "1.1rem",
-              fontWeight: 900,
-              cursor: "pointer",
-              marginBottom: 10,
+            taskTitle={task?.title || "Historical Document"}
+            prompts={analysisPrompts}
+            promptsLabel="Questions to answer:"
+            onSubmit={(photoData) => {
+              setSubmitted(true);
+              try { new Audio("/sounds/yay.mp3").play().catch(() => {}); } catch {}
+              onSubmit?.({
+                type: "historical-doc",
+                correct: false,
+                basePoints: task?.points || 10,
+                responses,
+                answeredCount,
+                totalPrompts: analysisPrompts.length,
+                viewingSeconds: viewingSec,
+                responseSeconds: responseSec,
+                imageUsed: resolvedUrl || originalUrl || "(description only)",
+                docTitle: config.docTitle || "",
+                docAuthor: config.docAuthor || "",
+                docYear: config.docYear || "",
+                paperMode: true,
+                ...photoData,
+              });
             }}
-          >
-            DONE ✅ — I've written my analysis
-          </button>
+          />
 
           <button
             onClick={() => setUseScreen(true)}
@@ -447,6 +428,7 @@ export default function HistoricalDocTask({ task, onSubmit, disabled }) {
               fontSize: "0.85rem",
               fontWeight: 600,
               cursor: "pointer",
+              marginTop: 6,
             }}
           >
             Type on screen instead
