@@ -230,9 +230,12 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
         background: "#000",
         display: "flex",
         flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
       }}>
+        <style>{`
+          .art-view-scroll { overflow: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y pinch-zoom; }
+          .art-view-scroll img { touch-action: pinch-zoom; }
+        `}</style>
+
         {/* Timer overlay */}
         <div style={{
           position: "absolute",
@@ -250,109 +253,119 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
           {formatTime(secondsLeft)}
         </div>
 
-        {/* Instruction + artwork info overlay */}
+        {/* Instruction + artwork info bar */}
         <div style={{
-          position: "absolute",
-          top: 16,
-          left: 20,
-          background: "rgba(0,0,0,0.7)",
-          color: "#fff",
           padding: "10px 16px",
-          borderRadius: 12,
-          fontSize: "0.9rem",
-          maxWidth: 350,
+          paddingRight: 100,
+          background: "rgba(0,0,0,0.8)",
+          color: "#fff",
+          fontSize: "0.85rem",
           zIndex: 10,
+          flexShrink: 0,
         }}>
-          <div style={{ marginBottom: 6 }}>
-            Study this image carefully. When the timer ends, it will disappear and you'll write your observations.
+          <div style={{ marginBottom: 4 }}>
+            Study this image carefully. Pinch to zoom, scroll to explore.
           </div>
           {(config.imageTitle || config.imageArtist) && (
-            <div style={{ fontSize: "0.8rem", color: "#d1d5db", fontStyle: "italic" }}>
+            <div style={{ fontSize: "0.78rem", color: "#d1d5db", fontStyle: "italic" }}>
               {[config.imageTitle, config.imageArtist, config.imageYear].filter(Boolean).join(" — ")}
             </div>
           )}
         </div>
 
-        {/* Focus hints */}
-        {focusHints.length > 0 && (
-          <div style={{
-            position: "absolute",
-            bottom: 16,
-            left: 20,
-            right: 20,
+        {/* Scrollable + zoomable image area */}
+        <div
+          className="art-view-scroll"
+          style={{
+            flex: 1,
+            overflow: "auto",
+            WebkitOverflowScrolling: "touch",
             display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
+            alignItems: resolvedUrl ? "flex-start" : "center",
             justifyContent: "center",
-            zIndex: 10,
-          }}>
-            {focusHints.map((hint, i) => (
-              <span key={i} style={{
-                background: "rgba(255,255,255,0.15)",
-                color: "#fff",
-                padding: "4px 12px",
-                borderRadius: 999,
-                fontSize: "0.8rem",
-                backdropFilter: "blur(4px)",
-              }}>
-                {hint}
-              </span>
-            ))}
-          </div>
-        )}
+            padding: resolvedUrl ? "12px" : "40px 20px",
+            position: "relative",
+          }}
+        >
+          {resolvedUrl ? (
+            <img
+              src={resolvedUrl}
+              alt={config.imageDescription || "Study this image"}
+              style={{
+                width: "100%",
+                maxWidth: 900,
+                objectFit: "contain",
+                borderRadius: 8,
+              }}
+            />
+          ) : (
+            <div style={{
+              color: "#e5e7eb",
+              fontSize: "1.1rem",
+              textAlign: "center",
+              maxWidth: 600,
+              lineHeight: 1.6,
+            }}>
+              {config.imageDescription ? (
+                <>
+                  <div style={{ fontSize: "0.85rem", color: "#fbbf24", marginBottom: 12, fontWeight: 700 }}>
+                    📖 Read the description below and study it carefully:
+                  </div>
+                  <div style={{ color: "#d1d5db" }}>
+                    {config.imageDescription}
+                  </div>
+                  {config.artTitle && (
+                    <div style={{ marginTop: 12, fontStyle: "italic", color: "#9ca3af" }}>
+                      {[config.artTitle, config.artist, config.year].filter(Boolean).join(" — ")}
+                    </div>
+                  )}
+                  <div style={{ marginTop: 16, fontSize: "0.85rem", color: "#6b7280" }}>
+                    Use the description above to form your observations.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: "0.85rem", color: "#ef4444", marginBottom: 12 }}>
+                    Image unavailable
+                  </div>
+                  {config.artTitle && (
+                    <div style={{ marginTop: 12, fontStyle: "italic", color: "#9ca3af" }}>
+                      {[config.artTitle, config.artist, config.year].filter(Boolean).join(" — ")}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
-        {/* The image (or description fallback) */}
-        {resolvedUrl ? (
-          <img
-            src={resolvedUrl}
-            alt={config.imageDescription || "Study this image"}
-            style={{
-              maxWidth: "95vw",
-              maxHeight: "90vh",
-              objectFit: "contain",
-              borderRadius: 8,
-            }}
-          />
-        ) : (
-          <div style={{
-            color: "#e5e7eb",
-            fontSize: "1.1rem",
-            textAlign: "center",
-            padding: 40,
-            maxWidth: 600,
-            lineHeight: 1.6,
-          }}>
-            {config.imageDescription ? (
-              <>
-                <div style={{ fontSize: "0.85rem", color: "#fbbf24", marginBottom: 12, fontWeight: 700 }}>
-                  📖 Read the description below and study it carefully:
-                </div>
-                <div style={{ color: "#d1d5db" }}>
-                  {config.imageDescription}
-                </div>
-                {config.artTitle && (
-                  <div style={{ marginTop: 12, fontStyle: "italic", color: "#9ca3af" }}>
-                    {[config.artTitle, config.artist, config.year].filter(Boolean).join(" — ")}
-                  </div>
-                )}
-                <div style={{ marginTop: 16, fontSize: "0.85rem", color: "#6b7280" }}>
-                  Use the description above to form your observations.
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={{ fontSize: "0.85rem", color: "#ef4444", marginBottom: 12 }}>
-                  Image unavailable
-                </div>
-                {config.artTitle && (
-                  <div style={{ marginTop: 12, fontStyle: "italic", color: "#9ca3af" }}>
-                    {[config.artTitle, config.artist, config.year].filter(Boolean).join(" — ")}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
+          {/* Focus hints at bottom of scroll area */}
+          {focusHints.length > 0 && (
+            <div style={{
+              position: "fixed",
+              bottom: 16,
+              left: 20,
+              right: 20,
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              justifyContent: "center",
+              zIndex: 10,
+            }}>
+              {focusHints.map((hint, i) => (
+                <span key={i} style={{
+                  background: "rgba(255,255,255,0.15)",
+                  color: "#fff",
+                  padding: "4px 12px",
+                  borderRadius: 999,
+                  fontSize: "0.8rem",
+                  backdropFilter: "blur(4px)",
+                }}>
+                  {hint}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     );
   }

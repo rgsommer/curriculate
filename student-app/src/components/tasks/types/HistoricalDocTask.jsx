@@ -230,9 +230,12 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
         background: "#1a1a2e",
         display: "flex",
         flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
       }}>
+        <style>{`
+          .hist-doc-scroll { overflow: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y pinch-zoom; }
+          .hist-doc-scroll img { touch-action: pinch-zoom; }
+        `}</style>
+
         {/* Timer overlay */}
         <div style={{
           position: "absolute",
@@ -250,91 +253,100 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
           {formatTime(secondsLeft)}
         </div>
 
-        {/* Instruction + document info overlay */}
+        {/* Instruction + document info overlay (collapsible on small screens) */}
         <div style={{
-          position: "absolute",
-          top: 16,
-          left: 20,
-          background: "rgba(26,26,46,0.9)",
-          color: "#f5f0e8",
           padding: "12px 16px",
-          borderRadius: 12,
-          fontSize: "0.9rem",
-          maxWidth: 400,
+          background: "rgba(26,26,46,0.95)",
+          color: "#f5f0e8",
+          fontSize: "0.85rem",
           zIndex: 10,
-          border: "1px solid rgba(212,165,116,0.3)",
+          borderBottom: "1px solid rgba(212,165,116,0.3)",
+          flexShrink: 0,
+          paddingRight: 100,
         }}>
-          <div style={{ marginBottom: 8, fontWeight: 700 }}>
-            Read this document carefully. When the timer ends, you will analyze its significance.
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>
+            Read this document carefully. Pinch to zoom, scroll to read.
           </div>
           {historicalContext && (
-            <div style={{ fontSize: "0.85rem", color: "#d4a574", fontStyle: "italic", marginBottom: 6 }}>
+            <div style={{ fontSize: "0.8rem", color: "#d4a574", fontStyle: "italic", marginBottom: 4 }}>
               {historicalContext}
             </div>
           )}
           {(config.docTitle || config.docAuthor) && (
-            <div style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
+            <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
               {[config.docTitle, config.docAuthor, config.docYear].filter(Boolean).join(" — ")}
               {config.docType && ` (${config.docType})`}
             </div>
           )}
         </div>
 
-        {/* The document image (or description fallback) */}
-        {resolvedUrl ? (
-          <img
-            src={resolvedUrl}
-            alt={config.imageDescription || "Historical document"}
-            style={{
-              maxWidth: "95vw",
-              maxHeight: "88vh",
-              objectFit: "contain",
-              borderRadius: 4,
-              boxShadow: "0 4px 30px rgba(0,0,0,0.5)",
-              border: "1px solid rgba(212,165,116,0.2)",
-            }}
-          />
-        ) : (
-          <div style={{
-            color: "#f5f0e8",
-            fontSize: "1.1rem",
-            textAlign: "center",
-            padding: 40,
-            maxWidth: 650,
-            lineHeight: 1.7,
-            fontFamily: "serif",
-          }}>
-            {config.imageDescription ? (
-              <>
-                <div style={{ fontSize: "0.85rem", color: "#fbbf24", marginBottom: 12, fontFamily: "sans-serif", fontWeight: 700 }}>
-                  📜 Read the document description below carefully:
-                </div>
-                <div style={{ color: "#d1d5db", marginBottom: 16 }}>
-                  {config.imageDescription}
-                </div>
-                {config.docTitle && (
-                  <div style={{ fontStyle: "italic", color: "#d4a574" }}>
-                    {[config.docTitle, config.docAuthor, config.docYear].filter(Boolean).join(" — ")}
+        {/* Scrollable + zoomable document area */}
+        <div
+          className="hist-doc-scroll"
+          style={{
+            flex: 1,
+            overflow: "auto",
+            WebkitOverflowScrolling: "touch",
+            display: "flex",
+            alignItems: resolvedUrl ? "flex-start" : "center",
+            justifyContent: "center",
+            padding: resolvedUrl ? "12px" : "40px 20px",
+          }}
+        >
+          {resolvedUrl ? (
+            <img
+              src={resolvedUrl}
+              alt={config.imageDescription || "Historical document"}
+              style={{
+                width: "100%",
+                maxWidth: 900,
+                objectFit: "contain",
+                borderRadius: 4,
+                boxShadow: "0 4px 30px rgba(0,0,0,0.5)",
+                border: "1px solid rgba(212,165,116,0.2)",
+              }}
+            />
+          ) : (
+            <div style={{
+              color: "#f5f0e8",
+              fontSize: "1.1rem",
+              textAlign: "center",
+              maxWidth: 650,
+              lineHeight: 1.7,
+              fontFamily: "serif",
+            }}>
+              {config.imageDescription ? (
+                <>
+                  <div style={{ fontSize: "0.85rem", color: "#fbbf24", marginBottom: 12, fontFamily: "sans-serif", fontWeight: 700 }}>
+                    📜 Read the document description below carefully:
                   </div>
-                )}
-                <div style={{ marginTop: 16, fontSize: "0.85rem", color: "#6b7280", fontFamily: "sans-serif" }}>
-                  Use the description above to inform your analysis.
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={{ fontSize: "0.85rem", color: "#ef4444", marginBottom: 12, fontFamily: "sans-serif" }}>
-                  Document image unavailable
-                </div>
-                {config.docTitle && (
-                  <div style={{ fontStyle: "italic", color: "#d4a574" }}>
-                    {[config.docTitle, config.docAuthor, config.docYear].filter(Boolean).join(" — ")}
+                  <div style={{ color: "#d1d5db", marginBottom: 16 }}>
+                    {config.imageDescription}
                   </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
+                  {config.docTitle && (
+                    <div style={{ fontStyle: "italic", color: "#d4a574" }}>
+                      {[config.docTitle, config.docAuthor, config.docYear].filter(Boolean).join(" — ")}
+                    </div>
+                  )}
+                  <div style={{ marginTop: 16, fontSize: "0.85rem", color: "#6b7280", fontFamily: "sans-serif" }}>
+                    Use the description above to inform your analysis.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: "0.85rem", color: "#ef4444", marginBottom: 12, fontFamily: "sans-serif" }}>
+                    Document image unavailable
+                  </div>
+                  {config.docTitle && (
+                    <div style={{ fontStyle: "italic", color: "#d4a574" }}>
+                      {[config.docTitle, config.docAuthor, config.docYear].filter(Boolean).join(" — ")}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
