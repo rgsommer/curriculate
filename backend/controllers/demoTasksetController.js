@@ -195,6 +195,24 @@ const STATIC_DEMO_TASKS = {
     },
   },
 
+  [TASK_TYPES.FLASHCARDS]: {
+    taskType: TASK_TYPES.FLASHCARDS,
+    title: "Vocabulary Review: Human Body Systems",
+    prompt: "Flip through the flashcards with your team. One person reads the question aloud — everyone else tries to answer before flipping!",
+    cards: [
+      { question: "What organ pumps blood throughout the body?", answer: "The heart" },
+      { question: "What system breaks down food into nutrients?", answer: "The digestive system" },
+      { question: "What are the tiny air sacs in the lungs called?", answer: "Alveoli" },
+      { question: "What is the main function of red blood cells?", answer: "Carry oxygen to body tissues" },
+      { question: "What organ filters waste from the blood?", answer: "The kidneys" },
+      { question: "What is the largest organ in the human body?", answer: "The skin" },
+      { question: "What connects muscles to bones?", answer: "Tendons" },
+      { question: "What part of the brain controls balance and coordination?", answer: "The cerebellum" },
+      { question: "What type of blood vessel carries blood away from the heart?", answer: "Arteries" },
+      { question: "What is the role of white blood cells?", answer: "Fight infections and protect against disease" },
+    ],
+  },
+
   [TASK_TYPES.BRAIN_SPARK_NOTES]: {
     taskType: TASK_TYPES.BRAIN_SPARK_NOTES,
     title: "Notes: The Solar System",
