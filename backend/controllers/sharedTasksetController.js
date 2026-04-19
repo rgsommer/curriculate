@@ -260,7 +260,7 @@ function validatePlayabilityByType(type, task) {
   // ── Mime / Draw-Mime clue quality checks ──
   if (type === TASK_TYPES.MIME || type === TASK_TYPES.DRAW_MIME) {
     const clues = Array.isArray(task?.clues) ? task.clues : Array.isArray(cfg?.clues) ? cfg.clues : [];
-    const mathPattern = /[=+\-x×÷\/]{1}/;
+    const mathPattern = /[=×÷]|\d\s*[+\-*/x]\s*\d|[+\-]\s*[+\-]|^\s*[+\-]\s+[+\-]/;
     const unactable = clues.filter((c) => {
       const s = String(c || "").trim();
       return mathPattern.test(s) || s.length > 40;
