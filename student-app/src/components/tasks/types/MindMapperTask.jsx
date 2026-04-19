@@ -733,7 +733,7 @@ export default function MindMapperTask({ task, onSubmit, disabled }) {
           <ol style={{ margin: "0 0 0 20px", color: "#334155", fontWeight: 700, lineHeight: 1.6, fontSize: "14px" }}>
             <li>Copy the organizer template into your notes.</li>
             <li>Fill the blanks with the ideas (and add your own if it's Hard).</li>
-            <li>If your teacher asked for a photo, snap it and submit.</li>
+            <li>Take a photo of your completed organizer and submit it below.</li>
           </ol>
         </div>
         <div style={{
@@ -742,7 +742,7 @@ export default function MindMapperTask({ task, onSubmit, disabled }) {
           border: "2px solid rgba(16,185,129,0.15)",
           background: "linear-gradient(135deg, rgba(16,185,129,0.05) 0%, rgba(6,95,70,0.05) 100%)",
         }}>
-          <div style={{ fontWeight: 1000, color: "#0f172a", marginBottom: "8px", fontSize: "15px" }}>📸 Optional: photo submission</div>
+          <div style={{ fontWeight: 1000, color: "#0f172a", marginBottom: "8px", fontSize: "15px" }}>📸 Submit your organizer</div>
           <div style={{ marginTop: "8px", display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
             <input
               type="file"
@@ -821,7 +821,7 @@ export default function MindMapperTask({ task, onSubmit, disabled }) {
             </div>
           ) : (
             <div style={{ marginTop: "8px", color: "#64748b", fontWeight: 700, fontSize: "14px" }}>
-              📸 Snap a photo of your organizer if submitting as paper-based.
+              📸 Snap a photo of your completed organizer to submit.
             </div>
           )}
         </div>
