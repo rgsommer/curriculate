@@ -520,7 +520,8 @@ export function assessTaskPlayability(rawTask) {
     case TASK_TYPES.TASK_RUNNER:
     case TASK_TYPES.MOOD_CHECKIN:
     case TASK_TYPES.TREASURE_RUNNER:
-    case TASK_TYPES.MULTI_PLAYER_FEEDBACK: {
+    case TASK_TYPES.MULTI_PLAYER_FEEDBACK:
+    case TASK_TYPES.STORYTELLING: {
       // Always playable with title+prompt
       break;
     }
