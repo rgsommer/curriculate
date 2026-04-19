@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 560" width="800" height="560">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d4c8a0"/>
+      <stop offset="60%" stop-color="#e8dfc0"/>
+      <stop offset="100%" stop-color="#f0e8d0"/>
+    </linearGradient>
+    <linearGradient id="wave1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a3a5c"/>
+      <stop offset="50%" stop-color="#2a5a8c"/>
+      <stop offset="100%" stop-color="#1a4a7c"/>
+    </linearGradient>
+    <linearGradient id="wave2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#15325a"/>
+      <stop offset="100%" stop-color="#1a4070"/>
+    </linearGradient>
+    <linearGradient id="foam" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e8e4d8"/>
+    </linearGradient>
+  </defs>
+  <!-- Sky background -->
+  <rect width="800" height="560" fill="url(#sky)"/>
+  <!-- Mount Fuji in background -->
+  <polygon points="360,280 400,160 440,280" fill="#4a6a8a" opacity="0.5"/>
+  <polygon points="370,268 400,175 430,268" fill="#6a8aaa" opacity="0.4"/>
+  <polygon points="385,220 400,185 415,220" fill="#f0e8d0" opacity="0.6"/>
+  <!-- Ocean base -->
+  <rect x="0" y="300" width="800" height="260" fill="#1a3a5c"/>
+  <!-- Background waves -->
+  <path d="M0,350 Q100,320 200,340 Q300,360 400,330 Q500,300 600,340 Q700,380 800,340 L800,560 L0,560Z" fill="url(#wave2)" opacity="0.7"/>
+  <!-- Main great wave - the iconic curl -->
+  <path d="M-20,400 Q30,380 80,350 Q130,310 180,270 Q220,240 260,200 Q300,160 340,130 Q370,115 390,120 Q420,130 440,160 Q450,180 430,190 Q410,195 390,185 Q370,175 360,165 Q340,145 320,155 Q290,170 270,200 Q240,250 220,290 Q200,320 160,340 Q120,360 80,370 Q40,380 0,390Z" fill="url(#wave1)"/>
+  <!-- Wave foam/crest - the curling white tips -->
+  <path d="M340,130 Q355,118 375,115 Q390,114 400,120 Q415,130 425,145 Q430,155 420,158 Q410,155 400,145 Q390,135 375,130 Q360,128 345,132Z" fill="url(#foam)" opacity="0.9"/>
+  <!-- Smaller foam fingers reaching down -->
+  <path d="M400,145 Q410,160 395,170 Q385,165 390,155Z" fill="white" opacity="0.8"/>
+  <path d="M415,150 Q425,168 410,175 Q400,170 405,158Z" fill="white" opacity="0.7"/>
+  <path d="M380,135 Q388,150 375,158 Q368,152 372,142Z" fill="white" opacity="0.75"/>
+  <path d="M425,155 Q432,172 420,180 Q412,174 418,162Z" fill="white" opacity="0.65"/>
+  <!-- Spray dots -->
+  <circle cx="350" cy="125" r="3" fill="white" opacity="0.6"/>
+  <circle cx="360" cy="118" r="2" fill="white" opacity="0.5"/>
+  <circle cx="370" cy="110" r="2.5" fill="white" opacity="0.55"/>
+  <circle cx="345" cy="115" r="1.5" fill="white" opacity="0.4"/>
+  <circle cx="380" cy="108" r="2" fill="white" opacity="0.45"/>
+  <circle cx="390" cy="105" r="1.5" fill="white" opacity="0.35"/>
+  <circle cx="335" cy="120" r="2" fill="white" opacity="0.5"/>
+  <!-- Second wave (smaller, right side) -->
+  <path d="M450,350 Q500,310 550,280 Q580,265 610,260 Q640,258 660,270 Q670,280 660,290 Q650,295 640,285 Q625,270 600,275 Q570,285 540,310 Q510,340 480,360 Q460,370 450,365Z" fill="url(#wave1)" opacity="0.85"/>
+  <path d="M610,260 Q630,255 650,260 Q665,268 658,278 Q648,275 640,270 Q625,262 612,264Z" fill="white" opacity="0.7"/>
+  <!-- Foreground wave trough -->
+  <path d="M0,420 Q100,400 200,410 Q300,420 400,400 Q500,380 600,400 Q700,420 800,410 L800,560 L0,560Z" fill="#132e4a"/>
+  <!-- Wave texture lines -->
+  <path d="M50,430 Q150,420 250,430 Q350,440 450,425" fill="none" stroke="#1a4a6a" stroke-width="1.5" opacity="0.5"/>
+  <path d="M100,460 Q200,450 300,460 Q400,470 500,455" fill="none" stroke="#1a4a6a" stroke-width="1" opacity="0.4"/>
+  <!-- Boats in the trough (small) -->
+  <path d="M200,400 Q210,390 220,400Z" fill="#5a3a2a" opacity="0.6"/>
+  <path d="M500,395 Q510,385 520,395Z" fill="#5a3a2a" opacity="0.5"/>
+  <!-- Title overlay -->
+  <rect x="0" y="460" width="800" height="100" fill="rgba(15,23,42,0.75)"/>
+  <text x="400" y="500" text-anchor="middle" font-family="Georgia, serif" font-size="28" font-weight="bold" fill="#f0e8d0">The Great Wave off Kanagawa</text>
+  <text x="400" y="535" text-anchor="middle" font-family="Georgia, serif" font-size="18" fill="#c8bfa0">Katsushika Hokusai · c. 1831 · Woodblock Print</text>
+</svg>

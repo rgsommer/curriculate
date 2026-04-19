@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <defs>
+    <linearGradient id="parchment" x1="0" y1="0" x2="0.1" y2="1">
+      <stop offset="0%" stop-color="#f5ead0"/>
+      <stop offset="30%" stop-color="#ede0c0"/>
+      <stop offset="70%" stop-color="#e8d8b4"/>
+      <stop offset="100%" stop-color="#ddd0a8"/>
+    </linearGradient>
+    <filter id="aged">
+      <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" result="noise"/>
+      <feColorMatrix type="saturate" values="0" in="noise" result="grayNoise"/>
+      <feBlend in="SourceGraphic" in2="grayNoise" mode="multiply"/>
+    </filter>
+    <filter id="shadow">
+      <feDropShadow dx="2" dy="3" stdDeviation="4" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <!-- Dark background -->
+  <rect width="800" height="600" fill="#2a2018"/>
+  <!-- Parchment document -->
+  <rect x="60" y="30" width="680" height="540" rx="4" fill="url(#parchment)" filter="url(#shadow)"/>
+  <!-- Subtle aging texture overlay -->
+  <rect x="60" y="30" width="680" height="540" rx="4" fill="#c8a870" opacity="0.08"/>
+  <!-- Edge darkening -->
+  <rect x="60" y="30" width="680" height="540" rx="4" fill="none" stroke="#b8a070" stroke-width="2" opacity="0.5"/>
+  <rect x="65" y="35" width="670" height="530" rx="3" fill="none" stroke="#c8b080" stroke-width="0.5" opacity="0.3"/>
+  <!-- Header decoration -->
+  <line x1="140" y1="80" x2="660" y2="80" stroke="#3a2a1a" stroke-width="0.5" opacity="0.3"/>
+  <!-- Title text -->
+  <text x="400" y="75" text-anchor="middle" font-family="Georgia, serif" font-size="16" font-weight="bold" fill="#2a1a0a" letter-spacing="6" opacity="0.8">BY THE PRESIDENT OF THE UNITED STATES OF AMERICA</text>
+  <!-- Subtitle -->
+  <text x="400" y="110" text-anchor="middle" font-family="Georgia, serif" font-size="13" fill="#3a2a1a" letter-spacing="3" opacity="0.7">A PROCLAMATION</text>
+  <line x1="200" y1="125" x2="600" y2="125" stroke="#3a2a1a" stroke-width="0.5" opacity="0.3"/>
+  <!-- Simulated handwritten/printed text lines -->
+  <g opacity="0.45" fill="#2a1a0a">
+    <!-- Paragraph 1 lines -->
+    <rect x="120" y="145" width="520" height="2" rx="1"/>
+    <rect x="100" y="162" width="580" height="2" rx="1"/>
+    <rect x="100" y="179" width="560" height="2" rx="1"/>
+    <rect x="100" y="196" width="590" height="2" rx="1"/>
+    <rect x="100" y="213" width="540" height="2" rx="1"/>
+    <rect x="100" y="230" width="570" height="2" rx="1"/>
+    <rect x="100" y="247" width="510" height="2" rx="1"/>
+    <!-- Paragraph 2 lines -->
+    <rect x="120" y="272" width="530" height="2" rx="1"/>
+    <rect x="100" y="289" width="580" height="2" rx="1"/>
+    <rect x="100" y="306" width="550" height="2" rx="1"/>
+    <rect x="100" y="323" width="590" height="2" rx="1"/>
+    <rect x="100" y="340" width="520" height="2" rx="1"/>
+    <rect x="100" y="357" width="570" height="2" rx="1"/>
+    <rect x="100" y="374" width="490" height="2" rx="1"/>
+    <!-- Paragraph 3 lines -->
+    <rect x="120" y="399" width="540" height="2" rx="1"/>
+    <rect x="100" y="416" width="575" height="2" rx="1"/>
+    <rect x="100" y="433" width="530" height="2" rx="1"/>
+    <rect x="100" y="450" width="560" height="2" rx="1"/>
+    <rect x="100" y="467" width="500" height="2" rx="1"/>
+  </g>
+  <!-- Signature area -->
+  <text x="480" y="510" font-family="'Brush Script MT', 'Segoe Script', cursive" font-size="24" fill="#1a0a00" opacity="0.6" transform="rotate(-3, 480, 510)">Abraham Lincoln</text>
+  <!-- Date -->
+  <text x="140" y="515" font-family="Georgia, serif" font-size="12" fill="#3a2a1a" opacity="0.5">January 1, 1863</text>
+  <!-- Seal impression (circular) -->
+  <circle cx="200" cy="490" r="35" fill="none" stroke="#8a6a3a" stroke-width="1.5" opacity="0.25"/>
+  <circle cx="200" cy="490" r="28" fill="none" stroke="#8a6a3a" stroke-width="0.5" opacity="0.2"/>
+  <text x="200" y="488" text-anchor="middle" font-family="Georgia, serif" font-size="7" fill="#6a4a2a" opacity="0.25" letter-spacing="1">SEAL OF THE</text>
+  <text x="200" y="498" text-anchor="middle" font-family="Georgia, serif" font-size="7" fill="#6a4a2a" opacity="0.25" letter-spacing="1">UNITED STATES</text>
+  <!-- Title overlay at bottom -->
+  <rect x="0" y="500" width="800" height="100" fill="rgba(26,16,8,0.8)"/>
+  <text x="400" y="540" text-anchor="middle" font-family="Georgia, serif" font-size="26" font-weight="bold" fill="#ede0c0">The Emancipation Proclamation</text>
+  <text x="400" y="572" text-anchor="middle" font-family="Georgia, serif" font-size="16" fill="#c8b090">Executive Order · January 1, 1863 · National Archives</text>
+</svg>

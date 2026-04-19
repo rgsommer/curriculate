@@ -195,7 +195,7 @@ export default function EchoChainTask({ task, memberNames = [] }) {
   return (
     <TaskCardFrame>
       <style>{`
-        .ec-wrap{background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:20px;padding:28px;color:#fff;position:relative;overflow:hidden}
+        .ec-wrap{background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:20px;padding:28px;padding-bottom:48px;color:#fff;position:relative;overflow:hidden}
         .ec-wrap::before{content:'';position:absolute;top:-50%;right:-50%;width:200%;height:200%;background:radial-gradient(circle,rgba(59,130,246,.1) 0%,transparent 70%);pointer-events:none}
         .ec-title{font-size:2.2em;font-weight:900;margin:0;background:linear-gradient(135deg,#3b82f6,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;display:flex;align-items:center;gap:10px}
         .ec-sub{color:#cbd5e1;margin-top:8px;font-size:1.05em;font-weight:500;line-height:1.6}

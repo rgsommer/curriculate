@@ -1681,7 +1681,10 @@ export function normalizeTaskByType(taskType, rawTask) {
         [];
 
       summary = summary.map((s) => asNonEmptyString(s, "")).map((s) => s.trim()).filter(Boolean);
-      while (summary.length < 2) summary.push(`Summary point ${summary.length + 1}`);
+      // Ensure at least 1 summary point; duplicate the first if only one exists rather than
+      // injecting a generic placeholder that would be visible to students.
+      if (summary.length === 0) summary.push("Key summary point");
+      if (summary.length < 2) summary.push(summary[0]);
 
       notes.keyTerms = keyTerms;
       notes.mainPoints = mainPoints;
@@ -1691,7 +1694,8 @@ export function normalizeTaskByType(taskType, rawTask) {
 
       // ✅ bullets should be >=3 and derived from summary (but not overwrite with summary accidentally)
       const bullets = Array.isArray(summary) ? [...summary] : [];
-      while (bullets.length < 3) bullets.push(`Key takeaway ${bullets.length + 1}`);
+      // Pad bullets by reusing existing content rather than adding numbered placeholders
+      while (bullets.length < 3 && summary.length > 0) bullets.push(summary[bullets.length % summary.length]);
       task.bullets = bullets;
 
       // ✅ FIX: preserve cfg + mirror bullets correctly (do NOT set bullets: summary)

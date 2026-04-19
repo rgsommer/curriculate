@@ -357,11 +357,7 @@ export default function TimelineTask({ task, onSubmit, disabled }) {
         </div>
       </div>
 
-      {correctOrder && (
-        <div style={{ marginTop: 10, fontSize: "0.82rem", color: "#64748b" }}>
-          (Generator hint: correctOrder is present; objective scoring compares your submitted order to it.)
-        </div>
-      )}
+      {/* correctOrder hint removed — was leaking developer info to students */}
     </div>
   );
 }

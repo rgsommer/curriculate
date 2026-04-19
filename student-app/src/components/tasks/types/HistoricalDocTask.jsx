@@ -300,22 +300,35 @@ export default function HistoricalDocTask({ task, onSubmit, disabled }) {
             lineHeight: 1.7,
             fontFamily: "serif",
           }}>
-            <div style={{ fontSize: "0.8rem", color: "#ef4444", marginBottom: 12, fontFamily: "sans-serif" }}>
-              {loadError || "Document image unavailable"}
-            </div>
-            {config.imageDescription && (
-              <div style={{ color: "#d1d5db", marginBottom: 16 }}>
-                {config.imageDescription}
-              </div>
+            {config.imageDescription ? (
+              <>
+                <div style={{ fontSize: "0.85rem", color: "#fbbf24", marginBottom: 12, fontFamily: "sans-serif", fontWeight: 700 }}>
+                  📜 Read the document description below carefully:
+                </div>
+                <div style={{ color: "#d1d5db", marginBottom: 16 }}>
+                  {config.imageDescription}
+                </div>
+                {config.docTitle && (
+                  <div style={{ fontStyle: "italic", color: "#d4a574" }}>
+                    {[config.docTitle, config.docAuthor, config.docYear].filter(Boolean).join(" — ")}
+                  </div>
+                )}
+                <div style={{ marginTop: 16, fontSize: "0.85rem", color: "#6b7280", fontFamily: "sans-serif" }}>
+                  Use the description above to inform your analysis.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: "0.85rem", color: "#ef4444", marginBottom: 12, fontFamily: "sans-serif" }}>
+                  Document image unavailable
+                </div>
+                {config.docTitle && (
+                  <div style={{ fontStyle: "italic", color: "#d4a574" }}>
+                    {[config.docTitle, config.docAuthor, config.docYear].filter(Boolean).join(" — ")}
+                  </div>
+                )}
+              </>
             )}
-            {config.docTitle && (
-              <div style={{ fontStyle: "italic", color: "#d4a574" }}>
-                {[config.docTitle, config.docAuthor, config.docYear].filter(Boolean).join(" — ")}
-              </div>
-            )}
-            <div style={{ marginTop: 16, fontSize: "0.85rem", color: "#6b7280", fontFamily: "sans-serif" }}>
-              Use the description above to inform your analysis.
-            </div>
           </div>
         )}
       </div>

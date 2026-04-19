@@ -257,22 +257,7 @@ export default function MakeAndSnapTask({
             <li>Take a clear photo that shows the full thing you made.</li>
             <li>Write 2–4 sentences explaining how your photo matches the prompt.</li>
           </ul>
-          {/* Small "camera JSON" hint (nice for debugging + clarity) */}
-          <div
-            style={{
-              marginTop: 10,
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(2,6,23,0.55)",
-              padding: "8px 10px",
-              fontFamily:
-                'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-              fontSize: 12,
-              color: "rgba(226,232,240,0.95)",
-            }}
-          >
-            {`{ "camera": "on", "taskType": "make-and-snap" }`}
-          </div>
+          {/* Camera JSON debug hint removed — was exposing developer data to students */}
         </div>
 
         <div

@@ -21,6 +21,30 @@ const ACTIVITY_CONFIG = {
   "Spin around 5 times": { type: "spin", target: 5, emoji: "🌀", file: "spin.json" },
 };
 
+/** Render activity text with line breaks for numbered steps (e.g. "1) Jump 2) Squat") */
+function FormattedActivity({ text, className, style }) {
+  const raw = String(text || "").trim();
+  // If text contains numbered steps like "1) ...", "2) ..." or "1. ...", split them
+  const hasNumbered = /\d+[\)\.]\s/.test(raw);
+  if (hasNumbered) {
+    const lines = raw
+      .replace(/(\d+[\)\.]\s)/g, "\n$1")
+      .split("\n")
+      .map(s => s.trim())
+      .filter(Boolean);
+    if (lines.length > 1) {
+      return (
+        <div className={className} style={{ ...style, textAlign: "left" }}>
+          {lines.map((line, i) => (
+            <div key={i} style={{ marginBottom: i < lines.length - 1 ? 8 : 0 }}>{line}</div>
+          ))}
+        </div>
+      );
+    }
+  }
+  return <div className={className} style={style}>{raw}</div>;
+}
+
 export default function MotionMissionTask({ task, onSubmit, disabled, presenter, remainingMs }) {
   const activityPrompt = task?.prompt || task?.activity || "Jump 10 times";
   const activityName = useMemo(() => String(activityPrompt || "").trim() || "Jump 10 times", [activityPrompt]);
@@ -244,9 +268,7 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
             </>
           )}
 
-          <div className="mt-5 px-4 text-2xl md:text-4xl font-black text-yellow-200 drop-shadow-2xl leading-tight" style={{ maxWidth: "90vw" }}>
-            {activityName}
-          </div>
+          <FormattedActivity text={activityName} className="mt-5 px-4 text-2xl md:text-4xl font-black text-yellow-200 drop-shadow-2xl leading-tight" style={{ maxWidth: "90vw" }} />
 
           <div className="mt-6 flex flex-col md:flex-row gap-3 items-center justify-center">
             <button
@@ -321,7 +343,7 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
               </div>
             )}
 
-            <div className="text-2xl md:text-3xl font-black mb-3 px-4 text-center leading-tight">{activityName}</div>
+            <FormattedActivity text={activityName} className="text-2xl md:text-3xl font-black mb-3 px-4 text-center leading-tight" />
 
             {hasConfiguredActivity && (
               <div className="w-[70vw] max-w-md md:max-w-lg flex items-center justify-center rounded-3xl bg-black/20 border border-white/20 shadow-2xl" style={{ maxHeight: "50vh" }}>

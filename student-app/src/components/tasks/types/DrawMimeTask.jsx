@@ -699,14 +699,14 @@ export default function DrawMimeTask({
             <motion.div key="mode" variants={pv} initial="initial" animate="animate" exit="exit"
               style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 32, textAlign: "center" }}>
               {totalRounds > 1 && (
-                <div style={{ fontSize: "0.85rem", fontWeight: 700, opacity: 0.65, letterSpacing: 1, textTransform: "uppercase" }}>
+                <div style={{ fontSize: "0.85rem", fontWeight: 700, opacity: 0.9, letterSpacing: 1, textTransform: "uppercase" }}>
                   Round {roundIndex + 1} of {totalRounds}
                 </div>
               )}
               <div style={{ fontSize: "3rem", fontWeight: 900, textShadow: "0 4px 16px rgba(0,0,0,0.3)" }}>
                 DRAW OR MIME IT!
               </div>
-              <div style={{ fontSize: "1.3rem", opacity: 0.85 }}>
+              <div style={{ fontSize: "1.3rem", opacity: 1 }}>
                 {performer?.name ? `${performer.name}, choose your mode:` : "Choose your mode for this round:"}
               </div>
               <div style={{ display: "flex", gap: 20, flexWrap: "wrap", justifyContent: "center" }}>
@@ -749,7 +749,7 @@ export default function DrawMimeTask({
                 onClick={() => setPhase("pass")}>
                 Got it! →
               </motion.button>
-              <button style={{ background: "none", border: "none", color: "rgba(255,255,255,0.6)", fontSize: "0.9rem", cursor: "pointer" }}
+              <button style={{ background: "none", border: "none", color: "rgba(255,255,255,0.85)", fontSize: "0.9rem", cursor: "pointer" }}
                 onClick={() => setPhase("mode")}>← Back</button>
             </motion.div>
           )}
@@ -758,7 +758,7 @@ export default function DrawMimeTask({
           {phase === "pass" && (
             <motion.div key="pass" variants={pv} initial="initial" animate="animate" exit="exit"
               style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 20, textAlign: "center" }}>
-              <div style={{ fontSize: "2rem", opacity: 0.85 }}>📱 Hand the device to:</div>
+              <div style={{ fontSize: "2rem", opacity: 1 }}>📱 Hand the device to:</div>
               <div style={{ fontSize: "3.5rem", fontWeight: 900, textShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
                 {performer?.name || "the performer"}
               </div>
@@ -767,7 +767,7 @@ export default function DrawMimeTask({
                   ✏️ Grab some paper and a pen first!
                 </div>
               )}
-              <div style={{ opacity: 0.7, fontSize: "0.95rem", marginTop: 8 }}>
+              <div style={{ opacity: 0.95, fontSize: "0.95rem", marginTop: 8 }}>
                 {performer?.name}, tap below once you have the device.
               </div>
               <motion.button whileTap={{ scale: 0.95 }} style={bigBtn("#f59e0b", "#000")}
@@ -781,10 +781,10 @@ export default function DrawMimeTask({
           {phase === "clue" && (
             <motion.div key="clue" variants={pv} initial="initial" animate="animate" exit="exit"
               style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 24, textAlign: "center" }}>
-              <div style={{ fontSize: "1.4rem", opacity: 0.8 }}>Hi {performer?.name || "performer"}! 👋</div>
+              <div style={{ fontSize: "1.4rem", opacity: 1 }}>Hi {performer?.name || "performer"}! 👋</div>
               {!clueRevealed ? (
                 <>
-                  <div style={{ fontSize: "1.1rem", opacity: 0.65 }}>Make sure your team isn't peeking...</div>
+                  <div style={{ fontSize: "1.1rem", opacity: 0.95 }}>Make sure your team isn't peeking...</div>
                   <motion.button whileTap={{ scale: 0.95 }} style={{ ...bigBtn("#fff", "#000"), fontSize: "1.8rem" }}
                     onClick={() => setClueRevealed(true)}>
                     👁️ Reveal my clue
@@ -792,12 +792,12 @@ export default function DrawMimeTask({
                 </>
               ) : (
                 <>
-                  <div style={{ opacity: 0.7, fontSize: "1rem" }}>Your clue:</div>
+                  <div style={{ opacity: 1, fontSize: "1rem" }}>Your clue:</div>
                   <div style={{ fontSize: "2.8rem", fontWeight: 900, background: "rgba(0,0,0,0.3)", borderRadius: 20, padding: "20px 32px", maxWidth: 480, lineHeight: 1.3 }}>
                     {prompt}
                   </div>
                   {mode === "draw" && (
-                    <div style={{ opacity: 0.75, fontSize: "0.95rem" }}>✏️ Draw it on paper — no words or letters!</div>
+                    <div style={{ opacity: 1, fontSize: "0.95rem" }}>✏️ Draw it on paper — no words or letters!</div>
                   )}
                   <motion.button whileTap={{ scale: 0.95 }} style={{ ...bigBtn("#22c55e"), fontSize: "2rem", marginTop: 8 }}
                     onClick={handleGo}>
@@ -812,13 +812,13 @@ export default function DrawMimeTask({
           {phase === "active" && (
             <motion.div key="active" variants={pv} initial="initial" animate="animate" exit="exit"
               style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, gap: 20, textAlign: "center" }}>
-              <div style={{ fontSize: "1.2rem", opacity: 0.75 }}>{mode === "draw" ? "🎨 Drawing..." : "🤫 Miming..."}</div>
+              <div style={{ fontSize: "1.2rem", opacity: 1 }}>{mode === "draw" ? "🎨 Drawing..." : "🤫 Miming..."}</div>
               <div style={{ fontSize: "5rem", fontWeight: 900, color: timerColor, textShadow: "0 4px 20px rgba(0,0,0,0.3)", transition: "color 0.5s" }}>
                 ⏱️ {timeLeft}s
               </div>
               {guessers.length > 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-                  <div style={{ opacity: 0.75, fontSize: "1rem", fontWeight: 600 }}>Who guessed it?</div>
+                  <div style={{ opacity: 1, fontSize: "1rem", fontWeight: 600 }}>Who guessed it?</div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center" }}>
                     {guessers.map(g => (
                       <motion.button whileTap={{ scale: 0.95 }} key={g.id}
@@ -845,7 +845,7 @@ export default function DrawMimeTask({
               style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 20, textAlign: "center" }}>
               <div style={{ fontSize: "4rem" }}>⏰</div>
               <div style={{ fontSize: "2.5rem", fontWeight: 900 }}>Time's Up!</div>
-              <div style={{ fontSize: "1.2rem", opacity: 0.8 }}>Did anyone sneak in a guess?</div>
+              <div style={{ fontSize: "1.2rem", opacity: 1 }}>Did anyone sneak in a guess?</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 14, justifyContent: "center" }}>
                 {guessers.map(g => (
                   <motion.button whileTap={{ scale: 0.95 }} key={g.id} style={bigBtn("#22c55e", "#000")}
@@ -865,7 +865,7 @@ export default function DrawMimeTask({
           {phase === "reveal" && (
             <motion.div key="reveal" variants={pv} initial="initial" animate="animate" exit="exit"
               style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 20, textAlign: "center" }}>
-              <div style={{ fontSize: "1.2rem", opacity: 0.7, letterSpacing: 2 }}>THE CLUE WAS...</div>
+              <div style={{ fontSize: "1.2rem", opacity: 1, letterSpacing: 2 }}>THE CLUE WAS...</div>
               <div style={{ fontSize: "3rem", fontWeight: 900, background: "rgba(0,0,0,0.3)", borderRadius: 24, padding: "24px 40px", maxWidth: 480, lineHeight: 1.3 }}>
                 {prompt}
               </div>
@@ -874,7 +874,7 @@ export default function DrawMimeTask({
                   ✅ {lastWinner.name} got it! +{1 + (lastWinner.bonus || 0)} pts
                 </div>
               ) : (
-                <div style={{ fontSize: "1.5rem", fontWeight: 800, opacity: 0.75 }}>
+                <div style={{ fontSize: "1.5rem", fontWeight: 800, opacity: 1 }}>
                   🦗 Nobody got it this time!
                 </div>
               )}
@@ -892,7 +892,7 @@ export default function DrawMimeTask({
               <div style={{ fontSize: "1.8rem", fontWeight: 900 }}>
                 How was {performer?.name}&apos;s {mode === "draw" ? "drawing" : "performance"}?
               </div>
-              <div style={{ opacity: 0.75 }}>Everyone tap your reaction — as many times as you like!</div>
+              <div style={{ opacity: 1 }}>Everyone tap your reaction — as many times as you like!</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "center" }}>
                 {[
                   { emoji: "🔥", label: "On fire!" },
@@ -904,7 +904,7 @@ export default function DrawMimeTask({
                     style={{ background: "rgba(0,0,0,0.25)", border: "none", borderRadius: 20, padding: "16px 24px", cursor: "pointer", color: "#fff", minWidth: 100 }}
                     onClick={() => setRatings(r => ({ ...r, [emoji]: (r[emoji] || 0) + 1 }))}>
                     <div style={{ fontSize: "2.5rem" }}>{emoji}</div>
-                    <div style={{ fontSize: "0.9rem", marginTop: 4, opacity: 0.85 }}>{label}</div>
+                    <div style={{ fontSize: "0.9rem", marginTop: 4, opacity: 1 }}>{label}</div>
                     {ratings[emoji] ? <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#facc15", marginTop: 4 }}>{ratings[emoji]}</div> : null}
                   </motion.button>
                 ))}
@@ -925,7 +925,7 @@ export default function DrawMimeTask({
                 {totalRounds > 1 ? `Round ${roundIndex + 1} Complete!` : "Round Complete!"}
               </div>
               {topRatingEmoji && (
-                <div style={{ fontSize: "1.4rem", opacity: 0.85 }}>
+                <div style={{ fontSize: "1.4rem", opacity: 1 }}>
                   The crowd says: {topRatingEmoji} {[
                     { emoji: "🔥", label: "On fire!" }, { emoji: "😂", label: "Hilarious!" },
                     { emoji: "🤔", label: "Huh??" }, { emoji: "💀", label: "Impossible!" },
@@ -937,7 +937,7 @@ export default function DrawMimeTask({
                 <span style={{ fontSize: "2rem" }}>{teamScore}</span>
               </div>
               {!isLastRound && (
-                <div style={{ fontSize: "1rem", opacity: 0.7, marginTop: -8 }}>
+                <div style={{ fontSize: "1rem", opacity: 1, marginTop: -8 }}>
                   Pass the device to the next player for Round {roundIndex + 2}
                 </div>
               )}

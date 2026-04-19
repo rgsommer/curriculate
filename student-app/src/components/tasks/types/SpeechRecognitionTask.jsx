@@ -117,7 +117,7 @@ export default function SpeechRecognitionTask({ task, onSubmit, disabled = false
       borderRadius: "16px",
       boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
     }}>
-      <h2 style={{ textAlign: "center", fontSize: "1.8rem", fontWeight: 700, marginBottom: "20px" }}>
+      <h2 style={{ textAlign: "center", fontSize: "1.8rem", fontWeight: 700, marginBottom: "20px", color: "#0f172a" }}>
         Speak Your Answer
       </h2>
 
@@ -164,7 +164,7 @@ export default function SpeechRecognitionTask({ task, onSubmit, disabled = false
         whiteSpace: "pre-wrap"
       }}>
         {fullText || (
-          <span style={{ color: "#94a3b8", fontStyle: "italic" }}>
+          <span style={{ color: "#64748b", fontStyle: "italic" }}>
             Click the microphone and start speaking...
           </span>
         )}

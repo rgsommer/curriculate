@@ -318,22 +318,35 @@ export default function ArtViewTask({ task, onSubmit, disabled }) {
             maxWidth: 600,
             lineHeight: 1.6,
           }}>
-            <div style={{ fontSize: "0.8rem", color: "#ef4444", marginBottom: 12 }}>
-              {loadError || "Image unavailable"}
-            </div>
-            {config.imageDescription && (
-              <div style={{ color: "#d1d5db" }}>
-                {config.imageDescription}
-              </div>
+            {config.imageDescription ? (
+              <>
+                <div style={{ fontSize: "0.85rem", color: "#fbbf24", marginBottom: 12, fontWeight: 700 }}>
+                  📖 Read the description below and study it carefully:
+                </div>
+                <div style={{ color: "#d1d5db" }}>
+                  {config.imageDescription}
+                </div>
+                {config.artTitle && (
+                  <div style={{ marginTop: 12, fontStyle: "italic", color: "#9ca3af" }}>
+                    {[config.artTitle, config.artist, config.year].filter(Boolean).join(" — ")}
+                  </div>
+                )}
+                <div style={{ marginTop: 16, fontSize: "0.85rem", color: "#6b7280" }}>
+                  Use the description above to form your observations.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: "0.85rem", color: "#ef4444", marginBottom: 12 }}>
+                  Image unavailable
+                </div>
+                {config.artTitle && (
+                  <div style={{ marginTop: 12, fontStyle: "italic", color: "#9ca3af" }}>
+                    {[config.artTitle, config.artist, config.year].filter(Boolean).join(" — ")}
+                  </div>
+                )}
+              </>
             )}
-            {config.imageTitle && (
-              <div style={{ marginTop: 12, fontStyle: "italic", color: "#9ca3af" }}>
-                {[config.imageTitle, config.imageArtist, config.imageYear].filter(Boolean).join(" — ")}
-              </div>
-            )}
-            <div style={{ marginTop: 16, fontSize: "0.85rem", color: "#6b7280" }}>
-              Use the description above to form your observations.
-            </div>
           </div>
         )}
       </div>

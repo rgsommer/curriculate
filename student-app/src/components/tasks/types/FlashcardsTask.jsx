@@ -269,8 +269,8 @@ export default function FlashcardsTask({ task, onSubmit, disabled, memberNames }
 
       <div style={{ marginTop: 10, color: "#334155", fontWeight: 800 }}>
         <div style={{ fontSize: 14 }}>
-          **How to play:** Students shout the answer. The first student to hit their **BUZZ** button gets to answer.
-          Then the team marks **Right** or **Wrong**.
+          <strong>How to play:</strong> Students shout the answer. The first student to hit their <strong>BUZZ</strong> button gets to answer.
+          Then the team marks <strong>Right</strong> or <strong>Wrong</strong>.
         </div>
       </div>
 

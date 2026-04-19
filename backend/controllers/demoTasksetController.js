@@ -157,7 +157,7 @@ const STATIC_DEMO_TASKS = {
     title: "The Emancipation Proclamation",
     prompt: "Read this historical document carefully. When it disappears, you will answer analysis questions about its significance and impact.",
     config: {
-      imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Emancipation_proclamation.jpg/800px-Emancipation_proclamation.jpg",
+      imageUrl: "/demo-images/emancipation-proclamation.svg",
       imageDescription: "The first page of the Emancipation Proclamation, issued by President Abraham Lincoln on January 1, 1863. The document is handwritten in elegant script on aged paper, beginning with the words 'By the President of the United States of America: A Proclamation.' It declared that all enslaved people in Confederate states 'shall be then, thenceforward, and forever free.' The document fundamentally changed the character of the Civil War from a fight to preserve the Union into a fight for human freedom.",
       docTitle: "The Emancipation Proclamation",
       docAuthor: "Abraham Lincoln",
@@ -179,7 +179,7 @@ const STATIC_DEMO_TASKS = {
     title: "The Great Wave off Kanagawa by Hokusai",
     prompt: "Study this artwork carefully. When it disappears, you will answer questions about what you observed and its artistic significance.",
     config: {
-      imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Tsunami_by_hokusai_19th_century.jpg/800px-Tsunami_by_hokusai_19th_century.jpg",
+      imageUrl: "/demo-images/great-wave.svg",
       imageDescription: "The Great Wave off Kanagawa by Katsushika Hokusai (c. 1831). A dramatic woodblock print showing a towering wave with white foam claws about to crash down on three fishing boats. In the background, the small but iconic shape of Mount Fuji sits calmly beneath the massive wave. The composition uses deep indigo blues (Prussian blue, imported from Europe) contrasted with white foam and a pale sky. The wave dominates the frame while Fuji appears almost miniature, creating a powerful contrast between nature's fury and the mountain's serenity. Part of the series 'Thirty-six Views of Mount Fuji.' One of the most recognized works of Japanese art worldwide.",
       artTitle: "The Great Wave off Kanagawa",
       artist: "Katsushika Hokusai",
@@ -563,6 +563,21 @@ const STATIC_DEMO_TASKS = {
           ],
         },
       ],
+    },
+  },
+
+  [TASK_TYPES.HIDENSEEK]: {
+    taskType: TASK_TYPES.HIDENSEEK,
+    title: "Vocabulary Hunt: Human Body Systems",
+    prompt: "Find a real-world example of one of today's vocabulary words — snap a photo and explain why it matches!",
+    config: {
+      clueSource: "your teacher",
+      clues: [
+        "Look for something in the classroom that represents how the circulatory system works.",
+        "Find an object that shows a network or branching pattern like blood vessels.",
+        "Spot something that pumps, pushes, or moves — like the heart does with blood.",
+      ],
+      pageReference: "Chapter 6 — Circulatory System, pages 142–145 in your textbook.",
     },
   },
 };

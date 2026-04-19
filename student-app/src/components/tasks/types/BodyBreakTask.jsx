@@ -205,8 +205,8 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
       fontWeight: 900,
       fontSize: 13,
     },
-    title: { fontSize: 22, fontWeight: 1000, margin: 0, letterSpacing: 0.3 },
-    sub: { marginTop: 5, fontSize: 14, opacity: 0.7, fontWeight: 700 },
+    title: { fontSize: 22, fontWeight: 1000, margin: 0, letterSpacing: 0.3, color: "#0f172a" },
+    sub: { marginTop: 5, fontSize: 14, opacity: 1, color: "#334155", fontWeight: 700 },
     stepsWrap: { marginTop: 20, display: "grid", gap: 14 },
     stepCard: {
       borderRadius: 22,
@@ -232,7 +232,7 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
       flex: "0 0 auto",
     },
     stepText: { fontSize: 20, fontWeight: 850, lineHeight: 1.4, letterSpacing: 0.1 },
-    stepMeta: { marginTop: 8, fontSize: 14, opacity: 0.7, fontWeight: 800 },
+    stepMeta: { marginTop: 8, fontSize: 14, opacity: 1, color: "#475569", fontWeight: 800 },
     controls: { marginTop: 20, display: "grid", gap: 12 },
     btn: {
       width: "100%",
@@ -269,7 +269,7 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
       background: "linear-gradient(90deg, rgba(14,165,233,0.85), rgba(34,197,94,0.85))",
       transition: "width 250ms linear",
     },
-    footer: { marginTop: 10, textAlign: "center", fontSize: 12, opacity: 0.8, fontWeight: 800 },
+    footer: { marginTop: 10, textAlign: "center", fontSize: 12, opacity: 1, color: "#475569", fontWeight: 800 },
   };
 
   return (
@@ -327,7 +327,7 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
               ⏱ <span style={{ fontVariantNumeric: "tabular-nums" }}>{timeLeft ?? totalSeconds}s</span>
             </div>
           ) : (
-            <div style={styles.badge}>✨ Refresh</div>
+            <div style={{ ...styles.badge, color: "#0f172a" }}>✨ Refresh</div>
           )}
         </div>
 
