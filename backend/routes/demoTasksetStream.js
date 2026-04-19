@@ -17,8 +17,8 @@ router.get("/task-types", (req, res) => {
   res.json({ taskTypes: [] });
 });
 
-// Fetch the currently-saved demo taskset
-router.get("/taskset", authAny, requireAdminJson, getDemoTaskset);
+// Fetch the currently-saved demo taskset (public — used by student demo app)
+router.get("/taskset", getDemoTaskset);
 
 // Simple JSON status endpoint (source of truth for "Last generated")
 router.get("/taskset/status", authAny, requireAdminJson, getDemoTasksetStatus);
