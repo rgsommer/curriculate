@@ -151,6 +151,18 @@ const STATIC_DEMO_TASKS = {
       vocabWords: ["republic", "senate", "legion", "aqueduct", "gladiator", "consul"],
     },
   },
+
+  [TASK_TYPES.CASE_STUDY]: {
+    taskType: TASK_TYPES.CASE_STUDY,
+    title: "The Water Crisis of Milltown",
+    prompt: "Read the case below and write a detailed response explaining how you would solve this problem. Use as many key concepts as you can for bonus points.",
+    config: {
+      scenario: "Milltown, a small city of 40,000 people, has discovered that its main water supply is contaminated with lead from aging pipes installed in the 1950s. The mayor must decide how to respond: replace all pipes at a cost of $50 million over 5 years, switch to bottled water distribution immediately at $2 million per month, or install filtration systems in every home for $8 million total. Meanwhile, residents are angry, local businesses are losing customers, and the state government is threatening to intervene. Three children have already been hospitalized with elevated lead levels.",
+      expertRole: "Environmental Scientist",
+      expertDescription: "A water quality researcher who has studied lead contamination in urban infrastructure for over 15 years.",
+      relevantConcepts: ["contamination", "infrastructure", "public health", "budget", "stakeholder", "intervention"],
+    },
+  },
 };
 
 function getDemoTasksetModel() {
