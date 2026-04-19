@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useThemeMode } from "../../../utils/ThemeModeContext.js";
+import StepCircle from "../StepCircle";
 
 /**
  * WordWeaverDuelTask (WORD_WEAVER_DUEL)
@@ -574,13 +575,13 @@ export default function WordWeaverDuelTask({
 
         <div style={s.howBox}>
           <div style={s.sectionTitle}>How to play</div>
-          <ul style={s.howList}>
+          <div>
             {howToPlay.map((line, i) => (
-              <li key={i} style={s.howItem}>
-                {line}
-              </li>
+              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                <StepCircle n={i + 1} /> <span style={{ fontSize: 13, color: s.howList?.color }}>{line}</span>
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
 
         <div style={s.scrabbleTop}>
@@ -886,12 +887,12 @@ export default function WordWeaverDuelTask({
 
       <div style={s.howBox}>
         <div style={s.sectionTitle}>How to play</div>
-        <ul style={s.howList}>
-          <li style={s.howItem}>Tap a word in the Word Bank to select it.</li>
-          <li style={s.howItem}>Tap an empty blank slot to place the selected word.</li>
-          <li style={s.howItem}>Tap a filled slot to remove that word and put it back in the bank.</li>
-          <li style={s.howItem}>When all blanks are filled, press Submit.</li>
-        </ul>
+        <div>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={1} /> <span style={{ fontSize: 13 }}>Tap a word in the Word Bank to select it.</span></div>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={2} /> <span style={{ fontSize: 13 }}>Tap an empty blank slot to place the selected word.</span></div>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={3} /> <span style={{ fontSize: 13 }}>Tap a filled slot to remove that word and put it back in the bank.</span></div>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={4} /> <span style={{ fontSize: 13 }}>When all blanks are filled, press Submit.</span></div>
+        </div>
       </div>
 
       {(opponent.teamId || opponent.filled > 0 || opponent.submitted) && (

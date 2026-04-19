@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/AIDebateJudgeTask.jsx
 import React, { useState, useEffect } from "react";
+import StepCircle from "../StepCircle";
 
 export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, onSubmit, presenter }) {
   const [isJudging, setIsJudging] = useState(false);
@@ -94,9 +95,9 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
       >
         <div className="text-2xl font-bold mb-3">How this works</div>
         <div className="text-xl leading-relaxed text-gray-700">
-          <div>1) Finish your debate first.</div>
-          <div>2) Tap <b>SUMMON AI JUDGE</b>.</div>
-          <div>3) The AI gives scores and picks a winner.</div>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={1} /> Finish your debate first.</div>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={2} /> Tap <b>SUMMON AI JUDGE</b>.</div>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={3} /> The AI gives scores and picks a winner.</div>
           <div style={{ marginTop: 8, opacity: 0.85 }}>
             Tip: once you summon the judge, the decision is final.
           </div>

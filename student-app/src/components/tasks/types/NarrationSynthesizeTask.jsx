@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/NarrationSynthesizeTask.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import StepCircle from "../StepCircle";
 
 /**
  * NarrationSynthesizeTask
@@ -468,11 +469,11 @@ export default function NarrationSynthesizeTask({
               }}
             >
               <div style={{ fontWeight: 950, marginBottom: 5 }}>⚡ How this works</div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <div><span style={{ opacity: 0.7 }}>1️⃣</span> <b>{currentName}</b> speaks out loud</div>
-                <div><span style={{ opacity: 0.7 }}>2️⃣</span> Everyone listens closely</div>
-                <div><span style={{ opacity: 0.7 }}>3️⃣</span> Group rates it</div>
-                <div><span style={{ opacity: 0.7 }}>4️⃣</span> Next player</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={1} /> <b>{currentName}</b> speaks out loud</div>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={2} /> Everyone listens closely</div>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={3} /> Group rates it</div>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={4} /> Next player</div>
               </div>
             </div>
           )}

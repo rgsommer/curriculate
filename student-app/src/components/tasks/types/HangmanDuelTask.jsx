@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import StepCircle from "../StepCircle";
 import {
   DndContext,
   PointerSensor,
@@ -1370,9 +1371,11 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
         How to play (easy drops):
       </div>
       <div style={{ marginTop: 6, fontSize: 14, opacity: 0.85, maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
-        1) Look at the <b>Shared Letter Pool</b>. 2) When it is your turn, drag any letter into the big tray (you can drop anywhere).
-        3) If the letter is in the word, it fills the right blank(s) and you score. 4) If it is not in the word, one part is added.
-        5) Bonus: if you drop a letter on the exact correct blank, you get an extra point.
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={1} /> Look at the <b>Shared Letter Pool</b>.</div>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={2} /> When it is your turn, drag any letter into the big tray (you can drop anywhere).</div>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={3} /> If the letter is in the word, it fills the right blank(s) and you score.</div>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={4} /> If it is not in the word, one part is added.</div>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={5} /> Bonus: if you drop a letter on the exact correct blank, you get an extra point.</div>
       </div>
 
       <DndContext

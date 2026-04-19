@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/SpeedDrawTask.jsx
 import React, { useState, useEffect, useRef } from "react";
+import StepCircle from "../StepCircle";
 
 export default function SpeedDrawTask({ task, onSubmit, disabled, socket, presenter }) {
   const [showWord, setShowWord] = useState(true);
@@ -15,8 +16,12 @@ export default function SpeedDrawTask({ task, onSubmit, disabled, socket, presen
     task?.word || task?.config?.word || task?.config?.prompt || "Mystery Word"; // AI-generated based on difficulty
   const difficulty = task?.difficulty || task?.config?.difficulty || "MEDIUM";
 
-  const instructionText =
-    "1) One person memorizes the word. 2) Team looks away. 3) Draw on paper. 4) Take a photo and submit.";
+  const instructionSteps = [
+    "One person memorizes the word.",
+    "Team looks away.",
+    "Draw on paper.",
+    "Take a photo and submit.",
+  ];
 
   useEffect(() => {
     let interval;
@@ -78,7 +83,13 @@ export default function SpeedDrawTask({ task, onSubmit, disabled, socket, presen
       <div className="w-full max-w-5xl mb-6">
         <div className="rounded-2xl border border-white/30 bg-white/10 backdrop-blur px-4 py-3">
           <div className="font-extrabold text-xl mb-1">How to play</div>
-          <div className="text-lg opacity-90">{instructionText}</div>
+          <div className="text-lg opacity-90">
+            {instructionSteps.map((text, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                <StepCircle n={i + 1} /> {text}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
       <h1 className="text-8xl font-black mb-12 drop-shadow-2xl animate-pulse">SPEED DRAW!</h1>

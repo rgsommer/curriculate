@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/BodyBreakTask.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import StepCircle from "../StepCircle";
 
 function parseStepsFromPrompt(promptText) {
   const t = String(promptText || "").trim();
@@ -219,19 +220,18 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
       alignItems: "flex-start",
     },
     num: {
-      width: 44,
-      height: 44,
-      borderRadius: 14,
+      width: 32,
+      height: 32,
+      borderRadius: "50%",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      fontWeight: 1000,
-      fontSize: 20,
-      background: "linear-gradient(135deg, rgba(14,165,233,0.22), rgba(99,102,241,0.20))",
-      border: "1px solid rgba(15,23,42,0.08)",
+      fontWeight: 900,
+      fontSize: 15,
+      color: "#fff",
       flex: "0 0 auto",
     },
-    stepText: { fontSize: 20, fontWeight: 850, lineHeight: 1.4, letterSpacing: 0.1 },
+    stepText: { fontSize: 20, fontWeight: 850, lineHeight: 1.4, letterSpacing: 0.1, color: "#0f172a" },
     stepMeta: { marginTop: 8, fontSize: 14, opacity: 1, color: "#475569", fontWeight: 800 },
     controls: { marginTop: 20, display: "grid", gap: 12 },
     btn: {
@@ -360,7 +360,7 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
           {steps.length ? (
             steps.map((s, idx) => (
               <div key={idx} style={styles.stepCard}>
-                <div style={styles.num}>{idx + 1}</div>
+                <StepCircle n={idx + 1} size={32} />
                 <div style={{ minWidth: 0 }}>
                   <div style={styles.stepText}>
                     {s.icon ? <span style={{ marginRight: 8 }}>{s.icon}</span> : null}

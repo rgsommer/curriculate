@@ -2,6 +2,7 @@
 import React, { useRef, useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TaskCardFrame } from "../taskStyles";
+import StepCircle from "../StepCircle";
 
 export default function DrawMimeTask({
   task,
@@ -733,15 +734,15 @@ export default function DrawMimeTask({
               <div style={{ background: "rgba(0,0,0,0.25)", borderRadius: 20, padding: "20px 28px", maxWidth: 380, width: "100%", textAlign: "left", fontSize: "1.2rem", lineHeight: 1.7 }}>
                 {mode === "draw" ? (
                   <>
-                    <div>✏️ Grab <strong>paper + a pen</strong> — draw your clue on paper</div>
-                    <div style={{ marginTop: 10 }}>🚫 No letters, numbers, or words</div>
-                    <div style={{ marginTop: 10 }}>👆 Tap the name of whoever guesses it first</div>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={1} /> Grab <strong>paper + a pen</strong> — draw your clue on paper</div>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={2} /> No letters, numbers, or words</div>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={3} /> Tap the name of whoever guesses it first</div>
                   </>
                 ) : (
                   <>
-                    <div>🤫 Act it out — <strong>no talking, no sounds</strong></div>
-                    <div style={{ marginTop: 10 }}>📱 Put the device down before you start</div>
-                    <div style={{ marginTop: 10 }}>👆 Tap the name of whoever guesses it first</div>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={1} /> Act it out — <strong>no talking, no sounds</strong></div>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={2} /> Put the device down before you start</div>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={3} /> Tap the name of whoever guesses it first</div>
                   </>
                 )}
               </div>

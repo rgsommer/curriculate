@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/GuessWhoTask.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSound from "use-sound";
+import StepCircle from "../StepCircle";
 
 const DEFAULT_MAX_GUESSES = 10;
 const DEFAULT_TIMER_SECONDS = 60;
@@ -443,16 +444,16 @@ export default function GuessWhoTask({ task, onSubmit }) {
             <div style={{ fontWeight: 800, fontSize: "1.05rem", color: CONTRAST_TEXT_DARK, marginBottom: 10 }}>
               How to Play
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {[
-                { step: "1", icon: "👀", text: "The Answerer holds the button to secretly see the mystery person's name." },
-                { step: "2", icon: "❓", text: "Teammates ask yes/no questions to narrow it down. (\"Are they a leader?\" \"Are they from Europe?\")" },
-                { step: "3", icon: "✅", text: "The Answerer taps Yes or No for each question." },
-                { step: "4", icon: "🎯", text: `When you think you know, type your guess! You get ${maxGuesses} guesses per round.` },
-                { step: "5", icon: "🔄", text: `There are ${totalRounds} rounds — a new mystery person each time!` },
+                { step: 1, text: "The Answerer holds the button to secretly see the mystery person's name." },
+                { step: 2, text: "Teammates ask yes/no questions to narrow it down. (\"Are they a leader?\" \"Are they from Europe?\")" },
+                { step: 3, text: "The Answerer taps Yes or No for each question." },
+                { step: 4, text: `When you think you know, type your guess! You get ${maxGuesses} guesses per round.` },
+                { step: 5, text: `There are ${totalRounds} rounds — a new mystery person each time!` },
               ].map((s) => (
-                <div key={s.step} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                  <span style={{ fontSize: 20, flexShrink: 0, marginTop: 2 }}>{s.icon}</span>
+                <div key={s.step} style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                  <StepCircle n={s.step} />
                   <span style={{ fontSize: "0.95rem", color: "#334155", lineHeight: 1.5 }}>{s.text}</span>
                 </div>
               ))}

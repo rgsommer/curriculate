@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/RolePlayDeckTask.jsx
 import React, { useMemo, useRef, useState, useEffect } from "react";
+import StepCircle from "../StepCircle";
 
 /**
  * RolePlayDeckTask
@@ -273,20 +274,20 @@ export default function RolePlayDeckTask({
           }}
         >
           <div style={{ fontWeight: 1000, marginBottom: 8 }}>How to play</div>
-          <ol style={{ margin: 0, paddingLeft: 18, color: "#334155", lineHeight: 1.4 }}>
-            <li>
-              Choose a mode: <strong>Mystery</strong> (hidden roles) or <strong>Classic</strong> (open roles).
-            </li>
-            <li>
-              Each player draws one role card. Follow the "Pass the device" screens.
-            </li>
-            <li>
-              Read the <strong>Scenario</strong> and role-play it as a team.
-            </li>
-            <li>
-              When you finish acting, tap <strong>End role-play</strong>.
-            </li>
-          </ol>
+          <div style={{ color: "#334155", lineHeight: 1.4 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+              <StepCircle n={1} /> Choose a mode: <strong>Mystery</strong> (hidden roles) or <strong>Classic</strong> (open roles).
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+              <StepCircle n={2} /> Each player draws one role card. Follow the "Pass the device" screens.
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+              <StepCircle n={3} /> Read the <strong>Scenario</strong> and role-play it as a team.
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+              <StepCircle n={4} /> When you finish acting, tap <strong>End role-play</strong>.
+            </div>
+          </div>
           <div style={{ marginTop: 8, fontSize: "0.92rem", color: "#64748b", fontWeight: 700 }}>
             Tip: In Mystery Mode, only the current player should look at their role card.
           </div>
@@ -359,13 +360,17 @@ export default function RolePlayDeckTask({
               }}
             >
               <div style={{ fontWeight: 800, marginBottom: 6 }}>How it works</div>
-              <ul style={{ margin: 0, paddingLeft: 18, color: "#334155", lineHeight: 1.35 }}>
-                <li>
-                  Player <strong>{currentTurn}</strong> taps "Draw role card".
-                </li>
-                <li>In Mystery mode, only that player should view the card.</li>
-                <li>Repeat until everyone has a role.</li>
-              </ul>
+              <div style={{ color: "#334155", lineHeight: 1.35 }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                  <StepCircle n={1} /> Player <strong>{currentTurn}</strong> taps "Draw role card".
+                </div>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                  <StepCircle n={2} /> In Mystery mode, only that player should view the card.
+                </div>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                  <StepCircle n={3} /> Repeat until everyone has a role.
+                </div>
+              </div>
             </div>
 
             {/* Mystery mode: explicit pass-device interstitial before draw */}
