@@ -635,7 +635,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
                       {c?.clue}
                     </div>
                     <div style={{ marginTop: 6, fontSize: 13, opacity: 0.82 }}>
-                      Tip: respond in <b>question form</b> (Jeopardy style).
+                      Remember: shout your answer as a question! e.g. <b>"What is photosynthesis?"</b>
                     </div>
                   </div>
                 );
@@ -726,6 +726,38 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
       )}
 
       <div style={{ display: "grid", gap: 14 }}>
+        {/* How-to-play example — show on the first clue only */}
+        {currentClueIndex === 0 && (
+          <div style={{
+            padding: 14,
+            borderRadius: 16,
+            background: "linear-gradient(135deg, rgba(99,102,241,0.08), rgba(236,72,153,0.06))",
+            border: "1px solid rgba(99,102,241,0.18)",
+          }}>
+            <div style={{ fontWeight: 950, fontSize: 14, color: "#4338ca", marginBottom: 8 }}>
+              How to play Brain Blitz
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.5, color: "#334155" }}>
+              Read each clue, then <b>shout your answer as a question</b> (Jeopardy style).
+            </div>
+            <div style={{
+              marginTop: 10,
+              padding: "10px 14px",
+              borderRadius: 12,
+              background: "rgba(255,255,255,0.8)",
+              border: "1px solid rgba(15,23,42,0.08)",
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#6366f1", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>Example</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "#1e293b" }}>
+                Clue: "This process converts sunlight into food for plants"
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 900, color: "#059669", marginTop: 4 }}>
+                You shout: "What is photosynthesis?"
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Per-clue rotation: different team member reads/answers each clue */}
         {memberNames.length >= 2 && (
           <StepDesignatedWriter
