@@ -152,6 +152,49 @@ const STATIC_DEMO_TASKS = {
     },
   },
 
+  [TASK_TYPES.HISTORICAL_DOC]: {
+    taskType: TASK_TYPES.HISTORICAL_DOC,
+    title: "The Emancipation Proclamation",
+    prompt: "Read this historical document carefully. When it disappears, you will answer analysis questions about its significance and impact.",
+    config: {
+      imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Emancipation_proclamation.jpg/800px-Emancipation_proclamation.jpg",
+      imageDescription: "The first page of the Emancipation Proclamation, issued by President Abraham Lincoln on January 1, 1863. The document is handwritten in elegant script on aged paper, beginning with the words 'By the President of the United States of America: A Proclamation.' It declared that all enslaved people in Confederate states 'shall be then, thenceforward, and forever free.' The document fundamentally changed the character of the Civil War from a fight to preserve the Union into a fight for human freedom.",
+      docTitle: "The Emancipation Proclamation",
+      docAuthor: "Abraham Lincoln",
+      docYear: "1863",
+      docType: "Presidential Proclamation",
+      historicalContext: "By late 1862, the Civil War had raged for over a year. President Lincoln decided to reframe the war's purpose by declaring the freedom of enslaved people in rebel states.",
+      viewingSeconds: 90,
+      responseSeconds: 150,
+      analysisPrompts: [
+        "What was the immediate impact of this document when it was issued in 1863?",
+        "Who was the intended audience, and how might different groups have reacted?",
+        "Why did Lincoln choose to issue this as a military order rather than push for a constitutional amendment at that time?",
+      ],
+    },
+  },
+
+  [TASK_TYPES.ART_VIEW]: {
+    taskType: TASK_TYPES.ART_VIEW,
+    title: "Starry Night by Vincent van Gogh",
+    prompt: "Study this painting carefully. When it disappears, you will answer questions about what you observed and its artistic significance.",
+    config: {
+      imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/800px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg",
+      imageDescription: "The Starry Night by Vincent van Gogh (1889). A swirling night sky dominates the canvas with bold spiraling clouds and bright yellow stars and a crescent moon radiating light. Below the dramatic sky sits a quiet village with a prominent church steeple. Dark cypress trees flame upward in the foreground on the left. The painting uses thick, expressive brushstrokes in deep blues, vibrant yellows, and whites, creating a sense of movement and emotional intensity. Painted while van Gogh was staying at the Saint-Paul-de-Mausole asylum in Saint-Remy-de-Provence, France.",
+      artTitle: "The Starry Night",
+      artist: "Vincent van Gogh",
+      year: "1889",
+      medium: "Oil on canvas",
+      viewingSeconds: 60,
+      responseSeconds: 120,
+      analysisPrompts: [
+        "Describe the use of color and brushwork in this painting. How do they contribute to the mood?",
+        "What contrast exists between the sky and the village below? What might this represent?",
+        "Why do you think this painting has become one of the most recognized artworks in the world?",
+      ],
+    },
+  },
+
   [TASK_TYPES.CASE_STUDY]: {
     taskType: TASK_TYPES.CASE_STUDY,
     title: "The Water Crisis of Milltown",
