@@ -75,8 +75,8 @@ function validatePlayabilityByType(type, task) {
     if (type === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) {
       if (_len(items) !== 4) errors.push(`items[] must have exactly 4 questions (got ${_len(items)})`);
     } else {
-      // Regular multiple choice: 3–5 questions
-      if (_len(items) < 3 || _len(items) > 5) errors.push(`items[] must have 3–5 questions (got ${_len(items)})`);
+      // Regular multiple choice: 3–8 questions
+      if (_len(items) < 3 || _len(items) > 8) errors.push(`items[] must have 3–8 questions (got ${_len(items)})`);
     }
     for (let i = 0; i < items.length; i++) {
       const it = items[i] || {};
@@ -123,7 +123,7 @@ function validatePlayabilityByType(type, task) {
   }
 
   if (type === TASK_TYPES.SEQUENCE || type === TASK_TYPES.TIMELINE) {
-    if (_len(cfg.items) < 3 && _len(task?.items) < 3) errors.push("sequence/items must have at least 3 steps");
+    if (_len(cfg.items) < 4 && _len(task?.items) < 4) errors.push("sequence/items must have at least 4 steps");
     const hasOrder =
       _len(task?.correctOrder) ||
       _len(cfg?.correctOrder) ||
@@ -866,7 +866,7 @@ export function assertValidAiTask(expectedType, task) {
 
 export const retryMustHave = {
   [TASK_TYPES.MULTIPLE_CHOICE]:
-    'MULTIPLE_CHOICE must include items[] with 3–5 questions. Put questions ONLY in top-level items[] (do NOT include config.items). Each item: { id, prompt, options[], correctAnswer } (correctAnswer is an index). IMPORTANT: Vary the correctAnswer position — use at least 3 different index values across items. Do NOT put the correct answer in the same position for every question. DOUBLE-CHECK: For EACH question, verify that options[correctAnswer] is actually the factually correct answer.',
+    'MULTIPLE_CHOICE must include items[] with 4–8 questions. Put questions ONLY in top-level items[] (do NOT include config.items). Each item: { id, prompt, options[], correctAnswer } (correctAnswer is an index). IMPORTANT: Vary the correctAnswer position — use at least 3 different index values across items. Do NOT put the correct answer in the same position for every question. DOUBLE-CHECK: For EACH question, verify that options[correctAnswer] is actually the factually correct answer.',
   [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]:
     'PHYSICAL_MULTIPLE_CHOICE must include items[] with EXACTLY 4 questions. Put questions ONLY in top-level items[] (do NOT include config.items). Each item: { id, prompt, options[4], correctAnswer } where correctAnswer is a 0-based index. IMPORTANT: Vary the correctAnswer position — use at least 3 different index values across items. DOUBLE-CHECK: For EACH question, verify that options[correctAnswer] is actually the factually correct answer. Read back the question, read the option at the index you chose, and confirm it is right before finalizing.',
   [TASK_TYPES.TRUE_FALSE]:
@@ -874,7 +874,7 @@ export const retryMustHave = {
   [TASK_TYPES.MUSICAL_CHAIRS]:
     'MUSICAL_CHAIRS must include items[] with EXACTLY 7 tap-based questions. Each item: { id, prompt, options[2..4], correctAnswer:number } where correctAnswer is a 0-based index into options. ALSO include config.rounds=7 and config.items as an IDENTICAL copy of items.',
   [TASK_TYPES.SHORT_ANSWER]:
-    'SHORT_ANSWER must include either (A) a single prompt + correctAnswer (string) OR (B) items[] with 3–5 prompts, each with correctAnswer (string) and optionally acceptableAnswers (array of strings).',
+    'SHORT_ANSWER must include either (A) a single prompt + correctAnswer (string) OR (B) items[] with 4–8 prompts, each with correctAnswer (string) and optionally acceptableAnswers (array of strings).',
   [TASK_TYPES.OPEN_TEXT]:
     'OPEN_TEXT must include a clear prompt plus settings: { gradeLevel:number, difficulty:"EASY"|"MEDIUM"|"HARD" }. Do NOT include correctAnswer.',
   [TASK_TYPES.BRAIN_SPARK_NOTES]:
@@ -920,7 +920,7 @@ export const retryMustHave = {
   [TASK_TYPES.JEOPARDY]:
     'JEOPARDY (BrainBlitz) must include clues[] with at least 5 SHORT clue STRINGS and a correctAnswer string (the single target answer). Also include config.clues and config.correctAnswer mirroring the root fields. CRITICAL: ALL clues must describe the SAME single concept/answer. Do NOT mix clues about different topics (e.g. do NOT have some clues about multiplication and others about addition). Every clue must be a valid hint for correctAnswer. The correctAnswer MUST be a single recognizable WORD or SHORT PHRASE (a concept, term, person, place, thing, or vocabulary word) — NOT a number that requires calculation. Do NOT create math word problems where students must compute an answer (e.g. "The store buys shirts for $14.99 and sells them for $24.99" with answer "$10.00" is WRONG). Clues should be descriptive hints that progressively reveal a concept students can shout out loud, Jeopardy-style. Good example: correctAnswer "photosynthesis", clues ["This process happens in the chloroplast", "Plants use sunlight to make food through this process", ...]. Bad example: correctAnswer "42%" with clues containing numbers to calculate.',
   [TASK_TYPES.HANGMAN_DUEL]:
-    "HANGMAN_DUEL must include wordsByStation[] (exactly 8). Each entry: { word, hint }. Words must be PURE ALPHABETIC (only A-Z letters, no numbers, hyphens, apostrophes, or special characters) and come from aiWordBank. CRITICAL: Each hint must be a real DEFINITION or CONTEXT CLUE for the word (e.g. 'The force that pulls objects toward Earth' for GRAVITY). Do NOT use lazy placeholders like 'Think about this N-letter word' — those will be REJECTED.",
+    "HANGMAN_DUEL must include wordsByStation[] (8–12 entries). Each entry: { word, hint }. Words must be PURE ALPHABETIC (only A-Z letters, no numbers, hyphens, apostrophes, or special characters) and come from aiWordBank. CRITICAL: Each hint must be a real DEFINITION or CONTEXT CLUE for the word (e.g. 'The force that pulls objects toward Earth' for GRAVITY). Do NOT use lazy placeholders like 'Think about this N-letter word' — those will be REJECTED.",
   [TASK_TYPES.FLASHCARDS]:
     'FLASHCARDS: Pick 12–20 terms from the vocabulary list as card fronts (question field). Write a clear definition for each as the card back (answer field). config.items (>=5). Each item: { question, answer }. NEVER use placeholder text like "Term 1" or "Card 2".',
   [TASK_TYPES.FLASHCARDS_RACE]:
@@ -936,9 +936,9 @@ export const retryMustHave = {
   [TASK_TYPES.FAKE_OUT]:
     "FAKE_OUT must include config.rounds with 3+ rounds. Each round: { prompt, options: string[3], correctIndex: 0..2, correctOption: string, jokeOption: string, jokeIndex: 0..3 }. CRITICAL: options must contain EXACTLY 3 UNIQUE strings. jokeOption is a SEPARATE field — it must NOT appear inside options[]. The system inserts jokeOption into the displayed choices at jokeIndex automatically. correctOption must match options[correctIndex] exactly. Vary correctIndex across rounds — do NOT always use index 0.",
   [TASK_TYPES.MAD_DASH]:
-    "MAD_DASH must include sequence (or config.sequence) as an array of 3–5 station/color names (strings). No correctOrder/answerKey is required.",
+    "MAD_DASH must include sequence (or config.sequence) as an array of 3–8 station/color names (strings). No correctOrder/answerKey is required.",
   [TASK_TYPES.MAD_DASH_SEQUENCE]:
-    "MAD_DASH_SEQUENCE must include config.items (array of 3–5 strings) AND config.correctOrder (a permutation of indexes 0..items.length-1). Do NOT include colors; colors are assigned at runtime. IMPORTANT: The items must be sequential STEPS for solving ONE specific problem or completing ONE specific process (e.g. steps of photosynthesis, stages of cell division). Each item is ONE step — do NOT mix unrelated facts or topics. correctOrder values must be INTEGERS (not strings). CRITICAL: items must be listed in SCRAMBLED order, NOT already in the correct sequence. The correctOrder array tells the system how to unscramble them. If items are [A,B,C,D] and correct sequence is B,D,A,C then correctOrder is [1,3,0,2]. A trivial correctOrder of [0,1,2,3] means the items are already in order — that is NOT a puzzle and will be REJECTED.",
+    "MAD_DASH_SEQUENCE must include config.items (array of 4–8 strings) AND config.correctOrder (a permutation of indexes 0..items.length-1). Do NOT include colors; colors are assigned at runtime. IMPORTANT: The items must be sequential STEPS for solving ONE specific problem or completing ONE specific process (e.g. steps of photosynthesis, stages of cell division). Each item is ONE step — do NOT mix unrelated facts or topics. correctOrder values must be INTEGERS (not strings). CRITICAL: items must be listed in SCRAMBLED order, NOT already in the correct sequence. The correctOrder array tells the system how to unscramble them. If items are [A,B,C,D] and correct sequence is B,D,A,C then correctOrder is [1,3,0,2]. A trivial correctOrder of [0,1,2,3] means the items are already in order — that is NOT a puzzle and will be REJECTED.",
   [TASK_TYPES.MIND_MAPPER]:
     `MIND_MAPPER must include ALL of these fields at the ROOT level (not only inside config):
   - organizerType: one of "mind-map", "hierarchy", "fishbone", "flowchart", "venn", "web"

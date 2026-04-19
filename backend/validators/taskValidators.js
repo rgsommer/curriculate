@@ -1141,7 +1141,7 @@ export function normalizeTaskByType(taskType, rawTask) {
         .filter(Boolean);
 
       while (seq.length < 3) seq.push(`Step ${seq.length + 1}`);
-      if (seq.length > 5) seq = seq.slice(0, 5);
+      if (seq.length > 8) seq = seq.slice(0, 8);
 
       task.sequence = seq;
       task.items = seq;
@@ -1170,7 +1170,7 @@ export function normalizeTaskByType(taskType, rawTask) {
         .filter(Boolean);
 
       while (items.length < 3) items.push(`Item ${items.length + 1}`);
-      if (items.length > 5) items = items.slice(0, 5);
+      if (items.length > 8) items = items.slice(0, 8);
 
       let order =
         cfg.correctOrder ?? task.correctOrder ??
@@ -1723,7 +1723,7 @@ export function normalizeTaskByType(taskType, rawTask) {
         : [];
 
       // Trim to 8 if AI generated more (common: prompt says 10-16)
-      if (cfg.wordsByStation.length > 8) cfg.wordsByStation = cfg.wordsByStation.slice(0, 8);
+      if (cfg.wordsByStation.length > 12) cfg.wordsByStation = cfg.wordsByStation.slice(0, 12);
 
       // Do NOT pad with placeholder words — let validation reject if < 8
 
