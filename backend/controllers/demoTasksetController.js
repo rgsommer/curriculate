@@ -226,9 +226,9 @@ const STATIC_DEMO_TASKS = {
         { term: "Gas Giant", definition: "A large planet made mostly of hydrogen and helium with no solid surface.", points: ["Jupiter, Saturn, Uranus, Neptune", "Much larger but less dense than terrestrial planets"] },
       ],
       mainPoints: [
-        { title: "Structure of the Solar System", content: "The solar system has 8 planets orbiting the Sun. The inner planets are rocky; the outer planets are gas giants.", details: ["The asteroid belt separates inner and outer planets", "Pluto was reclassified as a dwarf planet in 2006"] },
-        { title: "The Sun", content: "The Sun is a medium-sized star that provides light and heat to all planets. It contains 99.8% of the solar system's mass.", details: ["Surface temperature: about 5,500 degrees Celsius", "Energy comes from nuclear fusion of hydrogen"] },
-        { title: "Earth's Special Position", content: "Earth orbits in the habitable zone where liquid water can exist, making life possible.", details: ["The atmosphere protects us from harmful radiation", "The Moon stabilizes Earth's tilt and creates tides"] },
+        { heading: "Structure of the Solar System", bullets: ["The solar system has 8 planets orbiting the Sun — inner planets are rocky, outer planets are gas giants", "The asteroid belt separates inner and outer planets", "Pluto was reclassified as a dwarf planet in 2006"] },
+        { heading: "The Sun", bullets: ["The Sun is a medium-sized star providing light and heat to all planets — it contains 99.8% of the solar system's mass", "Surface temperature: about 5,500 degrees Celsius", "Energy comes from nuclear fusion of hydrogen"] },
+        { heading: "Earth's Special Position", bullets: ["Earth orbits in the habitable zone where liquid water can exist, making life possible", "The atmosphere protects us from harmful radiation", "The Moon stabilizes Earth's tilt and creates tides"] },
       ],
       summary: ["The solar system consists of the Sun and 8 planets held together by gravity. The inner rocky planets and outer gas giants each have unique characteristics. Earth's position in the habitable zone makes it uniquely suited for life."],
     },

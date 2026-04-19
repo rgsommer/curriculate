@@ -1658,7 +1658,10 @@ export function normalizeTaskByType(taskType, rawTask) {
           return { heading: mpHeading, sections };
         }
 
-        let bullets = Array.isArray(obj.bullets) ? obj.bullets : [];
+        let bullets = Array.isArray(obj.bullets) ? obj.bullets
+          : Array.isArray(obj.details) ? obj.details
+          : Array.isArray(obj.points) ? obj.points
+          : (typeof obj.content === "string" && obj.content.trim() ? [obj.content.trim()] : []);
         bullets = bullets.map((b) => asNonEmptyString(b, "")).map((s) => s.trim()).filter(Boolean);
         while (bullets.length < 2) bullets.push(bullets.length === 0 ? `Key idea for ${mpHeading}` : `Another key idea for ${mpHeading}`);
         return { heading: mpHeading, bullets };
