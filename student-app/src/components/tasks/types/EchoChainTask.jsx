@@ -1,679 +1,417 @@
 // student-app/src/components/tasks/types/EchoChainTask.jsx
-import React, { useMemo, useState, useEffect, useRef } from "react";
-import { TaskCardFrame, PrimaryButton, GhostButton, TextInput } from "../taskStyles";
-
-// CSS Keyframes for animations
-const styles = `
-  @keyframes fadeInScaleUp {
-    from {
-      opacity: 0;
-      transform: scale(0.7) translateY(10px);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1) translateY(0);
-    }
-  }
-
-  @keyframes linkConnect {
-    from {
-      opacity: 0;
-      width: 0;
-    }
-    to {
-      opacity: 1;
-      width: 100%;
-    }
-  }
-
-  @keyframes pulse {
-    0%, 100% {
-      box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
-    }
-    50% {
-      box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
-    }
-  }
-
-  @keyframes confetti {
-    0% {
-      transform: translateY(0) rotateZ(0deg);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(-80px) rotateZ(720deg);
-      opacity: 0;
-    }
-  }
-
-  @keyframes bounce {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-8px); }
-  }
-
-  @keyframes glow {
-    0%, 100% {
-      text-shadow: 0 0 5px rgba(59, 130, 246, 0.5);
-    }
-    50% {
-      text-shadow: 0 0 20px rgba(59, 130, 246, 1);
-    }
-  }
-`;
-
-const styleSheet = document.createElement("style");
-styleSheet.textContent = styles;
-if (typeof document !== "undefined") {
-  document.head.appendChild(styleSheet);
-}
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { TaskCardFrame } from "../taskStyles";
 
 /**
- * Echo Chain - Showstopper Gaming Experience
- * Contract: seed term MUST be provided by the task (prefer task.config.seedTerm).
- * Preserves exact props interface and onSubmit behavior.
+ * Echo Chain – always-on mic after each Add.
+ *
+ * Flow:
+ *  1. Player types a word → taps Add → word joins the chain, mic starts listening.
+ *  2. Next player recites the full chain out loud.
+ *  3. When the mic hears the LAST word in the chain it stops → green "heard it!" badge.
+ *  4. Player taps "Player X said that ✅" to confirm.
+ *  5. Add input becomes enabled for the next word.
  */
-export default function EchoChainTask({ task }) {
+
+const SpeechRecognition =
+  typeof window !== "undefined"
+    ? window.SpeechRecognition || window.webkitSpeechRecognition
+    : null;
+
+const playerColors = [
+  "#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899",
+  "#14b8a6", "#f97316", "#6366f1", "#06b6d4", "#84cc16", "#d97706",
+];
+const playerEmojis = ["🎤", "🎸", "🎹", "🎺", "🥁", "🎻", "🎷", "🎼", "🎧", "🎙️", "🎪", "🎭"];
+
+export default function EchoChainTask({ task, memberNames = [] }) {
+  /* ── seed term ── */
   const seed = useMemo(() => {
-    // Canonical: config.seedTerm
     const cfgSeed = task?.config?.seedTerm;
     if (typeof cfgSeed === "string" && cfgSeed.trim()) return cfgSeed.trim();
-
-    // Fallbacks (legacy)
     const topSeed = task?.seedTerm;
     if (typeof topSeed === "string" && topSeed.trim()) return topSeed.trim();
-
     if (Array.isArray(task?.ECHO_CHAIN) && task.ECHO_CHAIN.length > 0) {
       const legacy = task.ECHO_CHAIN[0];
       if (typeof legacy === "string" && legacy.trim()) return legacy.trim();
     }
-
     return "";
   }, [task]);
 
+  const names = useMemo(
+    () => (Array.isArray(memberNames) ? memberNames.filter(Boolean) : []),
+    [memberNames],
+  );
+
+  /* ── state ── */
   const [chain, setChain] = useState([]);
   const [currentPlayer, setCurrentPlayer] = useState(1);
   const [input, setInput] = useState("");
   const [seedVisible, setSeedVisible] = useState(true);
   const [revealTemporarily, setRevealTemporarily] = useState(false);
   const [celebrationActive, setCelebrationActive] = useState(false);
-  const [lastAddedIndex, setLastAddedIndex] = useState(-1);
-  const audioRef = useRef(null);
+
+  // Listening / confirmation flow
+  const [listening, setListening] = useState(false);     // mic is active
+  const [heardIt, setHeardIt] = useState(false);          // detected last word
+  const [confirmed, setConfirmed] = useState(true);       // "Player X said that" tapped (starts true so first Add works)
+  const [transcript, setTranscript] = useState("");       // running transcript
+  const [micError, setMicError] = useState("");           // fallback msg
+
+  const recognitionRef = useRef(null);
+  const restartTimeoutRef = useRef(null);
 
   const isFirstTurn = chain.length === 0 && currentPlayer === 1;
-  const playerColors = [
-    "#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899",
-    "#14b8a6", "#f97316", "#6366f1", "#06b6d4", "#84cc16", "#d97706"
-  ];
   const playerColor = playerColors[(currentPlayer - 1) % playerColors.length];
+  const playerName = (idx) => names[idx - 1] || `Player ${idx}`;
 
-  // Emoji pool for visual personality
-  const playerEmojis = ["🎤", "🎸", "🎹", "🎺", "🥁", "🎻", "🎷", "🎼", "🎧", "🎙️", "🎪", "🎭"];
+  /* ── speech recognition helpers ── */
+  const stopListening = useCallback(() => {
+    clearTimeout(restartTimeoutRef.current);
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch {}
+      recognitionRef.current = null;
+    }
+    setListening(false);
+  }, []);
 
-  const handleSubmit = () => {
-    if (!input.trim()) return;
+  const startListening = useCallback(
+    (targetWord) => {
+      stopListening();
+      setHeardIt(false);
+      setTranscript("");
+      setMicError("");
 
-    setLastAddedIndex(chain.length);
-    setChain((prev) => [...prev, input.trim()]);
+      if (!SpeechRecognition) {
+        // Browser doesn't support speech recognition – fall back to manual confirm
+        setMicError("Speech recognition not available in this browser. Confirm manually.");
+        return;
+      }
+
+      const recog = new SpeechRecognition();
+      recog.continuous = true;
+      recog.interimResults = true;
+      recog.lang = "en-US";
+      recognitionRef.current = recog;
+
+      const target = targetWord.toLowerCase().trim();
+
+      recog.onresult = (event) => {
+        let full = "";
+        for (let i = 0; i < event.results.length; i++) {
+          full += event.results[i][0].transcript;
+        }
+        setTranscript(full);
+
+        if (full.toLowerCase().includes(target)) {
+          setHeardIt(true);
+          stopListening();
+          try { new Audio("/sounds/yay.mp3").play().catch(() => {}); } catch {}
+        }
+      };
+
+      recog.onerror = (e) => {
+        // "no-speech" is normal – just restart. "aborted" is from our own abort().
+        if (e.error === "no-speech" || e.error === "aborted") return;
+        console.warn("[EchoChain] speech error:", e.error);
+        setMicError(`Mic error: ${e.error}. Confirm manually.`);
+        stopListening();
+      };
+
+      // Chrome stops continuous recognition after ~60 s; restart automatically.
+      recog.onend = () => {
+        if (recognitionRef.current === recog && !heardIt) {
+          restartTimeoutRef.current = setTimeout(() => {
+            try { recog.start(); } catch {}
+          }, 200);
+        }
+      };
+
+      try {
+        recog.start();
+        setListening(true);
+      } catch (err) {
+        setMicError("Could not start microphone. Confirm manually.");
+      }
+    },
+    [stopListening],
+  );
+
+  // Cleanup on unmount
+  useEffect(() => () => stopListening(), [stopListening]);
+
+  /* ── handlers ── */
+  const handleAdd = () => {
+    if (!input.trim() || !confirmed) return;
+
+    const newWord = input.trim();
+    setChain((prev) => [...prev, newWord]);
     setInput("");
     setSeedVisible(false);
     setRevealTemporarily(false);
+    setConfirmed(false);         // lock Add until next player confirms
     setCurrentPlayer((p) => p + 1);
 
-    // Trigger celebration if chain is getting long
+    // Start listening for the last word in the chain (the word just added)
+    startListening(newWord);
+
     if (chain.length >= 4) {
       setCelebrationActive(true);
-      playSound();
+      try { new Audio("/sounds/yay.mp3").play().catch(() => {}); } catch {}
       setTimeout(() => setCelebrationActive(false), 1500);
     }
   };
 
-  const playSound = () => {
-    try {
-      const audio = new Audio("/sounds/yay.mp3");
-      audio.play().catch(() => {
-        // Silent fail if sound doesn't exist
-      });
-    } catch (e) {
-      // Silent fail
-    }
+  const handleConfirm = () => {
+    stopListening();
+    setConfirmed(true);
+    setHeardIt(false);
+    setTranscript("");
+    setMicError("");
   };
 
   const handleReset = () => {
+    stopListening();
     setChain([]);
     setCurrentPlayer(1);
     setInput("");
     setSeedVisible(true);
     setRevealTemporarily(false);
-    setLastAddedIndex(-1);
     setCelebrationActive(false);
+    setConfirmed(true);
+    setHeardIt(false);
+    setTranscript("");
+    setMicError("");
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey && seed) {
+    if (e.key === "Enter" && !e.shiftKey && seed && confirmed) {
       e.preventDefault();
-      handleSubmit();
+      handleAdd();
     }
   };
 
+  /* ── render ── */
   return (
     <TaskCardFrame>
       <style>{`
-        .echo-chain-container {
-          background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-          border-radius: 20px;
-          padding: 32px;
-          color: white;
-          position: relative;
-          overflow: hidden;
-        }
-
-        .echo-chain-container::before {
-          content: '';
-          position: absolute;
-          top: -50%;
-          right: -50%;
-          width: 200%;
-          height: 200%;
-          background: radial-gradient(circle, rgba(59, 130, 246, 0.1) 0%, transparent 70%);
-          pointer-events: none;
-        }
-
-        .echo-header {
-          position: relative;
-          z-index: 10;
-          margin-bottom: 32px;
-        }
-
-        .echo-title {
-          font-size: 2.5em;
-          font-weight: 900;
-          margin: 0;
-          background: linear-gradient(135deg, #3b82f6 0%, #ec4899 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .echo-subtitle {
-          color: #cbd5e1;
-          margin-top: 8px;
-          font-size: 1.1em;
-          font-weight: 500;
-        }
-
-        .player-selector-container {
-          position: relative;
-          z-index: 10;
-          margin-top: 24px;
-          display: flex;
-          flex-wrap: wrap;
-          gap: 12px;
-          align-items: center;
-          padding: 16px;
-          background: rgba(51, 65, 85, 0.5);
-          border-radius: 16px;
-          border: 1px solid rgba(148, 163, 184, 0.2);
-          margin-bottom: 32px;
-        }
-
-        .player-label {
-          font-weight: 700;
-          font-size: 1.1em;
-        }
-
-        .player-select {
-          padding: 10px 16px;
-          border-radius: 12px;
-          border: 2px solid currentColor;
-          background: rgba(15, 23, 42, 0.8);
-          color: inherit;
-          font-weight: 700;
-          font-size: 1em;
-          cursor: pointer;
-          transition: all 0.3s ease;
-        }
-
-        .player-select:hover {
-          background: rgba(59, 130, 246, 0.3);
-        }
-
-        .chain-container {
-          position: relative;
-          z-index: 10;
-          margin-bottom: 32px;
-        }
-
-        .chain-title {
-          font-size: 1.4em;
-          font-weight: 800;
-          margin: 0 0 16px 0;
-          color: #cbd5e1;
-        }
-
-        .chain-visual {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 12px;
-          margin-bottom: 20px;
-        }
-
-        .chain-link {
-          animation: fadeInScaleUp 0.5s ease-out forwards;
-        }
-
-        .chain-bubble {
-          flex: 1;
-          min-width: 80px;
-          padding: 16px;
-          border-radius: 14px;
-          background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(236, 72, 153, 0.2) 100%);
-          border: 2px solid;
-          text-align: center;
-          font-weight: 700;
-          font-size: 0.95em;
-          word-break: break-word;
-          transition: all 0.3s ease;
-          position: relative;
-        }
-
-        .chain-bubble:hover {
-          transform: translateY(-4px);
-          box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
-        }
-
-        .seed-bubble {
-          background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-          border-color: #d97706;
-          color: #78350f;
-          font-weight: 900;
-          box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
-        }
-
-        .input-section {
-          position: relative;
-          z-index: 10;
-          margin-bottom: 24px;
-        }
-
-        .input-wrapper {
-          display: flex;
-          gap: 12px;
-          flex-wrap: wrap;
-          align-items: stretch;
-        }
-
-        .echo-input {
-          flex: 1;
-          min-width: 200px;
-          padding: 14px 18px;
-          border-radius: 14px;
-          border: 2px solid;
-          background: rgba(30, 41, 59, 0.8);
-          color: white;
-          font-size: 1em;
-          font-weight: 600;
-          transition: all 0.3s ease;
-        }
-
-        .echo-input:focus {
-          outline: none;
-          border-color: #3b82f6;
-          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
-        }
-
-        .echo-input::placeholder {
-          color: #64748b;
-        }
-
-        .submit-btn {
-          padding: 14px 28px;
-          border-radius: 14px;
-          border: none;
-          background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
-          color: white;
-          font-weight: 800;
-          font-size: 1em;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-
-        .submit-btn:hover:not(:disabled) {
-          transform: translateY(-2px);
-          box-shadow: 0 8px 24px rgba(59, 130, 246, 0.5);
-        }
-
-        .submit-btn:active:not(:disabled) {
-          transform: translateY(0);
-        }
-
-        .submit-btn:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .reset-btn {
-          padding: 14px 28px;
-          border-radius: 14px;
-          border: 2px solid #64748b;
-          background: transparent;
-          color: #cbd5e1;
-          font-weight: 700;
-          font-size: 1em;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-
-        .reset-btn:hover {
-          border-color: #cbd5e1;
-          background: rgba(148, 163, 184, 0.1);
-        }
-
-        .seed-display {
-          position: relative;
-          z-index: 10;
-          padding: 20px;
-          border-radius: 16px;
-          margin-bottom: 24px;
-          text-align: center;
-          font-weight: 700;
-          font-size: 1.2em;
-        }
-
-        .seed-display.visible {
-          background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-          border: 2px solid #d97706;
-          color: #78350f;
-          box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
-          animation: glow 2s ease-in-out infinite;
-        }
-
-        .seed-display.hidden {
-          background: rgba(51, 65, 85, 0.5);
-          border: 2px dashed rgba(148, 163, 184, 0.3);
-          color: #cbd5e1;
-        }
-
-        .reveal-btn {
-          margin-left: 12px;
-          padding: 8px 16px;
-          border-radius: 12px;
-          border: 2px solid #3b82f6;
-          background: rgba(59, 130, 246, 0.2);
-          color: #3b82f6;
-          font-weight: 700;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          font-size: 0.9em;
-        }
-
-        .reveal-btn:hover {
-          background: rgba(59, 130, 246, 0.3);
-        }
-
-        .celebration-burst {
-          position: fixed;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          font-size: 4em;
-          animation: confetti 1.5s ease-out forwards;
-          pointer-events: none;
-          z-index: 1000;
-        }
-
-        .current-player-highlight {
-          padding: 20px;
-          border-radius: 16px;
-          background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(236, 72, 153, 0.1) 100%);
-          border: 2px solid;
-          text-align: center;
-          margin-bottom: 24px;
-          animation: pulse 2s infinite;
-          position: relative;
-          z-index: 10;
-        }
-
-        .current-player-text {
-          font-size: 1.2em;
-          font-weight: 900;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-        }
-
-        .error-banner {
-          position: relative;
-          z-index: 10;
-          padding: 16px;
-          border-radius: 14px;
-          border: 2px solid #ef4444;
-          background: rgba(239, 68, 68, 0.1);
-          color: #fca5a5;
-          font-weight: 700;
-          margin-bottom: 24px;
-        }
-
-        @media (max-width: 768px) {
-          .echo-chain-container {
-            padding: 20px;
-          }
-
-          .echo-title {
-            font-size: 2em;
-          }
-
-          .input-wrapper {
-            flex-direction: column;
-          }
-
-          .echo-input {
-            min-width: 100%;
-            width: 100%;
-          }
-
-          .submit-btn, .reset-btn {
-            width: 100%;
-          }
-
-          .player-selector-container {
-            flex-direction: column;
-            align-items: stretch;
-          }
-
-          .player-select {
-            width: 100%;
-          }
-
-          .chain-visual {
-            flex-direction: column;
-          }
-
-          .chain-bubble {
-            min-width: 100%;
-          }
-        }
+        .ec-wrap{background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:20px;padding:28px;color:#fff;position:relative;overflow:hidden}
+        .ec-wrap::before{content:'';position:absolute;top:-50%;right:-50%;width:200%;height:200%;background:radial-gradient(circle,rgba(59,130,246,.1) 0%,transparent 70%);pointer-events:none}
+        .ec-title{font-size:2.2em;font-weight:900;margin:0;background:linear-gradient(135deg,#3b82f6,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;display:flex;align-items:center;gap:10px}
+        .ec-sub{color:#cbd5e1;margin-top:8px;font-size:1.05em;font-weight:500;line-height:1.6}
+        .ec-chain-bar{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
+        .ec-chip{padding:10px 16px;border-radius:12px;font-weight:700;font-size:.95em;text-align:center;min-width:70px;word-break:break-word}
+        .ec-seed-chip{background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#78350f;border:2px solid #d97706;font-weight:900;box-shadow:0 0 16px rgba(245,158,11,.35)}
+        .ec-player-box{padding:16px;border-radius:14px;border:2px solid;margin:16px 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+        .ec-input-row{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch;margin:12px 0}
+        .ec-input{flex:1;min-width:180px;padding:12px 16px;border-radius:12px;border:2px solid #475569;background:rgba(30,41,59,.8);color:#fff;font-size:1em;font-weight:600;outline:none}
+        .ec-input:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.2)}
+        .ec-input::placeholder{color:#64748b}
+        .ec-input:disabled{opacity:.4;cursor:not-allowed}
+        .ec-btn{padding:12px 24px;border-radius:12px;border:none;font-weight:800;font-size:1em;cursor:pointer;transition:all .2s;letter-spacing:.4px}
+        .ec-btn:disabled{opacity:.4;cursor:not-allowed}
+        .ec-add{background:linear-gradient(135deg,#3b82f6,#06b6d4);color:#fff;box-shadow:0 4px 12px rgba(59,130,246,.3)}
+        .ec-confirm{background:linear-gradient(135deg,#10b981,#059669);color:#fff;box-shadow:0 4px 12px rgba(16,185,129,.3);font-size:1.05em;padding:14px 28px}
+        .ec-reset{padding:10px 20px;border-radius:12px;border:2px solid #64748b;background:transparent;color:#cbd5e1;font-weight:700;cursor:pointer}
+        .ec-mic-badge{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-weight:700;font-size:.9em}
+        .ec-listening{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);color:#fca5a5}
+        .ec-heard{background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.4);color:#6ee7b7}
+        .ec-error-banner{padding:14px;border-radius:14px;border:2px solid #ef4444;background:rgba(239,68,68,.1);color:#fca5a5;font-weight:700;margin-bottom:20px}
+        .ec-reveal{margin-left:10px;padding:6px 14px;border-radius:10px;border:2px solid #3b82f6;background:rgba(59,130,246,.2);color:#3b82f6;font-weight:700;cursor:pointer;font-size:.85em}
+        @keyframes ec-pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
+        @keyframes ec-fadein{from{opacity:0;transform:scale(.7) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
+        @keyframes ec-confetti{0%{transform:translateY(0) rotateZ(0deg);opacity:1}100%{transform:translateY(-80px) rotateZ(720deg);opacity:0}}
+        @media(max-width:768px){.ec-wrap{padding:18px}.ec-title{font-size:1.6em}.ec-input-row{flex-direction:column}.ec-input{min-width:100%}.ec-btn{width:100%}}
       `}</style>
 
-      <div className="echo-chain-container">
+      <div className="ec-wrap">
         {/* Header */}
-        <div className="echo-header">
-          <h2 className="echo-title">
-            🔗 Echo Chain
-          </h2>
-          <div className="echo-subtitle" style={{ lineHeight: 1.6 }}>
-            <strong>How to play:</strong> You'll see a starting word below.
-            On your turn, <strong>say the entire chain out loud from memory</strong>, then <strong>add one new related word</strong>.
-            Type only your new word in the box. Each player must remember and repeat the whole chain before adding theirs!
-          </div>
+        <h2 className="ec-title">🔗 Echo Chain</h2>
+        <div className="ec-sub">
+          <strong>How to play:</strong> See the starting word below.
+          On your turn, <strong>say the entire chain out loud from memory</strong>, then <strong>add one new related word</strong>.
+          The mic is listening — when it hears the last word, your teammate confirms and adds the next!
         </div>
 
-        {/* Player Selector */}
-        <div className="player-selector-container" style={{ borderColor: playerColor }}>
-          <div className="player-label" style={{ color: playerColor }}>
-            {playerEmojis[currentPlayer - 1]} Current Speaker:
-          </div>
-          <select
-            value={currentPlayer}
-            onChange={(e) => setCurrentPlayer(Number(e.target.value) || 1)}
-            className="player-select"
-            style={{ borderColor: playerColor, color: playerColor }}
-          >
-            {Array.from({ length: 12 }).map((_, i) => (
-              <option key={i + 1} value={i + 1} style={{ background: "#0f172a", color: "white" }}>
-                {playerEmojis[i]} Player {i + 1}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Current Player Highlight */}
-        {seed && (
-          <div className="current-player-highlight" style={{ borderColor: playerColor }}>
-            <div className="current-player-text">
-              <span style={{ color: playerColor, animation: "bounce 1s ease-in-out infinite" }}>
-                {playerEmojis[currentPlayer - 1]}
-              </span>
-              <span>
-                {isFirstTurn
-                  ? `Player ${currentPlayer}: Say "${seed}" out loud, then add a related word!`
-                  : `Player ${currentPlayer}: Say the whole chain from memory, then add a new word!`}
-              </span>
-            </div>
+        {!seed && (
+          <div className="ec-error-banner">
+            ⚠️ Missing seed term! The task generator must supply config.seedTerm for the game to start.
           </div>
         )}
 
-        {/* Seed Display */}
+        {/* Seed display */}
         {seed && (
           <div
-            className={`seed-display ${isFirstTurn && seedVisible ? "visible" : "hidden"}`}
+            style={{
+              margin: "16px 0",
+              padding: "16px",
+              borderRadius: "14px",
+              textAlign: "center",
+              fontWeight: 700,
+              fontSize: "1.15em",
+              ...(isFirstTurn && seedVisible
+                ? {
+                    background: "linear-gradient(135deg, #fbbf24, #f59e0b)",
+                    border: "2px solid #d97706",
+                    color: "#78350f",
+                    boxShadow: "0 0 16px rgba(245,158,11,.35)",
+                  }
+                : {
+                    background: "rgba(51,65,85,.5)",
+                    border: "2px dashed rgba(148,163,184,.3)",
+                    color: "#cbd5e1",
+                  }),
+            }}
           >
             {isFirstTurn && seedVisible ? (
-              <>
-                Seed: <strong>{seed}</strong>
-              </>
+              <>🌱 Seed: <strong>{seed}</strong></>
             ) : (
               <>
-                🤫 Chain is spoken aloud. No on-screen clues.
+                🤫 Chain is spoken aloud — no on-screen clues.
                 {!isFirstTurn && (
                   <button
                     type="button"
+                    className="ec-reveal"
                     onClick={() => {
                       setRevealTemporarily(true);
                       setTimeout(() => setRevealTemporarily(false), 1500);
                     }}
-                    className="reveal-btn"
                   >
-                    👁️ Reveal Seed (1.5s)
+                    👁️ Reveal seed (1.5 s)
                   </button>
                 )}
                 {revealTemporarily && (
-                  <span style={{ marginLeft: 12, fontWeight: 900, color: "#000" }}>
-                    {seed}
-                  </span>
+                  <span style={{ marginLeft: 10, fontWeight: 900, color: "#fbbf24" }}>{seed}</span>
                 )}
               </>
             )}
           </div>
         )}
 
-        {!seed && (
-          <div className="error-banner">
-            ⚠️ Missing seed term! The task generator must supply config.seedTerm for the game to start.
-          </div>
-        )}
-
-        {/* Chain Display */}
+        {/* Chain chips */}
         {chain.length > 0 && (
-          <div className="chain-container">
-            <div className="chain-title">
-              ✨ Your Chain ({chain.length} link{chain.length !== 1 ? "s" : ""})
+          <div style={{ position: "relative", zIndex: 10 }}>
+            <div style={{ fontSize: "1.2em", fontWeight: 800, color: "#cbd5e1", marginBottom: 8 }}>
+              Current chain ({chain.length + 1})
             </div>
-            <div className="chain-visual">
-              {/* Seed Bubble */}
-              <div
-                className="chain-link"
-                key="seed"
-                style={{ animation: "fadeInScaleUp 0.5s ease-out forwards" }}
-              >
-                <div className="chain-bubble seed-bubble">
-                  🌱 {seed}
-                </div>
+            <div style={{ color: "#94a3b8", fontSize: ".85em", fontWeight: 600, marginBottom: 10 }}>
+              Tip: one person says the full chain out loud. Keep it hidden to avoid silent reading.
+            </div>
+            <div className="ec-chain-bar">
+              <div className="ec-chip ec-seed-chip" style={{ animation: "ec-fadein .4s ease-out" }}>
+                1. {seed}
               </div>
-
-              {/* Chain Links */}
-              {chain.map((link, idx) => (
+              {chain.map((word, idx) => (
                 <div
                   key={idx}
-                  className="chain-link"
+                  className="ec-chip"
                   style={{
-                    animation: `fadeInScaleUp 0.5s ease-out forwards`,
-                    animationDelay: `${(idx + 1) * 0.1}s`,
+                    border: `2px solid ${playerColors[idx % playerColors.length]}`,
+                    background: `${playerColors[idx % playerColors.length]}18`,
+                    color: playerColors[idx % playerColors.length],
+                    animation: `ec-fadein .4s ease-out ${idx * .08}s both`,
                   }}
                 >
-                  <div
-                    className="chain-bubble"
-                    style={{
-                      borderColor: playerColors[idx % playerColors.length],
-                      backgroundColor: `${playerColors[idx % playerColors.length]}20`,
-                      color: playerColors[idx % playerColors.length],
-                    }}
-                  >
-                    {playerEmojis[idx % playerEmojis.length]} {link}
-                  </div>
+                  {idx + 2}. {word}
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Input Section */}
+        {/* Player box + mic status */}
         {seed && (
-          <div className="input-section">
-            <div className="input-wrapper">
-              <input
-                type="text"
-                className="echo-input"
-                placeholder={isFirstTurn ? `Say "${seed}" aloud, then type your new word here…` : "Say the whole chain aloud, then type your new word here…"}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                style={{ borderColor: playerColor }}
-              />
-              <button
-                className="submit-btn"
-                onClick={handleSubmit}
-                disabled={!input.trim()}
-              >
-                ⚡ Add
-              </button>
-            </div>
+          <div className="ec-player-box" style={{ borderColor: playerColor, background: `${playerColor}10` }}>
+            <span style={{ fontSize: "1.3em" }}>{playerEmojis[(currentPlayer - 1) % playerEmojis.length]}</span>
+            <span style={{ fontWeight: 800, color: playerColor, fontSize: "1.05em" }}>
+              {playerName(currentPlayer)}'s turn
+            </span>
+
+            {/* Mic status badges */}
+            {listening && !heardIt && (
+              <span className="ec-mic-badge ec-listening" style={{ animation: "ec-pulse 1.5s infinite" }}>
+                🎙️ Listening…
+              </span>
+            )}
+            {heardIt && (
+              <span className="ec-mic-badge ec-heard">
+                ✅ Heard it!
+              </span>
+            )}
+            {micError && (
+              <span className="ec-mic-badge" style={{ background: "rgba(251,191,36,.15)", border: "1px solid rgba(251,191,36,.4)", color: "#fde68a" }}>
+                ⚠️ {micError}
+              </span>
+            )}
           </div>
         )}
 
-        {/* Reset Button */}
+        {/* Confirm button — shown when waiting for confirmation */}
+        {seed && !confirmed && (
+          <div style={{ margin: "12px 0", textAlign: "center" }}>
+            <button
+              className="ec-btn ec-confirm"
+              onClick={handleConfirm}
+              disabled={false}
+            >
+              {playerEmojis[(currentPlayer - 1) % playerEmojis.length]} {playerName(currentPlayer)} said that ✅
+            </button>
+            {!heardIt && !micError && listening && (
+              <div style={{ marginTop: 8, color: "#94a3b8", fontSize: ".85em", fontWeight: 600 }}>
+                Waiting to hear "<strong>{chain[chain.length - 1]}</strong>" …
+              </div>
+            )}
+            {(micError || (!listening && !heardIt)) && (
+              <div style={{ marginTop: 8, color: "#94a3b8", fontSize: ".85em", fontWeight: 600 }}>
+                Tap above once {playerName(currentPlayer)} has said the chain out loud.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Input section — only enabled after confirmation */}
+        {seed && (
+          <div className="ec-input-row">
+            <input
+              type="text"
+              className="ec-input"
+              placeholder={
+                !confirmed
+                  ? `Waiting for ${playerName(currentPlayer)} to say the chain…`
+                  : isFirstTurn
+                    ? `Say "${seed}" aloud, then type your new word…`
+                    : "Type the next word your team adds…"
+              }
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={!confirmed}
+              style={{ borderColor: confirmed ? playerColor : "#475569" }}
+            />
+            <button
+              className="ec-btn ec-add"
+              onClick={handleAdd}
+              disabled={!input.trim() || !confirmed}
+            >
+              Add
+            </button>
+          </div>
+        )}
+
+        {/* Reset */}
         {chain.length > 0 && (
-          <div style={{ position: "relative", zIndex: 10 }}>
-            <button className="reset-btn" onClick={handleReset}>
+          <div style={{ marginTop: 12, position: "relative", zIndex: 10 }}>
+            <button className="ec-reset" onClick={handleReset}>
               🔄 Reset Chain
             </button>
           </div>
         )}
 
-        {/* Celebration Confetti */}
+        {/* Celebration */}
         {celebrationActive && (
           <>
-            <div className="celebration-burst">🎉</div>
-            <div className="celebration-burst" style={{ animationDelay: "0.2s" }}>✨</div>
-            <div className="celebration-burst" style={{ animationDelay: "0.4s" }}>🎊</div>
+            <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: "4em", animation: "ec-confetti 1.5s ease-out forwards", pointerEvents: "none", zIndex: 1000 }}>🎉</div>
+            <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: "4em", animation: "ec-confetti 1.5s ease-out forwards", animationDelay: ".2s", pointerEvents: "none", zIndex: 1000 }}>✨</div>
           </>
         )}
       </div>
