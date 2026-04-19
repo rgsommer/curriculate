@@ -1157,59 +1157,59 @@ function buildVocabularyLinesFromConcepts(concepts) {
  * "Objective-ish" types get more terms; messy/creative types get fewer.
  */
 const CONCEPT_CAPS_BY_TYPE = {
-  // High-capacity: these task types naturally incorporate many terms
+  // High-capacity: these task types naturally incorporate many terms — max them out
   [TASK_TYPES.FLASHCARDS]: 8,
   [TASK_TYPES.FLASHCARDS_RACE]: 8,
   [TASK_TYPES.MATCHING]: 8,
-  [TASK_TYPES.TRUE_FALSE_CONNECT_FOUR]: 6, // Needs 20-30 T/F statements — more concepts = richer content
-  [TASK_TYPES.SORT]: 6,
-  [TASK_TYPES.VENNSORT]: 6,
-  [TASK_TYPES.TRUE_FALSE]: 6,
-  [TASK_TYPES.READING_COMP]: 5,
-  [TASK_TYPES.PET_FEEDING]: 5,
-  [TASK_TYPES.JEOPARDY]: 5,          // Brain Blitz (enum key is JEOPARDY)
-  [TASK_TYPES.GUESS_WHO]: 5,
-  [TASK_TYPES.NARRATION_SYNTHESIZE]: 5,
-  [TASK_TYPES.TOWER_BUILDER]: 5,         // Needs MC questions per layer — benefits from more concepts
-  [TASK_TYPES.MUSICAL_CHAIRS]: 5,        // Needs MC rounds — needs enough concepts to generate variety
-  [TASK_TYPES.FAKE_OUT]: 5,
-  [TASK_TYPES.MIND_MAPPER]: 5,
+  [TASK_TYPES.TRUE_FALSE_CONNECT_FOUR]: 8, // 20-30 T/F statements — more concepts = richer content
+  [TASK_TYPES.SORT]: 8,
+  [TASK_TYPES.VENNSORT]: 8,
+  [TASK_TYPES.TRUE_FALSE]: 8,
+  [TASK_TYPES.READING_COMP]: 7,
+  [TASK_TYPES.PET_FEEDING]: 7,
+  [TASK_TYPES.JEOPARDY]: 7,              // Brain Blitz (enum key is JEOPARDY)
+  [TASK_TYPES.GUESS_WHO]: 7,
+  [TASK_TYPES.NARRATION_SYNTHESIZE]: 7,
+  [TASK_TYPES.TOWER_BUILDER]: 7,         // MC questions per layer — more concepts = more layers
+  [TASK_TYPES.MUSICAL_CHAIRS]: 7,        // MC rounds — more concepts = more variety
+  [TASK_TYPES.FAKE_OUT]: 7,
+  [TASK_TYPES.MIND_MAPPER]: 7,
+  [TASK_TYPES.WORD_WEAVER_DUEL]: 8,      // Vocabulary-heavy by design
 
   // Rich writing tasks: students weave concepts into extended prose
-  [TASK_TYPES.LETTER]: 5,                // Letter writing — more concepts = richer letter content
-  [TASK_TYPES.CASE_STUDY]: 5,            // Case study — needs multiple concepts to build a realistic scenario
+  [TASK_TYPES.LETTER]: 7,                // More concepts = richer letter content
+  [TASK_TYPES.CASE_STUDY]: 7,            // More concepts = more realistic scenario
 
-  // Medium-capacity: can work with several terms
-  [TASK_TYPES.MULTIPLE_CHOICE]: 4,
-  [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]: 4,
-  [TASK_TYPES.SEQUENCE]: 4,
-  [TASK_TYPES.TIMELINE]: 4,
-  [TASK_TYPES.SHORT_ANSWER]: 4,
-  [TASK_TYPES.TRUE_FALSE_TICTACTOE]: 4,
-  [TASK_TYPES.MAD_DASH_SEQUENCE]: 4,
-  [TASK_TYPES.ECHO_CHAIN]: 4,
-  [TASK_TYPES.COLLABORATION]: 4,
-  [TASK_TYPES.BRAINSTORM_BATTLE]: 4,
-  [TASK_TYPES.WORD_WEAVER_DUEL]: 6,
-  [TASK_TYPES.HANGMAN_DUEL]: 4,
-  [TASK_TYPES.ROLE_PLAY_DECK]: 4,
-  [TASK_TYPES.SCRIPT_PLAY]: 4,
-  [TASK_TYPES.BRAIN_SPARK_NOTES]: 4,
-  [TASK_TYPES.PRONUNCIATION]: 4,
-  [TASK_TYPES.SPEECH_RECOGNITION]: 4,
+  // Medium-capacity → pushed up for maximum reinforcement
+  [TASK_TYPES.MULTIPLE_CHOICE]: 6,
+  [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]: 6,
+  [TASK_TYPES.SEQUENCE]: 6,
+  [TASK_TYPES.TIMELINE]: 6,
+  [TASK_TYPES.SHORT_ANSWER]: 6,
+  [TASK_TYPES.TRUE_FALSE_TICTACTOE]: 6,
+  [TASK_TYPES.MAD_DASH_SEQUENCE]: 6,
+  [TASK_TYPES.ECHO_CHAIN]: 6,
+  [TASK_TYPES.COLLABORATION]: 6,
+  [TASK_TYPES.BRAINSTORM_BATTLE]: 6,
+  [TASK_TYPES.HANGMAN_DUEL]: 6,
+  [TASK_TYPES.ROLE_PLAY_DECK]: 6,
+  [TASK_TYPES.SCRIPT_PLAY]: 6,
+  [TASK_TYPES.BRAIN_SPARK_NOTES]: 6,
+  [TASK_TYPES.PRONUNCIATION]: 6,
+  [TASK_TYPES.SPEECH_RECOGNITION]: 6,
 
-  // Low-capacity: simple types with just title + prompt
-  [TASK_TYPES.LIVE_DEBATE]: 3,
-  [TASK_TYPES.OPEN_TEXT]: 5,              // vocabulary-paragraph variant needs ≥5 words
-  [TASK_TYPES.RECORD_AUDIO]: 3,
-  [TASK_TYPES.DRAW]: 2,
-  [TASK_TYPES.DRAW_MIME]: 2,
-  [TASK_TYPES.MIME]: 2,
-  [TASK_TYPES.PHOTO]: 2,
-  [TASK_TYPES.PHOTO_JOURNAL]: 2,
-  [TASK_TYPES.MAKE_AND_SNAP]: 2,
-  [TASK_TYPES.BODY_BREAK]: 2,
-  [TASK_TYPES.MOTION_MISSION]: 2,
+  // Simpler types — still bumped for reinforcement
+  [TASK_TYPES.LIVE_DEBATE]: 5,
+  [TASK_TYPES.OPEN_TEXT]: 6,              // vocabulary-paragraph variant benefits from more words
+  [TASK_TYPES.RECORD_AUDIO]: 5,
+  [TASK_TYPES.DRAW]: 4,
+  [TASK_TYPES.DRAW_MIME]: 4,
+  [TASK_TYPES.MIME]: 4,
+  [TASK_TYPES.PHOTO]: 4,
+  [TASK_TYPES.PHOTO_JOURNAL]: 4,
+  [TASK_TYPES.MAKE_AND_SNAP]: 4,
+  [TASK_TYPES.BODY_BREAK]: 3,
+  [TASK_TYPES.MOTION_MISSION]: 3,
 };
 
 function getConceptCapForType(taskType) {
