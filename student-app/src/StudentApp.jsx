@@ -712,8 +712,10 @@ function StudentApp() {
       // suppression) all engage immediately.
       if (state.navigationMode === "mystery") {
         setIsMysteryMode(true);
-        // Request grid once the room is active and we don't have one yet
-        if (state.isActive && !mysteryBoxGrid) {
+        // Request grid once the room is active and we don't have one yet.
+        // Do NOT request if there's a current task — that means a box was just
+        // opened and the grid was intentionally hidden. Re-requesting would wipe the task.
+        if (state.isActive && !mysteryBoxGrid && !currentTaskRef.current) {
           socket.emit("mystery:requestGrid", {
             roomCode: roomCode.trim().toUpperCase(),
             teamId,
@@ -1339,8 +1341,11 @@ function StudentApp() {
       console.log("[StudentApp] mystery:boxGrid received", grid);
       setMysteryBoxGrid(grid);
       setIsMysteryMode(true);
-      // Clear current task so grid shows
-      setCurrentTask(null);
+      // Only clear currentTask if there is NO active task — don't wipe a task
+      // that was just assigned via a box tap (race with room:state re-requesting grid)
+      if (!currentTaskRef.current) {
+        setCurrentTask(null);
+      }
       setWaitingForLaunch(false);
       tasksStartedRef.current = true;
       setWarmupStep("done");
