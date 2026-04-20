@@ -468,7 +468,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                   <Pill>Clue {idx + 1}</Pill>
                   {hasAnswer ? (
-                    <Pill>✅ Answer: {c.answer}</Pill>
+                    <Pill>✅ What is {String(c.answer).toLowerCase()}?</Pill>
                   ) : (
                     <Pill>⚠ No answer provided</Pill>
                   )}
@@ -631,13 +631,10 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                       <Pill>Clue {idx + 1}</Pill>
-                      <Pill>{ans ? `Answer: ${ans}` : "Answer: (not provided)"}</Pill>
+                      <Pill>{ans ? `What is ${ans.toLowerCase()}?` : "Answer: (not provided)"}</Pill>
                     </div>
                     <div style={{ marginTop: 8, fontWeight: 900, fontSize: 16, lineHeight: 1.25 }}>
                       {c?.clue}
-                    </div>
-                    <div style={{ marginTop: 6, fontSize: 13, opacity: 0.82 }}>
-                      Remember: shout your answer as a question! e.g. <b>"What is photosynthesis?"</b>
                     </div>
                   </div>
                 );
