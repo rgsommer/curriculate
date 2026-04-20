@@ -319,6 +319,67 @@ function validatePlayabilityByType(type, task) {
     }
   }
 
+  // ── Connect Four / Tic-Tac-Toe: must have items ──
+  if (type === TASK_TYPES.TRUE_FALSE_CONNECT_FOUR || type === TASK_TYPES.TRUE_FALSE_TICTACTOE) {
+    const tfItems = Array.isArray(task?.items) ? task.items
+      : Array.isArray(cfg?.items) ? cfg.items
+      : Array.isArray(task?.statements) ? task.statements
+      : Array.isArray(cfg?.statements) ? cfg.statements
+      : [];
+    const minItems = type === TASK_TYPES.TRUE_FALSE_CONNECT_FOUR ? 10 : 12;
+    if (tfItems.length < minItems) {
+      errors.push(`${type} requires at least ${minItems} true/false statements (got ${tfItems.length})`);
+    }
+    // Check each item has a prompt and a boolean answer
+    for (let i = 0; i < tfItems.length; i++) {
+      const it = tfItems[i] || {};
+      const text = String(it.prompt || it.text || it.statement || "").trim();
+      if (!text) errors.push(`items[${i}] is missing prompt/text`);
+    }
+  }
+
+  // ── Mime / Draw clue actability checks ──
+  if (type === TASK_TYPES.MIME || type === TASK_TYPES.DRAW_MIME) {
+    const mimeClues = Array.isArray(task?.clues) ? task.clues : Array.isArray(cfg?.clues) ? cfg.clues : [];
+    // Flag clues that are too abstract/instructional to act out
+    const abstractPattern = /^(solve|demonstrate|show|explain|describe|prove|calculate|use|apply|remember)\b/i;
+    const abstractClues = mimeClues.filter((c) => {
+      const s = String(c || "").trim();
+      return abstractPattern.test(s) || s.split(/\s+/).length > 6;
+    });
+    if (abstractClues.length >= 2) {
+      errors.push(`${abstractClues.length} mime clues are too abstract or wordy to act out — mime clues should be 1-5 word concrete concepts (e.g. 'gravity', 'balancing a scale', 'erupting volcano')`);
+    }
+  }
+
+  // ── Flashcard front quality check ──
+  if (type === TASK_TYPES.FLASHCARDS) {
+    const fcItems = Array.isArray(task?.items) ? task.items : Array.isArray(cfg?.items) ? cfg.items : [];
+    const crypticFronts = fcItems.filter((it) => {
+      const q = String(it?.question || it?.front || "").trim();
+      // Flag notation-heavy fronts that are hard to read (mostly symbols, short, no letters)
+      return q.length > 0 && q.length <= 20 && (q.replace(/[^a-zA-Z\s]/g, "").trim().length / q.length) < 0.3;
+    });
+    if (crypticFronts.length >= 2) {
+      errors.push(`${crypticFronts.length} flashcard fronts are mostly symbols/notation — use readable terms or phrases as card fronts`);
+    }
+  }
+
+  // ── Flashcards Race duplicate answer check ──
+  if (type === TASK_TYPES.FLASHCARDS_RACE) {
+    const raceItems = Array.isArray(task?.items) ? task.items : Array.isArray(cfg?.items) ? cfg.items : [];
+    const raceAnswers = raceItems.map((it) => String(it?.answer || "").trim().toLowerCase()).filter(Boolean);
+    const seen = {};
+    let dupeCount = 0;
+    for (const a of raceAnswers) {
+      if (seen[a]) dupeCount++;
+      seen[a] = true;
+    }
+    if (dupeCount >= 2) {
+      errors.push(`${dupeCount} flashcard-race answers are duplicates — each card should test a different term`);
+    }
+  }
+
   return { ok: errors.length === 0, errors };
 }
 
