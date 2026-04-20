@@ -1794,7 +1794,7 @@ function StudentApp() {
     // Also build a flat email list for backward compat (team-level)
     const cleanEmails = memberEmails.filter(Boolean);
 
-    // Clear cached selfie if player names changed (different team composition)
+    // Clear cached selfie if team name or player names changed
     try {
       const prevMembersRaw = lsGet(LS_KEYS.members);
       const prevParsed = prevMembersRaw ? JSON.parse(prevMembersRaw) : [];
@@ -1807,10 +1807,18 @@ function StudentApp() {
         .map((n) => n.toLowerCase())
         .sort()
         .join(",");
-      if (prevNames && newNames && prevNames !== newNames) {
+
+      // Also check team name — selfie banner shows the team name
+      const prevTeamName = (lsGet(LS_KEYS.teamName) || "").trim().toLowerCase();
+      const newTeamName = (teamName || "").trim().toLowerCase();
+      const teamNameChanged = prevTeamName && newTeamName && prevTeamName !== newTeamName;
+
+      const memberNamesChanged = newNames && prevNames !== newNames;
+
+      if (teamNameChanged || memberNamesChanged) {
         lsDel(LS_KEYS.selfieUrl);
         lsDel(LS_KEYS.themedSelfieUrl);
-        console.log("[selfie] Cleared cached selfie — player names changed");
+        console.log("[selfie] Cleared cached selfie —", teamNameChanged ? "team name changed" : "player names changed");
       }
     } catch (_) { /* non-critical */ }
 
