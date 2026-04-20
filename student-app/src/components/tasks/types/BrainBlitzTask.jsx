@@ -47,6 +47,11 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
   // Manual type-in fallback (when mic fails due to network etc.)
   const [manualInput, setManualInput] = useState("");
 
+  // Per-clue attempt tracking: max 3 guesses, hint after 2 wrong
+  const MAX_GUESSES_PER_CLUE = 3;
+  const [clueAttempts, setClueAttempts] = useState(0); // wrong guesses for current clue
+  const [showHint, setShowHint] = useState(false);
+
   const recognitionRef = useRef(null);
   const listeningTimeoutRef = useRef(null);
   const clueIndexRef = useRef(currentClueIndex);
@@ -76,11 +81,31 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
   const currentClue =
     currentClueIndex >= 0 && currentClueIndex < clues.length ? clues[currentClueIndex] : null;
 
+  // Build a progressive hint: "_ _ _ _ _ (5 letters)" → "R _ _ _ _ (5 letters)"
+  const buildHint = (answer) => {
+    if (!answer) return "";
+    const words = answer.split(/\s+/);
+    return words.map((w) => {
+      const first = w.charAt(0).toUpperCase();
+      const blanks = Array(Math.max(w.length - 1, 0)).fill("_").join(" ");
+      return blanks ? `${first} ${blanks}` : first;
+    }).join("   ") + `  (${answer.length} letters)`;
+  };
+
+  // Advance to next clue, resetting per-clue state
+  const advanceClue = () => {
+    setClueAttempts(0);
+    setShowHint(false);
+    setCurrentClueIndex((prev) => prev + 1);
+  };
+
   useEffect(() => {
     // Reset round overlay when a new task arrives
     setShowAnswerOverlay(false);
     setOverlayRange({ start: 0, end: -1 });
     setMicError(null);
+    setClueAttempts(0);
+    setShowHint(false);
   }, [task?._id, task?.id, task?.taskId]);
 
   function playSound(src) {
@@ -202,17 +227,30 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
       }
 
       if (isCorrect) {
-        // Correct answer — stop mic, advance clue. User taps mic again for next clue.
+        // Correct answer — stop mic, advance clue.
         wantListeningRef.current = false;
         try { recognition.stop(); } catch {}
         if (listeningTimeoutRef.current) { clearTimeout(listeningTimeoutRef.current); listeningTimeoutRef.current = null; }
         setCountdown(null);
         setIsListening(false);
+        advanceClue();
+      } else {
+        // Wrong answer — track attempts, show hint or auto-advance
+        setClueAttempts((prev) => {
+          const next = prev + 1;
+          if (next >= 2) setShowHint(true); // hint after 2 wrong
+          if (next >= MAX_GUESSES_PER_CLUE) {
+            // Out of guesses — stop mic, reveal answer briefly, then advance
+            wantListeningRef.current = false;
+            try { recognition.stop(); } catch {}
+            if (listeningTimeoutRef.current) { clearTimeout(listeningTimeoutRef.current); listeningTimeoutRef.current = null; }
+            setCountdown(null);
+            setIsListening(false);
+            setTimeout(() => advanceClue(), 1800);
+          }
+          return next;
+        });
       }
-      // Wrong answer — mic stays on, keep listening for another attempt
-
-      // Move to the next clue
-      setCurrentClueIndex((prev) => prev + 1);
     };
 
     recognition.onerror = (event) => {
@@ -356,7 +394,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
 
   const handleManualSubmit = () => {
     const spoken = manualInput.trim();
-    if (!spoken) return;
+    if (!spoken || clueAttempts >= MAX_GUESSES_PER_CLUE) return;
     setManualInput("");
 
     const ci = clueIndexRef.current;
@@ -389,7 +427,18 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
       });
     }
 
-    setCurrentClueIndex((prev) => prev + 1);
+    if (isCorrect) {
+      advanceClue();
+    } else {
+      setClueAttempts((prev) => {
+        const next = prev + 1;
+        if (next >= 2) setShowHint(true);
+        if (next >= MAX_GUESSES_PER_CLUE) {
+          setTimeout(() => advanceClue(), 1800);
+        }
+        return next;
+      });
+    }
   };
 
   // Always show type-in — works as primary input or fallback alongside mic
@@ -800,12 +849,75 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
             border: "1px solid rgba(15,23,42,0.12)",
           }}
         >
-          <div style={{ fontSize: 14, fontWeight: 900, opacity: 0.7, marginBottom: 6 }}>
-            Clue {currentClueIndex + 1} / {clues.length}
+          <div style={{ fontSize: 14, fontWeight: 900, opacity: 0.7, marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>Clue {currentClueIndex + 1} / {clues.length}</span>
+            {clueAttempts > 0 && clueAttempts < MAX_GUESSES_PER_CLUE && (
+              <span style={{ fontSize: 12, opacity: 0.8 }}>
+                {MAX_GUESSES_PER_CLUE - clueAttempts} {MAX_GUESSES_PER_CLUE - clueAttempts === 1 ? "guess" : "guesses"} left
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 22, fontWeight: 950, lineHeight: 1.2 }}>
             {currentClue?.clue}
           </div>
+
+          {/* Hint (after 2 wrong guesses): first letter + word length */}
+          {showHint && currentClue?.answer && clueAttempts < MAX_GUESSES_PER_CLUE && (
+            <div style={{
+              marginTop: 10,
+              padding: "8px 12px",
+              borderRadius: 12,
+              background: "rgba(234,179,8,0.12)",
+              border: "1px solid rgba(234,179,8,0.3)",
+              fontSize: 15,
+              fontWeight: 800,
+              letterSpacing: 1.5,
+              color: "#92400e",
+            }}>
+              💡 {buildHint(currentClue.answer)}
+            </div>
+          )}
+
+          {/* Answer reveal (after max guesses exhausted) */}
+          {clueAttempts >= MAX_GUESSES_PER_CLUE && currentClue?.answer && (
+            <div style={{
+              marginTop: 10,
+              padding: "8px 12px",
+              borderRadius: 12,
+              background: "rgba(239,68,68,0.1)",
+              border: "1px solid rgba(239,68,68,0.25)",
+              fontSize: 15,
+              fontWeight: 900,
+              color: "#dc2626",
+            }}>
+              Answer: What is {currentClue.answer.toLowerCase()}?
+            </div>
+          )}
+
+          {/* Skip clue button — always available */}
+          {clueAttempts < MAX_GUESSES_PER_CLUE && (
+            <button
+              type="button"
+              onClick={() => {
+                pushGuess({ by: "You", spoken: "(skipped)", correct: false, clueIndex: currentClueIndex });
+                advanceClue();
+              }}
+              style={{
+                marginTop: 10,
+                padding: "6px 14px",
+                border: "none",
+                borderRadius: 10,
+                background: "transparent",
+                color: "#64748b",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+                opacity: 0.8,
+              }}
+            >
+              Skip this clue →
+            </button>
+          )}
         </div>
 
         {/* Mic toggle — tap on / tap off */}
