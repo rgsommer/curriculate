@@ -5168,7 +5168,7 @@ function StudentApp() {
 )}
 
 {/* MYSTERY BOX GRID (when in mystery mode and no active task, only after initial scan) */}
-{joined && postPhase === "tasks" && isMysteryMode && mysteryBoxGrid && !currentTask && !tasksetComplete && (!assignedColor || scannedStationId) && (
+{joined && postPhase === "tasks" && isMysteryMode && mysteryBoxGrid && !currentTask && !tasksetComplete && (
   <section style={{ marginTop: 10 }}>
     <MysteryBoxGrid
       grid={mysteryBoxGrid}
