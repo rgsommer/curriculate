@@ -2120,7 +2120,7 @@ function StudentApp() {
 
         // In mystery mode with room already active, skip treasure (mystery
         // boxes replace it) but still show selfie if needed.
-        if (isMysteryMode) {
+        if (isMysteryMode && roomIsActive) {
           const hasSelfie = !!(lsGet(LS_KEYS.selfieUrl));
           if (hasSelfie) {
             // Selfie cached and player names haven't changed (join handler
@@ -2863,7 +2863,7 @@ function StudentApp() {
 
         // In mystery mode with room already active, fresh joins still need
         // warmup (mood check) before seeing the grid. Don't just wait.
-        const freshMysteryJoin = isMysteryMode && warmupStep === "mood";
+        const freshMysteryJoin = isMysteryMode && roomIsActive && warmupStep === "mood";
 
         if (freshMysteryJoin) {
           // Go straight to mood check — treasure will be skipped after mood
@@ -4555,8 +4555,8 @@ function StudentApp() {
             if (url) {
               lsSet(LS_KEYS.selfieUrl, url);
             }
-            // In mystery mode, skip treasure → go to grid (boxes replace treasure)
-            if (isMysteryMode) {
+            // In mystery mode with room launched, skip treasure → go to grid
+            if (isMysteryMode && roomIsActive) {
               setWarmupStep("done");
               lsSet(LS_KEYS.warmupDone, "1");
               tasksStartedRef.current = true;
@@ -4575,8 +4575,8 @@ function StudentApp() {
         <button
           type="button"
           onClick={() => {
-            // In mystery mode, skip treasure → go to grid (boxes replace treasure)
-            if (isMysteryMode) {
+            // In mystery mode with room launched, skip treasure → go to grid
+            if (isMysteryMode && roomIsActive) {
               setWarmupStep("done");
               lsSet(LS_KEYS.warmupDone, "1");
               tasksStartedRef.current = true;
