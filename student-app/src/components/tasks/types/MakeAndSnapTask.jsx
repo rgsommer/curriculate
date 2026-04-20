@@ -12,6 +12,7 @@ export default function MakeAndSnapTask({
   const [imagePreview, setImagePreview] = useState(null);
   const [imageFile, setImageFile] = useState(null);
   const [submitted, setSubmitted] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
 
   // Some demo placeholders accidentally ship the "not in the pool" message to students.
@@ -82,7 +83,7 @@ export default function MakeAndSnapTask({
     return [];
   }, [task]);
 
-  const uiDisabled = disabled || submitted;
+  const uiDisabled = disabled || submitted || uploading;
 
 
   const notePrompt =
@@ -161,7 +162,7 @@ export default function MakeAndSnapTask({
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (uiDisabled) return;
 
     if (!imagePreview) {
@@ -169,17 +170,33 @@ export default function MakeAndSnapTask({
       return;
     }
 
+    setUploading(true);
+
     const answerText = buildAnswerText(note, true);
 
-    // ✅ Submit the actual photo (base64 data URL) + note + readable summary
-    onSubmit?.({
-      type: "make-and-snap",
-      note: note.trim(),
-      imageDataUrl: imagePreview, // <-- THIS is what you were missing
-      summary: answerText,
-    });
+    // Upload image to S3 first — sending raw base64 through the socket
+    // exceeds Socket.IO's message size limit and silently fails.
+    let s3 = null;
+    try {
+      if (imageFile) {
+        s3 = await presignAndUploadToS3({
+          blob: imageFile,
+          contentType: imageFile.type || "image/jpeg",
+          purpose: "image",
+        });
+      }
+    } catch (e) {
+      console.warn("S3 upload unavailable (MakeAndSnap), continuing without key:", e);
+    }
 
+    // Submit lightweight string answer (S3 key reference, not raw base64)
+    const enriched = s3?.s3Key
+      ? `${answerText} [S3:${s3.s3Key}]`
+      : answerText;
+
+    onSubmit?.(enriched);
     setSubmitted(true);
+    setUploading(false);
   };
 
   const handleNoteChange = (e) => {
@@ -424,7 +441,7 @@ export default function MakeAndSnapTask({
             uiDisabled || !imagePreview ? "default" : "pointer",
         }}
       >
-        {submitted ? "Submitted" : "Submit"}
+        {submitted ? "Submitted" : uploading ? "Uploading…" : "Submit"}
       </button>
     </div>
   );

@@ -509,13 +509,15 @@ export function sanitizeTaskShapeByType(type, task) {
     }
   }
 
-  // ── Brain Blitz: auto-fix clue/answer swaps and drop bad clues ──
+  // ── Brain Blitz: auto-fix clue/answer swaps, strip Jeopardy prefix, dedup, drop bad clues ──
   if (type === TASK_TYPES.JEOPARDY) {
     const clues = Array.isArray(t.clues) ? t.clues
       : Array.isArray(t.config?.clues) ? t.config.clues : null;
 
     if (clues) {
       const fixed = [];
+      const seenAnswers = new Set();
+
       for (const c of clues) {
         if (typeof c === "string") { fixed.push(c); continue; }
         if (!c || typeof c !== "object") continue;
@@ -538,6 +540,11 @@ export function sanitizeTaskShapeByType(type, task) {
 
         // Drop clues where answer is still too long (>60 chars) — unsalvageable
         if (answer.length > 60) continue;
+
+        // Dedup: skip clues with duplicate answers (case-insensitive)
+        const answerKey = answer.toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (seenAnswers.has(answerKey)) continue;
+        seenAnswers.add(answerKey);
 
         fixed.push({ clue: clueText, answer });
       }
