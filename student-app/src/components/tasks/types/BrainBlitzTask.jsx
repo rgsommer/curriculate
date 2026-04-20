@@ -184,6 +184,11 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
         playSound("/sounds/correct.mp3");
         triggerCelebrate();
       } else {
+        // Participation points for trying (first wrong guess per clue only)
+        const alreadyGuessedThisClue = guesses.some((g) => g.clueIndex === ci);
+        if (!alreadyGuessedThisClue) {
+          setScore((prev) => prev + 25);
+        }
         playSound("/sounds/wrong.mp3");
       }
 
@@ -367,6 +372,11 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
       playSound("/sounds/correct.mp3");
       triggerCelebrate();
     } else {
+      // Participation points for trying (first wrong guess per clue only)
+      const alreadyGuessedThisClue = guesses.some((g) => g.clueIndex === ci);
+      if (!alreadyGuessedThisClue) {
+        setScore((prev) => prev + 25);
+      }
       playSound("/sounds/wrong.mp3");
     }
 
@@ -639,6 +649,22 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
                   </div>
                 );
               })}
+            </div>
+
+            <div style={{
+              marginTop: 12,
+              padding: "10px 14px",
+              borderRadius: 12,
+              background: "linear-gradient(135deg, #f0fdf4, #dcfce7)",
+              border: "1px solid rgba(34,197,94,0.2)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              fontSize: 15,
+              fontWeight: 800,
+            }}>
+              <span>🏆 Your Score</span>
+              <span style={{ fontSize: 20 }}>{score} pts</span>
             </div>
 
             <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
