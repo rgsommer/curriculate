@@ -30,12 +30,21 @@ export const metadata: Metadata = {
     siteName: "Campfire",
     type: "website",
     locale: "en_US",
+    images: [
+      {
+        url: "https://curriculate.net/images/og/og-campfire-live.png",
+        width: 1200,
+        height: 630,
+        alt: "Campfire — Group Engagement App",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Campfire — Group Engagement App",
     description:
       "Sealed polls, live challenges, group games, and accountability. The app that brings your group to life.",
+    images: ["https://curriculate.net/images/og/og-campfire-live.png"],
   },
   alternates: {
     canonical: "https://curriculate.net/campfirelive",

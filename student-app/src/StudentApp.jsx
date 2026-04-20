@@ -1355,10 +1355,18 @@ function StudentApp() {
         setCurrentTask(null);
       }
       setWaitingForLaunch(false);
-      tasksStartedRef.current = true;
-      setWarmupStep("done");
-      lsSet(LS_KEYS.warmupDone, "1");
-      setPostPhase("tasks");
+      // If student is still in warmup pipeline, DON'T yank them to tasks phase.
+      // The grid is stored; warmup completion handlers will route to grid when ready.
+      const phase = postPhaseRef.current;
+      const warmupInProgress =
+        phase === "scan" || phase === "mood" ||
+        phase === "selfie" || phase === "treasure";
+      if (!warmupInProgress) {
+        tasksStartedRef.current = true;
+        setWarmupStep("done");
+        lsSet(LS_KEYS.warmupDone, "1");
+        setPostPhase("tasks");
+      }
     };
     const handleChallengeBeacon = (beacon) => {
       console.log("[StudentApp] mystery:challengeBeacon", beacon);
@@ -1392,6 +1400,14 @@ function StudentApp() {
       setMilestoneCard(card);
     };
 
+    // Auto-start triggered — room just became active. Set roomIsActive
+    // as a safety net (room:state broadcast also sets it, but this is
+    // a direct, unmissable signal).
+    const handleAutoStartTriggered = () => {
+      console.log("[StudentApp] autoStart:triggered — room is now active");
+      setRoomIsActive(true);
+    };
+
     socket.on("mystery:boxGrid", handleMysteryBoxGrid);
     socket.on("mystery:challengeBeacon", handleChallengeBeacon);
     socket.on("mystery:challengeExpired", handleChallengeExpired);
@@ -1399,6 +1415,7 @@ function StudentApp() {
     socket.on("mystery:challengeQueued", handleChallengeQueued);
     socket.on("mystery:timeUp", handleMysteryTimeUp);
     socket.on("mystery:milestoneCard", handleMilestoneCard);
+    socket.on("autoStart:triggered", handleAutoStartTriggered);
 
     socket.emit("room:request-state", {
       roomCode: roomCode.trim().toUpperCase(),
@@ -1426,6 +1443,7 @@ function StudentApp() {
       socket.off("mystery:challengeQueued", handleChallengeQueued);
       socket.off("mystery:timeUp", handleMysteryTimeUp);
       socket.off("mystery:milestoneCard", handleMilestoneCard);
+      socket.off("autoStart:triggered", handleAutoStartTriggered);
     };
   }, [teamId, roomCode]
   );

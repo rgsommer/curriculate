@@ -5657,6 +5657,31 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
           }, delaySec * 1000);
           console.log(`[AutoStart] Timer set: ${delaySec}s for room ${code}`);
         }
+
+        // ── Immediate trigger if teams already present ──
+        // If teams joined BEFORE the teacher armed, the auto-start check
+        // in handleStudentJoinRoom never fires. Check now.
+        const existingTeamCount = Object.keys(room.teams || {}).length;
+        if (autoStartMode === "first_ready" && existingTeamCount >= 1) {
+          console.log(`[AutoStart] first_ready triggered at arm time — ${existingTeamCount} team(s) already present in room ${code}`);
+          room.autoStart.armed = false;
+          if (room._autoStartTimer) { clearTimeout(room._autoStartTimer); room._autoStartTimer = null; }
+          setTimeout(() => {
+            startTasksetForRoom(code);
+            io.to(code).emit("autoStart:triggered", { mode: "first_ready" });
+          }, 1500);
+        } else if (autoStartMode === "all_ready") {
+          const minTeams = room.autoStart.minTeams || 2;
+          if (existingTeamCount >= minTeams) {
+            console.log(`[AutoStart] all_ready triggered at arm time — ${existingTeamCount}/${minTeams} team(s) already present in room ${code}`);
+            room.autoStart.armed = false;
+            if (room._autoStartTimer) { clearTimeout(room._autoStartTimer); room._autoStartTimer = null; }
+            setTimeout(() => {
+              startTasksetForRoom(code);
+              io.to(code).emit("autoStart:triggered", { mode: "all_ready" });
+            }, 3000);
+          }
+        }
       } else {
         room.autoStart = null;
       }

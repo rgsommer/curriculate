@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     type: "website",
     images: [
       {
-        url: "https://curriculate.net/images/og-ai-grading.png",
+        url: "https://curriculate.net/images/og/og-ai-grading.png",
         width: 1200,
         height: 630,
         alt: "Curriculate AI Grading Tool — Grade a stack of papers in minutes",
@@ -40,7 +40,7 @@ export const metadata: Metadata = {
     title: "AI Grading Tool — Grade Papers in Minutes | Curriculate",
     description:
       "Free AI grading for teachers. Reads handwriting, follows your rubric, 11 feedback voices. No sign-up required.",
-    images: ["https://curriculate.net/images/og-ai-grading.png"],
+    images: ["https://curriculate.net/images/og/og-ai-grading.png"],
   },
   alternates: {
     canonical: "https://curriculate.net/ai-grading",

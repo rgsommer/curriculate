@@ -38,12 +38,21 @@ export const metadata: Metadata = {
     type: "website",
     url: "https://curriculate.net/events",
     siteName: "Curriculate",
+    images: [
+      {
+        url: "https://curriculate.net/images/og/og-events.png",
+        width: 1200,
+        height: 630,
+        alt: "Corporate Event Games",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Corporate Event Games — AI-Powered Team Activities | Curriculate",
     description:
       "AI generates custom team games from your conference content, training material, or company vocabulary. Works on any phone.",
+    images: ["https://curriculate.net/images/og/og-events.png"],
   },
   alternates: {
     canonical: "https://curriculate.net/events",

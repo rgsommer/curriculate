@@ -24,6 +24,14 @@ export const metadata: Metadata = {
     url: "https://curriculate.net/compare",
     siteName: "Curriculate",
     type: "website",
+    images: [
+      {
+        url: "https://curriculate.net/images/og/og-compare.png",
+        width: 1200,
+        height: 630,
+        alt: "Curriculate vs Quiz Tools",
+      },
+    ],
   },
   alternates: {
     canonical: "https://curriculate.net/compare",

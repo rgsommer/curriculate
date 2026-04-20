@@ -26,6 +26,14 @@ export const metadata: Metadata = {
     url: "https://curriculate.net/features",
     siteName: "Curriculate",
     type: "website",
+    images: [
+      {
+        url: "https://curriculate.net/images/og/og-features.png",
+        width: 1200,
+        height: 630,
+        alt: "Curriculate Features",
+      },
+    ],
   },
   alternates: {
     canonical: "https://curriculate.net/features",

@@ -21,6 +21,14 @@ export const metadata: Metadata = {
     url: "https://curriculate.net/grading",
     siteName: "Curriculate",
     type: "website",
+    images: [
+      {
+        url: "https://curriculate.net/images/og/og-grading.png",
+        width: 1200,
+        height: 630,
+        alt: "Curriculate AI Grading Tool",
+      },
+    ],
   },
   alternates: {
     canonical: "https://curriculate.net/grading",

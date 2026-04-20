@@ -21,6 +21,14 @@ export const metadata: Metadata = {
     url: "https://curriculate.net/how-it-works",
     siteName: "Curriculate",
     type: "website",
+    images: [
+      {
+        url: "https://curriculate.net/images/og/og-how-it-works.png",
+        width: 1200,
+        height: 630,
+        alt: "How Curriculate Works",
+      },
+    ],
   },
   alternates: {
     canonical: "https://curriculate.net/how-it-works",

@@ -24,12 +24,21 @@ export const metadata: Metadata = {
     siteName: "Campfire",
     type: "website",
     locale: "en_US",
+    images: [
+      {
+        url: "https://curriculate.net/images/og/og-campfire.png",
+        width: 1200,
+        height: 630,
+        alt: "Campfire Prototype",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Campfire — Interactive Group Engagement Prototype",
     description:
       "Sealed polls, group challenges, accountability — try the prototype for the app that brings groups to life.",
+    images: ["https://curriculate.net/images/og/og-campfire.png"],
   },
   alternates: {
     canonical: "https://curriculate.net/campfire",

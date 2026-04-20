@@ -50,6 +50,14 @@ export const metadata: Metadata = {
     siteName: "Curriculate",
     type: "website",
     url: "https://curriculate.net",
+    images: [
+      {
+        url: "https://curriculate.net/images/og/og-home.png",
+        width: 1200,
+        height: 630,
+        alt: "Curriculate — AI-Powered Station-Based Learning",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",

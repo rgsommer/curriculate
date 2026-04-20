@@ -41,12 +41,21 @@ export const metadata: Metadata = {
     type: "website",
     url: "https://curriculate.net/parties",
     siteName: "Curriculate",
+    images: [
+      {
+        url: "https://curriculate.net/images/og/og-parties.png",
+        width: 1200,
+        height: 630,
+        alt: "Birthday Party Games",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Birthday Party Games — AI-Powered Party Activities | Curriculate",
     description:
       "AI generates themed party games for birthdays. Flashcards Race, Musical Chairs, Speed Draw, Treasure Runner — all on phones, no app needed.",
+    images: ["https://curriculate.net/images/og/og-parties.png"],
   },
   alternates: {
     canonical: "https://curriculate.net/parties",
