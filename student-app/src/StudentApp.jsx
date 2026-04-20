@@ -493,10 +493,11 @@ function StudentApp() {
           const savedTotal = Number(lsGet(LS_KEYS.tasksetTotal));
           if (savedTotal > 0) setTasksetTotalTasks(savedTotal);
 
-          // Skip warmup on resume if any evidence that tasks have started:
-          // active taskset, server sent a current task, saved task index, score > 0, or warmup was already done
+          // Skip warmup on resume if concrete evidence this student already did warmup:
+          // server sent a current task, score > 0, or warmup flag saved in localStorage.
+          // Note: state.isActive alone is NOT enough — the room may be active but this
+          // student may be joining for the first time and still needs scan + mood check.
           const hasProgress =
-            state?.isActive ||
             !!resp.currentTask?.task ||
             (typeof state?.scores?.[effectiveTeam] === "number" && state.scores[effectiveTeam] > 0) ||
             lsGet(LS_KEYS.warmupDone) === "1";
@@ -758,7 +759,14 @@ function StudentApp() {
           if (!isMystery) {
             setWaitingForLaunch(true);
           }
-          if (state?.isActive || tasksStartedRef.current || tasksStarted) {
+          // Only jump to "tasks" phase if this student has already started
+          // (i.e. completed warmup). Fresh joins must go through scan → mood
+          // → treasure first, even when the room is already active.
+          // The warmup-in-progress phases are "scan", "mood", "selfie", "treasure".
+          const warmupInProgress =
+            currentPhase === "scan" || currentPhase === "mood" ||
+            currentPhase === "selfie" || currentPhase === "treasure";
+          if ((tasksStartedRef.current || tasksStarted) && !warmupInProgress) {
             setPostPhase("tasks");
           }
         }
@@ -2109,6 +2117,30 @@ function StudentApp() {
       if (payloadType === TASK_TYPES.MOOD_CHECKIN) {
         setSubmitting(false);
         setStatusMessage("");
+
+        // In mystery mode with room already active, skip treasure (mystery
+        // boxes replace it) but still show selfie if needed.
+        if (isMysteryMode && roomIsActive) {
+          const hasSelfie = !!(lsGet(LS_KEYS.selfieUrl));
+          if (hasSelfie) {
+            // Selfie cached and player names haven't changed (join handler
+            // clears the cache when names differ) — go straight to grid.
+            setWarmupStep("done");
+            lsSet(LS_KEYS.warmupDone, "1");
+            tasksStartedRef.current = true;
+            setPostPhase("tasks");
+            socket.emit("mystery:requestGrid", {
+              roomCode: roomCode.trim().toUpperCase(),
+              teamId,
+            });
+          } else {
+            // Need a selfie first, then go to grid (treasure skipped).
+            setWarmupStep("selfie");
+            setPostPhase("selfie");
+          }
+          return;
+        }
+
         const hasSelfie = !!(lsGet(LS_KEYS.selfieUrl));
         if (hasSelfie) {
           setWarmupStep("treasure");
@@ -2829,13 +2861,24 @@ function StudentApp() {
       } else {
         tryPlayAlertSound();
 
-        setWaitingForLaunch(
-          waiting || roomIsActive || tasksStartedRef.current || tasksStarted
-        );
+        // In mystery mode with room already active, fresh joins still need
+        // warmup (mood check) before seeing the grid. Don't just wait.
+        const freshMysteryJoin = isMysteryMode && roomIsActive && warmupStep === "mood";
 
-        if (!(roomIsActive || tasksStartedRef.current || tasksStarted)) {
-          if (warmupStep === "done") setPostPhase("treasure");
-          else setPostPhase("mood");
+        if (freshMysteryJoin) {
+          // Go straight to mood check — treasure will be skipped after mood
+          // because the room is already active (mystery boxes replace treasure).
+          setPostPhase("mood");
+          setWaitingForLaunch(false);
+        } else {
+          setWaitingForLaunch(
+            waiting || roomIsActive || tasksStartedRef.current || tasksStarted
+          );
+
+          if (!(roomIsActive || tasksStartedRef.current || tasksStarted)) {
+            if (warmupStep === "done") setPostPhase("treasure");
+            else setPostPhase("mood");
+          }
         }
       }
     });
@@ -4512,6 +4555,18 @@ function StudentApp() {
             if (url) {
               lsSet(LS_KEYS.selfieUrl, url);
             }
+            // In mystery mode with room active, skip treasure → go to grid
+            if (isMysteryMode && roomIsActive) {
+              setWarmupStep("done");
+              lsSet(LS_KEYS.warmupDone, "1");
+              tasksStartedRef.current = true;
+              setPostPhase("tasks");
+              socket.emit("mystery:requestGrid", {
+                roomCode: roomCode.trim().toUpperCase(),
+                teamId,
+              });
+              return;
+            }
             // Advance to treasure
             setWarmupStep("treasure");
             setPostPhase("treasure");
@@ -4520,6 +4575,18 @@ function StudentApp() {
         <button
           type="button"
           onClick={() => {
+            // In mystery mode with room active, skip treasure → go to grid
+            if (isMysteryMode && roomIsActive) {
+              setWarmupStep("done");
+              lsSet(LS_KEYS.warmupDone, "1");
+              tasksStartedRef.current = true;
+              setPostPhase("tasks");
+              socket.emit("mystery:requestGrid", {
+                roomCode: roomCode.trim().toUpperCase(),
+                teamId,
+              });
+              return;
+            }
             setWarmupStep("treasure");
             setPostPhase("treasure");
           }}
