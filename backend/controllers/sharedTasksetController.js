@@ -326,7 +326,7 @@ function validatePlayabilityByType(type, task) {
       : Array.isArray(task?.statements) ? task.statements
       : Array.isArray(cfg?.statements) ? cfg.statements
       : [];
-    const minItems = type === TASK_TYPES.TRUE_FALSE_CONNECT_FOUR ? 10 : 12;
+    const minItems = type === TASK_TYPES.TRUE_FALSE_CONNECT_FOUR ? 10 : 9;
     if (tfItems.length < minItems) {
       errors.push(`${type} requires at least ${minItems} true/false statements (got ${tfItems.length})`);
     }
@@ -1082,7 +1082,7 @@ export const retryMustHave = {
   [TASK_TYPES.SCRIPT_PLAY]:
     "SCRIPT_PLAY must include lines/dialogue as an array of at least 8 lines. Each line should be a string or { speaker, text }. Do not omit.",
   [TASK_TYPES.TRUE_FALSE_TICTACTOE]:
-    "TRUE_FALSE_TICTACTOE must include at least 12 statements (so the game can fill a 3x3 board). Each statement must include a boolean answer.",
+    "TRUE_FALSE_TICTACTOE must include at least 9 statements as items[] (for a 3x3 board). Each item: { text: string, isFalse: boolean }. Aim for a mix of true and false.",
   [TASK_TYPES.TRUE_FALSE_CONNECT_FOUR]:
     'TRUE_FALSE_CONNECT_FOUR must include at least 10 statements (items[] or statements[]). Each statement: { text: string, isFalse: boolean }. Aim for a roughly 50/50 mix of true and false — at least 3 of each. Do NOT return an empty items array. Every statement must be content-specific (not generic) and clearly true or clearly false.',
   [TASK_TYPES.READING_COMP]:

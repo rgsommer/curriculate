@@ -79,6 +79,24 @@ function buildMinimalFallbackRawTask(planEntry, ctx, index) {
     ];
   }
 
+  // TF Tic-Tac-Toe needs 9 items; Connect Four needs 10.
+  if (taskType === "true-false-tictactoe") {
+    const topic = concept || "the topic";
+    base.prompt = "Answer true or false to claim squares!";
+    base.items = Array.from({ length: 9 }, (_, i) => ({
+      text: `Statement ${i + 1} about ${topic}`,
+      isFalse: i % 2 === 0,
+    }));
+  }
+  if (taskType === "true-false-connect-four") {
+    const topic = concept || "the topic";
+    base.prompt = "Answer true or false to drop your piece!";
+    base.items = Array.from({ length: 10 }, (_, i) => ({
+      text: `Statement ${i + 1} about ${topic}`,
+      isFalse: i % 2 === 0,
+    }));
+  }
+
   return base;
 }
 
@@ -173,6 +191,10 @@ Task-type-specific rules:
   Example: { "taskType":"matching", "title":"Match Terms to Definitions", "prompt":"Connect each word on the left to its correct meaning on the right.", "leftItems":[{"id":"L1","text":"Obedience"},{"id":"L2","text":"Faith"},{"id":"L3","text":"Grace"},{"id":"L4","text":"Covenant"},{"id":"L5","text":"Repentance"}], "rightItems":[{"id":"R1","text":"Following God's commands"},{"id":"R2","text":"Trust in what is unseen"},{"id":"R3","text":"Unmerited favor from God"},{"id":"R4","text":"A sacred agreement"},{"id":"R5","text":"Turning away from sin"}], "correctMatches":{"L1":"R1","L2":"R2","L3":"R3","L4":"R4","L5":"R5"} }
 - brain-blitz: MUST include a "clues" array of 6-8 OBJECTS, each with { "clue": "descriptive hint", "answer": "vocabulary word" }. Every clue MUST have a DIFFERENT unique answer word. Answers must be vocabulary words or concepts, NEVER computed numbers, decimals, or formulas. Do NOT include a top-level "correctAnswer" field.
   Example: { "taskType":"brain-blitz", "title":"Math Vocabulary Blitz", "prompt":"Guess the math term from the clue!", "clues":[{"clue":"The result of adding two numbers","answer":"sum"},{"clue":"A number multiplied by itself","answer":"square"},{"clue":"The bottom number of a fraction","answer":"denominator"},{"clue":"A shape with three sides","answer":"triangle"},{"clue":"The distance around a circle","answer":"circumference"},{"clue":"An equation showing two ratios are equal","answer":"proportion"}] }
+- true-false-tictactoe: MUST include an "items" array of exactly 9 objects (for a 3x3 board). Each item: { "text": "statement about the topic", "isFalse": boolean }. Aim for roughly 50/50 true and false. Every statement must be content-specific and clearly true or clearly false.
+  Example: { "taskType":"true-false-tictactoe", "title":"T/F Tic-Tac-Toe: Fractions", "prompt":"Answer true or false to claim squares!", "items":[{"text":"1/2 is equivalent to 2/4","isFalse":false},{"text":"A numerator is the bottom number","isFalse":true},{"text":"3/3 equals 1","isFalse":false},{"text":"You cannot add fractions with different denominators directly","isFalse":false},{"text":"1/4 is greater than 1/3","isFalse":true},{"text":"A proper fraction is less than 1","isFalse":false},{"text":"5/10 simplified is 1/5","isFalse":true},{"text":"Multiplying fractions requires a common denominator","isFalse":true},{"text":"An improper fraction has a numerator larger than its denominator","isFalse":false}] }
+- true-false-connect-four: MUST include an "items" array of at least 10 objects. Each item: { "text": "statement about the topic", "isFalse": boolean }. Aim for roughly 50/50 true and false — at least 3 of each. Every statement must be content-specific and clearly true or clearly false.
+  Example: { "taskType":"true-false-connect-four", "title":"T/F Connect Four: Solar System", "prompt":"Answer true or false to drop your piece!", "items":[{"text":"The sun is a star","isFalse":false},{"text":"Jupiter is the smallest planet","isFalse":true},{"text":"Earth has one moon","isFalse":false},{"text":"Venus is the hottest planet","isFalse":false},{"text":"Saturn has no rings","isFalse":true},{"text":"Mars is called the Red Planet","isFalse":false},{"text":"Mercury is farthest from the sun","isFalse":true},{"text":"Neptune is an ice giant","isFalse":false},{"text":"The moon produces its own light","isFalse":true},{"text":"Pluto is classified as a dwarf planet","isFalse":false}] }
   `.trim();
 
   const userPrompt = {
