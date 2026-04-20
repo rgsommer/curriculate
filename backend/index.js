@@ -5354,6 +5354,15 @@ if (!isMultiPack && task.taskType === "guess-who") {
       return;
     }
 
+    // Mystery box mode: send the box grid instead of a linear task
+    if (room.navigationMode === "mystery") {
+      addTeamToMysteryBox(room, teamId);
+      const grid = buildTeamBoxGrid(room, teamId);
+      io.to(teamId).emit("mystery:boxGrid", grid);
+      if (typeof ack === "function") ack({ ok: true, mysteryMode: true });
+      return;
+    }
+
     // Canonical: consume unlocked index if present; otherwise re-send current; otherwise start at 0
     let idx;
     if (typeof team.nextTaskIndex === "number" && team.nextTaskIndex >= 0) {

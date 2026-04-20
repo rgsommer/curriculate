@@ -58,15 +58,17 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
       (Array.isArray(task?.clues) && task.clues) ||
       (Array.isArray(task?.config?.clues) && task.config.clues) ||
       [];
+    // Fallback: if clues are plain strings, use the task-level correctAnswer for all
+    const taskAnswer = String(task?.correctAnswer ?? task?.config?.correctAnswer ?? "").trim();
     return raw
       .map((c, idx) => {
-        if (typeof c === "string") return { clue: c, answer: "" };
+        if (typeof c === "string") return { clue: c, answer: taskAnswer };
         if (c && typeof c === "object") {
           const clue = String(c.clue ?? c.prompt ?? c.text ?? c.question ?? `Clue ${idx + 1}`).trim();
-          const answer = String(c.answer ?? c.solution ?? c.correctAnswer ?? "").trim();
+          const answer = String(c.answer ?? c.solution ?? c.correctAnswer ?? "").trim() || taskAnswer;
           return { clue, answer };
         }
-        return { clue: `Clue ${idx + 1}`, answer: "" };
+        return { clue: `Clue ${idx + 1}`, answer: taskAnswer };
       })
       .filter((c) => c && c.clue);
   }, [task]);

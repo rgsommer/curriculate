@@ -149,22 +149,45 @@ function validatePlayabilityByType(type, task) {
   // ── Brain Blitz (Jeopardy) quality checks ──
   if (type === TASK_TYPES.JEOPARDY) {
     const clues = Array.isArray(task?.clues) ? task.clues : Array.isArray(cfg?.clues) ? cfg.clues : [];
-    const answer = String(task?.correctAnswer || cfg?.correctAnswer || "").trim();
+    const taskAnswer = String(task?.correctAnswer || cfg?.correctAnswer || "").trim();
 
     if (_len(clues) < 5) errors.push(`clues[] must have at least 5 clues (got ${_len(clues)})`);
-    if (!answer) errors.push("correctAnswer is required");
 
-    // Reject computed/numeric answers (should be a vocabulary concept, not a calculation result)
-    if (answer && /^\$?\d+[\d.,/%]*$/.test(answer.replace(/\s/g, ""))) {
-      errors.push(`correctAnswer "${answer}" looks like a computed number — brain-blitz answers must be a vocabulary word or concept, not a calculation result`);
+    // Check per-clue answers (new format: objects with { clue, answer })
+    const clueAnswers = clues
+      .map((c) => typeof c === "object" && c ? String(c.answer || c.correctAnswer || "").trim() : "")
+      .filter(Boolean);
+
+    // Must have answers: either per-clue or task-level
+    if (clueAnswers.length === 0 && !taskAnswer) {
+      errors.push("Each clue must have an answer, or the task must have a correctAnswer");
     }
-    if (answer && answer.length > 60) {
-      errors.push(`correctAnswer is too long (${answer.length} chars) — must be a short word or phrase students can shout out`);
+
+    // Check answer diversity: if per-clue answers exist, they should be unique
+    if (clueAnswers.length >= 3) {
+      const uniqueAnswers = new Set(clueAnswers.map((a) => a.toLowerCase()));
+      if (uniqueAnswers.size === 1) {
+        errors.push(`All ${clueAnswers.length} clue answers are identical ("${clueAnswers[0]}") — each clue should test a DIFFERENT vocabulary word for variety`);
+      }
+    }
+
+    // Validate individual answers aren't computed numbers
+    const allAnswers = clueAnswers.length > 0 ? clueAnswers : (taskAnswer ? [taskAnswer] : []);
+    for (const answer of allAnswers) {
+      if (/^\$?\d+[\d.,/%]*$/.test(answer.replace(/\s/g, ""))) {
+        errors.push(`Answer "${answer}" looks like a computed number — brain-blitz answers must be a vocabulary word or concept, not a calculation result`);
+        break; // one error is enough
+      }
+      if (answer.length > 60) {
+        errors.push(`Answer "${answer}" is too long (${answer.length} chars) — must be a short word or phrase students can shout out`);
+        break;
+      }
     }
 
     // Reject worksheet-style directive clues (should be descriptive hints, not instructions)
     const directivePattern = /^(calculate|compute|find|solve|express|determine|evaluate|simplify|convert|write an? equation|use the|remember that|when \w+ing|apply the|note that|think about|consider the|practice)\b/i;
-    const directiveClues = clues.filter((c) => directivePattern.test(String(c || "").trim()));
+    const clueTexts = clues.map((c) => typeof c === "string" ? c : String(c?.clue || c?.prompt || "")).filter(Boolean);
+    const directiveClues = clueTexts.filter((c) => directivePattern.test(c.trim()));
     if (directiveClues.length >= 2) {
       errors.push(`${directiveClues.length} clues start with directives like "Calculate…", "Use the…", or "Remember that…" — Brain Blitz clues must be descriptive hints about a concept (e.g. "This process converts sunlight into food for plants"), NOT worksheet instructions`);
     }
@@ -956,7 +979,7 @@ export const retryMustHave = {
   [TASK_TYPES.VENNSORT]:
     'VENNSORT: Pick 7–14 terms from the vocabulary list as items. Create 2–3 meaningful categories (config.categories). config.items (7–14 objects). Also include correctAnswer map: { "itemId": ["CategoryA"] }. Items MUST be real vocabulary terms — NEVER use placeholder text like "Item 1". CRITICAL: Every item MUST have at least one category assigned — items with categories:[] (empty) will be REJECTED because students cannot place them. If an item does not fit your categories, either change categories or remove the item. Every item placement must be clearly defensible and unambiguous. BALANCE IS MANDATORY: EVERY category must have AT LEAST 2 items assigned to it. If a category is underpopulated, ADD more relevant terms (even if they are not in the vocabulary list) until every category has ≥2 items. You are allowed to invent extra items as needed to achieve balance. Count your assignments before returning — a category with 0 or 1 items will be REJECTED. Keep item text SHORT (max 60 characters each) — truncate or rephrase long descriptions.',
   [TASK_TYPES.JEOPARDY]:
-    'JEOPARDY (BrainBlitz) must include clues[] with at least 5 SHORT clue STRINGS and a correctAnswer string (the single target answer). Also include config.clues and config.correctAnswer mirroring the root fields. CRITICAL: ALL clues must describe the SAME single concept/answer. Do NOT mix clues about different topics. Every clue must be a valid hint for correctAnswer. The correctAnswer MUST be a single recognizable WORD or SHORT PHRASE (a concept, term, person, place, thing, or vocabulary word) — NOT a number that requires calculation. Clues should be DESCRIPTIVE HINTS that progressively reveal a concept students can shout out loud, Jeopardy-style. GOOD clues DESCRIBE the answer: "This process happens in the chloroplast", "Plants use sunlight to make food through this process". BAD clues give INSTRUCTIONS: "Use the equation S = 3 x 14.99 to find...", "Remember that multiplying two negatives...", "Calculate the total cost...". Clues must NEVER start with directive words like "Use", "Calculate", "Find", "Remember", "Apply", "Note that", "When subtracting", "Practice", or similar worksheet language. Each clue should be a statement or fact that HINTS at the answer, not an instruction telling students what to do.',
+    'JEOPARDY (BrainBlitz) must include clues[] with 6–8 OBJECTS, each having { "clue": "descriptive hint", "answer": "vocabulary word" }. CRITICAL: Every clue MUST have a DIFFERENT unique answer — no two clues share the same answer word. Also mirror clues in config.clues. Each answer MUST be a single recognizable WORD or SHORT PHRASE (a concept, term, person, place, or vocabulary word) — NOT a number or calculation result. Clues should be DESCRIPTIVE HINTS about the answer. GOOD clues: "This process happens in the chloroplast" → answer: "photosynthesis". BAD clues: "Calculate the total cost", "Use the equation...", "Find the markup". Clues must NEVER start with directive words like "Use", "Calculate", "Find", "Remember", "Apply", "Solve". Each clue is a standalone fact or description — NOT a worksheet instruction.',
   [TASK_TYPES.HANGMAN_DUEL]:
     "HANGMAN_DUEL must include wordsByStation[] (8–12 entries). Each entry: { word, hint }. Words must be PURE ALPHABETIC (only A-Z letters, no numbers, hyphens, apostrophes, or special characters) and come from aiWordBank. CRITICAL: Each hint must be a real DEFINITION or CONTEXT CLUE for the word (e.g. 'The force that pulls objects toward Earth' for GRAVITY). Do NOT use lazy placeholders like 'Think about this N-letter word' — those will be REJECTED.",
   [TASK_TYPES.FLASHCARDS]:

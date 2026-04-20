@@ -1814,84 +1814,59 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     aiPrompt: `
       You are generating ONE task object.
 
-      MENTAL MODEL: This is Jeopardy-style clue → response, but implemented as a rapid "clue ladder."
-      Students see several short clues one at a time and try to guess the SINGLE target answer.
-      Think "20 Questions" or "Who Am I?" -- each clue narrows it down.
+      MENTAL MODEL: This is rapid-fire vocabulary recall. Students see clues one at a time,
+      each about a DIFFERENT vocabulary word/concept. They shout (or type) the answer Jeopardy-style.
+      Think "rapid quiz" — each clue is a standalone question with its own unique answer.
 
       Return JSON ONLY. No markdown. No commentary.
 
       HARD REQUIREMENTS:
       - taskType must be exactly "brain-blitz"
       - title: non-empty string
-      - prompt: non-empty string (explain: read clues, then guess)
-      - clues: array of AT LEAST 5 short clue strings (5–8 is ideal)
-      - correctAnswer: a short string that is the single target answer
+      - prompt: non-empty string (explain: read each clue, guess the word)
+      - clues: array of 6–8 OBJECTS, each with { "clue": "...", "answer": "..." }
+      - EVERY clue MUST have a DIFFERENT answer — no two clues share the same answer word
+      - Also include config.clues mirroring the root clues array
 
-      WHAT correctAnswer MUST BE:
-      - A single recognizable WORD or SHORT PHRASE -- a concept, term, person, place, or vocabulary word.
+      WHAT EACH answer MUST BE:
+      - A single recognizable WORD or SHORT PHRASE — a concept, term, person, place, or vocabulary word.
       - Something students can shout out loud in a classroom.
-      - Good: "photosynthesis", "Ohio Valley", "variable", "denominator", "Sir Isaac Newton"
-      - BAD: "$44.97", "Selling price = $44.97, Markup = $29.98", "42%", "x = 7"
+      - Good: "photosynthesis", "variable", "denominator", "Sir Isaac Newton"
+      - BAD: "$44.97", "42%", "x = 7", "Selling price = $44.97"
       - NEVER a number that requires calculation. NEVER a computed result.
 
       WHAT CLUES MUST BE:
-      - Each clue is a DESCRIPTIVE HINT that reveals a fact about the answer.
-      - Clues progress from vague → specific, helping students narrow down.
-      - ALL clues must describe the SAME single concept/answer.
-      - Good clues: "This process happens in the chloroplast", "Plants use sunlight for this"
-      - BAD clues: "Calculate the selling price", "Express this as an equation", "Find the markup"
-      - NEVER step-by-step instructions. NEVER worksheet-style directives.
-      - NEVER "Calculate…", "Find…", "Express…", "Solve…" -- those are worksheet prompts, not game clues.
+      - Each clue is a DESCRIPTIVE HINT about its specific answer word.
+      - Good clues: "This process happens in the chloroplast" → answer: "photosynthesis"
+      - BAD clues: "Calculate the selling price", "Find the markup" (worksheet instructions, NOT clues)
+      - NEVER start with directive words like "Calculate", "Find", "Use", "Remember", "Solve", "Apply"
 
       VALID EXAMPLE (copy this SHAPE, change the content):
       {
         "taskType": "brain-blitz",
-        "title": "Seven Years' War: Mystery Term",
-        "prompt": "Read each clue. After the final clue, type your best guess for the answer.",
+        "title": "Key Math Vocabulary",
+        "prompt": "Read each clue and shout the answer as a question! e.g. 'What is photosynthesis?'",
         "clues": [
-          "This region was contested by Britain and France in North America.",
-          "Rivers and trade routes made it strategically valuable.",
-          "Conflicts here helped spark the wider Seven Years' War.",
-          "It connects to Fort Duquesne and colonial expansion.",
-          "Many Indigenous nations were drawn into the struggle here."
+          { "clue": "In algebra, this letter or symbol represents an unknown quantity.", "answer": "variable" },
+          { "clue": "The answer you get when you add two or more numbers together.", "answer": "sum" },
+          { "clue": "A number that divides evenly into another number with no remainder.", "answer": "factor" },
+          { "clue": "This tells you how many times to multiply a base by itself.", "answer": "exponent" },
+          { "clue": "A math sentence that shows two expressions are equal, using an = sign.", "answer": "equation" },
+          { "clue": "The distance a number is from zero on a number line, always positive.", "answer": "absolute value" }
         ],
-        "correctAnswer": "Ohio Valley",
         "config": {
           "clues": [
-            "This region was contested by Britain and France in North America.",
-            "Rivers and trade routes made it strategically valuable.",
-            "Conflicts here helped spark the wider Seven Years' War.",
-            "It connects to Fort Duquesne and colonial expansion.",
-            "Many Indigenous nations were drawn into the struggle here."
-          ],
-          "correctAnswer": "Ohio Valley"
+            { "clue": "In algebra, this letter or symbol represents an unknown quantity.", "answer": "variable" },
+            { "clue": "The answer you get when you add two or more numbers together.", "answer": "sum" },
+            { "clue": "A number that divides evenly into another number with no remainder.", "answer": "factor" },
+            { "clue": "This tells you how many times to multiply a base by itself.", "answer": "exponent" },
+            { "clue": "A math sentence that shows two expressions are equal, using an = sign.", "answer": "equation" },
+            { "clue": "The distance a number is from zero on a number line, always positive.", "answer": "absolute value" }
+          ]
         }
       }
 
-      MATH EXAMPLE (correct way to do math brain-blitz):
-      {
-        "taskType": "brain-blitz",
-        "title": "Mystery Math Concept",
-        "prompt": "Read each clue. After the final clue, type your best guess for the answer.",
-        "clues": [
-          "In algebra, this is often represented by a letter like x, y, or n.",
-          "It stands for a quantity that is not yet known.",
-          "In the equation 9 + w = 14, the letter w is an example of this.",
-          "It can change value depending on the problem.",
-          "Its name comes from a word meaning 'able to change.'"
-        ],
-        "correctAnswer": "variable",
-        "config": {
-          "clues": [
-            "In algebra, this is often represented by a letter like x, y, or n.",
-            "It stands for a quantity that is not yet known.",
-            "In the equation 9 + w = 14, the letter w is an example of this.",
-            "It can change value depending on the problem.",
-            "Its name comes from a word meaning 'able to change.'"
-          ],
-          "correctAnswer": "variable"
-        }
-      }
+      CRITICAL: Every clue must have a UNIQUE answer. If you use the same answer for two clues, the task will be REJECTED.
 
       Now generate a brand-new brain-blitz task.
       `.trim(),
@@ -4756,19 +4731,22 @@ export const TASK_SHELLS = {
   },
 
   /* ── JEOPARDY (BrainBlitz) ── */
-  [TASK_TYPES.JEOPARDY]: function buildJeopardyShell({ itemCount = 5 } = {}) {
-    const clueCount = Math.max(5, itemCount);
-    const clues = Array.from({ length: clueCount }, (_, i) => `{{CLUE_${i + 1}}}`);
+  [TASK_TYPES.JEOPARDY]: function buildJeopardyShell({ itemCount = 6 } = {}) {
+    const clueCount = Math.max(6, itemCount);
+    const clues = Array.from({ length: clueCount }, (_, i) => ({
+      clue: `{{CLUE_${i + 1}}}`,
+      answer: `{{ANSWER_${i + 1}}}`,
+    }));
     const placeholders = [
       "TITLE: Short BrainBlitz title (3-7 words)",
       "PROMPT: 1-2 sentence student instructions",
-      "ANSWER: The single target answer -- a recognizable word or short phrase (NOT a number requiring calculation)",
     ];
-    const names = ["TITLE", "PROMPT", "ANSWER"];
+    const names = ["TITLE", "PROMPT"];
 
     for (let i = 0; i < clueCount; i++) {
-      placeholders.push(`CLUE_${i + 1}: A progressive hint for ANSWER -- all clues must describe the SAME concept. Earlier clues are harder, later ones easier.`);
-      names.push(`CLUE_${i + 1}`);
+      placeholders.push(`CLUE_${i + 1}: A descriptive hint about ANSWER_${i + 1} — a fact or description students can use to guess the word`);
+      placeholders.push(`ANSWER_${i + 1}: A different vocabulary word or concept (each clue MUST have a UNIQUE answer — no repeats)`);
+      names.push(`CLUE_${i + 1}`, `ANSWER_${i + 1}`);
     }
 
     const shell = {
@@ -4776,8 +4754,7 @@ export const TASK_SHELLS = {
       title: "{{TITLE}}",
       prompt: "{{PROMPT}}",
       clues,
-      correctAnswer: "{{ANSWER}}",
-      config: { clues: "<<COPY_CLUES>>", correctAnswer: "<<COPY_ANSWER>>" },
+      config: { clues: "<<COPY_CLUES>>" },
     };
     return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
   },

@@ -743,7 +743,12 @@ function StudentApp() {
         // showing the multi-player feedback form or the victory screen.
         const currentPhase = postPhaseRef.current;
         if (currentPhase !== "feedback" && currentPhase !== "trophy") {
-          setWaitingForLaunch(true);
+          // In mystery mode, the box grid handles task dispatch — don't show
+          // "Getting your first activity ready…" which would cover the grid.
+          const isMystery = state.navigationMode === "mystery";
+          if (!isMystery) {
+            setWaitingForLaunch(true);
+          }
           if (state?.isActive || tasksStartedRef.current || tasksStarted) {
             setPostPhase("tasks");
           }
@@ -2837,6 +2842,9 @@ function StudentApp() {
     if (currentTask) return;
     if (!teamId || !roomCode) return;
 
+    // Mystery box mode: tasks are dispatched via box opens, not requestNext
+    if (isMysteryMode) return;
+
     // NEVER overwrite feedback/trophy phase after last task
     if (tasksetComplete) return;
     if (postPhase === "feedback" || postPhase === "trophy") return;
@@ -2868,6 +2876,7 @@ function StudentApp() {
     tasksStarted,
     tasksetComplete,
     postPhase,
+    isMysteryMode,
   ]);
 
   // ─────────────────────────────────────────────
