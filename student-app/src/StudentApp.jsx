@@ -1475,6 +1475,8 @@ function StudentApp() {
       ? false
       : taskLocked
       ? false
+      : isMysteryMode
+      ? false  // Mystery box mode: tasks launch on box tap, no scan gate
       : assignedStationId
         ? (scannedStationId !== assignedStationId)
         : (!!assignedColor && !scannedStationId);
