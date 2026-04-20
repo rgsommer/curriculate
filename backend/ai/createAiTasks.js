@@ -61,13 +61,25 @@ function buildMinimalFallbackRawTask(planEntry, ctx, index) {
   const prompt = concept ? `Answer using the concept: ${concept}.` : "Answer clearly using one specific detail.";
 
   // Intentionally minimal: validator will canonicalize per task type.
-  return {
+  const base = {
     taskType,
     title,
     prompt,
     timeLimitSeconds: 60,
     points: 10,
   };
+
+  // Brain-blitz needs a clues array of objects to pass validation.
+  if (taskType === "brain-blitz") {
+    const word = concept || "vocabulary";
+    base.prompt = "Guess each term from the clue!";
+    base.clues = [
+      { clue: `A key concept related to ${word}`, answer: word },
+      { clue: `Another important term about ${word}`, answer: word },
+    ];
+  }
+
+  return base;
 }
 
 /**
@@ -159,6 +171,8 @@ Task-type-specific rules:
   Each item is an object with "id" and "text". Use L1,L2,... for left IDs and R1,R2,... for right IDs.
   NEVER use placeholder text like "Term 1", "Definition 2", "Left 1", "Right 1" — every "text" value MUST be a real vocabulary word, name, concept, or definition drawn from the subject.
   Example: { "taskType":"matching", "title":"Match Terms to Definitions", "prompt":"Connect each word on the left to its correct meaning on the right.", "leftItems":[{"id":"L1","text":"Obedience"},{"id":"L2","text":"Faith"},{"id":"L3","text":"Grace"},{"id":"L4","text":"Covenant"},{"id":"L5","text":"Repentance"}], "rightItems":[{"id":"R1","text":"Following God's commands"},{"id":"R2","text":"Trust in what is unseen"},{"id":"R3","text":"Unmerited favor from God"},{"id":"R4","text":"A sacred agreement"},{"id":"R5","text":"Turning away from sin"}], "correctMatches":{"L1":"R1","L2":"R2","L3":"R3","L4":"R4","L5":"R5"} }
+- brain-blitz: MUST include a "clues" array of 6-8 OBJECTS, each with { "clue": "descriptive hint", "answer": "vocabulary word" }. Every clue MUST have a DIFFERENT unique answer word. Answers must be vocabulary words or concepts, NEVER computed numbers, decimals, or formulas. Do NOT include a top-level "correctAnswer" field.
+  Example: { "taskType":"brain-blitz", "title":"Math Vocabulary Blitz", "prompt":"Guess the math term from the clue!", "clues":[{"clue":"The result of adding two numbers","answer":"sum"},{"clue":"A number multiplied by itself","answer":"square"},{"clue":"The bottom number of a fraction","answer":"denominator"},{"clue":"A shape with three sides","answer":"triangle"},{"clue":"The distance around a circle","answer":"circumference"},{"clue":"An equation showing two ratios are equal","answer":"proportion"}] }
   `.trim();
 
   const userPrompt = {
