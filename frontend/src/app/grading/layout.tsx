@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "AI Grading Tool — Free for Teachers",
+  title: "AI Grading Tool for Teachers",
   description:
-    "Grade student papers instantly with AI. Upload a photo of handwritten or typed work, set your rubric, and get detailed feedback in seconds. Free, no account required.",
+    "Grade student papers instantly with AI. Upload a photo of handwritten or typed work, set your rubric, and get detailed feedback in seconds.",
   keywords: [
     "AI grading tool",
     "grade papers online",
@@ -15,9 +15,9 @@ export const metadata: Metadata = {
     "free teacher tools",
   ],
   openGraph: {
-    title: "AI Grading Tool — Free for Teachers | Curriculate",
+    title: "AI Grading Tool for Teachers | Curriculate",
     description:
-      "Grade student papers instantly with AI. Photo-first workflow, 11 feedback voices, rubric-aligned scoring. Free, no sign-up required.",
+      "Grade student papers instantly with AI. Photo-first workflow, 11 feedback voices, rubric-aligned scoring.",
     url: "https://curriculate.net/grading",
     siteName: "Curriculate",
     type: "website",

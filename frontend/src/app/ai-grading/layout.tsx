@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "AI Grading Tool — Grade Papers in Minutes, Not Hours",
   description:
-    "Free AI-powered grading for teachers. Snap a photo of student work, choose from 11 feedback voices, and get rubric-aligned grades with personalized feedback in seconds. No sign-up required.",
+    "AI-powered grading for teachers. Snap a photo of student work, choose from 11 feedback voices, and get rubric-aligned grades with personalized feedback in seconds.",
   keywords: [
     "AI grading",
     "AI grading tool",
@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "AI Grading Tool — Grade Papers in Minutes | Curriculate",
     description:
-      "Free AI grading for teachers. Photo-first workflow reads handwriting, follows your rubric, and writes personalized feedback in 11 different voices. No sign-up required.",
+      "AI grading for teachers. Photo-first workflow reads handwriting, follows your rubric, and writes personalized feedback in 11 different voices.",
     url: "https://curriculate.net/ai-grading",
     siteName: "Curriculate",
     type: "website",
@@ -39,7 +39,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "AI Grading Tool — Grade Papers in Minutes | Curriculate",
     description:
-      "Free AI grading for teachers. Reads handwriting, follows your rubric, 11 feedback voices. No sign-up required.",
+      "AI grading for teachers. Reads handwriting, follows your rubric, 11 feedback voices.",
     images: ["https://curriculate.net/images/og/og-ai-grading.png"],
   },
   alternates: {
@@ -59,7 +59,7 @@ const jsonLd = {
     priceCurrency: "USD",
   },
   description:
-    "Free AI-powered grading tool for teachers. Reads handwriting, follows rubrics, and provides personalized student feedback in 11 different voices.",
+    "AI-powered grading tool for teachers. Reads handwriting, follows rubrics, and provides personalized student feedback in 11 different voices.",
   url: "https://curriculate.net/ai-grading",
   featureList: [
     "Photo-first workflow — snap handwritten or typed work",
