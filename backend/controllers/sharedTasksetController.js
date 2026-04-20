@@ -376,7 +376,8 @@ function validatePlayabilityByType(type, task) {
       seen[a] = true;
     }
     if (dupeCount >= 2) {
-      errors.push(`${dupeCount} flashcard-race answers are duplicates — each card should test a different term`);
+      // Warn but don't hard-fail — auto-dedupe in sanitizer handles this
+      task._validationWarning = `${dupeCount} flashcard-race answers were duplicates — kept only unique cards`;
     }
   }
 

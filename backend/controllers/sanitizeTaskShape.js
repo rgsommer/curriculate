@@ -489,6 +489,62 @@ export function sanitizeTaskShapeByType(type, task) {
     t.config = cfg;
   }
 
+  // ── Flashcards Race: auto-deduplicate answers ──
+  if (type === TASK_TYPES.FLASHCARDS_RACE) {
+    const items = Array.isArray(t.items) ? t.items
+      : Array.isArray(t.config?.items) ? t.config.items : null;
+    if (items && items.length > 0) {
+      const seen = new Set();
+      const deduped = [];
+      for (const it of items) {
+        const key = String(it?.answer || "").trim().toLowerCase();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(it);
+      }
+      if (deduped.length < items.length) {
+        if (Array.isArray(t.items)) t.items = deduped;
+        else if (t.config) t.config.items = deduped;
+      }
+    }
+  }
+
+  // ── Brain Blitz: auto-fix clue/answer swaps and drop bad clues ──
+  if (type === TASK_TYPES.JEOPARDY) {
+    const clues = Array.isArray(t.clues) ? t.clues
+      : Array.isArray(t.config?.clues) ? t.config.clues : null;
+
+    if (clues) {
+      const fixed = [];
+      for (const c of clues) {
+        if (typeof c === "string") { fixed.push(c); continue; }
+        if (!c || typeof c !== "object") continue;
+
+        let clueText = String(c.clue || c.prompt || "").trim();
+        let answer = String(c.answer || c.correctAnswer || c.solution || "").trim();
+
+        // Swap if the answer looks like a sentence and the clue looks like a short word
+        if (answer.length > 40 && clueText.length <= 40 && clueText.split(/\s+/).length <= 5) {
+          [clueText, answer] = [answer, clueText];
+        }
+
+        // Truncate answer to first meaningful chunk if it contains a question
+        if (answer.includes("?") || answer.includes(".")) {
+          const firstWord = answer.split(/[?.!,;:]/)[0].trim();
+          if (firstWord.length >= 2 && firstWord.length <= 40) {
+            answer = firstWord;
+          }
+        }
+
+        // Drop clues where answer is still too long (>60 chars) — unsalvageable
+        if (answer.length > 60) continue;
+
+        fixed.push({ clue: clueText, answer });
+      }
+      t.clues = fixed;
+    }
+  }
+
   return t;
 }
 
