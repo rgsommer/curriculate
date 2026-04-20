@@ -1528,6 +1528,9 @@ function StudentApp() {
     // Compute desired scanner state directly — no reading scannerActive here.
     const shouldBeActive = (() => {
       if (taskLocked && !taskWantsScan) return false;
+      // In mystery mode, don't show the scanner when there's no active task —
+      // the student must pick a mystery box first, THEN scan.
+      if (isMysteryMode && !currentTask) return false;
       if (mustScan) return true;
       if (needsGlobalScanner) return true;
       if (taskWantsScan) return true;
@@ -1561,6 +1564,7 @@ function StudentApp() {
     roomCode,
     taskLocked,
     postSubmitSecondsLeft,
+    isMysteryMode,
   ]);
 
   useEffect(() => {
