@@ -505,7 +505,11 @@ function StudentApp() {
             tasksStartedRef.current = true;
             setWarmupStep("done");
             setPostPhase("tasks");
-            setWaitingForLaunch(true);
+            // In mystery mode the box grid handles dispatch — don't show "Waiting…"
+            const joinIsMystery = state?.navigationMode === "mystery";
+            if (!joinIsMystery) {
+              setWaitingForLaunch(true);
+            }
             setScannerActive(false); // will be re-enabled by task:assigned or scan
           }
 
@@ -703,10 +707,13 @@ function StudentApp() {
       setRoomState(state);
 
       // ── Mystery box mode detection ──
-      if (state.navigationMode === "mystery" && state.isActive) {
+      // Set isMysteryMode as soon as we see navigationMode, even before isActive,
+      // so mystery-mode guards (mustScan bypass, requestNext skip, waitingForLaunch
+      // suppression) all engage immediately.
+      if (state.navigationMode === "mystery") {
         setIsMysteryMode(true);
-        // Request grid if we don't have one yet
-        if (!mysteryBoxGrid) {
+        // Request grid once the room is active and we don't have one yet
+        if (state.isActive && !mysteryBoxGrid) {
           socket.emit("mystery:requestGrid", {
             roomCode: roomCode.trim().toUpperCase(),
             teamId,
