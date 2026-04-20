@@ -813,6 +813,21 @@ function StudentApp() {
       if (isMysteryMode) {
         setMysteryBoxGrid(null);
         setChallengeBeacon(null);
+        // Update station assignment from the mystery box payload so the scan gate
+        // knows which station the student must scan BEFORE room:state arrives.
+        const mysteryStation = payload?.mysteryBox?.stationColor;
+        if (mysteryStation) {
+          const stationInfo = normalizeStationId(mysteryStation);
+          if (stationInfo?.id) {
+            setAssignedStationId(stationInfo.id);
+            assignedStationIdRef.current = stationInfo.id;
+          }
+          if (stationInfo?.color) {
+            setAssignedColor(stationInfo.color);
+          }
+          // Clear previous scan so they must re-scan for this new task's station
+          setScannedStationId(null);
+        }
       }
 
       const payloadIsTestMode = payload?.testMode === true;
@@ -884,10 +899,11 @@ function StudentApp() {
       }
 
       // Physical MC needs the global scanner panel. MadDash uses the embedded task scanner.
+      // Mystery mode: every task needs a station scan after the box tap to unlock.
       const assignedNeedsScanner =
         payloadIsTestMode && payload?.bypassScan
           ? false
-          : (assignedIsPhysicalMC || assignedIsMadDash);
+          : (assignedIsPhysicalMC || assignedIsMadDash || (isMysteryMode && !!assignedColor));
       setScannerActive(assignedNeedsScanner);
 
       // Play task arrival sound for every new task
@@ -1475,8 +1491,6 @@ function StudentApp() {
       ? false
       : taskLocked
       ? false
-      : isMysteryMode
-      ? false  // Mystery box mode: tasks launch on box tap, no scan gate
       : assignedStationId
         ? (scannedStationId !== assignedStationId)
         : (!!assignedColor && !scannedStationId);

@@ -6936,6 +6936,7 @@ socket.on(
 
       // Send the task to the team via the standard task:assigned event
       const timeLimitSeconds = task.timeLimitSeconds || 240;
+      const taskStation = task.displayKey || task.stationColor || task.config?.stationColor || null;
       const taskPayload = {
         task,
         taskIndex,
@@ -6947,6 +6948,7 @@ socket.on(
           pointValue,
           isInterTeam,
           challengeId: challenge?.challengeId || null,
+          stationColor: taskStation, // tells client which station to scan
         },
       };
       io.to(teamId).emit("task:assigned", taskPayload);
@@ -6954,9 +6956,15 @@ socket.on(
       // in case the socket lost its teamId room membership on reconnect)
       socket.emit("task:assigned", taskPayload);
 
-      // Update team's taskIndex for scoring compatibility
+      // Update team's taskIndex and station assignment for scoring + scan gate
       if (room.teams[teamId]) {
         room.teams[teamId].taskIndex = taskIndex;
+        // Assign the team to the task's station so the scan gate knows where to send them
+        const taskStation = task.displayKey || task.stationColor || task.config?.stationColor;
+        if (taskStation) {
+          room.teams[teamId].currentStationId = taskStation;
+          room.teams[teamId].stationId = taskStation;
+        }
       }
 
       // Broadcast updated state
