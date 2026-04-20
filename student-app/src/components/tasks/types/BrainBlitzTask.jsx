@@ -1005,8 +1005,8 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
                       {g.correct ? "✅" : "💬"}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 850, fontSize: 13, opacity: 0.85 }}>
-                        {g.by} {Number.isFinite(g.clueIndex) ? `• clue ${g.clueIndex + 1}` : ""}
+                      <div style={{ fontWeight: 850, fontSize: 13, opacity: 0.85, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {g.by} {Number.isFinite(g.clueIndex) && clues[g.clueIndex]?.clue ? `• ${clues[g.clueIndex].clue}` : ""}
                       </div>
                       <div style={{ fontWeight: 900, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {g.spoken || "(inaudible)"}
