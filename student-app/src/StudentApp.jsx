@@ -1581,6 +1581,30 @@ function StudentApp() {
     }
   }, [currentTask, postPhase]);
 
+  // Mystery mode: when the room activates while student is in treasure/warmup,
+  // bump them straight to selfie (if needed) or the mystery box grid.
+  // This handles "arm → launch on first join" when teams are already connected.
+  useEffect(() => {
+    if (!isMysteryMode || !roomIsActive || !joined) return;
+    const phase = postPhaseRef.current;
+    if (phase !== "treasure") return;
+
+    const hasSelfie = !!(lsGet(LS_KEYS.selfieUrl));
+    if (hasSelfie) {
+      setWarmupStep("done");
+      lsSet(LS_KEYS.warmupDone, "1");
+      tasksStartedRef.current = true;
+      setPostPhase("tasks");
+      socket.emit("mystery:requestGrid", {
+        roomCode: roomCode.trim().toUpperCase(),
+        teamId,
+      });
+    } else {
+      setWarmupStep("selfie");
+      setPostPhase("selfie");
+    }
+  }, [isMysteryMode, roomIsActive, joined]);
+
   // Clean up timers on unmount
   useEffect(() => {
     return () => {
