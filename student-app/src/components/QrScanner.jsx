@@ -16,7 +16,6 @@ import jsQR from "jsqr";
  */
 export default function QrScanner({ active = true, onCode, onScan, onError }) {
   const videoRef = useRef(null);
-  const canvasRef = useRef(null);
 
   // Keep latest handler without re-starting camera
   const handlerRef = useRef(null);
@@ -121,17 +120,23 @@ export default function QrScanner({ active = true, onCode, onScan, onError }) {
     if (scanningRef.current) return;
     scanningRef.current = true;
 
+    // Reusable downscale canvas — created once, resized as needed.
+    // jsQR speed scales with pixel count, so capping at ~480px wide
+    // cuts processing time 4-8× on high-res cameras while still
+    // giving jsQR plenty of detail to read QR codes.
+    const SCAN_MAX = 480;
+    let scanCanvas = document.createElement("canvas");
+    let scanCtx = scanCanvas.getContext("2d", { willReadFrequently: true });
+
     const loop = () => {
       if (!scanningRef.current || !mountedRef.current) return;
 
       const v = videoRef.current;
-      const c = canvasRef.current;
-      if (!v || !c) {
+      if (!v) {
         rafIdRef.current = requestAnimationFrame(loop);
         return;
       }
 
-      const ctx = c.getContext("2d", { willReadFrequently: true });
       const vw = v.videoWidth || 0;
       const vh = v.videoHeight || 0;
 
@@ -140,13 +145,21 @@ export default function QrScanner({ active = true, onCode, onScan, onError }) {
         return;
       }
 
-      c.width = vw;
-      c.height = vh;
-      ctx.drawImage(v, 0, 0, c.width, c.height);
+      // Downscale: cap the long edge at SCAN_MAX pixels
+      const scale = Math.min(1, SCAN_MAX / Math.max(vw, vh));
+      const sw = Math.round(vw * scale);
+      const sh = Math.round(vh * scale);
+
+      if (scanCanvas.width !== sw || scanCanvas.height !== sh) {
+        scanCanvas.width = sw;
+        scanCanvas.height = sh;
+      }
+
+      scanCtx.drawImage(v, 0, 0, sw, sh);
 
       try {
-        const imageData = ctx.getImageData(0, 0, c.width, c.height);
-        const qr = jsQR(imageData.data, c.width, c.height);
+        const imageData = scanCtx.getImageData(0, 0, sw, sh);
+        const qr = jsQR(imageData.data, sw, sh);
 
         if (qr && qr.data) {
           const rawValue = qr.data;
@@ -166,10 +179,11 @@ export default function QrScanner({ active = true, onCode, onScan, onError }) {
         onError?.("There was a problem reading that code. Try holding it steady and closer.");
       }
 
-      // ~15fps — fast enough for fluid scanning, light enough for tablets
+      // ~20fps — tighter loop for snappier scans on slow tablets
+      // (the downscaled frame keeps per-frame cost low)
       timeoutIdRef.current = window.setTimeout(() => {
         rafIdRef.current = requestAnimationFrame(loop);
-      }, 66);
+      }, 50);
     };
 
     rafIdRef.current = requestAnimationFrame(loop);
@@ -228,7 +242,6 @@ export default function QrScanner({ active = true, onCode, onScan, onError }) {
             muted
             playsInline
           />
-          <canvas ref={canvasRef} style={{ display: "none" }} />
           <p style={{ margin: 0, fontSize: "0.8rem", color: "#4b5563" }}>
             Hold the QR code steady in front of the camera. It will snap automatically when it can read it.
           </p>
