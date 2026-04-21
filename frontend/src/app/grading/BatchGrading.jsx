@@ -845,7 +845,9 @@ export default function BatchGrading({
     const first = results.find((r) => !r.error);
     const parts = ["Grading:"];
     if (first?.subject) parts.push(first.subject);
-    if (first?.assessmentType) parts.push(first.assessmentType);
+    // When voice is journal_response, use "Journal" instead of the AI-inferred type (which often says "Other")
+    const aType = feedbackVoice === "journal_response" ? "Journal" : first?.assessmentType;
+    if (aType) parts.push(aType);
     // If we got nothing useful, fall back to file name
     if (parts.length === 1) {
       const clean = (pdfName || "").replace(/\.pdf$/i, "").replace(/[_-]+/g, " ").trim();

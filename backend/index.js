@@ -8688,11 +8688,12 @@ VOICE: Journal Response (reflective, teacher voice)
     Engagement & voice (2): Does the entry feel genuine and invested, not just going through the motions?
     Length & completeness (2): ~150 words (roughly half a page) is the expected baseline. Meeting this with coherent content earns full marks here. Writing MORE should be rewarded IF the additional content is meaningful and coherent (not padding or repetition). Writing significantly less (e.g., 2-3 sentences) should lose marks here.
   - LENIENCY CALIBRATION: Journals are low-stakes reflective writing. The bar is engagement, not perfection.
-    A coherent, thoughtful 150-word entry that shows real processing = 8-9/10.
-    A longer entry with genuine depth and personal connection = 9-10/10.
-    A short but sincere and insightful entry (~100 words) = 7-8/10.
+    A coherent entry with well-developed ideas and genuine reflection = 9-10/10. This is the EXPECTED score for good journal writing.
+    A solid entry that meets expectations but is somewhat surface-level = 8/10.
+    A short but sincere entry (~100 words) with some reflection = 7-8/10.
     A very short or surface-level entry with minimal thought = 4-6/10.
     Barely anything / incoherent / obvious filler = 1-3/10.
+  - CRITICAL: Having room for improvement does NOT mean the score should drop. You can (and should) suggest next steps and deeper thinking in the improvements array WITHOUT reducing the score. Improvements are invitations, not penalties. A student who writes coherently, reflects meaningfully, and develops their ideas well deserves a 9 or 10 even if you can imagine ways they could go deeper. Do NOT treat "could be even better" as a reason to give an 8.
   - Do NOT grade journals like essays. Do not reduce marks primarily for writing imperfections.
   - Reward sincerity, depth of thought, and meaningful engagement.
   - A short but deeply honest entry can score higher than a long, surface-level one.
@@ -9182,7 +9183,7 @@ function buildRubricInstructions({
     - Frame improvements as invitations to deepen thinking, not corrections.
     - Teacher_comment should feel like a personal response to the student's thinking while still giving clear, useful feedback.
     - Keep the response concise (2–4 sentences max); do not turn the feedback into a full paragraph or essay.
-    - SCORING LENIENCY: Journals are low-stakes. Grade generously when the student shows genuine effort and coherent thinking. A solid 150-word entry with real engagement should land around 8-9/10, not 6-7. Reserve scores below 6 for entries that are clearly minimal, incoherent, or phoned in.
+    - SCORING LENIENCY: Journals are low-stakes. A coherent entry with well-developed ideas and genuine reflection = 9-10/10. Suggesting improvements is encouraged but must NOT lower the score — improvements are invitations to go deeper, not penalties. Reserve 8 for entries that are adequate but surface-level. Reserve scores below 6 for entries that are clearly minimal, incoherent, or phoned in.
     
     FEEDBACK LANGUAGE RULE (grade-band aligned):
     - For 3–5: Use simple, direct language. Short sentences. Avoid abstract vocabulary.
@@ -10449,7 +10450,7 @@ function buildRubricInstructions({
 
           inferred_assessment_type: {
             type: "string",
-            enum: ["Essay", "Test", "Quiz", "Homework", "Project", "Poster", "Worksheet", "Speech", "Performance", "Presentation", "Other"],
+            enum: ["Essay", "Test", "Quiz", "Homework", "Project", "Poster", "Worksheet", "Speech", "Performance", "Presentation", "Journal", "Other"],
           },
 
           inferred_grade_level: {
@@ -10613,7 +10614,7 @@ function buildRubricInstructions({
 
         INFERENCE (required):
         - inferred_subject: one of [Math, English, History, Geography, Science, Bible, Drama, Speech, Music, Art, French, Other]
-        - inferred_assessment_type: one of [Essay, Test, Quiz, Homework, Project, Poster, Worksheet, Speech, Performance, Presentation, Other]
+        - inferred_assessment_type: one of [Essay, Test, Quiz, Homework, Project, Poster, Worksheet, Speech, Performance, Presentation, Journal, Other]
         - inferred_grade_level: one of [3-5, 6-8, 9-10, 11+, Unknown]
 
         Rules:
@@ -12189,7 +12190,7 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
       properties: {
         response_format_detected: { type: "string", enum: ["short-answer", "paragraph", "mixed", "test"] },
         inferred_subject: { type: "string", enum: ["Math", "English", "History", "Geography", "Science", "Bible", "Drama", "Speech", "Music", "Art", "French", "Other"] },
-        inferred_assessment_type: { type: "string", enum: ["Essay", "Test", "Quiz", "Homework", "Project", "Poster", "Worksheet", "Speech", "Performance", "Presentation", "Other"] },
+        inferred_assessment_type: { type: "string", enum: ["Essay", "Test", "Quiz", "Homework", "Project", "Poster", "Worksheet", "Speech", "Performance", "Presentation", "Journal", "Other"] },
         inferred_grade_level: { type: "string", enum: ["3-5", "6-8", "9-10", "11+", "Unknown"] },
         overall_score: { type: "number", minimum: 0 },
         overall_out_of: { type: "number", minimum: 1 },
