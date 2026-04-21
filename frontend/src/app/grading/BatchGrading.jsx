@@ -1094,7 +1094,7 @@ export default function BatchGrading({
       )}
 
       {/* Config */}
-      {pdfFile && !grading && results.length === 0 && (
+      {pdfFile && !grading && (
         <div style={batchStyles.configSection}>
           <div style={{ fontWeight: 700, marginBottom: 8 }}>
             {pdfName} — {pageCount} page{pageCount !== 1 ? "s" : ""}
@@ -1504,23 +1504,32 @@ export default function BatchGrading({
                           letterSpacing: 0.5,
                           color: r.refCode ? "#2563eb" : "#999",
                           cursor: r.refCode ? "pointer" : "default",
+                          userSelect: "none",
                         }}
-                        onClick={() => {
-                          if (r.refCode) window.open(`https://www.curriculate.net/results/${r.refCode}`, "_blank");
+                        onClick={(e) => {
+                          if (!r.refCode) return;
+                          // Delay single-click to let double-click cancel it
+                          const td = e.currentTarget;
+                          if (td._clickTimer) return; // already waiting
+                          td._clickTimer = setTimeout(() => {
+                            td._clickTimer = null;
+                            window.open(`https://www.curriculate.net/results/${r.refCode}`, "_blank");
+                          }, 250);
                         }}
                         onDoubleClick={(e) => {
                           e.preventDefault();
                           if (!r.refCode) return;
+                          // Cancel the pending single-click
+                          const td = e.currentTarget;
+                          if (td._clickTimer) { clearTimeout(td._clickTimer); td._clickTimer = null; }
                           const text = `For results & feedback, check www.curriculate.net/results/${r.refCode}`;
                           navigator.clipboard?.writeText(text).then(() => {
-                            // Brief visual flash on the cell
-                            const td = e.currentTarget;
                             const orig = td.style.background;
                             td.style.background = "rgba(34,197,94,0.25)";
                             setTimeout(() => { td.style.background = orig; }, 600);
                           });
                         }}
-                        title={r.refCode ? "Click to open results page · Double-click to copy feedback link" : ""}
+                        title={r.refCode ? "Click to open · Double-click to copy feedback link" : ""}
                       >
                         {r.refCode || "—"}
                       </td>
