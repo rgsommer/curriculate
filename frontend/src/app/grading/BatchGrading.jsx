@@ -885,6 +885,16 @@ export default function BatchGrading({
     html += `<h2 style="margin: 0 0 4px; font-size: 20px; color: #0f172a;">Batch Grading Results</h2>`;
     html += `<p style="margin: 0 0 16px; font-size: 14px; color: #64748b;">${pdfName || "Uploaded PDF"} &mdash; ${results.length} student${results.length !== 1 ? "s" : ""} graded</p>`;
 
+    // Rubric note (if teacher typed one in)
+    const rubricNote = (rubricOverride || "").trim();
+    if (rubricNote) {
+      const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      html += `<div style="background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;">`;
+      html += `<div style="font-weight: 800; font-size: 12px; color: #92400e; margin-bottom: 4px;">Rubric</div>`;
+      html += `<div style="font-size: 13px; line-height: 1.5; color: #78350f; white-space: pre-wrap;">${esc(rubricNote)}</div>`;
+      html += `</div>`;
+    }
+
     // Class summary
     if (classSummary) {
       html += `<table style="border-collapse: collapse; width: 100%; margin-bottom: 12px; border: 1px solid #e2e8f0; border-radius: 8px;">`;
@@ -963,7 +973,7 @@ export default function BatchGrading({
 
     html += `</div>`;
     return html;
-  }, [results, classSummary, teacherAnalysis, pdfName]);
+  }, [results, classSummary, teacherAnalysis, pdfName, rubricOverride]);
 
   // ---------- Email summary (rich HTML) ----------
   const [emailTo, setEmailTo] = useState("");
@@ -1498,7 +1508,19 @@ export default function BatchGrading({
                         onClick={() => {
                           if (r.refCode) window.open(`https://www.curriculate.net/results/${r.refCode}`, "_blank");
                         }}
-                        title={r.refCode ? `Open student results page for ${r.refCode}` : ""}
+                        onDoubleClick={(e) => {
+                          e.preventDefault();
+                          if (!r.refCode) return;
+                          const text = `For results & feedback, check www.curriculate.net/results/${r.refCode}`;
+                          navigator.clipboard?.writeText(text).then(() => {
+                            // Brief visual flash on the cell
+                            const td = e.currentTarget;
+                            const orig = td.style.background;
+                            td.style.background = "rgba(34,197,94,0.25)";
+                            setTimeout(() => { td.style.background = orig; }, 600);
+                          });
+                        }}
+                        title={r.refCode ? "Click to open results page · Double-click to copy feedback link" : ""}
                       >
                         {r.refCode || "—"}
                       </td>

@@ -276,6 +276,9 @@ function StudentApp() {
   const postPhaseRef = useRef(postPhase);
     useEffect(() => { postPhaseRef.current = postPhase; }, [postPhase]);
 
+  const isMysteryModeRef = useRef(isMysteryMode);
+    useEffect(() => { isMysteryModeRef.current = isMysteryMode; }, [isMysteryMode]);
+
   // Noise + treats
   const [noiseState, setNoiseState] = useState({
     enabled: false,
@@ -2078,7 +2081,7 @@ function StudentApp() {
       // In mystery mode, the server controls "all boxes done" via mystery:timeUp,
       // so we never treat a single mystery task as "last" here.
       const isLastTask =
-        !isMysteryMode &&
+        !isMysteryModeRef.current &&
         typeof currentTaskIndex === "number" &&
         typeof tasksetTotalTasks === "number" &&
         currentTaskIndex >= 0 &&
@@ -2121,7 +2124,10 @@ function StudentApp() {
       }
 
       // Mystery mode: go back to box grid instead of scanning
-      if (isMysteryMode) {
+      // NOTE: use ref — this function is defined inside useEffect([teamId, roomCode]),
+      // so the closure-captured `isMysteryMode` is stale (always the value from
+      // the render when the effect last ran). The ref stays current.
+      if (isMysteryModeRef.current) {
         setPostPhase("tasks");
         setScannerActive(false);
         setWaitingForLaunch(false);

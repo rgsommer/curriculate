@@ -654,7 +654,7 @@ function tightenCropToContent(canvas, { pad = 12, threshold = 245 } = {}) {
   return out;
 }
 
-function buildFullTeacherPayloadText(assessment, codeLocal = "", gradeBandForKita = "") {
+function buildFullTeacherPayloadText(assessment, codeLocal = "", gradeBandForKita = "", rubricOverride = "") {
   const links = Array.isArray(assessment?.assignment_images) ? assessment.assignment_images : [];
 
   const lines = [];
@@ -680,6 +680,13 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "", gradeBandForKit
 
   if (g.score !== "") {
     lines.push(`Grade: ${g.score} / ${g.outOf}${codeLocal ? `  Ref: ${codeLocal}` : ""}`);
+    lines.push("");
+  }
+
+  // Include rubric override if the teacher typed one in
+  const rubricNote = (rubricOverride || "").trim();
+  if (rubricNote) {
+    lines.push(`Rubric: ${rubricNote}`);
     lines.push("");
   }
 
@@ -1296,8 +1303,8 @@ export default function GradingPage() {
     }, [sessionItems.length]);
 
     const formattedTeacherText = useMemo(() => {
-      return assessment ? buildFullTeacherPayloadText(assessment, refCode, gradeBand) : "";
-    }, [assessment, refCode]);
+      return assessment ? buildFullTeacherPayloadText(assessment, refCode, gradeBand, rubricOverride) : "";
+    }, [assessment, refCode, rubricOverride]);
 
     function triggerFlash() {
       setFlash(true);
@@ -2414,7 +2421,7 @@ export default function GradingPage() {
 
       if (!codeLocal) {
         try {
-          const payloadText = buildFullTeacherPayloadText(assessment, "", gradeBand);
+          const payloadText = buildFullTeacherPayloadText(assessment, "", gradeBand, rubricOverride);
           const pub = await publishResultToPortal({
             payload: payloadText,
             meta: {
@@ -2433,7 +2440,7 @@ export default function GradingPage() {
         }
       }
       
-      const plainText = buildFullTeacherPayloadText(assessment, codeLocal, gradeBand);
+      const plainText = buildFullTeacherPayloadText(assessment, codeLocal, gradeBand, rubricOverride);
       const htmlAssignmentLinks = getAssignmentLinksFromAssessment(assessment);
       const submittedText = String(assessment?.submitted_text || "").trim();
 

@@ -9898,10 +9898,10 @@ function buildRubricInstructions({
     If a category is not assessable from the work (e.g., "Effort & Growth" on a short quiz), simply omit it.
     For each category provide:
     - level: "strong", "adequate", "developing", or "limited"
-    - score: a numeric score for this category (to 2 decimal places)
-    - out_of: the denominator for this category — distribute the overall_out_of proportionally across included categories
+    - score: a numeric score for this category (use clean values: whole numbers or .25/.5/.75)
+    - out_of: the denominator for this category — distribute the overall_out_of across included categories using whole numbers or .5 increments only. Each category's out_of must be ≥ its score.
     - comment: 1 brief sentence
-    The sum of all out_of values should equal overall_out_of, and the sum of all score values should equal the student's final score.
+    The sum of all out_of values should approximately equal overall_out_of. Use clean round denominators — NEVER use values like 0.48 or 3.81.
     ${standards === "canada" ? `
     If sections[] already use KITA category names (from annotations), set achievement_summary = null.
     ${(gradeBand === "9-10" || gradeBand === "11+") ? `Otherwise, use the Ontario Achievement Chart categories:
@@ -10083,7 +10083,8 @@ function buildRubricInstructions({
     if (Math.abs(sumOutOf - overallOutOf) > 0.01) {
       const scale = overallOutOf / sumOutOf;
       for (const c of cats) {
-        c.out_of = Math.round(c.out_of * scale * 100) / 100;
+        // Round to nearest 0.25 for cleaner display (avoids ugly 0.48-type values)
+        c.out_of = Math.round(c.out_of * scale * 4) / 4;
       }
     }
 
@@ -10092,8 +10093,15 @@ function buildRubricInstructions({
       const scale = overallScore / sumScore;
       for (const c of cats) {
         if (Number.isFinite(c.score)) {
-          c.score = Math.round(c.score * scale * 100) / 100;
+          c.score = Math.round(c.score * scale * 4) / 4;
         }
+      }
+    }
+
+    // Ensure score ≤ out_of for every category (rescaling can break this)
+    for (const c of cats) {
+      if (Number.isFinite(c.score) && Number.isFinite(c.out_of) && c.score > c.out_of) {
+        c.out_of = c.score;
       }
     }
 
@@ -11060,13 +11068,17 @@ function buildRubricInstructions({
               }
             }
           }
-          // Rescale achievement_summary too
+          // Rescale achievement_summary too (round to nearest 0.25 for clean display)
           if (Array.isArray(enforced.achievement_summary)) {
             for (const cat of enforced.achievement_summary) {
               if (cat && Number.isFinite(cat.out_of)) {
-                cat.out_of = Math.round(cat.out_of * scale * 100) / 100;
+                cat.out_of = Math.round(cat.out_of * scale * 4) / 4;
                 if (Number.isFinite(cat.score)) {
-                  cat.score = Math.round(cat.score * scale * 100) / 100;
+                  cat.score = Math.round(cat.score * scale * 4) / 4;
+                }
+                // Ensure score ≤ out_of
+                if (Number.isFinite(cat.score) && cat.score > cat.out_of) {
+                  cat.out_of = cat.score;
                 }
               }
             }
