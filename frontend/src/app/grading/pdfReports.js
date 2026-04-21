@@ -330,21 +330,21 @@ export async function buildResultsPdf(results) {
   return doc.output("datauristring").split(",")[1];
 }
 
-// ---------- Cut-strip PDF (grade + ref code + comment) ----------
+// ---------- Cut-strip PDF (3-column card grid) ----------
 export async function buildStripsPdf(results) {
   const { jsPDF } = await loadJsPdf();
   const doc = new jsPDF({ unit: "pt", format: "letter" });
 
   const PAGE_W = 612;
   const PAGE_H = 792;
-  const MARGIN = 36;
-  const LINE_H = 13;
-  const STRIP_PAD = 10;
-  const CUT_GAP = 18;
-  const QR_SIZE = 42;
-  const QR_GAP = 8;
-  const COL_W_FULL = PAGE_W - MARGIN * 2;
-  const COL_W_WITH_QR = COL_W_FULL - QR_SIZE - QR_GAP - 4;
+  const MARGIN = 30;
+  const COLS = 3;
+  const GAP = 10;
+  const CARD_W = (PAGE_W - MARGIN * 2 - GAP * (COLS - 1)) / COLS;
+  const CARD_PAD = 8;
+  const LINE_H = 11;
+  const QR_SIZE = 36;
+  const INNER_W = CARD_W - CARD_PAD * 2;
 
   const good = results.filter((r) => !r.error);
   if (!good.length) return null;
@@ -358,97 +358,121 @@ export async function buildStripsPdf(results) {
     }
   }
 
-  function measureStrip(r) {
-    const hasQr = !!r.refCode;
-    const textW = hasQr ? COL_W_WITH_QR : COL_W_FULL - 8;
-    let h = 14 + 4;
-    if (r.refCode) h += 14;
+  // Pre-measure each card to determine row heights
+  function measureCard(r) {
+    let h = CARD_PAD;
+    // Name line
+    h += 13;
+    // Score line
+    h += 12;
+    // Ref code line
+    if (r.refCode) h += 10;
+    // Comment
     const comment = esc(r.raw?.teacher_comment || r.comment || "");
     if (comment) {
       h += 4;
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      h += doc.splitTextToSize(comment, textW).length * (LINE_H - 1);
+      doc.setFontSize(7.5);
+      const textW = r.refCode ? INNER_W - QR_SIZE - 6 : INNER_W;
+      h += doc.splitTextToSize(clamp(comment, 250), textW).length * (LINE_H - 2);
     }
-    const textH = h + STRIP_PAD * 2;
-    return hasQr ? Math.max(textH, QR_SIZE + STRIP_PAD * 2 + 14) : textH;
+    // QR needs minimum height
+    if (r.refCode) h = Math.max(h, CARD_PAD + 13 + 12 + QR_SIZE + 4);
+    h += CARD_PAD;
+    return h;
   }
 
-  let y = MARGIN;
+  function drawCard(r, x, y, cardH) {
+    // Card outline with rounded corners
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.5);
+    doc.setFillColor(252, 252, 253);
+    doc.roundedRect(x, y, CARD_W, cardH, 4, 4, "FD");
 
-  for (let i = 0; i < good.length; i++) {
-    const r = good[i];
-    const stripH = measureStrip(r);
+    // Dashed cut lines (scissors hint) at corners
+    doc.setDrawColor(180, 180, 180);
+    doc.setLineWidth(0.3);
+    try { doc.setLineDashPattern([2, 2], 0); } catch {}
+    // top-left corner guides
+    doc.line(x - 4, y, x + 6, y);
+    doc.line(x, y - 4, x, y + 6);
+    try { doc.setLineDashPattern([], 0); } catch {}
 
-    if (y + stripH > PAGE_H - MARGIN && y > MARGIN) {
-      doc.addPage();
-      y = MARGIN;
-    }
-
-    if (y > MARGIN + 4) {
-      doc.setDrawColor(180, 180, 180);
-      doc.setLineWidth(0.4);
-      try { doc.setLineDashPattern([4, 3], 0); } catch { /* compat */ }
-      doc.line(MARGIN, y, PAGE_W - MARGIN, y);
-      try { doc.setLineDashPattern([], 0); } catch { /* reset */ }
-      y += CUT_GAP / 2;
-    }
-
-    const stripStartY = y;
-    y += STRIP_PAD;
-
+    let cy = y + CARD_PAD;
     const hasQr = !!r.refCode;
-    const textW = hasQr ? COL_W_WITH_QR : COL_W_FULL - 8;
 
+    // QR code (top-right of card)
     if (hasQr && qrImages[r.refCode]) {
       try {
-        doc.addImage(qrImages[r.refCode], "PNG", PAGE_W - MARGIN - QR_SIZE, stripStartY + STRIP_PAD, QR_SIZE, QR_SIZE);
+        doc.addImage(qrImages[r.refCode], "PNG", x + CARD_W - CARD_PAD - QR_SIZE, cy, QR_SIZE, QR_SIZE);
       } catch { /* skip */ }
     }
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    const nameStr = getDisplayName(r);
-    const scoreStr = `${r.score} / ${r.outOf}  (${r.pct != null ? r.pct + "%" : "\u2014"})  ${r.letter || ""}`;
-    doc.text(nameStr, MARGIN + 4, y);
-    const scoreX = hasQr ? PAGE_W - MARGIN - QR_SIZE - QR_GAP : PAGE_W - MARGIN - 4;
-    doc.text(scoreStr, scoreX, y, { align: "right" });
-    y += 14;
+    const textW = hasQr ? INNER_W - QR_SIZE - 6 : INNER_W;
 
+    // Name
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(30, 30, 30);
+    doc.text(clamp(getDisplayName(r), 20), x + CARD_PAD, cy + 9);
+    cy += 13;
+
+    // Score
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(60, 60, 60);
+    const scoreStr = `${r.score}/${r.outOf}  ${r.pct != null ? r.pct + "%" : ""}  ${r.letter || ""}`;
+    doc.text(scoreStr, x + CARD_PAD, cy + 8);
+    cy += 12;
+
+    // Ref code
     if (r.refCode) {
-      y += 2;
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
-      doc.setTextColor(100, 100, 100);
-      doc.text(`Code: ${r.refCode}  \u2022  Full results & images: curriculate.net/results/${r.refCode}`, MARGIN + 4, y);
+      doc.setFontSize(6.5);
+      doc.setTextColor(130, 130, 130);
+      doc.text(`curriculate.net/results/${r.refCode}`, x + CARD_PAD, cy + 7);
       doc.setTextColor(0, 0, 0);
-      y += 12;
+      cy += 10;
     }
 
+    // Comment
     const comment = esc(r.raw?.teacher_comment || r.comment || "");
     if (comment) {
-      y += 4;
+      cy += 4;
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      const wrapped = doc.splitTextToSize(comment, textW);
+      doc.setFontSize(7.5);
+      doc.setTextColor(50, 50, 50);
+      const wrapped = doc.splitTextToSize(clamp(comment, 250), textW);
       for (const line of wrapped) {
-        doc.text(line, MARGIN + 4, y);
-        y += LINE_H - 1;
+        doc.text(line, x + CARD_PAD, cy + 7);
+        cy += LINE_H - 2;
       }
     }
 
-    const minY = stripStartY + stripH - CUT_GAP / 2;
-    if (y < minY) y = minY;
-    else y += STRIP_PAD;
-    y += CUT_GAP / 2;
+    doc.setTextColor(0, 0, 0);
   }
 
-  if (y < PAGE_H - MARGIN) {
-    doc.setDrawColor(180, 180, 180);
-    doc.setLineWidth(0.4);
-    try { doc.setLineDashPattern([4, 3], 0); } catch { /* compat */ }
-    doc.line(MARGIN, y, PAGE_W - MARGIN, y);
-    try { doc.setLineDashPattern([], 0); } catch { /* reset */ }
+  let pageY = MARGIN;
+
+  for (let i = 0; i < good.length; i += COLS) {
+    const row = good.slice(i, i + COLS);
+
+    // Measure row height (tallest card wins)
+    const rowH = Math.max(...row.map(measureCard));
+
+    // New page if needed
+    if (pageY + rowH > PAGE_H - MARGIN && pageY > MARGIN) {
+      doc.addPage();
+      pageY = MARGIN;
+    }
+
+    // Draw each card in the row
+    row.forEach((r, ci) => {
+      const x = MARGIN + ci * (CARD_W + GAP);
+      drawCard(r, x, pageY, rowH);
+    });
+
+    pageY += rowH + GAP;
   }
 
   return doc.output("datauristring").split(",")[1];
