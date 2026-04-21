@@ -120,6 +120,7 @@ const FREEMIUM_UPGRADE_URL = "/pricing";
 const FREEMIUM_PLUS_PRICE = "$4.99 CAD/month";
 
 function isFreemiumActive() {
+  if (typeof window === "undefined") return false;
   return new Date() >= FREEMIUM_ACTIVATION_DATE;
 }
 
@@ -208,6 +209,7 @@ function markSubmittedForTrigger(t) {
 }
 
 function readIntLS(key, fallback = 0) {
+  if (typeof window === "undefined") return fallback;
   try {
     const v = Number(localStorage.getItem(key));
     return Number.isFinite(v) ? v : fallback;
@@ -259,6 +261,7 @@ function getSessionId() {
 }
 
 function loadLS(key, fallback) {
+  if (typeof window === "undefined") return fallback;
   try {
     const v = localStorage.getItem(key);
     return v == null ? fallback : v;
@@ -805,6 +808,7 @@ const ANSWERKEY_STICKY_TS_KEY = "curriculate_grading_answerkey_sticky_ts_v1";
 const RUBRIC_TIP_DISMISSED_KEY = "curriculate_rubric_tip_dismissed_v1";
 
   function loadSession() {
+    if (typeof window === "undefined") return [];
     try {
       const raw = localStorage.getItem(SESSION_KEY);
       const parsed = raw ? JSON.parse(raw) : [];
