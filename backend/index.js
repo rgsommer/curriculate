@@ -8681,10 +8681,22 @@ VOICE: Journal Response (reflective, teacher voice)
   - May be mentioned briefly ONLY if they genuinely affect clarity.
   - Do NOT treat grammar, spelling, or mechanics as deductions. This is a journal, not an essay.
   - If mechanics must be noted, do it as a parenthetical aside, not a main point.
-- Marking approach:
+- Marking approach (JOURNAL-SPECIFIC SCORING — /10 default):
+  - When no rubric override is provided, grade journals out of 10 using these criteria:
+    Coherence & clarity (3): Does the writing make sense? Can you follow the student's thinking?
+    Processing & reflection (3): Does the student engage with the topic meaningfully — connecting ideas, asking questions, making inferences, or showing personal understanding?
+    Engagement & voice (2): Does the entry feel genuine and invested, not just going through the motions?
+    Length & completeness (2): ~150 words (roughly half a page) is the expected baseline. Meeting this with coherent content earns full marks here. Writing MORE should be rewarded IF the additional content is meaningful and coherent (not padding or repetition). Writing significantly less (e.g., 2-3 sentences) should lose marks here.
+  - LENIENCY CALIBRATION: Journals are low-stakes reflective writing. The bar is engagement, not perfection.
+    A coherent, thoughtful 150-word entry that shows real processing = 8-9/10.
+    A longer entry with genuine depth and personal connection = 9-10/10.
+    A short but sincere and insightful entry (~100 words) = 7-8/10.
+    A very short or surface-level entry with minimal thought = 4-6/10.
+    Barely anything / incoherent / obvious filler = 1-3/10.
+  - Do NOT grade journals like essays. Do not reduce marks primarily for writing imperfections.
   - Reward sincerity, depth of thought, and meaningful engagement.
   - A short but deeply honest entry can score higher than a long, surface-level one.
-  - Do not reduce marks primarily for writing imperfections.
+  - Extra length is only rewarded when it reflects genuine thinking — not when it's repetitive filler or "blah blah blah" padding.
   - Frame improvements as invitations to explore further, not corrections.
 - Strengths (array):
   - Respond to ideas: "Showed real empathy when reflecting on the character's choices."
@@ -9170,6 +9182,7 @@ function buildRubricInstructions({
     - Frame improvements as invitations to deepen thinking, not corrections.
     - Teacher_comment should feel like a personal response to the student's thinking while still giving clear, useful feedback.
     - Keep the response concise (2–4 sentences max); do not turn the feedback into a full paragraph or essay.
+    - SCORING LENIENCY: Journals are low-stakes. Grade generously when the student shows genuine effort and coherent thinking. A solid 150-word entry with real engagement should land around 8-9/10, not 6-7. Reserve scores below 6 for entries that are clearly minimal, incoherent, or phoned in.
     
     FEEDBACK LANGUAGE RULE (grade-band aligned):
     - For 3–5: Use simple, direct language. Short sentences. Avoid abstract vocabulary.

@@ -261,7 +261,7 @@ export default function BatchGrading({
   const [pageCount, setPageCount] = useState(0);
   const [pagesPerStudent, setPagesPerStudent] = useState("auto"); // number or "auto"
   const [answerKeyPages, setAnswerKeyPages] = useState(0); // leading pages that are the answer key
-  const [localRubric, setLocalRubric] = useState(rubricOverride || "");
+
   const [extractedAnswerKey, setExtractedAnswerKey] = useState(answerKeyOverride || "");
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -470,8 +470,7 @@ export default function BatchGrading({
       }
     }
 
-    // Effective rubric: local override > prop
-    const effectiveRubric = (localRubric || "").trim() || rubricOverride || "";
+    const effectiveRubric = (rubricOverride || "").trim();
 
     // Grade a single student — returns a result entry
     const gradeOneStudent = async (i, group) => {
@@ -731,14 +730,13 @@ export default function BatchGrading({
     detectedGroups,
     answerKeyPages,
     extractedAnswerKey,
-    localRubric,
+    rubricOverride,
     gradingUrl,
     resultsUrl,
     gradeBand,
     standards,
     feedbackVoice,
     voiceMode,
-    rubricOverride,
     answerKeyOverride,
   ]);
 
@@ -1235,22 +1233,6 @@ export default function BatchGrading({
             </div>
           )}
 
-          {/* Rubric override */}
-          <div style={{ marginTop: 12 }}>
-            <div style={{ fontWeight: 800, fontSize: 12, marginBottom: 4 }}>
-              Rubric / denominator override
-              {(localRubric || "").trim() ? (
-                <span style={{ fontWeight: 600, color: "#2563eb", marginLeft: 8 }}>active</span>
-              ) : null}
-            </div>
-            <textarea
-              value={localRubric}
-              onChange={(e) => setLocalRubric(e.target.value)}
-              placeholder="Optional: paste rubric, denominator (/20), or grading instructions..."
-              rows={3}
-              style={batchStyles.textarea}
-            />
-          </div>
 
           {extractedAnswerKey && (
             <div style={{ ...batchStyles.sticky, marginTop: 8 }}>
