@@ -2447,7 +2447,7 @@ export default function GradingPage() {
         } catch (pdfErr) {
           console.warn("[session] PDF generation failed:", pdfErr);
           const sendAnyway = window.confirm(
-            "PDF report generation failed (internet may be slow). Send email without PDF attachments?"
+            "PDF report generation failed. Send email without PDF attachments?"
           );
           if (!sendAnyway) {
             setSessionEmailSending(false);

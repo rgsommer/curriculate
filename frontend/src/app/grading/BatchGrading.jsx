@@ -1063,7 +1063,7 @@ export default function BatchGrading({
       } catch (pdfErr) {
         console.warn("[batch] PDF generation failed:", pdfErr);
         const sendAnyway = window.confirm(
-          "PDF report generation failed (internet may be slow). Send email without PDF attachments?"
+          "PDF report generation failed. Send email without PDF attachments?"
         );
         if (!sendAnyway) {
           setEmailSending(false);
@@ -1433,7 +1433,7 @@ export default function BatchGrading({
                     openPdf(b64Strips);
                   } catch (e) {
                     console.warn("[batch] PDF preview failed:", e);
-                    alert("Failed to generate PDF — check your internet connection and try again.");
+                    alert("Failed to generate PDF. Please try again.");
                   }
                 }}
                 style={batchStyles.smallBtn}
