@@ -1061,9 +1061,9 @@ export default function BatchGrading({
           buildStripsPdf(results),
         ]);
       } catch (pdfErr) {
-        console.warn("[batch] PDF generation failed:", pdfErr);
+        console.error("[batch] PDF generation failed:", pdfErr?.message || pdfErr, pdfErr?.stack);
         const sendAnyway = window.confirm(
-          "PDF report generation failed. Send email without PDF attachments?"
+          `PDF report generation failed: ${pdfErr?.message || "unknown error"}. Send email without PDF attachments?`
         );
         if (!sendAnyway) {
           setEmailSending(false);
@@ -1432,8 +1432,8 @@ export default function BatchGrading({
                     openPdf(b64Full);
                     openPdf(b64Strips);
                   } catch (e) {
-                    console.warn("[batch] PDF preview failed:", e);
-                    alert("Failed to generate PDF. Please try again.");
+                    console.error("[batch] PDF preview failed:", e?.message || e, e?.stack);
+                    alert(`Failed to generate PDF: ${e?.message || "unknown error"}`);
                   }
                 }}
                 style={batchStyles.smallBtn}

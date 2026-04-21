@@ -2445,9 +2445,9 @@ export default function GradingPage() {
             buildStripsPdf(results),
           ]);
         } catch (pdfErr) {
-          console.warn("[session] PDF generation failed:", pdfErr);
+          console.error("[session] PDF generation failed:", pdfErr?.message || pdfErr, pdfErr?.stack);
           const sendAnyway = window.confirm(
-            "PDF report generation failed. Send email without PDF attachments?"
+            `PDF report generation failed: ${pdfErr?.message || "unknown error"}. Send email without PDF attachments?`
           );
           if (!sendAnyway) {
             setSessionEmailSending(false);
