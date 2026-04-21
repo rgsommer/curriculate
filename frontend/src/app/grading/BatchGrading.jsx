@@ -22,9 +22,17 @@ import { buildResultsPdf, buildStripsPdf, preloadPdfLibs } from "./pdfReports";
 // NOTE: QR code loader, jsPDF loader, buildResultsPdf, and buildStripsPdf
 // have been moved to ./pdfReports.js (shared with page.jsx session reports).
 
-// ---------- PDF.js loader (CDN, no npm install) ----------
+// ---------- PDF.js loader (self-hosted proxy → CDN fallback) ----------
 // Uses the legacy UMD build (3.x) which sets window.pdfjsLib via <script>
 const PDFJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174";
+const PDFJS_URLS = [
+  "/api/vendor?lib=pdfjs",
+  `${PDFJS_CDN}/pdf.min.js`,
+];
+const PDFJS_WORKER_URLS = [
+  "/api/vendor?lib=pdfjs-worker",
+  `${PDFJS_CDN}/pdf.worker.min.js`,
+];
 let pdfjsPromise = null;
 
 function loadPdfJs() {
@@ -32,24 +40,34 @@ function loadPdfJs() {
   pdfjsPromise = new Promise((resolve, reject) => {
     if (typeof window === "undefined") return reject(new Error("SSR"));
     if (window.pdfjsLib) {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = `${PDFJS_CDN}/pdf.worker.min.js`;
+      // Worker URL: prefer proxy, fall back to CDN
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URLS[0];
       return resolve(window.pdfjsLib);
     }
-    const script = document.createElement("script");
-    script.src = `${PDFJS_CDN}/pdf.min.js`;
-    script.onload = () => {
-      if (window.pdfjsLib) {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = `${PDFJS_CDN}/pdf.worker.min.js`;
-        resolve(window.pdfjsLib);
-      } else {
-        reject(new Error("pdfjsLib not found after script load"));
+
+    let idx = 0;
+    function tryNext() {
+      if (idx >= PDFJS_URLS.length) {
+        pdfjsPromise = null;
+        reject(new Error("Failed to load pdf.js from all sources"));
+        return;
       }
-    };
-    script.onerror = () => {
-      pdfjsPromise = null; // allow retry on next call
-      reject(new Error("Failed to load pdf.js from CDN"));
-    };
-    document.head.appendChild(script);
+      const script = document.createElement("script");
+      script.src = PDFJS_URLS[idx];
+      script.onload = () => {
+        if (window.pdfjsLib) {
+          // Use matching worker source (proxy vs CDN)
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URLS[idx] || PDFJS_WORKER_URLS[0];
+          resolve(window.pdfjsLib);
+        } else {
+          idx++;
+          tryNext();
+        }
+      };
+      script.onerror = () => { idx++; tryNext(); };
+      document.head.appendChild(script);
+    }
+    tryNext();
   });
   return pdfjsPromise;
 }

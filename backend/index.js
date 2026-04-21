@@ -8682,12 +8682,14 @@ VOICE: Journal Response (reflective, teacher voice)
   - May be mentioned briefly ONLY if they genuinely affect clarity.
   - Do NOT treat grammar, spelling, or mechanics as deductions. This is a journal, not an essay.
   - If mechanics must be noted, do it as a parenthetical aside, not a main point.
-- Marking approach (JOURNAL-SPECIFIC SCORING — /10 default):
-  - When no rubric override is provided, grade journals out of 10 using these criteria:
-    Coherence & clarity (3): Does the writing make sense? Can you follow the student's thinking?
-    Processing & reflection (3): Does the student engage with the topic meaningfully — connecting ideas, asking questions, making inferences, or showing personal understanding?
-    Engagement & voice (2): Does the entry feel genuine and invested, not just going through the motions?
-    Length & completeness (2): ~150 words (roughly half a page) is the expected baseline. Meeting this with coherent content earns full marks here. Writing MORE should be rewarded IF the additional content is meaningful and coherent (not padding or repetition). Writing significantly less (e.g., 2-3 sentences) should lose marks here.
+- Marking approach (JOURNAL-SPECIFIC SCORING — /10 HARD CONSTRAINT):
+  - overall_out_of MUST always be exactly 10 for journals (never 10.75, 9, or any other number).
+  - When no rubric override is provided, grade journals out of 10 using EXACTLY these four sections (no others):
+    1. "Coherence & Clarity" (out_of: 3): Does the writing make sense? Can you follow the student's thinking?
+    2. "Processing & Reflection" (out_of: 3): Does the student engage with the topic meaningfully — connecting ideas, asking questions, making inferences, or showing personal understanding?
+    3. "Engagement & Voice" (out_of: 2): Does the entry feel genuine and invested, not just going through the motions?
+    4. "Length & Completeness" (out_of: 2): ~150 words (roughly half a page) is the expected baseline. Meeting this with coherent content earns full marks here. Writing MORE should be rewarded IF the additional content is meaningful and coherent (not padding or repetition). Writing significantly less (e.g., 2-3 sentences) should lose marks here.
+  - Section denominators MUST be 3 + 3 + 2 + 2 = 10. Do NOT invent different criteria or denominators. Do NOT use fractional denominators like 2.75 or 4.00.
   - LENIENCY CALIBRATION: Journals are low-stakes reflective writing. The bar is engagement, not perfection.
     A coherent entry with well-developed ideas and genuine reflection = 9-10/10. This is the EXPECTED score for good journal writing.
     A solid entry that meets expectations but is somewhat surface-level = 8/10.

@@ -2,29 +2,50 @@
  * pdfReports.js — Shared PDF report generation utilities
  *
  * Used by both BatchGrading (batch mode) and page.jsx (single-grade session).
- * Loads jsPDF and qrcode-generator from CDN at runtime (no npm install).
+ * Loads jsPDF and qrcode-generator at runtime.
+ *
+ * Loading strategy: tries our own /api/vendor proxy first (works through
+ * school/corporate firewalls that block CDN domains), falls back to
+ * cdnjs.cloudflare.com if the proxy is unavailable.
  */
 
-// ---------- QR code generator loader (CDN) ----------
-const QRCODE_CDN = "https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js";
+// ---------- Script loader with fallback ----------
+function loadScript(urls, globalKey) {
+  return new Promise((resolve, reject) => {
+    if (typeof window === "undefined") return reject(new Error("SSR"));
+    if (window[globalKey]) return resolve(window[globalKey]);
+
+    let idx = 0;
+    function tryNext() {
+      if (idx >= urls.length) {
+        reject(new Error(`Failed to load ${globalKey} from all sources`));
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = urls[idx];
+      script.onload = () => {
+        if (window[globalKey]) resolve(window[globalKey]);
+        else { idx++; tryNext(); }
+      };
+      script.onerror = () => { idx++; tryNext(); };
+      document.head.appendChild(script);
+    }
+    tryNext();
+  });
+}
+
+// ---------- QR code generator loader ----------
+const QRCODE_URLS = [
+  "/api/vendor?lib=qrcode",
+  "https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js",
+];
 let qrcodePromise = null;
 
 function loadQrCode() {
   if (qrcodePromise) return qrcodePromise;
-  qrcodePromise = new Promise((resolve, reject) => {
-    if (typeof window === "undefined") return reject(new Error("SSR"));
-    if (window.qrcode) return resolve(window.qrcode);
-    const script = document.createElement("script");
-    script.src = QRCODE_CDN;
-    script.onload = () => {
-      if (window.qrcode) resolve(window.qrcode);
-      else reject(new Error("qrcode not found after script load"));
-    };
-    script.onerror = () => {
-      qrcodePromise = null; // allow retry on next call
-      reject(new Error("Failed to load qrcode-generator from CDN"));
-    };
-    document.head.appendChild(script);
+  qrcodePromise = loadScript(QRCODE_URLS, "qrcode").catch((err) => {
+    qrcodePromise = null; // allow retry on next call
+    throw err;
   });
   return qrcodePromise;
 }
@@ -37,31 +58,23 @@ async function makeQrDataUrl(text) {
   return qr.createDataURL(4);
 }
 
-// ---------- jsPDF loader (CDN) ----------
-const JSPDF_CDN = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js";
+// ---------- jsPDF loader ----------
+const JSPDF_URLS = [
+  "/api/vendor?lib=jspdf",
+  "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js",
+];
 let jspdfPromise = null;
 
 function loadJsPdf() {
   if (jspdfPromise) return jspdfPromise;
-  jspdfPromise = new Promise((resolve, reject) => {
-    if (typeof window === "undefined") return reject(new Error("SSR"));
-    if (window.jspdf) return resolve(window.jspdf);
-    const script = document.createElement("script");
-    script.src = JSPDF_CDN;
-    script.onload = () => {
-      if (window.jspdf) resolve(window.jspdf);
-      else reject(new Error("jspdf not found after script load"));
-    };
-    script.onerror = () => {
-      jspdfPromise = null; // allow retry on next call
-      reject(new Error("Failed to load jsPDF from CDN"));
-    };
-    document.head.appendChild(script);
+  jspdfPromise = loadScript(JSPDF_URLS, "jspdf").catch((err) => {
+    jspdfPromise = null; // allow retry on next call
+    throw err;
   });
   return jspdfPromise;
 }
 
-// ---------- Preload CDN libs (call early so they're ready when needed) ----------
+// ---------- Preload libs (call early so they're ready when needed) ----------
 export function preloadPdfLibs() {
   if (typeof window === "undefined") return;
   loadJsPdf().catch(() => {});
