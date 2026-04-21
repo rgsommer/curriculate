@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import BatchGrading from "./BatchGrading";
 import VideoGrading from "./VideoGrading";
-import { buildResultsPdf, buildStripsPdf, sessionItemToResult } from "./pdfReports";
+import { buildResultsPdf, buildStripsPdf, sessionItemToResult, preloadPdfLibs } from "./pdfReports";
 
 /**
  * app/grading/page.jsx
@@ -2370,6 +2370,8 @@ export default function GradingPage() {
 
     async function emailReports() {
       if (!sessionItems.length) return;
+      // Start loading PDF libs in background while summary generates
+      preloadPdfLibs();
       // Step 1: generate session summary (AI or heuristic)
       setSessionSummaryError("");
       setSummarizingSession(true);
@@ -2443,7 +2445,14 @@ export default function GradingPage() {
             buildStripsPdf(results),
           ]);
         } catch (pdfErr) {
-          console.warn("[session] PDF generation failed, sending email without attachment:", pdfErr);
+          console.warn("[session] PDF generation failed:", pdfErr);
+          const sendAnyway = window.confirm(
+            "PDF report generation failed (internet may be slow). Send email without PDF attachments?"
+          );
+          if (!sendAnyway) {
+            setSessionEmailSending(false);
+            return;
+          }
         }
 
         const sendUrl = gradingUrl.replace(/\/grading$/, "/grading/send-email");

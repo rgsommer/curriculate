@@ -20,7 +20,10 @@ function loadQrCode() {
       if (window.qrcode) resolve(window.qrcode);
       else reject(new Error("qrcode not found after script load"));
     };
-    script.onerror = () => reject(new Error("Failed to load qrcode-generator from CDN"));
+    script.onerror = () => {
+      qrcodePromise = null; // allow retry on next call
+      reject(new Error("Failed to load qrcode-generator from CDN"));
+    };
     document.head.appendChild(script);
   });
   return qrcodePromise;
@@ -49,10 +52,20 @@ function loadJsPdf() {
       if (window.jspdf) resolve(window.jspdf);
       else reject(new Error("jspdf not found after script load"));
     };
-    script.onerror = () => reject(new Error("Failed to load jsPDF from CDN"));
+    script.onerror = () => {
+      jspdfPromise = null; // allow retry on next call
+      reject(new Error("Failed to load jsPDF from CDN"));
+    };
     document.head.appendChild(script);
   });
   return jspdfPromise;
+}
+
+// ---------- Preload CDN libs (call early so they're ready when needed) ----------
+export function preloadPdfLibs() {
+  if (typeof window === "undefined") return;
+  loadJsPdf().catch(() => {});
+  loadQrCode().catch(() => {});
 }
 
 // ---------- Helpers ----------

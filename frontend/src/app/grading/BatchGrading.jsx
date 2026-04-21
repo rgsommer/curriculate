@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { buildResultsPdf, buildStripsPdf } from "./pdfReports";
+import { buildResultsPdf, buildStripsPdf, preloadPdfLibs } from "./pdfReports";
 
 /**
  * BatchGrading — Teacher uploads a multi-page PDF (from scanner/copier),
@@ -45,7 +45,10 @@ function loadPdfJs() {
         reject(new Error("pdfjsLib not found after script load"));
       }
     };
-    script.onerror = () => reject(new Error("Failed to load pdf.js from CDN"));
+    script.onerror = () => {
+      pdfjsPromise = null; // allow retry on next call
+      reject(new Error("Failed to load pdf.js from CDN"));
+    };
     document.head.appendChild(script);
   });
   return pdfjsPromise;
@@ -65,6 +68,21 @@ async function renderPageToDataUrl(pdfDoc, pageNum, scale = 1.5) {
 
   // Compress to JPEG
   return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+// Retry wrapper for network-flaky environments (classrooms, tablets on wifi)
+async function fetchWithRetry(url, options, { retries = 2, baseDelay = 2000 } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      return res;
+    } catch (err) {
+      if (attempt >= retries) throw err;
+      const delay = baseDelay * Math.pow(2, attempt); // 2s, 4s
+      console.warn(`[batch] fetch attempt ${attempt + 1} failed, retrying in ${delay}ms:`, err.message);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
 }
 
 // Letter grade from percentage
@@ -260,6 +278,9 @@ export default function BatchGrading({
   answerKeyOverride,
   onClose,
 }) {
+  // Preload jsPDF + qrcode CDN scripts as soon as batch mode opens
+  useEffect(() => { preloadPdfLibs(); }, []);
+
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfName, setPdfName] = useState("");
   const [pageCount, setPageCount] = useState(0);
@@ -347,7 +368,7 @@ export default function BatchGrading({
       }
 
       const classifyUrl = gradingUrl.replace(/\/grading$/, "/grading/classify-pages");
-      const res = await fetch(classifyUrl, {
+      const res = await fetchWithRetry(classifyUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pageImages: thumbs, answerKeyPages }),
@@ -391,7 +412,7 @@ export default function BatchGrading({
           thumbs.push(await renderPageToDataUrl(doc, p, 0.6));
         }
         const classifyUrl = gradingUrl.replace(/\/grading$/, "/grading/classify-pages");
-        const classifyRes = await fetch(classifyUrl, {
+        const classifyRes = await fetchWithRetry(classifyUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ pageImages: thumbs, answerKeyPages }),
@@ -521,7 +542,7 @@ export default function BatchGrading({
           },
         };
 
-        const res = await fetch(gradingUrl, {
+        const res = await fetchWithRetry(gradingUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -1018,11 +1039,18 @@ export default function BatchGrading({
       let stripsBase64 = null;
       try {
         [pdfBase64, stripsBase64] = await Promise.all([
-          buildResultsPdf(results, pdfName, emailSubject),
+          buildResultsPdf(results),
           buildStripsPdf(results),
         ]);
       } catch (pdfErr) {
-        console.warn("[batch] PDF generation failed, sending email without attachment:", pdfErr);
+        console.warn("[batch] PDF generation failed:", pdfErr);
+        const sendAnyway = window.confirm(
+          "PDF report generation failed (internet may be slow). Send email without PDF attachments?"
+        );
+        if (!sendAnyway) {
+          setEmailSending(false);
+          return;
+        }
       }
 
       const sendUrl = gradingUrl.replace(/\/grading$/, "/grading/send-email");
@@ -1364,11 +1392,20 @@ export default function BatchGrading({
               </button>
               <button
                 onClick={async () => {
+                  const good = results.filter((r) => !r.error);
+                  if (!good.length) {
+                    alert("No successful results to print. All students have errors.");
+                    return;
+                  }
                   try {
                     const [b64Full, b64Strips] = await Promise.all([
-                      buildResultsPdf(results, pdfName, emailSubject),
+                      buildResultsPdf(results),
                       buildStripsPdf(results),
                     ]);
+                    if (!b64Full && !b64Strips) {
+                      alert("No results available to generate PDFs.");
+                      return;
+                    }
                     const openPdf = (b64) => {
                       if (!b64) return;
                       const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
@@ -1378,7 +1415,7 @@ export default function BatchGrading({
                     openPdf(b64Strips);
                   } catch (e) {
                     console.warn("[batch] PDF preview failed:", e);
-                    alert("Failed to generate PDF. Please try again.");
+                    alert("Failed to generate PDF — check your internet connection and try again.");
                   }
                 }}
                 style={batchStyles.smallBtn}
