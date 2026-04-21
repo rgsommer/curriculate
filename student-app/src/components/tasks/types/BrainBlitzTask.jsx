@@ -47,10 +47,9 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
   // Manual type-in fallback (when mic fails due to network etc.)
   const [manualInput, setManualInput] = useState("");
 
-  // Per-clue attempt tracking: max 3 guesses, hint after 2 wrong
-  const MAX_GUESSES_PER_CLUE = 3;
+  // Per-clue attempt tracking: max guesses = number of words in the answer
+  // After each wrong guess, reveal one more word from the answer as a hint.
   const [clueAttempts, setClueAttempts] = useState(0); // wrong guesses for current clue
-  const [showHint, setShowHint] = useState(false);
 
   const recognitionRef = useRef(null);
   const listeningTimeoutRef = useRef(null);
@@ -81,21 +80,34 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
   const currentClue =
     currentClueIndex >= 0 && currentClueIndex < clues.length ? clues[currentClueIndex] : null;
 
-  // Build a progressive hint: "_ _ _ _ _ (5 letters)" → "R _ _ _ _ (5 letters)"
-  const buildHint = (answer) => {
-    if (!answer) return "";
-    const words = answer.split(/\s+/);
-    return words.map((w) => {
+  // Max guesses per clue = number of words in the answer (min 2).
+  // After each wrong guess, reveal one more word.
+  const getMaxGuesses = (answer) => {
+    if (!answer) return 3;
+    return Math.max(2, answer.trim().split(/\s+/).length);
+  };
+
+  // Build progressive word hint: after N wrong guesses, show the first N words.
+  // For single-word answers, show first letter + blanks instead.
+  const buildWordHint = (answer, attempts) => {
+    if (!answer || attempts <= 0) return "";
+    const words = answer.trim().split(/\s+/);
+    if (words.length <= 1) {
+      // Single word: show first letter + blanks + letter count
+      const w = words[0] || "";
       const first = w.charAt(0).toUpperCase();
       const blanks = Array(Math.max(w.length - 1, 0)).fill("_").join(" ");
-      return blanks ? `${first} ${blanks}` : first;
-    }).join("   ") + `  (${answer.length} letters)`;
+      return blanks ? `${first} ${blanks}  (${w.length} letters)` : first;
+    }
+    const revealed = words.slice(0, attempts).join(" ");
+    const remaining = words.length - attempts;
+    if (remaining <= 0) return revealed; // all words shown
+    return revealed + " …";
   };
 
   // Advance to next clue, resetting per-clue state
   const advanceClue = () => {
     setClueAttempts(0);
-    setShowHint(false);
     setCurrentClueIndex((prev) => prev + 1);
   };
 
@@ -105,7 +117,6 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
     setOverlayRange({ start: 0, end: -1 });
     setMicError(null);
     setClueAttempts(0);
-    setShowHint(false);
   }, [task?._id, task?.id, task?.taskId]);
 
   function playSound(src) {
@@ -235,11 +246,11 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
         setIsListening(false);
         advanceClue();
       } else {
-        // Wrong answer — track attempts, show hint or auto-advance
+        // Wrong answer — track attempts, progressive word hints, auto-advance when exhausted
+        const maxGuesses = getMaxGuesses(clueObj?.answer);
         setClueAttempts((prev) => {
           const next = prev + 1;
-          if (next >= 2) setShowHint(true); // hint after 2 wrong
-          if (next >= MAX_GUESSES_PER_CLUE) {
+          if (next >= maxGuesses) {
             // Out of guesses — stop mic, reveal answer briefly, then advance
             wantListeningRef.current = false;
             try { recognition.stop(); } catch {}
@@ -394,7 +405,8 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
 
   const handleManualSubmit = () => {
     const spoken = manualInput.trim();
-    if (!spoken || clueAttempts >= MAX_GUESSES_PER_CLUE) return;
+    const maxGuesses = getMaxGuesses(currentClue?.answer);
+    if (!spoken || clueAttempts >= maxGuesses) return;
     setManualInput("");
 
     const ci = clueIndexRef.current;
@@ -432,8 +444,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
     } else {
       setClueAttempts((prev) => {
         const next = prev + 1;
-        if (next >= 2) setShowHint(true);
-        if (next >= MAX_GUESSES_PER_CLUE) {
+        if (next >= maxGuesses) {
           setTimeout(() => advanceClue(), 1800);
         }
         return next;
@@ -851,35 +862,38 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
         >
           <div style={{ fontSize: 14, fontWeight: 900, opacity: 0.7, marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span>Clue {currentClueIndex + 1} / {clues.length}</span>
-            {clueAttempts > 0 && clueAttempts < MAX_GUESSES_PER_CLUE && (
-              <span style={{ fontSize: 12, opacity: 0.8 }}>
-                {MAX_GUESSES_PER_CLUE - clueAttempts} {MAX_GUESSES_PER_CLUE - clueAttempts === 1 ? "guess" : "guesses"} left
-              </span>
-            )}
+            {(() => {
+              const max = getMaxGuesses(currentClue?.answer);
+              const left = max - clueAttempts;
+              return clueAttempts > 0 && left > 0 ? (
+                <span style={{ fontSize: 12, opacity: 0.8 }}>
+                  {left} {left === 1 ? "guess" : "guesses"} left
+                </span>
+              ) : null;
+            })()}
           </div>
           <div style={{ fontSize: 22, fontWeight: 950, lineHeight: 1.2 }}>
             {currentClue?.clue}
           </div>
 
-          {/* Hint (after 2 wrong guesses): first letter + word length */}
-          {showHint && currentClue?.answer && clueAttempts < MAX_GUESSES_PER_CLUE && (
+          {/* Progressive word hint: after each wrong guess, reveal one more word */}
+          {clueAttempts > 0 && currentClue?.answer && clueAttempts < getMaxGuesses(currentClue.answer) && (
             <div style={{
               marginTop: 10,
               padding: "8px 12px",
               borderRadius: 12,
               background: "rgba(234,179,8,0.12)",
               border: "1px solid rgba(234,179,8,0.3)",
-              fontSize: 15,
+              fontSize: 16,
               fontWeight: 800,
-              letterSpacing: 1.5,
               color: "#92400e",
             }}>
-              💡 {buildHint(currentClue.answer)}
+              💡 {buildWordHint(currentClue.answer, clueAttempts)}
             </div>
           )}
 
           {/* Answer reveal (after max guesses exhausted) */}
-          {clueAttempts >= MAX_GUESSES_PER_CLUE && currentClue?.answer && (
+          {currentClue?.answer && clueAttempts >= getMaxGuesses(currentClue.answer) && (
             <div style={{
               marginTop: 10,
               padding: "8px 12px",
@@ -894,8 +908,8 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
             </div>
           )}
 
-          {/* Skip clue button — always available */}
-          {clueAttempts < MAX_GUESSES_PER_CLUE && (
+          {/* Skip clue button — available until max guesses exhausted */}
+          {clueAttempts < getMaxGuesses(currentClue?.answer) && (
             <button
               type="button"
               onClick={() => {
