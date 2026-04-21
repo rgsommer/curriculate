@@ -1554,9 +1554,13 @@ function StudentApp() {
     // Compute desired scanner state directly — no reading scannerActive here.
     const shouldBeActive = (() => {
       if (taskLocked && !taskWantsScan) return false;
-      // In mystery mode, don't show the scanner when there's no active task —
-      // the student must pick a mystery box first, THEN scan.
-      if (isMysteryMode && !currentTask) return false;
+      // In mystery mode, suppress the scanner when there's no active task
+      // AND the student has already scanned their station (they're at the grid
+      // and should pick a mystery box first, THEN scan for the next task).
+      // But during warmup (initial scan), the scanner MUST be allowed.
+      const phase = postPhaseRef.current;
+      const inWarmup = phase === "scan" || phase === "mood" || phase === "selfie" || phase === "treasure";
+      if (isMysteryMode && !currentTask && !inWarmup) return false;
       if (mustScan) return true;
       if (needsGlobalScanner) return true;
       if (taskWantsScan) return true;
