@@ -172,6 +172,83 @@ export async function buildResultsPdf(results) {
     doc.text(scoreStr, PAGE_W - MARGIN, y, { align: "right" });
     y += HEADER_H + 2;
 
+    // Quality index bar
+    if (r.pct != null) {
+      const barX = MARGIN;
+      const barW = COL_W;
+      const barH = 10;
+      const pctClamped = Math.min(100, Math.max(0, r.pct));
+
+      // Gradient background: red → yellow → green (5 stops)
+      const gradStops = [
+        { pos: 0,    r: 254, g: 202, b: 202 }, // #fecaca
+        { pos: 0.3,  r: 253, g: 230, b: 138 }, // #fde68a
+        { pos: 0.55, r: 217, g: 249, b: 157 }, // #d9f99d
+        { pos: 0.75, r: 187, g: 247, b: 208 }, // #bbf7d0
+        { pos: 1,    r: 110, g: 231, b: 183 }, // #6ee7b7
+      ];
+      const slices = 60;
+      const sliceW = barW / slices;
+      for (let si = 0; si < slices; si++) {
+        const t = si / slices;
+        // Find which gradient segment we're in
+        let lo = gradStops[0], hi = gradStops[1];
+        for (let gi = 1; gi < gradStops.length; gi++) {
+          if (t >= gradStops[gi - 1].pos && t <= gradStops[gi].pos) {
+            lo = gradStops[gi - 1]; hi = gradStops[gi]; break;
+          }
+        }
+        const segT = hi.pos > lo.pos ? (t - lo.pos) / (hi.pos - lo.pos) : 0;
+        const cr = Math.round(lo.r + (hi.r - lo.r) * segT);
+        const cg = Math.round(lo.g + (hi.g - lo.g) * segT);
+        const cb = Math.round(lo.b + (hi.b - lo.b) * segT);
+        doc.setFillColor(cr, cg, cb);
+        if (si === 0) {
+          doc.roundedRect(barX + si * sliceW, y, sliceW + 0.5, barH, 3, 3, "F");
+        } else if (si === slices - 1) {
+          doc.roundedRect(barX + si * sliceW - 0.5, y, sliceW + 0.5, barH, 3, 3, "F");
+        } else {
+          doc.rect(barX + si * sliceW, y, sliceW + 0.5, barH, "F");
+        }
+      }
+      // Border
+      doc.setDrawColor(200, 210, 220);
+      doc.setLineWidth(0.5);
+      doc.roundedRect(barX, y, barW, barH, 3, 3, "S");
+
+      // Average marker (70%)
+      const avgX = barX + barW * 0.7;
+      doc.setDrawColor(148, 163, 184);
+      doc.setLineWidth(1);
+      doc.line(avgX, y - 2, avgX, y + barH + 2);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(6);
+      doc.setTextColor(100, 116, 139);
+      doc.text("Avg", avgX, y - 3, { align: "center" });
+
+      // Student score needle (red)
+      const needleX = barX + barW * (pctClamped / 100);
+      doc.setDrawColor(220, 38, 38);
+      doc.setLineWidth(2.5);
+      doc.line(needleX, y - 3, needleX, y + barH + 3);
+
+      // Zone labels
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(6);
+      doc.setTextColor(148, 163, 184);
+      const zones = ["Needs Support", "Developing", "Proficient", "Excellent"];
+      const zoneX = [barX + 2, barX + barW * 0.3, barX + barW * 0.6, barX + barW - 2];
+      const zoneAlign = ["left", "left", "left", "right"];
+      zones.forEach((z, zi) => {
+        doc.text(z, zoneX[zi], y + barH + 10, { align: zoneAlign[zi] });
+      });
+
+      doc.setTextColor(0, 0, 0);
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.5);
+      y += barH + 14;
+    }
+
     const hasFooter = !!r.refCode;
     const maxY = yBase + HALF_H - MARGIN - (hasFooter ? FOOTER_H : 4);
 
