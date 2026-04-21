@@ -1181,6 +1181,7 @@ export default function GradingPage() {
     const [sessionEmailTo, setSessionEmailTo] = useState(() => loadLS("curriculate_report_email", ""));
     const [sessionEmailSending, setSessionEmailSending] = useState(false);
     const [sessionEmailSent, setSessionEmailSent] = useState(false);
+    const [showSessionClearPrompt, setShowSessionClearPrompt] = useState(false);
     useEffect(() => { if (sessionEmailTo) saveLS("curriculate_report_email", sessionEmailTo); }, [sessionEmailTo]);
 
     const backendBase = useMemo(
@@ -2462,6 +2463,7 @@ export default function GradingPage() {
         if (res.ok) {
           setSessionEmailSent(true);
           setShowSessionEmailPrompt(false);
+          setShowSessionClearPrompt(true);
           setTimeout(() => setSessionEmailSent(false), 4000);
         } else {
           const err = await res.json().catch(() => ({}));
@@ -3497,6 +3499,40 @@ export default function GradingPage() {
                     <strong>Summary preview:</strong> {sessionSummary.slice(0, 200)}{sessionSummary.length > 200 ? "…" : ""}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Post-send clear prompt */}
+            {showSessionClearPrompt && !showSessionEmailPrompt && (
+              <div style={{
+                marginTop: 10, padding: "10px 14px", borderRadius: 12,
+                background: "rgba(22,163,74,0.07)", border: "1px solid rgba(22,163,74,0.2)",
+                display: "flex", alignItems: "center", gap: 10,
+              }}>
+                <span style={{ fontSize: 13, color: "#15803d", flex: 1 }}>
+                  Session emailed. Clear session?
+                </span>
+                <button
+                  onClick={() => {
+                    setSessionItems([]);
+                    setStickyRubricText("");
+                    setStickyRubricSource("");
+                    setStickyRubricCapturedAt("");
+                    setStickyAnswerKeyText("");
+                    setStickyAnswerKeyCapturedAt("");
+                    setRubricOverride("");
+                    setShowSessionClearPrompt(false);
+                  }}
+                  style={{ ...styles.primaryBtn, padding: "5px 14px", fontSize: 12, background: "#16a34a" }}
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={() => setShowSessionClearPrompt(false)}
+                  style={{ ...styles.ghostBtn, padding: "5px 10px", fontSize: 12 }}
+                >
+                  Keep
+                </button>
               </div>
             )}
 

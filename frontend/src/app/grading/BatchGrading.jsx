@@ -1295,7 +1295,9 @@ export default function BatchGrading({
               style={batchStyles.runBtn}
               type="button"
             >
-              Grade {studentCount} Student{studentCount !== 1 ? "s" : ""}
+              {isAuto && !detectedGroups
+                ? `Grade ${studentPages} Page${studentPages !== 1 ? "s" : ""}`
+                : `Grade ${studentCount} Student${studentCount !== 1 ? "s" : ""}`}
             </button>
 
             <button
