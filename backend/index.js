@@ -39,6 +39,7 @@ import SystemEmailTemplate from "./models/SystemEmailTemplate.js";
 import ReferralProgramSettings from "./models/ReferralProgramSettings.js";
 import StudentProfile from "./models/StudentProfile.js";
 import FeedbackMessage from "./models/FeedbackMessage.js";
+import TeacherOutreach from "./models/TeacherOutreach.js";
 import Submission from "./models/Submission.js";
 
 // 7) AI / email services
@@ -11215,11 +11216,11 @@ function buildRubricInstructions({
   // ====================================================================
   //  Send Batch Grading Summary Email (rich HTML)
   //  POST /grading/send-email
-  //  Body: { to, subject, html }
+  //  Body: { to, subject, html, pdfAttachment?, pdfFilename? }
   // ====================================================================
   app.post("/grading/send-email", async (req, res) => {
     try {
-      const { to, subject, html } = req.body || {};
+      const { to, subject, html, pdfAttachment, pdfFilename, pdfAttachments } = req.body || {};
       const email = String(to || "").trim().toLowerCase();
       const subj = String(subject || "").trim();
       const body = String(html || "").trim();
@@ -11231,18 +11232,42 @@ function buildRubricInstructions({
         return res.status(400).json({ error: "Missing email body." });
       }
 
+      // Build attachments array for nodemailer
+      const attachments = [];
+      // New: array of { data, filename } objects
+      if (Array.isArray(pdfAttachments)) {
+        for (const att of pdfAttachments) {
+          if (att?.data) {
+            attachments.push({
+              filename: att.filename || "report.pdf",
+              content: Buffer.from(att.data, "base64"),
+              contentType: "application/pdf",
+            });
+          }
+        }
+      }
+      // Legacy: single attachment fallback
+      if (!attachments.length && pdfAttachment) {
+        attachments.push({
+          filename: pdfFilename || "batch-results.pdf",
+          content: Buffer.from(pdfAttachment, "base64"),
+          contentType: "application/pdf",
+        });
+      }
+
       await sendSystemEmail({
         to: email,
         subject: subj || "Batch Grading Results — Curriculate",
         html: body,
+        attachments,
       });
 
       // Log teacher email for lead tracking
       try {
         await FeedbackMessage.create({
-          message: `[BATCH-EMAIL] Teacher sent batch grading summary to ${email}`,
+          message: `[GRADING-EMAIL] Teacher sent grading report to ${email}`,
           meta: {
-            source: "batch-grading-email",
+            source: "grading-email",
             teacherEmail: email,
             subject: subj,
             sentAt: new Date().toISOString(),
@@ -11250,6 +11275,20 @@ function buildRubricInstructions({
         });
       } catch (logErr) {
         console.warn("[grading] email log save failed:", logErr.message);
+      }
+
+      // Collect teacher email for future communication
+      try {
+        await TeacherOutreach.findOneAndUpdate(
+          { email },
+          {
+            $setOnInsert: { source: "grading-email" },
+            $set: { lastContactedAt: new Date() },
+          },
+          { upsert: true }
+        );
+      } catch (outreachErr) {
+        console.warn("[grading] teacher outreach upsert failed:", outreachErr.message);
       }
 
       console.log(`[grading] Batch summary email sent to ${email}`);

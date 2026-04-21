@@ -303,6 +303,11 @@ export default function AdminUsageDashboard() {
     return arr.map((x) => ({ name: labels[x.mode] || x.mode || "Unknown", count: x.count || 0 }));
   }, [data]);
 
+  const topCountries = useMemo(() => {
+    const arr = data?.breakdowns30d?.topCountries || [];
+    return arr.slice(0, 10).map((x) => ({ name: x.country || "Unknown", count: x.count || 0 }));
+  }, [data]);
+
   const momGrowth = data?.derived?.monthOverMonth?.growthPercent;
   const momMethod = data?.derived?.monthOverMonth?.method;
 
@@ -525,7 +530,7 @@ export default function AdminUsageDashboard() {
           </Card>
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card title="Input mode (30d)">
             <div className="h-48">
               <ResponsiveContainer width="100%" height="100%">
@@ -535,6 +540,20 @@ export default function AdminUsageDashboard() {
                   <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
                   <Tooltip />
                   <Bar dataKey="count" fill="#a78bfa" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+
+          <Card title="Countries (30d)">
+            <div className="h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topCountries} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#34d399" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

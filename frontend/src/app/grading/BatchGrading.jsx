@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { buildResultsPdf, buildStripsPdf } from "./pdfReports";
 
 /**
  * BatchGrading — Teacher uploads a multi-page PDF (from scanner/copier),
@@ -17,6 +18,9 @@ import React, { useCallback, useRef, useState } from "react";
  *   answerKeyOverride — string (answer key text)
  *   onClose         — callback to exit batch mode
  */
+
+// NOTE: QR code loader, jsPDF loader, buildResultsPdf, and buildStripsPdf
+// have been moved to ./pdfReports.js (shared with page.jsx session reports).
 
 // ---------- PDF.js loader (CDN, no npm install) ----------
 // Uses the legacy UMD build (3.x) which sets window.pdfjsLib via <script>
@@ -489,6 +493,7 @@ export default function BatchGrading({
           return {
             index: i + 1, pages: `${startPage}–${endPage}`,
             studentName: group.name || `Student ${i + 1}`,
+            nameConfirmed: false,
             score: "?", outOf: "?", pct: null, letter: "?",
             strengths: [], improvements: [], comment: "",
             sections: null, subject: "", assessmentType: "",
@@ -530,10 +535,21 @@ export default function BatchGrading({
           Number.isFinite(score) && Number.isFinite(outOf) && outOf > 0
             ? Math.round((score / outOf) * 100) : null;
 
+        // Determine if the student name is confidently known:
+        // Confirmed when both the page classifier (group.name) and the grading AI
+        // (data.student_name) independently returned the same name.
+        const aiName = (data.student_name || "").trim();
+        const classifierName = (group.name || "").trim();
+        const nameConfirmed = !!(
+          aiName && classifierName &&
+          aiName.toLowerCase() === classifierName.toLowerCase()
+        );
+
         const resultEntry = {
           index: i + 1,
           pages: `${startPage}–${endPage}`,
           studentName: data.student_name || group.name || `Student ${i + 1}`,
+          nameConfirmed,
           score: Number.isFinite(score) ? score : "?",
           outOf: Number.isFinite(outOf) ? outOf : "?",
           pct,
@@ -587,6 +603,7 @@ export default function BatchGrading({
         return {
           index: i + 1, pages: `${startPage}–${endPage}`,
           studentName: group.name || `Student ${i + 1}`,
+          nameConfirmed: false,
           score: "?", outOf: "?", pct: null, letter: "?",
           strengths: [], improvements: [], comment: "",
           sections: null, subject: "", assessmentType: "",
@@ -976,7 +993,10 @@ export default function BatchGrading({
   }, [results, classSummary, teacherAnalysis, pdfName, rubricOverride]);
 
   // ---------- Email summary (rich HTML) ----------
-  const [emailTo, setEmailTo] = useState("");
+  const [emailTo, setEmailTo] = useState(() => {
+    try { return localStorage.getItem("curriculate_report_email") || ""; } catch { return ""; }
+  });
+  useEffect(() => { if (emailTo) try { localStorage.setItem("curriculate_report_email", emailTo); } catch {} }, [emailTo]);
   const [showEmailPrompt, setShowEmailPrompt] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
 
@@ -992,11 +1012,38 @@ export default function BatchGrading({
     setEmailSending(true);
     try {
       const html = buildEmailHtml();
+
+      // Generate both PDFs in parallel: full reports + cut strips
+      let pdfBase64 = null;
+      let stripsBase64 = null;
+      try {
+        [pdfBase64, stripsBase64] = await Promise.all([
+          buildResultsPdf(results, pdfName, emailSubject),
+          buildStripsPdf(results),
+        ]);
+      } catch (pdfErr) {
+        console.warn("[batch] PDF generation failed, sending email without attachment:", pdfErr);
+      }
+
       const sendUrl = gradingUrl.replace(/\/grading$/, "/grading/send-email");
+      const baseName = (pdfName || "batch-results").replace(/\.pdf$/i, "");
+      const payload = { to, subject: emailSubject, html, pdfAttachments: [] };
+      if (pdfBase64) {
+        payload.pdfAttachments.push({ data: pdfBase64, filename: `${baseName}-reports.pdf` });
+      }
+      if (stripsBase64) {
+        payload.pdfAttachments.push({ data: stripsBase64, filename: `${baseName}-strips.pdf` });
+      }
+      // Legacy single-attachment fields for backward compat
+      if (pdfBase64) {
+        payload.pdfAttachment = pdfBase64;
+        payload.pdfFilename = `${baseName}-reports.pdf`;
+      }
+
       const res = await fetch(sendUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, subject: emailSubject, html }),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         setEmailCopied(true);
@@ -1012,7 +1059,7 @@ export default function BatchGrading({
       alert("Failed to send email. Please try again.");
     }
     setEmailSending(false);
-  }, [emailTo, buildEmailHtml, emailSubject, gradingUrl]);
+  }, [emailTo, buildEmailHtml, emailSubject, gradingUrl, results, pdfName]);
 
   // ---------- Copy / email ack ----------
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -1312,6 +1359,30 @@ export default function BatchGrading({
               </button>
               <button onClick={exportCsv} style={batchStyles.smallBtn} type="button">
                 Export CSV
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const [b64Full, b64Strips] = await Promise.all([
+                      buildResultsPdf(results, pdfName, emailSubject),
+                      buildStripsPdf(results),
+                    ]);
+                    const openPdf = (b64) => {
+                      if (!b64) return;
+                      const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
+                      window.open(URL.createObjectURL(blob), "_blank");
+                    };
+                    openPdf(b64Full);
+                    openPdf(b64Strips);
+                  } catch (e) {
+                    console.warn("[batch] PDF preview failed:", e);
+                    alert("Failed to generate PDF. Please try again.");
+                  }
+                }}
+                style={batchStyles.smallBtn}
+                type="button"
+              >
+                Print Reports
               </button>
               {!grading && (
                 <button

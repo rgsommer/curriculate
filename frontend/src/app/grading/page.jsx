@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import BatchGrading from "./BatchGrading";
 import VideoGrading from "./VideoGrading";
+import { buildResultsPdf, buildStripsPdf, sessionItemToResult } from "./pdfReports";
 
 /**
  * app/grading/page.jsx
@@ -180,8 +181,8 @@ const TOUR_STEPS = [
   },
   {
     id: "copy-session",
-    title: "Copy Session — Class Analysis",
-    body: "The number in brackets shows how many papers you've graded this session. Tap 'Copy Session' to get an AI-generated analysis of patterns across all papers — what the class understood well and where they struggled.",
+    title: "Email Reports — Class Analysis",
+    body: "The number in brackets shows how many papers you've graded this session. Tap 'Email Reports' to get an AI-generated analysis of patterns across all papers plus half-page and cut-strip PDF reports emailed to you.",
     target: "tourTargetCopySession",
     phase: 2,
   },
@@ -1171,9 +1172,16 @@ export default function GradingPage() {
     
     // Copy UX
     const [copied, setCopied] = useState(false);
-    const [copiedFlash, setCopiedFlash] = useState(false); 
+    const [copiedFlash, setCopiedFlash] = useState(false);
     // AA123 reference code per result (shown + copied)
     const [refCode, setRefCode] = useState("");
+
+    // Email Reports (session)
+    const [showSessionEmailPrompt, setShowSessionEmailPrompt] = useState(false);
+    const [sessionEmailTo, setSessionEmailTo] = useState(() => loadLS("curriculate_report_email", ""));
+    const [sessionEmailSending, setSessionEmailSending] = useState(false);
+    const [sessionEmailSent, setSessionEmailSent] = useState(false);
+    useEffect(() => { if (sessionEmailTo) saveLS("curriculate_report_email", sessionEmailTo); }, [sessionEmailTo]);
 
     const backendBase = useMemo(
       () => stripTrailingSlash(process.env.NEXT_PUBLIC_BACKEND_URL),
@@ -2359,9 +2367,9 @@ export default function GradingPage() {
       return paragraph;
     }
 
-    async function copySession() {
+    async function emailReports() {
       if (!sessionItems.length) return;
-
+      // Step 1: generate session summary (AI or heuristic)
       setSessionSummaryError("");
       setSummarizingSession(true);
 
@@ -2377,7 +2385,6 @@ export default function GradingPage() {
         }
 
         if (!paragraph) {
-          // fallback: turn your heuristic object into a short paragraph
           const fb = localHeuristicSessionSummary(sessionItems);
           const weak = (fb.concepts_not_understood || []).slice(0, 2).map(x => x.replace(/\s*\(\d+\)\s*$/, ""));
           const strong = (fb.concepts_understood_well || []).slice(0, 2).map(x => x.replace(/\s*\(\d+\)\s*$/, ""));
@@ -2387,27 +2394,85 @@ export default function GradingPage() {
         }
 
         setSessionSummary(paragraph);
-
-        const plain = [
-          `Session Summary: ${paragraph}`,
-          "",
-          ...sessionItems.map((it, idx) => {
-            const label = getSessionLabelLocal(it.assessment, idx + 1);
-            const body = String(it.formattedText || "").trim();
-            return `=== ${label} ===\n${body}\n`;
-          }),
-        ].join("\n").trim();
-
-        await navigator.clipboard?.writeText(plain);
-        setCopied(true);
-        setCopiedFlash(true);
-        window.setTimeout(() => setCopiedFlash(false), 1200);
+        // Show email prompt after summary is ready
+        setShowSessionEmailPrompt(true);
       } catch (e) {
-        console.error("copy session failed", e);
-        setSessionSummaryError("Copy session failed—your browser may block clipboard access.");
+        console.error("email reports failed", e);
+        setSessionSummaryError("Failed to generate session summary.");
       } finally {
         setSummarizingSession(false);
       }
+    }
+
+    async function sendSessionEmail() {
+      const to = sessionEmailTo.trim();
+      if (!to || !to.includes("@")) return;
+
+      setSessionEmailSending(true);
+      try {
+        // Build results array for PDF generation
+        const results = sessionItems.map((it, idx) => sessionItemToResult(it, idx + 1));
+
+        // Build email subject
+        const voiceEffective = voiceOverrideOn ? voiceOverride : voice;
+        const first = sessionItems[0]?.assessment || {};
+        const subjectParts = ["Grading:"];
+        if (first.subject) subjectParts.push(first.subject);
+        const aType = voiceEffective === "journal_response" ? "Journal" : (first.inferred_assessment_type || "");
+        if (aType) subjectParts.push(aType);
+        if (subjectParts.length === 1) subjectParts.push("Session Results");
+        const emailSubject = subjectParts.join(" ");
+
+        // Build HTML body from session summary
+        const summaryHtml = `
+          <div style="font-family:sans-serif;max-width:640px;margin:0 auto;">
+            <h2 style="color:#1e293b;margin-bottom:8px;">Session Summary</h2>
+            <p style="color:#334155;line-height:1.6;">${(sessionSummary || "").replace(/\n/g, "<br>")}</p>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0;">
+            <p style="color:#64748b;font-size:13px;">${sessionItems.length} submission${sessionItems.length === 1 ? "" : "s"} graded this session. Full reports and cut strips are attached as PDFs.</p>
+          </div>
+        `;
+
+        // Generate both PDFs in parallel
+        let pdfBase64 = null;
+        let stripsBase64 = null;
+        try {
+          [pdfBase64, stripsBase64] = await Promise.all([
+            buildResultsPdf(results),
+            buildStripsPdf(results),
+          ]);
+        } catch (pdfErr) {
+          console.warn("[session] PDF generation failed, sending email without attachment:", pdfErr);
+        }
+
+        const sendUrl = gradingUrl.replace(/\/grading$/, "/grading/send-email");
+        const payload = { to, subject: emailSubject, html: summaryHtml, pdfAttachments: [] };
+        if (pdfBase64) {
+          payload.pdfAttachments.push({ data: pdfBase64, filename: "session-reports.pdf" });
+        }
+        if (stripsBase64) {
+          payload.pdfAttachments.push({ data: stripsBase64, filename: "session-strips.pdf" });
+        }
+
+        const res = await fetch(sendUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          setSessionEmailSent(true);
+          setShowSessionEmailPrompt(false);
+          setTimeout(() => setSessionEmailSent(false), 4000);
+        } else {
+          const err = await res.json().catch(() => ({}));
+          console.warn("[session] send email failed:", err);
+          alert(err.error || "Failed to send email. Please try again.");
+        }
+      } catch (e) {
+        console.warn("[session] send email error:", e);
+        alert("Failed to send email. Please try again.");
+      }
+      setSessionEmailSending(false);
     }
 
     async function copyFormatted() {
@@ -3366,8 +3431,8 @@ export default function GradingPage() {
               >
                 {submitting ? "Submitting…" : "Submit"}
               </button>
-              <button ref={tourTargetCopySessionRef} onClick={copySession} disabled={!sessionItems.length || summarizingSession} style={styles.secondaryBtn}>
-                {summarizingSession ? `Analyzing… (${sessionItems.length})` : `Copy Session (${sessionItems.length})`}
+              <button ref={tourTargetCopySessionRef} onClick={emailReports} disabled={!sessionItems.length || summarizingSession} style={styles.secondaryBtn}>
+                {summarizingSession ? `Analyzing… (${sessionItems.length})` : sessionEmailSent ? `Sent! (${sessionItems.length})` : `Email Reports (${sessionItems.length})`}
               </button>
               <button
                 onClick={() => {
@@ -3383,9 +3448,57 @@ export default function GradingPage() {
                 style={styles.ghostBtn}
               >
                 Clear
-              </button> 
+              </button>
 
             </div>
+
+            {/* Email Reports prompt */}
+            {showSessionEmailPrompt && (
+              <div style={{
+                marginTop: 10, padding: "12px 14px", borderRadius: 12,
+                background: "rgba(37,99,235,0.06)", border: "1px solid rgba(37,99,235,0.18)",
+              }}>
+                <div style={{ fontSize: 13, color: "#334155", marginBottom: 8 }}>
+                  Email session reports (half-page &amp; strips PDFs attached):
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="email"
+                    placeholder="recipient@example.com"
+                    value={sessionEmailTo}
+                    onChange={(e) => setSessionEmailTo(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") sendSessionEmail(); }}
+                    style={{
+                      flex: 1, padding: "7px 10px", borderRadius: 8,
+                      border: "1px solid rgba(0,0,0,.15)", fontSize: 13,
+                      outline: "none",
+                    }}
+                  />
+                  <button
+                    onClick={sendSessionEmail}
+                    disabled={sessionEmailSending || !sessionEmailTo.includes("@")}
+                    style={{
+                      ...styles.primaryBtn,
+                      padding: "7px 18px", fontSize: 13,
+                      opacity: sessionEmailSending || !sessionEmailTo.includes("@") ? 0.5 : 1,
+                    }}
+                  >
+                    {sessionEmailSending ? "Sending…" : "Send"}
+                  </button>
+                  <button
+                    onClick={() => setShowSessionEmailPrompt(false)}
+                    style={{ ...styles.ghostBtn, padding: "7px 12px", fontSize: 13 }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {sessionSummary && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
+                    <strong>Summary preview:</strong> {sessionSummary.slice(0, 200)}{sessionSummary.length > 200 ? "…" : ""}
+                  </div>
+                )}
+              </div>
+            )}
 
             {retryNotice ? (
               <div

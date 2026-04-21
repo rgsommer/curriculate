@@ -32,7 +32,7 @@ export function buildTransport() {
   return { transporter, fromAddress, fromName };
 }
 
-export async function sendSystemEmail({ to, cc, subject, html }) {
+export async function sendSystemEmail({ to, cc, subject, html, attachments }) {
   const { transporter, fromAddress, fromName } = buildTransport();
 
   return transporter.sendMail({
@@ -41,5 +41,6 @@ export async function sendSystemEmail({ to, cc, subject, html }) {
     cc: cc || undefined,
     subject,
     html,
+    attachments: attachments || undefined,
   });
 }
