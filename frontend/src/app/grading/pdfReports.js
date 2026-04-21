@@ -99,6 +99,14 @@ export function preloadPdfLibs() {
 
 // ---------- Helpers ----------
 const esc = (s) => String(s || "").replace(/[\r]/g, "");
+
+/** Show first name if we have one, otherwise "Student N" */
+function getDisplayName(r) {
+  const raw = (r.studentName || "").trim();
+  if (!raw) return `Student ${r.index}`;
+  const firstName = raw.split(/\s+/)[0];
+  return esc(firstName);
+}
 const clamp = (str, maxChars) => str.length > maxChars ? str.slice(0, maxChars - 1) + "\u2026" : str;
 
 function letterGradeFromPct(pct) {
@@ -158,7 +166,7 @@ export async function buildResultsPdf(results) {
     // Name + score header
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
-    const nameStr = r.nameConfirmed ? esc(r.studentName) : `Student ${r.index}`;
+    const nameStr = getDisplayName(r);
     const scoreStr = `${r.score} / ${r.outOf}  (${r.pct != null ? r.pct + "%" : "\u2014"})  ${r.letter || ""}`;
     doc.text(nameStr, MARGIN, y);
     doc.text(scoreStr, PAGE_W - MARGIN, y, { align: "right" });
@@ -190,6 +198,89 @@ export async function buildResultsPdf(results) {
     }
 
     const raw = r.raw || {};
+
+    // Achievement categories (colored cards)
+    const cats = Array.isArray(raw.achievement_summary) ? raw.achievement_summary : [];
+    if (cats.length && y < maxY) {
+      y += 3;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text("Achievement Categories:", MARGIN, y);
+      y += LINE_H;
+
+      const levelColors = {
+        strong:     { r: 5, g: 150, b: 105 },
+        adequate:   { r: 37, g: 99, b: 235 },
+        developing: { r: 217, g: 119, b: 6 },
+        limited:    { r: 220, g: 38, b: 38 },
+      };
+      const knownShort = {
+        "Knowledge & Understanding": "K", "Thinking": "T", "Communication": "C", "Application": "A",
+        "Understanding": "U", "Problem Solving": "PS", "Effort & Growth": "EG",
+        "Skills & Application": "SA", "Progress & Effort": "PE",
+        "Knowledge & Recall (AO1)": "AO1", "Analysis & Application (AO2)": "AO2",
+        "Evaluation & Context (AO3)": "AO3", "Technical Accuracy (AO4)": "AO4",
+      };
+
+      const cardW = (COL_W - 8) / 2;
+      const cardPad = 5;
+
+      for (let ci = 0; ci < cats.length && y < maxY; ci += 2) {
+        const rowCats = cats.slice(ci, ci + 2);
+        // Measure row height
+        let rowH = 0;
+        const measured = rowCats.map((k) => {
+          const lvl = String(k.level || "").toLowerCase();
+          const c = levelColors[lvl] || levelColors.adequate;
+          const short = knownShort[k.category] || (k.category || "").split(/\s+/).map(w => w[0]).join("").slice(0, 3).toUpperCase();
+          const scoreStr = typeof k.score === "number" && typeof k.out_of === "number"
+            ? `  ${k.score.toFixed(1)}/${k.out_of.toFixed(1)}` : "";
+          const header = `${short} ${k.category}${scoreStr}`;
+          const levelStr = String(k.level || "").charAt(0).toUpperCase() + String(k.level || "").slice(1);
+          const commentLines = k.comment ? doc.splitTextToSize(clamp(esc(k.comment), 200), cardW - cardPad * 2 - 4) : [];
+          const h = 12 + 10 + commentLines.length * 9 + cardPad * 2;
+          if (h > rowH) rowH = h;
+          return { k, c, header, levelStr, commentLines };
+        });
+
+        if (y + rowH > maxY) break;
+
+        measured.forEach((m, mi) => {
+          const x = MARGIN + mi * (cardW + 8);
+          // Colored left border + light background
+          const bgR = Math.round(255 - (255 - m.c.r) * 0.08);
+          const bgG = Math.round(255 - (255 - m.c.g) * 0.08);
+          const bgB = Math.round(255 - (255 - m.c.b) * 0.08);
+          doc.setFillColor(bgR, bgG, bgB);
+          doc.roundedRect(x, y, cardW, rowH, 3, 3, "F");
+          doc.setFillColor(m.c.r, m.c.g, m.c.b);
+          doc.roundedRect(x, y, 3, rowH, 1.5, 1.5, "F");
+
+          let cy = y + cardPad + 9;
+          // Header line
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(m.c.r, m.c.g, m.c.b);
+          doc.text(m.header, x + cardPad + 4, cy);
+          cy += 10;
+          // Level
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(7.5);
+          doc.text(m.levelStr, x + cardPad + 4, cy);
+          cy += 9;
+          // Comment
+          doc.setTextColor(60, 60, 60);
+          doc.setFontSize(7);
+          for (const line of m.commentLines) {
+            doc.text(line, x + cardPad + 4, cy);
+            cy += 9;
+          }
+          doc.setTextColor(0, 0, 0);
+        });
+        y += rowH + 4;
+      }
+    }
+
     section("Strengths:", Array.isArray(raw.strengths) ? raw.strengths : r.strengths, true);
     section("Next Steps:", Array.isArray(raw.improvements) ? raw.improvements : r.improvements, true);
 
@@ -317,7 +408,7 @@ export async function buildStripsPdf(results) {
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
-    const nameStr = r.nameConfirmed ? esc(r.studentName) : `Student ${r.index}`;
+    const nameStr = getDisplayName(r);
     const scoreStr = `${r.score} / ${r.outOf}  (${r.pct != null ? r.pct + "%" : "\u2014"})  ${r.letter || ""}`;
     doc.text(nameStr, MARGIN + 4, y);
     const scoreX = hasQr ? PAGE_W - MARGIN - QR_SIZE - QR_GAP : PAGE_W - MARGIN - 4;

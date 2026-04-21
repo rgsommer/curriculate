@@ -1415,28 +1415,14 @@ export default function BatchGrading({
               <button
                 onClick={async () => {
                   const good = results.filter((r) => !r.error);
-                  if (!good.length) {
-                    alert("No successful results to print. All students have errors.");
-                    return;
-                  }
+                  if (!good.length) { alert("No successful results to print."); return; }
                   try {
-                    const [b64Full, b64Strips] = await Promise.all([
-                      buildResultsPdf(results),
-                      buildStripsPdf(results),
-                    ]);
-                    if (!b64Full && !b64Strips) {
-                      alert("No results available to generate PDFs.");
-                      return;
-                    }
-                    const openPdf = (b64) => {
-                      if (!b64) return;
-                      const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
-                      window.open(URL.createObjectURL(blob), "_blank");
-                    };
-                    openPdf(b64Full);
-                    openPdf(b64Strips);
+                    const b64 = await buildResultsPdf(results);
+                    if (!b64) { alert("No results available."); return; }
+                    const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
+                    window.open(URL.createObjectURL(blob), "_blank");
                   } catch (e) {
-                    console.error("[batch] PDF preview failed:", e?.message || e, e?.stack);
+                    console.error("[batch] PDF report failed:", e?.message || e);
                     alert(`Failed to generate PDF: ${e?.message || "unknown error"}`);
                   }
                 }}
@@ -1444,6 +1430,25 @@ export default function BatchGrading({
                 type="button"
               >
                 Print Reports
+              </button>
+              <button
+                onClick={async () => {
+                  const good = results.filter((r) => !r.error);
+                  if (!good.length) { alert("No successful results to print."); return; }
+                  try {
+                    const b64 = await buildStripsPdf(results);
+                    if (!b64) { alert("No results available."); return; }
+                    const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
+                    window.open(URL.createObjectURL(blob), "_blank");
+                  } catch (e) {
+                    console.error("[batch] PDF strips failed:", e?.message || e);
+                    alert(`Failed to generate PDF: ${e?.message || "unknown error"}`);
+                  }
+                }}
+                style={batchStyles.smallBtn}
+                type="button"
+              >
+                Print Strips
               </button>
               {!grading && (
                 <button
