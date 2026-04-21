@@ -1035,9 +1035,10 @@ export default function BatchGrading({
   }, [results, classSummary, teacherAnalysis, pdfName, rubricOverride]);
 
   // ---------- Email summary (rich HTML) ----------
-  const [emailTo, setEmailTo] = useState(() => {
-    try { return localStorage.getItem("curriculate_report_email") || ""; } catch { return ""; }
-  });
+  const [emailTo, setEmailTo] = useState("");
+  useEffect(() => {
+    try { const saved = localStorage.getItem("curriculate_report_email"); if (saved) setEmailTo(saved); } catch {}
+  }, []);
   useEffect(() => { if (emailTo) try { localStorage.setItem("curriculate_report_email", emailTo); } catch {} }, [emailTo]);
   const [showEmailPrompt, setShowEmailPrompt] = useState(false);
   const [emailSending, setEmailSending] = useState(false);

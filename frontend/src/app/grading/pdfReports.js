@@ -24,12 +24,10 @@ function loadScript(urls, globalKey) {
         return;
       }
       const url = urls[idx];
-      console.log(`[loadScript] Trying ${globalKey} from: ${url}`);
       const script = document.createElement("script");
       script.src = url;
       script.onload = () => {
         if (window[globalKey]) {
-          console.log(`[loadScript] Loaded ${globalKey} from: ${url}`);
           resolve(window[globalKey]);
         } else {
           errors.push(`${url}: loaded but ${globalKey} not found on window`);

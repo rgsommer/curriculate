@@ -74,9 +74,6 @@ export default function RootLayout({
   return (
     <html lang="en" className={inter.variable}>
       <head>
-        {/* Existing script */}
-        <Script src="/config/copy.js" strategy="beforeInteractive" />
-
         {/* Google tag (gtag.js) */}
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-PV7DD848BT"
