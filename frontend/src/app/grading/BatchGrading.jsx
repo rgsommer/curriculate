@@ -25,12 +25,15 @@ import { buildResultsPdf, buildStripsPdf, preloadPdfLibs } from "./pdfReports";
 // ---------- PDF.js loader (self-hosted proxy → CDN fallback) ----------
 // Uses the legacy UMD build (3.x) which sets window.pdfjsLib via <script>
 const PDFJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174";
+const PDFJS_JSR = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build";
 const PDFJS_URLS = [
   "/api/vendor?lib=pdfjs",
+  `${PDFJS_JSR}/pdf.min.js`,
   `${PDFJS_CDN}/pdf.min.js`,
 ];
 const PDFJS_WORKER_URLS = [
   "/api/vendor?lib=pdfjs-worker",
+  `${PDFJS_JSR}/pdf.worker.min.js`,
   `${PDFJS_CDN}/pdf.worker.min.js`,
 ];
 let pdfjsPromise = null;

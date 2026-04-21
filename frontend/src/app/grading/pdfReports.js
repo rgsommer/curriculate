@@ -15,19 +15,33 @@ function loadScript(urls, globalKey) {
     if (typeof window === "undefined") return reject(new Error("SSR"));
     if (window[globalKey]) return resolve(window[globalKey]);
 
+    const errors = [];
     let idx = 0;
     function tryNext() {
       if (idx >= urls.length) {
-        reject(new Error(`Failed to load ${globalKey} from all sources`));
+        console.error(`[loadScript] All sources failed for ${globalKey}:`, errors);
+        reject(new Error(`Failed to load ${globalKey} from all ${urls.length} sources`));
         return;
       }
+      const url = urls[idx];
+      console.log(`[loadScript] Trying ${globalKey} from: ${url}`);
       const script = document.createElement("script");
-      script.src = urls[idx];
+      script.src = url;
       script.onload = () => {
-        if (window[globalKey]) resolve(window[globalKey]);
-        else { idx++; tryNext(); }
+        if (window[globalKey]) {
+          console.log(`[loadScript] Loaded ${globalKey} from: ${url}`);
+          resolve(window[globalKey]);
+        } else {
+          errors.push(`${url}: loaded but ${globalKey} not found on window`);
+          idx++;
+          tryNext();
+        }
       };
-      script.onerror = () => { idx++; tryNext(); };
+      script.onerror = (e) => {
+        errors.push(`${url}: network error`);
+        idx++;
+        tryNext();
+      };
       document.head.appendChild(script);
     }
     tryNext();
@@ -37,6 +51,8 @@ function loadScript(urls, globalKey) {
 // ---------- QR code generator loader ----------
 const QRCODE_URLS = [
   "/api/vendor?lib=qrcode",
+  "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js",
+  "https://unpkg.com/qrcode-generator@1.4.4/qrcode.min.js",
   "https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js",
 ];
 let qrcodePromise = null;
@@ -61,6 +77,8 @@ async function makeQrDataUrl(text) {
 // ---------- jsPDF loader ----------
 const JSPDF_URLS = [
   "/api/vendor?lib=jspdf",
+  "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js",
+  "https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js",
   "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js",
 ];
 let jspdfPromise = null;
