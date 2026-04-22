@@ -1084,7 +1084,7 @@ export default function BatchGrading({
         ? emailTitle.trim().replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)
         : null;
       const baseName = titleSlug ? `${titleSlug}-${srcTag}` : `${rawBase}-${srcTag}`;
-      const subject = emailTitle.trim() ? `${emailSubject} — ${emailTitle.trim()}` : emailSubject;
+      const subject = emailTitle.trim() ? `Grading: ${emailTitle.trim()}` : emailSubject;
       const payload = { to, subject, html, pdfAttachments: [] };
       if (pdfBase64) {
         payload.pdfAttachments.push({ data: pdfBase64, filename: `${baseName}-reports.pdf` });
