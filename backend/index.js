@@ -12648,6 +12648,30 @@ app.post("/grading/audio", audioUpload.single("audio"), async (req, res) => {
     const responseTimeMs = Date.now() - startTime;
     console.log(`[audio-grade] Done in ${(responseTimeMs / 1000).toFixed(1)}s — score: ${grade.overall_score}/${grade.overall_out_of}`);
 
+    // Upload source audio to S3 with 30-day presigned URL
+    let audioSourceUrl = null;
+    let audioSourceExpires = null;
+    try {
+      const s3 = getS3Client();
+      if (s3 && S3_BUCKET) {
+        const safeName = (studentName || "student").replace(/[^a-zA-Z0-9_-]/g, "_");
+        const s3Key = `audio-grading/${safeName}-${Date.now()}.${ext}`;
+        await s3.send(new PutObjectCommand({
+          Bucket: S3_BUCKET,
+          Key: s3Key,
+          Body: req.file.buffer,
+          ContentType: mimeType,
+        }));
+        const THIRTY_DAYS = 30 * 24 * 60 * 60; // 2,592,000 seconds
+        const getCmd = new GetObjectCommand({ Bucket: S3_BUCKET, Key: s3Key });
+        audioSourceUrl = await getSignedUrl(s3, getCmd, { expiresIn: THIRTY_DAYS });
+        audioSourceExpires = new Date(Date.now() + THIRTY_DAYS * 1000).toISOString();
+        console.log(`[audio-grade] Source uploaded to S3: ${s3Key} (30-day link)`);
+      }
+    } catch (e) {
+      console.warn("[audio-grade] S3 upload failed (non-fatal):", e?.message);
+    }
+
     // Log usage
     (async () => {
       try {
@@ -12672,6 +12696,8 @@ app.post("/grading/audio", audioUpload.single("audio"), async (req, res) => {
       performanceType,
       instrumentFamily: instrumentFamily || null,
       instrument: instrument || null,
+      audioSourceUrl,
+      audioSourceExpires,
       meta: { gradeBand, inputType: "audio" },
     });
 

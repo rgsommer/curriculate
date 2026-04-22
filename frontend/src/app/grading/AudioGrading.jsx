@@ -303,6 +303,11 @@ export default function AudioGrading({
       lines.push("");
     }
     if (r.teacher_comment) { lines.push("Overall Comment:"); lines.push(r.teacher_comment); lines.push(""); }
+    if (r.audioSourceUrl) {
+      lines.push(`Source Recording: ${r.audioSourceUrl}`);
+      if (r.audioSourceExpires) lines.push(`(link expires ${new Date(r.audioSourceExpires).toLocaleDateString()})`);
+      lines.push("");
+    }
     if (r.transcript) { lines.push("Transcript:"); lines.push(r.transcript); lines.push(""); }
     return lines.join("\n");
   }
@@ -484,6 +489,27 @@ export default function AudioGrading({
           }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Overall Comment</div>
             {r.teacher_comment}
+          </div>
+        )}
+
+        {r.audioSourceUrl && (
+          <div style={{
+            padding: 10, background: "#f8fafc", borderRadius: 8,
+            border: "1px solid #e2e8f0", fontSize: 13, marginBottom: 12,
+            display: "flex", alignItems: "center", gap: 8,
+          }}>
+            <span style={{ fontSize: 18 }}>🎧</span>
+            <div>
+              <a href={r.audioSourceUrl} target="_blank" rel="noopener noreferrer"
+                style={{ color: "#2563eb", fontWeight: 600, textDecoration: "none" }}>
+                Listen to source recording
+              </a>
+              {r.audioSourceExpires && (
+                <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 2 }}>
+                  Link expires {new Date(r.audioSourceExpires).toLocaleDateString()}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
