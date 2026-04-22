@@ -1042,6 +1042,7 @@ export default function BatchGrading({
   useEffect(() => { if (emailTo) try { localStorage.setItem("curriculate_report_email", emailTo); } catch {} }, [emailTo]);
   const [showEmailPrompt, setShowEmailPrompt] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
+  const [emailTitle, setEmailTitle] = useState("");
 
   const emailSummary = useCallback(async () => {
     if (!results.length) return;
@@ -1077,7 +1078,8 @@ export default function BatchGrading({
 
       const sendUrl = gradingUrl.replace(/\/grading$/, "/grading/send-email");
       const baseName = (pdfName || "batch-results").replace(/\.pdf$/i, "");
-      const payload = { to, subject: emailSubject, html, pdfAttachments: [] };
+      const subject = emailTitle.trim() ? `${emailSubject} — ${emailTitle.trim()}` : emailSubject;
+      const payload = { to, subject, html, pdfAttachments: [] };
       if (pdfBase64) {
         payload.pdfAttachments.push({ data: pdfBase64, filename: `${baseName}-reports.pdf` });
       }
@@ -1109,7 +1111,7 @@ export default function BatchGrading({
       alert("Failed to send email. Please try again.");
     }
     setEmailSending(false);
-  }, [emailTo, buildEmailHtml, emailSubject, gradingUrl, results, pdfName]);
+  }, [emailTo, emailTitle, buildEmailHtml, emailSubject, gradingUrl, results, pdfName]);
 
   // ---------- Copy / email ack ----------
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -1477,46 +1479,68 @@ export default function BatchGrading({
               background: "rgba(37,99,235,0.04)",
               marginBottom: 10,
               display: "flex",
-              alignItems: "center",
+              flexDirection: "column",
               gap: 8,
             }}>
-              <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>Send to:</span>
-              <input
-                type="email"
-                value={emailTo}
-                onChange={(e) => setEmailTo(e.target.value)}
-                placeholder="recipient@school.ca"
-                onKeyDown={(e) => { if (e.key === "Enter") sendEmail(); }}
-                style={{
-                  flex: 1,
-                  padding: "7px 10px",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  fontSize: 13,
-                  outline: "none",
-                }}
-                autoFocus
-              />
-              <button
-                onClick={sendEmail}
-                disabled={emailSending || !emailTo.includes("@")}
-                style={{
-                  ...batchStyles.smallBtn,
-                  background: "#2563eb",
-                  color: "#fff",
-                  opacity: emailSending || !emailTo.includes("@") ? 0.5 : 1,
-                }}
-                type="button"
-              >
-                {emailSending ? "Sending..." : "Send"}
-              </button>
-              <button
-                onClick={() => setShowEmailPrompt(false)}
-                style={{ ...batchStyles.smallBtn, padding: "5px 10px" }}
-                type="button"
-              >
-                Cancel
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", minWidth: 60 }}>Send to:</span>
+                <input
+                  type="email"
+                  value={emailTo}
+                  onChange={(e) => setEmailTo(e.target.value)}
+                  placeholder="recipient@school.ca"
+                  onKeyDown={(e) => { if (e.key === "Enter") sendEmail(); }}
+                  style={{
+                    flex: 1,
+                    padding: "7px 10px",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    fontSize: 13,
+                    outline: "none",
+                  }}
+                  autoFocus
+                />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", minWidth: 60 }}>Title:</span>
+                <input
+                  type="text"
+                  value={emailTitle}
+                  onChange={(e) => setEmailTitle(e.target.value)}
+                  placeholder="e.g. Journal #3 — Period 2 (optional)"
+                  onKeyDown={(e) => { if (e.key === "Enter") sendEmail(); }}
+                  style={{
+                    flex: 1,
+                    padding: "7px 10px",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    fontSize: 13,
+                    outline: "none",
+                  }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button
+                  onClick={() => setShowEmailPrompt(false)}
+                  style={{ ...batchStyles.smallBtn, padding: "5px 10px" }}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={sendEmail}
+                  disabled={emailSending || !emailTo.includes("@")}
+                  style={{
+                    ...batchStyles.smallBtn,
+                    background: "#2563eb",
+                    color: "#fff",
+                    opacity: emailSending || !emailTo.includes("@") ? 0.5 : 1,
+                  }}
+                  type="button"
+                >
+                  {emailSending ? "Sending..." : "Send"}
+                </button>
+              </div>
             </div>
           )}
 
