@@ -12573,6 +12573,7 @@ app.post("/grading/audio", audioUpload.single("audio"), async (req, res) => {
       rubricOverride,
       transcript,
       duration,
+      studentName,
     });
 
     // Step 5: Grade with AI
@@ -12681,7 +12682,7 @@ app.post("/grading/audio", audioUpload.single("audio"), async (req, res) => {
 });
 
 // Build performance-specific grading prompt for audio submissions
-function buildAudioGradingPrompt({ performanceType, instrumentFamily, instrument, gradeBand, standards, feedbackVoice, rubricOverride, transcript, duration }) {
+function buildAudioGradingPrompt({ performanceType, instrumentFamily, instrument, gradeBand, standards, feedbackVoice, rubricOverride, transcript, duration, studentName }) {
   const gradeExpectations = {
     "3-5": "Grade 3-5: Be encouraging, focus on effort and basic technique. Age-appropriate expectations.",
     "6-8": "Grade 6-8: Expect developing technique and musicality. Balance encouragement with constructive feedback.",
