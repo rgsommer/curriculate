@@ -103,7 +103,7 @@ const esc = (s) => String(s || "").replace(/[\r]/g, "");
 /** Show first name if we have one, otherwise "Student N" */
 function getDisplayName(r) {
   const raw = (r.studentName || "").trim();
-  if (!raw || /^student$/i.test(raw) || /^student\s*\d*$/i.test(raw)) return "Name: _______________";
+  if (!raw || /^student$/i.test(raw) || /^student\s*\d*$/i.test(raw)) return "Name: ________";
   const firstName = raw.split(/\s+/)[0];
   return esc(firstName);
 }
