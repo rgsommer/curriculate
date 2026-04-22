@@ -103,7 +103,7 @@ const esc = (s) => String(s || "").replace(/[\r]/g, "");
 /** Show first name if we have one, otherwise "Student N" */
 function getDisplayName(r) {
   const raw = (r.studentName || "").trim();
-  if (!raw) return `Student ${r.index}`;
+  if (!raw || /^student$/i.test(raw) || /^student\s*\d*$/i.test(raw)) return "Name: _______________";
   const firstName = raw.split(/\s+/)[0];
   return esc(firstName);
 }
@@ -455,7 +455,7 @@ export async function buildStripsPdf(results) {
       h += 4;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.5);
-      h += doc.splitTextToSize(clamp(comment, 250), INNER_W).length * (LINE_H - 2);
+      h += doc.splitTextToSize(comment, INNER_W).length * (LINE_H - 2);
     }
     h += CARD_PAD;
     return h;
@@ -524,7 +524,7 @@ export async function buildStripsPdf(results) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.5);
       doc.setTextColor(50, 50, 50);
-      const wrapped = doc.splitTextToSize(clamp(comment, 250), INNER_W);
+      const wrapped = doc.splitTextToSize(comment, INNER_W);
       for (const line of wrapped) {
         doc.text(line, x + CARD_PAD, cy + 7);
         cy += LINE_H - 2;
