@@ -1536,8 +1536,8 @@ export default function BatchGrading({
   }, [gradingUrl]);
 
   const handleRosterUpload = useCallback(async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
     e.target.value = "";
 
     const email = (() => { try { return localStorage.getItem("curriculate_report_email") || ""; } catch { return ""; } })();
@@ -1547,32 +1547,35 @@ export default function BatchGrading({
     }
 
     setRosterUploading(true);
-    try {
-      const text = await file.text();
-      const rosterBase = gradingUrl.replace(/\/grading$/, "/class-roster");
-      const res = await fetch(`${rosterBase}/upload`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          teacherEmail: email,
-          csvText: text,
-          sourceFile: file.name,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || "Upload failed");
-      } else {
-        // Refresh roster list
-        const listRes = await fetch(`${rosterBase}/list?teacherEmail=${encodeURIComponent(email)}`);
-        if (listRes.ok) {
-          const listData = await listRes.json();
-          setRosterClasses(listData.rosters || []);
-        }
+    const rosterBase = gradingUrl.replace(/\/grading$/, "/class-roster");
+    const errors = [];
+    for (const file of files) {
+      try {
+        const text = await file.text();
+        const res = await fetch(`${rosterBase}/upload`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teacherEmail: email,
+            csvText: text,
+            sourceFile: file.name,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) errors.push(`${file.name}: ${data.error || "failed"}`);
+      } catch (err) {
+        errors.push(`${file.name}: ${err?.message || "failed"}`);
       }
-    } catch (err) {
-      alert("Upload failed: " + (err?.message || "unknown error"));
     }
+    // Refresh roster list
+    try {
+      const listRes = await fetch(`${rosterBase}/list?teacherEmail=${encodeURIComponent(email)}`);
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        setRosterClasses(listData.rosters || []);
+      }
+    } catch {}
+    if (errors.length) alert("Some files failed:\n" + errors.join("\n"));
     setRosterUploading(false);
   }, [gradingUrl]);
 
@@ -1634,14 +1637,14 @@ export default function BatchGrading({
         {showRoster && (
           <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, marginTop: 6, fontSize: 13 }}>
             <div style={{ marginBottom: 8, color: "#475569", lineHeight: 1.5 }}>
-              Upload your Edsby gradebook CSV to auto-match students by name.
-              If handwriting is unclear, students can write the last 4 digits of their ID as backup.
+              Export each class from Edsby (gradebook → gear icon ⚙ → Export) and upload all the CSVs here. Students are auto-matched by name so grades flow back into Edsby.
             </div>
 
             <input
               ref={rosterFileRef}
               type="file"
               accept=".csv,.txt"
+              multiple
               onChange={handleRosterUpload}
               style={{ display: "none" }}
             />
@@ -1655,7 +1658,7 @@ export default function BatchGrading({
                 opacity: rosterUploading ? 0.6 : 1, marginBottom: 8,
               }}
             >
-              {rosterUploading ? "Uploading..." : "Upload Edsby CSV"}
+              {rosterUploading ? "Uploading..." : "Upload Edsby CSVs"}
             </button>
 
             {rosterLoading && <div style={{ color: "#94a3b8", fontSize: 12 }}>Loading rosters...</div>}
