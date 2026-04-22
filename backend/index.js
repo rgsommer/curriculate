@@ -12035,7 +12035,7 @@ import os from "os";
 import { execFile } from "child_process";
 import { promisify } from "util";
 const execFileAsync = promisify(execFile);
-const audioUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+const audioUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
 const videoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 
 // ====================================================================
@@ -12492,6 +12492,372 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
     }
   }
 });
+
+// ====================================================================
+//  Audio Grading: Speech, Singing, or Instrumental Performance
+//  POST /grading/audio
+//  Accepts multipart audio upload + performanceType + instrument info
+// ====================================================================
+app.post("/grading/audio", audioUpload.single("audio"), async (req, res) => {
+  const startTime = Date.now();
+  try {
+    if (!req.file || !req.file.buffer || req.file.buffer.length < 500) {
+      return res.status(400).json({ error: "No audio file or file too small." });
+    }
+
+    const oai = getOpenAIInstance();
+    const performanceType = req.body?.performanceType || "speech"; // speech | singing | instrumental
+    const instrumentFamily = req.body?.instrumentFamily || "";
+    const instrument = req.body?.instrument || "";
+    const rubricOverride = String(req.body?.rubricOverride || "").trim();
+    const gradeBand = ["3-5", "6-8", "9-10", "11+"].includes(req.body?.gradeBand) ? req.body.gradeBand : "6-8";
+    const standards = ["canada", "us", "uk", "eu"].includes(req.body?.standards) ? req.body.standards : "canada";
+    const feedbackVoice = req.body?.feedbackVoice || "coach";
+    const studentName = String(req.body?.studentName || "").trim() || null;
+
+    console.log(`[audio-grade] type=${performanceType} family=${instrumentFamily} instrument=${instrument} band=${gradeBand} size=${(req.file.buffer.length / 1024 / 1024).toFixed(1)}MB`);
+
+    // Step 1: Determine audio format
+    const origName = (req.file.originalname || "").toLowerCase();
+    let ext = "mp3";
+    if (origName.endsWith(".m4a") || origName.endsWith(".aac")) ext = "m4a";
+    else if (origName.endsWith(".wav")) ext = "wav";
+    else if (origName.endsWith(".ogg")) ext = "ogg";
+    else if (origName.endsWith(".flac")) ext = "flac";
+    else if (origName.endsWith(".webm")) ext = "webm";
+
+    const mimeMap = { mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac", webm: "audio/webm" };
+    const mimeType = mimeMap[ext] || "audio/mpeg";
+
+    // Step 2: Get audio duration via ffprobe (if available)
+    let duration = 0;
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "audio-grade-"));
+    const audioPath = path.join(tmpDir, `input.${ext}`);
+    fs.writeFileSync(audioPath, req.file.buffer);
+
+    try {
+      const { stdout } = await execFileAsync("ffprobe", [
+        "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", audioPath,
+      ], { timeout: 15000 });
+      duration = parseFloat(stdout.trim()) || 0;
+    } catch {}
+    console.log(`[audio-grade] Duration: ${duration.toFixed(1)}s`);
+
+    // Step 3: Transcribe with Whisper
+    let transcript = "";
+    try {
+      const audioFile = await toFile(req.file.buffer, `audio.${ext}`, { type: mimeType });
+      const whisperResp = await oai.audio.transcriptions.create({
+        model: "whisper-1",
+        file: audioFile,
+        response_format: "text",
+      });
+      transcript = typeof whisperResp === "string" ? whisperResp : (whisperResp?.text || "");
+      console.log(`[audio-grade] Transcript: ${transcript.length} chars`);
+    } catch (e) {
+      console.warn("[audio-grade] Whisper transcription failed:", e?.message);
+      // For instrumental, no transcript is expected — continue
+      if (performanceType !== "instrumental") {
+        transcript = "[Transcription unavailable]";
+      }
+    }
+
+    // Step 4: Build performance-specific AI prompt
+    const performancePrompt = buildAudioGradingPrompt({
+      performanceType,
+      instrumentFamily,
+      instrument,
+      gradeBand,
+      standards,
+      feedbackVoice,
+      rubricOverride,
+      transcript,
+      duration,
+    });
+
+    // Step 5: Grade with AI
+    const gradeResultSchema = {
+      type: "object",
+      properties: {
+        overall_score: { type: "number", minimum: 0 },
+        overall_out_of: { type: "number", minimum: 1 },
+        sections: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              score: { type: "number" },
+              out_of: { type: "number" },
+              teacher_comment: { type: "string" },
+            },
+            required: ["name", "score", "out_of", "teacher_comment"],
+            additionalProperties: false,
+          },
+        },
+        strengths: { type: "array", items: { type: "string" } },
+        improvements: { type: "array", items: { type: "string" } },
+        teacher_comment: { type: "string" },
+        student_name: { anyOf: [{ type: "string" }, { type: "null" }] },
+        inferred_subject: { type: "string" },
+        inferred_assessment_type: { type: "string" },
+      },
+      required: ["overall_score", "overall_out_of", "sections", "strengths", "improvements", "teacher_comment", "student_name", "inferred_subject", "inferred_assessment_type"],
+      additionalProperties: false,
+    };
+
+    const userContent = [
+      { type: "input_text", text: performancePrompt },
+    ];
+
+    const useFullModel = standards === "canada" && (gradeBand === "9-10" || gradeBand === "11+");
+    const gradingModel = useFullModel ? AI_MODEL_FULL : AI_MODEL;
+    console.log(`[audio-grade] model=${gradingModel}`);
+
+    const response = await openai.responses.create({
+      model: gradingModel,
+      input: [{ role: "user", content: userContent }],
+      text: { format: { type: "json_schema", name: "grade_result", strict: true, schema: gradeResultSchema } },
+      max_output_tokens: 4000,
+    });
+
+    const grade = safeJsonParse(response.output_text);
+
+    if (!grade) {
+      return res.json({ error: "Audio grading returned invalid JSON", raw: response.output_text || "" });
+    }
+
+    // Override student name if provided
+    if (studentName) grade.student_name = studentName;
+
+    // Enforce denominator rules
+    if (rubricOverride) {
+      const parsed = parseRubricOrOverrides(rubricOverride);
+      if (parsed.fixedOutOf && Number.isFinite(parsed.fixedOutOf)) {
+        grade.overall_out_of = parsed.fixedOutOf;
+        if (grade.overall_score > parsed.fixedOutOf) grade.overall_score = parsed.fixedOutOf;
+      }
+    }
+
+    if (grade.overall_out_of !== 10) {
+      grade.score_out_of_10 = null;
+      grade.final_score_out_of_10 = null;
+    }
+
+    const responseTimeMs = Date.now() - startTime;
+    console.log(`[audio-grade] Done in ${(responseTimeMs / 1000).toFixed(1)}s — score: ${grade.overall_score}/${grade.overall_out_of}`);
+
+    // Log usage
+    (async () => {
+      try {
+        await GradingUsage.create({
+          timestamp: new Date(),
+          subject: grade.inferred_subject || "Music",
+          assessmentType: grade.inferred_assessment_type || "Performance",
+          inputMode: "audio",
+          gradeLevel: gradeBand,
+          imageCount: 0,
+          overrideInputUsed: Boolean(rubricOverride),
+          responseTimeMs,
+          userAgent: req.headers["user-agent"] || null,
+        });
+      } catch {}
+    })();
+
+    return res.json({
+      ...grade,
+      transcript: transcript || null,
+      audioDuration: duration,
+      performanceType,
+      instrumentFamily: instrumentFamily || null,
+      instrument: instrument || null,
+      meta: { gradeBand, inputType: "audio" },
+    });
+
+  } catch (err) {
+    console.error("[audio-grade] Error:", err?.message || err);
+    return res.status(500).json({ error: "Audio grading failed: " + (err?.message || "unknown error") });
+  }
+});
+
+// Build performance-specific grading prompt for audio submissions
+function buildAudioGradingPrompt({ performanceType, instrumentFamily, instrument, gradeBand, standards, feedbackVoice, rubricOverride, transcript, duration }) {
+  const gradeExpectations = {
+    "3-5": "Grade 3-5: Be encouraging, focus on effort and basic technique. Age-appropriate expectations.",
+    "6-8": "Grade 6-8: Expect developing technique and musicality. Balance encouragement with constructive feedback.",
+    "9-10": "Grade 9-10: Expect technical proficiency and musical expression. More detailed technical feedback.",
+    "11+": "Grade 11-12: Expect advanced technique, mature interpretation, and polished performance.",
+  };
+
+  const baseInstructions = buildRubricInstructions({
+    gradeBand,
+    rubricOverride,
+    answerKeyOverride: "",
+    feedbackVoice,
+    feedbackVoiceMode: "default",
+    standards,
+    subjectArea: "",
+    batchMode: false,
+  });
+
+  let typeSpecificPrompt = "";
+
+  if (performanceType === "speech") {
+    typeSpecificPrompt = `
+    PERFORMANCE TYPE: Speech / Presentation (audio only)
+    You are assessing a spoken presentation or speech. Grade based on:
+
+    DEFAULT SECTIONS (use these unless rubric overrides):
+    1. Content & Organization (structure, argument, evidence, clarity of ideas)
+    2. Delivery (pace, volume, tone variation, confidence, fluency)
+    3. Language Use (vocabulary, grammar, articulation, clarity of speech)
+    4. Engagement (audience awareness, rhetorical techniques, persuasiveness)
+
+    The transcript of the speech is provided below. Use it as the primary evidence.
+    Note: The transcript is AI-generated and may contain errors. Grade the content generously
+    where the meaning is clear despite potential transcription artifacts.
+    `;
+  } else if (performanceType === "singing") {
+    typeSpecificPrompt = `
+    PERFORMANCE TYPE: Singing / Vocal Performance
+    You are assessing a vocal/singing performance. This is MUSIC assessment, not speech assessment.
+
+    DEFAULT SECTIONS (use these unless rubric overrides):
+    1. Pitch & Intonation (/out_of) — accuracy of pitch, ability to stay in tune, interval accuracy
+    2. Tone Quality (/out_of) — vocal timbre, resonance, breath support, projection
+    3. Rhythm & Timing (/out_of) — rhythmic accuracy, tempo consistency, phrasing
+    4. Expression & Musicality (/out_of) — dynamics, emotional interpretation, stylistic awareness
+    5. Diction & Text (/out_of) — clarity of words, vowel formation, consonant articulation
+
+    IMPORTANT: Whisper (the AI transcriber) will attempt to transcribe singing as speech.
+    The transcript may be garbled, incomplete, or nonsensical — this is NORMAL for music.
+    Do NOT penalize the student based on transcript quality.
+    Instead, note that this is a singing performance and base your assessment on what can be
+    inferred about vocal quality from the audio analysis context.
+
+    If the transcript captures recognizable lyrics, use them to assess diction.
+    If the transcript is mostly unintelligible, that's expected for instrumental/vocal music and
+    you should note this and focus on the musical qualities you can assess.
+    `;
+  } else if (performanceType === "instrumental") {
+    const familyLabels = { brass: "Brass", woodwind: "Woodwind", strings: "Strings", percussion: "Percussion", keys: "Keyboard/Piano", guitar: "Guitar" };
+    const familyLabel = familyLabels[instrumentFamily] || instrumentFamily || "Instrument";
+
+    const instrumentSpecific = getInstrumentSpecificCriteria(instrumentFamily, instrument);
+
+    typeSpecificPrompt = `
+    PERFORMANCE TYPE: Instrumental Performance — ${familyLabel}${instrument ? ` (${instrument})` : ""}
+    You are assessing an instrumental music performance. This is MUSIC assessment.
+
+    DEFAULT SECTIONS (use these unless rubric overrides):
+    1. Tone Quality (/out_of) — ${instrumentSpecific.tone}
+    2. Technical Accuracy (/out_of) — ${instrumentSpecific.technique}
+    3. Rhythm & Timing (/out_of) — rhythmic precision, tempo consistency, time signature awareness
+    4. Intonation (/out_of) — pitch accuracy, tuning consistency${instrumentSpecific.intonation ? `, ${instrumentSpecific.intonation}` : ""}
+    5. Expression & Musicality (/out_of) — dynamics (piano/forte), phrasing, musical interpretation, stylistic awareness
+    ${instrumentSpecific.extra ? `6. ${instrumentSpecific.extra}` : ""}
+
+    IMPORTANT: Whisper will attempt to transcribe instrumental music as speech.
+    The transcript will likely be nonsensical — this is COMPLETELY NORMAL for instrumental music.
+    Do NOT use the transcript content as evidence of performance quality.
+    Instead, acknowledge that this is an instrumental performance and base your assessment on
+    the musical qualities that can be inferred from the audio context.
+
+    INSTRUMENT-SPECIFIC NOTES:
+    ${instrumentSpecific.notes}
+    `;
+  }
+
+  const durationNote = duration > 0 ? `\nRecording duration: ${Math.round(duration)} seconds.` : "";
+
+  return `
+    ${baseInstructions}
+
+    *** AUDIO PERFORMANCE ASSESSMENT ***
+    ${typeSpecificPrompt}
+
+    ${gradeExpectations[gradeBand] || gradeExpectations["6-8"]}
+    ${durationNote}
+
+    ${rubricOverride ? `
+    TEACHER-PROVIDED RUBRIC (takes priority over default sections above):
+    ${rubricOverride}
+    Use the rubric sections instead of the defaults listed above.
+    ` : ""}
+
+    ${transcript ? `
+    TRANSCRIPT (AI-generated from audio — may contain errors, especially for music):
+    ---
+    ${transcript.slice(0, 50000)}
+    ---
+    ` : "No transcript available (instrumental performance)."}
+
+    Grade this performance and return your assessment as JSON.
+    Set inferred_subject to "Music" for singing/instrumental, or to the appropriate subject for speech.
+    Set inferred_assessment_type to "${performanceType === "speech" ? "Speech/Presentation" : performanceType === "singing" ? "Vocal Performance" : "Instrumental Performance"}".
+    Set student_name to ${studentName ? `"${studentName}"` : "null"}.
+
+    IMPORTANT: If you cannot meaningfully assess certain aspects from audio alone (e.g., posture, fingering),
+    note this limitation in your comment but still provide your best assessment based on what CAN be heard.
+    For instrumental music where the transcript is garbled, focus your feedback on general musical principles
+    and provide constructive, grade-appropriate guidance.
+  `;
+}
+
+function getInstrumentSpecificCriteria(family, instrument) {
+  const criteria = {
+    brass: {
+      tone: "sound quality, warmth, projection, embouchure control",
+      technique: "fingering/slide accuracy, range, articulation (tonguing), legato vs staccato",
+      intonation: "lip flexibility, slide position accuracy (trombone)",
+      notes: "Assess embouchure control, breath support, and air management. For brass instruments, tone production is heavily dependent on proper air support and buzz quality. Grade-appropriate expectations: younger students may have limited range and endurance.",
+      extra: "",
+    },
+    woodwind: {
+      tone: "clarity, warmth, evenness across registers, reed quality (where applicable)",
+      technique: "finger technique, tonguing, articulation, embouchure, cross-fingerings",
+      intonation: "tuning across registers, voicing adjustments",
+      notes: "Assess embouchure formation, breath support, and finger coordination. Reed instruments (clarinet, saxophone, oboe, bassoon) — note that reed quality affects tone. Flute — assess air stream direction and tone focus.",
+      extra: "",
+    },
+    strings: {
+      tone: "bow control, sound production, resonance, vibrato (if grade-appropriate)",
+      technique: "bow technique (straight bow, bow distribution), left-hand accuracy, shifting, pizzicato",
+      intonation: "finger placement accuracy, consistent tuning in different positions",
+      notes: "Assess bow hold, bow speed and pressure, and left-hand frame. Vibrato expectations vary by grade level — not expected before grade 8-9. String crossing smoothness and coordination between hands are key indicators.",
+      extra: "",
+    },
+    percussion: {
+      tone: "sound quality, stick/mallet control, consistent stroke quality",
+      technique: "grip, stroke technique, rudiment accuracy, roll quality",
+      intonation: "",
+      notes: "For pitched percussion (marimba, xylophone, timpani), assess pitch accuracy and mallet technique. For snare/drum kit, assess rudiment execution, dynamic control, and groove consistency. Stick height consistency indicates control.",
+      extra: "Groove & Feel (/out_of) — steadiness, musical pocket, appropriate stylistic feel",
+    },
+    keys: {
+      tone: "touch, dynamic control, pedal use (piano), registration (organ)",
+      technique: "finger independence, hand position, scales/arpeggios, chord voicing",
+      intonation: "",
+      notes: "Assess hand position, finger curvature, and independence of hands. Pedal use expectations vary by level. Musical phrasing through touch control is important at higher levels. For beginners, focus on note accuracy and basic hand position.",
+      extra: "",
+    },
+    guitar: {
+      tone: "sound clarity, consistency, pick/finger technique, amp settings (electric)",
+      technique: "fretting accuracy, chord transitions, strumming/picking patterns, barre chords",
+      intonation: "fret accuracy, string bending pitch (electric)",
+      notes: "Assess left-hand fretting pressure and accuracy, right-hand strumming or picking consistency. Chord transition speed and cleanness are key indicators of level. For classical guitar, assess nail technique and tone production.",
+      extra: "",
+    },
+  };
+
+  return criteria[family] || {
+    tone: "sound quality, clarity, projection",
+    technique: "technical accuracy, control, consistency",
+    intonation: "pitch accuracy",
+    notes: "Assess the overall quality of the performance based on the instrument's standard expectations.",
+    extra: "",
+  };
+}
 
 app.post("/api/audio/transcribe", audioUpload.single("audio"), async (req, res) => {
   try {

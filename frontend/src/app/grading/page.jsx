@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import BatchGrading from "./BatchGrading";
 import VideoGrading from "./VideoGrading";
+import AudioGrading from "./AudioGrading";
 import { buildResultsPdf, buildStripsPdf, sessionItemToResult, preloadPdfLibs } from "./pdfReports";
 
 /**
@@ -135,7 +136,7 @@ const FREEMIUM_GATED_VOICES = [
   "student_friendly", "iep_supportive", "student_conference",
   "pudewa_mastery", "tutor",
 ];
-const FREEMIUM_GATED_MODES = ["photo", "batch", "video"];
+const FREEMIUM_GATED_MODES = ["photo", "batch", "video", "audio"];
 const FREEMIUM_UPGRADE_URL = "/pricing";
 const FREEMIUM_PLUS_PRICE = "$4.99 CAD/month";
 
@@ -1123,7 +1124,7 @@ export default function GradingPage() {
     });
 
     // Input mode: photo vs paste vs batch
-    const [inputMode, setInputMode] = useState("photo"); // "photo" | "paste" | "batch" | "video"
+    const [inputMode, setInputMode] = useState("photo"); // "photo" | "paste" | "batch" | "video" | "audio"
     
     const [workInput, setWorkInput] = useState("");
     useEffect(() => {
@@ -2964,6 +2965,7 @@ export default function GradingPage() {
                   { mode: "paste", label: "Paste", onClick: () => setInputMode("paste") },
                   { mode: "batch", label: "Batch", onClick: () => setInputMode("batch") },
                   { mode: "video", label: "Video", onClick: () => setInputMode("video") },
+                  { mode: "audio", label: "Audio", onClick: () => setInputMode("audio") },
                 ].map(({ mode, label, onClick, title }) => {
                   const gated = FREEMIUM_GATED_MODES.includes(mode);
                   const padlock = gated ? getPadlockForFeature() : null;
@@ -2990,8 +2992,22 @@ export default function GradingPage() {
               </div>
             </div>
 
-          {/* Video mode: full-card takeover */}
-          {inputMode === "video" ? (
+          {/* Audio mode: full-card takeover */}
+          {inputMode === "audio" ? (
+            <AudioGrading
+              gradingUrl={gradingUrl}
+              gradeBand={gradeBand}
+              standards={standards}
+              feedbackVoice={voiceOverrideOn ? voiceOverride : voice}
+              rubricOverride={
+                (rubricOverride || "").trim() ||
+                (stickyRubricText || "").trim() ||
+                ""
+              }
+              subjectArea={subjectArea}
+              onClose={() => setInputMode("photo")}
+            />
+          ) : inputMode === "video" ? (
             <VideoGrading
               gradingUrl={gradingUrl}
               gradeBand={gradeBand}
@@ -3553,8 +3569,8 @@ export default function GradingPage() {
             </div>
           </div>
 
-          {/* SUBMIT + RESPONSE CARD — hidden in batch mode */}
-          <div className="grading-submit-card" style={{ ...styles.card, ...((inputMode === "batch" || inputMode === "video") ? { display: "none" } : {}) }}>
+          {/* SUBMIT + RESPONSE CARD — hidden in batch/video/audio mode */}
+          <div className="grading-submit-card" style={{ ...styles.card, ...((inputMode === "batch" || inputMode === "video" || inputMode === "audio") ? { display: "none" } : {}) }}>
             <div style={styles.cardTitle}>Submit</div>
 
             <div style={styles.btnRow}>
