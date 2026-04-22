@@ -17,6 +17,7 @@ const teacherOutreachSchema = new mongoose.Schema(
     ],
     lastContactedAt: { type: Date, default: null },
     source: { type: String, default: "grade-review" }, // how we got this teacher's email
+    hidden: { type: Boolean, default: false }, // soft-delete: hide from outreach list
   },
   { timestamps: true }
 );

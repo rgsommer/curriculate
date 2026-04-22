@@ -1038,6 +1038,7 @@ export default function GradingPage() {
     const [feedbackSending, setFeedbackSending] = useState(false);
     const [feedbackSent, setFeedbackSent] = useState(false);
     const lastSubmitKeyRef = useRef("");
+    const lastWorkKeyRef = useRef(""); // tracks same student work (ignoring settings) for ref code reuse
     const [submissionAttempt, setSubmissionAttempt] = useState(0);
     const [retryNotice, setRetryNotice] = useState(""); // UX text
     const [feedbackTrigger, setFeedbackTrigger] = useState(null);
@@ -1130,6 +1131,7 @@ export default function GradingPage() {
     const [workInput, setWorkInput] = useState("");
     useEffect(() => {
           lastSubmitKeyRef.current = "";
+          lastWorkKeyRef.current = "";
           setSubmissionAttempt(0);
           setRetryNotice("");
         }, [inputMode, workInput, photos.length]);
@@ -1923,7 +1925,7 @@ export default function GradingPage() {
       setServerText("");
       setCopied(false);
       setCopyEnabled(false); // lock during submission
-      setRefCode(""); // new submission => new ref
+      // Keep refCode across resubmits — we'll update the same result entry
       
       if (!gradingUrl) {
         setSubmitError("Missing NEXT_PUBLIC_BACKEND_URL. Set it in Vercel and redeploy.");
@@ -1961,12 +1963,30 @@ export default function GradingPage() {
         .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
         .map(([id, tag]) => `${id}:${tag}`)
         .join(",");
+      const effectiveBiasForKey = biasOverride != null ? biasOverride : strictnessBias;
+
+      // Work key: identifies the student work itself (photos or paste text)
+      // Used to decide whether to reuse the ref code on resubmit
+      const workKey =
+        inputMode === "photo"
+          ? `photo:${photosToUse.map((p) => p.id).join(",")}|ak:${akFingerprint}|akp:${akPhotoIds}`
+          : `paste:${trimmedWork.slice(0, 200)}|len:${trimmedWork.length}|ak:${akFingerprint}|akp:${akPhotoIds}`;
+
+      // Submit key: includes all settings — used for compression escalation only
       const submitKey =
         inputMode === "photo"
-          ? `photo:${photosToUse.map((p) => p.id).join(",")}|gb:${gradeBand}|v:${voiceEffective}|r:${rubricFingerprint}|ak:${akFingerprint}|akp:${akPhotoIds}|st:${standards}`
-          : `paste:${trimmedWork.slice(0, 200)}|len:${trimmedWork.length}|gb:${gradeBand}|v:${voiceEffective}|r:${rubricFingerprint}|ak:${akFingerprint}|akp:${akPhotoIds}|st:${standards}`;
-          
+          ? `photo:${photosToUse.map((p) => p.id).join(",")}|gb:${gradeBand}|v:${voiceEffective}|r:${rubricFingerprint}|ak:${akFingerprint}|akp:${akPhotoIds}|st:${standards}|sb:${effectiveBiasForKey}|sa:${subjectArea}`
+          : `paste:${trimmedWork.slice(0, 200)}|len:${trimmedWork.length}|gb:${gradeBand}|v:${voiceEffective}|r:${rubricFingerprint}|ak:${akFingerprint}|akp:${akPhotoIds}|st:${standards}|sb:${effectiveBiasForKey}|sa:${subjectArea}`;
+
+      // New student work → clear ref code so a new one is generated
+      const isNewWork = workKey !== lastWorkKeyRef.current;
+      if (isNewWork) {
+        setRefCode("");
+        lastWorkKeyRef.current = workKey;
+      }
+
       // ✅ 2) Compute the attempt + compression profile LOCALLY (don't rely on state timing)
+      // Only escalate compression when EVERYTHING is identical (true retry)
       const isRetry = submitKey === lastSubmitKeyRef.current;
       const nextAttempt = isRetry ? Math.min(3, (submissionAttempt || 1) + 1) : 1;
       const profileToUse = getCompressionProfile(nextAttempt);
@@ -2196,6 +2216,46 @@ export default function GradingPage() {
         if (norm.assessment) {
           setCopyEnabled(true);
 
+          // Auto-publish result to portal (or update existing ref code on resubmit)
+          // Use closure refCode only if same student work (not new work)
+          const reuseCode = !isNewWork && refCode ? refCode : "";
+          try {
+            const payloadText = buildFullTeacherPayloadText(norm.assessment, reuseCode, gradeBand, rubricOverride);
+            if (reuseCode) {
+              // Resubmit same work: update existing result
+              await fetch(`${resultsCreateUrl}/${reuseCode}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ payload: payloadText }),
+              });
+            } else {
+              // New work or first submit: create new result
+              const pub = await publishResultToPortal({
+                payload: payloadText,
+                meta: {
+                  source: "grading-auto",
+                  gradeBand,
+                  capturedCount: photosRef.current?.length || undefined,
+                },
+              });
+              const newCode = String(pub.code || "").toUpperCase();
+              setRefCode(newCode);
+              // Update the stored payload to include the ref code link
+              if (newCode) {
+                try {
+                  const updatedPayload = buildFullTeacherPayloadText(norm.assessment, newCode, gradeBand, rubricOverride);
+                  await fetch(`${resultsCreateUrl}/${newCode}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ payload: updatedPayload }),
+                  });
+                } catch {}
+              }
+            }
+          } catch (e) {
+            console.warn("Auto-publish to /results failed:", e);
+          }
+
           // Auto-scroll to the response so teacher doesn't have to scroll manually
           setTimeout(() => {
             responseRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2298,9 +2358,20 @@ export default function GradingPage() {
         createdAt: Date.now(),
         assessment,
         formattedText: String(formattedText || "").trim(),
+        refCode: refCode || "",
       };
 
       setSessionItems((prev) => {
+        // If same ref code already in session, replace it (resubmit overwrites)
+        if (entry.refCode) {
+          const idx = prev.findIndex((it) => it.refCode === entry.refCode);
+          if (idx !== -1) {
+            const next = [...prev];
+            next[idx] = { ...entry, id: prev[idx].id }; // keep original id
+            return next;
+          }
+        }
+        // Fallback dedup: identical text within 2s
         const last = prev[prev.length - 1];
         if (last && last.formattedText === entry.formattedText && Date.now() - last.createdAt < 2000) {
           return prev;
@@ -2598,34 +2669,12 @@ export default function GradingPage() {
 
     async function copyFormatted() {
       if (!assessment || !copyEnabled) return;
-      
+
       setCopyEnabled(false);
 
-      // Ensure this result is published when teacher copies.
-      // We want AA123 returned from backend and included in the copied text.
-      let codeLocal = refCode;
+      // Result is already published on submission — just use the existing ref code
+      const codeLocal = refCode;
 
-      if (!codeLocal) {
-        try {
-          const payloadText = buildFullTeacherPayloadText(assessment, "", gradeBand, rubricOverride);
-          const pub = await publishResultToPortal({
-            payload: payloadText,
-            meta: {
-              source: "grading-copy",
-              gradeBand,
-              capturedCount: photosRef.current?.length || undefined,
-            },
-          });
-
-          codeLocal = String(pub.code || "").toUpperCase();
-          setRefCode(codeLocal);
-        } catch (e) {
-          console.warn("publish to /results failed:", e);
-          setSubmitError(`Portal publish failed (still copying): ${e?.message || "Unknown error"}`);
-          setCopyEnabled(true);
-        }
-      }
-      
       const plainText = buildFullTeacherPayloadText(assessment, codeLocal, gradeBand, rubricOverride);
       const htmlAssignmentLinks = getAssignmentLinksFromAssessment(assessment);
       const submittedText = String(assessment?.submitted_text || "").trim();
@@ -3606,7 +3655,7 @@ export default function GradingPage() {
                   )
                 }
               >
-                {submitting ? "Submitting…" : "Submit"}
+                {submitting ? "Submitting…" : assessment ? "Resubmit" : "Submit"}
               </button>
               <button ref={tourTargetCopySessionRef} onClick={emailReports} disabled={!sessionItems.length || summarizingSession} style={styles.secondaryBtn}>
                 {summarizingSession ? `Analyzing… (${sessionItems.length})` : sessionEmailSent ? `Sent! (${sessionItems.length})` : `Email Reports (${sessionItems.length})`}

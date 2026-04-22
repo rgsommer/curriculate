@@ -651,6 +651,7 @@ export default function AdminUsageDashboard() {
                       <th className="p-2 text-left">School</th>
                       <th className="p-2 text-left">Reviews</th>
                       <th className="p-2 text-left">Last contacted</th>
+                      <th className="p-2 text-center w-8"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -691,6 +692,33 @@ export default function AdminUsageDashboard() {
                               <span className="text-amber-300">Never</span>
                             )}
                             {t.emailsSent > 0 && <span className="text-white/40 ml-1">({t.emailsSent} sent)</span>}
+                          </td>
+                          <td className="p-2 text-center">
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (!window.confirm(`Remove ${t.email} from outreach list?`)) return;
+                                try {
+                                  const res = await fetch("/api/admin/teacher-outreach/delete", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ emails: [t.email] }),
+                                  });
+                                  const j = await res.json();
+                                  if (j.ok) {
+                                    loadOutreach();
+                                  } else {
+                                    alert(j.error || "Delete failed");
+                                  }
+                                } catch (err) {
+                                  alert("Delete failed: " + err.message);
+                                }
+                              }}
+                              className="text-red-400/60 hover:text-red-300 text-xs"
+                              title={`Remove ${t.email}`}
+                            >
+                              ✕
+                            </button>
                           </td>
                         </tr>
                       ))}
