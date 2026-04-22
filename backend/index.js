@@ -9731,9 +9731,18 @@ function buildRubricInstructions({
     Only suggest improvements that are demonstrably missing or weak in the student work shown.
     If an item is already present (labels, spacing, etc.), do not suggest it.
 
-    HANDWRITING RULE:
-    - If neat and legible: do not mention handwriting (unless praising notably neat/consistent presentation).
-    - Only comment if readability is clearly impacted.
+    NEATNESS & PRESENTATION RULE (applies to all handwritten/paper submissions):
+    - Do NOT deduct points for neatness or handwriting — this is purely observational feedback.
+    - If the work is notably neat, well-organized, or clearly presented: include a specific strength
+      (e.g., "Work is exceptionally neat and well-organized — easy to follow your thinking" or
+      "Clear handwriting and tidy layout make this a pleasure to read").
+    - If the work is messy, hard to read, disorganized, or has excessive cross-outs: include a specific
+      next step (e.g., "Try to keep your work more organized — use spacing between problems and avoid
+      heavy cross-outs so your teacher can follow your reasoning" or "Neater presentation would help
+      showcase the strong thinking behind your answers").
+    - For work that is average/unremarkable in neatness: do not mention it at all.
+    - Keep neatness comments encouraging, not punitive. Frame messy work as "here's how to show off
+      your thinking better" rather than criticism.
 
     ACADEMIC INTEGRITY (grade-calibrated, evidence-based):
       Default:

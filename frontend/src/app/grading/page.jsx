@@ -2768,7 +2768,9 @@ export default function GradingPage() {
       <div style={styles.page}>
         <div style={styles.header}>
           <h1 style={styles.h1}>Grading</h1>
-          <div style={styles.sub}>Capture tests, quizzes, essays, posters, math sheets, even art, then submit for an assessment using the built-in rubric or your own. Include a rubric with your first images to use it for the session.</div>
+          {!tipsHidden && (
+            <div style={styles.sub}>Grade anything: snap a photo, paste text, batch-upload a stack, record video, or upload audio. Works for essays, math, art, speeches, music performances, skits, and more. Use the built-in rubric or upload your own.</div>
+          )}
         </div>
 
         <div style={styles.controlsRow}>
