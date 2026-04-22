@@ -4678,7 +4678,8 @@ const styles = {
     borderRadius: 14,
     overflow: "hidden",
     background: "#0b1220",
-    /* no forced aspect-ratio — container adapts to the actual camera feed */
+    maxWidth: 200,
+    /* compact preview — still shows full frame via objectFit contain */
   },
   video: { width: "100%", height: "auto", objectFit: "contain", display: "block" },
   cameraOverlay: {
