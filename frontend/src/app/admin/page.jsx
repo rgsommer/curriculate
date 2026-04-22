@@ -613,6 +613,32 @@ export default function AdminUsageDashboard() {
                     return visible.every((t) => outreachSelected.has(t.email)) ? "Deselect all" : "Select all";
                   })()}
                 </button>
+                {outreachSelected.size > 0 && (
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm(`Delete ${outreachSelected.size} selected teacher(s) from outreach list?`)) return;
+                      try {
+                        const res = await fetch("/api/admin/teacher-outreach", {
+                          method: "DELETE",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ emails: [...outreachSelected] }),
+                        });
+                        const j = await res.json();
+                        if (j.ok) {
+                          setOutreachSelected(new Set());
+                          loadOutreach();
+                        } else {
+                          alert(j.error || "Delete failed");
+                        }
+                      } catch (e) {
+                        alert("Delete failed: " + e.message);
+                      }
+                    }}
+                    className="rounded-lg px-3 py-1 text-xs font-medium bg-red-500/20 border border-red-400/40 text-red-300 hover:bg-red-500/30"
+                  >
+                    Delete ({outreachSelected.size})
+                  </button>
+                )}
               </div>
 
               {/* Teacher list */}

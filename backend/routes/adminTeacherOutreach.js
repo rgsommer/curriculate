@@ -207,14 +207,32 @@ router.get("/teacher-outreach", requireAdminToken, async (req, res) => {
       const outreach = outreachMap.get(email);
       teachers.push({
         email,
-        teacherName: info.teacherName,
+        teacherName: info.teacherName || outreach?.teacherName || "",
         schools: [...info.schools],
         classes: [...info.classes],
         reviewCount: info.reviewCount,
         firstSeen: info.firstSeen,
         lastContactedAt: outreach?.lastContactedAt || null,
         emailsSent: outreach?.emails?.length || 0,
+        source: outreach?.source || "grade-review",
       });
+    }
+
+    // Include TeacherOutreach records that have no grade reviews (e.g. grading-email senders)
+    for (const [email, outreach] of outreachMap) {
+      if (!teacherMap.has(email)) {
+        teachers.push({
+          email,
+          teacherName: outreach.teacherName || "",
+          schools: outreach.school ? [outreach.school] : [],
+          classes: [],
+          reviewCount: 0,
+          firstSeen: outreach.createdAt || outreach.lastContactedAt,
+          lastContactedAt: outreach.lastContactedAt || null,
+          emailsSent: outreach.emails?.length || 0,
+          source: outreach.source || "grading-email",
+        });
+      }
     }
 
     // Sort: not-yet-contacted first, then by firstSeen desc
@@ -232,6 +250,24 @@ router.get("/teacher-outreach", requireAdminToken, async (req, res) => {
   } catch (e) {
     console.error("GET /admin/teacher-outreach error:", e);
     return res.status(500).json({ error: "Failed to load teacher outreach data" });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  DELETE /admin/teacher-outreach — remove selected teachers           */
+/* ------------------------------------------------------------------ */
+router.delete("/teacher-outreach", requireAdminToken, async (req, res) => {
+  try {
+    const { emails } = req.body || {};
+    if (!Array.isArray(emails) || !emails.length) {
+      return res.status(400).json({ error: "No emails provided" });
+    }
+    const normalized = emails.map((e) => String(e).toLowerCase().trim()).filter(Boolean);
+    const result = await TeacherOutreach.deleteMany({ email: { $in: normalized } });
+    return res.json({ ok: true, deleted: result.deletedCount });
+  } catch (e) {
+    console.error("DELETE /admin/teacher-outreach error:", e);
+    return res.status(500).json({ error: "Failed to delete outreach records" });
   }
 });
 

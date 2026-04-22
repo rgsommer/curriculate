@@ -152,6 +152,8 @@ function PadlockIcon({ locked, size = 13, style: extra }) {
         <>
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
           <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          <circle cx="12" cy="16" r="1.5" fill={color} stroke="none" />
+          <line x1="12" y1="17.5" x2="12" y2="19.5" strokeWidth={2} />
         </>
       ) : (
         <>
@@ -2777,7 +2779,7 @@ export default function GradingPage() {
                 const isLocked = padlock === "locked";
                 return (
                   <option key={v.value} value={v.value} disabled={isLocked}>
-                    {v.label}{padlock === "unlocked" ? " \u{1F513}" : padlock === "locked" ? " \u{1F512}" : ""}
+                    {v.label}{padlock === "unlocked" ? " \u{1F513}" : padlock === "locked" ? " \u{1F510}" : ""}
                   </option>
                 );
               })}
@@ -2812,7 +2814,7 @@ export default function GradingPage() {
                 const isLocked = padlock === "locked";
                 return (
                   <option key={v.value} value={v.value} disabled={isLocked}>
-                    {v.label}{padlock === "unlocked" ? " \u{1F513}" : padlock === "locked" ? " \u{1F512}" : ""}
+                    {v.label}{padlock === "unlocked" ? " \u{1F513}" : padlock === "locked" ? " \u{1F510}" : ""}
                   </option>
                 );
               })}
