@@ -9747,12 +9747,15 @@ function buildRubricInstructions({
         your name, date, and a clear title — shows professionalism").
       - If any are missing: be SPECIFIC about exactly which items are missing. Never give vague
         advice like "review your writing for clarity." Instead, name exactly what to add.
+        IMPORTANT: If there is ANY doubt (hard to read, might be on another page, partially visible),
+        phrase it as a question rather than a statement — "Did you include..." is safer than
+        "You forgot to include..." when you can't be 100% sure.
         Examples:
-        - Missing name only: "Don't forget to write your name at the top of your paper!"
-        - Missing date only: "Add the date to your paper so you and your teacher can keep track of when this was done."
-        - Missing title only: "Your paper needs a title at the top — something like 'My Book Report' or 'Math Homework Chapter 5' so your teacher knows what this is."
-        - Missing name and date: "Remember to write your name and the date at the top of every assignment."
-        - Missing all three: "Always start your paper with your name, the date, and a title. For example: 'Maya — April 22, 2026 — My Favourite Animal.'"
+        - Clearly missing name: "Don't forget to write your name at the top of your paper!"
+        - Uncertain if name is there: "Did you include your name? I couldn't spot it — make sure it's at the top so your teacher knows whose work this is."
+        - Missing date: "Did you add the date? It helps you and your teacher keep track of when this was done."
+        - Missing title: "Does your paper have a title? Something like 'My Book Report' or 'Math Homework Chapter 5' at the top helps your teacher know what this is about."
+        - Missing multiple: "Did you remember to include your name, the date, and a title at the top? For example: 'Maya — April 22, 2026 — My Favourite Animal.'"
         Especially for grades 3–5, be very direct and concrete — young students need to be told
         exactly what to write and where.
       - For tests/worksheets with pre-printed name/date fields: only comment if the student left
