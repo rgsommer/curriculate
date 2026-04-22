@@ -9745,8 +9745,16 @@ function buildRubricInstructions({
       proper title or heading on their work.
       - If all three are present and clear: mention it as a strength (e.g., "Good habit including
         your name, date, and a clear title — shows professionalism").
-      - If any are missing: include a gentle next step (e.g., "Remember to put your name and date
-        on your work, and add a title so your teacher knows what the assignment is about").
+      - If any are missing: be SPECIFIC about exactly which items are missing. Never give vague
+        advice like "review your writing for clarity." Instead, name exactly what to add.
+        Examples:
+        - Missing name only: "Don't forget to write your name at the top of your paper!"
+        - Missing date only: "Add the date to your paper so you and your teacher can keep track of when this was done."
+        - Missing title only: "Your paper needs a title at the top — something like 'My Book Report' or 'Math Homework Chapter 5' so your teacher knows what this is."
+        - Missing name and date: "Remember to write your name and the date at the top of every assignment."
+        - Missing all three: "Always start your paper with your name, the date, and a title. For example: 'Maya — April 22, 2026 — My Favourite Animal.'"
+        Especially for grades 3–5, be very direct and concrete — young students need to be told
+        exactly what to write and where.
       - For tests/worksheets with pre-printed name/date fields: only comment if the student left
         them blank. Don't praise filling in pre-printed fields — that's expected.
       - A page number or assignment code alone does NOT count as a title.
