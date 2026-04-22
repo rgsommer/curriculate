@@ -254,9 +254,9 @@ router.get("/teacher-outreach", requireAdminToken, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  DELETE /admin/teacher-outreach — remove selected teachers           */
+/*  POST /admin/teacher-outreach/delete — remove selected teachers     */
 /* ------------------------------------------------------------------ */
-router.delete("/teacher-outreach", requireAdminToken, async (req, res) => {
+router.post("/teacher-outreach/delete", requireAdminToken, async (req, res) => {
   try {
     const { emails } = req.body || {};
     if (!Array.isArray(emails) || !emails.length) {
@@ -266,7 +266,7 @@ router.delete("/teacher-outreach", requireAdminToken, async (req, res) => {
     const result = await TeacherOutreach.deleteMany({ email: { $in: normalized } });
     return res.json({ ok: true, deleted: result.deletedCount });
   } catch (e) {
-    console.error("DELETE /admin/teacher-outreach error:", e);
+    console.error("POST /admin/teacher-outreach/delete error:", e);
     return res.status(500).json({ error: "Failed to delete outreach records" });
   }
 });

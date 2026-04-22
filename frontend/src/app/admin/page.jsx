@@ -618,8 +618,8 @@ export default function AdminUsageDashboard() {
                     onClick={async () => {
                       if (!window.confirm(`Delete ${outreachSelected.size} selected teacher(s) from outreach list?`)) return;
                       try {
-                        const res = await fetch("/api/admin/teacher-outreach", {
-                          method: "DELETE",
+                        const res = await fetch("/api/admin/teacher-outreach/delete", {
+                          method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ emails: [...outreachSelected] }),
                         });
