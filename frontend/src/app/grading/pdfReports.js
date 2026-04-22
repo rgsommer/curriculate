@@ -125,7 +125,7 @@ function letterGradeFromPct(pct) {
 }
 
 // ---------- Half-page PDF (2 per page, full feedback) ----------
-export async function buildResultsPdf(results) {
+export async function buildResultsPdf(results, { title } = {}) {
   const { jsPDF } = await loadJsPdf();
   const doc = new jsPDF({ unit: "pt", format: "letter" });
 
@@ -404,11 +404,24 @@ export async function buildResultsPdf(results) {
     drawStudentReport(good[i], i);
   }
 
+  // Page footer with title on every page
+  if (title) {
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let p = 1; p <= pageCount; p++) {
+      doc.setPage(p);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7);
+      doc.setTextColor(140, 140, 140);
+      doc.text(title, PAGE_W / 2, PAGE_H - 14, { align: "center" });
+      doc.setTextColor(0, 0, 0);
+    }
+  }
+
   return doc.output("datauristring").split(",")[1];
 }
 
 // ---------- Cut-strip PDF (3-column card grid) ----------
-export async function buildStripsPdf(results) {
+export async function buildStripsPdf(results, { title } = {}) {
   const { jsPDF } = await loadJsPdf();
   const doc = new jsPDF({ unit: "pt", format: "letter" });
 
@@ -555,6 +568,19 @@ export async function buildStripsPdf(results) {
     });
 
     pageY += rowH + GAP;
+  }
+
+  // Page footer with title on every page
+  if (title) {
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let p = 1; p <= pageCount; p++) {
+      doc.setPage(p);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7);
+      doc.setTextColor(140, 140, 140);
+      doc.text(title, PAGE_W / 2, PAGE_H - 14, { align: "center" });
+      doc.setTextColor(0, 0, 0);
+    }
   }
 
   return doc.output("datauristring").split(",")[1];

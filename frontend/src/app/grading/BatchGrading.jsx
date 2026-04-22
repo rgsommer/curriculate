@@ -1061,9 +1061,10 @@ export default function BatchGrading({
       let pdfBase64 = null;
       let stripsBase64 = null;
       try {
+        const pdfOpts = emailTitle.trim() ? { title: emailTitle.trim() } : {};
         [pdfBase64, stripsBase64] = await Promise.all([
-          buildResultsPdf(results),
-          buildStripsPdf(results),
+          buildResultsPdf(results, pdfOpts),
+          buildStripsPdf(results, pdfOpts),
         ]);
       } catch (pdfErr) {
         console.error("[batch] PDF generation failed:", pdfErr?.message || pdfErr, pdfErr?.stack);
@@ -1077,7 +1078,12 @@ export default function BatchGrading({
       }
 
       const sendUrl = gradingUrl.replace(/\/grading$/, "/grading/send-email");
-      const baseName = (pdfName || "batch-results").replace(/\.pdf$/i, "");
+      const rawBase = (pdfName || "batch-results").replace(/\.pdf$/i, "");
+      const srcTag = rawBase.replace(/[^a-zA-Z0-9]/g, "").slice(-3) || "000";
+      const titleSlug = emailTitle.trim()
+        ? emailTitle.trim().replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)
+        : null;
+      const baseName = titleSlug ? `${titleSlug}-${srcTag}` : `${rawBase}-${srcTag}`;
       const subject = emailTitle.trim() ? `${emailSubject} — ${emailTitle.trim()}` : emailSubject;
       const payload = { to, subject, html, pdfAttachments: [] };
       if (pdfBase64) {
@@ -1419,7 +1425,8 @@ export default function BatchGrading({
                   const good = results.filter((r) => !r.error);
                   if (!good.length) { alert("No successful results to print."); return; }
                   try {
-                    const b64 = await buildResultsPdf(results);
+                    const opts = emailTitle.trim() ? { title: emailTitle.trim() } : {};
+                    const b64 = await buildResultsPdf(results, opts);
                     if (!b64) { alert("No results available."); return; }
                     const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
                     window.open(URL.createObjectURL(blob), "_blank");
@@ -1438,7 +1445,8 @@ export default function BatchGrading({
                   const good = results.filter((r) => !r.error);
                   if (!good.length) { alert("No successful results to print."); return; }
                   try {
-                    const b64 = await buildStripsPdf(results);
+                    const opts = emailTitle.trim() ? { title: emailTitle.trim() } : {};
+                    const b64 = await buildStripsPdf(results, opts);
                     if (!b64) { alert("No results available."); return; }
                     const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
                     window.open(URL.createObjectURL(blob), "_blank");
