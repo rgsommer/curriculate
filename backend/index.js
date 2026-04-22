@@ -9741,6 +9741,15 @@ function buildRubricInstructions({
       heavy cross-outs so your teacher can follow your reasoning" or "Neater presentation would help
       showcase the strong thinking behind your answers").
     - For work that is average/unremarkable in neatness: do not mention it at all.
+    - HEADINGS & IDENTIFICATION: Check whether the student included their name, the date, and a
+      proper title or heading on their work.
+      - If all three are present and clear: mention it as a strength (e.g., "Good habit including
+        your name, date, and a clear title — shows professionalism").
+      - If any are missing: include a gentle next step (e.g., "Remember to put your name and date
+        on your work, and add a title so your teacher knows what the assignment is about").
+      - For tests/worksheets with pre-printed name/date fields: only comment if the student left
+        them blank. Don't praise filling in pre-printed fields — that's expected.
+      - A page number or assignment code alone does NOT count as a title.
     - Keep neatness comments encouraging, not punitive. Frame messy work as "here's how to show off
       your thinking better" rather than criticism.
 
