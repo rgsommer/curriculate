@@ -3018,6 +3018,7 @@ export default function GradingPage() {
                 (stickyRubricText || "").trim() ||
                 ""
               }
+              subjectArea={subjectArea}
               onClose={() => setInputMode("photo")}
             />
           ) : inputMode === "batch" ? (

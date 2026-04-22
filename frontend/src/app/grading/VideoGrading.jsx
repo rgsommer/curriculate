@@ -11,17 +11,90 @@ import React, { useRef, useState, useCallback, useEffect } from "react";
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
 const ACCEPTED_TYPES = ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v"];
 
+const PERFORMANCE_TYPES = [
+  { value: "speech", label: "Speech / Presentation" },
+  { value: "acting", label: "Acting / Skit / Drama" },
+  { value: "singing", label: "Singing" },
+  { value: "instrumental", label: "Instrumental Music" },
+  { value: "dance", label: "Dance / Movement" },
+  { value: "demo", label: "Demonstration / How-To" },
+  { value: "other", label: "Other" },
+];
+
+const INSTRUMENT_FAMILIES = [
+  { value: "brass", label: "Brass" },
+  { value: "woodwind", label: "Woodwind" },
+  { value: "strings", label: "Strings" },
+  { value: "percussion", label: "Percussion" },
+  { value: "keys", label: "Keyboard / Piano" },
+  { value: "guitar", label: "Guitar" },
+];
+
+const INSTRUMENTS_BY_FAMILY = {
+  brass: [
+    { value: "trumpet", label: "Trumpet" },
+    { value: "trombone", label: "Trombone" },
+    { value: "french_horn", label: "French Horn" },
+    { value: "tuba", label: "Tuba" },
+    { value: "euphonium", label: "Euphonium / Baritone" },
+    { value: "cornet", label: "Cornet" },
+    { value: "brass_other", label: "Other Brass" },
+  ],
+  woodwind: [
+    { value: "flute", label: "Flute" },
+    { value: "clarinet", label: "Clarinet" },
+    { value: "saxophone", label: "Saxophone" },
+    { value: "oboe", label: "Oboe" },
+    { value: "bassoon", label: "Bassoon" },
+    { value: "recorder", label: "Recorder" },
+    { value: "piccolo", label: "Piccolo" },
+    { value: "woodwind_other", label: "Other Woodwind" },
+  ],
+  strings: [
+    { value: "violin", label: "Violin" },
+    { value: "viola", label: "Viola" },
+    { value: "cello", label: "Cello" },
+    { value: "double_bass", label: "Double Bass" },
+    { value: "ukulele", label: "Ukulele" },
+    { value: "harp", label: "Harp" },
+    { value: "strings_other", label: "Other Strings" },
+  ],
+  percussion: [
+    { value: "snare", label: "Snare Drum" },
+    { value: "drum_kit", label: "Drum Kit" },
+    { value: "timpani", label: "Timpani" },
+    { value: "marimba", label: "Marimba / Xylophone" },
+    { value: "percussion_other", label: "Other Percussion" },
+  ],
+  keys: [
+    { value: "piano", label: "Piano" },
+    { value: "organ", label: "Organ" },
+    { value: "synthesizer", label: "Synthesizer / Keyboard" },
+    { value: "keys_other", label: "Other Keyboard" },
+  ],
+  guitar: [
+    { value: "acoustic_guitar", label: "Acoustic Guitar" },
+    { value: "electric_guitar", label: "Electric Guitar" },
+    { value: "bass_guitar", label: "Bass Guitar" },
+    { value: "guitar_other", label: "Other Guitar" },
+  ],
+};
+
 export default function VideoGrading({
   gradingUrl,
   gradeBand,
   standards,
   feedbackVoice,
   rubricOverride,
+  subjectArea,
   onClose,
 }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [studentName, setStudentName] = useState("");
+  const [performanceType, setPerformanceType] = useState("");
+  const [instrumentFamily, setInstrumentFamily] = useState("");
+  const [instrument, setInstrument] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState("");
   const [result, setResult] = useState(null);
@@ -160,6 +233,10 @@ export default function VideoGrading({
       formData.append("standards", standards || "canada");
       formData.append("feedbackVoice", feedbackVoice || "coach");
       if (studentName.trim()) formData.append("studentName", studentName.trim());
+      if (performanceType) formData.append("performanceType", performanceType);
+      if (instrumentFamily) formData.append("instrumentFamily", instrumentFamily);
+      if (instrument) formData.append("instrument", instrument);
+      if (subjectArea) formData.append("subjectArea", subjectArea);
 
       const resp = await fetch(`${backendBase}/grading/video`, {
         method: "POST",
@@ -205,7 +282,7 @@ export default function VideoGrading({
       setProgress("");
       setProgressPct(0);
     }
-  }, [file, backendBase, rubricOverride, gradeBand, standards, feedbackVoice, studentName, startProgressTimer, stopProgressTimer]);
+  }, [file, backendBase, rubricOverride, gradeBand, standards, feedbackVoice, studentName, performanceType, instrumentFamily, instrument, subjectArea, startProgressTimer, stopProgressTimer]);
 
   function buildVideoPayloadText(r) {
     const lines = [];
@@ -216,6 +293,14 @@ export default function VideoGrading({
     }
     lines.push("");
     if (r.student_name) { lines.push(`Student: ${r.student_name}`); lines.push(""); }
+    if (r.performanceType) {
+      const typeLabel = PERFORMANCE_TYPES.find(t => t.value === r.performanceType)?.label || r.performanceType;
+      lines.push(`Performance Type: ${typeLabel}`);
+      if (r.instrument) {
+        const instLabel = Object.values(INSTRUMENTS_BY_FAMILY).flat().find(i => i.value === r.instrument)?.label || r.instrument;
+        lines.push(`Instrument: ${instLabel}`);
+      }
+    }
     if (r.videoDuration) lines.push(`Video: ${Math.round(r.videoDuration)}s, ${r.frameCount || 0} frames analyzed`);
     lines.push("");
     if (Array.isArray(r.sections)) {
@@ -282,6 +367,9 @@ export default function VideoGrading({
     setResult(null);
     setError("");
     setStudentName("");
+    setPerformanceType("");
+    setInstrumentFamily("");
+    setInstrument("");
     setRefCode("");
     setCopiedRef(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -326,7 +414,9 @@ export default function VideoGrading({
               {r.student_name || "Student"} — Video Assessment
             </div>
             <div style={{ fontSize: 13, color: "#64748b" }}>
-              {r.inferred_subject || "Subject"} • {r.inferred_assessment_type || "Assessment"} •{" "}
+              {r.performanceType ? (PERFORMANCE_TYPES.find(t => t.value === r.performanceType)?.label || r.performanceType) : (r.inferred_subject || "Subject")}
+              {r.instrument ? ` (${Object.values(INSTRUMENTS_BY_FAMILY).flat().find(i => i.value === r.instrument)?.label || r.instrument})` : ""}
+              {" • "}{r.inferred_assessment_type || "Assessment"} •{" "}
               {r.videoDuration ? `${Math.round(r.videoDuration)}s video` : ""}
               {r.frameCount ? ` • ${r.frameCount} frames analyzed` : ""}
             </div>
@@ -549,6 +639,78 @@ export default function VideoGrading({
             />
           </div>
 
+          {/* Performance type selector */}
+          {file && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 4 }}>
+                What type of performance is this?
+              </label>
+              <select
+                value={performanceType}
+                onChange={(e) => { setPerformanceType(e.target.value); setInstrumentFamily(""); setInstrument(""); }}
+                disabled={submitting}
+                style={{
+                  width: "100%", padding: "8px 12px", borderRadius: 8,
+                  border: "1px solid #cbd5e1", fontSize: 14, boxSizing: "border-box",
+                  background: "#fff",
+                }}
+              >
+                <option value="">Select performance type...</option>
+                {PERFORMANCE_TYPES.map(t => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Instrument family (instrumental only) */}
+          {performanceType === "instrumental" && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 4 }}>
+                Instrument Family
+              </label>
+              <select
+                value={instrumentFamily}
+                onChange={(e) => { setInstrumentFamily(e.target.value); setInstrument(""); }}
+                disabled={submitting}
+                style={{
+                  width: "100%", padding: "8px 12px", borderRadius: 8,
+                  border: "1px solid #cbd5e1", fontSize: 14, boxSizing: "border-box",
+                  background: "#fff",
+                }}
+              >
+                <option value="">Select family...</option>
+                {INSTRUMENT_FAMILIES.map(f => (
+                  <option key={f.value} value={f.value}>{f.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Specific instrument */}
+          {instrumentFamily && INSTRUMENTS_BY_FAMILY[instrumentFamily] && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 4 }}>
+                Instrument
+              </label>
+              <select
+                value={instrument}
+                onChange={(e) => setInstrument(e.target.value)}
+                disabled={submitting}
+                style={{
+                  width: "100%", padding: "8px 12px", borderRadius: 8,
+                  border: "1px solid #cbd5e1", fontSize: 14, boxSizing: "border-box",
+                  background: "#fff",
+                }}
+              >
+                <option value="">Select instrument...</option>
+                {INSTRUMENTS_BY_FAMILY[instrumentFamily].map(i => (
+                  <option key={i.value} value={i.value}>{i.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Rubric status indicator */}
           {rubricOverride && (
             <div style={{
@@ -563,17 +725,17 @@ export default function VideoGrading({
           {/* Grade button */}
           <button
             onClick={gradeVideo}
-            disabled={!file || submitting}
+            disabled={!file || !performanceType || submitting}
             style={{
               width: "100%",
               padding: "14px 20px",
               borderRadius: 10,
               border: "none",
-              background: !file || submitting ? "#94a3b8" : "#2563eb",
+              background: !file || !performanceType || submitting ? "#94a3b8" : "#2563eb",
               color: "#fff",
               fontSize: 16,
               fontWeight: 700,
-              cursor: !file || submitting ? "not-allowed" : "pointer",
+              cursor: !file || !performanceType || submitting ? "not-allowed" : "pointer",
               marginBottom: 8,
             }}
           >

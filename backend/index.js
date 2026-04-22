@@ -12093,6 +12093,9 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
     const subjectAreaVideo = ["math", "english", "science", "history", "geography", "languages"].includes(req.body?.subjectArea) ? req.body.subjectArea : "";
     const feedbackVoice = req.body?.feedbackVoice || "coach";
     const studentName = String(req.body?.studentName || "").trim() || null;
+    const performanceType = ["speech", "acting", "singing", "instrumental", "dance", "demo", "other"].includes(req.body?.performanceType) ? req.body.performanceType : "speech";
+    const instrumentFamily = req.body?.instrumentFamily || "";
+    const instrument = req.body?.instrument || "";
 
     // Create temp directory
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "curriculate-video-"));
@@ -12102,7 +12105,7 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
     const videoPath = path.join(tmpDir, `input.${ext}`);
     fs.writeFileSync(videoPath, req.file.buffer);
 
-    console.log(`[video-grade] Received ${(req.file.buffer.length / 1024 / 1024).toFixed(1)}MB ${ext} video`);
+    console.log(`[video-grade] Received ${(req.file.buffer.length / 1024 / 1024).toFixed(1)}MB ${ext} video, type=${performanceType}${instrumentFamily ? ` family=${instrumentFamily}` : ""}${instrument ? ` inst=${instrument}` : ""}`);
 
     // ------------------------------------------------
     // Step 1: Extract audio and transcribe with Whisper
@@ -12222,65 +12225,10 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
       batchMode: false,
     });
 
-    const videoPrompt = `
-    ${instructions}
-
-    *** VIDEO PERFORMANCE ASSESSMENT ***
-    You are grading a VIDEO recording of a student performance (speech, presentation, oral report, etc.).
-    You have two sources of evidence:
-    1. A TRANSCRIPT of what the student said (with timestamps)
-    2. FRAMES extracted from the video at regular intervals (showing the student's visual presentation)
-
-    ASSESSMENT DIMENSIONS (use these UNLESS a teacher rubric override specifies different criteria):
-    When no rubric is provided, assess using these 4 default dimensions (total /20):
-
-    1. CONTENT & KNOWLEDGE (/5):
-       - Accuracy and depth of subject matter
-       - Coverage of required topics/points
-       - Use of supporting evidence, examples, or details
-       - Understanding demonstrated through explanations
-
-    2. DELIVERY & PRESENTATION (/5):
-       - Speaking pace (too fast, too slow, or well-paced?)
-       - Volume and clarity of speech
-       - Filler words (count of "um", "uh", "like", "you know" — note frequency)
-       - Pauses — purposeful vs. awkward/lost
-       - Confidence and fluency
-
-    3. VISUAL PRESENTATION & BODY LANGUAGE (/5):
-       - Eye contact (looking at audience vs. reading from notes/screen)
-       - Posture and stance
-       - Gestures — natural and purposeful vs. fidgeting or stiff
-       - Use of visual aids (if applicable — slides, props, posters)
-       - Overall physical presence and engagement with audience
-
-    4. ORGANIZATION & STRUCTURE (/5):
-       - Clear introduction with topic/thesis statement
-       - Logical flow and transitions between points
-       - Conclusion that summarizes or closes effectively
-       - Time management (stayed within expected length, didn't rush/pad)
-
-    VIDEO-SPECIFIC RULES:
-    - Use the TRANSCRIPT to assess content, organization, and delivery (pace, filler words).
-    - Use the VIDEO FRAMES to assess eye contact, posture, gestures, visual aids.
-    - The frames are sampled every ~${Math.round(frameInterval)} seconds. Use them to identify PATTERNS,
-      not single moments (e.g., "mostly looked at notes" vs. "one frame caught them looking down").
-    - If the video has no speech (transcript empty), grade only visual aspects and note the absence of speech.
-    - If the video has no visual (frames empty), grade only from the transcript.
-    - Timestamps in the transcript help you assess pacing and time management.
-
-    ${transcript ? "" : "WARNING: No speech was detected in this video. Grade visual aspects only and note that no audio was captured."}
-
-    INFERENCE (required):
-    - inferred_subject: one of [Math, English, History, Geography, Science, Bible, Drama, Speech, Music, Art, French, Other]
-    - inferred_assessment_type: best fit from [Speech, Performance, Presentation, Project, Other]
-    - inferred_grade_level: one of [3-5, 6-8, 9-10, 11+, Unknown]
-    - response_format_detected: "mixed"
-
-    Set rubricDetected = false, rubricText = null, rubricConfidence = 0.
-    Set answerKeyDetected = false, answerKeyText = null, answerKeyConfidence = 0.
-    ${studentName ? `Set student_name = "${studentName}".` : "Set student_name = null."}
-    `.trim();
+    const videoPrompt = buildVideoPerformancePrompt({
+      performanceType, instrumentFamily, instrument, instructions, transcript,
+      frameInterval, studentName, rubricOverride: effectiveRubricOverride,
+    });
 
     // ------------------------------------------------
     // Step 4: Build AI request content
@@ -12479,6 +12427,9 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
       transcriptWithTimestamps,
       frameCount: frames.length,
       videoDuration: duration,
+      performanceType,
+      instrumentFamily: instrumentFamily || null,
+      instrument: instrument || null,
       meta: { submissionId, gradeBand, inputType: "video" },
     });
 
@@ -12708,6 +12659,249 @@ app.post("/grading/audio", audioUpload.single("audio"), async (req, res) => {
 });
 
 // Build performance-specific grading prompt for audio submissions
+// Build performance-type-aware prompt for video grading
+function buildVideoPerformancePrompt({ performanceType, instrumentFamily, instrument, instructions, transcript, frameInterval, studentName, rubricOverride }) {
+  const frameNote = `The frames are sampled every ~${Math.round(frameInterval)} seconds. Use them to identify PATTERNS, not single moments.`;
+
+  const commonVideoRules = `
+    VIDEO-SPECIFIC RULES:
+    - Use the TRANSCRIPT to assess spoken content, organization, and delivery.
+    - Use the VIDEO FRAMES to assess visual technique, posture, body language, and physical performance.
+    - ${frameNote}
+    - If the video has no speech (transcript empty), grade only visual/physical aspects.
+    - If the video has no visual (frames empty), grade only from the transcript.
+    ${transcript ? "" : "WARNING: No speech was detected in this video. Grade visual aspects only."}
+  `;
+
+  const inferBlock = `
+    INFERENCE (required):
+    - inferred_subject: one of [Math, English, History, Geography, Science, Bible, Drama, Speech, Music, Art, French, Other]
+    - inferred_assessment_type: best fit from [Speech, Performance, Presentation, Project, Other]
+    - inferred_grade_level: one of [3-5, 6-8, 9-10, 11+, Unknown]
+    - response_format_detected: "mixed"
+
+    Set rubricDetected = false, rubricText = null, rubricConfidence = 0.
+    Set answerKeyDetected = false, answerKeyText = null, answerKeyConfidence = 0.
+    ${studentName ? `Set student_name = "${studentName}".` : "Set student_name = null."}
+  `;
+
+  let typePrompt = "";
+
+  if (performanceType === "speech" || performanceType === "demo" || performanceType === "other") {
+    const label = performanceType === "demo" ? "Demonstration / How-To" : performanceType === "other" ? "General Performance" : "Speech / Presentation";
+    typePrompt = `
+    PERFORMANCE TYPE: ${label}
+
+    ASSESSMENT DIMENSIONS (use these UNLESS a teacher rubric overrides them — total /20):
+
+    1. CONTENT & KNOWLEDGE (/5):
+       - Accuracy and depth of subject matter
+       - Coverage of required topics/points
+       - Use of supporting evidence, examples, or details
+       - Understanding demonstrated through explanations
+
+    2. DELIVERY & PRESENTATION (/5):
+       - Speaking pace (too fast, too slow, or well-paced?)
+       - Volume and clarity of speech
+       - Filler words (count of "um", "uh", "like", "you know" — note frequency)
+       - Pauses — purposeful vs. awkward/lost
+       - Confidence and fluency
+
+    3. VISUAL PRESENTATION & BODY LANGUAGE (/5):
+       - Eye contact (looking at audience vs. reading from notes/screen)
+       - Posture and stance
+       - Gestures — natural and purposeful vs. fidgeting or stiff
+       - Use of visual aids (if applicable — slides, props, posters)
+       - Overall physical presence and engagement with audience
+
+    4. ORGANIZATION & STRUCTURE (/5):
+       - Clear introduction with topic/thesis statement
+       - Logical flow and transitions between points
+       - Conclusion that summarizes or closes effectively
+       - Time management (stayed within expected length, didn't rush/pad)
+    `;
+  } else if (performanceType === "acting") {
+    typePrompt = `
+    PERFORMANCE TYPE: Acting / Skit / Drama
+
+    ASSESSMENT DIMENSIONS (use these UNLESS a teacher rubric overrides them — total /25):
+
+    1. CHARACTER & INTERPRETATION (/5):
+       - Character commitment and believability
+       - Understanding of character's motivation and emotions
+       - Staying in character throughout the performance
+       - Distinction between characters (if playing multiple roles)
+
+    2. VOCAL PERFORMANCE (/5):
+       - Projection and volume appropriate for the space
+       - Clarity of diction and articulation
+       - Vocal variety (pitch, pace, tone changes to convey emotion)
+       - Accent or dialect work (if applicable)
+       - Memorization of lines (reading vs. performing)
+
+    3. PHYSICAL PERFORMANCE (/5):
+       - Blocking and stage movement (purposeful, not wandering)
+       - Facial expressions and emotional range
+       - Gestures and body language in character
+       - Use of space and awareness of audience
+       - Physical energy and commitment
+
+    4. TECHNICAL ELEMENTS (/5):
+       - Props and costumes (if used — appropriateness and handling)
+       - Timing and pacing of scenes
+       - Cue pickup (reacting on time, not leaving dead air)
+       - Transitions between scenes or beats
+
+    5. OVERALL IMPACT (/5):
+       - Audience engagement and emotional connection
+       - Teamwork and ensemble awareness (if group performance)
+       - Creativity and originality in interpretation
+       - Overall polish and preparedness
+    `;
+  } else if (performanceType === "singing") {
+    typePrompt = `
+    PERFORMANCE TYPE: Singing / Vocal Music Performance (VIDEO — visual + audio)
+
+    ASSESSMENT DIMENSIONS (use these UNLESS a teacher rubric overrides them — total /30):
+
+    1. PITCH & INTONATION (/5):
+       - Accuracy of pitch, ability to stay in tune
+       - Interval accuracy, key consistency
+
+    2. TONE QUALITY (/5):
+       - Vocal timbre, resonance, breath support, projection
+       - From video: observe breath management (visible chest/diaphragm movement)
+
+    3. RHYTHM & TIMING (/5):
+       - Rhythmic accuracy, tempo consistency, phrasing
+
+    4. EXPRESSION & MUSICALITY (/5):
+       - Dynamics (piano/forte), emotional interpretation, stylistic awareness
+       - From video: facial expression, emotional engagement, communication with audience
+
+    5. DICTION & TEXT (/5):
+       - Clarity of words, vowel formation, consonant articulation
+       - Mouth shape and jaw openness visible in video frames
+
+    6. STAGE PRESENCE & TECHNIQUE (/5):
+       - Posture (standing tall, shoulders back, relaxed)
+       - Eye contact and audience engagement
+       - Hand/arm position (not fidgeting, purposeful gestures if any)
+       - Overall confidence and physical poise
+       - Breathing technique visible (diaphragmatic vs. shallow)
+
+    IMPORTANT: Whisper may produce garbled transcripts for singing — this is normal.
+    Do NOT penalize based on transcript quality. Use the transcript only for diction assessment
+    if recognizable lyrics are captured. Focus on what you can SEE and HEAR.
+    `;
+  } else if (performanceType === "instrumental") {
+    const familyLabels = { brass: "Brass", woodwind: "Woodwind", strings: "Strings", percussion: "Percussion", keys: "Keyboard/Piano", guitar: "Guitar" };
+    const familyLabel = familyLabels[instrumentFamily] || instrumentFamily || "Instrument";
+    const instrumentSpecific = getInstrumentSpecificCriteria(instrumentFamily, instrument);
+
+    typePrompt = `
+    PERFORMANCE TYPE: Instrumental Music Performance — ${familyLabel}${instrument ? ` (${instrument})` : ""} (VIDEO — visual + audio)
+
+    ASSESSMENT DIMENSIONS (use these UNLESS a teacher rubric overrides them — total /30):
+
+    1. TONE QUALITY (/5):
+       - ${instrumentSpecific.tone}
+       - From video: observe embouchure/hand position/bow contact contributing to tone
+
+    2. TECHNICAL ACCURACY (/5):
+       - ${instrumentSpecific.technique}
+       - From video: finger placement, hand position, stick grip, bow technique as visible
+
+    3. RHYTHM & TIMING (/5):
+       - Rhythmic precision, tempo consistency, time signature awareness
+       - From video: physical pulse, foot tapping, body movement in time
+
+    4. INTONATION (/5):
+       - Pitch accuracy, tuning consistency${instrumentSpecific.intonation ? `, ${instrumentSpecific.intonation}` : ""}
+
+    5. EXPRESSION & MUSICALITY (/5):
+       - Dynamics (piano/forte), phrasing, musical interpretation, stylistic awareness
+       - From video: physical engagement with music, breathing with phrases, dynamic body movement
+
+    6. POSTURE & INSTRUMENT HOLD (/5):
+       - Correct instrument position and hold
+       - Sitting/standing posture appropriate for the instrument
+       - Hand, wrist, and arm position
+       - Overall physical ease vs. tension
+       - ${instrumentSpecific.notes}
+
+    IMPORTANT: Whisper will produce garbled/nonsensical transcripts for instrumental music — this is
+    COMPLETELY NORMAL. Do NOT use transcript content as evidence. Focus on what you can SEE in the
+    video frames for technique assessment and what can be inferred about sound quality.
+
+    INSTRUMENT-SPECIFIC VISUAL ASSESSMENT:
+    Look for: fingering accuracy, bow hold/angle (strings), embouchure (brass/woodwind),
+    stick grip and stroke technique (percussion), hand independence (piano/keys),
+    pick technique or fingerstyle form (guitar). Note any visible technical issues.
+    `;
+  } else if (performanceType === "dance") {
+    typePrompt = `
+    PERFORMANCE TYPE: Dance / Movement Performance
+
+    ASSESSMENT DIMENSIONS (use these UNLESS a teacher rubric overrides them — total /25):
+
+    1. TECHNIQUE (/5):
+       - Execution of required movements and steps
+       - Control, balance, and coordination
+       - Flexibility and range of motion
+       - Consistency of technique throughout the piece
+
+    2. MUSICALITY & RHYTHM (/5):
+       - Timing with the music (on beat, ahead, or behind)
+       - Response to musical phrasing and dynamics
+       - Interpretation of the music through movement
+       - Tempo changes handled smoothly
+
+    3. SPATIAL AWARENESS & USE OF SPACE (/5):
+       - Use of the performance area (not staying in one spot)
+       - Levels (high, medium, low) and directions
+       - Pathways and formations (if group dance)
+       - Awareness of other dancers (if applicable)
+
+    4. EXPRESSION & PERFORMANCE QUALITY (/5):
+       - Facial expression and emotional engagement
+       - Energy level and commitment to the choreography
+       - Character or storytelling through movement
+       - Audience connection and stage presence
+
+    5. OVERALL PRESENTATION (/5):
+       - Costume/appearance (if applicable)
+       - Confidence and preparedness
+       - Beginning and ending positions
+       - Recovery from mistakes (if any — graceful vs. stopping)
+
+    The transcript may capture music lyrics or be empty — this is expected for dance.
+    Focus primarily on the VIDEO FRAMES for assessment.
+    `;
+  }
+
+  return `
+    ${instructions}
+
+    *** VIDEO PERFORMANCE ASSESSMENT ***
+    You are grading a VIDEO recording of a student performance.
+    You have two sources of evidence:
+    1. A TRANSCRIPT of audio in the video (with timestamps)
+    2. FRAMES extracted from the video at regular intervals
+
+    ${typePrompt}
+
+    ${rubricOverride ? `
+    TEACHER-PROVIDED RUBRIC (takes priority over default sections above):
+    ${rubricOverride}
+    Use the rubric sections instead of the defaults listed above.
+    ` : ""}
+
+    ${commonVideoRules}
+    ${inferBlock}
+  `.trim();
+}
+
 function buildAudioGradingPrompt({ performanceType, instrumentFamily, instrument, gradeBand, standards, feedbackVoice, rubricOverride, transcript, duration, studentName }) {
   const gradeExpectations = {
     "3-5": "Grade 3-5: Be encouraging, focus on effort and basic technique. Age-appropriate expectations.",
