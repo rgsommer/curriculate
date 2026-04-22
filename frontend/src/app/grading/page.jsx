@@ -99,6 +99,7 @@ const VOICE_KEY = "curriculate_grading_voice_v1";
 const RUBRIC_OVERRIDE_KEY = "curriculate_rubric_override_v1";
 const VOICE_OVERRIDE_KEY = "curriculate_grading_voice_override_v1";
 const VOICE_OVERRIDE_VALUE_KEY = "curriculate_grading_voice_override_value_v1";
+const STRICTNESS_KEY = "curriculate_strictness_bias_v1";
 const SESSION_ID_KEY = "curriculate_session_id_v1";
 const ANON_ID_KEY = "curriculate_anon_id_v1";
 
@@ -1184,6 +1185,11 @@ export default function GradingPage() {
       if (typeof window === "undefined") return "warm";
       return loadLS(VOICE_OVERRIDE_VALUE_KEY, "warm");
     });
+    const [strictnessBias, setStrictnessBias] = useState(() => {
+      if (typeof window === "undefined") return 0;
+      const v = parseInt(loadLS(STRICTNESS_KEY, "0"), 10);
+      return Number.isFinite(v) ? Math.max(-3, Math.min(3, v)) : 0;
+    });
     const prevVoiceBeforeIepRef = useRef(null);
     const activeVoice = voiceOverrideOn ? voiceOverride : voice;
     const isTutorMode = activeVoice === "tutor";
@@ -1199,6 +1205,7 @@ export default function GradingPage() {
     useEffect(() => saveLS(VOICE_OVERRIDE_KEY, voiceOverrideOn ? "1" : "0"), [voiceOverrideOn]);
     useEffect(() => saveLS(RUBRIC_OVERRIDE_KEY, rubricOverride), [rubricOverride]);
     useEffect(() => saveLS(VOICE_OVERRIDE_VALUE_KEY, voiceOverride), [voiceOverride]);
+    useEffect(() => saveLS(STRICTNESS_KEY, String(strictnessBias)), [strictnessBias]);
 
     // Upload Rubric from electronic document
     const [uploadingRubricFile, setUploadingRubricFile] = useState(false);
@@ -1911,7 +1918,7 @@ export default function GradingPage() {
       return { maxWidth: 2600, quality: 0.97, label: "Max" };
     }
 
-    async function submitForGrading(photosOverride = null) {
+    async function submitForGrading(photosOverride = null, { biasOverride } = {}) {
       setSubmitError("");
       setServerText("");
       setCopied(false);
@@ -2093,6 +2100,7 @@ export default function GradingPage() {
           gradeBand,
           standards,
           subjectArea: subjectArea || undefined,
+          strictnessBias: (biasOverride != null ? biasOverride : strictnessBias) || undefined,
 
           meta: {
             sessionId: getSessionId(),
@@ -2264,6 +2272,12 @@ export default function GradingPage() {
       } finally {
         setSubmitting(false);
       }
+    }
+
+    function adjustStrictnessAndRegrade(delta) {
+      const next = Math.max(-3, Math.min(3, strictnessBias + delta));
+      setStrictnessBias(next);
+      submitForGrading(null, { biasOverride: next });
     }
 
     function toggleCamera() {
@@ -3007,6 +3021,8 @@ export default function GradingPage() {
                 ""
               }
               subjectArea={subjectArea}
+              strictnessBias={strictnessBias}
+              onStrictnessChange={setStrictnessBias}
               onClose={() => setInputMode("photo")}
             />
           ) : inputMode === "video" ? (
@@ -3021,6 +3037,8 @@ export default function GradingPage() {
                 ""
               }
               subjectArea={subjectArea}
+              strictnessBias={strictnessBias}
+              onStrictnessChange={setStrictnessBias}
               onClose={() => setInputMode("photo")}
             />
           ) : inputMode === "batch" ? (
@@ -3578,7 +3596,7 @@ export default function GradingPage() {
 
             <div style={styles.btnRow}>
               <button
-                onClick={submitForGrading}
+                onClick={() => submitForGrading()}
                 style={styles.primaryBtn}
                 disabled={
                   submitting || busyUpload ||
@@ -3841,9 +3859,60 @@ export default function GradingPage() {
                     <div style={styles.gradingTitle}>
                       {(() => {
                         const g = getDisplayScore(assessment);
+                        const biasLabel = strictnessBias > 0
+                          ? (strictnessBias === 1 ? "strict" : strictnessBias === 2 ? "stricter" : "strictest")
+                          : strictnessBias < 0
+                            ? (strictnessBias === -1 ? "lenient" : strictnessBias === -2 ? "more lenient" : "most lenient")
+                            : "";
                         return (
                           <>
-                            {isTutorMode ? "Tutor Feedback" : <>Grade: {g.score !== "" ? g.score : "(not provided)"} / {g.outOf}</>}
+                            {isTutorMode ? "Tutor Feedback" : (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 0 }}>
+                                Grade:{" "}
+                                {!submitting && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); adjustStrictnessAndRegrade(-1); }}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    disabled={submitting || strictnessBias <= -3}
+                                    title="Re-grade more leniently"
+                                    style={{
+                                      border: "none", background: "transparent", cursor: strictnessBias <= -3 ? "default" : "pointer",
+                                      padding: "0 3px", fontSize: 18, fontWeight: 700, lineHeight: 1,
+                                      color: strictnessBias <= -3 ? "#cbd5e1" : "#64748b",
+                                      opacity: strictnessBias <= -3 ? 0.4 : 0.7,
+                                    }}
+                                    aria-label="More lenient"
+                                  >&#8249;</button>
+                                )}
+                                <span style={{ minWidth: 40, textAlign: "center" }}>
+                                  {g.score !== "" ? g.score : "(not provided)"} / {g.outOf}
+                                </span>
+                                {!submitting && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); adjustStrictnessAndRegrade(1); }}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    disabled={submitting || strictnessBias >= 3}
+                                    title="Re-grade more strictly"
+                                    style={{
+                                      border: "none", background: "transparent", cursor: strictnessBias >= 3 ? "default" : "pointer",
+                                      padding: "0 3px", fontSize: 18, fontWeight: 700, lineHeight: 1,
+                                      color: strictnessBias >= 3 ? "#cbd5e1" : "#64748b",
+                                      opacity: strictnessBias >= 3 ? 0.4 : 0.7,
+                                    }}
+                                    aria-label="More strict"
+                                  >&#8250;</button>
+                                )}
+                                {biasLabel && (
+                                  <span style={{
+                                    fontSize: 10, fontWeight: 600, marginLeft: 4,
+                                    color: strictnessBias > 0 ? "#dc2626" : "#2563eb",
+                                    textTransform: "uppercase", letterSpacing: "0.03em",
+                                  }}>{biasLabel}</span>
+                                )}
+                              </span>
+                            )}
 
                             {refCode ? (
                               <button

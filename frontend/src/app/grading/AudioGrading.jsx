@@ -84,6 +84,8 @@ export default function AudioGrading({
   feedbackVoice,
   rubricOverride,
   subjectArea,
+  strictnessBias = 0,
+  onStrictnessChange,
   onClose,
 }) {
   const [file, setFile] = useState(null);
@@ -196,12 +198,14 @@ export default function AudioGrading({
 
   useEffect(() => () => stopProgressTimer(), [stopProgressTimer]);
 
-  const gradeAudio = useCallback(async () => {
+  const gradeAudio = useCallback(async (biasOverride) => {
     if (!file || !performanceType) return;
     if (performanceType === "instrumental" && !instrumentFamily) {
       setError("Please select an instrument family.");
       return;
     }
+
+    const effectiveBias = biasOverride != null ? biasOverride : strictnessBias;
 
     setSubmitting(true);
     setError("");
@@ -220,6 +224,7 @@ export default function AudioGrading({
       formData.append("feedbackVoice", feedbackVoice || "coach");
       formData.append("subjectArea", subjectArea || "");
       if (studentName.trim()) formData.append("studentName", studentName.trim());
+      if (effectiveBias) formData.append("strictnessBias", String(effectiveBias));
 
       const resp = await fetch(`${backendBase}/grading/audio`, {
         method: "POST",
@@ -265,7 +270,7 @@ export default function AudioGrading({
       setProgress("");
       setProgressPct(0);
     }
-  }, [file, performanceType, instrumentFamily, instrument, backendBase, rubricOverride, gradeBand, standards, feedbackVoice, subjectArea, studentName, startProgressTimer, stopProgressTimer]);
+  }, [file, performanceType, instrumentFamily, instrument, backendBase, rubricOverride, gradeBand, standards, feedbackVoice, subjectArea, studentName, strictnessBias, startProgressTimer, stopProgressTimer]);
 
   function buildAudioPayloadText(r) {
     const lines = [];
@@ -346,6 +351,12 @@ export default function AudioGrading({
 
   const canSubmit = file && performanceType && (performanceType !== "instrumental" || instrumentFamily);
 
+  function adjustStrictnessAndRegrade(delta) {
+    const next = Math.max(-3, Math.min(3, strictnessBias + delta));
+    if (onStrictnessChange) onStrictnessChange(next);
+    gradeAudio(next);
+  }
+
   // -------- Render result --------
   const renderResult = () => {
     if (!result) return null;
@@ -354,6 +365,11 @@ export default function AudioGrading({
     const pct = r.overall_out_of ? Math.round((r.overall_score / r.overall_out_of) * 100) : 0;
     const color = isTutor ? "#2563eb" : pct >= 80 ? "#16a34a" : pct >= 60 ? "#ca8a04" : "#dc2626";
     const typeLabel = PERFORMANCE_TYPES.find(t => t.value === performanceType)?.label || "Performance";
+    const biasLabel = strictnessBias > 0
+      ? (strictnessBias === 1 ? "strict" : strictnessBias === 2 ? "stricter" : "strictest")
+      : strictnessBias < 0
+        ? (strictnessBias === -1 ? "lenient" : strictnessBias === -2 ? "more lenient" : "most lenient")
+        : "";
 
     return (
       <div style={{ marginTop: 20 }}>
@@ -362,25 +378,62 @@ export default function AudioGrading({
           display: "flex", alignItems: "center", gap: 16, marginBottom: 16,
           padding: 16, background: "#f8fafc", borderRadius: 12, border: "1px solid #e2e8f0"
         }}>
-          {!isTutor ? (
-            <div style={{
-              width: 72, height: 72, borderRadius: "50%", display: "flex",
-              alignItems: "center", justifyContent: "center",
-              background: color + "18", border: `3px solid ${color}`,
-              fontSize: 20, fontWeight: 700, color,
-            }}>
-              {r.overall_score}/{r.overall_out_of}
-            </div>
-          ) : (
-            <div style={{
-              width: 72, height: 72, borderRadius: "50%", display: "flex",
-              alignItems: "center", justifyContent: "center",
-              background: "#dbeafe", border: "3px solid #2563eb",
-              fontSize: 28, fontWeight: 700, color: "#2563eb",
-            }}>
-              &#x1F3B5;
-            </div>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+            {!isTutor && !submitting && (
+              <button
+                type="button"
+                onClick={() => adjustStrictnessAndRegrade(-1)}
+                disabled={submitting || strictnessBias <= -3}
+                title="Re-grade more leniently"
+                style={{
+                  border: "none", background: "transparent", cursor: strictnessBias <= -3 ? "default" : "pointer",
+                  padding: "0 2px", fontSize: 22, fontWeight: 700, lineHeight: 1,
+                  color: strictnessBias <= -3 ? "#cbd5e1" : "#64748b",
+                  opacity: strictnessBias <= -3 ? 0.4 : 0.7,
+                }}
+              >&#8249;</button>
+            )}
+            {!isTutor ? (
+              <div style={{
+                width: 72, height: 72, borderRadius: "50%", display: "flex",
+                alignItems: "center", justifyContent: "center", flexDirection: "column",
+                background: color + "18", border: `3px solid ${color}`,
+                fontSize: 20, fontWeight: 700, color,
+              }}>
+                {r.overall_score}/{r.overall_out_of}
+                {biasLabel && (
+                  <span style={{
+                    fontSize: 8, fontWeight: 600, lineHeight: 1, marginTop: 1,
+                    color: strictnessBias > 0 ? "#dc2626" : "#2563eb",
+                    textTransform: "uppercase",
+                  }}>{biasLabel}</span>
+                )}
+              </div>
+            ) : (
+              <div style={{
+                width: 72, height: 72, borderRadius: "50%", display: "flex",
+                alignItems: "center", justifyContent: "center",
+                background: "#dbeafe", border: "3px solid #2563eb",
+                fontSize: 28, fontWeight: 700, color: "#2563eb",
+              }}>
+                &#x1F3B5;
+              </div>
+            )}
+            {!isTutor && !submitting && (
+              <button
+                type="button"
+                onClick={() => adjustStrictnessAndRegrade(1)}
+                disabled={submitting || strictnessBias >= 3}
+                title="Re-grade more strictly"
+                style={{
+                  border: "none", background: "transparent", cursor: strictnessBias >= 3 ? "default" : "pointer",
+                  padding: "0 2px", fontSize: 22, fontWeight: 700, lineHeight: 1,
+                  color: strictnessBias >= 3 ? "#cbd5e1" : "#64748b",
+                  opacity: strictnessBias >= 3 ? 0.4 : 0.7,
+                }}
+              >&#8250;</button>
+            )}
+          </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 600, fontSize: 16 }}>
               {r.student_name || "Student"} — {typeLabel} Assessment
@@ -680,7 +733,7 @@ export default function AudioGrading({
 
           {/* Grade button */}
           <button
-            onClick={gradeAudio}
+            onClick={() => gradeAudio()}
             disabled={!canSubmit || submitting}
             style={{
               width: "100%", padding: "14px 20px", borderRadius: 10, border: "none",

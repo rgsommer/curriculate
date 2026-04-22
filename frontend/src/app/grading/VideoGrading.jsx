@@ -87,6 +87,8 @@ export default function VideoGrading({
   feedbackVoice,
   rubricOverride,
   subjectArea,
+  strictnessBias = 0,
+  onStrictnessChange,
   onClose,
 }) {
   const [file, setFile] = useState(null);
@@ -217,13 +219,15 @@ export default function VideoGrading({
   // Cleanup on unmount
   useEffect(() => () => stopProgressTimer(), [stopProgressTimer]);
 
-  const gradeVideo = useCallback(async () => {
+  const gradeVideo = useCallback(async (biasOverride) => {
     if (!file) return;
     setSubmitting(true);
     setError("");
     setResult(null);
     abortRef.current = false;
     startProgressTimer();
+
+    const effectiveBias = biasOverride != null ? biasOverride : strictnessBias;
 
     try {
       const formData = new FormData();
@@ -237,6 +241,7 @@ export default function VideoGrading({
       if (instrumentFamily) formData.append("instrumentFamily", instrumentFamily);
       if (instrument) formData.append("instrument", instrument);
       if (subjectArea) formData.append("subjectArea", subjectArea);
+      if (effectiveBias) formData.append("strictnessBias", String(effectiveBias));
 
       const resp = await fetch(`${backendBase}/grading/video`, {
         method: "POST",
@@ -282,7 +287,7 @@ export default function VideoGrading({
       setProgress("");
       setProgressPct(0);
     }
-  }, [file, backendBase, rubricOverride, gradeBand, standards, feedbackVoice, studentName, performanceType, instrumentFamily, instrument, subjectArea, startProgressTimer, stopProgressTimer]);
+  }, [file, backendBase, rubricOverride, gradeBand, standards, feedbackVoice, studentName, performanceType, instrumentFamily, instrument, subjectArea, strictnessBias, startProgressTimer, stopProgressTimer]);
 
   function buildVideoPayloadText(r) {
     const lines = [];
@@ -375,6 +380,12 @@ export default function VideoGrading({
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
+  function adjustStrictnessAndRegrade(delta) {
+    const next = Math.max(-3, Math.min(3, strictnessBias + delta));
+    if (onStrictnessChange) onStrictnessChange(next);
+    gradeVideo(next);
+  }
+
   // -------- Render result --------
   const renderResult = () => {
     if (!result) return null;
@@ -382,6 +393,11 @@ export default function VideoGrading({
     const isTutor = feedbackVoice === "tutor";
     const pct = r.overall_out_of ? Math.round((r.overall_score / r.overall_out_of) * 100) : 0;
     const color = isTutor ? "#2563eb" : pct >= 80 ? "#16a34a" : pct >= 60 ? "#ca8a04" : "#dc2626";
+    const biasLabel = strictnessBias > 0
+      ? (strictnessBias === 1 ? "strict" : strictnessBias === 2 ? "stricter" : "strictest")
+      : strictnessBias < 0
+        ? (strictnessBias === -1 ? "lenient" : strictnessBias === -2 ? "more lenient" : "most lenient")
+        : "";
 
     return (
       <div style={{ marginTop: 20 }}>
@@ -390,25 +406,62 @@ export default function VideoGrading({
           display: "flex", alignItems: "center", gap: 16, marginBottom: 16,
           padding: 16, background: "#f8fafc", borderRadius: 12, border: "1px solid #e2e8f0"
         }}>
-          {!isTutor ? (
-            <div style={{
-              width: 72, height: 72, borderRadius: "50%", display: "flex",
-              alignItems: "center", justifyContent: "center",
-              background: color + "18", border: `3px solid ${color}`,
-              fontSize: 20, fontWeight: 700, color,
-            }}>
-              {r.overall_score}/{r.overall_out_of}
-            </div>
-          ) : (
-            <div style={{
-              width: 72, height: 72, borderRadius: "50%", display: "flex",
-              alignItems: "center", justifyContent: "center",
-              background: "#dbeafe", border: "3px solid #2563eb",
-              fontSize: 28, fontWeight: 700, color: "#2563eb",
-            }}>
-              &#x1F393;
-            </div>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+            {!isTutor && !submitting && (
+              <button
+                type="button"
+                onClick={() => adjustStrictnessAndRegrade(-1)}
+                disabled={submitting || strictnessBias <= -3}
+                title="Re-grade more leniently"
+                style={{
+                  border: "none", background: "transparent", cursor: strictnessBias <= -3 ? "default" : "pointer",
+                  padding: "0 2px", fontSize: 22, fontWeight: 700, lineHeight: 1,
+                  color: strictnessBias <= -3 ? "#cbd5e1" : "#64748b",
+                  opacity: strictnessBias <= -3 ? 0.4 : 0.7,
+                }}
+              >&#8249;</button>
+            )}
+            {!isTutor ? (
+              <div style={{
+                width: 72, height: 72, borderRadius: "50%", display: "flex",
+                alignItems: "center", justifyContent: "center", flexDirection: "column",
+                background: color + "18", border: `3px solid ${color}`,
+                fontSize: 20, fontWeight: 700, color,
+              }}>
+                {r.overall_score}/{r.overall_out_of}
+                {biasLabel && (
+                  <span style={{
+                    fontSize: 8, fontWeight: 600, lineHeight: 1, marginTop: 1,
+                    color: strictnessBias > 0 ? "#dc2626" : "#2563eb",
+                    textTransform: "uppercase",
+                  }}>{biasLabel}</span>
+                )}
+              </div>
+            ) : (
+              <div style={{
+                width: 72, height: 72, borderRadius: "50%", display: "flex",
+                alignItems: "center", justifyContent: "center",
+                background: "#dbeafe", border: "3px solid #2563eb",
+                fontSize: 28, fontWeight: 700, color: "#2563eb",
+              }}>
+                &#x1F393;
+              </div>
+            )}
+            {!isTutor && !submitting && (
+              <button
+                type="button"
+                onClick={() => adjustStrictnessAndRegrade(1)}
+                disabled={submitting || strictnessBias >= 3}
+                title="Re-grade more strictly"
+                style={{
+                  border: "none", background: "transparent", cursor: strictnessBias >= 3 ? "default" : "pointer",
+                  padding: "0 2px", fontSize: 22, fontWeight: 700, lineHeight: 1,
+                  color: strictnessBias >= 3 ? "#cbd5e1" : "#64748b",
+                  opacity: strictnessBias >= 3 ? 0.4 : 0.7,
+                }}
+              >&#8250;</button>
+            )}
+          </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 600, fontSize: 16 }}>
               {r.student_name || "Student"} — Video Assessment
@@ -724,7 +777,7 @@ export default function VideoGrading({
 
           {/* Grade button */}
           <button
-            onClick={gradeVideo}
+            onClick={() => gradeVideo()}
             disabled={!file || !performanceType || submitting}
             style={{
               width: "100%",

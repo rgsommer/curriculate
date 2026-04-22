@@ -8838,6 +8838,7 @@ function buildRubricInstructions({
     standards = "canada",
     subjectArea = "",
     batchMode = false,
+    strictnessBias = 0,
   } = {}) {
   const gradeExpectations = {
       "3-5": `
@@ -8947,6 +8948,56 @@ function buildRubricInstructions({
     When the task involves values, purpose, identity, morality, justice, meaning, or worldview-type reflection, respond from a respectful Christian perspective (grace + truth, human dignity). Do not preach; keep it classroom-appropriate and kind. For non-worldview questions, grade normally.
 
     ${gradeExpectations[gradeBand] || gradeExpectations["6-8"]}
+
+    ${(() => {
+      const bias = Number(strictnessBias) || 0;
+      if (bias === 0) return "";
+      if (bias >= 3) return `
+    STRICTNESS CALIBRATION: VERY STRICT (+3)
+    The teacher has calibrated grading to be significantly stricter than default.
+    - Require strong evidence for full marks. "Adequate" work should score 55-65%, not 75%.
+    - Only award top marks (85%+) for genuinely excellent, thorough, well-supported work.
+    - WRITING: Pay close attention to spelling, grammar, punctuation, sentence structure, and formatting. These should meaningfully affect the score.
+    - MATH/STEM: Require clear, organized work-showing. Penalize sloppy notation, missing units, and skipped steps.
+    - MUSIC/PERFORMANCE: Expect polished technique. Minor pitch, rhythm, or timing issues should reduce scores more noticeably.
+    - ALL SUBJECTS: Missing details, weak explanations, or superficial treatment should noticeably reduce scores. Partial credit only for answers showing clear understanding, not just attempt.`;
+      if (bias >= 2) return `
+    STRICTNESS CALIBRATION: STRICT (+2)
+    The teacher has calibrated grading to be stricter than default.
+    - Raise the bar for full marks. Adequate work = 60-70%, not 75-80%.
+    - WRITING: Deduct for spelling errors, grammatical issues, and poor formatting more than default. Expect proper structure.
+    - MATH/STEM: Expect organized work-showing and correct notation. Penalize missing steps.
+    - MUSIC/PERFORMANCE: Expect solid technique. Surface-level musicality should score lower.
+    - ALL SUBJECTS: Be less generous with partial credit on vague or incomplete responses.`;
+      if (bias >= 1) return `
+    STRICTNESS CALIBRATION: SLIGHTLY STRICT (+1)
+    The teacher prefers slightly stricter grading.
+    - WRITING: Note and lightly penalize spelling, grammar, and formatting issues that default grading might overlook.
+    - MATH/STEM: Expect neater work and clearer notation.
+    - ALL SUBJECTS: Require a bit more depth and precision for top marks.`;
+      if (bias <= -3) return `
+    STRICTNESS CALIBRATION: VERY LENIENT (-3)
+    The teacher has calibrated grading to be significantly more lenient.
+    - Give generous partial credit for any evidence of understanding or effort.
+    - Focus on what the student got RIGHT. Surface-level but correct = 70-80%.
+    - WRITING: Overlook spelling, grammar, and formatting. Focus on ideas and effort.
+    - MATH/STEM: Give credit for correct approach even with arithmetic errors. Accept messy work.
+    - MUSIC/PERFORMANCE: Emphasize effort and musicality over technical precision.
+    - Only give low scores for clearly missing, blank, or completely wrong responses.`;
+      if (bias <= -2) return `
+    STRICTNESS CALIBRATION: LENIENT (-2)
+    The teacher prefers more lenient grading.
+    - Be more generous with partial credit. Reward effort and attempt.
+    - WRITING: De-emphasize spelling and grammar. Focus on content and ideas.
+    - MATH/STEM: Give more credit for correct method even with calculation errors.
+    - Adequate work should score in the 75-85% range.`;
+      if (bias <= -1) return `
+    STRICTNESS CALIBRATION: SLIGHTLY LENIENT (-1)
+    The teacher prefers slightly more lenient grading.
+    - WRITING: Be slightly more forgiving on spelling and mechanics.
+    - ALL SUBJECTS: Give a bit more credit for partial answers and effort.`;
+      return "";
+    })()}
 
     ${(() => {
       if (!subjectArea) return "";
@@ -10420,9 +10471,10 @@ function buildRubricInstructions({
 
       const startTime = Date.now();
 
-      const { images, answerKeyImages, workInput, rubricOverride, answerKeyOverride, gradeBand, standards: rawStandards, subjectArea: rawSubject } = req.body || {};
+      const { images, answerKeyImages, workInput, rubricOverride, answerKeyOverride, gradeBand, standards: rawStandards, subjectArea: rawSubject, strictnessBias: rawBias } = req.body || {};
       const standards = ["canada", "us", "uk", "eu"].includes(rawStandards) ? rawStandards : "canada";
       const subjectArea = ["math", "english", "science", "history", "geography", "languages"].includes(rawSubject) ? rawSubject : "";
+      const strictnessBias = Math.max(-3, Math.min(3, Math.round(Number(rawBias) || 0)));
 
       // ------------------------------------------------
       // Parse teacher-provided rubric / denominator overrides
@@ -10700,6 +10752,7 @@ function buildRubricInstructions({
         standards,
         subjectArea,
         batchMode,
+        strictnessBias,
       });
 
       const instructionsWithInference = `
@@ -12151,6 +12204,7 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
     const performanceType = ["speech", "acting", "singing", "instrumental", "dance", "demo", "other"].includes(req.body?.performanceType) ? req.body.performanceType : "speech";
     const instrumentFamily = req.body?.instrumentFamily || "";
     const instrument = req.body?.instrument || "";
+    const strictnessBias = Math.max(-3, Math.min(3, Math.round(Number(req.body?.strictnessBias) || 0)));
 
     // Create temp directory
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "curriculate-video-"));
@@ -12278,6 +12332,7 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
       standards,
       subjectArea: subjectAreaVideo,
       batchMode: false,
+      strictnessBias,
     });
 
     const videoPrompt = buildVideoPerformancePrompt({
@@ -12520,6 +12575,7 @@ app.post("/grading/audio", audioUpload.single("audio"), async (req, res) => {
     const standards = ["canada", "us", "uk", "eu"].includes(req.body?.standards) ? req.body.standards : "canada";
     const feedbackVoice = req.body?.feedbackVoice || "coach";
     const studentName = String(req.body?.studentName || "").trim() || null;
+    const strictnessBias = Math.max(-3, Math.min(3, Math.round(Number(req.body?.strictnessBias) || 0)));
 
     console.log(`[audio-grade] type=${performanceType} family=${instrumentFamily} instrument=${instrument} band=${gradeBand} size=${(req.file.buffer.length / 1024 / 1024).toFixed(1)}MB`);
 
@@ -12580,6 +12636,7 @@ app.post("/grading/audio", audioUpload.single("audio"), async (req, res) => {
       transcript,
       duration,
       studentName,
+      strictnessBias,
     });
 
     // Step 5: Grade with AI
@@ -12957,7 +13014,7 @@ function buildVideoPerformancePrompt({ performanceType, instrumentFamily, instru
   `.trim();
 }
 
-function buildAudioGradingPrompt({ performanceType, instrumentFamily, instrument, gradeBand, standards, feedbackVoice, rubricOverride, transcript, duration, studentName }) {
+function buildAudioGradingPrompt({ performanceType, instrumentFamily, instrument, gradeBand, standards, feedbackVoice, rubricOverride, transcript, duration, studentName, strictnessBias = 0 }) {
   const gradeExpectations = {
     "3-5": "Grade 3-5: Be encouraging, focus on effort and basic technique. Age-appropriate expectations.",
     "6-8": "Grade 6-8: Expect developing technique and musicality. Balance encouragement with constructive feedback.",
@@ -12974,6 +13031,7 @@ function buildAudioGradingPrompt({ performanceType, instrumentFamily, instrument
     standards,
     subjectArea: "",
     batchMode: false,
+    strictnessBias,
   });
 
   let typeSpecificPrompt = "";
