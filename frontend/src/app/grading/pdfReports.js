@@ -444,17 +444,19 @@ export async function buildStripsPdf(results) {
     h += 12;
     // Ref code line
     if (r.refCode) h += 10;
-    // Comment
+    // If QR present, comment starts below it
+    if (r.refCode) {
+      const qrBottom = CARD_PAD + QR_SIZE + 4;
+      if (h < qrBottom) h = qrBottom;
+    }
+    // Comment (full width — sits below QR)
     const comment = esc(r.raw?.teacher_comment || r.comment || "");
     if (comment) {
       h += 4;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.5);
-      const textW = r.refCode ? INNER_W - QR_SIZE - 6 : INNER_W;
-      h += doc.splitTextToSize(clamp(comment, 250), textW).length * (LINE_H - 2);
+      h += doc.splitTextToSize(clamp(comment, 250), INNER_W).length * (LINE_H - 2);
     }
-    // QR needs minimum height
-    if (r.refCode) h = Math.max(h, CARD_PAD + 13 + 12 + QR_SIZE + 4);
     h += CARD_PAD;
     return h;
   }
@@ -512,14 +514,17 @@ export async function buildStripsPdf(results) {
       cy += 10;
     }
 
-    // Comment
+    // Comment (full width — flows below QR)
     const comment = esc(r.raw?.teacher_comment || r.comment || "");
     if (comment) {
+      // Push below QR if comment starts while QR is still visible
+      const qrBottom = y + CARD_PAD + QR_SIZE + 4;
+      if (hasQr && cy < qrBottom) cy = qrBottom;
       cy += 4;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.5);
       doc.setTextColor(50, 50, 50);
-      const wrapped = doc.splitTextToSize(clamp(comment, 250), textW);
+      const wrapped = doc.splitTextToSize(clamp(comment, 250), INNER_W);
       for (const line of wrapped) {
         doc.text(line, x + CARD_PAD, cy + 7);
         cy += LINE_H - 2;
