@@ -123,7 +123,7 @@ export default function HowItWorksPage() {
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-700 sm:text-lg">
             A simple loop: choose your topic and lesson length, Curriculate plans a time-fit task set,
-            launch a live session, students rotate through stations, work is captured automatically,
+            launch a live session, students explore tasks like a classroom scavenger hunt, work is captured automatically,
             and you finish with clear reports you can reuse next time.
           </p>
 
@@ -171,7 +171,7 @@ export default function HowItWorksPage() {
               </div>
               <LifecycleNode
                 label="Play"
-                sub="Stations + teamwork"
+                sub="Explore + teamwork"
                 icon={
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path
@@ -188,7 +188,7 @@ export default function HowItWorksPage() {
               </div>
               <LifecycleNode
                 label="Capture"
-                sub="Answers auto-saved"
+                sub="Work auto-saved"
                 icon={
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path
@@ -331,8 +331,8 @@ export default function HowItWorksPage() {
 
             <StepCard
               number="3"
-              title="Students Rotate & Complete Tasks"
-              desc="Students work station-by-station with clear on-screen prompts."
+              title="Students Explore & Complete Tasks"
+              desc="Students move through tasks like a classroom scavenger hunt, guided by clear on-screen prompts."
               icon={
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path
@@ -351,7 +351,7 @@ export default function HowItWorksPage() {
               bullets={[
                 "One device per team is enough (others can watch/assist).",
                 "Stations are QR-coded posters – one-time print and post.",
-                "Keeps students moving, collaborating, and focused.",
+                "Keeps students moving, discovering, collaborating, and focused.",
               ]}
             />
 
@@ -376,7 +376,7 @@ export default function HowItWorksPage() {
                 </svg>
               }
               bullets={[
-                "Team answers are stored by station and task type.",
+                "Team answers are stored by task and challenge type.",
                 "Optional scoring and feedback can be generated automatically.",
                 "No paper chase after class — everything is already sorted.",
                 "Grades ready for the grade book!",
@@ -403,7 +403,7 @@ export default function HowItWorksPage() {
                 </svg>
               }
               bullets={[
-                "Teacher report: whole-class overview + station performance.",
+                "Teacher report: whole-class overview + task-by-task performance.",
                 "Student/team report: what they did + what to improve next time.",
                 "Reuse the task set next week with quick edits.",
               ]}

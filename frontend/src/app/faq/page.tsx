@@ -19,11 +19,11 @@ const faqs = [
   },
   {
     q: "Schools are trying to reduce device use. Why does Curriculate require devices?",
-    a: "This is a fair concern—and one Curriculate was designed around intentionally. Curriculate is driven by technology, but the student experience is more about movement and tasks that are prompted by the device, not on the device. Students are not individually glued to screens. Instead, devices coordinate tasks, timers, prompts, and submissions while the learning happens through movement, discussion, collaboration, creation, and physical interaction. Students write on paper, observe physical displays, move to stations, discuss with teammates, and create real evidence of learning. The screen is a launchpad, not the destination.",
+    a: "This is a fair concern—and one Curriculate was designed around intentionally. Curriculate is driven by technology, but the student experience is more about movement and tasks that are prompted by the device, not on the device. Students are not individually glued to screens. Instead, devices coordinate tasks, timers, prompts, and submissions while the learning happens through movement, discussion, collaboration, creation, and physical interaction. Students write on paper, observe physical displays, explore challenges around the room, discuss with teammates, and create real evidence of learning. The screen is a launchpad, not the destination.",
   },
   {
     q: "So what are students actually doing during a task?",
-    a: "Depending on the task, students may be moving between stations, building or arranging physical models, discussing answers as a team, writing on paper, acting out scenarios, drawing, debating, or searching the room for evidence. The device is often checked briefly for instructions or submission, then set aside.",
+    a: "Depending on the task, students may be hunting for the next challenge around the room, building or arranging physical models, discussing answers as a team, writing on paper, acting out scenarios, drawing, debating, or searching for evidence. The device is often checked briefly for instructions or submission, then set aside.",
   },
   {
     q: "Are students working individually on their own screens?",
@@ -51,7 +51,7 @@ const faqs = [
   },
   {
     q: "Is it chaotic because students move around?",
-    a: "Movement is structured and intentional. Stations, time limits, clear prompts, and teacher-controlled pacing keep energy productive rather than chaotic. Teachers retain full control over when tasks start, pause, or end.",
+    a: "Movement is structured and intentional. QR-coded stations, time limits, clear prompts, and teacher-controlled pacing keep energy productive rather than chaotic. Teachers retain full control over when tasks start, pause, or end.",
   },
   {
     q: "Can this work in a quiet or highly structured classroom?",

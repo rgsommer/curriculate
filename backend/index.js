@@ -8836,6 +8836,7 @@ function buildRubricInstructions({
     feedbackVoice = "warm",
     feedbackVoiceMode = "default",
     standards = "canada",
+    subjectArea = "",
     batchMode = false,
   } = {}) {
   const gradeExpectations = {
@@ -8946,6 +8947,19 @@ function buildRubricInstructions({
     When the task involves values, purpose, identity, morality, justice, meaning, or worldview-type reflection, respond from a respectful Christian perspective (grace + truth, human dignity). Do not preach; keep it classroom-appropriate and kind. For non-worldview questions, grade normally.
 
     ${gradeExpectations[gradeBand] || gradeExpectations["6-8"]}
+
+    ${(() => {
+      if (!subjectArea) return "";
+      const subjectNotes = {
+        math: "SUBJECT: Mathematics\nGrade mathematically: check each step of working, mark partial credit for correct method with arithmetic errors, verify final answers against the solution. Do NOT penalise unconventional notation if the math is sound. Pay special attention to: order of operations, sign errors, unit conversions, and whether the student showed their working.",
+        english: "SUBJECT: English / Language Arts\nAssess thesis strength, evidence use, structure, grammar, and voice. Weight content and argument above mechanics unless the rubric specifies otherwise. Consider: paragraph structure, topic sentences, supporting details, transitions, and conclusion quality.",
+        science: "SUBJECT: Science\nCheck scientific accuracy, proper use of terminology, experimental method understanding, and data interpretation. Credit correct reasoning even if the final answer has minor errors. Pay attention to: hypothesis formation, controlled variables, data tables, graphing, and scientific conclusions.",
+        history: "SUBJECT: History\nAssess use of evidence, historical reasoning, cause-and-effect analysis, and source evaluation. Value substantiated arguments over recall of dates. Consider: historical perspective, use of primary/secondary sources, chronological understanding, and analytical depth.",
+        geography: "SUBJECT: Geography\nAssess understanding of spatial relationships, use of geographic terminology, map/data interpretation, and connections between human and physical geography. Consider: location knowledge, spatial patterns, geographic models, and fieldwork methodology.",
+        languages: "SUBJECT: World Languages\nAssess communication effectiveness, grammar accuracy, vocabulary range, and cultural awareness. Weight communicative competence above perfect grammar. Consider: verb conjugation, sentence structure, idiomatic usage, and comprehension of cultural context.",
+      };
+      return subjectNotes[subjectArea] || "";
+    })()}
 
     ${standardsBlock}
 
@@ -9194,6 +9208,25 @@ function buildRubricInstructions({
     - For 9–10: Use more precise academic language and clearer reasoning.
     - For 11+: Use mature, concise, academically appropriate phrasing.
     - Strengths, improvements, and teacher_comment must match the selected grade level tone.
+
+    SCORING CONSISTENCY PROTOCOL (mandatory — follow for every submission):
+    Before assigning ANY score, you MUST complete this internal checklist:
+    1. LIST every question/item visible in the student work.
+    2. For EACH item, write what the student's answer IS (quote or describe it exactly).
+    3. For EACH item, determine if it is correct, partially correct, or incorrect — and WHY.
+    4. Only THEN assign a score for that item.
+    5. SUM the item scores to get the section/overall score.
+    This prevents score drift. Do NOT assign an overall impression score first and work backwards.
+    The score MUST be the sum of individual item assessments, never a gut feeling.
+
+    MATH VERIFICATION (mandatory for math/STEM):
+    If the assignment involves calculations:
+    - YOU must re-compute each calculation step yourself.
+    - Compare YOUR computed answer to the student's answer.
+    - Only mark correct if the student's final answer matches the mathematically correct result.
+    - Show your verification in the teacher_comment (e.g., "Verified: axis of symmetry = x = -b/2a = x = 3. Student wrote x = 3. Correct.").
+    - Do NOT assume the student is wrong without computing the answer yourself.
+    - Do NOT assume the student is right without computing the answer yourself.
 
     FAIRNESS AND CONSISTENCY RULES (hard):
     - Grade similar quality work similarly.
@@ -10332,8 +10365,9 @@ function buildRubricInstructions({
 
       const startTime = Date.now();
 
-      const { images, answerKeyImages, workInput, rubricOverride, answerKeyOverride, gradeBand, standards: rawStandards } = req.body || {};
+      const { images, answerKeyImages, workInput, rubricOverride, answerKeyOverride, gradeBand, standards: rawStandards, subjectArea: rawSubject } = req.body || {};
       const standards = ["canada", "us", "uk", "eu"].includes(rawStandards) ? rawStandards : "canada";
+      const subjectArea = ["math", "english", "science", "history", "geography", "languages"].includes(rawSubject) ? rawSubject : "";
 
       // ------------------------------------------------
       // Parse teacher-provided rubric / denominator overrides
@@ -10609,6 +10643,7 @@ function buildRubricInstructions({
         feedbackVoice,
         feedbackVoiceMode,
         standards,
+        subjectArea,
         batchMode,
       });
 
@@ -11146,6 +11181,58 @@ function buildRubricInstructions({
           enforced.final_score_out_of_10 = null;
           enforced.overall_score = clampNum(enforced.overall_score, 0, outOf) ?? 0;
         }
+      }
+
+      // ---- Verification pass: re-check scores for internal consistency ----
+      try {
+        const sections = enforced.sections;
+        if (Array.isArray(sections) && sections.length > 0) {
+          // Check 1: section scores must sum to overall_score
+          const sectionSum = sections.reduce((s, sec) => s + (Number(sec?.score) || 0), 0);
+          const sectionOutOfSum = sections.reduce((s, sec) => s + (Number(sec?.out_of) || 0), 0);
+          const reportedScore = Number(enforced.overall_score) || 0;
+          const reportedOutOf = Number(enforced.overall_out_of) || 0;
+
+          if (Math.abs(sectionSum - reportedScore) > 0.01) {
+            console.warn(`[grade-verify] Score mismatch: sections sum=${sectionSum} vs overall_score=${reportedScore}. Correcting.`);
+            enforced.overall_score = Math.max(0, Math.min(reportedOutOf, sectionSum));
+          }
+          if (Math.abs(sectionOutOfSum - reportedOutOf) > 0.01 && sectionOutOfSum > 0) {
+            console.warn(`[grade-verify] OutOf mismatch: sections sum=${sectionOutOfSum} vs overall_out_of=${reportedOutOf}. Correcting.`);
+            enforced.overall_out_of = sectionOutOfSum;
+            enforced.overall_score = Math.max(0, Math.min(sectionOutOfSum, sectionSum));
+          }
+
+          // Check 2: no section score exceeds its out_of
+          for (const sec of sections) {
+            const sc = Number(sec?.score) || 0;
+            const oo = Number(sec?.out_of) || 0;
+            if (sc > oo && oo > 0) {
+              console.warn(`[grade-verify] Section "${sec.name}" score ${sc} > out_of ${oo}. Clamping.`);
+              sec.score = oo;
+            }
+          }
+
+          // Check 3: incorrect_items in a section should reduce the score
+          for (const sec of sections) {
+            const items = Array.isArray(sec?.incorrect_items) ? sec.incorrect_items : [];
+            if (items.length > 0 && Number(sec?.score) === Number(sec?.out_of) && Number(sec?.out_of) > 0) {
+              console.warn(`[grade-verify] Section "${sec.name}" has ${items.length} incorrect items but full marks. Flagging for review.`);
+              // Don't auto-correct (the items might be partial credit), but log the inconsistency
+            }
+          }
+        }
+
+        // Recalculate /10 fields if overall_out_of is 10
+        if (Number(enforced.overall_out_of) === 10) {
+          const ded = totalDeductionPoints(enforced.deductions);
+          const base10 = Math.max(0, Math.min(10, Number(enforced.overall_score) || 0));
+          enforced.score_out_of_10 = base10;
+          enforced.final_score_out_of_10 = Math.max(0, base10 - ded);
+          enforced.overall_score = enforced.final_score_out_of_10;
+        }
+      } catch (verifyErr) {
+        console.warn("[grade-verify] Verification pass error (non-fatal):", verifyErr?.message);
       }
 
       // ---- Fire-and-forget analytics logging (never blocks grading) ----
@@ -12003,6 +12090,7 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
     const rubricOverride = String(req.body?.rubricOverride || "").trim();
     const gradeBand = ["3-5", "6-8", "9-10", "11+"].includes(req.body?.gradeBand) ? req.body.gradeBand : "6-8";
     const standards = ["canada", "us", "uk", "eu"].includes(req.body?.standards) ? req.body.standards : "canada";
+    const subjectAreaVideo = ["math", "english", "science", "history", "geography", "languages"].includes(req.body?.subjectArea) ? req.body.subjectArea : "";
     const feedbackVoice = req.body?.feedbackVoice || "coach";
     const studentName = String(req.body?.studentName || "").trim() || null;
 
@@ -12130,6 +12218,7 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
       feedbackVoice,
       feedbackVoiceMode: "default",
       standards,
+      subjectArea: subjectAreaVideo,
       batchMode: false,
     });
 

@@ -100,7 +100,7 @@ export default function WalkthroughModal({
         body: (
           <div className="space-y-2">
             <p>
-              Curriculate runs a simple loop: <b>Build</b> → <b>Launch</b> → <b>Stations</b> →{" "}
+              Curriculate runs a simple loop: <b>Build</b> → <b>Launch</b> → <b>Hunt</b> →{" "}
               <b>Capture</b> → <b>Reports</b>.
             </p>
             <p className="text-slate-600">
@@ -110,7 +110,7 @@ export default function WalkthroughModal({
         ),
       },
       {
-        title: "1) Build a task set",
+        title: "1) Build a scavenger hunt",
         body: (
           <div className="space-y-2">
             <p>
@@ -136,11 +136,11 @@ export default function WalkthroughModal({
         ),
       },
       {
-        title: "3) Stations + teamwork",
+        title: "3) Hunt + teamwork",
         body: (
           <div className="space-y-2">
             <p>
-              Students rotate from color station to color station. One device per team is enough.
+              Teams hunt from station to station, solving challenges along the way. One device per team is enough.
             </p>
             <div className="rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-900 ring-1 ring-emerald-200">
               <b>Devices:</b> Phones work, but the best experience is{" "}

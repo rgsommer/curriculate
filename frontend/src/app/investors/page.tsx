@@ -13,7 +13,7 @@ function Pill({ children }: { children: React.ReactNode }) {
 export const metadata: Metadata = {
   title: "Investors",
   description:
-    "Curriculate is AI lesson orchestration for real classrooms — time-aware planning, intentional movement, and station-based delivery.",
+    "Curriculate is AI lesson orchestration for real classrooms — time-aware planning, intentional movement, and classroom scavenger hunt delivery.",
 };
 
 function Card({
@@ -126,11 +126,11 @@ export default function InvestorsPage() {
                   TL;DR
                 </div>
                 <h2 className="mt-3 text-2xl font-bold text-slate-900">
-                  "Not AI worksheets — AI pacing + stations + task variety"
+                  "Not AI worksheets — AI pacing + scavenger hunts + task variety"
                 </h2>
                 <p className="mt-2 text-slate-600">
                   Curriculate turns teacher intent (topic, vocab, grade, goal, and time)
-                  into a ready-to-run station rotation. The planning layer is the moat:
+                  into a ready-to-run classroom scavenger hunt. The planning layer is the moat:
                   time-aware task counts, intentional movement spacing, and only supported
                   UI task formats.
                 </p>
@@ -170,7 +170,7 @@ export default function InvestorsPage() {
             <SectionHeader
               eyebrow="Problem"
               title="Teachers don't need more content — they need better classroom flow"
-              desc="Most classrooms fail on pacing and engagement: too much dead time, rushed endings, and activities that don't translate into station routines. Generic AI tools produce content, but not a coherent experience."
+              desc="Most classrooms fail on pacing and engagement: too much dead time, rushed endings, and activities that don't translate into engaging scavenger hunt routines. Generic AI tools produce content, but not a coherent experience."
             />
             <div className="grid gap-4 md:grid-cols-2">
               <Card
@@ -192,7 +192,7 @@ export default function InvestorsPage() {
                   "Task variety by learning intent (retrieval, reasoning, collaboration, creativity)",
                   "Movement inserted intentionally and limited",
                   "Only supported task types are eligible",
-                  "Station-ready delivery for repeatable routines",
+                  "Scavenger-hunt-ready delivery for repeatable routines",
                 ]}
               />
             </div>
@@ -204,8 +204,8 @@ export default function InvestorsPage() {
           <div>
             <SectionHeader
               eyebrow="Product"
-              title="A station-based learning engine"
-              desc="Curriculate is designed for teachers who want a repeatable, low-prep station routine that students understand quickly."
+              title="A classroom scavenger hunt engine"
+              desc="Curriculate is designed for teachers who want a repeatable, low-prep scavenger hunt routine that students understand quickly."
             />
             <div className="grid gap-4 md:grid-cols-2">
               <Card
@@ -227,12 +227,12 @@ export default function InvestorsPage() {
                 ]}
               />
               <Card
-                title="📍 Stations + QR-friendly delivery"
-                desc="Designed for station rotation and student scanning routines."
+                title="📍 Scavenger hunt + QR-friendly delivery"
+                desc="Designed for classroom scavenger hunts and student scanning routines."
                 bullets={[
-                  "Station-ready task formats",
-                  "Optional fixed-station display assignment",
-                  "Multi-room scavenger options (hallway/library/gym)",
+                  "Scavenger-hunt-ready task formats",
+                  "QR station placement across the room or building",
+                  "Multi-room hunts (hallway/library/gym)",
                 ]}
               />
               <Card
@@ -256,7 +256,7 @@ export default function InvestorsPage() {
             <SectionHeader
               eyebrow="Differentiation"
               title="Why Curriculate is different from AI worksheets"
-              desc="Worksheets generate content. Curriculate generates a classroom routine — with pacing, stations, and task variety designed for real students."
+              desc="Worksheets generate content. Curriculate generates a classroom scavenger hunt — with pacing, movement, and task variety designed for real students."
             />
 
             <div className="grid gap-4 md:grid-cols-2">
@@ -287,7 +287,7 @@ export default function InvestorsPage() {
                   {[
                     "Plans the learning flow first, then generates to match",
                     "Uses task durations to fit the lesson window",
-                    "Pacing designed for station rotation",
+                    "Pacing designed for scavenger hunt flow",
                     "Movement inserted intentionally, capped, and spaced",
                     "Only generates formats the student app supports",
                     "Guardrails + slot-regeneration for reliable structure",
@@ -308,13 +308,13 @@ export default function InvestorsPage() {
           <div>
             <SectionHeader
               eyebrow="Go-to-market"
-              title="Wedge: station rotation + time-fit planning"
-              desc="Curriculate wins where teachers feel pain the most: engagement days, review days, mixed-ability classes, and low-prep station routines."
+              title="Wedge: classroom scavenger hunts + time-fit planning"
+              desc="Curriculate wins where teachers feel pain the most: engagement days, review days, mixed-ability classes, and low-prep scavenger hunt routines."
             />
             <div className="grid gap-4 md:grid-cols-2">
               <Card
                 title="Initial buyer"
-                desc="Individual teachers and small schools looking for a reliable station routine with low prep."
+                desc="Individual teachers and small schools looking for a reliable scavenger hunt routine with low prep."
                 bullets={[
                   "Middle school and upper elementary are strong fits",
                   "Review + introduction workflows",
@@ -377,7 +377,7 @@ export default function InvestorsPage() {
               <p className="text-slate-600">
                 Curriculate is designed and built by an experienced teacher and school
                 administrator, with daily classroom iteration. The product emphasis is
-                not "cool AI," but repeatable routines: pacing, stations, and structured
+                not "cool AI," but repeatable routines: pacing, scavenger hunts, and structured
                 outputs that reduce teacher prep and increase student engagement.
               </p>
             </div>

@@ -112,12 +112,12 @@ export default function SiteHeader() {
                 <DropdownItem
                   href="/how-it-works"
                   title="Overview"
-                  desc="Plan a time-fit station lesson → run → capture evidence → report."
+                  desc="Plan a time-fit scavenger hunt → run → capture evidence → report."
                 />
                 <DropdownItem
                   href="/preview"
                   title="Preview"
-                  desc="See the station experience before you sign up."
+                  desc="See the scavenger-hunt experience before you sign up."
                 />
                 <DropdownItem
                   href="/reports"

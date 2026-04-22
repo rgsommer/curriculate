@@ -34,7 +34,7 @@ import {
 
 const painPoints = [
   {
-    pain: "Station rotation takes hours to prep",
+    pain: "Scavenger hunts take hours to prep",
     fix: "AI plans time-fit task sets in under 60 seconds",
     icon: <Clock className="w-5 h-5" />,
   },
@@ -196,7 +196,7 @@ const why = [
 const steps = [
   { n: "1", title: "Launch a task set", desc: "Start from the Teacher Dashboard in one click." },
   { n: "2", title: "Teams join fast", desc: "No accounts — just a room code + team name." },
-  { n: "3", title: "Rotate stations", desc: "Color-coded QR stations guide movement. Teachers pick which color matches each physical object." },
+  { n: "3", title: "Hunt & solve", desc: "Color-coded QR stations guide movement. Teachers pick which color matches each physical object." },
   { n: "4", title: "Submit together", desc: "Text, photos, drawings, audio — evidence included." },
   { n: "5", title: "Reports generated", desc: "Teacher + student reports appear automatically." },
 ];
@@ -362,7 +362,7 @@ function Testimonials() {
                   For Teachers
                 </h3>
                 <p className="mt-2 text-sm text-gray-600">
-                  Less prep. Smooth station flow. End-of-session reports that
+                  Less prep. Smooth hunt flow. End-of-session reports that
                   support grading and formative feedback for students and
                   parents.
                 </p>
@@ -607,7 +607,7 @@ export default function Home() {
           </h1>
 
           <p className="text-lg sm:text-xl text-gray-600 mb-4 max-w-2xl mx-auto font-medium leading-relaxed">
-            Curriculate plans, generates, and runs station-based lessons for you — with built-in movement,
+            Curriculate plans, generates, and runs classroom scavenger hunts for you — with built-in movement,
             real-time scoring, and AI reports that land in your inbox before the bell rings.
           </p>
 
@@ -853,10 +853,10 @@ export default function Home() {
       <section className="px-6 py-14">
         <div className="mx-auto max-w-7xl">
           <h2 className="text-4xl font-black text-gray-900 text-center mb-4">
-            Not another quiz app. A better way to run class.
+            Not another quiz app. A better way to run a classroom scavenger hunt.
           </h2>
           <p className="text-lg text-gray-700 text-center max-w-3xl mx-auto mb-10">
-            Curriculate blends movement, teamwork, and formative assessment — while keeping teachers in control.
+            Curriculate blends movement, teamwork, and formative assessment into scavenger hunts — while keeping teachers in control.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">

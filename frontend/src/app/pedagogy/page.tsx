@@ -7,7 +7,7 @@ const sections = [
     icon: <Footprints className="w-6 h-6 text-blue-600" />,
     title: "Movement With Structure",
     body:
-      "Students move with clear prompts, time limits, and station accountability — increasing focus and reducing off-task behavior.",
+      "Students move with clear prompts, time limits, and scavenger hunt accountability — increasing focus and reducing off-task behavior.",
     bullets: ["Improves attention", "Reduces restlessness", "Supports kinesthetic learners"],
   },
   {

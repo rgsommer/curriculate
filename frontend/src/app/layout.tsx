@@ -15,13 +15,14 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: {
     template: "%s | Curriculate.net",
-    default: "Curriculate.net – AI-Powered Station-Based Learning",
+    default: "Curriculate.net – AI-Powered Classroom Scavenger Hunts",
   },
   description:
-    "AI-powered lesson planning and station-based learning. Curriculate plans time-fit task sets, then generates interactive stations with movement, collaboration, and evidence-rich reporting.",
+    "AI-powered classroom scavenger hunts and lesson planning. Curriculate plans time-fit task sets, then generates interactive scavenger hunt stations with movement, collaboration, and evidence-rich reporting.",
   keywords: [
     "education",
-    "station rotation",
+    "classroom scavenger hunt",
+    "scavenger hunt learning",
     "classroom activities",
     "AI lesson planning",
     "formative assessment",
@@ -55,7 +56,7 @@ export const metadata: Metadata = {
         url: "https://curriculate.net/images/og/og-home.png",
         width: 1200,
         height: 630,
-        alt: "Curriculate — AI-Powered Station-Based Learning",
+        alt: "Curriculate — AI-Powered Classroom Scavenger Hunts",
       },
     ],
   },
@@ -99,7 +100,7 @@ export default function RootLayout({
               name: "Curriculate",
               url: "https://curriculate.net",
               description:
-                "AI-powered station-based learning platform with time-fit lesson planning, interactive team stations, and evidence-rich reporting.",
+                "AI-powered classroom scavenger hunt platform with time-fit lesson planning, interactive team stations, and evidence-rich reporting.",
               potentialAction: {
                 "@type": "SearchAction",
                 target: "https://curriculate.net/search?q={search_term_string}",

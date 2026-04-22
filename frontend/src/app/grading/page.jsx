@@ -72,6 +72,26 @@ const STANDARDS_OPTIONS = [
   { value: "eu", label: "EU (Key Competences)" },
 ];
 
+const SUBJECT_AREAS = [
+  { value: "", label: "Auto-detect (default)" },
+  { value: "math", label: "Mathematics" },
+  { value: "english", label: "English / Language Arts" },
+  { value: "science", label: "Science" },
+  { value: "history", label: "History" },
+  { value: "geography", label: "Geography" },
+  { value: "languages", label: "Languages (French, Spanish, etc.)" },
+];
+
+const SUBJECT_GRADING_NOTES = {
+  math: "Grade mathematically: check each step of working, mark partial credit for correct method with arithmetic errors, verify final answers against the solution. Do NOT penalise unconventional notation if the math is sound.",
+  english: "Grade as English/Language Arts: assess thesis strength, evidence use, structure, grammar, and voice. Weight content and argument above mechanics unless rubric specifies otherwise.",
+  science: "Grade as Science: check scientific accuracy, proper use of terminology, experimental method understanding, and data interpretation. Credit correct reasoning even if the final answer has minor errors.",
+  history: "Grade as History: assess use of evidence, historical reasoning, cause-and-effect analysis, and source evaluation. Value substantiated arguments over recall of dates.",
+  geography: "Grade as Geography: assess understanding of spatial relationships, use of geographic terminology, map/data interpretation, and connections between human and physical geography.",
+  languages: "Grade as a World Language: assess communication effectiveness, grammar accuracy, vocabulary range, and cultural awareness. Weight communicative competence above perfect grammar.",
+};
+
+const SUBJECT_KEY = "curriculate_grading_subject_v1";
 const STANDARDS_KEY = "curriculate_grading_standards_v1";
 const GRADE_BAND_KEY = "curriculate_grading_band_v1";
 const VOICE_KEY = "curriculate_grading_voice_v1";
@@ -1027,6 +1047,7 @@ export default function GradingPage() {
     const videoRef = useRef(null);
     const streamRef = useRef(null);
     const canvasRef = useRef(null);
+    const rubricFileRef = useRef(null);
 
     const isMobile = useMemo(() => {
       if (typeof navigator === "undefined") return false;
@@ -1093,6 +1114,12 @@ export default function GradingPage() {
     const [standards, setStandards] = useState(() => {
       if (typeof window === "undefined") return "canada";
       return loadLS(STANDARDS_KEY, "canada");
+    });
+
+    // Subject area (shown for grade 9+)
+    const [subjectArea, setSubjectArea] = useState(() => {
+      if (typeof window === "undefined") return "";
+      return loadLS(SUBJECT_KEY, "");
     });
 
     // Input mode: photo vs paste vs batch
@@ -1163,6 +1190,7 @@ export default function GradingPage() {
     // Persist
     useEffect(() => saveLS(GRADE_BAND_KEY, gradeBand), [gradeBand]);
     useEffect(() => saveLS(STANDARDS_KEY, standards), [standards]);
+    useEffect(() => saveLS(SUBJECT_KEY, subjectArea), [subjectArea]);
     useEffect(() => {
       // Don't overwrite saved default with the temporary IEP voice
       if (voice !== "iep_supportive") saveLS(VOICE_KEY, voice);
@@ -1170,6 +1198,77 @@ export default function GradingPage() {
     useEffect(() => saveLS(VOICE_OVERRIDE_KEY, voiceOverrideOn ? "1" : "0"), [voiceOverrideOn]);
     useEffect(() => saveLS(RUBRIC_OVERRIDE_KEY, rubricOverride), [rubricOverride]);
     useEffect(() => saveLS(VOICE_OVERRIDE_VALUE_KEY, voiceOverride), [voiceOverride]);
+
+    // Upload Rubric from electronic document
+    const [uploadingRubricFile, setUploadingRubricFile] = useState(false);
+
+    async function handleRubricFileUpload(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setUploadingRubricFile(true);
+      try {
+        let text = "";
+        const name = file.name.toLowerCase();
+
+        if (name.endsWith(".txt") || name.endsWith(".rtf")) {
+          text = await file.text();
+        } else if (name.endsWith(".pdf")) {
+          // Use PDF.js if available, otherwise fall back to reading as text
+          if (typeof pdfjsLib !== "undefined") {
+            const buf = await file.arrayBuffer();
+            const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+            const pages = [];
+            for (let i = 1; i <= doc.numPages; i++) {
+              const page = await doc.getPage(i);
+              const content = await page.getTextContent();
+              pages.push(content.items.map((it) => it.str).join(" "));
+            }
+            text = pages.join("\n\n");
+          } else {
+            text = await file.text();
+          }
+        } else if (file.type?.startsWith("image/")) {
+          // Convert image to data URL and extract via a simple note
+          text = `[Rubric uploaded as image: ${file.name}]`;
+          // Read the image as a data URL so we can show it
+          const reader = new FileReader();
+          const dataUrl = await new Promise((resolve) => {
+            reader.onload = () => resolve(reader.result);
+            reader.readAsDataURL(file);
+          });
+          // For images, set it as a sticky rubric photo
+          setStickyRubricText(`[Rubric image: ${file.name}]`);
+          setStickyRubricSource("uploaded");
+          setStickyRubricCapturedAt(new Date().toLocaleString());
+          // Add as a rubric-tagged photo
+          const photoObj = {
+            id: String(Date.now()) + "_rubric",
+            dataUrl,
+            rawDataUrl: dataUrl,
+            createdAt: Date.now(),
+          };
+          setPhotos((prev) => [...prev, photoObj]);
+          setPhotoTags((prev) => new Map(prev).set(photoObj.id, "rubric"));
+          setUploadingRubricFile(false);
+          if (rubricFileRef.current) rubricFileRef.current.value = "";
+          return;
+        } else {
+          // .doc, .docx — read as text (basic fallback)
+          text = await file.text();
+        }
+
+        if (text.trim()) {
+          setRubricOverride(text.trim());
+        } else {
+          alert("Could not extract text from the uploaded file. Try pasting the rubric instead.");
+        }
+      } catch (err) {
+        console.error("Rubric upload error:", err);
+        alert("Failed to read rubric file: " + (err?.message || "Unknown error"));
+      }
+      setUploadingRubricFile(false);
+      if (rubricFileRef.current) rubricFileRef.current.value = "";
+    }
 
     // Learning Recommendations
     const [sessionSummary, setSessionSummary] = useState(""); // was null object
@@ -1435,23 +1534,11 @@ export default function GradingPage() {
 
         const ctx = canvas.getContext("2d", { alpha: false });
 
-        const targetAspect = isMobile ? 3 / 4 : 16 / 9;
+        // Capture the full camera frame — no cropping — so what you see is what you get
+        canvas.width = vw;
+        canvas.height = vh;
 
-        let cropW = vw;
-        let cropH = Math.round(vw / targetAspect);
-
-        if (cropH > vh) {
-          cropH = vh;
-          cropW = Math.round(vh * targetAspect);
-        }
-
-        const sx = Math.round((vw - cropW) / 2);
-        const sy = Math.round((vh - cropH) / 2);
-
-        canvas.width = cropW;
-        canvas.height = cropH;
-
-        ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
+        ctx.drawImage(video, 0, 0, vw, vh);
 
         const tightened = tightenCropToContent(canvas, { pad: 18, threshold: 245 });
         const rawDataUrl = tightened.toDataURL("image/jpeg", 0.9);
@@ -2004,6 +2091,7 @@ export default function GradingPage() {
           answerKeyOverride: effectiveAnswerKey.length ? effectiveAnswerKey : null,
           gradeBand,
           standards,
+          subjectArea: subjectArea || undefined,
 
           meta: {
             sessionId: getSessionId(),
@@ -2019,6 +2107,7 @@ export default function GradingPage() {
             rubricMode: manualRubric.length ? "manual" : (stickyRubric.length ? "sticky" : "default"),
             wantsRubricCapture: !manualRubric.length && !stickyRubric.length && inputMode === "photo",
             inputMode,
+            subjectArea: subjectArea || undefined,
           },
         };
 
@@ -2697,6 +2786,24 @@ export default function GradingPage() {
           </select>
         </label>
 
+        {/* Subject area — shown for grade 9+ */}
+        {(gradeBand === "9-10" || gradeBand === "11+") && (
+          <label style={styles.controlLabel}>
+            Subject Area
+            <select
+              value={subjectArea}
+              onChange={(e) => setSubjectArea(e.target.value)}
+              style={styles.select}
+            >
+              {SUBJECT_AREAS.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         {/* Standards + Note to Parents: hidden after 10 uses to reduce clutter */}
         {!tipsHidden && (
           <label style={styles.controlLabel}>
@@ -3363,6 +3470,22 @@ export default function GradingPage() {
                       title="Clear captured rubric and answer key for this session"
                     >
                       Clear Captured
+                    </button>
+
+                    <input
+                      ref={rubricFileRef}
+                      type="file"
+                      accept=".pdf,.doc,.docx,.txt,.rtf,image/*"
+                      style={{ display: "none" }}
+                      onChange={handleRubricFileUpload}
+                    />
+                    <button
+                      onClick={() => rubricFileRef.current?.click()}
+                      style={styles.secondaryBtn}
+                      type="button"
+                      disabled={uploadingRubricFile}
+                    >
+                      {uploadingRubricFile ? "Reading…" : "Upload Rubric"}
                     </button>
                   </div>
 
@@ -4538,9 +4661,9 @@ const styles = {
     borderRadius: 14,
     overflow: "hidden",
     background: "#0b1220",
-    aspectRatio: "16 / 9",
+    /* no forced aspect-ratio — container adapts to the actual camera feed */
   },
-  video: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
+  video: { width: "100%", height: "auto", objectFit: "contain", display: "block" },
   cameraOverlay: {
     position: "absolute",
     inset: 0,

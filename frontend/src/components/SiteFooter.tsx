@@ -28,7 +28,7 @@ export default function SiteFooter() {
               <span>Curriculate</span>
             </div>
             <p className="mt-3 text-sm text-gray-600">
-              Station-based learning made simple — AI plans time-fit task sets, then generates tasks,
+              Classroom scavenger hunts made simple — AI plans time-fit task sets, then generates tasks,
               with team play and evidence-rich reporting.
             </p>
             <p className="mt-4 text-sm text-gray-500">

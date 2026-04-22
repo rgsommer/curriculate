@@ -16,7 +16,7 @@ export function SmartPlanningBlock() {
           🧠 Smart Task Planning
         </div>
         <h2 className="text-2xl font-bold text-slate-900">
-          Not just AI task generation — AI lesson pacing and planning
+          Not just AI task generation — AI scavenger hunt pacing and planning
         </h2>
         <p className="text-slate-600">
           Curriculate doesn’t generate a random pile of activities. It first plans a
@@ -34,7 +34,7 @@ export function SmartPlanningBlock() {
         </ul>
 
         <div className="mt-3 rounded-2xl bg-slate-50 p-4 text-sm text-slate-700">
-          <span className="font-semibold">Why this matters:</span> a 45-minute task set is designed to
+          <span className="font-semibold">Why this matters:</span> a 45-minute scavenger hunt is designed to
           actually run for about 45 minutes — without rushed endings or dead time.
         </div>
       </div>
