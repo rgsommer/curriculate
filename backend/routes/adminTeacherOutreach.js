@@ -198,12 +198,16 @@ router.get("/teacher-outreach", requireAdminToken, async (req, res) => {
     // Merge with outreach records (contact history)
     const outreachRecords = await TeacherOutreach.find({}).lean();
     const outreachMap = new Map();
+    const hiddenEmails = new Set();
     for (const o of outreachRecords) {
-      outreachMap.set(o.email.toLowerCase(), o);
+      const em = o.email.toLowerCase();
+      if (o.hidden) { hiddenEmails.add(em); continue; }
+      outreachMap.set(em, o);
     }
 
     const teachers = [];
     for (const [email, info] of teacherMap) {
+      if (hiddenEmails.has(email)) continue; // skip deleted teachers
       const outreach = outreachMap.get(email);
       teachers.push({
         email,
@@ -220,7 +224,7 @@ router.get("/teacher-outreach", requireAdminToken, async (req, res) => {
 
     // Include TeacherOutreach records that have no grade reviews (e.g. grading-email senders)
     for (const [email, outreach] of outreachMap) {
-      if (!teacherMap.has(email)) {
+      if (!teacherMap.has(email) && !hiddenEmails.has(email)) {
         teachers.push({
           email,
           teacherName: outreach.teacherName || "",
@@ -263,8 +267,17 @@ router.post("/teacher-outreach/delete", requireAdminToken, async (req, res) => {
       return res.status(400).json({ error: "No emails provided" });
     }
     const normalized = emails.map((e) => String(e).toLowerCase().trim()).filter(Boolean);
-    const result = await TeacherOutreach.deleteMany({ email: { $in: normalized } });
-    return res.json({ ok: true, deleted: result.deletedCount });
+    // Remove any existing TeacherOutreach records
+    await TeacherOutreach.deleteMany({ email: { $in: normalized } });
+    // Mark each email as hidden so grade-review feedback entries don't resurface them
+    for (const email of normalized) {
+      await TeacherOutreach.findOneAndUpdate(
+        { email },
+        { $set: { hidden: true }, $setOnInsert: { source: "deleted" } },
+        { upsert: true }
+      );
+    }
+    return res.json({ ok: true, deleted: normalized.length });
   } catch (e) {
     console.error("POST /admin/teacher-outreach/delete error:", e);
     return res.status(500).json({ error: "Failed to delete outreach records" });
