@@ -97,6 +97,7 @@ import {
 } from "./socket/mysteryBoxEngine.js";
 import profileInlineRouter from "./routes/profileInline.js";
 import adminCrudRouter from "./routes/adminCrud.js";
+import classRosterRouter from "./routes/classRoster.js";
 
 function renderEmailTemplate(str, vars) {
   let out = String(str || "");
@@ -407,6 +408,9 @@ import adminUsageSummaryRouter from "./routes/adminUsageSummary.js";
 app.use("/admin", adminUsageSummaryRouter);
 app.use("/admin", adminFeedbackRouter);
 app.use("/admin", adminTeacherOutreachRouter);
+
+// Class roster management (Edsby CSV upload, student lookup)
+app.use("/class-roster", classRosterRouter);
 
 // Results sharing routes
 app.use("/results", resultsRoutes);
@@ -9322,6 +9326,14 @@ function buildRubricInstructions({
     - Do NOT personalize feedback.
     - Do NOT address the student by name in strengths, improvements, or teacher_comment.
 
+    STUDENT ID NUMBER:
+    - Look at the TOP of the first page for a handwritten number that appears to be a student ID.
+    - Common locations: top-right corner, beside or below the student's name, on a "Student #", "ID:", or "S#" line.
+    - The number is typically 4–9 digits (e.g. "0224", "8400224", "328400224").
+    - If you find such a number, set student_id to the exact digits you read (as a string).
+    - If no student ID number is visible, set student_id to null.
+    - Do NOT confuse page numbers, question numbers, dates, or scores with a student ID.
+
     STEP 1 — DETECT RESPONSE FORMAT (required):
     Choose ONE:
     - "short-answer" (brief/point-form, a few lines each)
@@ -9932,6 +9944,7 @@ function buildRubricInstructions({
     OUTPUT (JSON only; EXACT fields):
     - response_format_detected ("short-answer"|"paragraph"|"mixed"|"test")
     - student_name (${batchMode ? "string or null — read from paper if visible" : "null — must always be null"})
+    - student_id (string or null — numeric ID read from top of paper, if visible)
     - overall_score (number)
     - overall_out_of (number)
     - sections (array of { name, score, out_of, teacher_comment, incorrect_items } OR null)
@@ -10657,6 +10670,9 @@ function buildRubricInstructions({
           // --- student name detection ---
           student_name: { type: ["string", "null"] },
 
+          // --- student ID number (handwritten on paper) ---
+          student_id: { type: ["string", "null"] },
+
           // --- integrity flags ---
           ai_suspected_cheating: { type: ["string", "null"] },
           copying_suspected: { type: ["string", "null"] },
@@ -10716,6 +10732,7 @@ function buildRubricInstructions({
           "deductions",
           "sections",
           "student_name",
+          "student_id",
           "ai_suspected_cheating",
           "copying_suspected",
           "rubricText",
@@ -11417,7 +11434,7 @@ function buildRubricInstructions({
   // ====================================================================
   app.post("/grading/send-email", async (req, res) => {
     try {
-      const { to, subject, html, pdfAttachment, pdfFilename, pdfAttachments } = req.body || {};
+      const { to, subject, html, pdfAttachment, pdfFilename, pdfAttachments, csvAttachments } = req.body || {};
       const email = String(to || "").trim().toLowerCase();
       const subj = String(subject || "").trim();
       const body = String(html || "").trim();
@@ -11450,6 +11467,18 @@ function buildRubricInstructions({
           content: Buffer.from(pdfAttachment, "base64"),
           contentType: "application/pdf",
         });
+      }
+      // CSV attachments (Edsby grade export)
+      if (Array.isArray(csvAttachments)) {
+        for (const csv of csvAttachments) {
+          if (csv?.data) {
+            attachments.push({
+              filename: csv.filename || "grades.csv",
+              content: Buffer.from(csv.data, "base64"),
+              contentType: "text/csv",
+            });
+          }
+        }
       }
 
       await sendSystemEmail({
@@ -12417,6 +12446,7 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
           },
         },
         student_name: { type: ["string", "null"] },
+        student_id: { type: ["string", "null"] },
         ai_suspected_cheating: { type: ["string", "null"] },
         copying_suspected: { type: ["string", "null"] },
         rubricText: { type: ["string", "null"], maxLength: 3500 },
@@ -12446,7 +12476,7 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
       required: [
         "response_format_detected", "inferred_subject", "inferred_assessment_type", "inferred_grade_level",
         "overall_score", "overall_out_of", "score_out_of_10", "final_score_out_of_10",
-        "deductions", "sections", "student_name",
+        "deductions", "sections", "student_name", "student_id",
         "ai_suspected_cheating", "copying_suspected",
         "rubricText", "rubricConfidence", "rubricDetected",
         "answerKeyText", "answerKeyDetected", "answerKeyConfidence",

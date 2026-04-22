@@ -592,6 +592,7 @@ export default function BatchGrading({
           pages: `${startPage}–${endPage}`,
           studentName: data.student_name || group.name || `Student ${i + 1}`,
           nameConfirmed,
+          studentId: data.student_id || null,  // AI-detected numeric ID from paper
           score: Number.isFinite(score) ? score : "?",
           outOf: Number.isFinite(outOf) ? outOf : "?",
           pct,
@@ -645,7 +646,7 @@ export default function BatchGrading({
         return {
           index: i + 1, pages: `${startPage}–${endPage}`,
           studentName: group.name || `Student ${i + 1}`,
-          nameConfirmed: false,
+          nameConfirmed: false, studentId: null,
           score: "?", outOf: "?", pct: null, letter: "?",
           strengths: [], improvements: [], comment: "",
           sections: null, subject: "", assessmentType: "",
@@ -691,6 +692,178 @@ export default function BatchGrading({
       }
 
       setResults([...batchResults]);
+    }
+
+    // --- Roster matching: two-pass context-aware name matching ---
+    // Pass 1: resolve unambiguous names → determine which class this batch is from.
+    // Pass 2: use class context to disambiguate names that appear in multiple rosters.
+    // Falls back to student ID for anything still unmatched.
+    try {
+      // Flatten all roster students into one list, tagged with className
+      const allRosterStudents = [];
+      for (const rc of rosterClasses) {
+        for (const s of rc.students || []) {
+          allRosterStudents.push({ ...s, className: rc.className });
+        }
+      }
+
+      if (allRosterStudents.length > 0) {
+        const norm = (s) => (s || "").toLowerCase().replace(/[^a-z]/g, "").trim();
+
+        // Levenshtein distance for fuzzy comparison (handles OCR/handwriting errors)
+        function levenshtein(a, b) {
+          if (a.length === 0) return b.length;
+          if (b.length === 0) return a.length;
+          const matrix = [];
+          for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+          for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+          for (let i = 1; i <= b.length; i++) {
+            for (let j = 1; j <= a.length; j++) {
+              matrix[i][j] = Math.min(
+                matrix[i - 1][j] + 1,
+                matrix[i][j - 1] + 1,
+                matrix[i - 1][j - 1] + (b[i - 1] === a[j - 1] ? 0 : 1)
+              );
+            }
+          }
+          return matrix[b.length][a.length];
+        }
+
+        // Name matcher — returns all roster students whose name matches the AI-read name.
+        // Handles: exact match, contains-both, prefix match (for unusual names
+        // where AI gets first few letters right), and fuzzy/Levenshtein.
+        function findNameMatches(aiName) {
+          if (!aiName || aiName.startsWith("student")) return [];
+          return allRosterStudents.filter((s) => {
+            const first = norm(s.firstName);
+            const last = norm(s.lastName);
+            const full = first + last;
+            const fullReversed = last + first;
+            // Exact full name match (either order)
+            if (aiName === full || aiName === fullReversed) return true;
+            // AI reads "First Last" — check if it contains both parts
+            if (first.length >= 2 && last.length >= 2 &&
+                aiName.includes(first) && aiName.includes(last)) return true;
+            // Prefix match on first name + exact last name (handles "Ujaeger" → "Ujaeg" misread)
+            // AI got last name right and first 3+ chars of first name match
+            if (first.length >= 3 && last.length >= 2 && aiName.includes(last)) {
+              const prefix = first.slice(0, 3);
+              if (aiName.includes(prefix)) return true;
+            }
+            // Last name match + first initial (e.g. "D. Sidhu" → "D" + "sidhu")
+            if (last.length >= 3 && aiName.includes(last)) {
+              if (first[0] && aiName[0] === first[0]) return true;
+            }
+            // Fuzzy: allow 1-2 character errors for names 5+ chars
+            // (covers OCR misreads like "Divnoor" → "Divnoar", "Ujaeger" → "Ujaegar")
+            if (full.length >= 5) {
+              const maxDist = full.length >= 8 ? 2 : 1;
+              if (levenshtein(aiName, full) <= maxDist) return true;
+              if (levenshtein(aiName, fullReversed) <= maxDist) return true;
+            }
+            // Fuzzy on first name alone (when last name is clear)
+            if (first.length >= 4 && last.length >= 2 && aiName.includes(last)) {
+              // Extract what the AI thinks the first name is (before the last name)
+              const lastIdx = aiName.indexOf(last);
+              const aiFront = lastIdx > 0 ? aiName.slice(0, lastIdx) : "";
+              if (aiFront.length >= 3 && levenshtein(aiFront, first) <= 2) return true;
+            }
+            return false;
+          });
+        }
+
+        // --- PASS 1: resolve unambiguous matches, tally class votes ---
+        const classVotes = {}; // { className: count }
+        const pendingAmbiguous = []; // indices into batchResults that had >1 match
+
+        for (const r of batchResults) {
+          if (r.error) continue;
+          const aiName = norm(r.studentName || "");
+          const nameMatches = findNameMatches(aiName);
+
+          if (nameMatches.length === 1) {
+            // Unambiguous — assign immediately and vote for this class
+            Object.assign(r, {
+              rosterFirstName: nameMatches[0].firstName,
+              rosterLastName: nameMatches[0].lastName,
+              rosterEdsbyId: nameMatches[0].edsbyId,
+              rosterStudentId: nameMatches[0].studentId,
+              rosterClassName: nameMatches[0].className,
+            });
+            if (!r.studentName || r.studentName.startsWith("Student ")) {
+              r.studentName = `${nameMatches[0].firstName} ${nameMatches[0].lastName}`.trim() || r.studentName;
+            }
+            classVotes[nameMatches[0].className] = (classVotes[nameMatches[0].className] || 0) + 1;
+          } else if (nameMatches.length > 1) {
+            pendingAmbiguous.push({ result: r, nameMatches });
+          }
+        }
+
+        // Determine the most likely class for this batch
+        let batchClass = null;
+        let maxVotes = 0;
+        for (const [cls, count] of Object.entries(classVotes)) {
+          if (count > maxVotes) { maxVotes = count; batchClass = cls; }
+        }
+
+        // --- PASS 2: disambiguate using class context ---
+        for (const { result: r, nameMatches } of pendingAmbiguous) {
+          let match = null;
+
+          // If we know the batch's class, pick the student from that class
+          if (batchClass) {
+            const classFiltered = nameMatches.filter((s) => s.className === batchClass);
+            if (classFiltered.length === 1) match = classFiltered[0];
+          }
+
+          // Still ambiguous? Try student ID as tiebreaker
+          if (!match && r.studentId) {
+            const last4 = r.studentId.replace(/\D/g, "").slice(-4);
+            if (last4.length >= 3) {
+              const idFiltered = nameMatches.filter((s) => s.last4 === last4);
+              if (idFiltered.length === 1) match = idFiltered[0];
+            }
+          }
+
+          if (match) {
+            r.rosterFirstName = match.firstName;
+            r.rosterLastName = match.lastName;
+            r.rosterEdsbyId = match.edsbyId;
+            r.rosterStudentId = match.studentId;
+            r.rosterClassName = match.className;
+            if (!r.studentName || r.studentName.startsWith("Student ")) {
+              r.studentName = `${match.firstName} ${match.lastName}`.trim() || r.studentName;
+            }
+          }
+        }
+
+        // --- PASS 3: anyone still unmatched — try student ID alone ---
+        for (const r of batchResults) {
+          if (r.error || r.rosterEdsbyId) continue; // already matched
+          if (!r.studentId) continue;
+          const last4 = r.studentId.replace(/\D/g, "").slice(-4);
+          if (last4.length < 3) continue;
+          let candidates = allRosterStudents.filter((s) => s.last4 === last4);
+          if (candidates.length > 1 && batchClass) {
+            candidates = candidates.filter((s) => s.className === batchClass);
+          }
+          if (candidates.length === 1) {
+            const m = candidates[0];
+            r.rosterFirstName = m.firstName;
+            r.rosterLastName = m.lastName;
+            r.rosterEdsbyId = m.edsbyId;
+            r.rosterStudentId = m.studentId;
+            r.rosterClassName = m.className;
+            if (!r.studentName || r.studentName.startsWith("Student ")) {
+              r.studentName = `${m.firstName} ${m.lastName}`.trim() || r.studentName;
+            }
+          }
+        }
+
+        setResults([...batchResults]);
+      }
+    } catch (rosterErr) {
+      console.warn("[batch] roster matching failed:", rosterErr);
     }
 
     // Compute class summary
@@ -797,6 +970,7 @@ export default function BatchGrading({
     feedbackVoice,
     voiceMode,
     answerKeyOverride,
+    rosterClasses,
   ]);
 
   // ---------- Re-grade a single student with adjusted strictness ----------
@@ -884,6 +1058,7 @@ export default function BatchGrading({
         ...r,
         studentName: data.student_name || r.studentName,
         nameConfirmed,
+        studentId: data.student_id || r.studentId || null,
         score: Number.isFinite(score) ? score : "?",
         outOf: Number.isFinite(outOf) ? outOf : "?",
         pct,
@@ -1162,7 +1337,7 @@ export default function BatchGrading({
       const esc = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       html += `<tr style="background: ${bg}; border-bottom: 1px solid #e2e8f0;">`;
       html += `<td style="padding: 7px 10px;">${r.index}</td>`;
-      html += `<td style="padding: 7px 10px; font-weight: 700;">${esc(r.studentName)}</td>`;
+      html += `<td style="padding: 7px 10px; font-weight: 700;">${esc(r.studentName)}${r.studentId ? ` <span style="font-size:10px;color:#94a3b8;font-weight:400;">#${esc(r.studentId.slice(-4))}</span>` : ""}</td>`;
       html += `<td style="padding: 7px 10px; text-align: center;">${r.score}/${r.outOf}</td>`;
       html += `<td style="padding: 7px 10px; text-align: center;">${r.pct != null ? r.pct + "%" : "—"}</td>`;
       html += `<td style="padding: 7px 10px; text-align: center; font-weight: 800; color: ${r.letter !== "?" ? gradeColor(r.letter) : "#999"};">${r.letter}</td>`;
@@ -1214,6 +1389,41 @@ export default function BatchGrading({
     setShowEmailPrompt(true);
   }, [results]);
 
+  // ---------- Build Edsby-compatible CSV from results ----------
+  const buildEdsbyCsv = useCallback(() => {
+    if (!results.length) return null;
+
+    // CSV header
+    const headers = ["Student ID", "First Name", "Last Name", "Score", "Out Of", "Percentage", "Grade", "Ref Code", "Results Link"];
+    const escCsv = (v) => {
+      const s = String(v ?? "");
+      return s.includes(",") || s.includes('"') || s.includes("\n")
+        ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    const rows = [headers.map(escCsv).join(",")];
+    for (const r of results) {
+      if (r.error) continue;
+      // Use roster-matched info if available, fall back to AI-detected
+      const firstName = r.rosterFirstName || "";
+      const lastName = r.rosterLastName || "";
+      const sid = r.rosterStudentId || r.rosterEdsbyId || r.studentId || "";
+      const link = r.refCode ? `https://www.curriculate.net/results/${r.refCode}` : "";
+      rows.push([
+        escCsv(sid),
+        escCsv(firstName),
+        escCsv(lastName),
+        escCsv(r.score),
+        escCsv(r.outOf),
+        escCsv(r.pct != null ? `${r.pct}%` : ""),
+        escCsv(r.letter),
+        escCsv(r.refCode || ""),
+        escCsv(link),
+      ].join(","));
+    }
+    return rows.join("\n");
+  }, [results]);
+
   const sendEmail = useCallback(async () => {
     const to = emailTo.trim();
     if (!to || !to.includes("@")) return;
@@ -1222,7 +1432,7 @@ export default function BatchGrading({
     try {
       const html = buildEmailHtml();
 
-      // Generate both PDFs in parallel: full reports + cut strips
+      // Generate PDFs and Edsby CSV in parallel
       let pdfBase64 = null;
       let stripsBase64 = null;
       try {
@@ -1250,7 +1460,7 @@ export default function BatchGrading({
         : null;
       const baseName = titleSlug ? `${titleSlug}-${srcTag}` : `${rawBase}-${srcTag}`;
       const subject = emailTitle.trim() ? `Grading: ${emailTitle.trim()}` : emailSubject;
-      const payload = { to, subject, html, pdfAttachments: [] };
+      const payload = { to, subject, html, pdfAttachments: [], csvAttachments: [] };
       if (pdfBase64) {
         payload.pdfAttachments.push({ data: pdfBase64, filename: `${baseName}-reports.pdf` });
       }
@@ -1261,6 +1471,18 @@ export default function BatchGrading({
       if (pdfBase64) {
         payload.pdfAttachment = pdfBase64;
         payload.pdfFilename = `${baseName}-reports.pdf`;
+      }
+
+      // Attach Edsby CSV if any results have student IDs or roster matches
+      const csvText = buildEdsbyCsv();
+      if (csvText) {
+        const csvBase64 = typeof btoa === "function"
+          ? btoa(unescape(encodeURIComponent(csvText)))
+          : Buffer.from(csvText, "utf-8").toString("base64");
+        payload.csvAttachments.push({
+          data: csvBase64,
+          filename: `${baseName}-edsby-grades.csv`,
+        });
       }
 
       const res = await fetch(sendUrl, {
@@ -1282,7 +1504,7 @@ export default function BatchGrading({
       alert("Failed to send email. Please try again.");
     }
     setEmailSending(false);
-  }, [emailTo, emailTitle, buildEmailHtml, emailSubject, gradingUrl, results, pdfName]);
+  }, [emailTo, emailTitle, buildEmailHtml, buildEdsbyCsv, emailSubject, gradingUrl, results, pdfName]);
 
   // ---------- Copy / email ack ----------
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -1292,6 +1514,78 @@ export default function BatchGrading({
   const [expandedIndex, setExpandedIndex] = useState(null);
   const [regradingIndex, setRegradingIndex] = useState(null); // index of student being re-graded
   const [studentBias, setStudentBias] = useState({}); // { [index]: number } per-student strictness bias
+
+  // ---------- Edsby Class Roster ----------
+  const [showRoster, setShowRoster] = useState(false);
+  const [rosterClasses, setRosterClasses] = useState([]); // [{id, className, studentCount, students, sourceFile}]
+  const [rosterUploading, setRosterUploading] = useState(false);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const rosterFileRef = useRef(null);
+
+  // Load roster on mount (if teacher email is saved)
+  useEffect(() => {
+    const email = (() => { try { return localStorage.getItem("curriculate_report_email") || ""; } catch { return ""; } })();
+    if (!email || !email.includes("@")) return;
+    const rosterBase = gradingUrl.replace(/\/grading$/, "/class-roster");
+    setRosterLoading(true);
+    fetch(`${rosterBase}/list?teacherEmail=${encodeURIComponent(email)}`)
+      .then(r => r.ok ? r.json() : { rosters: [] })
+      .then(data => setRosterClasses(data.rosters || []))
+      .catch(() => {})
+      .finally(() => setRosterLoading(false));
+  }, [gradingUrl]);
+
+  const handleRosterUpload = useCallback(async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    const email = (() => { try { return localStorage.getItem("curriculate_report_email") || ""; } catch { return ""; } })();
+    if (!email || !email.includes("@")) {
+      alert("Please set your email address in the email field first, then upload your Edsby CSV.");
+      return;
+    }
+
+    setRosterUploading(true);
+    try {
+      const text = await file.text();
+      const rosterBase = gradingUrl.replace(/\/grading$/, "/class-roster");
+      const res = await fetch(`${rosterBase}/upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teacherEmail: email,
+          csvText: text,
+          sourceFile: file.name,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Upload failed");
+      } else {
+        // Refresh roster list
+        const listRes = await fetch(`${rosterBase}/list?teacherEmail=${encodeURIComponent(email)}`);
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          setRosterClasses(listData.rosters || []);
+        }
+      }
+    } catch (err) {
+      alert("Upload failed: " + (err?.message || "unknown error"));
+    }
+    setRosterUploading(false);
+  }, [gradingUrl]);
+
+  const deleteRoster = useCallback(async (rosterId) => {
+    if (!confirm("Delete this class roster?")) return;
+    try {
+      const rosterBase = gradingUrl.replace(/\/grading$/, "/class-roster");
+      await fetch(`${rosterBase}/${rosterId}`, { method: "DELETE" });
+      setRosterClasses((prev) => prev.filter((r) => r.id !== rosterId));
+    } catch {}
+  }, [gradingUrl]);
+
+  const totalRosterStudents = rosterClasses.reduce((s, r) => s + (r.studentCount || 0), 0);
 
   // ---------- Render ----------
   return (
@@ -1315,6 +1609,98 @@ export default function BatchGrading({
         >
           ✕
         </button>
+      </div>
+
+      {/* Edsby Class Roster */}
+      <div style={{ margin: "0 0 8px" }}>
+        <button
+          onClick={() => setShowRoster(!showRoster)}
+          type="button"
+          style={{
+            background: "none", border: "none", cursor: "pointer",
+            fontSize: 13, color: "#64748b", display: "flex", alignItems: "center", gap: 6,
+            padding: "4px 0",
+          }}
+        >
+          <span style={{ fontSize: 11, transform: showRoster ? "rotate(90deg)" : "rotate(0)", transition: "transform 0.15s" }}>▶</span>
+          <span>Class Roster</span>
+          {totalRosterStudents > 0 && (
+            <span style={{ fontSize: 11, background: "#e0f2fe", color: "#0369a1", borderRadius: 8, padding: "1px 7px", fontWeight: 700 }}>
+              {totalRosterStudents} student{totalRosterStudents !== 1 ? "s" : ""}
+            </span>
+          )}
+        </button>
+
+        {showRoster && (
+          <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, marginTop: 6, fontSize: 13 }}>
+            <div style={{ marginBottom: 8, color: "#475569", lineHeight: 1.5 }}>
+              Upload your Edsby gradebook CSV to auto-match students by name.
+              If handwriting is unclear, students can write the last 4 digits of their ID as backup.
+            </div>
+
+            <input
+              ref={rosterFileRef}
+              type="file"
+              accept=".csv,.txt"
+              onChange={handleRosterUpload}
+              style={{ display: "none" }}
+            />
+            <button
+              onClick={() => rosterFileRef.current?.click()}
+              disabled={rosterUploading}
+              type="button"
+              style={{
+                background: "#2563eb", color: "#fff", border: "none", borderRadius: 6,
+                padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+                opacity: rosterUploading ? 0.6 : 1, marginBottom: 8,
+              }}
+            >
+              {rosterUploading ? "Uploading..." : "Upload Edsby CSV"}
+            </button>
+
+            {rosterLoading && <div style={{ color: "#94a3b8", fontSize: 12 }}>Loading rosters...</div>}
+
+            {rosterClasses.length > 0 && (
+              <div style={{ marginTop: 6 }}>
+                {rosterClasses.map((rc) => (
+                  <div key={rc.id} style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "6px 0", borderBottom: "1px solid #e2e8f0",
+                  }}>
+                    <div>
+                      <span style={{ fontWeight: 700 }}>{rc.className}</span>
+                      <span style={{ color: "#94a3b8", marginLeft: 8, fontSize: 12 }}>
+                        {rc.studentCount} student{rc.studentCount !== 1 ? "s" : ""}
+                      </span>
+                      {rc.sourceFile && (
+                        <span style={{ color: "#cbd5e1", marginLeft: 6, fontSize: 11 }}>
+                          ({rc.sourceFile})
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => deleteRoster(rc.id)}
+                      type="button"
+                      style={{
+                        background: "none", border: "none", cursor: "pointer",
+                        color: "#ef4444", fontSize: 14, padding: "2px 6px",
+                      }}
+                      title="Delete this roster"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {rosterClasses.length === 0 && !rosterLoading && (
+              <div style={{ color: "#94a3b8", fontSize: 12, fontStyle: "italic" }}>
+                No class rosters uploaded yet. Export a gradebook CSV from Edsby and upload it here.
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Upload area */}
@@ -1810,6 +2196,11 @@ export default function BatchGrading({
                       <td style={batchStyles.td}>{r.index}</td>
                       <td style={{ ...batchStyles.td, fontWeight: 700, textAlign: "left" }}>
                         {r.studentName}
+                        {r.studentId && (
+                          <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 400, marginLeft: 6 }} title={`ID detected: ${r.studentId}${r.rosterFirstName ? ` → ${r.rosterFirstName} ${r.rosterLastName}` : ""}`}>
+                            #{r.studentId.slice(-4)}
+                          </span>
+                        )}
                       </td>
                       <td style={batchStyles.td}>{r.pages}</td>
                       <td style={{ ...batchStyles.td, whiteSpace: "nowrap" }}>
