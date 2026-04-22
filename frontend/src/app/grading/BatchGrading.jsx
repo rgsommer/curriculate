@@ -1424,8 +1424,14 @@ export default function BatchGrading({
                 onClick={async () => {
                   const good = results.filter((r) => !r.error);
                   if (!good.length) { alert("No successful results to print."); return; }
+                  let title = emailTitle.trim();
+                  if (!title) {
+                    const t = window.prompt("Assignment title (appears on footer — leave blank to skip):");
+                    if (t === null) return;
+                    if (t.trim()) { title = t.trim(); setEmailTitle(title); }
+                  }
                   try {
-                    const opts = emailTitle.trim() ? { title: emailTitle.trim() } : {};
+                    const opts = title ? { title } : {};
                     const b64 = await buildResultsPdf(results, opts);
                     if (!b64) { alert("No results available."); return; }
                     const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
@@ -1444,8 +1450,14 @@ export default function BatchGrading({
                 onClick={async () => {
                   const good = results.filter((r) => !r.error);
                   if (!good.length) { alert("No successful results to print."); return; }
+                  let title = emailTitle.trim();
+                  if (!title) {
+                    const t = window.prompt("Assignment title (appears on footer — leave blank to skip):");
+                    if (t === null) return;
+                    if (t.trim()) { title = t.trim(); setEmailTitle(title); }
+                  }
                   try {
-                    const opts = emailTitle.trim() ? { title: emailTitle.trim() } : {};
+                    const opts = title ? { title } : {};
                     const b64 = await buildStripsPdf(results, opts);
                     if (!b64) { alert("No results available."); return; }
                     const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
