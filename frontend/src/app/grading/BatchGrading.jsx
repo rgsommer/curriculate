@@ -326,6 +326,13 @@ export default function BatchGrading({
   const abortRef = useRef(false);
   const fileInputRef = useRef(null);
 
+  // ---------- Edsby Class Roster (state declared early — used in grading callback) ----------
+  const [showRoster, setShowRoster] = useState(false);
+  const [rosterClasses, setRosterClasses] = useState([]); // [{id, className, studentCount, students, sourceFile}]
+  const [rosterUploading, setRosterUploading] = useState(false);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const rosterFileRef = useRef(null);
+
   // ---------- PDF upload ----------
   const handleFileChange = useCallback(async (e) => {
     const file = e.target.files?.[0];
@@ -1514,13 +1521,6 @@ export default function BatchGrading({
   const [expandedIndex, setExpandedIndex] = useState(null);
   const [regradingIndex, setRegradingIndex] = useState(null); // index of student being re-graded
   const [studentBias, setStudentBias] = useState({}); // { [index]: number } per-student strictness bias
-
-  // ---------- Edsby Class Roster ----------
-  const [showRoster, setShowRoster] = useState(false);
-  const [rosterClasses, setRosterClasses] = useState([]); // [{id, className, studentCount, students, sourceFile}]
-  const [rosterUploading, setRosterUploading] = useState(false);
-  const [rosterLoading, setRosterLoading] = useState(false);
-  const rosterFileRef = useRef(null);
 
   // Load roster on mount (if teacher email is saved)
   useEffect(() => {
