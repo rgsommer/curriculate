@@ -9228,6 +9228,32 @@ function buildRubricInstructions({
     - Do NOT assume the student is wrong without computing the answer yourself.
     - Do NOT assume the student is right without computing the answer yourself.
 
+    SCORE-COMMENT ALIGNMENT (mandatory — hardest rule):
+    Your section scores MUST match the language in your teacher_comments. Re-read each section's
+    teacher_comment BEFORE finalizing its score. If the comment describes weak, thin, or incomplete
+    work, the score MUST reflect that — not generously round up.
+
+    Score calibration guide (for a section scored out of N):
+    - 90–100% (e.g., 5.5–6/6): Comment language = "strong," "thorough," "excellent," "demonstrates
+      deep understanding," "well-supported." Work is clearly above expectations.
+    - 75–89% (e.g., 4.5–5/6): Comment language = "good," "solid," "mostly complete," "effective."
+      Minor gaps or surface-level treatment of one aspect.
+    - 50–74% (e.g., 3–4/6): Comment language = "shows some understanding," "developing," "partially
+      addresses," "needs more detail," "surface-level." Work is recognizably below grade-level
+      expectations in meaningful ways.
+    - Below 50% (e.g., 0–2.5/6): Comment language = "limited," "incomplete," "does not address,"
+      "significant gaps," "missing key elements."
+
+    HARD RULE: If your comment says "shows some understanding" or "needs more detail to meet
+    grade-level expectations," the score MUST be in the 50–74% range for that section — NOT 80%+.
+    A comment that describes 3/6 work must not receive a 5/6 score. The feedback and the number
+    must tell the same story.
+
+    After scoring all sections, do a final sanity check: read every teacher_comment and its score
+    together. If any comment sounds critical but the score is high (or vice versa), adjust the
+    score to match the comment — not the other way around. The comment is the truth; the score
+    must follow.
+
     FAIRNESS AND CONSISTENCY RULES (hard):
     - Grade similar quality work similarly.
     - A short answer that is only minimally correct should not automatically tie a fuller, clearer, better-supported answer.
