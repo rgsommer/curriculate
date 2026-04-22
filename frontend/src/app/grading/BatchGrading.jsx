@@ -799,6 +799,171 @@ export default function BatchGrading({
     answerKeyOverride,
   ]);
 
+  // ---------- Re-grade a single student with adjusted strictness ----------
+  async function regradeStudent(resultIndex, biasDelta) {
+    const r = results.find((x) => x.index === resultIndex);
+    if (!r || regradingIndex) return;
+
+    const doc = pdfDocRef.current;
+    if (!doc) return;
+
+    // Compute new bias
+    const currentBias = studentBias[resultIndex] || 0;
+    const newBias = Math.max(-3, Math.min(3, currentBias + biasDelta));
+    setStudentBias((prev) => ({ ...prev, [resultIndex]: newBias }));
+    setRegradingIndex(resultIndex);
+
+    try {
+      // Find the page group for this student
+      const groups = detectedGroups || (() => {
+        const g = [];
+        const pps = Number(pagesPerStudent) || 1;
+        const firstPage = (Number(answerKeyPages) || 0) + 1;
+        for (let i = 0; i < results.length; i++) {
+          const start = firstPage + i * pps;
+          const end = Math.min(start + pps - 1, pageCount);
+          g.push({ startPage: start, endPage: end, pages: Array.from({ length: end - start + 1 }, (_, k) => start + k) });
+        }
+        return g;
+      })();
+      const groupIdx = resultIndex - 1; // index is 1-based
+      const group = groups[groupIdx];
+      if (!group) throw new Error("Cannot find page group for this student");
+
+      // Render pages to images
+      const images = [];
+      for (const p of group.pages) {
+        if (p < 1 || p > doc.numPages) continue;
+        images.push(await renderPageToDataUrl(doc, p));
+      }
+      if (!images.length) throw new Error("No valid pages for this student");
+
+      const effectiveRubric = (rubricOverride || "").trim();
+      const effectiveAnswerKey = extractedAnswerKey || "";
+
+      const payload = {
+        images,
+        rubricOverride: effectiveRubric || null,
+        answerKeyOverride: effectiveAnswerKey || null,
+        gradeBand,
+        standards,
+        strictnessBias: newBias || undefined,
+        meta: {
+          source: "batch-regrade",
+          batchMode: true,
+          capturedCount: images.length,
+          capturedAt: Date.now(),
+          feedbackVoiceMode: voiceMode || "default",
+          feedbackVoice: feedbackVoice || "warm",
+          inputMode: "photo",
+          batchIndex: groupIdx,
+        },
+      };
+
+      const res = await fetchWithRetry(gradingUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      const score = Number(data.overall_score);
+      const outOf = Number(data.overall_out_of);
+      const pct =
+        Number.isFinite(score) && Number.isFinite(outOf) && outOf > 0
+          ? Math.round((score / outOf) * 100) : null;
+
+      const aiName = (data.student_name || "").trim();
+      const classifierName = (group.name || "").trim();
+      const nameConfirmed = !!(
+        aiName && classifierName &&
+        aiName.toLowerCase() === classifierName.toLowerCase()
+      );
+
+      const updatedEntry = {
+        ...r,
+        studentName: data.student_name || r.studentName,
+        nameConfirmed,
+        score: Number.isFinite(score) ? score : "?",
+        outOf: Number.isFinite(outOf) ? outOf : "?",
+        pct,
+        letter: pct != null ? letterGrade(pct) : "?",
+        strengths: Array.isArray(data.strengths) ? data.strengths : [],
+        improvements: Array.isArray(data.improvements) ? data.improvements : [],
+        comment: data.teacher_comment || "",
+        sections: data.sections || null,
+        subject: data.inferred_subject || "",
+        assessmentType: data.inferred_assessment_type || "",
+        error: data.error || null,
+        raw: data,
+      };
+
+      // Update ref code via PUT (or create if missing)
+      if (resultsUrl) {
+        try {
+          if (updatedEntry.refCode) {
+            const updateUrl = resultsUrl.replace(/\/$/, "") + "/" + updatedEntry.refCode;
+            await fetch(updateUrl, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                payload: buildBatchPayloadText(updatedEntry, updatedEntry.refCode, gradeBand),
+              }),
+            });
+          } else {
+            const pubRes = await fetch(resultsUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                payload: buildBatchPayloadText(updatedEntry, null, gradeBand),
+                meta: { source: "batch-regrade", batchIndex: groupIdx, gradeBand },
+              }),
+            });
+            const pubData = await pubRes.json().catch(() => ({}));
+            if (pubData.code) {
+              updatedEntry.refCode = String(pubData.code).toUpperCase();
+              const updateUrl = resultsUrl.replace(/\/$/, "") + "/" + updatedEntry.refCode;
+              await fetch(updateUrl, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  payload: buildBatchPayloadText(updatedEntry, updatedEntry.refCode, gradeBand),
+                }),
+              }).catch(() => {});
+            }
+          }
+        } catch (e) {
+          console.warn(`[batch] regrade publish for student ${resultIndex} failed:`, e);
+        }
+      }
+
+      // Replace in results array
+      setResults((prev) => prev.map((x) => x.index === resultIndex ? updatedEntry : x));
+
+    } catch (err) {
+      console.error(`[batch] regrade student ${resultIndex} failed:`, err);
+    } finally {
+      setRegradingIndex(null);
+    }
+  }
+
+  // Recalculate class summary whenever results change (e.g. after per-student re-grade)
+  useEffect(() => {
+    if (!results.length || grading) return;
+    const validResults = results.filter((r) => r.pct != null);
+    if (!validResults.length) return;
+    const avg = validResults.reduce((s, r) => s + r.pct, 0) / validResults.length;
+    const sorted = [...validResults].sort((a, b) => a.pct - b.pct);
+    const median = sorted.length % 2 === 0
+      ? (sorted[sorted.length / 2 - 1].pct + sorted[sorted.length / 2].pct) / 2
+      : sorted[Math.floor(sorted.length / 2)].pct;
+    const high = sorted[sorted.length - 1].pct;
+    const low = sorted[0].pct;
+    const dist = { A: 0, B: 0, C: 0, D: 0, F: 0 };
+    validResults.forEach((r) => { const l = r.letter[0]; if (l in dist) dist[l]++; });
+    setClassSummary({ count: validResults.length, avg: Math.round(avg), median: Math.round(median), high, low, dist });
+  }, [results, grading]);
+
   // ---------- CSV export ----------
   const exportCsv = useCallback(() => {
     if (!results.length) return;
@@ -1125,6 +1290,8 @@ export default function BatchGrading({
 
   // ---------- Expanded row ----------
   const [expandedIndex, setExpandedIndex] = useState(null);
+  const [regradingIndex, setRegradingIndex] = useState(null); // index of student being re-graded
+  const [studentBias, setStudentBias] = useState({}); // { [index]: number } per-student strictness bias
 
   // ---------- Render ----------
   return (
@@ -1645,8 +1812,51 @@ export default function BatchGrading({
                         {r.studentName}
                       </td>
                       <td style={batchStyles.td}>{r.pages}</td>
-                      <td style={batchStyles.td}>
-                        {r.score}/{r.outOf}
+                      <td style={{ ...batchStyles.td, whiteSpace: "nowrap" }}>
+                        {regradingIndex === r.index ? (
+                          <span style={{ fontSize: 11, color: "#64748b" }}>grading…</span>
+                        ) : (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 0 }}>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); regradeStudent(r.index, -1); }}
+                              disabled={!!regradingIndex || (studentBias[r.index] || 0) <= -3}
+                              title="Re-grade more leniently"
+                              style={{
+                                border: "none", background: "transparent",
+                                cursor: (studentBias[r.index] || 0) <= -3 ? "default" : "pointer",
+                                padding: "0 2px", fontSize: 15, fontWeight: 700, lineHeight: 1,
+                                color: (studentBias[r.index] || 0) <= -3 ? "#cbd5e1" : "#64748b",
+                                opacity: (studentBias[r.index] || 0) <= -3 ? 0.4 : 0.7,
+                              }}
+                            >&#8249;</button>
+                            <span>{r.score}/{r.outOf}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); regradeStudent(r.index, 1); }}
+                              disabled={!!regradingIndex || (studentBias[r.index] || 0) >= 3}
+                              title="Re-grade more strictly"
+                              style={{
+                                border: "none", background: "transparent",
+                                cursor: (studentBias[r.index] || 0) >= 3 ? "default" : "pointer",
+                                padding: "0 2px", fontSize: 15, fontWeight: 700, lineHeight: 1,
+                                color: (studentBias[r.index] || 0) >= 3 ? "#cbd5e1" : "#64748b",
+                                opacity: (studentBias[r.index] || 0) >= 3 ? 0.4 : 0.7,
+                              }}
+                            >&#8250;</button>
+                            {(studentBias[r.index] || 0) !== 0 && (
+                              <span style={{
+                                fontSize: 8, fontWeight: 600, marginLeft: 2,
+                                color: (studentBias[r.index] || 0) > 0 ? "#dc2626" : "#2563eb",
+                                textTransform: "uppercase",
+                              }}>
+                                {(studentBias[r.index] || 0) > 0
+                                  ? ((studentBias[r.index] || 0) === 1 ? "S" : (studentBias[r.index] || 0) === 2 ? "S+" : "S++")
+                                  : ((studentBias[r.index] || 0) === -1 ? "L" : (studentBias[r.index] || 0) === -2 ? "L+" : "L++")}
+                              </span>
+                            )}
+                          </span>
+                        )}
                       </td>
                       <td style={batchStyles.td}>
                         {r.pct != null ? `${r.pct}%` : "—"}
