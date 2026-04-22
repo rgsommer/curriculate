@@ -1026,6 +1026,11 @@ const RUBRIC_TIP_DISMISSED_KEY = "curriculate_rubric_tip_dismissed_v1";
   }
 
 export default function GradingPage() {
+    // Prevent SSR hydration mismatch — this page reads localStorage in 17+ useState
+    // initializers. Rendering nothing on the server avoids React error #418.
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => { setMounted(true); }, []);
+
     const [sessionItems, setSessionItems] = useState(() => {
       if (typeof window === "undefined") return [];
       return loadSession();
@@ -2826,6 +2831,9 @@ export default function GradingPage() {
     const disableClearCaptured =
       !(stickyRubricText || "").trim().length ||
       stickyRubricSource !== "captured";
+
+    // SSR: render nothing until client mounts (avoids localStorage hydration mismatch)
+    if (!mounted) return null;
 
     return (
       <div style={styles.page}>
