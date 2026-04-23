@@ -110,10 +110,23 @@ router.post("/upload", async (req, res) => {
       return res.status(400).json({ error: "No students found in CSV." });
     }
 
-    // Derive class name from sourceFile if not provided
-    const derivedClassName = className
-      || (sourceFile || "").replace(/\.csv$/i, "").replace(/^.*?-\s*/, "").trim()
-      || "Imported Class";
+    // Derive class name from sourceFile if not provided.
+    // Edsby filenames look like "Mr. Richard Sommer HIST7C - Gradebook.csv"
+    // — the class code is the last word before the dash.
+    let derivedClassName = className || "";
+    if (!derivedClassName && sourceFile) {
+      const base = sourceFile.replace(/\.csv$/i, "").trim();
+      // Try to extract class code: last token before " - " (e.g. "HIST7C")
+      const dashIdx = base.indexOf(" - ");
+      if (dashIdx > 0) {
+        const beforeDash = base.slice(0, dashIdx).trim();
+        const tokens = beforeDash.split(/\s+/);
+        derivedClassName = tokens[tokens.length - 1] || beforeDash;
+      } else {
+        derivedClassName = base;
+      }
+    }
+    derivedClassName = derivedClassName || "Imported Class";
 
     // If the same teacher already uploaded the same sourceFile, replace it
     if (sourceFile) {
