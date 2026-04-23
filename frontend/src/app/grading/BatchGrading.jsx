@@ -1000,10 +1000,11 @@ export default function BatchGrading({
         setResults([...batchResults]);
 
         // Notify teacher about unmatched students + unmatched roster names
+        // Only show alert if we actually detected the batch class (batchRosterId is set).
+        // If no roster was detected, the unmatched list would be the entire roster — not helpful.
         const unmatched = batchResults.filter((r) => !r.error && !r.rosterEdsbyId);
-        if (unmatched.length > 0) {
+        if (unmatched.length > 0 && batchRosterId) {
           const unmatchedResultNames = unmatched.map((r) => r.studentName).join(", ");
-          // Also list which roster students weren't assigned
           const finalRem = remaining();
           const unmatchedRosterNames = finalRem.map((s) => `${s.firstName} ${s.lastName}`).join(", ");
           setTimeout(() => {
