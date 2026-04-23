@@ -32,6 +32,20 @@ function studentAuth(req, res, next) {
   }
 }
 
+function teacherAuth(req, res, next) {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: "Not authenticated" });
+  try {
+    const decoded = jwt.verify(token, jwtSecret());
+    if (decoded.type !== "teacher-progress") return res.status(401).json({ error: "Invalid token type" });
+    req.teacherEmail = decoded.teacherEmail;
+    next();
+  } catch {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+}
+
 /* ------------------------------------------------------------------
  *  POST /login
  *  { studentId, email }
@@ -71,17 +85,56 @@ router.post("/login", async (req, res) => {
             to: email,
             subject: "Your Curriculate verification code",
             html: `
-              <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-                <h2 style="color: #1a1a2e; margin-bottom: 16px;">Curriculate Progress Portal</h2>
-                <p style="color: #333; font-size: 15px; line-height: 1.5;">
-                  Your verification code is:
-                </p>
-                <div style="background: #f0f4ff; border: 2px solid #4361ee; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
-                  <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #4361ee;">${code}</span>
+              <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 0;">
+                <!-- Header -->
+                <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 28px 24px; border-radius: 12px 12px 0 0; text-align: center;">
+                  <h1 style="color: #ffffff; font-size: 22px; margin: 0 0 4px 0; font-weight: 700;">Curriculate</h1>
+                  <p style="color: #a0aec0; font-size: 13px; margin: 0;">Progress Portal — Teacher Access</p>
                 </div>
-                <p style="color: #666; font-size: 13px; line-height: 1.5;">
-                  This code expires in 10 minutes. If you didn't request this, you can safely ignore this email.
-                </p>
+
+                <!-- Code section -->
+                <div style="background: #ffffff; padding: 28px 24px; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">
+                  <p style="color: #333; font-size: 15px; line-height: 1.5; margin: 0 0 16px 0;">
+                    Here's your verification code to access your class overview:
+                  </p>
+                  <div style="background: #f0f4ff; border: 2px solid #4361ee; border-radius: 10px; padding: 22px; text-align: center; margin: 0 0 16px 0;">
+                    <span style="font-size: 36px; font-weight: bold; letter-spacing: 10px; color: #4361ee;">${code}</span>
+                  </div>
+                  <p style="color: #888; font-size: 12px; text-align: center; margin: 0 0 20px 0;">
+                    This code expires in 10 minutes.
+                  </p>
+
+                  <!-- What you'll see -->
+                  <div style="background: #f8fafc; border-radius: 8px; padding: 16px 20px; margin: 0 0 4px 0;">
+                    <p style="color: #1a1a2e; font-weight: 600; font-size: 14px; margin: 0 0 10px 0;">Once verified, you'll be able to:</p>
+                    <p style="color: #555; font-size: 13px; line-height: 1.7; margin: 0;">
+                      ✓ &nbsp;See every student's grades and overall averages<br>
+                      ✓ &nbsp;Track class progress over time<br>
+                      ✓ &nbsp;Click into individual student results<br>
+                      ✓ &nbsp;See which students and parents are checking in
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Curriculate teaser -->
+                <div style="background: #f0f4ff; padding: 20px 24px; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">
+                  <p style="color: #4361ee; font-weight: 600; font-size: 14px; margin: 0 0 8px 0;">Did you know?</p>
+                  <p style="color: #555; font-size: 13px; line-height: 1.6; margin: 0;">
+                    Curriculate's AI grading can mark a full class set in minutes — tests, essays, even handwritten work.
+                    Snap a photo or upload a batch, and get detailed feedback with scores ready to export to your gradebook.
+                  </p>
+                  <a href="https://www.curriculate.net/ai-grading" style="display: inline-block; margin-top: 12px; color: #4361ee; font-size: 13px; font-weight: 600; text-decoration: none;">
+                    Explore AI Grading →
+                  </a>
+                </div>
+
+                <!-- Footer -->
+                <div style="background: #1a1a2e; padding: 16px 24px; border-radius: 0 0 12px 12px; text-align: center;">
+                  <p style="color: #a0aec0; font-size: 11px; margin: 0; line-height: 1.5;">
+                    Curriculate — AI-powered tools that give teachers their time back.<br>
+                    If you didn't request this code, you can safely ignore this email.
+                  </p>
+                </div>
               </div>
             `,
           });
@@ -387,6 +440,79 @@ router.get("/profile", studentAuth, async (req, res) => {
  *  Removal requires teacher intervention to prevent bad actors
  *  (e.g. a classmate deleting parent emails).
  * ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------
+ *  GET /teacher/students (requires teacher auth)
+ *  Returns class overview — same data as the magic code login response
+ * ------------------------------------------------------------------ */
+router.get("/teacher/students", teacherAuth, async (req, res) => {
+  try {
+    const email = req.teacherEmail;
+    const teacherRosters = await ClassRoster.find({ teacherEmail: email }).lean();
+
+    const allStudentIds = new Set();
+    const studentMap = {};
+    for (const r of teacherRosters) {
+      for (const s of r.students || []) {
+        const fullId = s.studentId || s.edsbyId;
+        if (!fullId) continue;
+        if (!allStudentIds.has(fullId)) {
+          allStudentIds.add(fullId);
+          studentMap[fullId] = { firstName: s.firstName, lastName: s.lastName, className: r.className };
+        }
+      }
+    }
+
+    const idArray = [...allStudentIds];
+    const allResults = await PublishedResult.find({
+      "meta.studentId": { $in: idArray },
+    }).sort({ createdAt: -1 }).lean();
+
+    const byStudent = {};
+    for (const r of allResults) {
+      const sid = r.meta?.studentId;
+      if (!sid) continue;
+      if (!byStudent[sid]) byStudent[sid] = [];
+      byStudent[sid].push(r);
+    }
+
+    const students = idArray.map((id) => {
+      const info = studentMap[id] || {};
+      const studentResults = byStudent[id] || [];
+      const scores = [];
+      for (const r of studentResults) {
+        if (typeof r.payload === "string") {
+          const m = r.payload.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
+          if (m) {
+            const outOf = parseFloat(m[2]);
+            if (outOf > 0) scores.push(Math.round((parseFloat(m[1]) / outOf) * 100));
+          }
+        }
+      }
+      const avg = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+      return {
+        studentId: id,
+        firstName: info.firstName || "",
+        lastName: info.lastName || "",
+        className: info.className || "",
+        totalAssignments: studentResults.length,
+        avg,
+        lastGraded: studentResults[0]?.createdAt || null,
+      };
+    }).filter((s) => s.totalAssignments > 0)
+      .sort((a, b) => (a.lastName || "").localeCompare(b.lastName || ""));
+
+    return res.json({
+      ok: true,
+      students,
+      totalStudents: students.length,
+      totalAssignments: allResults.length,
+    });
+  } catch (err) {
+    console.error("GET /student-progress/teacher/students error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to load class overview." });
+  }
+});
 
 /* ------------------------------------------------------------------
  *  GET /stats (admin)

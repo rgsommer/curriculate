@@ -100,8 +100,21 @@ export default function ProgressPage() {
     setMounted(true);
     const saved = localStorage.getItem(TOKEN_KEY);
     if (saved) {
-      setToken(saved);
-      setView("dashboard");
+      // Decode JWT payload to determine token type
+      try {
+        const payload = JSON.parse(atob(saved.split(".")[1]));
+        if (payload.type === "teacher-progress") {
+          setToken(saved);
+          setEmail(payload.teacherEmail || "");
+          setView("teacher");
+        } else {
+          setToken(saved);
+          setView("dashboard");
+        }
+      } catch {
+        setToken(saved);
+        setView("dashboard");
+      }
     }
   }, []);
 
@@ -115,6 +128,30 @@ export default function ProgressPage() {
     });
     return res.json();
   }, [token]);
+
+  // Load teacher students when teacher view is shown
+  useEffect(() => {
+    if (view !== "teacher" || !token) return;
+    setLoading(true);
+    fetch(`${API}/student-progress/teacher/students`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.error) {
+          if (data.error.includes("expired") || data.error.includes("authenticated")) {
+            localStorage.removeItem(TOKEN_KEY);
+            setToken(null);
+            setView("login");
+          }
+          setError(data.error);
+        } else {
+          setTeacherStudents(data.students || []);
+        }
+        setLoading(false);
+      })
+      .catch(() => { setLoading(false); setError("Failed to load class overview."); });
+  }, [view, token]);
 
   // Load results when dashboard is shown
   useEffect(() => {
@@ -298,9 +335,13 @@ export default function ProgressPage() {
             <button onClick={logout} style={{ ...s.link, fontSize: 12, color: "#dc2626" }} type="button">Logout</button>
           </div>
 
+          {error && <div style={s.err}>{error}</div>}
+
           <div style={{ ...s.avgCard, background: "linear-gradient(135deg, #0f766e, #2563eb)" }}>
             <div style={{ fontSize: 13, opacity: 0.8 }}>{teacherStudents.length} students with graded work</div>
           </div>
+
+          {loading && <div style={{ textAlign: "center", padding: 40, color: "#64748b" }}>Loading class data...</div>}
 
           {/* Student list */}
           <div style={{ fontSize: 11, color: "#94a3b8", padding: "8px 0", borderBottom: "2px solid #e2e8f0", display: "flex", fontWeight: 700 }}>
