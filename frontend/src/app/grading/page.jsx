@@ -207,6 +207,13 @@ const TOUR_STEPS = [
     target: "tourTargetResult",
     phase: 1,
   },
+  {
+    id: "batch-intro",
+    title: "Got a Whole Class to Grade?",
+    body: "Switch to the Batch tab to upload a scanned PDF of all your students' papers at once. The AI splits by student, reads names, and grades each one — a whole class in minutes.",
+    target: "tourTargetBatch",
+    phase: 1,
+  },
   // Phase 2 — after 2nd grading: sharing tools
   {
     id: "copy-session",
