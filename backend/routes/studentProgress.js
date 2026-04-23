@@ -43,11 +43,100 @@ router.post("/login", async (req, res) => {
     const { studentId, email: rawEmail } = req.body || {};
     const sid = String(studentId || "").trim();
     const email = String(rawEmail || "").trim().toLowerCase();
-    if (!sid) {
-      return res.status(400).json({ error: "Student ID is required." });
-    }
     if (!email || !email.includes("@")) {
       return res.status(400).json({ error: "A valid email address is required." });
+    }
+
+    // Teacher class overview: email only, no student ID → send magic code
+    if (!sid) {
+      const { magicCode } = req.body || {};
+
+      // Check if this email belongs to a teacher with rosters
+      const teacherRosters = await ClassRoster.find({ teacherEmail: email }).lean();
+      if (teacherRosters.length === 0) {
+        return res.status(400).json({ error: "Student ID is required. Teachers: use the email associated with your uploaded rosters." });
+      }
+
+      // Step 1: No magic code provided → generate and send one
+      if (!magicCode) {
+        const code = String(Math.floor(100000 + Math.random() * 900000));
+        // Store code in memory (simple approach — expires in 10 min)
+        if (!global._teacherMagicCodes) global._teacherMagicCodes = {};
+        global._teacherMagicCodes[email] = { code, expires: Date.now() + 10 * 60 * 1000 };
+        console.log(`[student-progress] Teacher magic code for ${email}: ${code}`);
+        // TODO: send email with code via sendSystemEmail
+        return res.json({ ok: true, needsCode: true, message: "A 6-digit code has been sent to your email." });
+      }
+
+      // Step 2: Magic code provided → verify and return class overview
+      const stored = global._teacherMagicCodes?.[email];
+      if (!stored || stored.code !== String(magicCode).trim() || stored.expires < Date.now()) {
+        return res.status(401).json({ error: "Invalid or expired code. Request a new one." });
+      }
+      delete global._teacherMagicCodes[email];
+
+      // Build class overview
+      const allStudentIds = new Set();
+      const studentMap = {};
+      for (const r of teacherRosters) {
+        for (const s of r.students || []) {
+          const fullId = s.studentId || s.edsbyId;
+          if (!fullId) continue;
+          if (!allStudentIds.has(fullId)) {
+            allStudentIds.add(fullId);
+            studentMap[fullId] = { firstName: s.firstName, lastName: s.lastName, className: r.className };
+          }
+        }
+      }
+
+      const idArray = [...allStudentIds];
+      const allResults = await PublishedResult.find({
+        "meta.studentId": { $in: idArray },
+      }).sort({ createdAt: -1 }).lean();
+
+      const byStudent = {};
+      for (const r of allResults) {
+        const sid2 = r.meta?.studentId;
+        if (!sid2) continue;
+        if (!byStudent[sid2]) byStudent[sid2] = [];
+        byStudent[sid2].push(r);
+      }
+
+      const students = idArray.map((id) => {
+        const info = studentMap[id] || {};
+        const studentResults = byStudent[id] || [];
+        const scores = [];
+        for (const r of studentResults) {
+          if (typeof r.payload === "string") {
+            const m = r.payload.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
+            if (m) {
+              const outOf = parseFloat(m[2]);
+              if (outOf > 0) scores.push(Math.round((parseFloat(m[1]) / outOf) * 100));
+            }
+          }
+        }
+        const avg = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+        return {
+          studentId: id,
+          firstName: info.firstName || "",
+          lastName: info.lastName || "",
+          className: info.className || "",
+          totalAssignments: studentResults.length,
+          avg,
+          lastGraded: studentResults[0]?.createdAt || null,
+        };
+      }).filter((s) => s.totalAssignments > 0)
+        .sort((a, b) => (a.lastName || "").localeCompare(b.lastName || ""));
+
+      const token = jwt.sign({ teacherEmail: email, type: "teacher-progress" }, jwtSecret(), { expiresIn: "7d" });
+      return res.json({
+        ok: true,
+        token,
+        isTeacherOverview: true,
+        students,
+        totalStudents: students.length,
+        totalAssignments: allResults.length,
+      });
     }
 
     // Look up student in rosters to validate the ID

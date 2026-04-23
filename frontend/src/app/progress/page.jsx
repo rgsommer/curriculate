@@ -32,7 +32,7 @@ function gradeColor(letter) {
 export default function ProgressPage() {
   const [mounted, setMounted] = useState(false);
   const [token, setToken] = useState(null);
-  const [view, setView] = useState("login"); // login | dashboard
+  const [view, setView] = useState("login"); // login | dashboard | teacherCode | teacher
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
@@ -43,6 +43,8 @@ export default function ProgressPage() {
   // Login form
   const [studentId, setStudentId] = useState("");
   const [email, setEmail] = useState("");
+  const [magicCode, setMagicCode] = useState("");
+  const [teacherStudents, setTeacherStudents] = useState([]);
 
   // Settings
   const [showSettings, setShowSettings] = useState(false);
@@ -96,17 +98,48 @@ export default function ProgressPage() {
     setError("");
     setInfo("");
     setLoading(true);
-    const data = await apiCall("/login", { method: "POST", body: { studentId, email } });
+    const body = { studentId: studentId.trim(), email };
+    if (magicCode) body.magicCode = magicCode;
+    const data = await apiCall("/login", { method: "POST", body });
     if (data.ok) {
-      localStorage.setItem(TOKEN_KEY, data.token);
-      setToken(data.token);
-      setStudent(data.student);
-      if (data.newEmailAdded) {
-        setInfo(`Your email was added. ${data.emailCount} email${data.emailCount > 1 ? "s" : ""} now receive notifications for this student.`);
+      if (data.needsCode) {
+        // Teacher flow: code sent to email
+        setView("teacherCode");
+        setInfo(data.message);
+      } else if (data.isTeacherOverview) {
+        // Teacher class overview
+        localStorage.setItem(TOKEN_KEY, data.token);
+        setToken(data.token);
+        setTeacherStudents(data.students || []);
+        setView("teacher");
+      } else {
+        // Student/parent flow
+        localStorage.setItem(TOKEN_KEY, data.token);
+        setToken(data.token);
+        setStudent(data.student);
+        if (data.newEmailAdded) {
+          setInfo(`Your email was added. ${data.emailCount} email${data.emailCount > 1 ? "s" : ""} now receive notifications for this student.`);
+        }
+        setView("dashboard");
       }
-      setView("dashboard");
     } else {
       setError(data.error || "Login failed.");
+    }
+    setLoading(false);
+  };
+
+  const handleMagicCode = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    const data = await apiCall("/login", { method: "POST", body: { email, magicCode } });
+    if (data.ok && data.isTeacherOverview) {
+      localStorage.setItem(TOKEN_KEY, data.token);
+      setToken(data.token);
+      setTeacherStudents(data.students || []);
+      setView("teacher");
+    } else {
+      setError(data.error || "Invalid code.");
     }
     setLoading(false);
   };
@@ -174,8 +207,10 @@ export default function ProgressPage() {
           </form>
 
           <div style={{ marginTop: 16, fontSize: 12, color: "#94a3b8", lineHeight: 1.5 }}>
-            First time? Just enter your student ID and email — your account is created automatically.
-            Multiple people (student + parents) can each add their own email to receive grade notifications.
+            <strong>Students &amp; parents:</strong> Enter your student ID and email. First time? Your account is created automatically.
+            Multiple people can each add their own email to receive notifications.
+            <br /><br />
+            <strong>Teachers:</strong> Leave the student ID blank and enter your email to see all your students.
           </div>
         </div>
         <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: "#94a3b8" }}>
@@ -185,7 +220,95 @@ export default function ProgressPage() {
     );
   }
 
-  // --- DASHBOARD ---
+  // --- TEACHER: ENTER MAGIC CODE ---
+  if (view === "teacherCode") {
+    return (
+      <div style={s.page}>
+        <div style={s.card}>
+          <h1 style={s.h1}>Teacher Verification</h1>
+          <div style={s.sub}>Enter the 6-digit code sent to {email}</div>
+          {info && <div style={s.info}>{info}</div>}
+          {error && <div style={s.err}>{error}</div>}
+          <form onSubmit={handleMagicCode}>
+            <input style={{ ...s.input, fontSize: 24, textAlign: "center", letterSpacing: 8 }} placeholder="000000" maxLength={6} value={magicCode} onChange={(e) => setMagicCode(e.target.value)} />
+            <button style={s.btn} type="submit" disabled={loading}>{loading ? "Verifying..." : "Verify"}</button>
+          </form>
+          <div style={{ textAlign: "center", marginTop: 12 }}>
+            <button type="button" style={s.link} onClick={() => { setView("login"); setError(""); setMagicCode(""); }}>Back</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- TEACHER CLASS OVERVIEW ---
+  if (view === "teacher") {
+    return (
+      <div style={s.page}>
+        <div style={s.wideCard}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+            <h1 style={{ ...s.h1, textAlign: "left", fontSize: 24 }}>Class Progress</h1>
+            <button onClick={logout} style={{ ...s.link, fontSize: 12, color: "#dc2626" }} type="button">Logout</button>
+          </div>
+
+          <div style={{ ...s.avgCard, background: "linear-gradient(135deg, #0f766e, #2563eb)" }}>
+            <div style={{ fontSize: 13, opacity: 0.8 }}>{teacherStudents.length} students with graded work</div>
+          </div>
+
+          {/* Student list */}
+          <div style={{ fontSize: 11, color: "#94a3b8", padding: "8px 0", borderBottom: "2px solid #e2e8f0", display: "flex", fontWeight: 700 }}>
+            <div style={{ flex: 2 }}>STUDENT</div>
+            <div style={{ flex: 1, textAlign: "center" }}>CLASS</div>
+            <div style={{ flex: 1, textAlign: "center" }}>ASSIGNMENTS</div>
+            <div style={{ flex: 1, textAlign: "center" }}>AVERAGE</div>
+          </div>
+          {teacherStudents.map((ts) => (
+            <div
+              key={ts.studentId}
+              style={{ display: "flex", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}
+              onClick={() => {
+                // Switch to student view
+                setStudentId(ts.studentId);
+                setEmail(email); // keep teacher email
+                // Trigger login for this student
+                apiCall("/login", { method: "POST", body: { studentId: ts.studentId, email } })
+                  .then((data) => {
+                    if (data.ok && !data.needsCode && !data.isTeacherOverview) {
+                      localStorage.setItem(TOKEN_KEY, data.token);
+                      setToken(data.token);
+                      setStudent(data.student);
+                      setView("dashboard");
+                    }
+                  });
+              }}
+            >
+              <div style={{ flex: 2, fontWeight: 700, fontSize: 14 }}>{ts.firstName} {ts.lastName}</div>
+              <div style={{ flex: 1, textAlign: "center", fontSize: 12, color: "#64748b" }}>{ts.className}</div>
+              <div style={{ flex: 1, textAlign: "center", fontSize: 13 }}>{ts.totalAssignments}</div>
+              <div style={{ flex: 1, textAlign: "center" }}>
+                {ts.avg != null ? (
+                  <span style={{ fontWeight: 800, color: gradeColor(letterGrade(ts.avg)) }}>{ts.avg}% {letterGrade(ts.avg)}</span>
+                ) : (
+                  <span style={{ color: "#94a3b8" }}>--</span>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {teacherStudents.length === 0 && (
+            <div style={{ textAlign: "center", padding: 30, color: "#94a3b8", fontSize: 14 }}>
+              No graded results found yet. Results will appear after you grade student work with rosters uploaded.
+            </div>
+          )}
+        </div>
+        <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: "#94a3b8" }}>
+          curriculate.net/progress
+        </div>
+      </div>
+    );
+  }
+
+  // --- STUDENT DASHBOARD ---
   return (
     <div style={s.page}>
       <div style={s.wideCard}>

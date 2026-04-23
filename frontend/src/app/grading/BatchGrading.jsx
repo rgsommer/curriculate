@@ -1576,6 +1576,10 @@ export default function BatchGrading({
     html += `<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0 12px;" />`;
     html += `<table style="width: 100%;"><tr>`;
     html += `<td style="font-size: 12px; color: #94a3b8; line-height: 1.5;">`;
+    const hasRosterIds = results.some((r) => r.rosterStudentId || r.rosterEdsbyId);
+    if (hasRosterIds) {
+      html += `<strong style="color: #334155;">Student Progress Portal:</strong> View all scores and track progress at <a href="https://www.curriculate.net/progress" style="color: #2563eb; font-weight: 700; text-decoration: none;">curriculate.net/progress</a>. Enter just your email (no student ID) to see all your students' averages and click into any student's full history.<br/><br/>`;
+    }
     html += `Graded with <a href="https://www.curriculate.net" style="color: #2563eb; font-weight: 700; text-decoration: none;">Curriculate</a> &mdash; AI-powered grading &amp; feedback for teachers<br/>`;
     html += `Save hours on marking. Try it free at <a href="https://www.curriculate.net" style="color: #2563eb; text-decoration: none;">curriculate.net</a>`;
     html += `</td></tr></table>`;
