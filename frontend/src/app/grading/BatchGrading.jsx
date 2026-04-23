@@ -328,6 +328,7 @@ export default function BatchGrading({
 
   // ---------- Edsby Class Roster (state declared early — used in grading callback) ----------
   const [editingNameIndex, setEditingNameIndex] = useState(null); // index of result whose name is being edited
+  const [denomPrompt, setDenomPrompt] = useState(null); // { denoms: [56, 46], show: true } — mixed denominator prompt
   const [detectedBatchClass, setDetectedBatchClass] = useState(null); // class name detected from roster matching
   const [detectedBatchRosterId, setDetectedBatchRosterId] = useState(null); // roster ID detected from matching
   const [showRoster, setShowRoster] = useState(false);
@@ -1024,6 +1025,18 @@ export default function BatchGrading({
       }
     } catch (rosterErr) {
       console.warn("[batch] roster matching failed:", rosterErr);
+    }
+
+    // --- Check for mixed denominators ---
+    const denomSet = new Set();
+    for (const r of batchResults) {
+      if (!r.error && typeof r.outOf === "number" && r.outOf > 0) {
+        denomSet.add(r.outOf);
+      }
+    }
+    if (denomSet.size > 1) {
+      const denoms = [...denomSet].sort((a, b) => b - a);
+      setDenomPrompt({ denoms, show: true });
     }
 
     // Compute class summary
@@ -1748,6 +1761,28 @@ export default function BatchGrading({
     setEditingNameIndex(null);
   }, []);
 
+  // --- Normalize denominators across results ---
+  const normalizeDenoms = useCallback((targetDenom) => {
+    setResults((prev) => prev.map((r) => {
+      if (r.error || typeof r.outOf !== "number" || r.outOf <= 0) return r;
+      if (r.outOf === targetDenom) return r; // already correct
+      // Convert score to target denominator using percentage
+      const pct = r.pct != null ? r.pct : (r.score / r.outOf) * 100;
+      const newScore = Math.round((pct / 100) * targetDenom * 10) / 10;
+      return { ...r, score: newScore, outOf: targetDenom };
+    }));
+    setDenomPrompt(null);
+  }, []);
+
+  const convertToPercent = useCallback(() => {
+    setResults((prev) => prev.map((r) => {
+      if (r.error || typeof r.outOf !== "number" || r.outOf <= 0) return r;
+      const pct = r.pct != null ? r.pct : Math.round((r.score / r.outOf) * 100);
+      return { ...r, score: pct, outOf: 100 };
+    }));
+    setDenomPrompt(null);
+  }, []);
+
   // Close name dropdown on outside click
   useEffect(() => {
     if (editingNameIndex == null) return;
@@ -2195,6 +2230,47 @@ export default function BatchGrading({
           >
             Stop
           </button>
+        </div>
+      )}
+
+      {/* Mixed denominator prompt */}
+      {denomPrompt?.show && (
+        <div style={{
+          background: "#fffbeb", border: "1px solid #f59e0b", borderRadius: 10,
+          padding: "14px 18px", marginBottom: 12,
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 8, color: "#92400e" }}>
+            Mixed totals detected: assignments are scored out of {denomPrompt.denoms.join(" and ")}.
+          </div>
+          <div style={{ fontSize: 13, color: "#78350f", marginBottom: 10 }}>
+            How would you like to report scores?
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              onClick={convertToPercent}
+              style={{ ...batchStyles.smallBtn, background: "#f59e0b", color: "#fff", border: "none" }}
+              type="button"
+            >
+              Percentage (%)
+            </button>
+            {denomPrompt.denoms.map((d) => (
+              <button
+                key={d}
+                onClick={() => normalizeDenoms(d)}
+                style={batchStyles.smallBtn}
+                type="button"
+              >
+                Out of {d}
+              </button>
+            ))}
+            <button
+              onClick={() => setDenomPrompt(null)}
+              style={{ ...batchStyles.smallBtn, opacity: 0.6 }}
+              type="button"
+            >
+              Keep as-is
+            </button>
+          </div>
         </div>
       )}
 
