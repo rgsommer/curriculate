@@ -5,9 +5,8 @@ const studentAccountSchema = new mongoose.Schema(
   {
     studentId: { type: String, required: true, unique: true, index: true }, // full district student ID
     last4: { type: String, index: true },        // last 4 digits for quick lookup
-    passwordHash: { type: String, required: true },
-    email: { type: String, default: "" },         // student email (optional)
-    parentEmails: [{ type: String }],             // parent/guardian notification emails
+    passwordHash: { type: String, default: "" },   // optional, kept for backward compat
+    emails: [{ type: String }],                   // all associated emails (student + parents)
     firstName: { type: String, default: "" },
     lastName: { type: String, default: "" },
     edsbyId: { type: String, default: "" },

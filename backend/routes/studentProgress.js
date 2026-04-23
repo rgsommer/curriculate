@@ -1,7 +1,6 @@
 // backend/routes/studentProgress.js
-// Student progress portal — auth + results listing
+// Student progress portal — simple ID + email auth, results listing
 import express from "express";
-import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import StudentAccount from "../models/StudentAccount.js";
 import ClassRoster from "../models/ClassRoster.js";
@@ -34,22 +33,27 @@ function studentAuth(req, res, next) {
 }
 
 /* ------------------------------------------------------------------
- *  POST /register
- *  { studentId, password, email?, parentEmails? }
+ *  POST /login
+ *  { studentId, email }
+ *  Simple: enter student ID + email. If the email is new, it gets
+ *  added and all existing emails are notified. No password needed.
  * ------------------------------------------------------------------ */
-router.post("/register", async (req, res) => {
+router.post("/login", async (req, res) => {
   try {
-    const { studentId, password, email, parentEmails } = req.body || {};
+    const { studentId, email: rawEmail } = req.body || {};
     const sid = String(studentId || "").trim();
-    const pw = String(password || "");
-    if (!sid || pw.length < 4) {
-      return res.status(400).json({ error: "Student ID and password (min 4 chars) required." });
+    const email = String(rawEmail || "").trim().toLowerCase();
+    if (!sid) {
+      return res.status(400).json({ error: "Student ID is required." });
+    }
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ error: "A valid email address is required." });
     }
 
-    // Look up student in any roster
-    const rosters = await ClassRoster.find({}).lean();
+    // Look up student in rosters to validate the ID
     let rosterStudent = null;
     let rosterInfo = null;
+    const rosters = await ClassRoster.find({}).lean();
     for (const r of rosters) {
       for (const s of r.students || []) {
         if (s.studentId === sid || s.last4 === sid || s.edsbyId === sid) {
@@ -67,31 +71,53 @@ router.post("/register", async (req, res) => {
 
     const fullId = rosterStudent.studentId || rosterStudent.edsbyId || sid;
 
-    // Check if already registered
-    const existing = await StudentAccount.findOne({ studentId: fullId });
-    if (existing) {
-      return res.status(409).json({ error: "This student ID is already registered. Use login instead." });
+    // Find or create account
+    let account = await StudentAccount.findOne({
+      $or: [{ studentId: fullId }, { last4: rosterStudent.last4 }, { edsbyId: rosterStudent.edsbyId }].filter(q => Object.values(q).some(Boolean)),
+    });
+
+    let newEmailAdded = false;
+    const existingEmails = [];
+
+    if (!account) {
+      // First time — create account
+      account = await StudentAccount.create({
+        studentId: fullId,
+        last4: rosterStudent.last4 || fullId.slice(-4),
+        emails: [email],
+        firstName: rosterStudent.firstName,
+        lastName: rosterStudent.lastName,
+        edsbyId: rosterStudent.edsbyId || "",
+        teacherEmail: rosterInfo.teacherEmail,
+        className: rosterInfo.className,
+      });
+    } else {
+      // Existing account — check if email is already on file
+      const emailList = (account.emails || []).map((e) => e.toLowerCase());
+      if (!emailList.includes(email)) {
+        // New email — add it and note existing ones to notify
+        existingEmails.push(...emailList);
+        account.emails.push(email);
+        newEmailAdded = true;
+      }
+
+      // Update name/class from roster in case it changed
+      account.firstName = rosterStudent.firstName;
+      account.lastName = rosterStudent.lastName;
+      account.className = rosterInfo.className;
     }
 
-    const passwordHash = await bcrypt.hash(pw, 10);
-    const parentList = Array.isArray(parentEmails)
-      ? parentEmails.map((e) => String(e).trim().toLowerCase()).filter((e) => e.includes("@"))
-      : typeof parentEmails === "string"
-        ? parentEmails.split(/[,;\s]+/).map((e) => e.trim().toLowerCase()).filter((e) => e.includes("@"))
-        : [];
+    // Track login
+    account.loginCount = (account.loginCount || 0) + 1;
+    account.lastLoginAt = new Date();
+    await account.save();
 
-    const account = await StudentAccount.create({
-      studentId: fullId,
-      last4: rosterStudent.last4 || fullId.slice(-4),
-      passwordHash,
-      email: String(email || "").trim().toLowerCase(),
-      parentEmails: parentList,
-      firstName: rosterStudent.firstName,
-      lastName: rosterStudent.lastName,
-      edsbyId: rosterStudent.edsbyId || "",
-      teacherEmail: rosterInfo.teacherEmail,
-      className: rosterInfo.className,
-    });
+    // TODO: If newEmailAdded && existingEmails.length > 0, send notification
+    // to existingEmails: "A new email (email) was added to the progress
+    // account for {firstName} {lastName}."
+    if (newEmailAdded && existingEmails.length > 0) {
+      console.log(`[student-progress] New email ${email} added to ${fullId}. Notify: ${existingEmails.join(", ")}`);
+    }
 
     const token = signStudentToken(fullId);
     return res.json({
@@ -102,208 +128,12 @@ router.post("/register", async (req, res) => {
         lastName: account.lastName,
         className: account.className,
       },
-    });
-  } catch (err) {
-    console.error("POST /student-progress/register error:", err?.message || err);
-    return res.status(500).json({ error: "Registration failed." });
-  }
-});
-
-/* ------------------------------------------------------------------
- *  POST /login
- *  { studentId, password }
- * ------------------------------------------------------------------ */
-router.post("/login", async (req, res) => {
-  try {
-    const { studentId, password } = req.body || {};
-    const sid = String(studentId || "").trim();
-    if (!sid || !password) {
-      return res.status(400).json({ error: "Student ID and password required." });
-    }
-
-    // Find by full ID, last4, or edsbyId
-    const account = await StudentAccount.findOne({
-      $or: [{ studentId: sid }, { last4: sid }, { edsbyId: sid }],
-    });
-    if (!account) {
-      return res.status(401).json({ error: "Student ID not found. Register first." });
-    }
-
-    const valid = await bcrypt.compare(String(password), account.passwordHash);
-    if (!valid) {
-      return res.status(401).json({ error: "Incorrect password." });
-    }
-
-    // Track login
-    account.loginCount = (account.loginCount || 0) + 1;
-    account.lastLoginAt = new Date();
-    await account.save();
-
-    const token = signStudentToken(account.studentId);
-    return res.json({
-      ok: true,
-      token,
-      student: {
-        firstName: account.firstName,
-        lastName: account.lastName,
-        className: account.className,
-      },
+      newEmailAdded,
+      emailCount: account.emails.length,
     });
   } catch (err) {
     console.error("POST /student-progress/login error:", err?.message || err);
     return res.status(500).json({ error: "Login failed." });
-  }
-});
-
-/* ------------------------------------------------------------------
- *  POST /parent-login
- *  { studentId, parentEmail }
- *  Parents log in with student ID + their email (must be in parentEmails list)
- * ------------------------------------------------------------------ */
-router.post("/parent-login", async (req, res) => {
-  try {
-    const { studentId, parentEmail } = req.body || {};
-    const sid = String(studentId || "").trim();
-    const email = String(parentEmail || "").trim().toLowerCase();
-    if (!sid || !email) {
-      return res.status(400).json({ error: "Student ID and parent email required." });
-    }
-
-    const account = await StudentAccount.findOne({
-      $or: [{ studentId: sid }, { last4: sid }, { edsbyId: sid }],
-    });
-    if (!account) {
-      return res.status(401).json({ error: "Student ID not found." });
-    }
-
-    // Check if this email is in the student's parent emails list
-    const parentList = (account.parentEmails || []).map((e) => e.toLowerCase());
-    if (!parentList.includes(email)) {
-      return res.status(401).json({ error: "This email is not registered as a parent for this student. Ask your child to add your email in their progress settings." });
-    }
-
-    // Track parent login
-    account.parentLoginCount = (account.parentLoginCount || 0) + 1;
-    account.lastParentLoginAt = new Date();
-    await account.save();
-
-    const token = signStudentToken(account.studentId);
-    return res.json({
-      ok: true,
-      token,
-      student: {
-        firstName: account.firstName,
-        lastName: account.lastName,
-        className: account.className,
-      },
-      isParent: true,
-    });
-  } catch (err) {
-    console.error("POST /student-progress/parent-login error:", err?.message || err);
-    return res.status(500).json({ error: "Login failed." });
-  }
-});
-
-/* ------------------------------------------------------------------
- *  GET /stats (admin — no auth for now, add admin auth later)
- *  Returns aggregate stats on student progress usage
- * ------------------------------------------------------------------ */
-router.get("/stats", async (req, res) => {
-  try {
-    const totalAccounts = await StudentAccount.countDocuments();
-    const withEmail = await StudentAccount.countDocuments({ email: { $ne: "" } });
-    const withParents = await StudentAccount.countDocuments({ "parentEmails.0": { $exists: true } });
-    const loggedInLast7d = await StudentAccount.countDocuments({
-      lastLoginAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-    });
-    const loggedInLast30d = await StudentAccount.countDocuments({
-      lastLoginAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
-    });
-    const parentLoginsLast30d = await StudentAccount.countDocuments({
-      lastParentLoginAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
-    });
-    const totalLogins = await StudentAccount.aggregate([
-      { $group: { _id: null, total: { $sum: "$loginCount" }, parentTotal: { $sum: "$parentLoginCount" } } },
-    ]);
-
-    return res.json({
-      ok: true,
-      totalAccounts,
-      withEmail,
-      withParents,
-      loggedInLast7d,
-      loggedInLast30d,
-      parentLoginsLast30d,
-      totalStudentLogins: totalLogins[0]?.total || 0,
-      totalParentLogins: totalLogins[0]?.parentTotal || 0,
-    });
-  } catch (err) {
-    console.error("GET /student-progress/stats error:", err?.message || err);
-    return res.status(500).json({ error: "Failed to load stats." });
-  }
-});
-
-/* ------------------------------------------------------------------
- *  POST /forgot-password
- *  { studentId }
- * ------------------------------------------------------------------ */
-router.post("/forgot-password", async (req, res) => {
-  try {
-    const sid = String(req.body?.studentId || "").trim();
-    const account = await StudentAccount.findOne({
-      $or: [{ studentId: sid }, { last4: sid }, { edsbyId: sid }],
-    });
-    if (!account || !account.email) {
-      return res.json({ ok: true, message: "If an account with that ID exists, a reset link was sent." });
-    }
-
-    // Generate 6-digit reset code
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    account.resetToken = code;
-    account.resetTokenExpires = new Date(Date.now() + 30 * 60 * 1000); // 30 min
-    await account.save();
-
-    // In production, send email here. For now, log it.
-    console.log(`[student-progress] Password reset code for ${account.studentId}: ${code}`);
-
-    return res.json({ ok: true, message: "If an account with that ID exists, a reset code was sent to your email." });
-  } catch (err) {
-    console.error("POST /student-progress/forgot-password error:", err?.message || err);
-    return res.status(500).json({ error: "Failed." });
-  }
-});
-
-/* ------------------------------------------------------------------
- *  POST /reset-password
- *  { studentId, code, newPassword }
- * ------------------------------------------------------------------ */
-router.post("/reset-password", async (req, res) => {
-  try {
-    const { studentId, code, newPassword } = req.body || {};
-    const sid = String(studentId || "").trim();
-    const account = await StudentAccount.findOne({
-      $or: [{ studentId: sid }, { last4: sid }],
-    });
-    if (!account || !account.resetToken || account.resetToken !== String(code).trim()) {
-      return res.status(400).json({ error: "Invalid or expired reset code." });
-    }
-    if (account.resetTokenExpires && account.resetTokenExpires < new Date()) {
-      return res.status(400).json({ error: "Reset code has expired." });
-    }
-    if (!newPassword || String(newPassword).length < 4) {
-      return res.status(400).json({ error: "Password must be at least 4 characters." });
-    }
-
-    account.passwordHash = await bcrypt.hash(String(newPassword), 10);
-    account.resetToken = null;
-    account.resetTokenExpires = null;
-    await account.save();
-
-    const token = signStudentToken(account.studentId);
-    return res.json({ ok: true, token });
-  } catch (err) {
-    console.error("POST /student-progress/reset-password error:", err?.message || err);
-    return res.status(500).json({ error: "Reset failed." });
   }
 });
 
@@ -316,8 +146,7 @@ router.get("/results", studentAuth, async (req, res) => {
     const account = await StudentAccount.findOne({ studentId: req.studentId }).lean();
     if (!account) return res.status(404).json({ error: "Account not found." });
 
-    // Find results by studentId in meta (from batch grading)
-    // Also try matching by edsbyId and last4
+    // Find results by studentId in meta
     const ids = [account.studentId, account.edsbyId, account.last4].filter(Boolean);
     const results = await PublishedResult.find({
       $or: ids.map((id) => ({ "meta.studentId": id })),
@@ -325,21 +154,20 @@ router.get("/results", studentAuth, async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // Keep-alive: extend expiry on all this student's results by 30 days from now.
-    // Any login (student or parent) refreshes the TTL so results don't vanish.
+    // Keep-alive: extend expiry on all this student's results by 30 days.
+    // Any login (student or parent) refreshes the TTL.
     if (results.length > 0) {
       const newExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
       const resultIds = results.map((r) => r._id);
       PublishedResult.updateMany(
         { _id: { $in: resultIds }, expiresAt: { $lt: newExpiry } },
         { $set: { expiresAt: newExpiry } }
-      ).catch(() => {}); // fire-and-forget
+      ).catch(() => {});
     }
 
     // Build summary
     const entries = results.map((r) => {
       const meta = r.meta || {};
-      // Try to extract score from payload
       let score = null, outOf = null, pct = null, subject = "", assessmentType = "", title = "";
       if (typeof r.payload === "string") {
         const scoreMatch = r.payload.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
@@ -366,7 +194,6 @@ router.get("/results", studentAuth, async (req, res) => {
       };
     });
 
-    // Overall average
     const withPct = entries.filter((e) => e.pct != null);
     const overallAvg = withPct.length > 0
       ? Math.round(withPct.reduce((s, e) => s + e.pct, 0) / withPct.length)
@@ -378,6 +205,7 @@ router.get("/results", studentAuth, async (req, res) => {
         firstName: account.firstName,
         lastName: account.lastName,
         className: account.className,
+        emailCount: (account.emails || []).length,
       },
       results: entries,
       overallAvg,
@@ -401,8 +229,7 @@ router.get("/profile", studentAuth, async (req, res) => {
       firstName: account.firstName,
       lastName: account.lastName,
       className: account.className,
-      email: account.email || "",
-      parentEmails: account.parentEmails || [],
+      emails: account.emails || [],
     });
   } catch (err) {
     return res.status(500).json({ error: "Failed." });
@@ -410,25 +237,46 @@ router.get("/profile", studentAuth, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------
- *  PUT /profile (requires student auth)
- *  { email?, parentEmails? }
+ *  GET /profile emails are read-only for security.
+ *  Emails can only be added (by logging in with a new email).
+ *  Removal requires teacher intervention to prevent bad actors
+ *  (e.g. a classmate deleting parent emails).
  * ------------------------------------------------------------------ */
-router.put("/profile", studentAuth, async (req, res) => {
+
+/* ------------------------------------------------------------------
+ *  GET /stats (admin)
+ * ------------------------------------------------------------------ */
+router.get("/stats", async (req, res) => {
   try {
-    const updates = {};
-    if (req.body?.email != null) {
-      updates.email = String(req.body.email).trim().toLowerCase();
-    }
-    if (req.body?.parentEmails != null) {
-      const list = Array.isArray(req.body.parentEmails)
-        ? req.body.parentEmails
-        : String(req.body.parentEmails).split(/[,;\s]+/);
-      updates.parentEmails = list.map((e) => String(e).trim().toLowerCase()).filter((e) => e.includes("@"));
-    }
-    await StudentAccount.updateOne({ studentId: req.studentId }, { $set: updates });
-    return res.json({ ok: true });
+    const totalAccounts = await StudentAccount.countDocuments();
+    const loggedInLast7d = await StudentAccount.countDocuments({
+      lastLoginAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+    });
+    const loggedInLast30d = await StudentAccount.countDocuments({
+      lastLoginAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+    });
+    const totalLogins = await StudentAccount.aggregate([
+      { $group: { _id: null, total: { $sum: "$loginCount" } } },
+    ]);
+    const totalEmails = await StudentAccount.aggregate([
+      { $group: { _id: null, total: { $sum: { $size: { $ifNull: ["$emails", []] } } } } },
+    ]);
+    const multiEmail = await StudentAccount.countDocuments({
+      "emails.1": { $exists: true },
+    });
+
+    return res.json({
+      ok: true,
+      totalAccounts,
+      loggedInLast7d,
+      loggedInLast30d,
+      totalLogins: totalLogins[0]?.total || 0,
+      totalEmails: totalEmails[0]?.total || 0,
+      accountsWithMultipleEmails: multiEmail,
+    });
   } catch (err) {
-    return res.status(500).json({ error: "Failed to update profile." });
+    console.error("GET /student-progress/stats error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to load stats." });
   }
 });
 
