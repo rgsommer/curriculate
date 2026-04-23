@@ -602,9 +602,9 @@ export default function BatchGrading({
 
         const rawScore = Number(data.overall_score);
         const rawOutOf = Number(data.overall_out_of);
-        // Round to avoid floating point noise (e.g. 53.980000000000004 → 54)
-        const score = Number.isFinite(rawScore) ? Math.round(rawScore * 100) / 100 : rawScore;
-        const outOf = Number.isFinite(rawOutOf) ? Math.round(rawOutOf * 100) / 100 : rawOutOf;
+        // Round score to 1 decimal, outOf to nearest whole number (tests are always /N)
+        const score = Number.isFinite(rawScore) ? Math.round(rawScore * 10) / 10 : rawScore;
+        const outOf = Number.isFinite(rawOutOf) ? Math.round(rawOutOf) : rawOutOf;
         const pct =
           Number.isFinite(score) && Number.isFinite(outOf) && outOf > 0
             ? Math.round((score / outOf) * 100) : null;
@@ -1473,8 +1473,8 @@ export default function BatchGrading({
       const data = await res.json();
       const rawScore2 = Number(data.overall_score);
       const rawOutOf2 = Number(data.overall_out_of);
-      const score = Number.isFinite(rawScore2) ? Math.round(rawScore2 * 100) / 100 : rawScore2;
-      const outOf = Number.isFinite(rawOutOf2) ? Math.round(rawOutOf2 * 100) / 100 : rawOutOf2;
+      const score = Number.isFinite(rawScore2) ? Math.round(rawScore2 * 10) / 10 : rawScore2;
+      const outOf = Number.isFinite(rawOutOf2) ? Math.round(rawOutOf2) : rawOutOf2;
       const pct =
         Number.isFinite(score) && Number.isFinite(outOf) && outOf > 0
           ? Math.round((score / outOf) * 100) : null;
