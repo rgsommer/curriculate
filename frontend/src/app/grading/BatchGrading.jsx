@@ -868,6 +868,18 @@ export default function BatchGrading({
         }
 
         setResults([...batchResults]);
+
+        // Notify teacher about unmatched students
+        const unmatched = batchResults.filter((r) => !r.error && !r.rosterEdsbyId);
+        if (unmatched.length > 0) {
+          const names = unmatched.map((r) => r.studentName).join(", ");
+          setTimeout(() => {
+            alert(
+              `${unmatched.length} student${unmatched.length > 1 ? "s were" : " was"} not found in your uploaded rosters: ${names}\n\n` +
+              `You can upload additional class CSVs from Edsby under "Class Roster" above — the same batch results can be imported into multiple Edsby classes.`
+            );
+          }, 300);
+        }
       }
     } catch (rosterErr) {
       console.warn("[batch] roster matching failed:", rosterErr);
