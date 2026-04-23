@@ -941,6 +941,7 @@ export default function BatchGrading({
         for (const r of batchResults) {
           if (r.rosterEdsbyId) matchedIds.add(r.rosterEdsbyId);
           if (r.rosterStudentId) matchedIds.add(r.rosterStudentId);
+          if (r.rosterFirstName) matchedIds.add(`name:${(r.rosterFirstName||"").toLowerCase()}|${(r.rosterLastName||"").toLowerCase()}`);
         }
 
         // Build list of roster students not yet claimed (from the detected roster)
@@ -948,6 +949,7 @@ export default function BatchGrading({
           if (batchRosterId && s.rosterId !== batchRosterId) return false;
           if (s.edsbyId && matchedIds.has(s.edsbyId)) return false;
           if (s.studentId && matchedIds.has(s.studentId)) return false;
+          if (matchedIds.has(`name:${(s.firstName||"").toLowerCase()}|${(s.lastName||"").toLowerCase()}`)) return false;
           return true;
         });
 
@@ -960,19 +962,21 @@ export default function BatchGrading({
           r.studentName = `${m.firstName} ${m.lastName}`.trim() || r.studentName;
           if (m.edsbyId) matchedIds.add(m.edsbyId);
           if (m.studentId) matchedIds.add(m.studentId);
+          matchedIds.add(`name:${(m.firstName||"").toLowerCase()}|${(m.lastName||"").toLowerCase()}`);
         }
 
         function remaining() {
           return batchClassStudents.filter((s) => {
             if (s.edsbyId && matchedIds.has(s.edsbyId)) return false;
             if (s.studentId && matchedIds.has(s.studentId)) return false;
+            if (matchedIds.has(`name:${(s.firstName||"").toLowerCase()}|${(s.lastName||"").toLowerCase()}`)) return false;
             return true;
           });
         }
 
         function stillUnnamed() {
           return batchResults.filter(
-            (r) => !r.error && !r.rosterEdsbyId && (!r.studentName || /^Student \d+$/i.test(r.studentName))
+            (r) => !r.error && !r.rosterEdsbyId && !r.rosterStudentId && !r.rosterFirstName && (!r.studentName || /^Student \d+$/i.test(r.studentName))
           );
         }
 
@@ -1003,7 +1007,7 @@ export default function BatchGrading({
         // Notify teacher about unmatched students + unmatched roster names
         // Only show alert if we actually detected the batch class (batchRosterId is set).
         // If no roster was detected, the unmatched list would be the entire roster — not helpful.
-        const unmatched = batchResults.filter((r) => !r.error && !r.rosterEdsbyId);
+        const unmatched = batchResults.filter((r) => !r.error && !r.rosterEdsbyId && !r.rosterStudentId && !r.rosterFirstName);
         if (unmatched.length > 0 && batchRosterId) {
           const unmatchedResultNames = unmatched.map((r) => r.studentName).join(", ");
           const finalRem = remaining();
@@ -1698,13 +1702,19 @@ export default function BatchGrading({
     for (const r of results) {
       if (r.rosterEdsbyId) matched.add(r.rosterEdsbyId);
       if (r.rosterStudentId) matched.add(r.rosterStudentId);
+      if (r.rosterFirstName) matched.add(`name:${(r.rosterFirstName||"").toLowerCase()}|${(r.rosterLastName||"").toLowerCase()}`);
     }
+    const isMatched = (s) => {
+      if (s.edsbyId && matched.has(s.edsbyId)) return true;
+      if (s.studentId && matched.has(s.studentId)) return true;
+      if (matched.has(`name:${(s.firstName||"").toLowerCase()}|${(s.lastName||"").toLowerCase()}`)) return true;
+      return false;
+    };
     const all = [];
     for (const rc of rosterClasses) {
       if (detectedBatchRosterId && rc.id !== detectedBatchRosterId) continue;
       for (const s of rc.students || []) {
-        if (s.edsbyId && matched.has(s.edsbyId)) continue;
-        if (s.studentId && matched.has(s.studentId)) continue;
+        if (isMatched(s)) continue;
         all.push({ ...s, className: rc.className });
       }
     }
@@ -1712,8 +1722,7 @@ export default function BatchGrading({
     if (all.length === 0 && detectedBatchRosterId) {
       for (const rc of rosterClasses) {
         for (const s of rc.students || []) {
-          if (s.edsbyId && matched.has(s.edsbyId)) continue;
-          if (s.studentId && matched.has(s.studentId)) continue;
+          if (isMatched(s)) continue;
           all.push({ ...s, className: rc.className });
         }
       }
@@ -2436,7 +2445,7 @@ export default function BatchGrading({
                           style={{
                             cursor: "pointer",
                             borderBottom: "1px dashed #94a3b8",
-                            color: (!r.rosterEdsbyId && rosterClasses.length > 0) ? "#dc2626" : "inherit",
+                            color: (!r.rosterEdsbyId && !r.rosterStudentId && !r.rosterFirstName && rosterClasses.length > 0) ? "#dc2626" : "inherit",
                           }}
                           title="Click to change student name"
                         >
