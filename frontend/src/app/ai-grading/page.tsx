@@ -25,28 +25,38 @@ import {
 const features = [
   {
     icon: <Camera className="w-6 h-6 text-blue-600" />,
-    title: "Photo-first workflow",
-    desc: "Snap a photo of student work — handwritten or typed. The AI reads it instantly and starts grading.",
+    title: "5 input modes",
+    desc: "Snap a photo, paste text, batch-upload a whole class as PDF, record video performances, or upload audio. Whatever the assignment, there's a way in.",
   },
   {
     icon: <MessageSquare className="w-6 h-6 text-purple-600" />,
-    title: "11 feedback voices",
-    desc: "From encouraging coach to rigorous academic — pick the tone that fits your classroom culture.",
+    title: "13 feedback voices",
+    desc: "From encouraging coach to rigorous academic — pick the tone that fits your classroom culture. Journal Response, Tutor, and more.",
   },
   {
     icon: <BookOpen className="w-6 h-6 text-emerald-600" />,
-    title: "Sticky rubric detection",
-    desc: "Paste or describe your rubric once. The AI remembers it across every paper in the session.",
+    title: "Your rubric, every time",
+    desc: "Paste or describe your rubric once, or upload a PDF. The AI remembers it across every paper in the session.",
   },
   {
-    icon: <Clock className="w-6 h-6 text-yellow-600" />,
-    title: "Grade a stack in minutes",
-    desc: "What used to take an evening now takes a coffee break. Consistent, detailed feedback every time.",
+    icon: <Users className="w-6 h-6 text-yellow-600" />,
+    title: "Batch grade a whole class",
+    desc: "Upload a scanned PDF of 30 papers. AI splits by student, reads names, grades each one, and gives you a class summary.",
   },
   {
     icon: <BarChart3 className="w-6 h-6 text-indigo-600" />,
-    title: "Session summaries",
-    desc: "After grading a set of papers, get a bird's-eye view of class performance and common misconceptions.",
+    title: "Edsby gradebook export",
+    desc: "Upload your Edsby class CSV once. After grading, export a ready-to-import CSV with scores, dates, and feedback links.",
+  },
+  {
+    icon: <Zap className="w-6 h-6 text-orange-600" />,
+    title: "Student feedback pages",
+    desc: "Every graded paper gets a unique link. Students and parents can view detailed feedback anytime — no login needed.",
+  },
+  {
+    icon: <FileText className="w-6 h-6 text-teal-600" />,
+    title: "Print reports & strips",
+    desc: "Generate half-page reports or compact strips to hand back. Print-ready PDFs with scores, comments, and feedback links.",
   },
   {
     icon: <Shield className="w-6 h-6 text-rose-600" />,
@@ -67,6 +77,8 @@ const voices = [
   "Conversational",
   "Direct & Clear",
   "Narrative Feedback",
+  "Journal Response",
+  "Tutor",
 ];
 
 const steps = [
@@ -77,18 +89,18 @@ const steps = [
   },
   {
     n: "2",
-    title: "Snap or upload student work",
-    desc: "Take a photo or upload an image of any student submission — handwritten or digital.",
+    title: "Choose your input mode",
+    desc: "Snap a photo, paste text, upload a batch PDF, record video, or upload audio — whatever fits the assignment.",
   },
   {
     n: "3",
     title: "Set your rubric & voice",
-    desc: "Describe your expectations or paste a rubric. Choose from 11 feedback voices.",
+    desc: "Describe your expectations, paste a rubric, or upload one. Choose from 13 feedback voices.",
   },
   {
     n: "4",
     title: "Get instant feedback",
-    desc: "AI reads the work, evaluates against your rubric, and generates detailed, personalized feedback.",
+    desc: "AI reads the work, evaluates against your rubric, and generates detailed, personalized feedback with shareable student links.",
   },
 ];
 
@@ -102,8 +114,24 @@ const faqs = [
     a: "Absolutely. Snap a photo of handwritten student work and the AI reads it with high accuracy — even messy handwriting.",
   },
   {
+    q: "Can I grade a whole class at once?",
+    a: "Yes. Scan or photograph a stack of papers into a single PDF, upload it in Batch mode, and the AI splits by student, reads names, and grades each one. You get individual feedback plus a class summary.",
+  },
+  {
     q: "Can I use my own rubric?",
-    a: "Yes. Paste or describe your rubric and the AI uses it consistently across every paper in your grading session.",
+    a: "Yes. Paste, describe, or upload a PDF of your rubric. The AI uses it consistently across every paper in your grading session.",
+  },
+  {
+    q: "Does it work for video and audio?",
+    a: "Yes. Record or upload speeches, skits, music performances, and presentations. The AI evaluates delivery, content, and technique.",
+  },
+  {
+    q: "Can I export grades to my gradebook?",
+    a: "Yes. After grading, export a CSV formatted for Edsby or other gradebooks. Student IDs, scores, dates, and feedback links are all included.",
+  },
+  {
+    q: "How do parents see the feedback?",
+    a: "Every graded paper gets a unique link (like curriculate.net/results/AB123). Share it with students or parents — no login or account needed to view detailed feedback.",
   },
   {
     q: "Is student data stored?",
@@ -111,7 +139,7 @@ const faqs = [
   },
   {
     q: "What subjects does it work for?",
-    a: "Any subject — ELA, science, math, history, world languages, and more. If a student wrote it, the AI can grade it.",
+    a: "Any subject — ELA, science, math, history, world languages, music, drama, and more. If a student created it, the AI can grade it.",
   },
 ];
 
@@ -280,9 +308,9 @@ export default function AIGradingLanding() {
               </h1>
 
               <p className="text-lg sm:text-xl text-gray-700 font-medium max-w-xl mb-8 leading-relaxed">
-                AI-powered grading that reads handwriting, follows your rubric,
-                and writes personalized feedback in the voice you choose. No
-                sign-up required.
+                AI-powered grading for written work, handwriting, video performances,
+                and audio — with batch mode for whole-class sets. Follows your rubric,
+                writes feedback in your voice, and exports grades to your gradebook.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-3">
@@ -332,13 +360,13 @@ export default function AIGradingLanding() {
       <section className="border-y bg-white/60 px-6 py-8">
         <div className="mx-auto max-w-5xl flex flex-wrap items-center justify-center gap-8 text-center">
           <div>
-            <div className="text-3xl font-black text-gray-900">11</div>
-            <div className="text-sm font-bold text-gray-500">Feedback voices</div>
+            <div className="text-3xl font-black text-gray-900">5</div>
+            <div className="text-sm font-bold text-gray-500">Input modes</div>
           </div>
           <div className="h-10 w-px bg-gray-200 hidden sm:block" />
           <div>
-            <div className="text-3xl font-black text-gray-900">GPT-5.4</div>
-            <div className="text-sm font-bold text-gray-500">Powered by</div>
+            <div className="text-3xl font-black text-gray-900">13</div>
+            <div className="text-sm font-bold text-gray-500">Feedback voices</div>
           </div>
           <div className="h-10 w-px bg-gray-200 hidden sm:block" />
           <div>
@@ -431,7 +459,7 @@ export default function AIGradingLanding() {
             </div>
 
             <h2 className="text-3xl sm:text-4xl font-black text-gray-900 mb-3">
-              Your voice. Your classroom culture.
+              13 voices. Your classroom culture.
             </h2>
             <p className="text-lg text-gray-700 font-medium max-w-3xl mb-8">
               Choose how the AI speaks to your students. From warm encouragement
@@ -530,7 +558,7 @@ export default function AIGradingLanding() {
               {
                 icon: <FileText className="w-6 h-6 text-blue-600" />,
                 title: "Essays & written responses",
-                desc: "Grade persuasive essays, short answers, lab reports, and any extended writing assignment.",
+                desc: "Grade persuasive essays, short answers, lab reports, journals, and any extended writing assignment.",
               },
               {
                 icon: <Camera className="w-6 h-6 text-purple-600" />,
@@ -539,23 +567,23 @@ export default function AIGradingLanding() {
               },
               {
                 icon: <Users className="w-6 h-6 text-emerald-600" />,
-                title: "Whole-class sets",
-                desc: "Grade an entire stack in one session. Get a summary of class trends and common errors.",
+                title: "Batch grade a whole class",
+                desc: "Scan 30 papers into one PDF. AI splits by student, reads names, grades each one, and summarizes class performance.",
               },
               {
-                icon: <BarChart3 className="w-6 h-6 text-yellow-600" />,
-                title: "Formative checks",
-                desc: "Quick feedback on daily work without spending your evening on it.",
+                icon: <Star className="w-6 h-6 text-yellow-600" />,
+                title: "Video & audio performances",
+                desc: "Record or upload speeches, skits, music performances, and presentations. AI evaluates delivery, content, and technique.",
               },
               {
-                icon: <BookOpen className="w-6 h-6 text-indigo-600" />,
-                title: "Standards-aligned rubrics",
-                desc: "Align feedback to Common Core, NGSS, state standards, or your own custom rubric.",
+                icon: <BarChart3 className="w-6 h-6 text-indigo-600" />,
+                title: "Gradebook integration",
+                desc: "Export grades as a CSV ready to import into Edsby or other gradebooks. Scores, dates, and feedback links included.",
               },
               {
                 icon: <Zap className="w-6 h-6 text-rose-600" />,
-                title: "Substitute & cover lessons",
-                desc: "Give subs a grading tool so student work doesn't pile up while you're out.",
+                title: "Parent-friendly feedback",
+                desc: "Every paper gets a unique feedback link. Share it with parents or post one code per student — no login needed.",
               },
             ].map((c) => (
               <div

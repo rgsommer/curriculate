@@ -568,7 +568,7 @@ export default function BatchGrading({
             capturedAt: Date.now(),
             feedbackVoiceMode: voiceMode || "default",
             feedbackVoice: feedbackVoice || "warm",
-            inputMode: "photo",
+            inputMode: "batch",
             batchIndex: i,
           },
         };
@@ -1170,7 +1170,7 @@ export default function BatchGrading({
           capturedAt: Date.now(),
           feedbackVoiceMode: voiceMode || "default",
           feedbackVoice: feedbackVoice || "warm",
-          inputMode: "photo",
+          inputMode: "batch",
           batchIndex: groupIdx,
         },
       };

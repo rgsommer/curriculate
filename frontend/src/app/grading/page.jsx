@@ -2838,7 +2838,23 @@ export default function GradingPage() {
     return (
       <div style={styles.page}>
         <div style={styles.header}>
-          <h1 style={styles.h1}>Grading</h1>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+            <h1 style={styles.h1}>Grading</h1>
+            {!tipsHidden && (
+              <a
+                href="/ai-grading"
+                style={{
+                  fontSize: 12, fontWeight: 600, color: "#2563eb",
+                  textDecoration: "none", opacity: 0.8,
+                  border: "1px solid #bfdbfe", borderRadius: 12,
+                  padding: "3px 10px", background: "#eff6ff",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                New here? See what this tool can do →
+              </a>
+            )}
+          </div>
           {!tipsHidden && (
             <div style={styles.sub}>Grade anything: snap a photo, paste text, batch-upload a stack, record video, or upload audio. Works for essays, math, art, speeches, music performances, skits, and more. Use the built-in rubric or upload your own.</div>
           )}
