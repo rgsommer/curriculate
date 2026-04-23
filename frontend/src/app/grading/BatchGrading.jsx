@@ -328,6 +328,7 @@ export default function BatchGrading({
 
   // ---------- Edsby Class Roster (state declared early — used in grading callback) ----------
   const [editingNameIndex, setEditingNameIndex] = useState(null); // index of result whose name is being edited
+  const [detectedBatchClass, setDetectedBatchClass] = useState(null); // class detected from roster matching
   const [showRoster, setShowRoster] = useState(false);
   const [rosterClasses, setRosterClasses] = useState([]); // [{id, className, studentCount, students, sourceFile}]
   const [rosterUploading, setRosterUploading] = useState(false);
@@ -786,39 +787,74 @@ export default function BatchGrading({
           });
         }
 
-        // --- PASS 1: resolve unambiguous matches, tally class votes ---
+        // --- PASS 1: resolve matches, tally class votes ---
+        // A student in multiple classes (CED8A, GEO8A, MLS) produces multiple
+        // matches but they share the same edsbyId — that's the same person, not
+        // ambiguous. Only different edsbyIds means genuinely different students.
         const classVotes = {}; // { className: count }
-        const pendingAmbiguous = []; // indices into batchResults that had >1 match
+        const pendingAmbiguous = []; // indices into batchResults that had >1 distinct student
 
         for (const r of batchResults) {
           if (r.error) continue;
           const aiName = norm(r.studentName || "");
           const nameMatches = findNameMatches(aiName);
 
-          if (nameMatches.length === 1) {
-            // Unambiguous — assign immediately and vote for this class
+          if (nameMatches.length === 0) continue;
+
+          // Check if all matches are the same student (same edsbyId or studentId)
+          const uniqueStudents = [];
+          const seenIds = new Set();
+          for (const m of nameMatches) {
+            const key = m.edsbyId || m.studentId || `${norm(m.firstName)}|${norm(m.lastName)}`;
+            if (!seenIds.has(key)) {
+              seenIds.add(key);
+              uniqueStudents.push(m);
+            }
+          }
+
+          if (uniqueStudents.length === 1) {
+            // Same student across classes — resolved. Use first match, vote for all classes.
+            const m = uniqueStudents[0];
             Object.assign(r, {
-              rosterFirstName: nameMatches[0].firstName,
-              rosterLastName: nameMatches[0].lastName,
-              rosterEdsbyId: nameMatches[0].edsbyId,
-              rosterStudentId: nameMatches[0].studentId,
-              rosterClassName: nameMatches[0].className,
+              rosterFirstName: m.firstName,
+              rosterLastName: m.lastName,
+              rosterEdsbyId: m.edsbyId,
+              rosterStudentId: m.studentId,
+              rosterClassName: m.className,
             });
             if (!r.studentName || r.studentName.startsWith("Student ")) {
-              r.studentName = `${nameMatches[0].firstName} ${nameMatches[0].lastName}`.trim() || r.studentName;
+              r.studentName = `${m.firstName} ${m.lastName}`.trim() || r.studentName;
             }
-            classVotes[nameMatches[0].className] = (classVotes[nameMatches[0].className] || 0) + 1;
-          } else if (nameMatches.length > 1) {
+            // Vote for every class this student is in
+            for (const match of nameMatches) {
+              classVotes[match.className] = (classVotes[match.className] || 0) + 1;
+            }
+          } else {
+            // Genuinely different students with similar names
             pendingAmbiguous.push({ result: r, nameMatches });
           }
         }
 
-        // Determine the most likely class for this batch
+        // Determine the most likely class for this batch.
+        // When tied (e.g. CED8A and MLS both get 21 votes because MLS is a
+        // superset), prefer the smaller/more-specific class.
+        const classSizes = {};
+        for (const rc of rosterClasses) {
+          classSizes[rc.className] = (rc.students || []).length;
+        }
         let batchClass = null;
         let maxVotes = 0;
+        let batchClassSize = Infinity;
         for (const [cls, count] of Object.entries(classVotes)) {
-          if (count > maxVotes) { maxVotes = count; batchClass = cls; }
+          const size = classSizes[cls] || Infinity;
+          if (count > maxVotes || (count === maxVotes && size < batchClassSize)) {
+            maxVotes = count;
+            batchClass = cls;
+            batchClassSize = size;
+          }
         }
+
+        if (batchClass) setDetectedBatchClass(batchClass);
 
         // --- PASS 2: disambiguate using class context ---
         for (const { result: r, nameMatches } of pendingAmbiguous) {
@@ -1600,7 +1636,8 @@ export default function BatchGrading({
   const [emailCopied, setEmailCopied] = useState(false);
 
   // ---------- Manual name assignment ----------
-  // Returns roster students not yet matched to any result
+  // Returns roster students not yet matched to any result, filtered to the
+  // detected batch class so the dropdown shows the right group.
   const unmatchedRosterStudents = useMemo(() => {
     const matched = new Set();
     for (const r of results) {
@@ -1609,14 +1646,25 @@ export default function BatchGrading({
     }
     const all = [];
     for (const rc of rosterClasses) {
+      if (detectedBatchClass && rc.className !== detectedBatchClass) continue;
       for (const s of rc.students || []) {
         if (s.edsbyId && matched.has(s.edsbyId)) continue;
         if (s.studentId && matched.has(s.studentId)) continue;
         all.push({ ...s, className: rc.className });
       }
     }
+    // If no batch class detected, show all unmatched
+    if (all.length === 0 && detectedBatchClass) {
+      for (const rc of rosterClasses) {
+        for (const s of rc.students || []) {
+          if (s.edsbyId && matched.has(s.edsbyId)) continue;
+          if (s.studentId && matched.has(s.studentId)) continue;
+          all.push({ ...s, className: rc.className });
+        }
+      }
+    }
     return all;
-  }, [results, rosterClasses]);
+  }, [results, rosterClasses, detectedBatchClass]);
 
   const assignStudentName = useCallback((resultIndex, rosterStudent) => {
     setResults((prev) => {
