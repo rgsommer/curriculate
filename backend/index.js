@@ -11586,12 +11586,20 @@ STRONG clues that a page is a CONTINUATION (back of the previous student's sheet
 - Faint mirror-image bleed-through of the front side is visible
 
 STRONG clues that a page starts a NEW student:
-- The page has the SAME PRINTED worksheet template/header as other student pages (printed text, not handwritten) — this is a fresh copy of the assignment
+- The page has the SAME PRINTED first-page header/title as the very first student page (e.g. "Math 7 Test", "Science Quiz", course name + test title) — this is a fresh copy
 - A different student name is printed or written at the top
 - Questions restart from #1 with printed question text
 - It looks like a fresh, clean copy of the assignment form that a student has filled in
 
-KEY PRINCIPLE: If a page has a printed worksheet template (typed headers, printed questions, form fields), it is almost certainly a NEW student's copy. If a page lacks any printed template and only has handwriting or is blank, it is almost certainly a CONTINUATION or back side.
+MULTI-PAGE TESTS/EXAMS (critical):
+Tests and exams are often 2, 3, 4, or more pages long. Each student's test is a complete set of those pages.
+- Look at the FIRST student page carefully. Note its exact header/title (e.g. "Math 7 Test", "Unit 3 Exam").
+- A page starts a NEW student ONLY if it has that SAME first-page header/title AND/OR a new student name at the top.
+- Pages 2, 3, 4 of a test typically have DIFFERENT section headers (e.g. "Part B", "Section 2", "Page 3"), different question numbers continuing from where the previous page left off, or no title at all — these are CONTINUATIONS, not new students.
+- If you see a consistent pattern (e.g. every 4th page repeats the same title), that confirms the test length.
+- Do NOT mark a page as "new" just because it has printed text or questions. ONLY mark it "new" if the TITLE/HEADER matches the first page of the test exactly, suggesting it is page 1 of the next student's copy.
+
+KEY PRINCIPLE: For single-page worksheets, any page with a printed template is a new student. For multi-page tests, only the FIRST page of the test (with the main title) marks a new student — subsequent test pages are continuations even though they have printed content.
 
 For worksheets where the assignment says "use the other side" or "continue on back", expect that some students will have 2 scanned pages (front + back with extra writing) while others will have only 1 (front only, back is blank or not scanned).
 
@@ -11623,7 +11631,7 @@ Do NOT include any text outside the JSON array.`,
       const response = await openai.responses.create({
         model: AI_MODEL,
         input: [{ role: "user", content }],
-        max_output_tokens: 1200,
+        max_output_tokens: 2400,
       });
 
       const raw = String(response.output_text || "").trim();
