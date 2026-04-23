@@ -51,6 +51,7 @@ function parseEdsbyCSV(csvText) {
   const lnIdx = headerRow.findIndex((h) => /last\s*name/i.test(h.trim()));
   const eidIdx = headerRow.findIndex((h) => /edsby\s*id/i.test(h.trim()));
   const sidIdx = headerRow.findIndex((h) => /student\s*id/i.test(h.trim()));
+  const unIdx = headerRow.findIndex((h) => /^username$/i.test(h.trim()));
 
   if (fnIdx < 0 || lnIdx < 0) {
     return { students: [], className: "", error: "Could not find First Name / Last Name columns" };
@@ -69,15 +70,18 @@ function parseEdsbyCSV(csvText) {
     if (/^\d+(\.\d+)?%$/.test(firstName)) continue;
 
     const edsbyId = eidIdx >= 0 ? (cols[eidIdx] || "").trim() : "";
-    const studentId = sidIdx >= 0 ? (cols[sidIdx] || "").trim() : "";
+    const username = unIdx >= 0 ? (cols[unIdx] || "").trim() : "";
+    // Use username as studentId if no explicit Student ID column exists, since
+    // that's the number students actually know (e.g. Edsby "Username" = 400529)
+    const studentId = sidIdx >= 0 ? (cols[sidIdx] || "").trim() : username;
 
-    // Derive last4 from whichever ID is available (prefer studentId, fall back to edsbyId)
+    // Derive last4 from whichever ID is available (prefer studentId/username, fall back to edsbyId)
     const idForLast4 = studentId || edsbyId;
     const digitsOnly = idForLast4.replace(/\D/g, "");
     // For short/alphanumeric IDs (e.g. "AS01"), use the full ID as last4
     const last4 = idForLast4.length <= 4 ? idForLast4 : (digitsOnly.length >= 4 ? digitsOnly.slice(-4) : digitsOnly || idForLast4.slice(-4));
 
-    if (!edsbyId && !studentId) continue; // no usable ID
+    if (!edsbyId && !studentId && !username) continue; // no usable ID
 
     students.push({ firstName, lastName, edsbyId, studentId, last4 });
   }

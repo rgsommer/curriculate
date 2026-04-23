@@ -797,9 +797,11 @@ export default function BatchGrading({
                   aiName[first.length] === last[0]) return true;
             }
 
-            // 6. Roster first name contains AI name (middle name case)
+            // 6. Roster first name contains AI name or AI name is a prefix/suffix
             //    e.g. roster "Waysha Deborah" contains AI-read "Deborah"
-            if (aiName.length >= 4 && first.length > aiName.length && first.includes(aiName)) return true;
+            //    e.g. roster "Atinuke" starts with AI-read "Atin" or contains "tina" (close)
+            if (aiName.length >= 3 && first.length > aiName.length &&
+                (first.includes(aiName) || first.startsWith(aiName) || first.endsWith(aiName))) return true;
 
             // 7. AI name contains roster first name (AI read more than what's on roster)
             if (first.length >= 3 && aiName.length > first.length && aiName.includes(first)) return true;
@@ -860,13 +862,16 @@ export default function BatchGrading({
 
           if (nameMatches.length === 0) continue;
 
-          // Check if all matches are the same student (same edsbyId or studentId)
+          // Check if all matches are the same person (by name).
+          // We dedup by normalized name, not by edsbyId/studentId, because
+          // the same student can appear in multiple rosters with different IDs.
+          // The correct roster/ID gets resolved in Pass 2 once we know the batch class.
           const uniqueStudents = [];
-          const seenIds = new Set();
+          const seenNames = new Set();
           for (const m of nameMatches) {
-            const key = m.edsbyId || m.studentId || `${norm(m.firstName)}|${norm(m.lastName)}`;
-            if (!seenIds.has(key)) {
-              seenIds.add(key);
+            const nameKey = `${norm(m.firstName)}|${norm(m.lastName)}`;
+            if (!seenNames.has(nameKey)) {
+              seenNames.add(nameKey);
               uniqueStudents.push(m);
             }
           }
@@ -919,6 +924,27 @@ export default function BatchGrading({
 
         if (batchClass) setDetectedBatchClass(batchClass);
         if (batchRosterId) setDetectedBatchRosterId(batchRosterId);
+
+        // --- PASS 1B: update Pass 1 matches to use the correct roster's IDs ---
+        // Pass 1 may have assigned IDs from the first roster found, but now
+        // that we know batchRosterId, re-assign from the correct roster.
+        if (batchRosterId) {
+          for (const r of batchResults) {
+            if (r.error || !r.rosterFirstName) continue;
+            if (r.rosterRosterId === batchRosterId) continue; // already correct
+            const correctEntry = allRosterStudents.find(
+              (s) => s.rosterId === batchRosterId &&
+                norm(s.firstName) === norm(r.rosterFirstName) &&
+                norm(s.lastName) === norm(r.rosterLastName)
+            );
+            if (correctEntry) {
+              r.rosterEdsbyId = correctEntry.edsbyId;
+              r.rosterStudentId = correctEntry.studentId;
+              r.rosterClassName = correctEntry.className;
+              r.rosterRosterId = correctEntry.rosterId;
+            }
+          }
+        }
 
         // --- PASS 2: disambiguate using roster context ---
         for (const { result: r, nameMatches } of pendingAmbiguous) {
@@ -974,11 +1000,9 @@ export default function BatchGrading({
           }
         }
 
-        // --- PASS 4: process-of-elimination for unnamed students ---
-        // After passes 1-3 we know which roster students are already matched.
-        // Any result still showing "Student N" (AI couldn't read the name) can
-        // be assigned if there's exactly one unmatched roster student left, or
-        // if the batch class is known, from the remaining students in that class.
+        // --- PASS 4: process-of-elimination for unmatched students ---
+        // After passes 1-3, try harder matching against only the remaining
+        // unclaimed roster students. Smaller pool = more confident fuzzy matches.
         const matchedIds = new Set();
         for (const r of batchResults) {
           if (r.rosterEdsbyId) matchedIds.add(r.rosterEdsbyId);
@@ -1016,32 +1040,121 @@ export default function BatchGrading({
           });
         }
 
-        function stillUnnamed() {
+        function stillUnmatched() {
           return batchResults.filter(
-            (r) => !r.error && !r.rosterEdsbyId && !r.rosterStudentId && !r.rosterFirstName && (!r.studentName || /^Student \d+$/i.test(r.studentName))
+            (r) => !r.error && !r.rosterEdsbyId && !r.rosterStudentId && !r.rosterFirstName
           );
         }
 
-        // First try partial name hints on unnamed students
-        for (const r of stillUnnamed()) {
+        // 4A: Aggressive fuzzy match against remaining roster students
+        // With a smaller pool, we can afford looser matching.
+        for (const r of stillUnmatched()) {
           const raw = norm(r.studentName || "");
           if (!raw || raw.startsWith("student")) continue;
           const rem = remaining();
-          const partialMatches = rem.filter((s) => {
+          if (rem.length === 0) break;
+
+          let bestMatch = null;
+          let bestScore = Infinity;
+
+          for (const s of rem) {
             const first = norm(s.firstName);
             const last = norm(s.lastName);
-            if (last.length >= 3 && raw.includes(last)) return true;
-            if (first.length >= 3 && raw.includes(first)) return true;
-            return false;
-          });
-          if (partialMatches.length === 1) assignRoster(r, partialMatches[0]);
+            const full = first + last;
+
+            // Exact partial: first name contained in AI name or vice versa
+            if (first.length >= 3 && (raw.includes(first) || first.includes(raw))) {
+              bestMatch = s; bestScore = 0; break;
+            }
+            if (last.length >= 3 && (raw.includes(last) || last.includes(raw))) {
+              bestMatch = s; bestScore = 0; break;
+            }
+
+            // First name + last initial (e.g. "myab" → Mya Bassoo, "aarons" → Aaron S-something)
+            if (first.length >= 3 && raw.startsWith(first) && raw.length <= first.length + 2) {
+              if (!last.length || raw.length === first.length || raw[first.length] === last[0]) {
+                bestMatch = s; bestScore = 0; break;
+              }
+            }
+
+            // Suffix match: AI name is end of roster name (e.g. "tina" in "atinuke" → check suffix)
+            // Or roster first name ends with AI name
+            if (raw.length >= 3 && first.length > raw.length) {
+              if (first.startsWith(raw) || first.endsWith(raw)) {
+                bestMatch = s; bestScore = 0; break;
+              }
+            }
+
+            // Fuzzy first name with more generous threshold
+            if (first.length >= 3 && raw.length >= 3) {
+              const d = levenshtein(raw, first);
+              const maxLen = Math.max(raw.length, first.length);
+              // Allow up to 40% of the name to differ
+              const threshold = Math.max(2, Math.floor(maxLen * 0.4));
+              if (d <= threshold && d < bestScore) {
+                bestScore = d; bestMatch = s;
+              }
+            }
+
+            // Fuzzy full name
+            if (full.length >= 5) {
+              const d = levenshtein(raw, full);
+              const threshold = Math.max(2, Math.floor(full.length * 0.35));
+              if (d <= threshold && d < bestScore) {
+                bestScore = d; bestMatch = s;
+              }
+            }
+          }
+
+          if (bestMatch) {
+            // Only assign if this is the unique best match
+            const tied = rem.filter((s) => {
+              const first = norm(s.firstName);
+              const last = norm(s.lastName);
+              const full = first + last;
+              if (bestScore === 0) {
+                // For exact partial matches, check if another student also matches
+                if (first.length >= 3 && (raw.includes(first) || first.includes(raw))) return true;
+                if (last.length >= 3 && (raw.includes(last) || last.includes(raw))) return true;
+                if (first.length >= 3 && raw.startsWith(first) && raw.length <= first.length + 2) return true;
+                if (raw.length >= 3 && first.length > raw.length && (first.startsWith(raw) || first.endsWith(raw))) return true;
+                return false;
+              }
+              const d1 = levenshtein(raw, first);
+              const d2 = levenshtein(raw, full);
+              return d1 <= bestScore || d2 <= bestScore;
+            });
+            if (tied.length === 1) assignRoster(r, bestMatch);
+          }
         }
 
-        // Final sweep: if exactly 1 unnamed and 1 unclaimed, must be them
-        const finalUnnamed = stillUnnamed();
+        // 4B: Final sweep — if exactly N unmatched and N unclaimed, assign in order
+        // (handles the case where process-of-elimination leaves no ambiguity)
+        const finalUnmatched = stillUnmatched();
         const finalRemaining = remaining();
-        if (finalUnnamed.length === 1 && finalRemaining.length === 1) {
-          assignRoster(finalUnnamed[0], finalRemaining[0]);
+        if (finalUnmatched.length > 0 && finalUnmatched.length === finalRemaining.length && finalRemaining.length <= 3) {
+          // With 1-3 remaining, assign greedily by best fuzzy distance
+          const used = new Set();
+          for (const r of finalUnmatched) {
+            const raw = norm(r.studentName || "");
+            let bestIdx = -1;
+            let bestDist = Infinity;
+            for (let i = 0; i < finalRemaining.length; i++) {
+              if (used.has(i)) continue;
+              const s = finalRemaining[i];
+              const d = Math.min(
+                levenshtein(raw, norm(s.firstName)),
+                levenshtein(raw, norm(s.firstName) + norm(s.lastName))
+              );
+              if (d < bestDist) { bestDist = d; bestIdx = i; }
+            }
+            if (bestIdx >= 0) {
+              assignRoster(r, finalRemaining[bestIdx]);
+              used.add(bestIdx);
+            }
+          }
+        } else if (finalUnmatched.length === 1 && finalRemaining.length === 1) {
+          assignRoster(finalUnmatched[0], finalRemaining[0]);
         }
 
         setResults([...batchResults]);

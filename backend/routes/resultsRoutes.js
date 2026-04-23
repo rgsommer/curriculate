@@ -43,7 +43,30 @@ router.post("/", createLimiter, async (req, res) => {
 
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    // Retry on collision
+    // Dedup: if we have a studentId and title, update the existing result
+    // instead of creating a duplicate (teacher re-grading the same assignment)
+    const studentId = meta?.studentId;
+    const title = (meta?.title || "").trim();
+    if (studentId && title) {
+      const existing = await PublishedResult.findOne({
+        "meta.studentId": studentId,
+        "meta.title": title,
+      });
+      if (existing) {
+        existing.payload = payload;
+        existing.meta = meta;
+        existing.teacherId = teacherId || existing.teacherId;
+        existing.sessionId = sessionId || existing.sessionId;
+        existing.expiresAt = expiresAt;
+        existing.createdAt = new Date(); // refresh timestamp so it sorts as newest
+        existing.viewCount = 0;
+        existing.lastViewedAt = null;
+        await existing.save();
+        return res.json({ code: existing.code, expiresAt, updated: true });
+      }
+    }
+
+    // New result — retry on code collision
     for (let attempt = 0; attempt < 10; attempt++) {
       const code = genAA123();
       try {
