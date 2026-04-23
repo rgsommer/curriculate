@@ -876,7 +876,7 @@ export default function BatchGrading({
           setTimeout(() => {
             alert(
               `${unmatched.length} student${unmatched.length > 1 ? "s were" : " was"} not found in your uploaded rosters: ${names}\n\n` +
-              `You can upload additional class CSVs from Edsby under "Class Roster" above — the same batch results can be imported into multiple Edsby classes.`
+              `When importing into Edsby, you can upload the same grades CSV into the correct class for those students.`
             );
           }, 300);
         }
