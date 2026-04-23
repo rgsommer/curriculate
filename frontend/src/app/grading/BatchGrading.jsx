@@ -1569,7 +1569,7 @@ export default function BatchGrading({
       const sid = r.rosterStudentId || r.rosterEdsbyId || r.studentId || "";
       let comment = (r.comment || "").replace(/\s+/g, " ").trim();
       if (r.refCode) {
-        comment += (comment ? " " : "") + `For full feedback, check www.curriculate.net/results/${r.refCode}`;
+        comment += (comment ? " " : "") + `For detailed feedback, check www.curriculate.net/results/${r.refCode}`;
       }
       // If this student's denominator differs, convert using percentage
       let grade = "";
@@ -2574,26 +2574,25 @@ export default function BatchGrading({
                           if (!r.refCode) return;
                           // Delay single-click to let double-click cancel it
                           const td = e.currentTarget;
-                          if (td._clickTimer) return; // already waiting
+                          if (td._clickTimer) return;
                           td._clickTimer = setTimeout(() => {
                             td._clickTimer = null;
-                            window.open(`https://www.curriculate.net/results/${r.refCode}`, "_blank");
+                            const text = `For detailed feedback, check www.curriculate.net/results/${r.refCode}`;
+                            navigator.clipboard?.writeText(text).then(() => {
+                              const orig = td.style.background;
+                              td.style.background = "rgba(34,197,94,0.25)";
+                              setTimeout(() => { td.style.background = orig; }, 600);
+                            });
                           }, 250);
                         }}
                         onDoubleClick={(e) => {
                           e.preventDefault();
                           if (!r.refCode) return;
-                          // Cancel the pending single-click
                           const td = e.currentTarget;
                           if (td._clickTimer) { clearTimeout(td._clickTimer); td._clickTimer = null; }
-                          const text = `For results & feedback, check www.curriculate.net/results/${r.refCode}`;
-                          navigator.clipboard?.writeText(text).then(() => {
-                            const orig = td.style.background;
-                            td.style.background = "rgba(34,197,94,0.25)";
-                            setTimeout(() => { td.style.background = orig; }, 600);
-                          });
+                          window.open(`https://www.curriculate.net/results/${r.refCode}`, "_blank");
                         }}
-                        title={r.refCode ? "Click to open · Double-click to copy feedback link" : ""}
+                        title={r.refCode ? "Click to copy · Double-click to open" : ""}
                       >
                         {r.refCode || "—"}
                       </td>
