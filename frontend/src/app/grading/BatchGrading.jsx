@@ -1409,11 +1409,10 @@ export default function BatchGrading({
   }, [results]);
 
   // ---------- Build Edsby-compatible CSV from results ----------
-  // Returns array of { className, csv } — one CSV per class so each can be
-  // imported into the correct Edsby gradebook without cross-class contamination.
-  // Students not matched to any roster go into an "Unmatched" file.
-  const buildEdsbyCsvs = useCallback(() => {
-    if (!results.length) return [];
+  // Single CSV with all graded students — roster provides name/ID enrichment
+  // but doesn't determine grouping (students can be in multiple classes).
+  const buildEdsbyCsv = useCallback(() => {
+    if (!results.length) return null;
 
     const headers = ["Student ID", "First Name", "Last Name", "Score", "Out Of", "Percentage", "Grade", "Comment"];
     const escCsv = (v) => {
@@ -1421,9 +1420,10 @@ export default function BatchGrading({
       return s.includes(",") || s.includes('"') || s.includes("\n")
         ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const headerLine = headers.map(escCsv).join(",");
 
-    function buildRow(r) {
+    const rows = [headers.map(escCsv).join(",")];
+    for (const r of results) {
+      if (r.error) continue;
       const firstName = r.rosterFirstName || "";
       const lastName = r.rosterLastName || "";
       const sid = r.rosterStudentId || r.rosterEdsbyId || r.studentId || "";
@@ -1431,32 +1431,14 @@ export default function BatchGrading({
       if (r.refCode) {
         comment += (comment ? " " : "") + `For full feedback, check www.curriculate.net/results/${r.refCode}`;
       }
-      return [
+      rows.push([
         escCsv(sid), escCsv(firstName), escCsv(lastName),
         escCsv(r.score), escCsv(r.outOf),
         escCsv(r.pct != null ? `${r.pct}%` : ""),
         escCsv(r.letter), escCsv(comment),
-      ].join(",");
+      ].join(","));
     }
-
-    // Group results by class
-    const byClass = {};
-    for (const r of results) {
-      if (r.error) continue;
-      const cls = r.rosterClassName || "_unmatched";
-      if (!byClass[cls]) byClass[cls] = [];
-      byClass[cls].push(r);
-    }
-
-    const csvFiles = [];
-    for (const [cls, students] of Object.entries(byClass)) {
-      const rows = [headerLine, ...students.map(buildRow)];
-      csvFiles.push({
-        className: cls === "_unmatched" ? "Unmatched" : cls,
-        csv: rows.join("\n"),
-      });
-    }
-    return csvFiles;
+    return rows.join("\n");
   }, [results]);
 
   const sendEmail = useCallback(async () => {
@@ -1508,16 +1490,15 @@ export default function BatchGrading({
         payload.pdfFilename = `${baseName}-reports.pdf`;
       }
 
-      // Attach Edsby CSVs — one per class so each imports cleanly
-      const csvFiles = buildEdsbyCsvs();
-      for (const { className, csv } of csvFiles) {
+      // Attach single Edsby CSV with all graded students
+      const csvText = buildEdsbyCsv();
+      if (csvText) {
         const csvBase64 = typeof btoa === "function"
-          ? btoa(unescape(encodeURIComponent(csv)))
-          : Buffer.from(csv, "utf-8").toString("base64");
-        const slug = className.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30);
+          ? btoa(unescape(encodeURIComponent(csvText)))
+          : Buffer.from(csvText, "utf-8").toString("base64");
         payload.csvAttachments.push({
           data: csvBase64,
-          filename: `${baseName}-${slug}-grades.csv`,
+          filename: `${baseName}-edsby-grades.csv`,
         });
       }
 
@@ -1540,7 +1521,7 @@ export default function BatchGrading({
       alert("Failed to send email. Please try again.");
     }
     setEmailSending(false);
-  }, [emailTo, emailTitle, buildEmailHtml, buildEdsbyCsvs, emailSubject, gradingUrl, results, pdfName]);
+  }, [emailTo, emailTitle, buildEmailHtml, buildEdsbyCsv, emailSubject, gradingUrl, results, pdfName]);
 
   // ---------- Copy / email ack ----------
   const [copiedSummary, setCopiedSummary] = useState(false);
