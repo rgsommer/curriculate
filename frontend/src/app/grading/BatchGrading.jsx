@@ -1581,16 +1581,31 @@ export default function BatchGrading({
     html += `<table style="width: 100%;"><tr>`;
     html += `<td style="font-size: 12px; color: #94a3b8; line-height: 1.5;">`;
     const hasRosterIds = results.some((r) => r.rosterStudentId || r.rosterEdsbyId);
+    const hasRoster = rosterClasses.length > 0;
+
     if (hasRosterIds) {
-      html += `<strong style="color: #334155;">Student Progress Portal:</strong> View all scores and track progress at <a href="https://www.curriculate.net/progress" style="color: #2563eb; font-weight: 700; text-decoration: none;">curriculate.net/progress</a>. Enter just your email (no student ID) to see all your students' averages and click into any student's full history.<br/><br/>`;
+      // Teacher has roster and students are matched — show progress portal link
+      html += `<div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">`;
+      html += `<strong style="color: #166534;">Student Progress Portal</strong><br/>`;
+      html += `<span style="color: #15803d;">View all your students' scores and averages in one place at <a href="https://www.curriculate.net/progress" style="color: #2563eb; font-weight: 700;">curriculate.net/progress</a>. Just enter your email &mdash; no student ID needed &mdash; to see your full class overview. Click any student to see their complete history and progress over time.</span>`;
+      html += `</div>`;
+    } else if (!hasRoster) {
+      // No roster uploaded — guide teacher to set one up
+      html += `<div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">`;
+      html += `<strong style="color: #1e40af;">Get more from your grading</strong><br/>`;
+      html += `<span style="color: #1d4ed8;">Upload a class roster to auto-match students by name, export grades to your gradebook, and give students &amp; parents access to a progress portal.</span><br/><br/>`;
+      html += `<strong style="color: #334155;">Edsby schools:</strong> Export your class gradebook (gear icon &#x2699; &rarr; Export) and upload the CSV on the <a href="https://www.curriculate.net/grading" style="color: #2563eb; font-weight: 700;">grading page</a> under Class Roster.<br/>`;
+      html += `<strong style="color: #334155;">Other schools:</strong> Click "Create Roster" on the <a href="https://www.curriculate.net/grading" style="color: #2563eb; font-weight: 700;">grading page</a>, type your student names, and auto-generate IDs. Print the list and hand it out &mdash; students use their ID to view feedback at <a href="https://www.curriculate.net/progress" style="color: #2563eb; font-weight: 700;">curriculate.net/progress</a>.`;
+      html += `</div>`;
     }
+
     html += `Graded with <a href="https://www.curriculate.net" style="color: #2563eb; font-weight: 700; text-decoration: none;">Curriculate</a> &mdash; AI-powered grading &amp; feedback for teachers<br/>`;
     html += `Save hours on marking. Try it free at <a href="https://www.curriculate.net" style="color: #2563eb; text-decoration: none;">curriculate.net</a>`;
     html += `</td></tr></table>`;
 
     html += `</div>`;
     return html;
-  }, [results, classSummary, teacherAnalysis, pdfName, rubricOverride]);
+  }, [results, classSummary, teacherAnalysis, pdfName, rubricOverride, rosterClasses]);
 
   // ---------- Email summary (rich HTML) ----------
   const [emailTo, setEmailTo] = useState("");
