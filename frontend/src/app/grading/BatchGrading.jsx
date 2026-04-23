@@ -764,8 +764,6 @@ export default function BatchGrading({
         }
 
         // Name matcher — returns all roster students whose name matches the AI-read name.
-        // Handles: exact match, contains-both, prefix match (for unusual names
-        // where AI gets first few letters right), and fuzzy/Levenshtein.
         function findNameMatches(aiName) {
           if (!aiName || aiName.startsWith("student")) return [];
           return allRosterStudents.filter((s) => {
@@ -773,41 +771,73 @@ export default function BatchGrading({
             const last = norm(s.lastName);
             const full = first + last;
             const fullReversed = last + first;
-            // Exact full name match (either order)
+
+            // 1. Exact full name match (either order)
             if (aiName === full || aiName === fullReversed) return true;
-            // AI reads "First Last" — check if it contains both parts
+
+            // 2. AI reads "First Last" — check if AI name contains both roster parts
             if (first.length >= 2 && last.length >= 2 &&
                 aiName.includes(first) && aiName.includes(last)) return true;
-            // Prefix match on first name + exact last name (handles "Ujaeger" → "Ujaeg" misread)
-            // AI got last name right and first 3+ chars of first name match
+
+            // 3. Exact first name match (AI read just first name, e.g. "Eli" → "Eli Campbell")
+            if (first.length >= 3 && aiName === first) return true;
+
+            // 4. Exact last name match (AI read just last name)
+            if (last.length >= 3 && aiName === last) return true;
+
+            // 5. First name + last initial (e.g. "Mya B" → "Mya Bassoo")
+            //    or last name + first initial
+            if (first.length >= 3 && last.length >= 1) {
+              // "myab" contains "mya" and starts with first, last[0] matches
+              if (aiName.startsWith(first) && aiName.length <= first.length + 2 &&
+                  aiName[first.length] === last[0]) return true;
+            }
+
+            // 6. Roster first name contains AI name (middle name case)
+            //    e.g. roster "Waysha Deborah" contains AI-read "Deborah"
+            if (aiName.length >= 4 && first.length > aiName.length && first.includes(aiName)) return true;
+
+            // 7. AI name contains roster first name (AI read more than what's on roster)
+            if (first.length >= 3 && aiName.length > first.length && aiName.includes(first)) return true;
+
+            // 8. Prefix match on first name + exact last name
             if (first.length >= 3 && last.length >= 2 && aiName.includes(last)) {
               const prefix = first.slice(0, 3);
               if (aiName.includes(prefix)) return true;
             }
-            // Last name match + first initial (e.g. "D. Sidhu" → "D" + "sidhu")
+
+            // 9. Last name match + first initial
             if (last.length >= 3 && aiName.includes(last)) {
               if (first[0] && aiName[0] === first[0]) return true;
             }
-            // Fuzzy: allow 1-2 character errors for names 5+ chars
-            // (covers OCR misreads like "Divnoor" → "Divnoar", "Ujaeger" → "Ujaegar")
+
+            // 10. Fuzzy full name (1-2 char errors)
             if (full.length >= 5) {
               const maxDist = full.length >= 8 ? 2 : 1;
               if (levenshtein(aiName, full) <= maxDist) return true;
               if (levenshtein(aiName, fullReversed) <= maxDist) return true;
             }
-            // Fuzzy on first name alone (when last name is clear)
+
+            // 11. Fuzzy first name when last name is clear
             if (first.length >= 4 && last.length >= 2 && aiName.includes(last)) {
-              // Extract what the AI thinks the first name is (before the last name)
               const lastIdx = aiName.indexOf(last);
               const aiFront = lastIdx > 0 ? aiName.slice(0, lastIdx) : "";
               if (aiFront.length >= 3 && levenshtein(aiFront, first) <= 2) return true;
             }
-            // Fuzzy on first name only (AI read just a first name, no last name)
-            // e.g. "Anjita" → "Anjika" (distance 1), "Udaryoj" → "Udayraj" (distance 3)
-            if (first.length >= 4 && aiName.length <= first.length + 2) {
+
+            // 12. Fuzzy first name only (AI read just a first name with errors)
+            //     e.g. "Rohan" → "Ruhan" (distance 1), "Udaryoj" → "Udayraj" (distance 3)
+            if (first.length >= 3 && aiName.length >= 3 && aiName.length <= first.length + 2) {
               const maxDist = first.length >= 7 ? 3 : first.length >= 5 ? 2 : 1;
               if (levenshtein(aiName, first) <= maxDist) return true;
             }
+
+            // 13. Fuzzy last name only
+            if (last.length >= 4 && aiName.length >= 3 && aiName.length <= last.length + 2) {
+              const maxDist = last.length >= 7 ? 3 : last.length >= 5 ? 2 : 1;
+              if (levenshtein(aiName, last) <= maxDist) return true;
+            }
+
             return false;
           });
         }
