@@ -15,6 +15,10 @@ const studentAccountSchema = new mongoose.Schema(
     className: { type: String, default: "" },
     resetToken: { type: String, default: null },
     resetTokenExpires: { type: Date, default: null },
+    loginCount: { type: Number, default: 0 },
+    lastLoginAt: { type: Date, default: null },
+    parentLoginCount: { type: Number, default: 0 },
+    lastParentLoginAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

@@ -32,7 +32,7 @@ function gradeColor(letter) {
 export default function ProgressPage() {
   const [mounted, setMounted] = useState(false);
   const [token, setToken] = useState(null);
-  const [view, setView] = useState("login"); // login | register | forgot | reset | dashboard
+  const [view, setView] = useState("login"); // login | register | parent | forgot | reset | dashboard
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [student, setStudent] = useState(null);
@@ -42,6 +42,7 @@ export default function ProgressPage() {
   // Form fields
   const [studentId, setStudentId] = useState("");
   const [password, setPassword] = useState("");
+  const [parentEmail, setParentEmail] = useState("");
   const [email, setEmail] = useState("");
   const [parentEmails, setParentEmails] = useState("");
   const [resetCode, setResetCode] = useState("");
@@ -130,6 +131,22 @@ export default function ProgressPage() {
     setLoading(false);
   };
 
+  const handleParentLogin = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    const data = await apiCall("/parent-login", { method: "POST", body: { studentId, parentEmail } });
+    if (data.ok) {
+      localStorage.setItem(TOKEN_KEY, data.token);
+      setToken(data.token);
+      setStudent(data.student);
+      setView("dashboard");
+    } else {
+      setError(data.error || "Login failed.");
+    }
+    setLoading(false);
+  };
+
   const handleForgot = async (e) => {
     e.preventDefault();
     setError("");
@@ -199,7 +216,7 @@ export default function ProgressPage() {
   };
 
   // --- AUTH VIEWS ---
-  if (view === "login" || view === "register") {
+  if (view === "login" || view === "register" || view === "parent") {
     return (
       <div style={s.page}>
         <div style={s.card}>
@@ -207,7 +224,8 @@ export default function ProgressPage() {
           <div style={s.sub}>View your grading results and track your progress</div>
 
           <div style={s.tabs}>
-            <button style={s.tab(view === "login")} onClick={() => { setView("login"); setError(""); }}>Login</button>
+            <button style={s.tab(view === "login")} onClick={() => { setView("login"); setError(""); }}>Student</button>
+            <button style={s.tab(view === "parent")} onClick={() => { setView("parent"); setError(""); }}>Parent</button>
             <button style={s.tab(view === "register")} onClick={() => { setView("register"); setError(""); }}>Register</button>
           </div>
 
@@ -221,6 +239,15 @@ export default function ProgressPage() {
               <div style={{ textAlign: "center", marginTop: 12 }}>
                 <button type="button" style={s.link} onClick={() => { setView("forgot"); setError(""); }}>Forgot password?</button>
               </div>
+            </form>
+          ) : view === "parent" ? (
+            <form onSubmit={handleParentLogin}>
+              <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12 }}>
+                Enter your child's student ID and the email address they registered for you.
+              </div>
+              <input style={s.input} placeholder="Student ID (last 4 digits or full)" value={studentId} onChange={(e) => setStudentId(e.target.value)} />
+              <input style={s.input} type="email" placeholder="Your email address" value={parentEmail} onChange={(e) => setParentEmail(e.target.value)} />
+              <button style={s.btn} type="submit" disabled={loading}>{loading ? "Logging in..." : "Parent Login"}</button>
             </form>
           ) : (
             <form onSubmit={handleRegister}>

@@ -134,6 +134,11 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Incorrect password." });
     }
 
+    // Track login
+    account.loginCount = (account.loginCount || 0) + 1;
+    account.lastLoginAt = new Date();
+    await account.save();
+
     const token = signStudentToken(account.studentId);
     return res.json({
       ok: true,
@@ -147,6 +152,94 @@ router.post("/login", async (req, res) => {
   } catch (err) {
     console.error("POST /student-progress/login error:", err?.message || err);
     return res.status(500).json({ error: "Login failed." });
+  }
+});
+
+/* ------------------------------------------------------------------
+ *  POST /parent-login
+ *  { studentId, parentEmail }
+ *  Parents log in with student ID + their email (must be in parentEmails list)
+ * ------------------------------------------------------------------ */
+router.post("/parent-login", async (req, res) => {
+  try {
+    const { studentId, parentEmail } = req.body || {};
+    const sid = String(studentId || "").trim();
+    const email = String(parentEmail || "").trim().toLowerCase();
+    if (!sid || !email) {
+      return res.status(400).json({ error: "Student ID and parent email required." });
+    }
+
+    const account = await StudentAccount.findOne({
+      $or: [{ studentId: sid }, { last4: sid }, { edsbyId: sid }],
+    });
+    if (!account) {
+      return res.status(401).json({ error: "Student ID not found." });
+    }
+
+    // Check if this email is in the student's parent emails list
+    const parentList = (account.parentEmails || []).map((e) => e.toLowerCase());
+    if (!parentList.includes(email)) {
+      return res.status(401).json({ error: "This email is not registered as a parent for this student. Ask your child to add your email in their progress settings." });
+    }
+
+    // Track parent login
+    account.parentLoginCount = (account.parentLoginCount || 0) + 1;
+    account.lastParentLoginAt = new Date();
+    await account.save();
+
+    const token = signStudentToken(account.studentId);
+    return res.json({
+      ok: true,
+      token,
+      student: {
+        firstName: account.firstName,
+        lastName: account.lastName,
+        className: account.className,
+      },
+      isParent: true,
+    });
+  } catch (err) {
+    console.error("POST /student-progress/parent-login error:", err?.message || err);
+    return res.status(500).json({ error: "Login failed." });
+  }
+});
+
+/* ------------------------------------------------------------------
+ *  GET /stats (admin — no auth for now, add admin auth later)
+ *  Returns aggregate stats on student progress usage
+ * ------------------------------------------------------------------ */
+router.get("/stats", async (req, res) => {
+  try {
+    const totalAccounts = await StudentAccount.countDocuments();
+    const withEmail = await StudentAccount.countDocuments({ email: { $ne: "" } });
+    const withParents = await StudentAccount.countDocuments({ "parentEmails.0": { $exists: true } });
+    const loggedInLast7d = await StudentAccount.countDocuments({
+      lastLoginAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+    });
+    const loggedInLast30d = await StudentAccount.countDocuments({
+      lastLoginAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+    });
+    const parentLoginsLast30d = await StudentAccount.countDocuments({
+      lastParentLoginAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+    });
+    const totalLogins = await StudentAccount.aggregate([
+      { $group: { _id: null, total: { $sum: "$loginCount" }, parentTotal: { $sum: "$parentLoginCount" } } },
+    ]);
+
+    return res.json({
+      ok: true,
+      totalAccounts,
+      withEmail,
+      withParents,
+      loggedInLast7d,
+      loggedInLast30d,
+      parentLoginsLast30d,
+      totalStudentLogins: totalLogins[0]?.total || 0,
+      totalParentLogins: totalLogins[0]?.parentTotal || 0,
+    });
+  } catch (err) {
+    console.error("GET /student-progress/stats error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to load stats." });
   }
 });
 
@@ -231,6 +324,17 @@ router.get("/results", studentAuth, async (req, res) => {
     })
       .sort({ createdAt: -1 })
       .lean();
+
+    // Keep-alive: extend expiry on all this student's results by 30 days from now.
+    // Any login (student or parent) refreshes the TTL so results don't vanish.
+    if (results.length > 0) {
+      const newExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const resultIds = results.map((r) => r._id);
+      PublishedResult.updateMany(
+        { _id: { $in: resultIds }, expiresAt: { $lt: newExpiry } },
+        { $set: { expiresAt: newExpiry } }
+      ).catch(() => {}); // fire-and-forget
+    }
 
     // Build summary
     const entries = results.map((r) => {
