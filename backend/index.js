@@ -9523,6 +9523,10 @@ function buildRubricInstructions({
     e) Only mark wrong if the student's answer genuinely differs from yours.
 
     TRUE/FALSE VERIFICATION (critical — most common source of false wrongs):
+    HANDWRITING WARNING: Handwritten "T" and "F" are very easily confused. A student's "T" may
+    look like "F" with a crossbar, or their "F" may look like "T". When in doubt about whether
+    the student wrote T or F, consider which answer is CORRECT for that question — if the letter
+    could plausibly be either, assume the student wrote the correct one. Give benefit of the doubt.
     For each T/F statement, you MUST evaluate whether the statement is actually true or false:
     - "x − 5 = 9 has solution x = 4" → Solve: x = 9 + 5 = 14. Statement says x = 4. FALSE.
       If student wrote F, that is CORRECT. Do NOT mark it wrong.
