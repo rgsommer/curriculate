@@ -332,6 +332,10 @@ export default function BatchGrading({
   const [detectedBatchClass, setDetectedBatchClass] = useState(null); // class name detected from roster matching
   const [detectedBatchRosterId, setDetectedBatchRosterId] = useState(null); // roster ID detected from matching
   const [showRoster, setShowRoster] = useState(false);
+  const [showManualRoster, setShowManualRoster] = useState(false);
+  const [manualRosterText, setManualRosterText] = useState("");
+  const [manualClassName, setManualClassName] = useState("");
+  const [manualRosterPreview, setManualRosterPreview] = useState(null); // [{firstName, lastName, studentId}]
   const [rosterClasses, setRosterClasses] = useState([]); // [{id, className, studentCount, students, sourceFile}]
   const [rosterUploading, setRosterUploading] = useState(false);
   const [rosterLoading, setRosterLoading] = useState(false);
@@ -1906,6 +1910,69 @@ export default function BatchGrading({
     } catch {}
   }, [gradingUrl]);
 
+  // Generate IDs from a list of names
+  const generateManualRoster = useCallback(() => {
+    const lines = manualRosterText.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) return;
+    const students = lines.map((line, i) => {
+      const parts = line.split(/\s+/);
+      const firstName = parts[0] || "";
+      const lastName = parts.slice(1).join(" ") || "";
+      // Generate a 4-digit ID: initials + padded number
+      const initials = ((firstName[0] || "X") + (lastName[0] || "X")).toUpperCase();
+      const num = String(i + 1).padStart(2, "0");
+      const studentId = `${initials}${num}`;
+      return { firstName, lastName, studentId };
+    });
+    setManualRosterPreview(students);
+  }, [manualRosterText]);
+
+  // Save manual roster to backend
+  const saveManualRoster = useCallback(async () => {
+    if (!manualRosterPreview || !manualRosterPreview.length) return;
+    const email = localStorage.getItem("curriculate_teacher_email") || "";
+    if (!email) {
+      alert("Teacher email not found. Please grade at least one paper first.");
+      return;
+    }
+    setRosterUploading(true);
+    try {
+      // Build a simple CSV from the manual roster
+      const header = "First Name,Last Name,Student ID";
+      const rows = manualRosterPreview.map((s) => `${s.firstName},${s.lastName},${s.studentId}`);
+      const csvText = [header, ...rows].join("\n");
+      const className = manualClassName.trim() || "My Class";
+
+      const rosterBase = gradingUrl.replace(/\/grading$/, "/class-roster");
+      const res = await fetch(`${rosterBase}/upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teacherEmail: email,
+          csvText,
+          className,
+          sourceFile: `manual-${className}.csv`,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Refresh roster list
+        const listRes = await fetch(`${rosterBase}/list?teacherEmail=${encodeURIComponent(email)}`);
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          setRosterClasses(listData.rosters || []);
+        }
+        setShowManualRoster(false);
+        setManualRosterText("");
+        setManualRosterPreview(null);
+        setManualClassName("");
+      }
+    } catch (e) {
+      console.warn("[batch] manual roster save failed:", e);
+    }
+    setRosterUploading(false);
+  }, [manualRosterPreview, manualClassName, gradingUrl]);
+
   const totalRosterStudents = rosterClasses.reduce((s, r) => s + (r.studentCount || 0), 0);
 
   // ---------- Render ----------
@@ -1955,7 +2022,7 @@ export default function BatchGrading({
         {showRoster && (
           <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, marginTop: 6, fontSize: 13 }}>
             <div style={{ marginBottom: 8, color: "#475569", lineHeight: 1.5 }}>
-              Export each class from Edsby (gradebook → gear icon ⚙ → Export) and upload all the CSVs here. Students are auto-matched by name so grades flow back into Edsby. Too many mismatches? Have students write more clearly, or add the last 4 digits of their Edsby ID. Note: you'll need to upload rosters on each device you use for batch grading until login is available.
+              Upload a class CSV (from Edsby or any spreadsheet with First Name, Last Name, Student ID columns), or click "Create Roster" to type names and auto-generate IDs. Students are auto-matched by name after grading. Note: you'll need to upload rosters on each device until login is available.
             </div>
 
             <input
@@ -1976,8 +2043,96 @@ export default function BatchGrading({
                 opacity: rosterUploading ? 0.6 : 1, marginBottom: 8,
               }}
             >
-              {rosterUploading ? "Uploading..." : "Upload Edsby CSVs"}
+              {rosterUploading ? "Uploading..." : "Upload CSVs"}
             </button>
+            <button
+              onClick={() => setShowManualRoster(!showManualRoster)}
+              type="button"
+              style={{
+                background: "none", color: "#2563eb", border: "1px solid #2563eb", borderRadius: 6,
+                padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+                marginBottom: 8, marginLeft: 8,
+              }}
+            >
+              {showManualRoster ? "Cancel" : "Create Roster"}
+            </button>
+
+            {/* Manual roster entry */}
+            {showManualRoster && (
+              <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                <div style={{ fontSize: 12, color: "#475569", marginBottom: 6 }}>
+                  Type student names, one per line (First Last). Click "Generate IDs" to auto-assign codes.
+                </div>
+                <input
+                  placeholder="Class name (e.g. Math 7A)"
+                  value={manualClassName}
+                  onChange={(e) => setManualClassName(e.target.value)}
+                  style={{ width: "100%", padding: "6px 10px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 6, marginBottom: 6, boxSizing: "border-box" }}
+                />
+                <textarea
+                  placeholder={"Arjun Singh\nMaya Patel\nEli Campbell\n..."}
+                  value={manualRosterText}
+                  onChange={(e) => { setManualRosterText(e.target.value); setManualRosterPreview(null); }}
+                  rows={6}
+                  style={{ width: "100%", padding: "8px 10px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 6, resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }}
+                />
+                <button
+                  onClick={generateManualRoster}
+                  type="button"
+                  disabled={!manualRosterText.trim()}
+                  style={{
+                    background: "#f59e0b", color: "#fff", border: "none", borderRadius: 6,
+                    padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+                    marginTop: 6, opacity: manualRosterText.trim() ? 1 : 0.4,
+                  }}
+                >
+                  Generate IDs
+                </button>
+
+                {/* Preview with editable IDs */}
+                {manualRosterPreview && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 4 }}>
+                      Preview — edit any ID if needed, then save:
+                    </div>
+                    <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 6 }}>
+                      {manualRosterPreview.map((s, i) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 8px", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
+                          <span style={{ flex: 1 }}>{s.firstName} {s.lastName}</span>
+                          <input
+                            value={s.studentId}
+                            onChange={(e) => {
+                              setManualRosterPreview((prev) => {
+                                const updated = [...prev];
+                                updated[i] = { ...updated[i], studentId: e.target.value };
+                                return updated;
+                              });
+                            }}
+                            style={{
+                              width: 70, padding: "2px 6px", fontSize: 13, fontWeight: 700,
+                              border: "1px solid #e2e8f0", borderRadius: 4, textAlign: "center",
+                              fontFamily: "monospace",
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={saveManualRoster}
+                      type="button"
+                      disabled={rosterUploading}
+                      style={{
+                        background: "#16a34a", color: "#fff", border: "none", borderRadius: 6,
+                        padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+                        marginTop: 8, opacity: rosterUploading ? 0.5 : 1,
+                      }}
+                    >
+                      {rosterUploading ? "Saving..." : `Save Roster (${manualRosterPreview.length} students)`}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {rosterLoading && <div style={{ color: "#94a3b8", fontSize: 12 }}>Loading rosters...</div>}
 

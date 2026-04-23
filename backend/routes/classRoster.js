@@ -74,7 +74,8 @@ function parseEdsbyCSV(csvText) {
     // Derive last4 from whichever ID is available (prefer studentId, fall back to edsbyId)
     const idForLast4 = studentId || edsbyId;
     const digitsOnly = idForLast4.replace(/\D/g, "");
-    const last4 = digitsOnly.length >= 4 ? digitsOnly.slice(-4) : digitsOnly;
+    // For short/alphanumeric IDs (e.g. "AS01"), use the full ID as last4
+    const last4 = idForLast4.length <= 4 ? idForLast4 : (digitsOnly.length >= 4 ? digitsOnly.slice(-4) : digitsOnly || idForLast4.slice(-4));
 
     if (!edsbyId && !studentId) continue; // no usable ID
 
