@@ -18,6 +18,8 @@ const PublishedResultSchema = new mongoose.Schema(
 
 // TTL index (Mongo will delete after expiresAt)
 PublishedResultSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+// Student progress portal lookup
+PublishedResultSchema.index({ "meta.studentId": 1, createdAt: -1 });
 
 export default mongoose.models.PublishedResult ||
   mongoose.model("PublishedResult", PublishedResultSchema);

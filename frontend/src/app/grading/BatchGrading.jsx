@@ -641,7 +641,14 @@ export default function BatchGrading({
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 payload: buildBatchPayloadText(resultEntry, null, gradeBand),
-                meta: { source: "batch-grading", batchIndex: i, gradeBand },
+                meta: {
+                  source: "batch-grading", batchIndex: i, gradeBand,
+                  studentName: resultEntry.studentName || null,
+                  studentId: resultEntry.studentId || resultEntry.rosterStudentId || resultEntry.rosterEdsbyId || null,
+                  subject: resultEntry.subject || "",
+                  assessmentType: resultEntry.assessmentType || "",
+                  title: emailTitle.trim() || "",
+                },
                 sessionId: batchSessionId,
               }),
             });

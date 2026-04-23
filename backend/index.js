@@ -98,6 +98,7 @@ import {
 import profileInlineRouter from "./routes/profileInline.js";
 import adminCrudRouter from "./routes/adminCrud.js";
 import classRosterRouter from "./routes/classRoster.js";
+import studentProgressRouter from "./routes/studentProgress.js";
 
 function renderEmailTemplate(str, vars) {
   let out = String(str || "");
@@ -411,6 +412,7 @@ app.use("/admin", adminTeacherOutreachRouter);
 
 // Class roster management (Edsby CSV upload, student lookup)
 app.use("/class-roster", classRosterRouter);
+app.use("/student-progress", studentProgressRouter);
 
 // Results sharing routes
 app.use("/results", resultsRoutes);
