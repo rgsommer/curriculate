@@ -437,7 +437,7 @@ export default function BatchGrading({
     let groups = detectedGroups;
     let autoDetectedKeyPages = []; // answer key pages found anywhere in the PDF
     if (isAuto && !groups) {
-      setProgress({ done: 0, total: 0, current: "Detecting student boundaries..." });
+      setProgress({ done: 0, total: 0, current: `Analyzing ${pageCount} pages...` });
       try {
         const thumbs = [];
         for (let p = 1; p <= pageCount; p++) {

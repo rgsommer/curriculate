@@ -11582,8 +11582,8 @@ function buildRubricInstructions({
         return res.status(400).json({ error: "Missing pageImages array" });
       }
 
-      if (pageImages.length > 60) {
-        return res.status(400).json({ error: "Too many pages (max 60)" });
+      if (pageImages.length > 120) {
+        return res.status(400).json({ error: "Too many pages (max 120)" });
       }
 
       const content = [
@@ -11637,7 +11637,7 @@ Do NOT include any text outside the JSON array.`,
         },
       ];
 
-      // Add page images
+      // Add all page images
       pageImages.forEach((imgDataUrl, i) => {
         content.push({
           type: "input_image",
@@ -11650,7 +11650,7 @@ Do NOT include any text outside the JSON array.`,
       const response = await openai.responses.create({
         model: AI_MODEL,
         input: [{ role: "user", content }],
-        max_output_tokens: 2400,
+        max_output_tokens: 4096,
       });
 
       const raw = String(response.output_text || "").trim();
