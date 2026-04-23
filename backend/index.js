@@ -9340,7 +9340,31 @@ function buildRubricInstructions({
     - "paragraph" (multi-sentence explanations)
     - "mixed" (both)
     - "test" (multiple sections like matching, MC, short answer)
+    - "code" (HTML, CSS, JavaScript, Python, or any programming language)
     Set response_format_detected accordingly and calibrate expectations to that format.
+
+    CODE SUBMISSION DETECTION (important):
+    If the submission contains HTML tags (<!DOCTYPE, <html>, <head>, <body>, <div>, etc.),
+    CSS rules (selectors with { property: value }), JavaScript, Python, or any programming code:
+    - Set response_format_detected to "code"
+    - Set inferred_subject to "Computer Science"
+    - Set inferred_assessment_type to "Code"
+
+    When grading code submissions:
+    1. FILE SEPARATION: If HTML and CSS are pasted together (CSS rules appearing after </html>),
+       treat them as separate files. The CSS after the closing HTML tag is the stylesheet.
+       Grade each part independently according to the rubric.
+    2. MULTI-PART RUBRICS: Code assignments often have separate rubrics for each file/language
+       (e.g. HTML /65 and CSS /100). Create a SEPARATE SECTION for each part with its own
+       out_of value. The overall_score and overall_out_of should be the SUM of all parts.
+    3. GRADE ON FUNCTIONALITY: Evaluate whether the code achieves what it's supposed to do.
+       Minor syntax issues that don't break functionality should be noted but not heavily penalized.
+       Focus on: correct element usage, structure, meeting requirements, visual result.
+    4. RUBRIC ITEMS: If the rubric lists specific items with point values (e.g. "navigation bar /9",
+       "3 linked pages /15"), score each item individually and include them in the section breakdown.
+    5. CSS EVALUATION: Grade CSS on whether rules are valid, properly target elements, and achieve
+       the intended styling. Having 4+ valid CSS rules per HTML tag is a common requirement —
+       count them and score accordingly.
 
     TEACHER KEY / ANSWER KEY DETECTION (critical):
     Some images may be a teacher-provided marking guide, not student work.
@@ -9942,7 +9966,7 @@ function buildRubricInstructions({
       copying_suspected = null
 
     OUTPUT (JSON only; EXACT fields):
-    - response_format_detected ("short-answer"|"paragraph"|"mixed"|"test")
+    - response_format_detected ("short-answer"|"paragraph"|"mixed"|"test"|"code")
     - student_name (${batchMode ? "string or null — read from paper if visible" : "null — must always be null"})
     - student_id (string or null — numeric ID read from top of paper, if visible)
     - overall_score (number)
@@ -10597,12 +10621,12 @@ function buildRubricInstructions({
         properties: {
           response_format_detected: {
             type: "string",
-            enum: ["short-answer", "paragraph", "mixed", "test"],
+            enum: ["short-answer", "paragraph", "mixed", "test", "code"],
           },
 
           inferred_subject: {
             type: "string",
-            enum: ["Math", "English", "History", "Geography", "Science", "Bible", "Drama", "Speech", "Music", "Art", "French", "Other"],
+            enum: ["Math", "English", "History", "Geography", "Science", "Computer Science", "Bible", "Drama", "Speech", "Music", "Art", "French", "Other"],
           },
 
           inferred_assessment_type: {
@@ -10776,8 +10800,8 @@ function buildRubricInstructions({
         ${instructions}
 
         INFERENCE (required):
-        - inferred_subject: one of [Math, English, History, Geography, Science, Bible, Drama, Speech, Music, Art, French, Other]
-        - inferred_assessment_type: one of [Essay, Test, Quiz, Homework, Project, Poster, Worksheet, Speech, Performance, Presentation, Journal, Other]
+        - inferred_subject: one of [Math, English, History, Geography, Science, Computer Science, Bible, Drama, Speech, Music, Art, French, Other]
+        - inferred_assessment_type: one of [Essay, Test, Quiz, Homework, Project, Poster, Worksheet, Speech, Performance, Presentation, Journal, Code, Other]
         - inferred_grade_level: one of [3-5, 6-8, 9-10, 11+, Unknown]
 
         Rules:
@@ -12405,9 +12429,9 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
       type: "object",
       additionalProperties: false,
       properties: {
-        response_format_detected: { type: "string", enum: ["short-answer", "paragraph", "mixed", "test"] },
-        inferred_subject: { type: "string", enum: ["Math", "English", "History", "Geography", "Science", "Bible", "Drama", "Speech", "Music", "Art", "French", "Other"] },
-        inferred_assessment_type: { type: "string", enum: ["Essay", "Test", "Quiz", "Homework", "Project", "Poster", "Worksheet", "Speech", "Performance", "Presentation", "Journal", "Other"] },
+        response_format_detected: { type: "string", enum: ["short-answer", "paragraph", "mixed", "test", "code"] },
+        inferred_subject: { type: "string", enum: ["Math", "English", "History", "Geography", "Science", "Computer Science", "Bible", "Drama", "Speech", "Music", "Art", "French", "Other"] },
+        inferred_assessment_type: { type: "string", enum: ["Essay", "Test", "Quiz", "Homework", "Project", "Poster", "Worksheet", "Speech", "Performance", "Presentation", "Journal", "Code", "Other"] },
         inferred_grade_level: { type: "string", enum: ["3-5", "6-8", "9-10", "11+", "Unknown"] },
         overall_score: { type: "number", minimum: 0 },
         overall_out_of: { type: "number", minimum: 1 },
@@ -12817,8 +12841,8 @@ function buildVideoPerformancePrompt({ performanceType, instrumentFamily, instru
 
   const inferBlock = `
     INFERENCE (required):
-    - inferred_subject: one of [Math, English, History, Geography, Science, Bible, Drama, Speech, Music, Art, French, Other]
-    - inferred_assessment_type: best fit from [Speech, Performance, Presentation, Project, Other]
+    - inferred_subject: one of [Math, English, History, Geography, Science, Computer Science, Bible, Drama, Speech, Music, Art, French, Other]
+    - inferred_assessment_type: best fit from [Speech, Performance, Presentation, Project, Code, Other]
     - inferred_grade_level: one of [3-5, 6-8, 9-10, 11+, Unknown]
     - response_format_detected: "mixed"
 
