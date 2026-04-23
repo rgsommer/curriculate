@@ -1230,6 +1230,38 @@ export default function BatchGrading({
 
         setResults([...batchResults]);
 
+        // --- Update published results with roster IDs (matching runs after publish) ---
+        // The initial publish happens during grading before matching, so meta.studentId
+        // is null. Now that matching is done, update each published result with the
+        // correct roster studentId and the student's proper name.
+        if (resultsUrl) {
+          for (const r of batchResults) {
+            if (r.error || !r.refCode) continue;
+            const sid = r.rosterStudentId || r.rosterEdsbyId || r.studentId || null;
+            if (!sid && !r.rosterFirstName) continue; // nothing to update
+            try {
+              const updateUrl = resultsUrl.replace(/\/$/, "") + "/" + r.refCode;
+              await fetch(updateUrl, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  payload: buildBatchPayloadText(r, r.refCode, gradeBand),
+                  meta: {
+                    source: "batch-grading",
+                    studentName: r.rosterFirstName ? `${r.rosterFirstName} ${r.rosterLastName || ""}`.trim() : (r.studentName || null),
+                    studentId: sid,
+                    subject: r.subject || "",
+                    assessmentType: r.assessmentType || "",
+                    title: emailTitle.trim() || "",
+                  },
+                }),
+              });
+            } catch (e) {
+              console.warn(`[batch] post-match update for ${r.refCode} failed:`, e);
+            }
+          }
+        }
+
         // Notify teacher about unmatched students + unmatched roster names
         // Only show alert if we actually detected the batch class (batchRosterId is set).
         // If no roster was detected, the unmatched list would be the entire roster — not helpful.

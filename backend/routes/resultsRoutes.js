@@ -103,12 +103,15 @@ router.put("/:code", createLimiter, async (req, res) => {
   try {
     const code = normalizeCode(req.params.code);
     if (code.length !== 5) return res.status(404).json({ error: "Code not found." });
-    const { payload } = req.body || {};
+    const { payload, meta } = req.body || {};
     if (payload == null) return res.status(400).json({ error: "Missing payload." });
+
+    const update = { payload };
+    if (meta) update.meta = meta;
 
     const doc = await PublishedResult.findOneAndUpdate(
       { code },
-      { $set: { payload } },
+      { $set: update },
       { new: true }
     );
     if (!doc) return res.status(404).json({ error: "Code not found." });
