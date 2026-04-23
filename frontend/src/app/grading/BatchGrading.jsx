@@ -1639,6 +1639,9 @@ export default function BatchGrading({
       let comment = (r.comment || "").replace(/\s+/g, " ").trim();
       if (r.refCode) {
         comment += (comment ? " " : "") + `For detailed feedback, check www.curriculate.net/results/${r.refCode}`;
+        if (r.rosterStudentId || r.rosterEdsbyId) {
+          comment += ` For all results, check www.curriculate.net/progress`;
+        }
       }
       // If this student's denominator differs, convert using percentage
       let grade = "";
@@ -2714,7 +2717,10 @@ export default function BatchGrading({
                           if (td._clickTimer) return;
                           td._clickTimer = setTimeout(() => {
                             td._clickTimer = null;
-                            const text = `For detailed feedback, check www.curriculate.net/results/${r.refCode}`;
+                            let text = `For detailed feedback, check www.curriculate.net/results/${r.refCode}`;
+                            if (r.rosterStudentId || r.rosterEdsbyId) {
+                              text += ` For all results, check www.curriculate.net/progress`;
+                            }
                             navigator.clipboard?.writeText(text).then(() => {
                               const orig = td.style.background;
                               td.style.background = "rgba(34,197,94,0.25)";
