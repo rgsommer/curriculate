@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildResultsPdf, buildStripsPdf, preloadPdfLibs } from "./pdfReports";
 
 /**
@@ -327,6 +327,7 @@ export default function BatchGrading({
   const fileInputRef = useRef(null);
 
   // ---------- Edsby Class Roster (state declared early — used in grading callback) ----------
+  const [editingNameIndex, setEditingNameIndex] = useState(null); // index of result whose name is being edited
   const [showRoster, setShowRoster] = useState(false);
   const [rosterClasses, setRosterClasses] = useState([]); // [{id, className, studentCount, students, sourceFile}]
   const [rosterUploading, setRosterUploading] = useState(false);
@@ -1598,6 +1599,51 @@ export default function BatchGrading({
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [emailCopied, setEmailCopied] = useState(false);
 
+  // ---------- Manual name assignment ----------
+  // Returns roster students not yet matched to any result
+  const unmatchedRosterStudents = useMemo(() => {
+    const matched = new Set();
+    for (const r of results) {
+      if (r.rosterEdsbyId) matched.add(r.rosterEdsbyId);
+      if (r.rosterStudentId) matched.add(r.rosterStudentId);
+    }
+    const all = [];
+    for (const rc of rosterClasses) {
+      for (const s of rc.students || []) {
+        if (s.edsbyId && matched.has(s.edsbyId)) continue;
+        if (s.studentId && matched.has(s.studentId)) continue;
+        all.push({ ...s, className: rc.className });
+      }
+    }
+    return all;
+  }, [results, rosterClasses]);
+
+  const assignStudentName = useCallback((resultIndex, rosterStudent) => {
+    setResults((prev) => {
+      const updated = [...prev];
+      const r = updated.find((x) => x.index === resultIndex);
+      if (!r) return prev;
+      if (rosterStudent) {
+        r.studentName = `${rosterStudent.firstName} ${rosterStudent.lastName}`.trim();
+        r.rosterFirstName = rosterStudent.firstName;
+        r.rosterLastName = rosterStudent.lastName;
+        r.rosterEdsbyId = rosterStudent.edsbyId;
+        r.rosterStudentId = rosterStudent.studentId;
+        r.rosterClassName = rosterStudent.className;
+      }
+      return updated;
+    });
+    setEditingNameIndex(null);
+  }, []);
+
+  // Close name dropdown on outside click
+  useEffect(() => {
+    if (editingNameIndex == null) return;
+    const close = () => setEditingNameIndex(null);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [editingNameIndex]);
+
   // ---------- Expanded row ----------
   const [expandedIndex, setExpandedIndex] = useState(null);
   const [regradingIndex, setRegradingIndex] = useState(null); // index of student being re-graded
@@ -2278,12 +2324,92 @@ export default function BatchGrading({
                       }
                     >
                       <td style={batchStyles.td}>{r.index}</td>
-                      <td style={{ ...batchStyles.td, fontWeight: 700, textAlign: "left" }}>
-                        {r.studentName}
+                      <td style={{ ...batchStyles.td, fontWeight: 700, textAlign: "left", position: "relative" }}>
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingNameIndex(editingNameIndex === r.index ? null : r.index);
+                          }}
+                          style={{
+                            cursor: "pointer",
+                            borderBottom: "1px dashed #94a3b8",
+                            color: (!r.rosterEdsbyId && rosterClasses.length > 0) ? "#dc2626" : "inherit",
+                          }}
+                          title="Click to change student name"
+                        >
+                          {r.studentName}
+                        </span>
                         {r.studentId && (
                           <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 400, marginLeft: 6 }} title={`ID detected: ${r.studentId}${r.rosterFirstName ? ` → ${r.rosterFirstName} ${r.rosterLastName}` : ""}`}>
                             #{r.studentId.slice(-4)}
                           </span>
+                        )}
+                        {editingNameIndex === r.index && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              position: "absolute", top: "100%", left: 0, zIndex: 50,
+                              background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8,
+                              boxShadow: "0 4px 16px rgba(0,0,0,0.12)", minWidth: 220, maxHeight: 260,
+                              overflowY: "auto", padding: "4px 0",
+                            }}
+                          >
+                            {unmatchedRosterStudents.length > 0 && (
+                              <>
+                                <div style={{ padding: "6px 12px", fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600 }}>
+                                  Unmatched roster students
+                                </div>
+                                {unmatchedRosterStudents.map((s, si) => (
+                                  <div
+                                    key={si}
+                                    onClick={() => assignStudentName(r.index, s)}
+                                    style={{
+                                      padding: "8px 12px", cursor: "pointer", fontSize: 13,
+                                      borderBottom: "1px solid #f1f5f9",
+                                    }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.background = "#f1f5f9"; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                                  >
+                                    {s.firstName} {s.lastName}
+                                    <span style={{ fontSize: 10, color: "#94a3b8", marginLeft: 6 }}>{s.className}</span>
+                                  </div>
+                                ))}
+                              </>
+                            )}
+                            <div style={{ padding: "6px 12px", fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600, borderTop: unmatchedRosterStudents.length ? "1px solid #e2e8f0" : "none" }}>
+                              Type a name
+                            </div>
+                            <div style={{ padding: "4px 8px" }}>
+                              <input
+                                autoFocus
+                                placeholder={r.studentName}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && e.target.value.trim()) {
+                                    const parts = e.target.value.trim().split(/\s+/);
+                                    const first = parts[0] || "";
+                                    const last = parts.slice(1).join(" ") || "";
+                                    setResults((prev) => {
+                                      const updated = [...prev];
+                                      const item = updated.find((x) => x.index === r.index);
+                                      if (item) {
+                                        item.studentName = e.target.value.trim();
+                                        item.rosterFirstName = first;
+                                        item.rosterLastName = last;
+                                      }
+                                      return updated;
+                                    });
+                                    setEditingNameIndex(null);
+                                  } else if (e.key === "Escape") {
+                                    setEditingNameIndex(null);
+                                  }
+                                }}
+                                style={{
+                                  width: "100%", padding: "6px 8px", fontSize: 13,
+                                  border: "1px solid #e2e8f0", borderRadius: 6, outline: "none",
+                                }}
+                              />
+                            </div>
+                          </div>
                         )}
                       </td>
                       <td style={batchStyles.td}>{r.pages}</td>
