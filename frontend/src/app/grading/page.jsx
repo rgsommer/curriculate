@@ -196,7 +196,10 @@ const PARENT_NOTE_SNOOZE_DAYS = 30;       // if dismissed, don't show again for 
 // Feature tour (floating tooltips)
 const TOUR_SEEN_KEY = "curriculate_tour_seen_v1";
 const TOUR_PHASE2_SEEN_KEY = "curriculate_tour_phase2_seen_v1";
+const TOUR_PHASE3_SEEN_KEY = "curriculate_tour_phase3_seen_v1";
+const TOUR_PHASE4_SEEN_KEY = "curriculate_tour_phase4_seen_v1";
 const TOUR_STEPS = [
+  // Phase 1 — after first result: the basics
   {
     id: "tap-to-copy",
     title: "Tap to Copy & Share",
@@ -204,6 +207,7 @@ const TOUR_STEPS = [
     target: "tourTargetResult",
     phase: 1,
   },
+  // Phase 2 — after 2nd grading: sharing tools
   {
     id: "copy-session",
     title: "Email Reports — Class Analysis",
@@ -217,6 +221,36 @@ const TOUR_STEPS = [
     body: "Copies a ready-made message you can send home explaining how parents can view their child's feedback online using the reference code.",
     target: "tourTargetParentNote",
     phase: 2,
+  },
+  // Phase 3 — after 5th grading: fine-tuning
+  {
+    id: "strictness-chevrons",
+    title: "Adjust Strictness",
+    body: "Not happy with a grade? Use the ‹ › chevrons next to the score to re-grade more leniently or strictly. You can nudge up to 3 levels in either direction without re-submitting.",
+    target: "tourTargetChevrons",
+    phase: 3,
+  },
+  {
+    id: "feedback-voice",
+    title: "Change Your Feedback Voice",
+    body: "Choose from 13 feedback voices — Encouraging Coach, Socratic Guide, Journal Response, and more. The AI adapts its tone to match your teaching style.",
+    target: "tourTargetVoice",
+    phase: 3,
+  },
+  // Phase 4 — after 10th grading: pro workflow
+  {
+    id: "batch-mode",
+    title: "Batch Grade a Whole Class",
+    body: "Got a stack of papers? Switch to the Batch tab, upload a scanned PDF, and the AI splits by student, reads names, and grades each one. You get individual feedback plus a class summary.",
+    target: "tourTargetBatch",
+    phase: 4,
+  },
+  {
+    id: "edsby-export",
+    title: "Export Grades to Your Gradebook",
+    body: "In Batch mode, upload your Edsby class CSV to auto-match students by name. After grading, export a ready-to-import CSV with scores, dates, and feedback links.",
+    target: "tourTargetBatch",
+    phase: 4,
   },
 ];
 
@@ -1331,7 +1365,17 @@ export default function GradingPage() {
     const tourTargetResultRef = useRef(null);
     const tourTargetCopySessionRef = useRef(null);
     const tourTargetParentNoteRef = useRef(null);
-    const tourRefs = { tourTargetResult: tourTargetResultRef, tourTargetCopySession: tourTargetCopySessionRef, tourTargetParentNote: tourTargetParentNoteRef };
+    const tourTargetChevronsRef = useRef(null);
+    const tourTargetVoiceRef = useRef(null);
+    const tourTargetBatchRef = useRef(null);
+    const tourRefs = {
+      tourTargetResult: tourTargetResultRef,
+      tourTargetCopySession: tourTargetCopySessionRef,
+      tourTargetParentNote: tourTargetParentNoteRef,
+      tourTargetChevrons: tourTargetChevronsRef,
+      tourTargetVoice: tourTargetVoiceRef,
+      tourTargetBatch: tourTargetBatchRef,
+    };
 
     function startTour(phase) {
       const steps = TOUR_STEPS.filter((s) => s.phase <= phase);
@@ -1339,25 +1383,31 @@ export default function GradingPage() {
       setTourPhase(phase);
       setTourStep(0);
     }
+    function markTourPhasesSeen(phase) {
+      if (phase >= 1) writeStrLS(TOUR_SEEN_KEY, "1");
+      if (phase >= 2) writeStrLS(TOUR_PHASE2_SEEN_KEY, "1");
+      if (phase >= 3) writeStrLS(TOUR_PHASE3_SEEN_KEY, "1");
+      if (phase >= 4) writeStrLS(TOUR_PHASE4_SEEN_KEY, "1");
+    }
     function advanceTour() {
       const steps = TOUR_STEPS.filter((s) => s.phase <= tourPhase);
       const next = tourStep + 1;
       if (next >= steps.length) {
         setTourStep(-1);
-        if (tourPhase >= 1) writeStrLS(TOUR_SEEN_KEY, "1");
-        if (tourPhase >= 2) writeStrLS(TOUR_PHASE2_SEEN_KEY, "1");
+        markTourPhasesSeen(tourPhase);
       } else {
         setTourStep(next);
       }
     }
     function dismissTour() {
       setTourStep(-1);
-      if (tourPhase >= 1) writeStrLS(TOUR_SEEN_KEY, "1");
-      if (tourPhase >= 2) writeStrLS(TOUR_PHASE2_SEEN_KEY, "1");
+      markTourPhasesSeen(tourPhase);
     }
 
     const tourPhase1Fired = useRef(false);
     const tourPhase2Fired = useRef(false);
+    const tourPhase3Fired = useRef(false);
+    const tourPhase4Fired = useRef(false);
 
     const gradingUrl = useMemo(() => {
       if (!backendBase) return "";
@@ -1421,7 +1471,7 @@ export default function GradingPage() {
       setTimeout(() => startTour(1), 600);
     }, [assessment]);
 
-    // Phase 2: show full tour after 2nd grading
+    // Phase 2: sharing tools after 2nd grading
     useEffect(() => {
       if (tourPhase2Fired.current) return;
       if (sessionItems.length < 2) return;
@@ -1430,6 +1480,28 @@ export default function GradingPage() {
       tourPhase2Fired.current = true;
       setTimeout(() => startTour(2), 600);
     }, [sessionItems.length]);
+
+    // Phase 3: fine-tuning features after 5th grading
+    useEffect(() => {
+      if (tourPhase3Fired.current) return;
+      if (gradingUses < 5) return;
+      if (readStrLS(TOUR_PHASE3_SEEN_KEY, "0") === "1") return;
+      if (readStrLS(TOUR_PHASE2_SEEN_KEY, "0") !== "1") return;
+      if (!assessment) return;
+      tourPhase3Fired.current = true;
+      setTimeout(() => startTour(3), 600);
+    }, [gradingUses, assessment]);
+
+    // Phase 4: pro workflow after 10th grading
+    useEffect(() => {
+      if (tourPhase4Fired.current) return;
+      if (gradingUses < 10) return;
+      if (readStrLS(TOUR_PHASE4_SEEN_KEY, "0") === "1") return;
+      if (readStrLS(TOUR_PHASE3_SEEN_KEY, "0") !== "1") return;
+      if (!assessment) return;
+      tourPhase4Fired.current = true;
+      setTimeout(() => startTour(4), 600);
+    }, [gradingUses, assessment]);
 
     const formattedTeacherText = useMemo(() => {
       return assessment ? buildFullTeacherPayloadText(assessment, refCode, gradeBand, rubricOverride) : "";
@@ -2943,7 +3015,7 @@ export default function GradingPage() {
           </button>
         )}
 
-        <label style={styles.controlLabel}>
+        <label ref={tourTargetVoiceRef} style={styles.controlLabel}>
           Feedback Voice
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
@@ -3052,16 +3124,17 @@ export default function GradingPage() {
                     title: "Double-tap to flip camera",
                   },
                   { mode: "paste", label: "Paste", onClick: () => setInputMode("paste") },
-                  { mode: "batch", label: "Batch", onClick: () => setInputMode("batch") },
+                  { mode: "batch", label: "Batch", onClick: () => setInputMode("batch"), ref: tourTargetBatchRef },
                   { mode: "video", label: "Video", onClick: () => setInputMode("video") },
                   { mode: "audio", label: "Audio", onClick: () => setInputMode("audio") },
-                ].map(({ mode, label, onClick, title }) => {
+                ].map(({ mode, label, onClick, title, ref: btnRef }) => {
                   const gated = FREEMIUM_GATED_MODES.includes(mode);
                   const padlock = gated ? getPadlockForFeature() : null;
                   const isLocked = padlock === "locked";
                   return (
                     <button
                       key={mode}
+                      ref={btnRef || undefined}
                       type="button"
                       onClick={isLocked ? undefined : onClick}
                       style={{
@@ -3940,7 +4013,7 @@ export default function GradingPage() {
                         return (
                           <>
                             {isTutorMode ? "Tutor Feedback" : (
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: 0 }}>
+                              <span ref={tourTargetChevronsRef} style={{ display: "inline-flex", alignItems: "center", gap: 0 }}>
                                 Grade:{" "}
                                 {!submitting && (
                                   <button
