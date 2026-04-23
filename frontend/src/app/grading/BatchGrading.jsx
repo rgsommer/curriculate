@@ -781,9 +781,9 @@ export default function BatchGrading({
               if (aiFront.length >= 3 && levenshtein(aiFront, first) <= 2) return true;
             }
             // Fuzzy on first name only (AI read just a first name, no last name)
-            // e.g. "Anjita" → "Anjika" (distance 1)
-            if (first.length >= 4 && !aiName.includes(" ") && aiName.length <= first.length + 2) {
-              const maxDist = first.length >= 7 ? 2 : 1;
+            // e.g. "Anjita" → "Anjika" (distance 1), "Udaryoj" → "Udayraj" (distance 3)
+            if (first.length >= 4 && aiName.length <= first.length + 2) {
+              const maxDist = first.length >= 7 ? 3 : first.length >= 5 ? 2 : 1;
               if (levenshtein(aiName, first) <= maxDist) return true;
             }
             return false;
@@ -986,15 +986,20 @@ export default function BatchGrading({
 
         setResults([...batchResults]);
 
-        // Notify teacher about unmatched students
+        // Notify teacher about unmatched students + unmatched roster names
         const unmatched = batchResults.filter((r) => !r.error && !r.rosterEdsbyId);
         if (unmatched.length > 0) {
-          const names = unmatched.map((r) => r.studentName).join(", ");
+          const unmatchedResultNames = unmatched.map((r) => r.studentName).join(", ");
+          // Also list which roster students weren't assigned
+          const finalRem = remaining();
+          const unmatchedRosterNames = finalRem.map((s) => `${s.firstName} ${s.lastName}`).join(", ");
           setTimeout(() => {
-            alert(
-              `${unmatched.length} student${unmatched.length > 1 ? "s were" : " was"} not found in your uploaded rosters: ${names}\n\n` +
-              `When importing into Edsby, you can upload the same grades CSV into the correct class for those students.`
-            );
+            let msg = `${unmatched.length} student${unmatched.length > 1 ? "s were" : " was"} not matched: ${unmatchedResultNames}`;
+            if (unmatchedRosterNames) {
+              msg += `\n\nUnassigned roster students: ${unmatchedRosterNames}`;
+            }
+            msg += `\n\nTap any name in the results to reassign it.`;
+            alert(msg);
           }, 300);
         }
       }
