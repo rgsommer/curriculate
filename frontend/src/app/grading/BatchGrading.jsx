@@ -600,8 +600,11 @@ export default function BatchGrading({
 
         const data = await res.json();
 
-        const score = Number(data.overall_score);
-        const outOf = Number(data.overall_out_of);
+        const rawScore = Number(data.overall_score);
+        const rawOutOf = Number(data.overall_out_of);
+        // Round to avoid floating point noise (e.g. 53.980000000000004 → 54)
+        const score = Number.isFinite(rawScore) ? Math.round(rawScore * 100) / 100 : rawScore;
+        const outOf = Number.isFinite(rawOutOf) ? Math.round(rawOutOf * 100) / 100 : rawOutOf;
         const pct =
           Number.isFinite(score) && Number.isFinite(outOf) && outOf > 0
             ? Math.round((score / outOf) * 100) : null;
@@ -1230,8 +1233,8 @@ export default function BatchGrading({
     // --- Check for mixed denominators ---
     const denomSet = new Set();
     for (const r of batchResults) {
-      if (!r.error && typeof r.outOf === "number" && r.outOf > 0) {
-        denomSet.add(r.outOf);
+      if (!r.error && r.outOf != null && parseFloat(r.outOf) > 0) {
+        denomSet.add(Math.round(parseFloat(r.outOf) * 100) / 100); // avoid floating point noise
       }
     }
     if (denomSet.size > 1) {
@@ -1414,8 +1417,10 @@ export default function BatchGrading({
       });
 
       const data = await res.json();
-      const score = Number(data.overall_score);
-      const outOf = Number(data.overall_out_of);
+      const rawScore2 = Number(data.overall_score);
+      const rawOutOf2 = Number(data.overall_out_of);
+      const score = Number.isFinite(rawScore2) ? Math.round(rawScore2 * 100) / 100 : rawScore2;
+      const outOf = Number.isFinite(rawOutOf2) ? Math.round(rawOutOf2 * 100) / 100 : rawOutOf2;
       const pct =
         Number.isFinite(score) && Number.isFinite(outOf) && outOf > 0
           ? Math.round((score / outOf) * 100) : null;
