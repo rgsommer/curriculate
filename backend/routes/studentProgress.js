@@ -64,7 +64,30 @@ router.post("/login", async (req, res) => {
         if (!global._teacherMagicCodes) global._teacherMagicCodes = {};
         global._teacherMagicCodes[email] = { code, expires: Date.now() + 10 * 60 * 1000 };
         console.log(`[student-progress] Teacher magic code for ${email}: ${code}`);
-        // TODO: send email with code via sendSystemEmail
+        // Send email with code
+        try {
+          const { sendSystemEmail } = await import("../email/shareInviteEmailer.js");
+          await sendSystemEmail({
+            to: email,
+            subject: "Your Curriculate verification code",
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+                <h2 style="color: #1a1a2e; margin-bottom: 16px;">Curriculate Progress Portal</h2>
+                <p style="color: #333; font-size: 15px; line-height: 1.5;">
+                  Your verification code is:
+                </p>
+                <div style="background: #f0f4ff; border: 2px solid #4361ee; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
+                  <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #4361ee;">${code}</span>
+                </div>
+                <p style="color: #666; font-size: 13px; line-height: 1.5;">
+                  This code expires in 10 minutes. If you didn't request this, you can safely ignore this email.
+                </p>
+              </div>
+            `,
+          });
+        } catch (emailErr) {
+          console.error("[student-progress] Failed to send magic code email:", emailErr?.message || emailErr);
+        }
         return res.json({ ok: true, needsCode: true, message: "A 6-digit code has been sent to your email." });
       }
 
