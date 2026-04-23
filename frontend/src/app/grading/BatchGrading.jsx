@@ -1531,37 +1531,64 @@ export default function BatchGrading({
   }, [results]);
 
   // ---------- Build Edsby-compatible CSV from results ----------
-  // Single CSV with all graded students. If a teacher mixes classes in a
-  // batch, they get one combined file — keep batches clean to avoid that.
+  // Single CSV formatted for Edsby import. Edsby expects:
+  // Student ID, First Name, Last Name, Assessment Name, Grade, Out Of, Comment
+  // "Assessment Name" must be the same for every row so Edsby creates one
+  // assessment with all student grades, not one assessment per student.
+  // All scores normalized to /10 using percentage (so 4/5 → 8/10, not 4/10).
   const buildEdsbyCsv = useCallback(() => {
     if (!results.length) return null;
 
-    const headers = ["Student ID", "First Name", "Last Name", "Score", "Out Of", "Percentage", "Grade", "Comment"];
+    const assessmentName = emailTitle.trim() || "Curriculate Grade";
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const headers = ["Student ID", "First Name", "Last Name", "Assessment Name", "Date", "Grade", "Out Of", "Comment"];
     const escCsv = (v) => {
       const s = String(v ?? "");
       return s.includes(",") || s.includes('"') || s.includes("\n")
         ? `"${s.replace(/"/g, '""')}"` : s;
     };
 
+    // Find the most common denominator so outliers get converted to match
+    const denomCounts = {};
+    for (const r of results) {
+      if (r.error || !r.outOf) continue;
+      const d = parseFloat(r.outOf);
+      if (d > 0) denomCounts[d] = (denomCounts[d] || 0) + 1;
+    }
+    let outOfNorm = 10; // default
+    let maxCount = 0;
+    for (const [d, count] of Object.entries(denomCounts)) {
+      if (count > maxCount) { maxCount = count; outOfNorm = parseFloat(d); }
+    }
+
     const rows = [headers.map(escCsv).join(",")];
     for (const r of results) {
       if (r.error) continue;
-      const firstName = r.rosterFirstName || "";
+      const firstName = r.rosterFirstName || r.studentName || "";
       const lastName = r.rosterLastName || "";
       const sid = r.rosterStudentId || r.rosterEdsbyId || r.studentId || "";
       let comment = (r.comment || "").replace(/\s+/g, " ").trim();
       if (r.refCode) {
         comment += (comment ? " " : "") + `For full feedback, check www.curriculate.net/results/${r.refCode}`;
       }
+      // If this student's denominator differs, convert using percentage
+      let grade = "";
+      const origOutOf = parseFloat(r.outOf) || 0;
+      if (origOutOf === outOfNorm) {
+        grade = String(r.score);
+      } else if (r.pct != null) {
+        grade = String(Math.round((r.pct / 100) * outOfNorm * 10) / 10);
+      } else if (r.score != null && origOutOf > 0) {
+        grade = String(Math.round((parseFloat(r.score) / origOutOf) * outOfNorm * 10) / 10);
+      }
       rows.push([
         escCsv(sid), escCsv(firstName), escCsv(lastName),
-        escCsv(r.score), escCsv(r.outOf),
-        escCsv(r.pct != null ? `${r.pct}%` : ""),
-        escCsv(r.letter), escCsv(comment),
+        escCsv(assessmentName), escCsv(today), escCsv(grade),
+        escCsv(outOfNorm), escCsv(comment),
       ].join(","));
     }
     return rows.join("\n");
-  }, [results]);
+  }, [results, emailTitle]);
 
   const sendEmail = useCallback(async () => {
     const to = emailTo.trim();
