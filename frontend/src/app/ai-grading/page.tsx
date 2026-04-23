@@ -303,6 +303,130 @@ function GradingDemo() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  RECOMMEND SECTION                                                  */
+/* ------------------------------------------------------------------ */
+
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+
+function RecommendSection() {
+  const [open, setOpen] = React.useState(false);
+  const [name, setName] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [message, setMessage] = React.useState("");
+  const [sending, setSending] = React.useState(false);
+  const [sent, setSent] = React.useState(false);
+  const [error, setError] = React.useState("");
+
+  async function handleSend(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setSending(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/recommend`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recommenderName: name, teacherEmail: email, message }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setSent(true);
+      } else {
+        setError(data.error || "Failed to send.");
+      }
+    } catch {
+      setError("Failed to send. Try again.");
+    }
+    setSending(false);
+  }
+
+  if (sent) {
+    return (
+      <section className="px-6 py-12">
+        <div className="mx-auto max-w-2xl text-center">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-3xl p-10">
+            <div className="text-4xl mb-3">✓</div>
+            <h3 className="text-xl font-extrabold text-emerald-800">Recommendation sent!</h3>
+            <p className="text-emerald-700 font-medium mt-2">
+              We sent a personalized invitation to try Curriculate. Thanks for spreading the word!
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="px-6 py-12">
+      <div className="mx-auto max-w-2xl">
+        <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-3xl p-8 text-center">
+          <h2 className="text-2xl sm:text-3xl font-black text-gray-900 mb-2">
+            Know a teacher who needs this?
+          </h2>
+          <p className="text-gray-700 font-medium mb-6">
+            Students, parents, colleagues, principals — anyone can recommend Curriculate to a teacher. We'll send them a friendly invitation to try it.
+          </p>
+
+          {!open ? (
+            <button
+              onClick={() => setOpen(true)}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-500 hover:bg-amber-600 px-6 py-3 text-white text-lg font-black shadow-lg transition"
+            >
+              Recommend to a Teacher
+            </button>
+          ) : (
+            <form onSubmit={handleSend} className="text-left space-y-3 max-w-md mx-auto">
+              {error && (
+                <div className="bg-red-50 text-red-700 rounded-xl px-4 py-2 text-sm font-medium">
+                  {error}
+                </div>
+              )}
+              <input
+                className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                placeholder="Your name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+              <input
+                className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                type="email"
+                placeholder="Teacher's email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+              <textarea
+                className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                placeholder="Add a personal note (optional)"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={2}
+              />
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  disabled={sending}
+                  className="flex-1 rounded-xl bg-amber-500 hover:bg-amber-600 px-4 py-3 text-white font-black text-sm shadow transition disabled:opacity-50"
+                >
+                  {sending ? "Sending..." : "Send Recommendation"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="rounded-xl border border-gray-300 px-4 py-3 text-gray-600 font-bold text-sm hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  PAGE                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -641,6 +765,9 @@ export default function AIGradingLanding() {
           </div>
         </div>
       </section>
+
+      {/* -------- RECOMMEND -------- */}
+      <RecommendSection />
 
       {/* -------- FINAL CTA -------- */}
       <section className="px-6 py-16">

@@ -29,6 +29,52 @@ function gradeColor(letter) {
   return "#6b7280";
 }
 
+function RecommendWidget() {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [recEmail, setRecEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  if (sent) return <div style={{ textAlign: "center", color: "#16a34a", fontSize: 13, padding: 12 }}>Recommendation sent! Thanks for spreading the word.</div>;
+
+  return (
+    <div style={{ textAlign: "center", marginTop: 16 }}>
+      {!open ? (
+        <button
+          onClick={() => setOpen(true)}
+          style={{ fontSize: 13, color: "#d97706", background: "none", border: "1px solid #d97706", borderRadius: 10, padding: "6px 16px", cursor: "pointer", fontWeight: 700 }}
+        >
+          Recommend Curriculate to a teacher
+        </button>
+      ) : (
+        <div style={{ maxWidth: 360, margin: "0 auto", textAlign: "left" }}>
+          <input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} style={{ width: "100%", padding: "8px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 6, boxSizing: "border-box" }} />
+          <input placeholder="Teacher's email" type="email" value={recEmail} onChange={(e) => setRecEmail(e.target.value)} style={{ width: "100%", padding: "8px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 6, boxSizing: "border-box" }} />
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              disabled={sending || !name.trim() || !recEmail.includes("@")}
+              onClick={async () => {
+                setSending(true);
+                try {
+                  const res = await fetch(`${API}/api/recommend`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recommenderName: name, teacherEmail: recEmail }) });
+                  const d = await res.json();
+                  if (d.ok) setSent(true);
+                } catch {}
+                setSending(false);
+              }}
+              style={{ flex: 1, padding: "8px", fontSize: 13, fontWeight: 700, color: "#fff", background: "#d97706", border: "none", borderRadius: 8, cursor: "pointer", opacity: sending ? 0.5 : 1 }}
+            >
+              {sending ? "Sending..." : "Send"}
+            </button>
+            <button onClick={() => setOpen(false)} style={{ padding: "8px 12px", fontSize: 13, color: "#64748b", background: "none", border: "1px solid #e2e8f0", borderRadius: 8, cursor: "pointer" }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProgressPage() {
   const [mounted, setMounted] = useState(false);
   const [token, setToken] = useState(null);
@@ -213,7 +259,8 @@ export default function ProgressPage() {
             <strong>Teachers:</strong> Leave the student ID blank and enter your email to see all your students.
           </div>
         </div>
-        <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: "#94a3b8" }}>
+        <RecommendWidget />
+        <div style={{ textAlign: "center", marginTop: 12, fontSize: 12, color: "#94a3b8" }}>
           curriculate.net/progress
         </div>
       </div>
@@ -301,7 +348,8 @@ export default function ProgressPage() {
             </div>
           )}
         </div>
-        <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: "#94a3b8" }}>
+        <RecommendWidget />
+        <div style={{ textAlign: "center", marginTop: 12, fontSize: 12, color: "#94a3b8" }}>
           curriculate.net/progress
         </div>
       </div>

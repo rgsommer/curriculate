@@ -433,6 +433,11 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
   const [reviewSending, setReviewSending] = useState(false);
   const [reviewDone, setReviewDone] = useState(false);
   const [clipboardCopied, setClipboardCopied] = useState(false);
+  const [recommendOpen, setRecommendOpen] = useState(false);
+  const [recommendName, setRecommendName] = useState("");
+  const [recommendEmail, setRecommendEmail] = useState("");
+  const [recommendSending, setRecommendSending] = useState(false);
+  const [recommendSent, setRecommendSent] = useState(false);
 
   const code = useMemo(() => normalizeCode(codeInput), [codeInput]);
   useEffect(() => {
@@ -1444,6 +1449,47 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                 </pre>
               )}
             </Card>
+          )}
+        </div>
+      )}
+
+      {/* Recommend widget */}
+      {data && (
+        <div style={{ maxWidth: 600, margin: "20px auto", textAlign: "center" }}>
+          {!recommendSent ? (
+            !recommendOpen ? (
+              <button
+                onClick={() => setRecommendOpen(true)}
+                style={{ fontSize: 13, color: "#d97706", background: "none", border: "1px solid #d97706", borderRadius: 10, padding: "6px 16px", cursor: "pointer", fontWeight: 700 }}
+              >
+                Recommend Curriculate to a teacher
+              </button>
+            ) : (
+              <div style={{ maxWidth: 360, margin: "0 auto", textAlign: "left" }}>
+                <input placeholder="Your name" value={recommendName} onChange={(e) => setRecommendName(e.target.value)} style={{ width: "100%", padding: "8px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 6, boxSizing: "border-box" }} />
+                <input placeholder="Teacher's email" type="email" value={recommendEmail} onChange={(e) => setRecommendEmail(e.target.value)} style={{ width: "100%", padding: "8px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 6, boxSizing: "border-box" }} />
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button
+                    disabled={recommendSending || !recommendName.trim() || !recommendEmail.includes("@")}
+                    onClick={async () => {
+                      setRecommendSending(true);
+                      try {
+                        const r = await fetch(`${backendUrl}/api/recommend`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recommenderName: recommendName, teacherEmail: recommendEmail }) });
+                        const d = await r.json();
+                        if (d.ok) setRecommendSent(true);
+                      } catch {}
+                      setRecommendSending(false);
+                    }}
+                    style={{ flex: 1, padding: "8px", fontSize: 13, fontWeight: 700, color: "#fff", background: "#d97706", border: "none", borderRadius: 8, cursor: "pointer", opacity: recommendSending ? 0.5 : 1 }}
+                  >
+                    {recommendSending ? "Sending..." : "Send"}
+                  </button>
+                  <button onClick={() => setRecommendOpen(false)} style={{ padding: "8px 12px", fontSize: 13, color: "#64748b", background: "none", border: "1px solid #e2e8f0", borderRadius: 8, cursor: "pointer" }}>Cancel</button>
+                </div>
+              </div>
+            )
+          ) : (
+            <div style={{ color: "#16a34a", fontSize: 13 }}>Recommendation sent! Thanks for spreading the word.</div>
           )}
         </div>
       )}

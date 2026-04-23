@@ -414,6 +414,91 @@ app.use("/admin", adminTeacherOutreachRouter);
 app.use("/class-roster", classRosterRouter);
 app.use("/student-progress", studentProgressRouter);
 
+// Recommend Curriculate to a teacher
+app.post("/api/recommend", async (req, res) => {
+  try {
+    const { recommenderName, teacherEmail, message } = req.body || {};
+    const name = String(recommenderName || "").trim();
+    const email = String(teacherEmail || "").trim().toLowerCase();
+    if (!name || !email || !email.includes("@")) {
+      return res.status(400).json({ error: "Your name and a valid teacher email are required." });
+    }
+
+    const html = `
+      <div style="max-width: 600px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+        <div style="background: linear-gradient(135deg, #2563eb, #7c3aed); border-radius: 16px 16px 0 0; padding: 32px; text-align: center;">
+          <h1 style="color: #fff; margin: 0; font-size: 28px; font-weight: 900;">Someone thinks you'll love this</h1>
+        </div>
+        <div style="background: #fff; padding: 32px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 16px 16px;">
+          <p style="font-size: 18px; color: #1e293b; font-weight: 700; margin-top: 0;">
+            ${name.replace(/</g, "&lt;")} recommended Curriculate's AI grading tool for you.
+          </p>
+          ${message ? `<p style="font-size: 15px; color: #475569; background: #f8fafc; border-radius: 8px; padding: 12px 16px; border-left: 4px solid #2563eb;"><em>"${message.replace(/</g, "&lt;").slice(0, 500)}"</em></p>` : ""}
+          <p style="font-size: 15px; color: #475569; line-height: 1.6;">
+            Curriculate uses AI to grade student work — essays, handwriting, math tests, video performances, audio recordings — with detailed, personalized feedback in the voice you choose. Teachers report saving hours every week.
+          </p>
+          <h3 style="color: #1e293b; margin-bottom: 8px;">Here's what it does:</h3>
+          <ul style="color: #475569; font-size: 14px; line-height: 1.8; padding-left: 20px;">
+            <li><strong>5 input modes</strong> — photo, paste, batch PDF, video, audio</li>
+            <li><strong>13 feedback voices</strong> — encouraging coach to rigorous academic</li>
+            <li><strong>Batch grading</strong> — grade a whole class stack in minutes</li>
+            <li><strong>Gradebook export</strong> — CSV ready for Edsby or any gradebook</li>
+            <li><strong>Student progress portal</strong> — students and parents track grades online</li>
+            <li><strong>No signup needed</strong> — just open and grade</li>
+          </ul>
+          <div style="text-align: center; margin: 28px 0 16px;">
+            <a href="https://www.curriculate.net/grading?utm_source=recommendation&utm_medium=email"
+               style="display: inline-block; background: #2563eb; color: #fff; font-size: 18px; font-weight: 800; padding: 14px 32px; border-radius: 12px; text-decoration: none;">
+              Try It Free — Grade a Paper Now
+            </a>
+          </div>
+          <p style="font-size: 13px; color: #94a3b8; text-align: center; margin-bottom: 0;">
+            No account needed. No credit card. Just photograph a student paper and see what happens.<br/>
+            <a href="https://www.curriculate.net/ai-grading" style="color: #2563eb;">Learn more at curriculate.net/ai-grading</a>
+          </p>
+        </div>
+      </div>
+    `;
+
+    const { sendSystemEmail } = await import("./email/shareInviteEmailer.js");
+    await sendSystemEmail({
+      to: email,
+      subject: `${name} thinks you should try Curriculate — AI grading for teachers`,
+      html,
+    });
+
+    // Log recommendation
+    try {
+      const Recommendation = (await import("./models/Recommendation.js")).default;
+      await Recommendation.create({
+        recommenderName: name,
+        teacherEmail: email,
+        message: message || "",
+        source: req.body?.source || "ai-grading",
+      });
+    } catch (logErr) {
+      console.warn("[recommend] failed to log:", logErr?.message);
+    }
+
+    console.log(`[recommend] ${name} recommended Curriculate to ${email}`);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/recommend error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to send recommendation." });
+  }
+});
+
+// Recommendations list (admin)
+app.get("/api/recommendations", async (req, res) => {
+  try {
+    const Recommendation = (await import("./models/Recommendation.js")).default;
+    const recs = await Recommendation.find({}).sort({ createdAt: -1 }).limit(100).lean();
+    return res.json({ ok: true, recommendations: recs });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to load recommendations." });
+  }
+});
+
 // Results sharing routes
 app.use("/results", resultsRoutes);
 

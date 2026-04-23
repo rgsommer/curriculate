@@ -48,6 +48,8 @@ export default function AdminUsageDashboard() {
 
   // Diagnostic logs state
   const [diagLogs, setDiagLogs] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
+  const [recsLoading, setRecsLoading] = useState(false);
   const [diagLoading, setDiagLoading] = useState(false);
   const [diagLoaded, setDiagLoaded] = useState(false);
 
@@ -1026,6 +1028,38 @@ export default function AdminUsageDashboard() {
                 </div>
               )}
             </div>
+          </Card>
+
+          {/* Recommendations */}
+          <Card title="📨 Teacher Recommendations">
+            <button
+              onClick={async () => {
+                setRecsLoading(true);
+                try {
+                  const r = await fetch(`${API}/api/recommendations`);
+                  const d = await r.json();
+                  setRecommendations(d.recommendations || []);
+                } catch {}
+                setRecsLoading(false);
+              }}
+              className="px-3 py-1 text-xs font-bold rounded bg-blue-600 text-white hover:bg-blue-700 mb-2"
+            >
+              {recsLoading ? "Loading..." : `Load Recommendations (${recommendations.length})`}
+            </button>
+            {recommendations.length > 0 && (
+              <div className="max-h-64 overflow-y-auto text-xs space-y-1">
+                {recommendations.map((rec, i) => (
+                  <div key={i} className="flex items-center justify-between py-1 border-b border-gray-700">
+                    <div>
+                      <span className="font-bold text-blue-300">{rec.teacherEmail}</span>
+                      <span className="text-gray-400 ml-2">recommended by {rec.recommenderName}</span>
+                      {rec.message && <span className="text-gray-500 ml-2 italic">"{rec.message.slice(0, 60)}"</span>}
+                    </div>
+                    <span className="text-gray-500">{rec.createdAt ? new Date(rec.createdAt).toLocaleDateString() : ""}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
 
           {/* Diagnostic Logs */}
