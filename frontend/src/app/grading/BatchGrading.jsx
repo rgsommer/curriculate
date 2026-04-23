@@ -773,7 +773,7 @@ export default function BatchGrading({
         // Name matcher — returns all roster students whose name matches the AI-read name.
         function findNameMatches(aiName) {
           if (!aiName || aiName.startsWith("student")) return [];
-          return allRosterStudents.filter((s) => {
+          const matches = allRosterStudents.filter((s) => {
             const first = norm(s.firstName);
             const last = norm(s.lastName);
             const full = first + last;
@@ -847,8 +847,30 @@ export default function BatchGrading({
               if (levenshtein(aiName, last) <= maxDist) return true;
             }
 
+            // 14. Fuzzy first name + last initial (e.g. "aarons" → "aaryan" + "s"ran)
+            //     Split AI name into potential first + 1-char initial at the end
+            if (last.length >= 1 && aiName.length >= 4) {
+              const aiInit = aiName[aiName.length - 1];
+              const aiFront = aiName.slice(0, -1);
+              if (aiInit === last[0] && aiFront.length >= 3 && first.length >= 3) {
+                const maxDist = Math.max(1, Math.floor(Math.max(aiFront.length, first.length) * 0.35));
+                if (levenshtein(aiFront, first) <= maxDist) return true;
+              }
+            }
+
             return false;
           });
+          if (matches.length === 0 && aiName.length >= 3) {
+            console.log(`[match] NO MATCH for "${aiName}". Closest roster names:`,
+              allRosterStudents.slice(0, 30).map((s) => {
+                const first = norm(s.firstName);
+                const last = norm(s.lastName);
+                const full = first + last;
+                return `${s.firstName} ${s.lastName} (d=${levenshtein(aiName, full)})`;
+              }).join(", ")
+            );
+          }
+          return matches;
         }
 
         // --- PASS 1: resolve matches, tally roster votes ---
