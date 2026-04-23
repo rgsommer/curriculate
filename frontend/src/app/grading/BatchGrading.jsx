@@ -648,7 +648,7 @@ export default function BatchGrading({
                 meta: {
                   source: "batch-grading", batchIndex: i, gradeBand,
                   studentName: resultEntry.studentName || null,
-                  studentId: resultEntry.studentId || resultEntry.rosterStudentId || resultEntry.rosterEdsbyId || null,
+                  studentId: resultEntry.rosterStudentId || resultEntry.rosterEdsbyId || resultEntry.studentId || null,
                   subject: resultEntry.subject || "",
                   assessmentType: resultEntry.assessmentType || "",
                   title: emailTitle.trim() || "",

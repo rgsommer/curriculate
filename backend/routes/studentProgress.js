@@ -464,9 +464,19 @@ router.get("/teacher/students", teacherAuth, async (req, res) => {
     }
 
     const idArray = [...allStudentIds];
+    console.log(`[teacher-overview] ${email}: ${teacherRosters.length} rosters, ${idArray.length} student IDs. Sample IDs: ${idArray.slice(0, 5).join(", ")}`);
+
     const allResults = await PublishedResult.find({
       "meta.studentId": { $in: idArray },
     }).sort({ createdAt: -1 }).lean();
+
+    // Debug: if no results found, check what meta.studentId values exist
+    if (allResults.length === 0 && idArray.length > 0) {
+      const sampleResults = await PublishedResult.find({ "meta.source": "batch-grading" })
+        .sort({ createdAt: -1 }).limit(5).lean();
+      const sampleIds = sampleResults.map((r) => r.meta?.studentId).filter(Boolean);
+      console.log(`[teacher-overview] No matches. Recent batch result studentIds: ${sampleIds.join(", ") || "(none)"}`);
+    }
 
     const byStudent = {};
     for (const r of allResults) {
