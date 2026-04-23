@@ -876,9 +876,36 @@ export default function BatchGrading({
             }
           }
 
-          if (uniqueStudents.length === 1) {
-            // Same student (possibly in multiple rosters) — resolved.
-            const m = uniqueStudents[0];
+          // When multiple candidates matched, try to pick the best one by quality.
+          // Exact full name > exact first name > partial/fuzzy match.
+          let resolved = uniqueStudents;
+          if (uniqueStudents.length > 1) {
+            // Score each candidate: lower = better
+            function matchQuality(s) {
+              const first = norm(s.firstName);
+              const last = norm(s.lastName);
+              const full = first + last;
+              if (aiName === full || aiName === last + first) return 0; // exact full name
+              if (aiName === first) return 1; // exact first name
+              if (aiName === last) return 2; // exact last name
+              if (first.length >= 3 && aiName.startsWith(first) && aiName.length <= first.length + 2) return 3; // first + initial
+              if (first.length >= 2 && last.length >= 2 && aiName.includes(first) && aiName.includes(last)) return 3; // contains both
+              return 5; // partial/fuzzy/substring
+            }
+            const scored = uniqueStudents.map((s) => ({ s, q: matchQuality(s) }));
+            const bestQ = Math.min(...scored.map((x) => x.q));
+            const bestMatches = scored.filter((x) => x.q === bestQ);
+            if (bestMatches.length === 1) {
+              resolved = [bestMatches[0].s];
+            } else {
+              // Multiple at same quality — still ambiguous, but narrow the list
+              resolved = bestMatches.map((x) => x.s);
+            }
+          }
+
+          if (resolved.length === 1) {
+            // Resolved to one student — assign
+            const m = resolved[0];
             Object.assign(r, {
               rosterFirstName: m.firstName,
               rosterLastName: m.lastName,
@@ -895,7 +922,7 @@ export default function BatchGrading({
               rosterVotes[match.rosterId] = (rosterVotes[match.rosterId] || 0) + 1;
             }
           } else {
-            // Genuinely different students with similar names
+            // Genuinely different students with similar names at same quality
             pendingAmbiguous.push({ result: r, nameMatches });
           }
         }
@@ -1077,11 +1104,30 @@ export default function BatchGrading({
               }
             }
 
-            // Suffix match: AI name is end of roster name (e.g. "tina" in "atinuke" → check suffix)
-            // Or roster first name ends with AI name
+            // Suffix/prefix match: AI name overlaps with start/end of roster name
             if (raw.length >= 3 && first.length > raw.length) {
               if (first.startsWith(raw) || first.endsWith(raw)) {
                 bestMatch = s; bestScore = 0; break;
+              }
+            }
+
+            // Shared long substring: e.g. "timu" shares significant overlap with "atinuke"
+            // Check if most of the AI name's characters appear in sequence in the roster name
+            if (raw.length >= 3 && first.length >= 4) {
+              // Find longest common substring
+              let lcs = 0;
+              for (let si = 0; si < first.length; si++) {
+                for (let ri = 0; ri < raw.length; ri++) {
+                  let len = 0;
+                  while (si + len < first.length && ri + len < raw.length && first[si + len] === raw[ri + len]) len++;
+                  if (len > lcs) lcs = len;
+                }
+              }
+              // If ≥60% of the shorter name appears as a substring, it's likely a misread
+              const shorter = Math.min(raw.length, first.length);
+              if (lcs >= Math.ceil(shorter * 0.6) && lcs >= 3) {
+                const d = levenshtein(raw, first);
+                if (d < bestScore) { bestScore = d; bestMatch = s; }
               }
             }
 
