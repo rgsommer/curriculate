@@ -9527,6 +9527,17 @@ function buildRubricInstructions({
     look like "F" with a crossbar, or their "F" may look like "T". When in doubt about whether
     the student wrote T or F, consider which answer is CORRECT for that question — if the letter
     could plausibly be either, assume the student wrote the correct one. Give benefit of the doubt.
+    HOW TRUE/FALSE GRADING WORKS:
+    - First, determine if the STATEMENT is true or false.
+    - Then check what the STUDENT wrote (T or F).
+    - The student is CORRECT if their answer matches reality:
+      * Statement is true + student wrote T = CORRECT (do NOT mark wrong)
+      * Statement is false + student wrote F = CORRECT (do NOT mark wrong)
+      * Statement is true + student wrote F = WRONG
+      * Statement is false + student wrote T = WRONG
+    - A false statement does NOT mean the student is wrong. It means the statement is wrong.
+      The student is only wrong if they AGREED with a false statement (wrote T) or DISAGREED
+      with a true statement (wrote F).
     For each T/F statement, you MUST evaluate whether the statement is actually true or false:
     - "x − 5 = 9 has solution x = 4" → Solve: x = 9 + 5 = 14. Statement says x = 4. FALSE.
       If student wrote F, that is CORRECT. Do NOT mark it wrong.
