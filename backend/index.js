@@ -9497,6 +9497,25 @@ function buildRubricInstructions({
     - Section out_of must match the printed section total, or the true visible total of the questions in that section if the section total is clearly implied by the questions.
     - overall_out_of MUST equal the sum of section out_of values.
     - overall_score MUST equal the sum of section scores.
+
+    MATH TEST GRADING (critical — prevents false wrongs):
+    When grading math tests, quizzes, or worksheets:
+    1. SOLVE EACH PROBLEM YOURSELF FIRST before comparing to the student's answer.
+       Do not guess or approximate — actually compute the correct answer step by step.
+    2. Compare your computed answer to the student's answer. Only mark wrong if they
+       genuinely differ. Common false-wrong traps to avoid:
+       - "x = 7" and "7" are the SAME answer
+       - "2/3" and "0.667" are the SAME answer
+       - Different valid solution methods that reach the same result are ALL correct
+       - Messy handwriting: if a digit COULD be the correct one, give benefit of the doubt
+    3. For "show your work" questions: award marks for correct method even if the final
+       answer has a minor arithmetic slip. Deduct only for the specific error, not the whole question.
+    4. For matching questions: mark each individual match right or wrong, don't give 0 for the
+       whole section if one match is wrong.
+    5. For true/false with corrections: the correction only matters if the student wrote F.
+       If they correctly identified it as false, check their correction for reasonableness.
+    6. NEVER mark a correct answer as wrong. When in doubt, re-check your own computation.
+       A false wrong is worse than a false right — it destroys student and teacher trust.
     - Do NOT collapse a clearly sectioned test into one generic overall comment.
 
     SECTION COMMENT RULE:
@@ -11687,9 +11706,14 @@ Do NOT include any text outside the JSON array.`,
       }
       if (currentGroup) groups.push(currentGroup);
 
-      console.log(`[classify-pages] detected ${groups.length} students from ${pageImages.length} pages`);
+      // Collect answer key page numbers (may be at start, end, or middle)
+      const answerKeyPageNumbers = classifications
+        .filter(c => String(c.type || "").toLowerCase() === "key")
+        .map(c => Number(c.page));
 
-      res.json({ classifications, groups });
+      console.log(`[classify-pages] detected ${groups.length} students from ${pageImages.length} pages (${answerKeyPageNumbers.length} answer key pages)`);
+
+      res.json({ classifications, groups, answerKeyPages: answerKeyPageNumbers });
     } catch (err) {
       console.error("🔥 /grading/classify-pages failed:", err?.message || err);
       return res.status(500).json({

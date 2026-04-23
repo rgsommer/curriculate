@@ -435,6 +435,7 @@ export default function BatchGrading({
 
     // --- Auto-detect if needed and not already done ---
     let groups = detectedGroups;
+    let autoDetectedKeyPages = []; // answer key pages found anywhere in the PDF
     if (isAuto && !groups) {
       setProgress({ done: 0, total: 0, current: "Detecting student boundaries..." });
       try {
@@ -453,6 +454,11 @@ export default function BatchGrading({
           if (Array.isArray(classifyData.groups) && classifyData.groups.length > 0) {
             groups = classifyData.groups;
             setDetectedGroups(groups);
+          }
+          // Capture any answer key pages detected anywhere in the PDF
+          if (Array.isArray(classifyData.answerKeyPages) && classifyData.answerKeyPages.length > 0) {
+            autoDetectedKeyPages = classifyData.answerKeyPages;
+            console.log(`[batch] auto-detected ${autoDetectedKeyPages.length} answer key pages: ${autoDetectedKeyPages.join(", ")}`);
           }
         }
       } catch (e) {
@@ -494,16 +500,23 @@ export default function BatchGrading({
     const batchSessionId = `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const batchResults = [];
 
-    // --- Extract answer key from leading pages if configured ---
+    // --- Extract answer key from leading pages OR auto-detected key pages ---
     let effectiveAnswerKey = extractedAnswerKey || "";
     let answerKeyImages = null;
 
-    if (answerKeyPages > 0 && !effectiveAnswerKey) {
+    // Determine which pages to use as answer key
+    const keyPageNumbers = answerKeyPages > 0
+      ? Array.from({ length: answerKeyPages }, (_, i) => i + 1) // leading pages (manual config)
+      : autoDetectedKeyPages; // auto-detected (may be at end of PDF)
+
+    if (keyPageNumbers.length > 0 && !effectiveAnswerKey) {
       setProgress({ done: 0, total, current: "Extracting answer key..." });
       try {
         const akImages = [];
-        for (let p = 1; p <= Math.min(answerKeyPages, pageCount); p++) {
-          akImages.push(await renderPageToDataUrl(doc, p));
+        for (const p of keyPageNumbers) {
+          if (p >= 1 && p <= pageCount) {
+            akImages.push(await renderPageToDataUrl(doc, p));
+          }
         }
         answerKeyImages = akImages;
 
