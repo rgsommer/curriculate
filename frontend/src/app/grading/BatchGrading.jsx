@@ -583,6 +583,7 @@ export default function BatchGrading({
             feedbackVoice: feedbackVoice || "warm",
             inputMode: "batch",
             batchIndex: i,
+            subjectHint: batchResults.length > 0 ? (batchResults[0].subject || "") : "",
           },
         };
 

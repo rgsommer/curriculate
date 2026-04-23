@@ -8843,6 +8843,7 @@ function buildRubricInstructions({
     subjectArea = "",
     batchMode = false,
     strictnessBias = 0,
+    subjectHint = "",  // detected subject from prior grading (e.g. "Math", "Computer Science") — used to trim prompt
   } = {}) {
   const gradeExpectations = {
       "3-5": `
@@ -8944,6 +8945,14 @@ function buildRubricInstructions({
     };
 
     const standardsBlock = standardsSpecs[standards] || standardsSpecs.canada;
+
+    // Conditional prompt sections based on detected subject
+    const hint = (subjectHint || subjectArea || "").toLowerCase();
+    const isMath = hint.includes("math");
+    const isCode = hint.includes("computer") || hint.includes("code") || hint.includes("cs");
+    const hasAnswerKey = Boolean(answerKeyOverride);
+    // KITA is Ontario-specific achievement categories
+    const useKita = standards === "canada";
 
     return `
     You are a teacher grading a specific student assignment based ONLY on the attached photos.
@@ -9343,6 +9352,7 @@ function buildRubricInstructions({
     - "code" (HTML, CSS, JavaScript, Python, or any programming language)
     Set response_format_detected accordingly and calibrate expectations to that format.
 
+    ${isCode || !hint ? `
     CODE SUBMISSION DETECTION (important):
     If the submission contains HTML tags (<!DOCTYPE, <html>, <head>, <body>, <div>, etc.),
     CSS rules (selectors with { property: value }), JavaScript, Python, or any programming code:
@@ -9365,6 +9375,7 @@ function buildRubricInstructions({
     5. CSS EVALUATION: Grade CSS on whether rules are valid, properly target elements, and achieve
        the intended styling. Having 4+ valid CSS rules per HTML tag is a common requirement —
        count them and score accordingly.
+    ` : ''}
 
     TEACHER KEY / ANSWER KEY DETECTION (critical):
     Some images may be a teacher-provided marking guide, not student work.
@@ -9498,6 +9509,7 @@ function buildRubricInstructions({
     - overall_out_of MUST equal the sum of section out_of values.
     - overall_score MUST equal the sum of section scores.
 
+    ${isMath || !hint ? `
     MATH TEST GRADING (critical — prevents false wrongs):
     When grading math tests, quizzes, or worksheets, you MUST verify every answer by
     actually computing it yourself. False wrongs destroy teacher trust in the tool.
@@ -9536,6 +9548,7 @@ function buildRubricInstructions({
        The correction doesn't need to match the answer key exactly — just needs to be mathematically valid.
     7. NEVER mark a correct answer as wrong. A false wrong is worse than a false right.
     8. If you are unsure, re-compute. Then re-compute again. Get it right.
+    ` : ''}
     - Do NOT collapse a clearly sectioned test into one generic overall comment.
 
     SECTION COMMENT RULE:
@@ -10820,6 +10833,7 @@ function buildRubricInstructions({
       const feedbackVoice = req.body?.meta?.feedbackVoice || "warm";
       const feedbackVoiceMode = req.body?.meta?.feedbackVoiceMode || "default";
       const batchMode = req.body?.meta?.batchMode === true;
+      const subjectHint = req.body?.meta?.subjectHint || "";
 
       const effectiveAnswerKey = String(answerKeyOverride || "").trim();
 
@@ -10833,6 +10847,7 @@ function buildRubricInstructions({
         subjectArea,
         batchMode,
         strictnessBias,
+        subjectHint,
       });
 
       const instructionsWithInference = `
