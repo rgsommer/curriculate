@@ -221,7 +221,9 @@ router.post("/login", async (req, res) => {
     const rosters = await ClassRoster.find({}).lean();
     for (const r of rosters) {
       for (const s of r.students || []) {
-        if (s.studentId === sid || s.last4 === sid || s.edsbyId === sid) {
+        if (s.studentId === sid || s.last4 === sid || s.edsbyId === sid ||
+            // Suffix match: kid enters "400224" but roster has "328400224"
+            (sid.length >= 4 && s.studentId && s.studentId.endsWith(sid))) {
           rosterStudent = s;
           rosterInfo = { teacherEmail: r.teacherEmail, className: r.className };
           break;
