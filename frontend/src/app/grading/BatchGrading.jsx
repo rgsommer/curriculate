@@ -1637,7 +1637,7 @@ export default function BatchGrading({
         {showRoster && (
           <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, marginTop: 6, fontSize: 13 }}>
             <div style={{ marginBottom: 8, color: "#475569", lineHeight: 1.5 }}>
-              Export each class from Edsby (gradebook → gear icon ⚙ → Export) and upload all the CSVs here. Students are auto-matched by name so grades flow back into Edsby. Too many mismatches? Have students write more clearly, or add the last 4 digits of their Edsby ID.
+              Export each class from Edsby (gradebook → gear icon ⚙ → Export) and upload all the CSVs here. Students are auto-matched by name so grades flow back into Edsby. Too many mismatches? Have students write more clearly, or add the last 4 digits of their Edsby ID. Note: you'll need to upload rosters on each device you use for batch grading until login is available.
             </div>
 
             <input
