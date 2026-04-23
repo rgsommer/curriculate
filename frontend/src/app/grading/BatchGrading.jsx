@@ -628,7 +628,7 @@ export default function BatchGrading({
           subject: data.inferred_subject || "",
           assessmentType: data.inferred_assessment_type || "",
           refCode: null,
-          error: data.error || null,
+          error: data.error ? (data.details ? `${data.error}: ${data.details}` : data.error) : null,
           raw: data,
         };
 
