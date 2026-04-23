@@ -92,6 +92,9 @@ export default function ProgressPage() {
   const [magicCode, setMagicCode] = useState("");
   const [teacherStudents, setTeacherStudents] = useState([]);
 
+  // Teacher → student drill-down (for back button)
+  const [teacherToken, setTeacherToken] = useState(null);
+
   // Settings
   const [showSettings, setShowSettings] = useState(false);
   const [profileEmails, setProfileEmails] = useState([]);
@@ -355,9 +358,9 @@ export default function ProgressPage() {
               key={ts.studentId}
               style={{ display: "flex", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}
               onClick={() => {
-                // Switch to student view
+                // Save current teacher token so we can come back
+                setTeacherToken(token);
                 setStudentId(ts.studentId);
-                setEmail(email); // keep teacher email
                 // Trigger login for this student
                 apiCall("/login", { method: "POST", body: { studentId: ts.studentId, email } })
                   .then((data) => {
@@ -404,6 +407,27 @@ export default function ProgressPage() {
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <div>
+            {teacherToken && (
+              <button
+                onClick={() => {
+                  // Restore teacher token and go back to class overview
+                  localStorage.setItem(TOKEN_KEY, teacherToken);
+                  setToken(teacherToken);
+                  setTeacherToken(null);
+                  setStudent(null);
+                  setResults([]);
+                  setOverallAvg(null);
+                  setView("teacher");
+                }}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  color: "#2563eb", fontSize: 13, fontWeight: 600,
+                  padding: "0 0 8px", display: "flex", alignItems: "center", gap: 4,
+                }}
+              >
+                ← Back to Class
+              </button>
+            )}
             <h1 style={{ ...s.h1, textAlign: "left", fontSize: 24 }}>
               {student ? `${student.firstName} ${student.lastName}` : "My Progress"}
             </h1>
