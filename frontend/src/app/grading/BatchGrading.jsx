@@ -1409,8 +1409,8 @@ export default function BatchGrading({
   }, [results]);
 
   // ---------- Build Edsby-compatible CSV from results ----------
-  // Single CSV with all graded students — roster provides name/ID enrichment
-  // but doesn't determine grouping (students can be in multiple classes).
+  // Single CSV with all graded students. If a teacher mixes classes in a
+  // batch, they get one combined file — keep batches clean to avoid that.
   const buildEdsbyCsv = useCallback(() => {
     if (!results.length) return null;
 
@@ -1490,16 +1490,15 @@ export default function BatchGrading({
         payload.pdfFilename = `${baseName}-reports.pdf`;
       }
 
-      // Attach single Edsby CSV with all graded students
+      // Attach single Edsby CSV
       const csvText = buildEdsbyCsv();
       if (csvText) {
         const csvBase64 = typeof btoa === "function"
           ? btoa(unescape(encodeURIComponent(csvText)))
           : Buffer.from(csvText, "utf-8").toString("base64");
-        payload.csvAttachments.push({
-          data: csvBase64,
-          filename: `${baseName}-edsby-grades.csv`,
-        });
+        const title = emailTitle.trim();
+        const csvName = title ? `results-${title}.csv` : "results.csv";
+        payload.csvAttachments.push({ data: csvBase64, filename: csvName });
       }
 
       const res = await fetch(sendUrl, {
