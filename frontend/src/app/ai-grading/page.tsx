@@ -16,6 +16,8 @@ import {
   FileText,
   Users,
   BarChart3,
+  TrendingUp,
+  ClipboardList,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -44,12 +46,22 @@ const features = [
     desc: "Upload a scanned PDF of 30 papers. AI splits by student, reads names, grades each one, and gives you a class summary.",
   },
   {
-    icon: <BarChart3 className="w-6 h-6 text-indigo-600" />,
-    title: "Edsby gradebook export",
-    desc: "Upload your Edsby class CSV once. After grading, export a ready-to-import CSV with scores, dates, and feedback links.",
+    icon: <ClipboardList className="w-6 h-6 text-indigo-600" />,
+    title: "Class roster — any school",
+    desc: "Edsby schools: upload your gradebook CSV. Everyone else: type student names and auto-generate IDs. Either way, students are matched by name after grading.",
   },
   {
-    icon: <Zap className="w-6 h-6 text-orange-600" />,
+    icon: <BarChart3 className="w-6 h-6 text-cyan-600" />,
+    title: "Gradebook CSV export",
+    desc: "After grading, export a ready-to-import CSV with student IDs, scores, dates, and feedback links. Works with Edsby and other gradebooks.",
+  },
+  {
+    icon: <TrendingUp className="w-6 h-6 text-orange-600" />,
+    title: "Student progress portal",
+    desc: "Students and parents visit curriculate.net/progress, enter a student ID and email, and see all grades, averages, and progress over time. Teachers see all their students in one view.",
+  },
+  {
+    icon: <Zap className="w-6 h-6 text-yellow-600" />,
     title: "Student feedback pages",
     desc: "Every graded paper gets a unique link. Students and parents can view detailed feedback anytime — no login needed.",
   },
@@ -131,11 +143,19 @@ const faqs = [
   },
   {
     q: "How do parents see the feedback?",
-    a: "Every graded paper gets a unique link (like curriculate.net/results/AB123). Share it with students or parents — no login or account needed to view detailed feedback.",
+    a: "Every graded paper gets a unique link (like curriculate.net/results/AB123). Share it with students or parents — no login or account needed to view detailed feedback. For ongoing access, students and parents can visit curriculate.net/progress, enter the student ID and their email, and see all grades, averages, and progress over time in one dashboard.",
+  },
+  {
+    q: "Do I need Edsby?",
+    a: "No. Edsby schools can upload their gradebook CSV for automatic student matching and grade export. Non-Edsby schools can click 'Create Roster,' type student names, and auto-generate IDs. Either way, you get the same features: name matching, progress portal, and grade tracking.",
+  },
+  {
+    q: "Can parents track their child's progress?",
+    a: "Yes. At curriculate.net/progress, anyone with the student ID can enter their email and see all grades, averages, and a progress chart. Multiple people — the student, both parents, a tutor — can each add their own email. Everyone gets notified when new grades arrive.",
   },
   {
     q: "Is student data stored?",
-    a: "Grading sessions are processed in real time and not permanently stored. We take student privacy seriously.",
+    a: "Grading sessions are processed in real time and not permanently stored. Results linked to student accounts are kept as long as someone checks them within 30 days. We take student privacy seriously.",
   },
   {
     q: "What subjects does it work for?",
@@ -377,6 +397,11 @@ export default function AIGradingLanding() {
           <div>
             <div className="text-3xl font-black text-gray-900">30s</div>
             <div className="text-sm font-bold text-gray-500">Per paper avg.</div>
+          </div>
+          <div className="h-10 w-px bg-gray-200 hidden sm:block" />
+          <div>
+            <div className="text-3xl font-black text-gray-900">/progress</div>
+            <div className="text-sm font-bold text-gray-500">Student &amp; parent portal</div>
           </div>
         </div>
       </section>
