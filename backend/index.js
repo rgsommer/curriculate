@@ -9499,23 +9499,43 @@ function buildRubricInstructions({
     - overall_score MUST equal the sum of section scores.
 
     MATH TEST GRADING (critical — prevents false wrongs):
-    When grading math tests, quizzes, or worksheets:
-    1. SOLVE EACH PROBLEM YOURSELF FIRST before comparing to the student's answer.
-       Do not guess or approximate — actually compute the correct answer step by step.
-    2. Compare your computed answer to the student's answer. Only mark wrong if they
-       genuinely differ. Common false-wrong traps to avoid:
-       - "x = 7" and "7" are the SAME answer
-       - "2/3" and "0.667" are the SAME answer
-       - Different valid solution methods that reach the same result are ALL correct
-       - Messy handwriting: if a digit COULD be the correct one, give benefit of the doubt
-    3. For "show your work" questions: award marks for correct method even if the final
-       answer has a minor arithmetic slip. Deduct only for the specific error, not the whole question.
-    4. For matching questions: mark each individual match right or wrong, don't give 0 for the
-       whole section if one match is wrong.
-    5. For true/false with corrections: the correction only matters if the student wrote F.
-       If they correctly identified it as false, check their correction for reasonableness.
-    6. NEVER mark a correct answer as wrong. When in doubt, re-check your own computation.
-       A false wrong is worse than a false right — it destroys student and teacher trust.
+    When grading math tests, quizzes, or worksheets, you MUST verify every answer by
+    actually computing it yourself. False wrongs destroy teacher trust in the tool.
+
+    VERIFICATION PROCEDURE (mandatory for every math question):
+    For each question, BEFORE checking the student's answer:
+    a) Read the question carefully.
+    b) Solve it yourself step by step.
+    c) Determine the correct answer.
+    d) THEN compare to what the student wrote.
+    e) Only mark wrong if the student's answer genuinely differs from yours.
+
+    TRUE/FALSE VERIFICATION (critical — most common source of false wrongs):
+    For each T/F statement, you MUST evaluate whether the statement is actually true or false:
+    - "x − 5 = 9 has solution x = 4" → Solve: x = 9 + 5 = 14. Statement says x = 4. FALSE.
+      If student wrote F, that is CORRECT. Do NOT mark it wrong.
+    - "Markup is the final selling price" → Markup = selling price minus cost, NOT the selling price itself. FALSE.
+      If student wrote F, that is CORRECT.
+    - "You can solve 4x = 20 by dividing by 4" → 4x/4 = 20/4, x = 5. Yes, dividing by 4 works. TRUE.
+      If student wrote T, that is CORRECT.
+    DO NOT assume T/F statements are true just because they sound plausible. VERIFY each one mathematically.
+
+    PATTERN RULES:
+    - "Starts at 4, increases by 5 each time" → sequence: 4, 9, 14, 19...
+      If n starts at 0: t = 5n + 4. If n starts at 1: t = 5(n-1) + 4 = 5n - 1.
+      Accept either convention. Verify by plugging in n=0 or n=1.
+    - ALWAYS check the student's rule by substituting values. If t=4n+5 gives n=0→5 (should be 4), it's WRONG.
+
+    GENERAL RULES:
+    1. "x = 7" and "7" are the SAME answer. "2/3" and "0.667" are the SAME answer.
+    2. Different valid solution methods that reach the same result are ALL correct.
+    3. Messy handwriting: if a digit COULD be the correct one, give benefit of the doubt.
+    4. For "show your work": award marks for correct method even if the final answer has a minor slip.
+    5. For matching: mark each match individually, don't zero the whole section for one error.
+    6. For T/F with corrections: if student correctly wrote F, check their correction for reasonableness.
+       The correction doesn't need to match the answer key exactly — just needs to be mathematically valid.
+    7. NEVER mark a correct answer as wrong. A false wrong is worse than a false right.
+    8. If you are unsure, re-compute. Then re-compute again. Get it right.
     - Do NOT collapse a clearly sectioned test into one generic overall comment.
 
     SECTION COMMENT RULE:
@@ -11618,7 +11638,16 @@ Tests and exams are often 2, 3, 4, or more pages long. Each student's test is a 
 - If you see a consistent pattern (e.g. every 4th page repeats the same title), that confirms the test length.
 - Do NOT mark a page as "new" just because it has printed text or questions. ONLY mark it "new" if the TITLE/HEADER matches the first page of the test exactly, suggesting it is page 1 of the next student's copy.
 
-KEY PRINCIPLE: For single-page worksheets, any page with a printed template is a new student. For multi-page tests, only the FIRST page of the test (with the main title) marks a new student — subsequent test pages are continuations even though they have printed content.
+KEY PRINCIPLE: For single-page worksheets, any page with a printed template is a new student. For multi-page tests, only the FIRST page of the test (with the main title and student name field) marks a new student — subsequent test pages are continuations even though they have printed content.
+
+CRITICAL DISTINCTION — test page 1 vs. later pages:
+- Page 1 of a test has: the TEST TITLE (e.g. "Math 7 Test"), a Name field, a Date field, and starts with Part A or the first section.
+- Pages 2, 3, 4+ of the same test have: SECTION HEADERS like "Part B", "Part C", "Part D", "Part E", "Part F" — but NO test title and NO name field at the top. These are ALWAYS continuations.
+- A page starting with "Part C: MULTIPLE CHOICE" or "Part F: WORD PROBLEMS" is a CONTINUATION, not a new student.
+- The ONLY reliable marker for a new student is the MAIN TEST TITLE at the top of the page (e.g. "Math 7 Test") along with a Name/Date field.
+
+MULTIPLE TEST VERSIONS:
+A batch may contain two or more versions of the same test (e.g. "Math 7 Test" and "Math 7 Test B"). Both are valid first-page markers for new students. Each version still has the same number of pages per student.
 
 For worksheets where the assignment says "use the other side" or "continue on back", expect that some students will have 2 scanned pages (front + back with extra writing) while others will have only 1 (front only, back is blank or not scanned).
 
