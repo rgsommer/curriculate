@@ -1413,7 +1413,7 @@ export default function BatchGrading({
     if (!results.length) return null;
 
     // CSV header
-    const headers = ["Student ID", "First Name", "Last Name", "Score", "Out Of", "Percentage", "Grade", "Ref Code", "Results Link"];
+    const headers = ["Student ID", "First Name", "Last Name", "Score", "Out Of", "Percentage", "Grade", "Comment"];
     const escCsv = (v) => {
       const s = String(v ?? "");
       return s.includes(",") || s.includes('"') || s.includes("\n")
@@ -1427,7 +1427,11 @@ export default function BatchGrading({
       const firstName = r.rosterFirstName || "";
       const lastName = r.rosterLastName || "";
       const sid = r.rosterStudentId || r.rosterEdsbyId || r.studentId || "";
-      const link = r.refCode ? `https://www.curriculate.net/results/${r.refCode}` : "";
+      // Comment: overall teacher comment + link to full feedback
+      let comment = (r.comment || "").replace(/\s+/g, " ").trim();
+      if (r.refCode) {
+        comment += (comment ? " " : "") + `For full feedback, check www.curriculate.net/results/${r.refCode}`;
+      }
       rows.push([
         escCsv(sid),
         escCsv(firstName),
@@ -1436,8 +1440,7 @@ export default function BatchGrading({
         escCsv(r.outOf),
         escCsv(r.pct != null ? `${r.pct}%` : ""),
         escCsv(r.letter),
-        escCsv(r.refCode || ""),
-        escCsv(link),
+        escCsv(comment),
       ].join(","));
     }
     return rows.join("\n");
