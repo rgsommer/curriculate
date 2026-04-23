@@ -775,6 +775,12 @@ export default function BatchGrading({
               const aiFront = lastIdx > 0 ? aiName.slice(0, lastIdx) : "";
               if (aiFront.length >= 3 && levenshtein(aiFront, first) <= 2) return true;
             }
+            // Fuzzy on first name only (AI read just a first name, no last name)
+            // e.g. "Anjita" → "Anjika" (distance 1)
+            if (first.length >= 4 && !aiName.includes(" ") && aiName.length <= first.length + 2) {
+              const maxDist = first.length >= 7 ? 2 : 1;
+              if (levenshtein(aiName, first) <= maxDist) return true;
+            }
             return false;
           });
         }
@@ -865,6 +871,72 @@ export default function BatchGrading({
               r.studentName = `${m.firstName} ${m.lastName}`.trim() || r.studentName;
             }
           }
+        }
+
+        // --- PASS 4: process-of-elimination for unnamed students ---
+        // After passes 1-3 we know which roster students are already matched.
+        // Any result still showing "Student N" (AI couldn't read the name) can
+        // be assigned if there's exactly one unmatched roster student left, or
+        // if the batch class is known, from the remaining students in that class.
+        const matchedIds = new Set();
+        for (const r of batchResults) {
+          if (r.rosterEdsbyId) matchedIds.add(r.rosterEdsbyId);
+          if (r.rosterStudentId) matchedIds.add(r.rosterStudentId);
+        }
+
+        // Build list of roster students not yet claimed
+        const batchClassStudents = allRosterStudents.filter((s) => {
+          if (batchClass && s.className !== batchClass) return false;
+          if (s.edsbyId && matchedIds.has(s.edsbyId)) return false;
+          if (s.studentId && matchedIds.has(s.studentId)) return false;
+          return true;
+        });
+
+        function assignRoster(r, m) {
+          r.rosterFirstName = m.firstName;
+          r.rosterLastName = m.lastName;
+          r.rosterEdsbyId = m.edsbyId;
+          r.rosterStudentId = m.studentId;
+          r.rosterClassName = m.className;
+          r.studentName = `${m.firstName} ${m.lastName}`.trim() || r.studentName;
+          if (m.edsbyId) matchedIds.add(m.edsbyId);
+          if (m.studentId) matchedIds.add(m.studentId);
+        }
+
+        function remaining() {
+          return batchClassStudents.filter((s) => {
+            if (s.edsbyId && matchedIds.has(s.edsbyId)) return false;
+            if (s.studentId && matchedIds.has(s.studentId)) return false;
+            return true;
+          });
+        }
+
+        function stillUnnamed() {
+          return batchResults.filter(
+            (r) => !r.error && !r.rosterEdsbyId && (!r.studentName || /^Student \d+$/i.test(r.studentName))
+          );
+        }
+
+        // First try partial name hints on unnamed students
+        for (const r of stillUnnamed()) {
+          const raw = norm(r.studentName || "");
+          if (!raw || raw.startsWith("student")) continue;
+          const rem = remaining();
+          const partialMatches = rem.filter((s) => {
+            const first = norm(s.firstName);
+            const last = norm(s.lastName);
+            if (last.length >= 3 && raw.includes(last)) return true;
+            if (first.length >= 3 && raw.includes(first)) return true;
+            return false;
+          });
+          if (partialMatches.length === 1) assignRoster(r, partialMatches[0]);
+        }
+
+        // Final sweep: if exactly 1 unnamed and 1 unclaimed, must be them
+        const finalUnnamed = stillUnnamed();
+        const finalRemaining = remaining();
+        if (finalUnnamed.length === 1 && finalRemaining.length === 1) {
+          assignRoster(finalUnnamed[0], finalRemaining[0]);
         }
 
         setResults([...batchResults]);
