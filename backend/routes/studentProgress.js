@@ -525,6 +525,47 @@ router.get("/teacher/students", teacherAuth, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------
+ *  GET /debug (temporary diagnostic — remove after fixing)
+ * ------------------------------------------------------------------ */
+router.get("/debug", async (req, res) => {
+  try {
+    const email = (req.query.email || "").trim().toLowerCase();
+    const rosters = await ClassRoster.find(email ? { teacherEmail: email } : {}).lean();
+    const rosterInfo = rosters.map((r) => ({
+      className: r.className,
+      teacherEmail: r.teacherEmail,
+      studentCount: (r.students || []).length,
+      sampleStudents: (r.students || []).slice(0, 3).map((s) => ({
+        name: `${s.firstName} ${s.lastName}`,
+        studentId: s.studentId,
+        edsbyId: s.edsbyId,
+        last4: s.last4,
+      })),
+    }));
+
+    // Recent published results with meta.studentId
+    const recentResults = await PublishedResult.find({ "meta.source": "batch-grading" })
+      .sort({ createdAt: -1 }).limit(10).lean();
+    const resultInfo = recentResults.map((r) => ({
+      code: r.code,
+      studentId: r.meta?.studentId,
+      studentName: r.meta?.studentName,
+      title: r.meta?.title,
+      createdAt: r.createdAt,
+    }));
+
+    return res.json({
+      rosters: rosterInfo,
+      recentResults: resultInfo,
+      totalRosters: rosters.length,
+      totalResults: recentResults.length,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message });
+  }
+});
+
+/* ------------------------------------------------------------------
  *  GET /stats (admin)
  * ------------------------------------------------------------------ */
 router.get("/stats", async (req, res) => {
