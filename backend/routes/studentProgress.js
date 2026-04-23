@@ -71,6 +71,39 @@ router.post("/login", async (req, res) => {
 
     const fullId = rosterStudent.studentId || rosterStudent.edsbyId || sid;
 
+    // Teacher access: if the email matches the teacher who uploaded the roster,
+    // grant access immediately without adding teacher email to notification list
+    if (email === rosterInfo.teacherEmail.toLowerCase()) {
+      // Ensure account exists (create if first access)
+      let account = await StudentAccount.findOne({
+        $or: [{ studentId: fullId }, { last4: rosterStudent.last4 }, { edsbyId: rosterStudent.edsbyId }].filter(q => Object.values(q).some(Boolean)),
+      });
+      if (!account) {
+        account = await StudentAccount.create({
+          studentId: fullId,
+          last4: rosterStudent.last4 || fullId.slice(-4),
+          emails: [],
+          firstName: rosterStudent.firstName,
+          lastName: rosterStudent.lastName,
+          edsbyId: rosterStudent.edsbyId || "",
+          teacherEmail: rosterInfo.teacherEmail,
+          className: rosterInfo.className,
+        });
+      }
+      const token = signStudentToken(fullId);
+      return res.json({
+        ok: true,
+        token,
+        student: {
+          firstName: account.firstName,
+          lastName: account.lastName,
+          className: account.className,
+          emailCount: (account.emails || []).length,
+        },
+        isTeacher: true,
+      });
+    }
+
     // Find or create account
     let account = await StudentAccount.findOne({
       $or: [{ studentId: fullId }, { last4: rosterStudent.last4 }, { edsbyId: rosterStudent.edsbyId }].filter(q => Object.values(q).some(Boolean)),
