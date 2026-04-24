@@ -194,6 +194,40 @@ router.put("/:code", createLimiter, async (req, res) => {
 });
 
 /**
+ * PATCH /results/:code
+ * Body: { studentId?, studentName?, className?, teacherEmail? }
+ * Updates specific meta fields without replacing the full payload.
+ */
+router.patch("/:code", createLimiter, async (req, res) => {
+  try {
+    const code = normalizeCode(req.params.code);
+    if (code.length !== 5) return res.status(404).json({ error: "Code not found." });
+    const { studentId, studentName, className, teacherEmail } = req.body || {};
+
+    const setFields = {};
+    if (studentId != null) setFields["meta.studentId"] = studentId;
+    if (studentName != null) setFields["meta.studentName"] = studentName;
+    if (className != null) setFields["meta.className"] = className;
+    if (teacherEmail != null) setFields["meta.teacherEmail"] = teacherEmail;
+
+    if (!Object.keys(setFields).length) return res.status(400).json({ error: "Nothing to update." });
+
+    const doc = await PublishedResult.findOneAndUpdate(
+      { code },
+      { $set: setFields },
+      { new: true }
+    );
+    if (!doc) return res.status(404).json({ error: "Code not found." });
+
+    fireGradeNotify(code, doc.meta, doc.payload);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("PATCH /results/:code error:", err);
+    return res.status(500).json({ error: "Server error." });
+  }
+});
+
+/**
  * POST /results/feedback
  * Body: { role: "student"|"parent", message: string, refCode?: string }
  * Saves feedback from students/parents viewing results

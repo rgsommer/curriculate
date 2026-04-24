@@ -102,6 +102,7 @@ const VOICE_OVERRIDE_VALUE_KEY = "curriculate_grading_voice_override_value_v1";
 const STRICTNESS_KEY = "curriculate_strictness_bias_v1";
 const SESSION_ID_KEY = "curriculate_session_id_v1";
 const ANON_ID_KEY = "curriculate_anon_id_v1";
+const TEACHER_EMAIL_KEY = "curriculate_report_email";
 
 const DEFAULT_MAX_W = 1800;
 const DEFAULT_QUALITY = 0.85;
@@ -1171,6 +1172,19 @@ export default function GradingPage() {
       return loadLS(SUBJECT_KEY, "");
     });
 
+    // ── Teacher email + roster (shared across all modes) ──
+    const [teacherEmail, setTeacherEmail] = useState(() => {
+      if (typeof window === "undefined") return "";
+      try { return localStorage.getItem(TEACHER_EMAIL_KEY) || ""; } catch { return ""; }
+    });
+    const [rosterClasses, setRosterClasses] = useState([]);
+    const [rosterLoading, setRosterLoading] = useState(false);
+
+    // Persist teacher email
+    useEffect(() => {
+      if (teacherEmail) try { localStorage.setItem(TEACHER_EMAIL_KEY, teacherEmail); } catch {}
+    }, [teacherEmail]);
+
     // Input mode: photo vs paste vs batch
     const [inputMode, setInputMode] = useState("photo"); // "photo" | "paste" | "batch" | "video" | "audio"
     
@@ -1421,10 +1435,56 @@ export default function GradingPage() {
       return `${backendBase.replace(/\/$/, "")}/grading`;
     }, [backendBase]);
 
+    // Load rosters when email is set
+    useEffect(() => {
+      if (!teacherEmail || !teacherEmail.includes("@") || !gradingUrl) { setRosterClasses([]); return; }
+      const rosterBase = gradingUrl.replace(/\/grading$/, "/class-roster");
+      setRosterLoading(true);
+      fetch(`${rosterBase}/list?teacherEmail=${encodeURIComponent(teacherEmail)}`)
+        .then((r) => r.ok ? r.json() : { rosters: [] })
+        .then((data) => setRosterClasses(data.rosters || []))
+        .catch(() => {})
+        .finally(() => setRosterLoading(false));
+    }, [teacherEmail, gradingUrl]);
+
     const resultsCreateUrl = useMemo(() => {
       if (!backendBase) return "";
       return `${backendBase.replace(/\/$/, "")}/results`;
     }, [backendBase]);
+
+    // ── Simple roster name matcher for single-photo results ──
+    function matchStudentToRoster(name) {
+      if (!name || !rosterClasses.length) return null;
+      const norm = (s) => (s || "").toLowerCase().replace(/[^a-z]/g, "");
+      const aiNorm = norm(name);
+      if (!aiNorm) return null;
+      const aiParts = name.trim().toLowerCase().split(/\s+/);
+      let best = null;
+      let bestScore = 0;
+      for (const rc of rosterClasses) {
+        for (const s of (rc.students || [])) {
+          const fn = norm(s.firstName);
+          const ln = norm(s.lastName);
+          const full = fn + ln;
+          let score = 0;
+          // Exact full match
+          if (aiNorm === full) score = 100;
+          // First + last parts match
+          else if (aiParts.length >= 2 && norm(aiParts[0]) === fn && norm(aiParts[aiParts.length - 1]) === ln) score = 90;
+          // Last + first (reversed)
+          else if (aiParts.length >= 2 && norm(aiParts[0]) === ln && norm(aiParts[aiParts.length - 1]) === fn) score = 85;
+          // First name only match
+          else if (aiParts.some((p) => norm(p) === fn) && fn.length >= 3) score = 50;
+          // Partial contains
+          else if (full.includes(aiNorm) || aiNorm.includes(full)) score = 40;
+          if (score > bestScore) {
+            bestScore = score;
+            best = { ...s, className: rc.className, rosterId: rc.id };
+          }
+        }
+      }
+      return bestScore >= 40 ? best : null;
+    }
 
     async function publishResultToPortal({ payload, meta }) {
       if (!resultsCreateUrl) throw new Error("Missing NEXT_PUBLIC_BACKEND_URL (results endpoint).");
@@ -1583,6 +1643,8 @@ export default function GradingPage() {
     const captureTapTimerRef = useRef(null);
     const [detectedStudentName, setDetectedStudentName] = useState("");
     const [studentNameEdited, setStudentNameEdited] = useState(false);
+    const [matchedRosterStudent, setMatchedRosterStudent] = useState(null); // { firstName, lastName, studentId, edsbyId, className }
+    const [selectedClassName, setSelectedClassName] = useState(""); // manually chosen class
 
     useEffect(() => {
       return () => {
@@ -1594,12 +1656,42 @@ export default function GradingPage() {
       const aiName = String(assessment?.student_name || "").trim();
       if (!studentNameEdited && aiName) {
         setDetectedStudentName(aiName);
+        // Auto-match against roster
+        const match = matchStudentToRoster(aiName);
+        if (match) {
+          setMatchedRosterStudent(match);
+          setSelectedClassName(match.className || "");
+        } else {
+          setMatchedRosterStudent(null);
+        }
       }
-      // If you want it blank when none detected:
       if (!studentNameEdited && !aiName) {
         setDetectedStudentName("");
+        setMatchedRosterStudent(null);
       }
-    }, [assessment?.student_name, studentNameEdited]);
+    }, [assessment?.student_name, studentNameEdited, rosterClasses]);
+
+    // Update published result when teacher changes student/class assignment
+    useEffect(() => {
+      if (!refCode || !resultsCreateUrl) return;
+      const sid = matchedRosterStudent?.studentId || matchedRosterStudent?.edsbyId || null;
+      const sName = matchedRosterStudent
+        ? `${matchedRosterStudent.firstName} ${matchedRosterStudent.lastName}`.trim()
+        : (detectedStudentName || "").trim() || null;
+      const cls = selectedClassName || matchedRosterStudent?.className || null;
+      if (!sid && !sName) return;
+      // Fire-and-forget PATCH to update meta
+      fetch(`${resultsCreateUrl}/${refCode}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: sid,
+          studentName: sName,
+          className: cls,
+          teacherEmail: teacherEmail || undefined,
+        }),
+      }).catch(() => {});
+    }, [matchedRosterStudent, selectedClassName, refCode]);
 
     async function compressPhotosForSubmission(photosToUse, profile) {
       const { maxWidth, quality } = profile;
@@ -1987,6 +2079,8 @@ export default function GradingPage() {
       setWorkInput("");
       setDetectedStudentName("");
       setStudentNameEdited(false);
+      setMatchedRosterStudent(null);
+      setSelectedClassName("");
 
       if (voice === "iep_supportive") {
         const restore = prevVoiceBeforeIepRef.current || loadLS(VOICE_KEY, "warm");
@@ -2320,6 +2414,12 @@ export default function GradingPage() {
                   source: "grading-auto",
                   gradeBand,
                   capturedCount: photosRef.current?.length || undefined,
+                  studentName: matchedRosterStudent
+                    ? `${matchedRosterStudent.firstName} ${matchedRosterStudent.lastName}`.trim()
+                    : (detectedStudentName || "").trim() || undefined,
+                  studentId: matchedRosterStudent?.studentId || matchedRosterStudent?.edsbyId || undefined,
+                  className: selectedClassName || matchedRosterStudent?.className || undefined,
+                  teacherEmail: teacherEmail || undefined,
                 },
               });
               const newCode = String(pub.code || "").toUpperCase();
@@ -3112,6 +3212,37 @@ export default function GradingPage() {
             }
           }
         `}</style>
+        {/* ── Teacher email (optional, for roster linking) ── */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+          padding: "6px 12px", marginBottom: 8,
+          background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0",
+        }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 200 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", opacity: 0.7 }}>Email</span>
+            <input
+              type="email"
+              placeholder="Optional — links class rosters to results"
+              value={teacherEmail}
+              onChange={(e) => setTeacherEmail(e.target.value)}
+              style={{
+                flex: 1, padding: "5px 10px", borderRadius: 8,
+                border: "1px solid #cbd5e1", fontSize: 13,
+                background: "#fff", minWidth: 160,
+              }}
+            />
+          </label>
+          {rosterLoading && <span style={{ fontSize: 11, color: "#94a3b8" }}>Loading...</span>}
+          {!rosterLoading && rosterClasses.length > 0 && (
+            <span style={{ fontSize: 11, color: "#16a34a", fontWeight: 600 }}>
+              {rosterClasses.length} class{rosterClasses.length !== 1 ? "es" : ""} linked
+            </span>
+          )}
+          {!rosterLoading && teacherEmail && teacherEmail.includes("@") && rosterClasses.length === 0 && (
+            <span style={{ fontSize: 11, color: "#94a3b8" }}>No rosters yet</span>
+          )}
+        </div>
+
         <div className="grading-grid" style={styles.grid}>
           {/* CAMERA CARD */}
           <div style={styles.card}>
@@ -3209,6 +3340,9 @@ export default function GradingPage() {
                 ""
               }
               answerKeyOverride={(stickyAnswerKeyText || "").trim() || ""}
+              teacherEmail={teacherEmail}
+              rosterClasses={rosterClasses}
+              setRosterClasses={setRosterClasses}
               onClose={() => setInputMode("photo")}
             />
           ) : (
@@ -3977,6 +4111,97 @@ export default function GradingPage() {
                 )}
               </div>
             </div>
+
+            {/* ── Student name + class (roster linking) ── */}
+            {assessment && rosterClasses.length > 0 && (
+              <div style={{
+                display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center",
+              }}>
+                {/* Student name — dropdown from roster or free text */}
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <select
+                    value={matchedRosterStudent ? `${matchedRosterStudent.firstName}|${matchedRosterStudent.lastName}|${matchedRosterStudent.studentId || matchedRosterStudent.edsbyId || ""}` : "__custom"}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "__custom" || val === "__none") {
+                        setMatchedRosterStudent(null);
+                        if (val === "__none") { setDetectedStudentName(""); setStudentNameEdited(false); }
+                        return;
+                      }
+                      const [fn, ln, sid] = val.split("|");
+                      // Find matching roster student
+                      for (const rc of rosterClasses) {
+                        if (selectedClassName && rc.className !== selectedClassName) continue;
+                        const found = (rc.students || []).find((s) =>
+                          s.firstName === fn && s.lastName === ln && (s.studentId || s.edsbyId || "") === sid
+                        );
+                        if (found) {
+                          setMatchedRosterStudent({ ...found, className: rc.className, rosterId: rc.id });
+                          setDetectedStudentName(`${fn} ${ln}`.trim());
+                          setStudentNameEdited(true);
+                          setSelectedClassName(rc.className);
+                          break;
+                        }
+                      }
+                    }}
+                    style={{
+                      width: "100%", padding: "6px 10px", borderRadius: 8,
+                      border: "1px solid #cbd5e1", fontSize: 13, background: "#fff",
+                    }}
+                  >
+                    <option value="__none">— Select student —</option>
+                    {(() => {
+                      // Filter roster students by selected class if set
+                      const students = [];
+                      for (const rc of rosterClasses) {
+                        if (selectedClassName && rc.className !== selectedClassName) continue;
+                        for (const s of (rc.students || [])) {
+                          students.push({ ...s, className: rc.className });
+                        }
+                      }
+                      students.sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`));
+                      return students.map((s) => (
+                        <option key={`${s.firstName}|${s.lastName}|${s.studentId || s.edsbyId || ""}`}
+                          value={`${s.firstName}|${s.lastName}|${s.studentId || s.edsbyId || ""}`}>
+                          {s.firstName} {s.lastName}
+                        </option>
+                      ));
+                    })()}
+                    {detectedStudentName && !matchedRosterStudent && (
+                      <option value="__custom">{detectedStudentName} (not matched)</option>
+                    )}
+                  </select>
+                </div>
+
+                {/* Class dropdown */}
+                {rosterClasses.length > 1 && (
+                  <div style={{ minWidth: 140 }}>
+                    <select
+                      value={selectedClassName}
+                      onChange={(e) => {
+                        setSelectedClassName(e.target.value);
+                        setMatchedRosterStudent(null); // reset student when class changes
+                      }}
+                      style={{
+                        width: "100%", padding: "6px 10px", borderRadius: 8,
+                        border: "1px solid #cbd5e1", fontSize: 13, background: "#fff",
+                      }}
+                    >
+                      <option value="">All classes</option>
+                      {[...rosterClasses].sort((a, b) => a.className.localeCompare(b.className)).map((rc) => (
+                        <option key={rc.id} value={rc.className}>{rc.className}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {matchedRosterStudent && (
+                  <span style={{ fontSize: 11, color: "#16a34a", fontWeight: 600, whiteSpace: "nowrap" }}>
+                    ✓ Linked
+                  </span>
+                )}
+              </div>
+            )}
 
             {voice === "iep_supportive" && (
               <div
@@ -5164,13 +5389,13 @@ const styles = {
     gap: 12,
     padding: "12px 12px",
     borderRadius: 12,
-    border: "1px solid rgba(217,119,6,0.25)",
-    background: "linear-gradient(135deg, rgba(254,243,199,0.7), rgba(255,251,235,0.7))",
+    border: "1px solid #e2e8f0",
+    background: "#fff",
     cursor: "pointer",
   },
 
   rubricBarOpen: {
-    background: "linear-gradient(135deg, rgba(254,243,199,0.9), rgba(255,251,235,0.9))",
+    background: "#fff",
   },
 
   rubricBarActive: {

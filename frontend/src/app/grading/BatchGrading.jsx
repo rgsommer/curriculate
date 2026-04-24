@@ -297,6 +297,9 @@ export default function BatchGrading({
   voiceMode,
   rubricOverride,
   answerKeyOverride,
+  teacherEmail: parentTeacherEmail,
+  rosterClasses: parentRosterClasses,
+  setRosterClasses: parentSetRosterClasses,
   onClose,
 }) {
   // Preload jsPDF + qrcode CDN scripts as soon as batch mode opens
@@ -336,7 +339,9 @@ export default function BatchGrading({
   const [manualRosterText, setManualRosterText] = useState("");
   const [manualClassName, setManualClassName] = useState("");
   const [manualRosterPreview, setManualRosterPreview] = useState(null); // [{firstName, lastName, studentId}]
-  const [rosterClasses, setRosterClasses] = useState([]); // [{id, className, studentCount, students, sourceFile}]
+  const [localRosterClasses, localSetRosterClasses] = useState([]); // fallback if no parent props
+  const rosterClasses = parentRosterClasses || localRosterClasses;
+  const setRosterClasses = parentSetRosterClasses || localSetRosterClasses;
   const [rosterUploading, setRosterUploading] = useState(false);
   const [rosterLoading, setRosterLoading] = useState(false);
   const rosterFileRef = useRef(null);
@@ -1887,10 +1892,11 @@ export default function BatchGrading({
   }, [results, classSummary, teacherAnalysis, pdfName, rubricOverride, rosterClasses]);
 
   // ---------- Email summary (rich HTML) ----------
-  const [emailTo, setEmailTo] = useState("");
+  const [emailTo, setEmailTo] = useState(parentTeacherEmail || "");
   useEffect(() => {
+    if (parentTeacherEmail) { setEmailTo(parentTeacherEmail); return; }
     try { const saved = localStorage.getItem("curriculate_report_email"); if (saved) setEmailTo(saved); } catch {}
-  }, []);
+  }, [parentTeacherEmail]);
   useEffect(() => { if (emailTo) try { localStorage.setItem("curriculate_report_email", emailTo); } catch {} }, [emailTo]);
   const [showEmailPrompt, setShowEmailPrompt] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
@@ -2168,9 +2174,10 @@ export default function BatchGrading({
   const [regradingIndex, setRegradingIndex] = useState(null); // index of student being re-graded
   const [studentBias, setStudentBias] = useState({}); // { [index]: number } per-student strictness bias
 
-  // Load roster on mount (if teacher email is saved)
+  // Load roster on mount (skip if parent already provides rosters)
   useEffect(() => {
-    const email = (() => { try { return localStorage.getItem("curriculate_report_email") || ""; } catch { return ""; } })();
+    if (parentRosterClasses) return; // parent handles roster loading
+    const email = parentTeacherEmail || (() => { try { return localStorage.getItem("curriculate_report_email") || ""; } catch { return ""; } })();
     if (!email || !email.includes("@")) return;
     const rosterBase = gradingUrl.replace(/\/grading$/, "/class-roster");
     setRosterLoading(true);
@@ -2179,16 +2186,16 @@ export default function BatchGrading({
       .then(data => setRosterClasses(data.rosters || []))
       .catch(() => {})
       .finally(() => setRosterLoading(false));
-  }, [gradingUrl]);
+  }, [gradingUrl, parentRosterClasses, parentTeacherEmail]);
 
   const handleRosterUpload = useCallback(async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     e.target.value = "";
 
-    const email = (() => { try { return localStorage.getItem("curriculate_report_email") || ""; } catch { return ""; } })();
+    const email = parentTeacherEmail || (() => { try { return localStorage.getItem("curriculate_report_email") || ""; } catch { return ""; } })();
     if (!email || !email.includes("@")) {
-      alert("Please set your email address in the email field first, then upload your Edsby CSV.");
+      alert("Please set your email address in the email field above first, then upload your Edsby CSV.");
       return;
     }
 
@@ -2254,9 +2261,9 @@ export default function BatchGrading({
   // Save manual roster to backend
   const saveManualRoster = useCallback(async () => {
     if (!manualRosterPreview || !manualRosterPreview.length) return;
-    const email = localStorage.getItem("curriculate_teacher_email") || "";
-    if (!email) {
-      alert("Teacher email not found. Please grade at least one paper first.");
+    const email = parentTeacherEmail || (() => { try { return localStorage.getItem("curriculate_report_email") || ""; } catch { return ""; } })();
+    if (!email || !email.includes("@")) {
+      alert("Please set your email address in the email field above first.");
       return;
     }
     setRosterUploading(true);
