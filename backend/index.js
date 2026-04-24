@@ -9099,6 +9099,14 @@ function buildRubricInstructions({
       return "";
     })()}
 
+    MULTIPLE CHOICE & SHORT ANSWER ACCURACY:
+    When grading multiple choice or selected-response questions, you MUST verify your own answer before marking a student wrong.
+    - If the student's selected answer is a valid correct response, mark it correct — even if a different option also looks correct.
+    - Do NOT assume there is only one correct answer. Many MC questions (especially in math and science) have multiple valid options.
+    - MATH SPECIFIC: Be precise with terminology. An "expression" (e.g. 4x - 2) is NOT the same as an "equation" (e.g. x = 7). A "rate of change" in t = an + b is 'a', not 'b' ('b' is the initial value/zero term). Verify definitions before marking.
+    - If you are unsure whether the student's answer is correct, give the student the benefit of the doubt and mark it correct.
+    - When listing incorrect answers in feedback, double-check that your "correct" answer is actually correct. Getting this wrong destroys student trust.
+
     ${(() => {
       if (!subjectArea) return "";
       const subjectNotes = {

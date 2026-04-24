@@ -43,22 +43,42 @@ router.post("/", createLimiter, async (req, res) => {
 
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    // Dedup: if we have a studentId and title, update the existing result
-    // instead of creating a duplicate (teacher re-grading the same assignment)
+    // Dedup: find an existing result for the same student + assignment and overwrite it.
+    // Priority: match by title (if set), fallback to subject + assessmentType.
+    // Always picks the most recent match to avoid overwriting the wrong one.
     const studentId = meta?.studentId;
     const title = (meta?.title || "").trim();
-    if (studentId && title) {
-      const existing = await PublishedResult.findOne({
-        "meta.studentId": studentId,
-        "meta.title": title,
-      });
+    const subject = (meta?.subject || "").trim();
+    const assessmentType = (meta?.assessmentType || "").trim();
+
+    if (studentId) {
+      let existing = null;
+
+      // Primary: match by studentId + title (when title is explicitly set)
+      if (title) {
+        existing = await PublishedResult.findOne({
+          "meta.studentId": studentId,
+          "meta.title": title,
+        }).sort({ createdAt: -1 });
+      }
+
+      // Fallback: match by studentId + subject + assessmentType (when title is empty)
+      if (!existing && !title && (subject || assessmentType)) {
+        const fallbackQuery = { "meta.studentId": studentId };
+        // Only match results that also have no/empty title
+        fallbackQuery["meta.title"] = { $in: ["", null] };
+        if (subject) fallbackQuery["meta.subject"] = subject;
+        if (assessmentType) fallbackQuery["meta.assessmentType"] = assessmentType;
+        existing = await PublishedResult.findOne(fallbackQuery).sort({ createdAt: -1 });
+      }
+
       if (existing) {
         existing.payload = payload;
         existing.meta = meta;
         existing.teacherId = teacherId || existing.teacherId;
         existing.sessionId = sessionId || existing.sessionId;
         existing.expiresAt = expiresAt;
-        existing.createdAt = new Date(); // refresh timestamp so it sorts as newest
+        existing.createdAt = new Date();
         existing.viewCount = 0;
         existing.lastViewedAt = null;
         await existing.save();
