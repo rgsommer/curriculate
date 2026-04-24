@@ -42,13 +42,20 @@ function subjectPrefix(name) {
   return s.replace(/\d+[a-z]?$/, "");
 }
 
-function subjectColor(subj) {
-  // FNV-1a hash on the subject prefix so all classes in the same subject
-  // share a color (GEO8A, GEO8B, GEO8C → all the same)
+// Build a collision-free color map: deduplicate by subject prefix, sort,
+// then assign colors round-robin so no two subject areas share a color.
+function buildSubjectColorMap(allNames) {
+  const prefixes = [...new Set(allNames.map(subjectPrefix).filter(Boolean))].sort();
+  const map = {};
+  prefixes.forEach((p, i) => { map[p] = SUBJECT_COLORS[i % SUBJECT_COLORS.length]; });
+  return map;
+}
+
+function subjectColor(subj, colorMap) {
   const prefix = subjectPrefix(subj) || (subj || "").toLowerCase().trim();
-  let h = 0x811c9dc5;
-  for (let i = 0; i < prefix.length; i++) { h ^= prefix.charCodeAt(i); h = (h * 0x01000193) >>> 0; }
-  return SUBJECT_COLORS[h % SUBJECT_COLORS.length];
+  if (colorMap && colorMap[prefix]) return colorMap[prefix];
+  // Fallback for subjects not in the map
+  return SUBJECT_COLORS[0];
 }
 
 function gradeColor(letter) {
@@ -742,12 +749,13 @@ export default function ProgressPage() {
             }
 
             // Multiple classes — collapsible sections
+            const classColorMap = buildSubjectColorMap(classNames);
             return classNames.map((cls) => {
               const students = byClass[cls];
               const classAvgs = students.filter((s) => s.avg != null).map((s) => s.avg);
               const classAvg = classAvgs.length ? Math.round(classAvgs.reduce((a, b) => a + b, 0) / classAvgs.length) : null;
               const isOpen = expandedClasses[cls] === true; // default collapsed
-              const cc = subjectColor(cls);
+              const cc = subjectColor(cls, classColorMap);
 
               return (
                 <div key={cls} style={{ marginBottom: 8 }}>
@@ -1401,6 +1409,7 @@ export default function ProgressPage() {
 
               // Stable sorted list of all subjects for consistent color assignment
               const allSubjects = [...new Set(results.map((r) => r.subject || "General"))].sort();
+              const subjColorMap = buildSubjectColorMap(allSubjects);
 
               // Only one year and one subject — flat list, no bars
               const totalSubjects = allSubjects.length;
@@ -1457,7 +1466,7 @@ export default function ProgressPage() {
                             const subjAvg = calcAvg(items);
                             const subjKey = `${year}|${subj}`;
                             const isOpen = expandedSubjects[subjKey] !== false; // default open
-                            const sc = subjectColor(subj);
+                            const sc = subjectColor(subj, subjColorMap);
 
                             return (
                               <div key={subjKey} style={{ margin: years.length > 1 ? "4px 8px" : "0 0 6px" }}>
