@@ -3343,6 +3343,7 @@ export default function GradingPage() {
               }
               answerKeyOverride={(stickyAnswerKeyText || "").trim() || ""}
               teacherEmail={teacherEmail}
+              setTeacherEmail={setTeacherEmail}
               rosterClasses={rosterClasses}
               setRosterClasses={setRosterClasses}
               onClose={() => setInputMode("photo")}

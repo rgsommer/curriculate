@@ -298,6 +298,7 @@ export default function BatchGrading({
   rubricOverride,
   answerKeyOverride,
   teacherEmail: parentTeacherEmail,
+  setTeacherEmail: parentSetTeacherEmail,
   rosterClasses: parentRosterClasses,
   setRosterClasses: parentSetRosterClasses,
   onClose,
@@ -2190,6 +2191,93 @@ export default function BatchGrading({
       .finally(() => setRosterLoading(false));
   }, [gradingUrl, parentRosterClasses, parentTeacherEmail]);
 
+  // Re-run roster matching when rosters arrive after grading is done
+  // (e.g. teacher enters email in Email Summary prompt on a new device)
+  useEffect(() => {
+    if (!rosterClasses.length || !results.length || grading) return;
+    // Check if results already have roster matches
+    const hasMatches = results.some((r) => r.rosterEdsbyId || r.rosterStudentId || r.rosterFirstName);
+    if (hasMatches) return;
+
+    const norm = (s) => (s || "").toLowerCase().replace(/[^a-z]/g, "").trim();
+    const allRosterStudents = [];
+    for (const rc of rosterClasses) {
+      for (const s of (rc.students || [])) {
+        allRosterStudents.push({ ...s, className: rc.className, rosterId: rc.id });
+      }
+    }
+    if (!allRosterStudents.length) return;
+
+    let changed = false;
+    const rosterVotes = {};
+    const updated = results.map((r) => {
+      if (r.error || !r.studentName) return r;
+      const aiName = norm(r.studentName);
+      if (!aiName || aiName.startsWith("student")) return r;
+      const aiParts = r.studentName.trim().toLowerCase().split(/\s+/);
+
+      for (const s of allRosterStudents) {
+        const fn = norm(s.firstName);
+        const ln = norm(s.lastName);
+        const full = fn + ln;
+        const fullReversed = ln + fn;
+        let matched = false;
+        if (aiName === full || aiName === fullReversed) matched = true;
+        else if (aiParts.length >= 2 && norm(aiParts[0]) === fn && norm(aiParts[aiParts.length - 1]) === ln) matched = true;
+        else if (aiParts.length >= 2 && norm(aiParts[0]) === ln && norm(aiParts[aiParts.length - 1]) === fn) matched = true;
+        else if (aiParts.some((p) => norm(p) === fn) && fn.length >= 3) matched = true;
+        if (matched) {
+          changed = true;
+          rosterVotes[s.rosterId] = (rosterVotes[s.rosterId] || 0) + 1;
+          return {
+            ...r,
+            rosterFirstName: s.firstName,
+            rosterLastName: s.lastName,
+            rosterEdsbyId: s.edsbyId,
+            rosterStudentId: s.studentId,
+            rosterClassName: s.className,
+            rosterRosterId: s.rosterId,
+          };
+        }
+      }
+      return r;
+    });
+
+    if (!changed) return;
+
+    // Determine detected class from votes
+    let bestRid = null;
+    let bestVotes = 0;
+    for (const [rid, count] of Object.entries(rosterVotes)) {
+      if (count > bestVotes) { bestVotes = count; bestRid = rid; }
+    }
+    const detectedRc = rosterClasses.find((rc) => rc.id === bestRid);
+    if (detectedRc) {
+      setDetectedBatchClass(detectedRc.className);
+      setDetectedBatchRosterId(bestRid);
+    }
+
+    setResults(updated);
+
+    // Update published results with roster IDs
+    if (resultsUrl) {
+      for (const r of updated) {
+        if (r.error || !r.refCode) continue;
+        const sid = r.rosterStudentId || r.rosterEdsbyId || null;
+        if (!sid && !r.rosterFirstName) continue;
+        fetch(`${resultsUrl.replace(/\/$/, "")}/${r.refCode}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            studentId: sid,
+            studentName: r.rosterFirstName ? `${r.rosterFirstName} ${r.rosterLastName || ""}`.trim() : (r.studentName || null),
+            className: r.rosterClassName || "",
+          }),
+        }).catch(() => {});
+      }
+    }
+  }, [rosterClasses, results.length, grading]);
+
   const handleRosterUpload = useCallback(async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -2917,7 +3005,11 @@ export default function BatchGrading({
                 <input
                   type="email"
                   value={emailTo}
-                  onChange={(e) => setEmailTo(e.target.value)}
+                  onChange={(e) => {
+                    setEmailTo(e.target.value);
+                    // Sync to parent so rosters auto-load for this email
+                    if (parentSetTeacherEmail) parentSetTeacherEmail(e.target.value);
+                  }}
                   placeholder="recipient@school.ca"
                   onKeyDown={(e) => { if (e.key === "Enter") sendEmail(); }}
                   style={{

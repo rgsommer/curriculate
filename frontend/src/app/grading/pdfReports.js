@@ -447,8 +447,21 @@ export async function buildStripsPdf(results, { title } = {}) {
   }
 
   // Pre-measure each card to determine row heights
+  // Derive a short assignment description from available info
+  function assignmentLabel(r) {
+    if (title) return title;
+    const parts = [];
+    if (r.subject) parts.push(r.subject);
+    if (r.assessmentType && r.assessmentType !== r.subject) parts.push(r.assessmentType);
+    if (parts.length) return parts.join(" — ");
+    return "";
+  }
+
   function measureCard(r) {
     let h = CARD_PAD;
+    // Assignment label
+    const label = assignmentLabel(r);
+    if (label) h += 10;
     // Name line
     h += 13;
     // Score line
@@ -499,6 +512,17 @@ export async function buildStripsPdf(results, { title } = {}) {
     }
 
     const textW = hasQr ? INNER_W - QR_SIZE - 6 : INNER_W;
+
+    // Assignment label (e.g. "Math — Quiz" or teacher-entered title)
+    const label = assignmentLabel(r);
+    if (label) {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(7);
+      doc.setTextColor(100, 100, 100);
+      doc.text(clamp(label, 30), x + CARD_PAD, cy + 7);
+      doc.setTextColor(0, 0, 0);
+      cy += 10;
+    }
 
     // Name
     doc.setFont("helvetica", "bold");
