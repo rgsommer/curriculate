@@ -77,44 +77,18 @@ router.post("/", createLimiter, async (req, res) => {
 
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    // Dedup: find an existing result for the same student + assignment and overwrite it.
-    // Priority: 1) studentId + pdfName (same source file = same assignment)
-    //           2) studentId + title (explicit title match)
-    //           3) studentId + subject + assessmentType (fallback when title empty)
-    // Always picks the most recent match to avoid overwriting the wrong one.
+    // Dedup: only match by studentId + pdfName (same source PDF = same assignment).
+    // Title and subject are NOT reliable dedup keys — multiple different assignments
+    // can share the same title (e.g. several "Geo Journal" entries).
+    // For single-photo mode there is no pdfName, so each submission is unique.
     const studentId = meta?.studentId;
-    const title = (meta?.title || "").trim();
-    const subject = (meta?.subject || "").trim();
-    const assessmentType = (meta?.assessmentType || "").trim();
     const pdfName = (meta?.pdfName || "").trim();
 
-    if (studentId) {
-      let existing = null;
-
-      // Primary: match by studentId + pdfName (same source PDF = same assignment)
-      if (pdfName) {
-        existing = await PublishedResult.findOne({
-          "meta.studentId": studentId,
-          "meta.pdfName": pdfName,
-        }).sort({ createdAt: -1 });
-      }
-
-      // Secondary: match by studentId + title (when title is explicitly set)
-      if (!existing && title) {
-        existing = await PublishedResult.findOne({
-          "meta.studentId": studentId,
-          "meta.title": title,
-        }).sort({ createdAt: -1 });
-      }
-
-      // Fallback: match by studentId + subject + assessmentType (when title is empty)
-      if (!existing && !title && (subject || assessmentType)) {
-        const fallbackQuery = { "meta.studentId": studentId };
-        fallbackQuery["meta.title"] = { $in: ["", null] };
-        if (subject) fallbackQuery["meta.subject"] = subject;
-        if (assessmentType) fallbackQuery["meta.assessmentType"] = assessmentType;
-        existing = await PublishedResult.findOne(fallbackQuery).sort({ createdAt: -1 });
-      }
+    if (studentId && pdfName) {
+      const existing = await PublishedResult.findOne({
+        "meta.studentId": studentId,
+        "meta.pdfName": pdfName,
+      }).sort({ createdAt: -1 });
 
       if (existing) {
         existing.payload = payload;

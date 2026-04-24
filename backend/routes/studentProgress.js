@@ -1092,6 +1092,67 @@ router.post("/teacher/bulk-delete", teacherAuth, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------
+ *  POST /teacher/dedup
+ *  Finds and removes duplicate results for the teacher's roster students.
+ *  Duplicates are identified ONLY by same studentId + pdfName (source PDF).
+ *  Title/subject are NOT used — multiple assignments can share the same
+ *  title (e.g. several "Geo Journal" entries that are different journals).
+ *  Keeps the most recent result in each group and deletes the rest.
+ *  Results without pdfName (e.g. single-photo mode) are never touched.
+ * ------------------------------------------------------------------ */
+router.post("/teacher/dedup", teacherAuth, async (req, res) => {
+  try {
+    const rosters = await ClassRoster.find({ teacherEmail: req.teacherEmail }).lean();
+    const studentIds = new Set();
+    for (const r of rosters) {
+      for (const s of r.students || []) {
+        if (s.studentId) studentIds.add(s.studentId);
+        if (s.edsbyId) studentIds.add(s.edsbyId);
+      }
+    }
+    if (studentIds.size === 0) return res.json({ ok: true, removed: 0, groups: 0 });
+
+    // Fetch only results that have a pdfName (batch mode), newest first
+    const allResults = await PublishedResult.find({
+      "meta.studentId": { $in: [...studentIds] },
+      "meta.pdfName": { $exists: true, $ne: "" },
+    }).sort({ createdAt: -1 }).lean();
+
+    // Group by studentId + pdfName
+    const groups = {};
+    for (const r of allResults) {
+      const sid = r.meta?.studentId || "";
+      const pdfName = (r.meta?.pdfName || "").trim();
+      if (!pdfName) continue;
+      const key = `${sid}||${pdfName}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(r);
+    }
+
+    // Find groups with more than one result — delete all but the newest
+    const toDelete = [];
+    let dupGroups = 0;
+    for (const [, results] of Object.entries(groups)) {
+      if (results.length <= 1) continue;
+      dupGroups++;
+      for (let i = 1; i < results.length; i++) {
+        toDelete.push(results[i]._id);
+      }
+    }
+
+    if (toDelete.length > 0) {
+      await PublishedResult.deleteMany({ _id: { $in: toDelete } });
+    }
+
+    console.log(`[teacher-dedup] ${req.teacherEmail}: found ${dupGroups} duplicate groups, removed ${toDelete.length} older entries`);
+    return res.json({ ok: true, removed: toDelete.length, groups: dupGroups });
+  } catch (err) {
+    console.error("POST /teacher/dedup error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to remove duplicates." });
+  }
+});
+
+/* ------------------------------------------------------------------
  *  DELETE /teacher/result/:code
  *  Teacher deletes a single published result by its ref code.
  *  Verifies the result belongs to one of the teacher's roster students.

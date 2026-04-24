@@ -11069,6 +11069,9 @@ function buildRubricInstructions({
           // --- student ID number (handwritten on paper) ---
           student_id: { type: ["string", "null"] },
 
+          // --- assignment title detected from paper ---
+          detected_title: { type: ["string", "null"] },
+
           // --- integrity flags ---
           ai_suspected_cheating: { type: ["string", "null"] },
           copying_suspected: { type: ["string", "null"] },
@@ -11129,6 +11132,7 @@ function buildRubricInstructions({
           "sections",
           "student_name",
           "student_id",
+          "detected_title",
           "ai_suspected_cheating",
           "copying_suspected",
           "rubricText",
@@ -11177,9 +11181,11 @@ function buildRubricInstructions({
         - inferred_subject: one of [Math, English, History, Geography, Science, Computer Science, Bible, Drama, Speech, Music, Art, French, Other]
         - inferred_assessment_type: one of [Essay, Test, Quiz, Homework, Project, Poster, Worksheet, Speech, Performance, Presentation, Journal, Code, Other]
         - inferred_grade_level: one of [3-5, 6-8, 9-10, 11+, Unknown]
+        - detected_title: the specific assignment title visible on the paper (e.g. "Journal Entry #3", "Chapter 5 Test", "Lab Report: Photosynthesis", "Business Plan Draft 2"). Read what the student wrote as the title/heading on their paper. If no title is visible, set to null.
 
         Rules:
         - Do NOT guess wildly. If unsure, use Other / Unknown.
+        - For detected_title, only report what is actually written on the paper. Do NOT invent or infer a title — use null if nothing is visible.
         - inferred_grade_level should usually match the provided grade band (${band}) unless the work clearly indicates otherwise.
 
         RUBRIC DETECTION (very important — check EVERY image):
@@ -12867,6 +12873,7 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
         },
         student_name: { type: ["string", "null"] },
         student_id: { type: ["string", "null"] },
+        detected_title: { type: ["string", "null"] },
         ai_suspected_cheating: { type: ["string", "null"] },
         copying_suspected: { type: ["string", "null"] },
         rubricText: { type: ["string", "null"], maxLength: 3500 },
@@ -12896,7 +12903,7 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
       required: [
         "response_format_detected", "inferred_subject", "inferred_assessment_type", "inferred_grade_level",
         "overall_score", "overall_out_of", "score_out_of_10", "final_score_out_of_10",
-        "deductions", "sections", "student_name", "student_id",
+        "deductions", "sections", "student_name", "student_id", "detected_title",
         "ai_suspected_cheating", "copying_suspected",
         "rubricText", "rubricConfidence", "rubricDetected",
         "answerKeyText", "answerKeyDetected", "answerKeyConfidence",

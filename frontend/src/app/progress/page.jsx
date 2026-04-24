@@ -197,6 +197,7 @@ export default function ProgressPage() {
   const [showBulkDelete, setShowBulkDelete] = useState(false);
   const [bulkDeleteTitle, setBulkDeleteTitle] = useState("");
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [deduping, setDeduping] = useState(false);
 
   // Expanded result details (KITA bars)
   const [expandedResult, setExpandedResult] = useState(null);
@@ -513,6 +514,46 @@ export default function ProgressPage() {
               style={{ fontSize: 12, color: "#dc2626", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
             >
               {showBulkDelete ? "Close delete" : "Delete assignments"}
+            </button>
+            <button
+              disabled={deduping}
+              onClick={async () => {
+                if (!confirm("Remove duplicate results from batch-graded PDFs? When the same PDF was graded multiple times, this keeps only the most recent result per student. Single-photo results are not affected. This cannot be undone.")) return;
+                setDeduping(true);
+                try {
+                  const r = await fetch(`${API}/student-progress/teacher/dedup`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                  });
+                  const data = await r.json();
+                  if (data.ok) {
+                    if (data.removed > 0) {
+                      setInfo(`Removed ${data.removed} duplicate${data.removed !== 1 ? "s" : ""} across ${data.groups} assignment${data.groups !== 1 ? "s" : ""}.`);
+                      // Refresh teacher data
+                      try {
+                        const r2 = await fetch(`${API}/student-progress/teacher/students`, {
+                          headers: { Authorization: `Bearer ${token}` },
+                        });
+                        const d2 = await r2.json();
+                        if (d2.students) setTeacherStudents(d2.students);
+                        if (d2.rosterStudents) setRosterStudents(d2.rosterStudents);
+                        if (d2.classNames) setTeacherClassNames(d2.classNames);
+                      } catch {}
+                    } else {
+                      setInfo("No duplicates found.");
+                    }
+                    setTimeout(() => setInfo(""), 4000);
+                  } else {
+                    setError(data.error || "Failed to remove duplicates.");
+                  }
+                } catch {
+                  setError("Failed to remove duplicates.");
+                }
+                setDeduping(false);
+              }}
+              style={{ fontSize: 12, color: "#9333ea", background: "none", border: "none", cursor: deduping ? "default" : "pointer", textDecoration: "underline", opacity: deduping ? 0.5 : 1 }}
+            >
+              {deduping ? "Removing..." : "Remove duplicates"}
             </button>
           </div>
           {showBulkRename && (

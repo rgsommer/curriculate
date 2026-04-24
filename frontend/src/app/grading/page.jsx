@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import BatchGrading from "./BatchGrading";
 import VideoGrading from "./VideoGrading";
 import AudioGrading from "./AudioGrading";
-import { buildResultsPdf, buildStripsPdf, sessionItemToResult, preloadPdfLibs } from "./pdfReports";
+import { buildResultsPdf, buildStripsPdf, sessionItemToResult, buildSessionEdsbyCsv, preloadPdfLibs } from "./pdfReports";
 
 /**
  * app/grading/page.jsx
@@ -2079,8 +2079,9 @@ export default function GradingPage() {
       setWorkInput("");
       setDetectedStudentName("");
       setStudentNameEdited(false);
-      setMatchedRosterStudent(null);
-      setSelectedClassName("");
+      // Keep matchedRosterStudent and selectedClassName — teacher likely
+      // wants to grade another assignment from the same student. They can
+      // change via dropdown if needed.
 
       if (voice === "iep_supportive") {
         const restore = prevVoiceBeforeIepRef.current || loadLS(VOICE_KEY, "warm");
@@ -2397,6 +2398,7 @@ export default function GradingPage() {
           // Auto-publish result to portal (or update existing ref code on resubmit)
           // Use closure refCode only if same student work (not new work)
           const reuseCode = !isNewWork && refCode ? refCode : "";
+          let activeCode = reuseCode; // tracks the code that ends up assigned
           try {
             const payloadText = buildFullTeacherPayloadText(norm.assessment, reuseCode, gradeBand, rubricOverride);
             if (reuseCode) {
@@ -2420,9 +2422,12 @@ export default function GradingPage() {
                   studentId: matchedRosterStudent?.studentId || matchedRosterStudent?.edsbyId || undefined,
                   className: selectedClassName || matchedRosterStudent?.className || undefined,
                   teacherEmail: teacherEmail || undefined,
+                  subject: norm.assessment?.subject || undefined,
+                  assessmentType: norm.assessment?.inferred_assessment_type || norm.assessment?.assessmentType || undefined,
                 },
               });
               const newCode = String(pub.code || "").toUpperCase();
+              activeCode = newCode;
               setRefCode(newCode);
               // Update the stored payload to include the ref code link
               if (newCode) {
@@ -2438,6 +2443,14 @@ export default function GradingPage() {
             }
           } catch (e) {
             console.warn("Auto-publish to /results failed:", e);
+          }
+
+          // Auto-add to session (with refCode + roster info so Email Reports
+          // includes matched IDs and correct student name for progress).
+          // If same refCode exists in session, replaces instead of appending.
+          {
+            const sessionPayload = buildFullTeacherPayloadText(norm.assessment, activeCode, gradeBand, rubricOverride);
+            logCurrentToSessionLocal(sessionPayload, activeCode, matchedRosterStudent);
           }
 
           // Auto-scroll to the response so teacher doesn't have to scroll manually
@@ -2532,7 +2545,7 @@ export default function GradingPage() {
       setRubricOverride("");
     }
 
-    function logCurrentToSessionLocal(formattedText) {
+    function logCurrentToSessionLocal(formattedText, codeOverride, rosterStudent) {
       if (!assessment) return;
 
       const entry = {
@@ -2542,7 +2555,18 @@ export default function GradingPage() {
         createdAt: Date.now(),
         assessment,
         formattedText: String(formattedText || "").trim(),
-        refCode: refCode || "",
+        refCode: codeOverride || refCode || "",
+        // Roster-matched student info (from dropdown selection) so session
+        // email PDFs show the correct name and carry IDs for progress.
+        rosterStudent: rosterStudent
+          ? {
+              firstName: rosterStudent.firstName || "",
+              lastName: rosterStudent.lastName || "",
+              studentId: rosterStudent.studentId || "",
+              edsbyId: rosterStudent.edsbyId || "",
+              className: rosterStudent.className || "",
+            }
+          : null,
       };
 
       setSessionItems((prev) => {
@@ -2821,12 +2845,21 @@ export default function GradingPage() {
         }
 
         const sendUrl = gradingUrl.replace(/\/grading$/, "/grading/send-email");
-        const payload = { to, subject: emailSubject, html: summaryHtml, pdfAttachments: [] };
+        const payload = { to, subject: emailSubject, html: summaryHtml, pdfAttachments: [], csvAttachments: [] };
         if (pdfBase64) {
           payload.pdfAttachments.push({ data: pdfBase64, filename: "session-reports.pdf" });
         }
         if (stripsBase64) {
           payload.pdfAttachments.push({ data: stripsBase64, filename: "session-strips.pdf" });
+        }
+
+        // Attach Edsby CSV if any session results have roster-matched student IDs
+        const csvText = buildSessionEdsbyCsv(results);
+        if (csvText) {
+          const csvBase64 = typeof btoa === "function"
+            ? btoa(unescape(encodeURIComponent(csvText)))
+            : Buffer.from(csvText, "utf-8").toString("base64");
+          payload.csvAttachments.push({ data: csvBase64, filename: "session-results.csv" });
         }
 
         const res = await fetch(sendUrl, {
@@ -2986,7 +3019,7 @@ export default function GradingPage() {
         setCopied(true);
         setCopiedFlash(true);
         window.setTimeout(() => setCopiedFlash(false), 1200);
-        logCurrentToSessionLocal(plainText);
+        logCurrentToSessionLocal(plainText, undefined, matchedRosterStudent);
       } catch (e) {
         // ✅ if copy failed, allow retry for this submission
         setCopyEnabled(true);
@@ -4119,9 +4152,10 @@ export default function GradingPage() {
             {assessment && rosterClasses.length > 0 && (
               <div style={{
                 display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center",
+                maxWidth: "100%",
               }}>
                 {/* Student name — dropdown from roster or free text */}
-                <div style={{ flex: 1, minWidth: 160 }}>
+                <div style={{ flex: 1, minWidth: 120, maxWidth: rosterClasses.length > 1 ? "60%" : "100%" }}>
                   <select
                     value={matchedRosterStudent ? `${matchedRosterStudent.firstName}|${matchedRosterStudent.lastName}|${matchedRosterStudent.studentId || matchedRosterStudent.edsbyId || ""}` : "__custom"}
                     onChange={(e) => {
@@ -4174,15 +4208,24 @@ export default function GradingPage() {
                         </option>
                       ));
                     })()}
-                    {detectedStudentName && !matchedRosterStudent && (
-                      <option value="__custom">{detectedStudentName} (not matched)</option>
-                    )}
+                    {detectedStudentName && !matchedRosterStudent && (() => {
+                      // Only show "(not matched)" if detected name doesn't match any roster student
+                      const dn = detectedStudentName.toLowerCase().trim();
+                      const alreadyInRoster = rosterClasses.some((rc) =>
+                        (rc.students || []).some((s) => {
+                          const full = `${s.firstName} ${s.lastName}`.toLowerCase().trim();
+                          return full === dn || s.firstName?.toLowerCase() === dn || s.lastName?.toLowerCase() === dn;
+                        })
+                      );
+                      if (alreadyInRoster) return null;
+                      return <option value="__custom">{detectedStudentName} (not matched)</option>;
+                    })()}
                   </select>
                 </div>
 
                 {/* Class dropdown */}
                 {rosterClasses.length > 1 && (
-                  <div style={{ minWidth: 140 }}>
+                  <div style={{ minWidth: 100, maxWidth: "38%" }}>
                     <select
                       value={selectedClassName}
                       onChange={(e) => {

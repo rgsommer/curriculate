@@ -644,6 +644,8 @@ export default function BatchGrading({
           sections: data.sections || null,
           subject: data.inferred_subject || "",
           assessmentType: data.inferred_assessment_type || "",
+          detectedTitle: data.detected_title || "",
+          pageImages: images,
           refCode: null,
           error: data.error ? (data.details ? `${data.error}: ${data.details}` : data.error) : null,
           raw: data,
@@ -663,7 +665,9 @@ export default function BatchGrading({
                   studentId: resultEntry.rosterStudentId || resultEntry.rosterEdsbyId || resultEntry.studentId || null,
                   subject: resultEntry.subject || "",
                   assessmentType: resultEntry.assessmentType || "",
-                  title: effectiveTitle || "",
+                  title: resultEntry.detectedTitle
+                    ? (effectiveTitle ? `${effectiveTitle} — ${resultEntry.detectedTitle}` : resultEntry.detectedTitle)
+                    : (effectiveTitle || ""),
                   pdfName: pdfName || "",
                   className: resultEntry.rosterClassName || "",
                 },
@@ -1060,19 +1064,29 @@ export default function BatchGrading({
         // --- PASS 4: process-of-elimination for unmatched students ---
         // After passes 1-3, try harder matching against only the remaining
         // unclaimed roster students. Smaller pool = more confident fuzzy matches.
-        const matchedIds = new Set();
+        // NOTE: a student can have multiple assignments in one batch (e.g. mixed
+        // stacks with several journals from the same student), so we track how
+        // many times each student is matched and only exclude when the count
+        // exceeds a reasonable threshold. For safety, allow up to 5 matches
+        // per student before excluding — if they appear more than that it's
+        // likely a false match.
+        const matchedCounts = {}; // { "name:first|last": count }
         for (const r of batchResults) {
-          if (r.rosterEdsbyId) matchedIds.add(r.rosterEdsbyId);
-          if (r.rosterStudentId) matchedIds.add(r.rosterStudentId);
-          if (r.rosterFirstName) matchedIds.add(`name:${(r.rosterFirstName||"").toLowerCase()}|${(r.rosterLastName||"").toLowerCase()}`);
+          if (!r.rosterFirstName) continue;
+          const nameKey = `name:${(r.rosterFirstName||"").toLowerCase()}|${(r.rosterLastName||"").toLowerCase()}`;
+          matchedCounts[nameKey] = (matchedCounts[nameKey] || 0) + 1;
+          if (r.rosterEdsbyId) matchedCounts[r.rosterEdsbyId] = (matchedCounts[r.rosterEdsbyId] || 0) + 1;
+          if (r.rosterStudentId) matchedCounts[r.rosterStudentId] = (matchedCounts[r.rosterStudentId] || 0) + 1;
         }
 
-        // Build list of roster students not yet claimed (from the detected roster)
+        const MAX_MATCHES_PER_STUDENT = 5;
+        // Build list of roster students not yet over-claimed (from the detected roster)
         const batchClassStudents = allRosterStudents.filter((s) => {
           if (batchRosterId && s.rosterId !== batchRosterId) return false;
-          if (s.edsbyId && matchedIds.has(s.edsbyId)) return false;
-          if (s.studentId && matchedIds.has(s.studentId)) return false;
-          if (matchedIds.has(`name:${(s.firstName||"").toLowerCase()}|${(s.lastName||"").toLowerCase()}`)) return false;
+          const nameKey = `name:${(s.firstName||"").toLowerCase()}|${(s.lastName||"").toLowerCase()}`;
+          if ((matchedCounts[nameKey] || 0) >= MAX_MATCHES_PER_STUDENT) return false;
+          if (s.edsbyId && (matchedCounts[s.edsbyId] || 0) >= MAX_MATCHES_PER_STUDENT) return false;
+          if (s.studentId && (matchedCounts[s.studentId] || 0) >= MAX_MATCHES_PER_STUDENT) return false;
           return true;
         });
 
@@ -1257,7 +1271,9 @@ export default function BatchGrading({
                     studentId: sid,
                     subject: r.subject || "",
                     assessmentType: r.assessmentType || "",
-                    title: effectiveTitle || "",
+                    title: r.detectedTitle
+                      ? (effectiveTitle ? `${effectiveTitle} — ${r.detectedTitle}` : r.detectedTitle)
+                      : (effectiveTitle || ""),
                     pdfName: pdfName || "",
                     className: r.rosterClassName || "",
                   },
@@ -1532,6 +1548,7 @@ export default function BatchGrading({
         sections: data.sections || null,
         subject: data.inferred_subject || "",
         assessmentType: data.inferred_assessment_type || "",
+        detectedTitle: data.detected_title || r.detectedTitle || "",
         error: data.error || null,
         raw: data,
       };
@@ -1560,7 +1577,9 @@ export default function BatchGrading({
                   studentId: updatedEntry.rosterStudentId || updatedEntry.rosterEdsbyId || updatedEntry.studentId || null,
                   subject: updatedEntry.subject || "",
                   assessmentType: updatedEntry.assessmentType || "",
-                  title: effectiveTitle || "",
+                  title: updatedEntry.detectedTitle
+                    ? (effectiveTitle ? `${effectiveTitle} — ${updatedEntry.detectedTitle}` : updatedEntry.detectedTitle)
+                    : (effectiveTitle || ""),
                   pdfName: pdfName || "",
                   className: updatedEntry.rosterClassName || "",
                 },
@@ -2123,40 +2142,34 @@ export default function BatchGrading({
   const [stripsPrinted, setStripsPrinted] = useState(false);
 
   // ---------- Manual name assignment ----------
-  // Returns roster students not yet matched to any result, filtered to the
-  // detected batch class so the dropdown shows the right group.
-  const unmatchedRosterStudents = useMemo(() => {
-    const matched = new Set();
-    for (const r of results) {
-      if (r.rosterEdsbyId) matched.add(r.rosterEdsbyId);
-      if (r.rosterStudentId) matched.add(r.rosterStudentId);
-      if (r.rosterFirstName) matched.add(`name:${(r.rosterFirstName||"").toLowerCase()}|${(r.rosterLastName||"").toLowerCase()}`);
-    }
-    const isMatched = (s) => {
-      if (s.edsbyId && matched.has(s.edsbyId)) return true;
-      if (s.studentId && matched.has(s.studentId)) return true;
-      if (matched.has(`name:${(s.firstName||"").toLowerCase()}|${(s.lastName||"").toLowerCase()}`)) return true;
-      return false;
-    };
+  // Returns all roster students from the detected batch class. Students are
+  // NOT excluded when already matched — a batch can contain multiple assignments
+  // from the same student (e.g. mixed stacks with several journals).
+  const availableRosterStudents = useMemo(() => {
     const all = [];
+    const seen = new Set();
     for (const rc of rosterClasses) {
       if (detectedBatchRosterId && rc.id !== detectedBatchRosterId) continue;
       for (const s of rc.students || []) {
-        if (isMatched(s)) continue;
+        const key = `${(s.firstName || "").toLowerCase()}|${(s.lastName || "").toLowerCase()}|${s.studentId || s.edsbyId || ""}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         all.push({ ...s, className: rc.className });
       }
     }
-    // Fallback: if filtering left nothing, show all unmatched
+    // Fallback: if filtering by batch roster left nothing, show all
     if (all.length === 0 && detectedBatchRosterId) {
       for (const rc of rosterClasses) {
         for (const s of rc.students || []) {
-          if (isMatched(s)) continue;
+          const key = `${(s.firstName || "").toLowerCase()}|${(s.lastName || "").toLowerCase()}|${s.studentId || s.edsbyId || ""}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
           all.push({ ...s, className: rc.className });
         }
       }
     }
     return all;
-  }, [results, rosterClasses, detectedBatchRosterId]);
+  }, [rosterClasses, detectedBatchRosterId]);
 
   const assignStudentName = useCallback((resultIndex, rosterStudent) => {
     setResults((prev) => {
@@ -2208,6 +2221,7 @@ export default function BatchGrading({
 
   // ---------- Expanded row ----------
   const [expandedIndex, setExpandedIndex] = useState(null);
+  const [previewIndex, setPreviewIndex] = useState(null); // index of result whose source images are shown
   const [regradingIndex, setRegradingIndex] = useState(null); // index of student being re-graded
   const [studentBias, setStudentBias] = useState({}); // { [index]: number } per-student strictness bias
 
@@ -3219,12 +3233,12 @@ export default function BatchGrading({
                               display: "flex", flexDirection: "column",
                             }}
                           >
-                            {unmatchedRosterStudents.length > 0 && (
+                            {availableRosterStudents.length > 0 && (
                               <div style={{ maxHeight: 220, overflowY: "auto", padding: "4px 0" }}>
                                 <div style={{ padding: "6px 12px", fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600, position: "sticky", top: 0, background: "#fff" }}>
-                                  Unmatched roster students
+                                  Roster students
                                 </div>
-                                {unmatchedRosterStudents.map((s, si) => (
+                                {availableRosterStudents.map((s, si) => (
                                   <div
                                     key={si}
                                     onClick={() => assignStudentName(r.index, s)}
@@ -3241,7 +3255,7 @@ export default function BatchGrading({
                                 ))}
                               </div>
                             )}
-                            <div style={{ borderTop: unmatchedRosterStudents.length ? "1px solid #e2e8f0" : "none", padding: "4px 0" }}>
+                            <div style={{ borderTop: availableRosterStudents.length ? "1px solid #e2e8f0" : "none", padding: "4px 0" }}>
                               <div style={{ padding: "6px 12px", fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600 }}>
                                 Type a name
                               </div>
@@ -3329,7 +3343,11 @@ export default function BatchGrading({
                           })()}
                         </td>
                       )}
-                      <td style={batchStyles.td}>{r.pages}</td>
+                      <td
+                        style={{ ...batchStyles.td, cursor: r.pageImages?.length ? "pointer" : "default", color: r.pageImages?.length ? "#2563eb" : undefined, textDecoration: r.pageImages?.length ? "underline" : "none" }}
+                        onClick={(e) => { e.stopPropagation(); if (r.pageImages?.length) setPreviewIndex(previewIndex === r.index ? null : r.index); }}
+                        title={r.pageImages?.length ? "Tap to preview source" : ""}
+                      >{r.pages}</td>
                       <td style={{ ...batchStyles.td, whiteSpace: "nowrap" }}>
                         {regradingIndex === r.index ? (
                           <span style={{ fontSize: 11, color: "#64748b" }}>grading…</span>
@@ -3441,7 +3459,10 @@ export default function BatchGrading({
                         {r.error ? (
                           <span style={{ color: "#dc2626" }}>Error: {r.error}</span>
                         ) : (
-                          r.comment.slice(0, 100)
+                          <>
+                            {r.detectedTitle && <span style={{ fontSize: 10, fontWeight: 700, color: "#7c3aed", marginRight: 6 }}>{r.detectedTitle}</span>}
+                            {r.comment.slice(0, r.detectedTitle ? 60 : 100)}
+                          </>
                         )}
                       </td>
                     </tr>
@@ -3750,6 +3771,57 @@ export default function BatchGrading({
             </table>
           </div>
 
+          {/* Inline source image preview */}
+          {previewIndex != null && (() => {
+            const pr = results.find((r) => r.index === previewIndex);
+            if (!pr?.pageImages?.length) return null;
+            return (
+              <div style={{
+                background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12,
+                padding: 14, marginBottom: 12, position: "relative",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#334155" }}>
+                    {pr.studentName} — p{pr.pages}{pr.detectedTitle ? ` — ${pr.detectedTitle}` : ""}
+                  </span>
+                  <button
+                    onClick={() => setPreviewIndex(null)}
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "#94a3b8", lineHeight: 1, padding: "0 4px" }}
+                    title="Close preview"
+                  >&times;</button>
+                </div>
+                <div style={{
+                  display: "flex", gap: 10, overflowX: "auto",
+                  justifyContent: pr.pageImages.length === 1 ? "center" : "flex-start",
+                }}>
+                  {pr.pageImages.map((img, pi) => (
+                    <img
+                      key={pi}
+                      src={img}
+                      alt={`Page ${pi + 1}`}
+                      style={{
+                        maxHeight: 420, maxWidth: pr.pageImages.length === 1 ? "100%" : "48%",
+                        borderRadius: 8, border: "1px solid #e2e8f0", objectFit: "contain",
+                        cursor: "zoom-in",
+                      }}
+                      onClick={() => {
+                        // Open in full-screen overlay for zoom
+                        const overlay = document.createElement("div");
+                        overlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;cursor:zoom-out;";
+                        const im = document.createElement("img");
+                        im.src = img;
+                        im.style.cssText = "max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;";
+                        overlay.appendChild(im);
+                        overlay.onclick = () => document.body.removeChild(overlay);
+                        document.body.appendChild(overlay);
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           {!grading && (
             <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
               <button
@@ -3764,6 +3836,7 @@ export default function BatchGrading({
                   setTeacherAnalysis("");
                   setDetectedGroups(null);
                   setExpandedIndex(null);
+                  setPreviewIndex(null);
                   pdfDocRef.current = null;
                   if (fileInputRef.current) fileInputRef.current.value = "";
                 }}

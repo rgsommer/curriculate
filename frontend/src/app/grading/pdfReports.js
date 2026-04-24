@@ -449,6 +449,11 @@ export async function buildStripsPdf(results, { title } = {}) {
   // Pre-measure each card to determine row heights
   // Derive a short assignment description from available info
   function assignmentLabel(r) {
+    // Per-paper title detected by AI (e.g. "Journal Entry #3") is most specific
+    if (r.detectedTitle) {
+      // Combine with batch title if available: "Geo Journal — Journal Entry #3"
+      return title ? `${title} — ${r.detectedTitle}` : r.detectedTitle;
+    }
     if (title) return title;
     const parts = [];
     if (r.subject) parts.push(r.subject);
@@ -618,6 +623,7 @@ export async function buildStripsPdf(results, { title } = {}) {
  */
 export function sessionItemToResult(item, index) {
   const a = item.assessment || {};
+  const r = item.rosterStudent || null; // roster-matched student info (if teacher selected from dropdown)
   const score = Number(a.overall_score);
   const outOf = Number(a.overall_out_of);
   const pct = Number.isFinite(score) && Number.isFinite(outOf) && outOf > 0
@@ -628,10 +634,14 @@ export function sessionItemToResult(item, index) {
     || (item.formattedText || "").match(/\bcode:\s*([A-Z0-9]{4,8})\b/i);
   const refCode = refMatch ? refMatch[1].toUpperCase() : null;
 
+  // Prefer roster-matched name over AI-detected name
+  const rosterName = r ? `${r.firstName} ${r.lastName}`.trim() : "";
+  const studentName = rosterName || a.student_name || `Student ${index}`;
+
   return {
     index,
-    studentName: a.student_name || `Student ${index}`,
-    nameConfirmed: false, // single-grade mode: only one AI pass, so never "confirmed"
+    studentName,
+    nameConfirmed: !!rosterName, // true if roster-matched (teacher confirmed)
     score: Number.isFinite(score) ? score : "?",
     outOf: Number.isFinite(outOf) ? outOf : "?",
     pct,
@@ -642,5 +652,73 @@ export function sessionItemToResult(item, index) {
     refCode,
     error: null,
     raw: a,
+    // Roster IDs for progress upload / Edsby export
+    studentId: r?.studentId || r?.edsbyId || "",
+    className: r?.className || "",
   };
+}
+
+/**
+ * Build an Edsby-compatible CSV string from session results.
+ * Same format as BatchGrading's buildEdsbyCsv:
+ *   Student ID, First Name, Last Name, Assessment Name, Date, Grade, Out Of, Comment
+ * Only includes rows that have a studentId (roster-matched).
+ * Returns null if no eligible rows.
+ */
+export function buildSessionEdsbyCsv(results, assessmentName = "Curriculate Grade") {
+  const escCsv = (v) => {
+    const s = String(v ?? "");
+    return s.includes(",") || s.includes('"') || s.includes("\n")
+      ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  const eligible = results.filter((r) => !r.error && r.studentId);
+  if (!eligible.length) return null;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const headers = ["Student ID", "First Name", "Last Name", "Assessment Name", "Date", "Grade", "Out Of", "Comment"];
+
+  // Find the most common denominator so outliers get converted to match
+  const denomCounts = {};
+  for (const r of eligible) {
+    const d = parseFloat(r.outOf);
+    if (d > 0) denomCounts[d] = (denomCounts[d] || 0) + 1;
+  }
+  let outOfNorm = 10;
+  let maxCount = 0;
+  for (const [d, count] of Object.entries(denomCounts)) {
+    if (count > maxCount) { maxCount = count; outOfNorm = parseFloat(d); }
+  }
+
+  const rows = [headers.map(escCsv).join(",")];
+  for (const r of eligible) {
+    // Split studentName back into first/last for CSV columns
+    const nameParts = (r.studentName || "").trim().split(/\s+/);
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.slice(1).join(" ") || "";
+
+    let comment = (r.comment || "").replace(/\s+/g, " ").trim();
+    if (r.refCode) {
+      comment += (comment ? " " : "") + `For detailed feedback, check www.curriculate.net/results/${r.refCode}`;
+      comment += ` For all results, check www.curriculate.net/progress`;
+    }
+
+    // Normalize score to common denominator
+    let grade = "";
+    const origOutOf = parseFloat(r.outOf) || 0;
+    if (origOutOf === outOfNorm) {
+      grade = String(r.score);
+    } else if (r.pct != null) {
+      grade = String(Math.round((r.pct / 100) * outOfNorm * 10) / 10);
+    } else if (r.score != null && origOutOf > 0) {
+      grade = String(Math.round((parseFloat(r.score) / origOutOf) * outOfNorm * 10) / 10);
+    }
+
+    rows.push([
+      escCsv(r.studentId), escCsv(firstName), escCsv(lastName),
+      escCsv(assessmentName), escCsv(today), escCsv(grade),
+      escCsv(outOfNorm), escCsv(comment),
+    ].join(","));
+  }
+  return rows.join("\n");
 }
