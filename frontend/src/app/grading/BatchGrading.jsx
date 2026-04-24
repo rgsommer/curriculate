@@ -334,6 +334,7 @@ export default function BatchGrading({
   const [editingNameIndex, setEditingNameIndex] = useState(null); // index of result whose name is being edited
   const [denomPrompt, setDenomPrompt] = useState(null); // { denoms: [56, 46], show: true } — mixed denominator prompt
   const [detectedBatchClass, setDetectedBatchClass] = useState(null); // class name detected from roster matching
+  const classChangeCountRef = useRef(0); // tracks manual class changes to offer bulk update
   const [detectedBatchRosterId, setDetectedBatchRosterId] = useState(null); // roster ID detected from matching
   const [showRoster, setShowRoster] = useState(false);
   const [showManualRoster, setShowManualRoster] = useState(false);
@@ -2830,6 +2831,7 @@ export default function BatchGrading({
                 setCsvExported(false);
                 setReportsPrinted(false);
                 setStripsPrinted(false);
+                classChangeCountRef.current = 0;
               }}
               style={{ ...batchStyles.ghostBtn, marginLeft: 10 }}
               type="button"
@@ -3255,13 +3257,28 @@ export default function BatchGrading({
                             value={r.rosterClassName || ""}
                             onChange={(e) => {
                               const newClass = e.target.value;
+                              classChangeCountRef.current += 1;
+
+                              if (classChangeCountRef.current >= 2) {
+                                // After 2 manual changes, offer to change all
+                                const changeAll = window.confirm(
+                                  `Change all students in this batch to ${newClass}?`
+                                );
+                                if (changeAll) {
+                                  setResults((prev) => prev.map((x) => ({ ...x, rosterClassName: newClass })));
+                                  setDetectedBatchClass(newClass);
+                                  classChangeCountRef.current = 0;
+                                  return;
+                                }
+                              }
+
                               setResults((prev) => {
                                 const updated = [...prev];
                                 const item = updated.find((x) => x.index === r.index);
                                 if (item) item.rosterClassName = newClass;
                                 return updated;
                               });
-                            }}
+                            }
                             style={{
                               fontSize: 11, padding: "3px 4px",
                               border: isOutlier ? "1px solid rgba(217,119,6,0.5)" : "1px solid #e2e8f0",
