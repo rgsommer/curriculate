@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from "react";
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL || "";
 const TOKEN_KEY = "curriculate_student_token";
+const TEACHER_TOKEN_KEY = "curriculate_teacher_token";
 
 function letterGrade(pct) {
   if (pct >= 93) return "A";
@@ -95,12 +96,20 @@ export default function ProgressPage() {
   // Teacher → student drill-down (for back button)
   const [teacherToken, setTeacherToken] = useState(null);
 
+  // Expandable year/subject sections
+  const [expandedYears, setExpandedYears] = useState({});
+  const [expandedSubjects, setExpandedSubjects] = useState({});
+
   // Settings
   const [showSettings, setShowSettings] = useState(false);
   const [profileEmails, setProfileEmails] = useState([]);
 
   useEffect(() => {
     setMounted(true);
+    // Restore teacher token if we're in a drill-down
+    const savedTeacher = localStorage.getItem(TEACHER_TOKEN_KEY);
+    if (savedTeacher) setTeacherToken(savedTeacher);
+
     const saved = localStorage.getItem(TOKEN_KEY);
     if (saved) {
       // Decode JWT payload to determine token type
@@ -237,7 +246,9 @@ export default function ProgressPage() {
 
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TEACHER_TOKEN_KEY);
     setToken(null);
+    setTeacherToken(null);
     setStudent(null);
     setResults([]);
     setOverallAvg(null);
@@ -358,8 +369,9 @@ export default function ProgressPage() {
               key={ts.studentId}
               style={{ display: "flex", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}
               onClick={() => {
-                // Save current teacher token so we can come back
+                // Save current teacher token so we can come back (persists across refresh)
                 setTeacherToken(token);
+                localStorage.setItem(TEACHER_TOKEN_KEY, token);
                 setStudentId(ts.studentId);
                 // Trigger login for this student
                 apiCall("/login", { method: "POST", body: { studentId: ts.studentId, email } })
@@ -412,6 +424,7 @@ export default function ProgressPage() {
                 onClick={() => {
                   // Restore teacher token and go back to class overview
                   localStorage.setItem(TOKEN_KEY, teacherToken);
+                  localStorage.removeItem(TEACHER_TOKEN_KEY);
                   setToken(teacherToken);
                   setTeacherToken(null);
                   setStudent(null);
@@ -524,50 +537,160 @@ export default function ProgressPage() {
               </div>
             )}
 
-            {/* Results list */}
+            {/* Results grouped by year → subject */}
             <div style={{ fontSize: 16, fontWeight: 700, color: "#334155", marginBottom: 8, marginTop: 20 }}>Results</div>
             {results.length === 0 && (
               <div style={{ textAlign: "center", padding: 30, color: "#94a3b8", fontSize: 14 }}>
                 No grading results yet. Results will appear here after your teacher grades your work.
               </div>
             )}
-            {results.map((r) => (
-              <div key={r.code} style={s.resultRow}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>
-                    {r.title || r.subject || "Assignment"}
+            {(() => {
+              // Helper: render a single result row
+              const ResultRow = ({ r, flat }) => (
+                <div key={r.code} style={{ ...s.resultRow, ...(flat ? {} : { borderRadius: 0, margin: 0, borderBottom: "1px solid #f1f5f9" }) }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>
+                      {r.title || "Assignment"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#94a3b8" }}>
+                      {new Date(r.createdAt).toLocaleDateString()}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12, color: "#94a3b8" }}>
-                    {r.subject && <span>{r.subject} &middot; </span>}
-                    {new Date(r.createdAt).toLocaleDateString()}
+                  <div style={{ textAlign: "right", marginRight: 12 }}>
+                    {r.pct != null ? (
+                      <>
+                        <div style={{ fontWeight: 800, fontSize: 16, color: gradeColor(letterGrade(r.pct)) }}>
+                          {letterGrade(r.pct)}
+                        </div>
+                        <div style={{ fontSize: 12, color: "#64748b" }}>{r.score}/{r.outOf} ({r.pct}%)</div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 14, color: "#94a3b8" }}>--</div>
+                    )}
                   </div>
+                  <a href={`/results/${r.code}`} target="_blank" rel="noreferrer"
+                    style={{ fontSize: 11, fontWeight: 700, color: "#2563eb", textDecoration: "none", background: "#eff6ff", padding: "6px 10px", borderRadius: 8 }}>
+                    {r.code}
+                  </a>
                 </div>
-                <div style={{ textAlign: "right", marginRight: 12 }}>
-                  {r.pct != null ? (
-                    <>
-                      <div style={{ fontWeight: 800, fontSize: 16, color: gradeColor(letterGrade(r.pct)) }}>
-                        {letterGrade(r.pct)}
+              );
+
+              // Helper: compute average from result items
+              const calcAvg = (items) => {
+                const pcts = items.filter((r) => r.pct != null).map((r) => r.pct);
+                return pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
+              };
+
+              // Group by academic year (Sep–Aug) then subject
+              const byYear = {};
+              results.forEach((r) => {
+                const d = new Date(r.createdAt);
+                const m = d.getMonth(); // 0-based
+                const y = d.getFullYear();
+                // Academic year: Sep 2025 – Aug 2026 = "2025–2026"
+                const startYear = m >= 8 ? y : y - 1; // Aug (7) and earlier → previous academic year
+                const yearLabel = `${startYear}\u2013${startYear + 1}`;
+                const subj = r.subject || "General";
+                if (!byYear[yearLabel]) byYear[yearLabel] = {};
+                if (!byYear[yearLabel][subj]) byYear[yearLabel][subj] = [];
+                byYear[yearLabel][subj].push(r);
+              });
+              const years = Object.keys(byYear).sort().reverse(); // newest first
+
+              // Only one year and one subject — flat list, no bars
+              const totalSubjects = new Set(results.map((r) => r.subject || "General")).size;
+              if (years.length <= 1 && totalSubjects <= 1) {
+                return results.map((r) => <ResultRow key={r.code} r={r} flat />);
+              }
+
+              // Render year → subject hierarchy
+              return years.map((year) => {
+                const yearSubjects = byYear[year];
+                const subjKeys = Object.keys(yearSubjects).sort();
+                const allYearItems = subjKeys.flatMap((s) => yearSubjects[s]);
+                const yearAvg = calcAvg(allYearItems);
+                const yearOpen = expandedYears[year] !== false; // default open for current year
+                const isCurrentYear = year === years[0]; // most recent
+
+                return (
+                  <div key={year} style={{ marginBottom: 12 }}>
+                    {/* Year bar — only show if multiple years */}
+                    {years.length > 1 && (
+                      <button
+                        onClick={() => setExpandedYears((prev) => ({ ...prev, [year]: !yearOpen }))}
+                        style={{
+                          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                          padding: "12px 16px", background: "linear-gradient(135deg, #1e293b, #334155)",
+                          border: "none", borderRadius: yearOpen ? "12px 12px 0 0" : 12,
+                          cursor: "pointer", color: "#fff",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 11, transition: "transform 0.15s", transform: yearOpen ? "rotate(90deg)" : "rotate(0deg)", display: "inline-block" }}>&#9654;</span>
+                          <span style={{ fontWeight: 800, fontSize: 15 }}>{year}</span>
+                          <span style={{ fontSize: 12, opacity: 0.7 }}>{allYearItems.length} assignment{allYearItems.length !== 1 ? "s" : ""}</span>
+                        </div>
+                        {yearAvg != null && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ fontWeight: 800, fontSize: 15 }}>{yearAvg}%</span>
+                            <span style={{ fontWeight: 700, fontSize: 13, opacity: 0.85 }}>{letterGrade(yearAvg)}</span>
+                          </div>
+                        )}
+                      </button>
+                    )}
+
+                    {/* Year content */}
+                    {(yearOpen || years.length <= 1) && (
+                      <div style={years.length > 1 ? { border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 12px 12px", padding: "8px 0", overflow: "hidden" } : {}}>
+                        {subjKeys.length <= 1 ? (
+                          // Single subject in this year — no subject bar
+                          allYearItems.map((r) => <ResultRow key={r.code} r={r} flat />)
+                        ) : (
+                          // Multiple subjects — expandable bars
+                          subjKeys.map((subj) => {
+                            const items = yearSubjects[subj];
+                            const subjAvg = calcAvg(items);
+                            const subjKey = `${year}|${subj}`;
+                            const isOpen = expandedSubjects[subjKey] !== false; // default open
+
+                            return (
+                              <div key={subjKey} style={{ margin: years.length > 1 ? "4px 8px" : "0 0 6px" }}>
+                                <button
+                                  onClick={() => setExpandedSubjects((prev) => ({ ...prev, [subjKey]: !isOpen }))}
+                                  style={{
+                                    width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                                    padding: "10px 14px", background: "linear-gradient(135deg, #f8fafc, #f1f5f9)",
+                                    border: "1px solid #e2e8f0", borderRadius: isOpen ? "10px 10px 0 0" : 10,
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <span style={{ fontSize: 12, color: "#64748b", transition: "transform 0.15s", transform: isOpen ? "rotate(90deg)" : "rotate(0deg)", display: "inline-block" }}>&#9654;</span>
+                                    <span style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>{subj}</span>
+                                    <span style={{ fontSize: 12, color: "#94a3b8" }}>{items.length} assignment{items.length !== 1 ? "s" : ""}</span>
+                                  </div>
+                                  {subjAvg != null && (
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                      <span style={{ fontWeight: 800, fontSize: 14, color: gradeColor(letterGrade(subjAvg)) }}>{subjAvg}%</span>
+                                      <span style={{ fontWeight: 700, fontSize: 12, color: gradeColor(letterGrade(subjAvg)) }}>{letterGrade(subjAvg)}</span>
+                                    </div>
+                                  )}
+                                </button>
+                                {isOpen && (
+                                  <div style={{ border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
+                                    {items.map((r) => <ResultRow key={r.code} r={r} />)}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
                       </div>
-                      <div style={{ fontSize: 12, color: "#64748b" }}>{r.score}/{r.outOf} ({r.pct}%)</div>
-                    </>
-                  ) : (
-                    <div style={{ fontSize: 14, color: "#94a3b8" }}>--</div>
-                  )}
-                </div>
-                <a
-                  href={`/results/${r.code}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    fontSize: 11, fontWeight: 700, color: "#2563eb",
-                    textDecoration: "none", background: "#eff6ff",
-                    padding: "6px 10px", borderRadius: 8,
-                  }}
-                >
-                  {r.code}
-                </a>
-              </div>
-            ))}
+                    )}
+                  </div>
+                );
+              });
+            })()}
           </>
         )}
       </div>
