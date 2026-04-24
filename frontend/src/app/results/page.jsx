@@ -1149,7 +1149,10 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                   <div style={{ textAlign: "center", padding: "8px 0" }}>
                     <div style={{ fontSize: 20, marginBottom: 6 }}>&#10003;</div>
                     <div style={{ fontWeight: 700, fontSize: 14 }}>Thanks for your feedback!</div>
-                    <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>This helps us improve.</div>
+                    <div style={{ fontSize: 13, color: "#64748b", marginTop: 6, lineHeight: 1.5 }}>
+                      Your teacher will receive this feedback but will not be able to respond through Curriculate.
+                      If you need a reply, please contact your teacher directly.
+                    </div>
                   </div>
                 ) : reviewDone ? (
                   <div style={{ padding: "8px 0" }}>

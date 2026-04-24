@@ -592,12 +592,37 @@ router.get("/teacher/students", teacherAuth, async (req, res) => {
         if (!rc) {
           const matchesAnyRoster = classes.some((c) => resultMatchesClass(r, c.className));
           if (!matchesAnyRoster) {
-            // Use subject as virtual class name (capitalize it)
             const subj = (r.meta?.subject || "").trim();
             if (subj) {
-              const label = subj.charAt(0).toUpperCase() + subj.slice(1);
-              extraClasses.add(label);
-              classNames.add(label);
+              // Try to infer a specific class name from the assignment title
+              // e.g. "7A Math Journal" → MATH7A, "8B Science Test" → SCI8B
+              const title = (r.meta?.title || "").trim();
+              const sectionMatch = title.match(/\b(\d+[A-Za-z])\b/); // e.g. "7A", "8B", "9C"
+              const subjLower = subj.toLowerCase();
+              // Map subject to a short prefix (same as roster naming convention)
+              const prefixMap = {
+                math: "MATH", mathematics: "MATH",
+                geography: "GEO", geo: "GEO",
+                history: "HIST", hist: "HIST",
+                science: "SCI", sci: "SCI",
+                english: "ENG", ela: "ENG", "language arts": "ENG",
+                french: "FRE", français: "FRE",
+                "christian ethics": "CED", ethics: "CED", religion: "CED", bible: "CED",
+                music: "MUS", art: "ART", pe: "PE", "physical education": "PE",
+                technology: "TECH", tech: "TECH",
+              };
+              const prefix = prefixMap[subjLower];
+              if (sectionMatch && prefix) {
+                // Build class name like MATH7A, SCI8B
+                const label = `${prefix}${sectionMatch[1].toUpperCase()}`;
+                extraClasses.add(label);
+                classNames.add(label);
+              } else {
+                // Fallback: use capitalized subject
+                const label = subj.charAt(0).toUpperCase() + subj.slice(1);
+                extraClasses.add(label);
+                classNames.add(label);
+              }
             }
           }
         }
@@ -649,11 +674,31 @@ router.get("/teacher/students", teacherAuth, async (req, res) => {
         const vcResults = studentResults.filter((r) => {
           const rc = (r.meta?.className || "").trim();
           if (rc === vc) return true;
-          // Also match by subject label (e.g. vc="Math" matches subject "math")
           if (!rc) {
+            // Re-derive the label for this result using the same logic as above
+            const matchesAnyRoster = classes.some((c) => resultMatchesClass(r, c.className));
+            if (matchesAnyRoster) return false;
             const subj = (r.meta?.subject || "").trim();
-            const label = subj ? subj.charAt(0).toUpperCase() + subj.slice(1) : "";
-            return label === vc;
+            if (!subj) return false;
+            const title = (r.meta?.title || "").trim();
+            const sectionMatch = title.match(/\b(\d+[A-Za-z])\b/);
+            const subjLower = subj.toLowerCase();
+            const prefixMap = {
+              math: "MATH", mathematics: "MATH",
+              geography: "GEO", geo: "GEO",
+              history: "HIST", hist: "HIST",
+              science: "SCI", sci: "SCI",
+              english: "ENG", ela: "ENG", "language arts": "ENG",
+              french: "FRE", français: "FRE",
+              "christian ethics": "CED", ethics: "CED", religion: "CED", bible: "CED",
+              music: "MUS", art: "ART", pe: "PE", "physical education": "PE",
+              technology: "TECH", tech: "TECH",
+            };
+            const prefix = prefixMap[subjLower];
+            const derivedLabel = (sectionMatch && prefix)
+              ? `${prefix}${sectionMatch[1].toUpperCase()}`
+              : subj.charAt(0).toUpperCase() + subj.slice(1);
+            return derivedLabel === vc;
           }
           return false;
         });
