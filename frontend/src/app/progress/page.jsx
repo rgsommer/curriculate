@@ -335,6 +335,7 @@ export default function ProgressPage() {
       setToken(data.token);
       setTeacherStudents(data.students || []);
       if (data.rosterStudents) setRosterStudents(data.rosterStudents);
+      setInfo("");
       setView("teacher");
     } else {
       setError(data.error || "Invalid code.");
