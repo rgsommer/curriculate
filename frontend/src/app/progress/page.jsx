@@ -617,10 +617,23 @@ export default function ProgressPage() {
                 key={ts.studentId}
                 style={{ display: "flex", alignItems: "center", padding: "10px 14px", borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}
                 onClick={() => {
-                  setTeacherToken(token);
-                  localStorage.setItem(TEACHER_TOKEN_KEY, token);
+                  // Save the current teacher token before drilling down
+                  const currentToken = token;
+                  setTeacherToken(currentToken);
+                  localStorage.setItem(TEACHER_TOKEN_KEY, currentToken);
                   setStudentId(ts.studentId);
-                  apiCall("/login", { method: "POST", body: { studentId: ts.studentId, email } })
+                  // Reset stale student state immediately
+                  setStudent(null);
+                  setResults([]);
+                  setOverallAvg(null);
+                  setExpandedResult(null);
+                  // Use fetch directly to avoid stale token in apiCall closure
+                  fetch(`${API}/student-progress/login`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ studentId: ts.studentId, email }),
+                  })
+                    .then((r) => r.json())
                     .then((data) => {
                       if (data.ok && !data.needsCode && !data.isTeacherOverview) {
                         localStorage.setItem(TOKEN_KEY, data.token);
