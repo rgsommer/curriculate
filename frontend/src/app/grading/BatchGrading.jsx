@@ -1664,6 +1664,7 @@ export default function BatchGrading({
     a.download = `batch-grades-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+    setCsvExported(true);
   }, [results]);
 
   // ---------- Build summary text (shared by Copy + Email) ----------
@@ -1738,7 +1739,6 @@ export default function BatchGrading({
     try {
       await navigator.clipboard.writeText(buildSummaryText());
       setCopiedSummary(true);
-      setTimeout(() => setCopiedSummary(false), 2000);
     } catch {}
   }, [results, buildSummaryText]);
 
@@ -2038,7 +2038,6 @@ export default function BatchGrading({
       if (res.ok) {
         setEmailCopied(true);
         setShowEmailPrompt(false);
-        setTimeout(() => setEmailCopied(false), 4000);
 
         // Update published results with the email title (grading publishes before title is entered)
         const finalTitle = emailTitle.trim();
@@ -2084,6 +2083,9 @@ export default function BatchGrading({
   // ---------- Copy / email ack ----------
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [emailCopied, setEmailCopied] = useState(false);
+  const [csvExported, setCsvExported] = useState(false);
+  const [reportsPrinted, setReportsPrinted] = useState(false);
+  const [stripsPrinted, setStripsPrinted] = useState(false);
 
   // ---------- Manual name assignment ----------
   // Returns roster students not yet matched to any result, filtered to the
@@ -2819,7 +2821,7 @@ export default function BatchGrading({
                 {emailCopied ? "Sent ✓" : "Email Summary"}
               </button>
               <button onClick={exportCsv} style={batchStyles.smallBtn} type="button">
-                Export CSV
+                {csvExported ? "Exported ✓" : "Export CSV"}
               </button>
               <button
                 onClick={async () => {
@@ -2837,6 +2839,7 @@ export default function BatchGrading({
                     if (!b64) { alert("No results available."); return; }
                     const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
                     window.open(URL.createObjectURL(blob), "_blank");
+                    setReportsPrinted(true);
                   } catch (e) {
                     console.error("[batch] PDF report failed:", e?.message || e);
                     alert(`Failed to generate PDF: ${e?.message || "unknown error"}`);
@@ -2845,7 +2848,7 @@ export default function BatchGrading({
                 style={batchStyles.smallBtn}
                 type="button"
               >
-                Print Reports
+                {reportsPrinted ? "Printed ✓" : "Print Reports"}
               </button>
               <button
                 onClick={async () => {
@@ -2863,6 +2866,7 @@ export default function BatchGrading({
                     if (!b64) { alert("No results available."); return; }
                     const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
                     window.open(URL.createObjectURL(blob), "_blank");
+                    setStripsPrinted(true);
                   } catch (e) {
                     console.error("[batch] PDF strips failed:", e?.message || e);
                     alert(`Failed to generate PDF: ${e?.message || "unknown error"}`);
@@ -2871,7 +2875,7 @@ export default function BatchGrading({
                 style={batchStyles.smallBtn}
                 type="button"
               >
-                Print Strips
+                {stripsPrinted ? "Printed ✓" : "Print Strips"}
               </button>
               {!grading && (
                 <button
@@ -2881,6 +2885,11 @@ export default function BatchGrading({
                     setTeacherAnalysis("");
                     setDetectedGroups(null);
                     setExpandedIndex(null);
+                    setCopiedSummary(false);
+                    setEmailCopied(false);
+                    setCsvExported(false);
+                    setReportsPrinted(false);
+                    setStripsPrinted(false);
                   }}
                   style={batchStyles.smallBtn}
                   type="button"
