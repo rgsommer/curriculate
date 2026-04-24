@@ -4154,11 +4154,15 @@ export default function GradingPage() {
                   >
                     <option value="__none">— Select student —</option>
                     {(() => {
-                      // Filter roster students by selected class if set
+                      // Filter roster students by selected class, deduplicate across classes
                       const students = [];
+                      const seen = new Set();
                       for (const rc of rosterClasses) {
                         if (selectedClassName && rc.className !== selectedClassName) continue;
                         for (const s of (rc.students || [])) {
+                          const key = `${(s.firstName || "").toLowerCase()}|${(s.lastName || "").toLowerCase()}|${s.studentId || s.edsbyId || ""}`;
+                          if (seen.has(key)) continue;
+                          seen.add(key);
                           students.push({ ...s, className: rc.className });
                         }
                       }
