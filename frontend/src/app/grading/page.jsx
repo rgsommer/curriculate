@@ -3603,6 +3603,7 @@ export default function GradingPage() {
                 style={{
                   ...styles.rubricBar,
                   ...(showRubric ? styles.rubricBarOpen : null),
+                  ...((rubricOverride || "").trim() || (stickyRubricText || "").trim() || (stickyAnswerKeyText || "").trim() ? styles.rubricBarActive : null),
                 }}
                 aria-expanded={showRubric}
               >
@@ -5163,13 +5164,18 @@ const styles = {
     gap: 12,
     padding: "12px 12px",
     borderRadius: 12,
-    border: "1px solid rgba(15,23,42,0.12)",
-    background: "rgba(255,255,255,0.9)",
+    border: "1px solid rgba(217,119,6,0.25)",
+    background: "linear-gradient(135deg, rgba(254,243,199,0.7), rgba(255,251,235,0.7))",
     cursor: "pointer",
   },
 
   rubricBarOpen: {
-    background: "rgba(255,255,255,1)",
+    background: "linear-gradient(135deg, rgba(254,243,199,0.9), rgba(255,251,235,0.9))",
+  },
+
+  rubricBarActive: {
+    border: "1px solid rgba(217,119,6,0.4)",
+    background: "linear-gradient(135deg, rgba(254,233,160,0.6), rgba(254,243,199,0.6))",
   },
 
   chev: {

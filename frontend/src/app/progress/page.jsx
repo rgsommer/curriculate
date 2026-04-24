@@ -34,9 +34,13 @@ const SUBJECT_COLORS = [
   { bg: "linear-gradient(135deg, #cffafe, #ecfeff)", border: "#a5f3fc", text: "#155e75" },  // cyan
 ];
 
-function subjectColor(subj, allSubjects) {
-  const idx = allSubjects.indexOf(subj);
-  return SUBJECT_COLORS[idx >= 0 ? idx % SUBJECT_COLORS.length : 0];
+function subjectColor(subj) {
+  // FNV-1a hash — stable color per subject name regardless of what other
+  // subjects exist (Maths → rose, English → blue, Science → cyan, etc.)
+  let h = 0x811c9dc5;
+  const s = (subj || "").toLowerCase().trim();
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 0x01000193) >>> 0; }
+  return SUBJECT_COLORS[h % SUBJECT_COLORS.length];
 }
 
 function gradeColor(letter) {
@@ -698,7 +702,7 @@ export default function ProgressPage() {
               const classAvgs = students.filter((s) => s.avg != null).map((s) => s.avg);
               const classAvg = classAvgs.length ? Math.round(classAvgs.reduce((a, b) => a + b, 0) / classAvgs.length) : null;
               const isOpen = expandedClasses[cls] === true; // default collapsed
-              const cc = subjectColor(cls, classNames);
+              const cc = subjectColor(cls);
 
               return (
                 <div key={cls} style={{ marginBottom: 8 }}>
@@ -1332,7 +1336,7 @@ export default function ProgressPage() {
                             const subjAvg = calcAvg(items);
                             const subjKey = `${year}|${subj}`;
                             const isOpen = expandedSubjects[subjKey] !== false; // default open
-                            const sc = subjectColor(subj, allSubjects);
+                            const sc = subjectColor(subj);
 
                             return (
                               <div key={subjKey} style={{ margin: years.length > 1 ? "4px 8px" : "0 0 6px" }}>

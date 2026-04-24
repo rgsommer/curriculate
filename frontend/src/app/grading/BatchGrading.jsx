@@ -3142,11 +3142,11 @@ export default function BatchGrading({
                             style={{
                               fontSize: 11, padding: "3px 4px", border: "1px solid #e2e8f0",
                               borderRadius: 5, background: "#fff", color: "#334155",
-                              cursor: "pointer", maxWidth: 110, width: "100%",
+                              cursor: "pointer", minWidth: 90, width: "auto",
                             }}
                           >
                             <option value="">—</option>
-                            {rosterClasses.map((rc) => (
+                            {[...rosterClasses].sort((a, b) => a.className.localeCompare(b.className)).map((rc) => (
                               <option key={rc.id} value={rc.className}>{rc.className}</option>
                             ))}
                           </select>
