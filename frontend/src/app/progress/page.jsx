@@ -653,8 +653,6 @@ export default function ProgressPage() {
                   setOverallAvg(null);
                   setExpandedResult(null);
                   setReassigningCode(null);
-                  // Switch to dashboard immediately (shows loading state)
-                  setView("dashboard");
                   setLoading(true);
                   try {
                     const res = await fetch(`${API}/student-progress/login`, {
@@ -664,17 +662,17 @@ export default function ProgressPage() {
                     });
                     const data = await res.json();
                     if (data.ok && !data.needsCode && !data.isTeacherOverview) {
+                      // Set student token BEFORE switching view so the dashboard
+                      // useEffect picks up the correct token
                       localStorage.setItem(TOKEN_KEY, data.token);
                       setToken(data.token);
                       setStudent(data.student);
+                      setView("dashboard");
                     } else {
-                      // If login fails, go back to teacher view
-                      setView("teacher");
                       setError(data.error || "Failed to load student.");
                     }
                   } catch (err) {
                     console.error("[StudentRow] login error:", err);
-                    setView("teacher");
                     setError("Failed to load student. Please try again.");
                   }
                   setLoading(false);
