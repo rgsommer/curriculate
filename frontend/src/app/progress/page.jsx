@@ -99,8 +99,12 @@ export default function ProgressPage() {
   // Expandable year/subject sections (student dashboard)
   const [expandedYears, setExpandedYears] = useState({});
   const [expandedSubjects, setExpandedSubjects] = useState({});
+  // Inline title editing (teacher only)
+  const [editingTitleCode, setEditingTitleCode] = useState(null);
   // Expandable class sections (teacher overview)
   const [expandedClasses, setExpandedClasses] = useState({});
+  // Teacher's class names for re-classify dropdown
+  const [teacherClassNames, setTeacherClassNames] = useState([]);
 
   // Settings
   const [showSettings, setShowSettings] = useState(false);
@@ -161,6 +165,7 @@ export default function ProgressPage() {
           setError(data.error);
         } else {
           setTeacherStudents(data.students || []);
+          if (data.classNames) setTeacherClassNames(data.classNames);
         }
         setLoading(false);
       })
@@ -641,14 +646,79 @@ export default function ProgressPage() {
                 }
               };
 
+              const updateResult = async (code, updates) => {
+                if (!teacherToken) return;
+                try {
+                  const res = await fetch(`${API}/student-progress/teacher/result/${code}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${teacherToken}` },
+                    body: JSON.stringify(updates),
+                  });
+                  const data = await res.json();
+                  if (data.ok) {
+                    setResults((prev) => prev.map((r) => {
+                      if (r.code !== code) return r;
+                      const updated = { ...r };
+                      if (updates.title) updated.title = updates.title;
+                      if (updates.className != null) updated.className = updates.className;
+                      return updated;
+                    }));
+                  } else {
+                    setError(data.error || "Failed to update.");
+                  }
+                } catch {
+                  setError("Failed to update result.");
+                }
+                setEditingTitleCode(null);
+              };
+
               const ResultRow = ({ r, flat }) => (
                 <div key={r.code} style={{ ...s.resultRow, ...(flat ? {} : { borderRadius: 0, margin: 0, borderBottom: "1px solid #f1f5f9" }) }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>
-                      {r.title || "Assignment"}
-                    </div>
-                    <div style={{ fontSize: 12, color: "#94a3b8" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {editingTitleCode === r.code ? (
+                      <input
+                        autoFocus
+                        defaultValue={r.title || "Assignment"}
+                        onBlur={(e) => updateResult(r.code, { title: e.target.value.trim() || r.title })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") updateResult(r.code, { title: e.target.value.trim() || r.title });
+                          if (e.key === "Escape") setEditingTitleCode(null);
+                        }}
+                        style={{
+                          fontWeight: 700, fontSize: 14, color: "#1e293b", width: "100%",
+                          border: "1px solid #2563eb", borderRadius: 4, padding: "2px 6px",
+                          outline: "none", background: "#eff6ff",
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{ fontWeight: 700, fontSize: 14, color: "#1e293b", cursor: teacherToken ? "text" : "default" }}
+                        onClick={() => { if (teacherToken) setEditingTitleCode(r.code); }}
+                        title={teacherToken ? "Click to rename" : undefined}
+                      >
+                        {r.title || "Assignment"}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6 }}>
                       {new Date(r.createdAt).toLocaleDateString()}
+                      {teacherToken && teacherClassNames.length > 1 && (
+                        <select
+                          value={r.className || ""}
+                          onChange={(e) => updateResult(r.code, { className: e.target.value })}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            fontSize: 11, color: r.className ? "#2563eb" : "#94a3b8",
+                            border: "1px solid #e2e8f0", borderRadius: 4, padding: "1px 4px",
+                            background: "#fff", cursor: "pointer", outline: "none",
+                          }}
+                          title="Assign to a class"
+                        >
+                          <option value="">Auto</option>
+                          {teacherClassNames.map((cn) => (
+                            <option key={cn} value={cn}>{cn}</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   </div>
                   <div style={{ textAlign: "right", marginRight: 12 }}>

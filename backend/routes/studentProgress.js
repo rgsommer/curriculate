@@ -386,6 +386,7 @@ router.get("/results", studentAuth, async (req, res) => {
         subject,
         assessmentType,
         title,
+        className: meta.className || "",
         score,
         outOf,
         pct,
@@ -452,34 +453,31 @@ router.get("/teacher/students", teacherAuth, async (req, res) => {
     const email = req.teacherEmail;
     const teacherRosters = await ClassRoster.find({ teacherEmail: email }).lean();
 
+    // Build student → classes map (a student can be in multiple classes)
     const allStudentIds = new Set();
-    const studentMap = {};
+    const studentClasses = {}; // { studentId: [{ firstName, lastName, className }] }
+    const classNames = new Set();
     for (const r of teacherRosters) {
+      classNames.add(r.className || "");
       for (const s of r.students || []) {
         const fullId = s.studentId || s.edsbyId;
         if (!fullId) continue;
-        if (!allStudentIds.has(fullId)) {
-          allStudentIds.add(fullId);
-          studentMap[fullId] = { firstName: s.firstName, lastName: s.lastName, className: r.className };
-        }
+        allStudentIds.add(fullId);
+        if (!studentClasses[fullId]) studentClasses[fullId] = [];
+        studentClasses[fullId].push({
+          firstName: s.firstName, lastName: s.lastName, className: r.className || "",
+        });
       }
     }
 
     const idArray = [...allStudentIds];
-    console.log(`[teacher-overview] ${email}: ${teacherRosters.length} rosters, ${idArray.length} student IDs. Sample IDs: ${idArray.slice(0, 5).join(", ")}`);
+    console.log(`[teacher-overview] ${email}: ${teacherRosters.length} rosters, ${idArray.length} student IDs.`);
 
     const allResults = await PublishedResult.find({
       "meta.studentId": { $in: idArray },
     }).sort({ createdAt: -1 }).lean();
 
-    // Debug: if no results found, check what meta.studentId values exist
-    if (allResults.length === 0 && idArray.length > 0) {
-      const sampleResults = await PublishedResult.find({ "meta.source": "batch-grading" })
-        .sort({ createdAt: -1 }).limit(5).lean();
-      const sampleIds = sampleResults.map((r) => r.meta?.studentId).filter(Boolean);
-      console.log(`[teacher-overview] No matches. Recent batch result studentIds: ${sampleIds.join(", ") || "(none)"}`);
-    }
-
+    // Group results by student
     const byStudent = {};
     for (const r of allResults) {
       const sid = r.meta?.studentId;
@@ -488,41 +486,144 @@ router.get("/teacher/students", teacherAuth, async (req, res) => {
       byStudent[sid].push(r);
     }
 
-    const students = idArray.map((id) => {
-      const info = studentMap[id] || {};
+    // Helper: does a result belong to a class?
+    // Uses meta.className (explicit override) or fuzzy-matches meta.subject to className
+    function resultMatchesClass(result, className) {
+      const meta = result.meta || {};
+      // Explicit className override takes priority
+      if (meta.className) return meta.className === className;
+      // Fuzzy match subject to className: "Math" matches "MATH7A", "Geography" matches "GEO8C"
+      const subj = (meta.subject || "").toLowerCase();
+      const cls = (className || "").toLowerCase();
+      if (!subj || !cls) return false;
+      // Extract subject prefix from className (e.g. "GEO" from "GEO8C", "HIST" from "HIST7A", "MATH" from "MATH7A", "CED" from "CED8A")
+      const clsPrefix = cls.replace(/[0-9]/g, "");
+      const subjMap = {
+        math: ["math"],
+        geo: ["geography", "geo"],
+        hist: ["history", "hist"],
+        sci: ["science", "sci"],
+        eng: ["english", "eng", "ela", "language arts"],
+        fre: ["french", "fre", "français"],
+        ced: ["ced", "christian ethics", "ethics", "religion"],
+        mus: ["music", "mus"],
+        art: ["art", "visual art"],
+        pe: ["pe", "phys ed", "physical education"],
+        tech: ["tech", "technology"],
+      };
+      for (const [prefix, keywords] of Object.entries(subjMap)) {
+        if (clsPrefix.startsWith(prefix) && keywords.some((k) => subj.includes(k))) return true;
+      }
+      // Fallback: subject string starts with class prefix
+      if (clsPrefix.length >= 3 && subj.startsWith(clsPrefix)) return true;
+      return false;
+    }
+
+    // Create one entry per student per class (student appears in all their classes)
+    const students = [];
+    for (const id of idArray) {
+      const classes = studentClasses[id] || [];
       const studentResults = byStudent[id] || [];
-      const scores = [];
-      for (const r of studentResults) {
-        if (typeof r.payload === "string") {
-          const m = r.payload.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
-          if (m) {
-            const outOf = parseFloat(m[2]);
-            if (outOf > 0) scores.push(Math.round((parseFloat(m[1]) / outOf) * 100));
+      if (studentResults.length === 0) continue;
+
+      for (const cls of classes) {
+        // Filter results that belong to this class
+        const classResults = studentResults.filter((r) => resultMatchesClass(r, cls.className));
+        // Also find "unclassified" results (no subject and no className override)
+        const unclassified = studentResults.filter((r) => {
+          const meta = r.meta || {};
+          return !meta.className && !meta.subject;
+        });
+        const relevant = [...classResults];
+        // Add unclassified only if this is the student's first class (avoid double-counting)
+        if (classes.indexOf(cls) === 0) {
+          for (const u of unclassified) {
+            if (!relevant.find((r) => r.code === u.code)) relevant.push(u);
           }
         }
+
+        const scores = [];
+        for (const r of relevant) {
+          if (typeof r.payload === "string") {
+            const m = r.payload.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
+            if (m) {
+              const outOf = parseFloat(m[2]);
+              if (outOf > 0) scores.push(Math.round((parseFloat(m[1]) / outOf) * 100));
+            }
+          }
+        }
+        const avg = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+        students.push({
+          studentId: id,
+          firstName: cls.firstName || "",
+          lastName: cls.lastName || "",
+          className: cls.className || "",
+          totalAssignments: relevant.length,
+          avg,
+          lastGraded: relevant[0]?.createdAt || null,
+        });
       }
-      const avg = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
-      return {
-        studentId: id,
-        firstName: info.firstName || "",
-        lastName: info.lastName || "",
-        className: info.className || "",
-        totalAssignments: studentResults.length,
-        avg,
-        lastGraded: studentResults[0]?.createdAt || null,
-      };
-    }).filter((s) => s.totalAssignments > 0)
+    }
+
+    const filtered = students.filter((s) => s.totalAssignments > 0)
       .sort((a, b) => (a.lastName || "").localeCompare(b.lastName || ""));
 
     return res.json({
       ok: true,
-      students,
-      totalStudents: students.length,
+      students: filtered,
+      classNames: [...classNames].sort(),
+      totalStudents: new Set(filtered.map((s) => s.studentId)).size,
       totalAssignments: allResults.length,
     });
   } catch (err) {
     console.error("GET /student-progress/teacher/students error:", err?.message || err);
     return res.status(500).json({ error: "Failed to load class overview." });
+  }
+});
+
+/* ------------------------------------------------------------------
+ *  PATCH /teacher/result/:code
+ *  Teacher renames an assignment (updates meta.title).
+ * ------------------------------------------------------------------ */
+router.patch("/teacher/result/:code", teacherAuth, async (req, res) => {
+  try {
+    const code = (req.params.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
+    if (code.length !== 5) return res.status(400).json({ error: "Invalid code." });
+
+    const { title, className } = req.body || {};
+    const newTitle = title != null ? String(title).trim() : null;
+    const newClassName = className != null ? String(className).trim() : null;
+
+    if (newTitle != null && !newTitle) return res.status(400).json({ error: "Title cannot be empty." });
+    if (newTitle == null && newClassName == null) return res.status(400).json({ error: "Nothing to update." });
+
+    const doc = await PublishedResult.findOne({ code });
+    if (!doc) return res.status(404).json({ error: "Result not found." });
+
+    // Verify teacher owns this student via roster
+    const studentId = doc.meta?.studentId;
+    if (studentId) {
+      const roster = await ClassRoster.findOne({
+        teacherEmail: req.teacherEmail,
+        $or: [{ "students.studentId": studentId }, { "students.edsbyId": studentId }],
+      }).lean();
+      if (!roster) return res.status(403).json({ error: "This result does not belong to your roster." });
+    }
+
+    doc.meta = doc.meta || {};
+    if (newTitle != null) doc.meta.title = newTitle;
+    if (newClassName != null) doc.meta.className = newClassName;
+    doc.markModified("meta");
+    await doc.save();
+
+    const changes = [];
+    if (newTitle != null) changes.push(`title="${newTitle}"`);
+    if (newClassName != null) changes.push(`className="${newClassName}"`);
+    console.log(`[teacher-update] ${req.teacherEmail} updated result ${code}: ${changes.join(", ")}`);
+    return res.json({ ok: true, title: doc.meta.title, className: doc.meta.className });
+  } catch (err) {
+    console.error("PATCH /teacher/result/:code error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to update." });
   }
 });
 
