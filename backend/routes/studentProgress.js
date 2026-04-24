@@ -664,6 +664,45 @@ router.post("/teacher/bulk-rename", teacherAuth, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------
+ *  POST /teacher/bulk-delete
+ *  { title: string }
+ *  Deletes all results with matching title across the teacher's roster students.
+ * ------------------------------------------------------------------ */
+router.post("/teacher/bulk-delete", teacherAuth, async (req, res) => {
+  try {
+    const { title } = req.body || {};
+    const target = String(title || "").trim();
+
+    const rosters = await ClassRoster.find({ teacherEmail: req.teacherEmail }).lean();
+    const studentIds = new Set();
+    for (const r of rosters) {
+      for (const s of r.students || []) {
+        if (s.studentId) studentIds.add(s.studentId);
+        if (s.edsbyId) studentIds.add(s.edsbyId);
+      }
+    }
+    if (studentIds.size === 0) return res.json({ ok: true, deleted: 0 });
+
+    const query = { "meta.studentId": { $in: [...studentIds] } };
+    if (target) {
+      query.$or = [
+        { "meta.title": target },
+        { "meta.title": { $in: ["", null] }, "meta.assessmentType": target },
+      ];
+    } else {
+      query["meta.title"] = { $in: ["", null] };
+    }
+
+    const result = await PublishedResult.deleteMany(query);
+    console.log(`[bulk-delete] ${req.teacherEmail}: title="${target}", ${result.deletedCount} deleted`);
+    return res.json({ ok: true, deleted: result.deletedCount });
+  } catch (err) {
+    console.error("POST /teacher/bulk-delete error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to bulk delete." });
+  }
+});
+
+/* ------------------------------------------------------------------
  *  DELETE /teacher/result/:code
  *  Teacher deletes a single published result by its ref code.
  *  Verifies the result belongs to one of the teacher's roster students.

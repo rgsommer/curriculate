@@ -105,11 +105,14 @@ export default function ProgressPage() {
   const [expandedClasses, setExpandedClasses] = useState({});
   // Teacher's class names for re-classify dropdown
   const [teacherClassNames, setTeacherClassNames] = useState([]);
-  // Bulk rename
+  // Bulk rename / delete
   const [showBulkRename, setShowBulkRename] = useState(false);
   const [bulkOld, setBulkOld] = useState("");
   const [bulkNew, setBulkNew] = useState("");
   const [bulkRenaming, setBulkRenaming] = useState(false);
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
+  const [bulkDeleteTitle, setBulkDeleteTitle] = useState("");
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Settings
   const [showSettings, setShowSettings] = useState(false);
@@ -367,13 +370,19 @@ export default function ProgressPage() {
             <div style={{ fontSize: 13, opacity: 0.8 }}>{teacherStudents.length} students with graded work</div>
           </div>
 
-          {/* Bulk rename tool */}
-          <div style={{ textAlign: "right", marginBottom: 8 }}>
+          {/* Bulk tools */}
+          <div style={{ textAlign: "right", marginBottom: 8, display: "flex", justifyContent: "flex-end", gap: 12 }}>
             <button
-              onClick={() => setShowBulkRename(!showBulkRename)}
+              onClick={() => { setShowBulkRename(!showBulkRename); setShowBulkDelete(false); }}
               style={{ fontSize: 12, color: "#64748b", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
             >
-              {showBulkRename ? "Close" : "Rename assignments"}
+              {showBulkRename ? "Close rename" : "Rename assignments"}
+            </button>
+            <button
+              onClick={() => { setShowBulkDelete(!showBulkDelete); setShowBulkRename(false); }}
+              style={{ fontSize: 12, color: "#dc2626", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+            >
+              {showBulkDelete ? "Close delete" : "Delete assignments"}
             </button>
           </div>
           {showBulkRename && (
@@ -427,6 +436,63 @@ export default function ProgressPage() {
                   }}
                 >
                   {bulkRenaming ? "Renaming..." : "Rename all"}
+                </button>
+              </div>
+            </div>
+          )}
+          {showBulkDelete && (
+            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: 14, marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#991b1b", marginBottom: 8 }}>Bulk delete assignments</div>
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 10 }}>
+                Delete all assignments with a given title across all your students. This cannot be undone.
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <input
+                  placeholder='Title to delete (e.g. "Test")'
+                  value={bulkDeleteTitle}
+                  onChange={(e) => setBulkDeleteTitle(e.target.value)}
+                  style={{ flex: 1, minWidth: 180, padding: "6px 10px", fontSize: 13, border: "1px solid #fecaca", borderRadius: 6, outline: "none", background: "#fff" }}
+                />
+                <button
+                  disabled={bulkDeleting || !bulkDeleteTitle.trim()}
+                  onClick={async () => {
+                    if (!confirm(`Delete ALL assignments titled "${bulkDeleteTitle.trim()}" for every student? This cannot be undone.`)) return;
+                    setBulkDeleting(true);
+                    try {
+                      const res = await fetch(`${API}/student-progress/teacher/bulk-delete`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                        body: JSON.stringify({ title: bulkDeleteTitle.trim() }),
+                      });
+                      const data = await res.json();
+                      if (data.ok) {
+                        setInfo(`Deleted ${data.deleted} assignment${data.deleted !== 1 ? "s" : ""}.`);
+                        setBulkDeleteTitle("");
+                        setShowBulkDelete(false);
+                        setTimeout(() => setInfo(""), 4000);
+                        // Refresh teacher data
+                        try {
+                          const r2 = await fetch(`${API}/student-progress/teacher/students`, {
+                            headers: { Authorization: `Bearer ${token}` },
+                          });
+                          const d2 = await r2.json();
+                          if (d2.students) setTeacherStudents(d2.students);
+                          if (d2.classNames) setTeacherClassNames(d2.classNames);
+                        } catch {}
+                      } else {
+                        setError(data.error || "Failed to delete.");
+                      }
+                    } catch {
+                      setError("Failed to delete.");
+                    }
+                    setBulkDeleting(false);
+                  }}
+                  style={{
+                    padding: "6px 14px", fontSize: 13, fontWeight: 700, borderRadius: 6, border: "none",
+                    background: bulkDeleteTitle.trim() ? "#dc2626" : "#cbd5e1", color: "#fff", cursor: bulkDeleteTitle.trim() ? "pointer" : "default",
+                  }}
+                >
+                  {bulkDeleting ? "Deleting..." : "Delete all"}
                 </button>
               </div>
             </div>
