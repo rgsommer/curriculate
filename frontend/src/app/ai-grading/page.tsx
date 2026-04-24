@@ -352,10 +352,13 @@ const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "";
 function RecommendSection() {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
-  const [email, setEmail] = React.useState("");
+  const [myEmail, setMyEmail] = React.useState("");
+  const [teacherName, setTeacherName] = React.useState("");
+  const [teacherEmail, setTeacherEmail] = React.useState("");
   const [message, setMessage] = React.useState("");
   const [sending, setSending] = React.useState(false);
   const [sent, setSent] = React.useState(false);
+  const [creditMonths, setCreditMonths] = React.useState(0);
   const [error, setError] = React.useState("");
 
   async function handleSend(e: React.FormEvent) {
@@ -366,10 +369,17 @@ function RecommendSection() {
       const res = await fetch(`${API_BASE}/api/recommend`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recommenderName: name, teacherEmail: email, message }),
+        body: JSON.stringify({
+          recommenderName: name,
+          recommenderEmail: myEmail,
+          teacherName,
+          teacherEmail,
+          message,
+        }),
       });
       const data = await res.json();
       if (data.ok) {
+        setCreditMonths(data.totalCreditMonths || 0);
         setSent(true);
       } else {
         setError(data.error || "Failed to send.");
@@ -382,7 +392,7 @@ function RecommendSection() {
 
   if (sent) {
     return (
-      <section className="px-6 py-12">
+      <section id="recommend" className="px-6 py-12">
         <div className="mx-auto max-w-2xl text-center">
           <div className="bg-emerald-50 border border-emerald-200 rounded-3xl p-10">
             <div className="text-4xl mb-3">✓</div>
@@ -390,6 +400,22 @@ function RecommendSection() {
             <p className="text-emerald-700 font-medium mt-2">
               We sent a personalized invitation to try Curriculate. Thanks for spreading the word!
             </p>
+            {myEmail && creditMonths > 0 && (
+              <div className="mt-4 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                <p className="text-amber-800 font-bold text-sm">
+                  You&apos;ve earned {creditMonths} free month{creditMonths !== 1 ? "s" : ""} of Curriculate Pro!
+                </p>
+                <p className="text-amber-700 text-xs mt-1">
+                  Credits are linked to {myEmail} and will apply when paid plans launch.
+                </p>
+              </div>
+            )}
+            <button
+              onClick={() => { setSent(false); setTeacherName(""); setTeacherEmail(""); setMessage(""); }}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-5 py-2.5 text-white font-bold text-sm shadow transition"
+            >
+              Recommend Another Teacher
+            </button>
           </div>
         </div>
       </section>
@@ -403,8 +429,11 @@ function RecommendSection() {
           <h2 className="text-2xl sm:text-3xl font-black text-gray-900 mb-2">
             Know a teacher who needs this?
           </h2>
-          <p className="text-gray-700 font-medium mb-6">
-            Students, parents, colleagues, principals — anyone can recommend Curriculate to a teacher. We'll send them a friendly invitation to try it.
+          <p className="text-gray-700 font-medium mb-2">
+            Students, parents, colleagues, principals — anyone can recommend Curriculate to a teacher. We&apos;ll send them a friendly invitation to try it.
+          </p>
+          <p className="text-amber-700 font-bold text-sm mb-6">
+            Teachers: earn 1 free month of Curriculate Pro for every recommendation you send.
           </p>
 
           {!open ? (
@@ -421,6 +450,7 @@ function RecommendSection() {
                   {error}
                 </div>
               )}
+              <div className="text-xs font-bold text-gray-500 uppercase tracking-wide pt-1">About you</div>
               <input
                 className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
                 placeholder="Your name"
@@ -431,9 +461,23 @@ function RecommendSection() {
               <input
                 className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
                 type="email"
+                placeholder="Your email (optional — earns you a free month)"
+                value={myEmail}
+                onChange={(e) => setMyEmail(e.target.value)}
+              />
+              <div className="text-xs font-bold text-gray-500 uppercase tracking-wide pt-2">Teacher to recommend</div>
+              <input
+                className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                placeholder="Teacher's name"
+                value={teacherName}
+                onChange={(e) => setTeacherName(e.target.value)}
+              />
+              <input
+                className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                type="email"
                 placeholder="Teacher's email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={teacherEmail}
+                onChange={(e) => setTeacherEmail(e.target.value)}
                 required
               />
               <textarea

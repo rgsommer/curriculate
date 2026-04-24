@@ -435,6 +435,8 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
   const [clipboardCopied, setClipboardCopied] = useState(false);
   const [recommendOpen, setRecommendOpen] = useState(false);
   const [recommendName, setRecommendName] = useState("");
+  const [recommendMyEmail, setRecommendMyEmail] = useState("");
+  const [recommendTeacherName, setRecommendTeacherName] = useState("");
   const [recommendEmail, setRecommendEmail] = useState("");
   const [recommendSending, setRecommendSending] = useState(false);
   const [recommendSent, setRecommendSent] = useState(false);
@@ -1469,7 +1471,11 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
               </button>
             ) : (
               <div style={{ maxWidth: 360, margin: "0 auto", textAlign: "left" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", marginBottom: 4 }}>About you</div>
                 <input placeholder="Your name" value={recommendName} onChange={(e) => setRecommendName(e.target.value)} style={{ width: "100%", padding: "8px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 6, boxSizing: "border-box" }} />
+                <input placeholder="Your email (optional)" type="email" value={recommendMyEmail} onChange={(e) => setRecommendMyEmail(e.target.value)} style={{ width: "100%", padding: "8px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 6, boxSizing: "border-box" }} />
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", marginBottom: 4, marginTop: 4 }}>Teacher to recommend</div>
+                <input placeholder="Teacher's name" value={recommendTeacherName} onChange={(e) => setRecommendTeacherName(e.target.value)} style={{ width: "100%", padding: "8px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 6, boxSizing: "border-box" }} />
                 <input placeholder="Teacher's email" type="email" value={recommendEmail} onChange={(e) => setRecommendEmail(e.target.value)} style={{ width: "100%", padding: "8px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 6, boxSizing: "border-box" }} />
                 <div style={{ display: "flex", gap: 6 }}>
                   <button
@@ -1477,7 +1483,7 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                     onClick={async () => {
                       setRecommendSending(true);
                       try {
-                        const r = await fetch(`${API_BASE}/api/recommend`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recommenderName: recommendName, teacherEmail: recommendEmail }) });
+                        const r = await fetch(`${API_BASE}/api/recommend`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recommenderName: recommendName, recommenderEmail: recommendMyEmail, teacherName: recommendTeacherName, teacherEmail: recommendEmail }) });
                         const d = await r.json();
                         if (d.ok) setRecommendSent(true);
                       } catch {}
@@ -1492,7 +1498,15 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
               </div>
             )
           ) : (
-            <div style={{ color: "#16a34a", fontSize: 13 }}>Recommendation sent! Thanks for spreading the word.</div>
+            <div>
+              <div style={{ color: "#16a34a", fontSize: 13 }}>Recommendation sent! Thanks for spreading the word.</div>
+              <button
+                onClick={() => { setRecommendSent(false); setRecommendTeacherName(""); setRecommendEmail(""); }}
+                style={{ fontSize: 12, color: "#2563eb", background: "none", border: "none", cursor: "pointer", fontWeight: 700, marginTop: 6, textDecoration: "underline" }}
+              >
+                Recommend another teacher
+              </button>
+            </div>
           )}
         </div>
       )}

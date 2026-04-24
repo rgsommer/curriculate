@@ -30,14 +30,40 @@ function gradeColor(letter) {
   return "#6b7280";
 }
 
-function RecommendWidget() {
+function RecommendWidget({ userEmail, authToken, isTeacher }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const [myEmail, setMyEmail] = useState(userEmail || "");
+  const [teacherName, setTeacherName] = useState("");
   const [recEmail, setRecEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
-  if (sent) return <div style={{ textAlign: "center", color: "#16a34a", fontSize: 13, padding: 12 }}>Recommendation sent! Thanks for spreading the word.</div>;
+  // Auto-dismiss confirmation after 3 seconds, then show "Recommend another" button
+  useEffect(() => {
+    if (!sent) return;
+    setShowConfirm(true);
+    const t = setTimeout(() => setShowConfirm(false), 3000);
+    return () => clearTimeout(t);
+  }, [sent]);
+
+  if (sent && !showConfirm) return (
+    <div style={{ textAlign: "center", marginTop: 16 }}>
+      <button
+        onClick={() => { setSent(false); setTeacherName(""); setRecEmail(""); setOpen(true); }}
+        style={{ fontSize: 13, color: "#d97706", background: "none", border: "1px solid #d97706", borderRadius: 10, padding: "6px 16px", cursor: "pointer", fontWeight: 700 }}
+      >
+        Recommend another teacher
+      </button>
+    </div>
+  );
+
+  if (sent && showConfirm) return (
+    <div style={{ textAlign: "center", padding: 12 }}>
+      <div style={{ color: "#16a34a", fontSize: 13 }}>Recommendation sent! Thanks for spreading the word.</div>
+    </div>
+  );
 
   return (
     <div style={{ textAlign: "center", marginTop: 16 }}>
@@ -50,7 +76,13 @@ function RecommendWidget() {
         </button>
       ) : (
         <div style={{ maxWidth: 360, margin: "0 auto", textAlign: "left" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", marginBottom: 4 }}>About you</div>
           <input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} style={{ width: "100%", padding: "8px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 6, boxSizing: "border-box" }} />
+          {!userEmail && (
+            <input placeholder="Your email (optional — earns a free month)" type="email" value={myEmail} onChange={(e) => setMyEmail(e.target.value)} style={{ width: "100%", padding: "8px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 6, boxSizing: "border-box" }} />
+          )}
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", marginBottom: 4, marginTop: 4 }}>Teacher to recommend</div>
+          <input placeholder="Teacher's name" value={teacherName} onChange={(e) => setTeacherName(e.target.value)} style={{ width: "100%", padding: "8px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 6, boxSizing: "border-box" }} />
           <input placeholder="Teacher's email" type="email" value={recEmail} onChange={(e) => setRecEmail(e.target.value)} style={{ width: "100%", padding: "8px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 6, boxSizing: "border-box" }} />
           <div style={{ display: "flex", gap: 6 }}>
             <button
@@ -58,9 +90,21 @@ function RecommendWidget() {
               onClick={async () => {
                 setSending(true);
                 try {
-                  const res = await fetch(`${API}/api/recommend`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recommenderName: name, teacherEmail: recEmail }) });
+                  const res = await fetch(`${API}/api/recommend`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recommenderName: name, recommenderEmail: myEmail, teacherName, teacherEmail: recEmail }) });
                   const d = await res.json();
-                  if (d.ok) setSent(true);
+                  if (d.ok) {
+                    setSent(true);
+                    // If student/parent entered a new email, add it to their account
+                    if (!isTeacher && !userEmail && myEmail.includes("@") && authToken) {
+                      try {
+                        await fetch(`${API}/student-progress/profile/add-email`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+                          body: JSON.stringify({ email: myEmail }),
+                        });
+                      } catch {}
+                    }
+                  }
                 } catch {}
                 setSending(false);
               }}
@@ -116,6 +160,9 @@ export default function ProgressPage() {
 
   // Expanded result details (KITA bars)
   const [expandedResult, setExpandedResult] = useState(null);
+
+  // Recommendation badge
+  const [recommendCount, setRecommendCount] = useState(0);
 
   // Settings
   const [showSettings, setShowSettings] = useState(false);
@@ -206,6 +253,14 @@ export default function ProgressPage() {
         setLoading(false);
       })
       .catch(() => { setLoading(false); setError("Failed to load results."); });
+
+    // Fetch recommendation badge count
+    if (email && email.includes("@")) {
+      fetch(`${API}/api/recommend/count?email=${encodeURIComponent(email)}`)
+        .then((r) => r.json())
+        .then((d) => { if (d.ok) setRecommendCount(d.count); })
+        .catch(() => {});
+    }
   }, [view, token, apiCall]);
 
   const handleLogin = async (e) => {
@@ -348,7 +403,7 @@ export default function ProgressPage() {
             <strong>Teachers:</strong> Leave the student ID blank and enter your email to see all your students.
           </div>
         </div>
-        <RecommendWidget />
+        <RecommendWidget userEmail={email} authToken={token} isTeacher={view === "teacher"} />
         <div style={{ textAlign: "center", marginTop: 12, fontSize: 12, color: "#94a3b8" }}>
           curriculate.net/progress
         </div>
@@ -646,7 +701,7 @@ export default function ProgressPage() {
           })()}
 
         </div>
-        <RecommendWidget />
+        <RecommendWidget userEmail={email} authToken={token} isTeacher={view === "teacher"} />
         <div style={{ textAlign: "center", marginTop: 12, fontSize: 12, color: "#94a3b8" }}>
           curriculate.net/progress
         </div>
@@ -687,11 +742,23 @@ export default function ProgressPage() {
               {student ? `${student.firstName} ${student.lastName}` : "My Progress"}
             </h1>
             {student?.className && (
-              <div style={{ fontSize: 13, color: "#64748b", marginTop: 2 }}>
+              <div style={{ fontSize: 13, color: "#64748b", marginTop: 2, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 {student.className}
                 {student.emailCount > 1 && (
-                  <span style={{ marginLeft: 8, fontSize: 11, color: "#94a3b8" }}>
+                  <span style={{ fontSize: 11, color: "#94a3b8" }}>
                     {student.emailCount} people notified
+                  </span>
+                )}
+                {recommendCount > 0 && (
+                  <span style={{
+                    fontSize: 11, fontWeight: 800, color: "#d97706",
+                    background: "#fef3c7", border: "1px solid #fde68a",
+                    padding: "1px 8px", borderRadius: 10,
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                  }}
+                  title={`You've recommended Curriculate to ${recommendCount} teacher${recommendCount !== 1 ? "s" : ""}!`}
+                  >
+                    {recommendCount === 1 ? "1 referral" : `${recommendCount} referrals`}
                   </span>
                 )}
               </div>
@@ -1010,6 +1077,16 @@ export default function ProgressPage() {
                           {letterGrade(r.pct)}
                         </div>
                         <div style={{ fontSize: 12, color: "#64748b" }}>{r.score}/{r.outOf} ({r.pct}%)</div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: pctColor(r.pct) }}>
+                          {pctLabel(r.pct)}
+                        </div>
+                        {r.classAvg != null && r.classSize > 1 && (
+                          <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 1 }}
+                            title={`Class average: ${r.classAvg}% across ${r.classSize} students`}
+                          >
+                            Class avg: {r.classAvg}%
+                          </div>
+                        )}
                       </>
                     ) : (
                       <div style={{ fontSize: 14, color: "#94a3b8" }}>--</div>
@@ -1252,6 +1329,7 @@ export default function ProgressPage() {
           </>
         )}
       </div>
+      <RecommendWidget userEmail={email} authToken={token} isTeacher={false} />
       <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: "#94a3b8" }}>
         curriculate.net/progress
       </div>

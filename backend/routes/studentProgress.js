@@ -484,6 +484,62 @@ router.get("/results", studentAuth, async (req, res) => {
       ? Math.round(withPct.reduce((s, e) => s + e.pct, 0) / withPct.length)
       : null;
 
+    // Compute class averages for each assignment title
+    // Group by sessionId + title to find matching class results
+    const sessionIds = [...new Set(results.filter((r) => r.sessionId).map((r) => r.sessionId))];
+    const titleKeys = [...new Set(results.map((r) => (r.meta?.title || "").toLowerCase().trim()).filter(Boolean))];
+
+    let classAvgMap = {}; // { "title_lower": { avg, count } }
+    if (sessionIds.length > 0 && titleKeys.length > 0) {
+      try {
+        const classResults = await PublishedResult.aggregate([
+          {
+            $match: {
+              sessionId: { $in: sessionIds },
+              "meta.title": { $ne: null },
+            },
+          },
+          {
+            $group: {
+              _id: { $toLower: "$meta.title" },
+              payloads: { $push: "$payload" },
+              count: { $sum: 1 },
+            },
+          },
+        ]);
+
+        for (const cr of classResults) {
+          const scores = [];
+          for (const p of cr.payloads) {
+            if (typeof p === "string") {
+              const m = p.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
+              if (m) {
+                const outOf = parseFloat(m[2]);
+                if (outOf > 0) scores.push(Math.round((parseFloat(m[1]) / outOf) * 100));
+              }
+            }
+          }
+          if (scores.length > 1) {
+            classAvgMap[cr._id] = {
+              avg: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
+              count: scores.length,
+            };
+          }
+        }
+      } catch (err) {
+        console.warn("[progress] Class avg computation failed:", err.message);
+      }
+    }
+
+    // Attach class averages to entries
+    for (const entry of entries) {
+      const key = (entry.title || "").toLowerCase().trim();
+      if (classAvgMap[key]) {
+        entry.classAvg = classAvgMap[key].avg;
+        entry.classSize = classAvgMap[key].count;
+      }
+    }
+
     return res.json({
       ok: true,
       student: {
@@ -560,6 +616,32 @@ router.patch("/profile/email-pref", studentAuth, async (req, res) => {
   } catch (err) {
     console.error("PATCH /profile/email-pref error:", err?.message || err);
     return res.status(500).json({ error: "Failed to update preference." });
+  }
+});
+
+/* ------------------------------------------------------------------
+ *  POST /profile/add-email
+ *  Adds an email to the student account (e.g. entered during recommend flow).
+ * ------------------------------------------------------------------ */
+router.post("/profile/add-email", studentAuth, async (req, res) => {
+  try {
+    const em = String(req.body?.email || "").trim().toLowerCase();
+    if (!em || !em.includes("@")) {
+      return res.status(400).json({ error: "A valid email address is required." });
+    }
+    const account = await StudentAccount.findOne({ studentId: req.studentId });
+    if (!account) return res.status(404).json({ error: "Account not found." });
+    const emailList = (account.emails || []).map((e) => e.toLowerCase());
+    if (emailList.includes(em)) {
+      return res.json({ ok: true, added: false, emailCount: account.emails.length });
+    }
+    account.emails.push(em);
+    await account.save();
+    console.log(`[profile] Email ${em} added to ${req.studentId} via recommend flow`);
+    return res.json({ ok: true, added: true, emailCount: account.emails.length });
+  } catch (err) {
+    console.error("POST /profile/add-email error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to add email." });
   }
 });
 

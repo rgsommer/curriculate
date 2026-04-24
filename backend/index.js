@@ -417,18 +417,21 @@ app.use("/student-progress", studentProgressRouter);
 // Recommend Curriculate to a teacher
 app.post("/api/recommend", async (req, res) => {
   try {
-    const { recommenderName, teacherEmail, message } = req.body || {};
+    const { recommenderName, recommenderEmail, teacherName, teacherEmail, message } = req.body || {};
     const name = String(recommenderName || "").trim();
+    const myEmail = String(recommenderEmail || "").trim().toLowerCase();
+    const tName = String(teacherName || "").trim();
     const email = String(teacherEmail || "").trim().toLowerCase();
     if (!name || !email || !email.includes("@")) {
       return res.status(400).json({ error: "Your name and a valid teacher email are required." });
     }
 
     const esc = (s) => String(s || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const greeting = tName ? esc(tName) : "there";
 
-    const html = `
+    // --- Email 1: AI Grading ---
+    const gradingHtml = `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 0;">
-        <!-- Header -->
         <div style="background: linear-gradient(135deg, #2563eb, #7c3aed); border-radius: 16px 16px 0 0; padding: 28px 24px; text-align: center;">
           <div style="font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.3px;">Curriculate</div>
           <div style="font-size: 13px; color: rgba(255,255,255,0.75); margin-top: 4px;">Someone thinks you'll love this</div>
@@ -436,14 +439,13 @@ app.post("/api/recommend", async (req, res) => {
 
         <div style="background: #ffffff; padding: 28px 24px; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">
           <p style="margin: 0 0 16px; font-size: 17px; color: #1e293b; font-weight: 700; line-height: 1.5;">
-            ${esc(name)} recommended Curriculate's AI grading tool for you.
+            Hi ${greeting} — ${esc(name)} recommended Curriculate's AI grading tool for you.
           </p>
           ${message ? `<div style="background: #f8fafc; border-left: 4px solid #2563eb; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;"><p style="margin: 0; font-size: 15px; color: #475569; font-style: italic; line-height: 1.5;">"${esc(message).slice(0, 500)}"</p></div>` : ""}
           <p style="margin: 0 0 20px; font-size: 15px; color: #475569; line-height: 1.6;">
             Curriculate uses AI to grade student work — essays, handwriting, math, video performances, audio — with detailed, personalized feedback in the voice you choose. Teachers save hours every week.
           </p>
 
-          <!-- Feature grid -->
           <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
             <tr>
               <td style="padding: 10px; width: 50%; vertical-align: top;">
@@ -493,7 +495,6 @@ app.post("/api/recommend", async (req, res) => {
             Plus: per-student strictness, gradebook CSV export, review requests, class rosters, and more. <strong>No signup needed.</strong>
           </p>
 
-          <!-- CTA -->
           <div style="text-align: center; margin-bottom: 8px;">
             <a href="https://www.curriculate.net/grading?utm_source=recommendation&utm_medium=email"
                style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #2563eb, #7c3aed); color: #ffffff; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 16px;">
@@ -505,51 +506,149 @@ app.post("/api/recommend", async (req, res) => {
           </div>
         </div>
 
-        <!-- Recommend to another teacher -->
         <div style="background: #fffbeb; border: 1px solid #e2e8f0; border-top: none; padding: 16px 24px; text-align: center;">
-          <p style="margin: 0 0 8px; font-size: 13px; font-weight: 700; color: #92400e;">
-            Know another teacher who would love this?
-          </p>
+          <p style="margin: 0 0 8px; font-size: 13px; font-weight: 700; color: #92400e;">Know another teacher who would love this?</p>
           <a href="https://www.curriculate.net/ai-grading?utm_source=recommendation&utm_medium=email#recommend"
              style="display: inline-block; padding: 8px 20px; background: #f59e0b; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 800; font-size: 13px;">
             Recommend to a Teacher
           </a>
         </div>
 
-        <!-- Footer -->
         <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 16px 16px; padding: 18px 24px; text-align: center;">
-          <p style="margin: 0 0 6px; font-size: 12px; color: #94a3b8; line-height: 1.5;">
-            This email was sent via <a href="https://www.curriculate.net" style="color: #2563eb; text-decoration: none; font-weight: 600;">Curriculate</a> because someone recommended the tool to you.
+          <p style="margin: 0; font-size: 12px; color: #94a3b8;">
+            Sent via <a href="https://www.curriculate.net" style="color: #2563eb; text-decoration: none; font-weight: 600;">Curriculate</a> because someone recommended the tool to you.
           </p>
-          <p style="margin: 0; font-size: 11px; color: #cbd5e1;">
-            No account needed. No credit card. Just photograph a student paper and see what happens.
+        </div>
+      </div>
+    `;
+
+    // --- Email 2: Curriculate Platform (scavenger hunts / interactive tasks) ---
+    const platformHtml = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 0;">
+        <div style="background: linear-gradient(135deg, #dc2626, #ea580c); border-radius: 16px 16px 0 0; padding: 28px 24px; text-align: center;">
+          <div style="font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.3px;">Curriculate</div>
+          <div style="font-size: 13px; color: rgba(255,255,255,0.75); margin-top: 4px;">Classroom Scavenger Hunts — Powered by AI</div>
+        </div>
+
+        <div style="background: #ffffff; padding: 28px 24px; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">
+          <p style="margin: 0 0 16px; font-size: 17px; color: #1e293b; font-weight: 700; line-height: 1.5;">
+            Hi ${greeting} — one more thing from ${esc(name)}.
+          </p>
+          <p style="margin: 0 0 16px; font-size: 15px; color: #475569; line-height: 1.6;">
+            Besides AI grading, Curriculate also runs <strong>classroom scavenger hunts</strong> — AI-generated, curriculum-aligned activities that get students moving, thinking, and collaborating.
+          </p>
+          <p style="margin: 0 0 20px; font-size: 15px; color: #475569; line-height: 1.6;">
+            Tell the AI your topic, grade level, and how much time you have. It builds a full activity set with 65+ interactive task types — quizzes, debates, puzzles, movement breaks, role plays, and more. Students play on their phones. You get a real-time dashboard and an AI summary emailed before the bell rings.
+          </p>
+
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+            <tr>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #fef2f2; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #991b1b; margin-bottom: 4px;">65+ Task Types</div>
+                  <div style="font-size: 12px; color: #dc2626; line-height: 1.4;">Quizzes, debates, puzzles, role plays, movement breaks</div>
+                </div>
+              </td>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #fff7ed; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #9a3412; margin-bottom: 4px;">AI-Generated</div>
+                  <div style="font-size: 12px; color: #ea580c; line-height: 1.4;">Tell it your topic and time — it builds the whole thing</div>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #fefce8; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #854d0e; margin-bottom: 4px;">Real-Time Dashboard</div>
+                  <div style="font-size: 12px; color: #ca8a04; line-height: 1.4;">Live scoring, leaderboard, and class activity feed</div>
+                </div>
+              </td>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #ecfdf5; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #065f46; margin-bottom: 4px;">No Student Accounts</div>
+                  <div style="font-size: 12px; color: #059669; line-height: 1.4;">Students scan a QR code — no app, no login</div>
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <p style="margin: 0 0 24px; font-size: 14px; color: #64748b; text-align: center; line-height: 1.5;">
+            Works for any subject, any grade. Math gets logic puzzles. History gets debates and document analysis. Everyone gets movement breaks.
+          </p>
+
+          <div style="text-align: center; margin-bottom: 8px;">
+            <a href="https://www.curriculate.net/dashboard?utm_source=recommendation&utm_medium=email"
+               style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #dc2626, #ea580c); color: #ffffff; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 16px;">
+              Build a Scavenger Hunt — Free
+            </a>
+          </div>
+          <div style="text-align: center; margin-top: 12px;">
+            <a href="https://www.curriculate.net/how-it-works?utm_source=recommendation&utm_medium=email" style="font-size: 13px; color: #dc2626; text-decoration: none;">See how it works →</a>
+          </div>
+        </div>
+
+        <div style="background: #fffbeb; border: 1px solid #e2e8f0; border-top: none; padding: 16px 24px; text-align: center;">
+          <p style="margin: 0 0 8px; font-size: 13px; font-weight: 700; color: #92400e;">Know another teacher who would love this?</p>
+          <a href="https://www.curriculate.net/ai-grading?utm_source=recommendation&utm_medium=email#recommend"
+             style="display: inline-block; padding: 8px 20px; background: #f59e0b; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 800; font-size: 13px;">
+            Recommend to a Teacher
+          </a>
+        </div>
+
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 16px 16px; padding: 18px 24px; text-align: center;">
+          <p style="margin: 0; font-size: 12px; color: #94a3b8;">
+            Sent via <a href="https://www.curriculate.net" style="color: #2563eb; text-decoration: none; font-weight: 600;">Curriculate</a> because someone recommended the tool to you.
           </p>
         </div>
       </div>
     `;
 
     const { sendSystemEmail } = await import("./email/shareInviteEmailer.js");
+
+    // Send both emails (grading first, platform second)
     await sendSystemEmail({
       to: email,
       subject: `${name} thinks you should try Curriculate — AI grading for teachers`,
-      html,
+      html: gradingHtml,
     });
 
-    // Log recommendation
+    // Send platform email after a brief delay so it arrives second
+    setTimeout(async () => {
+      try {
+        await sendSystemEmail({
+          to: email,
+          subject: `One more from ${name} — Curriculate runs classroom scavenger hunts too`,
+          html: platformHtml,
+        });
+      } catch (err) {
+        console.warn("[recommend] Platform email failed:", err?.message);
+      }
+    }, 3000);
+
+    // Log recommendation and track referral credit
+    let totalCreditMonths = 0;
     try {
       const Recommendation = (await import("./models/Recommendation.js")).default;
       await Recommendation.create({
         recommenderName: name,
+        recommenderEmail: myEmail || "",
+        teacherName: tName,
         teacherEmail: email,
         message: message || "",
         source: req.body?.source || "ai-grading",
+        creditMonths: myEmail ? 1 : 0,
       });
+
+      // Count total credits for this recommender
+      if (myEmail) {
+        totalCreditMonths = await Recommendation.countDocuments({ recommenderEmail: myEmail });
+      }
     } catch (logErr) {
       console.warn("[recommend] failed to log:", logErr?.message);
     }
 
-    console.log(`[recommend] ${name} recommended Curriculate to ${email}`);
-    return res.json({ ok: true });
+    console.log(`[recommend] ${name}${myEmail ? ` (${myEmail})` : ""} recommended Curriculate to ${tName ? `${tName} <${email}>` : email}`);
+    return res.json({ ok: true, totalCreditMonths });
   } catch (err) {
     console.error("POST /api/recommend error:", err?.message || err);
     return res.status(500).json({ error: "Failed to send recommendation." });
@@ -564,6 +663,46 @@ app.get("/api/recommendations", async (req, res) => {
     return res.json({ ok: true, recommendations: recs });
   } catch (err) {
     return res.status(500).json({ error: "Failed to load recommendations." });
+  }
+});
+
+// Referral credit lookup (by email)
+app.get("/api/recommend/credits", async (req, res) => {
+  try {
+    const email = String(req.query.email || "").trim().toLowerCase();
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ error: "Email required." });
+    }
+    const Recommendation = (await import("./models/Recommendation.js")).default;
+    const recs = await Recommendation.find({ recommenderEmail: email }).sort({ createdAt: -1 }).lean();
+    const totalMonths = recs.reduce((s, r) => s + (r.creditMonths || 0), 0);
+    return res.json({
+      ok: true,
+      email,
+      totalCreditMonths: totalMonths,
+      recommendationCount: recs.length,
+      recommendations: recs.map((r) => ({
+        teacherName: r.teacherName || "",
+        teacherEmail: r.teacherEmail,
+        createdAt: r.createdAt,
+        creditMonths: r.creditMonths || 0,
+      })),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to look up credits." });
+  }
+});
+
+// Recommendation count by email (for badges)
+app.get("/api/recommend/count", async (req, res) => {
+  try {
+    const email = String(req.query.email || "").trim().toLowerCase();
+    if (!email) return res.json({ ok: true, count: 0 });
+    const Recommendation = (await import("./models/Recommendation.js")).default;
+    const count = await Recommendation.countDocuments({ recommenderEmail: email });
+    return res.json({ ok: true, count });
+  } catch {
+    return res.json({ ok: true, count: 0 });
   }
 });
 
