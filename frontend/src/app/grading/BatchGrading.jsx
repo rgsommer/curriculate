@@ -3008,6 +3008,7 @@ export default function BatchGrading({
                 <tr>
                   <th style={batchStyles.th}>#</th>
                   <th style={{ ...batchStyles.th, textAlign: "left" }}>Student</th>
+                  {rosterClasses.length > 1 && <th style={{ ...batchStyles.th, textAlign: "left" }}>Class</th>}
                   <th style={batchStyles.th}>Pages</th>
                   <th style={batchStyles.th}>Score</th>
                   <th style={batchStyles.th}>%</th>
@@ -3125,6 +3126,32 @@ export default function BatchGrading({
                           </div>
                         )}
                       </td>
+                      {rosterClasses.length > 1 && (
+                        <td style={{ ...batchStyles.td, padding: "2px 4px" }} onClick={(e) => e.stopPropagation()}>
+                          <select
+                            value={r.rosterClassName || ""}
+                            onChange={(e) => {
+                              const newClass = e.target.value;
+                              setResults((prev) => {
+                                const updated = [...prev];
+                                const item = updated.find((x) => x.index === r.index);
+                                if (item) item.rosterClassName = newClass;
+                                return updated;
+                              });
+                            }}
+                            style={{
+                              fontSize: 11, padding: "3px 4px", border: "1px solid #e2e8f0",
+                              borderRadius: 5, background: "#fff", color: "#334155",
+                              cursor: "pointer", maxWidth: 110, width: "100%",
+                            }}
+                          >
+                            <option value="">—</option>
+                            {rosterClasses.map((rc) => (
+                              <option key={rc.id} value={rc.className}>{rc.className}</option>
+                            ))}
+                          </select>
+                        </td>
+                      )}
                       <td style={batchStyles.td}>{r.pages}</td>
                       <td style={{ ...batchStyles.td, whiteSpace: "nowrap" }}>
                         {regradingIndex === r.index ? (
@@ -3245,7 +3272,7 @@ export default function BatchGrading({
                     {/* Expanded detail row */}
                     {expandedIndex === r.index && !r.error && (
                       <tr>
-                        <td colSpan={8} style={batchStyles.expandedTd}>
+                        <td colSpan={rosterClasses.length > 1 ? 9 : 8} style={batchStyles.expandedTd}>
                           <div style={batchStyles.expandedContent}>
                             {r.comment && (
                               <div style={{ marginBottom: 8 }}>
