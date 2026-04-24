@@ -949,9 +949,7 @@ export default function BatchGrading({
               rosterClassName: m.className,
               rosterRosterId: m.rosterId,
             });
-            if (!r.studentName || r.studentName.startsWith("Student ")) {
-              r.studentName = `${m.firstName} ${m.lastName}`.trim() || r.studentName;
-            }
+            r.studentName = `${m.firstName} ${m.lastName}`.trim() || r.studentName;
             // Vote for every roster this student appears in
             for (const match of nameMatches) {
               rosterVotes[match.rosterId] = (rosterVotes[match.rosterId] || 0) + 1;
@@ -1033,9 +1031,7 @@ export default function BatchGrading({
             r.rosterEdsbyId = match.edsbyId;
             r.rosterStudentId = match.studentId;
             r.rosterClassName = match.className;
-            if (!r.studentName || r.studentName.startsWith("Student ")) {
-              r.studentName = `${match.firstName} ${match.lastName}`.trim() || r.studentName;
-            }
+            r.studentName = `${match.firstName} ${match.lastName}`.trim() || r.studentName;
           }
         }
 
@@ -1056,9 +1052,7 @@ export default function BatchGrading({
             r.rosterEdsbyId = m.edsbyId;
             r.rosterStudentId = m.studentId;
             r.rosterClassName = m.className;
-            if (!r.studentName || r.studentName.startsWith("Student ")) {
-              r.studentName = `${m.firstName} ${m.lastName}`.trim() || r.studentName;
-            }
+            r.studentName = `${m.firstName} ${m.lastName}`.trim() || r.studentName;
           }
         }
 
@@ -1974,6 +1968,14 @@ export default function BatchGrading({
   const sendEmail = useCallback(async () => {
     const to = emailTo.trim();
     if (!to || !to.includes("@")) return;
+
+    // Final pass: normalize all matched student names to exact roster spelling
+    for (const r of results) {
+      if (r.error || !r.rosterFirstName) continue;
+      const rosterName = `${r.rosterFirstName} ${r.rosterLastName || ""}`.trim();
+      if (r.studentName !== rosterName) r.studentName = rosterName;
+    }
+    setResults([...results]); // trigger re-render with corrected names
 
     setEmailSending(true);
     try {
@@ -3236,6 +3238,9 @@ export default function BatchGrading({
                       </td>
                       {rosterClasses.length > 1 && (
                         <td style={{ ...batchStyles.td, padding: "2px 4px" }} onClick={(e) => e.stopPropagation()}>
+                          {(() => {
+                            const isOutlier = detectedBatchClass && r.rosterClassName && r.rosterClassName !== detectedBatchClass;
+                            return (
                           <select
                             value={r.rosterClassName || ""}
                             onChange={(e) => {
@@ -3248,16 +3253,22 @@ export default function BatchGrading({
                               });
                             }}
                             style={{
-                              fontSize: 11, padding: "3px 4px", border: "1px solid #e2e8f0",
-                              borderRadius: 5, background: "#fff", color: "#334155",
+                              fontSize: 11, padding: "3px 4px",
+                              border: isOutlier ? "1px solid rgba(217,119,6,0.5)" : "1px solid #e2e8f0",
+                              borderRadius: 5,
+                              background: isOutlier ? "rgba(254,243,199,0.8)" : "#fff",
+                              color: "#334155",
                               cursor: "pointer", minWidth: 90, width: "auto",
                             }}
+                            title={isOutlier ? `Different from batch class (${detectedBatchClass})` : ""}
                           >
                             <option value="">—</option>
                             {[...rosterClasses].sort((a, b) => a.className.localeCompare(b.className)).map((rc) => (
                               <option key={rc.id} value={rc.className}>{rc.className}</option>
                             ))}
                           </select>
+                            );
+                          })()}
                         </td>
                       )}
                       <td style={batchStyles.td}>{r.pages}</td>
