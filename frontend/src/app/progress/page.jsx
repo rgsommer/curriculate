@@ -280,12 +280,14 @@ export default function ProgressPage() {
       })
       .catch(() => { setLoading(false); setError("Failed to load results."); });
 
-    // Fetch recommendation badge count
-    if (email && email.includes("@")) {
+    // Fetch recommendation badge count (skip when teacher is viewing a student)
+    if (email && email.includes("@") && !teacherToken) {
       fetch(`${API}/api/recommend/count?email=${encodeURIComponent(email)}`)
         .then((r) => r.json())
         .then((d) => { if (d.ok) setRecommendCount(d.count); })
         .catch(() => {});
+    } else {
+      setRecommendCount(0);
     }
   }, [view, token, apiCall]);
 
@@ -615,6 +617,23 @@ export default function ProgressPage() {
           {info && <div style={s.info}>{info}</div>}
           {loading && <div style={{ textAlign: "center", padding: 40, color: "#64748b" }}>Loading class data...</div>}
 
+          {/* Collapse / Expand all */}
+          {teacherClassNames.length > 1 && (
+            <div style={{ textAlign: "right", marginBottom: 6 }}>
+              <button
+                onClick={() => {
+                  const anyOpen = Object.values(expandedClasses).some((v) => v === true);
+                  const next = {};
+                  teacherClassNames.forEach((cn) => { next[cn] = !anyOpen; });
+                  setExpandedClasses(next);
+                }}
+                style={{ fontSize: 11, color: "#64748b", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+              >
+                {Object.values(expandedClasses).some((v) => v === true) ? "Collapse all" : "Expand all"}
+              </button>
+            </div>
+          )}
+
           {/* Student list grouped by class/subject */}
           {(() => {
             if (teacherStudents.length === 0) {
@@ -659,6 +678,7 @@ export default function ProgressPage() {
                   setOverallAvg(null);
                   setExpandedResult(null);
                   setReassigningCode(null);
+                  setInfo("");
                   setLoading(true);
                   try {
                     const res = await fetch(`${API}/student-progress/login`, {
