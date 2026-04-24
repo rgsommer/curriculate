@@ -12,6 +12,10 @@ const studentAccountSchema = new mongoose.Schema(
     edsbyId: { type: String, default: "" },
     teacherEmail: { type: String, default: "" },  // which teacher's roster
     className: { type: String, default: "" },
+    // Per-email notification preference: { "email@example.com": "on-new" | "weekly" | "never" }
+    // Emails not listed default to "on-new"
+    emailPrefs: { type: mongoose.Schema.Types.Mixed, default: {} },
+    lastWeeklyDigestAt: { type: Date, default: null },
     resetToken: { type: String, default: null },
     resetTokenExpires: { type: Date, default: null },
     loginCount: { type: Number, default: 0 },

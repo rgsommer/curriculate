@@ -5,8 +5,42 @@ import PublishedResult from "../models/PublishedResult.js";
 import FeedbackMessage from "../models/FeedbackMessage.js";
 import { genAA123, normalizeCode } from "../utils/refCode.js";
 import { sendSystemEmail } from "../email/shareInviteEmailer.js";
+import { notifyNewGrade } from "../email/gradeNotification.js";
 
 const router = express.Router();
+
+/**
+ * Fire-and-forget grade notification.
+ * Only sends if the result hasn't been notified yet (notifiedAt is null)
+ * and the result has enough info (studentId + title or subject).
+ */
+function fireGradeNotify(code, meta, payload) {
+  if (!meta?.studentId) return;
+  // Need at least a title or subject to send a meaningful notification
+  if (!meta.title && !meta.subject && !meta.assessmentType) return;
+
+  // Check and set notifiedAt atomically to prevent duplicates
+  PublishedResult.findOneAndUpdate(
+    { code, notifiedAt: null },
+    { $set: { notifiedAt: new Date() } },
+  ).then((doc) => {
+    if (!doc) return; // already notified or not found
+    let scoreText = "";
+    const p = doc.payload || payload;
+    if (typeof p === "string") {
+      const m = p.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
+      if (m) scoreText = `${m[1]}/${m[2]}`;
+    }
+    return notifyNewGrade(meta.studentId, {
+      title: meta.title || meta.assessmentType || "",
+      subject: meta.subject || "",
+      code,
+      scoreText,
+    });
+  }).catch((err) => {
+    console.error("[grade-notify] fireGradeNotify error:", err.message);
+  });
+}
 
 /**
  * Public lookup limiter: keep it *tight* to stop guessing.
@@ -91,7 +125,9 @@ router.post("/", createLimiter, async (req, res) => {
         existing.createdAt = new Date();
         existing.viewCount = 0;
         existing.lastViewedAt = null;
+        existing.notifiedAt = null; // reset so re-graded result triggers a new notification
         await existing.save();
+        fireGradeNotify(existing.code, meta, payload);
         return res.json({ code: existing.code, expiresAt, updated: true });
       }
     }
@@ -108,6 +144,7 @@ router.post("/", createLimiter, async (req, res) => {
           sessionId,
           expiresAt,
         });
+        fireGradeNotify(code, meta, payload);
         return res.json({ code, expiresAt });
       } catch (e) {
         // Duplicate code -> retry
@@ -145,6 +182,9 @@ router.put("/:code", createLimiter, async (req, res) => {
       { new: true }
     );
     if (!doc) return res.status(404).json({ error: "Code not found." });
+
+    // Trigger notification if this update adds student info (post-match or title update)
+    if (meta) fireGradeNotify(code, doc.meta, doc.payload);
 
     return res.json({ ok: true });
   } catch (err) {

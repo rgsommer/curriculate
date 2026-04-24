@@ -117,6 +117,8 @@ export default function ProgressPage() {
   // Settings
   const [showSettings, setShowSettings] = useState(false);
   const [profileEmails, setProfileEmails] = useState([]);
+  const [emailPrefs, setEmailPrefs] = useState([]); // [{ address, notify }]
+  const [updatingPref, setUpdatingPref] = useState(null); // email being updated
 
   useEffect(() => {
     setMounted(true);
@@ -256,7 +258,25 @@ export default function ProgressPage() {
 
   const loadProfile = async () => {
     const data = await apiCall("/profile", { auth: true });
-    if (data.ok) setProfileEmails(data.emails || []);
+    if (data.ok) {
+      setProfileEmails(data.emails || []);
+      setEmailPrefs(data.emailPrefs || []);
+    }
+  };
+
+  const updateEmailPref = async (email, notify) => {
+    setUpdatingPref(email);
+    const data = await apiCall("/profile/email-pref", {
+      method: "PATCH",
+      auth: true,
+      body: { email, notify },
+    });
+    if (data.ok) {
+      setEmailPrefs((prev) =>
+        prev.map((ep) => (ep.address === email ? { ...ep, notify } : ep))
+      );
+    }
+    setUpdatingPref(null);
   };
 
   const logout = () => {
@@ -695,16 +715,45 @@ export default function ProgressPage() {
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "#334155" }}>
               Email notifications
             </div>
-            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>
-              Everyone on this list gets notified when new grades arrive. To add someone, they just log in with the student ID and their email.
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 10 }}>
+              Choose how each email gets notified about new grades.
             </div>
-            {profileEmails.map((em, i) => (
-              <div key={em} style={{ padding: "6px 0", borderBottom: "1px solid #e2e8f0", fontSize: 13 }}>
-                {em}
-                {i === 0 && <span style={{ fontSize: 10, color: "#94a3b8", marginLeft: 8 }}>(original)</span>}
+            {emailPrefs.map((ep) => (
+              <div key={ep.address} style={{ padding: "8px 0", borderBottom: "1px solid #e2e8f0" }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b", marginBottom: 6 }}>{ep.address}</div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {[
+                    { value: "on-new", label: "On new" },
+                    { value: "weekly", label: "Weekly" },
+                    { value: "never", label: "Never" },
+                  ].map(({ value, label }) => (
+                    <button
+                      key={value}
+                      disabled={updatingPref === ep.address}
+                      onClick={() => updateEmailPref(ep.address, value)}
+                      style={{
+                        padding: "4px 10px",
+                        fontSize: 12,
+                        fontWeight: ep.notify === value ? 700 : 400,
+                        borderRadius: 6,
+                        border: ep.notify === value ? "1.5px solid #2563eb" : "1px solid #e2e8f0",
+                        background: ep.notify === value ? "#eff6ff" : "#fff",
+                        color: ep.notify === value ? "#2563eb" : "#64748b",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
             ))}
-            <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 10 }}>
+              <strong>On new</strong> — notified immediately when a grade is posted.{" "}
+              <strong>Weekly</strong> — summary email every Saturday.{" "}
+              <strong>Never</strong> — no email notifications.
+            </div>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6 }}>
               To add someone, they log in at curriculate.net/progress with the student ID and their email.
               To remove someone, ask your teacher.
             </div>

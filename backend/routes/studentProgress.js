@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import StudentAccount from "../models/StudentAccount.js";
 import ClassRoster from "../models/ClassRoster.js";
 import PublishedResult from "../models/PublishedResult.js";
+import { sendWeeklyDigests } from "../email/gradeNotification.js";
 
 const router = express.Router();
 
@@ -425,15 +426,57 @@ router.get("/profile", studentAuth, async (req, res) => {
   try {
     const account = await StudentAccount.findOne({ studentId: req.studentId }).lean();
     if (!account) return res.status(404).json({ error: "Account not found." });
+    const prefs = account.emailPrefs || {};
+    // Return emails with their notification preference
+    const emailsWithPrefs = (account.emails || []).map((em) => ({
+      address: em,
+      notify: prefs[em] || "on-new", // default to "on-new"
+    }));
     return res.json({
       ok: true,
       firstName: account.firstName,
       lastName: account.lastName,
       className: account.className,
       emails: account.emails || [],
+      emailPrefs: emailsWithPrefs,
     });
   } catch (err) {
     return res.status(500).json({ error: "Failed." });
+  }
+});
+
+/* ------------------------------------------------------------------
+ *  PATCH /profile/email-pref
+ *  { email: string, notify: "on-new" | "weekly" | "never" }
+ *  Updates notification preference for one email address.
+ * ------------------------------------------------------------------ */
+router.patch("/profile/email-pref", studentAuth, async (req, res) => {
+  try {
+    const { email, notify } = req.body || {};
+    const em = String(email || "").trim().toLowerCase();
+    const validPrefs = ["on-new", "weekly", "never"];
+    if (!em || !validPrefs.includes(notify)) {
+      return res.status(400).json({ error: "Invalid email or preference." });
+    }
+
+    const account = await StudentAccount.findOne({ studentId: req.studentId });
+    if (!account) return res.status(404).json({ error: "Account not found." });
+
+    // Verify this email belongs to the account
+    if (!account.emails.includes(em)) {
+      return res.status(403).json({ error: "Email not associated with this account." });
+    }
+
+    const prefs = account.emailPrefs || {};
+    prefs[em] = notify;
+    account.emailPrefs = prefs;
+    account.markModified("emailPrefs");
+    await account.save();
+
+    return res.json({ ok: true, notify });
+  } catch (err) {
+    console.error("PATCH /profile/email-pref error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to update preference." });
   }
 });
 
@@ -904,6 +947,26 @@ router.get("/stats", async (req, res) => {
   } catch (err) {
     console.error("GET /student-progress/stats error:", err?.message || err);
     return res.status(500).json({ error: "Failed to load stats." });
+  }
+});
+
+/* ------------------------------------------------------------------
+ *  POST /weekly-digest
+ *  Triggers the weekly grade digest for all students with "weekly" pref.
+ *  Intended to be called by a cron job / scheduled task every Saturday at 4 PM.
+ *  Protected by a simple secret to prevent abuse.
+ * ------------------------------------------------------------------ */
+router.post("/weekly-digest", async (req, res) => {
+  try {
+    const secret = req.headers["x-digest-secret"] || req.body?.secret;
+    if (secret !== process.env.DIGEST_SECRET && process.env.DIGEST_SECRET) {
+      return res.status(403).json({ error: "Unauthorized." });
+    }
+    const result = await sendWeeklyDigests();
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error("POST /weekly-digest error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to send digests." });
   }
 });
 

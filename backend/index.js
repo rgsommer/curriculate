@@ -14158,7 +14158,31 @@ app.get("/analytics/sessions/:id", authRequired, getSessionDetails);
 // Admin CRUD routes (imported from routes/adminCrud.js)
 app.use("/api/admin", adminCrudRouter);
 
+// Weekly digest scheduler — fires every Saturday at 4 PM server time
+import { sendWeeklyDigests } from "./email/gradeNotification.js";
+function scheduleWeeklyDigest() {
+  const now = new Date();
+  const target = new Date(now);
+  target.setHours(16, 0, 0, 0); // 4 PM
+  // Find next Saturday
+  const daysUntilSat = (6 - now.getDay() + 7) % 7 || 7; // 6 = Saturday
+  if (now.getDay() === 6 && now.getHours() < 16) {
+    // It's Saturday before 4 PM — schedule for today
+    target.setDate(now.getDate());
+  } else {
+    target.setDate(now.getDate() + daysUntilSat);
+  }
+  const ms = target.getTime() - now.getTime();
+  console.log(`[weekly-digest] Next digest scheduled for ${target.toISOString()} (in ${Math.round(ms / 60000)} min)`);
+  setTimeout(() => {
+    sendWeeklyDigests().catch((err) => console.error("[weekly-digest] Error:", err.message));
+    // Reschedule for next week
+    scheduleWeeklyDigest();
+  }, ms);
+}
+
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log("Curriculate backend running on port", PORT);
+  scheduleWeeklyDigest();
 })

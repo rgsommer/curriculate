@@ -10,6 +10,7 @@ const PublishedResultSchema = new mongoose.Schema(
     sessionId: { type: String },                                        // optional
     viewCount: { type: Number, default: 0 },
     lastViewedAt: { type: Date, default: null },
+    notifiedAt: { type: Date, default: null },  // set after grade notification sent
     createdAt: { type: Date, default: Date.now },
     expiresAt: { type: Date, required: true },
   },
