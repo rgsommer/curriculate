@@ -382,14 +382,14 @@ export default function AudioGrading({
             {!isTutor && !submitting && (
               <button
                 type="button"
-                onClick={() => adjustStrictnessAndRegrade(-1)}
-                disabled={submitting || strictnessBias <= -3}
-                title="Re-grade more leniently"
+                onClick={() => adjustStrictnessAndRegrade(1)}
+                disabled={submitting || strictnessBias >= 3}
+                title="Re-grade more strictly (lower score)"
                 style={{
-                  border: "none", background: "transparent", cursor: strictnessBias <= -3 ? "default" : "pointer",
+                  border: "none", background: "transparent", cursor: strictnessBias >= 3 ? "default" : "pointer",
                   padding: "0 2px", fontSize: 22, fontWeight: 700, lineHeight: 1,
-                  color: strictnessBias <= -3 ? "#cbd5e1" : "#64748b",
-                  opacity: strictnessBias <= -3 ? 0.4 : 0.7,
+                  color: strictnessBias >= 3 ? "#cbd5e1" : "#64748b",
+                  opacity: strictnessBias >= 3 ? 0.4 : 0.7,
                 }}
               >&#8249;</button>
             )}
@@ -422,14 +422,14 @@ export default function AudioGrading({
             {!isTutor && !submitting && (
               <button
                 type="button"
-                onClick={() => adjustStrictnessAndRegrade(1)}
-                disabled={submitting || strictnessBias >= 3}
-                title="Re-grade more strictly"
+                onClick={() => adjustStrictnessAndRegrade(-1)}
+                disabled={submitting || strictnessBias <= -3}
+                title="Re-grade more leniently (higher score)"
                 style={{
-                  border: "none", background: "transparent", cursor: strictnessBias >= 3 ? "default" : "pointer",
+                  border: "none", background: "transparent", cursor: strictnessBias <= -3 ? "default" : "pointer",
                   padding: "0 2px", fontSize: 22, fontWeight: 700, lineHeight: 1,
-                  color: strictnessBias >= 3 ? "#cbd5e1" : "#64748b",
-                  opacity: strictnessBias >= 3 ? 0.4 : 0.7,
+                  color: strictnessBias <= -3 ? "#cbd5e1" : "#64748b",
+                  opacity: strictnessBias <= -3 ? 0.4 : 0.7,
                 }}
               >&#8250;</button>
             )}

@@ -3355,29 +3355,29 @@ export default function BatchGrading({
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 0 }}>
                             <button
                               type="button"
-                              onClick={(e) => { e.stopPropagation(); regradeStudent(r.index, -1); }}
-                              disabled={!!regradingIndex || (studentBias[r.index] || 0) <= -3}
-                              title="Re-grade more leniently"
-                              style={{
-                                border: "none", background: "transparent",
-                                cursor: (studentBias[r.index] || 0) <= -3 ? "default" : "pointer",
-                                padding: "0 2px", fontSize: 15, fontWeight: 700, lineHeight: 1,
-                                color: (studentBias[r.index] || 0) <= -3 ? "#cbd5e1" : "#64748b",
-                                opacity: (studentBias[r.index] || 0) <= -3 ? 0.4 : 0.7,
-                              }}
-                            >&#8249;</button>
-                            <span>{r.score}/{r.outOf}</span>
-                            <button
-                              type="button"
                               onClick={(e) => { e.stopPropagation(); regradeStudent(r.index, 1); }}
                               disabled={!!regradingIndex || (studentBias[r.index] || 0) >= 3}
-                              title="Re-grade more strictly"
+                              title="Re-grade more strictly (lower score)"
                               style={{
                                 border: "none", background: "transparent",
                                 cursor: (studentBias[r.index] || 0) >= 3 ? "default" : "pointer",
                                 padding: "0 2px", fontSize: 15, fontWeight: 700, lineHeight: 1,
                                 color: (studentBias[r.index] || 0) >= 3 ? "#cbd5e1" : "#64748b",
                                 opacity: (studentBias[r.index] || 0) >= 3 ? 0.4 : 0.7,
+                              }}
+                            >&#8249;</button>
+                            <span>{r.score}/{r.outOf}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); regradeStudent(r.index, -1); }}
+                              disabled={!!regradingIndex || (studentBias[r.index] || 0) <= -3}
+                              title="Re-grade more leniently (higher score)"
+                              style={{
+                                border: "none", background: "transparent",
+                                cursor: (studentBias[r.index] || 0) <= -3 ? "default" : "pointer",
+                                padding: "0 2px", fontSize: 15, fontWeight: 700, lineHeight: 1,
+                                color: (studentBias[r.index] || 0) <= -3 ? "#cbd5e1" : "#64748b",
+                                opacity: (studentBias[r.index] || 0) <= -3 ? 0.4 : 0.7,
                               }}
                             >&#8250;</button>
                             {(studentBias[r.index] || 0) !== 0 && (

@@ -234,7 +234,7 @@ const TOUR_STEPS = [
   {
     id: "strictness-chevrons",
     title: "Adjust Strictness",
-    body: "Not happy with a grade? Use the ‹ › chevrons next to the score to re-grade more leniently or strictly. You can nudge up to 3 levels in either direction without re-submitting.",
+    body: "Not happy with a grade? Use the ‹ › chevrons next to the score to adjust. Tap ‹ (left) for stricter, › (right) for more lenient. You can nudge up to 3 levels in either direction.",
     target: "tourTargetChevrons",
     phase: 3,
   },
@@ -4302,17 +4302,17 @@ export default function GradingPage() {
                                 {!submitting && (
                                   <button
                                     type="button"
-                                    onClick={(e) => { e.stopPropagation(); adjustStrictnessAndRegrade(-1); }}
+                                    onClick={(e) => { e.stopPropagation(); adjustStrictnessAndRegrade(1); }}
                                     onPointerDown={(e) => e.stopPropagation()}
-                                    disabled={submitting || strictnessBias <= -3}
-                                    title="Re-grade more leniently"
+                                    disabled={submitting || strictnessBias >= 3}
+                                    title="Re-grade more strictly (lower score)"
                                     style={{
-                                      border: "none", background: "transparent", cursor: strictnessBias <= -3 ? "default" : "pointer",
+                                      border: "none", background: "transparent", cursor: strictnessBias >= 3 ? "default" : "pointer",
                                       padding: "0 3px", fontSize: 18, fontWeight: 700, lineHeight: 1,
-                                      color: strictnessBias <= -3 ? "#cbd5e1" : "#64748b",
-                                      opacity: strictnessBias <= -3 ? 0.4 : 0.7,
+                                      color: strictnessBias >= 3 ? "#cbd5e1" : "#64748b",
+                                      opacity: strictnessBias >= 3 ? 0.4 : 0.7,
                                     }}
-                                    aria-label="More lenient"
+                                    aria-label="More strict"
                                   >&#8249;</button>
                                 )}
                                 <span style={{ minWidth: 40, textAlign: "center" }}>
@@ -4321,17 +4321,17 @@ export default function GradingPage() {
                                 {!submitting && (
                                   <button
                                     type="button"
-                                    onClick={(e) => { e.stopPropagation(); adjustStrictnessAndRegrade(1); }}
+                                    onClick={(e) => { e.stopPropagation(); adjustStrictnessAndRegrade(-1); }}
                                     onPointerDown={(e) => e.stopPropagation()}
-                                    disabled={submitting || strictnessBias >= 3}
-                                    title="Re-grade more strictly"
+                                    disabled={submitting || strictnessBias <= -3}
+                                    title="Re-grade more leniently (higher score)"
                                     style={{
-                                      border: "none", background: "transparent", cursor: strictnessBias >= 3 ? "default" : "pointer",
+                                      border: "none", background: "transparent", cursor: strictnessBias <= -3 ? "default" : "pointer",
                                       padding: "0 3px", fontSize: 18, fontWeight: 700, lineHeight: 1,
-                                      color: strictnessBias >= 3 ? "#cbd5e1" : "#64748b",
-                                      opacity: strictnessBias >= 3 ? 0.4 : 0.7,
+                                      color: strictnessBias <= -3 ? "#cbd5e1" : "#64748b",
+                                      opacity: strictnessBias <= -3 ? 0.4 : 0.7,
                                     }}
-                                    aria-label="More strict"
+                                    aria-label="More lenient"
                                   >&#8250;</button>
                                 )}
                                 {biasLabel && (
