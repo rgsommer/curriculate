@@ -663,7 +663,7 @@ export default function BatchGrading({
                   studentId: resultEntry.rosterStudentId || resultEntry.rosterEdsbyId || resultEntry.studentId || null,
                   subject: resultEntry.subject || "",
                   assessmentType: resultEntry.assessmentType || "",
-                  title: emailTitle.trim() || "",
+                  title: effectiveTitle || "",
                   pdfName: pdfName || "",
                   className: resultEntry.rosterClassName || "",
                 },
@@ -1257,7 +1257,7 @@ export default function BatchGrading({
                     studentId: sid,
                     subject: r.subject || "",
                     assessmentType: r.assessmentType || "",
-                    title: emailTitle.trim() || "",
+                    title: effectiveTitle || "",
                     pdfName: pdfName || "",
                     className: r.rosterClassName || "",
                   },
@@ -1560,7 +1560,7 @@ export default function BatchGrading({
                   studentId: updatedEntry.rosterStudentId || updatedEntry.rosterEdsbyId || updatedEntry.studentId || null,
                   subject: updatedEntry.subject || "",
                   assessmentType: updatedEntry.assessmentType || "",
-                  title: emailTitle.trim() || "",
+                  title: effectiveTitle || "",
                   pdfName: pdfName || "",
                   className: updatedEntry.rosterClassName || "",
                 },
@@ -1754,7 +1754,7 @@ export default function BatchGrading({
 
     // Header
     html += `<h2 style="margin: 0 0 4px; font-size: 20px; color: #0f172a;">Batch Grading Results</h2>`;
-    html += `<p style="margin: 0 0 16px; font-size: 14px; color: #64748b;">${pdfName || "Uploaded PDF"} &mdash; ${results.length} student${results.length !== 1 ? "s" : ""} graded</p>`;
+    html += `<p style="margin: 0 0 16px; font-size: 14px; color: #64748b;">${effectiveTitle || "Uploaded PDF"} &mdash; ${results.length} student${results.length !== 1 ? "s" : ""} graded</p>`;
 
     // Rubric note (if teacher typed one in)
     const rubricNote = (rubricOverride || "").trim();
@@ -1898,6 +1898,38 @@ export default function BatchGrading({
   const [emailSending, setEmailSending] = useState(false);
   const [emailTitle, setEmailTitle] = useState("");
 
+  // Derive an assignment title from AI-inferred fields across all results
+  const inferredTitle = useMemo(() => {
+    if (!results.length) return "";
+    const good = results.filter((r) => !r.error);
+    if (!good.length) return "";
+
+    // Find the most common subject and assessment type
+    const subjectCounts = {};
+    const typeCounts = {};
+    for (const r of good) {
+      if (r.subject) subjectCounts[r.subject] = (subjectCounts[r.subject] || 0) + 1;
+      if (r.assessmentType) typeCounts[r.assessmentType] = (typeCounts[r.assessmentType] || 0) + 1;
+    }
+    const topSubject = Object.entries(subjectCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+    const topType = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+
+    // Build title: "Math — Quiz" or just "Math" or just "Quiz"
+    const parts = [];
+    if (topSubject && topSubject !== "Other") parts.push(topSubject);
+    if (topType && topType !== "Other" && topType !== topSubject) parts.push(topType);
+    if (parts.length) return parts.join(" — ");
+    return "";
+  }, [results]);
+
+  // Effective title: teacher-entered > inferred > PDF filename
+  const effectiveTitle = useMemo(() => {
+    if (emailTitle.trim()) return emailTitle.trim();
+    if (inferredTitle) return inferredTitle;
+    if (pdfName) return pdfName.replace(/\.pdf$/i, "");
+    return "";
+  }, [emailTitle, inferredTitle, pdfName]);
+
   const emailSummary = useCallback(async () => {
     if (!results.length) return;
     setShowEmailPrompt(true);
@@ -1912,7 +1944,7 @@ export default function BatchGrading({
   const buildEdsbyCsv = useCallback(() => {
     if (!results.length) return null;
 
-    const assessmentName = emailTitle.trim() || "Curriculate Grade";
+    const assessmentName = effectiveTitle || "Curriculate Grade";
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const headers = ["Student ID", "First Name", "Last Name", "Assessment Name", "Date", "Grade", "Out Of", "Comment"];
     const escCsv = (v) => {
@@ -1986,7 +2018,7 @@ export default function BatchGrading({
       let pdfBase64 = null;
       let stripsBase64 = null;
       try {
-        const pdfOpts = emailTitle.trim() ? { title: emailTitle.trim() } : {};
+        const pdfOpts = effectiveTitle ? { title: effectiveTitle } : {};
         [pdfBase64, stripsBase64] = await Promise.all([
           buildResultsPdf(results, pdfOpts),
           buildStripsPdf(results, pdfOpts),
@@ -2005,11 +2037,11 @@ export default function BatchGrading({
       const sendUrl = gradingUrl.replace(/\/grading$/, "/grading/send-email");
       const rawBase = (pdfName || "batch-results").replace(/\.pdf$/i, "");
       const srcTag = rawBase.replace(/[^a-zA-Z0-9]/g, "").slice(-3) || "000";
-      const titleSlug = emailTitle.trim()
-        ? emailTitle.trim().replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)
+      const titleSlug = effectiveTitle
+        ? effectiveTitle.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)
         : null;
       const baseName = titleSlug ? `${titleSlug}-${srcTag}` : `${rawBase}-${srcTag}`;
-      const subject = emailTitle.trim() ? `Grading: ${emailTitle.trim()}` : emailSubject;
+      const subject = effectiveTitle ? `Grading: ${effectiveTitle}` : emailSubject;
       const payload = { to, subject, html, pdfAttachments: [], csvAttachments: [] };
       if (pdfBase64) {
         payload.pdfAttachments.push({ data: pdfBase64, filename: `${baseName}-reports.pdf` });
@@ -2029,8 +2061,7 @@ export default function BatchGrading({
         const csvBase64 = typeof btoa === "function"
           ? btoa(unescape(encodeURIComponent(csvText)))
           : Buffer.from(csvText, "utf-8").toString("base64");
-        const title = emailTitle.trim();
-        const csvName = title ? `results-${title}.csv` : "results.csv";
+        const csvName = effectiveTitle ? `results-${effectiveTitle}.csv` : "results.csv";
         payload.csvAttachments.push({ data: csvBase64, filename: csvName });
       }
 
@@ -2043,8 +2074,8 @@ export default function BatchGrading({
         setEmailCopied(true);
         setShowEmailPrompt(false);
 
-        // Update published results with the email title (grading publishes before title is entered)
-        const finalTitle = emailTitle.trim();
+        // Update published results with the effective title
+        const finalTitle = effectiveTitle;
         if (finalTitle && resultsUrl) {
           for (const r of results) {
             if (!r.refCode || r.error) continue;
@@ -2929,7 +2960,7 @@ export default function BatchGrading({
                 onClick={async () => {
                   const good = results.filter((r) => !r.error);
                   if (!good.length) { alert("No successful results to print."); return; }
-                  let title = emailTitle.trim();
+                  let title = effectiveTitle;
                   if (!title) {
                     const t = window.prompt("Assignment title (appears on footer — leave blank to skip):");
                     if (t === null) return;
@@ -2956,7 +2987,7 @@ export default function BatchGrading({
                 onClick={async () => {
                   const good = results.filter((r) => !r.error);
                   if (!good.length) { alert("No successful results to print."); return; }
-                  let title = emailTitle.trim();
+                  let title = effectiveTitle;
                   if (!title) {
                     const t = window.prompt("Assignment title (appears on footer — leave blank to skip):");
                     if (t === null) return;
