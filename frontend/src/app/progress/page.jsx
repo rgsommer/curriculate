@@ -20,6 +20,25 @@ function letterGrade(pct) {
   return "F";
 }
 
+// Soft subject color palette — pastel tints for subject bars
+const SUBJECT_COLORS = [
+  { bg: "linear-gradient(135deg, #dbeafe, #eff6ff)", border: "#bfdbfe", text: "#1e40af" },  // blue
+  { bg: "linear-gradient(135deg, #fce7f3, #fdf2f8)", border: "#fbcfe8", text: "#9d174d" },  // pink
+  { bg: "linear-gradient(135deg, #d1fae5, #ecfdf5)", border: "#a7f3d0", text: "#065f46" },  // green
+  { bg: "linear-gradient(135deg, #fef3c7, #fffbeb)", border: "#fde68a", text: "#92400e" },  // amber
+  { bg: "linear-gradient(135deg, #e0e7ff, #eef2ff)", border: "#c7d2fe", text: "#3730a3" },  // indigo
+  { bg: "linear-gradient(135deg, #ffe4e6, #fff1f2)", border: "#fecdd3", text: "#9f1239" },  // rose
+  { bg: "linear-gradient(135deg, #ccfbf1, #f0fdfa)", border: "#99f6e4", text: "#115e59" },  // teal
+  { bg: "linear-gradient(135deg, #fae8ff, #fdf4ff)", border: "#f0abfc", text: "#6b21a8" },  // purple
+  { bg: "linear-gradient(135deg, #ffedd5, #fff7ed)", border: "#fed7aa", text: "#9a3412" },  // orange
+  { bg: "linear-gradient(135deg, #cffafe, #ecfeff)", border: "#a5f3fc", text: "#155e75" },  // cyan
+];
+
+function subjectColor(subj, allSubjects) {
+  const idx = allSubjects.indexOf(subj);
+  return SUBJECT_COLORS[idx >= 0 ? idx % SUBJECT_COLORS.length : 0];
+}
+
 function gradeColor(letter) {
   const l = (letter || "?")[0];
   if (l === "A") return "#16a34a";
@@ -679,6 +698,7 @@ export default function ProgressPage() {
               const classAvgs = students.filter((s) => s.avg != null).map((s) => s.avg);
               const classAvg = classAvgs.length ? Math.round(classAvgs.reduce((a, b) => a + b, 0) / classAvgs.length) : null;
               const isOpen = expandedClasses[cls] === true; // default collapsed
+              const cc = subjectColor(cls, classNames);
 
               return (
                 <div key={cls} style={{ marginBottom: 8 }}>
@@ -686,15 +706,15 @@ export default function ProgressPage() {
                     onClick={() => setExpandedClasses((prev) => ({ ...prev, [cls]: !isOpen }))}
                     style={{
                       width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-                      padding: "12px 16px", background: "linear-gradient(135deg, #f8fafc, #f1f5f9)",
-                      border: "1px solid #e2e8f0", borderRadius: isOpen ? "10px 10px 0 0" : 10,
+                      padding: "12px 16px", background: cc.bg,
+                      border: `1px solid ${cc.border}`, borderRadius: isOpen ? "10px 10px 0 0" : 10,
                       cursor: "pointer",
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 12, color: "#64748b", transition: "transform 0.15s", transform: isOpen ? "rotate(90deg)" : "rotate(0deg)", display: "inline-block" }}>&#9654;</span>
-                      <span style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>{cls}</span>
-                      <span style={{ fontSize: 12, color: "#94a3b8" }}>{students.length} student{students.length !== 1 ? "s" : ""}</span>
+                      <span style={{ fontSize: 12, color: cc.text, opacity: 0.6, transition: "transform 0.15s", transform: isOpen ? "rotate(90deg)" : "rotate(0deg)", display: "inline-block" }}>&#9654;</span>
+                      <span style={{ fontWeight: 700, fontSize: 14, color: cc.text }}>{cls}</span>
+                      <span style={{ fontSize: 12, color: cc.text, opacity: 0.6 }}>{students.length} student{students.length !== 1 ? "s" : ""}</span>
                     </div>
                     {classAvg != null && (
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -1254,8 +1274,11 @@ export default function ProgressPage() {
               });
               const years = Object.keys(byYear).sort().reverse(); // newest first
 
+              // Stable sorted list of all subjects for consistent color assignment
+              const allSubjects = [...new Set(results.map((r) => r.subject || "General"))].sort();
+
               // Only one year and one subject — flat list, no bars
-              const totalSubjects = new Set(results.map((r) => r.subject || "General")).size;
+              const totalSubjects = allSubjects.length;
               if (years.length <= 1 && totalSubjects <= 1) {
                 return results.map((r) => <ResultRow key={r.code} r={r} flat />);
               }
@@ -1309,6 +1332,7 @@ export default function ProgressPage() {
                             const subjAvg = calcAvg(items);
                             const subjKey = `${year}|${subj}`;
                             const isOpen = expandedSubjects[subjKey] !== false; // default open
+                            const sc = subjectColor(subj, allSubjects);
 
                             return (
                               <div key={subjKey} style={{ margin: years.length > 1 ? "4px 8px" : "0 0 6px" }}>
@@ -1316,15 +1340,15 @@ export default function ProgressPage() {
                                   onClick={() => setExpandedSubjects((prev) => ({ ...prev, [subjKey]: !isOpen }))}
                                   style={{
                                     width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-                                    padding: "10px 14px", background: "linear-gradient(135deg, #f8fafc, #f1f5f9)",
-                                    border: "1px solid #e2e8f0", borderRadius: isOpen ? "10px 10px 0 0" : 10,
+                                    padding: "10px 14px", background: sc.bg,
+                                    border: `1px solid ${sc.border}`, borderRadius: isOpen ? "10px 10px 0 0" : 10,
                                     cursor: "pointer",
                                   }}
                                 >
                                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <span style={{ fontSize: 12, color: "#64748b", transition: "transform 0.15s", transform: isOpen ? "rotate(90deg)" : "rotate(0deg)", display: "inline-block" }}>&#9654;</span>
-                                    <span style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>{subj}</span>
-                                    <span style={{ fontSize: 12, color: "#94a3b8" }}>{items.length} assignment{items.length !== 1 ? "s" : ""}</span>
+                                    <span style={{ fontSize: 12, color: sc.text, opacity: 0.6, transition: "transform 0.15s", transform: isOpen ? "rotate(90deg)" : "rotate(0deg)", display: "inline-block" }}>&#9654;</span>
+                                    <span style={{ fontWeight: 700, fontSize: 14, color: sc.text }}>{subj}</span>
+                                    <span style={{ fontSize: 12, color: sc.text, opacity: 0.6 }}>{items.length} assignment{items.length !== 1 ? "s" : ""}</span>
                                   </div>
                                   {subjAvg != null && (
                                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
