@@ -668,11 +668,13 @@ export default function ProgressPage() {
             });
             const classNames = Object.keys(byClass).sort();
 
-            // Sort students within each class by last name then first name
+            // Sort students within each class alphabetically
             classNames.forEach((cls) => {
-              byClass[cls].sort((a, b) =>
-                (a.lastName || "").localeCompare(b.lastName || "") || (a.firstName || "").localeCompare(b.firstName || "")
-              );
+              byClass[cls].sort((a, b) => {
+                const nameA = (a.lastName || a.firstName || "").trim();
+                const nameB = (b.lastName || b.firstName || "").trim();
+                return nameA.localeCompare(nameB) || (a.firstName || "").localeCompare(b.firstName || "");
+              });
             });
 
             // Student row renderer
