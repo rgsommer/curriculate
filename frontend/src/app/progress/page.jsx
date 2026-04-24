@@ -623,6 +623,24 @@ export default function ProgressPage() {
             )}
             {(() => {
               // Helper: render a single result row
+              const deleteResult = async (code) => {
+                if (!teacherToken || !confirm("Delete this assignment result? This cannot be undone.")) return;
+                try {
+                  const res = await fetch(`${API}/student-progress/teacher/result/${code}`, {
+                    method: "DELETE",
+                    headers: { Authorization: `Bearer ${teacherToken}` },
+                  });
+                  const data = await res.json();
+                  if (data.ok) {
+                    setResults((prev) => prev.filter((r) => r.code !== code));
+                  } else {
+                    setError(data.error || "Failed to delete.");
+                  }
+                } catch {
+                  setError("Failed to delete result.");
+                }
+              };
+
               const ResultRow = ({ r, flat }) => (
                 <div key={r.code} style={{ ...s.resultRow, ...(flat ? {} : { borderRadius: 0, margin: 0, borderBottom: "1px solid #f1f5f9" }) }}>
                   <div style={{ flex: 1 }}>
@@ -649,6 +667,21 @@ export default function ProgressPage() {
                     style={{ fontSize: 11, fontWeight: 700, color: "#2563eb", textDecoration: "none", background: "#eff6ff", padding: "6px 10px", borderRadius: 8 }}>
                     {r.code}
                   </a>
+                  {teacherToken && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteResult(r.code); }}
+                      title="Delete this result"
+                      style={{
+                        background: "none", border: "none", cursor: "pointer",
+                        color: "#cbd5e1", fontSize: 16, fontWeight: 700, lineHeight: 1,
+                        padding: "4px 6px", marginLeft: 6, borderRadius: 4,
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "#dc2626"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = "#cbd5e1"; }}
+                    >
+                      &times;
+                    </button>
+                  )}
                 </div>
               );
 

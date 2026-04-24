@@ -527,6 +527,45 @@ router.get("/teacher/students", teacherAuth, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------
+ *  DELETE /teacher/result/:code
+ *  Teacher deletes a single published result by its ref code.
+ *  Verifies the result belongs to one of the teacher's roster students.
+ * ------------------------------------------------------------------ */
+router.delete("/teacher/result/:code", teacherAuth, async (req, res) => {
+  try {
+    const code = (req.params.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
+    if (code.length !== 5) return res.status(400).json({ error: "Invalid code." });
+
+    // Verify the result exists
+    const doc = await PublishedResult.findOne({ code }).lean();
+    if (!doc) return res.status(404).json({ error: "Result not found." });
+
+    // Verify teacher owns this student via roster
+    const studentId = doc.meta?.studentId;
+    if (studentId) {
+      const roster = await ClassRoster.findOne({
+        teacherEmail: req.teacherEmail,
+        "students.studentId": studentId,
+      }).lean();
+      const rosterByEdsby = !roster ? await ClassRoster.findOne({
+        teacherEmail: req.teacherEmail,
+        "students.edsbyId": studentId,
+      }).lean() : roster;
+      if (!rosterByEdsby) {
+        return res.status(403).json({ error: "This result does not belong to your roster." });
+      }
+    }
+
+    await PublishedResult.deleteOne({ code });
+    console.log(`[teacher-delete] ${req.teacherEmail} deleted result ${code} (student: ${studentId || "unknown"})`);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("DELETE /teacher/result/:code error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to delete result." });
+  }
+});
+
+/* ------------------------------------------------------------------
  *  GET /debug (temporary diagnostic — remove after fixing)
  * ------------------------------------------------------------------ */
 router.get("/debug", async (req, res) => {

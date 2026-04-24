@@ -358,6 +358,7 @@ export default function BatchGrading({
     setLoading(true);
     setPdfName(file.name);
     setResults([]);
+    setStudentBias({});
     setClassSummary(null);
     setTeacherAnalysis("");
     setDetectedGroups(null);
@@ -436,6 +437,7 @@ export default function BatchGrading({
     abortRef.current = false;
     setGrading(true);
     setResults([]);
+    setStudentBias({});
     setClassSummary(null);
 
     // --- Auto-detect if needed and not already done ---
@@ -1473,11 +1475,35 @@ export default function BatchGrading({
       const data = await res.json();
       const rawScore2 = Number(data.overall_score);
       const rawOutOf2 = Number(data.overall_out_of);
-      const score = Number.isFinite(rawScore2) ? Math.round(rawScore2 * 10) / 10 : rawScore2;
-      const outOf = Number.isFinite(rawOutOf2) ? Math.round(rawOutOf2) : rawOutOf2;
-      const pct =
+      let score = Number.isFinite(rawScore2) ? Math.round(rawScore2 * 10) / 10 : rawScore2;
+      let outOf = Number.isFinite(rawOutOf2) ? Math.round(rawOutOf2) : rawOutOf2;
+      let pct =
         Number.isFinite(score) && Number.isFinite(outOf) && outOf > 0
           ? Math.round((score / outOf) * 100) : null;
+
+      // Guard: lenient should never lower the score, strict should never raise it
+      const oldPct = typeof r.pct === "number" ? r.pct : null;
+      if (pct != null && oldPct != null) {
+        if (biasDelta < 0 && pct < oldPct) {
+          // Lenient gave a lower grade — keep the original
+          score = r.score;
+          outOf = r.outOf;
+          pct = oldPct;
+          data.strengths = data.strengths || r.strengths;
+          data.improvements = data.improvements || r.improvements;
+          data.teacher_comment = data.teacher_comment || r.comment;
+          data.sections = data.sections || r.sections;
+        } else if (biasDelta > 0 && pct > oldPct) {
+          // Strict gave a higher grade — keep the original
+          score = r.score;
+          outOf = r.outOf;
+          pct = oldPct;
+          data.strengths = data.strengths || r.strengths;
+          data.improvements = data.improvements || r.improvements;
+          data.teacher_comment = data.teacher_comment || r.comment;
+          data.sections = data.sections || r.sections;
+        }
+      }
 
       const aiName = (data.student_name || "").trim();
       const classifierName = (group.name || "").trim();
