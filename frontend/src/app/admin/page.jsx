@@ -432,6 +432,22 @@ export default function AdminUsageDashboard() {
             <BigNumber value={rpv.viewedLast30d} sub="Unique results viewed" />
           </Card>
         </div>
+        {rpv.bySource && (
+          <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+            <Card title="Direct views">
+              <BigNumber value={rpv.bySource.direct || 0} sub="Typed / pasted code" />
+            </Card>
+            <Card title="Progress portal">
+              <BigNumber value={rpv.bySource.progress || 0} sub="Via student dashboard" />
+            </Card>
+            <Card title="QR code scans">
+              <BigNumber value={rpv.bySource.qr || 0} sub="From PDF reports" />
+            </Card>
+            <Card title="Email clicks">
+              <BigNumber value={rpv.bySource.email || 0} sub="From notification emails" />
+            </Card>
+          </div>
+        )}
 
         <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card title="Daily submissions (last 30 days)">

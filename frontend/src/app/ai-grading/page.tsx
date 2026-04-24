@@ -18,6 +18,11 @@ import {
   BarChart3,
   TrendingUp,
   ClipboardList,
+  SlidersHorizontal,
+  QrCode,
+  Mail,
+  MessageCircle,
+  Bell,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -69,6 +74,26 @@ const features = [
     icon: <FileText className="w-6 h-6 text-teal-600" />,
     title: "Print reports & strips",
     desc: "Generate half-page reports or compact strips to hand back. Print-ready PDFs with scores, comments, and feedback links.",
+  },
+  {
+    icon: <SlidersHorizontal className="w-6 h-6 text-amber-600" />,
+    title: "Per-student strictness",
+    desc: "Adjust grading strictness per student with a simple slider. Tougher on your advanced kids, more encouraging for struggling learners — same rubric, calibrated expectations.",
+  },
+  {
+    icon: <QrCode className="w-6 h-6 text-violet-600" />,
+    title: "QR-coded PDF reports",
+    desc: "Generate print-ready PDF reports with QR codes linking to full feedback. Each result has a 5-character code (like AB123) for quick lookup.",
+  },
+  {
+    icon: <Bell className="w-6 h-6 text-pink-600" />,
+    title: "Email notifications",
+    desc: "Parents and students get notified when new grades arrive — instantly or as a weekly digest. Each email can be set to on-new, weekly, or never.",
+  },
+  {
+    icon: <MessageCircle className="w-6 h-6 text-sky-600" />,
+    title: "Grade review requests",
+    desc: "Students and parents can request a review or leave feedback directly on any result. Teachers see the request and can regrade with context.",
   },
   {
     icon: <Shield className="w-6 h-6 text-rose-600" />,
@@ -152,6 +177,22 @@ const faqs = [
   {
     q: "Can parents track their child's progress?",
     a: "Yes. At curriculate.net/progress, anyone with the student ID can enter their email and see all grades, averages, and a progress chart. Multiple people — the student, both parents, a tutor — can each add their own email. Everyone gets notified when new grades arrive.",
+  },
+  {
+    q: "Can I adjust strictness per student?",
+    a: "Yes. Each student gets a strictness slider — tougher grading for advanced students, more encouraging feedback for those who need it. Same rubric, calibrated expectations.",
+  },
+  {
+    q: "Do parents get notified when grades are posted?",
+    a: "Yes. Once an email is added to the progress portal, notifications are sent automatically when new grades arrive. Each email can be set to instant (on every new grade), weekly digest (Saturday summary), or turned off entirely.",
+  },
+  {
+    q: "What are the QR codes and 5-character codes?",
+    a: "Every graded result gets a unique 5-character code (like AB123). PDF reports include QR codes that link directly to the full feedback page. Students can also type the code at curriculate.net/results to view their feedback.",
+  },
+  {
+    q: "Can students request a regrade?",
+    a: "Yes. On any result page, students or parents can submit a review request or leave feedback. The teacher receives it and can regrade with the additional context.",
   },
   {
     q: "Is student data stored?",
@@ -356,7 +397,7 @@ function RecommendSection() {
   }
 
   return (
-    <section className="px-6 py-12">
+    <section id="recommend" className="px-6 py-12">
       <div className="mx-auto max-w-2xl">
         <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-3xl p-8 text-center">
           <h2 className="text-2xl sm:text-3xl font-black text-gray-900 mb-2">
@@ -525,7 +566,12 @@ export default function AIGradingLanding() {
           <div className="h-10 w-px bg-gray-200 hidden sm:block" />
           <div>
             <div className="text-3xl font-black text-gray-900">/progress</div>
-            <div className="text-sm font-bold text-gray-500">Student &amp; parent portal</div>
+            <div className="text-sm font-bold text-gray-500">Parent &amp; student portal</div>
+          </div>
+          <div className="h-10 w-px bg-gray-200 hidden sm:block" />
+          <div>
+            <div className="text-3xl font-black text-gray-900">14</div>
+            <div className="text-sm font-bold text-gray-500">Features &amp; counting</div>
           </div>
         </div>
       </section>

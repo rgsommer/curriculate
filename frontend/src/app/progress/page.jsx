@@ -114,6 +114,9 @@ export default function ProgressPage() {
   const [bulkDeleteTitle, setBulkDeleteTitle] = useState("");
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
+  // Expanded result details (KITA bars)
+  const [expandedResult, setExpandedResult] = useState(null);
+
   // Settings
   const [showSettings, setShowSettings] = useState(false);
   const [profileEmails, setProfileEmails] = useState([]);
@@ -764,7 +767,7 @@ export default function ProgressPage() {
 
         {!loading && (
           <>
-            {/* Overall average */}
+            {/* Overall average with progress bar */}
             {overallAvg != null && (
               <div style={s.avgCard}>
                 <div style={{ fontSize: 13, opacity: 0.8, marginBottom: 4 }}>Overall Average</div>
@@ -772,6 +775,28 @@ export default function ProgressPage() {
                 <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4 }}>{letterGrade(overallAvg)}</div>
                 <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
                   {results.length} assignment{results.length !== 1 ? "s" : ""} graded
+                </div>
+                {/* Progress bar */}
+                <div style={{ marginTop: 14, position: "relative", height: 14, borderRadius: 7, overflow: "visible", background: "rgba(255,255,255,0.15)" }}>
+                  <div style={{
+                    position: "absolute", top: 0, left: 0, bottom: 0, width: "100%", borderRadius: 7,
+                    background: "linear-gradient(90deg, #fecaca 0%, #fde68a 30%, #d9f99d 55%, #bbf7d0 75%, #6ee7b7 100%)",
+                    opacity: 0.85,
+                  }} />
+                  <div style={{
+                    position: "absolute", top: -4, bottom: -4,
+                    left: `${Math.min(100, Math.max(0, overallAvg))}%`, transform: "translateX(-50%)",
+                    width: 4, borderRadius: 2, zIndex: 3,
+                    background: "#fff",
+                    boxShadow: "0 0 8px rgba(255,255,255,0.8)",
+                  }} />
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 9, fontWeight: 600, opacity: 0.6 }}>
+                  <span>F</span>
+                  <span>D</span>
+                  <span>C</span>
+                  <span>B</span>
+                  <span>A</span>
                 </div>
               </div>
             )}
@@ -862,22 +887,43 @@ export default function ProgressPage() {
                 setEditingTitleCode(null);
               };
 
+              // Color helpers matching results page
+              const pctColor = (pct) =>
+                pct >= 80 ? "#059669" : pct >= 70 ? "#22c55e" : pct >= 60 ? "#eab308" : pct >= 50 ? "#f59e0b" : "#ef4444";
+              const pctLabel = (pct) =>
+                pct >= 90 ? "Exceptional" : pct >= 80 ? "Excellent" : pct >= 70 ? "Proficient"
+                : pct >= 60 ? "Developing" : pct >= 50 ? "Approaching" : "Needs Support";
+              const levelColors = {
+                strong: { bg: "rgba(5,150,105,0.1)", border: "rgba(5,150,105,0.3)", text: "#059669" },
+                adequate: { bg: "rgba(37,99,235,0.08)", border: "rgba(37,99,235,0.25)", text: "#2563eb" },
+                developing: { bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.3)", text: "#d97706" },
+                limited: { bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)", text: "#dc2626" },
+              };
+
               const ResultRow = ({ r, flat }) => {
                 const isNew = r.viewCount === 0;
                 const isUnviewed = r.viewCount != null && r.viewCount <= 1;
+                const isExpanded = expandedResult === r.code;
+                const hasCats = r.categories && r.categories.categories && r.categories.categories.length > 0;
                 return (
-                <div key={r.code} style={{
-                  ...s.resultRow,
-                  ...(flat ? {} : { borderRadius: 0, margin: 0, borderBottom: "1px solid #f1f5f9" }),
-                  ...(isNew ? { background: "#eff6ff", borderLeft: "3px solid #2563eb", paddingLeft: 10 }
-                    : isUnviewed ? { background: "#fafbff", borderLeft: "3px solid #c7d2fe", paddingLeft: 10 }
-                    : {}),
-                }}>
+                <div key={r.code}>
+                <div
+                  style={{
+                    ...s.resultRow,
+                    ...(flat ? {} : { borderRadius: 0, margin: 0, borderBottom: "1px solid #f1f5f9" }),
+                    ...(isNew ? { background: "#eff6ff", borderLeft: "3px solid #2563eb", paddingLeft: 10 }
+                      : isUnviewed ? { background: "#fafbff", borderLeft: "3px solid #c7d2fe", paddingLeft: 10 }
+                      : {}),
+                    cursor: hasCats ? "pointer" : "default",
+                  }}
+                  onClick={() => { if (hasCats) setExpandedResult(isExpanded ? null : r.code); }}
+                >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {editingTitleCode === r.code ? (
                       <input
                         autoFocus
                         defaultValue={r.title || "Assignment"}
+                        onClick={(e) => e.stopPropagation()}
                         onBlur={(e) => {
                           if (e.target.dataset.saved) return;
                           e.target.dataset.saved = "1";
@@ -901,14 +947,17 @@ export default function ProgressPage() {
                       />
                     ) : (
                       <div
-                        style={{ fontWeight: 700, fontSize: 14, color: "#1e293b", cursor: teacherToken ? "text" : "default" }}
-                        onClick={() => { if (teacherToken) setEditingTitleCode(r.code); }}
-                        title={teacherToken ? "Click to rename" : undefined}
+                        style={{ fontWeight: 700, fontSize: 14, color: "#1e293b", cursor: teacherToken ? "text" : hasCats ? "pointer" : "default", display: "flex", alignItems: "center", gap: 6 }}
+                        onClick={(e) => { if (teacherToken) { e.stopPropagation(); setEditingTitleCode(r.code); } }}
+                        title={teacherToken ? "Click to rename" : hasCats ? "Click to see breakdown" : undefined}
                       >
                         {r.title || "Assignment"}
+                        {hasCats && (
+                          <span style={{ fontSize: 10, color: "#94a3b8", transition: "transform 0.15s", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", display: "inline-block" }}>&#9654;</span>
+                        )}
                       </div>
                     )}
-                    <div style={{ fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                       {new Date(r.createdAt).toLocaleDateString()}
                       {isNew && (
                         <span style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", background: "#dbeafe", padding: "1px 5px", borderRadius: 4 }}>NEW</span>
@@ -967,6 +1016,7 @@ export default function ProgressPage() {
                     )}
                   </div>
                   <a href={`/results/${r.code}?src=progress`} target="_blank" rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
                     style={{ fontSize: 11, fontWeight: 700, color: "#2563eb", textDecoration: "none", background: "#eff6ff", padding: "6px 10px", borderRadius: 8 }}>
                     {r.code}
                   </a>
@@ -985,6 +1035,100 @@ export default function ProgressPage() {
                       &times;
                     </button>
                   )}
+                </div>
+                {/* Expanded KITA / category breakdown */}
+                {isExpanded && hasCats && (() => {
+                  const { categories, weightedTotal, isKita } = r.categories;
+                  const scored = categories.filter((c) => typeof c.score === "number" && typeof c.outOf === "number" && c.outOf > 0);
+                  return (
+                    <div style={{
+                      padding: "10px 14px 14px",
+                      background: "rgba(37,99,235,0.02)",
+                      borderBottom: "1px solid #e2e8f0",
+                    }}>
+                      {/* Category bars */}
+                      <div style={{ display: "grid", gap: 8 }}>
+                        {categories.map((cat, ci) => {
+                          const hasSc = typeof cat.score === "number" && typeof cat.outOf === "number" && cat.outOf > 0;
+                          const catPct = hasSc ? Math.round((cat.score / cat.outOf) * 100) : null;
+                          const lc = cat.level ? (levelColors[cat.level] || levelColors.adequate) : null;
+                          const barColor = catPct != null ? pctColor(catPct) : (lc ? lc.text : "#94a3b8");
+
+                          return (
+                            <div key={ci}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{
+                                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                    width: 20, height: 20, borderRadius: 5,
+                                    background: isKita ? "rgba(37,99,235,0.12)" : (lc ? lc.bg : "rgba(37,99,235,0.08)"),
+                                    fontSize: 10, fontWeight: 900,
+                                    color: isKita ? "#2563eb" : (lc ? lc.text : "#2563eb"),
+                                  }}>{cat.short}</span>
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: "#334155" }}>{cat.name}</span>
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  {cat.weight && <span style={{ fontSize: 10, color: "#94a3b8" }}>{cat.weight}%</span>}
+                                  {hasSc && <span style={{ fontSize: 12, fontWeight: 800, color: barColor }}>{cat.score}/{cat.outOf}</span>}
+                                  {cat.level && !hasSc && (
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: lc ? lc.text : "#64748b", textTransform: "capitalize" }}>{cat.level}</span>
+                                  )}
+                                </div>
+                              </div>
+                              {catPct != null && (
+                                <div style={{ height: 6, borderRadius: 3, background: "#f1f5f9", overflow: "hidden" }}>
+                                  <div style={{
+                                    height: "100%", borderRadius: 3, width: `${catPct}%`,
+                                    background: barColor,
+                                    transition: "width 0.3s ease",
+                                  }} />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Overall progress bar — same gradient as results page */}
+                      {scored.length > 0 && (() => {
+                        const totalScore = scored.reduce((s, c) => s + c.score, 0);
+                        const totalOutOf = scored.reduce((s, c) => s + c.outOf, 0);
+                        const pct = totalOutOf > 0 ? Math.min(100, Math.max(0, (totalScore / totalOutOf) * 100)) : 0;
+                        const displayPct = weightedTotal != null ? weightedTotal : Math.round(pct);
+
+                        return (
+                          <div style={{ marginTop: 10, padding: "8px 0 0" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                              <span style={{ fontSize: 11, fontWeight: 800, color: pctColor(displayPct) }}>{pctLabel(displayPct)}</span>
+                              <span style={{ fontSize: 12, fontWeight: 900, color: "#1e293b" }}>
+                                {weightedTotal != null ? `${weightedTotal}%` : `${totalScore.toFixed(1)}/${totalOutOf.toFixed(1)}`}
+                              </span>
+                            </div>
+                            <div style={{ position: "relative", height: 14, borderRadius: 7, overflow: "visible", background: "#f1f5f9", border: "1px solid #e2e8f0" }}>
+                              <div style={{
+                                position: "absolute", top: 0, left: 0, bottom: 0, width: "100%", borderRadius: 7,
+                                background: "linear-gradient(90deg, #fecaca 0%, #fde68a 30%, #d9f99d 55%, #bbf7d0 75%, #6ee7b7 100%)",
+                              }} />
+                              <div style={{
+                                position: "absolute", top: -4, bottom: -4,
+                                left: `${displayPct}%`, transform: "translateX(-50%)",
+                                width: 4, borderRadius: 2, zIndex: 3,
+                                background: "#dc2626",
+                                boxShadow: "0 0 6px rgba(220,38,38,0.5)",
+                              }} />
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3, fontSize: 8, fontWeight: 600, color: "#94a3b8" }}>
+                              <span>Needs Support</span>
+                              <span>Developing</span>
+                              <span>Proficient</span>
+                              <span>Excellent</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })()}
                 </div>
                 );
               };

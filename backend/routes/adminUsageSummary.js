@@ -109,6 +109,7 @@ router.get("/usage-summary", requireAdminToken, async (req, res) => {
       resultsTotalViewsAgg,
       resultsViewedAgg,
       resultsViewed30dAgg,
+      viewSourcesAgg,
     ] = await Promise.all([
       GradingUsage.countDocuments({}),
       GradingUsage.countDocuments({ timestamp: { $gte: today } }),
@@ -249,6 +250,16 @@ router.get("/usage-summary", requireAdminToken, async (req, res) => {
         { $match: { lastViewedAt: { $gte: since30 } } },
         { $group: { _id: null, totalViews: { $sum: "$viewCount" }, viewed: { $sum: 1 } } },
       ]).catch(() => []),
+      // Per-source view counts
+      PublishedResult.aggregate([
+        { $group: {
+          _id: null,
+          direct: { $sum: { $ifNull: ["$viewSources.direct", 0] } },
+          progress: { $sum: { $ifNull: ["$viewSources.progress", 0] } },
+          qr: { $sum: { $ifNull: ["$viewSources.qr", 0] } },
+          email: { $sum: { $ifNull: ["$viewSources.email", 0] } },
+        }},
+      ]).catch(() => []),
     ]);
 
     const dailySubmissions30d = dailyCounts30d.map((x) => {
@@ -356,6 +367,12 @@ router.get("/usage-summary", requireAdminToken, async (req, res) => {
         avgViewsPerResult: Math.round((resultsViewedAgg?.[0]?.avgViews || 0) * 10) / 10,
         maxViews: resultsViewedAgg?.[0]?.maxViews || 0,
         viewedLast30d: resultsViewed30dAgg?.[0]?.viewed || 0,
+        bySource: {
+          direct: viewSourcesAgg?.[0]?.direct || 0,
+          progress: viewSourcesAgg?.[0]?.progress || 0,
+          qr: viewSourcesAgg?.[0]?.qr || 0,
+          email: viewSourcesAgg?.[0]?.email || 0,
+        },
       },
 
       cache: { ttlMs: CACHE_TTL_MS },

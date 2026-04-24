@@ -1864,9 +1864,9 @@ export default function BatchGrading({
     html += `<div style="font-size: 12px; color: #78350f; margin-bottom: 8px;">Copy and paste this into your class chat, LMS, or handout:</div>`;
     html += `<div style="background: #ffffff; border: 1px dashed #d4a574; border-radius: 6px; padding: 12px 14px; font-size: 13px; color: #1e293b; line-height: 1.6;">`;
     if (hasAnyIds) {
-      html += `I'm working on this next level of my tool to make it easier for all of us&mdash;teachers, parents, students&mdash;to see the feedback and results. `;
+      html += `I'm sharing this Curriculate Progress viewer to make it easier for all of us&mdash;teachers, parents, students&mdash;to see the feedback and results on your assessments. `;
       if (hasEdsby) html += `Grades still go into Edsby&mdash;nothing changes there. `;
-      html += `As your new work is graded, it will appear in this portal!<br/><br/>`;
+      html += `As new work is graded, it will appear in this portal!<br/><br/>`;
       html += `To see your detailed results and feedback:<br/><br/>`;
       html += `1. Go to <strong>curriculate.net/progress</strong><br/>`;
       html += `2. Enter your student ID and your (or your parent's) email<br/>`;

@@ -9,6 +9,82 @@ import { sendWeeklyDigests } from "../email/gradeNotification.js";
 
 const router = express.Router();
 
+/**
+ * Parse KITA / Achievement Category scores from a result payload string.
+ * Returns { isKita, categories: [{ short, name, score, outOf, weight }], weightedTotal }
+ * or null if no structured categories found.
+ */
+function parseCategories(payload) {
+  if (typeof payload !== "string") return null;
+  const lines = payload.split("\n");
+
+  const isKita = lines.some((l) => l.trim() === "Achievement Categories (KITA):");
+  const isAchievement = lines.some((l) => l.trim() === "Achievement Categories:");
+
+  if (!isKita && !isAchievement) return null;
+
+  const header = isKita ? "Achievement Categories (KITA):" : "Achievement Categories:";
+  let inSection = false;
+  const categories = [];
+  let weightedTotal = null;
+
+  for (const ln of lines) {
+    if (ln.trim() === header) { inSection = true; continue; }
+    if (!inSection) continue;
+
+    // Stop at next heading
+    if (/^\S.*:$/.test(ln.trim()) && ln.trim() !== header) break;
+
+    const t = ln.trim();
+
+    // KITA line: "- K Knowledge & Understanding: 3.5/5 (25%) — comment"
+    const kitaMatch = t.match(/^-\s*([KTCA])\s+(.+?):\s*([\d.]+)\s*\/\s*([\d.]+)\s*\((\d+)%\)/);
+    if (kitaMatch) {
+      categories.push({
+        short: kitaMatch[1],
+        name: kitaMatch[2].trim(),
+        score: parseFloat(kitaMatch[3]),
+        outOf: parseFloat(kitaMatch[4]),
+        weight: parseInt(kitaMatch[5], 10),
+      });
+      continue;
+    }
+
+    // Achievement summary line with score: "- K Knowledge & Understanding 3.50/5.00 [strong]: comment"
+    const achScoreMatch = t.match(/^-?\s*(\S+)\s+(.+?)\s+([\d.]+)\/([\d.]+)\s*\[(\w+)\]/);
+    if (achScoreMatch) {
+      categories.push({
+        short: achScoreMatch[1],
+        name: achScoreMatch[2].trim(),
+        score: parseFloat(achScoreMatch[3]),
+        outOf: parseFloat(achScoreMatch[4]),
+        level: achScoreMatch[5].trim().toLowerCase(),
+      });
+      continue;
+    }
+
+    // Achievement summary without score: "- K Knowledge & Understanding [strong]: comment"
+    const achMatch = t.match(/^-?\s*(\S+)\s+(.+?)\s*\[(\w+)\]/);
+    if (achMatch) {
+      categories.push({
+        short: achMatch[1],
+        name: achMatch[2].trim(),
+        level: achMatch[3].trim().toLowerCase(),
+      });
+      continue;
+    }
+
+    // Weighted Total: 78%
+    const totalMatch = t.match(/^Weighted Total:\s*(\d+)%$/);
+    if (totalMatch) {
+      weightedTotal = parseInt(totalMatch[1], 10);
+    }
+  }
+
+  if (categories.length === 0) return null;
+  return { isKita, categories, weightedTotal };
+}
+
 function jwtSecret() {
   const s = process.env.JWT_SECRET;
   if (!s) throw new Error("JWT_SECRET not set");
@@ -382,6 +458,9 @@ router.get("/results", studentAuth, async (req, res) => {
       assessmentType = meta.assessmentType || "";
       title = meta.title || assessmentType || "Assignment";
 
+      // Parse KITA / achievement categories from payload
+      const cats = parseCategories(r.payload);
+
       return {
         code: r.code,
         subject,
@@ -396,6 +475,7 @@ router.get("/results", studentAuth, async (req, res) => {
         viewCount: r.viewCount || 0,
         viewSources: r.viewSources || {},
         lastViewedAt: r.lastViewedAt || null,
+        categories: cats,
       };
     });
 

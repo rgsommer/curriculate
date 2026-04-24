@@ -424,37 +424,105 @@ app.post("/api/recommend", async (req, res) => {
       return res.status(400).json({ error: "Your name and a valid teacher email are required." });
     }
 
+    const esc = (s) => String(s || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
     const html = `
-      <div style="max-width: 600px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
-        <div style="background: linear-gradient(135deg, #2563eb, #7c3aed); border-radius: 16px 16px 0 0; padding: 32px; text-align: center;">
-          <h1 style="color: #fff; margin: 0; font-size: 28px; font-weight: 900;">Someone thinks you'll love this</h1>
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 0;">
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #2563eb, #7c3aed); border-radius: 16px 16px 0 0; padding: 28px 24px; text-align: center;">
+          <div style="font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.3px;">Curriculate</div>
+          <div style="font-size: 13px; color: rgba(255,255,255,0.75); margin-top: 4px;">Someone thinks you'll love this</div>
         </div>
-        <div style="background: #fff; padding: 32px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 16px 16px;">
-          <p style="font-size: 18px; color: #1e293b; font-weight: 700; margin-top: 0;">
-            ${name.replace(/</g, "&lt;")} recommended Curriculate's AI grading tool for you.
+
+        <div style="background: #ffffff; padding: 28px 24px; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">
+          <p style="margin: 0 0 16px; font-size: 17px; color: #1e293b; font-weight: 700; line-height: 1.5;">
+            ${esc(name)} recommended Curriculate's AI grading tool for you.
           </p>
-          ${message ? `<p style="font-size: 15px; color: #475569; background: #f8fafc; border-radius: 8px; padding: 12px 16px; border-left: 4px solid #2563eb;"><em>"${message.replace(/</g, "&lt;").slice(0, 500)}"</em></p>` : ""}
-          <p style="font-size: 15px; color: #475569; line-height: 1.6;">
-            Curriculate uses AI to grade student work — essays, handwriting, math tests, video performances, audio recordings — with detailed, personalized feedback in the voice you choose. Teachers report saving hours every week.
+          ${message ? `<div style="background: #f8fafc; border-left: 4px solid #2563eb; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;"><p style="margin: 0; font-size: 15px; color: #475569; font-style: italic; line-height: 1.5;">"${esc(message).slice(0, 500)}"</p></div>` : ""}
+          <p style="margin: 0 0 20px; font-size: 15px; color: #475569; line-height: 1.6;">
+            Curriculate uses AI to grade student work — essays, handwriting, math, video performances, audio — with detailed, personalized feedback in the voice you choose. Teachers save hours every week.
           </p>
-          <h3 style="color: #1e293b; margin-bottom: 8px;">Here's what it does:</h3>
-          <ul style="color: #475569; font-size: 14px; line-height: 1.8; padding-left: 20px;">
-            <li><strong>5 input modes</strong> — photo, paste, batch PDF, video, audio</li>
-            <li><strong>13 feedback voices</strong> — encouraging coach to rigorous academic</li>
-            <li><strong>Batch grading</strong> — grade a whole class stack in minutes</li>
-            <li><strong>Gradebook export</strong> — CSV ready for Edsby or any gradebook</li>
-            <li><strong>Student progress portal</strong> — students and parents track grades online</li>
-            <li><strong>No signup needed</strong> — just open and grade</li>
-          </ul>
-          <div style="text-align: center; margin: 28px 0 16px;">
+
+          <!-- Feature grid -->
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+            <tr>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #eff6ff; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #1e40af; margin-bottom: 4px;">5 Input Modes</div>
+                  <div style="font-size: 12px; color: #3b82f6; line-height: 1.4;">Photo, paste, batch PDF, video, audio</div>
+                </div>
+              </td>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #f5f3ff; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #5b21b6; margin-bottom: 4px;">13 Feedback Voices</div>
+                  <div style="font-size: 12px; color: #7c3aed; line-height: 1.4;">Encouraging coach to rigorous academic</div>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #ecfdf5; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #065f46; margin-bottom: 4px;">Batch Grading</div>
+                  <div style="font-size: 12px; color: #059669; line-height: 1.4;">Grade a whole class stack in minutes</div>
+                </div>
+              </td>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #fef3c7; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #92400e; margin-bottom: 4px;">Progress Portal</div>
+                  <div style="font-size: 12px; color: #b45309; line-height: 1.4;">Students & parents track grades online</div>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #fce7f3; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #9d174d; margin-bottom: 4px;">Email Notifications</div>
+                  <div style="font-size: 12px; color: #db2777; line-height: 1.4;">Parents notified on new grades or weekly</div>
+                </div>
+              </td>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #f0fdfa; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #115e59; margin-bottom: 4px;">QR-Coded Reports</div>
+                  <div style="font-size: 12px; color: #0d9488; line-height: 1.4;">Print PDFs with QR codes to feedback</div>
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <p style="margin: 0 0 24px; font-size: 14px; color: #64748b; text-align: center; line-height: 1.5;">
+            Plus: per-student strictness, gradebook CSV export, review requests, class rosters, and more. <strong>No signup needed.</strong>
+          </p>
+
+          <!-- CTA -->
+          <div style="text-align: center; margin-bottom: 8px;">
             <a href="https://www.curriculate.net/grading?utm_source=recommendation&utm_medium=email"
-               style="display: inline-block; background: #2563eb; color: #fff; font-size: 18px; font-weight: 800; padding: 14px 32px; border-radius: 12px; text-decoration: none;">
+               style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #2563eb, #7c3aed); color: #ffffff; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 16px;">
               Try It Free — Grade a Paper Now
             </a>
           </div>
-          <p style="font-size: 13px; color: #94a3b8; text-align: center; margin-bottom: 0;">
-            No account needed. No credit card. Just photograph a student paper and see what happens.<br/>
-            <a href="https://www.curriculate.net/ai-grading" style="color: #2563eb;">Learn more at curriculate.net/ai-grading</a>
+          <div style="text-align: center; margin-top: 12px;">
+            <a href="https://www.curriculate.net/ai-grading?utm_source=recommendation&utm_medium=email" style="font-size: 13px; color: #2563eb; text-decoration: none;">See all features →</a>
+          </div>
+        </div>
+
+        <!-- Recommend to another teacher -->
+        <div style="background: #fffbeb; border: 1px solid #e2e8f0; border-top: none; padding: 16px 24px; text-align: center;">
+          <p style="margin: 0 0 8px; font-size: 13px; font-weight: 700; color: #92400e;">
+            Know another teacher who would love this?
+          </p>
+          <a href="https://www.curriculate.net/ai-grading?utm_source=recommendation&utm_medium=email#recommend"
+             style="display: inline-block; padding: 8px 20px; background: #f59e0b; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 800; font-size: 13px;">
+            Recommend to a Teacher
+          </a>
+        </div>
+
+        <!-- Footer -->
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 16px 16px; padding: 18px 24px; text-align: center;">
+          <p style="margin: 0 0 6px; font-size: 12px; color: #94a3b8; line-height: 1.5;">
+            This email was sent via <a href="https://www.curriculate.net" style="color: #2563eb; text-decoration: none; font-weight: 600;">Curriculate</a> because someone recommended the tool to you.
+          </p>
+          <p style="margin: 0; font-size: 11px; color: #cbd5e1;">
+            No account needed. No credit card. Just photograph a student paper and see what happens.
           </p>
         </div>
       </div>
