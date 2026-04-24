@@ -2820,6 +2820,16 @@ export default function BatchGrading({
                 setDetectedGroups(null);
                 pdfDocRef.current = null;
                 if (fileInputRef.current) fileInputRef.current.value = "";
+                // Clear previous results
+                setResults([]);
+                setClassSummary(null);
+                setTeacherAnalysis("");
+                setExpandedIndex(null);
+                setCopiedSummary(false);
+                setEmailCopied(false);
+                setCsvExported(false);
+                setReportsPrinted(false);
+                setStripsPrinted(false);
               }}
               style={{ ...batchStyles.ghostBtn, marginLeft: 10 }}
               type="button"
