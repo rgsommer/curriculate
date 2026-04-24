@@ -96,9 +96,11 @@ export default function ProgressPage() {
   // Teacher → student drill-down (for back button)
   const [teacherToken, setTeacherToken] = useState(null);
 
-  // Expandable year/subject sections
+  // Expandable year/subject sections (student dashboard)
   const [expandedYears, setExpandedYears] = useState({});
   const [expandedSubjects, setExpandedSubjects] = useState({});
+  // Expandable class sections (teacher overview)
+  const [expandedClasses, setExpandedClasses] = useState({});
 
   // Settings
   const [showSettings, setShowSettings] = useState(false);
@@ -357,52 +359,127 @@ export default function ProgressPage() {
 
           {loading && <div style={{ textAlign: "center", padding: 40, color: "#64748b" }}>Loading class data...</div>}
 
-          {/* Student list */}
-          <div style={{ fontSize: 11, color: "#94a3b8", padding: "8px 0", borderBottom: "2px solid #e2e8f0", display: "flex", fontWeight: 700 }}>
-            <div style={{ flex: 2 }}>STUDENT</div>
-            <div style={{ flex: 1, textAlign: "center" }}>CLASS</div>
-            <div style={{ flex: 1, textAlign: "center" }}>ASSIGNMENTS</div>
-            <div style={{ flex: 1, textAlign: "center" }}>AVERAGE</div>
-          </div>
-          {teacherStudents.map((ts) => (
-            <div
-              key={ts.studentId}
-              style={{ display: "flex", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}
-              onClick={() => {
-                // Save current teacher token so we can come back (persists across refresh)
-                setTeacherToken(token);
-                localStorage.setItem(TEACHER_TOKEN_KEY, token);
-                setStudentId(ts.studentId);
-                // Trigger login for this student
-                apiCall("/login", { method: "POST", body: { studentId: ts.studentId, email } })
-                  .then((data) => {
-                    if (data.ok && !data.needsCode && !data.isTeacherOverview) {
-                      localStorage.setItem(TOKEN_KEY, data.token);
-                      setToken(data.token);
-                      setStudent(data.student);
-                      setView("dashboard");
-                    }
-                  });
-              }}
-            >
-              <div style={{ flex: 2, fontWeight: 700, fontSize: 14 }}>{ts.firstName} {ts.lastName}</div>
-              <div style={{ flex: 1, textAlign: "center", fontSize: 12, color: "#64748b" }}>{ts.className}</div>
-              <div style={{ flex: 1, textAlign: "center", fontSize: 13 }}>{ts.totalAssignments}</div>
-              <div style={{ flex: 1, textAlign: "center" }}>
-                {ts.avg != null ? (
-                  <span style={{ fontWeight: 800, color: gradeColor(letterGrade(ts.avg)) }}>{ts.avg}% {letterGrade(ts.avg)}</span>
-                ) : (
-                  <span style={{ color: "#94a3b8" }}>--</span>
-                )}
-              </div>
-            </div>
-          ))}
+          {/* Student list grouped by class/subject */}
+          {(() => {
+            if (teacherStudents.length === 0) {
+              return (
+                <div style={{ textAlign: "center", padding: 30, color: "#94a3b8", fontSize: 14 }}>
+                  No graded results found yet. Results will appear after you grade student work with rosters uploaded.
+                </div>
+              );
+            }
 
-          {teacherStudents.length === 0 && (
-            <div style={{ textAlign: "center", padding: 30, color: "#94a3b8", fontSize: 14 }}>
-              No graded results found yet. Results will appear after you grade student work with rosters uploaded.
-            </div>
-          )}
+            // Group students by className
+            const byClass = {};
+            teacherStudents.forEach((ts) => {
+              const cls = ts.className || "General";
+              if (!byClass[cls]) byClass[cls] = [];
+              byClass[cls].push(ts);
+            });
+            const classNames = Object.keys(byClass).sort();
+
+            // Sort students within each class by last name then first name
+            classNames.forEach((cls) => {
+              byClass[cls].sort((a, b) =>
+                (a.lastName || "").localeCompare(b.lastName || "") || (a.firstName || "").localeCompare(b.firstName || "")
+              );
+            });
+
+            // Student row renderer
+            const StudentRow = ({ ts, showClass }) => (
+              <div
+                key={ts.studentId}
+                style={{ display: "flex", alignItems: "center", padding: "10px 14px", borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}
+                onClick={() => {
+                  setTeacherToken(token);
+                  localStorage.setItem(TEACHER_TOKEN_KEY, token);
+                  setStudentId(ts.studentId);
+                  apiCall("/login", { method: "POST", body: { studentId: ts.studentId, email } })
+                    .then((data) => {
+                      if (data.ok && !data.needsCode && !data.isTeacherOverview) {
+                        localStorage.setItem(TOKEN_KEY, data.token);
+                        setToken(data.token);
+                        setStudent(data.student);
+                        setView("dashboard");
+                      }
+                    });
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "#f8fafc"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+              >
+                <div style={{ flex: 2, fontWeight: 700, fontSize: 14 }}>{ts.firstName} {ts.lastName}</div>
+                {showClass && <div style={{ flex: 1, textAlign: "center", fontSize: 12, color: "#64748b" }}>{ts.className}</div>}
+                <div style={{ flex: 1, textAlign: "center", fontSize: 13 }}>{ts.totalAssignments}</div>
+                <div style={{ flex: 1, textAlign: "center" }}>
+                  {ts.avg != null ? (
+                    <span style={{ fontWeight: 800, color: gradeColor(letterGrade(ts.avg)) }}>{ts.avg}% {letterGrade(ts.avg)}</span>
+                  ) : (
+                    <span style={{ color: "#94a3b8" }}>--</span>
+                  )}
+                </div>
+              </div>
+            );
+
+            // Single class — flat list, no grouping needed
+            if (classNames.length <= 1) {
+              return (
+                <>
+                  <div style={{ fontSize: 11, color: "#94a3b8", padding: "8px 0", borderBottom: "2px solid #e2e8f0", display: "flex", fontWeight: 700 }}>
+                    <div style={{ flex: 2 }}>STUDENT</div>
+                    <div style={{ flex: 1, textAlign: "center" }}>ASSIGNMENTS</div>
+                    <div style={{ flex: 1, textAlign: "center" }}>AVERAGE</div>
+                  </div>
+                  {byClass[classNames[0]].map((ts) => <StudentRow key={ts.studentId} ts={ts} showClass={false} />)}
+                </>
+              );
+            }
+
+            // Multiple classes — collapsible sections
+            return classNames.map((cls) => {
+              const students = byClass[cls];
+              const classAvgs = students.filter((s) => s.avg != null).map((s) => s.avg);
+              const classAvg = classAvgs.length ? Math.round(classAvgs.reduce((a, b) => a + b, 0) / classAvgs.length) : null;
+              const isOpen = expandedClasses[cls] !== false; // default open
+
+              return (
+                <div key={cls} style={{ marginBottom: 8 }}>
+                  <button
+                    onClick={() => setExpandedClasses((prev) => ({ ...prev, [cls]: !isOpen }))}
+                    style={{
+                      width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "12px 16px", background: "linear-gradient(135deg, #f8fafc, #f1f5f9)",
+                      border: "1px solid #e2e8f0", borderRadius: isOpen ? "10px 10px 0 0" : 10,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 12, color: "#64748b", transition: "transform 0.15s", transform: isOpen ? "rotate(90deg)" : "rotate(0deg)", display: "inline-block" }}>&#9654;</span>
+                      <span style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>{cls}</span>
+                      <span style={{ fontSize: 12, color: "#94a3b8" }}>{students.length} student{students.length !== 1 ? "s" : ""}</span>
+                    </div>
+                    {classAvg != null && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontWeight: 800, fontSize: 14, color: gradeColor(letterGrade(classAvg)) }}>{classAvg}%</span>
+                        <span style={{ fontWeight: 700, fontSize: 12, color: gradeColor(letterGrade(classAvg)) }}>{letterGrade(classAvg)}</span>
+                      </div>
+                    )}
+                  </button>
+                  {isOpen && (
+                    <div style={{ border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
+                      {/* Column headers */}
+                      <div style={{ fontSize: 11, color: "#94a3b8", padding: "6px 14px", display: "flex", fontWeight: 700, background: "#fafbfc" }}>
+                        <div style={{ flex: 2 }}>STUDENT</div>
+                        <div style={{ flex: 1, textAlign: "center" }}>ASSIGNMENTS</div>
+                        <div style={{ flex: 1, textAlign: "center" }}>AVERAGE</div>
+                      </div>
+                      {students.map((ts) => <StudentRow key={ts.studentId} ts={ts} showClass={false} />)}
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          })()}
+
         </div>
         <RecommendWidget />
         <div style={{ textAlign: "center", marginTop: 12, fontSize: 12, color: "#94a3b8" }}>

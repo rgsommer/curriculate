@@ -2988,13 +2988,13 @@ export default function BatchGrading({
                             style={{
                               position: "absolute", top: "100%", left: 0, zIndex: 50,
                               background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8,
-                              boxShadow: "0 4px 16px rgba(0,0,0,0.12)", minWidth: 220, maxHeight: 260,
-                              overflowY: "auto", padding: "4px 0",
+                              boxShadow: "0 4px 16px rgba(0,0,0,0.12)", minWidth: 220,
+                              display: "flex", flexDirection: "column",
                             }}
                           >
                             {unmatchedRosterStudents.length > 0 && (
-                              <>
-                                <div style={{ padding: "6px 12px", fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600 }}>
+                              <div style={{ maxHeight: 220, overflowY: "auto", padding: "4px 0" }}>
+                                <div style={{ padding: "6px 12px", fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600, position: "sticky", top: 0, background: "#fff" }}>
                                   Unmatched roster students
                                 </div>
                                 {unmatchedRosterStudents.map((s, si) => (
@@ -3012,40 +3012,42 @@ export default function BatchGrading({
                                     <span style={{ fontSize: 10, color: "#94a3b8", marginLeft: 6 }}>{s.className}</span>
                                   </div>
                                 ))}
-                              </>
+                              </div>
                             )}
-                            <div style={{ padding: "6px 12px", fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600, borderTop: unmatchedRosterStudents.length ? "1px solid #e2e8f0" : "none" }}>
-                              Type a name
-                            </div>
-                            <div style={{ padding: "4px 8px" }}>
-                              <input
-                                autoFocus
-                                placeholder={r.studentName}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter" && e.target.value.trim()) {
-                                    const parts = e.target.value.trim().split(/\s+/);
-                                    const first = parts[0] || "";
-                                    const last = parts.slice(1).join(" ") || "";
-                                    setResults((prev) => {
-                                      const updated = [...prev];
-                                      const item = updated.find((x) => x.index === r.index);
-                                      if (item) {
-                                        item.studentName = e.target.value.trim();
-                                        item.rosterFirstName = first;
-                                        item.rosterLastName = last;
-                                      }
-                                      return updated;
-                                    });
-                                    setEditingNameIndex(null);
-                                  } else if (e.key === "Escape") {
-                                    setEditingNameIndex(null);
-                                  }
-                                }}
-                                style={{
-                                  width: "100%", padding: "6px 8px", fontSize: 13,
-                                  border: "1px solid #e2e8f0", borderRadius: 6, outline: "none",
-                                }}
-                              />
+                            <div style={{ borderTop: unmatchedRosterStudents.length ? "1px solid #e2e8f0" : "none", padding: "4px 0" }}>
+                              <div style={{ padding: "6px 12px", fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600 }}>
+                                Type a name
+                              </div>
+                              <div style={{ padding: "4px 8px 6px" }}>
+                                <input
+                                  autoFocus
+                                  placeholder={r.studentName}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && e.target.value.trim()) {
+                                      const parts = e.target.value.trim().split(/\s+/);
+                                      const first = parts[0] || "";
+                                      const last = parts.slice(1).join(" ") || "";
+                                      setResults((prev) => {
+                                        const updated = [...prev];
+                                        const item = updated.find((x) => x.index === r.index);
+                                        if (item) {
+                                          item.studentName = e.target.value.trim();
+                                          item.rosterFirstName = first;
+                                          item.rosterLastName = last;
+                                        }
+                                        return updated;
+                                      });
+                                      setEditingNameIndex(null);
+                                    } else if (e.key === "Escape") {
+                                      setEditingNameIndex(null);
+                                    }
+                                  }}
+                                  style={{
+                                    width: "100%", padding: "6px 8px", fontSize: 13,
+                                    border: "1px solid #e2e8f0", borderRadius: 6, outline: "none",
+                                  }}
+                                />
+                              </div>
                             </div>
                           </div>
                         )}
