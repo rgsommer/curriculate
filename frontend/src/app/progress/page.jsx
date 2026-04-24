@@ -862,8 +862,17 @@ export default function ProgressPage() {
                 setEditingTitleCode(null);
               };
 
-              const ResultRow = ({ r, flat }) => (
-                <div key={r.code} style={{ ...s.resultRow, ...(flat ? {} : { borderRadius: 0, margin: 0, borderBottom: "1px solid #f1f5f9" }) }}>
+              const ResultRow = ({ r, flat }) => {
+                const isNew = r.viewCount === 0;
+                const isUnviewed = r.viewCount != null && r.viewCount <= 1;
+                return (
+                <div key={r.code} style={{
+                  ...s.resultRow,
+                  ...(flat ? {} : { borderRadius: 0, margin: 0, borderBottom: "1px solid #f1f5f9" }),
+                  ...(isNew ? { background: "#eff6ff", borderLeft: "3px solid #2563eb", paddingLeft: 10 }
+                    : isUnviewed ? { background: "#fafbff", borderLeft: "3px solid #c7d2fe", paddingLeft: 10 }
+                    : {}),
+                }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {editingTitleCode === r.code ? (
                       <input
@@ -901,6 +910,30 @@ export default function ProgressPage() {
                     )}
                     <div style={{ fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6 }}>
                       {new Date(r.createdAt).toLocaleDateString()}
+                      {isNew && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", background: "#dbeafe", padding: "1px 5px", borderRadius: 4 }}>NEW</span>
+                      )}
+                      {r.viewCount > 0 && (() => {
+                        const vs = r.viewSources || {};
+                        const parts = [];
+                        if (vs.progress) parts.push(`${vs.progress} portal`);
+                        if (vs.qr) parts.push(`${vs.qr} QR`);
+                        if (vs.email) parts.push(`${vs.email} email`);
+                        if (vs.direct) parts.push(`${vs.direct} direct`);
+                        const tooltip = parts.length
+                          ? parts.join(", ") + (r.lastViewedAt ? ` · Last: ${new Date(r.lastViewedAt).toLocaleDateString()}` : "")
+                          : r.lastViewedAt ? `Last viewed ${new Date(r.lastViewedAt).toLocaleDateString()}` : "";
+                        return (
+                          <span style={{ fontSize: 10, color: "#94a3b8" }} title={tooltip}>
+                            {r.viewCount} view{r.viewCount !== 1 ? "s" : ""}
+                            {parts.length > 0 && (
+                              <span style={{ color: "#c7d2fe", marginLeft: 3 }}>
+                                ({parts.join(", ")})
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })()}
                       {teacherToken && teacherClassNames.length > 1 && (
                         <select
                           value={r.className || ""}
@@ -933,7 +966,7 @@ export default function ProgressPage() {
                       <div style={{ fontSize: 14, color: "#94a3b8" }}>--</div>
                     )}
                   </div>
-                  <a href={`/results/${r.code}`} target="_blank" rel="noreferrer"
+                  <a href={`/results/${r.code}?src=progress`} target="_blank" rel="noreferrer"
                     style={{ fontSize: 11, fontWeight: 700, color: "#2563eb", textDecoration: "none", background: "#eff6ff", padding: "6px 10px", borderRadius: 8 }}>
                     {r.code}
                   </a>
@@ -953,7 +986,8 @@ export default function ProgressPage() {
                     </button>
                   )}
                 </div>
-              );
+                );
+              };
 
               // Helper: compute average from result items
               const calcAvg = (items) => {

@@ -1477,7 +1477,7 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                     onClick={async () => {
                       setRecommendSending(true);
                       try {
-                        const r = await fetch(`${backendUrl}/api/recommend`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recommenderName: recommendName, teacherEmail: recommendEmail }) });
+                        const r = await fetch(`${API_BASE}/api/recommend`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recommenderName: recommendName, teacherEmail: recommendEmail }) });
                         const d = await r.json();
                         if (d.ok) setRecommendSent(true);
                       } catch {}

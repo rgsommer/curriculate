@@ -393,6 +393,9 @@ router.get("/results", studentAuth, async (req, res) => {
         pct,
         createdAt: r.createdAt,
         expiresAt: r.expiresAt,
+        viewCount: r.viewCount || 0,
+        viewSources: r.viewSources || {},
+        lastViewedAt: r.lastViewedAt || null,
       };
     });
 

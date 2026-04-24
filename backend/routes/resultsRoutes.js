@@ -387,9 +387,17 @@ router.get("/:code", lookupLimiter, async (req, res) => {
     const code = normalizeCode(req.params.code);
     if (code.length !== 5) return res.status(404).json({ error: "Code not found." });
 
+    // Track view source: ?src=progress|qr|email|direct (default: direct)
+    const validSources = ["direct", "progress", "qr", "email"];
+    const src = validSources.includes(req.query.src) ? req.query.src : "direct";
+    const sourceKey = `viewSources.${src}`;
+
     const doc = await PublishedResult.findOneAndUpdate(
       { code },
-      { $inc: { viewCount: 1 }, $set: { lastViewedAt: new Date() } },
+      {
+        $inc: { viewCount: 1, [sourceKey]: 1 },
+        $set: { lastViewedAt: new Date() },
+      },
       { new: true }
     ).lean();
     if (!doc) return res.status(404).json({ error: "Code not found." });
@@ -405,6 +413,7 @@ router.get("/:code", lookupLimiter, async (req, res) => {
       createdAt: doc.createdAt,
       expiresAt: doc.expiresAt,
       viewCount: doc.viewCount || 1,
+      viewSources: doc.viewSources || {},
     });
   } catch (err) {
     console.error("GET /results/:code error:", err);

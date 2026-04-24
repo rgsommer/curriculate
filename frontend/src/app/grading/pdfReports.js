@@ -147,7 +147,7 @@ export async function buildResultsPdf(results, { title } = {}) {
   for (const r of good) {
     if (r.refCode) {
       try {
-        qrImages[r.refCode] = await makeQrDataUrl(`https://www.curriculate.net/results/${r.refCode}`);
+        qrImages[r.refCode] = await makeQrDataUrl(`https://www.curriculate.net/results/${r.refCode}?src=qr`);
       } catch { /* skip */ }
     }
   }
@@ -441,7 +441,7 @@ export async function buildStripsPdf(results, { title } = {}) {
   for (const r of good) {
     if (r.refCode) {
       try {
-        qrImages[r.refCode] = await makeQrDataUrl(`https://www.curriculate.net/results/${r.refCode}`);
+        qrImages[r.refCode] = await makeQrDataUrl(`https://www.curriculate.net/results/${r.refCode}?src=qr`);
       } catch { /* skip */ }
     }
   }

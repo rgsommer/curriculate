@@ -28,7 +28,7 @@ export async function notifyNewGrade(studentId, gradeInfo) {
     const studentName = [account.firstName, account.lastName].filter(Boolean).join(" ") || "Your student";
     const title = gradeInfo.title || gradeInfo.subject || "New assignment";
     const code = gradeInfo.code || "";
-    const resultsUrl = code ? `https://www.curriculate.net/results/${code}` : "https://www.curriculate.net/progress";
+    const resultsUrl = code ? `https://www.curriculate.net/results/${code}?src=email` : "https://www.curriculate.net/progress";
     const progressUrl = "https://www.curriculate.net/progress";
 
     // Extract score from payload if available
