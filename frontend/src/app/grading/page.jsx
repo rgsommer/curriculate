@@ -3212,7 +3212,8 @@ export default function GradingPage() {
             }
           }
         `}</style>
-        {/* ── Teacher email (optional, for roster linking) ── */}
+        {/* ── Teacher email (optional, for roster linking) — hidden until 5 uses unless already set ── */}
+        {(gradingUses >= 5 || teacherEmail) && (
         <div style={{
           display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
           padding: "6px 12px", marginBottom: 8,
@@ -3242,6 +3243,7 @@ export default function GradingPage() {
             <span style={{ fontSize: 11, color: "#94a3b8" }}>No rosters yet</span>
           )}
         </div>
+        )}
 
         <div className="grading-grid" style={styles.grid}>
           {/* CAMERA CARD */}
