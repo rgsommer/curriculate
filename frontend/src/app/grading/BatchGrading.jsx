@@ -2020,6 +2020,34 @@ export default function BatchGrading({
         setEmailCopied(true);
         setShowEmailPrompt(false);
         setTimeout(() => setEmailCopied(false), 4000);
+
+        // Update published results with the email title (grading publishes before title is entered)
+        const finalTitle = emailTitle.trim();
+        if (finalTitle && resultsUrl) {
+          for (const r of results) {
+            if (!r.refCode || r.error) continue;
+            try {
+              const updateUrl = resultsUrl.replace(/\/$/, "") + "/" + r.refCode;
+              await fetch(updateUrl, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  payload: buildBatchPayloadText(r, r.refCode, gradeBand),
+                  meta: {
+                    source: "batch-grading", gradeBand,
+                    studentName: r.studentName || null,
+                    studentId: r.rosterStudentId || r.rosterEdsbyId || r.studentId || null,
+                    subject: r.subject || "",
+                    assessmentType: r.assessmentType || "",
+                    title: finalTitle,
+                  },
+                }),
+              });
+            } catch (e) {
+              console.warn(`[batch] title update for ${r.refCode} failed:`, e);
+            }
+          }
+        }
       } else {
         const err = await res.json().catch(() => ({}));
         console.warn("[batch] send email failed:", err);

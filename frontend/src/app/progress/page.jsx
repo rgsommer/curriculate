@@ -105,6 +105,11 @@ export default function ProgressPage() {
   const [expandedClasses, setExpandedClasses] = useState({});
   // Teacher's class names for re-classify dropdown
   const [teacherClassNames, setTeacherClassNames] = useState([]);
+  // Bulk rename
+  const [showBulkRename, setShowBulkRename] = useState(false);
+  const [bulkOld, setBulkOld] = useState("");
+  const [bulkNew, setBulkNew] = useState("");
+  const [bulkRenaming, setBulkRenaming] = useState(false);
 
   // Settings
   const [showSettings, setShowSettings] = useState(false);
@@ -362,6 +367,72 @@ export default function ProgressPage() {
             <div style={{ fontSize: 13, opacity: 0.8 }}>{teacherStudents.length} students with graded work</div>
           </div>
 
+          {/* Bulk rename tool */}
+          <div style={{ textAlign: "right", marginBottom: 8 }}>
+            <button
+              onClick={() => setShowBulkRename(!showBulkRename)}
+              style={{ fontSize: 12, color: "#64748b", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+            >
+              {showBulkRename ? "Close" : "Rename assignments"}
+            </button>
+          </div>
+          {showBulkRename && (
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 14, marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 8 }}>Bulk rename assignments</div>
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 10 }}>
+                Rename all assignments with a given title across all students at once.
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <input
+                  placeholder='Current title (e.g. "Test")'
+                  value={bulkOld}
+                  onChange={(e) => setBulkOld(e.target.value)}
+                  style={{ flex: 1, minWidth: 140, padding: "6px 10px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 6, outline: "none" }}
+                />
+                <span style={{ fontSize: 13, color: "#94a3b8" }}>→</span>
+                <input
+                  placeholder='New title (e.g. "Math Ch8 Test")'
+                  value={bulkNew}
+                  onChange={(e) => setBulkNew(e.target.value)}
+                  style={{ flex: 1, minWidth: 140, padding: "6px 10px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 6, outline: "none" }}
+                />
+                <button
+                  disabled={bulkRenaming || !bulkNew.trim()}
+                  onClick={async () => {
+                    setBulkRenaming(true);
+                    try {
+                      const res = await fetch(`${API}/student-progress/teacher/bulk-rename`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                        body: JSON.stringify({ oldTitle: bulkOld.trim(), newTitle: bulkNew.trim() }),
+                      });
+                      const data = await res.json();
+                      if (data.ok) {
+                        setInfo(`Renamed ${data.updated} assignment${data.updated !== 1 ? "s" : ""}.`);
+                        setBulkOld("");
+                        setBulkNew("");
+                        setShowBulkRename(false);
+                        setTimeout(() => setInfo(""), 4000);
+                      } else {
+                        setError(data.error || "Failed to rename.");
+                      }
+                    } catch {
+                      setError("Failed to rename.");
+                    }
+                    setBulkRenaming(false);
+                  }}
+                  style={{
+                    padding: "6px 14px", fontSize: 13, fontWeight: 700, borderRadius: 6, border: "none",
+                    background: bulkNew.trim() ? "#2563eb" : "#cbd5e1", color: "#fff", cursor: bulkNew.trim() ? "pointer" : "default",
+                  }}
+                >
+                  {bulkRenaming ? "Renaming..." : "Rename all"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {info && <div style={s.info}>{info}</div>}
           {loading && <div style={{ textAlign: "center", padding: 40, color: "#64748b" }}>Loading class data...</div>}
 
           {/* Student list grouped by class/subject */}
@@ -647,14 +718,17 @@ export default function ProgressPage() {
               };
 
               const updateResult = async (code, updates) => {
-                if (!teacherToken) return;
+                if (!teacherToken) { console.warn("[updateResult] No teacherToken"); return; }
                 try {
-                  const res = await fetch(`${API}/student-progress/teacher/result/${code}`, {
+                  const url = `${API}/student-progress/teacher/result/${code}`;
+                  console.log("[updateResult]", url, updates);
+                  const res = await fetch(url, {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json", Authorization: `Bearer ${teacherToken}` },
                     body: JSON.stringify(updates),
                   });
                   const data = await res.json();
+                  console.log("[updateResult] response:", data);
                   if (data.ok) {
                     setResults((prev) => prev.map((r) => {
                       if (r.code !== code) return r;
@@ -666,7 +740,8 @@ export default function ProgressPage() {
                   } else {
                     setError(data.error || "Failed to update.");
                   }
-                } catch {
+                } catch (err) {
+                  console.error("[updateResult] error:", err);
                   setError("Failed to update result.");
                 }
                 setEditingTitleCode(null);
@@ -679,10 +754,20 @@ export default function ProgressPage() {
                       <input
                         autoFocus
                         defaultValue={r.title || "Assignment"}
-                        onBlur={(e) => updateResult(r.code, { title: e.target.value.trim() || r.title })}
+                        onBlur={(e) => {
+                          if (e.target.dataset.saved) return;
+                          e.target.dataset.saved = "1";
+                          updateResult(r.code, { title: e.target.value.trim() || r.title });
+                        }}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") updateResult(r.code, { title: e.target.value.trim() || r.title });
-                          if (e.key === "Escape") setEditingTitleCode(null);
+                          if (e.key === "Enter") {
+                            e.target.dataset.saved = "1";
+                            updateResult(r.code, { title: e.target.value.trim() || r.title });
+                          }
+                          if (e.key === "Escape") {
+                            e.target.dataset.saved = "1";
+                            setEditingTitleCode(null);
+                          }
                         }}
                         style={{
                           fontWeight: 700, fontSize: 14, color: "#1e293b", width: "100%",

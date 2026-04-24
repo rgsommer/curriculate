@@ -615,6 +615,55 @@ router.patch("/teacher/result/:code", teacherAuth, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------
+ *  POST /teacher/bulk-rename
+ *  { oldTitle: string, newTitle: string }
+ *  Renames all results with matching meta.title across the teacher's roster students.
+ * ------------------------------------------------------------------ */
+router.post("/teacher/bulk-rename", teacherAuth, async (req, res) => {
+  try {
+    const { oldTitle, newTitle } = req.body || {};
+    const from = String(oldTitle || "").trim();
+    const to = String(newTitle || "").trim();
+    if (!to) return res.status(400).json({ error: "New title cannot be empty." });
+
+    // Get all student IDs from teacher's rosters
+    const rosters = await ClassRoster.find({ teacherEmail: req.teacherEmail }).lean();
+    const studentIds = new Set();
+    for (const r of rosters) {
+      for (const s of r.students || []) {
+        if (s.studentId) studentIds.add(s.studentId);
+        if (s.edsbyId) studentIds.add(s.edsbyId);
+      }
+    }
+    if (studentIds.size === 0) return res.json({ ok: true, updated: 0 });
+
+    // Build query: match by studentId AND title (or assessmentType fallback)
+    const query = {
+      "meta.studentId": { $in: [...studentIds] },
+    };
+    if (from) {
+      query.$or = [
+        { "meta.title": from },
+        { "meta.title": { $in: ["", null] }, "meta.assessmentType": from },
+      ];
+    } else {
+      // Empty oldTitle = match results with no title set
+      query["meta.title"] = { $in: ["", null] };
+    }
+
+    const result = await PublishedResult.updateMany(query, {
+      $set: { "meta.title": to },
+    });
+
+    console.log(`[bulk-rename] ${req.teacherEmail}: "${from}" → "${to}", ${result.modifiedCount} updated`);
+    return res.json({ ok: true, updated: result.modifiedCount });
+  } catch (err) {
+    console.error("POST /teacher/bulk-rename error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to bulk rename." });
+  }
+});
+
+/* ------------------------------------------------------------------
  *  DELETE /teacher/result/:code
  *  Teacher deletes a single published result by its ref code.
  *  Verifies the result belongs to one of the teacher's roster students.
