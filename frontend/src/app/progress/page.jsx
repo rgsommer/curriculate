@@ -444,7 +444,7 @@ export default function ProgressPage() {
               const students = byClass[cls];
               const classAvgs = students.filter((s) => s.avg != null).map((s) => s.avg);
               const classAvg = classAvgs.length ? Math.round(classAvgs.reduce((a, b) => a + b, 0) / classAvgs.length) : null;
-              const isOpen = expandedClasses[cls] !== false; // default open
+              const isOpen = expandedClasses[cls] === true; // default collapsed
 
               return (
                 <div key={cls} style={{ marginBottom: 8 }}>

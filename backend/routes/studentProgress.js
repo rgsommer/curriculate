@@ -520,47 +520,34 @@ router.get("/teacher/students", teacherAuth, async (req, res) => {
     }
 
     // Create one entry per student per class (student appears in all their classes)
+    // Show ALL assignments under each class — per-subject breakdown happens in the drill-down view
     const students = [];
     for (const id of idArray) {
       const classes = studentClasses[id] || [];
       const studentResults = byStudent[id] || [];
       if (studentResults.length === 0) continue;
 
-      for (const cls of classes) {
-        // Filter results that belong to this class
-        const classResults = studentResults.filter((r) => resultMatchesClass(r, cls.className));
-        // Also find "unclassified" results (no subject and no className override)
-        const unclassified = studentResults.filter((r) => {
-          const meta = r.meta || {};
-          return !meta.className && !meta.subject;
-        });
-        const relevant = [...classResults];
-        // Add unclassified only if this is the student's first class (avoid double-counting)
-        if (classes.indexOf(cls) === 0) {
-          for (const u of unclassified) {
-            if (!relevant.find((r) => r.code === u.code)) relevant.push(u);
+      const scores = [];
+      for (const r of studentResults) {
+        if (typeof r.payload === "string") {
+          const m = r.payload.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
+          if (m) {
+            const outOf = parseFloat(m[2]);
+            if (outOf > 0) scores.push(Math.round((parseFloat(m[1]) / outOf) * 100));
           }
         }
+      }
+      const avg = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
 
-        const scores = [];
-        for (const r of relevant) {
-          if (typeof r.payload === "string") {
-            const m = r.payload.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
-            if (m) {
-              const outOf = parseFloat(m[2]);
-              if (outOf > 0) scores.push(Math.round((parseFloat(m[1]) / outOf) * 100));
-            }
-          }
-        }
-        const avg = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+      for (const cls of classes) {
         students.push({
           studentId: id,
           firstName: cls.firstName || "",
           lastName: cls.lastName || "",
           className: cls.className || "",
-          totalAssignments: relevant.length,
+          totalAssignments: studentResults.length,
           avg,
-          lastGraded: relevant[0]?.createdAt || null,
+          lastGraded: studentResults[0]?.createdAt || null,
         });
       }
     }
