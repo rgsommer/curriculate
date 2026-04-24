@@ -159,6 +159,7 @@ export default function ProgressPage() {
   const [email, setEmail] = useState("");
   const [magicCode, setMagicCode] = useState("");
   const [teacherStudents, setTeacherStudents] = useState([]);
+  const [rosterStudents, setRosterStudents] = useState([]); // full roster for reassignment
 
   // Teacher → student drill-down (for back button)
   const [teacherToken, setTeacherToken] = useState(null);
@@ -249,6 +250,7 @@ export default function ProgressPage() {
           setError(data.error);
         } else {
           setTeacherStudents(data.students || []);
+          if (data.rosterStudents) setRosterStudents(data.rosterStudents);
           if (data.classNames) setTeacherClassNames(data.classNames);
         }
         setLoading(false);
@@ -305,6 +307,7 @@ export default function ProgressPage() {
         localStorage.setItem(TOKEN_KEY, data.token);
         setToken(data.token);
         setTeacherStudents(data.students || []);
+        if (data.rosterStudents) setRosterStudents(data.rosterStudents);
         setView("teacher");
       } else {
         // Student/parent flow
@@ -331,6 +334,7 @@ export default function ProgressPage() {
       localStorage.setItem(TOKEN_KEY, data.token);
       setToken(data.token);
       setTeacherStudents(data.students || []);
+      if (data.rosterStudents) setRosterStudents(data.rosterStudents);
       setView("teacher");
     } else {
       setError(data.error || "Invalid code.");
@@ -585,6 +589,7 @@ export default function ProgressPage() {
                           });
                           const d2 = await r2.json();
                           if (d2.students) setTeacherStudents(d2.students);
+                          if (d2.rosterStudents) setRosterStudents(d2.rosterStudents);
                           if (d2.classNames) setTeacherClassNames(d2.classNames);
                         } catch {}
                       } else {
@@ -790,6 +795,7 @@ export default function ProgressPage() {
                     });
                     const d2 = await r2.json();
                     if (d2.students) setTeacherStudents(d2.students);
+                    if (d2.rosterStudents) setRosterStudents(d2.rosterStudents);
                     if (d2.classNames) setTeacherClassNames(d2.classNames);
                   } catch {}
                 }}
@@ -1141,7 +1147,7 @@ export default function ProgressPage() {
                           ))}
                         </select>
                       )}
-                      {teacherToken && teacherStudents.length > 1 && (
+                      {teacherToken && rosterStudents.length > 0 && (
                         <span style={{ position: "relative", display: "inline-block" }}>
                           <span
                             onClick={(e) => { e.stopPropagation(); setReassigningCode(reassigningCode === r.code ? null : r.code); }}
@@ -1166,7 +1172,7 @@ export default function ProgressPage() {
                               <div style={{ padding: "6px 10px", fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600, position: "sticky", top: 0, background: "#fff" }}>
                                 Move to student{r.className ? ` in ${r.className}` : ""}
                               </div>
-                              {[...teacherStudents]
+                              {[...rosterStudents]
                                 .filter((ts) => ts.studentId !== (student?.studentId) && (!r.className || ts.className === r.className))
                                 .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`))
                                 .map((ts) => (

@@ -281,12 +281,27 @@ router.post("/login", async (req, res) => {
       }).filter((s) => s.totalAssignments > 0)
         .sort((a, b) => (a.lastName || "").localeCompare(b.lastName || ""));
 
+      // Full roster list for reassignment dropdown
+      const rosterStudentsList = [];
+      const seenR = new Set();
+      for (const tr of teacherRosters) {
+        for (const s of tr.students || []) {
+          const fid = s.studentId || s.edsbyId;
+          const key = `${fid}|${tr.className}`;
+          if (!fid || seenR.has(key)) continue;
+          seenR.add(key);
+          rosterStudentsList.push({ studentId: fid, firstName: s.firstName || "", lastName: s.lastName || "", className: tr.className || "" });
+        }
+      }
+      rosterStudentsList.sort((a, b) => (a.lastName || "").localeCompare(b.lastName || ""));
+
       const token = jwt.sign({ teacherEmail: email, type: "teacher-progress" }, jwtSecret(), { expiresIn: "7d" });
       return res.json({
         ok: true,
         token,
         isTeacherOverview: true,
         students,
+        rosterStudents: rosterStudentsList,
         totalStudents: students.length,
         totalAssignments: allResults.length,
       });
@@ -896,9 +911,29 @@ router.get("/teacher/students", teacherAuth, async (req, res) => {
     const filtered = students.filter((s) => s.totalAssignments > 0)
       .sort((a, b) => (a.lastName || "").localeCompare(b.lastName || ""));
 
+    // Full roster list (all students, including those without grades) for reassignment
+    const rosterStudents = [];
+    const seenRoster = new Set();
+    for (const r of teacherRosters) {
+      for (const s of r.students || []) {
+        const fullId = s.studentId || s.edsbyId;
+        const key = `${fullId}|${r.className}`;
+        if (!fullId || seenRoster.has(key)) continue;
+        seenRoster.add(key);
+        rosterStudents.push({
+          studentId: fullId,
+          firstName: s.firstName || "",
+          lastName: s.lastName || "",
+          className: r.className || "",
+        });
+      }
+    }
+    rosterStudents.sort((a, b) => (a.lastName || "").localeCompare(b.lastName || ""));
+
     return res.json({
       ok: true,
       students: filtered,
+      rosterStudents,
       classNames: [...classNames].sort(),
       totalStudents: new Set(filtered.map((s) => s.studentId)).size,
       totalAssignments: allResults.length,
