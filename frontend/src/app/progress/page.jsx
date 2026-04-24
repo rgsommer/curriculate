@@ -640,9 +640,10 @@ export default function ProgressPage() {
               <div
                 key={ts.studentId}
                 style={{ display: "flex", alignItems: "center", padding: "10px 14px", borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}
-                onClick={() => {
+                onClick={async () => {
                   // Save the current teacher token before drilling down
-                  const currentToken = token;
+                  // Read from localStorage as source of truth (state may be stale after back-navigation)
+                  const currentToken = localStorage.getItem(TOKEN_KEY) || token;
                   setTeacherToken(currentToken);
                   localStorage.setItem(TEACHER_TOKEN_KEY, currentToken);
                   setStudentId(ts.studentId);
@@ -651,21 +652,32 @@ export default function ProgressPage() {
                   setResults([]);
                   setOverallAvg(null);
                   setExpandedResult(null);
-                  // Use fetch directly to avoid stale token in apiCall closure
-                  fetch(`${API}/student-progress/login`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ studentId: ts.studentId, email }),
-                  })
-                    .then((r) => r.json())
-                    .then((data) => {
-                      if (data.ok && !data.needsCode && !data.isTeacherOverview) {
-                        localStorage.setItem(TOKEN_KEY, data.token);
-                        setToken(data.token);
-                        setStudent(data.student);
-                        setView("dashboard");
-                      }
+                  setReassigningCode(null);
+                  // Switch to dashboard immediately (shows loading state)
+                  setView("dashboard");
+                  setLoading(true);
+                  try {
+                    const res = await fetch(`${API}/student-progress/login`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ studentId: ts.studentId, email }),
                     });
+                    const data = await res.json();
+                    if (data.ok && !data.needsCode && !data.isTeacherOverview) {
+                      localStorage.setItem(TOKEN_KEY, data.token);
+                      setToken(data.token);
+                      setStudent(data.student);
+                    } else {
+                      // If login fails, go back to teacher view
+                      setView("teacher");
+                      setError(data.error || "Failed to load student.");
+                    }
+                  } catch (err) {
+                    console.error("[StudentRow] login error:", err);
+                    setView("teacher");
+                    setError("Failed to load student. Please try again.");
+                  }
+                  setLoading(false);
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = "#f8fafc"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
@@ -762,7 +774,7 @@ export default function ProgressPage() {
           <div>
             {teacherToken && (
               <button
-                onClick={() => {
+                onClick={async () => {
                   // Restore teacher token and go back to class overview
                   localStorage.setItem(TOKEN_KEY, teacherToken);
                   localStorage.removeItem(TEACHER_TOKEN_KEY);
@@ -771,7 +783,17 @@ export default function ProgressPage() {
                   setStudent(null);
                   setResults([]);
                   setOverallAvg(null);
+                  setReassigningCode(null);
                   setView("teacher");
+                  // Refresh teacher student list (picks up reassignments, new grades, etc.)
+                  try {
+                    const r2 = await fetch(`${API}/student-progress/teacher/students`, {
+                      headers: { Authorization: `Bearer ${teacherToken}` },
+                    });
+                    const d2 = await r2.json();
+                    if (d2.students) setTeacherStudents(d2.students);
+                    if (d2.classNames) setTeacherClassNames(d2.classNames);
+                  } catch {}
                 }}
                 style={{
                   background: "none", border: "none", cursor: "pointer",
@@ -1144,10 +1166,10 @@ export default function ProgressPage() {
                               }}
                             >
                               <div style={{ padding: "6px 10px", fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600, position: "sticky", top: 0, background: "#fff" }}>
-                                Move to student
+                                Move to student{r.className ? ` in ${r.className}` : ""}
                               </div>
                               {[...teacherStudents]
-                                .filter((ts) => ts.studentId !== (student?.studentId))
+                                .filter((ts) => ts.studentId !== (student?.studentId) && (!r.className || ts.className === r.className))
                                 .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`))
                                 .map((ts) => (
                                 <div
