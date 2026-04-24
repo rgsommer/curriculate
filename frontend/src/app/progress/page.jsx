@@ -34,12 +34,20 @@ const SUBJECT_COLORS = [
   { bg: "linear-gradient(135deg, #cffafe, #ecfeff)", border: "#a5f3fc", text: "#155e75" },  // cyan
 ];
 
+// Extract subject prefix from class codes like "GEO8A" → "geo",
+// "MATH7B" → "math", "HIST7C" → "hist", "CED8A" → "ced"
+function subjectPrefix(name) {
+  const s = (name || "").toLowerCase().trim();
+  // Strip trailing digits + optional section letter (e.g. "geo8a" → "geo", "math7b" → "math")
+  return s.replace(/\d+[a-z]?$/, "");
+}
+
 function subjectColor(subj) {
-  // FNV-1a hash — stable color per subject name regardless of what other
-  // subjects exist (Maths → rose, English → blue, Science → cyan, etc.)
+  // FNV-1a hash on the subject prefix so all classes in the same subject
+  // share a color (GEO8A, GEO8B, GEO8C → all the same)
+  const prefix = subjectPrefix(subj) || (subj || "").toLowerCase().trim();
   let h = 0x811c9dc5;
-  const s = (subj || "").toLowerCase().trim();
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 0x01000193) >>> 0; }
+  for (let i = 0; i < prefix.length; i++) { h ^= prefix.charCodeAt(i); h = (h * 0x01000193) >>> 0; }
   return SUBJECT_COLORS[h % SUBJECT_COLORS.length];
 }
 
