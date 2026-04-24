@@ -308,7 +308,7 @@ const corsOptions = {
     return callback(null, ok);
   },
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "x-demo-admin-key"],
   optionsSuccessStatus: 204,
 };
