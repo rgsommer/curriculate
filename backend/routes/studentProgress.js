@@ -918,37 +918,50 @@ router.patch("/teacher/result/:code", teacherAuth, async (req, res) => {
     const code = (req.params.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
     if (code.length !== 5) return res.status(400).json({ error: "Invalid code." });
 
-    const { title, className } = req.body || {};
+    const { title, className, studentId: newStudentId, studentName: newStudentName } = req.body || {};
     const newTitle = title != null ? String(title).trim() : null;
     const newClassName = className != null ? String(className).trim() : null;
+    const newSid = newStudentId != null ? String(newStudentId).trim() : null;
+    const newSname = newStudentName != null ? String(newStudentName).trim() : null;
 
     if (newTitle != null && !newTitle) return res.status(400).json({ error: "Title cannot be empty." });
-    if (newTitle == null && newClassName == null) return res.status(400).json({ error: "Nothing to update." });
+    if (newTitle == null && newClassName == null && newSid == null) return res.status(400).json({ error: "Nothing to update." });
 
     const doc = await PublishedResult.findOne({ code });
     if (!doc) return res.status(404).json({ error: "Result not found." });
 
-    // Verify teacher owns this student via roster
-    const studentId = doc.meta?.studentId;
-    if (studentId) {
+    // Verify teacher owns this student via roster (check both current and target student)
+    const currentSid = doc.meta?.studentId;
+    if (currentSid) {
       const roster = await ClassRoster.findOne({
         teacherEmail: req.teacherEmail,
-        $or: [{ "students.studentId": studentId }, { "students.edsbyId": studentId }],
+        $or: [{ "students.studentId": currentSid }, { "students.edsbyId": currentSid }],
       }).lean();
       if (!roster) return res.status(403).json({ error: "This result does not belong to your roster." });
+    }
+    if (newSid) {
+      const targetRoster = await ClassRoster.findOne({
+        teacherEmail: req.teacherEmail,
+        $or: [{ "students.studentId": newSid }, { "students.edsbyId": newSid }],
+      }).lean();
+      if (!targetRoster) return res.status(403).json({ error: "Target student is not in your roster." });
     }
 
     doc.meta = doc.meta || {};
     if (newTitle != null) doc.meta.title = newTitle;
     if (newClassName != null) doc.meta.className = newClassName;
+    if (newSid != null) doc.meta.studentId = newSid;
+    if (newSname != null) doc.meta.studentName = newSname;
     doc.markModified("meta");
     await doc.save();
 
     const changes = [];
     if (newTitle != null) changes.push(`title="${newTitle}"`);
     if (newClassName != null) changes.push(`className="${newClassName}"`);
+    if (newSid != null) changes.push(`studentId="${newSid}"`);
+    if (newSname != null) changes.push(`studentName="${newSname}"`);
     console.log(`[teacher-update] ${req.teacherEmail} updated result ${code}: ${changes.join(", ")}`);
-    return res.json({ ok: true, title: doc.meta.title, className: doc.meta.className });
+    return res.json({ ok: true, title: doc.meta.title, className: doc.meta.className, studentId: doc.meta.studentId });
   } catch (err) {
     console.error("PATCH /teacher/result/:code error:", err?.message || err);
     return res.status(500).json({ error: "Failed to update." });

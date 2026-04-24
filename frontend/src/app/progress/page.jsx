@@ -168,6 +168,7 @@ export default function ProgressPage() {
   const [expandedSubjects, setExpandedSubjects] = useState({});
   // Inline title editing (teacher only)
   const [editingTitleCode, setEditingTitleCode] = useState(null);
+  const [reassigningCode, setReassigningCode] = useState(null); // result code being reassigned to another student
   // Expandable class sections (teacher overview)
   const [expandedClasses, setExpandedClasses] = useState({});
   // Teacher's class names for re-classify dropdown
@@ -983,13 +984,19 @@ export default function ProgressPage() {
                   const data = await res.json();
                   console.log("[updateResult] response:", data);
                   if (data.ok) {
-                    setResults((prev) => prev.map((r) => {
-                      if (r.code !== code) return r;
-                      const updated = { ...r };
-                      if (updates.title) updated.title = updates.title;
-                      if (updates.className != null) updated.className = updates.className;
-                      return updated;
-                    }));
+                    if (updates.studentId) {
+                      // Reassigned to different student — remove from current view
+                      setResults((prev) => prev.filter((r) => r.code !== code));
+                      setReassigningCode(null);
+                    } else {
+                      setResults((prev) => prev.map((r) => {
+                        if (r.code !== code) return r;
+                        const updated = { ...r };
+                        if (updates.title) updated.title = updates.title;
+                        if (updates.className != null) updated.className = updates.className;
+                        return updated;
+                      }));
+                    }
                   } else {
                     setError(data.error || "Failed to update.");
                   }
@@ -1113,6 +1120,65 @@ export default function ProgressPage() {
                             <option key={cn} value={cn}>{cn}</option>
                           ))}
                         </select>
+                      )}
+                      {teacherToken && teacherStudents.length > 1 && (
+                        <span style={{ position: "relative", display: "inline-block" }}>
+                          <span
+                            onClick={(e) => { e.stopPropagation(); setReassigningCode(reassigningCode === r.code ? null : r.code); }}
+                            style={{
+                              fontSize: 10, color: "#d97706", cursor: "pointer",
+                              borderBottom: "1px dashed #d97706", fontWeight: 600,
+                            }}
+                            title="Reassign this result to a different student"
+                          >
+                            reassign
+                          </span>
+                          {reassigningCode === r.code && (
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                position: "absolute", top: "100%", left: 0, zIndex: 50,
+                                background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8,
+                                boxShadow: "0 4px 16px rgba(0,0,0,0.12)", minWidth: 200, maxHeight: 260,
+                                overflowY: "auto",
+                              }}
+                            >
+                              <div style={{ padding: "6px 10px", fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600, position: "sticky", top: 0, background: "#fff" }}>
+                                Move to student
+                              </div>
+                              {[...teacherStudents]
+                                .filter((ts) => ts.studentId !== (student?.studentId))
+                                .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`))
+                                .map((ts) => (
+                                <div
+                                  key={ts.studentId}
+                                  onClick={() => {
+                                    updateResult(r.code, {
+                                      studentId: ts.studentId,
+                                      studentName: `${ts.firstName} ${ts.lastName}`.trim(),
+                                      className: ts.className || r.className || "",
+                                    });
+                                  }}
+                                  style={{
+                                    padding: "7px 10px", cursor: "pointer", fontSize: 12,
+                                    borderBottom: "1px solid #f1f5f9",
+                                  }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.background = "#f1f5f9"; }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                                >
+                                  <span style={{ fontWeight: 600 }}>{ts.firstName} {ts.lastName}</span>
+                                  {ts.className && <span style={{ fontSize: 10, color: "#94a3b8", marginLeft: 6 }}>{ts.className}</span>}
+                                </div>
+                              ))}
+                              <div
+                                onClick={() => setReassigningCode(null)}
+                                style={{ padding: "6px 10px", fontSize: 11, color: "#64748b", cursor: "pointer", textAlign: "center", borderTop: "1px solid #e2e8f0" }}
+                              >
+                                Cancel
+                              </div>
+                            </div>
+                          )}
+                        </span>
                       )}
                     </div>
                   </div>
