@@ -569,7 +569,7 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
     >
       <div className="no-print">
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-          <img src="/images/prism/prism-logo.png" alt="Curriculate Prism" style={{ height: 40, width: "auto" }} />
+          <img src="/images/prism/prism-icon.png" alt="Curriculate Prism" style={{ height: 32, width: "auto" }} />
           <h1 style={{ fontSize: 24, margin: 0 }}>View Feedback</h1>
         </div>
         <p style={{ marginTop: 0, opacity: 0.8 }}>

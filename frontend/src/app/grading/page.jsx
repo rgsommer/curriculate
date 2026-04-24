@@ -2918,7 +2918,7 @@ export default function GradingPage() {
       <div style={styles.page}>
         <div style={styles.header}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <img src="/images/prism/prism-logo.png" alt="Prism" style={{ height: 36, width: "auto" }} />
+            <img src="/images/prism/prism-icon.png" alt="Prism" style={{ height: 32, width: "auto" }} />
             <h1 style={styles.h1}>Grading</h1>
             {!tipsHidden && (
               <a
