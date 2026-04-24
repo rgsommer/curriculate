@@ -1845,12 +1845,16 @@ export default function BatchGrading({
 
     // Copy-paste message for students
     const hasAnyIds = results.some((r) => r.rosterStudentId || r.rosterEdsbyId || r.studentId);
+    const hasEdsby = results.some((r) => r.rosterEdsbyId);
     html += `<div style="background: #fefce8; border: 1px solid #fde68a; border-radius: 8px; padding: 14px 16px; margin-bottom: 14px;">`;
     html += `<div style="font-weight: 800; font-size: 12px; color: #92400e; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">Share with your students</div>`;
     html += `<div style="font-size: 12px; color: #78350f; margin-bottom: 8px;">Copy and paste this into your class chat, LMS, or handout:</div>`;
     html += `<div style="background: #ffffff; border: 1px dashed #d4a574; border-radius: 6px; padding: 12px 14px; font-size: 13px; color: #1e293b; line-height: 1.6;">`;
     if (hasAnyIds) {
-      html += `Your work has been graded! To see your detailed results and feedback:<br/><br/>`;
+      html += `I'm working on this next level of my tool to make it easier for all of us&mdash;teachers, parents, students&mdash;to see the feedback and results. `;
+      if (hasEdsby) html += `Grades still go into Edsby&mdash;nothing changes there. `;
+      html += `As your new work is graded, it will appear in this portal!<br/><br/>`;
+      html += `To see your detailed results and feedback:<br/><br/>`;
       html += `1. Go to <strong>curriculate.net/progress</strong><br/>`;
       html += `2. Enter your student ID and your (or your parent's) email<br/>`;
       html += `3. You'll see your score, feedback, and a link to your full report<br/><br/>`;
