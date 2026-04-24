@@ -657,6 +657,7 @@ export default function BatchGrading({
                   subject: resultEntry.subject || "",
                   assessmentType: resultEntry.assessmentType || "",
                   title: emailTitle.trim() || "",
+                  pdfName: pdfName || "",
                 },
                 sessionId: batchSessionId,
               }),
@@ -1549,7 +1550,15 @@ export default function BatchGrading({
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 payload: buildBatchPayloadText(updatedEntry, null, gradeBand),
-                meta: { source: "batch-regrade", batchIndex: groupIdx, gradeBand },
+                meta: {
+                  source: "batch-regrade", batchIndex: groupIdx, gradeBand,
+                  studentName: updatedEntry.studentName || null,
+                  studentId: updatedEntry.rosterStudentId || updatedEntry.rosterEdsbyId || updatedEntry.studentId || null,
+                  subject: updatedEntry.subject || "",
+                  assessmentType: updatedEntry.assessmentType || "",
+                  title: emailTitle.trim() || "",
+                  pdfName: pdfName || "",
+                },
               }),
             });
             const pubData = await pubRes.json().catch(() => ({}));
@@ -2040,6 +2049,7 @@ export default function BatchGrading({
                     subject: r.subject || "",
                     assessmentType: r.assessmentType || "",
                     title: finalTitle,
+                    pdfName: pdfName || "",
                   },
                 }),
               });

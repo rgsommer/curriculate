@@ -44,18 +44,29 @@ router.post("/", createLimiter, async (req, res) => {
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
     // Dedup: find an existing result for the same student + assignment and overwrite it.
-    // Priority: match by title (if set), fallback to subject + assessmentType.
+    // Priority: 1) studentId + pdfName (same source file = same assignment)
+    //           2) studentId + title (explicit title match)
+    //           3) studentId + subject + assessmentType (fallback when title empty)
     // Always picks the most recent match to avoid overwriting the wrong one.
     const studentId = meta?.studentId;
     const title = (meta?.title || "").trim();
     const subject = (meta?.subject || "").trim();
     const assessmentType = (meta?.assessmentType || "").trim();
+    const pdfName = (meta?.pdfName || "").trim();
 
     if (studentId) {
       let existing = null;
 
-      // Primary: match by studentId + title (when title is explicitly set)
-      if (title) {
+      // Primary: match by studentId + pdfName (same source PDF = same assignment)
+      if (pdfName) {
+        existing = await PublishedResult.findOne({
+          "meta.studentId": studentId,
+          "meta.pdfName": pdfName,
+        }).sort({ createdAt: -1 });
+      }
+
+      // Secondary: match by studentId + title (when title is explicitly set)
+      if (!existing && title) {
         existing = await PublishedResult.findOne({
           "meta.studentId": studentId,
           "meta.title": title,
@@ -65,7 +76,6 @@ router.post("/", createLimiter, async (req, res) => {
       // Fallback: match by studentId + subject + assessmentType (when title is empty)
       if (!existing && !title && (subject || assessmentType)) {
         const fallbackQuery = { "meta.studentId": studentId };
-        // Only match results that also have no/empty title
         fallbackQuery["meta.title"] = { $in: ["", null] };
         if (subject) fallbackQuery["meta.subject"] = subject;
         if (assessmentType) fallbackQuery["meta.assessmentType"] = assessmentType;
