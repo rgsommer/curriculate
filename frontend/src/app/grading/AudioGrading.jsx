@@ -151,7 +151,7 @@ export default function AudioGrading({
     { label: "Uploading audio...", pct: 15, duration: 5000 },
     { label: "Analyzing audio...", pct: 30, duration: 10000 },
     { label: "Transcribing performance...", pct: 50, duration: 15000 },
-    { label: "AI grading performance...", pct: 75, duration: 30000 },
+    { label: "Prism grading performance...", pct: 75, duration: 30000 },
     { label: "Compiling feedback & scores...", pct: 88, duration: 20000 },
     { label: "Finalizing results...", pct: 95, duration: 15000 },
   ];

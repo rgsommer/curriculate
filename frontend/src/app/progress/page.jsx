@@ -372,6 +372,9 @@ export default function ProgressPage() {
     return (
       <div style={s.page}>
         <div style={s.card}>
+          <div style={{ textAlign: "center", marginBottom: 12 }}>
+            <img src="/images/prism/prism-logo.png" alt="Curriculate Prism" style={{ height: 64, width: "auto" }} />
+          </div>
           <h1 style={s.h1}>Student Progress</h1>
           <div style={s.sub}>Students and parents — enter your student ID and email to view grades and feedback</div>
 

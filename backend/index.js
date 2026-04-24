@@ -429,17 +429,20 @@ app.post("/api/recommend", async (req, res) => {
     const esc = (s) => String(s || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const greeting = tName ? esc(tName) : "there";
 
-    // --- Email 1: AI Grading ---
+    // --- Email 1: Prism (Grading) ---
     const gradingHtml = `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 0;">
         <div style="background: linear-gradient(135deg, #2563eb, #7c3aed); border-radius: 16px 16px 0 0; padding: 28px 24px; text-align: center;">
-          <div style="font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.3px;">Curriculate</div>
+          <div style="font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.3px;">Curriculate Prism</div>
           <div style="font-size: 13px; color: rgba(255,255,255,0.75); margin-top: 4px;">Someone thinks you'll love this</div>
         </div>
 
         <div style="background: #ffffff; padding: 28px 24px; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">
+          <div style="text-align: center; margin-bottom: 16px;">
+            <img src="https://www.curriculate.net/images/prism/prism-logo.png" alt="Curriculate Prism" style="height: 80px; width: auto;" />
+          </div>
           <p style="margin: 0 0 16px; font-size: 17px; color: #1e293b; font-weight: 700; line-height: 1.5;">
-            Hi ${greeting} — ${esc(name)} recommended Curriculate's AI grading tool for you.
+            Hi ${greeting} — ${esc(name)} recommended Curriculate Prism for you.
           </p>
           ${message ? `<div style="background: #f8fafc; border-left: 4px solid #2563eb; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;"><p style="margin: 0; font-size: 15px; color: #475569; font-style: italic; line-height: 1.5;">"${esc(message).slice(0, 500)}"</p></div>` : ""}
           <p style="margin: 0 0 20px; font-size: 15px; color: #475569; line-height: 1.6;">
@@ -502,13 +505,13 @@ app.post("/api/recommend", async (req, res) => {
             </a>
           </div>
           <div style="text-align: center; margin-top: 12px;">
-            <a href="https://www.curriculate.net/ai-grading?utm_source=recommendation&utm_medium=email" style="font-size: 13px; color: #2563eb; text-decoration: none;">See all features →</a>
+            <a href="https://www.curriculate.net/prism?utm_source=recommendation&utm_medium=email" style="font-size: 13px; color: #2563eb; text-decoration: none;">See all features →</a>
           </div>
         </div>
 
         <div style="background: #fffbeb; border: 1px solid #e2e8f0; border-top: none; padding: 16px 24px; text-align: center;">
           <p style="margin: 0 0 8px; font-size: 13px; font-weight: 700; color: #92400e;">Know another teacher who would love this?</p>
-          <a href="https://www.curriculate.net/ai-grading?utm_source=recommendation&utm_medium=email#recommend"
+          <a href="https://www.curriculate.net/prism?utm_source=recommendation&utm_medium=email#recommend"
              style="display: inline-block; padding: 8px 20px; background: #f59e0b; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 800; font-size: 13px;">
             Recommend to a Teacher
           </a>
@@ -535,7 +538,7 @@ app.post("/api/recommend", async (req, res) => {
             Hi ${greeting} — one more thing from ${esc(name)}.
           </p>
           <p style="margin: 0 0 16px; font-size: 15px; color: #475569; line-height: 1.6;">
-            Besides AI grading, Curriculate also runs <strong>classroom scavenger hunts</strong> — AI-generated, curriculum-aligned activities that get students moving, thinking, and collaborating.
+            Besides Prism, Curriculate also runs <strong>classroom scavenger hunts</strong> — AI-generated, curriculum-aligned activities that get students moving, thinking, and collaborating.
           </p>
           <p style="margin: 0 0 20px; font-size: 15px; color: #475569; line-height: 1.6;">
             Tell the AI your topic, grade level, and how much time you have. It builds a full activity set with 65+ interactive task types — quizzes, debates, puzzles, movement breaks, role plays, and more. Students play on their phones. You get a real-time dashboard and an AI summary emailed before the bell rings.
@@ -589,7 +592,7 @@ app.post("/api/recommend", async (req, res) => {
 
         <div style="background: #fffbeb; border: 1px solid #e2e8f0; border-top: none; padding: 16px 24px; text-align: center;">
           <p style="margin: 0 0 8px; font-size: 13px; font-weight: 700; color: #92400e;">Know another teacher who would love this?</p>
-          <a href="https://www.curriculate.net/ai-grading?utm_source=recommendation&utm_medium=email#recommend"
+          <a href="https://www.curriculate.net/prism?utm_source=recommendation&utm_medium=email#recommend"
              style="display: inline-block; padding: 8px 20px; background: #f59e0b; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 800; font-size: 13px;">
             Recommend to a Teacher
           </a>
@@ -608,7 +611,7 @@ app.post("/api/recommend", async (req, res) => {
     // Send both emails (grading first, platform second)
     await sendSystemEmail({
       to: email,
-      subject: `${name} thinks you should try Curriculate — AI grading for teachers`,
+      subject: `${name} thinks you should try Curriculate Prism — grading made easy`,
       html: gradingHtml,
     });
 
@@ -635,7 +638,7 @@ app.post("/api/recommend", async (req, res) => {
         teacherName: tName,
         teacherEmail: email,
         message: message || "",
-        source: req.body?.source || "ai-grading",
+        source: req.body?.source || "prism",
         creditMonths: myEmail ? 1 : 0,
       });
 

@@ -76,7 +76,7 @@ const TEMPLATES = {
         Hi${teacherName ? " " + esc(teacherName) : ""},
       </p>
       <p style="margin:0 0 16px;font-size:15px;color:#1e293b;line-height:1.6;">
-        One of your students recently used <strong>Curriculate</strong> — a platform that turns any lesson into an engaging, team-based classroom activity with AI-powered grading and instant feedback.
+        One of your students recently used <strong>Curriculate</strong> — a platform that turns any lesson into an engaging, team-based classroom activity with Prism grading and instant feedback.
       </p>
       <p style="margin:0 0 16px;font-size:15px;color:#1e293b;line-height:1.6;">
         We'd love for you to experience it firsthand. Here's what teachers are using Curriculate for:
@@ -84,7 +84,7 @@ const TEMPLATES = {
       <ul style="margin:0 0 16px;padding-left:20px;font-size:15px;color:#1e293b;line-height:1.8;">
         <li>Running interactive review sessions before tests</li>
         <li>Group activities with real-time progress tracking</li>
-        <li>AI-powered grading that saves hours of marking</li>
+        <li>Prism — grading that saves hours of marking</li>
         <li>Detailed student reports with actionable feedback</li>
       </ul>
       <p style="margin:0 0 16px;font-size:15px;color:#1e293b;line-height:1.6;">
@@ -155,7 +155,7 @@ function wrapInBrandedEmail(bodyHtml) {
       </div>
       <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 16px 16px; padding: 18px 24px; text-align: center;">
         <p style="margin: 0; font-size: 12px; color: #94a3b8; line-height: 1.5;">
-          <a href="https://www.curriculate.net" style="color: #2563eb; text-decoration: none; font-weight: 600;">Curriculate</a> — Engaging classroom activities with AI-powered grading
+          <a href="https://www.curriculate.net" style="color: #2563eb; text-decoration: none; font-weight: 600;">Curriculate</a> — Engaging classroom activities with Prism grading
         </p>
       </div>
     </div>

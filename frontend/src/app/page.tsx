@@ -440,7 +440,7 @@ function MobileNav() {
   const links = [
     { href: "/how-it-works", label: "How it works" },
     { href: "/features", label: "Features" },
-    { href: "/ai-grading", label: "AI Grading" },
+    { href: "/prism", label: "Prism" },
     { href: "/pricing", label: "Pricing" },
     { href: "/compare", label: "Compare" },
     { href: "/reports", label: "Reports" },
@@ -1144,18 +1144,20 @@ export default function Home() {
       <Testimonials />
 
       {/* ============================================================ */}
-      {/*  AI GRADING CROSS-SELL                                       */}
+      {/*  PRISM CROSS-SELL                                             */}
       {/* ============================================================ */}
       <section className="px-6 py-16">
         <div className="mx-auto max-w-7xl">
           <div className="rounded-3xl border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-8 sm:p-12 shadow-xl">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
               <div>
-                <div className="inline-flex items-center gap-2 rounded-full bg-indigo-100 px-4 py-1.5 text-sm font-bold text-indigo-800 mb-4">
-                  <Sparkles className="w-4 h-4" /> Also from Curriculate
-                </div>
+                <img
+                  src="/images/prism/prism-logo.png"
+                  alt="Curriculate Prism"
+                  className="h-14 w-auto mb-4"
+                />
                 <h2 className="text-3xl sm:text-4xl font-black text-gray-900 mb-4">
-                  AI Grading Tool — Free for All Teachers
+                  Free Grading for All Teachers
                 </h2>
                 <p className="text-gray-700 font-medium mb-6 leading-relaxed">
                   Snap a photo of student work — handwritten or typed. Choose from 11 feedback voices
@@ -1163,13 +1165,13 @@ export default function Home() {
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3">
                   <Link
-                    href="/ai-grading"
+                    href="/prism"
                     className="inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-6 py-4 text-white font-black shadow-xl hover:bg-indigo-700"
                   >
-                    Try AI Grading Free <ArrowRight className="w-5 h-5" />
+                    Try Prism Free <ArrowRight className="w-5 h-5" />
                   </Link>
                   <Link
-                    href="/ai-grading"
+                    href="/prism"
                     className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-6 py-4 text-gray-900 font-black shadow-md border border-gray-200 hover:bg-gray-50"
                   >
                     Learn More

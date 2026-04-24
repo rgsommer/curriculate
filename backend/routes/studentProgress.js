@@ -197,11 +197,11 @@ router.post("/login", async (req, res) => {
                 <div style="background: #f0f4ff; padding: 20px 24px; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">
                   <p style="color: #4361ee; font-weight: 600; font-size: 14px; margin: 0 0 8px 0;">Did you know?</p>
                   <p style="color: #555; font-size: 13px; line-height: 1.6; margin: 0;">
-                    Curriculate's AI grading can mark a full class set in minutes — tests, essays, even handwritten work.
+                    Curriculate Prism can mark a full class set in minutes — tests, essays, even handwritten work.
                     Snap a photo or upload a batch, and get detailed feedback with scores ready to export to your gradebook.
                   </p>
-                  <a href="https://www.curriculate.net/ai-grading" style="display: inline-block; margin-top: 12px; color: #4361ee; font-size: 13px; font-weight: 600; text-decoration: none;">
-                    Explore AI Grading →
+                  <a href="https://www.curriculate.net/prism" style="display: inline-block; margin-top: 12px; color: #4361ee; font-size: 13px; font-weight: 600; text-decoration: none;">
+                    Explore Prism →
                   </a>
                 </div>
 

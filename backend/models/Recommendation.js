@@ -8,7 +8,7 @@ const recommendationSchema = new mongoose.Schema(
     teacherName: { type: String, default: "" },
     teacherEmail: { type: String, required: true, index: true },
     message: { type: String, default: "" },
-    source: { type: String, default: "ai-grading" }, // which page the recommendation came from
+    source: { type: String, default: "prism" }, // which page the recommendation came from
     sentAt: { type: Date, default: Date.now },
     // Referral credit tracking
     creditMonths: { type: Number, default: 1 }, // months earned for this referral

@@ -2917,11 +2917,12 @@ export default function GradingPage() {
     return (
       <div style={styles.page}>
         <div style={styles.header}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <img src="/images/prism/prism-logo.png" alt="Prism" style={{ height: 36, width: "auto" }} />
             <h1 style={styles.h1}>Grading</h1>
             {!tipsHidden && (
               <a
-                href="/ai-grading"
+                href="/prism"
                 style={{
                   fontSize: 12, fontWeight: 600, color: "#2563eb",
                   textDecoration: "none", opacity: 0.8,

@@ -30,7 +30,7 @@ export const metadata: Metadata = {
     "teacher tools",
     "team-based learning",
     "QR code classroom",
-    "AI grading",
+    "Prism grading",
     "student reports",
     "movement in classroom",
     "birthday party games for kids",

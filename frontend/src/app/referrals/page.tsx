@@ -233,10 +233,10 @@ export default function ReferralsPage() {
               curriculate.net <ArrowRight className="w-5 h-5" />
             </Link>
             <Link
-              href="/ai-grading"
+              href="/prism"
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-6 py-4 text-white text-lg font-black shadow-xl hover:bg-emerald-700"
             >
-              Free AI Grading Tool <ArrowRight className="w-5 h-5" />
+              Try Prism Free <ArrowRight className="w-5 h-5" />
             </Link>
             <Link
               href="/pricing"

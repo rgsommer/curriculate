@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "AI Grading Tool — Grade Papers in Minutes, Not Hours",
+  title: "Prism — Grade Papers in Minutes, Not Hours | Curriculate",
   description:
-    "AI-powered grading for teachers. Snap a photo of student work, choose from 13 feedback voices, and get rubric-aligned grades with personalized feedback in seconds. Batch grading, parent portal, email notifications, and QR-coded PDF reports.",
+    "Prism by Curriculate. Snap a photo of student work, choose from 13 feedback voices, and get rubric-aligned grades with personalized feedback in seconds. Batch grading, parent portal, email notifications, and QR-coded PDF reports.",
   keywords: [
-    "AI grading",
-    "AI grading tool",
+    "Prism grading",
+    "Curriculate Prism",
     "grade papers with AI",
     "AI essay grader",
     "teacher grading tool",
@@ -23,14 +23,14 @@ export const metadata: Metadata = {
     "grade notifications",
     "QR code reports",
     "student progress tracking",
-    "AI grading for parents",
+    "Prism for teachers",
     "gradebook export",
   ],
   openGraph: {
-    title: "AI Grading Tool — Grade Papers in Minutes | Curriculate",
+    title: "Prism — Grade Papers in Minutes | Curriculate",
     description:
-      "AI grading for teachers. Photo-first workflow reads handwriting, follows your rubric, and writes personalized feedback in 13 different voices. Batch grading, parent portal, and email notifications.",
-    url: "https://curriculate.net/ai-grading",
+      "Prism by Curriculate. Photo-first workflow reads handwriting, follows your rubric, and writes personalized feedback in 13 different voices. Batch grading, parent portal, and email notifications.",
+    url: "https://curriculate.net/prism",
     siteName: "Curriculate",
     type: "website",
     images: [
@@ -38,26 +38,26 @@ export const metadata: Metadata = {
         url: "https://curriculate.net/images/og/og-ai-grading.png",
         width: 1200,
         height: 630,
-        alt: "Curriculate AI Grading Tool — Grade a stack of papers in minutes",
+        alt: "Curriculate Prism — Grade a stack of papers in minutes",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "AI Grading Tool — Grade Papers in Minutes | Curriculate",
+    title: "Prism — Grade Papers in Minutes | Curriculate",
     description:
-      "AI grading for teachers. Reads handwriting, follows your rubric, 13 feedback voices. Batch grading, parent portal, email notifications.",
+      "Prism by Curriculate. Reads handwriting, follows your rubric, 13 feedback voices. Batch grading, parent portal, email notifications.",
     images: ["https://curriculate.net/images/og/og-ai-grading.png"],
   },
   alternates: {
-    canonical: "https://curriculate.net/ai-grading",
+    canonical: "https://curriculate.net/prism",
   },
 };
 
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  name: "Curriculate AI Grading Tool",
+  name: "Curriculate Prism",
   applicationCategory: "EducationalApplication",
   operatingSystem: "Web",
   offers: {
@@ -66,8 +66,8 @@ const jsonLd = {
     priceCurrency: "USD",
   },
   description:
-    "AI-powered grading tool for teachers. Reads handwriting, follows rubrics, and provides personalized student feedback in 13 different voices.",
-  url: "https://curriculate.net/ai-grading",
+    "Prism by Curriculate. Reads handwriting, follows rubrics, and provides personalized student feedback in 13 different voices.",
+  url: "https://curriculate.net/prism",
   featureList: [
     "Photo-first workflow — snap handwritten or typed work",
     "13 feedback voices from encouraging to rigorous",
@@ -86,7 +86,7 @@ const jsonLd = {
   ],
 };
 
-export default function AIGradingLayout({
+export default function PrismLayout({
   children,
 }: {
   children: React.ReactNode;

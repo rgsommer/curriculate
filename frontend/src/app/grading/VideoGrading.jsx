@@ -161,8 +161,8 @@ export default function VideoGrading({
     { label: "Extracting audio...",                 pct: 18,  duration: 6000 },
     { label: "Transcribing speech...",              pct: 30,  duration: 15000 },
     { label: "Extracting video frames...",          pct: 38,  duration: 8000 },
-    { label: "AI grading transcript...",            pct: 55,  duration: 30000 },
-    { label: "AI grading visual presentation...",   pct: 72,  duration: 30000 },
+    { label: "Prism grading transcript...",           pct: 55,  duration: 30000 },
+    { label: "Prism grading visual presentation...",pct: 72,  duration: 30000 },
     { label: "Compiling feedback & scores...",      pct: 85,  duration: 25000 },
     { label: "Finalizing results...",               pct: 92,  duration: 20000 },
   ];

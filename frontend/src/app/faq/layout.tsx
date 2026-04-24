@@ -3,11 +3,11 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "FAQ — Frequently Asked Questions",
   description:
-    "Answers to common questions about Curriculate: classroom scavenger hunts, screen time, device use, handwriting bonus, AI grading, student privacy, collaboration, and getting started.",
+    "Answers to common questions about Curriculate: classroom scavenger hunts, screen time, device use, handwriting bonus, Prism, student privacy, collaboration, and getting started.",
   keywords: [
     "Curriculate FAQ",
     "classroom scavenger hunt questions",
-    "AI grading questions",
+    "Prism questions",
     "classroom tool FAQ",
     "teacher tool help",
     "reduce screen time classroom",
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "FAQ — Curriculate",
     description:
-      "Common questions about classroom scavenger hunts, screen time, AI grading, pricing, and getting started.",
+      "Common questions about classroom scavenger hunts, screen time, Prism, pricing, and getting started.",
     url: "https://curriculate.net/faq",
     siteName: "Curriculate",
     type: "website",

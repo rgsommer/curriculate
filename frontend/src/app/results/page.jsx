@@ -568,7 +568,10 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
       }}
     >
       <div className="no-print">
-        <h1 style={{ fontSize: 24, marginBottom: 8 }}>View Feedback</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+          <img src="/images/prism/prism-logo.png" alt="Curriculate Prism" style={{ height: 40, width: "auto" }} />
+          <h1 style={{ fontSize: 24, margin: 0 }}>View Feedback</h1>
+        </div>
         <p style={{ marginTop: 0, opacity: 0.8 }}>
           Enter the reference code written on the paper (expires after 30 days).
         </p>
@@ -1467,7 +1470,7 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                 onClick={() => setRecommendOpen(true)}
                 style={{ fontSize: 13, color: "#d97706", background: "none", border: "1px solid #d97706", borderRadius: 10, padding: "6px 16px", cursor: "pointer", fontWeight: 700 }}
               >
-                Recommend Curriculate to a teacher
+                Recommend Curriculate Prism to a teacher
               </button>
             ) : (
               <div style={{ maxWidth: 360, margin: "0 auto", textAlign: "left" }}>
