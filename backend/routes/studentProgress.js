@@ -520,34 +520,122 @@ router.get("/teacher/students", teacherAuth, async (req, res) => {
     }
 
     // Create one entry per student per class (student appears in all their classes)
-    // Show ALL assignments under each class — per-subject breakdown happens in the drill-down view
+    // Also detect results whose meta.className points to a class the student isn't
+    // rostered in — create virtual class entries so e.g. Math tests aren't orphaned
+    // under History when no Math roster exists.
     const students = [];
     for (const id of idArray) {
       const classes = studentClasses[id] || [];
       const studentResults = byStudent[id] || [];
       if (studentResults.length === 0) continue;
 
-      const scores = [];
+      // Build set of roster class names this student belongs to
+      const rosterClassSet = new Set(classes.map((c) => c.className || ""));
+
+      // Check if any results belong to a class not in this student's rosters.
+      // This covers: (a) meta.className set to a non-roster class, and
+      // (b) meta.subject that doesn't match any of the student's roster classes
+      // (e.g. Math results when only History/Geo rosters are uploaded).
+      const extraClasses = new Set();
       for (const r of studentResults) {
-        if (typeof r.payload === "string") {
-          const m = r.payload.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
-          if (m) {
-            const outOf = parseFloat(m[2]);
-            if (outOf > 0) scores.push(Math.round((parseFloat(m[1]) / outOf) * 100));
+        const rc = (r.meta?.className || "").trim();
+        // Case (a): explicit className not in any roster
+        if (rc && !rosterClassSet.has(rc)) {
+          extraClasses.add(rc);
+          classNames.add(rc);
+          continue;
+        }
+        // Case (b): no className, but subject doesn't match any of this student's roster classes
+        if (!rc) {
+          const matchesAnyRoster = classes.some((c) => resultMatchesClass(r, c.className));
+          if (!matchesAnyRoster) {
+            // Use subject as virtual class name (capitalize it)
+            const subj = (r.meta?.subject || "").trim();
+            if (subj) {
+              const label = subj.charAt(0).toUpperCase() + subj.slice(1);
+              extraClasses.add(label);
+              classNames.add(label);
+            }
           }
         }
       }
-      const avg = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
 
+      // For each roster class, compute stats only for results that belong to that class
       for (const cls of classes) {
+        const classResults = studentResults.filter((r) => resultMatchesClass(r, cls.className));
+        // Also include unclassified results (no className, no subject match) in the student's first class
+        const unclassified = studentResults.filter((r) => {
+          const rc = (r.meta?.className || "").trim();
+          const subj = (r.meta?.subject || "").trim();
+          return !rc && !subj;
+        });
+        const effectiveResults = classResults.length > 0 ? classResults : [];
+        // Add unclassified results only to the first class to avoid double-counting
+        if (cls === classes[0]) {
+          for (const u of unclassified) {
+            if (!effectiveResults.includes(u)) effectiveResults.push(u);
+          }
+        }
+        if (effectiveResults.length === 0) continue;
+
+        const scores = [];
+        for (const r of effectiveResults) {
+          if (typeof r.payload === "string") {
+            const m = r.payload.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
+            if (m) {
+              const outOf = parseFloat(m[2]);
+              if (outOf > 0) scores.push(Math.round((parseFloat(m[1]) / outOf) * 100));
+            }
+          }
+        }
+        const avg = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+
         students.push({
           studentId: id,
           firstName: cls.firstName || "",
           lastName: cls.lastName || "",
           className: cls.className || "",
-          totalAssignments: studentResults.length,
+          totalAssignments: effectiveResults.length,
           avg,
-          lastGraded: studentResults[0]?.createdAt || null,
+          lastGraded: effectiveResults[0]?.createdAt || null,
+        });
+      }
+
+      // Create entries for virtual classes (from meta.className or subject not in any roster)
+      for (const vc of extraClasses) {
+        const vcResults = studentResults.filter((r) => {
+          const rc = (r.meta?.className || "").trim();
+          if (rc === vc) return true;
+          // Also match by subject label (e.g. vc="Math" matches subject "math")
+          if (!rc) {
+            const subj = (r.meta?.subject || "").trim();
+            const label = subj ? subj.charAt(0).toUpperCase() + subj.slice(1) : "";
+            return label === vc;
+          }
+          return false;
+        });
+        if (vcResults.length === 0) continue;
+        const scores = [];
+        for (const r of vcResults) {
+          if (typeof r.payload === "string") {
+            const m = r.payload.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
+            if (m) {
+              const outOf = parseFloat(m[2]);
+              if (outOf > 0) scores.push(Math.round((parseFloat(m[1]) / outOf) * 100));
+            }
+          }
+        }
+        const avg = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+        // Use name from any roster entry for this student
+        const nameEntry = classes[0] || {};
+        students.push({
+          studentId: id,
+          firstName: nameEntry.firstName || "",
+          lastName: nameEntry.lastName || "",
+          className: vc,
+          totalAssignments: vcResults.length,
+          avg,
+          lastGraded: vcResults[0]?.createdAt || null,
         });
       }
     }

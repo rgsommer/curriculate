@@ -1530,7 +1530,7 @@ export default function GradingPage() {
     }
 
     useEffect(() => {
-      if (inputMode === "paste") {
+      if (inputMode !== "photo") {
         stopCamera();
         return;
       }

@@ -658,6 +658,7 @@ export default function BatchGrading({
                   assessmentType: resultEntry.assessmentType || "",
                   title: emailTitle.trim() || "",
                   pdfName: pdfName || "",
+                  className: resultEntry.rosterClassName || "",
                 },
                 sessionId: batchSessionId,
               }),
@@ -1256,6 +1257,8 @@ export default function BatchGrading({
                     subject: r.subject || "",
                     assessmentType: r.assessmentType || "",
                     title: emailTitle.trim() || "",
+                    pdfName: pdfName || "",
+                    className: r.rosterClassName || "",
                   },
                 }),
               });
@@ -1558,6 +1561,7 @@ export default function BatchGrading({
                   assessmentType: updatedEntry.assessmentType || "",
                   title: emailTitle.trim() || "",
                   pdfName: pdfName || "",
+                  className: updatedEntry.rosterClassName || "",
                 },
               }),
             });
@@ -2050,6 +2054,7 @@ export default function BatchGrading({
                     assessmentType: r.assessmentType || "",
                     title: finalTitle,
                     pdfName: pdfName || "",
+                    className: r.rosterClassName || "",
                   },
                 }),
               });
