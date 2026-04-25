@@ -1,4 +1,4 @@
-# Curriculate Prism — Mobile App Setup
+# Curriculate Pulse — Mobile App Setup
 
 ## Architecture
 
@@ -30,9 +30,9 @@ cd mobile-app
 # Install dependencies
 npm install
 
-# Copy the Prism icon for splash/app icon generation
-cp ../frontend/public/images/prism/prism-icon.png resources/icon.png
-cp ../frontend/public/images/prism/prism-logo.png resources/splash.png
+# Copy the Pulse icon for splash/app icon generation
+cp ../frontend/public/images/pulse/pulse-icon.png resources/icon.png
+cp ../frontend/public/images/pulse/pulse-logo.png resources/splash.png
 
 # Generate app icons and splash screens from your logo
 npm run icons

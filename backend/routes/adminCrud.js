@@ -570,7 +570,7 @@ router.post("/referral-codes/:id/send", ...adminRequired, async (req, res) => {
         ? `Your referrals get ${doc.customerDiscountPercent}% off their first payment!`
         : "",
       SITE_URL: "https://www.curriculate.net",
-      AI_GRADING_URL: "https://www.curriculate.net/prism",
+      AI_GRADING_URL: "https://www.curriculate.net/pulse",
       CUSTOM_MESSAGE: req.body?.message
         ? String(req.body.message).replace(/</g, "&lt;").replace(/>/g, "&gt;")
         : "",
@@ -606,14 +606,14 @@ const DEFAULT_REFERRAL_AGENT_HTML = `
       <a href="{{SITE_URL}}" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:700;font-size:16px;">Visit Curriculate</a>
     </div>
     <div style="text-align:center;">
-      <a href="{{AI_GRADING_URL}}" style="display:inline-block;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:700;font-size:16px;">Prism &mdash; See It In Action</a>
+      <a href="{{AI_GRADING_URL}}" style="display:inline-block;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:700;font-size:16px;">Pulse &mdash; See It In Action</a>
     </div>
   </div>
 
   <p style="color:#334155;font-size:14px;"><strong>How it works:</strong></p>
   <ol style="color:#334155;font-size:14px;padding-left:20px;">
     <li>Share your code along with the links above</li>
-    <li>Direct teachers to <a href="{{AI_GRADING_URL}}" style="color:#16a34a;font-weight:600;">curriculate.net/prism</a> to see Prism in action</li>
+    <li>Direct teachers to <a href="{{AI_GRADING_URL}}" style="color:#16a34a;font-weight:600;">curriculate.net/pulse</a> to see Pulse in action</li>
     <li>They enter your referral code at checkout</li>
     <li>You earn {{COMMISSION_PERCENT}}% commission on their subscription</li>
     <li>Commissions are tracked and paid out by the Curriculate team</li>
@@ -699,7 +699,7 @@ router.post("/referral-applications", async (req, res) => {
         NAME: name,
         EMAIL: email,
         SITE_URL: "https://www.curriculate.net",
-        AI_GRADING_URL: "https://www.curriculate.net/prism",
+        AI_GRADING_URL: "https://www.curriculate.net/pulse",
       };
       const subject = _render(template.subject || "", vars);
       const html = _render(template.html || "", vars);
@@ -736,7 +736,7 @@ const DEFAULT_REFERRAL_APPLICATION_HTML = `
       <a href="{{SITE_URL}}" style="display:inline-block;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:700;font-size:15px;">Explore Curriculate</a>
     </div>
     <div style="text-align:center;">
-      <a href="{{AI_GRADING_URL}}" style="display:inline-block;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:700;font-size:15px;">Try Free Prism</a>
+      <a href="{{AI_GRADING_URL}}" style="display:inline-block;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:700;font-size:15px;">Try Free Pulse</a>
     </div>
   </div>
 
@@ -822,7 +822,7 @@ router.put("/referral-applications/:id/approve", ...adminRequired, async (req, r
           ? `Your referrals get ${customerDiscountPercent}% off their first payment!`
           : "",
         SITE_URL: "https://www.curriculate.net",
-        AI_GRADING_URL: "https://www.curriculate.net/prism",
+        AI_GRADING_URL: "https://www.curriculate.net/pulse",
         CUSTOM_MESSAGE: "",
       };
 

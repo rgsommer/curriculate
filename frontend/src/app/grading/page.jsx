@@ -3069,11 +3069,11 @@ export default function GradingPage() {
       <div style={styles.page}>
         <div style={styles.header}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <img src="/images/prism/prism-icon.png" alt="Prism" style={{ height: 32, width: "auto" }} />
+            <img src="/images/pulse/pulse-icon.png" alt="Pulse" style={{ height: 32, width: "auto" }} />
             <h1 style={styles.h1}>Grading</h1>
             {!tipsHidden && (
               <a
-                href="/prism"
+                href="/pulse"
                 style={{
                   fontSize: 12, fontWeight: 600, color: "#2563eb",
                   textDecoration: "none", opacity: 0.8,
@@ -3788,6 +3788,16 @@ export default function GradingPage() {
               <button
                 type="button"
                 onClick={() => setShowRubric(v => !v)}
+                onDoubleClick={(e) => {
+                  e.preventDefault();
+                  setRubricOverride("");
+                  setStickyRubricText("");
+                  setStickyRubricSource("");
+                  setStickyRubricCapturedAt("");
+                  setStickyAnswerKeyText("");
+                  setStickyAnswerKeyCapturedAt("");
+                  setShowRubric(false);
+                }}
                 style={{
                   ...styles.rubricBar,
                   ...(showRubric ? styles.rubricBarOpen : null),

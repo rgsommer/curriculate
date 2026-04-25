@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "net.curriculate.prism",
-  appName: "Curriculate Prism",
+  appId: "net.curriculate.pulse",
+  appName: "Curriculate Pulse",
   webDir: "www",
 
   // ── Live URL mode ──────────────────────────────────────────────
@@ -44,7 +44,7 @@ const config: CapacitorConfig = {
     contentInset: "always",
     allowsLinkPreview: true,
     scrollEnabled: true,
-    scheme: "Curriculate Prism",
+    scheme: "Curriculate Pulse",
   },
 
   // Android-specific

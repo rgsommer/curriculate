@@ -1,7 +1,7 @@
 # App Store & Play Store Metadata
 
 ## App Name
-**Curriculate Prism**
+**Curriculate Pulse**
 
 ## Subtitle (App Store, 30 chars max)
 AI Grading for Teachers
@@ -13,9 +13,9 @@ Grade papers with AI. Photo → rubric → feedback in seconds. Free for teacher
 
 **Grade a stack of papers in minutes, not hours.**
 
-Prism by Curriculate is the free AI grading tool built for teachers. Snap a photo of student work — handwritten or typed — set your rubric, and get detailed, personalized feedback in seconds.
+Pulse by Curriculate is the free AI grading tool built for teachers. Snap a photo of student work — handwritten or typed — set your rubric, and get detailed, personalized feedback in seconds.
 
-**What Prism does:**
+**What Pulse does:**
 • 5 input modes: photo, paste, batch PDF, video, audio
 • 13 feedback voices from encouraging coach to rigorous academic
 • Your rubric, every time — paste, describe, or upload a PDF

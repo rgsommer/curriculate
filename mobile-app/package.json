@@ -1,11 +1,11 @@
 {
-  "name": "curriculate-prism",
+  "name": "curriculate-pulse",
   "version": "1.0.0",
-  "description": "Curriculate Prism — AI-powered grading for teachers",
+  "description": "Curriculate Pulse — AI-powered grading for teachers",
   "private": true,
   "scripts": {
     "build:web": "mkdir -p www && cp index.html www/index.html",
-    "cap:init": "npx cap init 'Curriculate Prism' net.curriculate.prism --web-dir www",
+    "cap:init": "npx cap init 'Curriculate Pulse' net.curriculate.pulse --web-dir www",
     "cap:add:ios": "npx cap add ios",
     "cap:add:android": "npx cap add android",
     "cap:sync": "npm run build:web && npx cap sync",

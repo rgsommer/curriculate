@@ -440,7 +440,7 @@ function MobileNav() {
   const links = [
     { href: "/how-it-works", label: "How it works" },
     { href: "/features", label: "Features" },
-    { href: "/prism", label: "Prism" },
+    { href: "/pulse", label: "Pulse" },
     { href: "/pricing", label: "Pricing" },
     { href: "/compare", label: "Compare" },
     { href: "/reports", label: "Reports" },
@@ -1152,8 +1152,8 @@ export default function Home() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
               <div>
                 <img
-                  src="/images/prism/prism-logo.png"
-                  alt="Curriculate Prism"
+                  src="/images/pulse/pulse-logo.png"
+                  alt="Curriculate Pulse"
                   className="h-14 w-auto mb-4"
                 />
                 <h2 className="text-3xl sm:text-4xl font-black text-gray-900 mb-4">
@@ -1165,13 +1165,13 @@ export default function Home() {
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3">
                   <Link
-                    href="/prism"
+                    href="/pulse"
                     className="inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-6 py-4 text-white font-black shadow-xl hover:bg-indigo-700"
                   >
-                    Try Prism Free <ArrowRight className="w-5 h-5" />
+                    Try Pulse Free <ArrowRight className="w-5 h-5" />
                   </Link>
                   <Link
-                    href="/prism"
+                    href="/pulse"
                     className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-6 py-4 text-gray-900 font-black shadow-md border border-gray-200 hover:bg-gray-50"
                   >
                     Learn More

@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Prism — Grading Tool for Teachers | Curriculate",
+  title: "Pulse — Grading Tool for Teachers | Curriculate",
   description:
-    "Grade student papers instantly with Prism. Upload a photo of handwritten or typed work, set your rubric, and get detailed feedback in seconds.",
+    "Grade student papers instantly with Pulse. Upload a photo of handwritten or typed work, set your rubric, and get detailed feedback in seconds.",
   keywords: [
-    "Prism grading",
+    "Pulse grading",
     "grade papers online",
     "AI essay grader free",
     "teacher grading assistant",
@@ -15,9 +15,9 @@ export const metadata: Metadata = {
     "free teacher tools",
   ],
   openGraph: {
-    title: "Prism — Grading Tool for Teachers | Curriculate",
+    title: "Pulse — Grading Tool for Teachers | Curriculate",
     description:
-      "Grade student papers instantly with Prism. Photo-first workflow, 13 feedback voices, rubric-aligned scoring.",
+      "Grade student papers instantly with Pulse. Photo-first workflow, 13 feedback voices, rubric-aligned scoring.",
     url: "https://curriculate.net/grading",
     siteName: "Curriculate",
     type: "website",
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
         url: "https://curriculate.net/images/og/og-grading.png",
         width: 1200,
         height: 630,
-        alt: "Curriculate Prism — Grading Tool for Teachers",
+        alt: "Curriculate Pulse — Grading Tool for Teachers",
       },
     ],
   },

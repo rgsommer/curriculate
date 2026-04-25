@@ -420,7 +420,7 @@ export default function ProgressPage() {
       <div style={s.page}>
         <div style={s.card}>
           <div style={{ textAlign: "center", marginBottom: 12 }}>
-            <img src="/images/prism/prism-logo.png" alt="Curriculate Prism" style={{ height: 64, width: "auto" }} />
+            <img src="/images/pulse/pulse-logo.png" alt="Curriculate Pulse" style={{ height: 64, width: "auto" }} />
           </div>
           <h1 style={s.h1}>Student Progress</h1>
           <div style={s.sub}>Students and parents — enter your student ID and email to view grades and feedback</div>
@@ -489,7 +489,7 @@ export default function ProgressPage() {
         <div style={s.wideCard}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <img src="/images/prism/prism-icon.png" alt="Prism" style={{ height: 28, width: "auto" }} />
+              <img src="/images/pulse/pulse-icon.png" alt="Pulse" style={{ height: 28, width: "auto" }} />
               <h1 style={{ ...s.h1, textAlign: "left", fontSize: 24, margin: 0 }}>Class Progress</h1>
             </div>
             <button onClick={logout} style={{ ...s.link, fontSize: 12, color: "#dc2626" }} type="button">Logout</button>
@@ -889,7 +889,7 @@ export default function ProgressPage() {
               </button>
             )}
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <img src="/images/prism/prism-icon.png" alt="Prism" style={{ height: 28, width: "auto" }} />
+              <img src="/images/pulse/pulse-icon.png" alt="Pulse" style={{ height: 28, width: "auto" }} />
               <h1 style={{ ...s.h1, textAlign: "left", fontSize: 24, margin: 0 }}>
                 {student ? `${student.firstName} ${student.lastName}` : "My Progress"}
               </h1>

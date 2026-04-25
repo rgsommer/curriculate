@@ -148,7 +148,7 @@ export default function SiteHeader() {
             </div>
           </div>
 
-          <NavLink href="/prism">Prism</NavLink>
+          <NavLink href="/pulse">Pulse</NavLink>
           <NavLink href="/parties">Parties</NavLink>
           <NavLink href="/events">Events</NavLink>
           <NavLink href="/pricing">Pricing</NavLink>

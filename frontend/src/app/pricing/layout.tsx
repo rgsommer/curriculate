@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Pricing — Free Plan & Premium Options",
   description:
-    "Curriculate pricing for teachers and schools. Free plan includes Prism and basic stations. Premium plans add unlimited task sets, advanced reports, and school-wide features.",
+    "Curriculate pricing for teachers and schools. Free plan includes Pulse and basic stations. Premium plans add unlimited task sets, advanced reports, and school-wide features.",
   keywords: [
     "Curriculate pricing",
     "teacher tool pricing",
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Pricing — Curriculate",
     description:
-      "Free plan available. Premium plans for teachers and schools with unlimited task sets, advanced reports, and Prism.",
+      "Free plan available. Premium plans for teachers and schools with unlimited task sets, advanced reports, and Pulse.",
     url: "https://curriculate.net/pricing",
     siteName: "Curriculate",
     type: "website",

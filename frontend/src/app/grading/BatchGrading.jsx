@@ -1726,7 +1726,7 @@ export default function BatchGrading({
       if (includeFooter) {
         lines.push("");
         lines.push("—");
-        lines.push("Graded with Curriculate Prism — grading & feedback for teachers");
+        lines.push("Graded with Curriculate Pulse — grading & feedback for teachers");
         lines.push("www.curriculate.net");
       }
 
@@ -1904,7 +1904,7 @@ export default function BatchGrading({
     }
     html += `</div></div>`;
 
-    html += `Graded with <a href="https://www.curriculate.net/prism" style="color: #2563eb; font-weight: 700; text-decoration: none;">Curriculate Prism</a> &mdash; grading &amp; feedback for teachers<br/>`;
+    html += `Graded with <a href="https://www.curriculate.net/pulse" style="color: #2563eb; font-weight: 700; text-decoration: none;">Curriculate Pulse</a> &mdash; grading &amp; feedback for teachers<br/>`;
     html += `Save hours on marking. Try it free at <a href="https://www.curriculate.net" style="color: #2563eb; text-decoration: none;">curriculate.net</a>`;
     html += `</td></tr></table>`;
 

@@ -133,7 +133,7 @@ export async function initNative() {
     platform: window.Capacitor?.getPlatform() || "web",
   };
 
-  console.log("[Prism] Native bridge initialized on", window.CurriculateNative.platform);
+  console.log("[Pulse] Native bridge initialized on", window.CurriculateNative.platform);
 }
 
 // Auto-initialize when loaded
