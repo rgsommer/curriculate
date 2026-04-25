@@ -1557,7 +1557,7 @@ export default function ProgressPage() {
                 // Academic year: Sep 2025 – Aug 2026 = "2025–2026"
                 const startYear = m >= 8 ? y : y - 1; // Aug (7) and earlier → previous academic year
                 const yearLabel = `${startYear}\u2013${startYear + 1}`;
-                const subj = r.subject || r.className || "General";
+                const subj = r.className || r.subject || "General";
                 if (!byYear[yearLabel]) byYear[yearLabel] = {};
                 if (!byYear[yearLabel][subj]) byYear[yearLabel][subj] = [];
                 byYear[yearLabel][subj].push(r);
@@ -1565,7 +1565,7 @@ export default function ProgressPage() {
               const years = Object.keys(byYear).sort().reverse(); // newest first
 
               // Stable sorted list of all subjects for consistent color assignment
-              const allSubjects = [...new Set(results.map((r) => r.subject || r.className || "General"))].sort();
+              const allSubjects = [...new Set(results.map((r) => r.className || r.subject || "General"))].sort();
               const subjColorMap = buildSubjectColorMap(allSubjects);
 
               // Only one year and one subject — flat list, no bars
