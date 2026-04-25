@@ -2189,8 +2189,20 @@ export default function BatchGrading({
         }
       }
     }
+    // Sort: unmatched (not yet assigned to any result) first, then matched
+    const assignedIds = new Set();
+    for (const r of results) {
+      if (r.rosterStudentId) assignedIds.add(r.rosterStudentId);
+      if (r.rosterEdsbyId) assignedIds.add(r.rosterEdsbyId);
+    }
+    all.sort((a, b) => {
+      const aMatched = assignedIds.has(a.studentId) || assignedIds.has(a.edsbyId);
+      const bMatched = assignedIds.has(b.studentId) || assignedIds.has(b.edsbyId);
+      if (aMatched !== bMatched) return aMatched ? 1 : -1; // unmatched first
+      return `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`);
+    });
     return all;
-  }, [rosterClasses, detectedBatchRosterId]);
+  }, [rosterClasses, detectedBatchRosterId, results]);
 
   const assignStudentName = useCallback((resultIndex, rosterStudent) => {
     setResults((prev) => {
