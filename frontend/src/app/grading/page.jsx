@@ -1460,7 +1460,7 @@ export default function GradingPage() {
     }, [backendBase]);
 
     // ── Simple roster name matcher for single-photo results ──
-    function matchStudentToRoster(name) {
+    function matchStudentToRoster(name, classFilter = "") {
       if (!name || !rosterClasses.length) return null;
       const norm = (s) => (s || "").toLowerCase().replace(/[^a-z]/g, "");
       const aiNorm = norm(name);
@@ -1469,6 +1469,7 @@ export default function GradingPage() {
       let best = null;
       let bestScore = 0;
       for (const rc of rosterClasses) {
+        if (classFilter && rc.className !== classFilter) continue;
         for (const s of (rc.students || [])) {
           const fn = norm(s.firstName);
           const ln = norm(s.lastName);
@@ -1663,11 +1664,11 @@ export default function GradingPage() {
       const aiName = String(assessment?.student_name || "").trim();
       if (!studentNameEdited && aiName) {
         setDetectedStudentName(aiName);
-        // Auto-match against roster
-        const match = matchStudentToRoster(aiName);
+        // Auto-match against roster (respect selected class if set)
+        const match = matchStudentToRoster(aiName, selectedClassName);
         if (match) {
           setMatchedRosterStudent(match);
-          setSelectedClassName(match.className || "");
+          if (!selectedClassName) setSelectedClassName(match.className || "");
         } else {
           setMatchedRosterStudent(null);
         }
@@ -1676,7 +1677,7 @@ export default function GradingPage() {
         setDetectedStudentName("");
         setMatchedRosterStudent(null);
       }
-    }, [assessment?.student_name, studentNameEdited, rosterClasses]);
+    }, [assessment?.student_name, studentNameEdited, rosterClasses, selectedClassName]);
 
     // Update published result when teacher changes student/class assignment
     useEffect(() => {
@@ -4253,8 +4254,16 @@ export default function GradingPage() {
                     <select
                       value={selectedClassName}
                       onChange={(e) => {
-                        setSelectedClassName(e.target.value);
-                        setMatchedRosterStudent(null); // reset student when class changes
+                        const cls = e.target.value;
+                        setSelectedClassName(cls);
+                        // Re-run auto-match with the new class filter
+                        const aiName = detectedStudentName || String(assessment?.student_name || "").trim();
+                        if (aiName) {
+                          const match = matchStudentToRoster(aiName, cls);
+                          setMatchedRosterStudent(match || null);
+                        } else {
+                          setMatchedRosterStudent(null);
+                        }
                       }}
                       style={{
                         width: "100%", padding: "6px 10px", borderRadius: 8,
