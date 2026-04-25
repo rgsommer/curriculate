@@ -1548,7 +1548,21 @@ export default function ProgressPage() {
                 return pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
               };
 
-              // Group by academic year (Sep–Aug) then subject
+              // Build className lookup: if a result has className "MATH7B" and
+              // another has subject "Math" but no className, merge into "MATH7B"
+              const knownClasses = [...new Set(results.map((r) => r.className).filter(Boolean))];
+              const resolveGroup = (r) => {
+                if (r.className) return r.className;
+                // Try to match subject to a known className (e.g. "Math" → "MATH7B")
+                const subj = (r.subject || "").toLowerCase();
+                if (subj) {
+                  const match = knownClasses.find((cn) => cn.toLowerCase().includes(subj));
+                  if (match) return match;
+                }
+                return r.subject || "General";
+              };
+
+              // Group by academic year (Sep–Aug) then subject/class
               const byYear = {};
               results.forEach((r) => {
                 const d = new Date(r.createdAt);
@@ -1557,7 +1571,7 @@ export default function ProgressPage() {
                 // Academic year: Sep 2025 – Aug 2026 = "2025–2026"
                 const startYear = m >= 8 ? y : y - 1; // Aug (7) and earlier → previous academic year
                 const yearLabel = `${startYear}\u2013${startYear + 1}`;
-                const subj = r.className || r.subject || "General";
+                const subj = resolveGroup(r);
                 if (!byYear[yearLabel]) byYear[yearLabel] = {};
                 if (!byYear[yearLabel][subj]) byYear[yearLabel][subj] = [];
                 byYear[yearLabel][subj].push(r);
@@ -1565,7 +1579,7 @@ export default function ProgressPage() {
               const years = Object.keys(byYear).sort().reverse(); // newest first
 
               // Stable sorted list of all subjects for consistent color assignment
-              const allSubjects = [...new Set(results.map((r) => r.className || r.subject || "General"))].sort();
+              const allSubjects = [...new Set(results.map((r) => resolveGroup(r)))].sort();
               const subjColorMap = buildSubjectColorMap(allSubjects);
 
               // Only one year and one subject — flat list, no bars
