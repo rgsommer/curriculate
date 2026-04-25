@@ -723,7 +723,9 @@ export default function ProgressPage() {
               <div
                 key={ts.studentId}
                 style={{ display: "flex", alignItems: "center", padding: "10px 14px", borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}
-                onClick={async () => {
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  if (loading) return; // prevent double-click while loading
                   // Save the current teacher token before drilling down
                   // Read from localStorage as source of truth (state may be stale after back-navigation)
                   const currentToken = localStorage.getItem(TOKEN_KEY) || token;
@@ -737,12 +739,24 @@ export default function ProgressPage() {
                   setExpandedResult(null);
                   setReassigningCode(null);
                   setInfo("");
+                  setError("");
                   setLoading(true);
                   try {
+                    // Use teacher email from state or decoded from stored token
+                    let teacherEmail = email;
+                    if (!teacherEmail || !teacherEmail.includes("@")) {
+                      try {
+                        const savedTk = localStorage.getItem(TOKEN_KEY);
+                        if (savedTk) {
+                          const payload = JSON.parse(atob(savedTk.split(".")[1]));
+                          if (payload.teacherEmail) teacherEmail = payload.teacherEmail;
+                        }
+                      } catch {}
+                    }
                     const res = await fetch(`${API}/student-progress/login`, {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ studentId: ts.studentId, email }),
+                      body: JSON.stringify({ studentId: ts.studentId, email: teacherEmail }),
                     });
                     const data = await res.json();
                     if (data.ok && !data.needsCode && !data.isTeacherOverview) {
@@ -750,9 +764,10 @@ export default function ProgressPage() {
                       // useEffect picks up the correct token
                       localStorage.setItem(TOKEN_KEY, data.token);
                       setToken(data.token);
-                      setStudent(data.student);
+                      setStudent(data.student || { firstName: ts.firstName, lastName: ts.lastName, className: ts.className });
                       setView("dashboard");
                     } else {
+                      console.warn("[StudentRow] unexpected response:", data);
                       setError(data.error || "Failed to load student.");
                     }
                   } catch (err) {
@@ -803,7 +818,7 @@ export default function ProgressPage() {
               return (
                 <div key={cls} style={{ marginBottom: 8 }}>
                   <button
-                    onClick={() => setExpandedClasses((prev) => ({ ...prev, [cls]: !isOpen }))}
+                    onClick={() => setExpandedClasses((prev) => isOpen ? { ...prev, [cls]: false } : { [cls]: true })}
                     style={{
                       width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
                       padding: "12px 16px", background: cc.bg,
@@ -1021,6 +1036,72 @@ export default function ProgressPage() {
               </div>
             )}
 
+            {/* Overall KITA / category summary */}
+            {(() => {
+              // Aggregate category scores across all results
+              const catTotals = {}; // { name: { short, totalScore, totalOutOf, count } }
+              let anyKita = false;
+              for (const r of results) {
+                if (!r.categories?.categories?.length) continue;
+                anyKita = true;
+                for (const cat of r.categories.categories) {
+                  if (typeof cat.score !== "number" || typeof cat.outOf !== "number" || cat.outOf <= 0) continue;
+                  const key = cat.short || cat.name;
+                  if (!catTotals[key]) catTotals[key] = { short: cat.short, name: cat.name, totalScore: 0, totalOutOf: 0, count: 0 };
+                  catTotals[key].totalScore += cat.score;
+                  catTotals[key].totalOutOf += cat.outOf;
+                  catTotals[key].count += 1;
+                }
+              }
+              const catKeys = Object.keys(catTotals);
+              if (!anyKita || catKeys.length === 0) return null;
+
+              const pctColor = (pct) =>
+                pct >= 80 ? "#059669" : pct >= 70 ? "#22c55e" : pct >= 60 ? "#eab308" : pct >= 50 ? "#f59e0b" : "#ef4444";
+
+              return (
+                <div style={{
+                  background: "#f8fafc", borderRadius: 12, padding: "14px 16px",
+                  marginBottom: 16, border: "1px solid #e2e8f0",
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 10 }}>
+                    Overall Category Averages
+                  </div>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {catKeys.map((key) => {
+                      const c = catTotals[key];
+                      const avgScore = c.totalScore / c.count;
+                      const avgOutOf = c.totalOutOf / c.count;
+                      const pct = Math.round((avgScore / avgOutOf) * 100);
+                      const barColor = pctColor(pct);
+                      return (
+                        <div key={key}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={{
+                                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                width: 22, height: 22, borderRadius: 6,
+                                background: "rgba(37,99,235,0.1)", fontSize: 11, fontWeight: 900, color: "#2563eb",
+                              }}>{c.short}</span>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: "#334155" }}>{c.name}</span>
+                              <span style={{ fontSize: 10, color: "#94a3b8" }}>({c.count} asst{c.count !== 1 ? "s" : ""})</span>
+                            </div>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: barColor }}>{pct}%</span>
+                          </div>
+                          <div style={{ height: 7, borderRadius: 4, background: "#e2e8f0", overflow: "hidden" }}>
+                            <div style={{
+                              height: "100%", borderRadius: 4, width: `${pct}%`,
+                              background: barColor, transition: "width 0.3s ease",
+                            }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Progress chart */}
             {results.length > 1 && (
               <div style={{ marginBottom: 20 }}>
@@ -1131,6 +1212,8 @@ export default function ProgressPage() {
                 const isUnviewed = r.viewCount != null && r.viewCount <= 1;
                 const isExpanded = expandedResult === r.code;
                 const hasCats = r.categories && r.categories.categories && r.categories.categories.length > 0;
+                const hasImages = r.images && r.images.length > 0;
+                const canExpand = hasCats || hasImages;
                 return (
                 <div key={r.code}>
                 <div
@@ -1140,9 +1223,9 @@ export default function ProgressPage() {
                     ...(isNew ? { background: "#eff6ff", borderLeft: "3px solid #2563eb", paddingLeft: 10 }
                       : isUnviewed ? { background: "#fafbff", borderLeft: "3px solid #c7d2fe", paddingLeft: 10 }
                       : {}),
-                    cursor: hasCats ? "pointer" : "default",
+                    cursor: canExpand ? "pointer" : "default",
                   }}
-                  onClick={() => { if (hasCats) setExpandedResult(isExpanded ? null : r.code); }}
+                  onClick={() => { if (canExpand) setExpandedResult(isExpanded ? null : r.code); }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {editingTitleCode === r.code ? (
@@ -1173,12 +1256,12 @@ export default function ProgressPage() {
                       />
                     ) : (
                       <div
-                        style={{ fontWeight: 700, fontSize: 14, color: "#1e293b", cursor: teacherToken ? "text" : hasCats ? "pointer" : "default", display: "flex", alignItems: "center", gap: 6 }}
+                        style={{ fontWeight: 700, fontSize: 14, color: "#1e293b", cursor: teacherToken ? "text" : canExpand ? "pointer" : "default", display: "flex", alignItems: "center", gap: 6 }}
                         onClick={(e) => { if (teacherToken) { e.stopPropagation(); setEditingTitleCode(r.code); } }}
-                        title={teacherToken ? "Click to rename" : hasCats ? "Click to see breakdown" : undefined}
+                        title={teacherToken ? "Click to rename" : canExpand ? "Click to see breakdown" : undefined}
                       >
                         {r.title || "Assignment"}
-                        {hasCats && (
+                        {canExpand && (
                           <span style={{ fontSize: 10, color: "#94a3b8", transition: "transform 0.15s", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", display: "inline-block" }}>&#9654;</span>
                         )}
                       </div>
@@ -1331,9 +1414,13 @@ export default function ProgressPage() {
                     </button>
                   )}
                 </div>
-                {/* Expanded KITA / category breakdown */}
-                {isExpanded && hasCats && (() => {
-                  const { categories, weightedTotal, isKita } = r.categories;
+                {/* Expanded KITA / category breakdown + source images */}
+                {isExpanded && (() => {
+                  const hasImages = r.images && r.images.length > 0;
+                  if (!hasCats && !hasImages) return null;
+                  const categories = hasCats ? r.categories.categories : [];
+                  const weightedTotal = hasCats ? r.categories.weightedTotal : null;
+                  const isKita = hasCats ? r.categories.isKita : false;
                   const scored = categories.filter((c) => typeof c.score === "number" && typeof c.outOf === "number" && c.outOf > 0);
                   return (
                     <div style={{
@@ -1341,6 +1428,32 @@ export default function ProgressPage() {
                       background: "rgba(37,99,235,0.02)",
                       borderBottom: "1px solid #e2e8f0",
                     }}>
+                      {/* Source images */}
+                      {hasImages && (
+                        <div style={{ marginBottom: hasCats ? 12 : 0 }}>
+                          <div style={{
+                            display: "grid",
+                            gridTemplateColumns: r.images.length === 1 ? "1fr" : "repeat(auto-fill, minmax(140px, 1fr))",
+                            gap: 8,
+                          }}>
+                            {r.images.map((url, ii) => (
+                              <a key={ii} href={url} target="_blank" rel="noreferrer">
+                                <img
+                                  src={url}
+                                  alt={`Page ${ii + 1}`}
+                                  style={{
+                                    width: "100%", maxHeight: 200, objectFit: "contain",
+                                    borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc",
+                                    cursor: "zoom-in",
+                                  }}
+                                />
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {!hasCats ? null : (<>
+                    {/* Category bars (existing) */}
                       {/* Category bars */}
                       <div style={{ display: "grid", gap: 8 }}>
                         {categories.map((cat, ci) => {
@@ -1421,6 +1534,7 @@ export default function ProgressPage() {
                           </div>
                         );
                       })()}
+                    </>)}
                     </div>
                   );
                 })()}
@@ -1443,7 +1557,7 @@ export default function ProgressPage() {
                 // Academic year: Sep 2025 – Aug 2026 = "2025–2026"
                 const startYear = m >= 8 ? y : y - 1; // Aug (7) and earlier → previous academic year
                 const yearLabel = `${startYear}\u2013${startYear + 1}`;
-                const subj = r.subject || "General";
+                const subj = r.subject || r.className || "General";
                 if (!byYear[yearLabel]) byYear[yearLabel] = {};
                 if (!byYear[yearLabel][subj]) byYear[yearLabel][subj] = [];
                 byYear[yearLabel][subj].push(r);
@@ -1451,7 +1565,7 @@ export default function ProgressPage() {
               const years = Object.keys(byYear).sort().reverse(); // newest first
 
               // Stable sorted list of all subjects for consistent color assignment
-              const allSubjects = [...new Set(results.map((r) => r.subject || "General"))].sort();
+              const allSubjects = [...new Set(results.map((r) => r.subject || r.className || "General"))].sort();
               const subjColorMap = buildSubjectColorMap(allSubjects);
 
               // Only one year and one subject — flat list, no bars
@@ -1514,7 +1628,7 @@ export default function ProgressPage() {
                             return (
                               <div key={subjKey} style={{ margin: years.length > 1 ? "4px 8px" : "0 0 6px" }}>
                                 <button
-                                  onClick={() => setExpandedSubjects((prev) => ({ ...prev, [subjKey]: !isOpen }))}
+                                  onClick={() => setExpandedSubjects((prev) => isOpen ? { ...prev, [subjKey]: false } : { [subjKey]: true })}
                                   style={{
                                     width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
                                     padding: "10px 14px", background: sc.bg,

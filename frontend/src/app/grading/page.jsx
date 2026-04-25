@@ -97,6 +97,7 @@ const STANDARDS_KEY = "curriculate_grading_standards_v1";
 const GRADE_BAND_KEY = "curriculate_grading_band_v1";
 const VOICE_KEY = "curriculate_grading_voice_v1";
 const RUBRIC_OVERRIDE_KEY = "curriculate_rubric_override_v1";
+const SAVED_RUBRICS_KEY = "curriculate_saved_rubrics_v1";
 const VOICE_OVERRIDE_KEY = "curriculate_grading_voice_override_v1";
 const VOICE_OVERRIDE_VALUE_KEY = "curriculate_grading_voice_override_value_v1";
 const STRICTNESS_KEY = "curriculate_strictness_bias_v1";
@@ -3070,7 +3071,7 @@ export default function GradingPage() {
         <div style={styles.header}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <img src="/images/pulse/pulse-icon.png" alt="Pulse" style={{ height: 32, width: "auto" }} />
-            <h1 style={styles.h1}>Grading</h1>
+            <h1 style={styles.h1}>Pulse Grading</h1>
             {!tipsHidden && (
               <a
                 href="/pulse"
@@ -3217,6 +3218,32 @@ export default function GradingPage() {
           </div>
         </label>
 
+        {/* ── Teacher email (beside Feedback Voice) — hidden until 5 uses unless already set ── */}
+        {(gradingUses >= 5 || teacherEmail) && (
+          <label style={{ ...styles.controlLabel, flex: "1 1 220px", minWidth: 200 }}>
+            Email
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="email"
+                placeholder="Optional — links rosters"
+                value={teacherEmail}
+                onChange={(e) => setTeacherEmail(e.target.value)}
+                style={{
+                  flex: 1, padding: "5px 10px", borderRadius: 8,
+                  border: "1px solid #cbd5e1", fontSize: 13,
+                  background: "#fff", minWidth: 120,
+                }}
+              />
+              {rosterLoading && <span style={{ fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap" }}>Loading...</span>}
+              {!rosterLoading && rosterClasses.length > 0 && (
+                <span style={{ fontSize: 11, color: "#16a34a", fontWeight: 600, whiteSpace: "nowrap" }}>
+                  {rosterClasses.length} class{rosterClasses.length !== 1 ? "es" : ""} linked
+                </span>
+              )}
+            </div>
+          </label>
+        )}
+
         {/* <label style={{ ...styles.controlLabel, flexDirection: "row", alignItems: "center", gap: 10, marginTop: 18 }}>
           <input
             type="checkbox"
@@ -3263,38 +3290,6 @@ export default function GradingPage() {
             }
           }
         `}</style>
-        {/* ── Teacher email (optional, for roster linking) — hidden until 5 uses unless already set ── */}
-        {(gradingUses >= 5 || teacherEmail) && (
-        <div style={{
-          display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
-          padding: "6px 12px", marginBottom: 8,
-          background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0",
-        }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 200 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", opacity: 0.7 }}>Email</span>
-            <input
-              type="email"
-              placeholder="Optional — links class rosters to results"
-              value={teacherEmail}
-              onChange={(e) => setTeacherEmail(e.target.value)}
-              style={{
-                flex: 1, padding: "5px 10px", borderRadius: 8,
-                border: "1px solid #cbd5e1", fontSize: 13,
-                background: "#fff", minWidth: 160,
-              }}
-            />
-          </label>
-          {rosterLoading && <span style={{ fontSize: 11, color: "#94a3b8" }}>Loading...</span>}
-          {!rosterLoading && rosterClasses.length > 0 && (
-            <span style={{ fontSize: 11, color: "#16a34a", fontWeight: 600 }}>
-              {rosterClasses.length} class{rosterClasses.length !== 1 ? "es" : ""} linked
-            </span>
-          )}
-          {!rosterLoading && teacherEmail && teacherEmail.includes("@") && rosterClasses.length === 0 && (
-            <span style={{ fontSize: 11, color: "#94a3b8" }}>No rosters yet</span>
-          )}
-        </div>
-        )}
 
         <div className="grading-grid" style={styles.grid}>
           {/* CAMERA CARD */}

@@ -10,6 +10,28 @@ import { sendWeeklyDigests } from "../email/gradeNotification.js";
 const router = express.Router();
 
 /**
+ * Extract saved capture image URLs from a result payload string.
+ * Returns array of URLs (photo only, excludes video).
+ */
+function parseImageUrls(payload) {
+  if (typeof payload !== "string") return [];
+  const urls = [];
+  const lines = payload.split("\n");
+  let inCaptures = false;
+  for (const ln of lines) {
+    if (/saved captures/i.test(ln)) { inCaptures = true; continue; }
+    if (inCaptures) {
+      if (/^\S.*:$/.test(ln.trim()) && !/saved captures/i.test(ln)) break;
+      const urlMatch = ln.match(/https?:\/\/\S+/);
+      if (urlMatch && !/\/video\.\w+/i.test(urlMatch[0])) {
+        urls.push(urlMatch[0]);
+      }
+    }
+  }
+  return urls;
+}
+
+/**
  * Parse KITA / Achievement Category scores from a result payload string.
  * Returns { isKita, categories: [{ short, name, score, outOf, weight }], weightedTotal }
  * or null if no structured categories found.
@@ -475,6 +497,7 @@ router.get("/results", studentAuth, async (req, res) => {
 
       // Parse KITA / achievement categories from payload
       const cats = parseCategories(r.payload);
+      const images = parseImageUrls(r.payload);
 
       return {
         code: r.code,
@@ -491,6 +514,7 @@ router.get("/results", studentAuth, async (req, res) => {
         viewSources: r.viewSources || {},
         lastViewedAt: r.lastViewedAt || null,
         categories: cats,
+        images,
       };
     });
 
