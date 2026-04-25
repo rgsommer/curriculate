@@ -31,6 +31,8 @@ function pctFmt(v) {
   return `${v}%`;
 }
 
+const API = process.env.NEXT_PUBLIC_BACKEND_URL || "https://api.curriculate.net";
+
 export default function AdminUsageDashboard() {
   const [adminToken, setAdminToken] = useState("");
 
@@ -1055,7 +1057,9 @@ export default function AdminUsageDashboard() {
                   const r = await fetch(`${API}/api/recommendations`);
                   const d = await r.json();
                   setRecommendations(d.recommendations || []);
-                } catch {}
+                } catch (e) {
+                  console.error("Failed to load recommendations:", e);
+                }
                 setRecsLoading(false);
               }}
               className="px-3 py-1 text-xs font-bold rounded bg-blue-600 text-white hover:bg-blue-700 mb-2"
