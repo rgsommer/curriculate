@@ -2465,7 +2465,7 @@ export default function GradingPage() {
           // If same refCode exists in session, replaces instead of appending.
           {
             const sessionPayload = buildFullTeacherPayloadText(norm.assessment, activeCode, gradeBand, rubricOverride);
-            logCurrentToSessionLocal(sessionPayload, activeCode, matchedRosterStudent);
+            logCurrentToSessionLocal(sessionPayload, activeCode, matchedRosterStudent, norm.assessment);
           }
 
           // Auto-scroll to the response so teacher doesn't have to scroll manually
@@ -2571,15 +2571,16 @@ export default function GradingPage() {
       setRubricOverride("");
     }
 
-    function logCurrentToSessionLocal(formattedText, codeOverride, rosterStudent) {
-      if (!assessment) return;
+    function logCurrentToSessionLocal(formattedText, codeOverride, rosterStudent, assessmentOverride) {
+      const effectiveAssessment = assessmentOverride || assessment;
+      if (!effectiveAssessment) return;
 
       const entry = {
         id:
           (globalThis.crypto?.randomUUID && crypto.randomUUID()) ||
           String(Date.now()) + "_" + Math.random().toString(16).slice(2),
         createdAt: Date.now(),
-        assessment,
+        assessment: effectiveAssessment,
         formattedText: String(formattedText || "").trim(),
         refCode: codeOverride || refCode || "",
         // Roster-matched student info (from dropdown selection) so session
