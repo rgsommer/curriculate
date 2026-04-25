@@ -1100,14 +1100,39 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
 
                 return (
                   <>
-                    {/* Photo captures (same as before) */}
+                    {/* Photo captures with inline image previews */}
                     {photoCaptures.length ? (
-                      <Card title="Saved captures (30-day links)">
-                        <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.55 }}>
-                          {photoCaptures.map((x, i) => (
-                            <li key={i}>{linkifyTextToReactNodes(x)}</li>
-                          ))}
-                        </ul>
+                      <Card title="Source Images">
+                        <div style={{ display: "grid", gridTemplateColumns: photoCaptures.length === 1 ? "1fr" : "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+                          {photoCaptures.map((x, i) => {
+                            const urlMatch = x.match(/https?:\/\/\S+/);
+                            const url = urlMatch ? urlMatch[0] : null;
+                            const label = x.replace(/https?:\/\/\S+/, "").replace(/[:\s]+$/, "").trim() || `Photo ${i + 1}`;
+                            return (
+                              <div key={i} style={{ textAlign: "center" }}>
+                                {url ? (
+                                  <a href={url} target="_blank" rel="noreferrer">
+                                    <img
+                                      src={url}
+                                      alt={label}
+                                      style={{
+                                        width: "100%",
+                                        maxHeight: 320,
+                                        objectFit: "contain",
+                                        borderRadius: 8,
+                                        border: "1px solid #e2e8f0",
+                                        background: "#f8fafc",
+                                      }}
+                                    />
+                                  </a>
+                                ) : (
+                                  <span style={{ fontSize: 13, color: "#64748b" }}>{x}</span>
+                                )}
+                                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>{label}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </Card>
                     ) : null}
 
