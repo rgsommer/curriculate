@@ -305,6 +305,21 @@ export default function ProgressPage() {
     } else {
       setRecommendCount(0);
     }
+
+    // If teacher is viewing a student dashboard, load class names & roster
+    // (needed for class dropdown + reassign — lost on page reload)
+    const savedTeacherTk = localStorage.getItem(TEACHER_TOKEN_KEY);
+    if (savedTeacherTk && teacherClassNames.length === 0) {
+      fetch(`${API}/student-progress/teacher/students`, {
+        headers: { Authorization: `Bearer ${savedTeacherTk}` },
+      })
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.classNames) setTeacherClassNames(d.classNames);
+          if (d.rosterStudents) setRosterStudents(d.rosterStudents);
+        })
+        .catch(() => {});
+    }
   }, [view, token, apiCall]);
 
   const handleLogin = async (e) => {
