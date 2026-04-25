@@ -3333,7 +3333,7 @@ export default function BatchGrading({
                                 if (item) item.rosterClassName = newClass;
                                 return updated;
                               });
-                            }
+                            }}
                             style={{
                               fontSize: 11, padding: "3px 4px",
                               border: isOutlier ? "1px solid rgba(217,119,6,0.5)" : "1px solid #e2e8f0",
@@ -3482,6 +3482,39 @@ export default function BatchGrading({
                       <tr>
                         <td colSpan={rosterClasses.length > 1 ? 9 : 8} style={batchStyles.expandedTd}>
                           <div style={batchStyles.expandedContent}>
+                            {/* Source image preview */}
+                            {r.pageImages?.length > 0 && (
+                              <div style={{ marginBottom: 12 }}>
+                                <div style={{
+                                  display: "flex", gap: 10, overflowX: "auto",
+                                  justifyContent: r.pageImages.length === 1 ? "center" : "flex-start",
+                                }}>
+                                  {r.pageImages.map((img, pi) => (
+                                    <img
+                                      key={pi}
+                                      src={img}
+                                      alt={`Page ${pi + 1}`}
+                                      style={{
+                                        maxHeight: 320, maxWidth: r.pageImages.length === 1 ? "100%" : "48%",
+                                        borderRadius: 8, border: "1px solid #e2e8f0", objectFit: "contain",
+                                        cursor: "zoom-in",
+                                      }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const overlay = document.createElement("div");
+                                        overlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;cursor:zoom-out;";
+                                        const im = document.createElement("img");
+                                        im.src = img;
+                                        im.style.cssText = "max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;";
+                                        overlay.appendChild(im);
+                                        overlay.onclick = () => document.body.removeChild(overlay);
+                                        document.body.appendChild(overlay);
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             {r.comment && (
                               <div style={{ marginBottom: 8 }}>
                                 <strong>Comment:</strong> {r.comment}
