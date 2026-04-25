@@ -1408,6 +1408,20 @@ export default function BatchGrading({
     setProgress({ done: total, total, current: "Done!" });
     setGrading(false);
 
+    // Track this filename as processed (persisted in localStorage)
+    if (pdfName) {
+      try {
+        const key = "curriculate_processed_pdfs_v1";
+        const prev = JSON.parse(localStorage.getItem(key) || "[]");
+        if (!prev.includes(pdfName)) {
+          prev.push(pdfName);
+          // Keep last 100 entries to avoid unbounded growth
+          if (prev.length > 100) prev.splice(0, prev.length - 100);
+          localStorage.setItem(key, JSON.stringify(prev));
+        }
+      } catch {}
+    }
+
     // GA: batch grading complete
     try {
       const ok = batchResults.filter(r => !r.error).length;
@@ -2687,6 +2701,33 @@ export default function BatchGrading({
           </div>
         </div>
       )}
+
+      {/* Recently processed PDFs */}
+      {!pdfFile && (() => {
+        try {
+          const processed = JSON.parse(localStorage.getItem("curriculate_processed_pdfs_v1") || "[]");
+          if (!processed.length) return null;
+          return (
+            <div style={{ marginTop: 8, padding: "10px 14px", background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>Recently processed</span>
+                <button
+                  type="button"
+                  onClick={() => { try { localStorage.removeItem("curriculate_processed_pdfs_v1"); } catch {} window.location.reload(); }}
+                  style={{ fontSize: 11, color: "#94a3b8", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+                >Clear list</button>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {processed.slice(-20).reverse().map((name, i) => (
+                  <span key={i} style={{ fontSize: 11, color: "#16a34a", background: "rgba(34,197,94,0.1)", padding: "3px 8px", borderRadius: 6 }}>
+                    ✓ {name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        } catch { return null; }
+      })()}
 
       <input
         ref={fileInputRef}
