@@ -1247,6 +1247,20 @@ export default function BatchGrading({
           assignRoster(finalUnmatched[0], finalRemaining[0]);
         }
 
+        // --- Flag multi-roster matches (same name in multiple classes) ---
+        for (const r of batchResults) {
+          if (r.error || !r.rosterFirstName) continue;
+          const fn = norm(r.rosterFirstName);
+          const ln = norm(r.rosterLastName || "");
+          const classesWithName = new Set();
+          for (const s of allRosterStudents) {
+            if (norm(s.firstName) === fn && norm(s.lastName) === ln) {
+              classesWithName.add(s.className || s.rosterId);
+            }
+          }
+          r.multiRosterMatch = classesWithName.size > 1;
+        }
+
         setResults([...batchResults]);
 
         // --- Update published results with roster IDs (matching runs after publish) ---
@@ -2326,6 +2340,21 @@ export default function BatchGrading({
 
     if (!changed) return;
 
+    // Flag multi-roster matches
+    for (let i = 0; i < updated.length; i++) {
+      const r = updated[i];
+      if (r.error || !r.rosterFirstName) continue;
+      const fn = norm(r.rosterFirstName);
+      const ln = norm(r.rosterLastName || "");
+      const classesWithName = new Set();
+      for (const s of allRosterStudents) {
+        if (norm(s.firstName) === fn && norm(s.lastName) === ln) {
+          classesWithName.add(s.className || s.rosterId);
+        }
+      }
+      if (classesWithName.size > 1) updated[i] = { ...r, multiRosterMatch: true };
+    }
+
     // Determine detected class from votes
     let bestRid = null;
     let bestVotes = 0;
@@ -3275,9 +3304,9 @@ export default function BatchGrading({
                           style={{
                             cursor: "pointer",
                             borderBottom: "1px dashed #94a3b8",
-                            color: (!r.rosterEdsbyId && !r.rosterStudentId && !r.rosterFirstName && rosterClasses.length > 0) ? "#dc2626" : "inherit",
+                            color: (!r.rosterEdsbyId && !r.rosterStudentId && !r.rosterFirstName && rosterClasses.length > 0) ? "#dc2626" : r.multiRosterMatch ? "#d97706" : "inherit",
                           }}
-                          title="Click to change student name"
+                          title={r.multiRosterMatch ? "This name appears in multiple classes — click to verify" : "Click to change student name"}
                         >
                           {r.studentName}
                         </span>
