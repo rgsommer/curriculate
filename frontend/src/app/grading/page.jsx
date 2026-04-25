@@ -274,6 +274,12 @@ function markSubmittedForTrigger(t) {
   writeStrLS(submittedKeyForTrigger(t), "1");
 }
 
+// ---------- Google Analytics custom events ----------
+// Safe wrapper: no-ops if gtag isn't loaded yet.
+function trackEvent(eventName, params = {}) {
+  try { if (typeof window !== "undefined" && window.gtag) window.gtag("event", eventName, params); } catch {}
+}
+
 function readIntLS(key, fallback = 0) {
   if (typeof window === "undefined") return fallback;
   try {
@@ -2458,11 +2464,22 @@ export default function GradingPage() {
             responseRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
           }, 120);
 
+          // --- GA milestone events ---
+          trackEvent("grading_complete", {
+            mode: "photo",
+            subject: norm.assessment?.subject || "",
+            grade_band: gradeBand,
+          });
+
           try {
             const uses = readIntLS(FEEDBACK_USES_KEY, 0);
             const nextUses = uses + 1;
             writeIntLS(FEEDBACK_USES_KEY, nextUses);
             setGradingUses(nextUses);
+
+            // Fire once when teacher crosses the "repeat grader" threshold
+            if (nextUses === 3) trackEvent("repeat_grader", { lifetime_uses: 3 });
+            if (nextUses === 10) trackEvent("power_grader", { lifetime_uses: 10 });
 
             if (!showFeedbackPrompt && shouldShowFeedbackPrompt(nextUses)) {
               const triggers = [FEEDBACK_TRIGGER_1, FEEDBACK_TRIGGER_2]
@@ -2868,6 +2885,7 @@ export default function GradingPage() {
           body: JSON.stringify(payload),
         });
         if (res.ok) {
+          trackEvent("session_email_sent", { count: sessionItems.length });
           setSessionEmailSent(true);
           setShowSessionEmailPrompt(false);
           setShowSessionClearPrompt(true);

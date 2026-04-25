@@ -245,6 +245,7 @@ export default function AudioGrading({
         setError(data.error);
       } else {
         setResult(data);
+        try { if (window.gtag) window.gtag("event", "grading_complete", { mode: "audio" }); } catch {}
 
         // Auto-publish for ref code
         if (resultsUrl) {

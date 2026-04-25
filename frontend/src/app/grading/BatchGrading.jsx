@@ -1407,6 +1407,12 @@ export default function BatchGrading({
 
     setProgress({ done: total, total, current: "Done!" });
     setGrading(false);
+
+    // GA: batch grading complete
+    try {
+      const ok = batchResults.filter(r => !r.error).length;
+      if (window.gtag) window.gtag("event", "batch_grading_complete", { students: ok, pages: pageCount });
+    } catch {}
   }, [
     studentCount,
     pageCount,
@@ -2090,6 +2096,7 @@ export default function BatchGrading({
         body: JSON.stringify(payload),
       });
       if (res.ok) {
+        try { if (window.gtag) window.gtag("event", "batch_email_sent", { students: results.filter(r => !r.error).length }); } catch {}
         setEmailCopied(true);
         setShowEmailPrompt(false);
 
@@ -2367,6 +2374,9 @@ export default function BatchGrading({
       }
     } catch {}
     if (errors.length) alert("Some files failed:\n" + errors.join("\n"));
+    else {
+      try { if (window.gtag) window.gtag("event", "roster_uploaded", { file_count: files.length }); } catch {}
+    }
     setRosterUploading(false);
   }, [gradingUrl]);
 

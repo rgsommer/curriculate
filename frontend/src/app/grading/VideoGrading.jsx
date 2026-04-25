@@ -262,6 +262,7 @@ export default function VideoGrading({
         setError(data.error);
       } else {
         setResult(data);
+        try { if (window.gtag) window.gtag("event", "grading_complete", { mode: "video" }); } catch {}
 
         // Auto-publish to get a ref code
         if (resultsUrl) {
