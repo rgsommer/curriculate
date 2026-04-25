@@ -1163,6 +1163,13 @@ export default function GradingPage() {
     // Optional rubric override UI
     const [showRubric, setShowRubric] = useState(false);
     const [rubricOverride, setRubricOverride] = useState(() => loadLS(RUBRIC_OVERRIDE_KEY, ""));
+    // Saved rubrics: [{ name: string, text: string }]
+    const [savedRubrics, setSavedRubrics] = useState(() => {
+      try { return JSON.parse(localStorage.getItem(SAVED_RUBRICS_KEY) || "[]"); } catch { return []; }
+    });
+    useEffect(() => {
+      try { localStorage.setItem(SAVED_RUBRICS_KEY, JSON.stringify(savedRubrics)); } catch {}
+    }, [savedRubrics]);
     const [gradeBand, setGradeBand] = useState(() => {
       if (typeof window === "undefined") return "6-8";
       return loadLS(GRADE_BAND_KEY, "6-8");
@@ -3914,6 +3921,78 @@ export default function GradingPage() {
                     </div>
                   ) : null}
 
+                  {/* Saved rubrics dropdown + save */}
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const idx = Number(e.target.value);
+                        if (!isNaN(idx) && savedRubrics[idx]) {
+                          setRubricOverride(savedRubrics[idx].text);
+                        }
+                      }}
+                      style={{ ...styles.select, flex: 1, fontSize: 13 }}
+                    >
+                      <option value="">
+                        {savedRubrics.length ? `Saved rubrics (${savedRubrics.length})` : "No saved rubrics"}
+                      </option>
+                      {savedRubrics.map((sr, i) => (
+                        <option key={i} value={i}>{sr.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!(rubricOverride || "").trim()}
+                      style={{
+                        ...styles.secondaryBtn,
+                        fontSize: 12, padding: "5px 10px", whiteSpace: "nowrap",
+                        opacity: (rubricOverride || "").trim() ? 1 : 0.4,
+                      }}
+                      onClick={() => {
+                        const text = (rubricOverride || "").trim();
+                        if (!text) return;
+                        const name = prompt("Name this rubric:");
+                        if (!name || !name.trim()) return;
+                        setSavedRubrics((prev) => {
+                          const existing = prev.findIndex((r) => r.name === name.trim());
+                          if (existing >= 0) {
+                            const updated = [...prev];
+                            updated[existing] = { name: name.trim(), text };
+                            return updated;
+                          }
+                          return [...prev, { name: name.trim(), text }];
+                        });
+                      }}
+                    >
+                      Save
+                    </button>
+                    {savedRubrics.length > 0 && (
+                      <button
+                        type="button"
+                        style={{ ...styles.secondaryBtn, fontSize: 12, padding: "5px 10px", color: "#dc2626" }}
+                        onClick={() => {
+                          const name = (rubricOverride || "").trim();
+                          const match = savedRubrics.find((r) => r.text === name || r.text === rubricOverride);
+                          if (match) {
+                            setSavedRubrics((prev) => prev.filter((r) => r.name !== match.name));
+                          } else {
+                            // Show list to pick which to delete
+                            const names = savedRubrics.map((r, i) => `${i + 1}. ${r.name}`).join("\n");
+                            const pick = prompt(`Delete which rubric?\n${names}\n\nEnter the number:`);
+                            if (pick) {
+                              const idx = Number(pick) - 1;
+                              if (idx >= 0 && idx < savedRubrics.length) {
+                                setSavedRubrics((prev) => prev.filter((_, i) => i !== idx));
+                              }
+                            }
+                          }
+                        }}
+                      >
+                        Del
+                      </button>
+                    )}
+                  </div>
+
                   <textarea
                     value={rubricOverride}
                     onChange={(e) => setRubricOverride(e.target.value)}
@@ -5212,10 +5291,10 @@ const styles = {
     borderRadius: 14,
     overflow: "hidden",
     background: "#0b1220",
-    maxWidth: 200,
-    /* compact preview — still shows full frame via objectFit contain */
+    maxWidth: 280,
+    aspectRatio: "8.5 / 11", /* letter-sized paper */
   },
-  video: { width: "100%", height: "auto", objectFit: "contain", display: "block" },
+  video: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
   cameraOverlay: {
     position: "absolute",
     inset: 0,
