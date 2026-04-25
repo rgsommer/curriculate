@@ -2872,7 +2872,8 @@ export default function GradingPage() {
         }
 
         // Attach Edsby CSV if any session results have roster-matched student IDs
-        const csvText = buildSessionEdsbyCsv(results);
+        // Pass rosterClasses for last-chance name matching at export time
+        const csvText = buildSessionEdsbyCsv(results, undefined, rosterClasses);
         if (csvText) {
           const csvBase64 = typeof btoa === "function"
             ? btoa(unescape(encodeURIComponent(csvText)))

@@ -665,12 +665,46 @@ export function sessionItemToResult(item, index) {
  * Only includes rows that have a studentId (roster-matched).
  * Returns null if no eligible rows.
  */
-export function buildSessionEdsbyCsv(results, assessmentName = "Curriculate Grade") {
+export function buildSessionEdsbyCsv(results, assessmentName = "Curriculate Grade", rosterClasses = []) {
   const escCsv = (v) => {
     const s = String(v ?? "");
     return s.includes(",") || s.includes('"') || s.includes("\n")
       ? `"${s.replace(/"/g, '""')}"` : s;
   };
+
+  // Last-chance roster match: if a result has a student name but no ID,
+  // try to match it against the roster now (covers cases where roster
+  // wasn't loaded during grading but is available at export time).
+  if (rosterClasses.length > 0) {
+    const norm = (s) => (s || "").toLowerCase().replace(/[^a-z]/g, "");
+    for (const r of results) {
+      if (r.studentId || r.error || !r.studentName) continue;
+      const aiParts = r.studentName.trim().toLowerCase().split(/\s+/);
+      const aiNorm = norm(r.studentName);
+      if (!aiNorm) continue;
+      let best = null, bestScore = 0;
+      for (const rc of rosterClasses) {
+        for (const s of (rc.students || [])) {
+          const fn = norm(s.firstName);
+          const ln = norm(s.lastName);
+          const full = fn + ln;
+          let score = 0;
+          if (aiNorm === full) score = 100;
+          else if (aiParts.length >= 2 && norm(aiParts[0]) === fn && norm(aiParts[aiParts.length - 1]) === ln) score = 90;
+          else if (aiParts.length >= 2 && norm(aiParts[0]) === ln && norm(aiParts[aiParts.length - 1]) === fn) score = 85;
+          else if (aiParts.some((p) => norm(p) === fn) && fn.length >= 3) score = 50;
+          else if (full.includes(aiNorm) || aiNorm.includes(full)) score = 40;
+          if (score > bestScore) { bestScore = score; best = { ...s, className: rc.className }; }
+        }
+      }
+      if (best && bestScore >= 40) {
+        r.studentId = best.studentId || best.edsbyId || "";
+        if (!r.studentName || r.studentName.startsWith("Student ")) {
+          r.studentName = `${best.firstName} ${best.lastName}`.trim();
+        }
+      }
+    }
+  }
 
   const eligible = results.filter((r) => !r.error && r.studentId);
   if (!eligible.length) return null;
