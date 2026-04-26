@@ -2469,9 +2469,12 @@ export default function GradingPage() {
           // Auto-add to session (with refCode + roster info so Email Reports
           // includes matched IDs and correct student name for progress).
           // If same refCode exists in session, replaces instead of appending.
-          {
+          try {
             const sessionPayload = buildFullTeacherPayloadText(norm.assessment, activeCode, gradeBand, rubricOverride);
+            console.log("[session-auto-add] adding to session, code:", activeCode, "payload len:", sessionPayload.length);
             logCurrentToSessionLocal(sessionPayload, activeCode, matchedRosterStudent, norm.assessment);
+          } catch (sessionErr) {
+            console.error("[session-auto-add] failed:", sessionErr);
           }
 
           // Auto-scroll to the response so teacher doesn't have to scroll manually

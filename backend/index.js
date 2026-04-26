@@ -8449,7 +8449,9 @@ async function extractStudentWorkFromLink(url) {
         const text = body.trim();
         if (!text) return { kind: "error", error: "Google Doc export returned empty text." };
 
-        return { kind: "text", text };
+        // First non-empty line of exported Google Doc is usually the doc title
+        const firstLine = text.split(/\n/).find((ln) => ln.trim().length > 0) || "";
+        return { kind: "text", text, title: firstLine.trim().slice(0, 200) };
       }
     }
 
@@ -11480,6 +11482,8 @@ function buildRubricInstructions({
         userContent.push({ type: "input_text", text: "END OF ANSWER KEY. STUDENT WORK follows below:" });
       }
 
+      let extractedDocTitle = ""; // deterministic title from link/paste first line
+
       if (hasImages) {
         userContent.push(...images.map((img) => ({ type: "input_image", image_url: img })));
       } else {
@@ -11487,6 +11491,8 @@ function buildRubricInstructions({
           // ✅ Option B: fetch + extract from link
           const extracted = await extractStudentWorkFromLink(trimmed);
           if (extracted.kind === "text") {
+            // Use document title extracted from export (first line of Google Doc, etc.)
+            if (extracted.title) extractedDocTitle = extracted.title;
             userContent.push({
               type: "input_text",
               text: `STUDENT WORK (FROM LINK):\n${extracted.text.slice(0, 180000)}`,
@@ -11498,6 +11504,11 @@ function buildRubricInstructions({
           }
         } else {
           // ✅ treat as pasted student work
+          // Extract title from first line if it looks like a heading (short, no sentence punctuation)
+          const firstLine = trimmed.split(/\n/).find((ln) => ln.trim().length > 0) || "";
+          if (firstLine.length > 0 && firstLine.length <= 120 && !/[.!?]$/.test(firstLine.trim())) {
+            extractedDocTitle = firstLine.trim();
+          }
           userContent.push({
             type: "input_text",
             text: `STUDENT WORK (PASTED TEXT):\n${trimmed}`,
@@ -11814,6 +11825,11 @@ function buildRubricInstructions({
           console.error("GradingUsage log failed:", e?.message || e);
         }
       })();
+
+      // Fall back to deterministically extracted title if AI didn't produce one
+      if (!enforced.detected_title && extractedDocTitle) {
+        enforced.detected_title = extractedDocTitle;
+      }
 
       return res.json({
         ...enforced,
