@@ -3664,7 +3664,11 @@ export default function GradingPage() {
                   Paste student work, a link, or an image URL
                   <textarea
                     value={workInput}
-                    onChange={(e) => setWorkInput(e.target.value)}
+                    onChange={(e) => {
+                      setWorkInput(e.target.value);
+                      // Clear previous result so button shows "Submit" not "Resubmit"
+                      if (serverText) { setServerText(""); setRefCode(""); setCopyEnabled(false); setCopied(false); }
+                    }}
                     placeholder={"Paste the student's writing/answers here...\nOR paste a link starting with https://\nOR paste a direct image URL (.jpg, .png, .jpeg)"}
                     rows={10}
                     style={styles.textarea}
