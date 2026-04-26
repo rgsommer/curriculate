@@ -1107,6 +1107,37 @@ export default function GradingPage() {
       saveSession(sessionItems);
     }, [sessionItems]);
 
+    // Sync roster student selection back to the current session item
+    // (teacher may link student after grading completes)
+    useEffect(() => {
+      if (!refCode) return;
+      setSessionItems((prev) => {
+        const idx = prev.findIndex((it) => it.refCode === refCode);
+        if (idx === -1) return prev;
+        const existing = prev[idx];
+        const newRoster = matchedRosterStudent
+          ? {
+              firstName: matchedRosterStudent.firstName || "",
+              lastName: matchedRosterStudent.lastName || "",
+              studentId: matchedRosterStudent.studentId || "",
+              edsbyId: matchedRosterStudent.edsbyId || "",
+              className: matchedRosterStudent.className || "",
+            }
+          : null;
+        // Skip update if nothing changed
+        const old = existing.rosterStudent;
+        if (
+          (old?.firstName || "") === (newRoster?.firstName || "") &&
+          (old?.lastName || "") === (newRoster?.lastName || "") &&
+          (old?.studentId || "") === (newRoster?.studentId || "") &&
+          (old?.edsbyId || "") === (newRoster?.edsbyId || "")
+        ) return prev;
+        const next = [...prev];
+        next[idx] = { ...existing, rosterStudent: newRoster };
+        return next;
+      });
+    }, [matchedRosterStudent, refCode]);
+
     const videoRef = useRef(null);
     const streamRef = useRef(null);
     const canvasRef = useRef(null);
