@@ -8424,21 +8424,29 @@ async function extractStudentWorkFromLink(url) {
       const m = u.pathname.match(/^\/document\/d\/([a-zA-Z0-9_-]+)/);
       if (m) {
         const docId = m[1];
-        const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
+        const exportTxtUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
+        const exportHtmlUrl = `https://docs.google.com/document/d/${docId}/export?format=html`;
 
         const ctrl = new AbortController();
         const t = setTimeout(() => ctrl.abort(), 8000);
 
-        const r = await fetch(exportUrl, {
-          redirect: "follow",
-          headers: { "Accept": "text/plain,text/*;q=0.9,*/*;q=0.1" },
-          signal: ctrl.signal,
-        }).finally(() => clearTimeout(t));
+        // Fetch text content and HTML (for title) in parallel
+        const [txtRes, htmlRes] = await Promise.all([
+          fetch(exportTxtUrl, {
+            redirect: "follow",
+            headers: { "Accept": "text/plain,text/*;q=0.9,*/*;q=0.1" },
+            signal: ctrl.signal,
+          }),
+          fetch(exportHtmlUrl, {
+            redirect: "follow",
+            signal: ctrl.signal,
+          }).catch(() => null),
+        ]).finally(() => clearTimeout(t));
 
-        const body = await r.text();
+        const body = await txtRes.text();
 
         const looksLikeHtml = /^\s*<!doctype html>|^\s*<html/i.test(body);
-        if (!r.ok || looksLikeHtml) {
+        if (!txtRes.ok || looksLikeHtml) {
           return {
             kind: "error",
             error:
@@ -8449,9 +8457,23 @@ async function extractStudentWorkFromLink(url) {
         const text = body.trim();
         if (!text) return { kind: "error", error: "Google Doc export returned empty text." };
 
-        // First non-empty line of exported Google Doc is usually the doc title
-        const firstLine = text.split(/\n/).find((ln) => ln.trim().length > 0) || "";
-        return { kind: "text", text, title: firstLine.trim().slice(0, 200) };
+        // Extract document title from HTML export <title> tag
+        let docTitle = "";
+        try {
+          if (htmlRes?.ok) {
+            const html = await htmlRes.text();
+            const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+            if (titleMatch) docTitle = titleMatch[1].trim();
+          }
+        } catch {}
+
+        // Fall back to first non-empty line if HTML title extraction failed
+        if (!docTitle) {
+          const firstLine = text.split(/\n/).find((ln) => ln.trim().length > 0) || "";
+          docTitle = firstLine.trim().slice(0, 200);
+        }
+
+        return { kind: "text", text, title: docTitle };
       }
     }
 
