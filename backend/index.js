@@ -11181,11 +11181,12 @@ function buildRubricInstructions({
         - inferred_subject: one of [Math, English, History, Geography, Science, Computer Science, Bible, Drama, Speech, Music, Art, French, Other]
         - inferred_assessment_type: one of [Essay, Test, Quiz, Homework, Project, Poster, Worksheet, Speech, Performance, Presentation, Journal, Code, Other]
         - inferred_grade_level: one of [3-5, 6-8, 9-10, 11+, Unknown]
-        - detected_title: the specific assignment title visible on the paper (e.g. "Journal Entry #3", "Chapter 5 Test", "Lab Report: Photosynthesis", "Business Plan Draft 2"). Read what the student wrote as the title/heading on their paper. If no title is visible, set to null.
+        - detected_title: the specific assignment title. For photos: read the title/heading written on the paper (e.g. "Journal Entry #3", "Chapter 5 Test", "Lab Report: Photosynthesis"). For pasted text or linked documents: derive a concise descriptive title from the document content — include page references and question numbers if present (e.g. "Ch. 5 Questions 1-12", "Biology Lab — Osmosis", "Hamlet Act 3 Response"). If no title can be determined, set to null.
 
         Rules:
         - Do NOT guess wildly. If unsure, use Other / Unknown.
-        - For detected_title, only report what is actually written on the paper. Do NOT invent or infer a title — use null if nothing is visible.
+        - For detected_title on photos, only report what is actually written on the paper. Do NOT invent a title if nothing is visible.
+        - For detected_title on pasted text or linked documents, derive the most descriptive short title you can from headings, page references, question numbers, or subject matter in the content.
         - inferred_grade_level should usually match the provided grade band (${band}) unless the work clearly indicates otherwise.
 
         RUBRIC DETECTION (very important — check EVERY image):

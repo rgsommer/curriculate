@@ -737,6 +737,12 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "", gradeBandForKit
   const lines = [];
   const g = getDisplayScore(assessment);
   const links2 = getAssignmentLinksFromAssessment(assessment);
+  const detTitle = String(assessment?.detected_title || "").trim();
+
+  if (detTitle) {
+    lines.push(detTitle);
+    lines.push("");
+  }
 
   if (links2.length) {
     lines.push("Links / evidence:");
@@ -2786,6 +2792,20 @@ export default function GradingPage() {
 
     async function emailReports() {
       if (!sessionItems.length) return;
+
+      // Warn if roster is loaded but some session items lack a matched student
+      if (rosterClasses.length > 0) {
+        const unmatchedCount = sessionItems.filter(
+          (it) => !it.rosterStudent?.studentId && !it.rosterStudent?.edsbyId && !it.rosterStudent?.firstName
+        ).length;
+        if (unmatchedCount > 0) {
+          const ok = window.confirm(
+            `${unmatchedCount} of ${sessionItems.length} submission${sessionItems.length > 1 ? "s" : ""} ${unmatchedCount === 1 ? "has" : "have"} no student selected from the roster. Student IDs will be missing from the export.\n\nSend anyway?`
+          );
+          if (!ok) return;
+        }
+      }
+
       // Start loading PDF libs in background while summary generates
       preloadPdfLibs();
       // Step 1: generate session summary (AI or heuristic)
@@ -4398,6 +4418,11 @@ export default function GradingPage() {
             >
               {assessment ? (
                 <div style={styles.gradingCard}>
+                  {String(assessment.detected_title || "").trim() && (
+                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 6, color: "#334155" }}>
+                      {String(assessment.detected_title).trim()}
+                    </div>
+                  )}
                   <div style={styles.gradingTopRow}>
                     <div style={styles.gradingTitle}>
                       {(() => {
