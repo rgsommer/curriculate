@@ -76,8 +76,12 @@ function loadPdfJs() {
 }
 
 // Render a single PDF page to a JPEG data URL
-async function renderPageToDataUrl(pdfDoc, pageNum, scale = 1.5, rotation = 0) {
+async function renderPageToDataUrl(pdfDoc, pageNum, scale = 1.5, extraRotation = 0) {
   const page = await pdfDoc.getPage(pageNum);
+  // Combine the page's inherent /Rotate metadata with any extra rotation we apply.
+  // pdf.js getViewport({ rotation }) REPLACES page.rotate — it doesn't add to it.
+  // So we must add them ourselves to preserve the PDF's built-in orientation.
+  const rotation = ((page.rotate || 0) + extraRotation) % 360;
   const viewport = page.getViewport({ scale, rotation });
 
   const canvas = document.createElement("canvas");
