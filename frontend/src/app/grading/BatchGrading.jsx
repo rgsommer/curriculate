@@ -78,15 +78,12 @@ function loadPdfJs() {
 // Render a single PDF page to a JPEG data URL
 async function renderPageToDataUrl(pdfDoc, pageNum, scale = 1.5, extraRotation = 0) {
   const page = await pdfDoc.getPage(pageNum);
-  // Combine the page's inherent /Rotate metadata with any extra rotation we apply.
-  // pdf.js getViewport({ rotation }) REPLACES page.rotate — it doesn't add to it.
-  // So we must add them ourselves to preserve the PDF's built-in orientation.
+  // Let pdf.js handle /Rotate metadata entirely on its own — do NOT pass rotation.
+  // pdf.js defaults to page.rotate internally and handles content stream transforms.
+  // Passing it explicitly can cause double-rotation if the PDF tool also adjusted the
+  // content stream (some rotation utilities do both /Rotate + cm transform).
   const pageRotate = page.rotate || 0;
-  const rotation = (pageRotate + extraRotation) % 360;
-  if (pageRotate !== 0 || extraRotation !== 0) {
-    console.log(`[renderPage] page ${pageNum}: page.rotate=${pageRotate}, extraRotation=${extraRotation}, total=${rotation}`);
-  }
-  const viewport = page.getViewport({ scale, rotation });
+  const viewport = page.getViewport({ scale });
 
   const canvas = document.createElement("canvas");
   canvas.width = viewport.width;
@@ -94,6 +91,39 @@ async function renderPageToDataUrl(pdfDoc, pageNum, scale = 1.5, extraRotation =
 
   const ctx = canvas.getContext("2d");
   await page.render({ canvasContext: ctx, viewport }).promise;
+
+  // Apply extra rotation (from AI detection) by physically rotating canvas pixels.
+  // This is bulletproof — works regardless of how pdf.js handles rotation internally.
+  const effectiveExtra = ((extraRotation % 360) + 360) % 360;
+  if (effectiveExtra !== 0) {
+    console.log(`[renderPage] page ${pageNum}: page.rotate=${pageRotate}, extraRotation=${extraRotation} — applying canvas rotation`);
+    const rotCanvas = document.createElement("canvas");
+    const rotCtx = rotCanvas.getContext("2d");
+    if (effectiveExtra === 180) {
+      rotCanvas.width = canvas.width;
+      rotCanvas.height = canvas.height;
+      rotCtx.translate(canvas.width / 2, canvas.height / 2);
+      rotCtx.rotate(Math.PI);
+      rotCtx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+    } else if (effectiveExtra === 90) {
+      rotCanvas.width = canvas.height;
+      rotCanvas.height = canvas.width;
+      rotCtx.translate(rotCanvas.width / 2, rotCanvas.height / 2);
+      rotCtx.rotate(Math.PI / 2);
+      rotCtx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+    } else if (effectiveExtra === 270) {
+      rotCanvas.width = canvas.height;
+      rotCanvas.height = canvas.width;
+      rotCtx.translate(rotCanvas.width / 2, rotCanvas.height / 2);
+      rotCtx.rotate(3 * Math.PI / 2);
+      rotCtx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+    }
+    return rotCanvas.toDataURL("image/jpeg", 0.85);
+  }
+
+  if (pageRotate !== 0) {
+    console.log(`[renderPage] page ${pageNum}: page.rotate=${pageRotate} (handled by pdf.js viewport)`);
+  }
 
   // Compress to JPEG
   return canvas.toDataURL("image/jpeg", 0.85);
