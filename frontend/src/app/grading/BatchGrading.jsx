@@ -81,7 +81,11 @@ async function renderPageToDataUrl(pdfDoc, pageNum, scale = 1.5, extraRotation =
   // Combine the page's inherent /Rotate metadata with any extra rotation we apply.
   // pdf.js getViewport({ rotation }) REPLACES page.rotate — it doesn't add to it.
   // So we must add them ourselves to preserve the PDF's built-in orientation.
-  const rotation = ((page.rotate || 0) + extraRotation) % 360;
+  const pageRotate = page.rotate || 0;
+  const rotation = (pageRotate + extraRotation) % 360;
+  if (pageRotate !== 0 || extraRotation !== 0) {
+    console.log(`[renderPage] page ${pageNum}: page.rotate=${pageRotate}, extraRotation=${extraRotation}, total=${rotation}`);
+  }
   const viewport = page.getViewport({ scale, rotation });
 
   const canvas = document.createElement("canvas");
@@ -331,6 +335,7 @@ export default function BatchGrading({
   const [detectedGroups, setDetectedGroups] = useState(null); // [{ startPage, endPage, pages: [...] }, ...]
   const [detecting, setDetecting] = useState(false);
   const [rotatedPages, setRotatedPages] = useState({}); // { pageNum: true } — pages detected as upside-down
+  const [rotationMsg, setRotationMsg] = useState(""); // brief status: "Rotating upside-down pages..."
   const [scanTipVisible, setScanTipVisible] = useState(false); // "scan in any orientation" tip
 
   const pdfDocRef = useRef(null);
@@ -441,7 +446,11 @@ export default function BatchGrading({
       if (data.rotatedPages && typeof data.rotatedPages === "object") {
         setRotatedPages(data.rotatedPages);
         const rotCount = Object.keys(data.rotatedPages).length;
-        if (rotCount > 0) console.log(`[batch] ${rotCount} upside-down page(s) detected — will auto-rotate`);
+        if (rotCount > 0) {
+          console.log(`[batch] ${rotCount} upside-down page(s) detected — will auto-rotate`);
+          setRotationMsg(`Rotating ${rotCount} upside-down page${rotCount > 1 ? "s" : ""}...`);
+          setTimeout(() => setRotationMsg(""), 3000);
+        }
       }
     } catch (e) {
       console.warn("[batch] auto-detect failed:", e);
@@ -466,7 +475,7 @@ export default function BatchGrading({
     let autoDetectedKeyPages = []; // answer key pages found anywhere in the PDF
     let localRotatedPages = { ...rotatedPages }; // local copy for use in grading loop
     if (isAuto && !groups) {
-      setProgress({ done: 0, total: 0, current: `Analyzing ${pageCount} pages...` });
+      setProgress({ done: 0, total: 0, current: `Analyzing ${pageCount} pages — checking orientation...` });
       try {
         const thumbs = [];
         for (let p = 1; p <= pageCount; p++) {
@@ -493,6 +502,11 @@ export default function BatchGrading({
           if (classifyData.rotatedPages && typeof classifyData.rotatedPages === "object") {
             localRotatedPages = classifyData.rotatedPages;
             setRotatedPages(classifyData.rotatedPages);
+            const rotCount = Object.keys(classifyData.rotatedPages).length;
+            if (rotCount > 0) {
+              setRotationMsg(`Rotating ${rotCount} upside-down page${rotCount > 1 ? "s" : ""}...`);
+              setTimeout(() => setRotationMsg(""), 3000);
+            }
           }
         }
       } catch (e) {
@@ -3015,10 +3029,17 @@ export default function BatchGrading({
         </div>
       )}
 
+      {/* Rotation status message (appears briefly when upside-down pages detected) */}
+      {rotationMsg && !grading && (
+        <div style={{ fontSize: 13, color: "#7c3aed", fontWeight: 600, padding: "6px 0", textAlign: "center" }}>
+          {rotationMsg}
+        </div>
+      )}
+
       {/* Progress */}
       {grading && (
         <div style={batchStyles.progressSection}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>{progress.current}</div>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>{progress.current}{rotationMsg ? ` — ${rotationMsg}` : ""}</div>
           <div style={batchStyles.progressBar}>
             <div
               style={{
