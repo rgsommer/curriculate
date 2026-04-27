@@ -11961,7 +11961,7 @@ function buildRubricInstructions({
 
       await sendSystemEmail({
         to: email,
-        subject: subj || "Batch Grading Results — Curriculate",
+        subject: subj || "Pulse Grading Batch Results — Curriculate",
         html: body,
         attachments,
       });
@@ -12066,6 +12066,13 @@ A batch may contain two or more versions of the same test (e.g. "Math 7 Test" an
 
 For worksheets where the assignment says "use the other side" or "continue on back", expect that some students will have 2 scanned pages (front + back with extra writing) while others will have only 1 (front only, back is blank or not scanned).
 
+FREEFORM / HANDWRITTEN ASSIGNMENTS (journals, essays, reflections, responses):
+Not all assignments have a printed template. Journals, essays, and written reflections are often just handwriting on blank lined paper. For these:
+- A NEW student is indicated by: a different handwriting style, a new name written at the top, a new date, or a handwritten title/heading (e.g. "Chapel Journal Entry") that repeats from an earlier page.
+- A CONTINUATION is indicated by: a blank or nearly-blank page (back of the sheet), or handwriting that flows mid-sentence from the previous page.
+- Do NOT group all handwritten pages together as one student just because there is no printed template. Each student writes their own entry, so look for name changes, date changes, handwriting style changes, or repeated handwritten headings as boundary markers.
+- The pattern is typically: [written page] [blank back] [written page] [blank back] ... — each written page is a NEW student, each blank page is a continuation (back of sheet).
+
 ROTATION DETECTION:
 ADF scanners sometimes produce pages that are completely upside down (rotated exactly 180°).
 If the printed text on a page is upside down, flag "rotated": true for that page.
@@ -12097,10 +12104,22 @@ Do NOT include any text outside the JSON array.`,
 
       // ── Quick rotation pre-check on a content-rich page ──
       // ADF scanners produce ALL pages in the same orientation, so we only
-      // need to check one page. Pick the 2nd student page (index answerKeyPages+1)
-      // since the first page of a test is often mostly blank rubric/header.
-      // Uses the full model for reliable vision detection.
-      const rotCheckIdx = Math.min(answerKeyPages + 1, pageImages.length - 1); // 0-indexed, skip to a content-rich page
+      // need to check one page. We try a few candidates and pick one that
+      // isn't likely blank. Uses the full model for reliable vision detection.
+      // Strategy: check pages starting from answerKeyPages, skip every other
+      // page (blank backs in single-sided scans are at odd indices).
+      let rotCheckIdx = answerKeyPages; // 0-indexed, first student page
+      // For single-sided scans, pages at even indices (0,2,4...) relative to
+      // the first student page tend to have content. Try index answerKeyPages,
+      // then answerKeyPages+2, etc. But if the first student page is mostly
+      // header/rubric, also try answerKeyPages+2.
+      if (pageImages.length > answerKeyPages + 2) {
+        rotCheckIdx = answerKeyPages + 2; // 3rd student page (likely content-rich, skips blank back)
+      } else if (pageImages.length > answerKeyPages) {
+        rotCheckIdx = answerKeyPages; // fall back to first student page
+      } else {
+        rotCheckIdx = pageImages.length - 1;
+      }
       let allPagesRotated = false;
       try {
         const rotCheckResponse = await openai.responses.create({

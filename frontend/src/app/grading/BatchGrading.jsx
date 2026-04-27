@@ -1577,6 +1577,8 @@ export default function BatchGrading({
     voiceMode,
     answerKeyOverride,
     rosterClasses,
+    rotatedPages,
+    perQuestionAudit,
   ]);
 
   // ---------- Re-grade a single student with adjusted strictness ----------
@@ -1843,7 +1845,7 @@ export default function BatchGrading({
       if (!results.length) return "";
 
       const lines = [
-        `Batch Grading Results — ${pdfName || "uploaded PDF"}`,
+        `Pulse Grading Batch Results — ${pdfName || "uploaded PDF"}`,
         `${results.length} student${results.length !== 1 ? "s" : ""} graded`,
         "",
       ];
@@ -1927,7 +1929,7 @@ export default function BatchGrading({
     let html = `<div style="font-family: -apple-system, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 640px; color: #1e293b;">`;
 
     // Header
-    html += `<h2 style="margin: 0 0 4px; font-size: 20px; color: #0f172a;">Batch Grading Results</h2>`;
+    html += `<h2 style="margin: 0 0 4px; font-size: 20px; color: #0f172a;">Pulse Grading Batch Results</h2>`;
     html += `<p style="margin: 0 0 16px; font-size: 14px; color: #64748b;">${effectiveTitle || "Uploaded PDF"} &mdash; ${results.length} student${results.length !== 1 ? "s" : ""} graded</p>`;
 
     // Rubric note (if teacher typed one in)
