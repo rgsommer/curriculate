@@ -76,9 +76,9 @@ function loadPdfJs() {
 }
 
 // Render a single PDF page to a JPEG data URL
-async function renderPageToDataUrl(pdfDoc, pageNum, scale = 1.5) {
+async function renderPageToDataUrl(pdfDoc, pageNum, scale = 1.5, rotation = 0) {
   const page = await pdfDoc.getPage(pageNum);
-  const viewport = page.getViewport({ scale });
+  const viewport = page.getViewport({ scale, rotation });
 
   const canvas = document.createElement("canvas");
   canvas.width = viewport.width;
@@ -325,6 +325,7 @@ export default function BatchGrading({
   // Auto-detect page grouping
   const [detectedGroups, setDetectedGroups] = useState(null); // [{ startPage, endPage, pages: [...] }, ...]
   const [detecting, setDetecting] = useState(false);
+  const [rotatedPages, setRotatedPages] = useState({}); // { pageNum: true } — pages detected as upside-down
 
   const pdfDocRef = useRef(null);
   const abortRef = useRef(false);
@@ -369,6 +370,7 @@ export default function BatchGrading({
     setClassSummary(null);
     setTeacherAnalysis("");
     setDetectedGroups(null);
+    setRotatedPages({});
 
     try {
       const pdfjsLib = await loadPdfJs();
@@ -429,6 +431,12 @@ export default function BatchGrading({
       if (Array.isArray(data.groups) && data.groups.length > 0) {
         setDetectedGroups(data.groups);
       }
+      // Store rotated page info for auto-rotation during grading
+      if (data.rotatedPages && typeof data.rotatedPages === "object") {
+        setRotatedPages(data.rotatedPages);
+        const rotCount = Object.keys(data.rotatedPages).length;
+        if (rotCount > 0) console.log(`[batch] ${rotCount} upside-down page(s) detected — will auto-rotate`);
+      }
     } catch (e) {
       console.warn("[batch] auto-detect failed:", e);
     }
@@ -450,6 +458,7 @@ export default function BatchGrading({
     // --- Auto-detect if needed and not already done ---
     let groups = detectedGroups;
     let autoDetectedKeyPages = []; // answer key pages found anywhere in the PDF
+    let localRotatedPages = { ...rotatedPages }; // local copy for use in grading loop
     if (isAuto && !groups) {
       setProgress({ done: 0, total: 0, current: `Analyzing ${pageCount} pages...` });
       try {
@@ -473,6 +482,11 @@ export default function BatchGrading({
           if (Array.isArray(classifyData.answerKeyPages) && classifyData.answerKeyPages.length > 0) {
             autoDetectedKeyPages = classifyData.answerKeyPages;
             console.log(`[batch] auto-detected ${autoDetectedKeyPages.length} answer key pages: ${autoDetectedKeyPages.join(", ")}`);
+          }
+          // Store rotated page info (both state + local var for immediate use)
+          if (classifyData.rotatedPages && typeof classifyData.rotatedPages === "object") {
+            localRotatedPages = classifyData.rotatedPages;
+            setRotatedPages(classifyData.rotatedPages);
           }
         }
       } catch (e) {
@@ -529,7 +543,8 @@ export default function BatchGrading({
         const akImages = [];
         for (const p of keyPageNumbers) {
           if (p >= 1 && p <= pageCount) {
-            akImages.push(await renderPageToDataUrl(doc, p));
+            const rotation = localRotatedPages[p] ? 180 : 0;
+            akImages.push(await renderPageToDataUrl(doc, p, 1.5, rotation));
           }
         }
         answerKeyImages = akImages;
@@ -561,11 +576,12 @@ export default function BatchGrading({
       const endPage = group.endPage;
 
       try {
-        // Render pages to images
+        // Render pages to images (auto-rotate any upside-down pages)
         const images = [];
         for (const p of group.pages) {
           if (p < 1 || p > doc.numPages) continue;
-          const dataUrl = await renderPageToDataUrl(doc, p);
+          const rotation = localRotatedPages[p] ? 180 : 0;
+          const dataUrl = await renderPageToDataUrl(doc, p, 1.5, rotation);
           images.push(dataUrl);
         }
         if (images.length === 0) {
@@ -1491,11 +1507,12 @@ export default function BatchGrading({
       const group = groups[groupIdx];
       if (!group) throw new Error("Cannot find page group for this student");
 
-      // Render pages to images
+      // Render pages to images (auto-rotate any upside-down pages)
       const images = [];
       for (const p of group.pages) {
         if (p < 1 || p > doc.numPages) continue;
-        images.push(await renderPageToDataUrl(doc, p));
+        const rotation = rotatedPages[p] ? 180 : 0;
+        images.push(await renderPageToDataUrl(doc, p, 1.5, rotation));
       }
       if (!images.length) throw new Error("No valid pages for this student");
 
