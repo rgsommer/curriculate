@@ -64,6 +64,7 @@ const VOICE_OPTIONS = [
   { value: "student_conference", label: "Student Conference (jot points)" },
   { value: "pudewa_mastery", label: "Mastery / IEW-style (Pudewa)" },
   { value: "tutor", label: "Tutor (process-focused, step-by-step)" },
+  { value: "rigorous", label: "Rigorous Review (per-question audit)" },
 ];
 
 const STANDARDS_OPTIONS = [
