@@ -8687,7 +8687,34 @@ function gradingExpiredHtml({ brand = "Curriculate" } = {}) {
     </html>`;
     }
 
-function voiceStyleSpec(voice = "warm") {
+// ── Per-question audit block — appended to ANY voice when the toggle is on ──
+const PER_QUESTION_AUDIT_BLOCK = `
+
+PER-QUESTION AUDIT MODE (toggle enabled by teacher):
+- You MUST address EVERY question that scored below full marks — no exceptions.
+- For each such question, state:
+  1. What the student got right (if anything).
+  2. What was missing, incomplete, or incorrect.
+  3. What specifically would have earned the remaining marks.
+- Even if a question lost only half a mark (e.g., missing units, incomplete label, minor sign error), it gets a comment.
+- Questions that earned full marks do NOT need individual comments — a brief group acknowledgment is fine ("Q1, Q3, Q5: full marks — accurate and well-presented").
+- This per-question detail goes in section teacher_comments and/or incorrect_items as appropriate.
+
+- incorrect_items EXTENSION:
+  In addition to questions with wrong final answers, ALSO include questions where marks were lost for:
+    - Missing or incomplete work/steps shown
+    - Missing units, labels, or diagrams
+    - Correct answer but insufficient justification
+    - Partial credit deductions for any reason
+  For these partial-credit items, set student_answer to what the student wrote and correct_answer to what full-marks would require.
+
+- Improvements: group by pattern, not just by question. Prioritize by impact — list the pattern that cost the most marks first.
+- Grade strictly and consistently. Every mark earned or lost must be traceable to visible evidence.
+- Partial credit is fair — award marks for correct method even when the final answer is wrong, and deduct for missing steps even when the final answer is right.
+- If work is not shown, marks for method cannot be awarded regardless of correct final answer.
+`.trim();
+
+function voiceStyleSpec(voice = "warm", { perQuestionAudit = false } = {}) {
   const baseGuardrails = `
 VOICE GUARDRAILS (always):
 - Be kind, respectful, and teacher-appropriate.
@@ -9148,66 +9175,15 @@ CRITICAL — NO NUMERIC GRADES IN TEXT:
   - Example (essay): "Your argument has a clear position and you chose relevant evidence — that's a strong foundation. The missing piece is the bridge between your evidence and your argument. Here's the technique: after every quote or example, write one sentence starting with 'This shows that…' or 'This matters because…' That bridge sentence is what turns evidence into proof. Try rewriting just your second paragraph with that technique — you'll see the difference immediately."
 `.trim(),
 
-  rigorous: `
-VOICE: Rigorous Review (per-question audit)
-- Tone: thorough, precise, fair. Think experienced marker who reviews every question and leaves nothing unaddressed. Professional but not cold — the goal is to help the student see exactly where marks were earned and lost.
-- Sentence length: medium. Clear, specific, evidence-based.
-- Style: audit every question. For each question that did NOT earn full marks, explain what was missing or incorrect and what would have earned the remaining marks. Even questions that lost only 0.5 marks get a comment.
-- Vocabulary: precise, subject-specific. Use correct terminology for the discipline.
-  "Correct approach but incomplete justification." "Missing units — always include units in final answers."
-  "Partial credit: method is sound but arithmetic error in step 3." "Full marks require a diagram with labels."
-  Avoid: vague praise ("good job"), emotional language, filler.
-
-- Marking approach:
-  - Grade strictly and consistently. Every mark earned or lost must be traceable to visible evidence.
-  - Partial credit is fair — award marks for correct method even when the final answer is wrong, and deduct for missing steps even when the final answer is right.
-  - If work is not shown, marks for method cannot be awarded regardless of correct final answer.
-  - Do NOT round up or give benefit of the doubt. If it's not on the paper, it's not marked.
-
-- CRITICAL — PER-QUESTION COVERAGE:
-  - You MUST address EVERY question that scored below full marks — no exceptions.
-  - For each such question, state:
-    1. What the student got right (if anything).
-    2. What was missing, incomplete, or incorrect.
-    3. What specifically would have earned the remaining marks.
-  - Even if a question lost only half a mark (e.g., missing units, incomplete label, minor sign error), it gets a comment.
-  - Questions that earned full marks do NOT need individual comments — a brief group acknowledgment is fine ("Q1, Q3, Q5: full marks — accurate and well-presented").
-  - This per-question detail goes in section teacher_comments and/or incorrect_items as appropriate.
-
-- incorrect_items EXTENSION:
-  - In addition to questions with wrong final answers, ALSO include questions where marks were lost for:
-    - Missing or incomplete work/steps shown
-    - Missing units, labels, or diagrams
-    - Correct answer but insufficient justification
-    - Partial credit deductions for any reason
-  - For these partial-credit items, set student_answer to what the student wrote and correct_answer to what full-marks would require (e.g., "12.5 m/s [with vector diagram]" or "F=ma → 25N, with free body diagram showing all forces").
-
-- Strengths (array):
-  - Identify specific skills demonstrated: "Correct application of Newton's second law in Q3." "Strong free-body diagram technique."
-  - Group questions by skill when possible: "Kinematics questions (Q1, Q4, Q7) all correctly set up with proper variable identification."
-  - Keep each item specific and evidence-based.
-
-- Improvements (array):
-  - Group by pattern, not just by question: "Units were missing in Q2, Q5, and Q8 — always include units in final answers, including derived units like m/s² or N."
-  - For conceptual errors, explain the correct concept briefly: "Q6: You used v=d/t for acceleration — that formula gives average speed. For acceleration, use a=(v₂−v₁)/t."
-  - For process errors, show the correct process: "Q9: Your equation setup was right but you divided instead of multiplied. Check: does your answer make physical sense? 0.003 m/s for a car is implausibly slow."
-  - Prioritize by impact — list the pattern that cost the most marks first.
-
-- Achievement_summary comments:
-  - Precise and criterion-referenced: "Knowledge: strong recall of formulas and definitions. Application: inconsistent — correct setups but frequent arithmetic errors in execution."
-  - Reference question numbers as evidence: "Thinking: strong in Q3 and Q7 where multi-step reasoning was required; weaker in Q10 where the problem required combining concepts."
-
-- Teacher_comment:
-  - 3–4 sentences: overall performance summary → main pattern of mark loss → specific actionable improvement → acknowledgment of what was done well.
-  - Be specific about what cost the most marks and how to fix it.
-  - Example (physics): "You clearly understand the core formulas and set up problems correctly — that's the foundation. The main pattern of mark loss was missing units (cost you marks on 4 questions) and not showing intermediate steps in multi-step problems. For full marks: write the formula, substitute with units, show each algebraic step, and box your final answer with units. Your kinematics work was particularly strong — that section was nearly perfect."
-  - Example (math): "Strong algebraic manipulation throughout — your equation-solving technique is solid. Marks were lost primarily in word problems where the translation from English to equation had errors (Q8, Q11, Q14). Before setting up the equation, try writing 'Let x = ...' and listing what you know in a table. Your graphing questions were excellent — all correct with proper labels."
-`.trim(),
 };
 
   const chosen = specs[voice] || specs.warm;
 
-  return `${baseGuardrails}\n\n${chosen}`.trim();
+  let result = `${baseGuardrails}\n\n${chosen}`;
+  if (perQuestionAudit) {
+    result += `\n\n${PER_QUESTION_AUDIT_BLOCK}`;
+  }
+  return result.trim();
 }
 
 function buildRubricInstructions({
@@ -9221,6 +9197,7 @@ function buildRubricInstructions({
     batchMode = false,
     strictnessBias = 0,
     subjectHint = "",  // detected subject from prior grading (e.g. "Math", "Computer Science") — used to trim prompt
+    perQuestionAudit = false,
   } = {}) {
   const gradeExpectations = {
       "3-5": `
@@ -9412,7 +9389,7 @@ function buildRubricInstructions({
 
     ${standardsBlock}
 
-    ${voiceStyleSpec(feedbackVoice)}
+    ${voiceStyleSpec(feedbackVoice, { perQuestionAudit })}
 
     ${(() => {
       if (!rubricOverride) return "";
@@ -11238,6 +11215,7 @@ function buildRubricInstructions({
       const feedbackVoiceMode = req.body?.meta?.feedbackVoiceMode || "default";
       const batchMode = req.body?.meta?.batchMode === true;
       const subjectHint = req.body?.meta?.subjectHint || "";
+      const perQuestionAudit = req.body?.meta?.perQuestionAudit === true || req.body?.perQuestionAudit === true;
 
       const effectiveAnswerKey = String(answerKeyOverride || "").trim();
 
@@ -11252,6 +11230,7 @@ function buildRubricInstructions({
         batchMode,
         strictnessBias,
         subjectHint,
+        perQuestionAudit,
       });
 
       const instructionsWithInference = `

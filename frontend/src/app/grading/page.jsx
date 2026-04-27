@@ -64,7 +64,6 @@ const VOICE_OPTIONS = [
   { value: "student_conference", label: "Student Conference (jot points)" },
   { value: "pudewa_mastery", label: "Mastery / IEW-style (Pudewa)" },
   { value: "tutor", label: "Tutor (process-focused, step-by-step)" },
-  { value: "rigorous", label: "Rigorous Review (per-question audit)" },
 ];
 
 const STANDARDS_OPTIONS = [
@@ -102,6 +101,7 @@ const SAVED_RUBRICS_KEY = "curriculate_saved_rubrics_v1";
 const VOICE_OVERRIDE_KEY = "curriculate_grading_voice_override_v1";
 const VOICE_OVERRIDE_VALUE_KEY = "curriculate_grading_voice_override_value_v1";
 const STRICTNESS_KEY = "curriculate_strictness_bias_v1";
+const PER_QUESTION_AUDIT_KEY = "curriculate_per_question_audit_v1";
 const SESSION_ID_KEY = "curriculate_session_id_v1";
 const ANON_ID_KEY = "curriculate_anon_id_v1";
 const TEACHER_EMAIL_KEY = "curriculate_report_email";
@@ -1258,7 +1258,9 @@ export default function GradingPage() {
     // Feedback Voice (tone/personality)
     const [voice, setVoice] = useState(() => {
       if (typeof window === "undefined") return "warm";
-      return loadLS(VOICE_KEY, "warm");
+      const saved = loadLS(VOICE_KEY, "warm");
+      // "rigorous" was removed as a standalone voice — fall back to warm
+      return saved === "rigorous" ? "warm" : saved;
     });
     const [voiceOverrideOn, setVoiceOverrideOn] = useState(() => {
       if (typeof window === "undefined") return false;
@@ -1272,6 +1274,10 @@ export default function GradingPage() {
       if (typeof window === "undefined") return 0;
       const v = parseInt(loadLS(STRICTNESS_KEY, "0"), 10);
       return Number.isFinite(v) ? Math.max(-3, Math.min(3, v)) : 0;
+    });
+    const [perQuestionAudit, setPerQuestionAudit] = useState(() => {
+      if (typeof window === "undefined") return false;
+      return loadLS(PER_QUESTION_AUDIT_KEY, "0") === "1";
     });
     const prevVoiceBeforeIepRef = useRef(null);
     const activeVoice = voiceOverrideOn ? voiceOverride : voice;
@@ -1289,6 +1295,7 @@ export default function GradingPage() {
     useEffect(() => saveLS(RUBRIC_OVERRIDE_KEY, rubricOverride), [rubricOverride]);
     useEffect(() => saveLS(VOICE_OVERRIDE_VALUE_KEY, voiceOverride), [voiceOverride]);
     useEffect(() => saveLS(STRICTNESS_KEY, String(strictnessBias)), [strictnessBias]);
+    useEffect(() => saveLS(PER_QUESTION_AUDIT_KEY, perQuestionAudit ? "1" : "0"), [perQuestionAudit]);
 
     // Upload Rubric from electronic document
     const [uploadingRubricFile, setUploadingRubricFile] = useState(false);
@@ -2365,6 +2372,7 @@ export default function GradingPage() {
 
             feedbackVoiceMode: voiceOverrideOn ? "override" : "default",
             feedbackVoice: voiceOverrideOn ? voiceOverride : voice,
+            perQuestionAudit: perQuestionAudit || undefined,
             rubricMode: manualRubric.length ? "manual" : (stickyRubric.length ? "sticky" : "default"),
             wantsRubricCapture: !manualRubric.length && !stickyRubric.length && inputMode === "photo",
             inputMode,
@@ -3280,6 +3288,17 @@ export default function GradingPage() {
             </select>
 
             <VoiceBadge feedbackVoice={voice} />
+
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, opacity: 0.85, whiteSpace: "nowrap" }}
+              title="When enabled, AI audits every question that lost marks — even partial credit — regardless of which voice is selected">
+              <input
+                type="checkbox"
+                checked={perQuestionAudit}
+                onChange={(e) => setPerQuestionAudit(e.target.checked)}
+                style={{ transform: "scale(1.1)", cursor: "pointer" }}
+              />
+              Per-question audit
+            </label>
           </div>
         </label>
 
@@ -3447,6 +3466,7 @@ export default function GradingPage() {
               standards={standards}
               feedbackVoice={voiceOverrideOn ? voiceOverride : voice}
               voiceMode={voiceOverrideOn ? "override" : "default"}
+              perQuestionAudit={perQuestionAudit}
               rubricOverride={
                 (rubricOverride || "").trim() ||
                 (stickyRubricText || "").trim() ||
