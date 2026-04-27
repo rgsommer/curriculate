@@ -455,6 +455,55 @@ export default function BatchGrading({
         setTimeout(() => setRotationMsg(""), 3000);
       } else if (hasRotated) {
         console.log(`[batch] all pages have consistent rotation metadata — pdf.js handles natively`);
+      } else {
+        // No rotation metadata at all (page.rotate=0 on all pages).
+        // Content might still be physically upside down from the scanner.
+        // Fire a dedicated AI rotation check asynchronously.
+        (async () => {
+          try {
+            if (!gradingUrl) return;
+            setRotationMsg("Checking page orientation...");
+            // Pick 2 content-rich pages (skip every other for blank backs)
+            const checkPages = [];
+            for (let p = 1; p <= doc.numPages && checkPages.length < 2; p += 2) {
+              checkPages.push(p);
+            }
+            // Render at higher resolution for reliable detection
+            const checkImages = [];
+            for (const p of checkPages) {
+              const pg = await doc.getPage(p);
+              const vp = pg.getViewport({ scale: 1.2 });
+              const cvs = document.createElement("canvas");
+              cvs.width = vp.width;
+              cvs.height = vp.height;
+              const cx = cvs.getContext("2d");
+              await pg.render({ canvasContext: cx, viewport: vp }).promise;
+              checkImages.push(cvs.toDataURL("image/jpeg", 0.9));
+            }
+            const checkUrl = gradingUrl.replace(/\/grading$/, "/grading/check-rotation");
+            const checkRes = await fetch(checkUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ images: checkImages }),
+            });
+            if (checkRes.ok) {
+              const checkData = await checkRes.json();
+              if (checkData.rotated) {
+                console.log(`[batch] rotation check: pages are upside down — marking ALL ${doc.numPages} pages for rotation`);
+                const allRotated = {};
+                for (let p = 1; p <= doc.numPages; p++) allRotated[p] = true;
+                setRotatedPages(allRotated);
+                setRotationMsg(`Rotating ${doc.numPages} upside-down pages...`);
+                setTimeout(() => setRotationMsg(""), 3000);
+                return;
+              }
+            }
+            setRotationMsg("");
+          } catch (err) {
+            console.warn("[batch] rotation check failed:", err.message);
+            setRotationMsg("");
+          }
+        })();
       }
 
       setLoading(false);
@@ -463,7 +512,7 @@ export default function BatchGrading({
       setLoadError("Could not read PDF. Make sure it's a valid PDF file.");
       setLoading(false);
     }
-  }, []);
+  }, [gradingUrl]);
 
   // ---------- Student count ----------
   const isAuto = pagesPerStudent === "auto";

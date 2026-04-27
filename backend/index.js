@@ -12004,6 +12004,62 @@ function buildRubricInstructions({
   });
 
   // ====================================================================
+  //  Rotation Detection — dedicated endpoint for orientation checking
+  //  POST /grading/check-rotation
+  //  Sends 1-3 page images and returns { rotated: boolean }.
+  //  Uses the full model with retry for reliable detection.
+  // ====================================================================
+  app.post("/grading/check-rotation", async (req, res) => {
+    try {
+      const { images } = req.body || {};
+      if (!Array.isArray(images) || images.length === 0) {
+        return res.status(400).json({ error: "Missing images array" });
+      }
+
+      // Check up to 3 images, majority vote
+      const checks = images.slice(0, 3);
+      let yesCount = 0;
+      let noCount = 0;
+
+      for (const img of checks) {
+        for (let attempt = 0; attempt < 2; attempt++) { // retry once on failure
+          try {
+            const response = await openai.responses.create({
+              model: AI_MODEL_FULL,
+              input: [{
+                role: "user",
+                content: [
+                  {
+                    type: "input_text",
+                    text: `Look at this scanned document page. Is the content upside down? Check the text orientation — if you would need to rotate the image 180 degrees to read the text normally (so letters and words appear right-side up), answer YES. If the text is already readable in normal orientation, answer NO. Answer with ONLY the single word YES or NO.`,
+                  },
+                  { type: "input_image", image_url: img },
+                ],
+              }],
+              max_output_tokens: 10,
+            });
+            const answer = String(response.output_text || "").trim().toUpperCase();
+            if (answer.startsWith("YES")) yesCount++;
+            else noCount++;
+            console.log(`[check-rotation] image ${checks.indexOf(img) + 1}/${checks.length} attempt ${attempt + 1}: "${answer}"`);
+            break; // success, no retry needed
+          } catch (err) {
+            console.warn(`[check-rotation] attempt ${attempt + 1} failed:`, err.message);
+            if (attempt === 1) noCount++; // give up, count as not rotated
+          }
+        }
+      }
+
+      const rotated = yesCount > noCount;
+      console.log(`[check-rotation] result: ${yesCount} YES / ${noCount} NO → ${rotated ? "ROTATED" : "normal"}`);
+      res.json({ rotated });
+    } catch (err) {
+      console.error("🔥 /grading/check-rotation failed:", err?.message || err);
+      res.status(500).json({ error: "Rotation check failed" });
+    }
+  });
+
+  // ====================================================================
   //  Batch Page Classification — detect student boundaries in a PDF stack
   //  POST /grading/classify-pages
   //  Sends thumbnail images and asks AI to identify where each new
