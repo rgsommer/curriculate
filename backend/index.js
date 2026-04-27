@@ -12087,14 +12087,15 @@ A batch may contain two or more versions of the same test (e.g. "Math 7 Test" an
 
 For worksheets where the assignment says "use the other side" or "continue on back", expect that some students will have 2 scanned pages (front + back with extra writing) while others will have only 1 (front only, back is blank or not scanned).
 
-ROTATION DETECTION (important):
-Check EVERY page for upside-down orientation (rotated 180°). Scanned PDFs from ADF scanners sometimes produce pages that are flipped upside down.
-Signs a page is rotated 180°:
-- Text/handwriting is upside down (readable only if you flip the image)
-- Student name, date, or title are at the BOTTOM instead of the top
-- Printed headers/questions appear inverted
-If a page is rotated 180°, include "rotated": true in that page's entry.
-Do NOT flag pages as rotated if they are right-side up. Only flag true 180° rotation.
+ROTATION DETECTION (use sparingly — most pages are right-side up):
+ADF scanners occasionally produce pages that are completely upside down (rotated exactly 180°).
+ONLY flag "rotated": true when you are CERTAIN the page is upside down — meaning ALL text and handwriting on the page is inverted and would need to be flipped 180° to read normally.
+Do NOT flag a page as rotated if:
+- It is right-side up (the normal case — most pages will be correct)
+- It is only slightly tilted or skewed from scanning
+- Only a small portion (like a single word or doodle) appears upside down
+- You are unsure — when in doubt, do NOT flag it
+The bar is high: every word on the page must be upside down for this to be true.
 
 Respond with ONLY a JSON array of objects, one per page, in order:
 [
