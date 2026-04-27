@@ -420,6 +420,43 @@ export default function BatchGrading({
       pdfDocRef.current = doc;
       setPageCount(doc.numPages);
       setPdfFile(file);
+
+      // ── Deterministic rotation consistency check ──
+      // If a rotation utility set /Rotate on SOME pages but not all (buggy utility),
+      // the pages without metadata need extra rotation to match.
+      // ADF scanners produce ALL pages in the same orientation, so if any page
+      // has /Rotate≠0, the pages without it are in the wrong orientation.
+      const rotationMap = {};
+      let hasRotated = false;
+      let hasUnrotated = false;
+      for (let p = 1; p <= doc.numPages; p++) {
+        const pg = await doc.getPage(p);
+        const r = pg.rotate || 0;
+        rotationMap[p] = r;
+        if (r !== 0) hasRotated = true;
+        else hasUnrotated = true;
+      }
+      if (hasRotated && hasUnrotated) {
+        // Mixed rotation — find the majority rotation and flag the outliers
+        const counts = {};
+        Object.values(rotationMap).forEach(r => { counts[r] = (counts[r] || 0) + 1; });
+        const majorityRotation = Number(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]);
+        const needsExtra = {};
+        for (const [p, r] of Object.entries(rotationMap)) {
+          if (r !== majorityRotation) {
+            // This page is missing the rotation that most pages have — needs extra rotation
+            needsExtra[Number(p)] = true;
+          }
+        }
+        const fixCount = Object.keys(needsExtra).length;
+        console.log(`[batch] rotation consistency: ${fixCount} page(s) missing /Rotate=${majorityRotation} — will auto-rotate`);
+        setRotatedPages(needsExtra);
+        setRotationMsg(`Fixing orientation on ${fixCount} page${fixCount > 1 ? "s" : ""}...`);
+        setTimeout(() => setRotationMsg(""), 3000);
+      } else if (hasRotated) {
+        console.log(`[batch] all pages have consistent rotation metadata — pdf.js handles natively`);
+      }
+
       setLoading(false);
     } catch (err) {
       console.error("PDF load error:", err);
@@ -472,15 +509,18 @@ export default function BatchGrading({
       if (Array.isArray(data.groups) && data.groups.length > 0) {
         setDetectedGroups(data.groups);
       }
-      // Store rotated page info for auto-rotation during grading
+      // Merge AI-detected rotation with consistency-check rotation
       if (data.rotatedPages && typeof data.rotatedPages === "object") {
-        setRotatedPages(data.rotatedPages);
-        const rotCount = Object.keys(data.rotatedPages).length;
-        if (rotCount > 0) {
-          console.log(`[batch] ${rotCount} upside-down page(s) detected — will auto-rotate`);
-          setRotationMsg(`Rotating ${rotCount} upside-down page${rotCount > 1 ? "s" : ""}...`);
-          setTimeout(() => setRotationMsg(""), 3000);
-        }
+        setRotatedPages(prev => {
+          const merged = { ...prev, ...data.rotatedPages };
+          const rotCount = Object.keys(merged).length;
+          if (rotCount > 0) {
+            console.log(`[batch] ${rotCount} upside-down page(s) detected — will auto-rotate`);
+            setRotationMsg(`Rotating ${rotCount} upside-down page${rotCount > 1 ? "s" : ""}...`);
+            setTimeout(() => setRotationMsg(""), 3000);
+          }
+          return merged;
+        });
       }
     } catch (e) {
       console.warn("[batch] auto-detect failed:", e);
@@ -528,11 +568,12 @@ export default function BatchGrading({
             autoDetectedKeyPages = classifyData.answerKeyPages;
             console.log(`[batch] auto-detected ${autoDetectedKeyPages.length} answer key pages: ${autoDetectedKeyPages.join(", ")}`);
           }
-          // Store rotated page info (both state + local var for immediate use)
+          // Merge AI-detected rotation with consistency-check rotation (don't replace)
           if (classifyData.rotatedPages && typeof classifyData.rotatedPages === "object") {
-            localRotatedPages = classifyData.rotatedPages;
-            setRotatedPages(classifyData.rotatedPages);
-            const rotCount = Object.keys(classifyData.rotatedPages).length;
+            const merged = { ...localRotatedPages, ...classifyData.rotatedPages };
+            localRotatedPages = merged;
+            setRotatedPages(merged);
+            const rotCount = Object.keys(merged).length;
             if (rotCount > 0) {
               setRotationMsg(`Rotating ${rotCount} upside-down page${rotCount > 1 ? "s" : ""}...`);
               setTimeout(() => setRotationMsg(""), 3000);
