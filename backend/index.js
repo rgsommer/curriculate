@@ -12068,13 +12068,8 @@ For worksheets where the assignment says "use the other side" or "continue on ba
 
 ROTATION DETECTION:
 ADF scanners sometimes produce pages that are completely upside down (rotated exactly 180°).
-For each page, check whether the printed text (headers, question numbers, titles) reads normally or is inverted.
-Flag "rotated": true when the main text on the page is upside down — i.e., you must mentally flip the image 180° to read it.
-Do NOT flag a page as rotated if:
-- The text reads normally (right-side up)
-- It is only slightly tilted or skewed from scanning
-- Only a margin note or stray mark is inverted while the main content reads normally
-The bar is high: every word on the page must be upside down for this to be true.
+If the printed text on a page is upside down, flag "rotated": true for that page.
+Do NOT flag pages that are right-side up, or only slightly tilted from scanning.
 
 Respond with ONLY a JSON array of objects, one per page, in order:
 [
@@ -12099,6 +12094,33 @@ Do NOT include any text outside the JSON array.`,
           image_url: imgDataUrl,
         });
       });
+
+      // ── Quick rotation pre-check on a representative page ──
+      // ADF scanners produce ALL pages in the same orientation, so we only
+      // need to check one page. Pick the first non-key student page.
+      const rotCheckIdx = Math.min(answerKeyPages, pageImages.length - 1); // 0-indexed
+      let allPagesRotated = false;
+      try {
+        const rotCheckResponse = await openai.responses.create({
+          model: AI_MODEL,
+          input: [{
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: `Look at this scanned page. Is the printed text on this page upside down (rotated 180°)? Answer ONLY with the single word YES or NO.`,
+              },
+              { type: "input_image", image_url: pageImages[rotCheckIdx] },
+            ],
+          }],
+          max_output_tokens: 10,
+        });
+        const rotAnswer = String(rotCheckResponse.output_text || "").trim().toUpperCase();
+        allPagesRotated = rotAnswer.startsWith("YES");
+        console.log(`[classify-pages] rotation pre-check page ${rotCheckIdx + 1}: "${rotAnswer}" → ${allPagesRotated ? "ALL pages will be rotated" : "no rotation needed"}`);
+      } catch (rotErr) {
+        console.warn("[classify-pages] rotation pre-check failed, skipping:", rotErr.message);
+      }
 
       console.log(`[classify-pages] classifying ${pageImages.length} pages (answerKeyPages=${answerKeyPages})`);
 
@@ -12167,10 +12189,20 @@ Do NOT include any text outside the JSON array.`,
         .map(c => Number(c.page));
 
       // Build a map of rotated pages (page number → true)
+      // Use the focused pre-check result if the per-page classification missed it
       const rotatedPages = {};
-      for (const c of classifications) {
-        if (c.rotated === true) {
-          rotatedPages[Number(c.page)] = true;
+      if (allPagesRotated) {
+        // Pre-check detected upside-down scan — mark ALL pages (including answer key)
+        for (let p = 1; p <= totalPages; p++) {
+          rotatedPages[p] = true;
+        }
+        console.log(`[classify-pages] pre-check override: marking ${Object.keys(rotatedPages).length} pages as rotated`);
+      } else {
+        // Fall back to per-page detection from the classifier
+        for (const c of classifications) {
+          if (c.rotated === true) {
+            rotatedPages[Number(c.page)] = true;
+          }
         }
       }
 
