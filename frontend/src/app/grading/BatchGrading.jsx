@@ -330,6 +330,7 @@ export default function BatchGrading({
   const [detectedGroups, setDetectedGroups] = useState(null); // [{ startPage, endPage, pages: [...] }, ...]
   const [detecting, setDetecting] = useState(false);
   const [rotatedPages, setRotatedPages] = useState({}); // { pageNum: true } — pages detected as upside-down
+  const [scanTipVisible, setScanTipVisible] = useState(false); // "scan in any orientation" tip
 
   const pdfDocRef = useRef(null);
   const abortRef = useRef(false);
@@ -1460,6 +1461,17 @@ export default function BatchGrading({
     try {
       const ok = batchResults.filter(r => !r.error).length;
       if (window.gtag) window.gtag("event", "batch_grading_complete", { students: ok, pages: pageCount });
+    } catch {}
+
+    // Show "scan in any orientation" tip after 3rd successful batch
+    try {
+      const tipKey = "curriculate_batch_scan_tip_v1";
+      const tipData = JSON.parse(localStorage.getItem(tipKey) || '{"count":0}');
+      tipData.count = (tipData.count || 0) + 1;
+      localStorage.setItem(tipKey, JSON.stringify(tipData));
+      if (tipData.count === 3 && !tipData.dismissed) {
+        setScanTipVisible(true);
+      }
     } catch {}
   }, [
     studentCount,
@@ -3063,6 +3075,47 @@ export default function BatchGrading({
               Keep as-is
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Scan orientation tip — shown after 3rd batch */}
+      {scanTipVisible && (
+        <div style={{
+          background: "linear-gradient(135deg, #eff6ff, #f0fdf4)",
+          border: "1px solid #93c5fd",
+          borderRadius: 10,
+          padding: "12px 16px",
+          marginBottom: 12,
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10,
+          fontSize: 13,
+          color: "#1e3a5f",
+          lineHeight: 1.5,
+        }}>
+          <span style={{ fontSize: 18, flexShrink: 0 }}>💡</span>
+          <div style={{ flex: 1 }}>
+            <strong>Did you know?</strong> You can scan papers in any orientation — even upside down.
+            For example, to avoid staples jamming in the feeder, scan with the stapled edge trailing.
+            Pulse will detect the orientation and auto-rotate before grading.
+          </div>
+          <button
+            onClick={() => {
+              setScanTipVisible(false);
+              try {
+                const tipKey = "curriculate_batch_scan_tip_v1";
+                const tipData = JSON.parse(localStorage.getItem(tipKey) || "{}");
+                tipData.dismissed = true;
+                localStorage.setItem(tipKey, JSON.stringify(tipData));
+              } catch {}
+            }}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              color: "#64748b", fontSize: 16, padding: "0 2px", flexShrink: 0,
+            }}
+            type="button"
+            title="Dismiss"
+          >✕</button>
         </div>
       )}
 
