@@ -12095,20 +12095,22 @@ Do NOT include any text outside the JSON array.`,
         });
       });
 
-      // ── Quick rotation pre-check on a representative page ──
+      // ── Quick rotation pre-check on a content-rich page ──
       // ADF scanners produce ALL pages in the same orientation, so we only
-      // need to check one page. Pick the first non-key student page.
-      const rotCheckIdx = Math.min(answerKeyPages, pageImages.length - 1); // 0-indexed
+      // need to check one page. Pick the 2nd student page (index answerKeyPages+1)
+      // since the first page of a test is often mostly blank rubric/header.
+      // Uses the full model for reliable vision detection.
+      const rotCheckIdx = Math.min(answerKeyPages + 1, pageImages.length - 1); // 0-indexed, skip to a content-rich page
       let allPagesRotated = false;
       try {
         const rotCheckResponse = await openai.responses.create({
-          model: AI_MODEL,
+          model: AI_MODEL_FULL,
           input: [{
             role: "user",
             content: [
               {
                 type: "input_text",
-                text: `Look at this scanned page. Is the printed text on this page upside down (rotated 180°)? Answer ONLY with the single word YES or NO.`,
+                text: `Look at this scanned page of student work. Is the text on this page upside down (rotated 180°)? Look at the handwriting and any printed text — would you need to rotate the image 180° to read it normally? Answer ONLY with the single word YES or NO.`,
               },
               { type: "input_image", image_url: pageImages[rotCheckIdx] },
             ],
@@ -12117,7 +12119,7 @@ Do NOT include any text outside the JSON array.`,
         });
         const rotAnswer = String(rotCheckResponse.output_text || "").trim().toUpperCase();
         allPagesRotated = rotAnswer.startsWith("YES");
-        console.log(`[classify-pages] rotation pre-check page ${rotCheckIdx + 1}: "${rotAnswer}" → ${allPagesRotated ? "ALL pages will be rotated" : "no rotation needed"}`);
+        console.log(`[classify-pages] rotation pre-check page ${rotCheckIdx + 1} (model=${AI_MODEL_FULL}): "${rotAnswer}" → ${allPagesRotated ? "ALL pages will be rotated" : "no rotation needed"}`);
       } catch (rotErr) {
         console.warn("[classify-pages] rotation pre-check failed, skipping:", rotErr.message);
       }
