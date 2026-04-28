@@ -129,6 +129,68 @@ async function renderPageToDataUrl(pdfDoc, pageNum, scale = 1.5, extraRotation =
   return canvas.toDataURL("image/jpeg", 0.85);
 }
 
+// ── Structural fingerprinting for page boundary detection ──
+// Renders a page region to a tiny grayscale grid and returns pixel values.
+// Used to compare page headers against a reference "page 1" deterministically.
+async function getPageFingerprint(pdfDoc, pageNum, region = "top") {
+  const page = await pdfDoc.getPage(pageNum);
+  const scale = 0.3; // very low res — we only need structural shape
+  const viewport = page.getViewport({ scale });
+
+  const canvas = document.createElement("canvas");
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext("2d");
+  await page.render({ canvasContext: ctx, viewport }).promise;
+
+  // Extract the region of interest
+  const regionH = region === "top" ? Math.round(canvas.height * 0.30) : canvas.height;
+  const regionY = 0;
+
+  // Downsample to a tiny grid (24 wide, proportional height)
+  const gridW = 24;
+  const gridH = Math.round((regionH / canvas.width) * gridW);
+  const tiny = document.createElement("canvas");
+  tiny.width = gridW;
+  tiny.height = Math.max(gridH, 1);
+  const tctx = tiny.getContext("2d");
+  tctx.drawImage(canvas, 0, regionY, canvas.width, regionH, 0, 0, gridW, tiny.height);
+
+  // Get grayscale pixel values
+  const imgData = tctx.getImageData(0, 0, gridW, tiny.height);
+  const gray = [];
+  for (let i = 0; i < imgData.data.length; i += 4) {
+    gray.push(0.299 * imgData.data[i] + 0.587 * imgData.data[i + 1] + 0.114 * imgData.data[i + 2]);
+  }
+  return gray;
+}
+
+// Compute normalized cross-correlation between two fingerprints (0 = no match, 1 = identical)
+function fingerprintSimilarity(fp1, fp2) {
+  if (!fp1 || !fp2 || fp1.length !== fp2.length || fp1.length === 0) return 0;
+  const n = fp1.length;
+  let sum1 = 0, sum2 = 0;
+  for (let i = 0; i < n; i++) { sum1 += fp1[i]; sum2 += fp2[i]; }
+  const mean1 = sum1 / n, mean2 = sum2 / n;
+  let num = 0, den1 = 0, den2 = 0;
+  for (let i = 0; i < n; i++) {
+    const d1 = fp1[i] - mean1, d2 = fp2[i] - mean2;
+    num += d1 * d2;
+    den1 += d1 * d1;
+    den2 += d2 * d2;
+  }
+  const den = Math.sqrt(den1 * den2);
+  return den === 0 ? 0 : num / den;
+}
+
+// Check if a page is blank by looking at pixel variance
+function isBlankPage(fingerprint) {
+  if (!fingerprint || fingerprint.length === 0) return true;
+  const mean = fingerprint.reduce((a, b) => a + b, 0) / fingerprint.length;
+  const variance = fingerprint.reduce((a, v) => a + (v - mean) ** 2, 0) / fingerprint.length;
+  return variance < 50; // very low variance = nearly uniform = blank
+}
+
 // Retry wrapper for network-flaky environments (classrooms, tablets on wifi)
 async function fetchWithRetry(url, options, { retries = 2, baseDelay = 2000 } = {}) {
   for (let attempt = 0; ; attempt++) {
@@ -529,16 +591,134 @@ export default function BatchGrading({
   // ---------- Auto-detect page boundaries ----------
   const runAutoDetect = useCallback(async () => {
     const doc = pdfDocRef.current;
-    if (!doc || !gradingUrl) return;
+    if (!doc) return;
 
     setDetecting(true);
     setDetectedGroups(null);
 
     try {
-      // Render all pages as small thumbnails for classification
+      // ── Phase 1: Deterministic structural fingerprinting ──
+      // Compare the top 30% of each page (header region) to page 1's header.
+      // Pages with high structural similarity = new student (same printed template).
+      // This is fast, deterministic, and doesn't require AI.
+      const firstStudentPage = answerKeyPages + 1; // 1-based
+      console.log(`[auto-detect] fingerprinting ${pageCount} pages (reference: page ${firstStudentPage})`);
+
+      const refFp = await getPageFingerprint(doc, firstStudentPage, "top");
+      const isRefBlank = isBlankPage(refFp);
+
+      if (!isRefBlank) {
+        const similarities = [{ page: firstStudentPage, sim: 1.0, blank: false }];
+
+        for (let p = firstStudentPage + 1; p <= pageCount; p++) {
+          const fp = await getPageFingerprint(doc, p, "top");
+          const blank = isBlankPage(fp);
+          const sim = blank ? 0 : fingerprintSimilarity(refFp, fp);
+          similarities.push({ page: p, sim, blank });
+        }
+
+        // Log all similarities for debugging
+        const simLog = similarities.map(s =>
+          `p${s.page}:${s.blank ? "BLANK" : s.sim.toFixed(2)}`
+        ).join(" ");
+        console.log(`[auto-detect] similarities: ${simLog}`);
+
+        // Find the natural threshold: page 1 matches should cluster near 0.85-1.0,
+        // non-matches (Part C pages, handwritten, blank) should be < 0.7.
+        // Use 0.75 as default threshold, but auto-calibrate if we can.
+        const nonBlankSims = similarities.filter(s => !s.blank && s.page !== firstStudentPage).map(s => s.sim);
+        nonBlankSims.sort((a, b) => a - b);
+
+        // Look for a natural gap in the similarity distribution
+        let threshold = 0.75;
+        if (nonBlankSims.length > 2) {
+          // Find the largest gap between sorted similarity values
+          let maxGap = 0, gapIdx = -1;
+          for (let i = 0; i < nonBlankSims.length - 1; i++) {
+            const gap = nonBlankSims[i + 1] - nonBlankSims[i];
+            if (gap > maxGap && nonBlankSims[i + 1] > 0.5) {
+              maxGap = gap;
+              gapIdx = i;
+            }
+          }
+          if (maxGap > 0.08 && gapIdx >= 0) {
+            threshold = (nonBlankSims[gapIdx] + nonBlankSims[gapIdx + 1]) / 2;
+            console.log(`[auto-detect] auto-calibrated threshold: ${threshold.toFixed(3)} (gap of ${maxGap.toFixed(3)})`);
+          }
+        }
+
+        // Build groups from fingerprint matches
+        const fpGroups = [];
+        let currentGroup = null;
+
+        for (let p = 1; p <= pageCount; p++) {
+          if (p <= answerKeyPages) continue; // skip answer key
+          const entry = similarities.find(s => s.page === p);
+          const isNewStudent = entry && !entry.blank && entry.sim >= threshold;
+
+          if (isNewStudent) {
+            if (currentGroup) fpGroups.push(currentGroup);
+            currentGroup = { startPage: p, endPage: p, pages: [p] };
+          } else if (currentGroup) {
+            currentGroup.endPage = p;
+            currentGroup.pages.push(p);
+          } else {
+            // Orphan page before first detected student — start a group
+            currentGroup = { startPage: p, endPage: p, pages: [p] };
+          }
+        }
+        if (currentGroup) fpGroups.push(currentGroup);
+
+        console.log(`[auto-detect] fingerprint detected ${fpGroups.length} students`);
+
+        // If fingerprinting found reasonable groups (more than 1 student), use them
+        if (fpGroups.length > 1) {
+          setDetectedGroups(fpGroups);
+          setDetecting(false);
+
+          // Try to read student names from the detected page-1 images via AI
+          // (non-blocking, runs in background after groups are set)
+          if (gradingUrl) {
+            try {
+              const namePages = fpGroups.map(g => g.startPage);
+              const nameImages = [];
+              for (const p of namePages) {
+                nameImages.push(await renderPageToDataUrl(doc, p, 0.5));
+              }
+              const nameUrl = gradingUrl.replace(/\/grading$/, "/grading/classify-pages");
+              const nameRes = await fetchWithRetry(nameUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ pageImages: nameImages, answerKeyPages: 0 }),
+              });
+              if (nameRes.ok) {
+                const nameData = await nameRes.json();
+                if (Array.isArray(nameData.classifications)) {
+                  const updatedGroups = fpGroups.map((g, i) => {
+                    const c = nameData.classifications[i];
+                    if (c?.name) return { ...g, name: String(c.name).trim() };
+                    return g;
+                  });
+                  setDetectedGroups(updatedGroups);
+                  console.log(`[auto-detect] names enriched:`, updatedGroups.map(g => g.name || "?").join(", "));
+                }
+              }
+            } catch (nameErr) {
+              console.warn("[auto-detect] name extraction failed (non-critical):", nameErr.message);
+            }
+          }
+          return;
+        }
+      }
+
+      // ── Phase 2: Fall back to AI classification ──
+      // Only if fingerprinting failed (e.g., freeform assignments with no printed template)
+      console.log("[auto-detect] fingerprinting found ≤1 group, falling back to AI classification");
+      if (!gradingUrl) { setDetecting(false); return; }
+
       const thumbs = [];
       for (let p = 1; p <= pageCount; p++) {
-        thumbs.push(await renderPageToDataUrl(doc, p, 0.8)); // needs enough res to read headers & names
+        thumbs.push(await renderPageToDataUrl(doc, p, 0.8));
       }
 
       const classifyUrl = gradingUrl.replace(/\/grading$/, "/grading/classify-pages");
@@ -595,46 +775,98 @@ export default function BatchGrading({
     let autoDetectedKeyPages = []; // answer key pages found anywhere in the PDF
     let localRotatedPages = { ...rotatedPages }; // local copy for use in grading loop
     if (isAuto && !groups) {
-      setProgress({ done: 0, total: 0, current: `Analyzing ${pageCount} pages — checking orientation...` });
+      setProgress({ done: 0, total: 0, current: `Analyzing ${pageCount} pages — detecting student boundaries...` });
+
+      // Use deterministic fingerprinting first
       try {
-        const thumbs = [];
-        for (let p = 1; p <= pageCount; p++) {
-          thumbs.push(await renderPageToDataUrl(doc, p, 0.8)); // needs enough res to read headers & names
-        }
-        const classifyUrl = gradingUrl.replace(/\/grading$/, "/grading/classify-pages");
-        const classifyRes = await fetchWithRetry(classifyUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pageImages: thumbs, answerKeyPages }),
-        });
-        if (classifyRes.ok) {
-          const classifyData = await classifyRes.json();
-          if (Array.isArray(classifyData.groups) && classifyData.groups.length > 0) {
-            groups = classifyData.groups;
-            setDetectedGroups(groups);
+        const firstStudentPage = answerKeyPages + 1;
+        const refFp = await getPageFingerprint(doc, firstStudentPage, "top");
+        if (!isBlankPage(refFp)) {
+          const similarities = [{ page: firstStudentPage, sim: 1.0, blank: false }];
+          for (let p = firstStudentPage + 1; p <= pageCount; p++) {
+            const fp = await getPageFingerprint(doc, p, "top");
+            const blank = isBlankPage(fp);
+            const sim = blank ? 0 : fingerprintSimilarity(refFp, fp);
+            similarities.push({ page: p, sim, blank });
           }
-          // Capture any answer key pages detected anywhere in the PDF
-          if (Array.isArray(classifyData.answerKeyPages) && classifyData.answerKeyPages.length > 0) {
-            autoDetectedKeyPages = classifyData.answerKeyPages;
-            console.log(`[batch] auto-detected ${autoDetectedKeyPages.length} answer key pages: ${autoDetectedKeyPages.join(", ")}`);
-          }
-          // Merge AI-detected rotation with consistency-check rotation (don't replace)
-          if (classifyData.rotatedPages && typeof classifyData.rotatedPages === "object") {
-            const merged = { ...localRotatedPages, ...classifyData.rotatedPages };
-            localRotatedPages = merged;
-            setRotatedPages(merged);
-            const rotCount = Object.keys(merged).length;
-            if (rotCount > 0) {
-              setRotationMsg(`Rotating ${rotCount} upside-down page${rotCount > 1 ? "s" : ""}...`);
-              setTimeout(() => setRotationMsg(""), 3000);
+
+          // Auto-calibrate threshold
+          const nonBlankSims = similarities.filter(s => !s.blank && s.page !== firstStudentPage).map(s => s.sim);
+          nonBlankSims.sort((a, b) => a - b);
+          let threshold = 0.75;
+          if (nonBlankSims.length > 2) {
+            let maxGap = 0, gapIdx = -1;
+            for (let i = 0; i < nonBlankSims.length - 1; i++) {
+              const gap = nonBlankSims[i + 1] - nonBlankSims[i];
+              if (gap > maxGap && nonBlankSims[i + 1] > 0.5) { maxGap = gap; gapIdx = i; }
+            }
+            if (maxGap > 0.08 && gapIdx >= 0) {
+              threshold = (nonBlankSims[gapIdx] + nonBlankSims[gapIdx + 1]) / 2;
             }
           }
+
+          const fpGroups = [];
+          let currentGroup = null;
+          for (let p = 1; p <= pageCount; p++) {
+            if (p <= answerKeyPages) continue;
+            const entry = similarities.find(s => s.page === p);
+            const isNewStudent = entry && !entry.blank && entry.sim >= threshold;
+            if (isNewStudent) {
+              if (currentGroup) fpGroups.push(currentGroup);
+              currentGroup = { startPage: p, endPage: p, pages: [p] };
+            } else if (currentGroup) {
+              currentGroup.endPage = p;
+              currentGroup.pages.push(p);
+            } else {
+              currentGroup = { startPage: p, endPage: p, pages: [p] };
+            }
+          }
+          if (currentGroup) fpGroups.push(currentGroup);
+
+          if (fpGroups.length > 1) {
+            groups = fpGroups;
+            setDetectedGroups(groups);
+            console.log(`[batch] fingerprint detected ${groups.length} students`);
+          }
         }
-      } catch (e) {
-        console.warn("[batch] auto-detect during grading failed:", e);
+      } catch (fpErr) {
+        console.warn("[batch] fingerprint detection failed:", fpErr);
       }
 
-      // If detection failed, fall back to 1 page per student
+      // Fall back to AI classification if fingerprinting didn't work
+      if (!groups && gradingUrl) {
+        try {
+          const thumbs = [];
+          for (let p = 1; p <= pageCount; p++) {
+            thumbs.push(await renderPageToDataUrl(doc, p, 0.8));
+          }
+          const classifyUrl = gradingUrl.replace(/\/grading$/, "/grading/classify-pages");
+          const classifyRes = await fetchWithRetry(classifyUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pageImages: thumbs, answerKeyPages }),
+          });
+          if (classifyRes.ok) {
+            const classifyData = await classifyRes.json();
+            if (Array.isArray(classifyData.groups) && classifyData.groups.length > 0) {
+              groups = classifyData.groups;
+              setDetectedGroups(groups);
+            }
+            if (Array.isArray(classifyData.answerKeyPages) && classifyData.answerKeyPages.length > 0) {
+              autoDetectedKeyPages = classifyData.answerKeyPages;
+            }
+            if (classifyData.rotatedPages && typeof classifyData.rotatedPages === "object") {
+              const merged = { ...localRotatedPages, ...classifyData.rotatedPages };
+              localRotatedPages = merged;
+              setRotatedPages(merged);
+            }
+          }
+        } catch (e) {
+          console.warn("[batch] AI classification failed:", e);
+        }
+      }
+
+      // If all detection failed, fall back to 1 page per student
       if (!groups) {
         groups = [];
         for (let p = answerKeyPages + 1; p <= pageCount; p++) {
