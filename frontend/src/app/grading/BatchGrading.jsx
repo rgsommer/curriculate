@@ -537,7 +537,7 @@ export default function BatchGrading({
       // Render all pages as small thumbnails for classification
       const thumbs = [];
       for (let p = 1; p <= pageCount; p++) {
-        thumbs.push(await renderPageToDataUrl(doc, p, 0.6)); // lower res for speed
+        thumbs.push(await renderPageToDataUrl(doc, p, 0.8)); // needs enough res to read headers & names
       }
 
       const classifyUrl = gradingUrl.replace(/\/grading$/, "/grading/classify-pages");
@@ -598,7 +598,7 @@ export default function BatchGrading({
       try {
         const thumbs = [];
         for (let p = 1; p <= pageCount; p++) {
-          thumbs.push(await renderPageToDataUrl(doc, p, 0.6));
+          thumbs.push(await renderPageToDataUrl(doc, p, 0.8)); // needs enough res to read headers & names
         }
         const classifyUrl = gradingUrl.replace(/\/grading$/, "/grading/classify-pages");
         const classifyRes = await fetchWithRetry(classifyUrl, {

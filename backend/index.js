@@ -12097,9 +12097,11 @@ STRONG clues that a page is a CONTINUATION (back of the previous student's sheet
 
 STRONG clues that a page starts a NEW student:
 - The page has the SAME PRINTED first-page header/title as the very first student page (e.g. "Math 7 Test", "Science Quiz", course name + test title) — this is a fresh copy
+- A school name, logo, or letterhead appears at the top (e.g. "Brampton Christian School") together with a Name/Date field — this is page 1 of a new student's test copy
 - A different student name is printed or written at the top
-- Questions restart from #1 with printed question text
+- Questions restart from #1 or "Part A" with printed question text
 - It looks like a fresh, clean copy of the assignment form that a student has filled in
+- The page has both a printed template header AND a handwritten student name — even if the printed content looks identical to an earlier page, a different name = different student
 
 MULTI-PAGE TESTS/EXAMS (critical):
 Tests and exams are often 2, 3, 4, or more pages long. Each student's test is a complete set of those pages.
@@ -12116,6 +12118,9 @@ CRITICAL DISTINCTION — test page 1 vs. later pages:
 - Pages 2, 3, 4+ of the same test have: SECTION HEADERS like "Part B", "Part C", "Part D", "Part E", "Part F" — but NO test title and NO name field at the top. These are ALWAYS continuations.
 - A page starting with "Part C: MULTIPLE CHOICE" or "Part F: WORD PROBLEMS" is a CONTINUATION, not a new student.
 - The ONLY reliable marker for a new student is the MAIN TEST TITLE at the top of the page (e.g. "Math 7 Test") along with a Name/Date field.
+
+SCHOOL LETTERHEAD / PRINTED HEADER PATTERN:
+Many tests and worksheets have a school name or logo at the very top (e.g. "Brampton Christian School", "St. Mary's Academy", or a school crest). When you see this school header together with a Name/Date/Class field AND the start of the test (Part A, Question 1, etc.), this is ALWAYS page 1 of a NEW student — even if the test title and questions look identical to the previous student's page 1. Each student gets their own fresh printed copy, so the school header + name field combo repeating = new student boundary. Read the name written on each page 1 carefully — different handwritten names confirm different students.
 
 MULTIPLE TEST VERSIONS:
 A batch may contain two or more versions of the same test (e.g. "Math 7 Test" and "Math 7 Test B"). Both are valid first-page markers for new students. Each version still has the same number of pages per student.
@@ -12201,8 +12206,14 @@ Do NOT include any text outside the JSON array.`,
 
       console.log(`[classify-pages] classifying ${pageImages.length} pages (answerKeyPages=${answerKeyPages})`);
 
+      // Use the full model for classification — this is a critical visual
+      // analysis step where mis-detection ruins the entire batch.  The mini
+      // model often can't read headers/names on scanned thumbnails reliably.
+      const classifyModel = AI_MODEL_FULL;
+      console.log(`[classify-pages] using model ${classifyModel} for classification`);
+
       const response = await openai.responses.create({
-        model: AI_MODEL,
+        model: classifyModel,
         input: [{ role: "user", content }],
         max_output_tokens: 4096,
       });

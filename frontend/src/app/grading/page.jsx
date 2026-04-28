@@ -3251,7 +3251,7 @@ export default function GradingPage() {
         <label ref={tourTargetVoiceRef} style={styles.controlLabel}>
           Feedback Voice
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, flexWrap: "wrap", maxWidth: "100%" }}>
             <select
               value={voice}
               onChange={(e) => {
@@ -3266,6 +3266,7 @@ export default function GradingPage() {
               }}
               style={{
                 ...styles.select,
+                flex: "1 1 120px",
                 border: voice === "iep_supportive"
                   ? "1px solid rgba(0,0,0,.45)"
                   : styles.select?.border || "1px solid rgba(0,0,0,.2)",
@@ -4769,7 +4770,7 @@ export default function GradingPage() {
                           const shortName = knownShort[k.category] || k.category.split(/\s+/).map(w => w[0]).join("").slice(0, 3).toUpperCase();
                           return (
                             <div key={i} style={{
-                              flex: "1 1 calc(50% - 8px)", minWidth: 140,
+                              flex: "1 1 calc(50% - 8px)", minWidth: 0,
                               borderRadius: 10, border: `1px solid ${c.border}`,
                               background: c.bg, padding: "8px 10px",
                             }}>
@@ -5341,6 +5342,7 @@ const styles = {
     fontFamily:
       'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
     color: "#0b1220",
+    overflowX: "hidden",
   },
   header: { marginBottom: 10 },
   h1: { margin: 0, fontSize: 24, letterSpacing: -0.3 },
@@ -5354,6 +5356,7 @@ const styles = {
     padding: 14,
     boxShadow: "0 8px 20px rgba(2, 6, 23, 0.06)",
     background: "white",
+    overflow: "hidden",
   },
 
   cardTitleRow: {
@@ -5435,6 +5438,7 @@ const styles = {
 
   textarea: {
     width: "100%",
+    maxWidth: "100%",
     marginTop: 0,
     borderRadius: 12,
     border: "1px solid rgba(15,23,42,0.12)",
@@ -5444,6 +5448,7 @@ const styles = {
     outline: "none",
     background: "white",
     resize: "vertical",
+    boxSizing: "border-box",
   },
 
   flash: {
@@ -5542,6 +5547,7 @@ const styles = {
     gap: 12,
     marginBottom: 10,
     flexWrap: "wrap",
+    maxWidth: "100%",
   },
 
   controlLabel: {
@@ -5571,6 +5577,7 @@ const styles = {
     border: "1px solid rgba(15,23,42,0.12)",
     padding: 12,
     background: "rgba(15,23,42,0.02)",
+    overflow: "hidden",
   },
   rubricHeader: {
     display: "flex",
@@ -5581,6 +5588,7 @@ const styles = {
   },
   rubricTextarea: {
     width: "100%",
+    maxWidth: "100%",
     marginTop: 10,
     borderRadius: 12,
     border: "1px solid rgba(15,23,42,0.12)",
@@ -5589,6 +5597,7 @@ const styles = {
     lineHeight: 1.35,
     outline: "none",
     background: "white",
+    boxSizing: "border-box",
   },
   rubricDetails: {
     marginTop: 10,
@@ -5624,6 +5633,7 @@ const styles = {
     background: "rgba(15,23,42,0.02)",
     padding: 12,
     minHeight: 220,
+    overflow: "hidden",
   },
   responseBoxClickable: {
     cursor: "pointer",
@@ -5673,6 +5683,8 @@ const styles = {
     border: "1px solid rgba(15,23,42,0.12)",
     padding: 10,
     background: "rgba(255,255,255,0.75)",
+    overflow: "hidden",
+    wordBreak: "break-word",
   },
 
   gradingCard: {
