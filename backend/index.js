@@ -141,7 +141,7 @@ const GradingUsage = mongoose.models.GradingUsage || mongoose.model(
       subject: String,
       assessmentType: String,
       gradeLevel: String,
-      inputMode: String,       // "photo" | "batch" | "video"
+      inputMode: String,       // "photo" | "paste" | "batch" | "video" | "audio"
       imageCount: Number,
       overrideInputUsed: Boolean,
       responseTimeMs: Number,
@@ -11869,7 +11869,7 @@ function buildRubricInstructions({
             subject: inferredSubject,
             assessmentType: inferredAssessmentType,
             gradeLevel: inferredGradeLevel,
-            inputMode: batchMode ? "batch" : "photo",
+            inputMode: req.body?.meta?.inputMode || (batchMode ? "batch" : (trimmed ? "paste" : "photo")),
 
             imageCount: Array.isArray(images) ? images.length : 0,
             overrideInputUsed: Boolean(String(rubricOverride || "").trim()),
