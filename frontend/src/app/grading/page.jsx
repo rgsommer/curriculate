@@ -3465,6 +3465,7 @@ export default function GradingPage() {
               resultsUrl={resultsCreateUrl}
               gradeBand={gradeBand}
               standards={standards}
+              subjectArea={subjectArea}
               feedbackVoice={voiceOverrideOn ? voiceOverride : voice}
               voiceMode={voiceOverrideOn ? "override" : "default"}
               perQuestionAudit={perQuestionAudit}

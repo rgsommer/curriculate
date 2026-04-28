@@ -331,6 +331,7 @@ export default function BatchGrading({
   resultsUrl,
   gradeBand,
   standards,
+  subjectArea,
   feedbackVoice,
   voiceMode,
   perQuestionAudit,
@@ -743,6 +744,7 @@ export default function BatchGrading({
           answerKeyOverride: effectiveAnswerKey || null,
           gradeBand,
           standards,
+          subjectArea: subjectArea || undefined,
           meta: {
             sessionId: batchSessionId,
             source: "batch-grading",
@@ -1679,6 +1681,7 @@ export default function BatchGrading({
         answerKeyOverride: effectiveAnswerKey || null,
         gradeBand,
         standards,
+        subjectArea: subjectArea || undefined,
         strictnessBias: newBias || undefined,
         meta: {
           source: "batch-regrade",

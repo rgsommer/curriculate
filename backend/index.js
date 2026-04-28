@@ -12214,30 +12214,51 @@ Do NOT include any text outside the JSON array.`,
 
       // ── Phase 1: Title-page detection pre-pass ──
       // Sending many images at once makes the AI lose track of subtle header
-      // differences.  We first scan each non-answer-key page individually with
-      // a simple yes/no question to find "title pages" (school header / test
-      // title / Name field).  These markers are injected into the main prompt
-      // so the classifier doesn't have to rediscover them from 20+ images.
+      // differences.  We scan non-blank pages individually with a strict
+      // question to find "title pages" (page 1 of each student's test).
+      // Uses the full model — mini over-detects (flags any printed page).
       const titlePageMarkers = []; // array of { page, isTitle, name? }
       try {
+        // Skip obviously blank pages — blank scans compress to very small
+        // base64 strings (typically < 5KB). Content pages are usually > 15KB.
+        const BLANK_THRESHOLD = 8000; // characters in base64 data URL
         const titleCheckPromises = [];
+        let skippedBlank = 0;
+
         for (let i = answerKeyPages; i < pageImages.length; i++) {
           const pageNum = i + 1; // 1-based
+          const imgLen = (pageImages[i] || "").length;
+          if (imgLen < BLANK_THRESHOLD) {
+            skippedBlank++;
+            titlePageMarkers.push({ page: pageNum, isTitle: false, name: null, skipped: true });
+            continue;
+          }
+
           titleCheckPromises.push(
             openai.responses.create({
-              model: AI_MODEL,  // mini is fine for this simple binary question
+              model: AI_MODEL_FULL,  // full model needed — mini over-detects
               input: [{
                 role: "user",
                 content: [
                   {
                     type: "input_text",
-                    text: `Look at this scanned page. Does it have a PRINTED test or assignment header at the top — specifically a school name or title (like "Unit Test: ..." or a school name) AND a Name/Date/Class field? This would be the FIRST page of a student's test copy.
+                    text: `Is this the VERY FIRST PAGE of a student's test or assignment?
 
-Answer in this exact format:
-TITLE_PAGE: YES or NO
-NAME: (the student name written on the page, if visible, otherwise NONE)
+Answer YES only if this page has ALL of these at the TOP:
+1. A school name, institution name, or logo (e.g. "Brampton Christian School")
+2. A "Name: ___" and/or "Date: ___" and/or "Class: ___" field
+3. The main test/assignment title (e.g. "Unit Test: War of 1812")
+4. The FIRST section of questions (e.g. "Part A:" or "Question 1")
 
-Only answer YES if there is a clear printed header/title AND a name/date field. A page with only handwriting, only continuation questions (Part C, Part D, etc. without the main title), or a blank page should be NO.`,
+Answer NO if:
+- The page starts with "Part B", "Part C", "Part D", etc. (this is a LATER page of the test, not the first page)
+- The page is blank or mostly blank
+- The page has only handwriting without a printed header
+- The page has printed questions but NO school name and NO Name/Date field at the top
+
+Reply in EXACTLY this format:
+FIRST_PAGE: YES or NO
+NAME: (student name if visible, otherwise NONE)`,
                   },
                   { type: "input_image", image_url: pageImages[i] },
                 ],
@@ -12245,10 +12266,10 @@ Only answer YES if there is a clear printed header/title AND a name/date field. 
               max_output_tokens: 50,
             }).then(resp => {
               const text = String(resp.output_text || "").trim();
-              const isTitle = /TITLE_PAGE:\s*YES/i.test(text);
+              const isTitle = /FIRST_PAGE:\s*YES/i.test(text);
               const nameMatch = text.match(/NAME:\s*(.+)/i);
               const name = nameMatch ? nameMatch[1].trim() : null;
-              return { page: pageNum, isTitle, name: (name && name !== "NONE") ? name : null };
+              return { page: pageNum, isTitle, name: (name && name.toUpperCase() !== "NONE") ? name : null };
             }).catch(err => {
               console.warn(`[classify-pages] title check page ${pageNum} failed:`, err.message);
               return { page: pageNum, isTitle: false, name: null };
@@ -12258,8 +12279,10 @@ Only answer YES if there is a clear printed header/title AND a name/date field. 
 
         const results = await Promise.all(titleCheckPromises);
         titlePageMarkers.push(...results);
+        // Sort by page number since parallel results may arrive out of order
+        titlePageMarkers.sort((a, b) => a.page - b.page);
         const detectedTitlePages = titlePageMarkers.filter(m => m.isTitle);
-        console.log(`[classify-pages] title-page pre-pass: found ${detectedTitlePages.length} title pages out of ${titlePageMarkers.length} checked:`,
+        console.log(`[classify-pages] title-page pre-pass: found ${detectedTitlePages.length} title pages out of ${titlePageMarkers.length} checked (${skippedBlank} blank pages skipped):`,
           detectedTitlePages.map(m => `p${m.page}${m.name ? ` (${m.name})` : ""}`).join(", ") || "none");
       } catch (titleErr) {
         console.warn("[classify-pages] title-page pre-pass failed, continuing without hints:", titleErr.message);
