@@ -134,7 +134,7 @@ async function renderPageToDataUrl(pdfDoc, pageNum, scale = 1.5, extraRotation =
 // Used to compare page headers against a reference "page 1" deterministically.
 async function getPageFingerprint(pdfDoc, pageNum, region = "top") {
   const page = await pdfDoc.getPage(pageNum);
-  const scale = 0.3; // very low res — we only need structural shape
+  const scale = 0.4; // low res but enough for structural comparison
   const viewport = page.getViewport({ scale });
 
   const canvas = document.createElement("canvas");
@@ -143,38 +143,44 @@ async function getPageFingerprint(pdfDoc, pageNum, region = "top") {
   const ctx = canvas.getContext("2d");
   await page.render({ canvasContext: ctx, viewport }).promise;
 
-  // Extract the region of interest
-  const regionH = region === "top" ? Math.round(canvas.height * 0.30) : canvas.height;
+  // Extract the region of interest — top 35% captures school header + name field + title
+  const regionH = region === "top" ? Math.round(canvas.height * 0.35) : canvas.height;
   const regionY = 0;
 
-  // Downsample to a tiny grid (24 wide, proportional height)
-  const gridW = 24;
-  const gridH = Math.round((regionH / canvas.width) * gridW);
+  // Downsample to a grid (32 wide, proportional height)
+  const gridW = 32;
+  const gridH = Math.max(1, Math.round((regionH / canvas.width) * gridW));
   const tiny = document.createElement("canvas");
   tiny.width = gridW;
-  tiny.height = Math.max(gridH, 1);
+  tiny.height = gridH;
   const tctx = tiny.getContext("2d");
-  tctx.drawImage(canvas, 0, regionY, canvas.width, regionH, 0, 0, gridW, tiny.height);
+  tctx.drawImage(canvas, 0, regionY, canvas.width, regionH, 0, 0, gridW, gridH);
 
   // Get grayscale pixel values
-  const imgData = tctx.getImageData(0, 0, gridW, tiny.height);
+  const imgData = tctx.getImageData(0, 0, gridW, gridH);
   const gray = [];
   for (let i = 0; i < imgData.data.length; i += 4) {
     gray.push(0.299 * imgData.data[i] + 0.587 * imgData.data[i + 1] + 0.114 * imgData.data[i + 2]);
   }
-  return gray;
+
+  // Also compute variance for blank detection
+  const mean = gray.reduce((a, b) => a + b, 0) / gray.length;
+  const variance = gray.reduce((a, v) => a + (v - mean) ** 2, 0) / gray.length;
+
+  return { pixels: gray, variance, mean };
 }
 
 // Compute normalized cross-correlation between two fingerprints (0 = no match, 1 = identical)
 function fingerprintSimilarity(fp1, fp2) {
-  if (!fp1 || !fp2 || fp1.length !== fp2.length || fp1.length === 0) return 0;
-  const n = fp1.length;
+  const a = fp1.pixels || fp1, b = fp2.pixels || fp2;
+  if (!a || !b || a.length !== b.length || a.length === 0) return 0;
+  const n = a.length;
   let sum1 = 0, sum2 = 0;
-  for (let i = 0; i < n; i++) { sum1 += fp1[i]; sum2 += fp2[i]; }
+  for (let i = 0; i < n; i++) { sum1 += a[i]; sum2 += b[i]; }
   const mean1 = sum1 / n, mean2 = sum2 / n;
   let num = 0, den1 = 0, den2 = 0;
   for (let i = 0; i < n; i++) {
-    const d1 = fp1[i] - mean1, d2 = fp2[i] - mean2;
+    const d1 = a[i] - mean1, d2 = b[i] - mean2;
     num += d1 * d2;
     den1 += d1 * d1;
     den2 += d2 * d2;
@@ -184,11 +190,9 @@ function fingerprintSimilarity(fp1, fp2) {
 }
 
 // Check if a page is blank by looking at pixel variance
-function isBlankPage(fingerprint) {
-  if (!fingerprint || fingerprint.length === 0) return true;
-  const mean = fingerprint.reduce((a, b) => a + b, 0) / fingerprint.length;
-  const variance = fingerprint.reduce((a, v) => a + (v - mean) ** 2, 0) / fingerprint.length;
-  return variance < 50; // very low variance = nearly uniform = blank
+function isBlankFingerprint(fp) {
+  const v = fp?.variance ?? 0;
+  return v < 10; // very low variance = nearly uniform = blank (lowered from 50)
 }
 
 // Retry wrapper for network-flaky environments (classrooms, tablets on wifi)
@@ -605,21 +609,22 @@ export default function BatchGrading({
       console.log(`[auto-detect] fingerprinting ${pageCount} pages (reference: page ${firstStudentPage})`);
 
       const refFp = await getPageFingerprint(doc, firstStudentPage, "top");
-      const isRefBlank = isBlankPage(refFp);
+      const isRefBlank = isBlankFingerprint(refFp);
+      console.log(`[auto-detect] reference page ${firstStudentPage}: variance=${refFp.variance?.toFixed(1)}, blank=${isRefBlank}`);
 
       if (!isRefBlank) {
         const similarities = [{ page: firstStudentPage, sim: 1.0, blank: false }];
 
         for (let p = firstStudentPage + 1; p <= pageCount; p++) {
           const fp = await getPageFingerprint(doc, p, "top");
-          const blank = isBlankPage(fp);
+          const blank = isBlankFingerprint(fp);
           const sim = blank ? 0 : fingerprintSimilarity(refFp, fp);
-          similarities.push({ page: p, sim, blank });
+          similarities.push({ page: p, sim, blank, variance: fp.variance });
         }
 
-        // Log all similarities for debugging
+        // Log all similarities for debugging (variance + similarity)
         const simLog = similarities.map(s =>
-          `p${s.page}:${s.blank ? "BLANK" : s.sim.toFixed(2)}`
+          `p${s.page}:${s.blank ? "BLANK" : s.sim.toFixed(2)}(var=${(s.variance ?? refFp.variance)?.toFixed(0)})`
         ).join(" ");
         console.log(`[auto-detect] similarities: ${simLog}`);
 
@@ -781,11 +786,11 @@ export default function BatchGrading({
       try {
         const firstStudentPage = answerKeyPages + 1;
         const refFp = await getPageFingerprint(doc, firstStudentPage, "top");
-        if (!isBlankPage(refFp)) {
+        if (!isBlankFingerprint(refFp)) {
           const similarities = [{ page: firstStudentPage, sim: 1.0, blank: false }];
           for (let p = firstStudentPage + 1; p <= pageCount; p++) {
             const fp = await getPageFingerprint(doc, p, "top");
-            const blank = isBlankPage(fp);
+            const blank = isBlankFingerprint(fp);
             const sim = blank ? 0 : fingerprintSimilarity(refFp, fp);
             similarities.push({ page: p, sim, blank });
           }
