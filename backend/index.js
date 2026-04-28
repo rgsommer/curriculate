@@ -12212,6 +12212,71 @@ Do NOT include any text outside the JSON array.`,
       const classifyModel = AI_MODEL_FULL;
       console.log(`[classify-pages] using model ${classifyModel} for classification`);
 
+      // ── Phase 1: Title-page detection pre-pass ──
+      // Sending many images at once makes the AI lose track of subtle header
+      // differences.  We first scan each non-answer-key page individually with
+      // a simple yes/no question to find "title pages" (school header / test
+      // title / Name field).  These markers are injected into the main prompt
+      // so the classifier doesn't have to rediscover them from 20+ images.
+      const titlePageMarkers = []; // array of { page, isTitle, name? }
+      try {
+        const titleCheckPromises = [];
+        for (let i = answerKeyPages; i < pageImages.length; i++) {
+          const pageNum = i + 1; // 1-based
+          titleCheckPromises.push(
+            openai.responses.create({
+              model: AI_MODEL,  // mini is fine for this simple binary question
+              input: [{
+                role: "user",
+                content: [
+                  {
+                    type: "input_text",
+                    text: `Look at this scanned page. Does it have a PRINTED test or assignment header at the top — specifically a school name or title (like "Unit Test: ..." or a school name) AND a Name/Date/Class field? This would be the FIRST page of a student's test copy.
+
+Answer in this exact format:
+TITLE_PAGE: YES or NO
+NAME: (the student name written on the page, if visible, otherwise NONE)
+
+Only answer YES if there is a clear printed header/title AND a name/date field. A page with only handwriting, only continuation questions (Part C, Part D, etc. without the main title), or a blank page should be NO.`,
+                  },
+                  { type: "input_image", image_url: pageImages[i] },
+                ],
+              }],
+              max_output_tokens: 50,
+            }).then(resp => {
+              const text = String(resp.output_text || "").trim();
+              const isTitle = /TITLE_PAGE:\s*YES/i.test(text);
+              const nameMatch = text.match(/NAME:\s*(.+)/i);
+              const name = nameMatch ? nameMatch[1].trim() : null;
+              return { page: pageNum, isTitle, name: (name && name !== "NONE") ? name : null };
+            }).catch(err => {
+              console.warn(`[classify-pages] title check page ${pageNum} failed:`, err.message);
+              return { page: pageNum, isTitle: false, name: null };
+            })
+          );
+        }
+
+        const results = await Promise.all(titleCheckPromises);
+        titlePageMarkers.push(...results);
+        const detectedTitlePages = titlePageMarkers.filter(m => m.isTitle);
+        console.log(`[classify-pages] title-page pre-pass: found ${detectedTitlePages.length} title pages out of ${titlePageMarkers.length} checked:`,
+          detectedTitlePages.map(m => `p${m.page}${m.name ? ` (${m.name})` : ""}`).join(", ") || "none");
+      } catch (titleErr) {
+        console.warn("[classify-pages] title-page pre-pass failed, continuing without hints:", titleErr.message);
+      }
+
+      // Inject title-page hints into the prompt if we found any
+      if (titlePageMarkers.length > 0) {
+        const detectedTitlePages = titlePageMarkers.filter(m => m.isTitle);
+        if (detectedTitlePages.length > 0) {
+          const hintText = `\n\nPRE-SCAN HINTS (from automated title-page detection — use these as strong guidance):\nThe following pages were identified as TITLE PAGES (printed header with test title + Name field). Each one starts a NEW student:\n` +
+            detectedTitlePages.map(m => `- Page ${m.page}${m.name ? ` (student name: "${m.name}")` : ""}`).join("\n") +
+            `\nAll other pages are either blank backs, continuation pages, or handwritten answer pages. Use these markers to group pages correctly.\n`;
+          // Prepend the hint to the first text content block
+          content[0].text += hintText;
+        }
+      }
+
       const response = await openai.responses.create({
         model: classifyModel,
         input: [{ role: "user", content }],
@@ -12270,6 +12335,58 @@ Do NOT include any text outside the JSON array.`,
         }
       }
       if (currentGroup) groups.push(currentGroup);
+
+      // ── Safety net: override with pre-pass title-page markers ──
+      // If the pre-pass found multiple title pages but the main classifier
+      // lumped everything into fewer groups, trust the pre-pass detection.
+      const detectedTitlePages = titlePageMarkers.filter(m => m.isTitle);
+      if (detectedTitlePages.length > 1 && groups.length < detectedTitlePages.length) {
+        console.warn(`[classify-pages] OVERRIDE: pre-pass found ${detectedTitlePages.length} title pages but classifier only made ${groups.length} groups — rebuilding from pre-pass markers`);
+
+        // Rebuild classifications: title pages → "new", everything else → "continuation" or "key"
+        const titlePageSet = new Set(detectedTitlePages.map(m => m.page));
+        const titleNameMap = {};
+        for (const m of detectedTitlePages) {
+          if (m.name) titleNameMap[m.page] = m.name;
+        }
+
+        // Re-classify using pre-pass markers
+        const overrideClassifications = [];
+        for (let p = 1; p <= totalPages; p++) {
+          if (p <= answerKeyPages) {
+            overrideClassifications.push({ page: p, type: "key" });
+          } else if (titlePageSet.has(p)) {
+            const entry = { page: p, type: "new" };
+            if (titleNameMap[p]) entry.name = titleNameMap[p];
+            overrideClassifications.push(entry);
+          } else {
+            overrideClassifications.push({ page: p, type: "continuation" });
+          }
+        }
+
+        // Rebuild groups from override
+        groups.length = 0;
+        currentGroup = null;
+        for (const c of overrideClassifications) {
+          const pageNum = Number(c.page);
+          const type = String(c.type || "").toLowerCase();
+          if (type === "key") continue;
+          if (type === "new") {
+            if (currentGroup) groups.push(currentGroup);
+            currentGroup = { startPage: pageNum, endPage: pageNum, pages: [pageNum] };
+            if (c.name) currentGroup.name = String(c.name).trim();
+          } else if (currentGroup) {
+            currentGroup.endPage = pageNum;
+            currentGroup.pages.push(pageNum);
+          }
+        }
+        if (currentGroup) groups.push(currentGroup);
+
+        // Update classifications for the response
+        classifications = overrideClassifications;
+        console.log(`[classify-pages] override produced ${groups.length} groups:`,
+          groups.map(g => `p${g.startPage}-${g.endPage}${g.name ? ` (${g.name})` : ""}`).join(", "));
+      }
 
       // Collect answer key page numbers (may be at start, end, or middle)
       const answerKeyPageNumbers = classifications
