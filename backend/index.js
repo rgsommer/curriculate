@@ -12212,110 +12212,94 @@ Do NOT include any text outside the JSON array.`,
       const classifyModel = AI_MODEL_FULL;
       console.log(`[classify-pages] using model ${classifyModel} for classification`);
 
-      // ── Phase 1: Title-page detection pre-pass ──
-      // Sending many images at once makes the AI lose track of subtle header
-      // differences.  We scan non-blank pages individually with a strict
-      // question to find "title pages" (page 1 of each student's test).
-      // Uses the full model — mini over-detects (flags any printed page).
-      const titlePageMarkers = []; // array of { page, isTitle, name? }
-      try {
-        // Skip obviously blank pages — blank scans compress to very small
-        // base64 strings (typically < 5KB). Content pages are usually > 15KB.
-        const BLANK_THRESHOLD = 8000; // characters in base64 data URL
-        const titleCheckPromises = [];
-        let skippedBlank = 0;
+      // ── Reference-page hint ──
+      // Instead of checking every page individually (expensive, unreliable at
+      // scale), we show the AI the FIRST content page as an explicit reference
+      // so it knows exactly what "page 1 of a student's test" looks like.
+      const firstContentIdx = answerKeyPages; // 0-based index of first student page
+      if (firstContentIdx < pageImages.length) {
+        const refHint = `\n\nIMPORTANT — REFERENCE IMAGE:\nPage ${firstContentIdx + 1} (the first image after any answer key pages) is the FIRST page of the first student's test/assignment. Study its layout carefully — the school name/logo, test title, Name/Date/Class fields, and first section heading. Every page in the PDF that has THIS SAME layout (same school header, same test title, same Name/Date fields at the top, same first section) is the start of a NEW student — even if a different student name is written in. Pages that do NOT match this first-page layout are continuations (later test pages, handwritten answer pages, or blank backs).`;
+        content[0].text += refHint;
+        console.log(`[classify-pages] added reference-page hint (page ${firstContentIdx + 1})`);
+      }
 
-        for (let i = answerKeyPages; i < pageImages.length; i++) {
-          const pageNum = i + 1; // 1-based
-          const imgLen = (pageImages[i] || "").length;
-          if (imgLen < BLANK_THRESHOLD) {
-            skippedBlank++;
-            titlePageMarkers.push({ page: pageNum, isTitle: false, name: null, skipped: true });
-            continue;
+      // ── Chunk large batches ──
+      // Vision models struggle with 50+ images in one call. For large PDFs,
+      // split into chunks of ~30 pages each. Each chunk gets the prompt text
+      // + the reference page image (page 1) + its chunk of page images.
+      const CHUNK_SIZE = 30;
+      const totalPages = pageImages.length;
+      let classifications = [];
+
+      if (totalPages <= CHUNK_SIZE + 5) {
+        // Small batch — single call
+        const response = await openai.responses.create({
+          model: classifyModel,
+          input: [{ role: "user", content }],
+          max_output_tokens: 4096,
+        });
+        const raw = String(response.output_text || "").trim();
+        const jsonMatch = raw.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) {
+          console.warn("[classify-pages] no JSON array found in response:", raw.slice(0, 300));
+          return res.status(502).json({ error: "AI did not return valid page classifications" });
+        }
+        classifications = JSON.parse(jsonMatch[0]);
+      } else {
+        // Large batch — classify in chunks
+        const promptText = content[0].text;
+        const refImage = pageImages[firstContentIdx]; // reference page 1 image
+        const chunks = [];
+        for (let start = 0; start < totalPages; start += CHUNK_SIZE) {
+          const end = Math.min(start + CHUNK_SIZE, totalPages);
+          chunks.push({ startIdx: start, endIdx: end });
+        }
+        console.log(`[classify-pages] large batch (${totalPages} pages) — splitting into ${chunks.length} chunks of ~${CHUNK_SIZE}`);
+
+        // Process chunks sequentially to avoid rate limits
+        for (const chunk of chunks) {
+          const chunkContent = [
+            {
+              type: "input_text",
+              text: promptText + `\n\nNOTE: You are classifying pages ${chunk.startIdx + 1} through ${chunk.endIdx} of ${totalPages} total pages. The reference first page (page ${firstContentIdx + 1}) is included as the first image below for comparison. Number your results using the ORIGINAL page numbers (${chunk.startIdx + 1} to ${chunk.endIdx}).`,
+            },
+          ];
+          // Always include the reference page first (unless it's in this chunk)
+          if (firstContentIdx < chunk.startIdx || firstContentIdx >= chunk.endIdx) {
+            chunkContent.push({ type: "input_image", image_url: refImage });
+          }
+          // Add chunk's page images
+          for (let i = chunk.startIdx; i < chunk.endIdx; i++) {
+            chunkContent.push({ type: "input_image", image_url: pageImages[i] });
           }
 
-          titleCheckPromises.push(
-            openai.responses.create({
-              model: AI_MODEL_FULL,  // full model needed — mini over-detects
-              input: [{
-                role: "user",
-                content: [
-                  {
-                    type: "input_text",
-                    text: `Is this the VERY FIRST PAGE of a student's test or assignment?
-
-Answer YES only if this page has ALL of these at the TOP:
-1. A school name, institution name, or logo (e.g. "Brampton Christian School")
-2. A "Name: ___" and/or "Date: ___" and/or "Class: ___" field
-3. The main test/assignment title (e.g. "Unit Test: War of 1812")
-4. The FIRST section of questions (e.g. "Part A:" or "Question 1")
-
-Answer NO if:
-- The page starts with "Part B", "Part C", "Part D", etc. (this is a LATER page of the test, not the first page)
-- The page is blank or mostly blank
-- The page has only handwriting without a printed header
-- The page has printed questions but NO school name and NO Name/Date field at the top
-
-Reply in EXACTLY this format:
-FIRST_PAGE: YES or NO
-NAME: (student name if visible, otherwise NONE)`,
-                  },
-                  { type: "input_image", image_url: pageImages[i] },
-                ],
-              }],
-              max_output_tokens: 50,
-            }).then(resp => {
-              const text = String(resp.output_text || "").trim();
-              const isTitle = /FIRST_PAGE:\s*YES/i.test(text);
-              const nameMatch = text.match(/NAME:\s*(.+)/i);
-              const name = nameMatch ? nameMatch[1].trim() : null;
-              return { page: pageNum, isTitle, name: (name && name.toUpperCase() !== "NONE") ? name : null };
-            }).catch(err => {
-              console.warn(`[classify-pages] title check page ${pageNum} failed:`, err.message);
-              return { page: pageNum, isTitle: false, name: null };
-            })
-          );
-        }
-
-        const results = await Promise.all(titleCheckPromises);
-        titlePageMarkers.push(...results);
-        // Sort by page number since parallel results may arrive out of order
-        titlePageMarkers.sort((a, b) => a.page - b.page);
-        const detectedTitlePages = titlePageMarkers.filter(m => m.isTitle);
-        console.log(`[classify-pages] title-page pre-pass: found ${detectedTitlePages.length} title pages out of ${titlePageMarkers.length} checked (${skippedBlank} blank pages skipped):`,
-          detectedTitlePages.map(m => `p${m.page}${m.name ? ` (${m.name})` : ""}`).join(", ") || "none");
-      } catch (titleErr) {
-        console.warn("[classify-pages] title-page pre-pass failed, continuing without hints:", titleErr.message);
-      }
-
-      // Inject title-page hints into the prompt if we found any
-      if (titlePageMarkers.length > 0) {
-        const detectedTitlePages = titlePageMarkers.filter(m => m.isTitle);
-        if (detectedTitlePages.length > 0) {
-          const hintText = `\n\nPRE-SCAN HINTS (from automated title-page detection — use these as strong guidance):\nThe following pages were identified as TITLE PAGES (printed header with test title + Name field). Each one starts a NEW student:\n` +
-            detectedTitlePages.map(m => `- Page ${m.page}${m.name ? ` (student name: "${m.name}")` : ""}`).join("\n") +
-            `\nAll other pages are either blank backs, continuation pages, or handwritten answer pages. Use these markers to group pages correctly.\n`;
-          // Prepend the hint to the first text content block
-          content[0].text += hintText;
+          try {
+            const chunkResp = await openai.responses.create({
+              model: classifyModel,
+              input: [{ role: "user", content: chunkContent }],
+              max_output_tokens: 4096,
+            });
+            const chunkRaw = String(chunkResp.output_text || "").trim();
+            const chunkMatch = chunkRaw.match(/\[[\s\S]*\]/);
+            if (chunkMatch) {
+              const chunkClassifications = JSON.parse(chunkMatch[0]);
+              classifications.push(...chunkClassifications);
+              console.log(`[classify-pages] chunk ${chunk.startIdx + 1}-${chunk.endIdx}: got ${chunkClassifications.length} classifications`);
+            } else {
+              console.warn(`[classify-pages] chunk ${chunk.startIdx + 1}-${chunk.endIdx}: no JSON array in response`);
+              // Fill with continuation for missing pages
+              for (let p = chunk.startIdx + 1; p <= chunk.endIdx; p++) {
+                classifications.push({ page: p, type: "continuation" });
+              }
+            }
+          } catch (chunkErr) {
+            console.error(`[classify-pages] chunk ${chunk.startIdx + 1}-${chunk.endIdx} failed:`, chunkErr.message);
+            for (let p = chunk.startIdx + 1; p <= chunk.endIdx; p++) {
+              classifications.push({ page: p, type: "continuation" });
+            }
+          }
         }
       }
-
-      const response = await openai.responses.create({
-        model: classifyModel,
-        input: [{ role: "user", content }],
-        max_output_tokens: 4096,
-      });
-
-      const raw = String(response.output_text || "").trim();
-
-      // Parse JSON array from response
-      const jsonMatch = raw.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) {
-        console.warn("[classify-pages] no JSON array found in response:", raw.slice(0, 300));
-        return res.status(502).json({ error: "AI did not return valid page classifications" });
-      }
-
-      let classifications = JSON.parse(jsonMatch[0]);
 
       // Validate structure
       if (!Array.isArray(classifications) || classifications.length === 0) {
@@ -12323,7 +12307,6 @@ NAME: (student name if visible, otherwise NONE)`,
       }
 
       // Clamp: AI sometimes hallucinates extra pages beyond what was sent
-      const totalPages = pageImages.length;
       classifications = classifications.filter(c => {
         const pn = Number(c.page);
         if (pn < 1 || pn > totalPages) {
@@ -12358,58 +12341,6 @@ NAME: (student name if visible, otherwise NONE)`,
         }
       }
       if (currentGroup) groups.push(currentGroup);
-
-      // ── Safety net: override with pre-pass title-page markers ──
-      // If the pre-pass found multiple title pages but the main classifier
-      // lumped everything into fewer groups, trust the pre-pass detection.
-      const detectedTitlePages = titlePageMarkers.filter(m => m.isTitle);
-      if (detectedTitlePages.length > 1 && groups.length < detectedTitlePages.length) {
-        console.warn(`[classify-pages] OVERRIDE: pre-pass found ${detectedTitlePages.length} title pages but classifier only made ${groups.length} groups — rebuilding from pre-pass markers`);
-
-        // Rebuild classifications: title pages → "new", everything else → "continuation" or "key"
-        const titlePageSet = new Set(detectedTitlePages.map(m => m.page));
-        const titleNameMap = {};
-        for (const m of detectedTitlePages) {
-          if (m.name) titleNameMap[m.page] = m.name;
-        }
-
-        // Re-classify using pre-pass markers
-        const overrideClassifications = [];
-        for (let p = 1; p <= totalPages; p++) {
-          if (p <= answerKeyPages) {
-            overrideClassifications.push({ page: p, type: "key" });
-          } else if (titlePageSet.has(p)) {
-            const entry = { page: p, type: "new" };
-            if (titleNameMap[p]) entry.name = titleNameMap[p];
-            overrideClassifications.push(entry);
-          } else {
-            overrideClassifications.push({ page: p, type: "continuation" });
-          }
-        }
-
-        // Rebuild groups from override
-        groups.length = 0;
-        currentGroup = null;
-        for (const c of overrideClassifications) {
-          const pageNum = Number(c.page);
-          const type = String(c.type || "").toLowerCase();
-          if (type === "key") continue;
-          if (type === "new") {
-            if (currentGroup) groups.push(currentGroup);
-            currentGroup = { startPage: pageNum, endPage: pageNum, pages: [pageNum] };
-            if (c.name) currentGroup.name = String(c.name).trim();
-          } else if (currentGroup) {
-            currentGroup.endPage = pageNum;
-            currentGroup.pages.push(pageNum);
-          }
-        }
-        if (currentGroup) groups.push(currentGroup);
-
-        // Update classifications for the response
-        classifications = overrideClassifications;
-        console.log(`[classify-pages] override produced ${groups.length} groups:`,
-          groups.map(g => `p${g.startPage}-${g.endPage}${g.name ? ` (${g.name})` : ""}`).join(", "));
-      }
 
       // Collect answer key page numbers (may be at start, end, or middle)
       const answerKeyPageNumbers = classifications
