@@ -3304,7 +3304,7 @@ export default function GradingPage() {
 
         {/* ── Teacher email (beside Feedback Voice) — hidden until 5 uses unless already set ── */}
         {(gradingUses >= 5 || teacherEmail) && (
-          <label style={{ ...styles.controlLabel, flex: "1 1 220px", minWidth: 200 }}>
+          <label style={{ ...styles.controlLabel, flex: "1 1 180px" }}>
             Email
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
@@ -3315,7 +3315,7 @@ export default function GradingPage() {
                 style={{
                   flex: 1, padding: "5px 10px", borderRadius: 8,
                   border: "1px solid #cbd5e1", fontSize: 13,
-                  background: "#fff", minWidth: 120,
+                  background: "#fff", minWidth: 0,
                 }}
               />
               {rosterLoading && <span style={{ fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap" }}>Loading...</span>}
@@ -4147,7 +4147,7 @@ export default function GradingPage() {
                 <div style={{ fontSize: 13, color: "#334155", marginBottom: 8 }}>
                   Email session reports (half-page &amp; strips PDFs attached):
                 </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <input
                     type="email"
                     placeholder="recipient@example.com"
@@ -4155,28 +4155,30 @@ export default function GradingPage() {
                     onChange={(e) => setSessionEmailTo(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") sendSessionEmail(); }}
                     style={{
-                      flex: 1, padding: "7px 10px", borderRadius: 8,
+                      flex: "1 1 180px", minWidth: 0, padding: "7px 10px", borderRadius: 8,
                       border: "1px solid rgba(0,0,0,.15)", fontSize: 13,
                       outline: "none",
                     }}
                   />
-                  <button
-                    onClick={sendSessionEmail}
-                    disabled={sessionEmailSending || !sessionEmailTo.includes("@")}
-                    style={{
-                      ...styles.primaryBtn,
-                      padding: "7px 18px", fontSize: 13,
-                      opacity: sessionEmailSending || !sessionEmailTo.includes("@") ? 0.5 : 1,
-                    }}
-                  >
-                    {sessionEmailSending ? "Sending…" : "Send"}
-                  </button>
-                  <button
-                    onClick={() => setShowSessionEmailPrompt(false)}
-                    style={{ ...styles.ghostBtn, padding: "7px 12px", fontSize: 13 }}
-                  >
-                    Cancel
-                  </button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      onClick={sendSessionEmail}
+                      disabled={sessionEmailSending || !sessionEmailTo.includes("@")}
+                      style={{
+                        ...styles.primaryBtn,
+                        padding: "7px 18px", fontSize: 13,
+                        opacity: sessionEmailSending || !sessionEmailTo.includes("@") ? 0.5 : 1,
+                      }}
+                    >
+                      {sessionEmailSending ? "Sending…" : "Send"}
+                    </button>
+                    <button
+                      onClick={() => setShowSessionEmailPrompt(false)}
+                      style={{ ...styles.ghostBtn, padding: "7px 12px", fontSize: 13 }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
                 {sessionSummary && (
                   <div style={{ marginTop: 8, fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
@@ -4339,7 +4341,7 @@ export default function GradingPage() {
                 maxWidth: "100%",
               }}>
                 {/* Student name — dropdown from roster or free text */}
-                <div style={{ flex: 1, minWidth: 120, maxWidth: rosterClasses.length > 1 ? "60%" : "100%" }}>
+                <div style={{ flex: 1, minWidth: 0, maxWidth: rosterClasses.length > 1 ? "50%" : "100%" }}>
                   <select
                     value={matchedRosterStudent ? `${matchedRosterStudent.firstName}|${matchedRosterStudent.lastName}|${matchedRosterStudent.studentId || matchedRosterStudent.edsbyId || ""}` : "__custom"}
                     onChange={(e) => {
@@ -4409,7 +4411,7 @@ export default function GradingPage() {
 
                 {/* Class dropdown */}
                 {rosterClasses.length > 1 && (
-                  <div style={{ minWidth: 100, maxWidth: "38%" }}>
+                  <div style={{ flex: 1, minWidth: 0, maxWidth: "50%" }}>
                     <select
                       value={selectedClassName}
                       onChange={(e) => {
@@ -5398,8 +5400,9 @@ const styles = {
 
   modeRow: {
     display: "flex",
-    gap: 10,
+    gap: 8,
     marginTop: 10,
+    flexWrap: "wrap",
   },
 
   modeBtn: {
@@ -5425,7 +5428,9 @@ const styles = {
     background: "white",
     fontSize: 14,
     fontWeight: 700,
-    minWidth: 240,
+    minWidth: 0,
+    width: "100%",
+    maxWidth: "100%",
   },
 
   textarea: {
@@ -5545,6 +5550,8 @@ const styles = {
     gap: 6,
     fontSize: 12,
     fontWeight: 800,
+    flex: "1 1 140px",
+    minWidth: 0,
   },
   select: {
     padding: "10px 12px",
@@ -5553,7 +5560,9 @@ const styles = {
     background: "white",
     fontSize: 14,
     fontWeight: 700,
-    minWidth: 240,
+    minWidth: 0,
+    width: "100%",
+    maxWidth: "100%",
   },
 
   rubricCard: {
