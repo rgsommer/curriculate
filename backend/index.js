@@ -9566,6 +9566,18 @@ function buildRubricInstructions({
 
       ANSWER KEY GRADING PROCEDURE (MANDATORY — follow these steps in order):
 
+      ${answerKeyOverride.includes("MULTIPLE TEST VERSIONS") ? `
+      STEP 0 — VERSION DETECTION (CRITICAL):
+      This test has MULTIPLE VERSIONS (e.g., Test A and Test B) with DIFFERENT correct answers.
+      Before grading, you MUST determine which version this student has:
+      - Look for "Test A", "Test B", "Version 1", "Version 2" labels on the student's cover/title page.
+      - If no label is visible, look at the student's first few matching answers and compare against
+        both version keys to determine the best match.
+      - Once you identify the version, grade ONLY against THAT version's answer key.
+      - Do NOT mix answers from different versions — this will produce incorrect scores.
+      - Include the detected version in detected_title (e.g., "War of 1812 Test - Version B").
+      ` : ''}
+
       STEP 1: For EACH question listed in the answer key, evaluate the student's response:
       - The answer key is a REFERENCE, not a rigid template. Use professional teacher judgment.
       - Award full marks if the student's answer is correct — even if their method, notation, or wording differs from the key.
@@ -12406,10 +12418,18 @@ Do NOT include any text outside the JSON array.`,
 
 Your ONLY job is to extract structured information from this answer key. Do NOT grade anything.
 
-For EACH question or sub-question visible, extract:
-- question_id: the question label (e.g., "2a", "2b", "Q1", "3ii")
+IMPORTANT — MULTIPLE TEST VERSIONS:
+Teachers often create multiple versions of the same test (e.g., "Test A" and "Test B", or "Version 1" and "Version 2").
+Each version has the SAME questions but DIFFERENT correct answers (e.g., different matching pairs, different T/F patterns).
+Look carefully for version labels like "Answer Key A", "Answer Key B", "Test A", "Test B", "Version 1", "Version 2", etc.
+
+If you see MULTIPLE versions, you MUST create SEPARATE entries in the "versions" array — one per version.
+If there is only ONE version (or no version label), create a single entry with version_label "A".
+
+For EACH version, extract ALL questions:
+- question_id: the question label (e.g., "M1" for Matching #1, "TF1" for True/False #1, "2a", "Q1")
 - correct_answer: the correct answer shown (keep concise, max 80 chars)
-- marks: how many marks this question is worth (look for /2, /3, /5, etc.)
+- marks: how many marks this question is worth (look for /2, /3, /5, etc. — default to 1 if not shown)
 ${isKitaBand ? `- kita_category: Look VERY CAREFULLY at the margins (right side, left side, near the question).
   Look for KITA achievement category annotations like:
     /2T  /3A  /5T  /2K  /4C  (slash + number + letter)
@@ -12428,24 +12448,35 @@ Return valid JSON matching this exact schema.`;
         type: "object",
         additionalProperties: false,
         properties: {
-          questions: {
+          versions: {
             type: "array",
             items: {
               type: "object",
               additionalProperties: false,
               properties: {
-                question_id: { type: "string", maxLength: 20 },
-                correct_answer: { type: "string", maxLength: 200 },
-                marks: { type: "number" },
-                kita_category: { type: ["string", "null"] },
+                version_label: { type: "string", maxLength: 30 },
+                questions: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      question_id: { type: "string", maxLength: 20 },
+                      correct_answer: { type: "string", maxLength: 200 },
+                      marks: { type: "number" },
+                      kita_category: { type: ["string", "null"] },
+                    },
+                    required: ["question_id", "correct_answer", "marks", "kita_category"],
+                  },
+                },
+                total_marks: { type: "number" },
               },
-              required: ["question_id", "correct_answer", "marks", "kita_category"],
+              required: ["version_label", "questions", "total_marks"],
             },
           },
-          total_marks: { type: "number" },
           notes: { type: ["string", "null"], maxLength: 500 },
         },
-        required: ["questions", "total_marks", "notes"],
+        required: ["versions", "notes"],
       };
 
       const content = [
@@ -12459,7 +12490,7 @@ Return valid JSON matching this exact schema.`;
         model: AI_MODEL_FULL,
         input: [{ role: "user", content }],
         text: { format: { type: "json_schema", name: "answer_key_extraction", strict: true, schema: extractionSchema } },
-        max_output_tokens: 2000,
+        max_output_tokens: 4000, // increased for multi-version answer keys
       });
 
       const extracted = safeJsonParse(response.output_text);
@@ -12467,40 +12498,73 @@ Return valid JSON matching this exact schema.`;
         return res.status(500).json({ error: "Failed to parse extraction response." });
       }
 
+      // Handle both new multi-version format and legacy single-version format
+      const versions = extracted.versions || [{ version_label: "A", questions: extracted.questions || [], total_marks: extracted.total_marks || 0 }];
+      const isMultiVersion = versions.length > 1;
+
       // Build a human-readable summary for use as answerKeyOverride in grading
       let summaryLines = [];
       const categoryGroups = {};
 
-      for (const q of extracted.questions || []) {
-        const line = `${q.question_id}: ${q.correct_answer} (/${q.marks}${q.kita_category ? ` ${q.kita_category}` : ""})`;
-        summaryLines.push(line);
-
-        if (q.kita_category) {
-          if (!categoryGroups[q.kita_category]) categoryGroups[q.kita_category] = { marks: 0, questions: [] };
-          categoryGroups[q.kita_category].marks += q.marks;
-          categoryGroups[q.kita_category].questions.push(q.question_id);
-        }
+      if (isMultiVersion) {
+        summaryLines.push("⚠️ MULTIPLE TEST VERSIONS DETECTED — READ CAREFULLY ⚠️");
+        summaryLines.push("");
+        summaryLines.push("This test has MULTIPLE VERSIONS with DIFFERENT correct answers.");
+        summaryLines.push("You MUST first determine which version the student has by looking at their test pages.");
+        summaryLines.push("Look for labels like 'Test A', 'Test B', 'Version 1', etc. on the student's cover page.");
+        summaryLines.push("If no label is visible, compare the student's answers against both keys — the version");
+        summaryLines.push("where more answers match is likely the correct one.");
+        summaryLines.push("");
       }
 
-      // Add grading instructions
-      summaryLines.push("");
-      summaryLines.push("GRADING INSTRUCTIONS: Compare the student's answer for EACH question above against the correct answer. If the student's final answer does not match, they lose the marks for that question.");
+      for (const version of versions) {
+        if (isMultiVersion) {
+          summaryLines.push(`========== ANSWER KEY: VERSION ${version.version_label} ==========`);
+        }
 
-      // Add KITA summary if categories found
+        for (const q of version.questions || []) {
+          const line = `${q.question_id}: ${q.correct_answer} (/${q.marks}${q.kita_category ? ` ${q.kita_category}` : ""})`;
+          summaryLines.push(line);
+
+          if (q.kita_category) {
+            const catKey = isMultiVersion ? `${q.kita_category}` : q.kita_category;
+            if (!categoryGroups[catKey]) categoryGroups[catKey] = { marks: 0, questions: [] };
+            categoryGroups[catKey].marks += q.marks;
+            categoryGroups[catKey].questions.push(q.question_id);
+          }
+        }
+
+        summaryLines.push(`Total: /${version.total_marks}`);
+        if (isMultiVersion) summaryLines.push("");
+      }
+
+      if (isMultiVersion) {
+        summaryLines.push("GRADING INSTRUCTIONS:");
+        summaryLines.push("1. FIRST: Identify which test version this student has (look for 'Test A'/'Test B' or version label on their pages).");
+        summaryLines.push("2. THEN: Grade ONLY against that version's answer key above.");
+        summaryLines.push("3. Do NOT mix answers from different versions.");
+        summaryLines.push("4. Report the detected version in detected_title (e.g., 'War of 1812 Test - Version A').");
+      } else {
+        summaryLines.push("");
+        summaryLines.push("GRADING INSTRUCTIONS: Compare the student's answer for EACH question above against the correct answer. If the student's final answer does not match, they lose the marks for that question.");
+      }
+
+      // Add KITA summary if categories found (use first version for KITA since structure should be same)
       if (Object.keys(categoryGroups).length > 0) {
         summaryLines.push("");
         summaryLines.push("KITA SECTIONS (use these as your sections[]):");
         for (const [cat, info] of Object.entries(categoryGroups)) {
           summaryLines.push(`  ${cat}: ${info.questions.join(", ")} = /${info.marks}`);
         }
-        summaryLines.push(`Total: /${extracted.total_marks}`);
+        summaryLines.push(`Total: /${versions[0].total_marks}`);
         summaryLines.push("Create ONE section per category above. Do NOT create per-question sections.");
         summaryLines.push("Section score = SUM of marks earned on correct answers within that category ONLY.");
       }
 
       const answerKeyText = summaryLines.join("\n");
 
-      console.log(`[extract-answer-key] extracted ${(extracted.questions || []).length} questions, ${Object.keys(categoryGroups).length} KITA categories`);
+      const totalQuestions = versions.reduce((sum, v) => sum + (v.questions || []).length, 0);
+      console.log(`[extract-answer-key] extracted ${totalQuestions} questions across ${versions.length} version(s), ${Object.keys(categoryGroups).length} KITA categories`);
       console.log(`[extract-answer-key] summary:\n${answerKeyText}`);
 
       res.json({
@@ -12508,6 +12572,8 @@ Return valid JSON matching this exact schema.`;
         answerKeyText,
         kitaCategories: categoryGroups,
         hasKita: Object.keys(categoryGroups).length > 0,
+        isMultiVersion,
+        versionCount: versions.length,
       });
     } catch (err) {
       console.error("[extract-answer-key] error:", err);
