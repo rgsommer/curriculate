@@ -114,6 +114,38 @@ export function setupAppListeners() {
   });
 }
 
+// ── Navigation Guard ────────────────────────────────────────────
+// Keep the app locked to /grading. Any link to other parts of the
+// site (or external URLs) opens in the phone's default browser.
+import { Browser } from "@capacitor/browser";
+
+function setupNavigationGuard() {
+  document.addEventListener("click", (e) => {
+    const anchor = e.target.closest("a[href]");
+    if (!anchor) return;
+
+    const href = anchor.getAttribute("href");
+    if (!href || href.startsWith("#") || href.startsWith("javascript:")) return;
+
+    try {
+      const url = new URL(href, window.location.origin);
+      const isInternal = url.origin === window.location.origin;
+      const isGrading = url.pathname.startsWith("/grading");
+
+      if (!isInternal || !isGrading) {
+        // Open in external browser instead of navigating in WebView
+        e.preventDefault();
+        e.stopPropagation();
+        Browser.open({ url: url.href });
+      }
+    } catch (err) {
+      // Malformed URL — open externally to be safe
+      e.preventDefault();
+      Browser.open({ url: href });
+    }
+  }, true); // capture phase to intercept before React handlers
+}
+
 // ── Initialize ──────────────────────────────────────────────────
 export async function initNative() {
   // Hide splash screen once web app has loaded
@@ -122,6 +154,7 @@ export async function initNative() {
   // Set up listeners
   setupAppListeners();
   setupPushListeners();
+  setupNavigationGuard();
 
   // Expose to global scope so web app can call these
   window.CurriculateNative = {

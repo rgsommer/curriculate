@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "net.curriculate.pulse",
-  appName: "Curriculate Pulse",
+  appName: "Pulse Grading",
   webDir: "www",
 
   // ── Live URL mode ──────────────────────────────────────────────
@@ -11,7 +11,7 @@ const config: CapacitorConfig = {
   // for content changes. The native shell provides camera, push
   // notifications, and subscription hooks.
   server: {
-    url: "https://www.curriculate.net",
+    url: "https://www.curriculate.net/grading?app=1",
     cleartext: false, // HTTPS only
   },
 

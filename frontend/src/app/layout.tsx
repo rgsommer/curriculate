@@ -91,6 +91,22 @@ export default function RootLayout({
       </head>
 
       <body className="min-h-screen bg-white text-gray-900 antialiased">
+        {/* Detect Capacitor native app shell and hide website chrome */}
+        <Script id="capacitor-detect" strategy="afterInteractive">
+          {`
+            (function() {
+              try {
+                var isApp = (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())
+                  || window.location.search.includes('app=1')
+                  || sessionStorage.getItem('capacitor-native') === '1';
+                if (isApp) {
+                  document.body.classList.add('capacitor-native');
+                  sessionStorage.setItem('capacitor-native', '1');
+                }
+              } catch(e) {}
+            })();
+          `}
+        </Script>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{

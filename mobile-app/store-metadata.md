@@ -1,7 +1,7 @@
 # App Store & Play Store Metadata
 
 ## App Name
-**Curriculate Pulse**
+**Pulse Grading**
 
 ## Subtitle (App Store, 30 chars max)
 AI Grading for Teachers
