@@ -2479,14 +2479,18 @@ export default function BatchGrading({
     try {
       const html = buildEmailHtml();
 
-      // Generate PDFs and Edsby CSV in parallel
+      // Generate PDFs and Edsby CSV in parallel (with 15s timeout)
       let pdfBase64 = null;
       let stripsBase64 = null;
       try {
         const pdfOpts = effectiveTitle ? { title: effectiveTitle } : {};
+        const pdfTimeout = (p) => Promise.race([
+          p,
+          new Promise((_, reject) => setTimeout(() => reject(new Error("PDF generation timed out (15s)")), 15000)),
+        ]);
         [pdfBase64, stripsBase64] = await Promise.all([
-          buildResultsPdf(results, pdfOpts),
-          buildStripsPdf(results, pdfOpts),
+          pdfTimeout(buildResultsPdf(results, pdfOpts)),
+          pdfTimeout(buildStripsPdf(results, pdfOpts)),
         ]);
       } catch (pdfErr) {
         console.error("[batch] PDF generation failed:", pdfErr?.message || pdfErr, pdfErr?.stack);
@@ -2540,34 +2544,36 @@ export default function BatchGrading({
         setEmailCopied(true);
         setShowEmailPrompt(false);
 
-        // Update published results with the effective title
+        // Update published results with the effective title (fire-and-forget, don't block UI)
         const finalTitle = effectiveTitle;
         if (finalTitle && resultsUrl) {
-          for (const r of results) {
-            if (!r.refCode || r.error) continue;
-            try {
-              const updateUrl = resultsUrl.replace(/\/$/, "") + "/" + r.refCode;
-              await fetch(updateUrl, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  payload: buildBatchPayloadText(r, r.refCode, gradeBand),
-                  meta: {
-                    source: "batch-grading", gradeBand,
-                    studentName: r.studentName || null,
-                    studentId: r.rosterStudentId || r.rosterEdsbyId || r.studentId || null,
-                    subject: r.subject || "",
-                    assessmentType: r.assessmentType || "",
-                    title: finalTitle,
-                    pdfName: pdfName || "",
-                    className: r.rosterClassName || "",
-                  },
-                }),
-              });
-            } catch (e) {
-              console.warn(`[batch] title update for ${r.refCode} failed:`, e);
+          (async () => {
+            for (const r of results) {
+              if (!r.refCode || r.error) continue;
+              try {
+                const updateUrl = resultsUrl.replace(/\/$/, "") + "/" + r.refCode;
+                fetch(updateUrl, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    payload: buildBatchPayloadText(r, r.refCode, gradeBand),
+                    meta: {
+                      source: "batch-grading", gradeBand,
+                      studentName: r.studentName || null,
+                      studentId: r.rosterStudentId || r.rosterEdsbyId || r.studentId || null,
+                      subject: r.subject || "",
+                      assessmentType: r.assessmentType || "",
+                      title: finalTitle,
+                      pdfName: pdfName || "",
+                      className: r.rosterClassName || "",
+                    },
+                  }),
+                }).catch(e => console.warn(`[batch] title update for ${r.refCode} failed:`, e));
+              } catch (e) {
+                console.warn(`[batch] title update for ${r.refCode} failed:`, e);
+              }
             }
-          }
+          })();
         }
       } else {
         const err = await res.json().catch(() => ({}));
