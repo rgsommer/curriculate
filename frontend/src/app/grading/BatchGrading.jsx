@@ -195,6 +195,98 @@ function isBlankFingerprint(fp) {
   return v < 10; // very low variance = nearly uniform = blank (lowered from 50)
 }
 
+// Detect student boundaries by fingerprinting page headers. Returns array of
+// groups (or null if the reference page is blank).
+//
+// Two passes: first against page 1 of student 1, then a multi-anchor refinement
+// where every page that confidently matched the reference becomes an additional
+// anchor. A page's final score is the MAX similarity across all anchors. This
+// catches printed page-1's that scored low against the single reference because
+// of scan offset, smudges, or margin handwriting — they tend to match a
+// neighbouring student's page-1 cleanly.
+async function detectStudentGroupsByFingerprint(doc, { pageCount, answerKeyPages, logPrefix = "[fp]" }) {
+  const firstStudentPage = answerKeyPages + 1;
+  console.log(`${logPrefix} fingerprinting ${pageCount} pages (reference: page ${firstStudentPage})`);
+
+  const refFp = await getPageFingerprint(doc, firstStudentPage, "top");
+  if (isBlankFingerprint(refFp)) {
+    console.log(`${logPrefix} reference page ${firstStudentPage} is blank — cannot fingerprint`);
+    return null;
+  }
+
+  // Pass 1: fingerprint each page, score against the single reference.
+  const entries = [{ page: firstStudentPage, fp: refFp, sim: 1.0, blank: false }];
+  for (let p = firstStudentPage + 1; p <= pageCount; p++) {
+    const fp = await getPageFingerprint(doc, p, "top");
+    const blank = isBlankFingerprint(fp);
+    const sim = blank ? 0 : fingerprintSimilarity(refFp, fp);
+    entries.push({ page: p, fp, sim, blank });
+  }
+
+  // Pass 2: multi-anchor max-similarity refinement.
+  const ANCHOR_MIN = 0.85;
+  const anchorFps = entries.filter(e => !e.blank && e.sim >= ANCHOR_MIN).map(e => e.fp);
+  if (anchorFps.length > 1) {
+    let lifted = 0;
+    for (const e of entries) {
+      if (e.blank || e.sim >= ANCHOR_MIN) continue;
+      const before = e.sim;
+      let best = before;
+      for (const aFp of anchorFps) {
+        const s = fingerprintSimilarity(aFp, e.fp);
+        if (s > best) best = s;
+      }
+      if (best > before) {
+        e.sim = best;
+        if (best >= ANCHOR_MIN) lifted++;
+      }
+    }
+    console.log(`${logPrefix} multi-anchor pass: ${anchorFps.length} anchors, lifted ${lifted} borderline page(s) above ${ANCHOR_MIN}`);
+  }
+
+  const simLog = entries.map(e =>
+    `p${e.page}:${e.blank ? "BLANK" : e.sim.toFixed(2)}`
+  ).join(" ");
+  console.log(`${logPrefix} similarities: ${simLog}`);
+
+  // Auto-calibrate threshold from the largest gap above 0.5
+  const nonBlankSims = entries.filter(e => !e.blank && e.page !== firstStudentPage).map(e => e.sim);
+  nonBlankSims.sort((a, b) => a - b);
+  let threshold = 0.75;
+  if (nonBlankSims.length > 2) {
+    let maxGap = 0, gapIdx = -1;
+    for (let i = 0; i < nonBlankSims.length - 1; i++) {
+      const gap = nonBlankSims[i + 1] - nonBlankSims[i];
+      if (gap > maxGap && nonBlankSims[i + 1] > 0.5) { maxGap = gap; gapIdx = i; }
+    }
+    if (maxGap > 0.08 && gapIdx >= 0) {
+      threshold = (nonBlankSims[gapIdx] + nonBlankSims[gapIdx + 1]) / 2;
+      console.log(`${logPrefix} auto-calibrated threshold: ${threshold.toFixed(3)} (gap of ${maxGap.toFixed(3)})`);
+    }
+  }
+
+  const groups = [];
+  let current = null;
+  for (let p = 1; p <= pageCount; p++) {
+    if (p <= answerKeyPages) continue;
+    const entry = entries.find(e => e.page === p);
+    const isNewStudent = entry && !entry.blank && entry.sim >= threshold;
+    if (isNewStudent) {
+      if (current) groups.push(current);
+      current = { startPage: p, endPage: p, pages: [p] };
+    } else if (current) {
+      current.endPage = p;
+      current.pages.push(p);
+    } else {
+      current = { startPage: p, endPage: p, pages: [p] };
+    }
+  }
+  if (current) groups.push(current);
+
+  console.log(`${logPrefix} fingerprint detected ${groups.length} students`);
+  return groups;
+}
+
 // Retry wrapper for network-flaky environments (classrooms, tablets on wifi)
 async function fetchWithRetry(url, options, { retries = 2, baseDelay = 2000 } = {}) {
   for (let attempt = 0; ; attempt++) {
@@ -605,77 +697,13 @@ export default function BatchGrading({
       // Compare the top 30% of each page (header region) to page 1's header.
       // Pages with high structural similarity = new student (same printed template).
       // This is fast, deterministic, and doesn't require AI.
-      const firstStudentPage = answerKeyPages + 1; // 1-based
-      console.log(`[auto-detect] fingerprinting ${pageCount} pages (reference: page ${firstStudentPage})`);
+      const fpGroups = await detectStudentGroupsByFingerprint(doc, {
+        pageCount,
+        answerKeyPages,
+        logPrefix: "[auto-detect]",
+      });
 
-      const refFp = await getPageFingerprint(doc, firstStudentPage, "top");
-      const isRefBlank = isBlankFingerprint(refFp);
-      console.log(`[auto-detect] reference page ${firstStudentPage}: variance=${refFp.variance?.toFixed(1)}, blank=${isRefBlank}`);
-
-      if (!isRefBlank) {
-        const similarities = [{ page: firstStudentPage, sim: 1.0, blank: false }];
-
-        for (let p = firstStudentPage + 1; p <= pageCount; p++) {
-          const fp = await getPageFingerprint(doc, p, "top");
-          const blank = isBlankFingerprint(fp);
-          const sim = blank ? 0 : fingerprintSimilarity(refFp, fp);
-          similarities.push({ page: p, sim, blank, variance: fp.variance });
-        }
-
-        // Log all similarities for debugging (variance + similarity)
-        const simLog = similarities.map(s =>
-          `p${s.page}:${s.blank ? "BLANK" : s.sim.toFixed(2)}(var=${(s.variance ?? refFp.variance)?.toFixed(0)})`
-        ).join(" ");
-        console.log(`[auto-detect] similarities: ${simLog}`);
-
-        // Find the natural threshold: page 1 matches should cluster near 0.85-1.0,
-        // non-matches (Part C pages, handwritten, blank) should be < 0.7.
-        // Use 0.75 as default threshold, but auto-calibrate if we can.
-        const nonBlankSims = similarities.filter(s => !s.blank && s.page !== firstStudentPage).map(s => s.sim);
-        nonBlankSims.sort((a, b) => a - b);
-
-        // Look for a natural gap in the similarity distribution
-        let threshold = 0.75;
-        if (nonBlankSims.length > 2) {
-          // Find the largest gap between sorted similarity values
-          let maxGap = 0, gapIdx = -1;
-          for (let i = 0; i < nonBlankSims.length - 1; i++) {
-            const gap = nonBlankSims[i + 1] - nonBlankSims[i];
-            if (gap > maxGap && nonBlankSims[i + 1] > 0.5) {
-              maxGap = gap;
-              gapIdx = i;
-            }
-          }
-          if (maxGap > 0.08 && gapIdx >= 0) {
-            threshold = (nonBlankSims[gapIdx] + nonBlankSims[gapIdx + 1]) / 2;
-            console.log(`[auto-detect] auto-calibrated threshold: ${threshold.toFixed(3)} (gap of ${maxGap.toFixed(3)})`);
-          }
-        }
-
-        // Build groups from fingerprint matches
-        const fpGroups = [];
-        let currentGroup = null;
-
-        for (let p = 1; p <= pageCount; p++) {
-          if (p <= answerKeyPages) continue; // skip answer key
-          const entry = similarities.find(s => s.page === p);
-          const isNewStudent = entry && !entry.blank && entry.sim >= threshold;
-
-          if (isNewStudent) {
-            if (currentGroup) fpGroups.push(currentGroup);
-            currentGroup = { startPage: p, endPage: p, pages: [p] };
-          } else if (currentGroup) {
-            currentGroup.endPage = p;
-            currentGroup.pages.push(p);
-          } else {
-            // Orphan page before first detected student — start a group
-            currentGroup = { startPage: p, endPage: p, pages: [p] };
-          }
-        }
-        if (currentGroup) fpGroups.push(currentGroup);
-
-        console.log(`[auto-detect] fingerprint detected ${fpGroups.length} students`);
-
+      if (fpGroups) {
         // If fingerprinting found reasonable groups (more than 1 student), use them
         if (fpGroups.length > 1) {
           setDetectedGroups(fpGroups);
@@ -784,55 +812,14 @@ export default function BatchGrading({
 
       // Use deterministic fingerprinting first
       try {
-        const firstStudentPage = answerKeyPages + 1;
-        const refFp = await getPageFingerprint(doc, firstStudentPage, "top");
-        if (!isBlankFingerprint(refFp)) {
-          const similarities = [{ page: firstStudentPage, sim: 1.0, blank: false }];
-          for (let p = firstStudentPage + 1; p <= pageCount; p++) {
-            const fp = await getPageFingerprint(doc, p, "top");
-            const blank = isBlankFingerprint(fp);
-            const sim = blank ? 0 : fingerprintSimilarity(refFp, fp);
-            similarities.push({ page: p, sim, blank });
-          }
-
-          // Auto-calibrate threshold
-          const nonBlankSims = similarities.filter(s => !s.blank && s.page !== firstStudentPage).map(s => s.sim);
-          nonBlankSims.sort((a, b) => a - b);
-          let threshold = 0.75;
-          if (nonBlankSims.length > 2) {
-            let maxGap = 0, gapIdx = -1;
-            for (let i = 0; i < nonBlankSims.length - 1; i++) {
-              const gap = nonBlankSims[i + 1] - nonBlankSims[i];
-              if (gap > maxGap && nonBlankSims[i + 1] > 0.5) { maxGap = gap; gapIdx = i; }
-            }
-            if (maxGap > 0.08 && gapIdx >= 0) {
-              threshold = (nonBlankSims[gapIdx] + nonBlankSims[gapIdx + 1]) / 2;
-            }
-          }
-
-          const fpGroups = [];
-          let currentGroup = null;
-          for (let p = 1; p <= pageCount; p++) {
-            if (p <= answerKeyPages) continue;
-            const entry = similarities.find(s => s.page === p);
-            const isNewStudent = entry && !entry.blank && entry.sim >= threshold;
-            if (isNewStudent) {
-              if (currentGroup) fpGroups.push(currentGroup);
-              currentGroup = { startPage: p, endPage: p, pages: [p] };
-            } else if (currentGroup) {
-              currentGroup.endPage = p;
-              currentGroup.pages.push(p);
-            } else {
-              currentGroup = { startPage: p, endPage: p, pages: [p] };
-            }
-          }
-          if (currentGroup) fpGroups.push(currentGroup);
-
-          if (fpGroups.length > 1) {
-            groups = fpGroups;
-            setDetectedGroups(groups);
-            console.log(`[batch] fingerprint detected ${groups.length} students`);
-          }
+        const fpGroups = await detectStudentGroupsByFingerprint(doc, {
+          pageCount,
+          answerKeyPages,
+          logPrefix: "[batch]",
+        });
+        if (fpGroups && fpGroups.length > 1) {
+          groups = fpGroups;
+          setDetectedGroups(groups);
         }
       } catch (fpErr) {
         console.warn("[batch] fingerprint detection failed:", fpErr);
