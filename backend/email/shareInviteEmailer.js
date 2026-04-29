@@ -11,7 +11,11 @@ function required(name) {
   return v;
 }
 
-export function buildTransport() {
+let cachedTransporter = null;
+let cachedFromAddress = null;
+let cachedFromName = null;
+
+function createTransport() {
   const host = required("SMTP_HOST");
   const port = parseInt(required("SMTP_PORT"), 10);
   const secure = boolEnv(process.env.SMTP_SECURE);
@@ -27,23 +31,53 @@ export function buildTransport() {
     port,
     secure,
     auth: { user, pass },
-    connectionTimeout: 10000, // 10s to establish connection
-    greetingTimeout: 10000,   // 10s for SMTP greeting
-    socketTimeout: 30000,     // 30s for socket inactivity
+    // Pool connections so back-to-back sends (e.g. a batch email retry)
+    // don't keep paying TCP+TLS handshake cost or hit Gmail's new-connection rate limit.
+    pool: true,
+    maxConnections: 3,
+    maxMessages: 50,
+    connectionTimeout: 15_000,
+    greetingTimeout: 15_000,
+    socketTimeout: 60_000,
   });
 
   return { transporter, fromAddress, fromName };
 }
 
+export function buildTransport() {
+  if (!cachedTransporter) {
+    const built = createTransport();
+    cachedTransporter = built.transporter;
+    cachedFromAddress = built.fromAddress;
+    cachedFromName = built.fromName;
+  }
+  return { transporter: cachedTransporter, fromAddress: cachedFromAddress, fromName: cachedFromName };
+}
+
+function resetTransport() {
+  try { cachedTransporter?.close?.(); } catch { /* ignore */ }
+  cachedTransporter = null;
+}
+
 export async function sendSystemEmail({ to, cc, subject, html, attachments }) {
   const { transporter, fromAddress, fromName } = buildTransport();
 
-  return transporter.sendMail({
-    from: `${fromName} <${fromAddress}>`,
-    to,
-    cc: cc || undefined,
-    subject,
-    html,
-    attachments: attachments || undefined,
-  });
+  try {
+    return await transporter.sendMail({
+      from: `${fromName} <${fromAddress}>`,
+      to,
+      cc: cc || undefined,
+      subject,
+      html,
+      attachments: attachments || undefined,
+    });
+  } catch (err) {
+    // On connection-class errors the pool may be holding a dead socket — drop it
+    // so the next call gets a fresh connection instead of replaying the same fail.
+    const code = err?.code;
+    if (code === "ETIMEDOUT" || code === "ECONNECTION" || code === "ESOCKET" || code === "ECONNRESET" || code === "EPIPE") {
+      resetTransport();
+    }
+    throw err;
+  }
 }

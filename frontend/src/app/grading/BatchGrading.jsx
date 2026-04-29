@@ -2611,22 +2611,31 @@ export default function BatchGrading({
             `Email failed: ${errMsg}\n\nWould you like to retry WITHOUT PDF attachments? (You can still use Print Reports / Print Strips for PDFs)`
           );
           if (retry) {
+            const retryController = new AbortController();
+            const retryTimeout = setTimeout(() => retryController.abort(), 30000);
             try {
               const retryPayload = { to: emailTo.trim(), subject, html, pdfAttachments: [], csvAttachments: payload.csvAttachments || [] };
               const retryRes = await fetch(sendUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(retryPayload),
+                signal: retryController.signal,
               });
+              clearTimeout(retryTimeout);
               if (retryRes.ok) {
                 setEmailCopied(true);
                 setShowEmailPrompt(false);
               } else {
                 const retryErr = await retryRes.json().catch(() => ({}));
-                alert(`Retry also failed: ${retryErr.error || retryRes.status}. Check server SMTP settings.`);
+                alert(`Retry also failed: ${retryErr.error || retryRes.status}.\n\nYour results are still saved — open Progress to view them, or use Print Reports / Print Strips / Export CSV to save locally.`);
               }
             } catch (retryE) {
-              alert(`Retry failed: ${retryE.message}. The email server may be unreachable.`);
+              clearTimeout(retryTimeout);
+              const isAbort = retryE.name === "AbortError";
+              alert(isAbort
+                ? "Retry timed out after 30 seconds — the email server is unreachable.\n\nYour results are still saved — open Progress to view them, or use Print Reports / Print Strips / Export CSV to save locally."
+                : `Retry failed: ${retryE.message}.\n\nYour results are still saved — use Print Reports / Print Strips / Export CSV.`
+              );
             }
           }
         } else {
