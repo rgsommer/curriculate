@@ -2534,11 +2534,15 @@ export default function BatchGrading({
         payload.csvAttachments.push({ data: csvBase64, filename: csvName });
       }
 
+      const emailController = new AbortController();
+      const emailTimeout = setTimeout(() => emailController.abort(), 45000); // 45s timeout
       const res = await fetch(sendUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal: emailController.signal,
       });
+      clearTimeout(emailTimeout);
       if (res.ok) {
         try { if (window.gtag) window.gtag("event", "batch_email_sent", { students: results.filter(r => !r.error).length }); } catch {}
         setEmailCopied(true);

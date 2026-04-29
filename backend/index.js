@@ -11971,12 +11971,15 @@ function buildRubricInstructions({
         }
       }
 
+      console.log(`[grading] Sending email to ${email} — subject="${subj}", attachments=${attachments.length}, bodyLen=${body.length}`);
+      const emailStart = Date.now();
       await sendSystemEmail({
         to: email,
         subject: subj || "Pulse Grading Batch Results — Curriculate",
         html: body,
         attachments,
       });
+      console.log(`[grading] Email sent to ${email} in ${Date.now() - emailStart}ms`);
 
       // Log teacher email for lead tracking
       try {

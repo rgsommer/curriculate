@@ -27,6 +27,9 @@ export function buildTransport() {
     port,
     secure,
     auth: { user, pass },
+    connectionTimeout: 10000, // 10s to establish connection
+    greetingTimeout: 10000,   // 10s for SMTP greeting
+    socketTimeout: 30000,     // 30s for socket inactivity
   });
 
   return { transporter, fromAddress, fromName };
