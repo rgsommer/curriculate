@@ -1664,13 +1664,15 @@ export default function BatchGrading({
         // is null. Now that matching is done, update each published result with the
         // correct roster studentId and the student's proper name.
         if (resultsUrl) {
+          let updateSuccessCount = 0;
+          let updateFailCount = 0;
           for (const r of batchResults) {
             if (r.error || !r.refCode) continue;
             const sid = r.rosterStudentId || r.rosterEdsbyId || r.studentId || null;
             if (!sid && !r.rosterFirstName) continue; // nothing to update
             try {
               const updateUrl = resultsUrl.replace(/\/$/, "") + "/" + r.refCode;
-              await fetch(updateUrl, {
+              const updateRes = await fetch(updateUrl, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -1689,9 +1691,20 @@ export default function BatchGrading({
                   },
                 }),
               });
+              if (updateRes.ok) {
+                updateSuccessCount++;
+              } else {
+                updateFailCount++;
+                console.warn(`[batch] post-match update for ${r.refCode} returned ${updateRes.status}: ${await updateRes.text().catch(() => "")}`);
+              }
             } catch (e) {
+              updateFailCount++;
               console.warn(`[batch] post-match update for ${r.refCode} failed:`, e);
             }
+          }
+          console.log(`[batch] roster-match updates: ${updateSuccessCount} ok, ${updateFailCount} failed`);
+          if (updateFailCount > 0 && updateSuccessCount === 0) {
+            console.error("[batch] ALL roster-match updates failed — results won't appear in /progress");
           }
         }
 

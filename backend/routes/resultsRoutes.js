@@ -59,7 +59,7 @@ const lookupLimiter = rateLimit({
 // (You can also protect this with your existing auth later.)
 const createLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
-  max: 60,
+  max: 300, // batch grading: 20 students × (POST + 2-3 PUTs) = 60-80 per batch, allow multiple batches
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests. Try again shortly." },
