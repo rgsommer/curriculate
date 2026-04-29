@@ -2595,11 +2595,42 @@ export default function BatchGrading({
       } else {
         const err = await res.json().catch(() => ({}));
         console.warn("[batch] send email failed:", err);
-        alert(err.error || "Failed to send email. Please try again.");
+        const errMsg = err.error || `Server returned ${res.status}`;
+        // Offer retry without attachments if the email had PDFs
+        if (pdfBase64 || stripsBase64) {
+          const retry = window.confirm(
+            `Email failed: ${errMsg}\n\nWould you like to retry WITHOUT PDF attachments? (You can still use Print Reports / Print Strips for PDFs)`
+          );
+          if (retry) {
+            try {
+              const retryPayload = { to: emailTo.trim(), subject, html, pdfAttachments: [], csvAttachments: payload.csvAttachments || [] };
+              const retryRes = await fetch(sendUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(retryPayload),
+              });
+              if (retryRes.ok) {
+                setEmailCopied(true);
+                setShowEmailPrompt(false);
+              } else {
+                const retryErr = await retryRes.json().catch(() => ({}));
+                alert(`Retry also failed: ${retryErr.error || retryRes.status}. Check server SMTP settings.`);
+              }
+            } catch (retryE) {
+              alert(`Retry failed: ${retryE.message}. The email server may be unreachable.`);
+            }
+          }
+        } else {
+          alert(`Email failed: ${errMsg}`);
+        }
       }
     } catch (e) {
       console.warn("[batch] send email error:", e);
-      alert("Failed to send email. Please try again.");
+      const isAbort = e.name === "AbortError";
+      alert(isAbort
+        ? "Email timed out after 45 seconds. The email server may be slow or unreachable. Try Print Reports instead."
+        : `Failed to send email: ${e.message}`
+      );
     }
     setEmailSending(false);
   }, [emailTo, emailTitle, buildEmailHtml, buildEdsbyCsv, emailSubject, gradingUrl, results, pdfName]);

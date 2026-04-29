@@ -12013,8 +12013,13 @@ function buildRubricInstructions({
       console.log(`[grading] Batch summary email sent to ${email}`);
       return res.json({ ok: true });
     } catch (err) {
-      console.error("POST /grading/send-email error:", err?.message || err);
-      return res.status(500).json({ error: "Failed to send email." });
+      console.error("POST /grading/send-email error:", err?.message || err, err?.stack);
+      const detail = err?.code === "EAUTH" ? "SMTP authentication failed — check email credentials."
+        : err?.code === "ECONNECTION" || err?.code === "ESOCKET" ? "Could not connect to email server."
+        : err?.code === "ETIMEDOUT" ? "Email server connection timed out."
+        : err?.responseCode ? `SMTP rejected: ${err.responseCode} ${err.response || ""}`
+        : `${err?.message || "Unknown error"}`;
+      return res.status(500).json({ error: `Failed to send email: ${detail}` });
     }
   });
 
