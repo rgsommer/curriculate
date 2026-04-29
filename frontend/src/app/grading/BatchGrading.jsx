@@ -2544,7 +2544,7 @@ export default function BatchGrading({
       }
 
       const emailController = new AbortController();
-      const emailTimeout = setTimeout(() => emailController.abort(), 45000); // 45s timeout
+      const emailTimeout = setTimeout(() => emailController.abort(), 20000); // 20s timeout (Resend is fast; SMTP has its own 15s cap)
       const res = await fetch(sendUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2633,7 +2633,7 @@ export default function BatchGrading({
       console.warn("[batch] send email error:", e);
       const isAbort = e.name === "AbortError";
       alert(isAbort
-        ? "Email timed out after 45 seconds. The email server may be slow or unreachable. Try Print Reports instead."
+        ? "Email timed out (20s). The email server may be unreachable. Use Print Reports + Export CSV instead."
         : `Failed to send email: ${e.message}`
       );
     }

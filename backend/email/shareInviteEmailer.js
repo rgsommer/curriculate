@@ -11,6 +11,49 @@ function required(name) {
   return v;
 }
 
+// ── Resend (HTTP API) ────────────────────────────────────────────────
+// Set RESEND_API_KEY in env to use Resend instead of SMTP.
+// Much more reliable than SMTP from cloud hosts that throttle port 587/465.
+// Free tier: 100 emails/day at resend.com
+
+async function sendViaResend({ to, cc, subject, html, attachments, fromAddress, fromName }) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const payload = {
+    from: `${fromName} <${fromAddress}>`,
+    to: Array.isArray(to) ? to : [to],
+    subject,
+    html,
+  };
+  if (cc) payload.cc = Array.isArray(cc) ? cc : [cc];
+  if (attachments?.length) {
+    payload.attachments = attachments.map((a) => ({
+      filename: a.filename,
+      content: a.content instanceof Buffer ? a.content.toString("base64") : a.content,
+    }));
+  }
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(15000), // 15s — HTTP is fast
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    const err = new Error(`Resend API ${res.status}: ${body}`);
+    err.code = "RESEND_ERROR";
+    err.responseCode = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+// ── SMTP (nodemailer) — fallback ─────────────────────────────────────
+
 let cachedTransporter = null;
 let cachedFromAddress = null;
 let cachedFromName = null;
@@ -24,15 +67,13 @@ function createTransport() {
   const fromName = process.env.EMAIL_FROM_NAME || "Curriculate";
 
   const pass = required("SMTP_PASS");
-  const user = fromAddress; // Google Workspace SMTP typically uses the mailbox address as user
+  const user = fromAddress;
 
   const transporter = nodemailer.createTransport({
     host,
     port,
     secure,
     auth: { user, pass },
-    // Pool connections so back-to-back sends (e.g. a batch email retry)
-    // don't keep paying TCP+TLS handshake cost or hit Gmail's new-connection rate limit.
     pool: true,
     maxConnections: 3,
     maxMessages: 50,
@@ -59,9 +100,19 @@ function resetTransport() {
   cachedTransporter = null;
 }
 
-export async function sendSystemEmail({ to, cc, subject, html, attachments }) {
-  const { transporter, fromAddress, fromName } = buildTransport();
+// ── Public API ───────────────────────────────────────────────────────
 
+export async function sendSystemEmail({ to, cc, subject, html, attachments }) {
+  const fromAddress = process.env.EMAIL_FROM_ADDRESS || process.env.RESEND_FROM_ADDRESS || "noreply@curriculate.net";
+  const fromName = process.env.EMAIL_FROM_NAME || "Curriculate";
+
+  // Prefer Resend (HTTP) if configured — much faster and more reliable
+  if (process.env.RESEND_API_KEY) {
+    return sendViaResend({ to, cc, subject, html, attachments, fromAddress, fromName });
+  }
+
+  // Fall back to SMTP with pooled transport + dead-socket recovery
+  const { transporter } = buildTransport();
   try {
     return await transporter.sendMail({
       from: `${fromName} <${fromAddress}>`,
@@ -72,8 +123,6 @@ export async function sendSystemEmail({ to, cc, subject, html, attachments }) {
       attachments: attachments || undefined,
     });
   } catch (err) {
-    // On connection-class errors the pool may be holding a dead socket — drop it
-    // so the next call gets a fresh connection instead of replaying the same fail.
     const code = err?.code;
     if (code === "ETIMEDOUT" || code === "ECONNECTION" || code === "ESOCKET" || code === "ECONNRESET" || code === "EPIPE") {
       resetTransport();
