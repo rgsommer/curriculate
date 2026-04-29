@@ -1486,6 +1486,15 @@ export default function BatchGrading({
           return true;
         });
 
+        const matchedIds = new Set();
+        // Pre-populate with already-matched students from passes 1-3
+        for (const r of batchResults) {
+          if (!r.rosterFirstName) continue;
+          if (r.rosterEdsbyId) matchedIds.add(r.rosterEdsbyId);
+          if (r.rosterStudentId) matchedIds.add(r.rosterStudentId);
+          matchedIds.add(`name:${(r.rosterFirstName||"").toLowerCase()}|${(r.rosterLastName||"").toLowerCase()}`);
+        }
+
         function assignRoster(r, m) {
           r.rosterFirstName = m.firstName;
           r.rosterLastName = m.lastName;
