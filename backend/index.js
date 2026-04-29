@@ -12147,6 +12147,21 @@ A batch may contain two or more versions of the same test (e.g. "Math 7 Test" an
 
 For worksheets where the assignment says "use the other side" or "continue on back", expect that some students will have 2 scanned pages (front + back with extra writing) while others will have only 1 (front only, back is blank or not scanned).
 
+MIXED / VARIOUS ASSIGNMENTS (most important rule):
+A single scanned PDF may contain DIFFERENT assignments from DIFFERENT students — not just copies of the same test. For example: a Business Fair Worksheet from one student, then a survey from another group, then a Scripture Handout from a third student. The assignments may look completely different from each other.
+
+THE DEFINITIVE NEW-STUDENT RULE:
+If a page has ANY COMBINATION of these three elements, it is DEFINITELY the start of a new student/group's work:
+1. A TITLE or assignment header (printed or handwritten) — e.g. "Grade 8 Business Fair Worksheet", "The Salsa Squad", "Lesson Three", "Chapel Journal"
+2. A STUDENT NAME (printed or handwritten) — e.g. "Name: Tobi", a name written in the corner, names at the top
+3. A DATE — e.g. "April 2026", a handwritten date
+
+If ALL THREE appear on a page → 100% new student, no exceptions.
+If TWO of three appear (title + name, or name + date) → almost certainly new student.
+If a page has a DIFFERENT assignment title than the previous pages → new student, even without a visible name.
+
+This means the first page of the PDF might say "Grade 8 Business Fair Worksheet — Name: Tobi" and page 5 might say "Lesson Three | Scripture Handout — Lex Ngu". These are DIFFERENT students with DIFFERENT assignments — both are "new".
+
 FREEFORM / HANDWRITTEN ASSIGNMENTS (journals, essays, reflections, responses):
 Not all assignments have a printed template. Journals, essays, and written reflections are often just handwriting on blank lined paper. For these:
 - A NEW student is indicated by: a different handwriting style, a new name written at the top, a new date, or a handwritten title/heading (e.g. "Chapel Journal Entry") that repeats from an earlier page.
@@ -12238,7 +12253,7 @@ Do NOT include any text outside the JSON array.`,
       // so it knows exactly what "page 1 of a student's test" looks like.
       const firstContentIdx = answerKeyPages; // 0-based index of first student page
       if (firstContentIdx < pageImages.length) {
-        const refHint = `\n\nIMPORTANT — REFERENCE IMAGE:\nPage ${firstContentIdx + 1} (the first image after any answer key pages) is the FIRST page of the first student's test/assignment. Study its layout carefully — the school name/logo, test title, Name/Date/Class fields, and first section heading. Every page in the PDF that has THIS SAME layout (same school header, same test title, same Name/Date fields at the top, same first section) is the start of a NEW student — even if a different student name is written in. Pages that do NOT match this first-page layout are continuations (later test pages, handwritten answer pages, or blank backs).`;
+        const refHint = `\n\nIMPORTANT — REFERENCE IMAGE:\nPage ${firstContentIdx + 1} (the first image after any answer key pages) is the FIRST page of the first student's assignment. Study its layout — title, Name/Date fields, first section heading. For UNIFORM batches (all students have the same test), every page with THIS SAME layout is a new student. For MIXED batches (different assignments from different students), use the title+name+date rule instead: any page with an assignment title, a student name, and/or a date is a new student boundary — even if the assignment is completely different from the first page. Decide early whether this is a uniform or mixed batch by checking if the first few "new" pages share the same template or have different assignments.`;
         content[0].text += refHint;
         console.log(`[classify-pages] added reference-page hint (page ${firstContentIdx + 1})`);
       }
