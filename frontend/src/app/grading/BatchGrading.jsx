@@ -507,8 +507,10 @@ export default function BatchGrading({
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfName, setPdfName] = useState("");
   const [pageCount, setPageCount] = useState(0);
-  const [pagesPerStudent, setPagesPerStudent] = useState("auto"); // number or "auto"
+  const [pagesPerStudent, setPagesPerStudent] = useState("auto"); // number, "auto", or "tap"
   const [answerKeyPages, setAnswerKeyPages] = useState(0); // leading pages that are the answer key
+  const [tapMarkedPages, setTapMarkedPages] = useState(new Set()); // pages marked as "first page" in tap mode
+  const [thumbnails, setThumbnails] = useState([]); // [{page, dataUrl}] for tap mode
 
   const [extractedAnswerKey, setExtractedAnswerKey] = useState(answerKeyOverride || "");
   const [loading, setLoading] = useState(false);
@@ -675,14 +677,52 @@ export default function BatchGrading({
 
   // ---------- Student count ----------
   const isAuto = pagesPerStudent === "auto";
-  const fixedPps = isAuto ? 1 : Number(pagesPerStudent);
+  const isTap = pagesPerStudent === "tap";
+  const fixedPps = isAuto || isTap ? 1 : Number(pagesPerStudent);
   // Pages available for student work (after answer key pages)
   const studentPages = Math.max(0, pageCount - answerKeyPages);
   const studentCount = detectedGroups
     ? detectedGroups.length
+    : isTap
+    ? tapMarkedPages.size
     : studentPages > 0
     ? Math.ceil(studentPages / fixedPps)
     : 0;
+
+  // ---------- Tap mode: generate thumbnails ----------
+  useEffect(() => {
+    if (!isTap || !pdfDocRef.current || pageCount === 0) return;
+    let cancelled = false;
+    (async () => {
+      const doc = pdfDocRef.current;
+      const thumbs = [];
+      for (let p = 1; p <= pageCount; p++) {
+        if (cancelled) return;
+        const dataUrl = await renderPageToDataUrl(doc, p, 0.3);
+        thumbs.push({ page: p, dataUrl });
+      }
+      if (!cancelled) setThumbnails(thumbs);
+    })();
+    return () => { cancelled = true; };
+  }, [isTap, pageCount]);
+
+  // Build groups from tap-marked pages
+  const tapGroups = useMemo(() => {
+    if (!isTap || tapMarkedPages.size === 0) return null;
+    const sorted = [...tapMarkedPages]
+      .filter(p => p > answerKeyPages)
+      .sort((a, b) => a - b);
+    if (sorted.length === 0) return null;
+    const groups = [];
+    for (let i = 0; i < sorted.length; i++) {
+      const start = sorted[i];
+      const end = i + 1 < sorted.length ? sorted[i + 1] - 1 : pageCount;
+      const pages = [];
+      for (let p = start; p <= end; p++) pages.push(p);
+      groups.push({ startPage: start, endPage: end, pages });
+    }
+    return groups;
+  }, [isTap, tapMarkedPages, answerKeyPages, pageCount]);
 
   // ---------- Auto-detect page boundaries ----------
   const runAutoDetect = useCallback(async () => {
@@ -803,8 +843,13 @@ export default function BatchGrading({
     setStudentBias({});
     setClassSummary(null);
 
+    // --- Use tap-marked groups if in tap mode ---
+    if (isTap && tapGroups) {
+      setDetectedGroups(tapGroups);
+    }
+
     // --- Auto-detect if needed and not already done ---
-    let groups = detectedGroups;
+    let groups = isTap ? tapGroups : detectedGroups;
     let autoDetectedKeyPages = []; // answer key pages found anywhere in the PDF
     let localRotatedPages = { ...rotatedPages }; // local copy for use in grading loop
     if (isAuto && !groups) {
@@ -1862,6 +1907,8 @@ export default function BatchGrading({
     pageCount,
     fixedPps,
     isAuto,
+    isTap,
+    tapGroups,
     detectedGroups,
     answerKeyPages,
     extractedAnswerKey,
@@ -3289,12 +3336,13 @@ export default function BatchGrading({
                 value={pagesPerStudent}
                 onChange={(e) => {
                   const v = e.target.value;
-                  setPagesPerStudent(v === "auto" ? "auto" : Number(v));
+                  setPagesPerStudent(v === "auto" ? "auto" : v === "tap" ? "tap" : Number(v));
                   if (v !== "auto") setDetectedGroups(null);
                 }}
                 style={batchStyles.select}
               >
                 <option value="auto">Auto-detect</option>
+                <option value="tap">Tap to mark</option>
                 {[1, 2, 3, 4, 5, 6, 8, 10].map((n) => (
                   <option key={n} value={n}>
                     {n} page{n > 1 ? "s" : ""} each
@@ -3322,6 +3370,21 @@ export default function BatchGrading({
                     ) : (
                       <span style={{ opacity: 0.6 }}>
                         Will auto-detect student boundaries when grading starts
+                      </span>
+                    )
+                  ) : isTap ? (
+                    tapMarkedPages.size > 0 ? (
+                      <>
+                        = <strong>{tapMarkedPages.size}</strong> student{tapMarkedPages.size !== 1 ? "s" : ""} marked
+                        {tapGroups && (
+                          <span style={{ color: "#2563eb", marginLeft: 6 }}>
+                            ({tapGroups.map((g) => g.pages.length).join(", ")} pages)
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span style={{ opacity: 0.6 }}>
+                        Tap the first page of each student&apos;s work below
                       </span>
                     )
                   ) : (
@@ -3402,6 +3465,84 @@ export default function BatchGrading({
           )}
 
 
+          {/* Tap-to-mark thumbnail grid */}
+          {isTap && pageCount > 0 && (
+            <div style={{
+              marginTop: 10,
+              padding: 12,
+              borderRadius: 10,
+              background: "rgba(37,99,235,0.03)",
+              border: "1px solid rgba(37,99,235,0.12)",
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#1e40af", marginBottom: 8 }}>
+                Tap the first page of each new student&apos;s assignment
+              </div>
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))",
+                gap: 6,
+              }}>
+                {(thumbnails.length > 0 ? thumbnails : Array.from({ length: pageCount }, (_, i) => ({ page: i + 1, dataUrl: null }))).map(({ page, dataUrl }) => {
+                  const isMarked = tapMarkedPages.has(page);
+                  const isKey = page <= answerKeyPages;
+                  return (
+                    <div
+                      key={page}
+                      onClick={() => {
+                        if (isKey) return;
+                        setTapMarkedPages(prev => {
+                          const next = new Set(prev);
+                          if (next.has(page)) next.delete(page);
+                          else next.add(page);
+                          return next;
+                        });
+                      }}
+                      style={{
+                        position: "relative",
+                        cursor: isKey ? "default" : "pointer",
+                        borderRadius: 6,
+                        border: isMarked ? "3px solid #2563eb" : isKey ? "2px solid #059669" : "2px solid rgba(0,0,0,0.1)",
+                        background: isMarked ? "rgba(37,99,235,0.08)" : isKey ? "rgba(5,150,105,0.06)" : "#fff",
+                        overflow: "hidden",
+                        opacity: isKey ? 0.5 : 1,
+                        transition: "border-color 0.15s, background 0.15s",
+                      }}
+                    >
+                      {dataUrl ? (
+                        <img src={dataUrl} alt={`Page ${page}`} style={{ width: "100%", display: "block" }} />
+                      ) : (
+                        <div style={{ width: "100%", paddingTop: "141%", background: "#f3f4f6" }} />
+                      )}
+                      <div style={{
+                        position: "absolute",
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        padding: "2px 0",
+                        textAlign: "center",
+                        fontSize: 10,
+                        fontWeight: isMarked ? 800 : 600,
+                        color: isMarked ? "#fff" : isKey ? "#059669" : "#64748b",
+                        background: isMarked ? "rgba(37,99,235,0.85)" : "rgba(255,255,255,0.85)",
+                      }}>
+                        {isKey ? "Key" : isMarked ? `#${[...tapMarkedPages].sort((a, b) => a - b).indexOf(page) + 1}` : page}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {tapMarkedPages.size > 0 && (
+                <button
+                  onClick={() => setTapMarkedPages(new Set())}
+                  style={{ ...batchStyles.ghostBtn, marginTop: 8, fontSize: 11, padding: "4px 10px" }}
+                  type="button"
+                >
+                  Clear all marks
+                </button>
+              )}
+            </div>
+          )}
+
           {extractedAnswerKey && (
             <div style={{ ...batchStyles.sticky, marginTop: 8 }}>
               Answer key extracted — will apply to all students
@@ -3411,10 +3552,18 @@ export default function BatchGrading({
           <div style={{ marginTop: 14 }}>
             <button
               onClick={runBatch}
-              style={batchStyles.runBtn}
+              disabled={isTap && tapMarkedPages.size === 0}
+              style={{
+                ...batchStyles.runBtn,
+                ...(isTap && tapMarkedPages.size === 0 ? { opacity: 0.4, cursor: "not-allowed" } : {}),
+              }}
               type="button"
             >
-              {isAuto && !detectedGroups
+              {isTap
+                ? tapMarkedPages.size > 0
+                  ? `Grade ${tapMarkedPages.size} Student${tapMarkedPages.size !== 1 ? "s" : ""}`
+                  : "Mark students first"
+                : isAuto && !detectedGroups
                 ? `Grade ${studentPages} Page${studentPages !== 1 ? "s" : ""}`
                 : `Grade ${studentCount} Student${studentCount !== 1 ? "s" : ""}`}
             </button>
