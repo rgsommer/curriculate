@@ -2635,6 +2635,7 @@ export default function GradingPage() {
                   studentId: matchedRosterStudent?.studentId || matchedRosterStudent?.edsbyId || undefined,
                   className: selectedClassName || matchedRosterStudent?.className || undefined,
                   teacherEmail: teacherEmail || undefined,
+                  title: String(norm.assessment?.detected_title || "").trim() || undefined,
                   subject: norm.assessment?.subject || undefined,
                   assessmentType: norm.assessment?.inferred_assessment_type || norm.assessment?.assessmentType || undefined,
                 },
