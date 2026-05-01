@@ -680,6 +680,148 @@ function formatPoints(p) {
   return `(\u2013${Math.abs(n)})`; // always show as "–1"
 }
 
+/**
+ * Detect a paper document against a darker surface (desk, table) and crop to it.
+ * Returns a cropped canvas if a document boundary is found, or the original canvas if not.
+ *
+ * How it works:
+ * 1. Sample the edges of the image (outer 8%) to get the average "background" brightness.
+ * 2. If edges are already bright (>200 avg), this is likely a scan or tightly-framed shot — skip.
+ * 3. Otherwise, scan inward from each edge to find where brightness jumps (paper boundary).
+ * 4. Crop to the detected paper region with a small pad.
+ *
+ * This intentionally does NOT do perspective correction — just rectangular cropping.
+ * For 3D projects or art where the whole frame is the content, the edge brightness
+ * will be similar to the center so it returns the original uncropped.
+ */
+function detectDocumentBounds(canvas, { pad = 10 } = {}) {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return canvas;
+  const { width: w, height: h } = canvas;
+  if (w < 100 || h < 100) return canvas;
+
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+
+  function brightness(x, y) {
+    const i = (y * w + x) * 4;
+    return (d[i] + d[i + 1] + d[i + 2]) / 3;
+  }
+
+  // Sample edge brightness (outer 8% band)
+  const edgeBand = Math.max(8, Math.floor(Math.min(w, h) * 0.08));
+  let edgeSum = 0, edgeCount = 0;
+  // Top and bottom strips
+  for (let y = 0; y < edgeBand; y++) {
+    for (let x = 0; x < w; x += 3) { edgeSum += brightness(x, y); edgeCount++; }
+  }
+  for (let y = h - edgeBand; y < h; y++) {
+    for (let x = 0; x < w; x += 3) { edgeSum += brightness(x, y); edgeCount++; }
+  }
+  // Left and right strips
+  for (let x = 0; x < edgeBand; x++) {
+    for (let y = edgeBand; y < h - edgeBand; y += 3) { edgeSum += brightness(x, y); edgeCount++; }
+  }
+  for (let x = w - edgeBand; x < w; x++) {
+    for (let y = edgeBand; y < h - edgeBand; y += 3) { edgeSum += brightness(x, y); edgeCount++; }
+  }
+  const edgeAvg = edgeSum / (edgeCount || 1);
+
+  // If edges are bright (>190), the image is already tight — no desk visible
+  if (edgeAvg > 190) return canvas;
+
+  // Sample center brightness
+  const cx = Math.floor(w / 2), cy = Math.floor(h / 2);
+  const centerR = Math.floor(Math.min(w, h) * 0.15);
+  let centerSum = 0, centerCount = 0;
+  for (let dy = -centerR; dy <= centerR; dy += 4) {
+    for (let dx = -centerR; dx <= centerR; dx += 4) {
+      centerSum += brightness(cx + dx, cy + dy);
+      centerCount++;
+    }
+  }
+  const centerAvg = centerSum / (centerCount || 1);
+
+  // Need meaningful contrast: center should be noticeably brighter than edges
+  if (centerAvg - edgeAvg < 40) return canvas;
+
+  // Dynamic threshold: midpoint between edge and center brightness
+  const thresh = (edgeAvg + centerAvg) / 2;
+
+  // Scan inward from each edge to find where brightness crosses the threshold
+  // Use multiple scan lines and take the median for robustness
+  function findEdge(scanFn, maxDist, numLines) {
+    const hits = [];
+    for (let line = 0; line < numLines; line++) {
+      for (let dist = 0; dist < maxDist; dist++) {
+        if (scanFn(line, dist, numLines) > thresh) {
+          hits.push(dist);
+          break;
+        }
+      }
+    }
+    if (hits.length < numLines * 0.3) return 0; // not enough lines found paper
+    hits.sort((a, b) => a - b);
+    return hits[Math.floor(hits.length * 0.3)]; // 30th percentile (conservative)
+  }
+
+  const numH = Math.min(40, Math.floor(h * 0.8));
+  const numW = Math.min(40, Math.floor(w * 0.8));
+
+  // Top edge: scan downward
+  const topDist = findEdge((line, dist, total) => {
+    const y = dist;
+    const x = Math.floor((w * 0.1) + (line / total) * (w * 0.8));
+    return brightness(x, y);
+  }, Math.floor(h * 0.4), numH);
+
+  // Bottom edge: scan upward
+  const bottomDist = findEdge((line, dist, total) => {
+    const y = h - 1 - dist;
+    const x = Math.floor((w * 0.1) + (line / total) * (w * 0.8));
+    return brightness(x, y);
+  }, Math.floor(h * 0.4), numH);
+
+  // Left edge: scan rightward
+  const leftDist = findEdge((line, dist, total) => {
+    const x = dist;
+    const y = Math.floor((h * 0.1) + (line / total) * (h * 0.8));
+    return brightness(x, y);
+  }, Math.floor(w * 0.4), numW);
+
+  // Right edge: scan leftward
+  const rightDist = findEdge((line, dist, total) => {
+    const x = w - 1 - dist;
+    const y = Math.floor((h * 0.1) + (line / total) * (h * 0.8));
+    return brightness(x, y);
+  }, Math.floor(w * 0.4), numW);
+
+  // Check if we actually found meaningful paper bounds
+  const cropL = Math.max(0, leftDist - pad);
+  const cropT = Math.max(0, topDist - pad);
+  const cropR = Math.min(w, w - rightDist + pad);
+  const cropB = Math.min(h, h - bottomDist + pad);
+
+  const cropW = cropR - cropL;
+  const cropH = cropB - cropT;
+
+  // Don't crop if it barely changed (<5% from each edge) or result too small
+  const minCrop = Math.min(w, h) * 0.03;
+  if (topDist < minCrop && bottomDist < minCrop && leftDist < minCrop && rightDist < minCrop) {
+    return canvas; // barely any desk visible
+  }
+  if (cropW < w * 0.3 || cropH < h * 0.3) {
+    return canvas; // something went wrong — crop too aggressive
+  }
+
+  const out = document.createElement("canvas");
+  out.width = cropW;
+  out.height = cropH;
+  const outCtx = out.getContext("2d");
+  outCtx.drawImage(canvas, cropL, cropT, cropW, cropH, 0, 0, cropW, cropH);
+  return out;
+}
+
 function tightenCropToContent(canvas, { pad = 12, threshold = 245 } = {}) {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return canvas;
@@ -1674,6 +1816,7 @@ export default function GradingPage() {
     const [studentNameEdited, setStudentNameEdited] = useState(false);
     const [matchedRosterStudent, setMatchedRosterStudent] = useState(null); // { firstName, lastName, studentId, edsbyId, className }
     const [selectedClassName, setSelectedClassName] = useState(""); // manually chosen class
+    const [progressSaveFlash, setProgressSaveFlash] = useState(false); // brief confirmation when saved to progress
 
     // Sync roster student selection back to the current session item
     // (teacher may link student after grading completes)
@@ -1732,6 +1875,7 @@ export default function GradingPage() {
     }, [assessment?.student_name, studentNameEdited, rosterClasses, selectedClassName]);
 
     // Update published result when teacher changes student/class assignment
+    // This saves to /progress immediately — no email step needed
     useEffect(() => {
       if (!refCode || !resultsCreateUrl) return;
       const sid = matchedRosterStudent?.studentId || matchedRosterStudent?.edsbyId || null;
@@ -1740,7 +1884,7 @@ export default function GradingPage() {
         : (detectedStudentName || "").trim() || null;
       const cls = selectedClassName || matchedRosterStudent?.className || null;
       if (!sid && !sName) return;
-      // Fire-and-forget PATCH to update meta
+      // Save to progress portal immediately
       fetch(`${resultsCreateUrl}/${refCode}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1750,6 +1894,11 @@ export default function GradingPage() {
           className: cls,
           teacherEmail: teacherEmail || undefined,
         }),
+      }).then((r) => {
+        if (r.ok) {
+          setProgressSaveFlash(true);
+          setTimeout(() => setProgressSaveFlash(false), 2500);
+        }
       }).catch(() => {});
     }, [matchedRosterStudent, selectedClassName, refCode]);
 
@@ -1786,7 +1935,10 @@ export default function GradingPage() {
 
         ctx.drawImage(video, 0, 0, vw, vh);
 
-        const tightened = tightenCropToContent(canvas, { pad: 18, threshold: 245 });
+        // Auto-detect paper document on desk and crop to it
+        const docCropped = detectDocumentBounds(canvas, { pad: 12 });
+        // Then tighten to content (trim remaining white borders)
+        const tightened = tightenCropToContent(docCropped, { pad: 18, threshold: 245 });
         const rawDataUrl = tightened.toDataURL("image/jpeg", 0.9);
 
         triggerFlash();
@@ -4342,10 +4494,41 @@ export default function GradingPage() {
                 display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center",
                 maxWidth: "100%",
               }}>
-                {/* Student name — dropdown from roster or free text */}
+                {/* Class dropdown — shown first when multiple classes */}
+                {rosterClasses.length > 1 && (
+                  <div style={{ flex: 1, minWidth: 0, maxWidth: "50%" }}>
+                    <select
+                      value={selectedClassName}
+                      onChange={(e) => {
+                        const cls = e.target.value;
+                        setSelectedClassName(cls);
+                        // Re-run auto-match with the new class filter
+                        const aiName = detectedStudentName || String(assessment?.student_name || "").trim();
+                        if (aiName) {
+                          const match = matchStudentToRoster(aiName, cls);
+                          setMatchedRosterStudent(match || null);
+                        } else {
+                          setMatchedRosterStudent(null);
+                        }
+                      }}
+                      style={{
+                        width: "100%", padding: "6px 10px", borderRadius: 8,
+                        border: "1px solid #cbd5e1", fontSize: 13, background: "#fff",
+                      }}
+                    >
+                      <option value="">— Select class —</option>
+                      {[...rosterClasses].sort((a, b) => a.className.localeCompare(b.className)).map((rc) => (
+                        <option key={rc.id} value={rc.className}>{rc.className} ({(rc.students || []).length})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Student name — dropdown from roster (disabled until class is picked when multiple classes) */}
                 <div style={{ flex: 1, minWidth: 0, maxWidth: rosterClasses.length > 1 ? "50%" : "100%" }}>
                   <select
                     value={matchedRosterStudent ? `${matchedRosterStudent.firstName}|${matchedRosterStudent.lastName}|${matchedRosterStudent.studentId || matchedRosterStudent.edsbyId || ""}` : "__custom"}
+                    disabled={rosterClasses.length > 1 && !selectedClassName}
                     onChange={(e) => {
                       const val = e.target.value;
                       if (val === "__custom" || val === "__none") {
@@ -4372,9 +4555,14 @@ export default function GradingPage() {
                     style={{
                       width: "100%", padding: "6px 10px", borderRadius: 8,
                       border: "1px solid #cbd5e1", fontSize: 13, background: "#fff",
+                      ...(rosterClasses.length > 1 && !selectedClassName ? { opacity: 0.5, cursor: "not-allowed" } : {}),
                     }}
                   >
-                    <option value="__none">— Select student —</option>
+                    <option value="__none">
+                      {rosterClasses.length > 1 && !selectedClassName
+                        ? "— Pick a class first —"
+                        : "— Select student —"}
+                    </option>
                     {(() => {
                       // Filter roster students by selected class, deduplicate across classes
                       const students = [];
@@ -4411,39 +4599,18 @@ export default function GradingPage() {
                   </select>
                 </div>
 
-                {/* Class dropdown */}
-                {rosterClasses.length > 1 && (
-                  <div style={{ flex: 1, minWidth: 0, maxWidth: "50%" }}>
-                    <select
-                      value={selectedClassName}
-                      onChange={(e) => {
-                        const cls = e.target.value;
-                        setSelectedClassName(cls);
-                        // Re-run auto-match with the new class filter
-                        const aiName = detectedStudentName || String(assessment?.student_name || "").trim();
-                        if (aiName) {
-                          const match = matchStudentToRoster(aiName, cls);
-                          setMatchedRosterStudent(match || null);
-                        } else {
-                          setMatchedRosterStudent(null);
-                        }
-                      }}
-                      style={{
-                        width: "100%", padding: "6px 10px", borderRadius: 8,
-                        border: "1px solid #cbd5e1", fontSize: 13, background: "#fff",
-                      }}
-                    >
-                      <option value="">All classes</option>
-                      {[...rosterClasses].sort((a, b) => a.className.localeCompare(b.className)).map((rc) => (
-                        <option key={rc.id} value={rc.className}>{rc.className}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
                 {matchedRosterStudent && (
-                  <span style={{ fontSize: 11, color: "#16a34a", fontWeight: 600, whiteSpace: "nowrap" }}>
-                    ✓ Linked
+                  <span style={{
+                    fontSize: progressSaveFlash ? 12 : 11,
+                    color: "#16a34a",
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                    background: progressSaveFlash ? "rgba(22,163,106,0.1)" : "transparent",
+                    padding: progressSaveFlash ? "3px 8px" : "0",
+                    borderRadius: 6,
+                    transition: "all 0.3s ease",
+                  }}>
+                    {progressSaveFlash ? "✓ Saved to student progress!" : "✓ On progress portal"}
                   </span>
                 )}
               </div>
