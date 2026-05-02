@@ -1516,8 +1516,8 @@ export default function ProgressPage() {
                                     const getData = await getRes.json();
                                     if (getData.payload) {
                                       const updatedPayload = getData.payload.replace(
-                                        /(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/,
-                                        `${newScore}/${newDenom}`
+                                        /Grade:\s*(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/,
+                                        `Grade: ${newScore} / ${newDenom}`
                                       );
                                       await fetch(`${API}/results/${r.code}`, {
                                         method: "PUT",
