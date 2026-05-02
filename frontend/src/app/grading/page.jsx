@@ -1521,6 +1521,11 @@ export default function GradingPage() {
     // AA123 reference code per result (shown + copied)
     const [refCode, setRefCode] = useState("");
 
+    // Denominator override — teacher can change outOf after grading
+    const [denomOverride, setDenomOverride] = useState(null); // { score, outOf } or null
+    const [editingDenom, setEditingDenom] = useState(false);
+    const [denomInput, setDenomInput] = useState("");
+
     // Email Reports (session)
     const [showSessionEmailPrompt, setShowSessionEmailPrompt] = useState(false);
     const [sessionEmailTo, setSessionEmailTo] = useState(() => loadLS("curriculate_report_email", ""));
@@ -1742,8 +1747,12 @@ export default function GradingPage() {
     }, [gradingUses, assessment]);
 
     const formattedTeacherText = useMemo(() => {
-      return assessment ? buildFullTeacherPayloadText(assessment, refCode, gradeBand, rubricOverride) : "";
-    }, [assessment, refCode, rubricOverride]);
+      if (!assessment) return "";
+      const effectiveAssessment = denomOverride
+        ? { ...assessment, overall_score: denomOverride.score, overall_out_of: denomOverride.outOf }
+        : assessment;
+      return buildFullTeacherPayloadText(effectiveAssessment, refCode, gradeBand, rubricOverride);
+    }, [assessment, refCode, rubricOverride, denomOverride]);
 
     function triggerFlash() {
       setFlash(true);
@@ -2288,6 +2297,8 @@ export default function GradingPage() {
       setServerText("");
       setCopied(false);
       setRefCode("");
+      setDenomOverride(null);
+      setEditingDenom(false);
       setWorkInput("");
       setDetectedStudentName("");
       setStudentNameEdited(false);
@@ -3137,7 +3148,10 @@ export default function GradingPage() {
       // Result is already published on submission — just use the existing ref code
       const codeLocal = refCode;
 
-      const plainText = buildFullTeacherPayloadText(assessment, codeLocal, gradeBand, rubricOverride);
+      const effectiveAssessment = denomOverride
+        ? { ...assessment, overall_score: denomOverride.score, overall_out_of: denomOverride.outOf }
+        : assessment;
+      const plainText = buildFullTeacherPayloadText(effectiveAssessment, codeLocal, gradeBand, rubricOverride);
       const htmlAssignmentLinks = getAssignmentLinksFromAssessment(assessment);
       const submittedText = String(assessment?.submitted_text || "").trim();
 
@@ -4657,7 +4671,8 @@ export default function GradingPage() {
                   <div style={styles.gradingTopRow}>
                     <div style={styles.gradingTitle}>
                       {(() => {
-                        const g = getDisplayScore(assessment);
+                        const gRaw = getDisplayScore(assessment);
+                        const g = denomOverride || gRaw;
                         const biasLabel = strictnessBias > 0
                           ? (strictnessBias === 1 ? "strict" : strictnessBias === 2 ? "stricter" : "strictest")
                           : strictnessBias < 0
@@ -4685,7 +4700,61 @@ export default function GradingPage() {
                                   >&#8249;</button>
                                 )}
                                 <span style={{ minWidth: 40, textAlign: "center" }}>
-                                  {g.score !== "" ? g.score : "(not provided)"} / {g.outOf}
+                                  {g.score !== "" ? g.score : "(not provided)"} /
+                                  {editingDenom ? (
+                                    <form
+                                      onSubmit={(e) => {
+                                        e.preventDefault();
+                                        const newDenom = Math.round(Number(denomInput));
+                                        if (Number.isFinite(newDenom) && newDenom > 0 && newDenom !== gRaw.outOf) {
+                                          const origScore = gRaw.score;
+                                          const origOutOf = gRaw.outOf;
+                                          const pct = origOutOf > 0 ? (origScore / origOutOf) * 100 : 0;
+                                          const newScore = Math.round((pct / 100) * newDenom * 10) / 10;
+                                          setDenomOverride({ score: newScore, outOf: newDenom });
+                                          // Re-publish to results portal
+                                          if (refCode && backendBase) {
+                                            const updatedAssessment = { ...assessment, overall_score: newScore, overall_out_of: newDenom };
+                                            const updatedPayload = buildFullTeacherPayloadText(updatedAssessment, refCode, gradeBand, rubricOverride);
+                                            const updateUrl = `${backendBase}/results/${refCode}`;
+                                            fetch(updateUrl, {
+                                              method: "PUT",
+                                              headers: { "Content-Type": "application/json" },
+                                              body: JSON.stringify({ payload: updatedPayload }),
+                                            }).catch((err) => console.warn("[denom] update failed:", err));
+                                          }
+                                        }
+                                        setEditingDenom(false);
+                                        setDenomInput("");
+                                      }}
+                                      style={{ display: "inline", marginLeft: 2 }}
+                                    >
+                                      <input
+                                        autoFocus
+                                        type="number"
+                                        min="1"
+                                        value={denomInput}
+                                        onChange={(e) => setDenomInput(e.target.value)}
+                                        onBlur={() => { setEditingDenom(false); setDenomInput(""); }}
+                                        onKeyDown={(e) => { if (e.key === "Escape") { setEditingDenom(false); setDenomInput(""); } }}
+                                        style={{
+                                          width: 44, fontSize: 14, fontWeight: 700,
+                                          border: "1px solid #2563eb", borderRadius: 4,
+                                          padding: "1px 3px", textAlign: "center", outline: "none",
+                                        }}
+                                      />
+                                    </form>
+                                  ) : (
+                                    <span
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setDenomInput(String(g.outOf));
+                                        setEditingDenom(true);
+                                      }}
+                                      title="Click to change denominator"
+                                      style={{ cursor: "pointer", borderBottom: "1px dashed #94a3b8", marginLeft: 2 }}
+                                    >{g.outOf}</span>
+                                  )}
                                 </span>
                                 {!submitting && (
                                   <button

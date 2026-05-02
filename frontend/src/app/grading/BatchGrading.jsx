@@ -538,6 +538,8 @@ export default function BatchGrading({
   // ---------- Edsby Class Roster (state declared early — used in grading callback) ----------
   const [editingNameIndex, setEditingNameIndex] = useState(null); // index of result whose name is being edited
   const [denomPrompt, setDenomPrompt] = useState(null); // { denoms: [56, 46], show: true } — mixed denominator prompt
+  const [editingDenom, setEditingDenom] = useState(false); // inline denom editor active
+  const [denomInput, setDenomInput] = useState(""); // value in the denom editor
   const [detectedBatchClass, setDetectedBatchClass] = useState(null); // class name detected from roster matching
   const classChangeCountRef = useRef(0); // tracks manual class changes to offer bulk update
   const [detectedBatchRosterId, setDetectedBatchRosterId] = useState(null); // roster ID detected from matching
@@ -2873,26 +2875,60 @@ export default function BatchGrading({
   }, [detectedBatchClass]);
 
   // --- Normalize denominators across results ---
+  // Rescales all students' scores to a new denominator and re-publishes to results portal
   const normalizeDenoms = useCallback((targetDenom) => {
-    setResults((prev) => prev.map((r) => {
-      if (r.error || typeof r.outOf !== "number" || r.outOf <= 0) return r;
-      if (r.outOf === targetDenom) return r; // already correct
-      // Convert score to target denominator using percentage
-      const pct = r.pct != null ? r.pct : (r.score / r.outOf) * 100;
-      const newScore = Math.round((pct / 100) * targetDenom * 10) / 10;
-      return { ...r, score: newScore, outOf: targetDenom };
-    }));
+    setResults((prev) => {
+      const updated = prev.map((r) => {
+        if (r.error || typeof r.outOf !== "number" || r.outOf <= 0) return r;
+        if (r.outOf === targetDenom) return r; // already correct
+        const pct = r.pct != null ? r.pct : (r.score / r.outOf) * 100;
+        const newScore = Math.round((pct / 100) * targetDenom * 10) / 10;
+        const newPct = targetDenom > 0 ? Math.round((newScore / targetDenom) * 100) : null;
+        return { ...r, score: newScore, outOf: targetDenom, pct: newPct, letter: newPct != null ? letterGrade(newPct) : r.letter };
+      });
+      // Re-publish each result that has a refCode (fire-and-forget)
+      if (resultsUrl) {
+        updated.forEach((r) => {
+          if (!r.refCode || r.error) return;
+          const updateUrl = resultsUrl.replace(/\/$/, "") + "/" + r.refCode;
+          fetch(updateUrl, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              payload: buildBatchPayloadText(r, r.refCode, gradeBand),
+            }),
+          }).catch((e) => console.warn(`[batch] denom update for ${r.refCode} failed:`, e));
+        });
+      }
+      return updated;
+    });
     setDenomPrompt(null);
-  }, []);
+  }, [resultsUrl, gradeBand]);
 
   const convertToPercent = useCallback(() => {
-    setResults((prev) => prev.map((r) => {
-      if (r.error || typeof r.outOf !== "number" || r.outOf <= 0) return r;
-      const pct = r.pct != null ? r.pct : Math.round((r.score / r.outOf) * 100);
-      return { ...r, score: pct, outOf: 100 };
-    }));
+    setResults((prev) => {
+      const updated = prev.map((r) => {
+        if (r.error || typeof r.outOf !== "number" || r.outOf <= 0) return r;
+        const pct = r.pct != null ? r.pct : Math.round((r.score / r.outOf) * 100);
+        return { ...r, score: pct, outOf: 100, pct, letter: letterGrade(pct) };
+      });
+      if (resultsUrl) {
+        updated.forEach((r) => {
+          if (!r.refCode || r.error) return;
+          const updateUrl = resultsUrl.replace(/\/$/, "") + "/" + r.refCode;
+          fetch(updateUrl, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              payload: buildBatchPayloadText(r, r.refCode, gradeBand),
+            }),
+          }).catch((e) => console.warn(`[batch] percent convert for ${r.refCode} failed:`, e));
+        });
+      }
+      return updated;
+    });
     setDenomPrompt(null);
-  }, []);
+  }, [resultsUrl, gradeBand]);
 
   // Close name dropdown on outside click
   useEffect(() => {
@@ -4100,7 +4136,59 @@ export default function BatchGrading({
                   <th style={{ ...batchStyles.th, textAlign: "left" }}>Student</th>
                   {rosterClasses.length > 1 && <th style={{ ...batchStyles.th, textAlign: "left" }}>Class</th>}
                   <th style={batchStyles.th}>Pages</th>
-                  <th style={batchStyles.th}>Score</th>
+                  <th style={batchStyles.th}>
+                    {editingDenom ? (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const newDenom = Math.round(Number(denomInput));
+                          if (Number.isFinite(newDenom) && newDenom > 0) {
+                            normalizeDenoms(newDenom);
+                          }
+                          setEditingDenom(false);
+                          setDenomInput("");
+                        }}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 3 }}
+                      >
+                        <span style={{ fontSize: 10, opacity: 0.7 }}>/ </span>
+                        <input
+                          autoFocus
+                          type="number"
+                          min="1"
+                          value={denomInput}
+                          onChange={(e) => setDenomInput(e.target.value)}
+                          onBlur={() => { setEditingDenom(false); setDenomInput(""); }}
+                          onKeyDown={(e) => { if (e.key === "Escape") { setEditingDenom(false); setDenomInput(""); } }}
+                          style={{
+                            width: 48, fontSize: 11, fontWeight: 700,
+                            border: "1px solid #2563eb", borderRadius: 4,
+                            padding: "2px 4px", textAlign: "center",
+                            outline: "none",
+                          }}
+                        />
+                      </form>
+                    ) : (
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // Pre-fill with the most common denominator
+                          const denomCounts = {};
+                          results.forEach((r) => {
+                            if (!r.error && typeof r.outOf === "number" && r.outOf > 0) {
+                              denomCounts[r.outOf] = (denomCounts[r.outOf] || 0) + 1;
+                            }
+                          });
+                          const topDenom = Object.entries(denomCounts).sort((a, b) => b[1] - a[1])[0];
+                          setDenomInput(topDenom ? topDenom[0] : "");
+                          setEditingDenom(true);
+                        }}
+                        title="Click to change denominator for all students"
+                        style={{ cursor: "pointer", borderBottom: "1px dashed #94a3b8" }}
+                      >
+                        Score
+                      </span>
+                    )}
+                  </th>
                   <th style={batchStyles.th}>%</th>
                   <th style={batchStyles.th}>Grade</th>
                   <th style={batchStyles.th}>Code</th>
@@ -4289,7 +4377,18 @@ export default function BatchGrading({
                                 opacity: (studentBias[r.index] || 0) >= 3 ? 0.4 : 0.7,
                               }}
                             >&#8249;</button>
-                            <span>{r.score}/{r.outOf}</span>
+                            <span>
+                              {r.score}/
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDenomInput(String(r.outOf));
+                                  setEditingDenom(true);
+                                }}
+                                title="Click to change denominator for all students"
+                                style={{ cursor: "pointer", borderBottom: "1px dashed #94a3b8" }}
+                              >{r.outOf}</span>
+                            </span>
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); regradeStudent(r.index, -1); }}
