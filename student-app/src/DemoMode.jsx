@@ -22,14 +22,26 @@ const AUTO_ADVANCE_MS = 90_000; // 90 seconds per task
 
 // Default points per task type (backend is source of truth; these are fallback)
 const DEFAULT_TASK_POINTS = {
-  "multiple-choice": 10, "true-false": 10, "short-answer": 15,
-  sort: 15, sequence: 15, matching: 15, flashcards: 10,
-  "flashcards-race": 20, timeline: 15, vennsort: 20,
-  "brain-blitz": 25, "open-text": 15, "hangman-duel": 20,
-  "speed-draw": 25, "pet-feeding": 15, spinner: 10,
-  trivia: 15, riddle: 20, "tower-builder": 20, "reading-comp": 20,
-  "diff-detective": 20, "echo-chain": 15, "word-weaver-duel": 20,
-  "body-break": 10, "mind-mapper": 20,
+  "multiple-choice": 10, "physical-multiple-choice": 10, "true-false": 10,
+  "short-answer": 15, "reading-comp": 20, "open-text": 15,
+  sort: 15, sequence: 15, matching: 15, timeline: 15, vennsort: 20,
+  draw: 20, mime: 15, photo: 15, "make-and-snap": 20, "photo-journal": 20,
+  "speed-draw": 25, "draw-mime": 20,
+  "body-break": 10, "musical-chairs": 15, "motion-mission": 15,
+  "mad-dash": 15, "mad-dash-sequence": 15,
+  "mood-checkin": 5, "team-selfie": 10, "treasure-runner": 15,
+  "brain-blitz": 25, "true-false-tictactoe": 20, "true-false-connect-four": 20,
+  "tower-builder": 20, flashcards: 10, "flashcards-race": 20,
+  "pet-feeding": 15, "diff-detective": 20, "hangman-duel": 20,
+  "word-weaver-duel": 20, "guess-who": 20, "echo-chain": 15,
+  spinner: 10, trivia: 15, riddle: 20,
+  collaboration: 15, "live-debate": 25, "ai-debate-judge": 25,
+  "brainstorm-battle": 20, "mystery-clues": 15, "fake-out": 20,
+  "brain-spark-notes": 20, "mind-mapper": 20, "narration-synthesize": 20,
+  "role-play": 20, "role-play-deck": 20, "script-play": 20,
+  pronunciation: 15, "speech-recognition": 15, "record-audio": 15,
+  letter: 20, "case-study": 25, "art-view": 20, "historical-doc": 20,
+  hidenseek: 15, storytelling: 25,
 };
 const DEFAULT_PTS = 10;
 
@@ -52,7 +64,7 @@ function isValidEmail(e) {
 // Phase: Email Capture
 // ----------------------------------------------------------------
 
-function EmailCapture({ onStart, source, classroom, promoCode }) {
+function EmailCapture({ onStart, source, classroom, promoCode, conferenceName, conferenceLocation, conferenceDate }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("");
@@ -78,6 +90,7 @@ function EmailCapture({ onStart, source, classroom, promoCode }) {
           role: role.trim() || undefined,
           source,
           classroom: classroom || "",
+          conference: conferenceName || "general",
           promoCode: promoCode || "CONFERENCE2025",
         }),
       });
@@ -103,10 +116,26 @@ function EmailCapture({ onStart, source, classroom, promoCode }) {
         <h1 style={styles.captureTitle}>
           {isClassroom ? "Practice Mode" : "Try Curriculate"}
         </h1>
+        {/* Conference info banner */}
+        {!isClassroom && conferenceName && (
+          <div style={{
+            background: "linear-gradient(135deg, #eff6ff, #f0f9ff)",
+            border: "1px solid #93c5fd",
+            borderRadius: 12,
+            padding: "10px 14px",
+            marginBottom: 12,
+            textAlign: "center",
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#1e40af" }}>{conferenceName}</div>
+            {conferenceLocation && <div style={{ fontSize: 12, color: "#3b82f6" }}>{conferenceLocation}</div>}
+            {conferenceDate && <div style={{ fontSize: 12, color: "#3b82f6" }}>{conferenceDate}</div>}
+          </div>
+        )}
+
         <p style={styles.captureSubtitle}>
           {isClassroom
-            ? "Try 25+ interactive task types and earn points! Your teacher can see your progress."
-            : "Experience 25+ interactive task types used in classrooms worldwide. Takes about 5 minutes — or skip around!"}
+            ? "Try 60+ interactive task types and earn points! Your teacher can see your progress."
+            : "Experience 60+ interactive task types used in classrooms worldwide. Takes about 5 minutes — or skip around!"}
         </p>
 
         <form onSubmit={handleSubmit} style={{ width: "100%" }}>
@@ -868,6 +897,9 @@ export default function DemoMode({ source = "conference", classroom = "" }) {
   const effectiveSource = params.get("source") || source;
   const effectiveClassroom = params.get("classroom") || classroom;
   const effectivePromo = params.get("promo") || "CONFERENCE2025";
+  const conferenceName = params.get("event") || "";
+  const conferenceLocation = params.get("location") || "";
+  const conferenceDate = params.get("date") || "";
 
   const handleStart = useCallback((u) => {
     setUser(u);
@@ -887,6 +919,9 @@ export default function DemoMode({ source = "conference", classroom = "" }) {
           source={effectiveSource}
           classroom={effectiveClassroom}
           promoCode={effectivePromo}
+          conferenceName={conferenceName}
+          conferenceLocation={conferenceLocation}
+          conferenceDate={conferenceDate}
         />
       )}
       {phase === "play" && user && (

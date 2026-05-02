@@ -269,6 +269,7 @@ export default function TrueFalseTask({
       const item = canonicalItems[canonicalIndex] || {};
       const flip = seededBool(`${taskKey}:tf:flip:${canonicalIndex}`);
       const prompt =
+        safeText(item.statement, "").trim() ||
         safeText(item.prompt, "").trim() ||
         safeText(item.text, "").trim() ||
         safeText(task.prompt, "").trim() ||

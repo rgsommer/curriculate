@@ -30,31 +30,95 @@ const resultsLimiter = rateLimit({
 
 // Points per task type (some types are harder / more engaging)
 const TASK_POINTS = {
+  // Core Q&A
   "multiple-choice": 10,
+  "physical-multiple-choice": 10,
   "true-false": 10,
   "short-answer": 15,
+  "reading-comp": 20,
+  "open-text": 15,
+
+  // Ordering / drag-and-drop
   sort: 15,
   sequence: 15,
   matching: 15,
-  flashcards: 10,
-  "flashcards-race": 20,
   timeline: 15,
   vennsort: 20,
-  "brain-blitz": 25,
-  "open-text": 15,
-  "hangman-duel": 20,
+
+  // Visual / creative
+  draw: 20,
+  mime: 15,
+  photo: 15,
+  "make-and-snap": 20,
+  "photo-journal": 20,
   "speed-draw": 25,
+  "draw-mime": 20,
+
+  // Movement / physical
+  "body-break": 10,
+  "musical-chairs": 15,
+  "motion-mission": 15,
+  "mad-dash": 15,
+  "mad-dash-sequence": 15,
+
+  // Pre-task / interstitial
+  "mood-checkin": 5,
+  "team-selfie": 10,
+  "treasure-runner": 15,
+
+  // Competitive / games
+  "brain-blitz": 25,
+  "true-false-tictactoe": 20,
+  "true-false-connect-four": 20,
+  "tower-builder": 20,
+  flashcards: 10,
+  "flashcards-race": 20,
   "pet-feeding": 15,
+  "diff-detective": 20,
+  "hangman-duel": 20,
+  "word-weaver-duel": 20,
+  "guess-who": 20,
+  "echo-chain": 15,
   spinner: 10,
   trivia: 15,
   riddle: 20,
-  "tower-builder": 20,
-  "reading-comp": 20,
-  "diff-detective": 20,
-  "echo-chain": 15,
-  "word-weaver-duel": 20,
-  "body-break": 10,
+
+  // Collaboration / discussion
+  collaboration: 15,
+  "live-debate": 25,
+  "ai-debate-judge": 25,
+  "brainstorm-battle": 20,
+
+  // Deduction / clue-based
+  "mystery-clues": 15,
+  "fake-out": 20,
+
+  // Synthesis / creative
+  "brain-spark-notes": 20,
   "mind-mapper": 20,
+  "narration-synthesize": 20,
+  "role-play": 20,
+  "role-play-deck": 20,
+  "script-play": 20,
+
+  // Language / speaking
+  pronunciation: 15,
+  "speech-recognition": 15,
+  "record-audio": 15,
+
+  // Writing
+  letter: 20,
+  "case-study": 25,
+
+  // Observation / visual analysis
+  "art-view": 20,
+  "historical-doc": 20,
+
+  // Physical / scavenger
+  hidenseek: 15,
+
+  // Storytelling
+  storytelling: 25,
 };
 
 const DEFAULT_POINTS = 10;
@@ -326,6 +390,82 @@ router.get("/feedback-summary", async (req, res) => {
   } catch (err) {
     console.error("[demo/feedback-summary] Error:", err.message);
     res.status(500).json({ error: "Failed to fetch feedback summary" });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  GET /feedback-export                                               */
+/*  Plain text export of all feedback for pasting / AI review          */
+/* ------------------------------------------------------------------ */
+
+router.get("/feedback-export", async (req, res) => {
+  try {
+    const key = req.query.key;
+    if (key !== process.env.ADMIN_API_KEY) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const leads = await ConferenceLead.find({ "results.0": { $exists: true } })
+      .select("results name email source classroom createdAt")
+      .lean();
+
+    // Build per-task-type aggregation
+    const byType = {};
+
+    for (const lead of leads) {
+      for (const r of lead.results || []) {
+        if (r.skipped || !r.feedback) continue;
+        const tt = r.taskType;
+        if (!byType[tt]) {
+          byType[tt] = { title: r.title || tt, funScores: [], clarityScores: [], comments: [] };
+        }
+        if (r.feedback.fun) byType[tt].funScores.push(r.feedback.fun);
+        if (r.feedback.clarity) byType[tt].clarityScores.push(r.feedback.clarity);
+        if (r.feedback.confusing) {
+          byType[tt].comments.push(`  [CONFUSING] "${r.feedback.confusing}" — ${lead.name}`);
+        }
+        if (r.feedback.suggestion) {
+          byType[tt].comments.push(`  [SUGGESTION] "${r.feedback.suggestion}" — ${lead.name}`);
+        }
+      }
+    }
+
+    // Sort by worst fun rating first
+    const sorted = Object.entries(byType).sort((a, b) => {
+      const avgA = a[1].funScores.length ? a[1].funScores.reduce((s, v) => s + v, 0) / a[1].funScores.length : 5;
+      const avgB = b[1].funScores.length ? b[1].funScores.reduce((s, v) => s + v, 0) / b[1].funScores.length : 5;
+      return avgA - avgB;
+    });
+
+    const lines = [
+      "=== CURRICULATE DEMO/PRACTICE FEEDBACK REPORT ===",
+      `Generated: ${new Date().toISOString()}`,
+      `Total testers: ${leads.length}`,
+      `Task types with feedback: ${sorted.length}`,
+      "",
+    ];
+
+    for (const [taskType, data] of sorted) {
+      const avgFun = data.funScores.length
+        ? (data.funScores.reduce((s, v) => s + v, 0) / data.funScores.length).toFixed(1)
+        : "N/A";
+      const avgClarity = data.clarityScores.length
+        ? (data.clarityScores.reduce((s, v) => s + v, 0) / data.clarityScores.length).toFixed(1)
+        : "N/A";
+
+      lines.push(`--- ${taskType} (${data.title}) ---`);
+      lines.push(`  Responses: ${data.funScores.length} | Fun: ${avgFun}/5 | Clarity: ${avgClarity}/5`);
+      if (data.comments.length > 0) {
+        lines.push("  Comments:");
+        data.comments.forEach((c) => lines.push(`    ${c}`));
+      }
+      lines.push("");
+    }
+
+    res.type("text/plain").send(lines.join("\n"));
+  } catch (err) {
+    console.error("[demo/feedback-export] Error:", err.message);
+    res.status(500).json({ error: "Failed to export feedback" });
   }
 });
 
