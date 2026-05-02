@@ -10003,22 +10003,35 @@ function buildRubricInstructions({
     - If the only difference is formatting, presentation, or notation style, do NOT mark incorrect.
     - Do not use deductions to re-penalize wrong answers already reflected in section scores.
 
-    WRITTEN / SHORT-ANSWER RESPONSE RULES:
+    WRITTEN / SHORT-ANSWER RESPONSE RULES (CRITICAL — read carefully):
     - SEMANTIC EQUIVALENCE: For non-math answers, compare MEANING, not exact wording.
-      If the student's answer says the same thing as the correct answer in different words, it is CORRECT.
-      Example: "colonialism does more harm than good" = "colonialism causes far more harm than good" — SAME MEANING, CORRECT.
+      If the student's answer conveys the same idea as the correct answer in different words, it is CORRECT.
+      Examples of answers that are THE SAME and must NOT be marked incorrect:
+        • "public sector and control led by the government" = "public sector is the part of economy controlled by the govt"
+        • "the part of economy that isn't under govt" = "the part of economy not controlled by govt"
+        • "corrupt politicians, greedy" = "corrupt politicians and corruption issues"
+        • "leaders blame others, no responsibility, bribes" = "leaders blame others, no responsibility, bribes, corruption" (student captured the key ideas)
+        • "problem #1. Population" = "problem #1 is population"
+        • "colonialism does more harm than good" = "colonialism causes far more harm than good"
+      RULE: If both answers describe the same concept, fact, or opinion — even with different sentence structure,
+      word order, synonyms, or minor omissions — they are EQUIVALENT. Do NOT mark as incorrect.
+    - PARAPHRASE TEST: Before marking a written answer incorrect, ask: "If a teacher read this student's answer,
+      would they consider it correct?" If a reasonable teacher would give full marks, you must too.
+      A false incorrect is WORSE than a false correct. When in doubt, mark it correct.
     - OPINION / REFLECTION QUESTIONS: If the question asks "what do you think about X?" or "how do you feel about X?",
       any thoughtful, relevant response that demonstrates engagement with the topic is correct.
       The answer key for opinion questions is a SAMPLE answer, not the ONLY valid answer.
       Do NOT mark an opinion answer as incorrect because it differs from the sample — mark it incorrect ONLY if it is completely off-topic or blank.
     - "PICK ONE" QUESTIONS: If the question asks the student to choose one from multiple valid options
-      (e.g., "which of the two areas would you like to work in?") and the answer key says "either accepted",
+      (e.g., "which of the two areas would you like to work in?") and the answer key says "either accepted" or "any reasonable answer",
       the student is correct if they name ANY valid option — including naming more than one.
-      A student who says "public sector and private sector" when "either accepted" is the key should get full marks.
     - SUPERSET ANSWERS: If the student's answer CONTAINS the correct answer plus additional correct/relevant information,
       it is CORRECT unless the question specifically required choosing only one item.
-    - Before marking a written answer as incorrect, ask: "Does the student's answer demonstrate the same knowledge or opinion
-      as the answer key expects?" If yes, it is CORRECT regardless of how differently it is worded.
+    - NEAR-MISS ANSWERS: If the student's answer captures 3 out of 4 key ideas from the answer key, that is NOT incorrect —
+      it is partial credit at worst, and usually full marks. Only mark incorrect when the answer is fundamentally wrong.
+    - COPYING TOLERANCE: If a question asks to list or copy items (e.g., "list all 8 beatitudes") and the student lists them
+      but with minor wording variations, spelling differences, or slight paraphrasing, that is CORRECT.
+      Only mark incorrect if items are completely missing or wrong.
 
     MATH RULE:
     - If a numeric answer is correct but a required unit is missing, deduct 0.5 from that question.

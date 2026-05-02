@@ -846,7 +846,7 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                             </div>
                             {typeof k.score === "number" && typeof k.out_of === "number" ? (
                               <span style={{ fontSize: 13, fontWeight: 900, color: c.text }}>
-                                {k.score.toFixed(2)}/{k.out_of.toFixed(2)}
+                                {Number.isInteger(k.score) ? k.score : k.score.toFixed(1)}/{Number.isInteger(k.out_of) ? k.out_of : k.out_of.toFixed(1)}
                               </span>
                             ) : null}
                           </div>
@@ -888,7 +888,7 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                           <div style={{ fontSize: 12, fontWeight: 800, color: qualityColor }}>{qualityLabel}</div>
                           <div style={{ fontSize: 13, fontWeight: 900, color: "#1e293b" }}>
                             <span style={{ opacity: 0.6, fontWeight: 600, marginRight: 6 }}>Total</span>
-                            {totalScore.toFixed(2)}/{totalOutOf.toFixed(2)}
+                            {Number.isInteger(totalScore) ? totalScore : totalScore.toFixed(1)}/{Number.isInteger(totalOutOf) ? totalOutOf : totalOutOf.toFixed(1)}
                           </div>
                         </div>
                         <div style={{ position: "relative", height: 16, borderRadius: 8, overflow: "visible", background: "#f1f5f9", border: "1px solid #e2e8f0" }}>
