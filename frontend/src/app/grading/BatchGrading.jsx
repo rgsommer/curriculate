@@ -2862,12 +2862,15 @@ export default function BatchGrading({
         r.rosterLastName = rosterStudent.lastName;
         r.rosterEdsbyId = rosterStudent.edsbyId;
         r.rosterStudentId = rosterStudent.studentId;
-        r.rosterClassName = rosterStudent.className;
+        // Keep the batch class if one has already been established
+        if (!detectedBatchClass) {
+          r.rosterClassName = rosterStudent.className;
+        }
       }
       return updated;
     });
     setEditingNameIndex(null);
-  }, []);
+  }, [detectedBatchClass]);
 
   // --- Normalize denominators across results ---
   const normalizeDenoms = useCallback((targetDenom) => {
