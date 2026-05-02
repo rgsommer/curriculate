@@ -2897,7 +2897,9 @@ export default function BatchGrading({
     const all = [];
     const seen = new Set();
     for (const rc of rosterClasses) {
+      // Filter by detected roster ID or detected class name
       if (detectedBatchRosterId && rc.id !== detectedBatchRosterId) continue;
+      if (!detectedBatchRosterId && detectedBatchClass && rc.className !== detectedBatchClass) continue;
       for (const s of rc.students || []) {
         const key = `${(s.firstName || "").toLowerCase()}|${(s.lastName || "").toLowerCase()}|${s.studentId || s.edsbyId || ""}`;
         if (seen.has(key)) continue;
@@ -2905,8 +2907,8 @@ export default function BatchGrading({
         all.push({ ...s, className: rc.className });
       }
     }
-    // Fallback: if filtering by batch roster left nothing, show all
-    if (all.length === 0 && detectedBatchRosterId) {
+    // Fallback: if filtering left nothing, show all
+    if (all.length === 0 && (detectedBatchRosterId || detectedBatchClass)) {
       for (const rc of rosterClasses) {
         for (const s of rc.students || []) {
           const key = `${(s.firstName || "").toLowerCase()}|${(s.lastName || "").toLowerCase()}|${s.studentId || s.edsbyId || ""}`;
@@ -2929,7 +2931,7 @@ export default function BatchGrading({
       return `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`);
     });
     return all;
-  }, [rosterClasses, detectedBatchRosterId, results]);
+  }, [rosterClasses, detectedBatchRosterId, detectedBatchClass, results]);
 
   const assignStudentName = useCallback((resultIndex, rosterStudent) => {
     setResults((prev) => {
@@ -4396,15 +4398,18 @@ export default function BatchGrading({
                               classChangeCountRef.current += 1;
 
                               if (classChangeCountRef.current >= 2) {
-                                // After 2 manual changes, offer to change all
-                                const changeAll = window.confirm(
-                                  `Change all students in this batch to ${newClass}?`
-                                );
-                                if (changeAll) {
-                                  setResults((prev) => prev.map((x) => ({ ...x, rosterClassName: newClass })));
-                                  setDetectedBatchClass(newClass);
-                                  classChangeCountRef.current = 0;
-                                  return;
+                                // After 2 manual changes, offer to change all — but skip if ≤2 students or already all that class
+                                const allAlready = results.every((x) => x.rosterClassName === newClass);
+                                if (!allAlready && results.length > 2) {
+                                  const changeAll = window.confirm(
+                                    `Change all students in this batch to ${newClass}?`
+                                  );
+                                  if (changeAll) {
+                                    setResults((prev) => prev.map((x) => ({ ...x, rosterClassName: newClass })));
+                                    setDetectedBatchClass(newClass);
+                                    classChangeCountRef.current = 0;
+                                    return;
+                                  }
                                 }
                               }
 
