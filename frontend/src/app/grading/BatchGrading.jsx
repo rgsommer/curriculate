@@ -508,6 +508,8 @@ export default function BatchGrading({
   const [pdfName, setPdfName] = useState("");
   const [pageCount, setPageCount] = useState(0);
   const [pagesPerStudent, setPagesPerStudent] = useState("auto"); // number, "auto", or "tap"
+  const [precisionMode, setPrecisionMode] = useState(false); // multi-pass median scoring
+  const PRECISION_PASSES = 3; // number of AI passes per student in precision mode
   const [answerKeyPages, setAnswerKeyPages] = useState(0); // leading pages that are the answer key
   const [tapMarkedPages, setTapMarkedPages] = useState(new Set()); // pages marked as "first page" in tap mode
   const [thumbnails, setThumbnails] = useState([]); // [{page, dataUrl}] for tap mode
@@ -832,6 +834,94 @@ export default function BatchGrading({
     setDetecting(false);
   }, [pageCount, answerKeyPages, gradingUrl]);
 
+  // ---------- Precision mode: merge N results into one via median scoring ----------
+  function mergeMultiPassResults(passes) {
+    if (!passes || passes.length === 0) return passes[0];
+    if (passes.length === 1) return passes[0];
+
+    // Filter out errored passes
+    const valid = passes.filter(p => !p.error);
+    if (valid.length === 0) return passes[0]; // all errored — return first
+    if (valid.length === 1) return valid[0];
+
+    const median = (nums) => {
+      const sorted = [...nums].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    };
+
+    // Median overall score
+    const scores = valid.map(p => Number(p.score)).filter(Number.isFinite);
+    const outOfs = valid.map(p => Number(p.outOf)).filter(Number.isFinite);
+    const medianScore = scores.length > 0 ? Math.round(median(scores) * 10) / 10 : valid[0].score;
+    const medianOutOf = outOfs.length > 0 ? Math.round(median(outOfs)) : valid[0].outOf;
+    const medianPct = Number.isFinite(medianScore) && Number.isFinite(medianOutOf) && medianOutOf > 0
+      ? Math.round((medianScore / medianOutOf) * 100) : null;
+
+    // Merge per-section scores via median
+    let mergedSections = null;
+    const sectionedPasses = valid.filter(p => Array.isArray(p.sections) && p.sections.length > 0);
+    if (sectionedPasses.length > 0) {
+      // Use first pass's structure as template
+      const template = sectionedPasses[0].sections;
+      mergedSections = template.map((sec, si) => {
+        const sectionScores = sectionedPasses
+          .map(p => p.sections[si] ? Number(p.sections[si].score) : NaN)
+          .filter(Number.isFinite);
+        const sectionOutOfs = sectionedPasses
+          .map(p => p.sections[si] ? Number(p.sections[si].out_of) : NaN)
+          .filter(Number.isFinite);
+        const secMedianScore = sectionScores.length > 0 ? Math.round(median(sectionScores) * 10) / 10 : sec.score;
+        const secMedianOutOf = sectionOutOfs.length > 0 ? Math.round(median(sectionOutOfs)) : sec.out_of;
+
+        // Pick feedback from the pass whose section score is closest to the median
+        let bestFeedback = sec.feedback || "";
+        let bestDist = Infinity;
+        for (const p of sectionedPasses) {
+          if (p.sections[si]) {
+            const dist = Math.abs(Number(p.sections[si].score) - secMedianScore);
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestFeedback = p.sections[si].feedback || bestFeedback;
+            }
+          }
+        }
+
+        return { ...sec, score: secMedianScore, out_of: secMedianOutOf, feedback: bestFeedback };
+      });
+    }
+
+    // Pick the pass whose overall score is closest to the median for text fields
+    let bestPass = valid[0];
+    let bestDist = Infinity;
+    for (const p of valid) {
+      const dist = Math.abs(Number(p.score) - medianScore);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestPass = p;
+      }
+    }
+
+    // Compute agreement: how close the passes were (for confidence indicator)
+    const scoreRange = scores.length > 1 ? Math.max(...scores) - Math.min(...scores) : 0;
+    const agreement = medianOutOf > 0 ? Math.max(0, 100 - Math.round((scoreRange / medianOutOf) * 100)) : 100;
+
+    return {
+      ...bestPass,
+      score: Number.isFinite(medianScore) ? medianScore : "?",
+      outOf: Number.isFinite(medianOutOf) ? medianOutOf : "?",
+      pct: medianPct,
+      letter: medianPct != null ? letterGrade(medianPct) : "?",
+      sections: mergedSections || bestPass.sections,
+      strengths: bestPass.strengths,
+      improvements: bestPass.improvements,
+      comment: bestPass.comment,
+      precisionPasses: passes.length,
+      precisionAgreement: agreement,
+      precisionScores: scores,  // individual pass scores for display
+    };
+  }
+
   // ---------- Run batch grading ----------
   const runBatch = useCallback(async () => {
     const doc = pdfDocRef.current;
@@ -1137,20 +1227,39 @@ export default function BatchGrading({
       }
     };
 
+    // --- Precision mode wrapper: run N passes and merge via median ---
+    const gradeWithPrecision = async (i, group, progressPrefix) => {
+      if (!precisionMode) {
+        return gradeOneStudent(i, group);
+      }
+      const passes = [];
+      for (let pass = 0; pass < PRECISION_PASSES; pass++) {
+        if (abortRef.current) break;
+        setProgress({
+          done: Math.max(0, i),
+          total,
+          current: `${progressPrefix} — pass ${pass + 1}/${PRECISION_PASSES}`,
+        });
+        const result = await gradeOneStudent(i, group);
+        passes.push(result);
+      }
+      return mergeMultiPassResults(passes);
+    };
+
     // Grade first student solo for fast initial feedback, then batches of 3
-    const CONCURRENCY = 3;
+    const CONCURRENCY = precisionMode ? 1 : 3; // serialize in precision mode to avoid API overload
     let start = 0;
 
     // First student — solo so the teacher sees a result quickly
     if (total > 0 && !abortRef.current) {
-      setProgress({ done: 0, total, current: `Grading student 1 of ${total}...` });
-      const first = await gradeOneStudent(0, studentGroups[0]);
+      setProgress({ done: 0, total, current: `Grading student 1 of ${total}${precisionMode ? " — pass 1/" + PRECISION_PASSES : ""}...` });
+      const first = await gradeWithPrecision(0, studentGroups[0], `Grading student 1 of ${total}`);
       batchResults.push(first);
       setResults([...batchResults]);
       start = 1;
     }
 
-    // Remaining students in parallel batches of 3
+    // Remaining students in parallel batches
     for (; start < total; start += CONCURRENCY) {
       if (abortRef.current) break;
 
@@ -1160,11 +1269,15 @@ export default function BatchGrading({
       setProgress({
         done: start,
         total,
-        current: `Grading students ${start + 1}–${batchEnd} of ${total}...`,
+        current: `Grading student${batchSlice.length > 1 ? "s" : ""} ${start + 1}${batchEnd > start + 1 ? "–" + batchEnd : ""} of ${total}...`,
       });
 
       const promises = batchSlice.map((group, offset) =>
-        gradeOneStudent(start + offset, group)
+        gradeWithPrecision(
+          start + offset,
+          group,
+          `Grading student ${start + offset + 1} of ${total}`
+        )
       );
       const settled = await Promise.all(promises);
 
@@ -1923,6 +2036,8 @@ export default function BatchGrading({
     rosterClasses,
     rotatedPages,
     perQuestionAudit,
+    precisionMode,
+    PRECISION_PASSES,
   ]);
 
   // ---------- Re-grade a single student with adjusted strictness ----------
@@ -3351,6 +3466,51 @@ export default function BatchGrading({
               </select>
             </label>
 
+            <label style={{
+              ...batchStyles.label,
+              cursor: "pointer",
+              paddingTop: 18,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div
+                  onClick={() => setPrecisionMode(!precisionMode)}
+                  style={{
+                    width: 40,
+                    height: 22,
+                    borderRadius: 11,
+                    background: precisionMode ? "#2563eb" : "#d1d5db",
+                    position: "relative",
+                    transition: "background 0.2s",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                  }}
+                >
+                  <div style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 9,
+                    background: "#fff",
+                    position: "absolute",
+                    top: 2,
+                    left: precisionMode ? 20 : 2,
+                    transition: "left 0.2s",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                  }} />
+                </div>
+                <span
+                  style={{ fontSize: 13, fontWeight: 600 }}
+                  title="Best for tests, exams, and high-stakes assignments. Grades each student multiple times and uses the median score for extra consistency."
+                >
+                  Precision Mode
+                </span>
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.6, marginTop: 2 }}>
+                {precisionMode
+                  ? `${PRECISION_PASSES} passes per student — median score (slower, more consistent)`
+                  : "Single pass (faster)"}
+              </div>
+            </label>
+
             <div style={{ fontSize: 13, opacity: 0.7, paddingTop: 20 }}>
               {answerKeyPages > 0 && (
                 <div style={{ color: "#059669", fontWeight: 600, marginBottom: 2 }}>
@@ -4156,6 +4316,23 @@ export default function BatchGrading({
                       </td>
                       <td style={batchStyles.td}>
                         {r.pct != null ? `${r.pct}%` : "—"}
+                        {r.precisionPasses > 1 && (
+                          <span
+                            title={`Precision: ${r.precisionPasses} passes, ${r.precisionAgreement}% agreement (scores: ${(r.precisionScores || []).join(", ")})`}
+                            style={{
+                              display: "inline-block",
+                              marginLeft: 4,
+                              fontSize: 10,
+                              fontWeight: 700,
+                              padding: "1px 4px",
+                              borderRadius: 4,
+                              background: r.precisionAgreement >= 90 ? "#dcfce7" : r.precisionAgreement >= 70 ? "#fef9c3" : "#fee2e2",
+                              color: r.precisionAgreement >= 90 ? "#166534" : r.precisionAgreement >= 70 ? "#854d0e" : "#991b1b",
+                            }}
+                          >
+                            {r.precisionAgreement >= 90 ? "●" : r.precisionAgreement >= 70 ? "◐" : "○"}
+                          </span>
+                        )}
                       </td>
                       <td
                         style={{
