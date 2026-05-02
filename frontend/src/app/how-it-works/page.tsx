@@ -350,7 +350,7 @@ export default function HowItWorksPage() {
               }
               bullets={[
                 "One device per team is enough (others can watch/assist).",
-                "Stations are QR-coded posters – one-time print and post.",
+                "Stations are CurricQR-coded posters – one-time print and post.",
                 "Keeps students moving, discovering, collaborating, and focused.",
               ]}
             />

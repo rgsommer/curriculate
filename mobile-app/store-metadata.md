@@ -21,7 +21,7 @@ Pulse by Curriculate is the free AI grading tool built for teachers. Snap a phot
 • Your rubric, every time — paste, describe, or upload a PDF
 • Batch grade a whole class from a single PDF scan
 • Per-student strictness adjustment
-• QR-coded PDF reports to hand back to students
+• CurricQR-coded PDF reports to hand back to students
 • Student & parent progress portal with grade tracking
 • Email notifications when new grades arrive
 • Gradebook CSV export for Edsby and other systems

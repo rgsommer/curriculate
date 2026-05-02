@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     "tween party games",
     "teen party games",
     "no app party games",
-    "QR code party games",
+    "CurricQR code party games",
     "themed birthday party",
     "dinosaur party games",
     "space party games",

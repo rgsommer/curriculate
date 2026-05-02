@@ -107,14 +107,14 @@ export default function FeaturesPage() {
             <SectionHeader
               eyebrow="Stations & Delivery"
               title="Built for station rotation, not worksheets"
-              desc="Curriculate is designed for real classrooms: color-coded QR stations, physical display integration, multi-room scavenger hunts, and repeatable routines that students learn once and run every time."
+              desc="Curriculate is designed for real classrooms: color-coded CurricQR stations, physical display integration, multi-room scavenger hunts, and repeatable routines that students learn once and run every time."
             />
             <div className="grid gap-4 md:grid-cols-2">
               <FeatureCard
                 title="📍 Station-Ready by Design"
-                body="Print color-coded QR posters once, stick them around the room, and reuse them for every session. Students scan to arrive at a station and receive their next task."
+                body="Print color-coded CurricQR posters once, stick them around the room, and reuse them for every session. Students scan to arrive at a station and receive their next task."
                 bullets={[
-                  "8 color-coded stations with printable QR posters",
+                  "8 color-coded stations with printable CurricQR posters",
                   "Automatic team-to-station assignment and rotation",
                   "Students scan to arrive — no teacher direction needed",
                   "Designed for quick launch and smooth transitions",
@@ -144,7 +144,7 @@ export default function FeaturesPage() {
                 title="🎯 Zero-Prep Reuse"
                 body="The station routine is the same every session. Students learn the scan-arrive-work loop once, and it works for any subject, any taskset, any day."
                 bullets={[
-                  "Same QR posters, different tasks every session",
+                  "Same CurricQR posters, different tasks every session",
                   "No re-printing, no new instructions, no wasted time",
                   "Works with all task types and game modes",
                 ]}

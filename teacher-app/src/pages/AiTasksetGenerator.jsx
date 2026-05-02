@@ -2004,7 +2004,7 @@ export default function AiTasksetGenerator() {
                     </button>
                   </div>
 
-                  {/* Station color picker — tap to assign which QR station this item is near */}
+                  {/* Station color picker — tap to assign which CurricQR station this item is near */}
                   <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
                     {STATION_COLORS.map((color) => {
                       const hex = {

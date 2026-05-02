@@ -22,7 +22,7 @@
 - Batch grading: PDF upload → AI classifies answer key / rubric / student pages → grades each student → results grid with re-grade
 - PDF rotation handling: dedicated `/grading/check-rotation` endpoint with majority vote, retry logic, gpt-4.1
 - Freeform/handwritten assignment classification support
-- QR-coded PDF reports for students
+- CurricQR-coded PDF reports for students
 - Session email with PDF attachments + Edsby CSV export
 
 ## B. Pulse Grading — Mobile App

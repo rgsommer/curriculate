@@ -5,7 +5,7 @@ export default function NotFound() {
     <main style={{ padding: 22, maxWidth: 820, margin: "0 auto" }}>
       <h1 style={{ marginTop: 0 }}>Page not found</h1>
       <p style={{ opacity: 0.8 }}>
-        If you scanned a scavenger hunt QR code, start with the demo.
+        If you scanned a scavenger hunt CurricQR code, start with the demo.
       </p>
 
       <Link

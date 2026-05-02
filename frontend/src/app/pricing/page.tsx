@@ -124,7 +124,7 @@ export default function PricingPage() {
         key: "teacher_plus",
         title: "Teacher Plus",
         price: "$6.99 CAD / month",
-        bullets: ["QR station rotation & fixed-station displays", "Student-level reporting", "PDF exports", "AI-themed team selfie images", "Great for small-group or class sessions"],
+        bullets: ["CurricQR station rotation & fixed-station displays", "Student-level reporting", "PDF exports", "AI-themed team selfie images", "Great for small-group or class sessions"],
         priceId: prices.TEACHER_PLUS_MONTHLY,
         // Bug 5: Send plan tier to backend, let backend resolve priceId
         plan: "TEACHER_PLUS",

@@ -4559,7 +4559,7 @@ Precipitation — rain, snow, hail`}
                   cursor: roomCode ? "pointer" : "not-allowed",
                 }}
               >
-                Print QR Station Sheets
+                Print CurricQR Station Sheets
               </button>
 
               <button
@@ -5506,7 +5506,7 @@ Precipitation — rain, snow, hail`}
               Station Setup Checklist
             </h2>
             <p style={{ margin: 0, fontSize: "0.85rem", color: "#4b5563" }}>
-              This taskset uses fixed stations. Please place these items at the correct QR stations before launching.
+              This taskset uses fixed stations. Please place these items at the correct CurricQR stations before launching.
             </p>
 
             <div style={{ marginTop: 4, overflowY: "auto", maxHeight: 320, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -6298,12 +6298,12 @@ Thomas | Soldier | loyal, brave, disciplined`}
           {
             target: "#live-teams-grid",
             title: "Teams",
-            body: "Teams appear here as students scan QR codes and join. You'll see their status, current task, and connection state.",
+            body: "Teams appear here as students scan CurricQR codes and join. You'll see their status, current task, and connection state.",
           },
           {
             target: "#live-leaderboard",
             title: "Leaderboard & Submissions",
-            body: "Scores update in real time. You can also see individual submissions and a scan log of QR activity.",
+            body: "Scores update in real time. You can also see individual submissions and a scan log of CurricQR activity.",
           },
           {
             target: "#live-noise-treats",

@@ -75,8 +75,35 @@ function loadPdfJs() {
   return pdfjsPromise;
 }
 
-// Render a single PDF page to a JPEG data URL
-async function renderPageToDataUrl(pdfDoc, pageNum, scale = 1.5, extraRotation = 0) {
+// Render a single page to a JPEG data URL.
+// For image-mode batches, `imageDataArr` supplies pre-loaded data URLs — pdfDoc may be null.
+async function renderPageToDataUrl(pdfDoc, pageNum, scale = 1.5, extraRotation = 0, imageDataArr = null) {
+  // ── Image mode: return stored data URL (optionally scaled) ──
+  if (imageDataArr && imageDataArr[pageNum - 1]) {
+    const src = imageDataArr[pageNum - 1];
+    // For thumbnails (scale < 1), resize on a canvas; for full-res just return as-is
+    if (scale >= 1 && extraRotation === 0) return src;
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width * Math.min(scale, 1);
+        let h = img.height * Math.min(scale, 1);
+        if (scale >= 1) { w = img.width; h = img.height; }
+        const cvs = document.createElement("canvas");
+        cvs.width = w; cvs.height = h;
+        const cx = cvs.getContext("2d");
+        const eff = ((extraRotation % 360) + 360) % 360;
+        if (eff === 180) { cx.translate(w / 2, h / 2); cx.rotate(Math.PI); cx.drawImage(img, -w / 2, -h / 2, w, h); }
+        else if (eff === 90) { cvs.width = h; cvs.height = w; cx.translate(h / 2, w / 2); cx.rotate(Math.PI / 2); cx.drawImage(img, -w / 2, -h / 2, w, h); }
+        else if (eff === 270) { cvs.width = h; cvs.height = w; cx.translate(h / 2, w / 2); cx.rotate(3 * Math.PI / 2); cx.drawImage(img, -w / 2, -h / 2, w, h); }
+        else { cx.drawImage(img, 0, 0, w, h); }
+        resolve(cvs.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = () => resolve(src);
+      img.src = src;
+    });
+  }
+  // ── PDF mode ──
   const page = await pdfDoc.getPage(pageNum);
   // Let pdf.js handle /Rotate metadata entirely on its own — do NOT pass rotation.
   // pdf.js defaults to page.rotate internally and handles content stream transforms.
@@ -532,6 +559,7 @@ export default function BatchGrading({
   const [scanTipVisible, setScanTipVisible] = useState(false); // "scan in any orientation" tip
 
   const pdfDocRef = useRef(null);
+  const imageDataRef = useRef([]); // For image-mode batches (JPEG/PNG uploads)
   const abortRef = useRef(false);
   const fileInputRef = useRef(null);
 
@@ -555,28 +583,84 @@ export default function BatchGrading({
   const [rosterLoading, setRosterLoading] = useState(false);
   const rosterFileRef = useRef(null);
 
-  // ---------- PDF upload ----------
+  // ---------- File upload (PDF or images) ----------
+  const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+
   const handleFileChange = useCallback(async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.type !== "application/pdf") {
-      setLoadError("Please select a PDF file.");
-      return;
-    }
-    if (file.size > 100 * 1024 * 1024) {
-      setLoadError("PDF is too large (max 100 MB).");
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const firstType = files[0].type;
+    const isPdf = firstType === "application/pdf";
+    const isImages = IMAGE_TYPES.includes(firstType) || /\.(jpe?g|png|webp|heic|heif)$/i.test(files[0].name);
+
+    if (!isPdf && !isImages) {
+      setLoadError("Please select a PDF or image files (JPEG, PNG, WebP, HEIC).");
       return;
     }
 
+    // Common reset
     setLoadError("");
     setLoading(true);
-    setPdfName(file.name);
     setResults([]);
     setStudentBias({});
     setClassSummary(null);
     setTeacherAnalysis("");
     setDetectedGroups(null);
     setRotatedPages({});
+    imageDataRef.current = [];
+    pdfDocRef.current = null;
+
+    // ── Image mode ──
+    if (isImages) {
+      // Filter to only image files, sort by name for consistent ordering
+      const imageFiles = files
+        .filter(f => IMAGE_TYPES.includes(f.type) || /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      if (imageFiles.length === 0) {
+        setLoadError("No valid image files found.");
+        setLoading(false);
+        return;
+      }
+      const totalSize = imageFiles.reduce((s, f) => s + f.size, 0);
+      if (totalSize > 200 * 1024 * 1024) {
+        setLoadError("Total image size is too large (max 200 MB).");
+        setLoading(false);
+        return;
+      }
+
+      const label = imageFiles.length === 1
+        ? imageFiles[0].name
+        : `${imageFiles.length} images`;
+      setPdfName(label);
+      setPdfFile(imageFiles[0]); // keep a truthy reference for UI guards
+
+      // Read all images as data URLs
+      const dataUrls = [];
+      for (const f of imageFiles) {
+        const url = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(f);
+        });
+        dataUrls.push(url);
+      }
+      imageDataRef.current = dataUrls;
+      setPageCount(dataUrls.length);
+      setLoading(false);
+      return;
+    }
+
+    // ── PDF mode (existing logic) ──
+    const file = files[0];
+    if (file.size > 100 * 1024 * 1024) {
+      setLoadError("PDF is too large (max 100 MB).");
+      setLoading(false);
+      return;
+    }
+
+    setPdfName(file.name);
 
     try {
       const pdfjsLib = await loadPdfJs();
@@ -587,10 +671,6 @@ export default function BatchGrading({
       setPdfFile(file);
 
       // ── Deterministic rotation consistency check ──
-      // If a rotation utility set /Rotate on SOME pages but not all (buggy utility),
-      // the pages without metadata need extra rotation to match.
-      // ADF scanners produce ALL pages in the same orientation, so if any page
-      // has /Rotate≠0, the pages without it are in the wrong orientation.
       const rotationMap = {};
       let hasRotated = false;
       let hasUnrotated = false;
@@ -602,14 +682,12 @@ export default function BatchGrading({
         else hasUnrotated = true;
       }
       if (hasRotated && hasUnrotated) {
-        // Mixed rotation — find the majority rotation and flag the outliers
         const counts = {};
         Object.values(rotationMap).forEach(r => { counts[r] = (counts[r] || 0) + 1; });
         const majorityRotation = Number(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]);
         const needsExtra = {};
         for (const [p, r] of Object.entries(rotationMap)) {
           if (r !== majorityRotation) {
-            // This page is missing the rotation that most pages have — needs extra rotation
             needsExtra[Number(p)] = true;
           }
         }
@@ -621,19 +699,14 @@ export default function BatchGrading({
       } else if (hasRotated) {
         console.log(`[batch] all pages have consistent rotation metadata — pdf.js handles natively`);
       } else {
-        // No rotation metadata at all (page.rotate=0 on all pages).
-        // Content might still be physically upside down from the scanner.
-        // Fire a dedicated AI rotation check asynchronously.
         (async () => {
           try {
             if (!gradingUrl) return;
             setRotationMsg("Checking page orientation...");
-            // Pick 2 content-rich pages (skip every other for blank backs)
             const checkPages = [];
             for (let p = 1; p <= doc.numPages && checkPages.length < 2; p += 2) {
               checkPages.push(p);
             }
-            // Render at higher resolution for reliable detection
             const checkImages = [];
             for (const p of checkPages) {
               const pg = await doc.getPage(p);
@@ -674,7 +747,7 @@ export default function BatchGrading({
       setLoading(false);
     } catch (err) {
       console.error("PDF load error:", err);
-      setLoadError("Could not read PDF. Make sure it's a valid PDF file.");
+      setLoadError("Could not read file. Make sure it's a valid PDF or image file.");
       setLoading(false);
     }
   }, [gradingUrl]);
@@ -695,14 +768,14 @@ export default function BatchGrading({
 
   // ---------- Tap mode: generate thumbnails ----------
   useEffect(() => {
-    if (!isTap || !pdfDocRef.current || pageCount === 0) return;
+    if (!isTap || (!pdfDocRef.current && imageDataRef.current.length === 0) || pageCount === 0) return;
     let cancelled = false;
     (async () => {
       const doc = pdfDocRef.current;
       const thumbs = [];
       for (let p = 1; p <= pageCount; p++) {
         if (cancelled) return;
-        const dataUrl = await renderPageToDataUrl(doc, p, 0.3);
+        const dataUrl = await renderPageToDataUrl(doc, p, 0.3, 0, imageDataRef.current);
         thumbs.push({ page: p, dataUrl });
       }
       if (!cancelled) setThumbnails(thumbs);
@@ -731,7 +804,7 @@ export default function BatchGrading({
   // ---------- Auto-detect page boundaries ----------
   const runAutoDetect = useCallback(async () => {
     const doc = pdfDocRef.current;
-    if (!doc) return;
+    if (!doc && imageDataRef.current.length === 0) return;
 
     setDetecting(true);
     setDetectedGroups(null);
@@ -760,7 +833,7 @@ export default function BatchGrading({
               const namePages = fpGroups.map(g => g.startPage);
               const nameImages = [];
               for (const p of namePages) {
-                nameImages.push(await renderPageToDataUrl(doc, p, 0.5));
+                nameImages.push(await renderPageToDataUrl(doc, p, 0.5, 0, imageDataRef.current));
               }
               const nameUrl = gradingUrl.replace(/\/grading$/, "/grading/classify-pages");
               const nameRes = await fetchWithRetry(nameUrl, {
@@ -795,7 +868,7 @@ export default function BatchGrading({
 
       const thumbs = [];
       for (let p = 1; p <= pageCount; p++) {
-        thumbs.push(await renderPageToDataUrl(doc, p, 0.8));
+        thumbs.push(await renderPageToDataUrl(doc, p, 0.8, 0, imageDataRef.current));
       }
 
       const classifyUrl = gradingUrl.replace(/\/grading$/, "/grading/classify-pages");
@@ -927,7 +1000,8 @@ export default function BatchGrading({
   // ---------- Run batch grading ----------
   const runBatch = useCallback(async () => {
     const doc = pdfDocRef.current;
-    if (!doc || !gradingUrl) return;
+    const imgArr = imageDataRef.current;
+    if ((!doc && imgArr.length === 0) || !gradingUrl) return;
 
     abortRef.current = false;
     setGrading(true);
@@ -967,7 +1041,7 @@ export default function BatchGrading({
         try {
           const thumbs = [];
           for (let p = 1; p <= pageCount; p++) {
-            thumbs.push(await renderPageToDataUrl(doc, p, 0.8));
+            thumbs.push(await renderPageToDataUrl(doc, p, 0.8, 0, imageDataRef.current));
           }
           const classifyUrl = gradingUrl.replace(/\/grading$/, "/grading/classify-pages");
           const classifyRes = await fetchWithRetry(classifyUrl, {
@@ -1046,7 +1120,7 @@ export default function BatchGrading({
         for (const p of keyPageNumbers) {
           if (p >= 1 && p <= pageCount) {
             const rotation = localRotatedPages[p] ? 180 : 0;
-            akImages.push(await renderPageToDataUrl(doc, p, 1.5, rotation));
+            akImages.push(await renderPageToDataUrl(doc, p, 1.5, rotation, imgArr));
           }
         }
         answerKeyImages = akImages;
@@ -1080,10 +1154,11 @@ export default function BatchGrading({
       try {
         // Render pages to images (auto-rotate any upside-down pages)
         const images = [];
+        const totalPages = doc ? doc.numPages : imgArr.length;
         for (const p of group.pages) {
-          if (p < 1 || p > doc.numPages) continue;
+          if (p < 1 || p > totalPages) continue;
           const rotation = localRotatedPages[p] ? 180 : 0;
-          const dataUrl = await renderPageToDataUrl(doc, p, 1.5, rotation);
+          const dataUrl = await renderPageToDataUrl(doc, p, 1.5, rotation, imgArr);
           images.push(dataUrl);
         }
         if (images.length === 0) {
@@ -2048,7 +2123,8 @@ export default function BatchGrading({
     if (!r || regradingIndex) return;
 
     const doc = pdfDocRef.current;
-    if (!doc) return;
+    const imgArr = imageDataRef.current;
+    if (!doc && imgArr.length === 0) return;
 
     // Compute new bias
     const currentBias = studentBias[resultIndex] || 0;
@@ -2075,10 +2151,11 @@ export default function BatchGrading({
 
       // Render pages to images (auto-rotate any upside-down pages)
       const images = [];
+      const totalPages = doc ? doc.numPages : imgArr.length;
       for (const p of group.pages) {
-        if (p < 1 || p > doc.numPages) continue;
+        if (p < 1 || p > totalPages) continue;
         const rotation = rotatedPages[p] ? 180 : 0;
-        images.push(await renderPageToDataUrl(doc, p, 1.5, rotation));
+        images.push(await renderPageToDataUrl(doc, p, 1.5, rotation, imgArr));
       }
       if (!images.length) throw new Error("No valid pages for this student");
 
@@ -2392,7 +2469,7 @@ export default function BatchGrading({
 
     // Header
     html += `<h2 style="margin: 0 0 4px; font-size: 20px; color: #0f172a;">Pulse Grading Batch Results</h2>`;
-    html += `<p style="margin: 0 0 16px; font-size: 14px; color: #64748b;">${effectiveTitle || "Uploaded PDF"} &mdash; ${results.length} student${results.length !== 1 ? "s" : ""} graded</p>`;
+    html += `<p style="margin: 0 0 16px; font-size: 14px; color: #64748b;">${effectiveTitle || "Uploaded batch"} &mdash; ${results.length} student${results.length !== 1 ? "s" : ""} graded</p>`;
 
     // Rubric note (if teacher typed one in)
     const rubricNote = (rubricOverride || "").trim();
@@ -2477,13 +2554,14 @@ export default function BatchGrading({
     html += `<table style="width: 100%;"><tr>`;
     html += `<td style="font-size: 12px; color: #94a3b8; line-height: 1.5;">`;
     const hasRosterIds = results.some((r) => r.rosterStudentId || r.rosterEdsbyId);
+    const hasEdsby = results.some((r) => r.rosterEdsbyId);
     const hasRoster = rosterClasses.length > 0;
 
     if (hasRosterIds) {
       // Teacher has roster and students are matched — show progress portal link
       html += `<div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">`;
       html += `<strong style="color: #166534;">Student Progress Portal</strong><br/>`;
-      html += `<span style="color: #15803d;">View all your students' scores and averages in one place at <a href="https://www.curriculate.net/progress" style="color: #2563eb; font-weight: 700;">curriculate.net/progress</a>. Just enter your email &mdash; no student ID needed &mdash; to see your full class overview. Click any student to see their complete history and progress over time.</span>`;
+      html += `<span style="color: #15803d;">View all your students' scores and averages in one place at <a href="https://www.curriculate.net/progress" style="color: #2563eb; font-weight: 700;">curriculate.net/progress</a>. Just enter your email &mdash; ${hasEdsby ? 'use your Edsby student ID/login' : 'no student ID needed'} &mdash; to see your full class overview. Click any student to see their complete history and progress over time.</span>`;
       html += `</div>`;
     } else if (!hasRoster) {
       // No roster uploaded — guide teacher to set one up
@@ -2497,18 +2575,18 @@ export default function BatchGrading({
 
     // Copy-paste message for students
     const hasAnyIds = results.some((r) => r.rosterStudentId || r.rosterEdsbyId || r.studentId);
-    const hasEdsby = results.some((r) => r.rosterEdsbyId);
     html += `<div style="background: #fefce8; border: 1px solid #fde68a; border-radius: 8px; padding: 14px 16px; margin-bottom: 14px;">`;
     html += `<div style="font-weight: 800; font-size: 12px; color: #92400e; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">Share with your students</div>`;
     html += `<div style="font-size: 12px; color: #78350f; margin-bottom: 8px;">Copy and paste this into your class chat, LMS, or handout:</div>`;
     html += `<div style="background: #ffffff; border: 1px dashed #d4a574; border-radius: 6px; padding: 12px 14px; font-size: 13px; color: #1e293b; line-height: 1.6;">`;
     if (hasAnyIds) {
+      html += `<strong style="font-size: 15px; color: #1e293b;">Check your Pulse</strong><br/><br/>`;
       html += `I'm sharing this Curriculate Progress viewer to make it easier for all of us&mdash;teachers, parents, students&mdash;to see the feedback and results on your assessments. `;
       if (hasEdsby) html += `Grades still go into Edsby&mdash;nothing changes there. `;
       html += `As new work is graded, it will appear in this portal!<br/><br/>`;
       html += `To see your detailed results and feedback:<br/><br/>`;
       html += `1. Go to <strong>curriculate.net/progress</strong><br/>`;
-      html += `2. Enter your student ID and your (or your parent's) email<br/>`;
+      html += `2. Enter your ${hasEdsby ? 'Edsby student ID/login' : 'student ID'} and your (or your parent's) email<br/>`;
       html += `3. You'll see your score, feedback, and a link to your full report<br/><br/>`;
       html += `Parents can also add their email to get notified of future grades. Just log in with the same student ID and a different email address.`;
     } else {
@@ -3393,11 +3471,11 @@ export default function BatchGrading({
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
-            const file = e.dataTransfer?.files?.[0];
-            if (file) {
-              // Simulate file input
+            const files = e.dataTransfer?.files;
+            if (files?.length) {
+              // Pass all dropped files through to handleFileChange
               const dt = new DataTransfer();
-              dt.items.add(file);
+              for (const f of files) dt.items.add(f);
               if (fileInputRef.current) {
                 fileInputRef.current.files = dt.files;
                 fileInputRef.current.dispatchEvent(new Event("change", { bubbles: true }));
@@ -3407,10 +3485,10 @@ export default function BatchGrading({
         >
           <div style={{ fontSize: 36, opacity: 0.4 }}>📁</div>
           <div style={{ fontWeight: 700, fontSize: 15 }}>
-            Drop a PDF here or tap to upload
+            Drop a PDF or images here, or tap to upload
           </div>
           <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>
-            Scan your stack with the copier's ADF, save as PDF, upload here
+            PDF from your copier's ADF, or select individual photos/scans
           </div>
         </div>
       )}
@@ -3445,13 +3523,14 @@ export default function BatchGrading({
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/pdf"
+        accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
+        multiple
         onChange={handleFileChange}
         style={{ display: "none" }}
       />
 
       {loading && (
-        <div style={batchStyles.statusBox}>Loading PDF...</div>
+        <div style={batchStyles.statusBox}>Loading file{pageCount > 1 ? "s" : ""}...</div>
       )}
 
       {loadError && (
@@ -3776,6 +3855,7 @@ export default function BatchGrading({
                 setExtractedAnswerKey(answerKeyOverride || "");
                 setDetectedGroups(null);
                 pdfDocRef.current = null;
+                imageDataRef.current = [];
                 if (fileInputRef.current) fileInputRef.current.value = "";
                 // Clear previous results
                 setResults([]);

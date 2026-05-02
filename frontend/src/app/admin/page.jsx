@@ -442,7 +442,7 @@ export default function AdminUsageDashboard() {
             <Card title="Progress portal">
               <BigNumber value={rpv.bySource.progress || 0} sub="Via student dashboard" />
             </Card>
-            <Card title="QR code scans">
+            <Card title="CurricQR code scans">
               <BigNumber value={rpv.bySource.qr || 0} sub="From PDF reports" />
             </Card>
             <Card title="Email clicks">

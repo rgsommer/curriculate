@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Pulse — Grade Papers in Minutes, Not Hours | Curriculate",
   description:
-    "Pulse by Curriculate. Snap a photo of student work, choose from 13 feedback voices, and get rubric-aligned grades with personalized feedback in seconds. Batch grading, parent portal, email notifications, and QR-coded PDF reports.",
+    "Pulse by Curriculate. Snap a photo of student work, choose from 13 feedback voices, and get rubric-aligned grades with personalized feedback in seconds. Batch grading, parent portal, email notifications, and CurricQR-coded PDF reports.",
   keywords: [
     "Pulse grading",
     "Curriculate Pulse",
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     "batch grading",
     "parent portal",
     "grade notifications",
-    "QR code reports",
+    "CurricQR code reports",
     "student progress tracking",
     "Pulse for teachers",
     "gradebook export",
@@ -74,7 +74,7 @@ const jsonLd = {
     "Sticky rubric detection across grading sessions",
     "Batch grading — upload a whole class as PDF",
     "Per-student strictness adjustment",
-    "QR-coded PDF reports with 5-character result codes",
+    "CurricQR-coded PDF reports with 5-character result codes",
     "Student & parent progress portal with grade tracking",
     "Email notifications — instant or weekly digest",
     "Grade review requests from students and parents",

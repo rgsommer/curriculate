@@ -51,7 +51,7 @@ const faqs = [
   },
   {
     q: "Is it chaotic because students move around?",
-    a: "Movement is structured and intentional. QR-coded stations, time limits, clear prompts, and teacher-controlled pacing keep energy productive rather than chaotic. Teachers retain full control over when tasks start, pause, or end.",
+    a: "Movement is structured and intentional. CurricQR-coded stations, time limits, clear prompts, and teacher-controlled pacing keep energy productive rather than chaotic. Teachers retain full control over when tasks start, pause, or end.",
   },
   {
     q: "Can this work in a quiet or highly structured classroom?",

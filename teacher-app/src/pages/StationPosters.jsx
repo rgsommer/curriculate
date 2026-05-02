@@ -316,7 +316,7 @@ export default function StationPosters() {
               </div>
               <img
                 src={qrUrl}
-                alt={`QR to ${upper} - ${location}`}
+                alt={`CurricQR to ${upper} - ${location}`}
                 style={{
                   width: "3.6in",
                   height: "3.6in",

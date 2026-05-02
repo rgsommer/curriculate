@@ -487,8 +487,8 @@ app.post("/api/recommend", async (req, res) => {
               </td>
               <td style="padding: 10px; width: 50%; vertical-align: top;">
                 <div style="background: #f0fdfa; border-radius: 10px; padding: 14px;">
-                  <div style="font-size: 13px; font-weight: 800; color: #115e59; margin-bottom: 4px;">QR-Coded Reports</div>
-                  <div style="font-size: 12px; color: #0d9488; line-height: 1.4;">Print PDFs with QR codes to feedback</div>
+                  <div style="font-size: 13px; font-weight: 800; color: #115e59; margin-bottom: 4px;">CurricQR-Coded Reports</div>
+                  <div style="font-size: 12px; color: #0d9488; line-height: 1.4;">Print PDFs with CurricQR codes to feedback</div>
                 </div>
               </td>
             </tr>
@@ -569,7 +569,7 @@ app.post("/api/recommend", async (req, res) => {
               <td style="padding: 10px; width: 50%; vertical-align: top;">
                 <div style="background: #ecfdf5; border-radius: 10px; padding: 14px;">
                   <div style="font-size: 13px; font-weight: 800; color: #065f46; margin-bottom: 4px;">No Student Accounts</div>
-                  <div style="font-size: 12px; color: #059669; line-height: 1.4;">Students scan a QR code — no app, no login</div>
+                  <div style="font-size: 12px; color: #059669; line-height: 1.4;">Students scan a CurricQR code — no app, no login</div>
                 </div>
               </td>
             </tr>
@@ -9585,6 +9585,10 @@ function buildRubricInstructions({
       - CRITICAL: "x=4" and "4" are the SAME correct answer. Do NOT mark wrong because the student included the variable name.
         Similarly: "y=-3" = "-3", "x=2/3" = "2/3", "a=0.5" = "0.5" = "1/2". The value is what matters.
       - For written responses: check whether the student demonstrates the key concepts, ideas, or reasoning shown in the answer key. Exact wording is NOT required.
+        Compare MEANING, not words. "colonialism does more harm than good" and "colonialism causes far more harm than good" are the SAME answer.
+      - For opinion/reflection questions ("what do you think about X?"): the answer key is a SAMPLE, not the only valid answer.
+        Any thoughtful, relevant response is correct. Do NOT mark it incorrect for differing from the sample.
+      - For "pick one" questions where "either accepted" appears in the key: naming ANY valid option (or all of them) is correct.
       - Award partial credit when the student shows correct understanding or method but makes a computational error, or addresses some but not all required elements.
       - Award 0 marks only when the student's answer is clearly wrong or missing.
       - You MUST actually EVALUATE each answer against the key. Do NOT assume the student is correct without checking.
@@ -9998,6 +10002,23 @@ function buildRubricInstructions({
     - If normalized answers match, the item MUST NOT appear in incorrect_items.
     - If the only difference is formatting, presentation, or notation style, do NOT mark incorrect.
     - Do not use deductions to re-penalize wrong answers already reflected in section scores.
+
+    WRITTEN / SHORT-ANSWER RESPONSE RULES:
+    - SEMANTIC EQUIVALENCE: For non-math answers, compare MEANING, not exact wording.
+      If the student's answer says the same thing as the correct answer in different words, it is CORRECT.
+      Example: "colonialism does more harm than good" = "colonialism causes far more harm than good" — SAME MEANING, CORRECT.
+    - OPINION / REFLECTION QUESTIONS: If the question asks "what do you think about X?" or "how do you feel about X?",
+      any thoughtful, relevant response that demonstrates engagement with the topic is correct.
+      The answer key for opinion questions is a SAMPLE answer, not the ONLY valid answer.
+      Do NOT mark an opinion answer as incorrect because it differs from the sample — mark it incorrect ONLY if it is completely off-topic or blank.
+    - "PICK ONE" QUESTIONS: If the question asks the student to choose one from multiple valid options
+      (e.g., "which of the two areas would you like to work in?") and the answer key says "either accepted",
+      the student is correct if they name ANY valid option — including naming more than one.
+      A student who says "public sector and private sector" when "either accepted" is the key should get full marks.
+    - SUPERSET ANSWERS: If the student's answer CONTAINS the correct answer plus additional correct/relevant information,
+      it is CORRECT unless the question specifically required choosing only one item.
+    - Before marking a written answer as incorrect, ask: "Does the student's answer demonstrate the same knowledge or opinion
+      as the answer key expects?" If yes, it is CORRECT regardless of how differently it is worded.
 
     MATH RULE:
     - If a numeric answer is correct but a required unit is missing, deduct 0.5 from that question.

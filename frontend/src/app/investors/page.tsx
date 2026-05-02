@@ -180,7 +180,7 @@ export default function InvestorsPage() {
                   "Activity timing is unpredictable",
                   "Too many similar tasks in a row",
                   "Movement is either missing or chaotic",
-                  "Formats don't match delivery (stations/QR/displays)",
+                  "Formats don't match delivery (stations/CurricQR/displays)",
                   "Teachers spend time reworking AI output",
                 ]}
               />
@@ -227,11 +227,11 @@ export default function InvestorsPage() {
                 ]}
               />
               <Card
-                title="📍 Scavenger hunt + QR-friendly delivery"
+                title="📍 Scavenger hunt + CurricQR-friendly delivery"
                 desc="Designed for classroom scavenger hunts and student scanning routines."
                 bullets={[
                   "Scavenger-hunt-ready task formats",
-                  "QR station placement across the room or building",
+                  "CurricQR station placement across the room or building",
                   "Multi-room hunts (hallway/library/gym)",
                 ]}
               />

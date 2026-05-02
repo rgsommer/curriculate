@@ -1391,7 +1391,7 @@ export default function ProgressPage() {
                         const vs = r.viewSources || {};
                         const parts = [];
                         if (vs.progress) parts.push(`${vs.progress} portal`);
-                        if (vs.qr) parts.push(`${vs.qr} QR`);
+                        if (vs.qr) parts.push(`${vs.qr} CurricQR`);
                         if (vs.email) parts.push(`${vs.email} email`);
                         if (vs.direct) parts.push(`${vs.direct} direct`);
                         const tooltip = parts.length

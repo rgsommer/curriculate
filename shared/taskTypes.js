@@ -384,7 +384,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Physical Multiple Choice (kinesthetic). Looks exactly like standard multiple-choice on the device (full question + four fully visible options A\u2013D), but students cannot submit by tapping.\nTo submit, they must walk to one of the classroom\u2019s 8 permanent colored QR stations and scan the station whose color matches the color displayed beside their chosen option.\n\nHow it works:\n- The system randomly selects 4 of the 8 station colors and maps them to A/B/C/D each question (randomized every play).\n- Each option shows a large color chip (e.g., A \u25cf Red, B \u25cf Teal, C \u25cf Purple, D \u25cf Green).\n- Student decides the answer, walks to that color station, scans, and the scan auto-submits that letter.\n- Typically 3\u20135 questions per task \u2192 3\u20135 trips across the room.\n\nAI generation shape:\n- config.items: array of 3\u20135 questions\n- each item: { question: string, options: [string,string,string,string], correctIndex: 0\u20133 }\n- system provides per-question colorMap (generated at runtime; not required from AI)\nScoring: objective (correctIndex). Inter-team: NO. Intra-team: NO.",
+      "Physical Multiple Choice (kinesthetic). Looks exactly like standard multiple-choice on the device (full question + four fully visible options A\u2013D), but students cannot submit by tapping.\nTo submit, they must walk to one of the classroom\u2019s 8 permanent colored CurricQR stations and scan the station whose color matches the color displayed beside their chosen option.\n\nHow it works:\n- The system randomly selects 4 of the 8 station colors and maps them to A/B/C/D each question (randomized every play).\n- Each option shows a large color chip (e.g., A \u25cf Red, B \u25cf Teal, C \u25cf Purple, D \u25cf Green).\n- Student decides the answer, walks to that color station, scans, and the scan auto-submits that letter.\n- Typically 3\u20135 questions per task \u2192 3\u20135 trips across the room.\n\nAI generation shape:\n- config.items: array of 3\u20135 questions\n- each item: { question: string, options: [string,string,string,string], correctIndex: 0\u20133 }\n- system provides per-question colorMap (generated at runtime; not required from AI)\nScoring: objective (correctIndex). Inter-team: NO. Intra-team: NO.",
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "physical-multiple-choice".
@@ -397,7 +397,7 @@ export const TASK_TYPE_META = {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Same as Multiple Choice, but students submit by scanning a colored QR station instead of tapping.
+    - Same as Multiple Choice, but students submit by scanning a colored CurricQR station instead of tapping.
     - Include EXACTLY 4 questions. Keep questions quick and unambiguous.
     - Vary the correctAnswer position. Make all distractors plausible.
 

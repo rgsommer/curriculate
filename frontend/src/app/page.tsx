@@ -40,7 +40,7 @@ const painPoints = [
   },
   {
     pain: "Students wander and go off-task",
-    fix: "QR-coded stations with built-in timers and guided rotation",
+    fix: "CurricQR-coded stations with built-in timers and guided rotation",
     icon: <Target className="w-5 h-5" />,
   },
   {
@@ -148,7 +148,7 @@ const pricingFeatures = [
   { name: "Team selfie (2 free sessions)", free: "2 sessions", plus: true, pro: true },
   { name: "AI-themed selfie images", free: false, plus: true, pro: true },
   { name: "Station rotation engine", free: true, plus: true, pro: true },
-  { name: "QR station posters", free: true, plus: true, pro: true },
+  { name: "CurricQR station posters", free: true, plus: true, pro: true },
   { name: "Session summary reports", free: true, plus: true, pro: true },
   { name: "Student-level reporting", free: false, plus: true, pro: true },
   { name: "PDF report exports", free: false, plus: true, pro: true },
@@ -196,7 +196,7 @@ const why = [
 const steps = [
   { n: "1", title: "Launch a task set", desc: "Start from the Teacher Dashboard in one click." },
   { n: "2", title: "Teams join fast", desc: "No accounts — just a room code + team name." },
-  { n: "3", title: "Hunt & solve", desc: "Color-coded QR stations guide movement. Teachers pick which color matches each physical object." },
+  { n: "3", title: "Hunt & solve", desc: "Color-coded CurricQR stations guide movement. Teachers pick which color matches each physical object." },
   { n: "4", title: "Submit together", desc: "Text, photos, drawings, audio — evidence included." },
   { n: "5", title: "Reports generated", desc: "Teacher + student reports appear automatically." },
 ];
@@ -910,7 +910,7 @@ export default function Home() {
               },
               {
                 title: "Fixed Station Color Picker",
-                desc: "Teachers assign colored QR stations to physical objects — microscopes, maps, models — and the AI generates tasks specific to each station.",
+                desc: "Teachers assign colored CurricQR stations to physical objects — microscopes, maps, models — and the AI generates tasks specific to each station.",
                 tag: "Stations",
                 tagColor: "bg-emerald-100 text-emerald-700",
               },

@@ -146,7 +146,7 @@ export default function ComparePage() {
 
             <tr>
               <td className="p-4">Designed for movement & rotation</td>
-              <Cell mark="yes" detail="QR-based flow" />
+              <Cell mark="yes" detail="CurricQR-based flow" />
               <Cell mark="yes" detail="Manual" />
               <Cell mark="partial" detail="Usually seated" />
             </tr>

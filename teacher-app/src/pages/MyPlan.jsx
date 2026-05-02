@@ -228,7 +228,7 @@ export default function MyPlanPage() {
             </thead>
             <tbody>
               <FeatureRow
-                label="Live sessions with QR stations"
+                label="Live sessions with CurricQR stations"
                 free="✓"
                 plus="✓"
                 pro="✓"

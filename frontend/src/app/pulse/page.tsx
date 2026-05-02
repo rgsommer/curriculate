@@ -82,8 +82,8 @@ const features = [
   },
   {
     icon: <QrCode className="w-6 h-6 text-violet-600" />,
-    title: "QR-coded PDF reports",
-    desc: "Generate print-ready PDF reports with QR codes linking to full feedback. Each result has a 5-character code (like AB123) for quick lookup.",
+    title: "CurricQR-coded PDF reports",
+    desc: "Generate print-ready PDF reports with CurricQR codes linking to full feedback. Each result has a 5-character code (like AB123) for quick lookup.",
   },
   {
     icon: <Bell className="w-6 h-6 text-pink-600" />,
@@ -187,8 +187,8 @@ const faqs = [
     a: "Yes. Once an email is added to the progress portal, notifications are sent automatically when new grades arrive. Each email can be set to instant (on every new grade), weekly digest (Saturday summary), or turned off entirely.",
   },
   {
-    q: "What are the QR codes and 5-character codes?",
-    a: "Every graded result gets a unique 5-character code (like AB123). PDF reports include QR codes that link directly to the full feedback page. Students can also type the code at curriculate.net/results to view their feedback.",
+    q: "What are the CurricQR codes and 5-character codes?",
+    a: "Every graded result gets a unique 5-character code (like AB123). PDF reports include CurricQR codes that link directly to the full feedback page. Students can also type the code at curriculate.net/results to view their feedback.",
   },
   {
     q: "Can students request a regrade?",

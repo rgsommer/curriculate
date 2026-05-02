@@ -47,7 +47,7 @@ export default function ScannerOverlay({
             <div className="text-5xl mb-4">📷</div>
             <div className="text-lg font-medium">Camera feed active</div>
             <div className="text-sm opacity-70 mt-2">
-              Align the QR code within the frame
+              Align the CurricQR code within the frame
             </div>
           </div>
         </div>

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Features — AI-Powered Station-Based Learning",
   description:
-    "Explore Curriculate's features: AI lesson planning, time-fit task generation, 65+ interactive task types, real-time multiplayer stations, QR-based rotation, photo evidence capture, handwriting bonus, trivia breaks, spinner rewards, and automatic teacher and student reports.",
+    "Explore Curriculate's features: AI lesson planning, time-fit task generation, 65+ interactive task types, real-time multiplayer stations, CurricQR-based rotation, photo evidence capture, handwriting bonus, trivia breaks, spinner rewards, and automatic teacher and student reports.",
   keywords: [
     "classroom station rotation",
     "AI lesson planning tool",

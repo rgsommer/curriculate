@@ -243,7 +243,7 @@ export default function QrScanner({ active = true, onCode, onScan, onError }) {
             playsInline
           />
           <p style={{ margin: 0, fontSize: "0.8rem", color: "#4b5563" }}>
-            Hold the QR code steady in front of the camera. It will snap automatically when it can read it.
+            Hold the CurricQR code steady in front of the camera. It will snap automatically when it can read it.
           </p>
         </>
       )}

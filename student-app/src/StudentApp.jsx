@@ -2838,7 +2838,7 @@ function StudentApp() {
 
     const norm = normalizeStationId(data);
     if (!norm?.id) {
-      setScanError("Unrecognized station QR code.");
+      setScanError("Unrecognized station CurricQR code.");
       return false;
     }
 
@@ -5129,15 +5129,15 @@ function StudentApp() {
         const colorUpper = String(displayAssignedColor || stationInfo?.color || "").toUpperCase();
         const locationUpper = String(roomLocation || "").toUpperCase();
 
-        if (!colorUpper) return "Scan station QR code";
+        if (!colorUpper) return "Scan station CurricQR code";
 
         if (isMultiRoom && enforceLocation && locationUpper) {
           return destinationText
-            ? `Scan QR Code at ${destinationText}`
-            : "Scan station QR code";
+            ? `Scan CurricQR Code at ${destinationText}`
+            : "Scan station CurricQR code";
         }
 
-        return `Scan QR Code at ${colorUpper}`;
+        return `Scan CurricQR Code at ${colorUpper}`;
       })()}
     </div>
 
@@ -5371,7 +5371,7 @@ function StudentApp() {
         Scan your station first!
       </div>
       <div style={{ fontSize: 14, color: "#64748b", lineHeight: 1.4 }}>
-        Point your camera at the QR code on your station before opening a mystery box.
+        Point your camera at the CurricQR code on your station before opening a mystery box.
       </div>
     </div>
   </div>
@@ -6225,7 +6225,7 @@ function StudentApp() {
         </div>
         <p style={{ marginTop: 6, fontSize: "0.9rem", marginBottom: 0 }}>
           Your teacher has locked this task to a specific station. Scan the station's
-          QR code to unlock it.
+          CurricQR code to unlock it.
         </p>
       </section>
       )}
