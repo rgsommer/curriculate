@@ -128,6 +128,39 @@ function getTaskPoints(taskType) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Engagement classification                                          */
+/* ------------------------------------------------------------------ */
+
+function classifyEngagement(results, totalPoints) {
+  const completed = (results || []).filter((r) => !r.skipped);
+  const skipped = (results || []).filter((r) => r.skipped);
+  const withFeedback = completed.filter(
+    (r) => r.feedback && (r.feedback.fun > 0 || r.feedback.clarity > 0)
+  );
+  const avgFun = withFeedback.length
+    ? withFeedback.reduce((s, r) => s + (r.feedback?.fun || 0), 0) / withFeedback.length
+    : 0;
+  const wroteComments = completed.some(
+    (r) => r.feedback && (r.feedback.confusing || r.feedback.suggestion)
+  );
+
+  // Keener: deeply engaged
+  if (completed.length >= 12 || (completed.length >= 8 && avgFun >= 3.5) || (completed.length >= 8 && wroteComments)) {
+    return { label: "🌟 Keener", level: "keener", avgFun, wroteComments };
+  }
+  // Engaged: solid participation
+  if (completed.length >= 5) {
+    return { label: "👍 Engaged", level: "engaged", avgFun, wroteComments };
+  }
+  // Tried it: light participation
+  if (completed.length >= 2) {
+    return { label: "👋 Tried It", level: "tried", avgFun, wroteComments };
+  }
+  // Drive-by
+  return { label: "🚗 Drive-by", level: "driveby", avgFun, wroteComments };
+}
+
+/* ------------------------------------------------------------------ */
 /*  POST /register                                                     */
 /*  Captures name, email, role for a conference/classroom visitor       */
 /* ------------------------------------------------------------------ */
@@ -203,9 +236,14 @@ router.post("/results", resultsLimiter, async (req, res) => {
       return res.status(404).json({ error: "Lead not found — register first" });
     }
 
-    // Send results email (fire-and-forget)
+    // Send results email to user (fire-and-forget)
     sendDemoResultsEmail(lead).catch((err) =>
       console.error("[demo/results] Email send failed:", err.message)
+    );
+
+    // Send admin notification (fire-and-forget)
+    sendAdminNotification(lead).catch((err) =>
+      console.error("[demo/results] Admin email failed:", err.message)
     );
 
     res.json({ ok: true, totalPoints });
@@ -500,6 +538,127 @@ router.get("/leads", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch leads" });
   }
 });
+
+/* ------------------------------------------------------------------ */
+/*  ADMIN NOTIFICATION EMAIL                                           */
+/*  Sent to admin@curriculate.net for every conference/practice run    */
+/* ------------------------------------------------------------------ */
+
+async function sendAdminNotification(lead) {
+  const completed = (lead.results || []).filter((r) => !r.skipped);
+  const skipped = (lead.results || []).filter((r) => r.skipped);
+  const engagement = classifyEngagement(lead.results, lead.totalPoints);
+  const isClassroom = lead.source === "classroom";
+  const wasOfferedReferral = engagement.level === "keener" && !isClassroom;
+
+  // Reward recommendation for practice students
+  let rewardNote = "";
+  if (isClassroom) {
+    if (lead.totalPoints >= 500) {
+      rewardNote = "🏆 Outstanding — consider a $10 Tim's card";
+    } else if (lead.totalPoints >= 300) {
+      rewardNote = "⭐ Strong effort — consider recognition or small reward";
+    } else if (lead.totalPoints >= 150) {
+      rewardNote = "👍 Good participation";
+    } else {
+      rewardNote = "Getting started";
+    }
+  }
+
+  // Feedback highlights
+  const comments = [];
+  for (const r of completed) {
+    if (r.feedback?.confusing) {
+      comments.push(`<span style="color:#dc2626;">[confusing]</span> ${esc(r.taskType)}: "${esc(r.feedback.confusing)}"`);
+    }
+    if (r.feedback?.suggestion) {
+      comments.push(`<span style="color:#16a34a;">[suggestion]</span> ${esc(r.taskType)}: "${esc(r.feedback.suggestion)}"`);
+    }
+  }
+
+  const modeLabel = isClassroom ? "🎓 Practice" : "🎯 Conference";
+  const subjectLine = `${engagement.label} ${isClassroom ? "Student" : "Visitor"}: ${lead.name} (${lead.totalPoints} pts)`;
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 20px;">
+      <div style="background: linear-gradient(135deg, #0f172a, #1e293b); padding: 20px 24px; border-radius: 16px 16px 0 0; color: #fff;">
+        <div style="font-size: 12px; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.5px;">${modeLabel} Completion</div>
+        <div style="font-size: 22px; font-weight: 900; margin-top: 4px;">${esc(lead.name)}</div>
+        <div style="font-size: 13px; opacity: 0.7; margin-top: 2px;">${esc(lead.email)}${lead.role ? ` · ${esc(lead.role)}` : ""}</div>
+      </div>
+
+      <div style="background: #fff; padding: 20px 24px; border: 1px solid #e2e8f0; border-top: none;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <tr>
+            <td style="padding: 8px 0; color: #64748b;">Engagement</td>
+            <td style="padding: 8px 0; font-weight: 800; text-align: right; font-size: 16px;">${engagement.label}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; color: #64748b;">Points</td>
+            <td style="padding: 8px 0; font-weight: 800; text-align: right; color: #f59e0b; font-size: 16px;">${lead.totalPoints}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; color: #64748b;">Tasks</td>
+            <td style="padding: 8px 0; text-align: right;">${completed.length} completed, ${skipped.length} skipped</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; color: #64748b;">Avg Fun</td>
+            <td style="padding: 8px 0; text-align: right;">${engagement.avgFun ? engagement.avgFun.toFixed(1) + "/5" : "N/A"}</td>
+          </tr>
+          ${!isClassroom ? `
+          <tr>
+            <td style="padding: 8px 0; color: #64748b;">Referral Offered</td>
+            <td style="padding: 8px 0; text-align: right; font-weight: 700; color: ${wasOfferedReferral ? "#16a34a" : "#94a3b8"};">
+              ${wasOfferedReferral ? "✅ Yes — Ambassador popup shown" : "No"}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; color: #64748b;">Promo Code</td>
+            <td style="padding: 8px 0; text-align: right; font-weight: 700;">${esc(lead.promoCode || "CONFERENCE2025")}</td>
+          </tr>
+          ` : ""}
+          ${isClassroom ? `
+          <tr>
+            <td style="padding: 8px 0; color: #64748b;">Classroom</td>
+            <td style="padding: 8px 0; text-align: right;">${esc(lead.classroom || "—")}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; color: #64748b;">Reward</td>
+            <td style="padding: 8px 0; text-align: right; font-weight: 700;">${rewardNote}</td>
+          </tr>
+          ` : ""}
+          <tr>
+            <td style="padding: 8px 0; color: #64748b;">Source</td>
+            <td style="padding: 8px 0; text-align: right;">${esc(lead.source)} · ${esc(lead.conference || "general")}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; color: #64748b;">Wrote Comments</td>
+            <td style="padding: 8px 0; text-align: right;">${engagement.wroteComments ? "✅ Yes" : "No"}</td>
+          </tr>
+        </table>
+      </div>
+
+      ${comments.length > 0 ? `
+      <div style="background: #f8fafc; padding: 16px 24px; border: 1px solid #e2e8f0; border-top: none;">
+        <div style="font-weight: 800; font-size: 13px; margin-bottom: 8px; color: #334155;">Feedback Comments:</div>
+        ${comments.map((c) => `<div style="font-size: 13px; margin-bottom: 6px; line-height: 1.4;">${c}</div>`).join("")}
+      </div>
+      ` : ""}
+
+      <div style="background: #f1f5f9; padding: 12px 24px; border-radius: 0 0 16px 16px; border: 1px solid #e2e8f0; border-top: none;">
+        <div style="font-size: 11px; color: #94a3b8; text-align: center;">
+          Curriculate Demo Admin · ${new Date().toLocaleString("en-CA", { timeZone: "America/Toronto" })}
+        </div>
+      </div>
+    </div>
+  `;
+
+  await sendSystemEmail({
+    to: "admin@curriculate.net",
+    subject: subjectLine,
+    html,
+  });
+}
 
 /* ------------------------------------------------------------------ */
 /*  RESULTS EMAIL                                                      */

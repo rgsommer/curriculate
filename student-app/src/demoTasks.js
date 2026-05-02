@@ -442,7 +442,8 @@ const DEMO_TASKS = [
   {
     taskType: "musical-chairs",
     title: "Musical Chairs Quiz",
-    prompt: "Answer the question, then scan your station!",
+    prompt: "Answer the question, then tap SCAN to move to the next round!",
+    roomCode: "DEMO",
     items: [
       { id: "mc1", prompt: "What color do you get mixing red and blue?", options: ["Green", "Purple", "Orange", "Brown"], correctAnswer: "Purple" },
       { id: "mc2", prompt: "How many legs does a spider have?", options: ["6", "8", "10", "12"], correctAnswer: "8" },

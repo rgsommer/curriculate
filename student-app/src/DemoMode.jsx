@@ -497,15 +497,49 @@ function DemoPlayer({ user, onFinish, source }) {
   const popKeyRef = useRef(0);
   const isClassroom = source === "classroom";
 
-  const demoSocket = useMemo(
-    () => ({
-      on: () => {},
-      off: () => {},
-      emit: (_event, _payload, ack) => {
-        if (typeof ack === "function") ack({ ok: true, demo: true });
+  // Smart demo socket — simulates server responses for team task types
+  const demoSocket = useMemo(() => {
+    const listeners = {};
+
+    return {
+      connected: true,
+      on: (event, fn) => {
+        if (!listeners[event]) listeners[event] = [];
+        listeners[event].push(fn);
       },
-    }),
-    []
+      off: (event, fn) => {
+        if (listeners[event]) {
+          listeners[event] = fn
+            ? listeners[event].filter((f) => f !== fn)
+            : [];
+        }
+      },
+      emit: (event, payload, ack) => {
+        // Default acknowledgment
+        if (typeof ack === "function") ack({ ok: true, demo: true });
+
+        // Simulate AI Debate Judge verdict
+        if (event === "ai-judge:request") {
+          setTimeout(() => {
+            const fns = listeners["ai-judge:verdict"] || [];
+            fns.forEach((fn) =>
+              fn({
+                winner: "affirmative",
+                scores: { affirmative: 82, negative: 74 },
+                feedback:
+                  "Both sides made compelling arguments! The affirmative team edges ahead with stronger evidence and clearer structure. Great debate!",
+              })
+            );
+          }, 2500);
+        }
+
+        // Simulate Musical Chairs scan acknowledgment
+        if (event === "musical-chairs-scan") {
+          // The component auto-advances after emit — no listener needed
+        }
+      },
+    };
+  }, []
   );
 
   const task = DEMO_TASKS[taskIdx] || null;
