@@ -976,9 +976,9 @@ export default function ProgressPage() {
               const prev = idx > 0 ? classmates[idx - 1] : null;
               const next = idx < classmates.length - 1 ? classmates[idx + 1] : null;
               const navigate = async (ts) => {
-                const currentToken = localStorage.getItem(TOKEN_KEY) || token;
-                setTeacherToken(currentToken);
-                localStorage.setItem(TEACHER_TOKEN_KEY, currentToken);
+                // teacherToken holds the original teacher JWT — use it to get the email
+                const tToken = teacherToken || localStorage.getItem(TEACHER_TOKEN_KEY);
+                if (!tToken) return;
                 setStudentId(ts.studentId);
                 setStudent(null);
                 setResults([]);
@@ -989,13 +989,15 @@ export default function ProgressPage() {
                 setError("");
                 setLoading(true);
                 try {
-                  // Decode teacher email from token
-                  let teacherEmail = email;
+                  // Decode teacher email from the teacher token
+                  let teacherEmail = "";
+                  try {
+                    const payload = JSON.parse(atob(tToken.split(".")[1]));
+                    teacherEmail = payload.teacherEmail || payload.email || "";
+                  } catch {}
                   if (!teacherEmail || !teacherEmail.includes("@")) {
-                    try {
-                      const payload = JSON.parse(atob(currentToken.split(".")[1]));
-                      if (payload.teacherEmail) teacherEmail = payload.teacherEmail;
-                    } catch {}
+                    // Fallback: try email state
+                    teacherEmail = email;
                   }
                   const r2 = await fetch(`${API}/student-progress/login`, {
                     method: "POST",
