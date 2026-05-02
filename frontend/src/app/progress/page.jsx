@@ -886,8 +886,13 @@ export default function ProgressPage() {
   return (
     <div style={s.page}>
       <div style={s.wideCard}>
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        {/* Header — sticky */}
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20,
+          position: "sticky", top: 0, zIndex: 10,
+          background: "#fff", paddingTop: 16, paddingBottom: 12,
+          borderBottom: "1px solid #f1f5f9",
+        }}>
           <div>
             {teacherToken && (
               <button
