@@ -435,6 +435,51 @@ function StreakBanner({ streak }) {
 // Phase: Playing Tasks
 // ----------------------------------------------------------------
 
+function TreatToast({ onDismiss }) {
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => { setVisible(false); if (onDismiss) onDismiss(); }, 6000);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        bottom: 24,
+        left: "50%",
+        transform: "translateX(-50%)",
+        maxWidth: 340,
+        width: "90%",
+        padding: "14px 18px",
+        borderRadius: 16,
+        background: "linear-gradient(135deg, #fef3c7, #fffbeb)",
+        border: "2px solid #fbbf24",
+        boxShadow: "0 8px 32px rgba(245,158,11,0.25)",
+        zIndex: 10000,
+        animation: "treatSlideUp 0.5s ease-out",
+        cursor: "pointer",
+      }}
+      onClick={() => { setVisible(false); if (onDismiss) onDismiss(); }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 28, lineHeight: 1 }}>🍬</span>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: 14, color: "#92400e" }}>
+            Nice work — you've earned a treat!
+          </div>
+          <div style={{ fontSize: 12, color: "#a16207", marginTop: 2 }}>
+            Swing by our booth to pick one up.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DemoPlayer({ user, onFinish, source }) {
   const [taskIdx, setTaskIdx] = useState(0);
   const [results, setResults] = useState([]);
@@ -445,6 +490,8 @@ function DemoPlayer({ user, onFinish, source }) {
   const [streak, setStreak] = useState(0);
   const [showFeedback, setShowFeedback] = useState(false); // feedback popup
   const [pendingEntry, setPendingEntry] = useState(null); // entry awaiting feedback
+  const [showTreat, setShowTreat] = useState(false);
+  const treatShownRef = useRef(false);
   const timerRef = useRef(null);
   const startedRef = useRef(Date.now());
   const popKeyRef = useRef(0);
@@ -517,6 +564,13 @@ function DemoPlayer({ user, onFinish, source }) {
       setTotalPoints((p) => p + pts);
       setStreak((s) => s + 1);
 
+      // Treat milestone: after 3rd completed task (conference mode only)
+      const completedSoFar = results.filter((r) => !r.skipped).length + 1;
+      if (completedSoFar === 3 && !isClassroom && !treatShownRef.current) {
+        treatShownRef.current = true;
+        setShowTreat(true);
+      }
+
       // Trigger points pop
       popKeyRef.current += 1;
       setLastEarned({ pts, key: popKeyRef.current });
@@ -585,6 +639,9 @@ function DemoPlayer({ user, onFinish, source }) {
 
       {/* Streak banner */}
       <StreakBanner streak={streak} />
+
+      {/* Treat toast — conference mode, after 3 completions */}
+      {showTreat && <TreatToast onDismiss={() => setShowTreat(false)} />}
 
       {/* Task feedback popup */}
       {showFeedback && pendingEntry && (
@@ -692,6 +749,14 @@ function DemoPlayer({ user, onFinish, source }) {
           from { opacity: 0; }
           to   { opacity: 1; }
         }
+        @keyframes treatSlideUp {
+          from { opacity: 0; transform: translateX(-50%) translateY(40px); }
+          to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        @keyframes ambassadorFadeIn {
+          from { opacity: 0; transform: scale(0.95); }
+          to   { opacity: 1; transform: scale(1); }
+        }
       `}</style>
     </div>
   );
@@ -701,14 +766,158 @@ function DemoPlayer({ user, onFinish, source }) {
 // Phase: Results & Signup CTA
 // ----------------------------------------------------------------
 
+// ----------------------------------------------------------------
+// Keener Detection
+// ----------------------------------------------------------------
+
+function isKeener(results) {
+  const completed = results.filter((r) => !r.skipped);
+  if (completed.length < 8) return false; // need decent engagement
+
+  const withFeedback = completed.filter((r) => r.feedback && (r.feedback.fun > 0 || r.feedback.clarity > 0));
+  if (withFeedback.length === 0) return false;
+
+  const avgFun = withFeedback.reduce((s, r) => s + (r.feedback.fun || 0), 0) / withFeedback.length;
+  const wroteComments = completed.some(
+    (r) => r.feedback && (r.feedback.confusing || r.feedback.suggestion)
+  );
+
+  // High completion + enjoying it + left feedback = keener
+  return avgFun >= 3.5 || (completed.length >= 12) || (completed.length >= 8 && wroteComments);
+}
+
+// ----------------------------------------------------------------
+// Ambassador Popup
+// ----------------------------------------------------------------
+
+function AmbassadorPopup({ user, onDismiss }) {
+  const [copied, setCopied] = useState(false);
+  const referralCode = `REF-${user.name.replace(/\s+/g, "").slice(0, 6).toUpperCase()}${Math.floor(Math.random() * 900 + 100)}`;
+  const referralLink = `https://curriculate.net/pricing?ref=${encodeURIComponent(referralCode)}`;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(referralLink).then(() => setCopied(true)).catch(() => {});
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15,23,42,0.6)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 10000,
+        padding: 20,
+        animation: "ambassadorFadeIn 0.3s ease-out",
+      }}
+      onClick={onDismiss}
+    >
+      <div
+        style={{
+          maxWidth: 380,
+          width: "100%",
+          background: "#fff",
+          borderRadius: 20,
+          padding: 28,
+          textAlign: "center",
+          boxShadow: "0 24px 64px rgba(0,0,0,0.2)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ fontSize: 40, marginBottom: 8 }}>⭐</div>
+        <h2 style={{ fontSize: 20, fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>
+          You're a natural, {user.name.split(" ")[0]}
+        </h2>
+        <p style={{ fontSize: 14, color: "#475569", lineHeight: 1.5, marginBottom: 20 }}>
+          You clearly see what this could do in a classroom.
+          Want to help spread the word? Share your personal link
+          — anyone who signs up through it gets an extra month free,
+          and you'll get credit toward yours too.
+        </p>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            borderRadius: 10,
+            padding: "10px 12px",
+            marginBottom: 16,
+          }}
+        >
+          <input
+            type="text"
+            readOnly
+            value={referralLink}
+            style={{
+              flex: 1,
+              border: "none",
+              background: "transparent",
+              fontSize: 12,
+              color: "#334155",
+              outline: "none",
+              fontFamily: "monospace",
+            }}
+          />
+          <button
+            onClick={handleCopy}
+            style={{
+              padding: "6px 14px",
+              borderRadius: 8,
+              border: "none",
+              background: copied ? "#10b981" : "#3b82f6",
+              color: "#fff",
+              fontWeight: 700,
+              fontSize: 12,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {copied ? "Copied!" : "Copy"}
+          </button>
+        </div>
+
+        <button
+          onClick={onDismiss}
+          style={{
+            padding: "10px 24px",
+            borderRadius: 10,
+            border: "none",
+            background: "#f1f5f9",
+            color: "#64748b",
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          Maybe later
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [showAmbassador, setShowAmbassador] = useState(false);
   const isClassroom = source === "classroom";
 
   const completed = results.filter((r) => !r.skipped);
   const skipped = results.filter((r) => r.skipped);
   const totalPoints = results.reduce((s, r) => s + (r.points || 0), 0);
+
+  // Show ambassador popup after a brief delay for keeners (conference only)
+  useEffect(() => {
+    if (isClassroom) return;
+    if (!isKeener(results)) return;
+    const t = setTimeout(() => setShowAmbassador(true), 2500);
+    return () => clearTimeout(t);
+  }, []);
 
   // Send results to backend for email
   useEffect(() => {
@@ -879,6 +1088,11 @@ function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
           Play Again
         </button>
       </div>
+
+      {/* Ambassador popup for keeners */}
+      {showAmbassador && (
+        <AmbassadorPopup user={user} onDismiss={() => setShowAmbassador(false)} />
+      )}
     </div>
   );
 }
