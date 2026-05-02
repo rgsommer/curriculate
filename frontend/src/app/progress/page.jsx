@@ -947,15 +947,105 @@ export default function ProgressPage() {
               </div>
             )}
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button
-              onClick={() => { setShowSettings(!showSettings); if (!showSettings) loadProfile(); }}
-              style={{ ...s.link, fontSize: 12 }}
-              type="button"
-            >
-              Settings
-            </button>
-            <button onClick={logout} style={{ ...s.link, fontSize: 12, color: "#dc2626" }} type="button">Logout</button>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button
+                onClick={() => { setShowSettings(!showSettings); if (!showSettings) loadProfile(); }}
+                style={{ ...s.link, fontSize: 12 }}
+                type="button"
+              >
+                Settings
+              </button>
+              <button onClick={logout} style={{ ...s.link, fontSize: 12, color: "#dc2626" }} type="button">Logout</button>
+            </div>
+            {/* Prev / Next student navigation (teacher view only) */}
+            {teacherToken && teacherStudents.length > 1 && student && (() => {
+              const classmates = teacherStudents
+                .filter((ts) => (ts.className || "General") === (student.className || "General"))
+                .sort((a, b) => {
+                  const nameA = (a.lastName || a.firstName || "").trim();
+                  const nameB = (b.lastName || b.firstName || "").trim();
+                  return nameA.localeCompare(nameB) || (a.firstName || "").localeCompare(b.firstName || "");
+                });
+              const idx = classmates.findIndex((ts) => ts.studentId === studentId);
+              if (classmates.length <= 1) return null;
+              const prev = idx > 0 ? classmates[idx - 1] : null;
+              const next = idx < classmates.length - 1 ? classmates[idx + 1] : null;
+              const navigate = async (ts) => {
+                const currentToken = localStorage.getItem(TOKEN_KEY) || token;
+                setTeacherToken(currentToken);
+                localStorage.setItem(TEACHER_TOKEN_KEY, currentToken);
+                setStudentId(ts.studentId);
+                setStudent(null);
+                setResults([]);
+                setOverallAvg(null);
+                setExpandedResult(null);
+                setReassigningCode(null);
+                setInfo("");
+                setError("");
+                setLoading(true);
+                try {
+                  // Decode teacher email from token
+                  let teacherEmail = email;
+                  if (!teacherEmail || !teacherEmail.includes("@")) {
+                    try {
+                      const payload = JSON.parse(atob(currentToken.split(".")[1]));
+                      if (payload.teacherEmail) teacherEmail = payload.teacherEmail;
+                    } catch {}
+                  }
+                  const r2 = await fetch(`${API}/student-progress/login`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ studentId: ts.studentId, email: teacherEmail }),
+                  });
+                  const d2 = await r2.json();
+                  if (d2.ok && !d2.needsCode && !d2.isTeacherOverview) {
+                    localStorage.setItem(TOKEN_KEY, d2.token);
+                    setToken(d2.token);
+                    setStudent(d2.student || { firstName: ts.firstName, lastName: ts.lastName, className: ts.className });
+                  } else {
+                    setError(d2.error || "Failed to load student");
+                  }
+                } catch (err) {
+                  setError("Failed to load student");
+                } finally {
+                  setLoading(false);
+                }
+              };
+              return (
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <button
+                    onClick={() => prev && navigate(prev)}
+                    disabled={!prev}
+                    title={prev ? `${prev.firstName} ${prev.lastName}` : ""}
+                    style={{
+                      background: "none", border: "1px solid #e2e8f0", borderRadius: 6,
+                      padding: "3px 10px", cursor: prev ? "pointer" : "default",
+                      opacity: prev ? 1 : 0.3, fontSize: 14, color: "#2563eb",
+                    }}
+                    type="button"
+                  >
+                    ◀
+                  </button>
+                  <span style={{ fontSize: 11, color: "#94a3b8" }}>
+                    {idx + 1} / {classmates.length}
+                  </span>
+                  <button
+                    onClick={() => next && navigate(next)}
+                    disabled={!next}
+                    title={next ? `${next.firstName} ${next.lastName}` : ""}
+                    style={{
+                      background: "none", border: "1px solid #e2e8f0", borderRadius: 6,
+                      padding: "3px 10px", cursor: next ? "pointer" : "default",
+                      opacity: next ? 1 : 0.3, fontSize: 14, color: "#2563eb",
+                    }}
+                    type="button"
+                  >
+                    ▶
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         </div>
 
