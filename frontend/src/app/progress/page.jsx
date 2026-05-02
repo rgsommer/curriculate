@@ -202,6 +202,10 @@ export default function ProgressPage() {
   // Expanded result details (KITA bars)
   const [expandedResult, setExpandedResult] = useState(null);
 
+  // Denominator editor (teacher view)
+  const [editingDenomCode, setEditingDenomCode] = useState(null); // result code being edited
+  const [denomInput, setDenomInput] = useState("");
+
   // Recommendation badge
   const [recommendCount, setRecommendCount] = useState(0);
 
@@ -1482,7 +1486,85 @@ export default function ProgressPage() {
                         <div style={{ fontWeight: 800, fontSize: 16, color: gradeColor(letterGrade(r.pct)) }}>
                           {letterGrade(r.pct)}
                         </div>
-                        <div style={{ fontSize: 12, color: "#64748b" }}>{r.score}/{r.outOf} ({r.pct}%)</div>
+                        <div style={{ fontSize: 12, color: "#64748b" }}>
+                          {r.score}/
+                          {teacherToken && editingDenomCode === r.code ? (
+                            <form
+                              onSubmit={async (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const newDenom = Math.round(Number(denomInput));
+                                if (Number.isFinite(newDenom) && newDenom > 0 && newDenom !== r.outOf) {
+                                  const pct = r.outOf > 0 ? (r.score / r.outOf) * 100 : 0;
+                                  const newScore = Math.round((pct / 100) * newDenom * 10) / 10;
+                                  const newPct = newDenom > 0 ? Math.round((newScore / newDenom) * 100) : null;
+                                  // Update local state + recalculate overall average
+                                  setResults((prev) => {
+                                    const updated = prev.map((x) =>
+                                      x.code === r.code ? { ...x, score: newScore, outOf: newDenom, pct: newPct } : x
+                                    );
+                                    const pcts = updated.filter((x) => x.pct != null).map((x) => x.pct);
+                                    if (pcts.length > 0) {
+                                      setOverallAvg(Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length));
+                                    }
+                                    return updated;
+                                  });
+                                  // Update published result payload on server
+                                  try {
+                                    // Fetch current payload, replace score line
+                                    const getRes = await fetch(`${API}/results/${r.code}`);
+                                    const getData = await getRes.json();
+                                    if (getData.payload) {
+                                      const updatedPayload = getData.payload.replace(
+                                        /(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/,
+                                        `${newScore}/${newDenom}`
+                                      );
+                                      await fetch(`${API}/results/${r.code}`, {
+                                        method: "PUT",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ payload: updatedPayload }),
+                                      });
+                                    }
+                                  } catch (err) {
+                                    console.warn("[progress] denom update failed:", err);
+                                  }
+                                }
+                                setEditingDenomCode(null);
+                                setDenomInput("");
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ display: "inline" }}
+                            >
+                              <input
+                                autoFocus
+                                type="number"
+                                min="1"
+                                value={denomInput}
+                                onChange={(e) => setDenomInput(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                onBlur={() => { setEditingDenomCode(null); setDenomInput(""); }}
+                                onKeyDown={(e) => { if (e.key === "Escape") { setEditingDenomCode(null); setDenomInput(""); } }}
+                                style={{
+                                  width: 40, fontSize: 12, fontWeight: 700,
+                                  border: "1px solid #2563eb", borderRadius: 4,
+                                  padding: "1px 3px", textAlign: "center", outline: "none",
+                                }}
+                              />
+                            </form>
+                          ) : (
+                            <span
+                              onClick={(e) => {
+                                if (!teacherToken) return;
+                                e.stopPropagation();
+                                setDenomInput(String(r.outOf));
+                                setEditingDenomCode(r.code);
+                              }}
+                              title={teacherToken ? "Click to change denominator" : ""}
+                              style={teacherToken ? { cursor: "pointer", borderBottom: "1px dashed #94a3b8" } : {}}
+                            >{r.outOf}</span>
+                          )}
+                          {" "}({r.pct}%)
+                        </div>
                         <div style={{ fontSize: 10, fontWeight: 700, color: pctColor(r.pct) }}>
                           {pctLabel(r.pct)}
                         </div>
