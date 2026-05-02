@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useCallback, useEffect } from "react";
+import { completeQuest } from "../../components/QuestWidget";
 
 /**
  * AudioGrading — Audio upload + AI grading for speech, singing, or instrumental performance.
@@ -246,6 +247,7 @@ export default function AudioGrading({
       } else {
         setResult(data);
         try { if (window.gtag) window.gtag("event", "grading_complete", { mode: "audio" }); } catch {}
+        completeQuest("try_audio_grading");
 
         // Auto-publish for ref code
         if (resultsUrl) {

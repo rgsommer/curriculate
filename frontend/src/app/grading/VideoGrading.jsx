@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useCallback, useEffect } from "react";
+import { completeQuest } from "../../components/QuestWidget";
 
 /**
  * VideoGrading — Video upload + AI grading for speeches/presentations.
@@ -263,6 +264,7 @@ export default function VideoGrading({
       } else {
         setResult(data);
         try { if (window.gtag) window.gtag("event", "grading_complete", { mode: "video" }); } catch {}
+        completeQuest("try_video_grading");
 
         // Auto-publish to get a ref code
         if (resultsUrl) {

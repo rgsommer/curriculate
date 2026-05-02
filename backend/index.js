@@ -64,6 +64,7 @@ import authRoutes from "./routes/auth.js";
 import stripeRoutes from "./routes/stripe.js";
 import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 import demoTasksetStreamRoutes from "./routes/demoTasksetStream.js";
+import demoRoutes from "./routes/demo.js";
 import aiTasksetsRouter from "./routes/aiTasksets.js";
 import tasksetsRouter from "./routes/tasksets.js";
 import sharedRoutes from "./routes/shared.js";
@@ -383,6 +384,9 @@ app.use("/api/subscription", subscriptionRoutes);
 
 // 3) Demo stream routes
 app.use("/api/demo", demoTasksetStreamRoutes);
+
+// 3b) Conference demo (lead capture + results email)
+app.use("/api/conference", demoRoutes);
 
 // 4) Taskset routes (your new canonical ones)
 // If your routers already do their own auth, mount directly:

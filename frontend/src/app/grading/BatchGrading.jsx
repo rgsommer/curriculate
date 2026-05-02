@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildResultsPdf, buildStripsPdf, preloadPdfLibs } from "./pdfReports";
+import { completeQuest } from "../../components/QuestWidget";
 
 /**
  * BatchGrading — Teacher uploads a multi-page PDF (from scanner/copier),
@@ -2077,6 +2078,9 @@ export default function BatchGrading({
       } catch {}
     }
 
+    // Quest: batch grading
+    completeQuest("try_batch_grading");
+
     // GA: batch grading complete
     try {
       const ok = batchResults.filter(r => !r.error).length;
@@ -2797,6 +2801,7 @@ export default function BatchGrading({
       clearTimeout(emailTimeout);
       if (res.ok) {
         try { if (window.gtag) window.gtag("event", "batch_email_sent", { students: results.filter(r => !r.error).length }); } catch {}
+        completeQuest("email_session_results");
         setEmailCopied(true);
         setShowEmailPrompt(false);
 

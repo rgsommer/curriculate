@@ -4,6 +4,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import App from "./StudentApp.jsx";
 import DemoPage from "./pages/DemoPage.jsx";
+import DemoMode from "./DemoMode.jsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import "./index.css";
 
@@ -38,8 +39,11 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             {/* Main student flow */}
             <Route path="/" element={<App />} />
 
-            {/* Demo page */}
+            {/* Demo page (developer) */}
             <Route path="/demo" element={<DemoPage />} />
+
+            {/* Conference demo (visitor-facing) */}
+            <Route path="/conference" element={<DemoMode />} />
 
             {/* Unknown routes -> main */}
             <Route path="*" element={<App />} />

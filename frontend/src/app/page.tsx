@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import HoverVideo from "../components/HoverVideo";
+import QuestWidget, { HOMEPAGE_QUESTS, completeQuest } from "../components/QuestWidget";
 import {
   ArrowRight,
   Sparkles,
@@ -578,6 +579,27 @@ function SmartPlanning() {
 export default function Home() {
   const [stationMode, setStationMode] = React.useState<"single" | "multi">("single");
   const [expandedCat, setExpandedCat] = React.useState<number | null>(null);
+
+  // Track link clicks for quest completion
+  React.useEffect(() => {
+    const questMap: Record<string, string> = {
+      "/grading": "visit_pulse_grading",
+      "/pulse": "visit_pulse_grading",
+      "/features": "explore_task_types",
+      "/how-it-works": "visit_how_it_works",
+      "/pricing": "explore_pricing",
+      "/reports": "visit_sample_reports",
+    };
+    function handleClick(e: MouseEvent) {
+      const link = (e.target as HTMLElement)?.closest?.("a");
+      if (!link) return;
+      const href = link.getAttribute("href") || "";
+      const questId = questMap[href];
+      if (questId) completeQuest(questId);
+    }
+    document.addEventListener("click", handleClick, true);
+    return () => document.removeEventListener("click", handleClick, true);
+  }, []);
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
@@ -1250,6 +1272,7 @@ export default function Home() {
           </div>
         </div>
       </section>
+      <QuestWidget quests={HOMEPAGE_QUESTS} label="Quests" />
     </main>
   );
 }

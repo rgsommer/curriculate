@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import BatchGrading from "./BatchGrading";
 import VideoGrading from "./VideoGrading";
 import AudioGrading from "./AudioGrading";
+import QuestWidget, { GRADING_QUESTS, completeQuest } from "../../components/QuestWidget";
 import { buildResultsPdf, buildStripsPdf, sessionItemToResult, buildSessionEdsbyCsv, preloadPdfLibs } from "./pdfReports";
 
 /**
@@ -1499,6 +1500,7 @@ export default function GradingPage() {
 
         if (text.trim()) {
           setRubricOverride(text.trim());
+          completeQuest("use_rubric_override");
         } else {
           alert("Could not extract text from the uploaded file. Try pasting the rubric instead.");
         }
@@ -1617,7 +1619,10 @@ export default function GradingPage() {
       setRosterLoading(true);
       fetch(`${rosterBase}/list?teacherEmail=${encodeURIComponent(teacherEmail)}`)
         .then((r) => r.ok ? r.json() : { rosters: [] })
-        .then((data) => setRosterClasses(data.rosters || []))
+        .then((data) => {
+          setRosterClasses(data.rosters || []);
+          if ((data.rosters || []).length > 0) completeQuest("setup_class_roster");
+        })
         .catch(() => {})
         .finally(() => setRosterLoading(false));
     }, [teacherEmail, gradingUrl]);
@@ -2686,6 +2691,10 @@ export default function GradingPage() {
             responseRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
           }, 120);
 
+          // --- Quest completions ---
+          completeQuest("grade_first_photo");
+          if (manualRubric.length || stickyRubric.length || rubricOverride) completeQuest("use_rubric_override");
+
           // --- GA milestone events ---
           trackEvent("grading_complete", {
             mode: "photo",
@@ -3124,6 +3133,7 @@ export default function GradingPage() {
         });
         if (res.ok) {
           trackEvent("session_email_sent", { count: sessionItems.length });
+          completeQuest("email_session_results");
           setSessionEmailSent(true);
           setShowSessionEmailPrompt(false);
           setShowSessionClearPrompt(true);
@@ -5557,7 +5567,7 @@ export default function GradingPage() {
           onClick={() => startTour(2)}
           title="Feature tour"
           style={{
-            position: "fixed", bottom: 16, right: 16,
+            position: "fixed", bottom: 16, right: 88,
             width: 36, height: 36, borderRadius: "50%",
             background: "#e2e8f0", border: "1px solid #cbd5e1",
             color: "#475569", fontSize: 16, fontWeight: 900,
@@ -5568,6 +5578,9 @@ export default function GradingPage() {
         >
           ?
         </button>
+
+        {/* ── Quest widget ── */}
+        <QuestWidget quests={GRADING_QUESTS} label="Quests" />
       </div>
     );
   }
