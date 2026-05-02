@@ -501,6 +501,7 @@ router.get("/results", studentAuth, async (req, res) => {
 
       return {
         code: r.code,
+        sessionId: r.sessionId || null,
         subject,
         assessmentType,
         title,

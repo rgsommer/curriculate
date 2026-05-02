@@ -1495,38 +1495,66 @@ export default function ProgressPage() {
                                 e.stopPropagation();
                                 const newDenom = Math.round(Number(denomInput));
                                 if (Number.isFinite(newDenom) && newDenom > 0 && newDenom !== r.outOf) {
-                                  const pct = r.outOf > 0 ? (r.score / r.outOf) * 100 : 0;
-                                  const newScore = Math.round((pct / 100) * newDenom * 10) / 10;
-                                  const newPct = newDenom > 0 ? Math.round((newScore / newDenom) * 100) : null;
-                                  // Update local state + recalculate overall average
-                                  setResults((prev) => {
-                                    const updated = prev.map((x) =>
-                                      x.code === r.code ? { ...x, score: newScore, outOf: newDenom, pct: newPct } : x
-                                    );
-                                    const pcts = updated.filter((x) => x.pct != null).map((x) => x.pct);
-                                    if (pcts.length > 0) {
-                                      setOverallAvg(Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length));
-                                    }
-                                    return updated;
-                                  });
-                                  // Update published result payload on server
-                                  try {
-                                    // Fetch current payload, replace score line
-                                    const getRes = await fetch(`${API}/results/${r.code}`);
-                                    const getData = await getRes.json();
-                                    if (getData.payload) {
-                                      const updatedPayload = getData.payload.replace(
-                                        /Grade:\s*(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/,
-                                        `Grade: ${newScore} / ${newDenom}`
-                                      );
-                                      await fetch(`${API}/results/${r.code}`, {
-                                        method: "PUT",
+                                  if (r.sessionId) {
+                                    // Batch update: rescale all results in this batch session
+                                    try {
+                                      const batchRes = await fetch(`${API}/results/batch-update-denom`, {
+                                        method: "POST",
                                         headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify({ payload: updatedPayload }),
+                                        body: JSON.stringify({ sessionId: r.sessionId, newDenom }),
                                       });
+                                      const batchData = await batchRes.json();
+                                      if (batchData.ok && Array.isArray(batchData.results)) {
+                                        // Update any local results that were in this batch
+                                        const updatedMap = {};
+                                        batchData.results.forEach((u) => { updatedMap[u.code] = u; });
+                                        setResults((prev) => {
+                                          const updated = prev.map((x) => {
+                                            const u = updatedMap[x.code];
+                                            return u ? { ...x, score: u.score, outOf: u.outOf, pct: u.pct } : x;
+                                          });
+                                          const pcts = updated.filter((x) => x.pct != null).map((x) => x.pct);
+                                          if (pcts.length > 0) {
+                                            setOverallAvg(Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length));
+                                          }
+                                          return updated;
+                                        });
+                                      }
+                                    } catch (err) {
+                                      console.warn("[progress] batch denom update failed:", err);
                                     }
-                                  } catch (err) {
-                                    console.warn("[progress] denom update failed:", err);
+                                  } else {
+                                    // Single result update (no batch session)
+                                    const pct = r.outOf > 0 ? (r.score / r.outOf) * 100 : 0;
+                                    const newScore = Math.round((pct / 100) * newDenom * 10) / 10;
+                                    const newPct = newDenom > 0 ? Math.round((newScore / newDenom) * 100) : null;
+                                    setResults((prev) => {
+                                      const updated = prev.map((x) =>
+                                        x.code === r.code ? { ...x, score: newScore, outOf: newDenom, pct: newPct } : x
+                                      );
+                                      const pcts = updated.filter((x) => x.pct != null).map((x) => x.pct);
+                                      if (pcts.length > 0) {
+                                        setOverallAvg(Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length));
+                                      }
+                                      return updated;
+                                    });
+                                    try {
+                                      const getRes = await fetch(`${API}/results/${r.code}`);
+                                      const getData = await getRes.json();
+                                      if (getData.payload) {
+                                        const updatedPayload = getData.payload.replace(
+                                          /Grade:\s*(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/,
+                                          `Grade: ${newScore} / ${newDenom}`
+                                        );
+                                        await fetch(`${API}/results/${r.code}`, {
+                                          method: "PUT",
+                                          headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ payload: updatedPayload }),
+                                        });
+                                      }
+                                    } catch (err) {
+                                      console.warn("[progress] denom update failed:", err);
+                                    }
                                   }
                                 }
                                 setEditingDenomCode(null);

@@ -168,6 +168,53 @@ router.put("/:code", createLimiter, async (req, res) => {
 });
 
 /**
+ * POST /results/batch-update-denom
+ * Body: { sessionId, newDenom }
+ * Rescales all results in a batch session to a new denominator.
+ * Returns { updated: number, results: [{ code, score, outOf, pct }] }
+ */
+router.post("/batch-update-denom", createLimiter, async (req, res) => {
+  try {
+    const { sessionId, newDenom } = req.body || {};
+    if (!sessionId) return res.status(400).json({ error: "Missing sessionId." });
+    const denom = Math.round(Number(newDenom));
+    if (!Number.isFinite(denom) || denom <= 0) return res.status(400).json({ error: "Invalid denominator." });
+
+    const docs = await PublishedResult.find({ sessionId });
+    if (!docs.length) return res.status(404).json({ error: "No results found for this session." });
+
+    const updatedResults = [];
+    for (const doc of docs) {
+      if (typeof doc.payload !== "string") continue;
+      const scoreMatch = doc.payload.match(/Grade:\s*(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
+      if (!scoreMatch) continue;
+
+      const oldScore = parseFloat(scoreMatch[1]);
+      const oldOutOf = parseFloat(scoreMatch[2]);
+      if (oldOutOf <= 0 || oldOutOf === denom) continue;
+
+      const pct = (oldScore / oldOutOf) * 100;
+      const newScore = Math.round((pct / 100) * denom * 10) / 10;
+      const newPct = Math.round((newScore / denom) * 100);
+
+      const updatedPayload = doc.payload.replace(
+        /Grade:\s*(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/,
+        `Grade: ${newScore} / ${denom}`
+      );
+
+      doc.payload = updatedPayload;
+      await doc.save();
+      updatedResults.push({ code: doc.code, score: newScore, outOf: denom, pct: newPct });
+    }
+
+    return res.json({ ok: true, updated: updatedResults.length, results: updatedResults });
+  } catch (err) {
+    console.error("POST /results/batch-update-denom error:", err);
+    return res.status(500).json({ error: "Server error." });
+  }
+});
+
+/**
  * PATCH /results/:code
  * Body: { studentId?, studentName?, className?, teacherEmail? }
  * Updates specific meta fields without replacing the full payload.
