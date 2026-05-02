@@ -45,6 +45,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             {/* Conference demo (visitor-facing) */}
             <Route path="/conference" element={<DemoMode />} />
 
+            {/* Classroom practice (student-facing, points + teacher tracking) */}
+            <Route path="/practice" element={<DemoMode source="classroom" />} />
+
             {/* Unknown routes -> main */}
             <Route path="*" element={<App />} />
           </Routes>
