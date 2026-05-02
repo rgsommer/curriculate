@@ -70,7 +70,7 @@ function getTaskPoints(taskType) {
 
 router.post("/register", registerLimiter, async (req, res) => {
   try {
-    const { name, email, role, conference, source, classroom } = req.body;
+    const { name, email, role, conference, source, classroom, promoCode } = req.body;
 
     if (!name || !email) {
       return res.status(400).json({ error: "Name and email are required" });
@@ -87,6 +87,7 @@ router.post("/register", registerLimiter, async (req, res) => {
           source: source || "conference",
           classroom: classroom || "",
           conference: conference || "general",
+          promoCode: promoCode || "CONFERENCE2025",
         },
         $setOnInsert: { registeredAt: new Date() },
       },

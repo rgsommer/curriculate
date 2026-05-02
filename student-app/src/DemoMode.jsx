@@ -52,7 +52,7 @@ function isValidEmail(e) {
 // Phase: Email Capture
 // ----------------------------------------------------------------
 
-function EmailCapture({ onStart, source, classroom }) {
+function EmailCapture({ onStart, source, classroom, promoCode }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("");
@@ -78,6 +78,7 @@ function EmailCapture({ onStart, source, classroom }) {
           role: role.trim() || undefined,
           source,
           classroom: classroom || "",
+          promoCode: promoCode || "CONFERENCE2025",
         }),
       });
       const data = await resp.json();
@@ -671,7 +672,7 @@ function DemoPlayer({ user, onFinish, source }) {
 // Phase: Results & Signup CTA
 // ----------------------------------------------------------------
 
-function DemoResults({ user, results, source }) {
+function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const isClassroom = source === "classroom";
@@ -799,7 +800,7 @@ function DemoResults({ user, results, source }) {
               🎁 1 Month Free
             </div>
             <div style={{ fontSize: 14, color: "#3b82f6", marginBottom: 12 }}>
-              Use code <strong style={{ fontSize: 18, letterSpacing: 2 }}>CONFERENCE2025</strong> when you sign up
+              Use code <strong style={{ fontSize: 18, letterSpacing: 2 }}>{promoCode}</strong> when you sign up
             </div>
             <a
               href="https://curriculate.net/pricing"
@@ -866,6 +867,7 @@ export default function DemoMode({ source = "conference", classroom = "" }) {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const effectiveSource = params.get("source") || source;
   const effectiveClassroom = params.get("classroom") || classroom;
+  const effectivePromo = params.get("promo") || "CONFERENCE2025";
 
   const handleStart = useCallback((u) => {
     setUser(u);
@@ -884,13 +886,14 @@ export default function DemoMode({ source = "conference", classroom = "" }) {
           onStart={handleStart}
           source={effectiveSource}
           classroom={effectiveClassroom}
+          promoCode={effectivePromo}
         />
       )}
       {phase === "play" && user && (
         <DemoPlayer user={user} onFinish={handleFinish} source={effectiveSource} />
       )}
       {phase === "results" && user && (
-        <DemoResults user={user} results={results} source={effectiveSource} />
+        <DemoResults user={user} results={results} source={effectiveSource} promoCode={effectivePromo} />
       )}
     </div>
   );
