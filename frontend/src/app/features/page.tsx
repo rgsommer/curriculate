@@ -223,9 +223,9 @@ export default function FeaturesPage() {
                 body="Structured discussion and team formats designed for real classrooms."
                 bullets={[
                   "Peer editing with 38 teacher-style correction marks (tap any word to annotate)",
+                  "Teach-back — explain concepts to a younger audience; AI-assessed for clarity and completeness",
                   "Intra-team and inter-team challenge options",
                   "Debate/discussion structures",
-                  "Peer explanation and reasoning",
                 ]}
               />
             </div>

@@ -4,7 +4,7 @@ import { ArrowRight, Download } from "lucide-react";
 
 const rows = [
   { label: "Core purpose", c: "Active station learning + collaboration + evidence", q: "Flashcard study and recall review (self-paced)" },
-  { label: "Task variety", c: "65+ AI-generated task types (cloze, AI interviews, peer editing, movement, debate, creation)", q: "Flashcards + a few study/game modes around recall" },
+  { label: "Task variety", c: "65+ AI-generated task types (cloze, AI interviews, peer editing, teach-back, movement, debate, creation)", q: "Flashcards + a few study/game modes around recall" },
   { label: "Group play", c: "1–4 players per station; team submissions", q: "Individual study or whole-class Live mode" },
   { label: "Physical integration", c: "Strong — stations + movement tasks", q: "Screen-only — no physical component" },
   { label: "Teacher workload", c: "Optional AI generation reduces prep", q: "Create/import sets; large library helps" },

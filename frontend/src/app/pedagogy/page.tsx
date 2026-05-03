@@ -123,7 +123,7 @@ const bloomsData: BloomLevel[] = [
     color: "#f97316",
     description: "Constructing meaning from instructional messages",
     icon: <BookOpen className="w-5 h-5" />,
-    primary: 5,
+    primary: 6,
     secondary: 6,
     tasks: [
       "Short Answer",
@@ -131,6 +131,7 @@ const bloomsData: BloomLevel[] = [
       "Brain Spark Notes",
       "Pronunciation",
       "Speech Recognition",
+      "Teach-Back",
     ],
     secondaryTasks: [
       "Multiple Choice",
@@ -222,7 +223,7 @@ const bloomsData: BloomLevel[] = [
     description: "Making judgments based on criteria and standards",
     icon: <Scale className="w-5 h-5" />,
     primary: 9,
-    secondary: 12,
+    secondary: 13,
     tasks: [
       "Open Text",
       "Live Debate",
@@ -247,6 +248,7 @@ const bloomsData: BloomLevel[] = [
       "Script Play",
       "Open Text",
       "Photo Journal",
+      "Teach-Back",
     ],
   },
   {
@@ -285,7 +287,7 @@ const bloomsData: BloomLevel[] = [
   },
 ];
 
-const TOTAL_COGNITIVE = 60; // total primary classifications across all levels
+const TOTAL_COGNITIVE = 61; // total primary classifications across all levels
 
 /* ─── Other frameworks ─── */
 
@@ -307,7 +309,7 @@ const modalities = [
   { mode: "Visual", pct: 30, color: "#f472b6", desc: "Drawing, photo, art view, diagrams" },
   { mode: "Auditory", pct: 12, color: "#60a5fa", desc: "Pronunciation, speech, record audio, debate" },
   { mode: "Kinesthetic", pct: 25, color: "#34d399", desc: "Stations, movement, mad dash, hide & seek" },
-  { mode: "Read / Write", pct: 33, color: "#a78bfa", desc: "Cloze, short answer, letter, open text, peer editing" },
+  { mode: "Read / Write", pct: 33, color: "#a78bfa", desc: "Cloze, short answer, letter, open text, peer editing, teach-back" },
 ];
 
 /* ─── Component ─── */
@@ -380,7 +382,7 @@ export default function PedagogyPage() {
           </h2>
           <p className="text-gray-600 font-medium max-w-3xl mb-2">
             Every Curriculate task type is mapped to one or more levels of
-            Bloom&apos;s Taxonomy. Here&apos;s the breakdown across all 60
+            Bloom&apos;s Taxonomy. Here&apos;s the breakdown across all 61
             cognitive task types — showing exactly where each level of thinking
             is exercised.
           </p>
@@ -417,12 +419,12 @@ export default function PedagogyPage() {
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="rounded-2xl bg-red-50 border border-red-200 p-5">
-              <div className="text-2xl font-black text-red-700">23%</div>
+              <div className="text-2xl font-black text-red-700">25%</div>
               <div className="font-bold text-red-900 mt-1">
                 Know It — Remember + Understand
               </div>
               <p className="text-red-700 text-sm font-medium mt-2">
-                14 tasks focus on recall and explanation — the foundation of
+                15 tasks focus on recall and explanation — the foundation of
                 learning, but not where Curriculate stops.
               </p>
             </div>
@@ -645,7 +647,7 @@ export default function PedagogyPage() {
             <div className="rounded-2xl bg-blue-50 border border-blue-200 p-6">
               <div className="font-black text-blue-900 mb-2">Curriculate</div>
               <p className="text-blue-800 font-medium text-sm leading-relaxed">
-                23% Remember/Understand · 38% Apply/Analyze · 38%
+                25% Remember/Understand · 38% Apply/Analyze · 38%
                 Evaluate/Create. Higher-order thinking is built into the task
                 library — not an optional add-on. Four VARK modalities covered.
                 Station rotation adds kinesthetic engagement that no screen-only

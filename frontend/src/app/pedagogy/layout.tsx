@@ -4,7 +4,7 @@ export const metadata: Metadata = {
   title:
     "Pedagogy & Learning Science — Bloom's Taxonomy Coverage | Curriculate",
   description:
-    "See how Curriculate's 65+ task types map to Bloom's Taxonomy, Webb's Depth of Knowledge, SOLO Taxonomy, and VARK modalities. 38% of tasks target higher-order thinking (Evaluate + Create) — far beyond quiz-only tools.",
+    "See how Curriculate's 65+ task types map to Bloom's Taxonomy, Webb's Depth of Knowledge, SOLO Taxonomy, and VARK modalities. 38% of tasks target higher-order thinking (Evaluate + Create) — far beyond quiz-only tools. Includes teach-back explanations for deeper understanding.",
   keywords: [
     "Bloom's taxonomy classroom tool",
     "higher order thinking activities",
