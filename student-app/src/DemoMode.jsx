@@ -45,8 +45,52 @@ const DEFAULT_TASK_POINTS = {
 };
 const DEFAULT_PTS = 10;
 
-function getTaskPts(taskType, pointsMap) {
+// NEW-type bonus multiplier / repeat penalty
+const NEW_TYPE_MULTIPLIER = 1.5;  // 1.5× for first encounter of a task type
+const REPEAT_MULTIPLIER = 0.5;    // 0.5× for types already completed
+
+function getBaseTaskPts(taskType, pointsMap) {
   return (pointsMap || DEFAULT_TASK_POINTS)[taskType] || DEFAULT_PTS;
+}
+
+/** Adaptive points: bonus for new types, penalty for repeats */
+function getAdaptivePts(taskType, pointsMap, completedTypes) {
+  const base = getBaseTaskPts(taskType, pointsMap);
+  if (!completedTypes || completedTypes.size === 0) return { pts: Math.round(base * NEW_TYPE_MULTIPLIER), isNew: true };
+  if (!completedTypes.has(taskType)) return { pts: Math.round(base * NEW_TYPE_MULTIPLIER), isNew: true };
+  return { pts: Math.round(base * REPEAT_MULTIPLIER), isNew: false };
+}
+
+/** Shuffle array (Fisher-Yates) */
+function shuffleArray(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/**
+ * Build a smart task order: one task per type first (shuffled), then
+ * remaining duplicates (shuffled) at the end. Students see every type
+ * before encountering repeats.
+ */
+function buildSmartTaskOrder(tasks) {
+  const seen = new Set();
+  const firstPass = [];
+  const extras = [];
+  // Shuffle first so the one-per-type order is randomized
+  const shuffled = shuffleArray(tasks);
+  for (const t of shuffled) {
+    if (!seen.has(t.taskType)) {
+      seen.add(t.taskType);
+      firstPass.push(t);
+    } else {
+      extras.push(t);
+    }
+  }
+  return [...firstPass, ...shuffleArray(extras)];
 }
 
 function formatTime(ms) {
@@ -481,8 +525,12 @@ function TreatToast({ onDismiss }) {
 }
 
 function DemoPlayer({ user, onFinish, source }) {
+  // Build a smart task order: one of each type first, then repeats
+  const taskOrder = useMemo(() => buildSmartTaskOrder(DEMO_TASKS), []);
+
   const [taskIdx, setTaskIdx] = useState(0);
   const [results, setResults] = useState([]);
+  const [completedTypes, setCompletedTypes] = useState(new Set());
   const [remainingMs, setRemainingMs] = useState(AUTO_ADVANCE_MS);
   const [paused, setPaused] = useState(false);
   const [totalPoints, setTotalPoints] = useState(0);
@@ -542,9 +590,11 @@ function DemoPlayer({ user, onFinish, source }) {
   }, []
   );
 
-  const task = DEMO_TASKS[taskIdx] || null;
-  const total = DEMO_TASKS.length;
-  const nextTaskPts = task ? getTaskPts(task.taskType, user.taskPoints) : 0;
+  const task = taskOrder[taskIdx] || null;
+  const total = taskOrder.length;
+  const { pts: nextTaskPts, isNew: nextIsNew } = task
+    ? getAdaptivePts(task.taskType, user.taskPoints, completedTypes)
+    : { pts: 0, isNew: false };
 
   // Auto-advance timer
   useEffect(() => {
@@ -583,10 +633,10 @@ function DemoPlayer({ user, onFinish, source }) {
     return () => clearInterval(timerRef.current);
   }, [taskIdx, paused]);
 
-  // Submit handler — earns points, then shows feedback popup
+  // Submit handler — earns adaptive points, then shows feedback popup
   const handleSubmit = useCallback(
     (answer) => {
-      const pts = getTaskPts(task?.taskType, user.taskPoints);
+      const { pts } = getAdaptivePts(task?.taskType, user.taskPoints, completedTypes);
       const entry = {
         taskType: task?.taskType,
         title: task?.title,
@@ -597,6 +647,9 @@ function DemoPlayer({ user, onFinish, source }) {
       };
       setTotalPoints((p) => p + pts);
       setStreak((s) => s + 1);
+
+      // Track this type as completed
+      setCompletedTypes((prev) => new Set([...prev, task?.taskType]));
 
       // Treat milestone: after 3rd completed task (conference mode only)
       const completedSoFar = results.filter((r) => !r.skipped).length + 1;
@@ -614,7 +667,7 @@ function DemoPlayer({ user, onFinish, source }) {
       setPendingEntry(entry);
       setTimeout(() => setShowFeedback(true), 800); // brief delay for points pop
     },
-    [task, taskIdx, total, results, onFinish, user.taskPoints]
+    [task, taskIdx, total, results, onFinish, user.taskPoints, completedTypes]
   );
 
   // Handle feedback submission or skip
@@ -737,7 +790,10 @@ function DemoPlayer({ user, onFinish, source }) {
       <div style={styles.taskTypeLabel}>
         <span style={styles.taskTypeBadge}>{task?.taskType?.replace(/-/g, " ")}</span>
         <span style={{ fontWeight: 800, fontSize: 16, flex: 1 }}>{task?.title}</span>
-        <span style={styles.ptsBadge}>+{nextTaskPts} pts</span>
+        <span style={styles.ptsBadge}>
+          {nextIsNew && <span style={styles.newBadge}>NEW</span>}
+          +{nextTaskPts} pts
+        </span>
       </div>
 
       {/* Task Runner */}
@@ -746,7 +802,7 @@ function DemoPlayer({ user, onFinish, source }) {
           key={`demo-${taskIdx}`}
           task={task}
           taskIndex={taskIdx}
-          taskTypes={DEMO_TASKS.map((t) => t.taskType)}
+          taskTypes={taskOrder.map((t) => t.taskType)}
           onSubmit={handleSubmit}
           submitting={false}
           disabled={false}
@@ -1003,6 +1059,9 @@ function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
           <div style={{ fontSize: 48, fontWeight: 900, color: "#f59e0b" }}>{totalPoints}</div>
           <div style={{ fontSize: 13, color: "#a16207" }}>
             {completed.length} task{completed.length !== 1 ? "s" : ""} completed out of {DEMO_TASKS.length}
+          </div>
+          <div style={{ fontSize: 12, color: "#a16207", marginTop: 2 }}>
+            {new Set(completed.map((r) => r.taskType)).size} unique task types tried
           </div>
         </div>
 
@@ -1326,6 +1385,19 @@ const styles = {
     color: "#fbbf24",
     border: "1px solid rgba(245,158,11,0.25)",
     whiteSpace: "nowrap",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+  },
+  newBadge: {
+    padding: "1px 5px",
+    borderRadius: 4,
+    fontSize: 9,
+    fontWeight: 900,
+    background: "#22c55e",
+    color: "#fff",
+    letterSpacing: "0.5px",
+    lineHeight: "14px",
   },
   doneBtn: {
     padding: "6px 14px",
