@@ -5561,6 +5561,36 @@ export const TASK_SHELLS = {
     return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
   },
 
+  /* ── TEACH-BACK ── */
+  [TASK_TYPES.TEACH_BACK]: function buildTeachBackShell({ itemCount = 4 } = {}) {
+    const conceptCount = Math.max(3, Math.min(5, itemCount));
+    const placeholders = [
+      "TITLE: Short title (3-7 words, e.g., 'Teach: The Water Cycle')",
+      "PROMPT: Student-facing instruction (e.g., 'Explain these concepts as if teaching a 2nd grader. Use simple words!')",
+      "TARGET_AGE: Target audience description (e.g., 'a 2nd grader' or 'a 5-year-old') — should be roughly grade_level minus 3-4 years",
+      "RUBRIC: Short 1-2 sentence AI scoring rubric (e.g., 'Award points for clear, accurate, age-appropriate explanations.')",
+    ];
+    const names = ["TITLE", "PROMPT", "TARGET_AGE", "RUBRIC"];
+
+    for (let i = 1; i <= conceptCount; i++) {
+      placeholders.push(`CONCEPT_${i}: A key vocabulary term or concept from the word list (2-5 words) — pick a REAL term the student should be able to explain`);
+      names.push(`CONCEPT_${i}`);
+    }
+
+    const concepts = [];
+    for (let i = 1; i <= conceptCount; i++) concepts.push(`{{CONCEPT_${i}}}`);
+
+    const shell = {
+      taskType: "teach-back",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      concepts,
+      targetAge: "{{TARGET_AGE}}",
+      config: { rubric: "{{RUBRIC}}" },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
   // NOTE: peer-editing intentionally omitted from TASK_SHELLS.
   // The passage and error word-indices are interdependent — the AI must co-generate them
   // in a single JSON object. Template placeholder filling can't handle this reliably
