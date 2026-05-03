@@ -684,6 +684,47 @@ export function sanitizeTaskShapeByType(type, task) {
     }
   }
 
+  // ── INTERVIEW ──
+  if (type === TASK_TYPES.INTERVIEW) {
+    const cfg = t.config && typeof t.config === "object" ? t.config : null;
+
+    // Promote config.candidates to top level if AI nested them
+    if (!Array.isArray(t.candidates) && Array.isArray(cfg?.candidates)) {
+      t.candidates = cfg.candidates;
+      delete cfg.candidates;
+    }
+
+    // Promote config.minTurns / maxTurns
+    if (typeof t.minTurns === "undefined" && cfg?.minTurns) { t.minTurns = cfg.minTurns; delete cfg.minTurns; }
+    if (typeof t.maxTurns === "undefined" && cfg?.maxTurns) { t.maxTurns = cfg.maxTurns; delete cfg.maxTurns; }
+
+    // Normalize candidates array
+    if (Array.isArray(t.candidates)) {
+      t.candidates = t.candidates
+        .filter((c) => c && typeof c === "object")
+        .map((c) => ({
+          name: String(c.name || c.characterName || "").trim(),
+          era: String(c.era || c.timePeriod || "").trim(),
+          description: String(c.description || c.bio || c.desc || "").trim(),
+          greeting: String(c.greeting || c.intro || c.openingLine || "").trim(),
+          systemPrompt: String(c.systemPrompt || c.system || c.persona || "").trim(),
+        }));
+    }
+
+    // Ensure numeric turn bounds
+    t.minTurns = typeof t.minTurns === "number" ? t.minTurns : parseInt(t.minTurns, 10) || 3;
+    t.maxTurns = typeof t.maxTurns === "number" ? t.maxTurns : parseInt(t.maxTurns, 10) || 5;
+    if (t.minTurns < 2) t.minTurns = 2;
+    if (t.maxTurns < t.minTurns) t.maxTurns = t.minTurns + 2;
+
+    // Strip empty config
+    if (cfg) {
+      const keys = Object.keys(cfg).filter((k) => cfg[k] !== undefined);
+      if (keys.length === 0) delete t.config;
+      else t.config = cfg;
+    }
+  }
+
   return t;
 }
 

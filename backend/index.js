@@ -8057,6 +8057,79 @@ Write a reply letter back to the student, IN CHARACTER as ${charName}. Guideline
 });
 
 /* ------------------------------------------------------------------ */
+/*  Interview — live AI conversation with historical / topical figure  */
+/* ------------------------------------------------------------------ */
+app.post("/api/evaluate/interview-reply", async (req, res) => {
+  try {
+    const {
+      characterName, systemPrompt, history,
+      studentQuestion, turnNumber, maxTurns,
+    } = req.body || {};
+
+    const charName = String(characterName || "Historical Figure").slice(0, 100);
+    const sysPrompt = String(systemPrompt || "").slice(0, 1500);
+    const question = String(studentQuestion || "").trim().slice(0, 2000);
+    const turn = parseInt(turnNumber, 10) || 1;
+    const maxT = parseInt(maxTurns, 10) || 5;
+
+    if (!question) return res.status(400).json({ error: "Missing studentQuestion" });
+
+    // Build conversation history for context
+    const messages = [
+      {
+        role: "system",
+        content: `${sysPrompt}\n\nYou are ${charName} being interviewed by a student. Stay fully in character. Keep each reply 40-100 words — vivid and engaging, appropriate for a school setting. After responding, rate the student's question for relevance on a scale of 1-5 (5 = deeply relevant to who you are or what you did; 1 = off-topic or generic). Return your answer as JSON: {"reply":"...","relevanceScore":N}. Return ONLY valid JSON, no markdown fences.`,
+      },
+    ];
+
+    // Add conversation history
+    if (Array.isArray(history)) {
+      for (const h of history.slice(-10)) {
+        if (h.role === "student") {
+          messages.push({ role: "user", content: String(h.text || "").slice(0, 2000) });
+        } else if (h.role === "character") {
+          messages.push({ role: "assistant", content: String(h.text || "").slice(0, 2000) });
+        }
+      }
+    }
+
+    // Add current question
+    messages.push({
+      role: "user",
+      content: `[Turn ${turn}/${maxT}] ${question}`,
+    });
+
+    const response = await openai.chat.completions.create({
+      model: AI_MODEL,
+      messages,
+      temperature: 0.7,
+      max_tokens: 300,
+    });
+
+    const raw = (response.choices?.[0]?.message?.content || "").trim();
+
+    // Parse JSON response
+    let reply = "";
+    let relevanceScore = 3;
+    try {
+      const cleaned = raw.replace(/^```json?\s*/i, "").replace(/```\s*$/, "").trim();
+      const parsed = JSON.parse(cleaned);
+      reply = String(parsed.reply || "").trim();
+      relevanceScore = Math.min(5, Math.max(1, parseInt(parsed.relevanceScore, 10) || 3));
+    } catch (_) {
+      // Fallback: use raw text as reply
+      reply = raw.replace(/\{[^}]*\}/g, "").trim() || `Thank you for that question! That's an interesting thing to ask about.`;
+      relevanceScore = 3;
+    }
+
+    return res.json({ reply, relevanceScore });
+  } catch (err) {
+    console.error("Interview reply error:", err);
+    return res.status(500).json({ error: "Interview reply generation failed" });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  Case Study — AI expert feedback on student's solution              */
 /* ------------------------------------------------------------------ */
 app.post("/api/evaluate/case-study-feedback", async (req, res) => {

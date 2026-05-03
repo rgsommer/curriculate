@@ -2309,6 +2309,36 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
+    case TASK_TYPES.INTERVIEW: {
+      // Promote candidates from config if needed
+      if (!Array.isArray(task.candidates) && Array.isArray(task.config?.candidates)) {
+        task.candidates = task.config.candidates;
+      }
+
+      // Normalize candidates
+      let cands = Array.isArray(task.candidates) ? task.candidates : [];
+      cands = cands
+        .filter((c) => c && typeof c === "object")
+        .map((c) => ({
+          name: asNonEmptyString(c.name, asNonEmptyString(c.characterName, "")),
+          era: asNonEmptyString(c.era, asNonEmptyString(c.timePeriod, "")),
+          description: asNonEmptyString(c.description, asNonEmptyString(c.bio, "")),
+          greeting: asNonEmptyString(c.greeting, asNonEmptyString(c.intro, "")),
+          systemPrompt: asNonEmptyString(c.systemPrompt, asNonEmptyString(c.system, "")),
+        }));
+      if (cands.length < 2) {
+        errors.push(`interview task needs at least 2 candidates, found ${cands.length}`);
+      }
+      task.candidates = cands;
+
+      // Normalize turn bounds
+      task.minTurns = typeof task.minTurns === "number" ? task.minTurns
+        : typeof task.config?.minTurns === "number" ? task.config.minTurns : 3;
+      task.maxTurns = typeof task.maxTurns === "number" ? task.maxTurns
+        : typeof task.config?.maxTurns === "number" ? task.config.maxTurns : 5;
+      break;
+    }
+
     default:
       break;
   }
@@ -2970,6 +3000,29 @@ export function validateTaskByType(taskType, task) {
       }
       if (!Array.isArray(task.errors) || task.errors.length < 3) {
         errors.push("peer-editing requires at least 3 errors in the errors array");
+      }
+      break;
+    }
+
+    case TASK_TYPES.INTERVIEW: {
+      if (!Array.isArray(task.candidates) || task.candidates.length < 2) {
+        errors.push("interview requires at least 2 candidates");
+      } else {
+        for (let i = 0; i < task.candidates.length; i++) {
+          const c = task.candidates[i];
+          if (!c.name || typeof c.name !== "string" || !c.name.trim()) {
+            errors.push(`interview candidate[${i}] requires a non-empty name`);
+          }
+          if (!c.systemPrompt || typeof c.systemPrompt !== "string" || !c.systemPrompt.trim()) {
+            errors.push(`interview candidate[${i}] requires a non-empty systemPrompt`);
+          }
+        }
+      }
+      if (typeof task.minTurns !== "number" || task.minTurns < 2) {
+        errors.push("interview requires minTurns >= 2");
+      }
+      if (typeof task.maxTurns !== "number" || task.maxTurns < task.minTurns) {
+        errors.push("interview requires maxTurns >= minTurns");
       }
       break;
     }

@@ -41,7 +41,7 @@ const DEFAULT_TASK_POINTS = {
   "role-play": 20, "role-play-deck": 20, "script-play": 20,
   pronunciation: 15, "speech-recognition": 15, "record-audio": 15,
   letter: 20, "case-study": 25, "art-view": 20, "historical-doc": 20,
-  hidenseek: 15, storytelling: 25, "peer-editing": 20,
+  hidenseek: 15, storytelling: 25, "peer-editing": 20, interview: 25,
 };
 const DEFAULT_PTS = 10;
 

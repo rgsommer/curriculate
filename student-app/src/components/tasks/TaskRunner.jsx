@@ -65,6 +65,7 @@ import TriviaTask from "./types/TriviaTask";
 import SpinnerTask from "./types/SpinnerTask";
 import TeamSelfieTask from "./types/TeamSelfieTask";
 import PeerEditingTask from "./types/PeerEditingTask";
+import InterviewTask from "./types/InterviewTask";
 import PaperModeCamera from "./PaperModeCamera.jsx";
 import CoachPanel from "./CoachPanel.jsx";
 
@@ -107,6 +108,7 @@ const COACH_MODE_SKIP = new Set([
   "live-debate",         // debate — everyone speaks
   "trivia",              // everyone answers together
   "spinner",             // everyone watches the spin
+  "interview",           // live AI conversation — individual
 ]);
 
 // Task types eligible for paper mode (text-heavy tasks that can be done on paper)
@@ -3114,6 +3116,18 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
     case "peer-editing": {
       content = (
         <PeerEditingTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled || isReview}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.INTERVIEW:
+    case "interview": {
+      content = (
+        <InterviewTask
           task={tp}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled || isReview}

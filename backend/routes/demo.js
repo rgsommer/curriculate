@@ -122,6 +122,9 @@ const TASK_POINTS = {
 
   // Peer editing
   "peer-editing": 20,
+
+  // Interview (live AI conversation)
+  interview: 25,
 };
 
 const DEFAULT_POINTS = 10;

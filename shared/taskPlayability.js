@@ -528,6 +528,22 @@ export function assessTaskPlayability(rawTask) {
       break;
     }
 
+    case TASK_TYPES.INTERVIEW: {
+      // Interview needs candidates array with 2-3 entries, each with name + systemPrompt
+      const candidates = Array.isArray(t.candidates) ? t.candidates
+        : Array.isArray(t.config?.candidates) ? t.config.candidates : [];
+      if (candidates.length < 2) issues.push(`candidates array must have at least 2 entries (got ${candidates.length})`);
+      else {
+        for (let i = 0; i < candidates.length; i++) {
+          const c = candidates[i];
+          if (!c || typeof c !== "object") { issues.push(`candidate[${i}] must be an object`); continue; }
+          if (!isNonEmptyString(c.name)) issues.push(`candidate[${i}]: name is required`);
+          if (!isNonEmptyString(c.systemPrompt)) issues.push(`candidate[${i}]: systemPrompt is required`);
+        }
+      }
+      break;
+    }
+
     case TASK_TYPES.TEAM_SELFIE:
     case TASK_TYPES.TASK_RUNNER:
     case TASK_TYPES.MOOD_CHECKIN:

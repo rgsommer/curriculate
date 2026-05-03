@@ -119,6 +119,9 @@ export const TASK_TYPES = {
   // Peer editing / proofreading
   PEER_EDITING: "peer-editing",
 
+  // Interview — live AI conversation with historical/topical figure
+  INTERVIEW: "interview",
+
   // Comic relief / no-score
   RIDDLE: "riddle",
   TRIVIA: "trivia",
@@ -198,6 +201,7 @@ export const TASK_BLOOMS_MAP = {
   "narration-synthesize":       ["EVALUATE", "CREATE"],
   "letter":                     ["EVALUATE", "CREATE"],
   "peer-editing":               ["EVALUATE", "ANALYZE"],
+  "interview":                  ["EVALUATE", "ANALYZE", "APPLY"],
 
   // Create -- design, construct, produce, invent
   "draw":                       ["CREATE"],
@@ -1114,6 +1118,54 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Include between 5 and 10 errors, no fewer.
     - Errors should be age-appropriate and clearly wrong (not ambiguous style choices).
     - Do not make the passage so error-filled it's unreadable — intersperse errors naturally.
+    `,
+  },
+
+  [TASK_TYPES.INTERVIEW]: {
+    label: "Interview",
+    category: CATEGORY.CREATIVE,
+    implemented: true,
+    demoEligible: true,
+    generatorEligible: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
+    quickTaskEligible: false,
+    hasOptions: false,
+    expectsText: true,
+    maxTimeSeconds: 300,
+    estimatedMinutes: 5,
+    interTeamEnabled: false,
+    intraTeamEnabled: false,
+    description:
+      "Students interview a historical figure or subject-matter expert via live AI conversation. " +
+      "They choose from 2-3 candidate characters, each introduces themselves in-character. " +
+      "Students ask 3-5 questions and are scored on relevance — good follow-up questions that " +
+      "connect to what the character said earn more points. Input modes: type, voice dictation, " +
+      "or paper photo snap. Develops inquiry skills, historical empathy, and critical thinking.",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "interview".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt, candidates.
+    - candidates: array of 2-3 objects, each with:
+        name (full name of a REAL historical person or notable figure relevant to the topic),
+        era (short era/date string, e.g. "1700s" or "Ancient Greece"),
+        description (1-2 sentence bio the student sees before choosing — who they are and why they matter),
+        greeting (2-3 sentences the character says to introduce themselves in first person, in-character, setting up what they know about),
+        systemPrompt (a DETAILED persona prompt for the AI to role-play this character: their knowledge, speech style, historical context, what they're passionate about, what they witnessed. 3-5 sentences.)
+    - prompt: student-facing instructions (e.g., "Choose a person to interview and ask thoughtful questions...")
+    - title: short title (3-7 words)
+    - config.minTurns: 3
+    - config.maxTurns: 5
+
+    IMPORTANT:
+    - Candidates MUST be real historical or notable figures relevant to the lesson topic.
+    - Each candidate should offer a DIFFERENT perspective on the topic.
+    - The systemPrompt must give the AI enough context to stay in character.
+    - Greetings should be engaging and mention specific things the student could ask about.
     `,
   },
 
