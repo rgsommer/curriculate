@@ -2377,6 +2377,30 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
+    case TASK_TYPES.TEACH_BACK: {
+      // Promote from config
+      if (!Array.isArray(task.concepts) && Array.isArray(task.config?.concepts)) task.concepts = task.config.concepts;
+      if (!task.targetAge && task.config?.targetAge) task.targetAge = task.config.targetAge;
+      if (!task.targetAge && task.target_age) { task.targetAge = task.target_age; delete task.target_age; }
+      if (!task.targetAge && task.targetAudience) { task.targetAge = task.targetAudience; delete task.targetAudience; }
+
+      // Normalize concepts
+      if (Array.isArray(task.concepts)) {
+        task.concepts = task.concepts
+          .map((c) => typeof c === "string" ? c.trim() : asNonEmptyString(c?.name || c?.concept, ""))
+          .filter(Boolean);
+      }
+      if (!Array.isArray(task.concepts) || task.concepts.length < 3) {
+        errors.push(`teach-back needs at least 3 concepts, found ${Array.isArray(task.concepts) ? task.concepts.length : 0}`);
+      }
+
+      task.targetAge = asNonEmptyString(task.targetAge, "");
+      if (!task.targetAge) {
+        errors.push("teach-back requires targetAge (e.g. 'a 2nd grader')");
+      }
+      break;
+    }
+
     default:
       break;
   }
@@ -3084,6 +3108,24 @@ export function validateTaskByType(taskType, task) {
         if (markerCount !== task.blanks.length) {
           errors.push(`cloze passage has ${markerCount} ___ markers but ${task.blanks.length} blanks`);
         }
+      }
+      break;
+    }
+
+    case TASK_TYPES.TEACH_BACK: {
+      if (!Array.isArray(task.concepts) || task.concepts.length < 3) {
+        errors.push("teach-back requires at least 3 concepts");
+      } else if (task.concepts.length > 5) {
+        errors.push("teach-back should have at most 5 concepts");
+      } else {
+        for (let i = 0; i < task.concepts.length; i++) {
+          if (!task.concepts[i] || typeof task.concepts[i] !== "string" || !task.concepts[i].trim()) {
+            errors.push(`teach-back concept[${i}] must be a non-empty string`);
+          }
+        }
+      }
+      if (!task.targetAge || typeof task.targetAge !== "string" || !task.targetAge.trim()) {
+        errors.push("teach-back requires a non-empty targetAge string");
       }
       break;
     }

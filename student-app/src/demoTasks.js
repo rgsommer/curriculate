@@ -1033,4 +1033,31 @@ const DEMO_TASKS = [
   },
 ];
 
+  // ── TEACH-BACK ──
+  {
+    taskType: "teach-back",
+    title: "Teach: The Water Cycle",
+    prompt: "Explain these concepts as if teaching a 2nd grader. Use simple words and real-world examples!",
+    concepts: ["evaporation", "condensation", "precipitation", "collection"],
+    targetAge: "a 2nd grader",
+    config: { rubric: "Award points for clear, accurate, age-appropriate explanations that build on teammates' contributions." },
+    priorEntries: [
+      {
+        playerName: "Alex",
+        explanation: "Evaporation is when water gets really hot from the sun and turns into steam that goes up into the sky. Like when you see steam coming off a puddle on a hot day!",
+        score: 15,
+      },
+    ],
+  },
+  {
+    taskType: "teach-back",
+    title: "Teach: Parts of a Plant",
+    prompt: "Explain these plant parts as if teaching a kindergartner. Make it fun and simple!",
+    concepts: ["roots", "stem", "leaves", "flower", "seeds"],
+    targetAge: "a kindergartner",
+    config: { rubric: "Award points for simple, accurate explanations with relatable analogies." },
+    priorEntries: [],
+  },
+];
+
 export default DEMO_TASKS;

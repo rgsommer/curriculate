@@ -67,6 +67,7 @@ import TeamSelfieTask from "./types/TeamSelfieTask";
 import PeerEditingTask from "./types/PeerEditingTask";
 import InterviewTask from "./types/InterviewTask";
 import ClozeTask from "./types/ClozeTask";
+import TeachBackTask from "./types/TeachBackTask";
 import PaperModeCamera from "./PaperModeCamera.jsx";
 import CoachPanel from "./CoachPanel.jsx";
 
@@ -3141,6 +3142,18 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
     case "cloze": {
       content = (
         <ClozeTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled || isReview}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.TEACH_BACK:
+    case "teach-back": {
+      content = (
+        <TeachBackTask
           task={tp}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled || isReview}

@@ -125,6 +125,9 @@ export const TASK_TYPES = {
   // Cloze — fill-in-the-blank passage with drag-and-drop word bank
   CLOZE: "cloze",
 
+  // Teach-Back — explain concepts to a younger audience, AI-assessed
+  TEACH_BACK: "teach-back",
+
   // Comic relief / no-score
   RIDDLE: "riddle",
   TRIVIA: "trivia",
@@ -206,6 +209,7 @@ export const TASK_BLOOMS_MAP = {
   "peer-editing":               ["EVALUATE", "ANALYZE"],
   "interview":                  ["EVALUATE", "ANALYZE", "APPLY"],
   "cloze":                      ["REMEMBER", "UNDERSTAND", "APPLY"],
+  "teach-back":                 ["UNDERSTAND", "EVALUATE"],
 
   // Create -- design, construct, produce, invent
   "draw":                       ["CREATE"],
@@ -1220,6 +1224,57 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Blank words should be meaningful vocabulary, not articles or prepositions.
     - Distractors should be the same part of speech as real answers to be genuinely challenging.
     - The passage must read naturally with the correct words filled in.
+    `,
+  },
+
+  [TASK_TYPES.TEACH_BACK]: {
+    label: "Teach-Back",
+    category: CATEGORY.COLLABORATION,
+    implemented: true,
+    demoEligible: true,
+    generatorEligible: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
+    quickTaskEligible: false,
+    hasOptions: false,
+    expectsText: true,
+    maxTimeSeconds: 300,
+    estimatedMinutes: 5,
+    interTeamEnabled: false,
+    intraTeamEnabled: true,
+    description:
+      "Each team member takes a turn explaining 3-5 related concepts as if teaching a student " +
+      "several grade levels younger. Input modes: record audio, text-to-speech playback, or " +
+      "editable text. Players can see what their teammates said before them and must build on it — " +
+      "repeating is allowed but adding new detail is rewarded. AI assesses each contribution for " +
+      "clarity, accuracy, age-appropriateness, and whether it adds to prior explanations. " +
+      "Develops deep understanding through the 'teaching effect' — you learn best when you teach.",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "teach-back".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt, concepts, targetAge.
+    - concepts: array of 3-5 SHORT concept strings (2-5 words each) that are related to
+      each other and to the lesson topic. They should be the key vocabulary or ideas a
+      student needs to understand.
+    - targetAge: a description of the target audience, e.g. "a 2nd grader" or
+      "a 5-year-old". This should be roughly (grade_level - 3) years old.
+      For K-2, use "a younger child who has never learned this."
+    - prompt: student-facing instruction explaining what to do (e.g., "Explain these
+      concepts as if you were teaching them to a 2nd grader. Use simple words!")
+    - title: short title (3-7 words), e.g. "Teach: The Water Cycle"
+    - config.rubric: a short 1-2 sentence rubric for AI scoring, e.g.
+      "Award points for clear, accurate, age-appropriate explanations that add
+      new detail beyond what teammates already said."
+
+    IMPORTANT:
+    - Concepts should be substantive vocabulary or ideas, not generic terms.
+    - The target audience age should be noticeably younger than the actual grade.
+    - Each concept should be teachable in 1-3 sentences by the student.
+    - Concepts should connect — they form a coherent topic, not random words.
     `,
   },
 

@@ -125,6 +125,7 @@ const CATEGORIES = [
       { icon: "🎬", name: "Script Play", desc: "Act out a script — pass the device speaker to speaker" },
       { icon: "✏️", name: "Peer Editing", desc: "Mark up a classmate's writing with teacher-style correction codes" },
       { icon: "🎙️", name: "Interview", desc: "Interview a historical figure via live AI — scored on question relevance" },
+      { icon: "🧑‍🏫", name: "Teach-Back", desc: "Explain concepts to a younger audience — AI assesses clarity and depth" },
     ],
   },
   {

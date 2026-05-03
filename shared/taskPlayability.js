@@ -571,6 +571,22 @@ export function assessTaskPlayability(rawTask) {
       break;
     }
 
+    case TASK_TYPES.TEACH_BACK: {
+      // Teach-back needs concepts array with 3-5 entries and a targetAge
+      const concepts = Array.isArray(t.concepts) ? t.concepts
+        : Array.isArray(t.config?.concepts) ? t.config.concepts : [];
+      if (concepts.length < 3) issues.push(`concepts array must have at least 3 entries (got ${concepts.length})`);
+      else if (concepts.length > 5) issues.push(`concepts array should have at most 5 entries (got ${concepts.length})`);
+      else {
+        for (let i = 0; i < concepts.length; i++) {
+          if (!isNonEmptyString(concepts[i])) issues.push(`concept[${i}] must be a non-empty string`);
+        }
+      }
+      const targetAge = t.targetAge || t.config?.targetAge || "";
+      if (!isNonEmptyString(targetAge)) issues.push("targetAge is required (e.g. 'a 2nd grader')");
+      break;
+    }
+
     case TASK_TYPES.TEAM_SELFIE:
     case TASK_TYPES.TASK_RUNNER:
     case TASK_TYPES.MOOD_CHECKIN:

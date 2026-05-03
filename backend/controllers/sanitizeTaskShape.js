@@ -766,6 +766,42 @@ export function sanitizeTaskShapeByType(type, task) {
     }
   }
 
+  // ── TEACH-BACK ──
+  if (type === TASK_TYPES.TEACH_BACK) {
+    const cfg = t.config && typeof t.config === "object" ? t.config : null;
+
+    // Promote config fields to top level
+    if (!Array.isArray(t.concepts) && Array.isArray(cfg?.concepts)) { t.concepts = cfg.concepts; delete cfg.concepts; }
+    if (!t.targetAge && cfg?.targetAge) { t.targetAge = cfg.targetAge; delete cfg.targetAge; }
+    if (!t.rubric && cfg?.rubric) { t.rubric = cfg.rubric; delete cfg.rubric; }
+
+    // Also accept target_age, targetAudience as aliases
+    if (!t.targetAge && t.target_age) { t.targetAge = t.target_age; delete t.target_age; }
+    if (!t.targetAge && t.targetAudience) { t.targetAge = t.targetAudience; delete t.targetAudience; }
+
+    // Normalize concepts — must be array of strings
+    if (Array.isArray(t.concepts)) {
+      t.concepts = t.concepts
+        .map((c) => {
+          if (typeof c === "string") return c.trim();
+          if (typeof c === "object" && c) return String(c.name || c.concept || c.label || c.text || "").trim();
+          return String(c || "").trim();
+        })
+        .filter(Boolean);
+    }
+
+    // Ensure targetAge is a string
+    if (t.targetAge && typeof t.targetAge !== "string") {
+      t.targetAge = String(t.targetAge);
+    }
+
+    if (cfg) {
+      const keys = Object.keys(cfg).filter((k) => cfg[k] !== undefined);
+      if (keys.length === 0) delete t.config;
+      else t.config = cfg;
+    }
+  }
+
   return t;
 }
 

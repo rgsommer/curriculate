@@ -128,6 +128,9 @@ const TASK_POINTS = {
 
   // Cloze (fill-in-the-blank)
   cloze: 15,
+
+  // Teach-Back (explain to younger audience)
+  "teach-back": 20,
 };
 
 const DEFAULT_POINTS = 10;
