@@ -46,6 +46,7 @@ export default function SiteFooter() {
               <Link href="/compare/kahoot">vs Kahoot</Link>
               <Link href="/compare/quizlet">vs Quizlet</Link>
               <Link href="/station-posters">Station Posters</Link>
+              <Link href="/pedagogy">Pedagogy</Link>
             </FooterCol>
 
             <FooterCol title="Get Started">
