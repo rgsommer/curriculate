@@ -997,7 +997,7 @@ export default function AiTasksetGenerator() {
                 <div>Assigned concepts</div>
               </div>
 
-              {allocation.slice(0, 12).map((row) => (
+              {allocation.map((row) => (
                 <div
                   key={`${row.index}-${row.taskType}`}
                   style={{
@@ -1038,11 +1038,6 @@ export default function AiTasksetGenerator() {
                 </div>
               ))}
 
-              {allocation.length > 12 && (
-                <div style={{ padding: "8px 10px", borderTop: "1px solid #f3f4f6", fontSize: "0.8rem", color: "#6b7280" }}>
-                  Showing first 12 rows.
-                </div>
-              )}
             </div>
           </div>
         )}
