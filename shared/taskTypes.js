@@ -116,6 +116,9 @@ export const TASK_TYPES = {
   // Storytelling -- AI generates story from student-built characters
   STORYTELLING: "storytelling",
 
+  // Peer editing / proofreading
+  PEER_EDITING: "peer-editing",
+
   // Comic relief / no-score
   RIDDLE: "riddle",
   TRIVIA: "trivia",
@@ -194,6 +197,7 @@ export const TASK_BLOOMS_MAP = {
   "collaboration":              ["EVALUATE", "CREATE"],
   "narration-synthesize":       ["EVALUATE", "CREATE"],
   "letter":                     ["EVALUATE", "CREATE"],
+  "peer-editing":               ["EVALUATE", "ANALYZE"],
 
   // Create -- design, construct, produce, invent
   "draw":                       ["CREATE"],
@@ -1048,6 +1052,55 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Do not omit config or any required config fields.
     - Setting must be specific and vivid, not generic like "a place".
     - vocabWords must be real terms from the vocabulary list.
+    `,
+  },
+
+  [TASK_TYPES.PEER_EDITING]: {
+    label: "Peer Editing",
+    category: CATEGORY.CREATIVE,
+    implemented: true,
+    demoEligible: true,
+    generatorEligible: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 180,
+    estimatedMinutes: 4,
+    interTeamEnabled: true,
+    intraTeamEnabled: true,
+    description:
+      "A writing sample paragraph is presented as a 'peer's' work on a related topic. Each word is numbered " +
+      "with a subscript for easy reference. The passage contains 5–10 intentional errors: typos, grammar " +
+      "mistakes, logical errors, punctuation issues. Students tap a word to select it, then choose an action " +
+      "(Fix Spelling, Replace, or Delete) and enter the correction. Supports three modes: on-screen (tap-to-edit), " +
+      "paper (write corrections by hand and snap a photo), and timed (inter-team 3-minute race). " +
+      "Great for language arts, ESL, and cross-curricular writing skills.",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "peer-editing".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt, passage, errors, mode.
+    - passage: a 40–80 word paragraph on the topic that reads like a student wrote it.
+      Embed 5–10 intentional errors (typos, grammar, logic, punctuation).
+      Write naturally — don't make every sentence have an error.
+    - errors: array of objects, each with:
+        wordIndex (0-based index of the erroneous word in the passage split by spaces),
+        type (one of: "typo", "grammar", "logic", "punctuation", "delete"),
+        correct (the correct replacement word/phrase, or null for "delete")
+    - mode: "on-screen" (default), "paper", or "timed"
+    - prompt: student-facing instructions (e.g., "Read this paragraph and find the errors...")
+    - title: short title (3-7 words)
+
+    Common failure prevention:
+    - Count word indices carefully — split the passage by whitespace and use 0-based indexing.
+    - Include between 5 and 10 errors, no fewer.
+    - Errors should be age-appropriate and clearly wrong (not ambiguous style choices).
+    - Do not make the passage so error-filled it's unreadable — intersperse errors naturally.
     `,
   },
 
@@ -5330,6 +5383,49 @@ export const TASK_SHELLS = {
       prompt: "{{CLUE_1}}",
       clues: ["{{CLUE_1}}", "{{CLUE_2}}", "{{CLUE_3}}", "{{CLUE_4}}"],
       config: { mode: "EITHER" },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── PEER EDITING ── */
+  [TASK_TYPES.PEER_EDITING]: function buildPeerEditingShell({ errorCount = 7 } = {}) {
+    const placeholders = [
+      "TITLE: Short peer-editing title (3-7 words, e.g., 'Edit: Peer Paragraph')",
+      "PROMPT: 1-2 sentence student instructions (e.g., 'Read this paragraph and find the errors. Tap each mistake to correct it.')",
+      "PASSAGE: A 40-80 word paragraph on the topic, written as if by a student peer. " +
+        "Embed " + errorCount + " intentional errors (typos, grammar, logic, punctuation). " +
+        "Write naturally — not every sentence needs an error. The passage should be coherent despite the errors.",
+      'MODE: one of "on-screen" (default tap-to-edit), "paper" (handwritten + photo), or "timed" (3-minute race)',
+    ];
+    const names = ["TITLE", "PROMPT", "PASSAGE", "MODE"];
+
+    for (let i = 0; i < errorCount; i++) {
+      const n = i + 1;
+      placeholders.push(
+        `ERR${n}_WORD_INDEX: 0-based index of the erroneous word in the passage (split by spaces). Count carefully!`,
+        `ERR${n}_TYPE: one of "typo", "grammar", "logic", "punctuation", "delete"`,
+        `ERR${n}_CORRECT: the correct replacement word/phrase, or "DELETE" if the word should be removed`,
+      );
+      names.push(`ERR${n}_WORD_INDEX`, `ERR${n}_TYPE`, `ERR${n}_CORRECT`);
+    }
+
+    const errors = [];
+    for (let i = 0; i < errorCount; i++) {
+      const n = i + 1;
+      errors.push({
+        wordIndex: `<<ERR${n}_WORD_INDEX>>`,
+        type: `{{ERR${n}_TYPE}}`,
+        correct: `{{ERR${n}_CORRECT}}`,
+      });
+    }
+
+    const shell = {
+      taskType: "peer-editing",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      passage: "{{PASSAGE}}",
+      mode: "{{MODE}}",
+      errors,
     };
     return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
   },

@@ -64,6 +64,7 @@ import RiddleTask from "./types/RiddleTask";
 import TriviaTask from "./types/TriviaTask";
 import SpinnerTask from "./types/SpinnerTask";
 import TeamSelfieTask from "./types/TeamSelfieTask";
+import PeerEditingTask from "./types/PeerEditingTask";
 import PaperModeCamera from "./PaperModeCamera.jsx";
 import CoachPanel from "./CoachPanel.jsx";
 
@@ -3104,6 +3105,18 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
           disabled={effectiveDisabled}
           roomCode={roomCode}
           teamId={derivedTeamId}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.PEER_EDITING:
+    case "peer-editing": {
+      content = (
+        <PeerEditingTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled || isReview}
         />
       );
       break;

@@ -552,6 +552,36 @@ export function sanitizeTaskShapeByType(type, task) {
     }
   }
 
+  // ── PEER EDITING ──
+  if (type === TASK_TYPES.PEER_EDITING) {
+    // Promote config fields to top level if AI nested them
+    const cfg = t.config && typeof t.config === "object" ? t.config : null;
+    if (!t.passage && cfg?.passage) { t.passage = cfg.passage; delete cfg.passage; }
+    if (!t.errors && cfg?.errors) { t.errors = cfg.errors; delete cfg.errors; }
+    if (!t.mode && cfg?.mode) { t.mode = cfg.mode; delete cfg.mode; }
+
+    // Normalize errors array
+    if (Array.isArray(t.errors)) {
+      t.errors = t.errors
+        .filter((e) => e && typeof e === "object")
+        .map((e) => ({
+          wordIndex: typeof e.wordIndex === "number" ? e.wordIndex : parseInt(e.wordIndex, 10) || 0,
+          type: ["typo", "grammar", "logic", "punctuation", "delete", "insert"].includes(e.type) ? e.type : "typo",
+          correct: e.correct || e.replacement || e.fix || null,
+        }));
+    }
+
+    // Default mode
+    if (!["on-screen", "paper", "timed"].includes(t.mode)) t.mode = "on-screen";
+
+    // Strip empty config
+    if (cfg) {
+      const keys = Object.keys(cfg).filter((k) => cfg[k] !== undefined);
+      if (keys.length === 0) delete t.config;
+      else t.config = cfg;
+    }
+  }
+
   return t;
 }
 

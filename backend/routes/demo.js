@@ -119,6 +119,9 @@ const TASK_POINTS = {
 
   // Storytelling
   storytelling: 25,
+
+  // Peer editing
+  "peer-editing": 20,
 };
 
 const DEFAULT_POINTS = 10;

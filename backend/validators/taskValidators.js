@@ -2278,6 +2278,37 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
+    case TASK_TYPES.PEER_EDITING: {
+      // Normalize passage
+      task.passage = asNonEmptyString(task.passage, asNonEmptyString(task.text, ""));
+      if (!task.passage) {
+        errors.push("peer-editing task has no passage text");
+      }
+
+      // Normalize errors array
+      let errs = Array.isArray(task.errors) ? task.errors
+        : Array.isArray(task.corrections) ? task.corrections
+        : [];
+      errs = errs
+        .filter((e) => e && typeof e === "object")
+        .map((e) => {
+          const wi = typeof e.wordIndex === "number" ? e.wordIndex : parseInt(e.wordIndex || e.index, 10);
+          const tp = ["typo", "grammar", "logic", "punctuation", "delete", "insert"].includes(e.type) ? e.type : "typo";
+          const correct = e.correct || e.replacement || e.fix || null;
+          return { wordIndex: isNaN(wi) ? 0 : wi, type: tp, correct };
+        });
+      if (errs.length < 3) {
+        errors.push(`peer-editing task needs at least 5 errors, found ${errs.length}`);
+      }
+      task.errors = errs;
+
+      // Normalize mode
+      if (!["on-screen", "paper", "timed"].includes(task.mode)) {
+        task.mode = "on-screen";
+      }
+      break;
+    }
+
     default:
       break;
   }
@@ -2929,6 +2960,16 @@ export function validateTaskByType(taskType, task) {
       }
       if (!isNonEmptyString(rpCfg.scenario)) {
         errors.push("role-play-deck requires config.scenario (non-empty)");
+      }
+      break;
+    }
+
+    case TASK_TYPES.PEER_EDITING: {
+      if (!task.passage || typeof task.passage !== "string" || task.passage.trim().length < 20) {
+        errors.push("peer-editing requires a passage of at least 20 characters");
+      }
+      if (!Array.isArray(task.errors) || task.errors.length < 3) {
+        errors.push("peer-editing requires at least 3 errors in the errors array");
       }
       break;
     }

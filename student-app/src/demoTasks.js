@@ -876,6 +876,63 @@ const DEMO_TASKS = [
       ],
     },
   },
+
+  // ── PEER EDITING (on-screen) ──
+  {
+    taskType: "peer-editing",
+    title: "Peer Edit: Photosynthesis Paragraph",
+    prompt: "Read this paragraph written by a classmate. Tap each word that has an error, then fix it.",
+    passage: "Photosynthesis is the proccess by which plants converts sunlight into energey. The leafs absorb carbon dioxide from the air and water from the soil. Inside the chloroplast, light energy is used to brake apart water molecules. Oxygen is than released as a byproduct, and glucose is produced four the plant to use as food.",
+    mode: "on-screen",
+    errors: [
+      { wordIndex: 3, type: "typo", correct: "process" },
+      { wordIndex: 7, type: "grammar", correct: "convert" },
+      { wordIndex: 10, type: "typo", correct: "energy" },
+      { wordIndex: 12, type: "typo", correct: "leaves" },
+      { wordIndex: 32, type: "typo", correct: "break" },
+      { wordIndex: 38, type: "grammar", correct: "then" },
+      { wordIndex: 47, type: "typo", correct: "for" },
+    ],
+  },
+
+  // ── PEER EDITING (timed — inter-team race) ──
+  {
+    taskType: "peer-editing",
+    title: "Speed Edit: History Essay",
+    prompt: "Race the clock! Find and fix as many errors as you can in 3 minutes.",
+    passage: "The Rennaissance began in Itally during the 14th century and spreaded across Europe. Artists like Leonardo da Vinci and Michelangelo creates masterpieces that still inspires people today. The period was marked by a renewed intrest in classical Greek and Roman culture. Many importent discoveries in science and art was made during this era, changing the corse of history forever.",
+    mode: "timed",
+    errors: [
+      { wordIndex: 1, type: "typo", correct: "Renaissance" },
+      { wordIndex: 4, type: "typo", correct: "Italy" },
+      { wordIndex: 10, type: "grammar", correct: "spread" },
+      { wordIndex: 20, type: "grammar", correct: "created" },
+      { wordIndex: 24, type: "grammar", correct: "inspire" },
+      { wordIndex: 34, type: "typo", correct: "interest" },
+      { wordIndex: 42, type: "typo", correct: "important" },
+      { wordIndex: 48, type: "grammar", correct: "were" },
+      { wordIndex: 55, type: "typo", correct: "course" },
+    ],
+  },
+
+  // ── PEER EDITING (paper mode) ──
+  {
+    taskType: "peer-editing",
+    title: "Peer Edit: Water Cycle (Paper)",
+    prompt: "Read the paragraph below, then write your corrections on paper and snap a photo.",
+    passage: "Water evaporates form the ocean and rises into the atmosfere. As it cools, it condences into tiny dropplets that form clouds. When the clouds becomes to heavy, precipitation falls as rain or snow. The water then flowes back into rivers and lakes, completeing the cycle all over again.",
+    mode: "paper",
+    errors: [
+      { wordIndex: 2, type: "typo", correct: "from" },
+      { wordIndex: 9, type: "typo", correct: "atmosphere" },
+      { wordIndex: 14, type: "typo", correct: "condenses" },
+      { wordIndex: 17, type: "typo", correct: "droplets" },
+      { wordIndex: 24, type: "grammar", correct: "become" },
+      { wordIndex: 25, type: "grammar", correct: "too" },
+      { wordIndex: 36, type: "typo", correct: "flows" },
+      { wordIndex: 42, type: "typo", correct: "completing" },
+    ],
+  },
 ];
 
 export default DEMO_TASKS;
