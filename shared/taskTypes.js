@@ -1089,15 +1089,28 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       Embed 5–10 intentional errors (typos, grammar, logic, punctuation).
       Write naturally — don't make every sentence have an error.
     - errors: array of objects, each with:
-        wordIndex (0-based index of the erroneous word in the passage split by spaces),
+        wordIndex (0-based index of the erroneous word in the passage when split by whitespace),
+        word (the EXACT erroneous word as it appears in the passage — this is critical for verification),
         type (one of: "typo", "grammar", "logic", "punctuation", "delete"),
         correct (the correct replacement word/phrase, or null for "delete")
-    - mode: "on-screen" (default), "paper", or "timed"
+    - mode: always use "on-screen"
     - prompt: student-facing instructions (e.g., "Read this paragraph and find the errors...")
     - title: short title (3-7 words)
 
+    IMPORTANT — Index counting procedure:
+    1. Write the passage first.
+    2. Split it by whitespace into an array.
+    3. For each error, find the EXACT word (including any trailing punctuation) and record its 0-based position.
+    4. Include the "word" field with the exact erroneous word so we can verify the index.
+
+    Example errors array:
+    [
+      { "wordIndex": 3, "word": "proccess", "type": "typo", "correct": "process" },
+      { "wordIndex": 7, "word": "converts", "type": "grammar", "correct": "convert" }
+    ]
+
     Common failure prevention:
-    - Count word indices carefully — split the passage by whitespace and use 0-based indexing.
+    - The "word" field MUST match passage.split(/\\s+/)[wordIndex] exactly.
     - Include between 5 and 10 errors, no fewer.
     - Errors should be age-appropriate and clearly wrong (not ambiguous style choices).
     - Do not make the passage so error-filled it's unreadable — intersperse errors naturally.
@@ -5387,46 +5400,9 @@ export const TASK_SHELLS = {
     return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
   },
 
-  /* ── PEER EDITING ── */
-  [TASK_TYPES.PEER_EDITING]: function buildPeerEditingShell({ errorCount = 7 } = {}) {
-    const placeholders = [
-      "TITLE: Short peer-editing title (3-7 words, e.g., 'Edit: Peer Paragraph')",
-      "PROMPT: 1-2 sentence student instructions (e.g., 'Read this paragraph and find the errors. Tap each mistake to correct it.')",
-      "PASSAGE: A 40-80 word paragraph on the topic, written as if by a student peer. " +
-        "Embed " + errorCount + " intentional errors (typos, grammar, logic, punctuation). " +
-        "Write naturally — not every sentence needs an error. The passage should be coherent despite the errors.",
-      'MODE: one of "on-screen" (default tap-to-edit), "paper" (handwritten + photo), or "timed" (3-minute race)',
-    ];
-    const names = ["TITLE", "PROMPT", "PASSAGE", "MODE"];
-
-    for (let i = 0; i < errorCount; i++) {
-      const n = i + 1;
-      placeholders.push(
-        `ERR${n}_WORD_INDEX: 0-based index of the erroneous word in the passage (split by spaces). Count carefully!`,
-        `ERR${n}_TYPE: one of "typo", "grammar", "logic", "punctuation", "delete"`,
-        `ERR${n}_CORRECT: the correct replacement word/phrase, or "DELETE" if the word should be removed`,
-      );
-      names.push(`ERR${n}_WORD_INDEX`, `ERR${n}_TYPE`, `ERR${n}_CORRECT`);
-    }
-
-    const errors = [];
-    for (let i = 0; i < errorCount; i++) {
-      const n = i + 1;
-      errors.push({
-        wordIndex: `<<ERR${n}_WORD_INDEX>>`,
-        type: `{{ERR${n}_TYPE}}`,
-        correct: `{{ERR${n}_CORRECT}}`,
-      });
-    }
-
-    const shell = {
-      taskType: "peer-editing",
-      title: "{{TITLE}}",
-      prompt: "{{PROMPT}}",
-      passage: "{{PASSAGE}}",
-      mode: "{{MODE}}",
-      errors,
-    };
-    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
-  },
+  // NOTE: peer-editing intentionally omitted from TASK_SHELLS.
+  // The passage and error word-indices are interdependent — the AI must co-generate them
+  // in a single JSON object. Template placeholder filling can't handle this reliably
+  // because LLMs miscounted 0-based word indices through the fill-in-the-blank approach.
+  // Instead, peer-editing uses the freeform aiPrompt path exclusively.
 };

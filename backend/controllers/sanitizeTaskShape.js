@@ -4,6 +4,33 @@
 
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 
+// ── String distance helpers for peer-editing word-index repair ──
+function _commonPrefixLen(a, b) {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  return i;
+}
+
+function _editDistance(a, b) {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  // Optimized for short strings (words)
+  const matrix = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      const cost = b[i - 1] === a[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost,
+      );
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
 // Task-shape sanitizer
 // Key rule: Multiple Choice & Physical Multiple Choice must NOT use config.items.
 // Promote config.items -> top-level items[] if needed, then delete config.items.
@@ -568,7 +595,82 @@ export function sanitizeTaskShapeByType(type, task) {
           wordIndex: typeof e.wordIndex === "number" ? e.wordIndex : parseInt(e.wordIndex, 10) || 0,
           type: ["typo", "grammar", "logic", "punctuation", "delete", "insert"].includes(e.type) ? e.type : "typo",
           correct: e.correct || e.replacement || e.fix || null,
+          _originalWord: e.word || e.original || e.originalWord || null,
         }));
+    }
+
+    // ── AUTO-REPAIR word indices ──
+    // LLMs frequently miscounted 0-based indices. If the error references a word in the passage
+    // that doesn't look like the error (e.g., index 4 should be "proccess" but the word at 4 is "by"),
+    // try to find the actual word nearby by fuzzy matching the error's correct replacement or _originalWord.
+    if (typeof t.passage === "string" && Array.isArray(t.errors) && t.errors.length > 0) {
+      const words = t.passage.split(/\s+/);
+      const strip = (w) => (w || "").replace(/[.,;:!?"'()[\]{}]/g, "").toLowerCase();
+
+      for (const err of t.errors) {
+        const atIdx = strip(words[err.wordIndex] || "");
+        const correctStripped = strip(err.correct);
+        const originalStripped = strip(err._originalWord);
+
+        // If the word at the claimed index is ALREADY the correct word, or is missing,
+        // the index is probably wrong — search for a word that looks like the error.
+        const looksCorrectAlready = atIdx === correctStripped;
+        const indexOutOfRange = err.wordIndex < 0 || err.wordIndex >= words.length;
+
+        if (looksCorrectAlready || indexOutOfRange) {
+          // Try to find the erroneous word by looking for a word that is NOT the correct one
+          // but is close (off-by-one or small edit distance). Search near the claimed index first.
+          let found = false;
+
+          // If the AI provided the original (erroneous) word, look for it directly
+          if (originalStripped) {
+            for (let i = 0; i < words.length; i++) {
+              if (strip(words[i]) === originalStripped) {
+                err.wordIndex = i;
+                found = true;
+                break;
+              }
+            }
+          }
+
+          // If no _originalWord, try finding a word that's similar to the correct word but misspelled
+          if (!found && correctStripped) {
+            // Look for near-matches: words within edit distance 1-3 of the correct word
+            let bestIdx = -1;
+            let bestDist = 999;
+            for (let i = 0; i < words.length; i++) {
+              const w = strip(words[i]);
+              if (w === correctStripped) continue; // skip exact matches (already correct)
+              if (w.length === 0) continue;
+              // Simple heuristic: if the word starts with the same 2+ chars and is similar length
+              const lenDiff = Math.abs(w.length - correctStripped.length);
+              const commonPrefix = _commonPrefixLen(w, correctStripped);
+              if (commonPrefix >= 2 && lenDiff <= 3) {
+                const d = _editDistance(w, correctStripped);
+                if (d <= 3 && d < bestDist) {
+                  bestDist = d;
+                  bestIdx = i;
+                }
+              }
+            }
+            if (bestIdx >= 0) {
+              err.wordIndex = bestIdx;
+              found = true;
+            }
+          }
+        }
+
+        // Clean up helper field
+        delete err._originalWord;
+      }
+
+      // Deduplicate: if two errors point to the same wordIndex, keep only the first
+      const seen = new Set();
+      t.errors = t.errors.filter((e) => {
+        if (seen.has(e.wordIndex)) return false;
+        seen.add(e.wordIndex);
+        return true;
+      });
     }
 
     // Default mode
