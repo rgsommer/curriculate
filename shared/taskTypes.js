@@ -122,6 +122,9 @@ export const TASK_TYPES = {
   // Interview — live AI conversation with historical/topical figure
   INTERVIEW: "interview",
 
+  // Cloze — fill-in-the-blank passage with drag-and-drop word bank
+  CLOZE: "cloze",
+
   // Comic relief / no-score
   RIDDLE: "riddle",
   TRIVIA: "trivia",
@@ -202,6 +205,7 @@ export const TASK_BLOOMS_MAP = {
   "letter":                     ["EVALUATE", "CREATE"],
   "peer-editing":               ["EVALUATE", "ANALYZE"],
   "interview":                  ["EVALUATE", "ANALYZE", "APPLY"],
+  "cloze":                      ["REMEMBER", "UNDERSTAND", "APPLY"],
 
   // Create -- design, construct, produce, invent
   "draw":                       ["CREATE"],
@@ -1166,6 +1170,56 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Each candidate should offer a DIFFERENT perspective on the topic.
     - The systemPrompt must give the AI enough context to stay in character.
     - Greetings should be engaging and mention specific things the student could ask about.
+    `,
+  },
+
+  [TASK_TYPES.CLOZE]: {
+    label: "Cloze (Fill in the Blank)",
+    category: CATEGORY.QUIZ,
+    implemented: true,
+    demoEligible: true,
+    generatorEligible: true,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 180,
+    estimatedMinutes: 3,
+    interTeamEnabled: true,
+    intraTeamEnabled: false,
+    description:
+      "A passage with grade-level-appropriate blanks. Students drag words from a word bank " +
+      "into the correct positions. Each blank is scored instantly on drop — correct on first " +
+      "try earns full points, retries earn partial credit. For grades 7+ the word bank " +
+      "includes 2-3 plausible distractor words. Builds vocabulary, reading comprehension, " +
+      "and contextual reasoning.",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "cloze".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt, passage, blanks.
+    - passage: a coherent, grade-appropriate paragraph (60-120 words) on the lesson topic.
+      Replace key vocabulary or concept words with ___ (three underscores).
+      The number of blanks should be grade level +/- 2 (e.g. grade 5 → 3-7 blanks,
+      grade 9 → 7-11 blanks). Never blank out more than ~15% of the words.
+    - blanks: array of objects IN THE ORDER they appear in the passage, each with:
+        answer (string — the correct word for that blank)
+    - distractors: array of 0-3 plausible-but-wrong words.
+      For grades K-6: distractors should be an empty array [].
+      For grades 7+: include 2-3 distractor words that are topically related but wrong.
+    - title: short title (3-7 words)
+    - prompt: student-facing instruction (e.g., "Drag the words into the correct blanks.")
+
+    IMPORTANT:
+    - Every ___ in the passage must have exactly one matching entry in blanks[].
+    - blanks[] order must match the left-to-right, top-to-bottom order of ___ in the passage.
+    - Blank words should be meaningful vocabulary, not articles or prepositions.
+    - Distractors should be the same part of speech as real answers to be genuinely challenging.
+    - The passage must read naturally with the correct words filled in.
     `,
   },
 

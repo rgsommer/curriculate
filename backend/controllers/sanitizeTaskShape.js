@@ -725,6 +725,47 @@ export function sanitizeTaskShapeByType(type, task) {
     }
   }
 
+  // ── CLOZE ──
+  if (type === TASK_TYPES.CLOZE) {
+    const cfg = t.config && typeof t.config === "object" ? t.config : null;
+
+    // Promote config fields to top level if AI nested them
+    if (!t.passage && cfg?.passage) { t.passage = cfg.passage; delete cfg.passage; }
+    if (!Array.isArray(t.blanks) && Array.isArray(cfg?.blanks)) { t.blanks = cfg.blanks; delete cfg.blanks; }
+    if (!Array.isArray(t.distractors) && Array.isArray(cfg?.distractors)) { t.distractors = cfg.distractors; delete cfg.distractors; }
+
+    // Also accept "text" as passage alias
+    if (!t.passage && t.text) { t.passage = t.text; delete t.text; }
+
+    // Normalize blanks array — accept various AI output shapes
+    if (Array.isArray(t.blanks)) {
+      t.blanks = t.blanks
+        .filter((b) => b != null)
+        .map((b) => {
+          if (typeof b === "string") return { answer: b.trim() };
+          if (typeof b === "object") return { answer: String(b.answer || b.word || b.text || "").trim() };
+          return { answer: String(b).trim() };
+        })
+        .filter((b) => b.answer.length > 0);
+    }
+
+    // Normalize distractors — can be strings or objects
+    if (Array.isArray(t.distractors)) {
+      t.distractors = t.distractors
+        .map((d) => typeof d === "string" ? d.trim() : String(d?.word || d?.text || d || "").trim())
+        .filter(Boolean);
+    } else {
+      t.distractors = [];
+    }
+
+    // Strip empty config
+    if (cfg) {
+      const keys = Object.keys(cfg).filter((k) => cfg[k] !== undefined);
+      if (keys.length === 0) delete t.config;
+      else t.config = cfg;
+    }
+  }
+
   return t;
 }
 

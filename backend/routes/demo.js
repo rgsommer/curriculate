@@ -125,6 +125,9 @@ const TASK_POINTS = {
 
   // Interview (live AI conversation)
   interview: 25,
+
+  // Cloze (fill-in-the-blank)
+  cloze: 15,
 };
 
 const DEFAULT_POINTS = 10;

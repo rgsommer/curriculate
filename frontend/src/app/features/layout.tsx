@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Features — AI-Powered Station-Based Learning",
   description:
-    "Explore Curriculate's features: AI lesson planning, time-fit task generation, 65+ interactive task types, real-time multiplayer stations, CurricQR-based rotation, photo evidence capture, handwriting bonus, trivia breaks, spinner rewards, and automatic teacher and student reports.",
+    "Explore Curriculate's features: AI lesson planning, time-fit task generation, 65+ interactive task types including fill-in-the-blank, live AI interviews, and peer editing with teacher-style markup. Real-time multiplayer stations, CurricQR-based rotation, photo evidence, and automatic reports.",
   keywords: [
     "classroom station rotation",
     "AI lesson planning tool",
@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Features — Curriculate Station-Based Learning Platform",
     description:
-      "AI plans time-fit lessons, generates 65+ task types, runs real-time multiplayer stations, and produces evidence-rich reports automatically.",
+      "AI plans time-fit lessons, generates 65+ task types including cloze, AI interviews, and peer editing. Real-time multiplayer stations and evidence-rich reports.",
     url: "https://curriculate.net/features",
     siteName: "Curriculate",
     type: "website",

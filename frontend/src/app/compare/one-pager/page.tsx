@@ -13,7 +13,7 @@ const top = [
 const kahootRows = [
   { label: "Primary format", c: "Station-based, physical + digital hybrid learning", r: "Whole-class quiz-show (everyone answers at once)" },
   { label: "Group structure", c: "1–4 players per station (teams collaborate)", r: "Unlimited players; mostly individual competition" },
-  { label: "Task variety", c: "65+ task types (movement, photo, debate, trivia, spinner, creation)", r: "Mostly quiz formats (MC, T/F, short answer)" },
+  { label: "Task variety", c: "65+ task types (cloze, AI interviews, peer editing, movement, photo, debate, creation)", r: "Mostly quiz formats (MC, T/F, short answer)" },
   { label: "Noise & pacing", c: "Turn-based controls reduce chaos; teacher pacing", r: "Simultaneous answers can get loud/chaotic" },
   { label: "Depth of thinking", c: "Strong: explanation, synthesis, evidence tasks", r: "Best for fast recall review + excitement" },
   { label: "Reporting", c: "Student + teacher reports with artifacts", r: "Results/leaderboards; fewer artifacts" },
@@ -21,7 +21,7 @@ const kahootRows = [
 
 const quizletRows = [
   { label: "Core purpose", c: "Active stations + collaboration + evidence", r: "Flashcard study and recall review (self-paced)" },
-  { label: "Task variety", c: "65+ task types beyond recall", r: "Flashcards + a few recall-focused modes" },
+  { label: "Task variety", c: "65+ task types beyond recall (cloze, AI interviews, peer editing, and more)", r: "Flashcards + a few recall-focused modes" },
   { label: "Group play", c: "Team submissions at stations", r: "Mostly individual; Live mode is class competition" },
   { label: "Physical integration", c: "Built-in station rotation + movement tasks", r: "Screen-only by design" },
   { label: "Depth of thinking", c: "Strong: explanation, speaking, creation", r: "Best for memorization and rapid review" },
@@ -31,7 +31,7 @@ const quizletRows = [
 const blooketRows = [
   { label: "Primary format", c: "Station-based, physical + digital hybrid learning", r: "Screen-based game modes (Tower Defense, Gold Quest, etc.)" },
   { label: "Group structure", c: "1–4 players per station (teams collaborate)", r: "Individual play; students compete on own device" },
-  { label: "Task variety", c: "65+ task types (movement, photo, debate, trivia, spinner, creation)", r: "Primarily multiple-choice quiz formats in game themes" },
+  { label: "Task variety", c: "65+ task types (cloze, AI interviews, peer editing, movement, photo, debate, creation)", r: "Primarily multiple-choice quiz formats in game themes" },
   { label: "Physical movement", c: "Built-in station rotation + movement breaks", r: "Screen-only — students stay seated" },
   { label: "Depth of thinking", c: "Strong: explanation, synthesis, evidence tasks", r: "Best for fast recall via gamified repetition" },
   { label: "Reporting", c: "Student + teacher reports with artifacts", r: "Basic performance data; limited artifacts" },

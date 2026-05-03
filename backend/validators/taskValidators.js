@@ -2339,6 +2339,44 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
+    case TASK_TYPES.CLOZE: {
+      // Promote from config
+      if (!task.passage && task.config?.passage) task.passage = task.config.passage;
+      if (!Array.isArray(task.blanks) && Array.isArray(task.config?.blanks)) task.blanks = task.config.blanks;
+      if (!Array.isArray(task.distractors) && Array.isArray(task.config?.distractors)) task.distractors = task.config.distractors;
+      if (!task.passage && task.text) task.passage = task.text;
+
+      task.passage = asNonEmptyString(task.passage, "");
+      if (!task.passage) {
+        errors.push("cloze task has no passage text");
+      }
+
+      // Normalize blanks
+      let blanks = Array.isArray(task.blanks) ? task.blanks : [];
+      blanks = blanks
+        .filter((b) => b != null)
+        .map((b) => {
+          if (typeof b === "string") return { answer: b.trim() };
+          if (typeof b === "object") return { answer: asNonEmptyString(b.answer, asNonEmptyString(b.word, "")) };
+          return { answer: String(b).trim() };
+        })
+        .filter((b) => b.answer.length > 0);
+      if (blanks.length < 2) {
+        errors.push(`cloze task needs at least 2 blanks, found ${blanks.length}`);
+      }
+      task.blanks = blanks;
+
+      // Normalize distractors (optional)
+      if (Array.isArray(task.distractors)) {
+        task.distractors = task.distractors
+          .map((d) => typeof d === "string" ? d.trim() : asNonEmptyString(d?.word, ""))
+          .filter(Boolean);
+      } else {
+        task.distractors = [];
+      }
+      break;
+    }
+
     default:
       break;
   }
@@ -3023,6 +3061,29 @@ export function validateTaskByType(taskType, task) {
       }
       if (typeof task.maxTurns !== "number" || task.maxTurns < task.minTurns) {
         errors.push("interview requires maxTurns >= minTurns");
+      }
+      break;
+    }
+
+    case TASK_TYPES.CLOZE: {
+      if (!task.passage || typeof task.passage !== "string" || task.passage.trim().length < 20) {
+        errors.push("cloze requires a passage of at least 20 characters");
+      }
+      if (!Array.isArray(task.blanks) || task.blanks.length < 2) {
+        errors.push("cloze requires at least 2 blanks");
+      } else {
+        for (let i = 0; i < task.blanks.length; i++) {
+          if (!task.blanks[i]?.answer || typeof task.blanks[i].answer !== "string" || !task.blanks[i].answer.trim()) {
+            errors.push(`cloze blank[${i}] requires a non-empty answer`);
+          }
+        }
+      }
+      // Verify marker count matches blanks count
+      if (task.passage && Array.isArray(task.blanks) && task.blanks.length > 0) {
+        const markerCount = (task.passage.match(/___/g) || []).length;
+        if (markerCount !== task.blanks.length) {
+          errors.push(`cloze passage has ${markerCount} ___ markers but ${task.blanks.length} blanks`);
+        }
       }
       break;
     }

@@ -66,6 +66,7 @@ import SpinnerTask from "./types/SpinnerTask";
 import TeamSelfieTask from "./types/TeamSelfieTask";
 import PeerEditingTask from "./types/PeerEditingTask";
 import InterviewTask from "./types/InterviewTask";
+import ClozeTask from "./types/ClozeTask";
 import PaperModeCamera from "./PaperModeCamera.jsx";
 import CoachPanel from "./CoachPanel.jsx";
 
@@ -3128,6 +3129,18 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
     case "interview": {
       content = (
         <InterviewTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled || isReview}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.CLOZE:
+    case "cloze": {
+      content = (
+        <ClozeTask
           task={tp}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled || isReview}

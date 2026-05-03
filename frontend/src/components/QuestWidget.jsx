@@ -26,7 +26,7 @@ export const HOMEPAGE_QUESTS = [
   {
     id: "explore_task_types",
     title: "Explore task types",
-    description: "Check out the 30+ interactive task types available",
+    description: "Check out the 65+ interactive task types available",
     credits: 3,
     icon: "🧩",
   },

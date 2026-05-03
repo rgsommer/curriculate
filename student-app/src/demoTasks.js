@@ -993,6 +993,44 @@ const DEMO_TASKS = [
       },
     ],
   },
+  // =========================================================================
+  // CLOZE (fill-in-the-blank)
+  // =========================================================================
+
+  // ── CLOZE (science — no distractors, younger students) ──
+  {
+    taskType: "cloze",
+    title: "Water Cycle Blanks",
+    prompt: "Drag the correct words into the blanks to complete the passage about the water cycle.",
+    passage: "Water from oceans and lakes is heated by the ___ and turns into water vapor through a process called ___. The vapor rises into the atmosphere and cools, forming ___ in a process called condensation. When the clouds become heavy, water falls back to Earth as ___. This water collects in rivers and ___, and the cycle begins again.",
+    blanks: [
+      { answer: "Sun" },
+      { answer: "evaporation" },
+      { answer: "clouds" },
+      { answer: "precipitation" },
+      { answer: "oceans" },
+    ],
+    distractors: [],
+  },
+
+  // ── CLOZE (history — with distractors, older students) ──
+  {
+    taskType: "cloze",
+    title: "American Revolution Blanks",
+    prompt: "Fill in the blanks to complete this passage about the American Revolution.",
+    passage: "The American Revolution began in ___ when colonists grew frustrated with British ___. The famous protest known as the Boston ___ Party showed colonial anger over taxation without ___. In 1776, Thomas ___ drafted the Declaration of Independence, declaring the colonies free from British rule. General George ___ led the Continental Army through harsh winters and decisive ___. The war officially ended with the Treaty of ___ in 1783.",
+    blanks: [
+      { answer: "1775" },
+      { answer: "taxation" },
+      { answer: "Tea" },
+      { answer: "representation" },
+      { answer: "Jefferson" },
+      { answer: "Washington" },
+      { answer: "battles" },
+      { answer: "Paris" },
+    ],
+    distractors: ["London", "Adams", "1812"],
+  },
 ];
 
 export default DEMO_TASKS;

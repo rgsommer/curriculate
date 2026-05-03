@@ -23,6 +23,7 @@ const CATEGORIES = [
       { icon: "🔗", name: "Matching", desc: "Drag terms to their definitions" },
       { icon: "🃏", name: "Flashcards", desc: "Study mode — flip cards to review terms" },
       { icon: "⚡", name: "Flashcards Race", desc: "Competitive timed flashcard challenge" },
+      { icon: "📝", name: "Cloze (Fill in the Blank)", desc: "Drag words from a bank into blanks — instant scoring, bonus for first try" },
     ],
   },
   {
@@ -122,6 +123,8 @@ const CATEGORIES = [
       { icon: "📢", name: "Narration Synthesize", desc: "Listen to narration, synthesize the key takeaways" },
       { icon: "🎭", name: "Role Play Deck", desc: "Draw character cards and argue from that perspective" },
       { icon: "🎬", name: "Script Play", desc: "Act out a script — pass the device speaker to speaker" },
+      { icon: "✏️", name: "Peer Editing", desc: "Mark up a classmate's writing with teacher-style correction codes" },
+      { icon: "🎙️", name: "Interview", desc: "Interview a historical figure via live AI — scored on question relevance" },
     ],
   },
   {

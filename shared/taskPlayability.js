@@ -528,6 +528,33 @@ export function assessTaskPlayability(rawTask) {
       break;
     }
 
+    case TASK_TYPES.CLOZE: {
+      // Cloze needs a passage with ___ markers and a blanks array
+      const passage = t.passage || t.text || t.config?.passage || "";
+      if (!isNonEmptyString(passage)) issues.push("passage is required");
+      else if (!passage.includes("___")) issues.push("passage must contain at least one ___ blank marker");
+
+      const blanks = Array.isArray(t.blanks) ? t.blanks
+        : Array.isArray(t.config?.blanks) ? t.config.blanks : [];
+      if (blanks.length < 2) issues.push(`blanks array must have at least 2 entries (got ${blanks.length})`);
+      else {
+        for (let i = 0; i < blanks.length; i++) {
+          const b = blanks[i];
+          if (!b || typeof b !== "object") { issues.push(`blank[${i}] must be an object`); continue; }
+          if (!isNonEmptyString(b.answer)) issues.push(`blank[${i}]: answer is required`);
+        }
+      }
+
+      // Verify blank count matches ___ count in passage
+      if (isNonEmptyString(passage) && blanks.length > 0) {
+        const markerCount = (passage.match(/___/g) || []).length;
+        if (markerCount !== blanks.length) {
+          issues.push(`passage has ${markerCount} ___ markers but blanks array has ${blanks.length} entries`);
+        }
+      }
+      break;
+    }
+
     case TASK_TYPES.INTERVIEW: {
       // Interview needs candidates array with 2-3 entries, each with name + systemPrompt
       const candidates = Array.isArray(t.candidates) ? t.candidates

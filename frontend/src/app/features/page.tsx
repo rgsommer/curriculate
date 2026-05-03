@@ -193,9 +193,9 @@ export default function FeaturesPage() {
                 body="Fast, confidence-building checks for key facts and terms."
                 bullets={[
                   "Multiple choice and true/false formats",
+                  "Cloze (fill-in-the-blank) with drag-and-drop word bank and instant scoring",
                   "Flashcards and speed rounds",
                   "Trivia breaks: bluff catcher, true/false rapid-fire, estimation",
-                  "Quick feedback loops",
                 ]}
               />
               <FeatureCard
@@ -211,10 +211,10 @@ export default function FeaturesPage() {
                 title="🎨 Expression & Creativity"
                 body="Let students show understanding in more than one modality."
                 bullets={[
+                  "Live AI interviews — talk to historical figures, scientists, or characters in real time",
                   "Letter writing — write to a historical character, get an AI reply back",
                   "Case study — solve a real-world scenario, get AI expert feedback",
                   "Drawing/visual response and photo journal formats",
-                  "Narration/synthesis and vocabulary paragraph prompts",
                   "Handwriting bonus — write on paper, snap a photo, earn extra points",
                 ]}
               />
@@ -222,7 +222,8 @@ export default function FeaturesPage() {
                 title="🤝 Collaboration & Communication"
                 body="Structured discussion and team formats designed for real classrooms."
                 bullets={[
-                  "Intra-team and inter-team options",
+                  "Peer editing with 38 teacher-style correction marks (tap any word to annotate)",
+                  "Intra-team and inter-team challenge options",
                   "Debate/discussion structures",
                   "Peer explanation and reasoning",
                 ]}

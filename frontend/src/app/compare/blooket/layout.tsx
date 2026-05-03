@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Curriculate vs Blooket — Side-by-Side Comparison",
   description:
-    "Compare Curriculate and Blooket side by side. Curriculate offers station-based movement, 65+ task types, team collaboration, and off-screen learning. Blooket excels at gamified quiz review with creative game modes.",
+    "Compare Curriculate and Blooket side by side. Curriculate offers station-based movement, 65+ task types including cloze, AI interviews, and peer editing, plus team collaboration and off-screen learning. Blooket excels at gamified quiz review.",
   keywords: [
     "Curriculate vs Blooket",
     "Blooket alternative",
