@@ -554,6 +554,62 @@ async function sendAdminNotification(lead) {
   const isClassroom = lead.source === "classroom";
   const wasOfferedReferral = engagement.level === "keener" && !isClassroom;
 
+  // ── Build leaderboard: all students who have submitted results ──
+  let leaderboardHtml = "";
+  try {
+    const filter = { totalPoints: { $gt: 0 } };
+    // Scope to classroom if applicable
+    if (isClassroom && lead.classroom) filter.classroom = lead.classroom;
+    else if (!isClassroom && lead.conference) filter.conference = lead.conference;
+
+    const allLeads = await ConferenceLead.find(filter)
+      .sort({ totalPoints: -1, createdAt: 1 })
+      .limit(50)
+      .lean();
+
+    if (allLeads.length > 0) {
+      const rows = allLeads.map((l, i) => {
+        const rank = i + 1;
+        const isCurrent = String(l._id) === String(lead._id);
+        const tasksCompleted = (l.results || []).filter((r) => !r.skipped).length;
+        const uniqueTypes = new Set((l.results || []).filter((r) => !r.skipped).map((r) => r.taskType)).size;
+        const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `${rank}.`;
+        const rowBg = isCurrent ? "#fefce8" : (i % 2 === 0 ? "#fff" : "#f8fafc");
+        const nameBold = isCurrent ? "font-weight:900;color:#b45309;" : "font-weight:600;";
+        const arrow = isCurrent ? " ← just submitted" : "";
+
+        return `<tr style="background:${rowBg};">
+          <td style="padding:6px 10px;font-size:14px;text-align:center;width:36px;">${medal}</td>
+          <td style="padding:6px 10px;font-size:14px;${nameBold}">${esc(l.name)}${arrow}</td>
+          <td style="padding:6px 10px;font-size:14px;font-weight:800;color:#f59e0b;text-align:center;">${l.totalPoints || 0}</td>
+          <td style="padding:6px 10px;font-size:13px;color:#64748b;text-align:center;">${tasksCompleted}</td>
+          <td style="padding:6px 10px;font-size:13px;color:#64748b;text-align:center;">${uniqueTypes}</td>
+        </tr>`;
+      }).join("");
+
+      const scopeLabel = isClassroom && lead.classroom ? esc(lead.classroom) : "All Students";
+      leaderboardHtml = `
+      <div style="background:#fff;padding:16px 24px;border:1px solid #e2e8f0;border-top:none;">
+        <div style="font-weight:900;font-size:14px;margin-bottom:10px;color:#1e293b;">Leaderboard — ${scopeLabel} (${allLeads.length} student${allLeads.length !== 1 ? "s" : ""})</div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th style="padding:6px 10px;text-align:center;color:#64748b;font-size:11px;text-transform:uppercase;">#</th>
+              <th style="padding:6px 10px;text-align:left;color:#64748b;font-size:11px;text-transform:uppercase;">Name</th>
+              <th style="padding:6px 10px;text-align:center;color:#64748b;font-size:11px;text-transform:uppercase;">Pts</th>
+              <th style="padding:6px 10px;text-align:center;color:#64748b;font-size:11px;text-transform:uppercase;">Tasks</th>
+              <th style="padding:6px 10px;text-align:center;color:#64748b;font-size:11px;text-transform:uppercase;">Types</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+    }
+  } catch (err) {
+    console.error("[demo/admin-email] Leaderboard query failed:", err.message);
+    // Non-fatal — send email without leaderboard
+  }
+
   // Reward recommendation for practice students
   let rewardNote = "";
   if (isClassroom) {
@@ -647,6 +703,8 @@ async function sendAdminNotification(lead) {
         ${comments.map((c) => `<div style="font-size: 13px; margin-bottom: 6px; line-height: 1.4;">${c}</div>`).join("")}
       </div>
       ` : ""}
+
+      ${leaderboardHtml}
 
       <div style="background: #f1f5f9; padding: 12px 24px; border-radius: 0 0 16px 16px; border: 1px solid #e2e8f0; border-top: none;">
         <div style="font-size: 11px; color: #94a3b8; text-align: center;">
