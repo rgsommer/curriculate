@@ -2347,9 +2347,6 @@ export function normalizeTaskByType(taskType, rawTask) {
       if (!task.passage && task.text) task.passage = task.text;
 
       task.passage = asNonEmptyString(task.passage, "");
-      if (!task.passage) {
-        errors.push("cloze task has no passage text");
-      }
 
       // Normalize blanks
       let blanks = Array.isArray(task.blanks) ? task.blanks : [];
@@ -2361,9 +2358,6 @@ export function normalizeTaskByType(taskType, rawTask) {
           return { answer: String(b).trim() };
         })
         .filter((b) => b.answer.length > 0);
-      if (blanks.length < 2) {
-        errors.push(`cloze task needs at least 2 blanks, found ${blanks.length}`);
-      }
       task.blanks = blanks;
 
       // Normalize distractors (optional)
@@ -2390,14 +2384,8 @@ export function normalizeTaskByType(taskType, rawTask) {
           .map((c) => typeof c === "string" ? c.trim() : asNonEmptyString(c?.name || c?.concept, ""))
           .filter(Boolean);
       }
-      if (!Array.isArray(task.concepts) || task.concepts.length < 3) {
-        errors.push(`teach-back needs at least 3 concepts, found ${Array.isArray(task.concepts) ? task.concepts.length : 0}`);
-      }
 
       task.targetAge = asNonEmptyString(task.targetAge, "");
-      if (!task.targetAge) {
-        errors.push("teach-back requires targetAge (e.g. 'a 2nd grader')");
-      }
       break;
     }
 
