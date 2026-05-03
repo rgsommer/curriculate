@@ -516,6 +516,18 @@ export function assessTaskPlayability(rawTask) {
     // =========================
     // Demo-only / meta
     // =========================
+    case TASK_TYPES.PEER_EDITING: {
+      // Peer editing needs passage + errors
+      const passage = t.passage || t.text || t.config?.passage || "";
+      if (!isNonEmptyString(passage)) issues.push("passage is required");
+      else if (passage.trim().length < 20) issues.push("passage must be at least 20 characters");
+
+      const errs = Array.isArray(t.errors) ? t.errors
+        : Array.isArray(t.config?.errors) ? t.config.errors : [];
+      if (errs.length < 3) issues.push(`errors array must have at least 3 items (got ${errs.length})`);
+      break;
+    }
+
     case TASK_TYPES.TEAM_SELFIE:
     case TASK_TYPES.TASK_RUNNER:
     case TASK_TYPES.MOOD_CHECKIN:

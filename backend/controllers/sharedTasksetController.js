@@ -1094,6 +1094,8 @@ export const retryMustHave = {
     'PET_FEEDING MUST include "goodFoods" (array of 6-8 TRUE/PRO statements) and "badFoods" (array of 6-8 FALSE/CON statements) at the ROOT level of the task object. Total must be at least 12 items. Each item is a short factual claim (1 sentence). Do NOT return empty arrays. Also include config: { goal: 4-5, pack: "classic"|"farm"|"ocean"|"dino"|"fantasy" }. Example: { "goodFoods":["The sun is a star","Water boils at 100°C"], "badFoods":["The moon is larger than Earth","Fish live on land"] }',
   [TASK_TYPES.SPEECH_RECOGNITION]:
     'SPEECH_RECOGNITION must include "referenceText" as a ROOT-level string field (10-40 words). This is the expected spoken answer or reading-aloud passage. Do NOT generate a "phrases" array — only referenceText is used by the component.',
+  [TASK_TYPES.PEER_EDITING]:
+    'PEER_EDITING must include passage (40-80 word paragraph with embedded errors), errors[] (5-10 objects each with wordIndex, word, type, correct), and mode ("on-screen"). Each error.wordIndex is a 0-based index into passage.split(/\\s+/). Each error.word MUST match the exact word at that index. Types: "typo", "grammar", "logic", "punctuation", "delete". error.correct is the fix (string or null for delete).',
   [TASK_TYPES.COLLABORATION]:
     'COLLABORATION is a pair-and-respond task between two teams. It only needs taskType, title, and a clear prompt. The prompt should ask teams to write an initial response, then they will view and reply to another team\'s answer. Do NOT include config.roles, config.clues, or role-play content — this is NOT a role-play task. If the task requires individual roles within a team, use "role-play-deck" instead.',
   [TASK_TYPES.ART_VIEW]:
@@ -1527,7 +1529,7 @@ export async function regenerateSingleTask({
   const request = {
     model: process.env.AI_MODEL || "gpt-4.1-mini",
     temperature: typeof temperature === "number" ? temperature : 0.4,
-    max_completion_tokens: 2048,
+    max_completion_tokens: allowedType === TASK_TYPES.PEER_EDITING ? 3072 : 2048,
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },
