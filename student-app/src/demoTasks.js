@@ -1031,7 +1031,6 @@ const DEMO_TASKS = [
     ],
     distractors: ["London", "Adams", "1812"],
   },
-];
 
   // ── TEACH-BACK ──
   {
