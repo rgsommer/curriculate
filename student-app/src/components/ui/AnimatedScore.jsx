@@ -5,7 +5,8 @@ import React, { useEffect, useRef, useState } from "react";
  * On increase: big pop + color flash + floating delta indicator.
  * On decrease: smaller shrink flash.
  */
-export default function AnimatedScore({ value = 0, suffix = " pts", duration = 800 }) {
+export default function AnimatedScore({ value: rawValue = 0, suffix = " pts", duration = 800 }) {
+  const value = Math.round(rawValue);
   const [display, setDisplay] = useState(value);
   const prevRef = useRef(value);
   const frameRef = useRef(null);
@@ -24,7 +25,7 @@ export default function AnimatedScore({ value = 0, suffix = " pts", duration = 8
 
     // Show floating delta label
     if (isUp) {
-      setDelta(`+${diff}`);
+      setDelta(`+${Math.round(diff)}`);
       setTimeout(() => setDelta(null), 1100);
     }
 

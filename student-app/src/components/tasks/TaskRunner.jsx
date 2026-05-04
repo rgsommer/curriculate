@@ -1484,6 +1484,7 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
 function MultiPartTask({ mode, task, review, readOnly = false, onSubmit, submitting, disabled }) {
   const isChoice = mode === "choice";
   const isReview = !!readOnly;
+  const [validationMsg, setValidationMsg] = useState(null);
 
   const rawItems =
     (Array.isArray(task.items) && task.items.length > 0 && task.items) ||
@@ -1540,13 +1541,46 @@ function MultiPartTask({ mode, task, review, readOnly = false, onSubmit, submitt
     );
   };
 
+  // Sentence validation for short-answer (non-choice) mode
+  const MIN_SENTENCE_WORDS = 5;
+  const SENTENCE_PUNCT = /[.!?]$/;
+
+  const getAnswerStatus = (val) => {
+    if (isChoice) return "ok";
+    const text = String(val || "").trim();
+    if (!text) return "empty";
+    const words = text.split(/\s+/).filter(Boolean).length;
+    if (words < MIN_SENTENCE_WORDS) return "too-short";
+    if (!SENTENCE_PUNCT.test(text)) return "no-punct";
+    return "ok";
+  };
+
   const allAnswered = answers.every(
     (ans) => ans.value !== null && String(ans.value).trim() !== ""
   );
 
+  const allValid = isChoice || answers.every((ans) => getAnswerStatus(ans.value) === "ok");
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (submitting || disabled || !allAnswered) return;
+
+    // Validate sentences for short-answer mode
+    if (!isChoice) {
+      for (let i = 0; i < answers.length; i++) {
+        const status = getAnswerStatus(answers[i].value);
+        if (status === "too-short") {
+          setValidationMsg(`Question ${i + 1}: Your sentence is too short — write at least ${MIN_SENTENCE_WORDS} words.`);
+          setTimeout(() => setValidationMsg(null), 4000);
+          return;
+        }
+        if (status === "no-punct") {
+          setValidationMsg(`Question ${i + 1}: Please end your sentence with proper punctuation (. ! ?)`);
+          setTimeout(() => setValidationMsg(null), 4000);
+          return;
+        }
+      }
+    }
 
     const payload = items.map((item, idx) => {
       let answerVal = answers[idx]?.value ?? null;
@@ -1715,16 +1749,18 @@ function MultiPartTask({ mode, task, review, readOnly = false, onSubmit, submitt
                 <textarea
                   rows={2}
                   value={answerVal}
-                  onChange={(e) => handleTextChange(idx, e.target.value)}
+                  onChange={(e) => { handleTextChange(idx, e.target.value); if (validationMsg) setValidationMsg(null); }}
                   disabled={submitting || disabled}
                   style={{
                     width: "100%",
                     padding: "6px 8px",
                     borderRadius: 10,
-                    border: `1px solid ${CONTRAST_BORDER}`,
+                    border: `1px solid ${getAnswerStatus(answerVal) === "ok" ? "#86efac" : CONTRAST_BORDER}`,
                     fontSize: "0.9rem",
                     resize: "vertical",
                     color: CONTRAST_TEXT_DARK,
+                    background: getAnswerStatus(answerVal) === "ok" ? "#f0fdf4" : "#fff",
+                    transition: "background 0.25s ease, border-color 0.25s ease",
                   }}
                   placeholder="Type your answer…"
                 />
@@ -1733,6 +1769,22 @@ function MultiPartTask({ mode, task, review, readOnly = false, onSubmit, submitt
           );
         })}
       </div>
+
+      {/* Validation popup */}
+      {validationMsg && (
+        <div style={{
+          marginTop: 8,
+          padding: "8px 12px",
+          borderRadius: 10,
+          background: "#fef2f2",
+          border: "1px solid #fca5a5",
+          color: "#991b1b",
+          fontSize: "0.85rem",
+          fontWeight: 600,
+        }}>
+          {validationMsg}
+        </div>
+      )}
 
       <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
         <button

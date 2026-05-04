@@ -95,12 +95,32 @@ export default function SequenceTask({
       });
   }, [task]);
 
-  const [orderIds, setOrderIds] = useState(() => items.map((x) => x.id));
+  // Shuffle items so they don't appear in the correct (answer) order
+  const shuffleIds = (ids) => {
+    const arr = [...ids];
+    // Fisher-Yates with a simple seed from task id for consistency
+    const seed = String(task?._id || task?.id || "seq");
+    let s = 0;
+    for (let i = 0; i < seed.length; i++) s = ((s << 5) - s + seed.charCodeAt(i)) | 0;
+    const rand = () => { s = (1664525 * s + 1013904223) >>> 0; return s / 4294967296; };
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    // If shuffle produced the original order, swap first two
+    if (arr.length >= 2 && arr.every((id, idx) => id === ids[idx])) {
+      [arr[0], arr[1]] = [arr[1], arr[0]];
+    }
+    return arr;
+  };
+
+  const [orderIds, setOrderIds] = useState(() => shuffleIds(items.map((x) => x.id)));
 
   // Reset order whenever a new task arrives / items change
   useEffect(() => {
-    setOrderIds(items.map((x) => x.id));
-    if (onAnswerChange) onAnswerChange({ order: items.map((x) => x.id) });
+    const shuffled = shuffleIds(items.map((x) => x.id));
+    setOrderIds(shuffled);
+    if (onAnswerChange) onAnswerChange({ order: shuffled });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?._id, task?.id, items.length]);
 

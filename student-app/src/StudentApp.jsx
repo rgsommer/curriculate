@@ -755,7 +755,28 @@ function StudentApp() {
         // Don't overwrite feedback/trophy phase — taskset is done, we're
         // showing the multi-player feedback form or the victory screen.
         const currentPhase = postPhaseRef.current;
-        if (currentPhase !== "feedback" && currentPhase !== "trophy") {
+
+        // Safety net: if the team's taskIndex >= total tasks, the session is
+        // over — trigger session-complete flow instead of "waiting for launch".
+        const myIdx = typeof myTeam.taskIndex === "number" ? myTeam.taskIndex : -1;
+        const totalTasks = Array.isArray(state.taskset?.tasks) ? state.taskset.tasks.length
+          : (typeof state.totalTasks === "number" ? state.totalTasks : -1);
+        if (myIdx >= 0 && totalTasks > 0 && myIdx >= totalTasks &&
+            currentPhase !== "feedback" && currentPhase !== "trophy") {
+          console.log("[StudentApp] room:state — team past last task (%d/%d), triggering session:complete", myIdx, totalTasks);
+          setCurrentTask(null);
+          setCurrentTaskIndex(null);
+          setWaitingForLaunch(false);
+          setScannerActive(false);
+          setReviewState(null);
+          setPostSubmitSecondsLeft(null);
+          if (postSubmitTimerRef.current) {
+            clearInterval(postSubmitTimerRef.current);
+            postSubmitTimerRef.current = null;
+          }
+          setPostPhase("feedback");
+          tryPlaySessionEndSound();
+        } else if (currentPhase !== "feedback" && currentPhase !== "trophy") {
           // In mystery mode, the box grid handles task dispatch — don't show
           // "Getting your first activity ready…" which would cover the grid.
           const isMystery = state.navigationMode === "mystery";
@@ -1181,7 +1202,7 @@ function StudentApp() {
           setTimeout(() => setShowConfetti(false), 1400);
         }
       } else if (typeof scoreDelta === "number" && delta > 0) {
-        toastMsg = `+${delta} pts`;
+        toastMsg = `+${Math.round(delta)} pts`;
         if (aiFeedback) toastMsg += ` — ${aiFeedback}`;
         toastPositive = true;
         // Big score celebration
@@ -1261,8 +1282,8 @@ function StudentApp() {
 
       // Show a prominent toast
       const msg = positive
-        ? `+${pts} ${reason}`
-        : `${pts} ${reason}`;
+        ? `+${Math.round(pts)} ${reason}`
+        : `${Math.round(pts)} ${reason}`;
       setPointToast({ message: msg, positive });
       if (positive) tryPlayCorrectSound();
       else tryPlayWrongSound();
@@ -3275,11 +3296,16 @@ function StudentApp() {
       ? teamTaskNumber
       : null;
 
-  const progressLabel =
+  const clampedTaskNumber =
     effectiveTaskNumber && totalTasks
-      ? `Task ${effectiveTaskNumber} of ${totalTasks}`
-      : effectiveTaskNumber
-      ? `Task ${effectiveTaskNumber}`
+      ? Math.min(effectiveTaskNumber, totalTasks)
+      : effectiveTaskNumber;
+
+  const progressLabel =
+    clampedTaskNumber && totalTasks
+      ? `Task ${clampedTaskNumber} of ${totalTasks}`
+      : clampedTaskNumber
+      ? `Task ${clampedTaskNumber}`
       : null;
   // ─────────────────────────────────────────────
   // Render
