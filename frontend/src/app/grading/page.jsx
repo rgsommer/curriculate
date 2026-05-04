@@ -1440,69 +1440,103 @@ export default function GradingPage() {
     useEffect(() => saveLS(STRICTNESS_KEY, String(strictnessBias)), [strictnessBias]);
     useEffect(() => saveLS(PER_QUESTION_AUDIT_KEY, perQuestionAudit ? "1" : "0"), [perQuestionAudit]);
 
-    // Upload Rubric from electronic document
+    // Upload Rubric from electronic document (supports multiple files)
     const [uploadingRubricFile, setUploadingRubricFile] = useState(false);
 
+    // Lazy-load mammoth.js for DOCX parsing
+    let mammothPromise = null;
+    function loadMammoth() {
+      if (mammothPromise) return mammothPromise;
+      if (typeof window !== "undefined" && window.mammoth) return Promise.resolve(window.mammoth);
+      mammothPromise = new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js";
+        s.onload = () => resolve(window.mammoth);
+        s.onerror = () => reject(new Error("Failed to load mammoth.js for DOCX parsing"));
+        document.head.appendChild(s);
+      });
+      return mammothPromise;
+    }
+
+    async function extractTextFromFile(file) {
+      const name = file.name.toLowerCase();
+
+      if (name.endsWith(".txt") || name.endsWith(".rtf")) {
+        return await file.text();
+      }
+
+      if (name.endsWith(".pdf")) {
+        if (typeof pdfjsLib !== "undefined") {
+          const buf = await file.arrayBuffer();
+          const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+          const pages = [];
+          for (let i = 1; i <= doc.numPages; i++) {
+            const page = await doc.getPage(i);
+            const content = await page.getTextContent();
+            pages.push(content.items.map((it) => it.str).join(" "));
+          }
+          return pages.join("\n\n");
+        }
+        return await file.text();
+      }
+
+      if (name.endsWith(".docx")) {
+        const mammoth = await loadMammoth();
+        const buf = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer: buf });
+        return result.value || "";
+      }
+
+      // Fallback for other text-based formats
+      return await file.text();
+    }
+
     async function handleRubricFileUpload(e) {
-      const file = e.target.files?.[0];
-      if (!file) return;
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
       setUploadingRubricFile(true);
       try {
-        let text = "";
-        const name = file.name.toLowerCase();
+        const textParts = [];
+        const imageFiles = [];
 
-        if (name.endsWith(".txt") || name.endsWith(".rtf")) {
-          text = await file.text();
-        } else if (name.endsWith(".pdf")) {
-          // Use PDF.js if available, otherwise fall back to reading as text
-          if (typeof pdfjsLib !== "undefined") {
-            const buf = await file.arrayBuffer();
-            const doc = await pdfjsLib.getDocument({ data: buf }).promise;
-            const pages = [];
-            for (let i = 1; i <= doc.numPages; i++) {
-              const page = await doc.getPage(i);
-              const content = await page.getTextContent();
-              pages.push(content.items.map((it) => it.str).join(" "));
-            }
-            text = pages.join("\n\n");
+        for (const file of files) {
+          if (file.type?.startsWith("image/")) {
+            imageFiles.push(file);
           } else {
-            text = await file.text();
+            const text = await extractTextFromFile(file);
+            if (text.trim()) textParts.push(text.trim());
           }
-        } else if (file.type?.startsWith("image/")) {
-          // Convert image to data URL and extract via a simple note
-          text = `[Rubric uploaded as image: ${file.name}]`;
-          // Read the image as a data URL so we can show it
+        }
+
+        // Handle image rubric files
+        for (const imgFile of imageFiles) {
           const reader = new FileReader();
           const dataUrl = await new Promise((resolve) => {
             reader.onload = () => resolve(reader.result);
-            reader.readAsDataURL(file);
+            reader.readAsDataURL(imgFile);
           });
-          // For images, set it as a sticky rubric photo
-          setStickyRubricText(`[Rubric image: ${file.name}]`);
+          setStickyRubricText(`[Rubric image: ${imgFile.name}]`);
           setStickyRubricSource("uploaded");
           setStickyRubricCapturedAt(new Date().toLocaleString());
-          // Add as a rubric-tagged photo
           const photoObj = {
-            id: String(Date.now()) + "_rubric",
+            id: String(Date.now()) + "_rubric_" + Math.random().toString(36).slice(2, 6),
             dataUrl,
             rawDataUrl: dataUrl,
             createdAt: Date.now(),
           };
           setPhotos((prev) => [...prev, photoObj]);
           setPhotoTags((prev) => new Map(prev).set(photoObj.id, "rubric"));
-          setUploadingRubricFile(false);
-          if (rubricFileRef.current) rubricFileRef.current.value = "";
-          return;
-        } else {
-          // .doc, .docx — read as text (basic fallback)
-          text = await file.text();
         }
 
-        if (text.trim()) {
-          setRubricOverride(text.trim());
+        // Combine text from all non-image files
+        if (textParts.length) {
+          const combined = textParts.length === 1
+            ? textParts[0]
+            : textParts.map((t, i) => `--- Rubric ${i + 1} ---\n${t}`).join("\n\n");
+          setRubricOverride(combined);
           completeQuest("use_rubric_override");
-        } else {
-          alert("Could not extract text from the uploaded file. Try pasting the rubric instead.");
+        } else if (!imageFiles.length) {
+          alert("Could not extract text from the uploaded file(s). Try pasting the rubric instead.");
         }
       } catch (err) {
         console.error("Rubric upload error:", err);
@@ -4129,6 +4163,7 @@ export default function GradingPage() {
                       ref={rubricFileRef}
                       type="file"
                       accept=".pdf,.doc,.docx,.txt,.rtf,image/*"
+                      multiple
                       style={{ display: "none" }}
                       onChange={handleRubricFileUpload}
                     />
