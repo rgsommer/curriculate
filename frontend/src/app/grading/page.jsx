@@ -4717,11 +4717,10 @@ export default function GradingPage() {
                                         e.preventDefault();
                                         const newDenom = Math.round(Number(denomInput));
                                         if (Number.isFinite(newDenom) && newDenom > 0 && newDenom !== gRaw.outOf) {
+                                          // Curve: keep the raw score, just change the denominator
                                           const origScore = gRaw.score;
-                                          const origOutOf = gRaw.outOf;
-                                          const pct = origOutOf > 0 ? (origScore / origOutOf) * 100 : 0;
-                                          const newScore = Math.round((pct / 100) * newDenom * 10) / 10;
-                                          setDenomOverride({ score: newScore, outOf: newDenom });
+                                          const cappedScore = Math.min(origScore, newDenom); // cap if score exceeds new denom
+                                          setDenomOverride({ score: cappedScore, outOf: newDenom });
                                           // Re-publish to results portal
                                           if (refCode && backendBase) {
                                             const updatedAssessment = { ...assessment, overall_score: newScore, overall_out_of: newDenom };

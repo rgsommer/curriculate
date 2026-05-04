@@ -2961,8 +2961,8 @@ export default function BatchGrading({
       const updated = prev.map((r) => {
         if (r.error || typeof r.outOf !== "number" || r.outOf <= 0) return r;
         if (r.outOf === targetDenom) return r; // already correct
-        const pct = r.pct != null ? r.pct : (r.score / r.outOf) * 100;
-        const newScore = Math.round((pct / 100) * targetDenom * 10) / 10;
+        // Curve: keep raw score, change denominator (cap if score exceeds new denom)
+        const newScore = Math.min(r.score, targetDenom);
         const newPct = targetDenom > 0 ? Math.round((newScore / targetDenom) * 100) : null;
         return { ...r, score: newScore, outOf: targetDenom, pct: newPct, letter: newPct != null ? letterGrade(newPct) : r.letter };
       });
