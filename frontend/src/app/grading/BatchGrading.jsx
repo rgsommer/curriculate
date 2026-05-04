@@ -2976,6 +2976,7 @@ export default function BatchGrading({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               payload: buildBatchPayloadText(r, r.refCode, gradeBand),
+              meta: { score: r.score, outOf: targetDenom, pct: r.pct },
             }),
           }).catch((e) => console.warn(`[batch] denom update for ${r.refCode} failed:`, e));
         });
@@ -3001,6 +3002,7 @@ export default function BatchGrading({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               payload: buildBatchPayloadText(r, r.refCode, gradeBand),
+              meta: { score: r.score, outOf: 100, pct: r.pct },
             }),
           }).catch((e) => console.warn(`[batch] percent convert for ${r.refCode} failed:`, e));
         });

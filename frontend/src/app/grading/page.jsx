@@ -4723,13 +4723,14 @@ export default function GradingPage() {
                                           setDenomOverride({ score: cappedScore, outOf: newDenom });
                                           // Re-publish to results portal
                                           if (refCode && backendBase) {
-                                            const updatedAssessment = { ...assessment, overall_score: newScore, overall_out_of: newDenom };
+                                            const updatedAssessment = { ...assessment, overall_score: cappedScore, overall_out_of: newDenom };
                                             const updatedPayload = buildFullTeacherPayloadText(updatedAssessment, refCode, gradeBand, rubricOverride);
+                                            const newPct = newDenom > 0 ? Math.round((cappedScore / newDenom) * 100) : 0;
                                             const updateUrl = `${backendBase}/results/${refCode}`;
                                             fetch(updateUrl, {
                                               method: "PUT",
                                               headers: { "Content-Type": "application/json" },
-                                              body: JSON.stringify({ payload: updatedPayload }),
+                                              body: JSON.stringify({ payload: updatedPayload, meta: { score: cappedScore, outOf: newDenom, pct: newPct } }),
                                             }).catch((err) => console.warn("[denom] update failed:", err));
                                           }
                                         }

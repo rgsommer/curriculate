@@ -193,8 +193,8 @@ router.post("/batch-update-denom", createLimiter, async (req, res) => {
       const oldOutOf = parseFloat(scoreMatch[2]);
       if (oldOutOf <= 0 || oldOutOf === denom) continue;
 
-      const pct = (oldScore / oldOutOf) * 100;
-      const newScore = Math.round((pct / 100) * denom * 10) / 10;
+      // Curve: keep raw score, just change denom (cap if score exceeds new denom)
+      const newScore = Math.min(oldScore, denom);
       const newPct = Math.round((newScore / denom) * 100);
 
       const updatedPayload = doc.payload.replace(
