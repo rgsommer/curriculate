@@ -1262,9 +1262,7 @@ export default function BatchGrading({
                   studentId: resultEntry.rosterStudentId || resultEntry.rosterEdsbyId || resultEntry.studentId || null,
                   subject: resultEntry.subject || "",
                   assessmentType: resultEntry.assessmentType || "",
-                  title: resultEntry.detectedTitle
-                    ? (effectiveTitle ? `${effectiveTitle} — ${resultEntry.detectedTitle}` : resultEntry.detectedTitle)
-                    : (effectiveTitle || ""),
+                  title: resultEntry.detectedTitle || effectiveTitle || "",
                   pdfName: pdfName || "",
                   className: resultEntry.rosterClassName || "",
                 },
@@ -1916,9 +1914,7 @@ export default function BatchGrading({
                     studentId: sid,
                     subject: r.subject || "",
                     assessmentType: r.assessmentType || "",
-                    title: r.detectedTitle
-                      ? (effectiveTitle ? `${effectiveTitle} — ${r.detectedTitle}` : r.detectedTitle)
-                      : (effectiveTitle || ""),
+                    title: r.detectedTitle || effectiveTitle || "",
                     pdfName: pdfName || "",
                     className: r.rosterClassName || "",
                   },
@@ -2278,9 +2274,7 @@ export default function BatchGrading({
                   studentId: updatedEntry.rosterStudentId || updatedEntry.rosterEdsbyId || updatedEntry.studentId || null,
                   subject: updatedEntry.subject || "",
                   assessmentType: updatedEntry.assessmentType || "",
-                  title: updatedEntry.detectedTitle
-                    ? (effectiveTitle ? `${effectiveTitle} — ${updatedEntry.detectedTitle}` : updatedEntry.detectedTitle)
-                    : (effectiveTitle || ""),
+                  title: updatedEntry.detectedTitle || effectiveTitle || "",
                   pdfName: pdfName || "",
                   className: updatedEntry.rosterClassName || "",
                 },

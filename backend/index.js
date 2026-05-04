@@ -11363,11 +11363,11 @@ function buildRubricInstructions({
         - inferred_subject: one of [Math, English, History, Geography, Science, Computer Science, Bible, Drama, Speech, Music, Art, French, Other]
         - inferred_assessment_type: one of [Essay, Test, Quiz, Homework, Project, Poster, Worksheet, Speech, Performance, Presentation, Journal, Code, Other]
         - inferred_grade_level: one of [3-5, 6-8, 9-10, 11+, Unknown]
-        - detected_title: the specific assignment title. For photos: read the title/heading written on the paper (e.g. "Journal Entry #3", "Chapter 5 Test", "Lab Report: Photosynthesis"). For pasted text or linked documents: derive a concise descriptive title from the document content — include page references and question numbers if present (e.g. "Ch. 5 Questions 1-12", "Biology Lab — Osmosis", "Hamlet Act 3 Response"). If no title can be determined, set to null.
+        - detected_title: a concise, descriptive assignment title (3–10 words). For photos: start from whatever title/heading is written on the paper, but if it is just a class code, section label, or abbreviation (e.g. "8B Geo", "Journal 5", "Sci 10", "Math HW"), compose a more descriptive title by combining it with the actual content or topic of the assignment (e.g. "8B Geography — Plate Tectonics Worksheet", "Journal 5 — Character Analysis of Atticus Finch", "Science 10 — Cell Division Quiz"). For pasted text or linked documents: derive a concise descriptive title from the document content — include page references and question numbers if present (e.g. "Ch. 5 Questions 1-12", "Biology Lab — Osmosis", "Hamlet Act 3 Response"). If no title can be determined at all, set to null.
 
         Rules:
         - Do NOT guess wildly. If unsure, use Other / Unknown.
-        - For detected_title on photos, only report what is actually written on the paper. Do NOT invent a title if nothing is visible.
+        - For detected_title on photos: prefer a descriptive title that tells a parent or student what the assignment was about. Never return just a class code, section number, or 1-2 word abbreviation — always expand short labels into a descriptive title using the visible content/topic of the work. If absolutely nothing is visible on the paper, set to null.
         - For detected_title on pasted text or linked documents, derive the most descriptive short title you can from headings, page references, question numbers, or subject matter in the content.
         - inferred_grade_level should usually match the provided grade band (${band}) unless the work clearly indicates otherwise.
 
