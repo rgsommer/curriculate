@@ -3543,7 +3543,7 @@ export default function GradingPage() {
         <style>{`
           @media (min-width: 820px) {
             .grading-grid {
-              grid-template-columns: 1fr 1fr !important;
+              grid-template-columns: ${(inputMode === "batch" || inputMode === "video" || inputMode === "audio") ? "1fr" : "1fr 1fr"} !important;
             }
             .grading-grid > .grading-submit-card {
               position: sticky;
