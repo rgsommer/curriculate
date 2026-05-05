@@ -3525,6 +3525,8 @@ export default function GradingPage() {
                 }
 
                 setVoice(next);
+                // Auto-enable per-question audit for Detailed Coach (it's expected behavior)
+                if (next === "coach") setPerQuestionAudit(true);
               }}
               style={{
                 ...styles.select,
