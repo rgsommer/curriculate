@@ -1379,6 +1379,10 @@ export default function GradingPage() {
     useEffect(() => saveLS(RUBRIC_STICKY_SRC_KEY, stickyRubricSource || ""), [stickyRubricSource]);
     useEffect(() => saveLS(RUBRIC_STICKY_TS_KEY, stickyRubricCapturedAt || ""), [stickyRubricCapturedAt]);
 
+    // Rubric page preview images (from DOCX/image uploads converted to page images)
+    const [rubricPreviewPages, setRubricPreviewPages] = useState([]);
+    const [enlargedRubricPage, setEnlargedRubricPage] = useState(null);
+
     // ✅ Sticky answer key captured from solution sheet (session-level)
     const [stickyAnswerKeyText, setStickyAnswerKeyText] = useState(() => {
       if (typeof window === "undefined") return "";
@@ -1524,6 +1528,7 @@ export default function GradingPage() {
             const data = await resp.json();
             if (data.ok && Array.isArray(data.pages)) {
               // Add each page as a rubric-tagged photo so AI can see equations
+              const newPreviews = [];
               for (let pi = 0; pi < data.pages.length; pi++) {
                 const photoObj = {
                   id: `${Date.now()}_rubric_docx_${pi}_${Math.random().toString(36).slice(2, 6)}`,
@@ -1533,7 +1538,9 @@ export default function GradingPage() {
                 };
                 setPhotos((prev) => [...prev, photoObj]);
                 setPhotoTags((prev) => new Map(prev).set(photoObj.id, "rubric"));
+                newPreviews.push({ src: data.pages[pi], label: `${docFile.name} — p${pi + 1}` });
               }
+              setRubricPreviewPages((prev) => [...prev, ...newPreviews]);
               setStickyRubricText(`[Answer key: ${docFile.name} — ${data.pageCount} page${data.pageCount > 1 ? "s" : ""}]`);
               setStickyRubricSource("uploaded");
               setStickyRubricCapturedAt(new Date().toLocaleString());
@@ -1574,6 +1581,7 @@ export default function GradingPage() {
           };
           setPhotos((prev) => [...prev, photoObj]);
           setPhotoTags((prev) => new Map(prev).set(photoObj.id, "rubric"));
+          setRubricPreviewPages((prev) => [...prev, { src: dataUrl, label: imgFile.name }]);
         }
 
         // Combine text from all non-image, non-docx files
@@ -4141,6 +4149,7 @@ export default function GradingPage() {
                   setStickyRubricCapturedAt("");
                   setStickyAnswerKeyText("");
                   setStickyAnswerKeyCapturedAt("");
+                  setRubricPreviewPages([]);
                   setShowRubric(false);
                 }}
                 style={{
@@ -4194,12 +4203,13 @@ export default function GradingPage() {
                         setStickyRubricCapturedAt("");
                         setStickyAnswerKeyText("");
                         setStickyAnswerKeyCapturedAt("");
+                        setRubricPreviewPages([]);
                       }}
-                      disabled={disableClearCaptured && !(stickyAnswerKeyText || "").trim().length}
+                      disabled={disableClearCaptured && !(stickyAnswerKeyText || "").trim().length && !rubricPreviewPages.length}
                       style={{
                         ...styles.secondaryBtn,
-                        opacity: (disableClearCaptured && !(stickyAnswerKeyText || "").trim().length) ? 0.5 : 1,
-                        cursor: (disableClearCaptured && !(stickyAnswerKeyText || "").trim().length) ? "not-allowed" : "pointer",
+                        opacity: (disableClearCaptured && !(stickyAnswerKeyText || "").trim().length && !rubricPreviewPages.length) ? 0.5 : 1,
+                        cursor: (disableClearCaptured && !(stickyAnswerKeyText || "").trim().length && !rubricPreviewPages.length) ? "not-allowed" : "pointer",
                       }}
                       type="button"
                       title="Clear captured rubric and answer key for this session"
@@ -4342,6 +4352,56 @@ export default function GradingPage() {
                     rows={9}
                     style={styles.rubricTextarea}
                   />
+
+                  {/* Rubric page previews (from DOCX/image uploads) */}
+                  {rubricPreviewPages.length > 0 && (
+                    <div style={{
+                      marginTop: 10, marginBottom: 8, padding: 10,
+                      borderRadius: 12,
+                      border: "1px solid rgba(37,99,235,0.2)",
+                      background: "rgba(37,99,235,0.03)",
+                    }}>
+                      <div style={{ fontWeight: 900, fontSize: 12, color: "#2563eb", marginBottom: 8 }}>
+                        Answer key pages ({rubricPreviewPages.length}) — click to enlarge
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {rubricPreviewPages.map((pg, i) => (
+                          <div
+                            key={i}
+                            onClick={() => setEnlargedRubricPage(pg)}
+                            style={{
+                              cursor: "pointer",
+                              border: "1px solid rgba(0,0,0,0.15)",
+                              borderRadius: 6,
+                              overflow: "hidden",
+                              width: 80,
+                              height: 110,
+                              position: "relative",
+                              boxShadow: "0 1px 4px rgba(0,0,0,0.1)",
+                              transition: "transform 0.15s, box-shadow 0.15s",
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.05)"; e.currentTarget.style.boxShadow = "0 3px 12px rgba(0,0,0,0.2)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.1)"; }}
+                            title={pg.label}
+                          >
+                            <img
+                              src={pg.src}
+                              alt={pg.label}
+                              style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top" }}
+                            />
+                            <div style={{
+                              position: "absolute", bottom: 0, left: 0, right: 0,
+                              background: "rgba(0,0,0,0.6)", color: "#fff",
+                              fontSize: 9, padding: "2px 4px", textAlign: "center",
+                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                            }}>
+                              {pg.label}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div style={styles.rubricSummaryBox}>
                     <div style={{ fontWeight: 900, marginBottom: 6 }}>Default rubric (summary)</div>
@@ -5664,6 +5724,51 @@ export default function GradingPage() {
 
         {/* ── Quest widget ── */}
         <QuestWidget quests={GRADING_QUESTS} label="Quests" />
+
+        {/* ── Enlarged rubric page overlay ── */}
+        {enlargedRubricPage && (
+          <div
+            onClick={() => setEnlargedRubricPage(null)}
+            style={{
+              position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+              background: "rgba(0,0,0,0.8)", zIndex: 100000,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "zoom-out",
+            }}
+          >
+            <div style={{ position: "relative", maxWidth: "92vw", maxHeight: "92vh" }}>
+              <img
+                src={enlargedRubricPage.src}
+                alt={enlargedRubricPage.label}
+                style={{
+                  maxWidth: "92vw", maxHeight: "88vh",
+                  objectFit: "contain", borderRadius: 8,
+                  boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+              <div style={{
+                position: "absolute", bottom: -32, left: 0, right: 0,
+                textAlign: "center", color: "#fff", fontSize: 13, fontWeight: 600,
+              }}>
+                {enlargedRubricPage.label}
+              </div>
+              <button
+                onClick={() => setEnlargedRubricPage(null)}
+                style={{
+                  position: "absolute", top: -12, right: -12,
+                  width: 32, height: 32, borderRadius: "50%",
+                  background: "#fff", border: "none", cursor: "pointer",
+                  fontSize: 18, fontWeight: 900, color: "#333",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
