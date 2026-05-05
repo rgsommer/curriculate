@@ -4297,7 +4297,16 @@ export default function BatchGrading({
                         setExpandedIndex(expandedIndex === r.index ? null : r.index)
                       }
                     >
-                      <td style={batchStyles.td}>{r.index}</td>
+                      <td style={batchStyles.td}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          <span style={{
+                            display: "inline-block", width: 14, fontSize: 10, color: "#94a3b8",
+                            transition: "transform 0.15s",
+                            transform: expandedIndex === r.index ? "rotate(90deg)" : "rotate(0deg)",
+                          }}>&#9654;</span>
+                          {r.index}
+                        </span>
+                      </td>
                       <td style={{ ...batchStyles.td, fontWeight: 700, textAlign: "left", position: "relative" }}>
                         <span
                           onClick={(e) => {
@@ -4442,9 +4451,8 @@ export default function BatchGrading({
                         </td>
                       )}
                       <td
-                        style={{ ...batchStyles.td, cursor: r.pageImages?.length ? "pointer" : "default", color: r.pageImages?.length ? "#2563eb" : undefined, textDecoration: r.pageImages?.length ? "underline" : "none" }}
-                        onClick={(e) => { e.stopPropagation(); if (r.pageImages?.length) setPreviewIndex(previewIndex === r.index ? null : r.index); }}
-                        title={r.pageImages?.length ? "Tap to preview source" : ""}
+                        style={{ ...batchStyles.td, color: "#2563eb", textDecoration: "underline", cursor: "pointer" }}
+                        title="Click to expand details and source images"
                       >{r.pages}</td>
                       <td style={{ ...batchStyles.td, whiteSpace: "nowrap" }}>
                         {regradingIndex === r.index ? (
@@ -4930,56 +4938,7 @@ export default function BatchGrading({
             </table>
           </div>
 
-          {/* Inline source image preview */}
-          {previewIndex != null && (() => {
-            const pr = results.find((r) => r.index === previewIndex);
-            if (!pr?.pageImages?.length) return null;
-            return (
-              <div style={{
-                background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12,
-                padding: 14, marginBottom: 12, position: "relative",
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#334155" }}>
-                    {pr.studentName} — p{pr.pages}{pr.detectedTitle ? ` — ${pr.detectedTitle}` : ""}
-                  </span>
-                  <button
-                    onClick={() => setPreviewIndex(null)}
-                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "#94a3b8", lineHeight: 1, padding: "0 4px" }}
-                    title="Close preview"
-                  >&times;</button>
-                </div>
-                <div style={{
-                  display: "flex", gap: 10, overflowX: "auto",
-                  justifyContent: pr.pageImages.length === 1 ? "center" : "flex-start",
-                }}>
-                  {pr.pageImages.map((img, pi) => (
-                    <img
-                      key={pi}
-                      src={img}
-                      alt={`Page ${pi + 1}`}
-                      style={{
-                        maxHeight: 420, maxWidth: pr.pageImages.length === 1 ? "100%" : "48%",
-                        borderRadius: 8, border: "1px solid #e2e8f0", objectFit: "contain",
-                        cursor: "zoom-in",
-                      }}
-                      onClick={() => {
-                        // Open in full-screen overlay for zoom
-                        const overlay = document.createElement("div");
-                        overlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;cursor:zoom-out;";
-                        const im = document.createElement("img");
-                        im.src = img;
-                        im.style.cssText = "max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;";
-                        overlay.appendChild(im);
-                        overlay.onclick = () => document.body.removeChild(overlay);
-                        document.body.appendChild(overlay);
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
+          {/* (previewIndex section removed — images now shown in expanded row) */}
 
           {!grading && (
             <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
