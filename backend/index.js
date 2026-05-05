@@ -9297,24 +9297,27 @@ function buildRubricInstructions({
 
       "9-10": `
     GRADE LEVEL: 9–10
-    GRADING LENIENCY: LOW — grade strictly on demonstrated knowledge. No benefit of the doubt.
-    - Expect clearer reasoning and more precision.
+    GRADING LENIENCY: MODERATE-LOW — grade fairly but expect demonstrated knowledge.
+    - Expect clearer reasoning and more precision than younger grades.
     - Short-answer: 3+ strong points or brief explanation per point.
     - Paragraph: clearer structure and some evidence when appropriate.
-    - Wrong answers are wrong. Blank answers are 0. Illegible work is 0.
-    - Partial credit only for demonstrated correct methodology with minor errors.
+    - Wrong answers are wrong. Blank answers are 0.
+    - Partial credit for demonstrated correct methodology with minor errors.
+    - Messy handwriting: if you can reasonably interpret what the student wrote, grade the interpreted answer.
     `.trim(),
 
       "11+": `
     GRADE LEVEL: 11+
-    GRADING LENIENCY: VERY LOW — grade with university-prep rigour. Accuracy is paramount.
+    GRADING LENIENCY: MODERATE-LOW — grade fairly with higher expectations. Accuracy matters.
     - Expect well-developed explanations, evidence, precision, academic structure.
     - Short-answer still concise but more analytical and specific.
-    - Mathematical/scientific answers must be EXACTLY correct (or mathematically equivalent).
-    - No sympathy marks. No benefit of the doubt. No credit for "close" answers.
-    - Partial credit is rare and only for clearly demonstrated correct methodology with a minor slip.
-    - A student who leaves questions blank or writes incorrect answers should receive a low score.
-      If a student scores 40% from the teacher, your score should be in the same range — not 80%.
+    - Mathematical/scientific answers must be correct (or mathematically equivalent).
+    - Blank or missing answers earn 0. Do not assume the student "probably knows" the answer.
+    - Award partial credit when the student demonstrates correct methodology with a minor arithmetic or transcription slip.
+      For example: correct setup + sign error in the last step = most of the marks, not 0.
+    - Handwritten work: grade what you can reasonably interpret. Messy ≠ wrong.
+      If a digit or symbol COULD be the correct one, interpret it as correct.
+    - Your goal is to match how an experienced, fair teacher would grade — not harsher, not softer.
     `.trim(),
     };
 
@@ -9467,7 +9470,7 @@ function buildRubricInstructions({
     ${(() => {
       if (!subjectArea) return "";
       const subjectNotes = {
-        math: "SUBJECT: Mathematics\nGrade mathematically with STRICT accuracy:\n- Check each step of working AND verify the FINAL ANSWER against the solution or expected result.\n- A wrong final answer is a wrong answer — do NOT award full marks just because the setup looked reasonable.\n- Partial credit: award ONLY when the student demonstrates a correct METHOD with a minor arithmetic slip. The credit should be proportional (e.g., 1/3 for correct setup but wrong answer on a 3-mark question).\n- If a question is BLANK or unanswered, the score is 0. No partial credit for blank work.\n- If handwriting is illegible and you cannot determine what the student wrote, score it 0 — do NOT guess generously.\n- Do NOT penalise unconventional notation if the math is sound.\n- Pay special attention to: order of operations, sign errors, unit conversions, and whether the student showed their working.\n- CRITICAL: When an answer key is provided, compare EACH student answer against the key's answer EXACTLY. The key is the authority — if the student's answer differs from the key, it is WRONG unless mathematically equivalent.",
+        math: "SUBJECT: Mathematics\nGrade mathematically with accuracy and fairness:\n- Check each step of working AND verify the FINAL ANSWER against the solution or expected result.\n- A wrong final answer with correct method/setup still earns MOST of the marks (e.g., 3/4 for correct setup with arithmetic slip).\n- A wrong final answer with NO correct working earns 0.\n- Partial credit should be GENEROUS when the student demonstrates understanding of the correct METHOD.\n  Teachers routinely award 3/4 or 2/3 for correct approach with minor errors — match this pattern.\n- If a question is BLANK or unanswered, the score is 0.\n- Messy handwriting: if you can reasonably interpret the math, grade it. Messy ≠ wrong.\n- Do NOT penalise unconventional notation if the math is sound.\n- Pay special attention to: order of operations, sign errors, unit conversions, and whether the student showed their working.\n- CRITICAL: When an answer key is provided, compare EACH student answer against the key. The key is the authority.\n  If the student's answer differs from the key AND is not mathematically equivalent, it is wrong.\n  But ALWAYS check for partial credit on multi-mark questions — correct setup with wrong final answer earns partial marks.",
         english: "SUBJECT: English / Language Arts\nAssess thesis strength, evidence use, structure, grammar, and voice. Weight content and argument above mechanics unless the rubric specifies otherwise. Consider: paragraph structure, topic sentences, supporting details, transitions, and conclusion quality.",
         science: "SUBJECT: Science\nCheck scientific accuracy, proper use of terminology, experimental method understanding, and data interpretation. Credit correct reasoning even if the final answer has minor errors. Pay attention to: hypothesis formation, controlled variables, data tables, graphing, and scientific conclusions.",
         history: "SUBJECT: History\nAssess use of evidence, historical reasoning, cause-and-effect analysis, and source evaluation. Value substantiated arguments over recall of dates. Consider: historical perspective, use of primary/secondary sources, chronological understanding, and analytical depth.",
@@ -9616,11 +9619,12 @@ function buildRubricInstructions({
       - HARD CONSTRAINT: overall_score MUST equal the sum of section scores, and it MUST be out of overall_out_of.
         If overall_out_of is 8, the grade must be "X / 8", never "X / 4".
       - HARD CONSTRAINT: overall_score MUST NEVER exceed overall_out_of. A score of 44/42 is IMPOSSIBLE.
-      - ANTI-INFLATION RULE: Do NOT give the benefit of the doubt on ambiguous or illegible work.
-        If you cannot clearly read the student's answer, score it 0. If the answer is blank, score it 0.
-        If the student wrote NOTHING for a question, it earns 0 marks — not partial credit.
-        A generous grading pattern where low-performing students receive inflated scores undermines
-        the teacher's ability to identify students who need help. Grade what is ACTUALLY on the page.
+      - BLANK / MISSING RULE: If the student wrote NOTHING for a question, it earns 0 marks — never partial credit.
+        Do NOT assume the student "probably knows" the answer if they didn't write it.
+      - HANDWRITING RULE: If handwriting is messy but you can REASONABLY interpret what the student wrote,
+        grade the interpreted answer — messy handwriting is not the same as a wrong answer.
+        If a digit or symbol could plausibly be the correct one, interpret it as correct.
+        Only score 0 for truly illegible work where you genuinely cannot determine any answer.
       - If you have only ONE section, that section's out_of = overall_out_of (the full denominator).
       - Do NOT create deductions for "missing questions" when using a shorthand denominator.
         The denominator is a weight, not a question count.
