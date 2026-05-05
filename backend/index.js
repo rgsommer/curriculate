@@ -9279,29 +9279,42 @@ function buildRubricInstructions({
   const gradeExpectations = {
       "3-5": `
     GRADE LEVEL: 3–5
+    GRADING LENIENCY: HIGH — be encouraging, focus on understanding and effort.
     - Simple sentences or point-form is fine.
     - Meeting expectations: 1–2 correct points per question is often sufficient.
-    - Be encouraging; focus on understanding and completion. Mechanics are secondary.
+    - Focus on understanding and completion. Mechanics are secondary.
+    - On borderline cases, lean slightly generous — effort and attempt count at this level.
     `.trim(),
 
       "6-8": `
     GRADE LEVEL: 6–8
+    GRADING LENIENCY: MODERATE — be fair but not generous. Grade what is on the page.
     - Short-answer: 2–3 accurate, relevant points per question is sufficient.
     - Paragraph: clear claim + some explanation + an example when applicable.
     - Do not demand essay-level depth for short-answer. Tone: firm-kind, practical.
+    - Blank or missing answers earn 0. Do not assume the student "probably knows" the answer.
     `.trim(),
 
       "9-10": `
     GRADE LEVEL: 9–10
+    GRADING LENIENCY: LOW — grade strictly on demonstrated knowledge. No benefit of the doubt.
     - Expect clearer reasoning and more precision.
     - Short-answer: 3+ strong points or brief explanation per point.
     - Paragraph: clearer structure and some evidence when appropriate.
+    - Wrong answers are wrong. Blank answers are 0. Illegible work is 0.
+    - Partial credit only for demonstrated correct methodology with minor errors.
     `.trim(),
 
       "11+": `
     GRADE LEVEL: 11+
+    GRADING LENIENCY: VERY LOW — grade with university-prep rigour. Accuracy is paramount.
     - Expect well-developed explanations, evidence, precision, academic structure.
     - Short-answer still concise but more analytical and specific.
+    - Mathematical/scientific answers must be EXACTLY correct (or mathematically equivalent).
+    - No sympathy marks. No benefit of the doubt. No credit for "close" answers.
+    - Partial credit is rare and only for clearly demonstrated correct methodology with a minor slip.
+    - A student who leaves questions blank or writes incorrect answers should receive a low score.
+      If a student scores 40% from the teacher, your score should be in the same range — not 80%.
     `.trim(),
     };
 
@@ -9454,7 +9467,7 @@ function buildRubricInstructions({
     ${(() => {
       if (!subjectArea) return "";
       const subjectNotes = {
-        math: "SUBJECT: Mathematics\nGrade mathematically: check each step of working, mark partial credit for correct method with arithmetic errors, verify final answers against the solution. Do NOT penalise unconventional notation if the math is sound. Pay special attention to: order of operations, sign errors, unit conversions, and whether the student showed their working.",
+        math: "SUBJECT: Mathematics\nGrade mathematically with STRICT accuracy:\n- Check each step of working AND verify the FINAL ANSWER against the solution or expected result.\n- A wrong final answer is a wrong answer — do NOT award full marks just because the setup looked reasonable.\n- Partial credit: award ONLY when the student demonstrates a correct METHOD with a minor arithmetic slip. The credit should be proportional (e.g., 1/3 for correct setup but wrong answer on a 3-mark question).\n- If a question is BLANK or unanswered, the score is 0. No partial credit for blank work.\n- If handwriting is illegible and you cannot determine what the student wrote, score it 0 — do NOT guess generously.\n- Do NOT penalise unconventional notation if the math is sound.\n- Pay special attention to: order of operations, sign errors, unit conversions, and whether the student showed their working.\n- CRITICAL: When an answer key is provided, compare EACH student answer against the key's answer EXACTLY. The key is the authority — if the student's answer differs from the key, it is WRONG unless mathematically equivalent.",
         english: "SUBJECT: English / Language Arts\nAssess thesis strength, evidence use, structure, grammar, and voice. Weight content and argument above mechanics unless the rubric specifies otherwise. Consider: paragraph structure, topic sentences, supporting details, transitions, and conclusion quality.",
         science: "SUBJECT: Science\nCheck scientific accuracy, proper use of terminology, experimental method understanding, and data interpretation. Credit correct reasoning even if the final answer has minor errors. Pay attention to: hypothesis formation, controlled variables, data tables, graphing, and scientific conclusions.",
         history: "SUBJECT: History\nAssess use of evidence, historical reasoning, cause-and-effect analysis, and source evaluation. Value substantiated arguments over recall of dates. Consider: historical perspective, use of primary/secondary sources, chronological understanding, and analytical depth.",
@@ -9602,6 +9615,12 @@ function buildRubricInstructions({
         If it doesn't, you have distributed marks incorrectly. Recalculate before responding.
       - HARD CONSTRAINT: overall_score MUST equal the sum of section scores, and it MUST be out of overall_out_of.
         If overall_out_of is 8, the grade must be "X / 8", never "X / 4".
+      - HARD CONSTRAINT: overall_score MUST NEVER exceed overall_out_of. A score of 44/42 is IMPOSSIBLE.
+      - ANTI-INFLATION RULE: Do NOT give the benefit of the doubt on ambiguous or illegible work.
+        If you cannot clearly read the student's answer, score it 0. If the answer is blank, score it 0.
+        If the student wrote NOTHING for a question, it earns 0 marks — not partial credit.
+        A generous grading pattern where low-performing students receive inflated scores undermines
+        the teacher's ability to identify students who need help. Grade what is ACTUALLY on the page.
       - If you have only ONE section, that section's out_of = overall_out_of (the full denominator).
       - Do NOT create deductions for "missing questions" when using a shorthand denominator.
         The denominator is a weight, not a question count.
@@ -13089,6 +13108,67 @@ import os from "os";
 import { execFile } from "child_process";
 import { promisify } from "util";
 const execFileAsync = promisify(execFile);
+
+// ====================================================================
+//  DOCX-to-Images: Convert uploaded DOCX to page images via LibreOffice
+//  POST /grading/convert-docx
+//  Accepts multipart DOCX upload, returns array of base64 page images.
+//  Used for rubric/answer key uploads containing math equations that
+//  can't be extracted as text.
+// ====================================================================
+const docxUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+app.post("/grading/convert-docx", docxUpload.single("file"), async (req, res) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "docx-convert-"));
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+
+    const ext = path.extname(req.file.originalname || "").toLowerCase();
+    if (ext !== ".docx" && ext !== ".doc") {
+      return res.status(400).json({ error: "Only .docx or .doc files are supported." });
+    }
+
+    // Write DOCX to temp file
+    const docxPath = path.join(tmpDir, "input" + ext);
+    fs.writeFileSync(docxPath, req.file.buffer);
+
+    // Convert to PDF via LibreOffice
+    await execFileAsync("soffice", [
+      "--headless", "--convert-to", "pdf", "--outdir", tmpDir, docxPath
+    ], { timeout: 30000 });
+
+    const pdfPath = path.join(tmpDir, "input.pdf");
+    if (!fs.existsSync(pdfPath)) {
+      return res.status(500).json({ error: "LibreOffice conversion failed." });
+    }
+
+    // Convert PDF pages to images via pdftoppm
+    await execFileAsync("pdftoppm", [
+      "-jpeg", "-r", "200", pdfPath, path.join(tmpDir, "page")
+    ], { timeout: 30000 });
+
+    // Read all generated page images
+    const pageFiles = fs.readdirSync(tmpDir)
+      .filter(f => f.startsWith("page-") && f.endsWith(".jpg"))
+      .sort();
+
+    if (!pageFiles.length) {
+      return res.status(500).json({ error: "No pages generated from PDF." });
+    }
+
+    const pages = pageFiles.map(f => {
+      const imgBuf = fs.readFileSync(path.join(tmpDir, f));
+      return "data:image/jpeg;base64," + imgBuf.toString("base64");
+    });
+
+    return res.json({ ok: true, pages, pageCount: pages.length, fileName: req.file.originalname });
+  } catch (err) {
+    console.error("[convert-docx] Error:", err);
+    return res.status(500).json({ error: "Conversion failed: " + (err?.message || "Unknown error") });
+  } finally {
+    // Clean up temp dir
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+});
 const audioUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
 const videoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 

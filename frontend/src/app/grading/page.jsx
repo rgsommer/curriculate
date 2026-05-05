@@ -1498,13 +1498,61 @@ export default function GradingPage() {
       try {
         const textParts = [];
         const imageFiles = [];
+        const docxFiles = [];
 
         for (const file of files) {
+          const name = file.name.toLowerCase();
           if (file.type?.startsWith("image/")) {
             imageFiles.push(file);
+          } else if (name.endsWith(".docx") || name.endsWith(".doc")) {
+            docxFiles.push(file);
           } else {
             const text = await extractTextFromFile(file);
             if (text.trim()) textParts.push(text.trim());
+          }
+        }
+
+        // Convert DOCX files to images via backend (preserves math equations)
+        for (const docFile of docxFiles) {
+          try {
+            const base = backendBase || (typeof window !== "undefined"
+              ? (window.location.hostname === "localhost" ? "http://localhost:3001" : "")
+              : "");
+            const form = new FormData();
+            form.append("file", docFile);
+            const resp = await fetch(`${base}/grading/convert-docx`, { method: "POST", body: form });
+            const data = await resp.json();
+            if (data.ok && Array.isArray(data.pages)) {
+              // Add each page as a rubric-tagged photo so AI can see equations
+              for (let pi = 0; pi < data.pages.length; pi++) {
+                const photoObj = {
+                  id: `${Date.now()}_rubric_docx_${pi}_${Math.random().toString(36).slice(2, 6)}`,
+                  dataUrl: data.pages[pi],
+                  rawDataUrl: data.pages[pi],
+                  createdAt: Date.now(),
+                };
+                setPhotos((prev) => [...prev, photoObj]);
+                setPhotoTags((prev) => new Map(prev).set(photoObj.id, "rubric"));
+              }
+              setStickyRubricText(`[Answer key: ${docFile.name} — ${data.pageCount} page${data.pageCount > 1 ? "s" : ""}]`);
+              setStickyRubricSource("uploaded");
+              setStickyRubricCapturedAt(new Date().toLocaleString());
+            } else {
+              // Fallback: try mammoth text extraction
+              console.warn("[rubric] DOCX conversion failed, falling back to text:", data.error);
+              const mammoth = await loadMammoth();
+              const buf = await docFile.arrayBuffer();
+              const result = await mammoth.extractRawText({ arrayBuffer: buf });
+              if (result.value?.trim()) textParts.push(result.value.trim());
+            }
+          } catch (convErr) {
+            console.warn("[rubric] DOCX conversion error, falling back to text:", convErr);
+            try {
+              const mammoth = await loadMammoth();
+              const buf = await docFile.arrayBuffer();
+              const result = await mammoth.extractRawText({ arrayBuffer: buf });
+              if (result.value?.trim()) textParts.push(result.value.trim());
+            } catch {}
           }
         }
 
@@ -1528,14 +1576,14 @@ export default function GradingPage() {
           setPhotoTags((prev) => new Map(prev).set(photoObj.id, "rubric"));
         }
 
-        // Combine text from all non-image files
+        // Combine text from all non-image, non-docx files
         if (textParts.length) {
           const combined = textParts.length === 1
             ? textParts[0]
             : textParts.map((t, i) => `--- Rubric ${i + 1} ---\n${t}`).join("\n\n");
           setRubricOverride(combined);
           completeQuest("use_rubric_override");
-        } else if (!imageFiles.length) {
+        } else if (!imageFiles.length && !docxFiles.length) {
           alert("Could not extract text from the uploaded file(s). Try pasting the rubric instead.");
         }
       } catch (err) {
