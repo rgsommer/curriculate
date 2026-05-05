@@ -13110,11 +13110,12 @@ import { promisify } from "util";
 const execFileAsync = promisify(execFile);
 
 // ====================================================================
-//  DOCX-to-Images: Convert uploaded DOCX to page images via LibreOffice
+//  DOCX-to-Text+HTML: Convert uploaded DOCX via pandoc (preserves math)
 //  POST /grading/convert-docx
-//  Accepts multipart DOCX upload, returns array of base64 page images.
-//  Used for rubric/answer key uploads containing math equations that
-//  can't be extracted as text.
+//  Accepts multipart DOCX upload, returns:
+//    - textContent: markdown with LaTeX math (for AI rubricOverride)
+//    - html: rendered HTML with MathML (for frontend preview/thumbnails)
+//  Pandoc correctly converts OMML equations to LaTeX, unlike LibreOffice.
 // ====================================================================
 const docxUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 app.post("/grading/convert-docx", docxUpload.single("file"), async (req, res) => {
@@ -13131,36 +13132,45 @@ app.post("/grading/convert-docx", docxUpload.single("file"), async (req, res) =>
     const docxPath = path.join(tmpDir, "input" + ext);
     fs.writeFileSync(docxPath, req.file.buffer);
 
-    // Convert to PDF via LibreOffice
-    await execFileAsync("soffice", [
-      "--headless", "--convert-to", "pdf", "--outdir", tmpDir, docxPath
-    ], { timeout: 30000 });
-
-    const pdfPath = path.join(tmpDir, "input.pdf");
-    if (!fs.existsSync(pdfPath)) {
-      return res.status(500).json({ error: "LibreOffice conversion failed." });
+    // Verify pandoc is available
+    try {
+      await execFileAsync("pandoc", ["--version"], { timeout: 5000 });
+    } catch {
+      return res.status(500).json({ error: "pandoc is not installed on the server. Please install it: apt-get install pandoc" });
     }
 
-    // Convert PDF pages to images via pdftoppm
-    await execFileAsync("pdftoppm", [
-      "-jpeg", "-r", "200", pdfPath, path.join(tmpDir, "page")
-    ], { timeout: 30000 });
-
-    // Read all generated page images
-    const pageFiles = fs.readdirSync(tmpDir)
-      .filter(f => f.startsWith("page-") && f.endsWith(".jpg"))
-      .sort();
-
-    if (!pageFiles.length) {
-      return res.status(500).json({ error: "No pages generated from PDF." });
+    // Extract markdown with LaTeX math (for AI consumption)
+    let textContent = "";
+    try {
+      const { stdout } = await execFileAsync("pandoc", [
+        docxPath, "-t", "markdown", "--wrap=none"
+      ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
+      textContent = stdout.trim();
+    } catch (pandocErr) {
+      console.error("[convert-docx] pandoc markdown extraction failed:", pandocErr.message);
     }
 
-    const pages = pageFiles.map(f => {
-      const imgBuf = fs.readFileSync(path.join(tmpDir, f));
-      return "data:image/jpeg;base64," + imgBuf.toString("base64");
+    // Generate HTML with MathML (for frontend visual preview)
+    let html = "";
+    try {
+      const { stdout: htmlOut } = await execFileAsync("pandoc", [
+        docxPath, "-t", "html", "--mathml", "--standalone"
+      ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
+      html = htmlOut;
+    } catch (pandocErr) {
+      console.error("[convert-docx] pandoc HTML generation failed:", pandocErr.message);
+    }
+
+    if (!textContent && !html) {
+      return res.status(500).json({ error: "Pandoc conversion failed — no output generated." });
+    }
+
+    return res.json({
+      ok: true,
+      textContent,
+      html,
+      fileName: req.file.originalname,
     });
-
-    return res.json({ ok: true, pages, pageCount: pages.length, fileName: req.file.originalname });
   } catch (err) {
     console.error("[convert-docx] Error:", err);
     return res.status(500).json({ error: "Conversion failed: " + (err?.message || "Unknown error") });

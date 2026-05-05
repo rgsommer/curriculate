@@ -1516,7 +1516,7 @@ export default function GradingPage() {
           }
         }
 
-        // Convert DOCX files to images via backend (preserves math equations)
+        // Convert DOCX files via pandoc (preserves math equations as LaTeX)
         for (const docFile of docxFiles) {
           try {
             const base = backendBase || (typeof window !== "undefined"
@@ -1526,22 +1526,17 @@ export default function GradingPage() {
             form.append("file", docFile);
             const resp = await fetch(`${base}/grading/convert-docx`, { method: "POST", body: form });
             const data = await resp.json();
-            if (data.ok && Array.isArray(data.pages)) {
-              // Add each page as a rubric-tagged photo so AI can see equations
-              const newPreviews = [];
-              for (let pi = 0; pi < data.pages.length; pi++) {
-                const photoObj = {
-                  id: `${Date.now()}_rubric_docx_${pi}_${Math.random().toString(36).slice(2, 6)}`,
-                  dataUrl: data.pages[pi],
-                  rawDataUrl: data.pages[pi],
-                  createdAt: Date.now(),
-                };
-                setPhotos((prev) => [...prev, photoObj]);
-                setPhotoTags((prev) => new Map(prev).set(photoObj.id, "rubric"));
-                newPreviews.push({ src: data.pages[pi], label: `${docFile.name} — p${pi + 1}` });
+            if (data.ok && data.textContent) {
+              // Use the LaTeX-enriched text as rubric override (AI reads LaTeX natively)
+              textParts.push(`--- ${docFile.name} ---\n${data.textContent}`);
+              // Store HTML for visual preview (rendered in iframe)
+              if (data.html) {
+                setRubricPreviewPages((prev) => [...prev, {
+                  html: data.html,
+                  label: docFile.name,
+                }]);
               }
-              setRubricPreviewPages((prev) => [...prev, ...newPreviews]);
-              setStickyRubricText(`[Answer key: ${docFile.name} — ${data.pageCount} page${data.pageCount > 1 ? "s" : ""}]`);
+              setStickyRubricText(`[Answer key: ${docFile.name} — converted with math equations]`);
               setStickyRubricSource("uploaded");
               setStickyRubricCapturedAt(new Date().toLocaleString());
             } else {
@@ -4362,7 +4357,7 @@ export default function GradingPage() {
                       background: "rgba(37,99,235,0.03)",
                     }}>
                       <div style={{ fontWeight: 900, fontSize: 12, color: "#2563eb", marginBottom: 8 }}>
-                        Answer key pages ({rubricPreviewPages.length}) — click to enlarge
+                        Answer key preview ({rubricPreviewPages.length}) — click to enlarge
                       </div>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         {rubricPreviewPages.map((pg, i) => (
@@ -4374,7 +4369,7 @@ export default function GradingPage() {
                               border: "1px solid rgba(0,0,0,0.15)",
                               borderRadius: 6,
                               overflow: "hidden",
-                              width: 80,
+                              width: pg.html ? 140 : 80,
                               height: 110,
                               position: "relative",
                               boxShadow: "0 1px 4px rgba(0,0,0,0.1)",
@@ -4384,11 +4379,24 @@ export default function GradingPage() {
                             onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.1)"; }}
                             title={pg.label}
                           >
-                            <img
-                              src={pg.src}
-                              alt={pg.label}
-                              style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top" }}
-                            />
+                            {pg.src ? (
+                              <img
+                                src={pg.src}
+                                alt={pg.label}
+                                style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top" }}
+                              />
+                            ) : pg.html ? (
+                              <iframe
+                                srcDoc={pg.html}
+                                sandbox=""
+                                style={{
+                                  width: 700, height: 550, border: "none",
+                                  transform: "scale(0.2)", transformOrigin: "top left",
+                                  pointerEvents: "none",
+                                }}
+                                title={pg.label}
+                              />
+                            ) : null}
                             <div style={{
                               position: "absolute", bottom: 0, left: 0, right: 0,
                               background: "rgba(0,0,0,0.6)", color: "#fff",
@@ -5737,16 +5745,31 @@ export default function GradingPage() {
             }}
           >
             <div style={{ position: "relative", maxWidth: "92vw", maxHeight: "92vh" }}>
-              <img
-                src={enlargedRubricPage.src}
-                alt={enlargedRubricPage.label}
-                style={{
-                  maxWidth: "92vw", maxHeight: "88vh",
-                  objectFit: "contain", borderRadius: 8,
-                  boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
-                }}
-                onClick={(e) => e.stopPropagation()}
-              />
+              {enlargedRubricPage.src ? (
+                <img
+                  src={enlargedRubricPage.src}
+                  alt={enlargedRubricPage.label}
+                  style={{
+                    maxWidth: "92vw", maxHeight: "88vh",
+                    objectFit: "contain", borderRadius: 8,
+                    boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : enlargedRubricPage.html ? (
+                <iframe
+                  srcDoc={enlargedRubricPage.html}
+                  sandbox=""
+                  style={{
+                    width: "88vw", height: "85vh",
+                    border: "none", borderRadius: 8,
+                    background: "#fff",
+                    boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  title={enlargedRubricPage.label}
+                />
+              ) : null}
               <div style={{
                 position: "absolute", bottom: -32, left: 0, right: 0,
                 textAlign: "center", color: "#fff", fontSize: 13, fontWeight: 600,
