@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00293b"/>
+      <stop offset="60%" stop-color="#0a3a52"/>
+      <stop offset="100%" stop-color="#1f656d"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.85" cy="0.2" r="0.5">
+      <stop offset="0%" stop-color="#ee3124" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#ee3124" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <!-- accent badge -->
+  <rect x="80" y="120" width="170" height="38" rx="19" fill="#ee3124"/>
+  <text x="165" y="146" text-anchor="middle" font-family="Poppins, system-ui, sans-serif" font-size="16" font-weight="700" fill="#ffffff" letter-spacing="3">SUNDAYS · 10 AM</text>
+  <!-- main title -->
+  <text x="80" y="250" font-family="Poppins, system-ui, sans-serif" font-size="78" font-weight="700" fill="#ffffff" letter-spacing="-2">Love God.</text>
+  <text x="80" y="340" font-family="Poppins, system-ui, sans-serif" font-size="78" font-weight="700" fill="#ffffff" letter-spacing="-2">Love Others.</text>
+  <text x="80" y="430" font-family="Poppins, system-ui, sans-serif" font-size="78" font-weight="700" fill="#ee3124" letter-spacing="-2">Make Disciples.</text>
+  <!-- subtitle -->
+  <text x="80" y="490" font-family="Hind Siliguri, system-ui, sans-serif" font-size="26" fill="#cfd9e0">Flamborough Baptist Church · Waterdown, Ontario</text>
+  <!-- corner mark -->
+  <circle cx="1080" cy="540" r="58" fill="#ee3124"/>
+  <text x="1080" y="556" text-anchor="middle" font-family="Poppins, system-ui, sans-serif" font-size="34" font-weight="700" fill="#ffffff">FBC</text>
+</svg>
