@@ -532,7 +532,10 @@ router.get("/feedback-export", async (req, res) => {
 /*  Strips all feedback fields from ConferenceLead results             */
 /* ------------------------------------------------------------------ */
 
-router.post("/feedback-clear", async (req, res) => {
+router.post("/feedback-clear", feedbackClearHandler);
+router.get("/feedback-clear", feedbackClearHandler);
+
+async function feedbackClearHandler(req, res) {
   try {
     const key = req.query.key || req.body?.key;
     if (key !== (process.env.ADMIN_API_TOKEN || process.env.ADMIN_API_KEY)) {
@@ -549,7 +552,7 @@ router.post("/feedback-clear", async (req, res) => {
     console.error("[demo/feedback-clear] Error:", err.message);
     res.status(500).json({ error: "Failed to clear feedback" });
   }
-});
+}
 
 /* ------------------------------------------------------------------ */
 /*  GET /points-config                                                 */
