@@ -2726,6 +2726,9 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
   [TASK_TYPES.SPEED_DRAW]: {
     label: "Speed Draw",
     category: "creative",
+    implemented: true,
+    demoEligible: true,
+    generatorEligible: true,
     intraTeamEnabled: false,
     interTeamEnabled: false,
     description: `

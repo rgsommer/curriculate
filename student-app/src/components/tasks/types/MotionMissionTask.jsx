@@ -356,33 +356,55 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
             )}
 
             <div className="mt-4 flex flex-col items-center gap-4">
-              {/* Motion count — fun visual only, not a gate */}
+              {/* Motion count — required gate when motion is supported */}
               {!noMotionSupport && (
                 <div className="px-5 py-3 rounded-2xl bg-white/10 border border-white/15 shadow text-lg md:text-xl font-extrabold">
                   Motion count: <span className="text-yellow-200">{count}</span> / {target}
                 </div>
               )}
 
-              {/* "We did it!" button only appears after timer expires */}
-              {timerExpired ? (
-                <button
-                  type="button"
-                  disabled={disabled || done}
-                  onClick={submitDone}
-                  className={[
-                    "px-10 py-4 rounded-3xl text-3xl md:text-4xl font-black shadow-2xl border transition animate-pulse",
-                    disabled || done
-                      ? "bg-white/20 border-white/10 opacity-60"
-                      : "bg-green-400 text-black border-green-200 hover:scale-[1.03]",
-                  ].join(" ")}
-                >
-                  We did it!
-                </button>
-              ) : (
-                <div className="mt-2 text-lg md:text-xl font-bold opacity-90 animate-pulse">
-                  Keep going!
-                </div>
-              )}
+              {/* "We did it!" button: requires timer expired AND motion detected (if supported) */}
+              {(() => {
+                const motionOk = noMotionSupport || count > 0;
+                const canFinish = timerExpired && motionOk;
+
+                if (canFinish) {
+                  return (
+                    <button
+                      type="button"
+                      disabled={disabled || done}
+                      onClick={submitDone}
+                      className={[
+                        "px-10 py-4 rounded-3xl text-3xl md:text-4xl font-black shadow-2xl border transition animate-pulse",
+                        disabled || done
+                          ? "bg-white/20 border-white/10 opacity-60"
+                          : "bg-green-400 text-black border-green-200 hover:scale-[1.03]",
+                      ].join(" ")}
+                    >
+                      We did it!
+                    </button>
+                  );
+                }
+
+                if (timerExpired && !motionOk) {
+                  return (
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="mt-2 text-lg md:text-xl font-bold opacity-90 text-yellow-200 animate-pulse">
+                        Move your device to finish!
+                      </div>
+                      <div className="text-sm opacity-70">
+                        Shake, wave, or tilt your device to register motion.
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="mt-2 text-lg md:text-xl font-bold opacity-90 animate-pulse">
+                    Keep going!
+                  </div>
+                );
+              })()}
             </div>
           </div>
         );
