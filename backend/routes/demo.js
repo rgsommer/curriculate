@@ -224,10 +224,18 @@ router.post("/results", resultsLimiter, async (req, res) => {
       return res.status(400).json({ error: "Email and results are required" });
     }
 
-    // Calculate total points
+    // Accept adaptive points from frontend (with sanity cap per task)
+    // Frontend applies 1.5× for new task types, 0.5× for repeats
+    const MAX_PTS_PER_TASK = 25; // hard cap to prevent abuse
     let totalPoints = 0;
     const scoredResults = results.map((r) => {
-      const pts = r.skipped ? 0 : getTaskPoints(r.taskType);
+      if (r.skipped) return { ...r, points: 0 };
+      const base = getTaskPoints(r.taskType);
+      // Trust frontend points if reasonable, otherwise fall back to base
+      const frontendPts = typeof r.points === "number" ? r.points : 0;
+      const pts = (frontendPts > 0 && frontendPts <= MAX_PTS_PER_TASK)
+        ? frontendPts
+        : base;
       totalPoints += pts;
       return { ...r, points: pts };
     });
@@ -274,7 +282,7 @@ router.post("/results", resultsLimiter, async (req, res) => {
 router.get("/activity", async (req, res) => {
   try {
     const key = req.query.key;
-    if (key !== process.env.ADMIN_API_KEY) {
+    if (key !== (process.env.ADMIN_API_TOKEN || process.env.ADMIN_API_KEY)) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -375,7 +383,7 @@ router.get("/leaderboard", async (req, res) => {
 router.get("/feedback-summary", async (req, res) => {
   try {
     const key = req.query.key;
-    if (key !== process.env.ADMIN_API_KEY) {
+    if (key !== (process.env.ADMIN_API_TOKEN || process.env.ADMIN_API_KEY)) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -451,7 +459,7 @@ router.get("/feedback-summary", async (req, res) => {
 router.get("/feedback-export", async (req, res) => {
   try {
     const key = req.query.key;
-    if (key !== process.env.ADMIN_API_KEY) {
+    if (key !== (process.env.ADMIN_API_TOKEN || process.env.ADMIN_API_KEY)) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -535,7 +543,7 @@ router.get("/points-config", (_req, res) => {
 router.get("/leads", async (req, res) => {
   try {
     const key = req.query.key;
-    if (key !== process.env.ADMIN_API_KEY) {
+    if (key !== (process.env.ADMIN_API_TOKEN || process.env.ADMIN_API_KEY)) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 

@@ -6,6 +6,7 @@
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { TaskCardFrame, Pill, PrimaryButton } from "../taskStyles";
+import { useThemeMode } from "../../utils/ThemeModeContext";
 
 /* ------------------------------------------------------------------ */
 /*  CSS animations                                                     */
@@ -61,6 +62,49 @@ function injectStyles() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Theme-adaptive colors                                              */
+/* ------------------------------------------------------------------ */
+function themeColors(theme) {
+  const dark = theme === "dark";
+  return {
+    // Word chip (unused)
+    chipText:      dark ? "rgba(255,255,255,0.88)" : "#1e293b",
+    chipBg:        dark ? "rgba(255,255,255,0.06)" : "rgba(15,23,42,0.06)",
+    chipBorder:    dark ? "rgba(255,255,255,0.12)" : "rgba(15,23,42,0.14)",
+    // Word chip (selected)
+    chipSelText:   dark ? "#a5b4fc" : "#4338ca",
+    chipSelBg:     dark ? "rgba(99,102,241,0.18)" : "rgba(99,102,241,0.12)",
+    chipSelBorder: dark ? "rgba(99,102,241,0.7)"  : "rgba(99,102,241,0.5)",
+    // Word chip (used)
+    chipUsedText:   dark ? "rgba(255,255,255,0.2)" : "rgba(15,23,42,0.25)",
+    chipUsedBg:     dark ? "rgba(255,255,255,0.02)" : "rgba(15,23,42,0.03)",
+    chipUsedBorder: dark ? "rgba(255,255,255,0.04)" : "rgba(15,23,42,0.06)",
+    // Blank slot
+    blankBg:        dark ? "rgba(255,255,255,0.06)" : "rgba(15,23,42,0.05)",
+    blankBorder:    dark ? "rgba(255,255,255,0.15)" : "rgba(15,23,42,0.15)",
+    blankText:      dark ? "rgba(255,255,255,0.4)"  : "rgba(15,23,42,0.4)",
+    blankFilledText: dark ? "#a5b4fc" : "#4338ca",
+    blankFilledBg:   dark ? "rgba(99,102,241,0.1)" : "rgba(99,102,241,0.08)",
+    blankFilledBorder: dark ? "rgba(99,102,241,0.4)" : "rgba(99,102,241,0.35)",
+    blankDragBg:    dark ? "rgba(99,102,241,0.2)" : "rgba(99,102,241,0.12)",
+    blankDragBorder: dark ? "rgba(99,102,241,0.6)" : "rgba(99,102,241,0.4)",
+    // Passage
+    passageText:   dark ? "rgba(255,255,255,0.88)" : "#1e293b",
+    passageBg:     dark ? "rgba(0,0,0,0.18)" : "rgba(15,23,42,0.04)",
+    passageBorder: dark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.1)",
+    // Word bank container
+    bankBg:        dark ? "rgba(255,255,255,0.02)" : "rgba(15,23,42,0.02)",
+    bankBorder:    dark ? "rgba(255,255,255,0.06)" : "rgba(15,23,42,0.08)",
+    bankLabel:     dark ? "rgba(148,163,184,0.5)" : "rgba(100,116,139,0.6)",
+    // Misc
+    promptText:    dark ? "rgba(226,232,240,0.85)" : "rgba(30,41,59,0.85)",
+    hintText:      dark ? "rgba(148,163,184,0.6)" : "rgba(100,116,139,0.55)",
+    resultSubtext: dark ? "rgba(226,232,240,0.6)" : "rgba(30,41,59,0.6)",
+    scoreBg:       dark ? "rgba(255,255,255,0.06)" : "rgba(15,23,42,0.06)",
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /*  Scoring constants                                                  */
 /* ------------------------------------------------------------------ */
 const PTS_FIRST = 10;   // correct on first attempt
@@ -102,7 +146,7 @@ function parsePassage(passage) {
 /* ================================================================== */
 /*  Blank slot component                                               */
 /* ================================================================== */
-function BlankSlot({ index, filledWord, status, attempts, onDrop, onTap, onRemove, disabled }) {
+function BlankSlot({ index, filledWord, status, attempts, onDrop, onTap, onRemove, disabled, tc }) {
   const ref = useRef(null);
   const [dragOver, setDragOver] = useState(false);
 
@@ -124,9 +168,9 @@ function BlankSlot({ index, filledWord, status, attempts, onDrop, onTap, onRemov
   const isWrong = status === "wrong";
   const isEmpty = !filledWord;
 
-  let bgColor = "rgba(255,255,255,0.06)";
-  let borderColor = "rgba(255,255,255,0.15)";
-  let textColor = "rgba(255,255,255,0.4)";
+  let bgColor = tc.blankBg;
+  let borderColor = tc.blankBorder;
+  let textColor = tc.blankText;
   let anim = undefined;
 
   if (isCorrect) {
@@ -140,12 +184,12 @@ function BlankSlot({ index, filledWord, status, attempts, onDrop, onTap, onRemov
     textColor = "#ef4444";
     anim = "cloze-shake 0.4s ease";
   } else if (filledWord) {
-    bgColor = "rgba(99,102,241,0.1)";
-    borderColor = "rgba(99,102,241,0.4)";
-    textColor = "#a5b4fc";
+    bgColor = tc.blankFilledBg;
+    borderColor = tc.blankFilledBorder;
+    textColor = tc.blankFilledText;
   } else if (dragOver) {
-    bgColor = "rgba(99,102,241,0.2)";
-    borderColor = "rgba(99,102,241,0.6)";
+    bgColor = tc.blankDragBg;
+    borderColor = tc.blankDragBorder;
   }
 
   return (
@@ -210,7 +254,7 @@ function BlankSlot({ index, filledWord, status, attempts, onDrop, onTap, onRemov
 /* ================================================================== */
 /*  Word bank chip                                                     */
 /* ================================================================== */
-function WordChip({ word, bankIdx, used, isDistractor, onDragStart, onTapSelect, selected, disabled }) {
+function WordChip({ word, bankIdx, used, isDistractor, onDragStart, onTapSelect, selected, disabled, tc }) {
   const handleDragStart = useCallback((e) => {
     e.dataTransfer.setData("text/plain", word);
     e.dataTransfer.setData("application/x-cloze-bank-idx", String(bankIdx));
@@ -233,20 +277,20 @@ function WordChip({ word, bankIdx, used, isDistractor, onDragStart, onTapSelect,
         userSelect: "none",
         transition: "all 0.15s ease",
         border: selected
-          ? "2px solid rgba(99,102,241,0.7)"
+          ? `2px solid ${tc.chipSelBorder}`
           : used
-            ? "2px solid rgba(255,255,255,0.04)"
-            : "2px solid rgba(255,255,255,0.12)",
+            ? `2px solid ${tc.chipUsedBorder}`
+            : `2px solid ${tc.chipBorder}`,
         background: selected
-          ? "rgba(99,102,241,0.18)"
+          ? tc.chipSelBg
           : used
-            ? "rgba(255,255,255,0.02)"
-            : "rgba(255,255,255,0.06)",
+            ? tc.chipUsedBg
+            : tc.chipBg,
         color: used
-          ? "rgba(255,255,255,0.2)"
+          ? tc.chipUsedText
           : selected
-            ? "#a5b4fc"
-            : "rgba(255,255,255,0.88)",
+            ? tc.chipSelText
+            : tc.chipText,
         textDecoration: used ? "line-through" : "none",
         opacity: used ? 0.4 : 1,
         animation: used ? undefined : "cloze-fadeIn 0.2s ease",
@@ -265,6 +309,8 @@ function WordChip({ word, bankIdx, used, isDistractor, onDragStart, onTapSelect,
 /* ================================================================== */
 export default function ClozeTask({ task, onSubmit, disabled }) {
   injectStyles();
+  const theme = useThemeMode() || "light";
+  const tc = useMemo(() => themeColors(theme), [theme]);
 
   const passage = task?.passage || "";
   const blanks = useMemo(() => Array.isArray(task?.blanks) ? task.blanks : [], [task?.blanks]);
@@ -444,7 +490,7 @@ export default function ClozeTask({ task, onSubmit, disabled }) {
       {task?.prompt && (
         <div style={{
           fontSize: 14, fontWeight: 700, lineHeight: 1.55,
-          color: "rgba(226,232,240,0.85)", marginBottom: 12,
+          color: tc.promptText, marginBottom: 12,
         }}>
           {task.prompt}
         </div>
@@ -453,7 +499,7 @@ export default function ClozeTask({ task, onSubmit, disabled }) {
       {/* Instructions hint */}
       {!submitted && (
         <div style={{
-          fontSize: 12, fontWeight: 700, color: "rgba(148,163,184,0.6)",
+          fontSize: 12, fontWeight: 700, color: tc.hintText,
           marginBottom: 12, display: "flex", alignItems: "center", gap: 6,
         }}>
           <span style={{ fontSize: 15 }}>💡</span>
@@ -465,13 +511,13 @@ export default function ClozeTask({ task, onSubmit, disabled }) {
       <div style={{
         padding: "16px 14px",
         borderRadius: 18,
-        border: "1px solid rgba(255,255,255,0.08)",
-        background: "rgba(0,0,0,0.18)",
+        border: `1px solid ${tc.passageBorder}`,
+        background: tc.passageBg,
         marginBottom: 16,
         fontSize: 16,
         fontWeight: 600,
         lineHeight: 2,
-        color: "rgba(255,255,255,0.88)",
+        color: tc.passageText,
       }}>
         {segments.map((seg, i) => {
           if (seg.type === "text") {
@@ -489,6 +535,7 @@ export default function ClozeTask({ task, onSubmit, disabled }) {
               onTap={handleBlankTap}
               onRemove={handleRemoveFromBlank}
               disabled={disabled || submitted}
+              tc={tc}
             />
           );
         })}
@@ -502,7 +549,7 @@ export default function ClozeTask({ task, onSubmit, disabled }) {
         }}>
           <div style={{
             flex: 1, height: 8, borderRadius: 4,
-            background: "rgba(255,255,255,0.06)",
+            background: tc.scoreBg,
             overflow: "hidden",
           }}>
             <div style={{
@@ -529,12 +576,12 @@ export default function ClozeTask({ task, onSubmit, disabled }) {
         <div style={{
           padding: "14px",
           borderRadius: 16,
-          border: "1px solid rgba(255,255,255,0.06)",
-          background: "rgba(255,255,255,0.02)",
+          border: `1px solid ${tc.bankBorder}`,
+          background: tc.bankBg,
           marginBottom: 16,
         }}>
           <div style={{
-            fontSize: 11, fontWeight: 800, color: "rgba(148,163,184,0.5)",
+            fontSize: 11, fontWeight: 800, color: tc.bankLabel,
             marginBottom: 10, textTransform: "uppercase", letterSpacing: 1.2,
           }}>
             Word Bank
@@ -551,6 +598,7 @@ export default function ClozeTask({ task, onSubmit, disabled }) {
                 onTapSelect={handleBankTap}
                 selected={selectedBankIdx === entry.bankIdx}
                 disabled={disabled || submitted}
+                tc={tc}
               />
             ))}
           </div>
@@ -589,7 +637,7 @@ export default function ClozeTask({ task, onSubmit, disabled }) {
           </div>
           {attempts.some((a) => a === 1 && statuses[attempts.indexOf(a)] === "correct") && (
             <div style={{
-              fontSize: 13, fontWeight: 700, color: "rgba(226,232,240,0.6)",
+              fontSize: 13, fontWeight: 700, color: tc.resultSubtext,
               marginTop: 8,
             }}>
               {attempts.filter((a, i) => a === 1 && statuses[i] === "correct").length} blanks correct on first try!
