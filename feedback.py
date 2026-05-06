@@ -7,35 +7,62 @@ Run from the project root:  python feedback.py
 import os, sys, urllib.request, urllib.error, json
 
 API_BASE = os.environ.get("API_BASE", "https://api.curriculate.net")
-TOKEN = os.environ.get("ADMIN_API_TOKEN", "")
+TOKEN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".feedback-token")
 
-def get_token():
-    global TOKEN
-    if TOKEN:
-        return TOKEN
-    # Try .env file in current directory
-    env_path = os.path.join(os.path.dirname(__file__), ".env")
+def load_token():
+    """Load token from env, .feedback-token file, or .env file."""
+    # 1. Environment variable
+    t = os.environ.get("ADMIN_API_TOKEN", "").strip()
+    if t:
+        return t
+    # 2. Saved token file
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE) as f:
+            t = f.read().strip()
+            if t:
+                return t
+    # 3. .env file
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     if os.path.exists(env_path):
         with open(env_path) as f:
             for line in f:
                 line = line.strip()
                 if line.startswith("ADMIN_API_TOKEN="):
-                    TOKEN = line.split("=", 1)[1].strip().strip('"').strip("'")
-                    return TOKEN
-    # Ask the user
-    TOKEN = input("Enter your ADMIN_API_TOKEN: ").strip()
-    return TOKEN
+                    t = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if t:
+                        return t
+    return ""
+
+def save_token(token):
+    """Save token to .feedback-token for future runs."""
+    with open(TOKEN_FILE, "w") as f:
+        f.write(token.strip())
+    print(f"Token saved to .feedback-token")
+
+def get_token(force_prompt=False):
+    """Get token, prompting if missing."""
+    if not force_prompt:
+        t = load_token()
+        if t:
+            return t
+    t = input("Enter your ADMIN_API_TOKEN: ").strip()
+    if t:
+        save_token(t)
+    return t
 
 def pull_feedback():
     """Download the feedback report and save to feedback-report.txt"""
     token = get_token()
+    if not token:
+        print("No token provided.")
+        return
     url = f"{API_BASE}/api/conference/feedback-export?key={token}"
     print(f"\nFetching feedback from {API_BASE} ...")
     try:
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=15) as resp:
             body = resp.read().decode("utf-8")
-        out = os.path.join(os.path.dirname(__file__), "feedback-report.txt")
+        out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "feedback-report.txt")
         with open(out, "w") as f:
             f.write(body)
         lines = body.strip().split("\n")
@@ -49,6 +76,9 @@ def pull_feedback():
 def clear_feedback():
     """Clear all feedback from the database so the report starts fresh"""
     token = get_token()
+    if not token:
+        print("No token provided.")
+        return
     url = f"{API_BASE}/api/conference/feedback-clear?key={token}"
     print(f"\nClearing feedback at {API_BASE} ...")
     confirm = input("Are you sure? This removes ALL practice feedback. (yes/no): ").strip().lower()
@@ -68,14 +98,26 @@ def clear_feedback():
     except Exception as e:
         print(f"Failed: {e}")
 
+def update_token():
+    """Prompt for a new token and save it."""
+    current = load_token()
+    if current:
+        masked = current[:4] + "..." + current[-4:] if len(current) > 8 else "****"
+        print(f"\nCurrent token: {masked}")
+    get_token(force_prompt=True)
+    print("Token updated.")
+
 def show_menu():
-    print("\n╔══════════════════════════════════════╗")
-    print("║   Curriculate Feedback Utility       ║")
-    print("╠══════════════════════════════════════╣")
-    print("║  1. Pull feedback report             ║")
-    print("║  2. Clear all feedback               ║")
-    print("║  3. Exit                             ║")
-    print("╚══════════════════════════════════════╝")
+    token = load_token()
+    status = "set" if token else "not set"
+    print(f"\n╔══════════════════════════════════════╗")
+    print(f"║   Curriculate Feedback Utility       ║")
+    print(f"╠══════════════════════════════════════╣")
+    print(f"║  1. Pull feedback report             ║")
+    print(f"║  2. Clear all feedback               ║")
+    print(f"║  3. Update API token  ({status:>7})     ║")
+    print(f"║  4. Exit                             ║")
+    print(f"╚══════════════════════════════════════╝")
 
 if __name__ == "__main__":
     # Allow direct command: python feedback.py pull | clear
@@ -85,19 +127,23 @@ if __name__ == "__main__":
             pull_feedback()
         elif cmd == "clear":
             clear_feedback()
+        elif cmd == "token":
+            update_token()
         else:
-            print(f"Unknown command: {cmd}\nUsage: python feedback.py [pull|clear]")
+            print(f"Unknown command: {cmd}\nUsage: python feedback.py [pull|clear|token]")
         sys.exit(0)
 
     while True:
         show_menu()
-        choice = input("\nChoice (1/2/3): ").strip()
+        choice = input("\nChoice (1-4): ").strip()
         if choice == "1":
             pull_feedback()
         elif choice == "2":
             clear_feedback()
         elif choice == "3":
+            update_token()
+        elif choice == "4":
             print("Bye!")
             break
         else:
-            print("Pick 1, 2, or 3.")
+            print("Pick 1-4.")

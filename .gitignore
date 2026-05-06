@@ -22,6 +22,10 @@ backend/.env
 .env.*
 backend/.env
 
+# Feedback utility
+.feedback-token
+feedback-report.txt
+
 # Next.js build output
 .next
 frontend/.next
