@@ -273,7 +273,7 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
             </div>
           )}
           {(config.docTitle || config.docAuthor) && (
-            <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
+            <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
               {[config.docTitle, config.docAuthor, config.docYear].filter(Boolean).join(" — ")}
               {config.docType && ` (${config.docType})`}
             </div>
@@ -328,7 +328,7 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
                       {[config.docTitle, config.docAuthor, config.docYear].filter(Boolean).join(" — ")}
                     </div>
                   )}
-                  <div style={{ marginTop: 16, fontSize: "0.85rem", color: "#6b7280", fontFamily: "sans-serif" }}>
+                  <div style={{ marginTop: 16, fontSize: "0.85rem", color: "#374151", fontFamily: "sans-serif" }}>
                     Use the description above to inform your analysis.
                   </div>
                 </>
@@ -373,7 +373,7 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
           <h2 style={{ margin: 0, fontSize: "1.3rem", fontWeight: 900 }}>
             {task?.title || "Historical Document Analysis"}
           </h2>
-          <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: "0.9rem" }}>
+          <p style={{ margin: "4px 0 0", color: "#374151", fontSize: "0.9rem" }}>
             {paperMode ? "Answer these questions on paper!" : "Answer the analysis questions based on what you read."}
           </p>
         </div>
@@ -436,7 +436,7 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
               borderRadius: 12,
               border: "1px solid #d1d5db",
               background: "transparent",
-              color: "#6b7280",
+              color: "#374151",
               fontSize: "0.85rem",
               fontWeight: 600,
               cursor: "pointer",
@@ -469,7 +469,7 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
                   transition: "width 0.3s ease",
                 }} />
               </div>
-              <div style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: 16, textAlign: "right" }}>
+              <div style={{ fontSize: "0.8rem", color: "#374151", marginBottom: 16, textAlign: "right" }}>
                 {answeredCount}/{analysisPrompts.length} questions answered
               </div>
             </>
@@ -534,7 +534,7 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
                   ) : (
                     <div style={{
                       padding: "10px 14px",
-                      color: "#9ca3af",
+                      color: "#6b7280",
                       fontStyle: "italic",
                       fontSize: "0.9rem",
                     }}>
@@ -584,7 +584,7 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
               <div style={{ fontSize: "2rem", marginBottom: 8 }}>
                 {useScreen && allAnswered ? "Excellent analysis!" : "Submitted!"}
               </div>
-              <div style={{ color: "#6b7280", fontSize: "0.9rem" }}>
+              <div style={{ color: "#374151", fontSize: "0.9rem" }}>
                 {useScreen
                   ? <>You answered {answeredCount} of {analysisPrompts.length} analysis question{analysisPrompts.length !== 1 ? "s" : ""}.</>
                   : "Your paper analysis has been noted. Great work!"

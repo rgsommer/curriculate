@@ -16,8 +16,7 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
     const handleVerdict = (data) => {
       setVerdict(data);
       setIsJudging(false);
-      // optional: bubble up to parent for reporting
-      onSubmit?.({ taskType: "ai-debate-judge", verdict: data, completed: true });
+      // Don't auto-submit — let students read the verdict first
     };
     socket.on("ai-judge:verdict", handleVerdict);
     return () => socket.off("ai-judge:verdict", handleVerdict);
@@ -73,6 +72,13 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
             <div className="whitespace-pre-wrap">{verdict.feedback}</div>
           </div>
         )}
+
+        <button
+          onClick={() => onSubmit?.({ taskType: "ai-debate-judge", verdict, completed: true })}
+          className="mt-12 px-20 py-8 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-4xl font-bold rounded-full shadow-2xl hover:shadow-3xl transition"
+        >
+          Continue →
+        </button>
       </div>
     );
   }

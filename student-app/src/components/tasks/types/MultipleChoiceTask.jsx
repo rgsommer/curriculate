@@ -213,6 +213,24 @@ export default function MultipleChoiceTask({ task, onComplete, memberNames = [] 
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
           {choices.map((choice, idx) => {
             const selected = selectedIdx === idx;
+            const isCorrectChoice = correctIndex != null && idx === correctIndex;
+            const isWrongPick = submitLocked && selected && correctIndex != null && idx !== correctIndex;
+            const showCorrect = submitLocked && isCorrectChoice;
+
+            let bg = selected ? "rgba(59,130,246,0.22)" : "rgba(0,0,0,0.22)";
+            let border = selected ? "1px solid rgba(59,130,246,0.55)" : "1px solid rgba(255,255,255,0.14)";
+            let badgeBg = selected ? "rgba(59,130,246,0.75)" : "rgba(255,255,255,0.10)";
+
+            if (showCorrect) {
+              bg = "rgba(34,197,94,0.25)";
+              border = "2px solid rgba(34,197,94,0.7)";
+              badgeBg = "rgba(34,197,94,0.75)";
+            } else if (isWrongPick) {
+              bg = "rgba(239,68,68,0.25)";
+              border = "2px solid rgba(239,68,68,0.7)";
+              badgeBg = "rgba(239,68,68,0.75)";
+            }
+
             return (
               <button
                 key={idx}
@@ -224,16 +242,15 @@ export default function MultipleChoiceTask({ task, onComplete, memberNames = [] 
                   padding: "14px 14px",
                   borderRadius: 16,
                   cursor: submitLocked ? "not-allowed" : "pointer",
-                  background: selected ? "rgba(59,130,246,0.22)" : "rgba(0,0,0,0.22)",
-                  border: selected
-                    ? "1px solid rgba(59,130,246,0.55)"
-                    : "1px solid rgba(255,255,255,0.14)",
+                  background: bg,
+                  border,
                   color: "rgba(255,255,255,0.92)",
                   fontWeight: 900,
                   lineHeight: 1.25,
                   display: "flex",
                   alignItems: "flex-start",
                   gap: 12,
+                  transition: "all 0.3s ease",
                 }}
               >
                 <span
@@ -243,19 +260,39 @@ export default function MultipleChoiceTask({ task, onComplete, memberNames = [] 
                     borderRadius: 10,
                     display: "inline-grid",
                     placeItems: "center",
-                    background: selected ? "rgba(59,130,246,0.75)" : "rgba(255,255,255,0.10)",
+                    background: badgeBg,
                     border: "1px solid rgba(255,255,255,0.12)",
                     fontSize: 12,
                     flex: "0 0 auto",
                   }}
                 >
-                  {String.fromCharCode(65 + idx)}
+                  {showCorrect ? "✓" : isWrongPick ? "✗" : String.fromCharCode(65 + idx)}
                 </span>
                 <span style={{ fontSize: 16, fontWeight: 800 }}>{choice}</span>
               </button>
             );
           })}
         </div>
+
+        {/* Answer overlay after submit */}
+        {submitLocked && correctIndex != null && (
+          <div style={{
+            marginTop: 10,
+            padding: "10px 14px",
+            borderRadius: 14,
+            background: selectedIdx === correctIndex
+              ? "rgba(34,197,94,0.18)"
+              : "rgba(239,68,68,0.18)",
+            border: `1px solid ${selectedIdx === correctIndex ? "rgba(34,197,94,0.4)" : "rgba(239,68,68,0.4)"}`,
+            fontWeight: 800,
+            fontSize: 15,
+            textAlign: "center",
+          }}>
+            {selectedIdx === correctIndex
+              ? "✅ Correct!"
+              : `❌ The correct answer was: ${String.fromCharCode(65 + correctIndex)}. ${choices[correctIndex]}`}
+          </div>
+        )}
 
         {/* Controls */}
         <div

@@ -281,7 +281,13 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
               Question {idx + 1} / {items.length}
             </div>
             <div className="text-sm md:text-base font-bold text-slate-500">
-              {locked ? "Answered ✅ — now scan" : "Tap an answer"}
+              {locked
+                ? (typeof current?.correctAnswer === "number" && selectedIndex === current.correctAnswer
+                    ? "✅ Correct! — now scan"
+                    : typeof current?.correctAnswer === "number"
+                      ? "❌ Wrong — now scan"
+                      : "Answered ✅ — now scan")
+                : "Tap an answer"}
             </div>
           </div>
 
@@ -294,11 +300,23 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
           >
             {(Array.isArray(current.options) ? current.options : []).map((opt, i) => {
               const isPicked = selectedIndex === i;
+              const correctIdx = typeof current?.correctAnswer === "number" ? current.correctAnswer : null;
+              const showOverlay = locked && correctIdx != null;
+              const isCorrectOpt = showOverlay && i === correctIdx;
+              const isWrongPick = showOverlay && isPicked && i !== correctIdx;
+
               const base =
                 "p-4 rounded-xl font-bold text-lg border-2 transition shadow-sm";
-              const cls = isPicked
-                ? `${base} bg-slate-900 text-white border-slate-900`
-                : `${base} bg-white text-slate-900 border-slate-200 hover:bg-slate-50`;
+              let cls;
+              if (isCorrectOpt) {
+                cls = `${base} bg-green-100 text-green-900 border-green-500`;
+              } else if (isWrongPick) {
+                cls = `${base} bg-red-100 text-red-900 border-red-500`;
+              } else if (isPicked) {
+                cls = `${base} bg-slate-900 text-white border-slate-900`;
+              } else {
+                cls = `${base} bg-white text-slate-900 border-slate-200 hover:bg-slate-50`;
+              }
               return (
                 <button
                   key={`${currentId}-opt-${i}`}
@@ -306,7 +324,7 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
                   disabled={!canTap}
                   className={cls}
                 >
-                  {opt}
+                  {isCorrectOpt ? "✓ " : isWrongPick ? "✗ " : ""}{opt}
                 </button>
               );
             })}

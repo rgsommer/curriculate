@@ -111,7 +111,7 @@ export default function StorytellingTask({
   }, [characters, generatedStory, storyTitle]);
 
   // 30-second auto-assign timer
-  const [timeLeft, setTimeLeft] = useState(30);
+  const [timeLeft, setTimeLeft] = useState(45);
   const [autoAssigning, setAutoAssigning] = useState(false);
   const timerRef = useRef(null);
   const hasStartedRef = useRef(false);
@@ -201,18 +201,7 @@ export default function StorytellingTask({
         new Audio("/sounds/yay.mp3").play().catch(() => {});
       } catch {}
 
-      // Auto-submit for scoring
-      const payload = {
-        type: "storytelling",
-        correct: false,
-        basePoints,
-        characters: charDescriptions,
-        story,
-        storyTitle: title,
-        setting,
-        genre,
-      };
-      onSubmit?.(payload);
+      // Don't auto-submit — let students read the story first
     } catch {
       setGenError(true);
       // Fallback story
@@ -227,17 +216,7 @@ export default function StorytellingTask({
       setStoryTitle("An Adventure Begins");
       setPhase("reading");
 
-      const payload = {
-        type: "storytelling",
-        correct: false,
-        basePoints,
-        characters: charDescriptions,
-        story: fallbackStory,
-        storyTitle: "An Adventure Begins",
-        setting,
-        genre,
-      };
-      onSubmit?.(payload);
+      // Don't auto-submit — let students read the story first
     }
   };
 
@@ -389,19 +368,45 @@ export default function StorytellingTask({
           </div>
         )}
 
-        <div
-          style={{
-            marginTop: 14,
-            padding: "10px 14px",
-            borderRadius: 12,
-            background: "#f1f5f9",
-            textAlign: "center",
-            fontSize: 14,
-            fontWeight: 600,
-            color: "#475569",
-          }}
-        >
-          ✅ Story submitted! Read it aloud with your team!
+        <div style={{ marginTop: 14, textAlign: "center" }}>
+          <div style={{ fontSize: 14, color: "#475569", fontWeight: 600, marginBottom: 8 }}>
+            Read the story aloud with your team, then tap Done!
+          </div>
+          <button
+            onClick={() => {
+              const charDescriptions = characters.map((c) => ({
+                name: c.name,
+                trait: c.trait,
+                role: c.customRole.trim() || c.role,
+                gender: c.gender,
+                ...(c.nationality && { nationality: c.nationality }),
+              }));
+              onSubmit?.({
+                type: "storytelling",
+                correct: false,
+                basePoints,
+                characters: charDescriptions,
+                story: generatedStory,
+                storyTitle,
+                setting,
+                genre,
+              });
+            }}
+            disabled={isDisabled}
+            style={{
+              padding: "14px 40px",
+              borderRadius: 14,
+              border: "none",
+              background: "linear-gradient(135deg, #22c55e, #16a34a)",
+              color: "#fff",
+              fontSize: 17,
+              fontWeight: 800,
+              cursor: isDisabled ? "default" : "pointer",
+              boxShadow: "0 4px 14px rgba(34,197,94,0.3)",
+            }}
+          >
+            ✅ Done Reading
+          </button>
         </div>
       </div>
     );
@@ -481,7 +486,7 @@ export default function StorytellingTask({
             <div
               style={{
                 height: "100%",
-                width: `${(timeLeft / 30) * 100}%`,
+                width: `${(timeLeft / 45) * 100}%`,
                 background:
                   timeLeft <= 10
                     ? "linear-gradient(90deg, #ef4444, #dc2626)"

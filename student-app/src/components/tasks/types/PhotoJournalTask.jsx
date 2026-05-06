@@ -140,7 +140,7 @@ export default function PhotoJournalTask({
         >
           Step 1 – Take your photo
         </div>
-        <div style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: 6 }}>
+        <div style={{ fontSize: "0.8rem", color: "#374151", marginBottom: 6 }}>
           Use the camera or upload button below to capture evidence for this task.
         </div>
 

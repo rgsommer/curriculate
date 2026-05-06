@@ -4526,6 +4526,17 @@ const __DEMO_TEMPLATES = {
       { statement: "Bats are blind.", correctAnswer: false },
     ],
   },
+
+  [TASK_TYPES.MYSTERY_CLUES]: {
+    taskType: TASK_TYPES.MYSTERY_CLUES,
+    title: "Mystery Clue!",
+    prompt: "Memorize these clues — you will need to recall them later!",
+    timeLimitSeconds: 0,
+    points: 15,
+    isFinal: false,
+    revealMs: 8000,
+    clues: ["Photosynthesis", "Chlorophyll", "Sunlight"],
+  },
 };
 
 const __DEMO_TOASTS = {

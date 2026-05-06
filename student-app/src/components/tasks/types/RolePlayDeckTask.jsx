@@ -262,77 +262,85 @@ export default function RolePlayDeckTask({
           </div>
         )}
 
-        {/* Clear, student-friendly instructions (Grade 7 level) */}
-        <div
-          style={{
-            marginTop: 12,
-            borderRadius: 16,
-            border: `1px solid ${CONTRAST_BORDER}`,
-            background: "linear-gradient(180deg, #ffffff, #f8fafc)",
-            padding: 12,
-            boxShadow: "0 10px 28px rgba(2,6,23,0.05)",
-          }}
-        >
-          <div style={{ fontWeight: 1000, marginBottom: 8 }}>How to play</div>
-          <div style={{ color: "#334155", lineHeight: 1.4 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
-              <StepCircle n={1} /> Choose a mode: <strong>Mystery</strong> (hidden roles) or <strong>Classic</strong> (open roles).
-            </div>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
-              <StepCircle n={2} /> Each player draws one role card. Follow the "Pass the device" screens.
-            </div>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
-              <StepCircle n={3} /> Read the <strong>Scenario</strong> and role-play it as a team.
-            </div>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
-              <StepCircle n={4} /> When you finish acting, tap <strong>End role-play</strong>.
-            </div>
-          </div>
-          <div style={{ marginTop: 8, fontSize: "0.92rem", color: "#64748b", fontWeight: 700 }}>
-            Tip: In Mystery Mode, only the current player should look at their role card.
-          </div>
-        </div>
-
-        {/* Mode Choice */}
+        {/* Hype screen — single intro that explains the task and gets students excited */}
         {!mode && (
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontWeight: 800, marginBottom: 8 }}>Choose a mode</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div
+            style={{
+              marginTop: 12,
+              borderRadius: 18,
+              background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%)",
+              padding: "20px 16px",
+              color: "#fff",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: "2.2rem", marginBottom: 6 }}>🎭</div>
+            <div style={{ fontSize: "1.3rem", fontWeight: 1000, marginBottom: 6 }}>
+              Time to become someone else!
+            </div>
+            <div style={{ fontSize: "1rem", lineHeight: 1.5, opacity: 0.92, marginBottom: 16, maxWidth: 500, margin: "0 auto 16px" }}>
+              Each of you will draw a secret character card with a unique role and personality.
+              Then you'll act out a scenario together — staying in character the whole time!
+            </div>
+
+            <div
+              style={{
+                display: "inline-flex",
+                flexDirection: "column",
+                gap: 6,
+                background: "rgba(255,255,255,0.15)",
+                borderRadius: 14,
+                padding: "10px 18px",
+                textAlign: "left",
+                fontSize: "0.95rem",
+                lineHeight: 1.5,
+                marginBottom: 16,
+              }}
+            >
+              <div>🎴 Draw your secret role card</div>
+              <div>🎬 Read the scenario together</div>
+              <div>🗣️ Act it out — stay in character!</div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
               <button
                 type="button"
                 onClick={() => chooseMode("mystery")}
                 disabled={disabled}
                 style={{
-                  padding: "12px 12px",
-                  borderRadius: 16,
-                  border: "none",
-                  background: disabled ? "#9ca3af" : ACCENT_PURPLE,
+                  padding: "14px 28px",
+                  borderRadius: 999,
+                  border: "2px solid rgba(255,255,255,0.5)",
+                  background: "rgba(255,255,255,0.2)",
                   color: "#fff",
-                  fontWeight: 900,
+                  fontWeight: 1000,
+                  fontSize: "1.1rem",
                   cursor: disabled ? "not-allowed" : "pointer",
+                  backdropFilter: "blur(4px)",
                 }}
               >
-                🕵️ Mystery (hidden roles)
+                🕵️ Mystery Mode
               </button>
               <button
                 type="button"
                 onClick={() => chooseMode("classic")}
                 disabled={disabled}
                 style={{
-                  padding: "12px 12px",
-                  borderRadius: 16,
-                  border: "none",
-                  background: disabled ? "#9ca3af" : ACCENT_GREEN,
-                  color: "#fff",
-                  fontWeight: 900,
+                  padding: "14px 28px",
+                  borderRadius: 999,
+                  border: "2px solid rgba(255,255,255,0.3)",
+                  background: "rgba(255,255,255,0.1)",
+                  color: "rgba(255,255,255,0.85)",
+                  fontWeight: 800,
+                  fontSize: "0.95rem",
                   cursor: disabled ? "not-allowed" : "pointer",
                 }}
               >
-                🎭 Classic (open roles)
+                🎭 Classic Mode
               </button>
             </div>
-            <div style={{ marginTop: 10, fontSize: "0.9rem", color: "#475569" }}>
-              <strong>Tip:</strong> In Mystery Mode, each player should briefly hold the device while drawing and viewing their card.
+            <div style={{ marginTop: 8, fontSize: "0.82rem", opacity: 0.7 }}>
+              Mystery = secret roles · Classic = everyone sees all roles
             </div>
           </div>
         )}
@@ -348,29 +356,6 @@ export default function RolePlayDeckTask({
                 </span>
               </div>
               <div style={{ fontSize: "0.9rem", color: "#475569" }}>{playerCount} players</div>
-            </div>
-
-            <div
-              style={{
-                marginTop: 10,
-                borderRadius: 16,
-                border: `1px solid ${CONTRAST_BORDER}`,
-                background: CONTRAST_BG_LIGHT,
-                padding: 12,
-              }}
-            >
-              <div style={{ fontWeight: 800, marginBottom: 6 }}>How it works</div>
-              <div style={{ color: "#334155", lineHeight: 1.35 }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
-                  <StepCircle n={1} /> Player <strong>{currentTurn}</strong> taps "Draw role card".
-                </div>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
-                  <StepCircle n={2} /> In Mystery mode, only that player should view the card.
-                </div>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
-                  <StepCircle n={3} /> Repeat until everyone has a role.
-                </div>
-              </div>
             </div>
 
             {/* Mystery mode: explicit pass-device interstitial before draw */}
@@ -504,11 +489,7 @@ export default function RolePlayDeckTask({
               })}
             </div>
 
-            {mode === "mystery" && (
-              <div style={{ marginTop: 10, fontSize: "0.9rem", color: "#475569" }}>
-                <strong>Mystery mode note:</strong> Each player privately views their card, then taps <strong>Hide</strong> to continue.
-              </div>
-            )}
+            {/* Mystery mode hint is already clear from the pass-device interstitial */}
           </div>
         )}
 
