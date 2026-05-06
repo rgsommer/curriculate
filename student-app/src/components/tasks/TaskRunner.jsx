@@ -2237,7 +2237,7 @@ export default function TaskRunner({
   if (hasMultiItems && (isChoiceType || isShortType)) {
     const multiMode = isChoiceType ? "choice" : "short";
     return (
-        <div className="h-full overflow-auto">
+        <div className="h-full overflow-auto" style={{ WebkitOverflowScrolling: "touch", transform: "translateZ(0)" }}>
           <MultiPartTask
             mode={multiMode}
             readOnly={isReview}
@@ -3478,7 +3478,7 @@ return (
       </div>
     ) : null}
 
-    <div className="flex-1 min-h-0 overflow-auto">
+    <div className="flex-1 min-h-0 overflow-auto" style={{ WebkitOverflowScrolling: "touch", transform: "translateZ(0)" }}>
       {/* Coach mode: non-writers get a tap-to-peek hint panel */}
       {content && !isReview && !COACH_MODE_SKIP.has(type) && memberNames.length >= 2 && (
         <CoachPanel
@@ -3522,13 +3522,13 @@ return (
       </button>
     )}
 
-    {/* Skip reason dialog */}
+    {/* Skip reason dialog — uses position:fixed to escape overflow:auto parent */}
     {showSkipDialog && (
       <div
         style={{
-          position: "absolute",
+          position: "fixed",
           inset: 0,
-          zIndex: 100,
+          zIndex: 9999,
           background: "rgba(2,6,23,0.45)",
           backdropFilter: "blur(4px)",
           display: "flex",
@@ -3536,18 +3536,21 @@ return (
           justifyContent: "center",
           padding: 16,
         }}
+        onClick={(e) => { if (e.target === e.currentTarget) { setShowSkipDialog(false); setSkipReason(""); } }}
       >
         <div
           style={{
             width: "min(420px, 92vw)",
             borderRadius: 20,
             background: "#fff",
+            color: "#0f172a",
             border: "1px solid rgba(15,23,42,0.12)",
             boxShadow: "0 16px 50px rgba(2,6,23,0.25)",
             padding: 20,
           }}
+          onClick={(e) => e.stopPropagation()}
         >
-          <div style={{ fontWeight: 950, fontSize: 17, marginBottom: 4 }}>
+          <div style={{ fontWeight: 950, fontSize: 17, marginBottom: 4, color: "#0f172a" }}>
             Skip this task?
           </div>
           <div style={{ fontSize: 13, color: "#64748b", marginBottom: 14, lineHeight: 1.4 }}>
@@ -3562,6 +3565,7 @@ return (
             rows={3}
             style={{
               width: "100%",
+              boxSizing: "border-box",
               padding: 12,
               borderRadius: 12,
               border: "1.5px solid rgba(15,23,42,0.18)",
@@ -3569,6 +3573,9 @@ return (
               fontFamily: "inherit",
               resize: "vertical",
               outline: "none",
+              background: "#fff",
+              color: "#0f172a",
+              WebkitAppearance: "none",
             }}
             autoFocus
           />
@@ -3583,6 +3590,7 @@ return (
                 borderRadius: 10,
                 border: "1px solid rgba(15,23,42,0.15)",
                 background: "#fff",
+                color: "#0f172a",
                 fontWeight: 700,
                 fontSize: 13,
                 cursor: "pointer",

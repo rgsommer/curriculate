@@ -152,7 +152,7 @@ export default function InterviewTask({ task, onSubmit, disabled }) {
   const cfg = task?.config || {};
   const candidates = task?.candidates || cfg?.candidates || [];
   const minTurns = cfg.minTurns || 3;
-  const maxTurns = cfg.maxTurns || 5;
+  const maxTurns = cfg.maxTurns || 8;
 
   // Phases: "select" → "chat" → "done"
   const [phase, setPhase] = useState("select");
@@ -303,7 +303,10 @@ export default function InterviewTask({ task, onSubmit, disabled }) {
             {task?.title || "Interview"}
           </div>
           <div style={{ fontSize: 14, color: "#64748b", lineHeight: 1.5 }}>
-            {task?.prompt || "Choose someone to interview. Ask thoughtful questions to earn points!"}
+            {task?.prompt || "Choose someone to interview. Ask thoughtful, open-ended questions to learn about them and earn points!"}
+          </div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 6, lineHeight: 1.4 }}>
+            💡 <strong>Tips:</strong> Ask about their experiences, opinions, and motivations. "Why" and "How" questions score higher than yes/no questions.
           </div>
         </div>
 
@@ -451,7 +454,7 @@ export default function InterviewTask({ task, onSubmit, disabled }) {
             <TextArea
               value={input}
               onChange={(e) => setInput(e.target.value.slice(0, MAX_INPUT))}
-              placeholder="Ask your question..."
+              placeholder="Ask a question... (e.g. What was your biggest challenge? Why did you choose that path?)"
               rows={2}
               style={{ flex: 1, fontSize: 14, resize: "none" }}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendQuestion(input); } }}

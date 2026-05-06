@@ -13,10 +13,12 @@ export default function PronunciationTask({ task, onSubmit, disabled }) {
   const safeTask = task || {};
   const language = safeTask.language || "English";
 
-  // Accent options: if none provided, offer a sensible default list.
-  const accentOptions = Array.isArray(safeTask.accentOptions) && safeTask.accentOptions.length
-    ? safeTask.accentOptions
+  // Accent options: always include american; merge with any task-specified options.
+  const rawOptions = Array.isArray(safeTask.accentOptions) && safeTask.accentOptions.length
+    ? safeTask.accentOptions.map((a) => String(a).toLowerCase())
     : ["american", "british", "canadian", "australian", "neutral"];
+  // Guarantee "american" is always available (students' most natural accent)
+  const accentOptions = rawOptions.includes("american") ? rawOptions : ["american", ...rawOptions];
 
   // Provide a readable reference sentence even if the generator forgot.
   const referenceTextRaw =
