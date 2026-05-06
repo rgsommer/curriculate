@@ -416,7 +416,7 @@ export default function MakeAndSnapTask({
           padding: 8,
           fontSize: "0.9rem",
           background: "#020617",
-          color: "#e5e7eb",
+          color: "#f1f5f9",
           resize: "vertical",
           marginBottom: 12,
         }}

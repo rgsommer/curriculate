@@ -4467,6 +4467,62 @@ const __DEMO_TEMPLATES = {
       ],
     },
   },
+
+  [TASK_TYPES.TRUE_FALSE]: {
+    taskType: TASK_TYPES.TRUE_FALSE,
+    title: "True or False?",
+    prompt: "Read each statement carefully. Decide if it is TRUE or FALSE.",
+    timeLimitSeconds: 0,
+    points: 10,
+    items: [
+      { statement: "The Earth revolves around the Sun.", correctAnswer: true },
+      { statement: "Sound travels faster than light.", correctAnswer: false },
+      { statement: "Water freezes at 0 degrees Celsius.", correctAnswer: true },
+      { statement: "Humans have four lungs.", correctAnswer: false },
+      { statement: "The Great Wall of China is visible from the Moon with the naked eye.", correctAnswer: false },
+    ],
+  },
+
+  [TASK_TYPES.TRUE_FALSE_TICTACTOE]: {
+    taskType: TASK_TYPES.TRUE_FALSE_TICTACTOE,
+    title: "T/F Tic-Tac-Toe",
+    prompt: "Answer True or False to claim a square. Get three in a row to win!",
+    timeLimitSeconds: 0,
+    points: 12,
+    items: [
+      { statement: "Photosynthesis happens in the leaves of plants.", correctAnswer: true },
+      { statement: "The Pacific Ocean is the smallest ocean.", correctAnswer: false },
+      { statement: "Insects have six legs.", correctAnswer: true },
+      { statement: "The moon produces its own light.", correctAnswer: false },
+      { statement: "Ottawa is the capital of Canada.", correctAnswer: true },
+      { statement: "There are 8 continents on Earth.", correctAnswer: false },
+      { statement: "Friction is a force that slows things down.", correctAnswer: true },
+      { statement: "Diamonds are made of carbon.", correctAnswer: true },
+      { statement: "Penguins can fly.", correctAnswer: false },
+    ],
+  },
+
+  [TASK_TYPES.TRUE_FALSE_CONNECT_FOUR]: {
+    taskType: TASK_TYPES.TRUE_FALSE_CONNECT_FOUR,
+    title: "T/F Connect Four",
+    prompt: "Answer True or False to drop a chip. Connect four in a row to win!",
+    timeLimitSeconds: 0,
+    points: 14,
+    items: [
+      { statement: "The chemical symbol for water is H2O.", correctAnswer: true },
+      { statement: "Jupiter is the closest planet to the Sun.", correctAnswer: false },
+      { statement: "The Sahara is the largest hot desert in the world.", correctAnswer: true },
+      { statement: "Mammals are cold-blooded animals.", correctAnswer: false },
+      { statement: "A triangle has three sides.", correctAnswer: true },
+      { statement: "Lightning never strikes the same place twice.", correctAnswer: false },
+      { statement: "The human body has 206 bones.", correctAnswer: true },
+      { statement: "Spiders are insects.", correctAnswer: false },
+      { statement: "Mount Everest is the tallest mountain on Earth.", correctAnswer: true },
+      { statement: "The Amazon River is in Africa.", correctAnswer: false },
+      { statement: "Gravity pulls objects toward each other.", correctAnswer: true },
+      { statement: "Bats are blind.", correctAnswer: false },
+    ],
+  },
 };
 
 const __DEMO_TOASTS = {
@@ -4484,6 +4540,9 @@ const __DEMO_TOASTS = {
   [TASK_TYPES.BODY_BREAK]: "✅ Body Break! Get moving.",
   [TASK_TYPES.HANGMAN_DUEL]: "🪓 Hangman Duel! Guess the word as a team.",
   [TASK_TYPES.JEOPARDY]: "⚡ Brain Blitz! Shout the question (Jeopardy style).",
+  [TASK_TYPES.TRUE_FALSE]: "✅ True or False! Read carefully and decide.",
+  [TASK_TYPES.TRUE_FALSE_TICTACTOE]: "❌⭕ T/F Tic-Tac-Toe! Answer correctly to claim your square.",
+  [TASK_TYPES.TRUE_FALSE_CONNECT_FOUR]: "🔴🟡 T/F Connect Four! Answer correctly to drop your chip.",
 };
 
 // Demo SFX keys are consumed by the UI layer (DemoPage). Keeping them in meta

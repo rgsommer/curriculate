@@ -19,6 +19,12 @@ import { API_BASE_URL } from "./config.js";
 // ----------------------------------------------------------------
 
 const AUTO_ADVANCE_MS = 90_000; // 90 seconds per task
+const ACTIVITY_EXTEND_MS = 30_000; // keep timer alive for 30s after last keystroke
+const TEXT_HEAVY_TYPES = new Set([
+  "case-study", "open-text", "storytelling", "short-answer",
+  "letter", "peer-editing", "interview", "teach-back", "cloze",
+  "brain-spark-notes",
+]);
 
 // Default points per task type (backend is source of truth; these are fallback)
 const DEFAULT_TASK_POINTS = {
@@ -543,6 +549,8 @@ function DemoPlayer({ user, onFinish, source }) {
   const treatShownRef = useRef(false);
   const timerRef = useRef(null);
   const startedRef = useRef(Date.now());
+  const lastActivityRef = useRef(Date.now());
+  const taskAreaRef = useRef(null);
   const popKeyRef = useRef(0);
   const isClassroom = source === "classroom";
 
@@ -597,9 +605,36 @@ function DemoPlayer({ user, onFinish, source }) {
     ? getAdaptivePts(task.taskType, user.taskPoints, completedTypes)
     : { pts: 0, isNew: false };
 
+  // Activity-based timer extension: for text-heavy tasks, keep timer alive while student types
+  const isTextHeavy = TEXT_HEAVY_TYPES.has(task?.taskType);
+
+  useEffect(() => {
+    if (!isTextHeavy) return;
+    const el = taskAreaRef.current;
+    if (!el) return;
+
+    const onActivity = () => {
+      lastActivityRef.current = Date.now();
+      // Push startedRef forward so there's always at least ACTIVITY_EXTEND_MS left
+      const elapsed = Date.now() - startedRef.current;
+      const rem = AUTO_ADVANCE_MS - elapsed;
+      if (rem < ACTIVITY_EXTEND_MS) {
+        startedRef.current = Date.now() - (AUTO_ADVANCE_MS - ACTIVITY_EXTEND_MS);
+      }
+    };
+
+    el.addEventListener("input", onActivity, true);
+    el.addEventListener("keydown", onActivity, true);
+    return () => {
+      el.removeEventListener("input", onActivity, true);
+      el.removeEventListener("keydown", onActivity, true);
+    };
+  }, [taskIdx, isTextHeavy]);
+
   // Auto-advance timer
   useEffect(() => {
     startedRef.current = Date.now();
+    lastActivityRef.current = Date.now();
     setRemainingMs(AUTO_ADVANCE_MS);
 
     if (paused) return;
@@ -798,7 +833,7 @@ function DemoPlayer({ user, onFinish, source }) {
       </div>
 
       {/* Task Runner */}
-      <div style={styles.taskArea}>
+      <div ref={taskAreaRef} style={styles.taskArea}>
         <TaskRunner
           key={`demo-${taskIdx}`}
           task={task}

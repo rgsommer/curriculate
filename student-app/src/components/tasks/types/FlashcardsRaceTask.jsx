@@ -609,7 +609,7 @@ export default function FlashcardsRaceTask(props) {
                         padding: 10,
                         borderRadius: 12,
                         border: "1px solid rgba(148,163,184,0.55)",
-                        background: "rgba(15,23,42,0.55)",
+                        background: "rgba(15,23,42,0.85)",
                         color: "#fff",
                         fontWeight: 900,
                         outline: "none",

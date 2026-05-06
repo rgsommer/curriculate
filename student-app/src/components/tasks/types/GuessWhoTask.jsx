@@ -728,6 +728,8 @@ export default function GuessWhoTask({ task, onSubmit }) {
                     borderRadius: 12,
                     border: `1px solid ${CONTRAST_BORDER}`,
                     fontSize: "1rem",
+                    background: "#fff",
+                    color: "#0f172a",
                   }}
                 />
                 <button
@@ -788,6 +790,8 @@ export default function GuessWhoTask({ task, onSubmit }) {
                     borderRadius: 12,
                     border: `1px solid ${CONTRAST_BORDER}`,
                     fontSize: "1rem",
+                    background: "#fff",
+                    color: "#0f172a",
                   }}
                 />
                 <button

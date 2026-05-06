@@ -119,6 +119,9 @@ export default function WordWeaverDuelTask({
   const [wordOrientations, setWordOrientations] = useState(() => ({})); // {wordIdx: "H" | "V"}
   const [rotatedView, setRotatedView] = useState(false);
   const [placementError, setPlacementError] = useState(null); // error message for placement feedback
+  const [touchDragIdx, setTouchDragIdx] = useState(null); // touch-drag word index
+  const [touchDragPos, setTouchDragPos] = useState(null); // {x,y} for touch ghost
+  const boardRef = useRef(null); // ref to grid container for hit-testing touch drops
 
   // board is 2D char matrix + ownership of letters (which word placed it)
   const emptyBoard = useMemo(() => {
@@ -257,6 +260,77 @@ export default function WordWeaverDuelTask({
 
       return b;
     });
+  };
+
+  // --- Custom drag image for HTML5 drag ---
+  const createDragImage = (word) => {
+    const el = document.createElement("div");
+    el.style.cssText =
+      "display:inline-flex;gap:1px;padding:4px;border-radius:6px;" +
+      "background:rgba(14,165,233,0.12);border:1px solid rgba(14,165,233,0.4);" +
+      "position:fixed;top:-200px;left:-200px;pointer-events:none;z-index:99999;";
+    String(word).toUpperCase().split("").forEach((ch) => {
+      const tile = document.createElement("div");
+      tile.style.cssText =
+        "width:28px;height:28px;display:flex;align-items:center;justify-content:center;" +
+        "background:rgba(139,106,58,0.55);border:1px solid rgba(255,255,255,0.3);" +
+        "border-radius:2px;font-weight:900;font-size:13px;color:rgba(255,255,255,0.85);";
+      tile.textContent = ch;
+      el.appendChild(tile);
+    });
+    document.body.appendChild(el);
+    return el;
+  };
+
+  const handleTileDragStart = (ev, idx) => {
+    if (!canInteract) return;
+    if (placed?.[idx]) return;
+    const word = scrabbleWords[idx] || "";
+    setSelectedWordIdx(idx);
+    try {
+      ev.dataTransfer?.setData?.("text/plain", String(idx));
+      ev.dataTransfer?.setData?.("wordIdx", String(idx));
+      const ghost = createDragImage(word);
+      ev.dataTransfer?.setDragImage?.(ghost, 14, 14);
+      // Clean up after a tick
+      requestAnimationFrame(() => setTimeout(() => ghost.remove(), 100));
+    } catch { /* no-op */ }
+  };
+
+  // --- Touch drag support for mobile ---
+  const handleTouchStart = (ev, idx) => {
+    if (!canInteract) return;
+    if (placed?.[idx]) return;
+    setTouchDragIdx(idx);
+    setSelectedWordIdx(idx);
+    const touch = ev.touches?.[0];
+    if (touch) setTouchDragPos({ x: touch.clientX, y: touch.clientY });
+  };
+
+  const handleTouchMove = (ev, idx) => {
+    if (touchDragIdx == null) return;
+    const touch = ev.touches?.[0];
+    if (touch) {
+      ev.preventDefault?.(); // prevent scroll while dragging
+      setTouchDragPos({ x: touch.clientX, y: touch.clientY });
+    }
+  };
+
+  const handleTouchEnd = (ev) => {
+    if (touchDragIdx == null) return;
+    const touch = ev.changedTouches?.[0];
+    if (touch && boardRef.current) {
+      // Hit-test which grid cell is under the finger
+      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (el) {
+        const cellData = el.closest?.("[data-cell]")?.dataset;
+        if (cellData?.row != null && cellData?.col != null) {
+          placeWord(Number(cellData.row), Number(cellData.col), touchDragIdx);
+        }
+      }
+    }
+    setTouchDragIdx(null);
+    setTouchDragPos(null);
   };
 
   const handleCellDrop = (ev, r, c) => {
@@ -645,6 +719,7 @@ export default function WordWeaverDuelTask({
 
           <div style={s.boardWrap}>
             <div
+              ref={boardRef}
               style={{
                 ...s.board,
                 transform: rotatedView ? "rotate(90deg)" : "none",
@@ -674,6 +749,9 @@ export default function WordWeaverDuelTask({
                     return (
                       <div
                         key={`${r}:${c}`}
+                        data-cell=""
+                        data-row={r}
+                        data-col={c}
                         style={{
                           ...s.cell,
                           ...(isEmpty ? s.cellEmpty : s.cellFilled),
@@ -712,13 +790,23 @@ export default function WordWeaverDuelTask({
 
               return (
                 <div key={`${w}-${idx}`} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {/* Tile strip rendering */}
+                  {/* Tile strip — draggable + clickable */}
                   <div
+                    draggable={canInteract && !isPlaced}
+                    onDragStart={(ev) => handleTileDragStart(ev, idx)}
+                    onTouchStart={(ev) => handleTouchStart(ev, idx)}
+                    onTouchMove={(ev) => handleTouchMove(ev, idx)}
+                    onTouchEnd={handleTouchEnd}
+                    onClick={() => {
+                      if (!canInteract || isPlaced) return;
+                      setSelectedWordIdx((cur) => (cur === idx ? null : idx));
+                    }}
                     style={{
                       ...s.tileStrip,
-                      ...(isPlaced ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+                      ...(isPlaced ? { opacity: 0.5, cursor: "not-allowed" } : { cursor: "grab" }),
                       ...(isSelected ? { border: "2px solid rgba(14,165,233,0.9)", background: "rgba(14,165,233,0.08)" } : {}),
                     }}
+                    title={isPlaced ? "Already placed" : "Drag to the board, or tap to select"}
                   >
                     {String(w)
                       .toUpperCase()
@@ -730,38 +818,18 @@ export default function WordWeaverDuelTask({
                       ))}
                   </div>
 
-                  {/* Selection/drag button wrapper */}
-                  <button
-                    type="button"
-                    draggable={canInteract && !isPlaced}
-                    onDragStart={(ev) => {
-                      try {
-                        ev.dataTransfer?.setData?.("text/plain", String(idx));
-                        ev.dataTransfer?.setData?.("wordIdx", String(idx));
-                      } catch {
-                        // no-op
-                      }
-                    }}
-                    onClick={() => {
-                      if (!canInteract) return;
-                      if (isPlaced) return;
-                      setSelectedWordIdx((cur) => (cur === idx ? null : idx));
-                    }}
-                    disabled={!canInteract || isPlaced}
+                  {/* Status label */}
+                  <div
                     style={{
-                      padding: "6px 8px",
-                      borderRadius: 6,
-                      border: isSelected ? "2px solid rgba(14,165,233,0.9)" : "1px solid rgba(15,23,42,0.14)",
-                      background: isSelected ? "rgba(14,165,233,0.08)" : "transparent",
-                      cursor: canInteract && !isPlaced ? "pointer" : "not-allowed",
-                      fontSize: 12,
-                      opacity: isPlaced ? 0.5 : 1,
+                      textAlign: "center",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      opacity: isPlaced ? 0.5 : 0.8,
+                      color: isSelected ? "rgba(14,165,233,0.9)" : undefined,
                     }}
-                    aria-pressed={isSelected}
-                    title={isPlaced ? "Already placed" : "Click to select, or drag to the board"}
                   >
-                    {isPlaced ? "Placed" : "Select"}
-                  </button>
+                    {isPlaced ? "Placed ✓" : isSelected ? "Selected" : "Tap or drag"}
+                  </div>
 
                   {/* Per-word rotation toggle */}
                   {!isPlaced && (
@@ -850,6 +918,50 @@ export default function WordWeaverDuelTask({
                 <div style={s.bad}>Not quite ❌</div>
               )}
               {review?.feedback && <div style={s.feedback}>{String(review.feedback)}</div>}
+            </div>
+          )}
+
+          {/* Touch-drag floating ghost */}
+          {touchDragIdx != null && touchDragPos && (
+            <div
+              style={{
+                position: "fixed",
+                left: touchDragPos.x - 20,
+                top: touchDragPos.y - 20,
+                pointerEvents: "none",
+                zIndex: 99999,
+                display: "inline-flex",
+                gap: 1,
+                padding: 4,
+                borderRadius: 6,
+                background: "rgba(14,165,233,0.15)",
+                border: "1px solid rgba(14,165,233,0.5)",
+                opacity: 0.85,
+              }}
+            >
+              {String(scrabbleWords[touchDragIdx] || "")
+                .toUpperCase()
+                .split("")
+                .map((ch, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      width: 26,
+                      height: 26,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "rgba(139,106,58,0.55)",
+                      border: "1px solid rgba(255,255,255,0.35)",
+                      borderRadius: 2,
+                      fontWeight: 900,
+                      fontSize: 12,
+                      color: "rgba(255,255,255,0.85)",
+                    }}
+                  >
+                    {ch}
+                  </div>
+                ))}
             </div>
           )}
         </div>

@@ -1070,6 +1070,8 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
                 borderRadius: 14,
                 border: "2px solid rgba(99,102,241,0.3)",
                 outline: "none",
+                background: "#fff",
+                color: "#0f172a",
               }}
             />
             <button

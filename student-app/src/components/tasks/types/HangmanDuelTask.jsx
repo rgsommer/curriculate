@@ -1634,6 +1634,7 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
               placeholder="Type your guess"
               style={{
                 width: "100%",
+                boxSizing: "border-box",
                 marginTop: 10,
                 padding: "12px 12px",
                 borderRadius: 12,
@@ -1641,6 +1642,8 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
                 fontSize: 16,
                 fontWeight: 800,
                 textTransform: "uppercase",
+                background: "#fff",
+                color: "#0f172a",
               }}
             />
 
