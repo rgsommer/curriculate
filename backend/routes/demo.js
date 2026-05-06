@@ -528,6 +528,30 @@ router.get("/feedback-export", async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  POST /feedback-clear                                               */
+/*  Strips all feedback fields from ConferenceLead results             */
+/* ------------------------------------------------------------------ */
+
+router.post("/feedback-clear", async (req, res) => {
+  try {
+    const key = req.query.key || req.body?.key;
+    if (key !== (process.env.ADMIN_API_TOKEN || process.env.ADMIN_API_KEY)) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const result = await ConferenceLead.updateMany(
+      { "results.feedback": { $exists: true } },
+      { $unset: { "results.$[].feedback": 1 } }
+    );
+
+    res.json({ ok: true, modifiedCount: result.modifiedCount });
+  } catch (err) {
+    console.error("[demo/feedback-clear] Error:", err.message);
+    res.status(500).json({ error: "Failed to clear feedback" });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  GET /points-config                                                 */
 /*  Returns the points-per-task-type map for frontend display          */
 /* ------------------------------------------------------------------ */
