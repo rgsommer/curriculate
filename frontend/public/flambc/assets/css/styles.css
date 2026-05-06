@@ -637,6 +637,36 @@ section.dark .card .icon { background: rgba(255,255,255,0.08); color: #fff; }
 }
 .ig-section .ig-handle:hover { text-decoration: underline; }
 
+.ig-fallback-grid {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+.ig-fallback-grid:hover { color: inherit; }
+
+.ig-setup-pill {
+  text-align: center;
+  margin: 1.4rem auto 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
+  background: rgba(238, 49, 36, 0.08);
+  color: var(--c-red);
+  font-family: var(--f-heading);
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  width: fit-content;
+}
+.ig-setup-pill::before {
+  content: "⚙";
+  font-size: 0.95rem;
+}
+.ig-setup-pill a { color: var(--c-red); text-decoration: underline; }
+.ig-setup-pill-wrap { text-align: center; }
+
 /* CTA strip */
 .cta-strip {
   background: var(--c-red);
