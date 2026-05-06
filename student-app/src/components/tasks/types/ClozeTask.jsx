@@ -6,7 +6,7 @@
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { TaskCardFrame, Pill, PrimaryButton } from "../taskStyles";
-import { useThemeMode } from "../../utils/ThemeModeContext";
+import { useThemeMode } from "../../../utils/ThemeModeContext";
 
 /* ------------------------------------------------------------------ */
 /*  CSS animations                                                     */
