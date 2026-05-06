@@ -576,6 +576,67 @@ section.dark .card .icon { background: rgba(255,255,255,0.08); color: #fff; }
 }
 .form-group textarea { min-height: 140px; resize: vertical; }
 
+/* Instagram feed */
+.ig-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.6rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+@media (max-width: 900px) { .ig-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 480px) { .ig-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.ig-tile {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: 12px;
+  overflow: hidden;
+  display: block;
+  text-decoration: none;
+  color: #fff;
+  background: linear-gradient(135deg, #00293b 0%, #1f656d 100%);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.ig-tile:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); color: #fff; }
+.ig-tile-1 { background: linear-gradient(135deg, #ee3124 0%, #b81b13 100%); }
+.ig-tile-2 { background: linear-gradient(135deg, #00293b 0%, #0f4a64 100%); }
+.ig-tile-3 { background: linear-gradient(135deg, #1f656d 0%, #2a8d80 100%); }
+.ig-tile-4 { background: linear-gradient(135deg, #00293b 0%, #ee3124 130%); }
+.ig-tile-5 { background: linear-gradient(135deg, #1f656d 0%, #00293b 100%); }
+.ig-tile-6 { background: linear-gradient(135deg, #2a8d80 0%, #1f656d 100%); }
+.ig-tile-inner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem;
+  text-align: center;
+  font-family: var(--f-heading);
+}
+.ig-tile-inner .ig-icon {
+  width: 32px;
+  height: 32px;
+  margin-bottom: 0.4rem;
+  opacity: 0.9;
+}
+.ig-tile-inner .ig-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.95;
+}
+.ig-section .ig-handle {
+  font-family: var(--f-heading);
+  font-weight: 600;
+  color: var(--c-red);
+  text-decoration: none;
+}
+.ig-section .ig-handle:hover { text-decoration: underline; }
+
 /* CTA strip */
 .cta-strip {
   background: var(--c-red);
