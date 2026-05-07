@@ -10,7 +10,19 @@
 // ====================================================================
 
 import PDFDocument from "pdfkit";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { sendSystemEmail } from "./shareInviteEmailer.js";
+
+const __emailDir = path.dirname(fileURLToPath(import.meta.url));
+let _mascotBuf = null;
+function getMascotBuffer() {
+  if (!_mascotBuf) {
+    try { _mascotBuf = fs.readFileSync(path.join(__emailDir, "mascot-report.png")); } catch { _mascotBuf = null; }
+  }
+  return _mascotBuf;
+}
 
 // --------------------------------------------------------------------
 // Branding
@@ -305,9 +317,12 @@ function buildEmailHtml({
   return `
   <div style="font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:14px; color:#0f172a;">
     <div style="border:1px solid #e5e7eb; border-radius:16px; overflow:hidden;">
-      <div style="background:#0f172a; color:#fff; padding:14px 16px;">
-        <div style="font-size:16px; font-weight:900; letter-spacing:0.2px;">${BRAND_NAME} Report Ready</div>
-        <div style="font-size:12px; opacity:.85;">${escHtml(BRAND_TAGLINE)}</div>
+      <div style="background:#0f172a; color:#fff; padding:14px 16px; display:flex; align-items:center; gap:12px;">
+        <img src="https://curriculate.net/images/mascot/email-results/1.png" alt="" style="width:48px; height:48px; border-radius:50%; object-fit:cover; flex-shrink:0;" />
+        <div>
+          <div style="font-size:16px; font-weight:900; letter-spacing:0.2px;">${BRAND_NAME} Report Ready</div>
+          <div style="font-size:12px; opacity:.85;">${escHtml(BRAND_TAGLINE)}</div>
+        </div>
       </div>
 
       <div style="padding:16px;">
@@ -562,38 +577,59 @@ async function buildReportPdfBuffer({
   const doc = new PDFDocument({ size: "LETTER", margin: 44, compress: true });
   const chunks = [];
 
+  const mascotImg = getMascotBuffer();
+
   function header() {
     const top = doc.y;
+    const barW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const barH = 40;
     doc.save();
-    doc
-      .rect(doc.page.margins.left, top, doc.page.width - doc.page.margins.left - doc.page.margins.right, 40)
-      .fill("#0f172a");
-    doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(14).text(`${BRAND_NAME} Report`, doc.page.margins.left + 12, top + 10);
-    doc.fillColor("#cbd5e1").font("Helvetica").fontSize(9).text(BRAND_TAGLINE, doc.page.margins.left + 12, top + 26);
+    doc.rect(doc.page.margins.left, top, barW, barH).fill("#0f172a");
+
+    // Mascot avatar (circular crop via clipping)
+    const mascotSize = 28;
+    const mascotX = doc.page.margins.left + 10;
+    const mascotY = top + (barH - mascotSize) / 2;
+    const textLeft = mascotImg ? mascotX + mascotSize + 8 : doc.page.margins.left + 12;
+
+    if (mascotImg) {
+      doc.save();
+      doc.circle(mascotX + mascotSize / 2, mascotY + mascotSize / 2, mascotSize / 2).clip();
+      doc.image(mascotImg, mascotX, mascotY, { width: mascotSize, height: mascotSize });
+      doc.restore();
+    }
+
+    doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(14).text(`${BRAND_NAME} Report`, textLeft, top + 10, { lineBreak: false });
+    doc.fillColor("#cbd5e1").font("Helvetica").fontSize(9).text(BRAND_TAGLINE, textLeft, top + 26, { lineBreak: false });
     doc.restore();
-    doc.moveDown(3);
+    doc.y = top + barH + 8;
   }
 
   function footer() {
     const text = `${BRAND_NAME} • Room ${overview.roomCode || "—"} • ${overview.tasksetName || "—"}`;
     doc.save();
+    // Temporarily remove bottom margin to prevent auto-pagination when drawing below content area
+    const savedBottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
     doc.font("Helvetica").fontSize(9).fillColor("#94a3b8");
-    doc.text(text, doc.page.margins.left, doc.page.height - doc.page.margins.bottom + 8, {
+    doc.text(text, doc.page.margins.left, doc.page.height - savedBottom + 8, {
       width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
       align: "center",
     });
+    doc.page.margins.bottom = savedBottom;
     doc.restore();
   }
 
   function sectionTitle(t) {
     doc.moveDown(0.4);
+    doc.x = doc.page.margins.left; // ensure we're at left margin
     doc.font("Helvetica-Bold").fontSize(12).fillColor("#0f172a").text(t);
     doc.moveDown(0.25);
   }
 
   function pill(text) {
     const padX = 10;
-    const x = doc.x;
+    const x = doc.page.margins.left;
     const y = doc.y;
     const w = doc.widthOfString(text) + padX * 2;
     const h = 22;
@@ -606,6 +642,7 @@ async function buildReportPdfBuffer({
 
   function pageStart() {
     header();
+    doc.x = doc.page.margins.left; // reset x after header image
     if (schoolName) {
       doc.font("Helvetica-Bold").fontSize(10).fillColor("#0f172a").text(schoolName);
       doc.moveDown(0.2);
@@ -701,10 +738,11 @@ async function buildReportPdfBuffer({
           const barW = Math.max(lvl.primaryCount > 0 ? 6 : 0, Math.round((lvl.primaryCount / maxCount) * barMaxW));
           const alpha = lvl.primaryCount > 0 ? 1 : 0.25;
 
-          // Label
           doc.save();
           doc.opacity(alpha);
-          doc.font("Helvetica-Bold").fontSize(9).fillColor(lvl.color).text(lvl.label, barLeft, y + 2, { width: labelW, align: "right" });
+          // Label (right-aligned)
+          doc.font("Helvetica-Bold").fontSize(9).fillColor(lvl.color);
+          doc.text(lvl.label, barLeft, y + 2, { width: labelW, align: "right", lineBreak: false });
 
           // Bar background
           doc.rect(barLeft + labelW + 8, y + 1, barMaxW, rowH - 2).fill("#f1f5f9");
@@ -713,26 +751,37 @@ async function buildReportPdfBuffer({
             doc.rect(barLeft + labelW + 8, y + 1, barW, rowH - 2).fill(lvl.color);
           }
 
-          // Count
-          doc.font("Helvetica").fontSize(9).fillColor("#64748b").text(String(lvl.primaryCount), barLeft + labelW + barMaxW + 14, y + 2);
+          // Count label
+          doc.font("Helvetica").fontSize(9).fillColor("#64748b");
+          doc.text(String(lvl.primaryCount), barLeft + labelW + barMaxW + 14, y + 2, { width: 40, lineBreak: false });
           doc.restore();
 
           doc.y = y + rowH + 1;
         }
 
+        // Reset x back to left margin after bar chart drawing
+        doc.x = doc.page.margins.left;
         doc.moveDown(0.3);
 
         // Cognitive profile narrative from AI
         const cogProfile = aiSummary?.cognitiveProfile || "";
         if (cogProfile) {
-          doc.font("Helvetica").fontSize(10).fillColor("#334155").text(cogProfile, { lineGap: 2 });
+          const contentW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+          doc.font("Helvetica").fontSize(10).fillColor("#334155").text(cogProfile, doc.page.margins.left, doc.y, { width: contentW, lineGap: 2 });
           doc.moveDown(0.2);
         }
 
         // Deterministic summary
-        doc.font("Helvetica").fontSize(9).fillColor("#64748b").text(bt.summary, { lineGap: 1 });
+        const contentW2 = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+        doc.font("Helvetica").fontSize(9).fillColor("#64748b").text(bt.summary, doc.page.margins.left, doc.y, { width: contentW2, lineGap: 1 });
         doc.moveDown(0.4);
       }
+    }
+
+    // Helper: full-width text to avoid x-drift from previous sections
+    const fullW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    function fullText(str, opts = {}) {
+      doc.text(str, doc.page.margins.left, doc.y, { width: fullW, ...opts });
     }
 
     // Standards Alignment
@@ -740,12 +789,13 @@ async function buildReportPdfBuffer({
     if (standards.length) {
       ensureSpace(100);
       sectionTitle("Standards Alignment");
-      doc.font("Helvetica").fontSize(10).fillColor("#0f172a");
       standards.forEach((s) => {
         const prefix = s.code ? `[${s.code}] ` : "";
-        doc.font("Helvetica-Bold").fontSize(10).fillColor("#1e40af").text(`${prefix}${s.standard || ""}`, { lineGap: 1 });
+        doc.font("Helvetica-Bold").fontSize(10).fillColor("#1e40af");
+        fullText(`${prefix}${s.standard || ""}`, { lineGap: 1 });
         if (s.connection) {
-          doc.font("Helvetica").fontSize(9).fillColor("#475569").text(`  ${s.connection}`, { lineGap: 1 });
+          doc.font("Helvetica").fontSize(9).fillColor("#475569");
+          fullText(`  ${s.connection}`, { lineGap: 1 });
         }
         doc.moveDown(0.15);
       });
@@ -755,18 +805,20 @@ async function buildReportPdfBuffer({
     sectionTitle("Concepts Covered");
     if (overview.concepts.length) {
       doc.font("Helvetica").fontSize(10).fillColor("#0f172a");
-      overview.concepts.forEach((c) => doc.text(`• ${c}`, { lineGap: 1 }));
+      overview.concepts.forEach((c) => fullText(`• ${c}`, { lineGap: 1 }));
     } else {
-      doc.font("Helvetica").fontSize(10).fillColor("#475569").text("(No concepts detected.)");
+      doc.font("Helvetica").fontSize(10).fillColor("#475569");
+      fullText("(No concepts detected.)");
     }
     doc.moveDown(0.4);
 
     sectionTitle("Activities Completed");
     if (overview.activities.length) {
       doc.font("Helvetica").fontSize(10).fillColor("#0f172a");
-      overview.activities.forEach((a) => doc.text(`• ${a}`, { lineGap: 1 }));
+      overview.activities.forEach((a) => fullText(`• ${a}`, { lineGap: 1 }));
     } else {
-      doc.font("Helvetica").fontSize(10).fillColor("#475569").text("(No activities detected.)");
+      doc.font("Helvetica").fontSize(10).fillColor("#475569");
+      fullText("(No activities detected.)");
     }
     doc.moveDown(0.4);
 
@@ -774,7 +826,7 @@ async function buildReportPdfBuffer({
     if (cats.length) {
       sectionTitle("Assessment Categories");
       doc.font("Helvetica").fontSize(10).fillColor("#0f172a");
-      cats.forEach((c) => doc.text(`• ${c.label || c.name || String(c)}`));
+      cats.forEach((c) => fullText(`• ${c.label || c.name || String(c)}`));
       doc.moveDown(0.4);
     }
 
@@ -807,16 +859,17 @@ async function buildReportPdfBuffer({
       const gTableW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
 
       // Header
+      const gHeaderY = doc.y;
       doc.save();
-      doc.rect(gTableX, doc.y, gTableW, 20).fill("#3b82f6");
+      doc.rect(gTableX, gHeaderY, gTableW, 20).fill("#3b82f6");
       doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(8);
       let gxCur = gTableX;
       gColLabels.forEach((label, i) => {
-        doc.text(label, gxCur + 4, doc.y + 6, { width: gTableW * gColW[i] - 8 });
+        doc.text(label, gxCur + 4, gHeaderY + 6, { width: gTableW * gColW[i] - 8, lineBreak: false });
         gxCur += gTableW * gColW[i];
       });
       doc.restore();
-      doc.y += 22;
+      doc.y = gHeaderY + 22;
 
       const sortedG = [...gradesList].sort((a, b) => (b.percent ?? 0) - (a.percent ?? 0));
       doc.font("Helvetica").fontSize(8).fillColor("#0f172a");
@@ -844,7 +897,7 @@ async function buildReportPdfBuffer({
         gxCur = gTableX;
         const rowY = doc.y;
         vals.forEach((v, i) => {
-          doc.text(v, gxCur + 4, rowY, { width: gTableW * gColW[i] - 8 });
+          doc.text(v, gxCur + 4, rowY, { width: gTableW * gColW[i] - 8, lineBreak: false });
           gxCur += gTableW * gColW[i];
         });
         doc.y = rowY + 14;
@@ -854,20 +907,21 @@ async function buildReportPdfBuffer({
       if (sortedG.length > 1) {
         const avgPct = Math.round(sortedG.reduce((s, g) => s + (g.percent ?? 0), 0) / sortedG.length);
         const avgScaled = (sortedG.reduce((s, g) => s + (g.scaledGrade ?? 0), 0) / sortedG.length).toFixed(1);
+        const avgY = doc.y;
         doc.save();
-        doc.rect(gTableX, doc.y - 2, gTableW, 18).fill("#e0e7ff");
+        doc.rect(gTableX, avgY - 2, gTableW, 18).fill("#e0e7ff");
         doc.restore();
         doc.font("Helvetica-Bold").fontSize(8).fillColor("#0f172a");
-        doc.text(`Class Average`, gTableX + 4, doc.y, { width: gTableW * 0.54 - 8 });
-        doc.text(`${avgPct}%`, gTableX + gTableW * 0.54 + 4, doc.y - 10, { width: gTableW * 0.12 - 8 });
-        doc.text(`${avgScaled}/${sortedG[0]?.maxGrade ?? 100}`, gTableX + gTableW * 0.66 + 4, doc.y - 10, { width: gTableW * 0.18 - 8 });
-        doc.y += 10;
+        doc.text("Class Average", gTableX + 4, avgY, { width: gTableW * 0.54 - 8, lineBreak: false });
+        doc.text(`${avgPct}%`, gTableX + gTableW * 0.54 + 4, avgY, { width: gTableW * 0.12 - 8, lineBreak: false });
+        doc.text(`${avgScaled}/${sortedG[0]?.maxGrade ?? 100}`, gTableX + gTableW * 0.66 + 4, avgY, { width: gTableW * 0.18 - 8, lineBreak: false });
+        doc.y = avgY + 18;
       }
 
       doc.moveDown(0.6);
     }
 
-    ensureSpace(220);
+    ensureSpace(80);
     sectionTitle("Teams");
 
     const tableX = doc.page.margins.left;
@@ -890,14 +944,15 @@ async function buildReportPdfBuffer({
     });
 
     // Header row
+    const teamHeaderY = doc.y;
     doc.save();
-    doc.rect(tableX, doc.y, tableW, 22).fill("#f1f5f9");
+    doc.rect(tableX, teamHeaderY, tableW, 22).fill("#f1f5f9");
     doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(9);
     cols.forEach((c, i) => {
-      doc.text(c.label, colXs[i] + 4, doc.y + 6, { width: tableW * c.w - 8 });
+      doc.text(c.label, colXs[i] + 4, teamHeaderY + 6, { width: tableW * c.w - 8, lineBreak: false });
     });
     doc.restore();
-    doc.moveDown(1.5);
+    doc.y = teamHeaderY + 24;
     doc.font("Helvetica").fontSize(9).fillColor("#0f172a");
 
     function rowHeightFor(values) {
@@ -937,21 +992,22 @@ async function buildReportPdfBuffer({
       const rh = rowHeightFor(vals);
       ensureSpace(rh + 20);
 
+      const teamRowY = doc.y;
       doc.save();
-      doc.rect(tableX, doc.y - 2, tableW, rh).stroke("#e5e7eb");
+      doc.rect(tableX, teamRowY - 2, tableW, rh).stroke("#e5e7eb");
       doc.restore();
 
       cols.forEach((c, i) => {
         const w = tableW * c.w - 8;
-        doc.text(vals[i], colXs[i] + 4, doc.y + 6, { width: w });
+        doc.text(vals[i], colXs[i] + 4, teamRowY + 4, { width: w });
       });
 
-      doc.y = doc.y + rh;
+      doc.y = teamRowY + rh;
     }
 
     doc.moveDown(0.6);
 
-    ensureSpace(140);
+    ensureSpace(60);
     sectionTitle("Photo / Recording Submissions");
     if (media.length) {
       doc.font("Helvetica").fontSize(10).fillColor("#0f172a");

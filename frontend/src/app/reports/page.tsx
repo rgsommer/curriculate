@@ -33,10 +33,11 @@ const docs = [
     downloadName: "Curriculate-Teacher-Report-Sample.pdf",
     icon: <ClipboardList className="w-6 h-6 text-emerald-600" />,
     bullets: [
-      "Session overview + team performance snapshot",
-      "Task-by-task analysis and misconceptions",
-      "Engagement highlights and next-lesson targets",
-      "Actionable, not spreadsheet overload",
+      "Team scores, engagement, and exit feedback at a glance",
+      "Bloom's taxonomy cognitive profile with bar chart",
+      "Student gradebook with letter grades and class average",
+      "Copy-paste class chat blurb and note to parents",
+      "Standards alignment + skills developed",
     ],
   },
 ];

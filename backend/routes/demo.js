@@ -2,10 +2,26 @@
 // Conference demo + classroom practice endpoints:
 // lead registration, results capture, email, teacher activity dashboard
 import express from "express";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import rateLimit from "express-rate-limit";
 import ConferenceLead from "../models/ConferenceLead.js";
 import Recommendation from "../models/Recommendation.js";
 import { sendSystemEmail } from "../email/shareInviteEmailer.js";
+
+const __demoDir = path.dirname(fileURLToPath(import.meta.url));
+let _sampleReportBuf = null;
+function getSampleReportPdf() {
+  if (!_sampleReportBuf) {
+    try {
+      _sampleReportBuf = fs.readFileSync(
+        path.resolve(__demoDir, "../../frontend/public/pdfs/Curriculate-Teacher-Report-Sample.pdf")
+      );
+    } catch { _sampleReportBuf = null; }
+  }
+  return _sampleReportBuf;
+}
 
 const router = express.Router();
 
@@ -1032,6 +1048,15 @@ async function sendTeacherRecommendationEmail({ teacherName, teacherEmail, stude
           Curriculate helps you create interactive scavenger hunts, AI-graded assignments, and engaging activities — all in minutes.
         </p>
 
+        <div style="background: linear-gradient(135deg, #eff6ff, #dbeafe); border: 2px solid #93c5fd; border-radius: 12px; padding: 20px; margin: 20px 0;">
+          <div style="font-size: 15px; color: #1e40af; font-weight: 800; margin-bottom: 8px;">
+            📊 See what your reports look like
+          </div>
+          <div style="font-size: 14px; color: #334155; line-height: 1.5;">
+            After every session, Curriculate automatically generates a detailed report — team scores, Bloom's taxonomy analysis, a student gradebook, and even a ready-to-send note to parents. We attached a sample so you can see for yourself!
+          </div>
+        </div>
+
         <div style="text-align: center; margin: 24px 0;">
           <a href="https://curriculate.net/pricing" style="display: inline-block; padding: 14px 32px; border-radius: 12px; background: linear-gradient(135deg, #7c3aed, #a855f7); color: #fff; font-weight: 900; font-size: 16px; text-decoration: none; box-shadow: 0 4px 12px rgba(124,58,237,0.3);">
             Try It Free →
@@ -1052,13 +1077,23 @@ async function sendTeacherRecommendationEmail({ teacherName, teacherEmail, stude
     </div>
   `;
 
-  await sendSystemEmail({
+  const emailOpts = {
     to: teacherEmail,
     subject: `⭐ ${studentName} recommended you try Curriculate!`,
     html,
-  });
+  };
 
-  console.log(`[demo/recommend] ✅ Recommendation email sent to ${teacherEmail} from ${studentName}`);
+  // Attach sample teacher report PDF if available
+  const samplePdf = getSampleReportPdf();
+  if (samplePdf) {
+    emailOpts.attachments = [
+      { filename: "Curriculate-Sample-Report.pdf", content: samplePdf },
+    ];
+  }
+
+  await sendSystemEmail(emailOpts);
+
+  console.log(`[demo/recommend] ✅ Recommendation email sent to ${teacherEmail} from ${studentName} (pdf: ${!!samplePdf})`);
 }
 
 export default router;

@@ -15,6 +15,9 @@ import { Server } from "socket.io";
 import mongoose from "mongoose";
 
 // 3) Third-party SDKs / crypto
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import crypto from "crypto";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -345,6 +348,16 @@ const aiLimiter = rateLimit({
 });
 
 const app = express();
+
+// Lazy-load sample report PDF for recommendation emails
+const __indexDir = path.dirname(fileURLToPath(import.meta.url));
+let _sampleReportPdf = null;
+function getSampleReportPdf() {
+  if (!_sampleReportPdf) {
+    try { _sampleReportPdf = fs.readFileSync(path.resolve(__indexDir, "../frontend/public/pdfs/Curriculate-Teacher-Report-Sample.pdf")); } catch { _sampleReportPdf = null; }
+  }
+  return _sampleReportPdf;
+}
 app.set("trust proxy", 1); // trust first proxy (Render) — required for express-rate-limit
 
 const server = http.createServer(app);
@@ -579,6 +592,15 @@ app.post("/api/recommend", async (req, res) => {
             </tr>
           </table>
 
+          <div style="background: linear-gradient(135deg, #eff6ff, #dbeafe); border: 2px solid #93c5fd; border-radius: 12px; padding: 20px; margin: 0 0 20px;">
+            <div style="font-size: 15px; color: #1e40af; font-weight: 800; margin-bottom: 8px;">
+              📊 Check out the report you get — automatically
+            </div>
+            <div style="font-size: 14px; color: #334155; line-height: 1.5;">
+              After every session, Curriculate emails you a full report — team scores, student grades, Bloom's taxonomy analysis, a note to parents, and more. We attached a sample so you can see exactly what you'll get!
+            </div>
+          </div>
+
           <p style="margin: 0 0 24px; font-size: 14px; color: #64748b; text-align: center; line-height: 1.5;">
             Works for any subject, any grade. Math gets logic puzzles. History gets debates and document analysis. Everyone gets movement breaks.
           </p>
@@ -619,14 +641,19 @@ app.post("/api/recommend", async (req, res) => {
       html: gradingHtml,
     });
 
-    // Send platform email after a brief delay so it arrives second
+    // Send platform email after a brief delay so it arrives second (with sample report attached)
+    const samplePdf = getSampleReportPdf();
     setTimeout(async () => {
       try {
-        await sendSystemEmail({
+        const platformOpts = {
           to: email,
           subject: `One more from ${name} — Curriculate runs classroom scavenger hunts too`,
           html: platformHtml,
-        });
+        };
+        if (samplePdf) {
+          platformOpts.attachments = [{ filename: "Curriculate-Sample-Report.pdf", content: samplePdf }];
+        }
+        await sendSystemEmail(platformOpts);
       } catch (err) {
         console.warn("[recommend] Platform email failed:", err?.message);
       }

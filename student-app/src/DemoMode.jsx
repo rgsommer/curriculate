@@ -36,25 +36,32 @@ function mascotSrc(category) {
   const n = Math.floor(Math.random() * count) + 1;
   return `${MASCOT_BASE}/${category}/${n}.png`;
 }
-/** Mascot element — renders <video> loop for animated categories, <img> for static */
+/** Mascot element — renders <video> loop for animated categories, <img> for static.
+ *  Applies a soft radial fade so edges blend naturally into any background.
+ *  drop-shadow is applied to the wrapper so it isn't clipped by the mask. */
 function Mascot({ category, size = 120, style = {} }) {
   const [imgSrc] = useState(() => mascotSrc(category));
-  const baseStyle = { width: size, height: size, objectFit: "contain", ...style };
+  // Separate filter (drop-shadow) from the rest so shadow lives on wrapper, mask on media
+  const { filter, ...restStyle } = style;
+  const softEdge = {
+    WebkitMaskImage: "radial-gradient(circle, #000 60%, transparent 100%)",
+    maskImage: "radial-gradient(circle, #000 60%, transparent 100%)",
+  };
+  const mediaStyle = { width: size, height: size, objectFit: "contain", ...softEdge, ...restStyle };
+  const wrapStyle = { display: "inline-block", ...(filter ? { filter } : {}) };
 
-  if (MASCOT_VIDEO.has(category)) {
-    return (
-      <video
-        src={`${MASCOT_BASE}/${category}/1.mp4`}
-        autoPlay
-        loop
-        muted
-        playsInline
-        poster={imgSrc}
-        style={{ ...baseStyle, background: "transparent" }}
-      />
-    );
-  }
-  return <img src={imgSrc} alt="Curriculate mascot" style={baseStyle} />;
+  const media = MASCOT_VIDEO.has(category) ? (
+    <video
+      src={`${MASCOT_BASE}/${category}/1.mp4`}
+      autoPlay loop muted playsInline
+      poster={imgSrc}
+      style={{ ...mediaStyle, background: "transparent" }}
+    />
+  ) : (
+    <img src={imgSrc} alt="Curriculate mascot" style={mediaStyle} />
+  );
+
+  return <span style={wrapStyle}>{media}</span>;
 }
 const ACTIVITY_EXTEND_MS = 30_000; // keep timer alive for 30s after last keystroke
 const TEXT_HEAVY_TYPES = new Set([
