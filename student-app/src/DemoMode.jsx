@@ -284,228 +284,182 @@ function EmailCapture({ onStart, source, classroom, promoCode, conferenceName, c
 // Task Feedback Popup (shown after each completed task)
 // ----------------------------------------------------------------
 
-// Calculate bonus points for constructive feedback
-function calcFeedbackBonus(fun, clarity, confusing, suggestion) {
-  let bonus = 0;
-  // Base: rated both stars = +1
-  if (fun > 0 && clarity > 0) bonus += 1;
-  // Low rating + good explanation = valuable feedback = more points
-  const hasConfusing = confusing.trim().length >= 8;
-  const hasSuggestion = suggestion.trim().length >= 8;
-  if (hasConfusing) bonus += 2;
-  if (hasSuggestion) bonus += 2;
-  // Extra reward if they rate low AND explain why (most useful feedback)
-  if ((fun <= 3 || clarity <= 3) && (hasConfusing || hasSuggestion)) bonus += 1;
-  return bonus; // 0-6
-}
+// ── Quick-tap feedback (emoji based, auto-submits) ──────────────
+// Designed to feel like part of the game, not a form.
+// Phase 1: two emoji rows (fun + clarity) — tap one in each row.
+// Phase 2 (only if low rating): quick text input for "what was wrong?"
+// Auto-dismisses after 6s if untouched.
+
+const EMOJI_FUN = [
+  { val: 1, face: "😴", label: "Boring" },
+  { val: 2, face: "😐", label: "Meh" },
+  { val: 3, face: "🙂", label: "OK" },
+  { val: 4, face: "😄", label: "Fun!" },
+  { val: 5, face: "🤩", label: "Loved it!" },
+];
+const EMOJI_CLARITY = [
+  { val: 1, face: "😵", label: "Lost" },
+  { val: 2, face: "🤔", label: "Confusing" },
+  { val: 3, face: "😊", label: "Mostly clear" },
+  { val: 4, face: "👍", label: "Clear" },
+  { val: 5, face: "💡", label: "Crystal clear" },
+];
 
 function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip }) {
-  const [fun, setFun] = useState(0); // 1-5 stars
-  const [clarity, setClarity] = useState(0); // 1-5 stars
-  const [confusing, setConfusing] = useState("");
-  const [suggestion, setSuggestion] = useState("");
+  const [fun, setFun] = useState(0);
+  const [clarity, setClarity] = useState(0);
+  const [comment, setComment] = useState("");
+  const [phase, setPhase] = useState("rate"); // "rate" | "comment" | "done"
+  const autoTimer = useRef(null);
+  const submitTimer = useRef(null);
 
-  const bonus = calcFeedbackBonus(fun, clarity, confusing, suggestion);
-  const needsExplanation = (fun > 0 && fun <= 3) || (clarity > 0 && clarity <= 3);
+  // Auto-dismiss after 6s if student doesn't interact at all
+  useEffect(() => {
+    autoTimer.current = setTimeout(() => {
+      if (fun === 0 && clarity === 0) onSkip();
+    }, 6000);
+    return () => { clearTimeout(autoTimer.current); clearTimeout(submitTimer.current); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSubmit = () => {
-    onSubmit({ fun, clarity, confusing: confusing.trim(), suggestion: suggestion.trim(), feedbackBonus: bonus });
+  // Once both ratings picked, auto-advance
+  useEffect(() => {
+    if (fun > 0 && clarity > 0 && phase === "rate") {
+      clearTimeout(autoTimer.current);
+      // Low rating? Ask what was wrong (worth bonus points)
+      if (fun <= 2 || clarity <= 2) {
+        setPhase("comment");
+      } else {
+        // Good ratings — auto-submit after brief flash
+        setPhase("done");
+        submitTimer.current = setTimeout(() => {
+          onSubmit({ fun, clarity, confusing: "", suggestion: "", feedbackBonus: 1 });
+        }, 600);
+      }
+    }
+  }, [fun, clarity]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleCommentSubmit = () => {
+    clearTimeout(autoTimer.current);
+    const bonus = comment.trim().length >= 5 ? 4 : 1;
+    onSubmit({ fun, clarity, confusing: comment.trim(), suggestion: "", feedbackBonus: bonus });
   };
 
-  const Star = ({ filled, onClick }) => (
-    <span
-      onClick={onClick}
-      style={{
-        fontSize: 24,
-        cursor: "pointer",
-        color: filled ? "#f59e0b" : "#334155",
-        transition: "transform 0.15s",
-        display: "inline-block",
-      }}
-    >
-      {filled ? "★" : "☆"}
-    </span>
+  const handleCommentSkip = () => {
+    onSubmit({ fun, clarity, confusing: "", suggestion: "", feedbackBonus: 1 });
+  };
+
+  const EmojiRow = ({ label, items, selected, onSelect }) => (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#94a3b8", marginBottom: 6, textAlign: "center" }}>
+        {label}
+      </div>
+      <div style={{ display: "flex", justifyContent: "center", gap: 6 }}>
+        {items.map((e) => (
+          <button
+            key={e.val}
+            onClick={() => { clearTimeout(autoTimer.current); onSelect(e.val); }}
+            style={{
+              width: 52, height: 52,
+              borderRadius: 14,
+              border: selected === e.val ? "2px solid #f59e0b" : "2px solid rgba(255,255,255,0.08)",
+              background: selected === e.val ? "rgba(245,158,11,0.15)" : "rgba(255,255,255,0.05)",
+              fontSize: 26,
+              cursor: "pointer",
+              transition: "all 0.15s",
+              transform: selected === e.val ? "scale(1.15)" : "scale(1)",
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+              padding: 0,
+            }}
+          >
+            <span>{e.face}</span>
+            <span style={{ fontSize: 8, color: selected === e.val ? "#fbbf24" : "#64748b", fontWeight: 700, marginTop: -2 }}>
+              {e.label}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 
   return (
-    <div style={feedbackStyles.overlay}>
-      <div style={feedbackStyles.card}>
-        <div style={{ fontSize: 13, color: "#94a3b8", fontWeight: 600, marginBottom: 4 }}>
-          Quick feedback on:
-        </div>
-        <div style={{ fontSize: 16, fontWeight: 800, color: "#f8fafc", marginBottom: 8 }}>
-          {taskTitle || taskType}
-        </div>
-
-        {/* Bonus incentive */}
-        <div style={{
-          fontSize: 12,
-          color: bonus > 0 ? "#22c55e" : "#64748b",
-          fontWeight: 700,
-          marginBottom: 12,
-          padding: "6px 10px",
-          borderRadius: 8,
-          background: bonus > 0 ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.04)",
-          border: bonus > 0 ? "1px solid rgba(34,197,94,0.25)" : "1px solid rgba(255,255,255,0.06)",
-          transition: "all 0.2s",
-        }}>
-          {bonus > 0
-            ? `🎯 +${bonus} bonus pts for your feedback!`
-            : "💡 Rate and explain to earn bonus points!"}
-        </div>
-
-        {/* Fun rating */}
-        <div style={feedbackStyles.row}>
-          <span style={feedbackStyles.label}>Was it fun?</span>
-          <div style={feedbackStyles.stars}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <Star key={n} filled={n <= fun} onClick={() => setFun(n)} />
-            ))}
-          </div>
-        </div>
-
-        {/* Clarity rating */}
-        <div style={feedbackStyles.row}>
-          <span style={feedbackStyles.label}>Was it clear?</span>
-          <div style={feedbackStyles.stars}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <Star key={n} filled={n <= clarity} onClick={() => setClarity(n)} />
-            ))}
-          </div>
-        </div>
-
-        {/* Nudge for low ratings */}
-        {needsExplanation && !confusing.trim() && !suggestion.trim() && (
-          <div style={{
-            fontSize: 12,
-            color: "#fbbf24",
-            fontWeight: 700,
-            padding: "6px 10px",
-            marginBottom: 8,
-            borderRadius: 8,
-            background: "rgba(251,191,36,0.1)",
-            border: "1px solid rgba(251,191,36,0.2)",
-          }}>
-            ⚡ Tell us what was wrong — you'll earn extra points for helping us improve!
-          </div>
+    <div style={{
+      position: "fixed", inset: 0,
+      background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "flex-end", justifyContent: "center",
+      zIndex: 10000, padding: "0 12px 24px",
+      animation: "feedbackFadeIn 0.2s ease-out",
+    }}>
+      <div style={{
+        width: "100%", maxWidth: 380,
+        padding: "16px 16px 14px",
+        borderRadius: 20,
+        background: "rgba(30,41,59,0.97)",
+        border: "1px solid rgba(255,255,255,0.1)",
+        color: "#f8fafc",
+        boxShadow: "0 -4px 24px rgba(0,0,0,0.3)",
+      }}>
+        {phase === "rate" && (
+          <>
+            <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: "#e2e8f0", marginBottom: 2 }}>
+              Quick rate! <span style={{ color: "#22c55e" }}>+1 pt</span>
+            </div>
+            <div style={{ textAlign: "center", fontSize: 11, color: "#64748b", marginBottom: 10 }}>
+              {taskTitle || taskType}
+            </div>
+            <EmojiRow label="Was it fun?" items={EMOJI_FUN} selected={fun} onSelect={setFun} />
+            <EmojiRow label="Was it clear?" items={EMOJI_CLARITY} selected={clarity} onSelect={setClarity} />
+          </>
         )}
 
-        {/* Confusing text */}
-        <div style={{ marginBottom: 12 }}>
-          <label style={feedbackStyles.textLabel}>Anything confusing?</label>
-          <input
-            type="text"
-            value={confusing}
-            onChange={(e) => setConfusing(e.target.value)}
-            placeholder="e.g. I didn't understand the instructions"
-            style={feedbackStyles.textInput}
-          />
-        </div>
+        {phase === "comment" && (
+          <>
+            <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: "#fbbf24", marginBottom: 8 }}>
+              Tell us what was wrong — earn <span style={{ color: "#22c55e" }}>+4 pts!</span>
+            </div>
+            <input
+              type="text"
+              autoFocus
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleCommentSubmit()}
+              placeholder="e.g. Instructions were confusing..."
+              style={{
+                width: "100%", padding: "12px 14px", borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.15)",
+                background: "rgba(255,255,255,0.07)", color: "#f8fafc",
+                fontSize: 15, outline: "none", boxSizing: "border-box",
+                marginBottom: 10,
+              }}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={handleCommentSkip} style={{
+                flex: 1, padding: 10, borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.1)", background: "transparent",
+                color: "#94a3b8", fontWeight: 700, fontSize: 13, cursor: "pointer",
+              }}>
+                Skip (+1)
+              </button>
+              <button onClick={handleCommentSubmit} style={{
+                flex: 2, padding: 10, borderRadius: 10, border: "none",
+                background: "linear-gradient(135deg, #f59e0b, #ef4444)",
+                color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer",
+              }}>
+                Send (+4 pts)
+              </button>
+            </div>
+          </>
+        )}
 
-        {/* Suggestion */}
-        <div style={{ marginBottom: 16 }}>
-          <label style={feedbackStyles.textLabel}>Suggestions?</label>
-          <input
-            type="text"
-            value={suggestion}
-            onChange={(e) => setSuggestion(e.target.value)}
-            placeholder="e.g. Add a hint button"
-            style={feedbackStyles.textInput}
-          />
-        </div>
-
-        {/* Actions */}
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onSkip} style={feedbackStyles.skipBtn}>
-            Skip
-          </button>
-          <button onClick={handleSubmit} style={feedbackStyles.submitBtn}>
-            Submit{bonus > 0 ? ` (+${bonus} pts)` : ""} & Continue
-          </button>
-        </div>
+        {phase === "done" && (
+          <div style={{ textAlign: "center", padding: "8px 0" }}>
+            <div style={{ fontSize: 28 }}>✅</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#22c55e" }}>+1 pt — thanks!</div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
-
-const feedbackStyles = {
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.6)",
-    backdropFilter: "blur(6px)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10000,
-    padding: 20,
-    animation: "feedbackFadeIn 0.2s ease-out",
-  },
-  card: {
-    width: "100%",
-    maxWidth: 400,
-    padding: 24,
-    borderRadius: 20,
-    background: "rgba(30,41,59,0.95)",
-    border: "1px solid rgba(255,255,255,0.1)",
-    color: "#f8fafc",
-  },
-  row: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 14,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: 700,
-    color: "#cbd5e1",
-  },
-  stars: {
-    display: "flex",
-    gap: 4,
-  },
-  textLabel: {
-    display: "block",
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#94a3b8",
-    marginBottom: 4,
-  },
-  textInput: {
-    width: "100%",
-    padding: "10px 12px",
-    borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.15)",
-    background: "rgba(255,255,255,0.07)",
-    color: "#f8fafc",
-    fontSize: 14,
-    outline: "none",
-    boxSizing: "border-box",
-  },
-  skipBtn: {
-    flex: 1,
-    padding: "10px",
-    borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "transparent",
-    color: "#94a3b8",
-    fontWeight: 700,
-    fontSize: 13,
-    cursor: "pointer",
-  },
-  submitBtn: {
-    flex: 2,
-    padding: "10px",
-    borderRadius: 10,
-    border: "none",
-    background: "linear-gradient(135deg, #3b82f6, #8b5cf6)",
-    color: "#fff",
-    fontWeight: 800,
-    fontSize: 13,
-    cursor: "pointer",
-  },
-};
 
 // ----------------------------------------------------------------
 // Points Pop Animation
