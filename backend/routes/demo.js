@@ -468,22 +468,29 @@ router.get("/feedback-export", async (req, res) => {
       .lean();
 
     // Build per-task-type aggregation
+    // Include ALL completed results (even those where feedback popup was skipped)
     const byType = {};
 
     for (const lead of leads) {
       for (const r of lead.results || []) {
-        if (r.skipped || !r.feedback) continue;
+        if (r.skipped) continue;
         const tt = r.taskType;
+        if (!tt) continue;
         if (!byType[tt]) {
-          byType[tt] = { title: r.title || tt, funScores: [], clarityScores: [], comments: [] };
+          byType[tt] = { title: r.title || tt, funScores: [], clarityScores: [], comments: [], responseCount: 0 };
         }
-        if (r.feedback.fun) byType[tt].funScores.push(r.feedback.fun);
-        if (r.feedback.clarity) byType[tt].clarityScores.push(r.feedback.clarity);
-        if (r.feedback.confusing) {
-          byType[tt].comments.push(`  [CONFUSING] "${r.feedback.confusing}" — ${lead.name}`);
-        }
-        if (r.feedback.suggestion) {
-          byType[tt].comments.push(`  [SUGGESTION] "${r.feedback.suggestion}" — ${lead.name}`);
+        byType[tt].responseCount += 1;
+        // Feedback may be null (popup skipped), an object, or have defaults of 0
+        const fb = r.feedback;
+        if (fb) {
+          if (fb.fun > 0) byType[tt].funScores.push(fb.fun);
+          if (fb.clarity > 0) byType[tt].clarityScores.push(fb.clarity);
+          if (fb.confusing && fb.confusing.trim()) {
+            byType[tt].comments.push(`  [CONFUSING] "${fb.confusing.trim()}" — ${lead.name}`);
+          }
+          if (fb.suggestion && fb.suggestion.trim()) {
+            byType[tt].comments.push(`  [SUGGESTION] "${fb.suggestion.trim()}" — ${lead.name}`);
+          }
         }
       }
     }
@@ -512,7 +519,8 @@ router.get("/feedback-export", async (req, res) => {
         : "N/A";
 
       lines.push(`--- ${taskType} (${data.title}) ---`);
-      lines.push(`  Responses: ${data.funScores.length} | Fun: ${avgFun}/5 | Clarity: ${avgClarity}/5`);
+      const rated = data.funScores.length;
+      lines.push(`  Completed: ${data.responseCount} | Rated: ${rated} | Fun: ${avgFun}/5 | Clarity: ${avgClarity}/5`);
       if (data.comments.length > 0) {
         lines.push("  Comments:");
         data.comments.forEach((c) => lines.push(`    ${c}`));

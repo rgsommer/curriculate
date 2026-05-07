@@ -243,14 +243,32 @@ function EmailCapture({ onStart, source, classroom, promoCode, conferenceName, c
 // Task Feedback Popup (shown after each completed task)
 // ----------------------------------------------------------------
 
+// Calculate bonus points for constructive feedback
+function calcFeedbackBonus(fun, clarity, confusing, suggestion) {
+  let bonus = 0;
+  // Base: rated both stars = +1
+  if (fun > 0 && clarity > 0) bonus += 1;
+  // Low rating + good explanation = valuable feedback = more points
+  const hasConfusing = confusing.trim().length >= 8;
+  const hasSuggestion = suggestion.trim().length >= 8;
+  if (hasConfusing) bonus += 2;
+  if (hasSuggestion) bonus += 2;
+  // Extra reward if they rate low AND explain why (most useful feedback)
+  if ((fun <= 3 || clarity <= 3) && (hasConfusing || hasSuggestion)) bonus += 1;
+  return bonus; // 0-6
+}
+
 function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip }) {
   const [fun, setFun] = useState(0); // 1-5 stars
   const [clarity, setClarity] = useState(0); // 1-5 stars
   const [confusing, setConfusing] = useState("");
   const [suggestion, setSuggestion] = useState("");
 
+  const bonus = calcFeedbackBonus(fun, clarity, confusing, suggestion);
+  const needsExplanation = (fun > 0 && fun <= 3) || (clarity > 0 && clarity <= 3);
+
   const handleSubmit = () => {
-    onSubmit({ fun, clarity, confusing: confusing.trim(), suggestion: suggestion.trim() });
+    onSubmit({ fun, clarity, confusing: confusing.trim(), suggestion: suggestion.trim(), feedbackBonus: bonus });
   };
 
   const Star = ({ filled, onClick }) => (
@@ -274,8 +292,25 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip }) {
         <div style={{ fontSize: 13, color: "#94a3b8", fontWeight: 600, marginBottom: 4 }}>
           Quick feedback on:
         </div>
-        <div style={{ fontSize: 16, fontWeight: 800, color: "#f8fafc", marginBottom: 16 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "#f8fafc", marginBottom: 8 }}>
           {taskTitle || taskType}
+        </div>
+
+        {/* Bonus incentive */}
+        <div style={{
+          fontSize: 12,
+          color: bonus > 0 ? "#22c55e" : "#64748b",
+          fontWeight: 700,
+          marginBottom: 12,
+          padding: "6px 10px",
+          borderRadius: 8,
+          background: bonus > 0 ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.04)",
+          border: bonus > 0 ? "1px solid rgba(34,197,94,0.25)" : "1px solid rgba(255,255,255,0.06)",
+          transition: "all 0.2s",
+        }}>
+          {bonus > 0
+            ? `🎯 +${bonus} bonus pts for your feedback!`
+            : "💡 Rate and explain to earn bonus points!"}
         </div>
 
         {/* Fun rating */}
@@ -297,6 +332,22 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip }) {
             ))}
           </div>
         </div>
+
+        {/* Nudge for low ratings */}
+        {needsExplanation && !confusing.trim() && !suggestion.trim() && (
+          <div style={{
+            fontSize: 12,
+            color: "#fbbf24",
+            fontWeight: 700,
+            padding: "6px 10px",
+            marginBottom: 8,
+            borderRadius: 8,
+            background: "rgba(251,191,36,0.1)",
+            border: "1px solid rgba(251,191,36,0.2)",
+          }}>
+            ⚡ Tell us what was wrong — you'll earn extra points for helping us improve!
+          </div>
+        )}
 
         {/* Confusing text */}
         <div style={{ marginBottom: 12 }}>
@@ -328,7 +379,7 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip }) {
             Skip
           </button>
           <button onClick={handleSubmit} style={feedbackStyles.submitBtn}>
-            Submit & Continue
+            Submit{bonus > 0 ? ` (+${bonus} pts)` : ""} & Continue
           </button>
         </div>
       </div>
@@ -709,7 +760,16 @@ function DemoPlayer({ user, onFinish, source }) {
   // Handle feedback submission or skip
   const handleFeedback = useCallback(
     (feedback) => {
+      // Award feedback bonus points
+      const fbBonus = feedback?.feedbackBonus || 0;
       const entry = { ...pendingEntry, feedback: feedback || null };
+      if (fbBonus > 0) {
+        entry.points = (entry.points || 0) + fbBonus;
+        setTotalPoints((p) => p + fbBonus);
+        // Show a quick bonus pop
+        popKeyRef.current += 1;
+        setLastEarned({ pts: fbBonus, key: popKeyRef.current, label: "feedback" });
+      }
       const newResults = [...results, entry];
       setResults(newResults);
       setShowFeedback(false);
