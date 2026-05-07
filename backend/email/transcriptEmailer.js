@@ -10,34 +10,13 @@
 // ====================================================================
 
 import PDFDocument from "pdfkit";
-import { mailer } from "./mailer.js";
+import { sendSystemEmail } from "./shareInviteEmailer.js";
 
 // --------------------------------------------------------------------
 // Branding
 // --------------------------------------------------------------------
 const BRAND_NAME = "Curriculate";
 const BRAND_TAGLINE = "Active learning, live classrooms.";
-
-function resolveFromAddress() {
-  // Option A: send from an alias (noreply@curriculate.net) while authenticating with EMAIL_USER.
-  // Your SMTP provider must allow the "From" override for that mailbox/alias.
-  const fromName = process.env.EMAIL_FROM_NAME || "Curriculate Reports";
-  const fromAddr =
-    process.env.EMAIL_FROM_ADDRESS ||
-    process.env.EMAIL_FROM ||
-    "noreply@curriculate.net";
-
-  return `"${fromName}" <${fromAddr}>`;
-}
-
-function resolveReplyTo() {
-  // If you truly don't want replies hitting your inbox, set EMAIL_REPLY_TO to a sink/support inbox
-  // or leave it blank to omit Reply-To entirely.
-  const replyTo = process.env.EMAIL_REPLY_TO;
-  if (replyTo == null) return undefined; // omit
-  const trimmed = String(replyTo).trim();
-  return trimmed.length ? trimmed : undefined;
-}
 
 // --------------------------------------------------------------------
 // Utilities
@@ -1096,11 +1075,7 @@ export async function sendTranscriptEmail({
     ? `${process.env.EMAIL_SUBJECT_PREFIX} ${tasksetName} (Room ${roomCode})`
     : `Curriculate Report Ready — ${tasksetName} (Room ${roomCode})`;
 
-    const replyTo = resolveReplyTo();
-
-    await mailer.sendMail({
-      from: resolveFromAddress(),
-      ...(replyTo ? { replyTo } : {}),
+    await sendSystemEmail({
       to,
       subject,
       html,
@@ -1108,7 +1083,6 @@ export async function sendTranscriptEmail({
         {
           filename: `Curriculate-Report-${roomCode || "session"}.pdf`,
           content: pdfBuffer,
-          contentType: "application/pdf",
         },
       ],
     });

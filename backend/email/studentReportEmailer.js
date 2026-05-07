@@ -7,18 +7,9 @@
 //  and a "what you learned" recap. No other teams' data.
 // ====================================================================
 
-import { mailer } from "./mailer.js";
+import { sendSystemEmail } from "./shareInviteEmailer.js";
 
 const BRAND_NAME = "Curriculate";
-
-function resolveFromAddress() {
-  const fromName = process.env.EMAIL_FROM_NAME || "Curriculate Reports";
-  const fromAddr =
-    process.env.EMAIL_FROM_ADDRESS ||
-    process.env.EMAIL_FROM ||
-    "noreply@curriculate.net";
-  return `"${fromName}" <${fromAddr}>`;
-}
 
 function escHtml(s) {
   return String(s ?? "")
@@ -241,16 +232,11 @@ export async function sendStudentReportEmail({
 </body>
 </html>`;
 
-  const mailOpts = {
-    from: resolveFromAddress(),
+  await sendSystemEmail({
     to: safeTo,
+    cc: cc || undefined,
     subject: `Your ${BRAND_NAME} Report — ${taskSetName || className || "Session"}`,
     html,
-  };
-
-  // CC admin
-  if (cc) mailOpts.cc = cc;
-
-  await mailer.sendMail(mailOpts);
+  });
   console.log(`[studentReport] Sent student report to ${safeTo}${cc ? ` (cc: ${cc})` : ""}`);
 }
