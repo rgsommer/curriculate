@@ -19,6 +19,43 @@ import { API_BASE_URL } from "./config.js";
 // ----------------------------------------------------------------
 
 const AUTO_ADVANCE_MS = 90_000; // 90 seconds per task
+
+// ---- Mascot images & videos (served from frontend/public/images/mascot/) ----
+const MASCOT_BASE = "https://curriculate.net/images/mascot";
+const MASCOT_COUNTS = {
+  "practice-signin": 3, "demo-signin": 4, "celebrate": 4,
+  "recommend": 4, "treat": 4, "ambassador": 4, "feedback": 2,
+  "streak": 4, "promo": 4, "thinking": 4,
+};
+// Categories that have a looping video (1.mp4); prefer video when available
+const MASCOT_VIDEO = new Set(["celebrate", "streak", "treat"]);
+
+/** Pick a random mascot image URL for a given category */
+function mascotSrc(category) {
+  const count = MASCOT_COUNTS[category] || 1;
+  const n = Math.floor(Math.random() * count) + 1;
+  return `${MASCOT_BASE}/${category}/${n}.png`;
+}
+/** Mascot element — renders <video> loop for animated categories, <img> for static */
+function Mascot({ category, size = 120, style = {} }) {
+  const [imgSrc] = useState(() => mascotSrc(category));
+  const baseStyle = { width: size, height: size, objectFit: "contain", ...style };
+
+  if (MASCOT_VIDEO.has(category)) {
+    return (
+      <video
+        src={`${MASCOT_BASE}/${category}/1.mp4`}
+        autoPlay
+        loop
+        muted
+        playsInline
+        poster={imgSrc}
+        style={{ ...baseStyle, background: "transparent" }}
+      />
+    );
+  }
+  return <img src={imgSrc} alt="Curriculate mascot" style={baseStyle} />;
+}
 const ACTIVITY_EXTEND_MS = 30_000; // keep timer alive for 30s after last keystroke
 const TEXT_HEAVY_TYPES = new Set([
   "case-study", "open-text", "storytelling", "short-answer",
@@ -163,9 +200,13 @@ function EmailCapture({ onStart, source, classroom, promoCode, conferenceName, c
   return (
     <div style={styles.captureOuter}>
       <div style={styles.captureCard}>
-        <div style={{ fontSize: 40, marginBottom: 8 }}>{isClassroom ? "🎓" : "🎯"}</div>
+        <Mascot
+          category={isClassroom ? "practice-signin" : "demo-signin"}
+          size={140}
+          style={{ marginBottom: -8, filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.15))" }}
+        />
         <h1 style={styles.captureTitle}>
-          {isClassroom ? "Practice Mode" : "Try Curriculate"}
+          {isClassroom ? "Curriculate Practice Mode" : "Try Curriculate"}
         </h1>
         {/* Conference info banner */}
         {!isClassroom && conferenceName && (
@@ -567,8 +608,8 @@ function TreatToast({ onDismiss }) {
       }}
       onClick={() => { setVisible(false); if (onDismiss) onDismiss(); }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 28, lineHeight: 1 }}>🍬</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <Mascot category="treat" size={52} style={{ flexShrink: 0, filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.1))" }} />
         <div>
           <div style={{ fontWeight: 800, fontSize: 14, color: "#92400e" }}>
             Nice work — you've earned a treat!
@@ -1012,7 +1053,7 @@ function AmbassadorPopup({ user, onDismiss }) {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ fontSize: 40, marginBottom: 8 }}>⭐</div>
+        <Mascot category="ambassador" size={100} style={{ marginBottom: 4, filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.12))" }} />
         <h2 style={{ fontSize: 20, fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>
           You're a natural, {user.name.split(" ")[0]}
         </h2>
@@ -1143,7 +1184,7 @@ function RecommendTeacher({ user, onPointsEarned }) {
         textAlign: "center",
         marginBottom: 20,
       }}>
-        <div style={{ fontSize: 32, marginBottom: 8 }}>⭐</div>
+        <Mascot category="recommend" size={80} style={{ marginBottom: 4, filter: "drop-shadow(0 3px 8px rgba(0,0,0,0.1))" }} />
         <div style={{ fontSize: 16, fontWeight: 900, color: "#6d28d9", marginBottom: 4 }}>
           Recommendation Sent!
         </div>
@@ -1183,7 +1224,7 @@ function RecommendTeacher({ user, onPointsEarned }) {
           transition: "all 0.2s",
         }}
       >
-        <span style={{ fontSize: 20, marginRight: 8 }}>⭐</span>
+        <Mascot category="recommend" size={44} style={{ marginRight: 4, verticalAlign: "middle", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.1))" }} />
         <span style={{ fontSize: 15, fontWeight: 800, color: "#6d28d9" }}>
           Recommend a Teacher — Earn {RECOMMEND_POINTS} pts!
         </span>
@@ -1203,8 +1244,11 @@ function RecommendTeacher({ user, onPointsEarned }) {
       border: "2px solid #c4b5fd",
       marginBottom: 20,
     }}>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+        <Mascot category="recommend" size={64} style={{ filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.1))" }} />
+      </div>
       <div style={{ fontSize: 16, fontWeight: 900, color: "#6d28d9", marginBottom: 4, textAlign: "center" }}>
-        ⭐ Recommend a Teacher
+        Recommend a Teacher
       </div>
       <div style={{ fontSize: 12, color: "#7c3aed", marginBottom: 16, textAlign: "center" }}>
         They'll get an email from Curriculate with your name. Earn {RECOMMEND_POINTS} bonus points!
@@ -1368,7 +1412,7 @@ function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
   return (
     <div style={styles.resultsOuter}>
       <div style={styles.resultsCard}>
-        <div style={{ fontSize: 48, marginBottom: 8 }}>🎉</div>
+        <Mascot category="celebrate" size={140} style={{ marginBottom: -4, filter: "drop-shadow(0 6px 16px rgba(0,0,0,0.12))" }} />
         <h1 style={{ fontSize: 24, fontWeight: 900, color: "#0f172a", marginBottom: 4 }}>
           {isClassroom ? `Awesome, ${user.name}!` : `Great job, ${user.name}!`}
         </h1>
@@ -1462,8 +1506,9 @@ function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
               marginBottom: 16,
             }}
           >
+            <Mascot category="promo" size={64} style={{ marginBottom: 4, filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.1))" }} />
             <div style={{ fontSize: 20, fontWeight: 900, color: "#1e40af", marginBottom: 4 }}>
-              🎁 1 Month Free
+              1 Month Free
             </div>
             <div style={{ fontSize: 14, color: "#3b82f6", marginBottom: 12 }}>
               Use code <strong style={{ fontSize: 18, letterSpacing: 2 }}>{promoCode}</strong> when you sign up

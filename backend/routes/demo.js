@@ -836,6 +836,7 @@ async function sendDemoResultsEmail(lead) {
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 0; background: #ffffff;">
       <!-- Header -->
       <div style="background: linear-gradient(135deg, #2563eb, #7c3aed); border-radius: 16px 16px 0 0; padding: 32px 24px; text-align: center;">
+        <img src="https://curriculate.net/images/mascot/email-results/1.png" alt="Curriculate mascot" style="width: 80px; height: 80px; margin-bottom: 8px;" />
         <div style="font-size: 28px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px;">Curriculate</div>
         <div style="font-size: 14px; color: rgba(255,255,255,0.8); margin-top: 6px;">${isClassroom ? "Your Practice Results" : "Your Demo Results"}</div>
       </div>
@@ -1006,7 +1007,7 @@ async function sendTeacherRecommendationEmail({ teacherName, teacherEmail, stude
   const html = `
     <div style="max-width: 600px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
       <div style="background: linear-gradient(135deg, #7c3aed, #a855f7); border-radius: 16px 16px 0 0; padding: 28px 24px; text-align: center;">
-        <div style="font-size: 36px; margin-bottom: 8px;">⭐</div>
+        <img src="https://curriculate.net/images/mascot/email-recommend/1.png" alt="Curriculate mascot" style="width: 80px; height: 80px; margin-bottom: 8px;" />
         <h1 style="margin: 0; color: #fff; font-size: 22px; font-weight: 900;">A Student Recommended You!</h1>
       </div>
 
