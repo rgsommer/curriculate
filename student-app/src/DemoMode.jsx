@@ -1087,15 +1087,251 @@ function AmbassadorPopup({ user, onDismiss }) {
   );
 }
 
+// ----------------------------------------------------------------
+// Recommend a Teacher — earn bonus points
+// ----------------------------------------------------------------
+
+const RECOMMEND_POINTS = 25;
+
+function RecommendTeacher({ user, onPointsEarned }) {
+  const [expanded, setExpanded] = useState(false);
+  const [teacherName, setTeacherName] = useState("");
+  const [teacherEmail, setTeacherEmail] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | checking | sending | sent | duplicate | error
+  const [earnedPoints, setEarnedPoints] = useState(0);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!teacherEmail.trim() || !isValidEmail(teacherEmail)) return;
+
+    setStatus("sending");
+    try {
+      const resp = await fetch(`${API_BASE_URL}/api/conference/recommend`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teacherName: teacherName.trim(),
+          teacherEmail: teacherEmail.trim().toLowerCase(),
+          studentName: user.name,
+          studentEmail: user.email,
+        }),
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        setStatus("sent");
+        setEarnedPoints(data.points || RECOMMEND_POINTS);
+        onPointsEarned?.(data.points || RECOMMEND_POINTS);
+      } else if (data.alreadyRecommended) {
+        setStatus("duplicate");
+      } else {
+        setStatus("error");
+      }
+    } catch (err) {
+      console.warn("[recommend] failed:", err);
+      setStatus("error");
+    }
+  };
+
+  if (status === "sent") {
+    return (
+      <div style={{
+        width: "100%",
+        padding: 20,
+        borderRadius: 16,
+        background: "linear-gradient(135deg, #f5f3ff, #ede9fe)",
+        border: "2px solid #c4b5fd",
+        textAlign: "center",
+        marginBottom: 20,
+      }}>
+        <div style={{ fontSize: 32, marginBottom: 8 }}>⭐</div>
+        <div style={{ fontSize: 16, fontWeight: 900, color: "#6d28d9", marginBottom: 4 }}>
+          Recommendation Sent!
+        </div>
+        <div style={{ fontSize: 14, color: "#7c3aed" }}>
+          {teacherName || teacherEmail} will get an email from Curriculate with your name as the recommender.
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "6px 14px",
+          borderRadius: 8,
+          background: "#fef3c7",
+          border: "1px solid #fde68a",
+          display: "inline-block",
+          fontSize: 14,
+          fontWeight: 800,
+          color: "#f59e0b",
+        }}>
+          +{earnedPoints} pts earned!
+        </div>
+      </div>
+    );
+  }
+
+  if (!expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        style={{
+          width: "100%",
+          padding: "14px 20px",
+          borderRadius: 14,
+          border: "2px dashed #c4b5fd",
+          background: "linear-gradient(135deg, #faf5ff, #f5f3ff)",
+          cursor: "pointer",
+          textAlign: "center",
+          marginBottom: 20,
+          transition: "all 0.2s",
+        }}
+      >
+        <span style={{ fontSize: 20, marginRight: 8 }}>⭐</span>
+        <span style={{ fontSize: 15, fontWeight: 800, color: "#6d28d9" }}>
+          Recommend a Teacher — Earn {RECOMMEND_POINTS} pts!
+        </span>
+        <div style={{ fontSize: 12, color: "#7c3aed", marginTop: 4 }}>
+          Know a teacher who'd love Curriculate? Send them a recommendation!
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <div style={{
+      width: "100%",
+      padding: 20,
+      borderRadius: 16,
+      background: "linear-gradient(135deg, #faf5ff, #f5f3ff)",
+      border: "2px solid #c4b5fd",
+      marginBottom: 20,
+    }}>
+      <div style={{ fontSize: 16, fontWeight: 900, color: "#6d28d9", marginBottom: 4, textAlign: "center" }}>
+        ⭐ Recommend a Teacher
+      </div>
+      <div style={{ fontSize: 12, color: "#7c3aed", marginBottom: 16, textAlign: "center" }}>
+        They'll get an email from Curriculate with your name. Earn {RECOMMEND_POINTS} bonus points!
+      </div>
+
+      <form onSubmit={handleSubmit}>
+        <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#4c1d95", marginBottom: 4 }}>
+          Teacher's name <span style={{ fontWeight: 400, color: "#8b5cf6" }}>(optional)</span>
+        </label>
+        <input
+          type="text"
+          value={teacherName}
+          onChange={(e) => setTeacherName(e.target.value)}
+          placeholder="e.g. Ms. Johnson"
+          style={{
+            width: "100%",
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: "1px solid #ddd6fe",
+            fontSize: 15,
+            marginBottom: 12,
+            boxSizing: "border-box",
+          }}
+        />
+
+        <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#4c1d95", marginBottom: 4 }}>
+          Teacher's email <span style={{ color: "#ef4444" }}>*</span>
+        </label>
+        <input
+          type="email"
+          value={teacherEmail}
+          onChange={(e) => setTeacherEmail(e.target.value)}
+          placeholder="teacher@school.edu"
+          required
+          style={{
+            width: "100%",
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: "1px solid #ddd6fe",
+            fontSize: 15,
+            marginBottom: 16,
+            boxSizing: "border-box",
+          }}
+        />
+
+        {status === "duplicate" && (
+          <div style={{
+            padding: "8px 12px",
+            borderRadius: 8,
+            background: "#fef3c7",
+            border: "1px solid #fde68a",
+            fontSize: 13,
+            color: "#92400e",
+            marginBottom: 12,
+            textAlign: "center",
+          }}>
+            This teacher has already been recommended! Try a different teacher.
+          </div>
+        )}
+
+        {status === "error" && (
+          <div style={{
+            padding: "8px 12px",
+            borderRadius: 8,
+            background: "#fee2e2",
+            border: "1px solid #fca5a5",
+            fontSize: 13,
+            color: "#991b1b",
+            marginBottom: 12,
+            textAlign: "center",
+          }}>
+            Something went wrong. Please try again.
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            type="submit"
+            disabled={status === "sending" || !teacherEmail.trim()}
+            style={{
+              flex: 1,
+              padding: "12px 20px",
+              borderRadius: 12,
+              border: "none",
+              background: "linear-gradient(135deg, #7c3aed, #a855f7)",
+              color: "#fff",
+              fontWeight: 900,
+              fontSize: 15,
+              cursor: status === "sending" ? "wait" : "pointer",
+              opacity: status === "sending" || !teacherEmail.trim() ? 0.6 : 1,
+            }}
+          >
+            {status === "sending" ? "Sending…" : `Send Recommendation (+${RECOMMEND_POINTS} pts)`}
+          </button>
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            style={{
+              padding: "12px 16px",
+              borderRadius: 12,
+              border: "1px solid #e2e8f0",
+              background: "#fff",
+              color: "#64748b",
+              fontWeight: 700,
+              fontSize: 14,
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [showAmbassador, setShowAmbassador] = useState(false);
+  const [recommendBonus, setRecommendBonus] = useState(0);
   const isClassroom = source === "classroom";
 
   const completed = results.filter((r) => !r.skipped);
   const skipped = results.filter((r) => r.skipped);
-  const totalPoints = results.reduce((s, r) => s + (r.points || 0), 0);
+  const basePoints = results.reduce((s, r) => s + (r.points || 0), 0);
+  const totalPoints = basePoints + recommendBonus;
 
   // Show ambassador popup after a brief delay for keeners (conference only)
   useEffect(() => {
@@ -1209,6 +1445,9 @@ function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
             </div>
           </div>
         )}
+
+        {/* Recommend a Teacher */}
+        <RecommendTeacher user={user} onPointsEarned={(pts) => setRecommendBonus(pts)} />
 
         {/* CTA section */}
         {!isClassroom && (

@@ -4,6 +4,7 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
 import ConferenceLead from "../models/ConferenceLead.js";
+import Recommendation from "../models/Recommendation.js";
 import { sendSystemEmail } from "../email/shareInviteEmailer.js";
 
 const router = express.Router();
@@ -909,6 +910,154 @@ function esc(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/* ------------------------------------------------------------------ */
+/*  POST /recommend                                                     */
+/*  Student recommends a teacher — one recommendation per teacher       */
+/* ------------------------------------------------------------------ */
+
+const recommendLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: "Too many recommendations, please try again later" },
+});
+
+router.post("/recommend", recommendLimiter, async (req, res) => {
+  try {
+    const { teacherName, teacherEmail, studentName, studentEmail } = req.body;
+
+    if (!teacherEmail || !studentName) {
+      return res.status(400).json({ error: "Teacher email and student name are required" });
+    }
+
+    const normalizedTeacherEmail = teacherEmail.toLowerCase().trim();
+
+    // Check if this teacher has already been recommended (by anyone)
+    const existing = await Recommendation.findOne({
+      teacherEmail: normalizedTeacherEmail,
+      source: "student-practice",
+    });
+
+    if (existing) {
+      return res.json({
+        ok: false,
+        alreadyRecommended: true,
+        message: "This teacher has already been recommended!",
+      });
+    }
+
+    // Create the recommendation record
+    const rec = await Recommendation.create({
+      recommenderName: studentName.trim(),
+      recommenderEmail: (studentEmail || "").toLowerCase().trim(),
+      teacherName: (teacherName || "").trim(),
+      teacherEmail: normalizedTeacherEmail,
+      source: "student-practice",
+      message: `${studentName.trim()} recommended you to try Curriculate!`,
+    });
+
+    // Send recommendation email to the teacher (fire-and-forget)
+    sendTeacherRecommendationEmail({
+      teacherName: (teacherName || "").trim(),
+      teacherEmail: normalizedTeacherEmail,
+      studentName: studentName.trim(),
+    }).catch((err) => {
+      console.error("[demo/recommend] Email send failed:", err.message);
+    });
+
+    console.log(`[demo/recommend] ${studentName} recommended ${normalizedTeacherEmail}`);
+    res.json({ ok: true, points: 25 });
+  } catch (err) {
+    console.error("[demo/recommend] Error:", err.message);
+    res.status(500).json({ error: "Recommendation failed" });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  GET /check-recommendation                                           */
+/*  Check if a teacher has already been recommended                     */
+/* ------------------------------------------------------------------ */
+
+router.get("/check-recommendation", async (req, res) => {
+  try {
+    const email = (req.query.email || "").toLowerCase().trim();
+    if (!email) return res.json({ recommended: false });
+
+    const existing = await Recommendation.findOne({
+      teacherEmail: email,
+      source: "student-practice",
+    });
+
+    res.json({ recommended: !!existing });
+  } catch (err) {
+    console.error("[demo/check-recommendation] Error:", err.message);
+    res.json({ recommended: false });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  Teacher recommendation email                                        */
+/* ------------------------------------------------------------------ */
+
+async function sendTeacherRecommendationEmail({ teacherName, teacherEmail, studentName }) {
+  const greeting = teacherName ? `Hi ${esc(teacherName)}` : "Hi there";
+
+  const html = `
+    <div style="max-width: 600px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+      <div style="background: linear-gradient(135deg, #7c3aed, #a855f7); border-radius: 16px 16px 0 0; padding: 28px 24px; text-align: center;">
+        <div style="font-size: 36px; margin-bottom: 8px;">⭐</div>
+        <h1 style="margin: 0; color: #fff; font-size: 22px; font-weight: 900;">A Student Recommended You!</h1>
+      </div>
+
+      <div style="background: #fff; padding: 24px; border: 1px solid #e2e8f0; border-top: none;">
+        <p style="font-size: 16px; color: #334155; line-height: 1.6; margin-top: 0;">
+          ${greeting},
+        </p>
+        <p style="font-size: 16px; color: #334155; line-height: 1.6;">
+          <strong style="color: #7c3aed;">${esc(studentName)}</strong> thinks you're an amazing teacher and recommended you try <strong>Curriculate</strong> — an AI-powered platform with 60+ interactive task types for classroom engagement.
+        </p>
+
+        <div style="background: linear-gradient(135deg, #f5f3ff, #ede9fe); border: 2px solid #c4b5fd; border-radius: 12px; padding: 20px; margin: 20px 0; text-align: center;">
+          <div style="font-size: 14px; color: #6d28d9; font-weight: 700; margin-bottom: 8px;">
+            Your student said you're worth recommending
+          </div>
+          <div style="font-size: 13px; color: #7c3aed;">
+            That's a pretty great compliment! 💜
+          </div>
+        </div>
+
+        <p style="font-size: 15px; color: #334155; line-height: 1.6;">
+          Curriculate helps you create interactive scavenger hunts, AI-graded assignments, and engaging activities — all in minutes.
+        </p>
+
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="https://curriculate.net/pricing" style="display: inline-block; padding: 14px 32px; border-radius: 12px; background: linear-gradient(135deg, #7c3aed, #a855f7); color: #fff; font-weight: 900; font-size: 16px; text-decoration: none; box-shadow: 0 4px 12px rgba(124,58,237,0.3);">
+            Try It Free →
+          </a>
+        </div>
+
+        <p style="font-size: 13px; color: #94a3b8; text-align: center;">
+          Use code <strong style="font-size: 15px; letter-spacing: 2px; color: #7c3aed;">STUDENTREC</strong> for 1 month free
+        </p>
+      </div>
+
+      <div style="background: #f8fafc; border-radius: 0 0 16px 16px; padding: 20px 24px; border: 1px solid #e2e8f0; border-top: none; text-align: center;">
+        <p style="margin: 0; font-size: 12px; color: #94a3b8; line-height: 1.5;">
+          Curriculate — AI-powered interactive learning for classrooms<br/>
+          <a href="https://www.curriculate.net" style="color: #3b82f6; text-decoration: none;">curriculate.net</a>
+        </p>
+      </div>
+    </div>
+  `;
+
+  await sendSystemEmail({
+    to: teacherEmail,
+    subject: `⭐ ${studentName} recommended you try Curriculate!`,
+    html,
+  });
+
+  console.log(`[demo/recommend] ✅ Recommendation email sent to ${teacherEmail} from ${studentName}`);
 }
 
 export default router;
