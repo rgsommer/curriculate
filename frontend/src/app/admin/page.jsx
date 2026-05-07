@@ -52,6 +52,9 @@ export default function AdminUsageDashboard() {
   const [diagLogs, setDiagLogs] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [recsLoading, setRecsLoading] = useState(false);
+  const [recForm, setRecForm] = useState({ teacherName: "", teacherEmail: "", message: "" });
+  const [recSending, setRecSending] = useState(false);
+  const [recStatus, setRecStatus] = useState(null);
   const [diagLoading, setDiagLoading] = useState(false);
   const [diagLoaded, setDiagLoaded] = useState(false);
 
@@ -1050,6 +1053,81 @@ export default function AdminUsageDashboard() {
 
           {/* Recommendations */}
           <Card title="📨 Teacher Recommendations">
+            {/* --- Recommend-a-Teacher Form --- */}
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!recForm.teacherEmail.trim()) return;
+                setRecSending(true);
+                setRecStatus(null);
+                try {
+                  const r = await fetch(`${API}/api/recommend`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      recommenderName: "Richard (Admin)",
+                      recommenderEmail: "rgsommer@me.com",
+                      teacherName: recForm.teacherName.trim(),
+                      teacherEmail: recForm.teacherEmail.trim(),
+                      message: recForm.message.trim() || undefined,
+                    }),
+                  });
+                  if (r.ok) {
+                    setRecStatus({ ok: true, text: `Recommendation sent to ${recForm.teacherEmail}` });
+                    setRecForm({ teacherName: "", teacherEmail: "", message: "" });
+                  } else {
+                    const d = await r.json().catch(() => ({}));
+                    setRecStatus({ ok: false, text: d.error || "Failed to send" });
+                  }
+                } catch (err) {
+                  setRecStatus({ ok: false, text: err.message });
+                }
+                setRecSending(false);
+              }}
+              className="mb-4 space-y-2 rounded-lg border border-white/10 bg-white/5 p-3"
+            >
+              <div className="text-xs font-bold text-white/70 mb-1">Recommend a Teacher</div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Teacher name (optional)"
+                  value={recForm.teacherName}
+                  onChange={(e) => setRecForm((f) => ({ ...f, teacherName: e.target.value }))}
+                  className="flex-1 rounded border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-white placeholder-white/30 focus:border-blue-500 focus:outline-none"
+                />
+                <input
+                  type="email"
+                  required
+                  placeholder="Teacher email *"
+                  value={recForm.teacherEmail}
+                  onChange={(e) => setRecForm((f) => ({ ...f, teacherEmail: e.target.value }))}
+                  className="flex-1 rounded border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-white placeholder-white/30 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <input
+                type="text"
+                placeholder="Personal message (optional)"
+                value={recForm.message}
+                onChange={(e) => setRecForm((f) => ({ ...f, message: e.target.value }))}
+                className="w-full rounded border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-white placeholder-white/30 focus:border-blue-500 focus:outline-none"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={recSending}
+                  className="px-3 py-1.5 text-xs font-bold rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {recSending ? "Sending…" : "Send Recommendation"}
+                </button>
+                {recStatus && (
+                  <span className={`text-xs ${recStatus.ok ? "text-green-400" : "text-red-400"}`}>
+                    {recStatus.text}
+                  </span>
+                )}
+              </div>
+            </form>
+
+            {/* --- Recommendations List --- */}
             <button
               onClick={async () => {
                 setRecsLoading(true);
