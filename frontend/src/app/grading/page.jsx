@@ -3627,7 +3627,7 @@ export default function GradingPage() {
               }}
               style={{
                 ...styles.select,
-                flex: "1 1 120px",
+                flex: "1 1 180px",
                 border: voice === "iep_supportive"
                   ? "1px solid rgba(0,0,0,.45)"
                   : styles.select?.border || "1px solid rgba(0,0,0,.2)",
@@ -3666,7 +3666,7 @@ export default function GradingPage() {
 
         {/* ── Teacher email (beside Feedback Voice) — hidden until 5 uses unless already set ── */}
         {(gradingUses >= 5 || teacherEmail) && (
-          <label style={{ ...styles.controlLabel, flex: "1 1 180px" }}>
+          <label style={{ ...styles.controlLabel, flex: "1 1 220px" }}>
             Email
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
@@ -6183,18 +6183,22 @@ const styles = {
     display: "flex",
     alignItems: "flex-end",
     gap: 12,
-    marginBottom: 10,
+    rowGap: 14,
+    marginBottom: 14,
     flexWrap: "wrap",
     maxWidth: "100%",
   },
 
+  // Each control column needs ~220px of breathing room before two-up;
+  // below that (phones), wrap to a single column. This prevents the
+  // truncation seen in mobile screenshots ("Grades 6-8 (defa…").
   controlLabel: {
     display: "flex",
     flexDirection: "column",
     gap: 6,
     fontSize: 12,
     fontWeight: 800,
-    flex: "1 1 140px",
+    flex: "1 1 220px",
     minWidth: 0,
   },
   select: {
@@ -6207,6 +6211,8 @@ const styles = {
     minWidth: 0,
     width: "100%",
     maxWidth: "100%",
+    // Reserve a safe overflow strategy so long labels never get clipped
+    textOverflow: "ellipsis",
   },
 
   rubricCard: {
