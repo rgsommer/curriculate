@@ -3489,6 +3489,11 @@ export default function GradingPage() {
         <div style={styles.header}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <img src="/images/pulse/pulse-icon.png" alt="Pulse" style={{ height: 32, width: "auto" }} />
+            <img
+              src="/images/mascot/email-results/2.png"
+              alt=""
+              style={{ height: 36, width: 36, borderRadius: "50%", objectFit: "cover" }}
+            />
             <h1 style={styles.h1}>Pulse Grading</h1>
             {!tipsHidden && (
               <a
@@ -4570,7 +4575,23 @@ export default function GradingPage() {
                 <div style={{
                   marginTop: 10, padding: "14px 16px", borderRadius: 12,
                   background: bg, border,
+                  display: "flex",
+                  gap: 12,
+                  alignItems: "flex-start",
                 }}>
+                  <img
+                    src="/images/mascot/feedback/1.png"
+                    alt=""
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: "50%",
+                      objectFit: "cover",
+                      flexShrink: 0,
+                      border: `2px solid ${safetyCount > 0 ? "#fca5a5" : "#fde68a"}`,
+                    }}
+                  />
+                  <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 800, fontSize: 14, color: headlineColor, marginBottom: 6 }}>
                     🚩 {flagged.length} student response{flagged.length === 1 ? "" : "s"} flagged for your attention
                     {safetyCount > 0 ? ` — ${safetyCount} possible safety, ${wellbeingCount} wellbeing` : ""}
@@ -4595,6 +4616,7 @@ export default function GradingPage() {
                       </li>
                     ))}
                   </ul>
+                  </div>
                 </div>
               );
             })()}

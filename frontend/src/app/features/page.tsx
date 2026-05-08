@@ -493,6 +493,36 @@ export default function FeaturesPage() {
 
           <div className="mt-12">
             <SectionHeader
+              eyebrow="Care & Attention"
+              title="What AI grading shouldn't lose: the human read"
+              desc="When you grade by hand, you catch the moment a student's journal turns serious — a passing line about home, a flicker of struggle, something that deserves a follow-up. Pulse Grading is built to keep that signal visible, not bury it under a pile of efficiency."
+              mascot="/images/mascot/feedback/2.png"
+            />
+            <FeatureCard
+              title="🚩 Welfare check — alongside every grade"
+              body="When the AI reads a student's writing, it's also watching for signals a caring teacher would want to know about — and surfaces them in two clearly-marked tiers, with a short snippet so you can locate the passage."
+              bullets={[
+                "⚠️ Possible safety concern — explicit signals (self-harm references, abuse disclosure, persistent bullying, severe hopelessness)",
+                "💛 Wellbeing — notable personal context worth a check-in (recent loss, family stress, anxiety mentioned in passing, identity concerns)",
+                "Short snippet (≤15 words) so you can locate the passage — never a long quote, never third-party identifying details",
+                "Surfaces in the on-screen results banner AND in the session-summary email — you can't miss it in batch grading",
+                "Strict guardrails: no diagnosis, no prescription, signal-only — you remain the decision-maker",
+                "Teacher-only: never in CSV exports, parent emails, student result pages, or any grade analytics",
+              ]}
+            />
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+              <div className="text-sm font-bold text-amber-900 mb-1">A note on what this is and isn't</div>
+              <p className="text-sm leading-relaxed text-amber-900/85">
+                This is an AI signal, not a clinical judgment. It catches what's plausibly visible in the
+                writing — it cannot replace your judgment, your knowledge of the student, or your school's
+                safeguarding policy. The detection is intentionally biased toward "none" when uncertain, so
+                the few flags that do surface are the ones genuinely worth your attention.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-12">
+            <SectionHeader
               eyebrow="Plans"
               title="Three tiers — Free, Plus, Pro"
               desc="Free is full-featured for live engagement. Plus unlocks class linking and gradebook integration. Pro adds per-student improvement reports for teachers and admins who want to track impact over time."
