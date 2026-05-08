@@ -77,32 +77,87 @@ router.post("/", createLimiter, async (req, res) => {
 
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    // Dedup: only match by studentId + pdfName (same source PDF = same assignment).
-    // Title and subject are NOT reliable dedup keys — multiple different assignments
-    // can share the same title (e.g. several "Geo Journal" entries).
-    // For single-photo mode there is no pdfName, so each submission is unique.
-    const studentId = meta?.studentId;
-    const pdfName = (meta?.pdfName || "").trim();
+    // ─── Dedup by pdfName + same student (collapses re-grades on /progress) ───
+    // Prior behavior: required studentId + pdfName both set; the prior record
+    // was untouched if the previous grade had been published BEFORE the
+    // teacher linked the student (no studentId on the old doc).
+    //
+    // New behavior: when a new result is published with a known pdfName, we
+    // sweep ALL existing records that share that pdfName + look like the same
+    // student (matching studentId, or matching studentName when either side
+    // lacks studentId). The most recent matching record gets updated in place
+    // (preserving its code so old links keep working); any older stragglers
+    // are deleted so /progress shows only one entry per (student × pdf).
+    const studentId = meta?.studentId ? String(meta.studentId) : "";
+    const studentName = String(meta?.studentName || "").trim().toLowerCase();
+    const pdfName = String(meta?.pdfName || "").trim();
+    const teacherEmail = String(meta?.teacherEmail || "").trim().toLowerCase();
 
-    if (studentId && pdfName) {
-      const existing = await PublishedResult.findOne({
-        "meta.studentId": studentId,
+    if (pdfName) {
+      // Scope candidates to this teacher when we can identify them, so we
+      // never collapse another teacher's records.
+      const teacherFilter = teacherId
+        ? { teacherId }
+        : (teacherEmail ? { "meta.teacherEmail": teacherEmail } : {});
+      const sameSource = await PublishedResult.find({
         "meta.pdfName": pdfName,
-      }).sort({ createdAt: -1 });
+        ...teacherFilter,
+      });
 
-      if (existing) {
-        existing.payload = payload;
-        existing.meta = meta;
-        existing.teacherId = teacherId || existing.teacherId;
-        existing.sessionId = sessionId || existing.sessionId;
-        existing.expiresAt = expiresAt;
-        existing.createdAt = new Date();
-        existing.viewCount = 0;
-        existing.lastViewedAt = null;
-        existing.notifiedAt = null; // reset so re-graded result triggers a new notification
-        await existing.save();
-        fireGradeNotify(existing.code, meta, payload);
-        return res.json({ code: existing.code, expiresAt, updated: true });
+      // Filter to records that look like the same student.
+      const sameStudent = sameSource.filter((doc) => {
+        const dId = doc.meta?.studentId ? String(doc.meta.studentId) : "";
+        const dName = String(doc.meta?.studentName || "").trim().toLowerCase();
+        // Strongest signal: matching studentId
+        if (studentId && dId && dId === studentId) return true;
+        // Names match (case-insensitive) — covers the unlinked-then-linked case.
+        // We require both names to be non-empty to avoid false positives.
+        if (studentName && dName && dName === studentName) return true;
+        // New has studentId but old has no studentId AND no studentName at all:
+        // pdfName + same teacher already strongly implies same student. Take it.
+        if (studentId && !dId && !dName) return true;
+        return false;
+      });
+
+      if (sameStudent.length > 0) {
+        // Keep the most recent matching record (preserves its code so any
+        // outstanding share links continue to resolve). Delete the rest.
+        sameStudent.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        const keep = sameStudent[0];
+        const drop = sameStudent.slice(1);
+
+        keep.payload = payload;
+        keep.meta = meta;
+        keep.teacherId = teacherId || keep.teacherId;
+        keep.sessionId = sessionId || keep.sessionId;
+        keep.expiresAt = expiresAt;
+        keep.createdAt = new Date();
+        keep.viewCount = 0;
+        keep.lastViewedAt = null;
+        keep.notifiedAt = null; // reset so the re-graded result triggers a fresh notification
+        await keep.save();
+
+        if (drop.length > 0) {
+          try {
+            await PublishedResult.deleteMany({
+              _id: { $in: drop.map((d) => d._id) },
+            });
+            console.log(
+              `[results] Replaced ${drop.length} prior record(s) on /progress ` +
+                `for pdfName="${pdfName}" student="${studentName || studentId || "?"}"`
+            );
+          } catch (e) {
+            console.warn("[results] Stragglers cleanup failed:", e?.message || e);
+          }
+        }
+
+        fireGradeNotify(keep.code, meta, payload);
+        return res.json({
+          code: keep.code,
+          expiresAt,
+          updated: true,
+          replaced: drop.length,
+        });
       }
     }
 
