@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Field Day</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ============ WELCOME / ENTRY SCREEN ============ -->
+<section class="welcome" id="welcomeScreen">
+  <div class="welcome-card">
+    <div class="welcome-mark">🏅</div>
+    <h1>Field Day</h1>
+    <p class="muted">Run events, score categories, announce winners.</p>
+    <div class="welcome-roles">
+      <button class="role-card" id="enterAdmin">
+        <div class="role-icon">🛡️</div>
+        <div class="role-title">Enter as Admin</div>
+        <div class="role-sub">Set up your school, oversee all events, finalize ribbons.</div>
+      </button>
+      <button class="role-card" id="enterLeader">
+        <div class="role-icon">📣</div>
+        <div class="role-title">Enter as Event Leader</div>
+        <div class="role-sub">Use a school code to run events and submit results.</div>
+      </button>
+    </div>
+    <p class="welcome-foot muted small">Data is stored on this device. Use Export to share between devices. <a href="/meet-fieldday/" style="margin-left:6px">About Field Day →</a></p>
+  </div>
+</section>
+
+<!-- ============ ADMIN SIGN-IN MODAL ============ -->
+<div class="modal" id="adminAuthModal" hidden>
+  <div class="modal-card">
+    <header class="modal-header">
+      <h2 id="adminAuthTitle">Admin Sign In</h2>
+      <button class="icon-btn" id="btnAdminAuthClose">✕</button>
+    </header>
+
+    <div class="modal-body" id="adminAuthBody">
+      <!-- Step 1: Email -->
+      <div id="adminStepEmail">
+        <div class="form-row">
+          <label>Email Address</label>
+          <input type="email" id="adminEmail" placeholder="you@school.org" autocomplete="email" />
+        </div>
+        <p class="muted small">Enter your email — we'll send a passkey from <strong>Curriculate Field Day</strong>. If email isn't reachable, the code will appear on screen instead.</p>
+      </div>
+
+      <!-- Step 2: Passkey -->
+      <div id="adminStepPasskey" hidden>
+        <div class="passkey-display" id="passkeyDisplay" hidden>
+          <div class="muted small">Your passkey:</div>
+          <div class="passkey-code" id="passkeyShown"></div>
+        </div>
+        <div class="form-row">
+          <label>Enter Passkey</label>
+          <input type="text" id="adminPasskey" placeholder="6-digit code" autocomplete="one-time-code" maxlength="8" />
+        </div>
+        <p class="muted small" id="passkeyHint">Enter the passkey above to continue.</p>
+      </div>
+
+      <!-- Step 3: School details (new school) -->
+      <div id="adminStepSchool" hidden>
+        <div class="form-row">
+          <label>School Name</label>
+          <input id="schoolName" placeholder="Maple Elementary School" />
+        </div>
+        <div class="form-row">
+          <label>School Code</label>
+          <input id="schoolCode" placeholder="MAPLE26" maxlength="10" />
+          <p class="muted small">Event leaders will use this code to join. Letters and numbers only.</p>
+        </div>
+      </div>
+
+      <!-- Step 4: Pick existing school -->
+      <div id="adminStepPickSchool" hidden>
+        <p class="muted small">Schools registered to this email:</p>
+        <div id="schoolPickerList" class="school-picker"></div>
+        <button class="link" id="btnNewSchoolFromPick" type="button">+ Create another school</button>
+        <button class="link" id="btnJoinSchoolFromPick" type="button" style="margin-left:12px">↪ Join an existing school with a code</button>
+      </div>
+
+      <!-- Step 5: Join existing school by code -->
+      <div id="adminStepJoinSchool" hidden>
+        <div class="form-row">
+          <label>School Code</label>
+          <input id="joinSchoolCode" placeholder="MAPLE26" maxlength="10" autocomplete="off" />
+          <p class="muted small">Ask the school's existing admin for the code. You'll be added as an admin once you join.</p>
+        </div>
+      </div>
+    </div>
+
+    <footer class="modal-footer">
+      <button class="btn ghost" id="btnAdminAuthBack" hidden>Back</button>
+      <button class="btn primary" id="btnAdminAuthNext">Continue</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ LEADER SIGN-IN MODAL ============ -->
+<div class="modal" id="leaderAuthModal" hidden>
+  <div class="modal-card">
+    <header class="modal-header">
+      <h2>Event Leader Sign In</h2>
+      <button class="icon-btn" id="btnLeaderAuthClose">✕</button>
+    </header>
+    <div class="modal-body">
+      <div class="form-row">
+        <label>School Code</label>
+        <input id="leaderSchoolCode" placeholder="MAPLE26" maxlength="10" autocomplete="off" />
+      </div>
+      <div class="form-row">
+        <label>Your Name</label>
+        <input id="leaderName" placeholder="Coach Smith" autocomplete="name" />
+      </div>
+      <p class="muted small" id="leaderAuthHint">Ask your field day admin for the school code.</p>
+    </div>
+    <footer class="modal-footer">
+      <button class="btn ghost" id="btnLeaderAuthCancel">Cancel</button>
+      <button class="btn primary" id="btnLeaderAuthSubmit">Continue</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ MAIN APP (after sign-in) ============ -->
+<header class="topbar" id="topbar" hidden>
+  <div class="brand">
+    <span class="brand-mark">🏅</span>
+    <span class="brand-text">Field Day</span>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="events">Events</button>
+    <button class="tab" data-tab="admin" data-admin="1">Admin</button>
+    <button class="tab" data-tab="ribbons" data-admin="1">Ribbons</button>
+    <button class="tab" data-tab="announce" data-admin="1">Announce <span class="badge" id="announceBadge" hidden>0</span></button>
+    <button class="tab" data-tab="settings" data-admin="1">Settings</button>
+  </nav>
+  <div class="user-chip" id="userChip">
+    <div class="user-info">
+      <div class="user-name" id="userName"></div>
+      <div class="user-school" id="userSchool"></div>
+    </div>
+    <button class="icon-btn" id="btnSignOut" title="Sign out">⎋</button>
+  </div>
+</header>
+
+<main id="app" hidden>
+  <!-- ============== EVENTS TAB ============== -->
+  <section class="view" id="view-events">
+    <div class="view-header">
+      <h1>Events</h1>
+      <div class="view-header-actions">
+        <input class="search" id="eventSearch" placeholder="Search events..." />
+        <button class="btn primary" id="btnNewEvent">+ New Event</button>
+      </div>
+    </div>
+
+    <div class="filter-row">
+      <label>Status
+        <select id="filterStatus">
+          <option value="">All</option>
+          <option value="in_progress">In Progress</option>
+          <option value="completed">Completed</option>
+        </select>
+      </label>
+      <label>Gender
+        <select id="filterGender">
+          <option value="">All</option>
+          <option value="Girls">Girls</option>
+          <option value="Boys">Boys</option>
+          <option value="Mixed">Mixed</option>
+        </select>
+      </label>
+      <label>Age
+        <select id="filterAge"><option value="">All</option></select>
+      </label>
+    </div>
+
+    <div class="event-grid" id="eventGrid"></div>
+
+    <div class="empty-state" id="eventsEmpty" hidden>
+      <div class="empty-icon">🎽</div>
+      <h2>No events yet</h2>
+      <p>Tap “+ New Event” to set up your first race or contest.</p>
+    </div>
+  </section>
+
+  <!-- ============== EVENT DETAIL ============== -->
+  <section class="view" id="view-event-detail" hidden>
+    <div class="view-header">
+      <button class="btn ghost" id="btnBackEvents">← Back</button>
+      <div class="view-header-title">
+        <h1 id="eventDetailTitle">Event</h1>
+        <div class="muted" id="eventDetailMeta"></div>
+      </div>
+      <div class="view-header-actions">
+        <button class="btn ghost" id="btnEditEvent">Edit</button>
+        <button class="btn danger ghost" id="btnDeleteEvent">Delete</button>
+      </div>
+    </div>
+
+    <div class="event-detail">
+      <div class="detail-card event-rules-card" id="eventRulesCard" hidden>
+        <h2 style="display:flex;justify-content:space-between;align-items:center;">
+          Rules
+          <button class="link" id="btnToggleRules" type="button" style="font-size:13px">Hide</button>
+        </h2>
+        <pre id="eventRulesText"></pre>
+      </div>
+      <div class="detail-card">
+        <h2>Competitors & Results</h2>
+        <div id="competitorList" class="competitor-list"></div>
+        <div class="add-competitor-row">
+          <input id="newCompetitorName" placeholder="Competitor name" />
+          <button class="btn" id="btnAddCompetitor">+ Add Competitor</button>
+        </div>
+      </div>
+
+      <aside class="detail-side">
+        <div class="detail-card" id="timerCard" hidden>
+          <h2>Stopwatch</h2>
+          <div class="timer-display" id="timerDisplay">00:00.00</div>
+          <div class="timer-buttons">
+            <button class="btn primary" id="btnTimerStart">Start</button>
+            <button class="btn" id="btnTimerStop" disabled>Stop</button>
+            <button class="btn ghost" id="btnTimerReset">Reset</button>
+          </div>
+          <div class="timer-target muted">Tap a result cell, then Start. Stop saves the time there.</div>
+        </div>
+
+        <div class="detail-card">
+          <h2>Event Status</h2>
+          <div class="status-line"><span class="dot" id="eventStatusDot"></span> <span id="eventStatusText">In Progress</span></div>
+          <button class="btn primary block" id="btnSubmitEvent">Submit & Complete</button>
+          <button class="btn ghost block" id="btnReopenEvent" hidden>Reopen Event</button>
+          <p class="muted small">Submitting marks the event final and posts it to the announcer.</p>
+        </div>
+
+        <div class="detail-card">
+          <h2>Live Standings</h2>
+          <ol class="standings" id="liveStandings"></ol>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============== ADMIN TAB ============== -->
+  <section class="view" id="view-admin" hidden>
+    <div class="view-header">
+      <h1>Admin Overview</h1>
+      <div class="view-header-actions">
+        <button class="btn ghost" id="btnExportJson">Export Data</button>
+        <label class="btn ghost file-btn">
+          Import Data
+          <input type="file" id="importJson" accept="application/json" hidden />
+        </label>
+      </div>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-num" id="kpiEvents">0</div><div class="kpi-lbl">Events</div></div>
+      <div class="kpi"><div class="kpi-num" id="kpiCompleted">0</div><div class="kpi-lbl">Completed</div></div>
+      <div class="kpi"><div class="kpi-num" id="kpiInProgress">0</div><div class="kpi-lbl">In Progress</div></div>
+      <div class="kpi"><div class="kpi-num" id="kpiCompetitors">0</div><div class="kpi-lbl">Competitors</div></div>
+    </div>
+
+    <h2 class="section-title">Overall Standings</h2>
+    <div class="overall-standings" id="overallStandings"></div>
+
+    <h2 class="section-title">School Records</h2>
+    <div class="records-block" id="recordsBlock"></div>
+
+    <h2 class="section-title">Points by Category</h2>
+    <div class="points-tables" id="pointsTables"></div>
+
+    <h2 class="section-title">Events by Category</h2>
+    <div class="category-groups" id="categoryGroups"></div>
+  </section>
+
+  <!-- ============== RIBBONS TAB ============== -->
+  <section class="view" id="view-ribbons" hidden>
+    <div class="view-header">
+      <h1>Ribbons & Final Results</h1>
+      <div class="view-header-actions">
+        <label class="check"><input type="checkbox" id="ribbonsOnlyCompleted" checked /> Only completed</label>
+        <button class="btn ghost" id="btnPrintRibbons">Print List</button>
+        <button class="btn primary" id="btnPrintLabels">Print Label Sheet</button>
+      </div>
+    </div>
+    <div class="ribbons-print-area" id="ribbonsContainer"></div>
+
+    <!-- Hidden print-only label sheet, populated when "Print Label Sheet" is clicked -->
+    <div class="label-sheet" id="labelSheet" hidden></div>
+  </section>
+
+  <!-- ============== ANNOUNCE TAB ============== -->
+  <section class="view" id="view-announce" hidden>
+    <div class="view-header">
+      <h1>Announcer</h1>
+      <div class="view-header-actions">
+        <button class="btn ghost" id="btnAnnounceRefresh">Refresh</button>
+      </div>
+    </div>
+
+    <div class="announce-stage" id="announceStage">
+      <div class="announce-empty" id="announceEmpty">
+        <div class="empty-icon">📣</div>
+        <h2>Nothing new to announce</h2>
+        <p>When event leaders submit, completed categories will queue up here.</p>
+      </div>
+
+      <article class="announce-card" id="announceCard" hidden>
+        <div class="announce-eyebrow" id="announceEyebrow"></div>
+        <h2 class="announce-title" id="announceTitle"></h2>
+        <ol class="announce-results" id="announceResults"></ol>
+        <div class="announce-actions">
+          <button class="btn ghost" id="btnAnnounceSkip">Skip</button>
+          <button class="btn primary big" id="btnAnnounced">Announced ✓</button>
+        </div>
+        <div class="muted small" id="announceQueueInfo"></div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============== SETTINGS TAB ============== -->
+  <section class="view" id="view-settings" hidden>
+    <div class="view-header"><h1>Settings</h1></div>
+
+    <div class="detail-card">
+      <h2>Scoring Mode</h2>
+      <label class="radio">
+        <input type="radio" name="scoringMode" value="placement" />
+        <div>
+          <strong>Strict placement (1st / 2nd / 3rd)</strong>
+          <div class="muted small">Awards points for ranking within each event. The classic field-day model.</div>
+        </div>
+      </label>
+      <label class="radio">
+        <input type="radio" name="scoringMode" value="standard" />
+        <div>
+          <strong>Compete against the standard</strong>
+          <div class="muted small">Each event has 1st / 2nd / 3rd standard targets per age band. Anyone who beats the 3rd standard gets a ribbon.</div>
+        </div>
+      </label>
+    </div>
+
+    <div class="detail-card">
+      <h2>Tie-breaking Method</h2>
+      <label class="radio">
+        <input type="radio" name="tieMethod" value="average" />
+        <div>
+          <strong>Average tied positions</strong>
+          <div class="muted small">Tie for 1st: each gets (5+4)/2 = 4.5. Next is 3rd.</div>
+        </div>
+      </label>
+      <label class="radio">
+        <input type="radio" name="tieMethod" value="higher" />
+        <div>
+          <strong>Both get higher placement</strong>
+          <div class="muted small">Tie for 1st: each gets 5. Next is 3rd. Easier and more encouraging.</div>
+        </div>
+      </label>
+    </div>
+
+    <div class="detail-card">
+      <h2>Age Categories &amp; Bands</h2>
+      <p class="muted small">Categories are individual ages used to tag events. Bands are ranges used for standards and overall standings.</p>
+      <label class="settings-label">Categories (comma-separated)</label>
+      <input id="ageCategories" />
+      <label class="settings-label">Age Bands (comma-separated, ranges with hyphens)</label>
+      <input id="ageBands" placeholder="5-6, 7-8, 9-10, 11-12, 13-14" />
+      <div class="settings-row">
+        <button class="btn" id="btnSaveAges">Save Ages &amp; Bands</button>
+      </div>
+    </div>
+
+    <div class="detail-card">
+      <h2>Event Title Library</h2>
+      <p class="muted small">Edit the list of typical events shown in the New Event dropdown.</p>
+      <textarea id="eventLibrary" rows="10"></textarea>
+      <button class="btn" id="btnSaveLibrary">Save Library</button>
+    </div>
+
+    <div class="detail-card">
+      <h2>Event Rules</h2>
+      <p class="muted small">Pre-populated rules shown to event leaders running each event. Edit any of them; leaders see what you save here.</p>
+      <div id="eventRulesEditor" class="rules-editor"></div>
+      <div class="settings-row">
+        <button class="btn" id="btnSaveRules">Save Rules</button>
+      </div>
+    </div>
+
+    <div class="detail-card">
+      <h2>School Records</h2>
+      <p class="muted small">Add a baseline record manually, or let the app capture them as competitors set them. The horn blows on every new record.</p>
+      <div id="recordsEditor" class="records-editor"></div>
+      <div class="add-record-row">
+        <input id="recTitle" placeholder="Event title" />
+        <input id="recAge" placeholder="Age" style="width:60px" />
+        <select id="recGender"><option>Girls</option><option>Boys</option><option>Mixed</option></select>
+        <select id="recType">
+          <option value="timed">Timed</option>
+          <option value="distance">Distance</option>
+          <option value="weight">Weight</option>
+        </select>
+        <input id="recValue" placeholder="Value (s or m)" style="width:120px" />
+        <input id="recHolder" placeholder="Held by" />
+        <input id="recDate" type="date" />
+        <button class="btn" id="btnAddRecord">+ Add Record</button>
+      </div>
+    </div>
+
+    <div class="detail-card" id="standardsCard" hidden>
+      <h2>Performance Standards</h2>
+      <p class="muted small">Targets per event, age band, and gender. 1st-level (gold), 2nd-level (silver), 3rd-level (bronze). Anyone who beats the 3rd standard earns a ribbon. Numbers below are starting points — edit for your region.</p>
+      <div class="standards-toolbar">
+        <select id="standardsTitleFilter"></select>
+        <button class="btn ghost" id="btnReseedStandards">Re-seed defaults</button>
+      </div>
+      <div id="standardsEditor" class="standards-editor"></div>
+    </div>
+
+    <div class="detail-card">
+      <h2>School Code & Admins</h2>
+      <p class="muted small">The school code lets event leaders join. Share it with other admins so they can join too. The code can only be changed with confirmation from the master admin.</p>
+      <div class="code-display">
+        <span class="code-label">Current code:</span>
+        <span class="code-value" id="currentSchoolCode">—</span>
+      </div>
+      <div class="muted small" id="masterAdminLine"></div>
+      <div class="muted small" id="adminListLine"></div>
+
+      <div class="settings-row">
+        <button class="btn" id="btnInviteAdmin">Invite Admin by Email</button>
+        <button class="btn ghost" id="btnChangeSchoolCode">Change School Code</button>
+      </div>
+
+      <!-- Code-change inline flow -->
+      <div id="codeChangeFlow" class="code-change-flow" hidden>
+        <p class="muted small">A confirmation code will be emailed to <strong id="masterEmailEcho"></strong>. Enter it below along with the new school code.</p>
+        <div class="settings-row">
+          <input id="newSchoolCode" placeholder="New code (e.g. MAPLE27)" maxlength="10" />
+          <input id="confirmationCode" placeholder="6-digit confirmation" maxlength="8" />
+          <button class="btn primary" id="btnConfirmCodeChange">Confirm</button>
+          <button class="btn ghost" id="btnCancelCodeChange">Cancel</button>
+        </div>
+        <div class="muted small" id="codeChangeDevHint" hidden></div>
+      </div>
+
+      <!-- Invite inline flow -->
+      <div id="inviteFlow" class="invite-flow" hidden>
+        <div class="settings-row">
+          <input id="inviteEmail" type="email" placeholder="colleague@school.org" />
+          <button class="btn primary" id="btnSendInvite">Send Invite</button>
+          <button class="btn ghost" id="btnCancelInvite">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="detail-card">
+      <h2>Seasons & Archives</h2>
+      <p class="muted small">Start a new field day year by archiving everything you've run so far. Your archived events are saved and can be restored if you archive by mistake.</p>
+
+      <div class="archive-current" id="archiveCurrentSummary"></div>
+
+      <div class="archive-form" id="archiveForm">
+        <input id="archiveLabel" placeholder="Label this season — e.g. Spring 2026" />
+        <button class="btn primary" id="btnArchiveYear">Start a new year</button>
+      </div>
+
+      <h3 class="archive-list-title" id="archiveListTitle" hidden>Archived seasons</h3>
+      <div class="archive-list" id="archiveList"></div>
+    </div>
+
+    <div class="detail-card danger-card">
+      <h2>Danger Zone</h2>
+      <button class="btn danger" id="btnResetAll">Reset all data</button>
+    </div>
+  </section>
+</main>
+
+<!-- ============== NEW / EDIT EVENT MODAL ============== -->
+<div class="modal" id="eventModal" hidden>
+  <div class="modal-card">
+    <header class="modal-header">
+      <h2 id="eventModalTitle">New Event</h2>
+      <button class="icon-btn" id="btnCloseModal">✕</button>
+    </header>
+    <div class="modal-body">
+      <div class="form-row">
+        <label>Event Title</label>
+        <select id="evTitle"></select>
+        <input id="evCustomTitle" placeholder="Custom title" hidden />
+        <button class="link" id="btnCustomTitle" type="button">Use custom title</button>
+      </div>
+      <div class="form-row split">
+        <div>
+          <label>Age</label>
+          <select id="evAge"></select>
+        </div>
+        <div>
+          <label>Gender</label>
+          <select id="evGender">
+            <option>Girls</option><option>Boys</option><option>Mixed</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row split">
+        <div>
+          <label>Result Type</label>
+          <select id="evType">
+            <option value="timed">Timed (lower is better)</option>
+            <option value="distance">Distance (higher is better)</option>
+            <option value="weight">Weight (higher is better)</option>
+          </select>
+        </div>
+        <div>
+          <label>Attempts (Best of)</label>
+          <input type="number" id="evAttempts" min="1" max="10" value="1" />
+        </div>
+      </div>
+      <div class="form-row split">
+        <div>
+          <label>Unit</label>
+          <input id="evUnit" placeholder="e.g. seconds, m, ft, lbs" />
+        </div>
+        <div>
+          <label>Notes</label>
+          <input id="evNotes" placeholder="Optional" />
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Initial Competitors (one per line, optional)</label>
+        <textarea id="evCompetitors" rows="4" placeholder="Alex Chen&#10;Jordan Smith"></textarea>
+      </div>
+    </div>
+    <footer class="modal-footer">
+      <button class="btn ghost" id="btnCancelModal">Cancel</button>
+      <button class="btn primary" id="btnSaveModal">Save Event</button>
+    </footer>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<!-- ============== RECORD-BREAK CELEBRATION OVERLAY ============== -->
+<div class="celebration" id="celebration" hidden aria-live="polite">
+  <div class="celebration-card">
+    <div class="celebration-eyebrow">🎉 NEW SCHOOL RECORD 🎉</div>
+    <div class="celebration-title" id="celebrationEvent"></div>
+    <div class="celebration-name" id="celebrationName"></div>
+    <div class="celebration-result" id="celebrationResult"></div>
+    <div class="celebration-prev muted small" id="celebrationPrev"></div>
+    <button class="btn primary big" id="btnCelebrationClose">Awesome 🎺</button>
+  </div>
+  <div class="confetti" id="confetti" aria-hidden="true"></div>
+</div>
+
+<script src="api.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

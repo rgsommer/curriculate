@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="Introducing Field Day from Curriculate — a free, no-install web app that turns the chaos of school field day into a calm, scored, ribbon-ready event. Available now." />
+<title>Introducing Field Day · Curriculate</title>
+<link rel="stylesheet" href="landing.css" />
+<style>
+  /* Launch-page-specific tweaks layered on top of landing.css */
+  .launch-hero {
+    background:
+      radial-gradient(circle at 80% 20%, #fff5d6 0%, transparent 50%),
+      radial-gradient(circle at 10% 90%, #e7eeff 0%, transparent 55%),
+      var(--bg);
+    padding: 72px 24px 56px;
+    border-bottom: 1px solid var(--line-2);
+    text-align: center;
+  }
+  .launch-hero .stamp {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--ink); color: white; padding: 6px 14px;
+    border-radius: 999px; font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .1em;
+    margin-bottom: 18px;
+  }
+  .launch-hero .stamp-dot { width: 8px; height: 8px; background: #ff5e3a; border-radius: 999px; box-shadow: 0 0 0 4px rgba(255,94,58,.25); }
+  .launch-hero h1 { font-size: clamp(36px, 5vw, 60px); margin: 0 auto 18px; max-width: 900px; font-weight: 800; }
+  .launch-hero .lede { font-size: clamp(17px, 1.7vw, 21px); color: var(--muted); margin: 0 auto 28px; max-width: 720px; }
+  .launch-meta {
+    display: inline-flex; gap: 18px; color: var(--muted); font-size: 14px; flex-wrap: wrap; justify-content: center;
+    margin-bottom: 24px;
+  }
+  .launch-meta .dot { width: 4px; height: 4px; background: #b9bfd0; border-radius: 999px; align-self: center; }
+
+  /* Article body */
+  article.post {
+    max-width: 740px; margin: 0 auto; padding: 64px 24px;
+    font-size: 17px; line-height: 1.7; color: var(--ink-2);
+  }
+  article.post p { margin: 0 0 18px; }
+  article.post h2 { font-size: 28px; margin: 40px 0 14px; }
+  article.post h3 { font-size: 20px; margin: 28px 0 10px; }
+  article.post blockquote {
+    border-left: 4px solid var(--primary);
+    background: var(--primary-soft);
+    margin: 24px 0; padding: 16px 22px;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    font-size: 18px; color: var(--ink);
+  }
+  article.post ul { padding-left: 22px; }
+  article.post li { margin-bottom: 6px; }
+  article.post .lead-out {
+    border-top: 1px solid var(--line);
+    margin-top: 40px; padding-top: 28px;
+    color: var(--muted); font-size: 15px;
+  }
+  .stat-row {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 14px; margin: 32px 0;
+  }
+  @media (max-width: 640px) { .stat-row { grid-template-columns: 1fr; } }
+  .stat {
+    background: var(--bg-soft); border: 1px solid var(--line);
+    border-radius: var(--radius-sm); padding: 18px; text-align: center;
+  }
+  .stat .num { font-size: 30px; font-weight: 800; color: var(--primary); display: block; }
+  .stat .lbl { font-size: 13px; color: var(--muted); }
+
+  .roadmap {
+    background: var(--bg-soft); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 24px 28px; margin: 32px 0;
+  }
+  .roadmap h3 { margin-top: 0; }
+  .roadmap-list { list-style: none; padding: 0; margin: 0; }
+  .roadmap-list li {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 10px 0; border-bottom: 1px dashed var(--line);
+  }
+  .roadmap-list li:last-child { border-bottom: 0; }
+  .pill-badge {
+    flex: 0 0 auto;
+    font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+  .pill-badge.now { background: #d6f4dc; color: var(--green); }
+  .pill-badge.next { background: var(--primary-soft); color: var(--primary); }
+  .pill-badge.later { background: #fbeede; color: #8a4d1c; }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav-inner">
+    <a class="nav-brand" href="index.html">
+      <span class="brand-mark">🏅</span>
+      <span class="brand-text">Field Day</span>
+      <span class="brand-by">by Curriculate</span>
+    </a>
+    <nav class="nav-links">
+      <a href="index.html#features">Features</a>
+      <a href="index.html#how-it-works">How it works</a>
+      <a href="index.html#scoring">Scoring</a>
+      <a href="index.html#faq">FAQ</a>
+    </nav>
+    <a class="nav-cta" href="/fieldday/">Launch app →</a>
+  </div>
+</header>
+
+<!-- ============== LAUNCH HERO ============== -->
+<section class="launch-hero">
+  <div class="stamp"><span class="stamp-dot"></span> Now Live</div>
+  <h1>Introducing Field Day.</h1>
+  <p class="lede">A free web app that turns the chaos of a school field day into a calm, scored, ribbon-ready event — no installs, no accounts, no spreadsheet at midnight.</p>
+  <div class="launch-meta">
+    <span>Curriculate · Field Day Team</span>
+    <span class="dot"></span>
+    <span>Released today</span>
+    <span class="dot"></span>
+    <span>Free for every school</span>
+  </div>
+  <div class="hero-cta" style="justify-content:center;">
+    <a class="btn-primary" href="/fieldday/">Launch the app</a>
+    <a class="btn-ghost" href="index.html">See features</a>
+  </div>
+</section>
+
+<!-- ============== ARTICLE BODY ============== -->
+<article class="post">
+
+  <p>Every May, in playgrounds and on tracks, the same scene plays out. A PE teacher with a stopwatch in one hand and a soggy clipboard in the other. A volunteer parent squinting at a sheet trying to remember which kid was in the second heat. A laminated points table on a folding table in the wind. And, after it's all over, somebody's evening on a kitchen-table spreadsheet trying to decide which kid actually won the Age 8 Girls overall.</p>
+
+  <p>We've watched it. We've been the one with the clipboard. We built Field Day so it doesn't have to keep happening.</p>
+
+  <p><strong>Today, Field Day is live</strong> — at <a href="https://www.curriculate.net/fieldday">www.curriculate.net/fieldday</a> — and it's free for every school.</p>
+
+  <h2>What it is</h2>
+
+  <p>Field Day is a single web app with three jobs:</p>
+
+  <ul>
+    <li><strong>Help event leaders run their event</strong> — pick a title from a dropdown, set age and gender, add competitors, and capture results. Timed events get a built-in stopwatch accurate to the hundredth of a second; field events handle distance or weight with best-of-N attempts.</li>
+    <li><strong>Score the day automatically</strong> — 5-4-3-2-1 points roll up by age and gender as soon as leaders submit. Ties handle themselves, your way: average tied positions, or both get the higher place. Toggle in Settings; everything recalculates instantly.</li>
+    <li><strong>Make the announcer's life easy</strong> — the moment a leader hits Submit, the completed category lines up in the Announcer tab with title, age, gender, and the medal-by-medal results. Tap "Announced ✓" and the next one slides in.</li>
+  </ul>
+
+  <p>And when the day is done, the Ribbons tab gives you a single, print-ready sheet of every place in every event, sorted exactly the way you'll write the ribbons.</p>
+
+  <blockquote>
+    The whole thing replaces a folder full of paper sheets, three different spreadsheets, and the announcer asking "Wait, who came third?" — with one app that everybody on the field can use.
+  </blockquote>
+
+  <h2>Built for the people who actually run the day</h2>
+
+  <p>The single biggest design decision was deciding who the user is. Field Day is built for the volunteer parent at Station 4. The PE teacher juggling six events. The grandparent at the mic stand. None of them want to set up an account, install something from an app store, or learn a new tool the morning of. So they don't have to.</p>
+
+  <h3>For the Admin</h3>
+  <p>The admin signs in once with their email and gets a passkey on screen. They name their school and pick a school code. That's it — they're in. They see every event in the school, every points total, every competitor.</p>
+
+  <h3>For Event Leaders</h3>
+  <p>Leaders join with the school code and their name. No email, no password, no account. Ten seconds, and they're at a clean Events screen ready to spin up their first race.</p>
+
+  <h3>For the Announcer</h3>
+  <p>The announcer just opens the Announce tab. Big titles, names with results, one button. The queue stays full as leaders submit; they never have to chase anybody for a printout.</p>
+
+  <h2>What's in the box today</h2>
+
+  <div class="stat-row">
+    <div class="stat"><span class="num">⅒₀</span><span class="lbl">Stopwatch precision (in seconds)</span></div>
+    <div class="stat"><span class="num">23</span><span class="lbl">Built-in event titles</span></div>
+    <div class="stat"><span class="num">$0</span><span class="lbl">For every school, forever</span></div>
+  </div>
+
+  <p>Out of the box, Field Day ships with a library of typical events — sprints, distance runs, hurdles, relays, jumps, throws, sack races, three-legged races, tug of war, obstacle course, and more. The library is fully editable in Settings, so if your school does a wheelbarrow race or a Frisbee toss, those go right in the dropdown alongside the rest.</p>
+
+  <p>Age categories are also configurable — set them once at the start of the year, and every event you create after that picks them up.</p>
+
+  <h2>How scoring works</h2>
+
+  <p>The points table is the standard one most schools use:</p>
+
+  <ul>
+    <li>1st place: 5 points</li>
+    <li>2nd place: 4 points</li>
+    <li>3rd place: 3 points</li>
+    <li>4th place: 2 points</li>
+    <li>Participation: 1 point</li>
+  </ul>
+
+  <p>Ties get the trickiest part of any field day right. We support two methods, and the admin chooses which one:</p>
+
+  <p><strong>Average tied positions.</strong> Two kids tie for 1st: each gets (5+4)/2 = 4.5 points. The next kid gets 3rd. Mathematically fair, and what most middle and high schools use.</p>
+
+  <p><strong>Both get the higher placement.</strong> Two kids tie for 1st: each gets 5 points. The next kid gets 3rd. Easier to explain, more encouraging — what most elementary schools do.</p>
+
+  <p>Switch any time. Rankings recalculate instantly across every event in the school.</p>
+
+  <h2>Privacy and data, plainly</h2>
+
+  <p>Field Day stores its data in your browser. There is no central database holding student names. The app works without internet, by design — so a Wi-Fi outage on the day doesn't take down the field. When you want to sync results across devices (admin tablet plus a few leader tablets, say), use Export Data and Import Data. Move a JSON file via AirDrop, email, or a USB stick.</p>
+
+  <p>That's a deliberate trade-off. We give up a little real-time-multi-device convenience to give you back full control over student data and a tool that simply works on the day, regardless of what your school's network is doing.</p>
+
+  <h2>What's next</h2>
+
+  <div class="roadmap">
+    <h3>Roadmap</h3>
+    <ul class="roadmap-list">
+      <li><span class="pill-badge now">Now</span><span>Stopwatch, distance, weight, best-of-N, scoring with two tie modes, admin overview, ribbons sheet, announcer queue, export/import.</span></li>
+      <li><span class="pill-badge next">Next</span><span>Optional cloud sync for schools that want a single shared dataset across devices in real time.</span></li>
+      <li><span class="pill-badge next">Next</span><span>Roster import — upload a class list once, then pick competitors instead of typing names.</span></li>
+      <li><span class="pill-badge later">Later</span><span>Heat sheets, lane assignments, and a printable program of events.</span></li>
+      <li><span class="pill-badge later">Later</span><span>Year-over-year records — automatically flag when a result beats the school's previous best.</span></li>
+    </ul>
+  </div>
+
+  <h2>Try it for your field day this year</h2>
+
+  <p>If your field day is in the next few weeks, you have time. Set up takes about a minute. Walk an event leader through it in under five.</p>
+
+  <p>Open the app, name your school, share the code, and run a test heat with two volunteers in the gym at lunchtime. By the time you're at "Submit," you'll know exactly how the day will run.</p>
+
+  <p>If you do try it, we'd love to hear what worked and what didn't. The team that built this is small and reads every email — and the next features on the list will come straight out of what real schools tell us about their real field days.</p>
+
+  <div class="lead-out">
+    <p><strong>— The Curriculate Field Day team</strong></p>
+    <p>Field Day is a free product from Curriculate. Built for the people with stopwatches and clipboards.</p>
+  </div>
+
+</article>
+
+<!-- ============== CTA BAND ============== -->
+<section class="cta-band">
+  <div class="cta-inner">
+    <h2>Field day shouldn't feel like a tax audit.</h2>
+    <p>Open Field Day, set up your school, and run an event in five minutes. No installs, no licenses, no fees.</p>
+    <a class="btn-primary big" href="/fieldday/">Launch the app →</a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-brand">
+      <span class="brand-mark">🏅</span>
+      <strong>Field Day</strong>
+      <span class="muted">· part of Curriculate</span>
+    </div>
+    <div class="foot-links">
+      <a href="index.html">Home</a>
+      <a href="index.html#features">Features</a>
+      <a href="index.html#faq">FAQ</a>
+      <a href="/fieldday/">Launch</a>
+    </div>
+    <div class="muted small">© Curriculate. Made for the people who count laps and write ribbons.</div>
+  </div>
+</footer>
+
+</body>
+</html>
