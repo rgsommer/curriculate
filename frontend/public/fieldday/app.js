@@ -304,16 +304,13 @@
       try {
         const out = await api.requestAdminPasskey(email);
         pendingDevPasskey = out.devPasskey || null;
-        if (out.emailed) {
-          $("#passkeyHint").innerHTML =
-            `We emailed your passkey to <strong>${escapeHtml(email)}</strong> from <strong>Curriculate Field Day</strong>. ` +
-            `Enter the 6-digit code from the email to continue.`;
-        } else if (pendingDevPasskey) {
+        $("#passkeyHint").innerHTML =
+          `We emailed your passkey to <strong>${escapeHtml(email)}</strong> from <strong>Curriculate Field Day</strong>. ` +
+          `Enter the 6-digit code from the email to continue.`;
+        // Dev/staging only: backend may echo a passkey for testing
+        if (pendingDevPasskey) {
           $("#passkeyShown").textContent = pendingDevPasskey;
           $("#passkeyDisplay").hidden = false;
-          $("#passkeyHint").textContent = "Type the passkey above to continue. Save it for next time.";
-        } else {
-          $("#passkeyHint").textContent = "Enter the passkey you set up for this email.";
         }
       } catch (e) {
         showToast("Couldn't request passkey");
@@ -1757,39 +1754,23 @@
     } catch (e) { showToast("Delete failed"); }
   }
 
-  // ---------- Export / Import (works for the local cache only) ----------
+  // ---------- Backup (downloads a JSON snapshot of current school's data) ----------
   function exportData() {
-    const blob = api.readLocalBlob();
+    const blob = { school: state.school, events: state.events, announceQueue: state.announceQueue, exportedAt: new Date().toISOString() };
     const data = new Blob([JSON.stringify(blob, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(data);
-    a.download = `fieldday-${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `${(state.school?.code || "fieldday")}-${new Date().toISOString().slice(0,10)}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
-  function importData(file) {
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        const incoming = JSON.parse(reader.result);
-        if (!confirm("This replaces the local cache. (On the backend, contact your admin to import server-side.) Continue?")) return;
-        api.writeLocalBlob(incoming);
-        await refreshState();
-        if (api.getSession()) await showApp(); else showWelcome();
-        showToast("Data imported");
-      } catch (e) { showToast("Import failed: not valid JSON"); }
-    };
-    reader.readAsText(file);
-  }
   async function resetAll() {
-    if (!confirm("Erase ALL local data on this device? This cannot be undone.")) return;
-    if (!confirm("Are you absolutely sure? All cached schools, events, and results will be lost.")) return;
+    if (!confirm("Sign out of this device? Your school's data stays in Curriculate; you can sign back in any time.")) return;
     try { await api.signOut(); } catch (e) {}
-    api.writeLocalBlob({ schools: [], events: [], announceQueue: [] });
     api.clearSession();
     state = { school: null, events: [], announceQueue: [] };
     showWelcome();
-    showToast("Local data cleared");
+    showToast("Signed out");
   }
 
   // ---------- Wiring ----------
@@ -1854,10 +1835,6 @@
     });
 
     $("#btnExportJson").addEventListener("click", exportData);
-    $("#importJson").addEventListener("change", (e) => {
-      if (e.target.files[0]) importData(e.target.files[0]);
-      e.target.value = "";
-    });
 
     $("#ribbonsOnlyCompleted").addEventListener("change", renderRibbons);
     $("#btnPrintRibbons").addEventListener("click", () => window.print());

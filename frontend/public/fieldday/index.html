@@ -26,7 +26,7 @@
         <div class="role-sub">Use a school code to run events and submit results.</div>
       </button>
     </div>
-    <p class="welcome-foot muted small">Data is stored on this device. Use Export to share between devices. <a href="/meet-fieldday/" style="margin-left:6px">About Field Day →</a></p>
+    <p class="welcome-foot muted small"><a href="/meet-fieldday/">About Field Day →</a></p>
   </div>
 </section>
 
@@ -45,7 +45,7 @@
           <label>Email Address</label>
           <input type="email" id="adminEmail" placeholder="you@school.org" autocomplete="email" />
         </div>
-        <p class="muted small">Enter your email — we'll send a passkey from <strong>Curriculate Field Day</strong>. If email isn't reachable, the code will appear on screen instead.</p>
+        <p class="muted small">Enter your email — we'll send a passkey from <strong>Curriculate Field Day</strong>.</p>
       </div>
 
       <!-- Step 2: Passkey -->
@@ -252,11 +252,7 @@
     <div class="view-header">
       <h1>Admin Overview</h1>
       <div class="view-header-actions">
-        <button class="btn ghost" id="btnExportJson">Export Data</button>
-        <label class="btn ghost file-btn">
-          Import Data
-          <input type="file" id="importJson" accept="application/json" hidden />
-        </label>
+        <button class="btn ghost" id="btnExportJson" title="Download a JSON backup of this season">Backup</button>
       </div>
     </div>
 
@@ -476,8 +472,9 @@
     </div>
 
     <div class="detail-card danger-card">
-      <h2>Danger Zone</h2>
-      <button class="btn danger" id="btnResetAll">Reset all data</button>
+      <h2>Sign Out</h2>
+      <p class="muted small">Sign out of this device. Your school's data stays in Curriculate.</p>
+      <button class="btn danger" id="btnResetAll">Sign out of this device</button>
     </div>
   </section>
 </main>
