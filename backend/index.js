@@ -12762,17 +12762,30 @@ function buildRubricInstructions({
 
   //  POST /grading/send-email
   //  Body: { to, subject, html, pdfAttachment?, pdfFilename? }
+  //  `to` may be a single email or an array / comma-separated string of emails.
   // ====================================================================
   app.post("/grading/send-email", async (req, res) => {
     try {
       const { to, subject, html, pdfAttachment, pdfFilename, pdfAttachments, csvAttachments } = req.body || {};
-      const email = String(to || "").trim().toLowerCase();
+      // Normalize `to` into an array of unique, validated, lowercased addresses.
+      const VALID_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const rawList = Array.isArray(to)
+        ? to
+        : String(to || "").split(/[,;\n]+/);
+      const recipients = Array.from(new Set(
+        rawList
+          .map((s) => String(s || "").trim().toLowerCase())
+          .filter((s) => s && VALID_EMAIL.test(s))
+      ));
       const subj = String(subject || "").trim();
       const body = String(html || "").trim();
 
-      if (!email || !email.includes("@") || !email.includes(".")) {
+      if (!recipients.length) {
         return res.status(400).json({ error: "Invalid email address." });
       }
+      // Keep `email` as the primary recipient for downstream logging /
+      // teacher-outreach upserts; the rest are delivered alongside it.
+      const email = recipients[0];
       if (!body) {
         return res.status(400).json({ error: "Missing email body." });
       }
@@ -12812,15 +12825,18 @@ function buildRubricInstructions({
         }
       }
 
-      console.log(`[grading] Sending email to ${email} — subject="${subj}", attachments=${attachments.length}, bodyLen=${body.length}`);
+      const recipientList = recipients.join(", ");
+      const ccList = recipients.length > 1 ? recipients.slice(1).join(",") : "";
+      console.log(`[grading] Sending email to ${recipientList} — subject="${subj}", attachments=${attachments.length}, bodyLen=${body.length}`);
       const emailStart = Date.now();
       await sendSystemEmail({
         to: email,
+        ...(ccList ? { cc: ccList } : {}),
         subject: subj || "Pulse Grading Batch Results — Curriculate",
         html: body,
         attachments,
       });
-      console.log(`[grading] Email sent to ${email} in ${Date.now() - emailStart}ms`);
+      console.log(`[grading] Email sent to ${recipientList} in ${Date.now() - emailStart}ms`);
 
       // Log teacher email for lead tracking
       try {

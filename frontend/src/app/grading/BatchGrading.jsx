@@ -2890,34 +2890,47 @@ export default function BatchGrading({
   const [stripsPrinted, setStripsPrinted] = useState(false);
 
   // ---------- Manual name assignment ----------
-  // Returns all roster students from the detected batch class. Students are
-  // NOT excluded when already matched — a batch can contain multiple assignments
-  // from the same student (e.g. mixed stacks with several journals).
-  const availableRosterStudents = useMemo(() => {
-    const all = [];
-    const seen = new Set();
-    for (const rc of rosterClasses) {
-      // Filter by detected roster ID or detected class name
-      if (detectedBatchRosterId && rc.id !== detectedBatchRosterId) continue;
-      if (!detectedBatchRosterId && detectedBatchClass && rc.className !== detectedBatchClass) continue;
-      for (const s of rc.students || []) {
-        const key = `${(s.firstName || "").toLowerCase()}|${(s.lastName || "").toLowerCase()}|${s.studentId || s.edsbyId || ""}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        all.push({ ...s, className: rc.className });
-      }
-    }
-    // Fallback: if filtering left nothing, show all
-    if (all.length === 0 && (detectedBatchRosterId || detectedBatchClass)) {
+  // Returns roster students filtered to the ROW's selected class first,
+  // then the detected batch class as fallback, then all classes if nothing
+  // matched. Students are NOT excluded when already matched — a batch can
+  // contain multiple assignments from the same student.
+  //
+  // `rowClassName` is the per-row r.rosterClassName ("" / undefined if the
+  // teacher hasn't picked a class for that row yet).
+  const getAvailableRosterStudents = useCallback((rowClassName) => {
+    const collect = (filterFn) => {
+      const out = [];
+      const seen = new Set();
       for (const rc of rosterClasses) {
+        if (!filterFn(rc)) continue;
         for (const s of rc.students || []) {
           const key = `${(s.firstName || "").toLowerCase()}|${(s.lastName || "").toLowerCase()}|${s.studentId || s.edsbyId || ""}`;
           if (seen.has(key)) continue;
           seen.add(key);
-          all.push({ ...s, className: rc.className });
+          out.push({ ...s, className: rc.className });
         }
       }
+      return out;
+    };
+
+    let all = [];
+    // Tier 1: row's chosen class, if any
+    if (rowClassName) {
+      all = collect((rc) => rc.className === rowClassName);
     }
+    // Tier 2: detected batch class
+    if (all.length === 0) {
+      if (detectedBatchRosterId) {
+        all = collect((rc) => rc.id === detectedBatchRosterId);
+      } else if (detectedBatchClass) {
+        all = collect((rc) => rc.className === detectedBatchClass);
+      }
+    }
+    // Tier 3: fall back to ALL classes — only if nothing else matched
+    if (all.length === 0) {
+      all = collect(() => true);
+    }
+
     // Sort: unmatched (not yet assigned to any result) first, then matched
     const assignedIds = new Set();
     for (const r of results) {
@@ -4327,7 +4340,12 @@ export default function BatchGrading({
                             #{r.studentId.slice(-4)}
                           </span>
                         )}
-                        {editingNameIndex === r.index && (
+                        {editingNameIndex === r.index && (() => {
+                          // Per-row roster list: filtered to the row's selected class first.
+                          // The teacher picks "HIST7C" and the dropdown shows ONLY HIST7C names.
+                          const rowRoster = getAvailableRosterStudents(r.rosterClassName);
+                          const rowClassLabel = r.rosterClassName || detectedBatchClass || "";
+                          return (
                           <div
                             onClick={(e) => e.stopPropagation()}
                             style={{
@@ -4337,12 +4355,12 @@ export default function BatchGrading({
                               display: "flex", flexDirection: "column",
                             }}
                           >
-                            {availableRosterStudents.length > 0 && (
+                            {rowRoster.length > 0 && (
                               <div style={{ maxHeight: 220, overflowY: "auto", padding: "4px 0" }}>
                                 <div style={{ padding: "6px 12px", fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600, position: "sticky", top: 0, background: "#fff" }}>
-                                  Roster students
+                                  Roster students{rowClassLabel ? ` — ${rowClassLabel}` : ""}
                                 </div>
-                                {availableRosterStudents.map((s, si) => (
+                                {rowRoster.map((s, si) => (
                                   <div
                                     key={si}
                                     onClick={() => assignStudentName(r.index, s)}
@@ -4359,7 +4377,7 @@ export default function BatchGrading({
                                 ))}
                               </div>
                             )}
-                            <div style={{ borderTop: availableRosterStudents.length ? "1px solid #e2e8f0" : "none", padding: "4px 0" }}>
+                            <div style={{ borderTop: rowRoster.length ? "1px solid #e2e8f0" : "none", padding: "4px 0" }}>
                               <div style={{ padding: "6px 12px", fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600 }}>
                                 Type a name
                               </div>
@@ -4395,7 +4413,8 @@ export default function BatchGrading({
                               </div>
                             </div>
                           </div>
-                        )}
+                          );
+                        })()}
                       </td>
                       {rosterClasses.length > 1 && (
                         <td style={{ ...batchStyles.td, padding: "2px 4px" }} onClick={(e) => e.stopPropagation()}>

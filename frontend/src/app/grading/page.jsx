@@ -3145,8 +3145,17 @@ export default function GradingPage() {
     }
 
     async function sendSessionEmail() {
-      const to = sessionEmailTo.trim();
-      if (!to || !to.includes("@")) return;
+      // Accept comma- (or semicolon- or newline-) separated recipient list.
+      // Each address is trimmed, lowercased, validated, and de-duplicated.
+      const VALID_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const recipients = Array.from(new Set(
+        sessionEmailTo
+          .split(/[,;\n]+/)
+          .map((s) => s.trim().toLowerCase())
+          .filter((s) => s && VALID_EMAIL_RE.test(s))
+      ));
+      if (!recipients.length) return;
+      const to = recipients.join(",");
 
       setSessionEmailSending(true);
       try {
@@ -4628,12 +4637,12 @@ export default function GradingPage() {
                 background: "rgba(37,99,235,0.06)", border: "1px solid rgba(37,99,235,0.18)",
               }}>
                 <div style={{ fontSize: 13, color: "#334155", marginBottom: 8 }}>
-                  Email session reports (half-page &amp; strips PDFs attached):
+                  Email session reports (half-page &amp; strips PDFs attached). Separate multiple recipients with commas.
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <input
-                    type="email"
-                    placeholder="recipient@example.com"
+                    type="text"
+                    placeholder="you@school.edu, parent@example.com, dept-head@school.edu"
                     value={sessionEmailTo}
                     onChange={(e) => setSessionEmailTo(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") sendSessionEmail(); }}
@@ -4644,17 +4653,31 @@ export default function GradingPage() {
                     }}
                   />
                   <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      onClick={sendSessionEmail}
-                      disabled={sessionEmailSending || !sessionEmailTo.includes("@")}
-                      style={{
-                        ...styles.primaryBtn,
-                        padding: "7px 18px", fontSize: 13,
-                        opacity: sessionEmailSending || !sessionEmailTo.includes("@") ? 0.5 : 1,
-                      }}
-                    >
-                      {sessionEmailSending ? "Sending…" : "Send"}
-                    </button>
+                    {(() => {
+                      // Live-validated recipient count for the Send button label + disabled state.
+                      const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                      const validCount = Array.from(new Set(
+                        sessionEmailTo.split(/[,;\n]+/).map((s) => s.trim().toLowerCase()).filter((s) => s && re.test(s))
+                      )).length;
+                      const sendDisabled = sessionEmailSending || validCount === 0;
+                      return (
+                        <button
+                          onClick={sendSessionEmail}
+                          disabled={sendDisabled}
+                          style={{
+                            ...styles.primaryBtn,
+                            padding: "7px 18px", fontSize: 13,
+                            opacity: sendDisabled ? 0.5 : 1,
+                          }}
+                        >
+                          {sessionEmailSending
+                            ? "Sending…"
+                            : validCount > 1
+                              ? `Send to ${validCount} recipients`
+                              : "Send"}
+                        </button>
+                      );
+                    })()}
                     <button
                       onClick={() => setShowSessionEmailPrompt(false)}
                       style={{ ...styles.ghostBtn, padding: "7px 12px", fontSize: 13 }}
