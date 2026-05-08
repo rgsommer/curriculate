@@ -11885,6 +11885,22 @@ function buildRubricInstructions({
               required: ["category", "level", "score", "out_of", "comment"],
             },
           },
+
+          // --- welfare concern detection (always populated; level "none" when no concern) ---
+          // Surfaces signals of student distress, safety risk, or notable personal context
+          // (e.g. journal-style work) so the teacher can follow up. NEVER includes long
+          // quotations and NEVER replaces the teacher's own judgment.
+          welfare_concern: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              level: { type: "string", enum: ["safety", "wellbeing", "none"] },
+              category: { type: "string", maxLength: 60 },
+              snippet: { type: "string", maxLength: 120 },
+              suggested_action: { type: "string", maxLength: 200 },
+            },
+            required: ["level", "category", "snippet", "suggested_action"],
+          },
         },
 
         required: [
@@ -11913,6 +11929,7 @@ function buildRubricInstructions({
           "improvements",
           "teacher_comment",
           "achievement_summary",
+          "welfare_concern",
         ],
       };
       // 2) Optional wrapper if you like keeping it around locally
@@ -12174,11 +12191,61 @@ function buildRubricInstructions({
         If NO KITA annotations are visible and no answer key override provides KITA sections, grade normally without KITA.
       ` : "";
 
+      const welfareDetectionBlock = `
+        STUDENT WELFARE DETECTION (mandatory — runs alongside grading; never affects the grade):
+        Scan the student's response for signals that the student may be experiencing distress,
+        a difficult life situation, or anything a caring teacher would want to follow up on.
+        This applies most often to journals, opinion pieces, narrative writing, and reflective
+        responses — but check every submission.
+
+        Classify into one of three levels:
+
+        1. "safety" — Possible safety concern requiring prompt follow-up. Examples include:
+            references to self-harm, suicidal ideation, abuse (physical/emotional/sexual/neglect),
+            being unsafe at home, persistent bullying or being threatened, severe hopelessness,
+            statements like "I don't want to be here anymore" or "no one would notice if I were gone."
+
+        2. "wellbeing" — Notable personal context worth a check-in but not an emergency.
+            Examples include: recent loss (death, pet, move, divorce), family stress, isolation,
+            anxiety/sadness mentioned in passing, conflict with friends, struggles with identity,
+            discouragement, or unusual emotional content for the assignment type.
+
+        3. "none" — Nothing of concern. Use this when the response is purely academic, on-topic,
+            and shows no indicator of personal distress. THIS IS THE DEFAULT.
+
+        For each level, also produce:
+            - category: one short label (≤60 chars), e.g.
+                "Possible self-harm reference", "Bullying disclosure", "Family conflict",
+                "Recent loss", "Anxiety mentioned", "Identity / belonging concern".
+            - snippet: a SHORT (≤15-word) fragment from the student's writing that surfaced
+                the concern. Just enough so the teacher can locate the passage. NEVER quote
+                more than 15 words. NEVER include identifying details about third parties
+                (names, addresses, etc.) — paraphrase if needed.
+            - suggested_action: one sentence guidance, neutral and non-prescriptive.
+                For "safety": "Review this passage today and follow your school's safeguarding policy."
+                For "wellbeing": "Consider a brief check-in with this student when you have a moment."
+                For "none": "" (empty string).
+
+        CRITICAL GUARDRAILS:
+        - You are NOT diagnosing. You are NOT prescribing. You are surfacing a signal.
+        - Do NOT classify routine struggle, sadness in a fictional/historical narrative, or
+            normal academic frustration as a concern — these are part of grade-level writing.
+        - Do NOT classify expressions of hard topics in clearly assigned essays (e.g., a war
+            history piece mentioning death, a literature response about a tragic character)
+            as personal welfare concerns. The signal must come from the student's own voice
+            and personal context, not the assignment topic.
+        - Welfare detection NEVER affects the grade, the teacher_comment, the strengths /
+            improvements arrays, or any score. It lives ONLY in welfare_concern.
+        - When in doubt between "wellbeing" and "none", default to "none" — teachers must be
+            able to trust the flag rate. Reserve "safety" for clear, explicit signals.
+      `;
+
       const instructionsWithInferenceFinal = `
         ${instructionsWithInference}
         ${denomOverrideBlock ? `\n\n${denomOverrideBlock}` : ""}
         ${countResultBlock ? `\n\n${countResultBlock}` : ""}
         ${kitaReminder}
+        ${welfareDetectionBlock}
         `.trim();
 
       let imageRefs = [];

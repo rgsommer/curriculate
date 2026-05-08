@@ -3163,9 +3163,53 @@ export default function GradingPage() {
         if (subjectParts.length === 1) subjectParts.push("Session Results");
         const emailSubject = subjectParts.join(" ");
 
+        // ── Welfare-concerns block (prepended above the session summary) ──
+        // Surfaces flagged students from this batch so the teacher sees them
+        // before they close the session. Privacy: this block is teacher-only —
+        // never CSV-exported, never sent to students or parents.
+        const escWelfare = (s) => String(s ?? "")
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        const flaggedSafety = sessionItems
+          .map((it) => ({ name: it?.studentName || "Unnamed", concern: it?.assessment?.welfare_concern }))
+          .filter((x) => x.concern && x.concern.level === "safety");
+        const flaggedWellbeing = sessionItems
+          .map((it) => ({ name: it?.studentName || "Unnamed", concern: it?.assessment?.welfare_concern }))
+          .filter((x) => x.concern && x.concern.level === "wellbeing");
+        const renderFlag = (x, color) => `
+          <li style="margin-bottom:8px;">
+            <strong style="color:${color};">${escWelfare(x.name)}</strong>
+            — ${escWelfare(x.concern.category)}
+            <div style="font-size:12px;color:#64748b;margin-top:2px;">
+              "${escWelfare(x.concern.snippet)}"
+            </div>
+            <div style="font-size:12px;color:#475569;margin-top:2px;">
+              ${escWelfare(x.concern.suggested_action)}
+            </div>
+          </li>`;
+        const welfareBlock = (flaggedSafety.length || flaggedWellbeing.length) ? `
+          <div style="border:2px solid #fca5a5;background:#fef2f2;padding:14px 16px;border-radius:12px;margin-bottom:16px;">
+            <div style="font-weight:800;color:#991b1b;font-size:15px;margin-bottom:8px;">
+              🚩 Student responses flagged for your attention
+            </div>
+            <div style="font-size:12px;color:#7f1d1d;margin-bottom:10px;">
+              These are AI signals from this batch — not diagnoses. Review each student's full response and respond per your school's safeguarding policy.
+            </div>
+            ${flaggedSafety.length ? `
+              <div style="font-weight:700;color:#dc2626;font-size:13px;margin-top:6px;">Possible safety concern (${flaggedSafety.length})</div>
+              <ul style="margin:6px 0 10px 18px;padding:0;color:#0f172a;font-size:13px;">${flaggedSafety.map((x) => renderFlag(x, "#dc2626")).join("")}</ul>
+            ` : ""}
+            ${flaggedWellbeing.length ? `
+              <div style="font-weight:700;color:#a16207;font-size:13px;margin-top:6px;">Wellbeing — worth a check-in (${flaggedWellbeing.length})</div>
+              <ul style="margin:6px 0 10px 18px;padding:0;color:#0f172a;font-size:13px;">${flaggedWellbeing.map((x) => renderFlag(x, "#a16207")).join("")}</ul>
+            ` : ""}
+          </div>
+        ` : "";
+
         // Build HTML body from session summary
         const summaryHtml = `
           <div style="font-family:sans-serif;max-width:640px;margin:0 auto;">
+            ${welfareBlock}
             <h2 style="color:#1e293b;margin-bottom:8px;">Session Summary</h2>
             <p style="color:#334155;line-height:1.6;">${(sessionSummary || "").replace(/\n/g, "<br>")}</p>
             <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0;">
@@ -4508,6 +4552,52 @@ export default function GradingPage() {
               </button>
 
             </div>
+
+            {/* Welfare-concerns banner — surfaces flagged students from this batch.
+                Renders only when at least one item carries a non-"none" welfare_concern.
+                Click "Review" to scroll/jump to the flagged student's row. */}
+            {(() => {
+              const flagged = (sessionItems || [])
+                .map((it, idx) => ({ idx, item: it, c: it?.assessment?.welfare_concern }))
+                .filter((x) => x.c && x.c.level && x.c.level !== "none");
+              if (!flagged.length) return null;
+              const safetyCount = flagged.filter((x) => x.c.level === "safety").length;
+              const wellbeingCount = flagged.filter((x) => x.c.level === "wellbeing").length;
+              const headlineColor = safetyCount > 0 ? "#991b1b" : "#a16207";
+              const bg = safetyCount > 0 ? "#fef2f2" : "#fffbeb";
+              const border = safetyCount > 0 ? "2px solid #fca5a5" : "2px solid #fde68a";
+              return (
+                <div style={{
+                  marginTop: 10, padding: "14px 16px", borderRadius: 12,
+                  background: bg, border,
+                }}>
+                  <div style={{ fontWeight: 800, fontSize: 14, color: headlineColor, marginBottom: 6 }}>
+                    🚩 {flagged.length} student response{flagged.length === 1 ? "" : "s"} flagged for your attention
+                    {safetyCount > 0 ? ` — ${safetyCount} possible safety, ${wellbeingCount} wellbeing` : ""}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#475569", marginBottom: 8 }}>
+                    These are AI signals, not diagnoses. Review each student's full response and respond per your school's safeguarding policy.
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
+                    {flagged.map((x) => (
+                      <li key={x.idx} style={{ marginBottom: 6 }}>
+                        <strong style={{ color: x.c.level === "safety" ? "#dc2626" : "#a16207" }}>
+                          {x.item?.studentName || `Student ${x.idx + 1}`}
+                        </strong>
+                        {" — "}
+                        <span style={{ color: "#0f172a" }}>{x.c.category}</span>
+                        <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                          "{x.c.snippet}"
+                        </div>
+                        <div style={{ fontSize: 12, color: "#475569", marginTop: 2 }}>
+                          {x.c.suggested_action}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
 
             {/* Email Reports prompt */}
             {showSessionEmailPrompt && (
