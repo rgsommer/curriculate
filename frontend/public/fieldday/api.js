@@ -542,6 +542,7 @@
       eventRules: { ...DEFAULT_EVENT_RULES },
       tieMethod: "average",
       scoringMode: "placement",
+      ageCutoffDate: "12-31",
       records: [],
       standards: seedStandardsFor(ageBands, eventLibrary),
       archives: [],

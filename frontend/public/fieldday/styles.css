@@ -140,10 +140,15 @@ main { padding: 24px clamp(16px, 4vw, 40px); max-width: 1280px; margin: 0 auto; 
 .detail-side .detail-card:last-child { margin-bottom: 0; }
 
 .competitor-list { display: flex; flex-direction: column; gap: 8px; }
+.heat-group { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.heat-group .heat-header { display: flex; justify-content: space-between; align-items: baseline; padding: 0 4px 6px; border-bottom: 1px dashed var(--line); }
+.heat-group .heat-title { font-weight: 700; font-size: 13px; color: var(--primary); text-transform: uppercase; letter-spacing: .04em; }
 .competitor-row {
   border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px;
   display: grid; grid-template-columns: 1.2fr 2fr auto; gap: 8px; align-items: center;
 }
+.competitor-row .competitor-name-block { display: flex; flex-direction: column; gap: 2px; }
+.competitor-row .competitor-meta { padding-left: 8px; }
 .competitor-row .name-input {
   border: 0; background: transparent; padding: 6px 8px; font-size: 14px; font-weight: 500;
   border-radius: 6px;
@@ -304,6 +309,36 @@ main { padding: 24px clamp(16px, 4vw, 40px); max-width: 1280px; margin: 0 auto; 
 
 #ageCategories, #eventLibrary { width: 100%; border: 1px solid var(--line); padding: 8px; border-radius: var(--radius-sm); margin-bottom: 8px; font-family: inherit; }
 
+/* ===== Roster Import ===== */
+.import-card { max-width: 760px; }
+.csv-help { margin: 8px 0 14px; font-size: 13px; }
+.csv-help summary { cursor: pointer; color: var(--primary); font-weight: 600; }
+.csv-help code { background: var(--line-2); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+.csv-example {
+  background: var(--ink); color: #d4ffd2;
+  padding: 12px 14px; border-radius: var(--radius-sm);
+  font-family: "SF Mono","Menlo","Consolas",monospace; font-size: 12px;
+  overflow-x: auto; margin-top: 10px;
+}
+.import-preview {
+  margin-top: 14px; max-height: 320px; overflow: auto;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+}
+.import-preview table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.import-preview th, .import-preview td { padding: 6px 10px; border-bottom: 1px solid var(--line-2); text-align: left; }
+.import-preview th { background: var(--panel-2); color: var(--muted); position: sticky; top: 0; }
+.import-preview tr.error td { background: var(--danger-soft); color: var(--danger); }
+.import-preview tr.new-event td { background: #fff7e0; }
+.import-preview-summary { padding: 10px 14px; background: var(--primary-soft); color: var(--primary); font-size: 13px; font-weight: 600; }
+.import-log {
+  margin-top: 14px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 10px 14px; font-family: monospace; font-size: 12px;
+  max-height: 200px; overflow: auto;
+}
+.import-log .ok { color: var(--green); }
+.import-log .err { color: var(--danger); }
+
 /* ===== Welcome / Auth ===== */
 .welcome {
   min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
@@ -328,7 +363,26 @@ main { padding: 24px clamp(16px, 4vw, 40px); max-width: 1280px; margin: 0 auto; 
 .role-icon { font-size: 32px; }
 .role-title { font-weight: 700; margin-top: 6px; }
 .role-sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
-.welcome-foot { margin-top: 12px; }
+.welcome-foot { margin-top: 18px; text-align: center; }
+.welcome-about {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 22px;
+  background: white;
+  color: var(--primary);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 14px; font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 1px 2px rgba(16,24,40,.05), 0 2px 6px rgba(41,86,255,.10);
+  transition: transform .08s, box-shadow .12s, border-color .12s, background .12s;
+}
+.welcome-about:hover {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  box-shadow: 0 4px 12px rgba(41,86,255,.18);
+  transform: translateY(-1px);
+}
+.welcome-about:active { transform: translateY(0); }
 
 .passkey-display {
   background: var(--primary-soft); border: 1px solid #c5d4ff; border-radius: var(--radius-sm);

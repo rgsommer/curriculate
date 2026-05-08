@@ -132,6 +132,21 @@
       <h3>Live across devices</h3>
       <p>Leaders submit on their tablet, the announcer queue updates automatically, the admin dashboard re-tallies in seconds. No manual refresh, no copying spreadsheets between phones.</p>
     </article>
+    <article class="pillar">
+      <div class="pillar-icon">📥</div>
+      <h3>Roster import in one CSV</h3>
+      <p>Download the template, fill it in from your school SIS, upload — every event and every competitor created in one shot. Supports DOB (auto-computes age on your cutoff date), grade, and per-kid heat assignments.</p>
+    </article>
+    <article class="pillar">
+      <div class="pillar-icon">🎯</div>
+      <h3>Heats, set by the PE teacher</h3>
+      <p>Group strong-with-strong, weaker-with-weaker. Each event detail screen organizes competitors into heats — by CSV column, by drag-friendly inline editor, or both. Heats show on the announcer and on printed ribbons.</p>
+    </article>
+    <article class="pillar">
+      <div class="pillar-icon">🎓</div>
+      <h3>Run by grade, score by age</h3>
+      <p>Schools that run heats by grade can still score by age. Toggle "Score Within → each age band" on the event, and the 5th-grade heat awards a separate 1st/2nd/3rd to the 10-year-olds and to the 11-year-olds. Standards stay accurate to each kid's age.</p>
+    </article>
   </div>
 </section>
 
@@ -325,6 +340,18 @@
     <details>
       <summary>Best of 3, best of 5?</summary>
       <p>Set Attempts when creating the event (1–10). For field events like Long Jump or Shot Put, this is your best-of count — only the best counts toward placement.</p>
+    </details>
+    <details>
+      <summary>How does the roster CSV import work?</summary>
+      <p>In the Admin tab, click <strong>Import Roster (CSV)</strong>. Download the template, fill in one row per competitor-in-event with columns <code>Event, Age, Gender, Name, Grade, DOB, Heat, ActualAge</code>, then upload. The app shows a preview of every event it'll create or add to, plus any errors. Click Apply and it runs. <code>DOB</code> is optional — when present, the app computes each kid's age based on your school's cutoff date (default Dec 31; configurable in Settings).</p>
+    </details>
+    <details>
+      <summary>Can we run heats by grade but score by age?</summary>
+      <p>Yes — when creating an event, set <strong>Score Within</strong> to "Each age band separately." You can group all 5th graders into one event for the heat, but the placements split out by age — the 10-year-olds get their own 1st/2nd/3rd, the 11-year-olds get theirs. Standards-mode scoring continues to compare each kid against their own age band.</p>
+    </details>
+    <details>
+      <summary>What about heat assignments for the PE teacher?</summary>
+      <p>Each competitor has an optional <strong>Heat</strong> field — set it via the CSV column or click the gear icon next to a competitor in the event detail. The event screen visually groups competitors by heat. Strong-vs-strong, weaker-vs-weaker, however your PE teacher prefers.</p>
     </details>
     <details>
       <summary>How does the new-year archive work?</summary>

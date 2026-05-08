@@ -26,7 +26,7 @@
         <div class="role-sub">Use a school code to run events and submit results.</div>
       </button>
     </div>
-    <p class="welcome-foot muted small"><a href="/meet-fieldday/">About Field Day →</a></p>
+    <p class="welcome-foot"><a class="welcome-about" href="/meet-fieldday/">About Field Day →</a></p>
   </div>
 </section>
 
@@ -252,6 +252,7 @@
     <div class="view-header">
       <h1>Admin Overview</h1>
       <div class="view-header-actions">
+        <button class="btn primary" id="btnImportRoster">Import Roster (CSV)</button>
         <button class="btn ghost" id="btnExportJson" title="Download a JSON backup of this season">Backup</button>
       </div>
     </div>
@@ -368,6 +369,9 @@
       <input id="ageCategories" />
       <label class="settings-label">Age Bands (comma-separated, ranges with hyphens)</label>
       <input id="ageBands" placeholder="5-6, 7-8, 9-10, 11-12, 13-14" />
+      <label class="settings-label">Age Cutoff Date (MM-DD)</label>
+      <input id="ageCutoffDate" placeholder="12-31" />
+      <p class="muted small">When competitors are imported with a DOB, age is computed as their age on this date of the current year. Default is Dec 31.</p>
       <div class="settings-row">
         <button class="btn" id="btnSaveAges">Save Ages &amp; Bands</button>
       </div>
@@ -525,9 +529,16 @@
           <input id="evUnit" placeholder="e.g. seconds, m, ft, lbs" />
         </div>
         <div>
-          <label>Notes</label>
-          <input id="evNotes" placeholder="Optional" />
+          <label>Score Within</label>
+          <select id="evScoreBy">
+            <option value="event">The whole event (one set of 1st/2nd/3rd)</option>
+            <option value="ageBand">Each age band separately (grade-grouped events)</option>
+          </select>
         </div>
+      </div>
+      <div class="form-row">
+        <label>Notes</label>
+        <input id="evNotes" placeholder="Optional" />
       </div>
       <div class="form-row">
         <label>Initial Competitors (one per line, optional)</label>
@@ -537,6 +548,57 @@
     <footer class="modal-footer">
       <button class="btn ghost" id="btnCancelModal">Cancel</button>
       <button class="btn primary" id="btnSaveModal">Save Event</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ ROSTER IMPORT MODAL ============ -->
+<div class="modal" id="importModal" hidden>
+  <div class="modal-card import-card">
+    <header class="modal-header">
+      <h2>Import Roster (CSV)</h2>
+      <button class="icon-btn" id="btnImportClose">✕</button>
+    </header>
+    <div class="modal-body">
+      <p class="muted small">
+        Upload a CSV with one row per competitor-in-event. The app will create any missing events and add the competitors.
+      </p>
+      <details class="csv-help">
+        <summary>CSV format &amp; example</summary>
+        <p><strong>Required columns:</strong> <code>Event, Age, Gender, Name</code></p>
+        <p><strong>Optional columns:</strong> <code>Grade, DOB, ActualAge, Heat</code></p>
+        <p class="muted small">
+          <strong>Age</strong> = the event's competition tier (an 8-year-old running with the 9s gets <code>Age=9</code>).
+          <strong>DOB</strong> = date of birth in YYYY-MM-DD; the app computes the kid's actual age as of the school's cutoff date (default Dec 31 — change in Settings).
+          <strong>ActualAge</strong> = override if you don't want to use DOB or computed age.
+          <strong>Heat</strong> = a label like "1", "A", or "Fast" — the event detail groups competitors by heat.
+        </p>
+        <pre class="csv-example">Event,Age,Gender,Name,Grade,DOB,Heat
+50m Sprint,8,Girls,Maya Patel,3,2017-04-12,1
+50m Sprint,8,Girls,Ava Chen,3,2017-08-30,1
+50m Sprint,9,Girls,Sofia Martinez,4,2017-11-02,2
+Long Jump,10,Boys,Liam Cole,5,2015-06-19,A
+Shot Put,12,Boys,Noah Reyes,6,2013-10-04,A</pre>
+      </details>
+
+      <div class="settings-row">
+        <button class="btn ghost" id="btnImportTemplate">Download Template</button>
+        <label class="btn primary file-btn">
+          Choose CSV file
+          <input type="file" id="importFile" accept=".csv,text/csv" hidden />
+        </label>
+        <span class="muted small" id="importFileName">No file chosen</span>
+      </div>
+
+      <textarea id="importPaste" rows="3" placeholder="…or paste CSV text here" style="width:100%;border:1px solid var(--line);padding:8px 10px;border-radius:var(--radius-sm);font-family:monospace;margin-top:10px"></textarea>
+
+      <div id="importPreview" class="import-preview" hidden></div>
+      <div id="importLog" class="import-log" hidden></div>
+    </div>
+    <footer class="modal-footer">
+      <button class="btn ghost" id="btnImportCancel">Cancel</button>
+      <button class="btn" id="btnImportPreview">Preview</button>
+      <button class="btn primary" id="btnImportApply" disabled>Apply Import</button>
     </footer>
   </div>
 </div>

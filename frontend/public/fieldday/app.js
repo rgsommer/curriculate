@@ -37,6 +37,26 @@
   function $(sel, root=document) { return root.querySelector(sel); }
   function $$(sel, root=document) { return [...root.querySelectorAll(sel)]; }
   function genCode() { return "FIELD" + Math.floor(10 + Math.random()*90); }
+
+  /**
+   * Computes a person's age on the school's cutoff date (default Dec 31)
+   * of the current calendar year.
+   * @param {string} dob — ISO date "YYYY-MM-DD"
+   * @param {string} cutoff — "MM-DD"
+   * @returns {number|null}
+   */
+  function computeAge(dob, cutoff = "12-31") {
+    if (!dob) return null;
+    const dobDate = new Date(String(dob) + "T00:00:00");
+    if (isNaN(dobDate.getTime())) return null;
+    const [mm, dd] = String(cutoff || "12-31").split("-").map(n => parseInt(n, 10));
+    const yr = new Date().getFullYear();
+    const cutoffDate = new Date(yr, (mm||12) - 1, dd || 31);
+    let age = cutoffDate.getFullYear() - dobDate.getFullYear();
+    if (cutoffDate.getMonth() < dobDate.getMonth() ||
+        (cutoffDate.getMonth() === dobDate.getMonth() && cutoffDate.getDate() < dobDate.getDate())) age--;
+    return age >= 0 ? age : null;
+  }
   function getSchool() { return state.school; }
   function isAdmin() { return api.getSession()?.role === "admin"; }
   function showToast(msg, ms=2200) {
@@ -513,6 +533,7 @@
     $("#evType").value = prefill.type || "timed";
     $("#evAttempts").value = prefill.attempts || 1;
     $("#evUnit").value = prefill.unit || defaultUnitFor(prefill.type || "timed");
+    $("#evScoreBy").value = prefill.scoreBy || "event";
     $("#evNotes").value = prefill.notes || "";
     $("#evCompetitors").value = "";
     $("#evCompetitors").parentElement.hidden = false;
@@ -535,6 +556,7 @@
     $("#evType").value = ev.type;
     $("#evAttempts").value = ev.attempts;
     $("#evUnit").value = ev.unit;
+    $("#evScoreBy").value = ev.scoreBy || "event";
     $("#evNotes").value = ev.notes || "";
     $("#evCompetitors").value = "";
     $("#evCompetitors").parentElement.hidden = true;
@@ -567,6 +589,7 @@
       type: $("#evType").value,
       attempts: Math.max(1, Math.min(10, parseInt($("#evAttempts").value, 10) || 1)),
       unit: $("#evUnit").value.trim(),
+      scoreBy: $("#evScoreBy").value || "event",
       notes: $("#evNotes").value.trim()
     };
     $("#btnSaveModal").disabled = true;
@@ -659,7 +682,24 @@
 
     const placements = computePlacements(ev, state.school?.tieMethod || "average");
     const list = $("#competitorList");
-    list.innerHTML = (ev.competitors||[]).map(c => {
+
+    // Group competitors by heat (those without a heat go in an "Unassigned" bucket).
+    const heatGroups = new Map();
+    (ev.competitors||[]).forEach(c => {
+      const key = (c.heat || "").trim() || "—";
+      if (!heatGroups.has(key)) heatGroups.set(key, []);
+      heatGroups.get(key).push(c);
+    });
+    const heatKeys = [...heatGroups.keys()].sort((a,b) => {
+      if (a === "—") return 1;
+      if (b === "—") return -1;
+      const an = parseFloat(a), bn = parseFloat(b);
+      if (!isNaN(an) && !isNaN(bn)) return an - bn;
+      return a.localeCompare(b);
+    });
+    const showHeats = heatKeys.length > 1 || (heatKeys.length === 1 && heatKeys[0] !== "—");
+
+    const renderRowHelper = (c) => {
       const p = placements.find(x => x.competitorId === c.id);
       const placeTag = p && p.place ? renderPlaceTag(p.place) : `<span class="place-tag">—</span>`;
       const best = bestOf(c.attempts, ev.type);
@@ -673,16 +713,41 @@
                  placeholder="${ev.type === 'timed' ? 'mm:ss.ss' : ev.unit || '0'}"
                  ${readOnly?"disabled":""} />`;
       }).join("");
+      const meta = (c.grade || c.actualAge)
+        ? `<span class="competitor-meta muted small">${c.grade ? "G" + escapeHtml(c.grade) : ""}${c.grade && c.actualAge ? " · " : ""}${c.actualAge ? "age " + escapeHtml(c.actualAge) : ""}</span>`
+        : "";
       return `
         <div class="competitor-row" data-cid="${c.id}">
-          <input class="name-input" value="${escapeHtml(c.name)}" data-cid="${c.id}" placeholder="Competitor name" ${readOnly?"disabled":""} />
+          <div class="competitor-name-block">
+            <input class="name-input" value="${escapeHtml(c.name)}" data-cid="${c.id}" placeholder="Competitor name" ${readOnly?"disabled":""} />
+            ${meta}
+          </div>
           <div class="attempts">${attemptInputs}</div>
           <div class="row-actions">
             ${placeTag}
+            ${!readOnly ? `<button class="icon-btn" data-edit-meta="${c.id}" title="Edit grade / age / heat">⚙︎</button>` : ""}
             ${!readOnly ? `<button class="icon-btn" data-del="${c.id}" title="Remove">🗑</button>` : ""}
           </div>
         </div>`;
-    }).join("");
+    };
+
+    // Render — either flat or grouped by heat
+    if (showHeats) {
+      list.innerHTML = heatKeys.map(k => {
+        const label = k === "—" ? "Unassigned" : `Heat ${k}`;
+        return `
+          <div class="heat-group" data-heat="${escapeHtml(k)}">
+            <div class="heat-header">
+              <span class="heat-title">${escapeHtml(label)}</span>
+              <span class="muted small">${heatGroups.get(k).length} competitor${heatGroups.get(k).length===1?"":"s"}</span>
+            </div>
+            ${heatGroups.get(k).map(renderRowHelper).join("")}
+          </div>
+        `;
+      }).join("");
+    } else {
+      list.innerHTML = (ev.competitors||[]).map(renderRowHelper).join("");
+    }
 
     const sorted = (ev.competitors||[]).map(c => {
       const p = placements.find(x => x.competitorId === c.id);
@@ -736,6 +801,24 @@
           if (ev2) ev2.competitors = ev2.competitors.filter(c => c.id !== btn.dataset.del);
           renderEventDetail();
         } catch (e) { showToast("Delete failed"); }
+      });
+    });
+    list.querySelectorAll("[data-edit-meta]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const ev2 = state.events.find(e => e.id === currentEventId);
+        const c = ev2?.competitors.find(x => x.id === btn.dataset.editMeta);
+        if (!c) return;
+        const grade = prompt(`Grade for ${c.name}? (leave blank to clear)`, c.grade || "");
+        if (grade === null) return;
+        const actualAge = prompt(`Actual age for ${c.name}? (overrides band rollup; leave blank to use event's age "${ev2.age}")`, c.actualAge || "");
+        if (actualAge === null) return;
+        const heat = prompt(`Heat for ${c.name}? (e.g. "1", "A", "Fast" — leave blank for none)`, c.heat || "");
+        if (heat === null) return;
+        try {
+          const resp = await api.updateCompetitor(currentEventId, c.id, { grade: grade.trim(), actualAge: actualAge.trim(), heat: heat.trim() });
+          if (resp?.competitor) Object.assign(c, resp.competitor);
+          renderEventDetail();
+        } catch (e) { showToast("Save failed"); }
       });
     });
   }
@@ -888,31 +971,50 @@
   }
 
   // ---------- Scoring ----------
+  /**
+   * Computes placements + points for an event.
+   * - When ev.scoreBy === "ageBand", competitors are first partitioned by their
+   *   actualAge's age band (or the event's age band if actualAge is missing),
+   *   and 1st/2nd/3rd are awarded WITHIN each band. So a grade-grouped event
+   *   can have a separate "1st place" for each age in the heat.
+   * - Otherwise (default), placements are computed across the whole event.
+   */
   function computePlacements(ev, tieMode = "average") {
-    const rows = (ev.competitors||[]).map(c => ({ competitorId: c.id, best: bestOf(c.attempts, ev.type) }));
-    const withResults = rows.filter(r => r.best != null);
-    const noResults = rows.filter(r => r.best == null);
-    withResults.sort((a,b) => compareResults(a.best, b.best, ev.type));
-    const groups = [];
-    for (const r of withResults) {
-      const last = groups[groups.length-1];
-      if (last && last[0].best === r.best) last.push(r); else groups.push([r]);
-    }
+    const groupBy = (ev.scoreBy === "ageBand")
+      ? (c) => bandForAge(c.actualAge || ev.age) || "_"
+      : () => "_";
+    const buckets = new Map();
+    (ev.competitors||[]).forEach(c => {
+      const key = groupBy(c);
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(c);
+    });
     const placements = [];
-    let curPlace = 1;
-    for (const group of groups) {
-      const span = group.length;
-      const used = []; for (let i=0;i<span;i++) used.push(curPlace+i);
-      group.forEach(r => {
-        let assignedPlace, points;
-        if (tieMode === "higher") { assignedPlace = curPlace; points = pointsForPlace(curPlace); }
-        else { assignedPlace = curPlace; const total = used.reduce((s,p)=>s+pointsForPlace(p),0); points = Math.round((total/used.length)*100)/100; }
-        placements.push({ competitorId: r.competitorId, place: assignedPlace, tied: span > 1, points });
-      });
-      curPlace += span;
+    for (const [, comps] of buckets) {
+      const rows = comps.map(c => ({ competitorId: c.id, best: bestOf(c.attempts, ev.type) }));
+      const withResults = rows.filter(r => r.best != null);
+      const noResults = rows.filter(r => r.best == null);
+      withResults.sort((a,b) => compareResults(a.best, b.best, ev.type));
+      const tiedGroups = [];
+      for (const r of withResults) {
+        const last = tiedGroups[tiedGroups.length-1];
+        if (last && last[0].best === r.best) last.push(r); else tiedGroups.push([r]);
+      }
+      let curPlace = 1;
+      for (const group of tiedGroups) {
+        const span = group.length;
+        const used = []; for (let i=0;i<span;i++) used.push(curPlace+i);
+        group.forEach(r => {
+          let assignedPlace, points;
+          if (tieMode === "higher") { assignedPlace = curPlace; points = pointsForPlace(curPlace); }
+          else { assignedPlace = curPlace; const total = used.reduce((s,p)=>s+pointsForPlace(p),0); points = Math.round((total/used.length)*100)/100; }
+          placements.push({ competitorId: r.competitorId, place: assignedPlace, tied: span > 1, points });
+        });
+        curPlace += span;
+      }
+      if (ev.status === "completed") noResults.forEach(r => placements.push({ competitorId: r.competitorId, place: null, tied: false, points: COMPLETION_POINTS }));
+      else noResults.forEach(r => placements.push({ competitorId: r.competitorId, place: null, tied: false, points: 0 }));
     }
-    if (ev.status === "completed") noResults.forEach(r => placements.push({ competitorId: r.competitorId, place: null, tied: false, points: COMPLETION_POINTS }));
-    else noResults.forEach(r => placements.push({ competitorId: r.competitorId, place: null, tied: false, points: 0 }));
     return placements;
   }
   function pointsForPlace(p) { return PLACE_POINTS[p] ?? 0; }
@@ -984,11 +1086,15 @@
         const key = `${ev.gender}|${c.name.trim().toLowerCase()}`;
         let entry = acc.get(key);
         if (!entry) {
-          entry = { name: c.name.trim(), gender: ev.gender, ages: new Set(), points: 0 };
+          entry = { name: c.name.trim(), gender: ev.gender, ages: new Set(), grades: new Set(), points: 0 };
           acc.set(key, entry);
         }
         entry.points += (p.points || 0);
-        entry.ages.add(String(ev.age));
+        // For age-band rollup, prefer the competitor's actualAge over the event's age,
+        // so a kid running with an older group still rolls up to their own band.
+        const rolloverAge = c.actualAge || String(ev.age);
+        entry.ages.add(String(rolloverAge));
+        if (c.grade) entry.grades.add(String(c.grade));
       });
     });
     return [...acc.values()].map(e => ({ ...e, points: Math.round(e.points * 100) / 100 }))
@@ -1358,6 +1464,7 @@
     $$("input[name='scoringMode']").forEach(r => r.checked = (r.value === (school.scoringMode||"placement")));
     $("#ageCategories").value = (school.ageCategories||[]).join(", ");
     $("#ageBands").value = (school.ageBands||[]).join(", ");
+    $("#ageCutoffDate").value = school.ageCutoffDate || "12-31";
     $("#eventLibrary").value = (school.eventLibrary||[]).join("\n");
     $("#standardsCard").hidden = (school.scoringMode||"placement") !== "standard";
     renderSchoolCodeCard();
@@ -1454,12 +1561,14 @@
   async function saveAges() {
     const cats  = $("#ageCategories").value.split(",").map(s => s.trim()).filter(Boolean);
     const bands = $("#ageBands").value.split(",").map(s => s.trim()).filter(Boolean);
+    const cutoff = $("#ageCutoffDate").value.trim() || "12-31";
     if (cats.length === 0)  { showToast("Need at least one age category"); return; }
     if (bands.length === 0) { showToast("Need at least one age band"); return; }
+    if (!/^\d{1,2}-\d{1,2}$/.test(cutoff)) { showToast("Cutoff date must be MM-DD"); return; }
     try {
-      const resp = await api.updateSchool({ ageCategories: cats, ageBands: bands });
+      const resp = await api.updateSchool({ ageCategories: cats, ageBands: bands, ageCutoffDate: cutoff });
       if (resp?.school) state.school = resp.school;
-      showToast("Ages & bands saved");
+      showToast("Saved");
     } catch (e) { showToast("Save failed"); }
   }
 
@@ -1773,6 +1882,248 @@
     showToast("Signed out");
   }
 
+  // ---------- Roster CSV Import ----------
+  /** Minimal RFC-4180-ish CSV parser. Returns an array of arrays of strings. */
+  function parseCSV(text) {
+    const rows = [];
+    let row = [], cur = "", inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (inQuotes) {
+        if (ch === '"' && text[i+1] === '"') { cur += '"'; i++; }
+        else if (ch === '"') { inQuotes = false; }
+        else { cur += ch; }
+      } else {
+        if (ch === '"') { inQuotes = true; }
+        else if (ch === ",") { row.push(cur); cur = ""; }
+        else if (ch === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; }
+        else if (ch === "\r") { /* skip */ }
+        else { cur += ch; }
+      }
+    }
+    if (cur.length || row.length) { row.push(cur); rows.push(row); }
+    return rows.filter(r => r.length > 0 && !(r.length === 1 && r[0].trim() === ""));
+  }
+
+  function inferEventType(title) {
+    const t = (title||"").toLowerCase();
+    if (/(jump|throw|put|distance|toss)/.test(t)) return { type: "distance", attempts: 3, unit: "m" };
+    if (/(sprint|run|race|hurdle|relay|course|tug)/.test(t)) return { type: "timed", attempts: 1, unit: "seconds" };
+    return { type: "timed", attempts: 1, unit: "" };
+  }
+
+  let importParsedRows = null;     // rows ready to apply
+  let importPlan = null;           // {events:[…], errors:[…]} from preview
+
+  function downloadImportTemplate() {
+    const lib = state.school?.eventLibrary || ["50m Sprint","Long Jump","Shot Put"];
+    const sampleEvents = lib.slice(0, 3);
+    const headers = "Event,Age,Gender,Name,Grade,DOB,Heat,ActualAge";
+    const rows = [
+      `${sampleEvents[0]},8,Girls,Maya Patel,3,2017-04-12,1,`,
+      `${sampleEvents[0]},8,Girls,Ava Chen,3,2017-08-30,1,`,
+      `${sampleEvents[0]},9,Girls,Sofia Martinez,4,2017-11-02,2,8`,
+      `${sampleEvents[1] || sampleEvents[0]},10,Boys,Liam Cole,5,2015-06-19,A,`,
+      `${sampleEvents[2] || sampleEvents[0]},12,Boys,Noah Reyes,6,2013-10-04,A,`,
+    ];
+    const csv = [headers, ...rows].join("\n") + "\n";
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "fieldday-roster-template.csv";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  function openImportModal() {
+    importParsedRows = null;
+    importPlan = null;
+    $("#importFile").value = "";
+    $("#importPaste").value = "";
+    $("#importFileName").textContent = "No file chosen";
+    $("#importPreview").hidden = true;
+    $("#importLog").hidden = true;
+    $("#btnImportApply").disabled = true;
+    $("#importModal").hidden = false;
+  }
+
+  function previewImport() {
+    const text = $("#importPaste").value.trim();
+    if (!text) { showToast("Choose a CSV file or paste CSV text first"); return; }
+    const rows = parseCSV(text);
+    if (rows.length < 2) { showToast("CSV must have a header row and at least one data row"); return; }
+
+    // Header mapping (case-insensitive)
+    const header = rows[0].map(h => h.trim().toLowerCase());
+    const colIdx = (name, alts=[]) => {
+      const all = [name, ...alts].map(s => s.toLowerCase());
+      for (let i = 0; i < header.length; i++) if (all.includes(header[i])) return i;
+      return -1;
+    };
+    const iEvent  = colIdx("event", ["event title","title"]);
+    const iAge    = colIdx("age");
+    const iGender = colIdx("gender");
+    const iName   = colIdx("name", ["competitor","competitor name","student"]);
+    const iGrade  = colIdx("grade");
+    const iActual = colIdx("actualage", ["actual age","real age","home age"]);
+    const iDob    = colIdx("dob", ["date of birth","birthdate","birthday"]);
+    const iHeat   = colIdx("heat", ["heat number","heat #"]);
+
+    const required = { Event: iEvent, Age: iAge, Gender: iGender, Name: iName };
+    const missing = Object.entries(required).filter(([_, idx]) => idx < 0).map(([k]) => k);
+    if (missing.length > 0) { showToast(`Missing column(s): ${missing.join(", ")}`); return; }
+
+    // Group rows by (event title, age, gender) so we know which events to create/find
+    const groups = new Map();
+    const errors = [];
+    rows.slice(1).forEach((r, ri) => {
+      const lineNo = ri + 2;
+      const eventTitle = (r[iEvent]||"").trim();
+      const age = (r[iAge]||"").trim();
+      const gender = (r[iGender]||"").trim();
+      const name = (r[iName]||"").trim();
+      const grade = iGrade  >= 0 ? (r[iGrade] ||"").trim() : "";
+      let actualAge = iActual >= 0 ? (r[iActual]||"").trim() : "";
+      const dob   = iDob    >= 0 ? (r[iDob]  ||"").trim() : "";
+      const heat  = iHeat   >= 0 ? (r[iHeat] ||"").trim() : "";
+      // If DOB is provided and no explicit ActualAge, compute from DOB + cutoff
+      if (dob && !actualAge) {
+        const computed = computeAge(dob, state.school?.ageCutoffDate);
+        if (computed != null) actualAge = String(computed);
+      }
+      if (!eventTitle || !age || !gender || !name) {
+        errors.push({ lineNo, msg: "Missing required field", row: r.join(",") });
+        return;
+      }
+      const validGender = ["girls","boys","mixed"].includes(gender.toLowerCase());
+      if (!validGender) {
+        errors.push({ lineNo, msg: `Gender must be Girls/Boys/Mixed, got "${gender}"`, row: r.join(",") });
+        return;
+      }
+      const genderTitled = gender[0].toUpperCase() + gender.slice(1).toLowerCase();
+      const key = `${eventTitle}||${age}||${genderTitled}`;
+      if (!groups.has(key)) groups.set(key, { eventTitle, age, gender: genderTitled, competitors: [] });
+      groups.get(key).competitors.push({ name, grade, actualAge, dob, heat, lineNo });
+    });
+
+    // Match against existing events; flag those that need creating
+    const plan = { groups: [], errors, totalCompetitors: 0 };
+    groups.forEach(g => {
+      const existing = state.events.find(e =>
+        (e.title||"").toLowerCase() === g.eventTitle.toLowerCase() &&
+        String(e.age) === String(g.age) &&
+        e.gender === g.gender);
+      g.existingEvent = existing;
+      g.willCreate = !existing;
+      plan.totalCompetitors += g.competitors.length;
+      plan.groups.push(g);
+    });
+    importPlan = plan;
+
+    // Render preview
+    const newCount = plan.groups.filter(g => g.willCreate).length;
+    const existCount = plan.groups.filter(g => !g.willCreate).length;
+    let html = `
+      <div class="import-preview-summary">
+        ${plan.totalCompetitors} competitors across ${plan.groups.length} events
+        (${newCount} new, ${existCount} existing)
+        ${errors.length ? ` · ${errors.length} row(s) with errors` : ""}
+      </div>
+      <table>
+        <thead><tr><th>Event</th><th>Age</th><th>Gender</th><th>Status</th><th>Competitors</th></tr></thead>
+        <tbody>
+          ${plan.groups.map(g => `
+            <tr class="${g.willCreate?"new-event":""}">
+              <td>${escapeHtml(g.eventTitle)}</td>
+              <td>${escapeHtml(g.age)}</td>
+              <td>${escapeHtml(g.gender)}</td>
+              <td>${g.willCreate ? "✚ create" : "→ existing"}</td>
+              <td>${g.competitors.map(c => escapeHtml(c.name) + (c.grade?` <span class="muted small">(G${escapeHtml(c.grade)})</span>`:"") + (c.actualAge && c.actualAge !== g.age ? ` <span class="muted small">[age ${escapeHtml(c.actualAge)}]</span>`:"")).join(", ")}</td>
+            </tr>`).join("")}
+          ${errors.map(e => `
+            <tr class="error">
+              <td colspan="5">Line ${e.lineNo}: ${escapeHtml(e.msg)} — <code>${escapeHtml(e.row)}</code></td>
+            </tr>`).join("")}
+        </tbody>
+      </table>`;
+    $("#importPreview").innerHTML = html;
+    $("#importPreview").hidden = false;
+    $("#btnImportApply").disabled = plan.groups.length === 0;
+  }
+
+  async function applyImport() {
+    if (!importPlan) { showToast("Click Preview first"); return; }
+    const log = $("#importLog");
+    log.hidden = false;
+    log.innerHTML = "";
+    const append = (cls, msg) => { log.innerHTML += `<div class="${cls}">${msg}</div>`; log.scrollTop = log.scrollHeight; };
+
+    let createdEvents = 0, addedCompetitors = 0, failed = 0;
+    $("#btnImportApply").disabled = true;
+    $("#btnImportCancel").disabled = true;
+
+    for (const g of importPlan.groups) {
+      let event = g.existingEvent;
+      if (!event) {
+        const inferred = inferEventType(g.eventTitle);
+        try {
+          const session = api.getSession();
+          const resp = await api.createEvent({
+            title: g.eventTitle, age: g.age, gender: g.gender,
+            type: inferred.type, attempts: inferred.attempts, unit: inferred.unit, notes: "",
+            leaderName: session?.leaderName || session?.email || "Admin",
+            competitors: []
+          });
+          event = resp?.event;
+          if (event) {
+            applyEntityUpdate(resp);
+            createdEvents++;
+            append("ok", `✚ Created event: ${escapeHtml(g.eventTitle)} (Age ${escapeHtml(g.age)} ${escapeHtml(g.gender)})`);
+          }
+        } catch (e) {
+          append("err", `✗ Failed to create event ${escapeHtml(g.eventTitle)} (Age ${escapeHtml(g.age)} ${escapeHtml(g.gender)})`);
+          failed++;
+          continue;
+        }
+      }
+      for (const c of g.competitors) {
+        try {
+          const resp = await api.addCompetitor(event.id, c.name);
+          const created = resp?.competitor;
+          if (created && (c.grade || c.actualAge || c.dob || c.heat)) {
+            const patch = {};
+            if (c.grade)     patch.grade     = c.grade;
+            if (c.actualAge) patch.actualAge = c.actualAge;
+            if (c.dob)       patch.dob       = c.dob;
+            if (c.heat)      patch.heat      = c.heat;
+            const u = await api.updateCompetitor(event.id, created.id, patch);
+            const ev = state.events.find(e => e.id === event.id);
+            const local = ev?.competitors.find(x => x.id === created.id);
+            if (local && u?.competitor) Object.assign(local, u.competitor);
+          } else if (created) {
+            const ev = state.events.find(e => e.id === event.id);
+            if (ev) ev.competitors.push(created);
+          }
+          addedCompetitors++;
+        } catch (e) {
+          append("err", `✗ Failed: ${escapeHtml(c.name)} → ${escapeHtml(g.eventTitle)} (line ${c.lineNo})`);
+          failed++;
+        }
+      }
+    }
+
+    append("ok", `<br/><strong>Done.</strong> Created ${createdEvents} event(s), added ${addedCompetitors} competitor(s)${failed ? `, ${failed} failure(s)` : ""}.`);
+    await refreshState();
+    renderAdmin();
+    $("#btnImportCancel").disabled = false;
+    $("#btnImportApply").textContent = "Done";
+    setTimeout(() => {
+      $("#importModal").hidden = true;
+      $("#btnImportApply").textContent = "Apply Import";
+      $("#btnImportApply").disabled = true;
+    }, 1500);
+  }
+
   // ---------- Wiring ----------
   function wire() {
     $("#enterAdmin").addEventListener("click", openAdminAuth);
@@ -1835,6 +2186,25 @@
     });
 
     $("#btnExportJson").addEventListener("click", exportData);
+
+    // Roster CSV import
+    $("#btnImportRoster").addEventListener("click", openImportModal);
+    $("#btnImportTemplate").addEventListener("click", downloadImportTemplate);
+    $("#btnImportClose").addEventListener("click", () => $("#importModal").hidden = true);
+    $("#btnImportCancel").addEventListener("click", () => $("#importModal").hidden = true);
+    $("#btnImportPreview").addEventListener("click", previewImport);
+    $("#btnImportApply").addEventListener("click", applyImport);
+    $("#importFile").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      $("#importFileName").textContent = file.name;
+      const reader = new FileReader();
+      reader.onload = () => {
+        $("#importPaste").value = reader.result;
+        previewImport();
+      };
+      reader.readAsText(file);
+    });
 
     $("#ribbonsOnlyCompleted").addEventListener("change", renderRibbons);
     $("#btnPrintRibbons").addEventListener("click", () => window.print());
