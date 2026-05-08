@@ -11886,11 +11886,11 @@ function buildRubricInstructions({
             },
           },
 
-          // --- welfare concern detection (always populated; level "none" when no concern) ---
+          // --- well-being concern detection (always populated; level "none" when no concern) ---
           // Surfaces signals of student distress, safety risk, or notable personal context
           // (e.g. journal-style work) so the teacher can follow up. NEVER includes long
           // quotations and NEVER replaces the teacher's own judgment.
-          welfare_concern: {
+          wellbeing_concern: {
             type: "object",
             additionalProperties: false,
             properties: {
@@ -11929,7 +11929,7 @@ function buildRubricInstructions({
           "improvements",
           "teacher_comment",
           "achievement_summary",
-          "welfare_concern",
+          "wellbeing_concern",
         ],
       };
       // 2) Optional wrapper if you like keeping it around locally
@@ -12191,8 +12191,8 @@ function buildRubricInstructions({
         If NO KITA annotations are visible and no answer key override provides KITA sections, grade normally without KITA.
       ` : "";
 
-      const welfareDetectionBlock = `
-        STUDENT WELFARE DETECTION (mandatory — runs alongside grading; never affects the grade):
+      const wellbeingDetectionBlock = `
+        STUDENT WELL-BEING DETECTION (mandatory — runs alongside grading; never affects the grade):
         Scan the student's response for signals that the student may be experiencing distress,
         a difficult life situation, or anything a caring teacher would want to follow up on.
         This applies most often to journals, opinion pieces, narrative writing, and reflective
@@ -12232,10 +12232,10 @@ function buildRubricInstructions({
             normal academic frustration as a concern — these are part of grade-level writing.
         - Do NOT classify expressions of hard topics in clearly assigned essays (e.g., a war
             history piece mentioning death, a literature response about a tragic character)
-            as personal welfare concerns. The signal must come from the student's own voice
+            as personal well-being concerns. The signal must come from the student's own voice
             and personal context, not the assignment topic.
-        - Welfare detection NEVER affects the grade, the teacher_comment, the strengths /
-            improvements arrays, or any score. It lives ONLY in welfare_concern.
+        - Well-being detection NEVER affects the grade, the teacher_comment, the strengths /
+            improvements arrays, or any score. It lives ONLY in wellbeing_concern.
         - When in doubt between "wellbeing" and "none", default to "none" — teachers must be
             able to trust the flag rate. Reserve "safety" for clear, explicit signals.
       `;
@@ -12245,7 +12245,7 @@ function buildRubricInstructions({
         ${denomOverrideBlock ? `\n\n${denomOverrideBlock}` : ""}
         ${countResultBlock ? `\n\n${countResultBlock}` : ""}
         ${kitaReminder}
-        ${welfareDetectionBlock}
+        ${wellbeingDetectionBlock}
         `.trim();
 
       let imageRefs = [];

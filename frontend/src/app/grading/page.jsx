@@ -3163,31 +3163,31 @@ export default function GradingPage() {
         if (subjectParts.length === 1) subjectParts.push("Session Results");
         const emailSubject = subjectParts.join(" ");
 
-        // ── Welfare-concerns block (prepended above the session summary) ──
+        // ── Well-being concerns block (prepended above the session summary) ──
         // Surfaces flagged students from this batch so the teacher sees them
         // before they close the session. Privacy: this block is teacher-only —
         // never CSV-exported, never sent to students or parents.
-        const escWelfare = (s) => String(s ?? "")
+        const escWb = (s) => String(s ?? "")
           .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
           .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
         const flaggedSafety = sessionItems
-          .map((it) => ({ name: it?.studentName || "Unnamed", concern: it?.assessment?.welfare_concern }))
+          .map((it) => ({ name: it?.studentName || "Unnamed", concern: it?.assessment?.wellbeing_concern }))
           .filter((x) => x.concern && x.concern.level === "safety");
         const flaggedWellbeing = sessionItems
-          .map((it) => ({ name: it?.studentName || "Unnamed", concern: it?.assessment?.welfare_concern }))
+          .map((it) => ({ name: it?.studentName || "Unnamed", concern: it?.assessment?.wellbeing_concern }))
           .filter((x) => x.concern && x.concern.level === "wellbeing");
         const renderFlag = (x, color) => `
           <li style="margin-bottom:8px;">
-            <strong style="color:${color};">${escWelfare(x.name)}</strong>
-            — ${escWelfare(x.concern.category)}
+            <strong style="color:${color};">${escWb(x.name)}</strong>
+            — ${escWb(x.concern.category)}
             <div style="font-size:12px;color:#64748b;margin-top:2px;">
-              "${escWelfare(x.concern.snippet)}"
+              "${escWb(x.concern.snippet)}"
             </div>
             <div style="font-size:12px;color:#475569;margin-top:2px;">
-              ${escWelfare(x.concern.suggested_action)}
+              ${escWb(x.concern.suggested_action)}
             </div>
           </li>`;
-        const welfareBlock = (flaggedSafety.length || flaggedWellbeing.length) ? `
+        const wellbeingBlock = (flaggedSafety.length || flaggedWellbeing.length) ? `
           <div style="border:2px solid #fca5a5;background:#fef2f2;padding:14px 16px;border-radius:12px;margin-bottom:16px;">
             <div style="font-weight:800;color:#991b1b;font-size:15px;margin-bottom:8px;">
               🚩 Student responses flagged for your attention
@@ -3209,7 +3209,7 @@ export default function GradingPage() {
         // Build HTML body from session summary
         const summaryHtml = `
           <div style="font-family:sans-serif;max-width:640px;margin:0 auto;">
-            ${welfareBlock}
+            ${wellbeingBlock}
             <h2 style="color:#1e293b;margin-bottom:8px;">Session Summary</h2>
             <p style="color:#334155;line-height:1.6;">${(sessionSummary || "").replace(/\n/g, "<br>")}</p>
             <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0;">
@@ -4558,12 +4558,12 @@ export default function GradingPage() {
 
             </div>
 
-            {/* Welfare-concerns banner — surfaces flagged students from this batch.
-                Renders only when at least one item carries a non-"none" welfare_concern.
+            {/* Well-being concerns banner — surfaces flagged students from this batch.
+                Renders only when at least one item carries a non-"none" wellbeing_concern.
                 Click "Review" to scroll/jump to the flagged student's row. */}
             {(() => {
               const flagged = (sessionItems || [])
-                .map((it, idx) => ({ idx, item: it, c: it?.assessment?.welfare_concern }))
+                .map((it, idx) => ({ idx, item: it, c: it?.assessment?.wellbeing_concern }))
                 .filter((x) => x.c && x.c.level && x.c.level !== "none");
               if (!flagged.length) return null;
               const safetyCount = flagged.filter((x) => x.c.level === "safety").length;

@@ -499,7 +499,7 @@ export default function FeaturesPage() {
               mascot="/images/mascot/feedback/2.png"
             />
             <FeatureCard
-              title="🚩 Welfare check — alongside every grade"
+              title="🚩 Well-being check — alongside every grade"
               body="When the AI reads a student's writing, it's also watching for signals a caring teacher would want to know about — and surfaces them in two clearly-marked tiers, with a short snippet so you can locate the passage."
               bullets={[
                 "⚠️ Possible safety concern — explicit signals (self-harm references, abuse disclosure, persistent bullying, severe hopelessness)",
