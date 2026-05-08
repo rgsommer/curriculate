@@ -3223,6 +3223,45 @@ export default function GradingPage() {
           setShowSessionEmailPrompt(false);
           setShowSessionClearPrompt(true);
           setTimeout(() => setSessionEmailSent(false), 4000);
+
+          // Mode B: also email each linked student their personal result
+          // at the address on file in StudentContact. Fire-and-forget — a
+          // failure here doesn't impact the teacher's report send above.
+          try {
+            const linkedResults = (results || [])
+              .filter((r) => !r?.error && r?.studentId && r?.refCode)
+              .map((r) => ({
+                edsbyId: r.studentId,
+                studentName: r.studentName || "",
+                refCode: r.refCode || "",
+                score: r.score,
+                outOf: r.outOf,
+                percent: r.pct,
+                comment: r.comment || "",
+              }));
+            if (linkedResults.length) {
+              const studentSendUrl = gradingUrl.replace(
+                /\/grading$/,
+                "/grading/send-student-results"
+              );
+              const assessmentName =
+                first?.subject ||
+                first?.inferred_assessment_type ||
+                emailSubject.replace(/^Grading:\s*/i, "") ||
+                "Pulse Grading";
+              fetch(studentSendUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  teacherName: "",
+                  taskSetName: assessmentName,
+                  results: linkedResults,
+                }),
+              }).catch((err) => console.warn("[student-results] send failed:", err?.message || err));
+            }
+          } catch (perStudentErr) {
+            console.warn("[student-results] dispatch error:", perStudentErr?.message || perStudentErr);
+          }
         } else {
           const err = await res.json().catch(() => ({}));
           console.warn("[session] send email failed:", err);

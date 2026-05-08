@@ -53,6 +53,17 @@ export default function SharedLaunch() {
         localStorage.setItem("curriculateSharedFromTeacherId", String(data.sharedFromTeacherId || ""));
         localStorage.setItem("curriculateSharedFromTeacherEmail", String(data.sharedFromTeacherEmail || ""));
 
+        // Mode B (sub): if the sending teacher bound a class to this link,
+        // carry the binding into the LiveSession launch so the resulting
+        // session is class-bound. Sub teacher never sees a class picker.
+        if (data.classRosterId) {
+          localStorage.setItem("curriculateSharedClassRosterId", String(data.classRosterId));
+          localStorage.setItem("curriculateSharedClassName", String(data.className || ""));
+        } else {
+          localStorage.removeItem("curriculateSharedClassRosterId");
+          localStorage.removeItem("curriculateSharedClassName");
+        }
+
         if (!alive) return;
 
         // Go to live presenter controls

@@ -336,6 +336,37 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
   const [navigationMode, setNavigationMode] = useState("linear"); // "linear" | "mystery"
   const [mysteryTimerMinutes, setMysteryTimerMinutes] = useState(30);
 
+  // Plan tier — read once from /api/profile/me so we can hide PLUS-only UI
+  // (class linking) and PRO-only UI from FREE-tier teachers without making
+  // them hit a 403 from the server.
+  const [planTier, setPlanTier] = useState("FREE");
+  const planTierRank = (t) => (t === "PRO" ? 2 : t === "PLUS" ? 1 : 0);
+  const isAtLeastPlus = planTierRank(planTier) >= 1;
+
+  // Class rosters (Mode B): teacher's uploaded class lists, used to bind
+  // a session to a specific class so the join screen can offer a name
+  // dropdown and the report CSV gets Edsby Student IDs auto-filled.
+  const [classRosters, setClassRosters] = useState([]); // [{id, className, studentCount, students}]
+  const [selectedClassRosterId, setSelectedClassRosterId] = useState(() => {
+    // Mode B (sub): if a sub teacher launched via a class-bound share link,
+    // the binding rides through localStorage. Pre-fill it so it propagates
+    // to teacher:loadTaskset without the sub touching anything.
+    try {
+      return localStorage.getItem("curriculateSharedClassRosterId") || "";
+    } catch {
+      return "";
+    }
+  });
+  // Read-only display name for sub flow (sub doesn't own the roster)
+  const sharedClassName = (() => {
+    try {
+      return localStorage.getItem("curriculateSharedClassName") || "";
+    } catch {
+      return "";
+    }
+  })();
+  const isSharedClassBoundLaunch = !!sharedClassName && !!selectedClassRosterId;
+
   // NEW dynamic system — only these
   const [taskType, setTaskType] = useState(
     QUICK_TASK_TYPES[0] || TASK_TYPES.SHORT_ANSWER
@@ -593,6 +624,33 @@ useEffect(() => {
     treatSoundRef.current = treatAudio;
   }, []);
 
+  // Load this teacher's class rosters (Mode B class binding)
+  useEffect(() => {
+    const teacherEmail = (user?.email || reportOwnerEmail || "").trim();
+    if (!teacherEmail) {
+      setClassRosters([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `${API_BASE}/class-roster/list?teacherEmail=${encodeURIComponent(teacherEmail)}`
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const rosters = Array.isArray(data?.rosters) ? data.rosters : [];
+        setClassRosters(rosters);
+      } catch (e) {
+        console.warn("[LiveSession] class roster fetch failed:", e?.message || e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.email, reportOwnerEmail]);
+
   useEffect(() => {
     async function loadTeacherRooms() {
       const profile = await fetchMyProfile();
@@ -606,6 +664,9 @@ useEffect(() => {
 
       setTeacherRooms(profile.locationOptions || []);
       setLocationOptions(profile.locationOptions || []);
+
+      // Tier (PLUS = class-linking, PRO = trend reports)
+      if (profile?.planTier) setPlanTier(String(profile.planTier).toUpperCase());
     }
     loadTeacherRooms();
   }, []);
@@ -2885,6 +2946,7 @@ if (
         selectedRooms,
         navigationMode,
         mysteryTimerMinutes: navigationMode === "mystery" ? mysteryTimerMinutes : undefined,
+        classRosterId: selectedClassRosterId || undefined,
         reportOwnerId,
         reportOwnerName,
         reportOwnerEmail,
@@ -3905,6 +3967,77 @@ if (
                   >
                     Cancel
                   </button>
+                </div>
+              )}
+
+              {/* Class roster binding (Mode B) — pick a class so the join screen
+                  shows a name dropdown and the report CSV gets Edsby IDs filled in.
+                  On a sub-teacher launch via a class-bound share link, swap the
+                  dropdown for a read-only indicator (sub doesn't own the roster). */}
+              {activeTasksetMeta && !taskFlowActive && isSharedClassBoundLaunch && (
+                <div
+                  style={{
+                    marginBottom: 6,
+                    padding: "6px 8px",
+                    background: "#ecfdf5",
+                    borderRadius: 8,
+                    border: "1px solid #86efac",
+                    fontSize: "0.82rem",
+                    color: "#065f46",
+                  }}
+                >
+                  <span style={{ fontWeight: 700 }}>📋 Class:</span>{" "}
+                  {sharedClassName}
+                  <div style={{ marginTop: 2, fontSize: "0.72rem", color: "#047857" }}>
+                    Set by the sending teacher. Students will pick their name on join.
+                  </div>
+                </div>
+              )}
+              {activeTasksetMeta && !taskFlowActive && !isSharedClassBoundLaunch && isAtLeastPlus && classRosters.length > 0 && (
+                <div
+                  style={{
+                    marginBottom: 6,
+                    padding: "6px 8px",
+                    background: selectedClassRosterId ? "#ecfdf5" : "transparent",
+                    borderRadius: 8,
+                    border: selectedClassRosterId ? "1px solid #86efac" : "1px solid transparent",
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: "0.82rem",
+                      color: "#065f46",
+                    }}
+                  >
+                    <span style={{ fontWeight: 700 }}>📋 Class:</span>
+                    <select
+                      value={selectedClassRosterId}
+                      onChange={(e) => setSelectedClassRosterId(e.target.value)}
+                      style={{
+                        flex: 1,
+                        padding: "4px 6px",
+                        borderRadius: 6,
+                        border: "1px solid #d1d5db",
+                        fontSize: "0.82rem",
+                        background: "#fff",
+                      }}
+                    >
+                      <option value="">(none — generic launch)</option>
+                      {classRosters.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.className || "Unnamed class"} ({r.studentCount || 0} students)
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {selectedClassRosterId && (
+                    <div style={{ marginTop: 4, fontSize: "0.72rem", color: "#047857" }}>
+                      Students will pick their name on join. Edsby-ready CSV will be in the report.
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -5607,6 +5740,7 @@ Precipitation — rain, snow, hail`}
                     roomCode: code,
                     tasksetId: data._id || activeTasksetMeta?._id,
                     selectedRooms,
+                    classRosterId: selectedClassRosterId || undefined,
                     reportOwnerId,
                     reportOwnerName,
                     reportOwnerEmail,
@@ -5899,6 +6033,7 @@ Precipitation — rain, snow, hail`}
                           tasksetDoc._id ||
                           activeTasksetMeta?._id,
                         selectedRooms,
+                        classRosterId: selectedClassRosterId || undefined,
                         reportOwnerId,
                         reportOwnerName,
                         reportOwnerEmail,

@@ -2,7 +2,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetchJson } from "../api/apiFetch";
+import { fetchMyProfile } from "../api/profile";
+import { API_BASE_URL } from "../config";
 import { TASK_TYPE_META } from "../../../shared/taskTypes.js";
+
+const _API_BASE = API_BASE_URL || "";
 
 // Category → color mapping for task type badges
 const CATEGORY_COLORS = {
@@ -343,6 +347,10 @@ export default function TaskSets() {
   const [reportData, setReportData] = useState(null);
   const reportCacheRef = useRef(new Map());
 
+  // Plan tier — gates class linking (PLUS+).
+  const [planTier, setPlanTier] = useState("FREE");
+  const isAtLeastPlus = planTier === "PLUS" || planTier === "PRO";
+
   // Share modal state
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareLink, setShareLink] = useState("");
@@ -351,6 +359,14 @@ export default function TaskSets() {
   const [inviteMessage, setInviteMessage] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
   const [inviteSent, setInviteSent] = useState(false);
+
+  // Mode B (sub): class-binding the share link.
+  // Sending teacher picks a class; the binding rides on the link so the
+  // sub teacher's session is class-bound automatically.
+  const [shareClassRosters, setShareClassRosters] = useState([]); // [{id, className, studentCount}]
+  const [shareClassRosterId, setShareClassRosterId] = useState("");
+  const [shareTaskset, setShareTaskset] = useState(null); // remember which taskset to regenerate against
+  const [shareRegenerating, setShareRegenerating] = useState(false);
 
   const loadSets = useCallback(async () => {
     setLoading(true);
@@ -376,6 +392,13 @@ export default function TaskSets() {
 
   useEffect(() => {
     loadSets();
+    // Fetch plan tier for UI gating (class-linking requires PLUS).
+    (async () => {
+      try {
+        const profile = await fetchMyProfile();
+        if (profile?.planTier) setPlanTier(String(profile.planTier).toUpperCase());
+      } catch {}
+    })();
     return () => {
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     };
@@ -567,17 +590,48 @@ export default function TaskSets() {
     navigate("/live");
   };
 
+  // Helper: hit /api/shared/create-link with optional class binding
+  const createShareLink = useCallback(async (tasksetId, classRosterId) => {
+    const data = await apiFetchJson("/api/shared/create-link", {
+      method: "POST",
+      body: {
+        tasksetId,
+        ...(classRosterId ? { classRosterId } : {}),
+      },
+    });
+    if (!data?.ok || !data?.link) {
+      throw new Error(data?.error || "Share failed");
+    }
+    return data;
+  }, []);
+
   const copyShareLink = async (taskset) => {
     const id = taskset?._id || taskset?.id;
     if (!id) return;
     try {
-      const data = await apiFetchJson("/api/shared/create-link", {
-        method: "POST",
-        body: { tasksetId: id },
-      });
-      if (!data?.ok || !data?.link) {
-        throw new Error(data?.error || "Share failed");
-      }
+      // Open the modal and start fetching rosters in parallel.
+      setShareTaskset(taskset);
+      setShareClassRosterId("");
+      setShareClassRosters([]);
+
+      // Kick off roster fetch (non-blocking — link generates without binding by default).
+      (async () => {
+        try {
+          const profile = await fetchMyProfile();
+          const teacherEmail = String(profile?.email || "").trim();
+          if (!teacherEmail) return;
+          const res = await fetch(
+            `${_API_BASE}/class-roster/list?teacherEmail=${encodeURIComponent(teacherEmail)}`
+          );
+          if (!res.ok) return;
+          const j = await res.json();
+          setShareClassRosters(Array.isArray(j?.rosters) ? j.rosters : []);
+        } catch (e) {
+          console.warn("[TaskSets] roster fetch failed:", e?.message || e);
+        }
+      })();
+
+      const data = await createShareLink(id);
       setShareLink(String(data.link));
       setShareExpiresAt(data.expiresAt || "");
       setInviteEmail("");
@@ -586,6 +640,24 @@ export default function TaskSets() {
       setShareModalOpen(true);
     } catch (e) {
       setError(e?.message || "Share failed");
+    }
+  };
+
+  // Regenerate the share link with a different class binding (or none).
+  const regenerateShareLinkWithClass = async (newClassRosterId) => {
+    if (!shareTaskset) return;
+    const id = shareTaskset?._id || shareTaskset?.id;
+    if (!id) return;
+    setShareRegenerating(true);
+    try {
+      const data = await createShareLink(id, newClassRosterId || undefined);
+      setShareLink(String(data.link));
+      setShareExpiresAt(data.expiresAt || "");
+      setInviteSent(false); // any prior invite was for the old token
+    } catch (e) {
+      setError(e?.message || "Could not regenerate share link.");
+    } finally {
+      setShareRegenerating(false);
     }
   };
 
@@ -1500,10 +1572,74 @@ export default function TaskSets() {
             <p style={{ color: "#6b7280", marginBottom: 16 }}>
               Share this link with a substitute teacher. It expires in 7 days.
             </p>
+
+            {/* Mode B (sub): Class binding — picks the class the sub will run for.
+                When set, the sub's session inherits the class so students get a
+                name dropdown and the report CSV gets Edsby Student IDs filled in.
+                Gated to PLUS+ tier. */}
+            {isAtLeastPlus && shareClassRosters.length > 0 && (
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  background: shareClassRosterId ? "#ecfdf5" : "#f9fafb",
+                  border: shareClassRosterId ? "1px solid #86efac" : "1px solid #e5e7eb",
+                }}
+              >
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: "0.9rem",
+                    color: shareClassRosterId ? "#065f46" : "#374151",
+                  }}
+                >
+                  <span style={{ fontWeight: 700, whiteSpace: "nowrap" }}>📋 Bind to class:</span>
+                  <select
+                    value={shareClassRosterId}
+                    disabled={shareRegenerating}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setShareClassRosterId(v);
+                      regenerateShareLinkWithClass(v);
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: "6px 8px",
+                      borderRadius: 6,
+                      border: "1px solid #d1d5db",
+                      fontSize: "0.9rem",
+                      background: "#fff",
+                    }}
+                  >
+                    <option value="">(none — sub picks no class)</option>
+                    {shareClassRosters.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.className || "Unnamed class"} ({r.studentCount || 0} students)
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div style={{ marginTop: 6, fontSize: "0.78rem", color: "#475569" }}>
+                  {shareClassRosterId
+                    ? "Students will pick their name from your class roster on join. Edsby-ready CSV will be in the report."
+                    : "Optional — sub can run without a class. You can still match grades after the fact in your Profile."}
+                </div>
+                {shareRegenerating && (
+                  <div style={{ marginTop: 6, fontSize: "0.78rem", color: "#1e3a8a" }}>
+                    Regenerating link…
+                  </div>
+                )}
+              </div>
+            )}
+
             <div style={{
               background: "#f3f4f6", padding: 12, borderRadius: 8,
               marginBottom: 12, fontFamily: "monospace",
               wordBreak: "break-all", fontSize: "0.9rem",
+              opacity: shareRegenerating ? 0.55 : 1,
             }}>
               {shareLink}
             </div>

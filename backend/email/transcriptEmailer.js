@@ -205,6 +205,60 @@ function shouldIncludeIndividualReports(planName, includeIndividualReports) {
 // --------------------------------------------------------------------
 // HTML Email Builder
 // --------------------------------------------------------------------
+// Tier helper — mirrors backend/utils/tierGate.js. Trend / improvement
+// indicator is gated to PRO. PLUS and FREE see no Trend column at all
+// (cleaner than a column of em-dashes).
+function isPlanAtLeastPro(planName = "FREE") {
+  const t = String(planName || "").toUpperCase();
+  return t.includes("PRO");
+}
+
+// Build the conditional CSV-import instructions block
+// for the report email. Rendered just under the Brief Overview.
+function buildCsvImportBlockHtml({ csvInfo, classBound }) {
+  if (!csvInfo) return "";
+
+  if (csvInfo.hasAnyId && classBound) {
+    // Mode B: full Edsby-ready CSV
+    return `
+      <div style="margin-top:14px; padding:12px 14px; border-radius:14px; background:#eff6ff; border:1px solid #93c5fd;">
+        <div style="font-weight:900; margin-bottom:6px;">📄 Edsby Import CSV Attached</div>
+        <div style="font-size:13px; line-height:1.5; color:#1e3a8a;">
+          A gradebook CSV is attached, ready to import into Edsby. To import:
+          Edsby → Gradebook → click your assessment → <strong>Import</strong> → upload the attached CSV.
+          Verify the column mapping (Student ID, First Name, Last Name, Grade) and confirm.
+        </div>
+      </div>`;
+  }
+
+  if (csvInfo.hasAnyId && !classBound) {
+    // Some matches happened post-hoc (rosters present but session wasn't class-bound)
+    return `
+      <div style="margin-top:14px; padding:12px 14px; border-radius:14px; background:#eff6ff; border:1px solid #93c5fd;">
+        <div style="font-weight:900; margin-bottom:6px;">📄 Edsby Import CSV Attached</div>
+        <div style="font-size:13px; line-height:1.5; color:#1e3a8a;">
+          A gradebook CSV is attached using your uploaded class roster. To import into Edsby:
+          Edsby → Gradebook → your assessment → <strong>Import</strong> → upload the CSV.
+          Tip: launching with a class selected (or sending sub-teacher links bound to a class)
+          gives the cleanest match rate.
+        </div>
+      </div>`;
+  }
+
+  // No matches — generic CSV
+  return `
+    <div style="margin-top:14px; padding:12px 14px; border-radius:14px; background:#fffbeb; border:1px solid #fde68a;">
+      <div style="font-weight:900; margin-bottom:6px;">📄 Grades CSV Attached</div>
+      <div style="font-size:13px; line-height:1.5; color:#78350f;">
+        A generic gradebook CSV is attached with each completed student's score.
+        Want one-click import into <strong>Edsby</strong>? Upload your class roster in your
+        Profile → Class Rosters; we'll auto-match students next time and produce an
+        Edsby-ready file. Use a different LMS?
+        <a href="https://curriculate.net/profile?platform_request=1" style="color:#92400e; text-decoration:underline;">Request support for it</a>.
+      </div>
+    </div>`;
+}
+
 function buildEmailHtml({
   transcript,
   aiSummary,
@@ -218,6 +272,8 @@ function buildEmailHtml({
   studentGrades,
   gradingConfig,
   bloomsTaxonomy,
+  csvInfo,
+  classBound,
 }) {
   const tier = planTier(planName);
   const overview = extractOverview({ transcript, aiSummary });
@@ -343,6 +399,8 @@ function buildEmailHtml({
           </div>
         </div>
 
+        ${buildCsvImportBlockHtml({ csvInfo, classBound })}
+
         ${(() => {
           const blurb = aiSummary?.classChatBlurb || "";
           if (!blurb) return "";
@@ -452,6 +510,30 @@ function buildEmailHtml({
           const gc = gradingConfig && typeof gradingConfig === "object" ? gradingConfig : {};
           const maxGradeLabel = gc.maxGrade ? ` (out of ${gc.maxGrade})` : "";
           const sorted = [...grades].sort((a, b) => (b.percent ?? 0) - (a.percent ?? 0));
+          // Trend column is PRO-only. PLUS/FREE skip the column entirely.
+          const showTrend = isPlanAtLeastPro(planName);
+
+          // Improvement / trend cell helper (Mode B only). Renders as a
+          // colored arrow + delta vs. last session, or "first time" for
+          // brand-new players, or em-dash when no edsbyId is present.
+          const trendCellHtml = (g) => {
+            const imp = g?.improvement;
+            if (!imp) {
+              return `<td style="padding:6px 8px; border-top:1px solid #e5e7eb; text-align:center; color:#9ca3af;">—</td>`;
+            }
+            if (imp.priorCount === 0 || imp.trend === "first") {
+              return `<td style="padding:6px 8px; border-top:1px solid #e5e7eb; text-align:center; font-size:11px; color:#6b7280;">first time</td>`;
+            }
+            const v = Number(imp.vsLast || 0);
+            const sign = v > 0 ? "+" : "";
+            const arrow = imp.trend === "up" ? "▲" : imp.trend === "down" ? "▼" : "▬";
+            const bg = imp.trend === "up" ? "#dcfce7" : imp.trend === "down" ? "#fee2e2" : "#f3f4f6";
+            const fg = imp.trend === "up" ? "#15803d" : imp.trend === "down" ? "#dc2626" : "#4b5563";
+            return `<td style="padding:6px 8px; border-top:1px solid #e5e7eb; text-align:center;">
+              <span style="display:inline-block; padding:2px 8px; border-radius:999px; font-weight:700; font-size:11px; background:${bg}; color:${fg};">${arrow} ${sign}${v}%</span>
+            </td>`;
+          };
+
           const gradeRows = sorted.map((g) => `
             <tr>
               <td style="padding:6px 8px; border-top:1px solid #e5e7eb;">${escHtml(g.studentName || "—")}</td>
@@ -466,11 +548,21 @@ function buildEmailHtml({
                   g.letterGrade === "A" ? "#15803d" : g.letterGrade === "B" ? "#1d4ed8" : g.letterGrade === "C" ? "#a16207" : g.letterGrade === "D" ? "#c2410c" : "#dc2626"
                 };">${escHtml(g.letterGrade || "—")}</span>
               </td>
+              ${showTrend ? trendCellHtml(g) : ""}
             </tr>
           `).join("");
 
           const avgPct = sorted.length > 1
             ? Math.round(sorted.reduce((s, g) => s + (g.percent ?? 0), 0) / sorted.length)
+            : null;
+
+          // Class-level improvement: average vsLast across students with prior history
+          const withPrior = sorted.filter((g) => g.improvement && g.improvement.priorCount > 0);
+          const avgVsLast = withPrior.length
+            ? Math.round(
+                (withPrior.reduce((s, g) => s + (Number(g.improvement.vsLast) || 0), 0) /
+                  withPrior.length) * 10
+              ) / 10
             : null;
 
           const avgRow = avgPct != null ? `
@@ -479,6 +571,10 @@ function buildEmailHtml({
               <td style="padding:6px 8px; border-top:2px solid #6366f1; text-align:right; font-weight:700;">${avgPct}%</td>
               <td style="padding:6px 8px; border-top:2px solid #6366f1; text-align:right; font-weight:700;">${(sorted.reduce((s, g) => s + (g.scaledGrade ?? 0), 0) / sorted.length).toFixed(1)}/${sorted[0]?.maxGrade ?? 100}</td>
               <td style="padding:6px 8px; border-top:2px solid #6366f1;"></td>
+              ${showTrend ? `<td style="padding:6px 8px; border-top:2px solid #6366f1; text-align:center; font-weight:700;">${
+                avgVsLast == null ? "—" :
+                `<span style="display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; background:${avgVsLast > 0 ? "#dcfce7" : avgVsLast < 0 ? "#fee2e2" : "#f3f4f6"}; color:${avgVsLast > 0 ? "#15803d" : avgVsLast < 0 ? "#dc2626" : "#4b5563"};">${avgVsLast > 0 ? "▲ +" : avgVsLast < 0 ? "▼ " : "▬ "}${avgVsLast}%</span>`
+              }</td>` : ""}
             </tr>
           ` : "";
 
@@ -495,6 +591,7 @@ function buildEmailHtml({
                       <th style="text-align:right; padding:8px;">%</th>
                       <th style="text-align:right; padding:8px;">Grade</th>
                       <th style="text-align:center; padding:8px;">Letter</th>
+                      ${showTrend ? `<th style="text-align:center; padding:8px;">Trend</th>` : ""}
                     </tr>
                   </thead>
                   <tbody>
@@ -853,8 +950,14 @@ async function buildReportPdfBuffer({
         doc.moveDown(0.2);
       }
 
-      const gColW = [0.22, 0.16, 0.16, 0.12, 0.18, 0.16];
-      const gColLabels = ["Student", "Team", "Points", "%", "Grade", "Letter"];
+      // Trend column is PRO-only (matches the email-HTML rendering above).
+      const showTrendPdf = isPlanAtLeastPro(planName);
+      const gColW = showTrendPdf
+        ? [0.20, 0.14, 0.14, 0.10, 0.16, 0.12, 0.14]
+        : [0.22, 0.16, 0.16, 0.12, 0.18, 0.16];
+      const gColLabels = showTrendPdf
+        ? ["Student", "Team", "Points", "%", "Grade", "Letter", "Trend"]
+        : ["Student", "Team", "Points", "%", "Grade", "Letter"];
       const gTableX = doc.page.margins.left;
       const gTableW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
 
@@ -885,7 +988,28 @@ async function buildReportPdfBuffer({
           doc.fillColor("#0f172a");
         }
 
-        const vals = [
+        // Improvement / trend value (Mode B only) — rendered as a colored
+        // arrow + delta. Falls back to "—" when no edsbyId, "1st" for
+        // brand-new players.
+        const imp = g?.improvement;
+        let trendStr = "—";
+        let trendColor = null;
+        if (imp) {
+          if (imp.priorCount === 0 || imp.trend === "first") {
+            trendStr = "1st";
+            trendColor = "#6b7280";
+          } else {
+            const v = Number(imp.vsLast || 0);
+            const sign = v > 0 ? "+" : "";
+            const arrow = imp.trend === "up" ? "▲" : imp.trend === "down" ? "▼" : "—";
+            trendStr = `${arrow} ${sign}${v}%`;
+            trendColor =
+              imp.trend === "up" ? "#15803d" :
+              imp.trend === "down" ? "#dc2626" : "#4b5563";
+          }
+        }
+
+        const baseVals = [
           g.studentName || "—",
           g.teamName || "—",
           `${g.pointsEarned ?? 0}/${g.pointsPossible ?? 0}`,
@@ -893,11 +1017,20 @@ async function buildReportPdfBuffer({
           `${g.scaledGrade ?? 0}/${g.maxGrade ?? 100}`,
           g.letterGrade || "—",
         ];
+        const vals = showTrendPdf ? [...baseVals, trendStr] : baseVals;
 
         gxCur = gTableX;
         const rowY = doc.y;
         vals.forEach((v, i) => {
-          doc.text(v, gxCur + 4, rowY, { width: gTableW * gColW[i] - 8, lineBreak: false });
+          if (i === vals.length - 1 && trendColor) {
+            doc.save();
+            doc.fillColor(trendColor).font("Helvetica-Bold");
+            doc.text(v, gxCur + 4, rowY, { width: gTableW * gColW[i] - 8, lineBreak: false });
+            doc.restore();
+            doc.fillColor("#0f172a").font("Helvetica");
+          } else {
+            doc.text(v, gxCur + 4, rowY, { width: gTableW * gColW[i] - 8, lineBreak: false });
+          }
           gxCur += gTableW * gColW[i];
         });
         doc.y = rowY + 14;
@@ -1036,6 +1169,14 @@ async function buildReportPdfBuffer({
     // Optional individual pages
     const perParticipant = asList(aiSummary?.perParticipant).filter(Boolean);
     if (wantIndividualPages && perParticipant.length) {
+      // Build a name-keyed lookup of grade row -> improvement so the
+      // per-student page can show a trend line under the headline pills.
+      const gradeByName = new Map();
+      for (const g of asList(studentGrades)) {
+        if (!g) continue;
+        gradeByName.set(String(g.studentName || "").toLowerCase(), g);
+      }
+
       for (const p of perParticipant) {
         doc.addPage();
         pageStart();
@@ -1048,6 +1189,29 @@ async function buildReportPdfBuffer({
         const engP = typeof p.engagementPercent === "number" ? `${clamp(p.engagementPercent, 0, 100)}%` : "—";
         const finalP = typeof p.finalPercent === "number" ? `${clamp(p.finalPercent, 0, 100)}%` : "—";
         pill(`Engagement: ${engP}   •   Overall mark: ${finalP}`);
+
+        // Mode B: show improvement vs. prior sessions (PRO-only).
+        const gradeRow = gradeByName.get(String(p.studentName || "").toLowerCase());
+        const imp = isPlanAtLeastPro(planName) ? gradeRow?.improvement : null;
+        if (imp) {
+          let line = "";
+          let color = "#475569";
+          if (imp.priorCount === 0 || imp.trend === "first") {
+            line = "First time playing — this score sets the baseline.";
+            color = "#1d4ed8";
+          } else {
+            const v = Number(imp.vsLast || 0);
+            const sign = v > 0 ? "+" : "";
+            const va = Number(imp.vsAvg || 0);
+            const signA = va > 0 ? "+" : "";
+            const verb = imp.trend === "up" ? "Improved" : imp.trend === "down" ? "Slipped" : "Held steady";
+            line = `${verb}: ${sign}${v}% vs. last session, ${signA}${va}% vs. ${imp.priorCount}-session average.`;
+            color = imp.trend === "up" ? "#15803d" : imp.trend === "down" ? "#dc2626" : "#4b5563";
+          }
+          doc.font("Helvetica-Bold").fontSize(10).fillColor(color).text(line);
+          doc.fillColor("#0f172a");
+          doc.moveDown(0.4);
+        }
 
         const catsP = asList(p.categories);
         if (catsP.length) {
@@ -1090,9 +1254,14 @@ export async function sendTranscriptEmail({
   studentGrades,
   gradingConfig,
   bloomsTaxonomy,
+  // NEW: optional CSV attachment + metadata for the email body block
+  csvAttachment, // { csv: string, anyMatched, hasAnyId, completedCount, totalCount }
+  classBound = false, // true if this session was launched with a class binding
 }) {
   if (!to) throw new Error("Missing destination email.");
   if (!transcript) throw new Error("Missing transcript payload.");
+
+  const csvInfo = csvAttachment && csvAttachment.csv ? csvAttachment : null;
 
   const html = buildEmailHtml({
     transcript,
@@ -1107,6 +1276,8 @@ export async function sendTranscriptEmail({
     studentGrades,
     gradingConfig,
     bloomsTaxonomy,
+    csvInfo,
+    classBound,
   });
 
   const pdfBuffer = await buildReportPdfBuffer({
@@ -1131,16 +1302,37 @@ export async function sendTranscriptEmail({
     ? `${process.env.EMAIL_SUBJECT_PREFIX} ${tasksetName} (Room ${roomCode})`
     : `Curriculate Report Ready — ${tasksetName} (Room ${roomCode})`;
 
+    // Build the attachments array. PDF is always present.
+    // CSV is appended only if a non-empty csvInfo was passed in and at
+    // least one student completed (csv body has more than just the header).
+    const attachments = [
+      {
+        filename: `Curriculate-Report-${roomCode || "session"}.pdf`,
+        content: pdfBuffer,
+      },
+    ];
+
+    if (csvInfo && csvInfo.completedCount > 0 && csvInfo.csv) {
+      const safeName = String(tasksetName || "Curriculate")
+        .replace(/[^A-Za-z0-9_\- ]+/g, "")
+        .replace(/\s+/g, "-")
+        .slice(0, 60) || "Curriculate";
+      const csvFilename =
+        (csvInfo.hasAnyId
+          ? `${safeName}-edsby-import.csv`
+          : `${safeName}-grades.csv`);
+      attachments.push({
+        filename: csvFilename,
+        content: Buffer.from(csvInfo.csv, "utf8"),
+        contentType: "text/csv; charset=utf-8",
+      });
+    }
+
     await sendSystemEmail({
       to,
       subject,
       html,
-      attachments: [
-        {
-          filename: `Curriculate-Report-${roomCode || "session"}.pdf`,
-          content: pdfBuffer,
-        },
-      ],
+      attachments,
     });
 
 }

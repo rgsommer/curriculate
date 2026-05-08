@@ -2,8 +2,30 @@
 // Routes for managing class rosters (Edsby CSV upload, student lookup)
 import express from "express";
 import ClassRoster from "../models/ClassRoster.js";
+import StudentContact from "../models/StudentContact.js";
+import User from "../models/User.js";
+import { hasTierAtLeast } from "../utils/tierGate.js";
+import { resolveAccessForUser } from "../billing/planResolver.js";
 
 const router = express.Router();
+
+/**
+ * Look up a teacher's tier by email. Returns "FREE" if not found.
+ * Used by the upload route to gate class-linking behind PLUS.
+ */
+async function lookupTeacherTierByEmail(email) {
+  try {
+    const e = String(email || "").trim().toLowerCase();
+    if (!e) return "FREE";
+    const user = await User.findOne({ email: { $regex: new RegExp(`^${e}$`, "i") } }).lean();
+    if (!user) return "FREE";
+    const access = await resolveAccessForUser(user);
+    return String(access?.tier || user.planTier || "FREE").toUpperCase();
+  } catch (e) {
+    console.warn("[classRoster] tier lookup failed:", e?.message || e);
+    return "FREE";
+  }
+}
 
 /* ------------------------------------------------------------------
  * Parse Edsby gradebook CSV into student records.
@@ -105,6 +127,17 @@ router.post("/upload", async (req, res) => {
     }
     if (!csvText || typeof csvText !== "string") {
       return res.status(400).json({ error: "csvText is required." });
+    }
+
+    // Tier gate (PLUS or above). Class linking is a paid feature in both
+    // the scavenger-hunt teacher app and the Pulse Grading UI.
+    const tier = await lookupTeacherTierByEmail(email);
+    if (!hasTierAtLeast(tier, "PLUS")) {
+      return res.status(403).json({
+        error: "Class linking requires a PLUS plan or above.",
+        requiredPlan: "PLUS",
+        currentPlan: tier,
+      });
     }
 
     const { students, error } = parseEdsbyCSV(csvText);
@@ -235,6 +268,162 @@ router.get("/lookup", async (req, res) => {
   } catch (err) {
     console.error("GET /class-roster/lookup error:", err?.message || err);
     return res.status(500).json({ error: "Lookup failed." });
+  }
+});
+
+/* ------------------------------------------------------------------
+ *  GET /class-roster/:id/contacts?teacherEmail=...
+ *  Returns the full roster joined with each student's StudentContact
+ *  (email, parentEmail, declined flags). Used by the teacher-side
+ *  Class Rosters admin in TeacherProfile so the teacher can review
+ *  and fill in missing student / parent emails.
+ *  Tier gate: PLUS or above. Owner check by teacherEmail.
+ * ------------------------------------------------------------------ */
+router.get("/:id/contacts", async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    const email = String(req.query.teacherEmail || "").trim().toLowerCase();
+    if (!id || !email) return res.status(400).json({ error: "id + teacherEmail required" });
+
+    const tier = await lookupTeacherTierByEmail(email);
+    if (!hasTierAtLeast(tier, "PLUS")) {
+      return res.status(403).json({
+        error: "Class linking requires a PLUS plan or above.",
+        requiredPlan: "PLUS",
+        currentPlan: tier,
+      });
+    }
+
+    const roster = await ClassRoster.findById(id).lean();
+    if (!roster) return res.status(404).json({ error: "Roster not found." });
+    if (String(roster.teacherEmail || "").toLowerCase() !== email) {
+      return res.status(403).json({ error: "Roster not yours." });
+    }
+
+    const ids = (roster.students || [])
+      .map((s) => s.edsbyId)
+      .filter(Boolean);
+    let contactByEdsbyId = new Map();
+    if (ids.length) {
+      const contacts = await StudentContact.find({ edsbyId: { $in: ids } }).lean();
+      for (const c of contacts) contactByEdsbyId.set(c.edsbyId, c);
+    }
+
+    const students = (roster.students || []).map((s) => {
+      const c = contactByEdsbyId.get(s.edsbyId) || {};
+      return {
+        firstName: s.firstName || "",
+        lastName: s.lastName || "",
+        edsbyId: s.edsbyId || "",
+        studentId: s.studentId || "",
+        last4: s.last4 || "",
+        // Contact fields (may be blank)
+        email: c.email || "",
+        parentEmail: c.parentEmail || "",
+        emailUpdatedAt: c.emailUpdatedAt || null,
+        parentEmailUpdatedAt: c.parentEmailUpdatedAt || null,
+        parentEmailDeclined: !!c.parentEmailDeclined,
+      };
+    });
+
+    return res.json({
+      ok: true,
+      rosterId: String(roster._id),
+      className: roster.className || "",
+      students,
+    });
+  } catch (err) {
+    console.error("GET /class-roster/:id/contacts error:", err?.message || err);
+    return res.status(500).json({ error: "Lookup failed." });
+  }
+});
+
+/* ------------------------------------------------------------------
+ *  POST /class-roster/:id/contacts/bulk-set
+ *  Body: { teacherEmail, updates: [{ edsbyId, email?, parentEmail? }] }
+ *  Lets the teacher save multiple student/parent email edits in one
+ *  shot. Validates the roster belongs to this teacher, validates each
+ *  edsbyId exists in the roster (so a teacher can't edit students
+ *  they don't own), and upserts to StudentContact.
+ * ------------------------------------------------------------------ */
+router.post("/:id/contacts/bulk-set", async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    const { teacherEmail, updates } = req.body || {};
+    const email = String(teacherEmail || "").trim().toLowerCase();
+    if (!id || !email) return res.status(400).json({ error: "id + teacherEmail required" });
+    if (!Array.isArray(updates)) return res.status(400).json({ error: "updates required" });
+
+    const tier = await lookupTeacherTierByEmail(email);
+    if (!hasTierAtLeast(tier, "PLUS")) {
+      return res.status(403).json({
+        error: "Class linking requires a PLUS plan or above.",
+        requiredPlan: "PLUS",
+        currentPlan: tier,
+      });
+    }
+
+    const roster = await ClassRoster.findById(id).lean();
+    if (!roster) return res.status(404).json({ error: "Roster not found." });
+    if (String(roster.teacherEmail || "").toLowerCase() !== email) {
+      return res.status(403).json({ error: "Roster not yours." });
+    }
+
+    const validIds = new Set(
+      (roster.students || []).map((s) => s.edsbyId).filter(Boolean)
+    );
+
+    const VALID_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const now = new Date();
+    let saved = 0;
+    let skipped = 0;
+    const errors = [];
+
+    for (const u of updates) {
+      const edsbyId = String(u?.edsbyId || "").trim();
+      if (!edsbyId || !validIds.has(edsbyId)) { skipped += 1; continue; }
+      const set = { edsbyId };
+      const studentEmail = String(u.email || "").trim().toLowerCase();
+      const parentEmail = String(u.parentEmail || "").trim().toLowerCase();
+
+      if (studentEmail !== "" && !VALID_EMAIL.test(studentEmail)) {
+        errors.push({ edsbyId, error: "Invalid student email" });
+        continue;
+      }
+      if (parentEmail !== "" && !VALID_EMAIL.test(parentEmail)) {
+        errors.push({ edsbyId, error: "Invalid parent email" });
+        continue;
+      }
+
+      // Find the roster student to enrich the StudentContact record
+      const rs = (roster.students || []).find((s) => s.edsbyId === edsbyId);
+      if (rs) {
+        if (rs.firstName) set.firstName = rs.firstName;
+        if (rs.lastName) set.lastName = rs.lastName;
+        if (rs.studentId) set.studentId = rs.studentId;
+      }
+
+      const update = { $setOnInsert: { edsbyId } };
+      const $set = { ...set };
+      if (studentEmail) {
+        $set.email = studentEmail;
+        $set.emailUpdatedAt = now;
+      }
+      if (parentEmail) {
+        $set.parentEmail = parentEmail;
+        $set.parentEmailUpdatedAt = now;
+        $set.parentEmailDeclined = false; // teacher provided override
+      }
+      if (Object.keys($set).length) update.$set = $set;
+
+      await StudentContact.updateOne({ edsbyId }, update, { upsert: true });
+      saved += 1;
+    }
+
+    return res.json({ ok: true, saved, skipped, errors });
+  } catch (err) {
+    console.error("POST /class-roster/:id/contacts/bulk-set error:", err?.message || err);
+    return res.status(500).json({ error: "Bulk save failed." });
   }
 });
 

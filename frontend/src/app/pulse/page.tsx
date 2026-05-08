@@ -524,11 +524,18 @@ export default function PulseLanding() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             {/* Left — copy */}
             <div>
-              <img
-                src="/images/pulse/pulse-logo.png"
-                alt="Curriculate Pulse"
-                className="h-16 sm:h-20 w-auto mb-6"
-              />
+              <div className="flex items-center gap-4 mb-6">
+                <img
+                  src="/images/pulse/pulse-logo.png"
+                  alt="Curriculate Pulse"
+                  className="h-16 sm:h-20 w-auto"
+                />
+                <img
+                  src="/images/mascot/email-results/2.png"
+                  alt=""
+                  className="h-16 w-16 rounded-full object-cover shadow-sm sm:h-20 sm:w-20"
+                />
+              </div>
 
               <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-4 py-1.5 text-sm font-extrabold text-emerald-800 mb-6">
                 <Sparkles className="w-4 h-4" />

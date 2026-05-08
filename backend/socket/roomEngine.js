@@ -762,6 +762,25 @@ export function createRoomEngine(io) {
       // Brainstorm battle – light summary so LiveSession can show counts
       brainstorm: brainstormSummary,
 
+      // ── Class roster binding (Mode B) ──
+      // Surfaced to the student-app so its join screen can render a name
+      // dropdown sourced from the bound class. Only first/last names + IDs
+      // are exposed; other PII (email, etc.) stays server-side.
+      classBound: !!room.classBound,
+      className: room.className || (room.classRoster?.className || ""),
+      classRoster: room.classRoster && Array.isArray(room.classRoster.students)
+        ? {
+            id: room.classRoster.id || String(room.classRosterId || ""),
+            className: room.classRoster.className || "",
+            students: room.classRoster.students.map((s) => ({
+              firstName: s.firstName || "",
+              lastName: s.lastName || "",
+              edsbyId: s.edsbyId || "",
+              studentId: s.studentId || "",
+            })),
+          }
+        : null,
+
       // Paper mode: when enabled, text-heavy tasks show a camera for paper-based work
       minimizeOnScreen: !!room.minimizeOnScreen,
 

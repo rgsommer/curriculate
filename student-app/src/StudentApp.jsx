@@ -206,6 +206,29 @@ function StudentApp() {
   const [wantStreak, setWantStreak] = useState(false);
   const [roomState, setRoomState] = useState(null);
 
+  // Mode B (join): result of room:peek — populated when the student types
+  // a class-bound room code. Drives the roster name dropdown in the join UI.
+  const [peekedClass, setPeekedClass] = useState(null); // { className, classRoster: { students: [...] } } | null
+  const [progressByEdsbyId, setProgressByEdsbyId] = useState({}); // edsbyId -> { sessions, points, streak, lastPlayedAt }
+  // Per-member roster pick: array aligned with `members`, each entry is
+  // null or { firstName, lastName, edsbyId, studentId, displayName }.
+  const [memberRosterPicks, setMemberRosterPicks] = useState([null, null, null]);
+  // Per-edsbyId contact-on-file status: edsbyId → { hasEmail, email,
+  //   hasParentEmail, parentEmailDeclined }. Populated from
+  //   /student-contact/:edsbyId. Drives the email-prompt UI + the
+  //   parent-email prompt at end of session.
+  const [contactByEdsbyId, setContactByEdsbyId] = useState({});
+  // Per-member email entered into the prompt (for picks where hasEmail=false).
+  // Aligned with `members`, value is the typed email string.
+  const [memberEmailInputs, setMemberEmailInputs] = useState(["", "", ""]);
+  // Per-edsbyId end-of-session parent-email prompt state.
+  //   "asking"   — the yes/no buttons are showing
+  //   "yes"      — email input is showing, awaiting submit
+  //   "saved"    — email saved, thank-you state
+  //   "declined" — student answered No
+  const [parentPromptState, setParentPromptState] = useState({});
+  const [parentEmailInputs, setParentEmailInputs] = useState({}); // edsbyId -> string
+
   // Collaboration
   const [partnerAnswer, setPartnerAnswer] = useState(null);
   const [showPartnerReply, setShowPartnerReply] = useState(false);
@@ -246,6 +269,105 @@ function StudentApp() {
   useEffect(() => {
     assignedStationIdRef.current = assignedStationId;
   }, [assignedStationId]);
+
+  // Mode B: peek at a class-bound room when the student types a 2-letter
+  // room code. Returns the roster so the join screen can render a name
+  // dropdown. Debounced + only fires when not yet joined.
+  useEffect(() => {
+    if (joined) return;
+    const code = (roomCode || "").trim().toUpperCase();
+    if (code.length < 2) {
+      setPeekedClass(null);
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      try {
+        socket.emit("room:peek", { roomCode: code }, (resp) => {
+          if (cancelled) return;
+          if (resp?.ok && resp.classBound && resp.classRoster) {
+            setPeekedClass({
+              className: resp.className || resp.classRoster.className || "",
+              classRoster: resp.classRoster,
+            });
+          } else {
+            setPeekedClass(null);
+          }
+        });
+      } catch {
+        // socket may not be connected yet — ignore; we'll retry on next change
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomCode, joined]);
+
+  // Mode B: when peeked class arrives, fetch each picked student's progress
+  // (sessions joined, current streak, total points). Used for the
+  // "Welcome back! 🔥 3-day streak" banner.
+  useEffect(() => {
+    if (!peekedClass) {
+      setProgressByEdsbyId({});
+      setContactByEdsbyId({});
+      return;
+    }
+    const idsToFetch = memberRosterPicks
+      .filter((p) => p && p.edsbyId)
+      .map((p) => p.edsbyId);
+    if (!idsToFetch.length) return;
+    const fresh = idsToFetch.filter((id) => !progressByEdsbyId[id]);
+    const freshContacts = idsToFetch.filter((id) => !contactByEdsbyId[id]);
+    if (!fresh.length && !freshContacts.length) return;
+    let cancelled = false;
+    (async () => {
+      const updates = {};
+      const contactUpdates = {};
+      await Promise.all([
+        ...fresh.map(async (id) => {
+          try {
+            const res = await fetch(
+              `${API_BASE_URL}/student-scavenger-progress/${encodeURIComponent(id)}`
+            );
+            if (!res.ok) return;
+            const j = await res.json();
+            if (j?.ok) updates[id] = j.progress || null;
+          } catch {}
+        }),
+        ...freshContacts.map(async (id) => {
+          try {
+            const res = await fetch(
+              `${API_BASE_URL}/student-contact/${encodeURIComponent(id)}`
+            );
+            if (!res.ok) return;
+            const j = await res.json();
+            if (j?.ok) {
+              contactUpdates[id] = {
+                hasEmail: !!j.hasEmail,
+                email: j.email || "",
+                hasParentEmail: !!j.hasParentEmail,
+                parentEmailDeclined: !!j.parentEmailDeclined,
+              };
+            }
+          } catch {}
+        }),
+      ]);
+      if (!cancelled) {
+        if (Object.keys(updates).length) {
+          setProgressByEdsbyId((prev) => ({ ...prev, ...updates }));
+        }
+        if (Object.keys(contactUpdates).length) {
+          setContactByEdsbyId((prev) => ({ ...prev, ...contactUpdates }));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peekedClass, memberRosterPicks]);
 
   // Task + timer state
   const [currentTask, setCurrentTask] = useState(null);
@@ -1822,10 +1944,27 @@ function StudentApp() {
   // Join room + submit handlers
   // ─────────────────────────────────────────────
 
+  const VALID_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  // Mode B: every linked student must have an email on file OR have just
+  // entered a valid one in the prompt input. Block joining until satisfied.
+  const allLinkedHaveEmail = (() => {
+    if (!peekedClass) return true;
+    for (let i = 0; i < memberRosterPicks.length; i++) {
+      const pick = memberRosterPicks[i];
+      if (!pick || !pick.edsbyId) continue;
+      const onFile = contactByEdsbyId[pick.edsbyId]?.hasEmail;
+      if (onFile) continue;
+      const typed = (memberEmailInputs[i] || "").trim();
+      if (!VALID_EMAIL_RE.test(typed)) return false;
+    }
+    return true;
+  })();
+
   const canJoin =
     roomCode.trim().length >= 2 &&
     // Team name can be blank (server will auto-assign for first-come teams).
-    members.some((m) => (m?.name || m || "").toString().trim().length > 0);
+    members.some((m) => (m?.name || m || "").toString().trim().length > 0) &&
+    allLinkedHaveEmail;
 
   const handleJoinRoom = () => {
     // Extract names and emails from the per-member objects
@@ -1868,13 +2007,36 @@ function StudentApp() {
       }
     } catch (_) { /* non-critical */ }
 
-    // Build memberDetails for per-member email tracking
+    // Build memberDetails for per-member email tracking + Mode B identity picks.
+    // When peekedClass is set, attach the roster identity (firstName, lastName,
+    // edsbyId, studentId) so the backend can lock the canonical name on the
+    // team record and the report CSV gets Edsby Student IDs out of the box.
+    // For linked picks, prefer the stored email (from contactByEdsbyId) and
+    // fall back to the just-typed email from memberEmailInputs.
     const memberDetails = members
-      .filter((m) => (typeof m === "string" ? m : m?.name || "").trim())
-      .map((m) => ({
-        name: (typeof m === "string" ? m : m?.name || "").trim(),
-        email: (typeof m === "string" ? "" : m?.email || "").trim().toLowerCase() || "",
-      }));
+      .map((m, idx) => {
+        const baseName = (typeof m === "string" ? m : m?.name || "").trim();
+        const pick = memberRosterPicks[idx];
+        if (!baseName && !pick) return null;
+        const teamEmail = (typeof m === "string" ? "" : m?.email || "").trim().toLowerCase();
+        // Per-linked-student email — stored takes precedence, then the prompt input
+        const storedEmail = pick?.edsbyId ? (contactByEdsbyId[pick.edsbyId]?.email || "") : "";
+        const typedEmail = (memberEmailInputs[idx] || "").trim().toLowerCase();
+        const linkedEmail = storedEmail || (VALID_EMAIL_RE.test(typedEmail) ? typedEmail : "");
+        return {
+          name: baseName,
+          email: linkedEmail || teamEmail,
+          ...(pick && {
+            firstName: pick.firstName,
+            lastName: pick.lastName,
+            edsbyId: pick.edsbyId,
+            studentId: pick.studentId,
+            displayName: pick.displayName || "",
+            studentEmail: linkedEmail,
+          }),
+        };
+      })
+      .filter(Boolean);
 
     const payload = {
       roomCode: roomCode.trim().toUpperCase(),
@@ -4442,44 +4604,234 @@ function StudentApp() {
                   }}
                 >
                   Team Members
-                </label>
-                {members.map((m, idx) => (
-                  <div key={idx} style={{ marginBottom: wantStreak ? 8 : 4 }}>
-                    <input
-                      value={typeof m === "string" ? m : m?.name || ""}
-                      onChange={(e) => {
-                        const copy = [...members];
-                        const cur = typeof copy[idx] === "string" ? { name: copy[idx], email: "" } : { ...copy[idx] };
-                        cur.name = sanitizeName(e.target.value);
-                        copy[idx] = cur;
-                        setMembers(copy);
+                  {peekedClass && (
+                    <span
+                      style={{
+                        marginLeft: 8,
+                        padding: "2px 8px",
+                        borderRadius: 999,
+                        background: "#ecfdf5",
+                        color: "#065f46",
+                        fontSize: "0.7rem",
+                        border: "1px solid #86efac",
+                        fontWeight: 700,
                       }}
-                      placeholder={`Member ${idx + 1}`}
-                    />
-                    {wantStreak && (
+                    >
+                      📋 {peekedClass.className || "Class"}
+                    </span>
+                  )}
+                </label>
+
+                {peekedClass ? (
+                  // Mode B: roster name dropdown — students must pick themselves.
+                  // Optional displayName for team play.
+                  members.map((m, idx) => {
+                    const pick = memberRosterPicks[idx];
+                    const usedEdsbyIds = new Set(
+                      memberRosterPicks
+                        .map((p, j) => (j !== idx && p?.edsbyId ? p.edsbyId : null))
+                        .filter(Boolean)
+                    );
+                    const progress = pick?.edsbyId ? progressByEdsbyId[pick.edsbyId] : null;
+                    return (
+                      <div key={idx} style={{ marginBottom: 8 }}>
+                        <select
+                          value={pick ? pick.edsbyId || pick.studentId || `${pick.firstName}|${pick.lastName}` : ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            const copy = [...memberRosterPicks];
+                            const memCopy = [...members];
+                            if (!v) {
+                              copy[idx] = null;
+                              memCopy[idx] = { name: "", email: "" };
+                            } else {
+                              const found = peekedClass.classRoster.students.find(
+                                (s) =>
+                                  s.edsbyId === v ||
+                                  s.studentId === v ||
+                                  `${s.firstName}|${s.lastName}` === v
+                              );
+                              if (found) {
+                                copy[idx] = {
+                                  firstName: found.firstName,
+                                  lastName: found.lastName,
+                                  edsbyId: found.edsbyId,
+                                  studentId: found.studentId,
+                                  displayName: memCopy[idx]?.displayName || "",
+                                };
+                                memCopy[idx] = {
+                                  name: `${found.firstName} ${found.lastName}`.trim(),
+                                  email: memCopy[idx]?.email || "",
+                                  displayName: memCopy[idx]?.displayName || "",
+                                };
+                              }
+                            }
+                            setMemberRosterPicks(copy);
+                            setMembers(memCopy);
+                          }}
+                          style={{ width: "100%", padding: "8px 10px", borderRadius: 8 }}
+                        >
+                          <option value="">— Pick your name —</option>
+                          {peekedClass.classRoster.students
+                            .slice()
+                            .sort((a, b) =>
+                              `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`)
+                            )
+                            .map((s) => {
+                              const key = s.edsbyId || s.studentId || `${s.firstName}|${s.lastName}`;
+                              const inUse =
+                                pick?.edsbyId !== s.edsbyId &&
+                                s.edsbyId &&
+                                usedEdsbyIds.has(s.edsbyId);
+                              return (
+                                <option key={key} value={key} disabled={inUse}>
+                                  {s.firstName} {s.lastName}
+                                  {inUse ? " (already picked)" : ""}
+                                </option>
+                              );
+                            })}
+                        </select>
+                        {pick && (
+                          <input
+                            type="text"
+                            value={pick.displayName || ""}
+                            onChange={(e) => {
+                              const copy = [...memberRosterPicks];
+                              copy[idx] = { ...copy[idx], displayName: sanitizeName(e.target.value) };
+                              setMemberRosterPicks(copy);
+                            }}
+                            placeholder="Optional display name (for team play)"
+                            style={{
+                              marginTop: 4,
+                              fontSize: "0.78rem",
+                              padding: "5px 8px",
+                              width: "100%",
+                              boxSizing: "border-box",
+                              border: "1px solid #e5e7eb",
+                              borderRadius: 6,
+                              background: "#f9fafb",
+                              color: "#374151",
+                            }}
+                          />
+                        )}
+                        {progress && progress.totalSessions > 0 && (
+                          <div
+                            style={{
+                              marginTop: 4,
+                              fontSize: "0.74rem",
+                              color: "#065f46",
+                              padding: "4px 8px",
+                              background: "#ecfdf5",
+                              borderRadius: 6,
+                              border: "1px solid #a7f3d0",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                            }}
+                          >
+                            <img
+                              src="https://curriculate.net/images/mascot/streak/1.png"
+                              alt=""
+                              style={{
+                                width: 22,
+                                height: 22,
+                                borderRadius: "50%",
+                                objectFit: "cover",
+                                flexShrink: 0,
+                              }}
+                            />
+                            <span>
+                              {progress.streakDays > 1 ? `🔥 ${progress.streakDays}-day streak · ` : ""}
+                              {progress.totalSessions} session
+                              {progress.totalSessions === 1 ? "" : "s"} · {progress.totalPoints} pts
+                            </span>
+                          </div>
+                        )}
+                        {/* Email prompt: shown only when this pick has no
+                            stored email on file. Required to unlock Join. */}
+                        {pick && pick.edsbyId && contactByEdsbyId[pick.edsbyId]?.hasEmail === false && (
+                          <div
+                            style={{
+                              marginTop: 6,
+                              padding: "6px 8px",
+                              background: "#fffbeb",
+                              border: "1px solid #fde68a",
+                              borderRadius: 6,
+                            }}
+                          >
+                            <div style={{ fontSize: "0.74rem", color: "#92400e", marginBottom: 4, fontWeight: 700 }}>
+                              📧 Your email — we'll send your performance reports here.
+                            </div>
+                            <input
+                              type="email"
+                              value={memberEmailInputs[idx] || ""}
+                              onChange={(e) => {
+                                const copy = [...memberEmailInputs];
+                                copy[idx] = e.target.value;
+                                setMemberEmailInputs(copy);
+                              }}
+                              placeholder="you@example.com"
+                              style={{
+                                width: "100%",
+                                padding: "6px 8px",
+                                fontSize: "0.85rem",
+                                borderRadius: 6,
+                                border: "1px solid #d1d5db",
+                                boxSizing: "border-box",
+                              }}
+                              required
+                            />
+                          </div>
+                        )}
+                        {/* Stored email — confirmation pill */}
+                        {pick && pick.edsbyId && contactByEdsbyId[pick.edsbyId]?.hasEmail === true && (
+                          <div style={{ marginTop: 4, fontSize: "0.72rem", color: "#475569" }}>
+                            📧 Reports go to {contactByEdsbyId[pick.edsbyId].email || "your email on file"}.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  // Mode A: free-form name + (optional) email input — unchanged behavior
+                  members.map((m, idx) => (
+                    <div key={idx} style={{ marginBottom: wantStreak ? 8 : 4 }}>
                       <input
-                        type="email"
-                        value={typeof m === "string" ? "" : m?.email || ""}
+                        value={typeof m === "string" ? m : m?.name || ""}
                         onChange={(e) => {
                           const copy = [...members];
                           const cur = typeof copy[idx] === "string" ? { name: copy[idx], email: "" } : { ...copy[idx] };
-                          cur.email = e.target.value;
+                          cur.name = sanitizeName(e.target.value);
                           copy[idx] = cur;
                           setMembers(copy);
                         }}
-                        placeholder="email"
-                        style={{
-                          marginTop: 3,
-                          fontSize: "0.78rem",
-                          padding: "5px 8px",
-                          color: "#6b7280",
-                          background: "#f9fafb",
-                          border: "1px solid #e5e7eb",
-                        }}
+                        placeholder={`Member ${idx + 1}`}
                       />
-                    )}
-                  </div>
-                ))}
+                      {wantStreak && (
+                        <input
+                          type="email"
+                          value={typeof m === "string" ? "" : m?.email || ""}
+                          onChange={(e) => {
+                            const copy = [...members];
+                            const cur = typeof copy[idx] === "string" ? { name: copy[idx], email: "" } : { ...copy[idx] };
+                            cur.email = e.target.value;
+                            copy[idx] = cur;
+                            setMembers(copy);
+                          }}
+                          placeholder="email"
+                          style={{
+                            marginTop: 3,
+                            fontSize: "0.78rem",
+                            padding: "5px 8px",
+                            color: "#6b7280",
+                            background: "#f9fafb",
+                            border: "1px solid #e5e7eb",
+                          }}
+                        />
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
 
               <button type="submit" disabled={!canJoin || joiningRoom}>
@@ -4963,13 +5315,28 @@ function StudentApp() {
       textAlign: "center",
     }}
   >
-    {teamSelfieUrl && (
+    {teamSelfieUrl ? (
       <img
         src={teamSelfieUrl}
         alt="Team selfie"
         style={{
           width: 80,
           height: 80,
+          borderRadius: "50%",
+          objectFit: "cover",
+          border: "3px solid #fbbf24",
+          boxShadow: "0 4px 16px rgba(251,191,36,0.3)",
+          margin: "0 auto 12px",
+          display: "block",
+        }}
+      />
+    ) : (
+      <img
+        src="https://curriculate.net/images/mascot/celebrate/1.png"
+        alt=""
+        style={{
+          width: 96,
+          height: 96,
           borderRadius: "50%",
           objectFit: "cover",
           border: "3px solid #fbbf24",
@@ -5019,6 +5386,187 @@ function StudentApp() {
         Join another room
       </button>
     </div>
+
+    {/* Parent email prompt — shown once per linked student who hasn't yet
+        provided a parent email and hasn't declined the prompt. */}
+    {memberRosterPicks.filter(Boolean).map((pick, i) => {
+      const c = contactByEdsbyId[pick.edsbyId];
+      if (!c) return null; // contact lookup hasn't returned yet
+      if (c.hasParentEmail || c.parentEmailDeclined) return null;
+
+      const promptState = parentPromptState[pick.edsbyId] || "asking";
+      const inputVal = parentEmailInputs[pick.edsbyId] || "";
+      const VALID = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      const setState = (next) => setParentPromptState((s) => ({ ...s, [pick.edsbyId]: next }));
+      const setInput = (v) => setParentEmailInputs((s) => ({ ...s, [pick.edsbyId]: v }));
+
+      const submit = async (parentEmail, declined) => {
+        try {
+          const res = await fetch(
+            `${API_BASE_URL}/student-contact/${encodeURIComponent(pick.edsbyId)}/parent-email`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(parentEmail ? { parentEmail } : { declined: true }),
+            }
+          );
+          if (res.ok) {
+            // Reflect saved state in our local cache so the prompt stops showing
+            setContactByEdsbyId((prev) => ({
+              ...prev,
+              [pick.edsbyId]: {
+                ...prev[pick.edsbyId],
+                hasParentEmail: !!parentEmail,
+                parentEmailDeclined: !!declined,
+              },
+            }));
+            setState(parentEmail ? "saved" : "declined");
+          }
+        } catch (e) {
+          // Non-fatal — leave the prompt visible
+          console.warn("[parent-prompt] save failed:", e?.message || e);
+        }
+      };
+
+      const firstName = pick.firstName || "";
+
+      return (
+        <div
+          key={pick.edsbyId || i}
+          style={{
+            marginTop: 14,
+            padding: "14px 16px",
+            borderRadius: 14,
+            background: "#fffbeb",
+            border: "1px solid #fde68a",
+            textAlign: "center",
+          }}
+        >
+          {promptState === "asking" && (
+            <>
+              <img
+                src="https://curriculate.net/images/mascot/feedback/1.png"
+                alt=""
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: "50%",
+                  objectFit: "cover",
+                  margin: "0 auto 8px",
+                  display: "block",
+                  border: "2px solid #fde68a",
+                }}
+              />
+              <div style={{ fontSize: "0.95rem", fontWeight: 800, marginBottom: 8, color: "#78350f" }}>
+                Would your parents want to see {firstName ? `${firstName}'s` : "this"} result?
+              </div>
+              <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setState("yes")}
+                  style={{
+                    background: "#10b981",
+                    color: "#fff",
+                    fontWeight: 700,
+                    padding: "8px 18px",
+                    borderRadius: 999,
+                    border: "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => submit("", true)}
+                  style={{
+                    background: "#e5e7eb",
+                    color: "#111827",
+                    fontWeight: 700,
+                    padding: "8px 18px",
+                    borderRadius: 999,
+                    border: "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  No thanks
+                </button>
+              </div>
+            </>
+          )}
+
+          {promptState === "yes" && (
+            <>
+              <div style={{ fontSize: "0.9rem", fontWeight: 700, marginBottom: 8, color: "#78350f" }}>
+                📧 Parent email — we'll send {firstName ? `${firstName}'s` : "the"} reports here too.
+              </div>
+              <input
+                type="email"
+                value={inputVal}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="parent@example.com"
+                style={{
+                  width: "100%",
+                  maxWidth: 320,
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  fontSize: "0.9rem",
+                  marginBottom: 8,
+                  boxSizing: "border-box",
+                }}
+              />
+              <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
+                <button
+                  type="button"
+                  disabled={!VALID.test(inputVal.trim())}
+                  onClick={() => submit(inputVal.trim().toLowerCase(), false)}
+                  style={{
+                    background: VALID.test(inputVal.trim()) ? "#0f172a" : "#9ca3af",
+                    color: "#fff",
+                    fontWeight: 700,
+                    padding: "8px 18px",
+                    borderRadius: 999,
+                    border: "none",
+                    cursor: VALID.test(inputVal.trim()) ? "pointer" : "not-allowed",
+                  }}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState("asking")}
+                  style={{
+                    background: "transparent",
+                    color: "#6b7280",
+                    fontWeight: 600,
+                    padding: "8px 12px",
+                    borderRadius: 999,
+                    border: "1px solid #d1d5db",
+                    cursor: "pointer",
+                  }}
+                >
+                  Back
+                </button>
+              </div>
+            </>
+          )}
+
+          {promptState === "saved" && (
+            <div style={{ fontSize: "0.9rem", color: "#065f46", fontWeight: 700 }}>
+              ✓ Saved — your parents will see this and future results.
+            </div>
+          )}
+
+          {promptState === "declined" && (
+            <div style={{ fontSize: "0.85rem", color: "#6b7280" }}>
+              Got it — we won't ask again.
+            </div>
+          )}
+        </div>
+      );
+    })}
 
     {/* Share nudge — two options for different audiences */}
     <div

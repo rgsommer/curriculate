@@ -53,6 +53,11 @@ import { resolveAccessForUser, PLAN } from "./billing/planResolver.js";
 import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
 import { sendStudentReportEmail } from "./email/studentReportEmailer.js";
 import { sendSystemEmail } from "./email/shareInviteEmailer.js";
+import { buildSessionEdsbyCsv } from "./email/sessionGradesCsv.js";
+import ClassRoster from "./models/ClassRoster.js";
+import StudentScavengerProgress from "./models/StudentScavengerProgress.js";
+import StudentContact from "./models/StudentContact.js";
+import { hasTierAtLeast } from "./utils/tierGate.js";
 import OpenAI, { toFile } from "openai";
 
 // 8) Controllers
@@ -102,6 +107,8 @@ import {
 import profileInlineRouter from "./routes/profileInline.js";
 import adminCrudRouter from "./routes/adminCrud.js";
 import classRosterRouter from "./routes/classRoster.js";
+import studentScavengerProgressRouter from "./routes/studentScavengerProgress.js";
+import studentContactRouter from "./routes/studentContact.js";
 import studentProgressRouter from "./routes/studentProgress.js";
 
 function renderEmailTemplate(str, vars) {
@@ -429,6 +436,8 @@ app.use("/admin", adminTeacherOutreachRouter);
 
 // Class roster management (Edsby CSV upload, student lookup)
 app.use("/class-roster", classRosterRouter);
+app.use("/student-scavenger-progress", studentScavengerProgressRouter);
+app.use("/student-contact", studentContactRouter);
 app.use("/student-progress", studentProgressRouter);
 
 // Recommend Curriculate to a teacher
@@ -2302,12 +2311,22 @@ socket.on("task:force-advance", ({ roomCode }) => {
         : [];
 
       // Parse per-member details (NEW: name+email pairs for skin tracking)
+      // Plus class-bound roster identity (Mode B): firstName/lastName/edsbyId/studentId
+      // The email field carries either a previously-entered address or the
+      // newly-provided one from the join screen prompt; we persist to
+      // StudentContact below.
       const cleanMemberDetails = Array.isArray(memberDetails)
         ? memberDetails
             .filter((md) => md && typeof md.name === "string" && md.name.trim())
             .map((md) => ({
               name: capEmojis(md.name.trim()),
-              email: (md.email || "").trim().toLowerCase(),
+              email: (md.email || md.studentEmail || "").trim().toLowerCase(),
+              // Mode B identity (only present when joining a class-bound session)
+              firstName: typeof md.firstName === "string" ? md.firstName.trim() : "",
+              lastName: typeof md.lastName === "string" ? md.lastName.trim() : "",
+              edsbyId: typeof md.edsbyId === "string" ? md.edsbyId.trim() : "",
+              studentId: typeof md.studentId === "string" ? md.studentId.trim() : "",
+              displayName: typeof md.displayName === "string" ? capEmojis(md.displayName.trim()) : "",
             }))
             .slice(0, 8)
         : [];
@@ -2339,6 +2358,47 @@ socket.on("task:force-advance", ({ roomCode }) => {
           });
         }
         return;
+      }
+
+      // ── Class roster validation (Mode B) ──
+      // If the room is class-bound, every member-with-identity must match a
+      // roster student. Mismatches are dropped silently (defensive — client
+      // should only send IDs from the published roster). Members without
+      // identity go through unchanged (e.g., teacher-added guest names).
+      if (room.classBound && Array.isArray(room.classRoster?.students)) {
+        const rosterById = new Map();
+        const rosterByName = new Map();
+        for (const s of room.classRoster.students) {
+          if (s.edsbyId) rosterById.set(s.edsbyId, s);
+          if (s.studentId && !rosterById.has(s.studentId)) rosterById.set(s.studentId, s);
+          const fullKey = `${(s.firstName || "").toLowerCase()}|${(s.lastName || "").toLowerCase()}`;
+          if (fullKey !== "|") rosterByName.set(fullKey, s);
+        }
+        for (const md of cleanMemberDetails) {
+          if (!md.edsbyId && !md.studentId && !md.firstName) continue;
+          let canonical = null;
+          if (md.edsbyId && rosterById.has(md.edsbyId)) canonical = rosterById.get(md.edsbyId);
+          else if (md.studentId && rosterById.has(md.studentId)) canonical = rosterById.get(md.studentId);
+          else {
+            const k = `${(md.firstName || "").toLowerCase()}|${(md.lastName || "").toLowerCase()}`;
+            if (rosterByName.has(k)) canonical = rosterByName.get(k);
+          }
+          if (canonical) {
+            md.firstName = canonical.firstName || md.firstName;
+            md.lastName = canonical.lastName || md.lastName;
+            md.edsbyId = canonical.edsbyId || md.edsbyId;
+            md.studentId = canonical.studentId || md.studentId;
+            // Lock the displayed name to the roster's canonical name (with
+            // optional team-play display name kept separately)
+            md.name = `${md.firstName} ${md.lastName}`.trim() || md.name;
+          } else {
+            // Unknown identity — strip ID claims so they aren't trusted later
+            md.firstName = "";
+            md.lastName = "";
+            md.edsbyId = "";
+            md.studentId = "";
+          }
+        }
       }
 
       // ------------------------------------------------------------
@@ -2423,6 +2483,17 @@ socket.on("task:force-advance", ({ roomCode }) => {
           teamId,
           teamName: resolvedTeamName,
           members: memberList,
+          // Mode B: parallel identity records (kept separate from members[]
+          // string array for backward compat). Only populated for class-bound
+          // sessions where students picked themselves from the roster.
+          memberIdentities: cleanMemberDetails.filter((md) => md.edsbyId || md.studentId).map((md) => ({
+            name: md.name,
+            displayName: md.displayName || "",
+            firstName: md.firstName,
+            lastName: md.lastName,
+            edsbyId: md.edsbyId,
+            studentId: md.studentId,
+          })),
           emails: emailList,
           createdAt: new Date().toISOString(),
           score: 0,
@@ -2455,10 +2526,69 @@ socket.on("task:force-advance", ({ roomCode }) => {
         // Merge emails (deduplicate)
         const prevEmails = Array.isArray(room.teams[teamId].emails) ? room.teams[teamId].emails : [];
         room.teams[teamId].emails = Array.from(new Set([...prevEmails, ...emailList])).slice(0, 10);
+
+        // Mode B: merge memberIdentities by edsbyId (or studentId fallback) — newer wins
+        const prevIdents = Array.isArray(room.teams[teamId].memberIdentities) ? room.teams[teamId].memberIdentities : [];
+        const newIdents = cleanMemberDetails.filter((md) => md.edsbyId || md.studentId).map((md) => ({
+          name: md.name,
+          displayName: md.displayName || "",
+          firstName: md.firstName,
+          lastName: md.lastName,
+          edsbyId: md.edsbyId,
+          studentId: md.studentId,
+        }));
+        const identByKey = new Map();
+        for (const id of prevIdents) {
+          identByKey.set(id.edsbyId || id.studentId || `${id.firstName}|${id.lastName}`, id);
+        }
+        for (const id of newIdents) {
+          identByKey.set(id.edsbyId || id.studentId || `${id.firstName}|${id.lastName}`, id);
+        }
+        room.teams[teamId].memberIdentities = Array.from(identByKey.values());
+
         room.teams[teamId].status = "online";
         room.teams[teamId].connected = true;
         room.teams[teamId].stale = false;
         room.teams[teamId].lastSeenAt = new Date();
+      }
+
+      // ── Persist student emails to StudentContact (Mode B) ──
+      // Fire-and-forget. For every linked member with an email, upsert. For
+      // every linked member without an email, we still touch the doc so the
+      // teacher-tracking audit trail is updated.
+      const linkedThisJoin = cleanMemberDetails.filter((md) => md.edsbyId);
+      if (linkedThisJoin.length) {
+        (async () => {
+          for (const md of linkedThisJoin) {
+            try {
+              const setOnInsert = { edsbyId: md.edsbyId };
+              const set = {};
+              if (md.firstName) set.firstName = md.firstName;
+              if (md.lastName) set.lastName = md.lastName;
+              if (md.studentId) set.studentId = md.studentId;
+              if (md.email) {
+                set.email = md.email;
+                set.emailUpdatedAt = new Date();
+              }
+              const ownerEmail = String(room.reportOwnerEmail || "").toLowerCase().trim();
+              const cName = String(room.className || room.classRoster?.className || "");
+              const update = { $setOnInsert: setOnInsert };
+              if (Object.keys(set).length) update.$set = set;
+              const existing = await StudentContact.findOne({ edsbyId: md.edsbyId }).lean();
+              if (ownerEmail) {
+                const merged = (existing?.knownTeachers || []).filter(
+                  (t) => !(t.teacherEmail === ownerEmail && t.className === cName)
+                );
+                merged.push({ teacherEmail: ownerEmail, className: cName, lastSeenAt: new Date() });
+                merged.sort((a, b) => new Date(b.lastSeenAt) - new Date(a.lastSeenAt));
+                update.$set = { ...(update.$set || {}), knownTeachers: merged.slice(0, 20) };
+              }
+              await StudentContact.updateOne({ edsbyId: md.edsbyId }, update, { upsert: true });
+            } catch (e) {
+              console.warn(`[studentContact] upsert failed for edsbyId=${md.edsbyId}:`, e?.message || e);
+            }
+          }
+        })();
       }
 
       // Ensure published team assignment is always in currentStationId
@@ -2616,6 +2746,49 @@ socket.on("task:force-advance", ({ roomCode }) => {
 
   socket.on("student:join-room", handleStudentJoinRoom);
   socket.on("student-join-room", handleStudentJoinRoom);
+
+  // ── Mode B: Pre-join "peek" so the student-app can render a roster
+  // name dropdown BEFORE joining. Returns only public, non-PII info:
+  // whether the room is class-bound, the class name, and the student
+  // first/last names + IDs (used to lock identity on join). No emails,
+  // no other rosters. Returns { ok: false, error } if the room doesn't
+  // exist; { ok: true, classBound: false } when not bound.
+  socket.on("room:peek", ({ roomCode } = {}, ack) => {
+    try {
+      const code = String(roomCode || "").trim().toUpperCase();
+      if (!code || typeof ack !== "function") return;
+      const room = rooms[code];
+      if (!room) {
+        ack({ ok: false, error: "Room not found." });
+        return;
+      }
+      // class-bound peek is itself a PLUS feature: rooms launched without class
+      // binding will already report classBound:false here, but if a downgraded
+      // teacher's session is somehow class-bound we still gate the response.
+      if (!room.classBound || !room.classRoster?.students?.length) {
+        ack({ ok: true, classBound: false });
+        return;
+      }
+      ack({
+        ok: true,
+        classBound: true,
+        className: room.className || room.classRoster.className || "",
+        classRoster: {
+          id: room.classRoster.id || String(room.classRosterId || ""),
+          className: room.classRoster.className || "",
+          students: room.classRoster.students.map((s) => ({
+            firstName: s.firstName || "",
+            lastName: s.lastName || "",
+            edsbyId: s.edsbyId || "",
+            studentId: s.studentId || "",
+          })),
+        },
+      });
+    } catch (e) {
+      console.warn("[room:peek] error:", e?.message || e);
+      try { ack && ack({ ok: false, error: "Peek failed." }); } catch {}
+    }
+  });
 
   socket.on("room:request-state", ({ roomCode, teamId } = {}, ack) => {
     try {
@@ -5809,6 +5982,7 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
         sharedToken,
         navigationMode, // "linear" (default) | "mystery"
         mysteryTimerMinutes, // global timer for mystery mode
+        classRosterId, // optional: bind this session to a specific class roster
       } = payload || {};
     const code = (roomCode || "").toUpperCase();
 
@@ -5856,6 +6030,62 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
         room.runByPresenterEmail = String(runByPresenterEmail || "").trim();
       }
       if (sharedToken) room.sharedToken = String(sharedToken || "").trim();
+
+      // ── Class roster binding (Mode B) ──
+      // If the teacher launched with a specific class selected, look up the roster
+      // and attach a denormalized snapshot to the room. Used for: roster-based
+      // name selection on the student join screen, and auto-resolution of Edsby
+      // Student IDs in the report CSV. Failure is non-fatal — falls back to Mode A.
+      //
+      // Gate: PLUS tier or above. FREE-tier launches silently ignore classRosterId.
+      let teacherTier = "FREE";
+      try {
+        const ownerForTier = String(reportOwnerId || socket.data?.user?._id || socket.data?.userId || "").trim();
+        if (ownerForTier) {
+          const teacherUser = await User.findById(ownerForTier).lean().catch(() => null);
+          if (teacherUser) {
+            const access = await resolveAccessForUser(teacherUser);
+            teacherTier = String(access?.tier || teacherUser.planTier || "FREE").toUpperCase();
+          }
+        }
+      } catch (e) {
+        console.warn("[classRoster] tier lookup failed (defaulting to FREE):", e?.message || e);
+      }
+      const classBindAllowed = hasTierAtLeast(teacherTier, "PLUS");
+
+      if (classRosterId && !classBindAllowed) {
+        console.log(`[classRoster] Tier ${teacherTier} below PLUS — class binding skipped for room ${code}`);
+      }
+      if (classRosterId && classBindAllowed) {
+        try {
+          const roster = await ClassRoster.findById(classRosterId).lean();
+          if (roster && Array.isArray(roster.students)) {
+            room.classRosterId = String(roster._id);
+            room.classBound = true;
+            room.className = roster.className || "";
+            // Denormalized snapshot — read by the student-app on join, used by
+            // the report CSV builder to resolve Student IDs at email time.
+            room.classRoster = {
+              id: String(roster._id),
+              className: roster.className || "",
+              students: (roster.students || []).map((s) => ({
+                firstName: s.firstName || "",
+                lastName: s.lastName || "",
+                edsbyId: s.edsbyId || "",
+                studentId: s.studentId || "",
+                last4: s.last4 || "",
+              })),
+            };
+            console.log(
+              `[classRoster] Bound room ${code} to roster ${roster._id} (${roster.className}, ${roster.students.length} students)`
+            );
+          } else {
+            console.warn(`[classRoster] Roster ${classRosterId} not found or empty — leaving room unbound`);
+          }
+        } catch (e) {
+          console.warn(`[classRoster] Lookup failed for ${classRosterId}:`, e?.message || e);
+        }
+      }
 
       const tasksetDoc = await TaskSet.findById(tasksetId).lean();
       if (!tasksetDoc) {
@@ -6723,11 +6953,32 @@ socket.on(
       return "F";
     }
 
+    // Build a quick lookup of roster identities from team.memberIdentities
+    // (Mode B: students who picked themselves from the bound roster on join).
+    // Keyed by lowercased "firstname lastname" + the displayName fallback.
+    const identityByName = new Map();
+    for (const t of Object.values(room.teams || {})) {
+      const idents = Array.isArray(t?.memberIdentities) ? t.memberIdentities : [];
+      for (const id of idents) {
+        const fullName = `${id.firstName || ""} ${id.lastName || ""}`.trim().toLowerCase();
+        if (fullName) identityByName.set(fullName, id);
+        if (id.name) identityByName.set(String(id.name).toLowerCase(), id);
+        if (id.displayName) identityByName.set(String(id.displayName).toLowerCase(), id);
+      }
+    }
+
     const studentGrades = (perParticipant || []).map((p) => {
       const pct = p.finalPercent ?? (p.pointsPossible > 0 ? Math.round((p.pointsEarned / p.pointsPossible) * 100) : 0);
       const scaled = Math.round((pct / 100) * maxGrade * 10) / 10; // one decimal
+
+      // Mode B: pull canonical name + Edsby Student ID from the team's
+      // memberIdentities if this student picked themselves on join.
+      const identity = identityByName.get(String(p.studentName || "").toLowerCase()) || null;
+
       return {
-        studentName: p.studentName || "Unknown",
+        studentName: identity
+          ? `${identity.firstName} ${identity.lastName}`.trim() || p.studentName
+          : (p.studentName || "Unknown"),
         teamName: p.teamName || "",
         pointsEarned: p.pointsEarned || 0,
         pointsPossible: p.pointsPossible || 0,
@@ -6735,8 +6986,71 @@ socket.on(
         scaledGrade: scaled,
         maxGrade,
         letterGrade: computeLetterGrade(pct),
+        // Mode B: Edsby identity (used by sessionGradesCsv to fill in Student ID)
+        firstName: identity?.firstName || "",
+        lastName: identity?.lastName || "",
+        edsbyId: identity?.edsbyId || "",
+        studentId: identity?.studentId || "",
       };
     });
+
+    // ── Improvement / trend (Mode B + PRO tier only) ──
+    // For every student with an edsbyId, look up their existing progress
+    // ledger and compare this session's percent to (a) their last session
+    // and (b) the average of their prior sessions. Result is attached as
+    // `improvement: { vsLast, vsAvg, priorCount, trend }` for the email
+    // and PDF renderers.
+    //
+    // Gate: PRO tier required. PLUS and below skip this entirely so the
+    // trend column renders as "—" in their reports.
+    if (!hasTierAtLeast(planTierUsed, "PRO")) {
+      // skip improvement attachment — leaves studentGrades.improvement undefined
+    } else try {
+      const idsToCheck = studentGrades
+        .filter((g) => g.edsbyId)
+        .map((g) => g.edsbyId);
+      if (idsToCheck.length) {
+        const teacherKeyForLookup = String(
+          (teacherEmail || "") || (await (async () => {
+            try {
+              const profile = await TeacherProfile.findOne({ ownerId: safeOwnerId }).lean();
+              return profile?.email || "";
+            } catch { return ""; }
+          })())
+        ).toLowerCase().trim();
+
+        const priorDocs = await StudentScavengerProgress.find({
+          ...(teacherKeyForLookup ? { teacherEmail: teacherKeyForLookup } : {}),
+          edsbyId: { $in: idsToCheck },
+        }).lean();
+        const priorByEdsbyId = new Map();
+        for (const d of priorDocs) priorByEdsbyId.set(d.edsbyId, d);
+
+        for (const g of studentGrades) {
+          if (!g.edsbyId) continue;
+          const prior = priorByEdsbyId.get(g.edsbyId);
+          const recent = Array.isArray(prior?.recentSessions) ? prior.recentSessions : [];
+          if (!recent.length) {
+            g.improvement = { priorCount: 0, vsLast: null, vsAvg: null, trend: "first" };
+            continue;
+          }
+          const last = recent[recent.length - 1];
+          const vsLast = Math.round((g.percent - (Number(last?.percent) || 0)) * 10) / 10;
+          const avgPrior =
+            recent.reduce((s, r) => s + (Number(r?.percent) || 0), 0) / recent.length;
+          const vsAvg = Math.round((g.percent - avgPrior) * 10) / 10;
+          const trend = vsLast >= 5 ? "up" : vsLast <= -5 ? "down" : "flat";
+          g.improvement = {
+            priorCount: recent.length,
+            vsLast,
+            vsAvg,
+            trend,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn("[report] improvement lookup failed (non-fatal):", e?.message || e);
+    }
 
     // 6) Persist immutable report snapshot
     emitProgress(3, 6, "Computing grades…");
@@ -7010,7 +7324,134 @@ socket.on(
       console.warn("[report] ⚠️ No teacher email found — email will fail. Payload teacherEmail:", teacherEmail, "ownerId:", safeOwnerId);
     }
 
-    // 7) Send email (includes report teaser; emailer may attach PDF)
+    // 7) Build the Edsby-format gradebook CSV (always — even with no rosters
+    //    it falls back to a generic grades CSV so teachers always get one).
+    let csvAttachment = null;
+    let classBound = false;
+    try {
+      // Look up any rosters owned by this teacher (by email) for last-chance
+      // post-hoc matching of free-form student names to Edsby Student IDs.
+      let rosterStudents = [];
+      if (toEmail) {
+        const rosters = await ClassRoster.find({
+          teacherEmail: String(toEmail).toLowerCase().trim(),
+        }).lean();
+        for (const r of rosters || []) {
+          for (const s of r.students || []) rosterStudents.push(s);
+        }
+      }
+
+      // A session is class-bound if the room was launched with a class roster
+      // selected, OR was joined via a sub-link with a class binding. Both cases
+      // surface as room.classRosterId / room.classBound. (Wired in a later task.)
+      classBound = !!(room?.classBound || room?.classRosterId);
+
+      const tasksetTitle =
+        transcript?.tasksetName ||
+        transcript?.name ||
+        room?.taskset?.name ||
+        room?.taskset?.title ||
+        "Curriculate Activity";
+
+      csvAttachment = buildSessionEdsbyCsv({
+        studentGrades,
+        perParticipant,
+        assessmentName: tasksetTitle,
+        rosterStudents,
+      });
+    } catch (e) {
+      console.warn("[report] CSV build failed (continuing without CSV):", e?.message || e);
+      csvAttachment = null;
+    }
+
+    // 7a) Update per-student running totals (Mode B). Fire-and-forget;
+    //     a failure here must not block the email send.
+    if (toEmail) {
+      (async () => {
+        try {
+          const teacherKey = String(toEmail).toLowerCase().trim();
+          const today = new Date();
+          const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+          const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+          const className = String(room?.className || room?.classRoster?.className || "");
+
+          for (const g of studentGrades || []) {
+            if (!g.edsbyId) continue; // Mode A rows skipped
+            const points = Number(g.pointsEarned) || 0;
+            try {
+              const existing = await StudentScavengerProgress.findOne({
+                teacherEmail: teacherKey,
+                edsbyId: g.edsbyId,
+              });
+              const lastDate = existing?.lastPlayedAt ? new Date(existing.lastPlayedAt) : null;
+              const startOfLast = lastDate
+                ? new Date(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate()).getTime()
+                : null;
+
+              let nextStreak = 1;
+              if (startOfLast != null) {
+                const diff = startOfToday - startOfLast;
+                if (diff <= 0) nextStreak = existing.streakDays || 1; // same day — keep streak
+                else if (diff <= ONE_DAY_MS + 1) nextStreak = (existing.streakDays || 0) + 1;
+                else nextStreak = 1; // gap broke the streak
+              }
+
+              const newEntry = {
+                roomCode: code,
+                taskSetName: String(transcript?.tasksetName || transcript?.name || ""),
+                percent: Number(g.percent) || 0,
+                pointsEarned: points,
+                pointsPossible: Number(g.pointsPossible) || 0,
+                completedAt: today,
+              };
+
+              await StudentScavengerProgress.updateOne(
+                { teacherEmail: teacherKey, edsbyId: g.edsbyId },
+                {
+                  $set: {
+                    teacherEmail: teacherKey,
+                    edsbyId: g.edsbyId,
+                    studentId: g.studentId || existing?.studentId || "",
+                    firstName: g.firstName || existing?.firstName || "",
+                    lastName: g.lastName || existing?.lastName || "",
+                    className: className || existing?.className || "",
+                    streakDays: nextStreak,
+                    longestStreakDays: Math.max(
+                      Number(existing?.longestStreakDays || 0),
+                      nextStreak
+                    ),
+                    lastPlayedAt: today,
+                  },
+                  $inc: {
+                    totalSessions: 1,
+                    totalPoints: points,
+                  },
+                  $push: {
+                    recentSessions: {
+                      $each: [newEntry],
+                      $slice: -10, // keep only the last 10
+                    },
+                  },
+                  $setOnInsert: {
+                    firstPlayedAt: today,
+                  },
+                },
+                { upsert: true }
+              );
+            } catch (e) {
+              console.warn(
+                `[progress] Failed to update for edsbyId=${g.edsbyId}:`,
+                e?.message || e
+              );
+            }
+          }
+        } catch (e) {
+          console.warn("[progress] writer top-level failure:", e?.message || e);
+        }
+      })();
+    }
+
+    // 7b) Send email (includes report teaser; emailer attaches PDF + CSV)
     emitProgress(5, 6, "Sending email report…");
     try {
       // Wrap email send in a 45-second timeout so the progress bar never hangs
@@ -7031,6 +7472,8 @@ socket.on(
           studentGrades,
           gradingConfig: gc,
           bloomsTaxonomy,
+          csvAttachment,
+          classBound,
         }),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Email send timed out after 45 seconds")), 45_000)
@@ -7043,6 +7486,34 @@ socket.on(
 
       if (sharedFromTeacherId && sharedFromTeacherEmail && String(sharedFromTeacherId) !== String(safeOwnerId)) {
         try {
+          // For the shared-run copy to the original teacher, rebuild the CSV
+          // against THEIR rosters (the sub teacher's rosters are irrelevant
+          // here — we want the original teacher's class roster matches).
+          let originalTeacherCsv = csvAttachment;
+          try {
+            const origRosters = await ClassRoster.find({
+              teacherEmail: String(sharedFromTeacherEmail).toLowerCase().trim(),
+            }).lean();
+            const origRosterStudents = [];
+            for (const r of origRosters || []) {
+              for (const s of r.students || []) origRosterStudents.push(s);
+            }
+            const tasksetTitle =
+              transcript?.tasksetName ||
+              transcript?.name ||
+              room?.taskset?.name ||
+              room?.taskset?.title ||
+              "Curriculate Activity";
+            originalTeacherCsv = buildSessionEdsbyCsv({
+              studentGrades,
+              perParticipant,
+              assessmentName: tasksetTitle,
+              rosterStudents: origRosterStudents,
+            });
+          } catch (e) {
+            console.warn("[shared] Original-teacher CSV rebuild failed:", e?.message || e);
+          }
+
           // Send a copy of the report to the original teacher
           await sendTranscriptEmail({
             to: sharedFromTeacherEmail,
@@ -7061,6 +7532,8 @@ socket.on(
             studentGrades,
             gradingConfig: gc,
             bloomsTaxonomy,
+            csvAttachment: originalTeacherCsv,
+            classBound,
           });
           console.log(`[shared] Sent report email to original teacher: ${sharedFromTeacherEmail}`);
         } catch (e) {
@@ -7085,6 +7558,31 @@ socket.on(
           // Also check feedback for a reportEmail
           const fbEmail = feedbackMap[tid]?.reportEmail;
           if (fbEmail && !teamEmails.includes(fbEmail)) teamEmails.push(fbEmail);
+
+          // Mode B: pull stored emails for any linked students on this team.
+          // Each linked student's StudentContact.email AND parentEmail gets
+          // the report, in addition to any team-level emails.
+          const memberIdents = Array.isArray(team.memberIdentities) ? team.memberIdentities : [];
+          const linkedEdsbyIds = memberIdents.map((m) => m.edsbyId).filter(Boolean);
+          if (linkedEdsbyIds.length) {
+            try {
+              const contacts = await StudentContact.find({
+                edsbyId: { $in: linkedEdsbyIds },
+                $or: [
+                  { email: { $exists: true, $ne: "" } },
+                  { parentEmail: { $exists: true, $ne: "" } },
+                ],
+              }).lean();
+              for (const c of contacts) {
+                const sEmail = String(c.email || "").trim().toLowerCase();
+                if (sEmail && !teamEmails.includes(sEmail)) teamEmails.push(sEmail);
+                const pEmail = String(c.parentEmail || "").trim().toLowerCase();
+                if (pEmail && !teamEmails.includes(pEmail)) teamEmails.push(pEmail);
+              }
+            } catch (e) {
+              console.warn("[studentReport] linked-email lookup failed:", e?.message || e);
+            }
+          }
 
           if (!teamEmails.length) continue;
 
@@ -7198,6 +7696,34 @@ socket.on(
 
       socket.emit("report:progress", { step: 5, total: 6, label: "Retrying email…" });
 
+      // Rebuild the CSV from the saved report so the retry email also gets it.
+      let retryCsv = null;
+      let retryClassBound = !!report.classBound;
+      try {
+        let rosterStudents = [];
+        if (toEmail) {
+          const rosters = await ClassRoster.find({
+            teacherEmail: String(toEmail).toLowerCase().trim(),
+          }).lean();
+          for (const r of rosters || []) {
+            for (const s of r.students || []) rosterStudents.push(s);
+          }
+        }
+        const tasksetTitle =
+          report.transcript?.tasksetName ||
+          report.transcript?.name ||
+          report.taskSetName ||
+          "Curriculate Activity";
+        retryCsv = buildSessionEdsbyCsv({
+          studentGrades: report.studentGrades || [],
+          perParticipant: report.perParticipant || [],
+          assessmentName: tasksetTitle,
+          rosterStudents,
+        });
+      } catch (e) {
+        console.warn("[retry] CSV rebuild failed:", e?.message || e);
+      }
+
       await Promise.race([
         sendTranscriptEmail({
           to: toEmail,
@@ -7215,6 +7741,8 @@ socket.on(
           studentGrades: report.studentGrades || [],
           gradingConfig: report.gradingConfig || null,
           bloomsTaxonomy: report.bloomsTaxonomy || null,
+          csvAttachment: retryCsv,
+          classBound: retryClassBound,
         }),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Email retry timed out after 45 seconds")), 45_000)
@@ -12090,6 +12618,81 @@ function buildRubricInstructions({
 
   // ====================================================================
   //  Send Batch Grading Summary Email (rich HTML)
+  // ====================================================================
+  //  POST /grading/send-student-results
+  //  Per-student submission-report email for Pulse Grading.
+  //
+  //  Body: {
+  //    teacherName?, taskSetName?,
+  //    results: [{ edsbyId, studentName, refCode, score, outOf, percent, comment }]
+  //  }
+  //
+  //  For every result that carries an edsbyId, looks up the student's
+  //  email in StudentContact and sends a short email with their score and
+  //  a link to /results/{refCode}. Skips students with no stored email.
+  //  Returns { ok, sent, skipped, errors }.
+  // ====================================================================
+  app.post("/grading/send-student-results", async (req, res) => {
+    try {
+      const { teacherName, taskSetName, results } = req.body || {};
+      const list = Array.isArray(results) ? results : [];
+      const linked = list.filter((r) => r && r.edsbyId);
+      if (!linked.length) return res.json({ ok: true, sent: 0, skipped: 0, errors: [] });
+
+      const ids = linked.map((r) => r.edsbyId);
+      const contacts = await StudentContact.find({
+        edsbyId: { $in: ids },
+        $or: [
+          { email: { $exists: true, $ne: "" } },
+          { parentEmail: { $exists: true, $ne: "" } },
+        ],
+      }).lean();
+      const recipientsById = new Map();
+      for (const c of contacts) {
+        const rs = [];
+        if (c.email) rs.push(c.email);
+        if (c.parentEmail && c.parentEmail !== c.email) rs.push(c.parentEmail);
+        recipientsById.set(c.edsbyId, rs);
+      }
+
+      let sent = 0;
+      let skipped = 0;
+      const errors = [];
+      for (const r of linked) {
+        const recipients = recipientsById.get(r.edsbyId) || [];
+        if (!recipients.length) { skipped += 1; continue; }
+        const to = recipients[0];
+        const cc = recipients.slice(1).join(",");
+        const escH = (s) => String(s ?? "")
+          .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+        const refLink = r.refCode ? `https://www.curriculate.net/results/${encodeURIComponent(r.refCode)}` : "";
+        const score = (r.score != null && r.outOf != null) ? `${r.score} / ${r.outOf}` : (r.score != null ? String(r.score) : "");
+        const pct = (r.percent != null) ? `${Math.round(Number(r.percent))}%` : "";
+        const subject = `Your result — ${taskSetName || "Pulse Grading"}`;
+        const html = `
+          <div style="font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:14px; color:#0f172a;">
+            <p>Hi ${escH(r.studentName || "there")},</p>
+            <p>Here's your result on <strong>${escH(taskSetName || "your assignment")}</strong>:</p>
+            <p style="font-size:18px; font-weight:800;">${escH(score)}${pct ? ` &middot; ${escH(pct)}` : ""}</p>
+            ${r.comment ? `<p style="background:#f1f5f9; padding:10px 12px; border-radius:8px;">${escH(r.comment)}</p>` : ""}
+            ${refLink ? `<p><a href="${refLink}" style="background:#0f172a; color:#fff; padding:8px 14px; border-radius:6px; text-decoration:none;">View full feedback</a></p>` : ""}
+            ${teacherName ? `<p style="font-size:12px; color:#64748b;">Sent by ${escH(teacherName)} via Pulse Grading.</p>` : ""}
+          </div>`;
+        try {
+          await sendSystemEmail({ to, ...(cc ? { cc } : {}), subject, html });
+          sent += 1;
+        } catch (e) {
+          errors.push({ edsbyId: r.edsbyId, error: e?.message || "send failed" });
+        }
+      }
+      return res.json({ ok: true, sent, skipped, errors });
+    } catch (err) {
+      console.error("POST /grading/send-student-results failed:", err);
+      return res.status(500).json({ ok: false, error: "Send failed." });
+    }
+  });
+
   //  POST /grading/send-email
   //  Body: { to, subject, html, pdfAttachment?, pdfFilename? }
   // ====================================================================

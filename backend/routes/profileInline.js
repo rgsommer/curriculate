@@ -2,8 +2,28 @@ import express from "express";
 import { authRequired } from "../middleware/authRequired.js";
 import User from "../models/User.js";
 import TeacherProfile from "../models/TeacherProfile.js";
+import { resolveAccessForUser } from "../billing/planResolver.js";
 
 const router = express.Router();
+
+/**
+ * Resolve the authenticated user's plan tier ("FREE" | "PLUS" | "PRO").
+ * Used to attach `planTier` to /api/profile/me responses so the frontend
+ * can gate UI for class-linking (PLUS) and trend reports (PRO).
+ */
+async function resolveTierForReq(req) {
+  try {
+    const id = String(req.user?._id || req.user?.userId || req.user?.id || req.userId || "").trim();
+    if (!id) return "FREE";
+    const userDoc = await User.findById(id).lean().catch(() => null);
+    if (!userDoc) return "FREE";
+    const access = await resolveAccessForUser(userDoc);
+    return String(access?.tier || userDoc.planTier || "FREE").toUpperCase();
+  } catch (e) {
+    console.warn("[profile] tier resolve failed:", e?.message || e);
+    return "FREE";
+  }
+}
 
 // Helper functions
 function getOwnerId(req) {
@@ -40,6 +60,7 @@ router.get("/me", authRequired, async (req, res) => {
     const plain = profile.toObject();
     plain.presenterTitle = plain.presenterTitle || plain.title || "";
     plain.title = plain.title || plain.presenterTitle || "";
+    plain.planTier = await resolveTierForReq(req); // "FREE" | "PLUS" | "PRO"
     res.json(plain);
   } catch (err) {
     console.error("Profile fetch failed (/api/profile/me):", err);
@@ -67,6 +88,7 @@ router.get("/", authRequired, async (req, res) => {
     // Include a few extra convenience fields
     plain.userId = ownerId;
     plain.isAdmin = !!(profile.isAdmin || req.user?.isAdmin);
+    plain.planTier = await resolveTierForReq(req);
 
     return res.json(plain);
   } catch (e) {

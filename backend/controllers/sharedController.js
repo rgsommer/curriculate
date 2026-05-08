@@ -4,6 +4,9 @@ import jwt from "jsonwebtoken";
 import TaskSet from "../models/TaskSet.js";
 import SharedTasksetLink, { hashShareToken } from "../models/SharedTasksetLink.js";
 import User from "../models/User.js";
+import ClassRoster from "../models/ClassRoster.js";
+import { hasTierAtLeast } from "../utils/tierGate.js";
+import { resolveAccessForUser } from "../billing/planResolver.js";
 
 function hashToken(token) {
   return crypto.createHash("sha256").update(String(token || "")).digest("hex");
@@ -49,6 +52,18 @@ export async function sharedLaunchController(req, res) {
     const taskset = await TaskSet.findById(link.tasksetId).lean();
     if (!taskset) return res.status(404).json({ ok: false, error: "Task set not found" });
 
+    // If the link is bound to a class, fetch the className for display purposes
+    // (the SharedLaunch page can show "for Class 7C"). The actual roster lookup
+    // happens server-side at session creation time — sub teacher never gets
+    // student PII via this response.
+    let boundClassName = "";
+    if (link.classRosterId) {
+      try {
+        const roster = await ClassRoster.findById(link.classRosterId).select("className").lean();
+        if (roster?.className) boundClassName = String(roster.className);
+      } catch {}
+    }
+
     // Room code for this run (fresh each click)
     const roomCode = generateRoomCode();
 
@@ -69,6 +84,9 @@ export async function sharedLaunchController(req, res) {
       // Helpful to show "Shared by R. Sommer"
       authorDisplay: safeAuthorDisplay(link.authorDisplay),
       tasksetId: String(link.tasksetId || ""),
+      // Mode B (sub): class binding rides on the link, so the sub teacher's
+      // session inherits it without any class-selection step.
+      classRosterId: link.classRosterId ? String(link.classRosterId) : "",
     };
 
     // Guest token lifetime should be short-ish; it can be refreshed by re-clicking the link.
@@ -88,6 +106,8 @@ export async function sharedLaunchController(req, res) {
       authorDisplay: safeAuthorDisplay(link.authorDisplay),
       sharedFromTeacherId: String(link.createdByUserId || ""),
       sharedFromTeacherEmail: String(link.ownerEmail || ""),
+      classRosterId: link.classRosterId ? String(link.classRosterId) : "",
+      className: boundClassName,
       tasksetMeta: {
         _id: String(taskset._id),
         name: String(taskset.name || taskset.title || "Task Set"),
@@ -114,7 +134,7 @@ export async function sharedLaunchController(req, res) {
  */
 export async function createShareLinkController(req, res) {
   try {
-    const { tasksetId } = req.body || {};
+    const { tasksetId, classRosterId } = req.body || {};
     if (!tasksetId) {
       return res.status(400).json({ ok: false, error: "Missing tasksetId" });
     }
@@ -156,6 +176,46 @@ export async function createShareLinkController(req, res) {
     // Extract author display (short version of name for "Shared by...")
     const authorDisplay = ownerName ? ownerName.split(" ")[0] : "Teacher"; // Just first name
 
+    // Validate classRosterId (must belong to the requesting teacher AND
+    // teacher must be on PLUS or above). Below PLUS, the field is silently
+    // dropped — link still works as a generic share.
+    let resolvedClassRosterId = null;
+    if (classRosterId) {
+      // Tier check
+      let teacherTier = "FREE";
+      try {
+        const userDoc = await User.findById(userId).lean();
+        if (userDoc) {
+          const access = await resolveAccessForUser(userDoc);
+          teacherTier = String(access?.tier || userDoc.planTier || "FREE").toUpperCase();
+        }
+      } catch (e) {
+        console.warn("[shared/create-link] tier lookup failed (defaulting to FREE):", e?.message || e);
+      }
+      if (!hasTierAtLeast(teacherTier, "PLUS")) {
+        console.log(`[shared/create-link] Tier ${teacherTier} below PLUS — class binding skipped`);
+      } else {
+        try {
+          const roster = await ClassRoster.findById(classRosterId).lean();
+          if (
+            roster &&
+            ownerEmail &&
+            String(roster.teacherEmail || "").toLowerCase() ===
+              String(ownerEmail).toLowerCase()
+          ) {
+            resolvedClassRosterId = roster._id;
+          } else {
+            console.warn(
+              "[shared/create-link] classRosterId rejected (not owner):",
+              classRosterId
+            );
+          }
+        } catch (e) {
+          console.warn("[shared/create-link] classRoster lookup failed:", e?.message || e);
+        }
+      }
+    }
+
     // Create SharedTasksetLink document with 7-day expiry
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days from now
 
@@ -169,6 +229,7 @@ export async function createShareLinkController(req, res) {
       authorDisplay,
       createdByUserId: String(userId),
       expiresAt,
+      classRosterId: resolvedClassRosterId,
     });
 
     if (!link) {
@@ -184,6 +245,7 @@ export async function createShareLinkController(req, res) {
       token,
       link: shareLink,
       expiresAt,
+      classRosterId: resolvedClassRosterId ? String(resolvedClassRosterId) : null,
     });
   } catch (err) {
     console.error("createShareLinkController error:", err);

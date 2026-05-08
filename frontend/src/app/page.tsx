@@ -614,6 +614,12 @@ export default function Home() {
         <div className="pointer-events-none absolute -bottom-40 -right-40 h-[400px] w-[400px] rounded-full bg-indigo-200/30 blur-3xl" />
 
         <div className="relative mx-auto max-w-7xl text-center">
+          <img
+            src="/images/mascot/promo/1.png"
+            alt=""
+            className="mx-auto mb-4 h-20 w-20 rounded-full object-cover shadow-md sm:h-28 sm:w-28"
+          />
+
           <div className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-4 py-1.5 text-sm font-bold text-blue-800 mb-6">
             <Sparkles className="w-4 h-4" /> Used by teachers across Canada and the US
           </div>

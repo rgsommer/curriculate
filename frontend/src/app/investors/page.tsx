@@ -1,5 +1,5 @@
 // src/app/investors/page.tsx
-import type { Metadata } from "next";
+// Metadata for this route lives in ./layout.tsx — see that file for SEO setup.
 import Link from "next/link";
 
 function Pill({ children }: { children: React.ReactNode }) {
@@ -9,12 +9,6 @@ function Pill({ children }: { children: React.ReactNode }) {
     </span>
   );
 }
-
-export const metadata: Metadata = {
-  title: "Investors",
-  description:
-    "Curriculate is AI lesson orchestration for real classrooms — time-aware planning, intentional movement, and classroom scavenger hunt delivery.",
-};
 
 function Card({
   title,

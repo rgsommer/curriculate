@@ -13,50 +13,61 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://curriculate.net"),
   title: {
     template: "%s | Curriculate.net",
-    default: "Curriculate.net – AI-Powered Classroom Scavenger Hunts",
+    default: "Curriculate.net – AI Classroom Scavenger Hunts + AI Grading",
   },
   description:
-    "AI-powered classroom scavenger hunts and lesson planning. Curriculate plans time-fit task sets, then generates interactive scavenger hunt stations with movement, collaboration, and evidence-rich reporting.",
+    "Curriculate is a two-product platform for K-12 teachers: AI-powered classroom scavenger hunts (live station-based learning) plus Pulse Grading (AI grading at curriculate.net/grading) — with native Edsby roster import and gradebook-ready reports.",
   keywords: [
     "education",
     "classroom scavenger hunt",
     "scavenger hunt learning",
     "classroom activities",
     "AI lesson planning",
+    "AI grading",
+    "AI grader for teachers",
+    "Pulse Grading",
+    "Edsby gradebook export",
+    "Edsby class roster",
     "formative assessment",
     "interactive learning",
     "teacher tools",
     "team-based learning",
     "CurricQR code classroom",
-    "Pulse grading",
     "student reports",
+    "parent reports",
     "movement in classroom",
     "birthday party games for kids",
     "corporate team building games",
     "role play classroom",
-    "formative assessment tools",
     "classroom gamification",
     "subject-specific activities",
     "Kahoot alternative",
     "Blooket alternative",
     "Quizlet alternative",
     "screen-free classroom learning",
-    "off-screen learning technology",
     "handwriting bonus classroom",
     "reduce screen time school",
   ],
+  authors: [{ name: "Curriculate" }],
+  creator: "Curriculate",
+  publisher: "Curriculate",
+  alternates: {
+    canonical: "https://curriculate.net",
+  },
   openGraph: {
     siteName: "Curriculate",
     type: "website",
     url: "https://curriculate.net",
+    locale: "en_CA",
     images: [
       {
         url: "https://curriculate.net/images/og/og-home.png",
         width: 1200,
         height: 630,
-        alt: "Curriculate — AI-Powered Classroom Scavenger Hunts",
+        alt: "Curriculate — AI Classroom Scavenger Hunts + AI Grading",
       },
     ],
   },
@@ -64,6 +75,26 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     site: "@CurriculateNet",
     creator: "@CurriculateNet",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
+  formatDetection: {
+    telephone: false,
+    email: false,
+    address: false,
+  },
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
   },
 };
 
@@ -107,6 +138,10 @@ export default function RootLayout({
             })();
           `}
         </Script>
+        {/* Structured data: WebSite, Organization, and SoftwareApplication.
+            These help search engines build the knowledge panel and the
+            sitelinks search box, and they qualify the products for rich
+            results in education-related searches. */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -116,12 +151,75 @@ export default function RootLayout({
               name: "Curriculate",
               url: "https://curriculate.net",
               description:
-                "AI-powered classroom scavenger hunt platform with time-fit lesson planning, interactive team stations, and evidence-rich reporting.",
+                "AI-powered classroom scavenger hunt platform plus Pulse Grading — time-fit lesson planning, interactive team stations, AI grading, and gradebook-ready reporting with native Edsby integration.",
               potentialAction: {
                 "@type": "SearchAction",
                 target: "https://curriculate.net/search?q={search_term_string}",
                 "query-input": "required name=search_term_string",
               },
+            }),
+          }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "Organization",
+              name: "Curriculate",
+              url: "https://curriculate.net",
+              logo: "https://curriculate.net/images/og/og-home.png",
+              description:
+                "Curriculate builds AI tools for K-12 teachers — live classroom scavenger hunts and AI grading.",
+              sameAs: [
+                "https://twitter.com/CurriculateNet",
+              ],
+              contactPoint: [
+                {
+                  "@type": "ContactPoint",
+                  contactType: "customer support",
+                  email: "support@curriculate.net",
+                  url: "https://curriculate.net/contact",
+                  availableLanguage: ["English"],
+                },
+              ],
+            }),
+          }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "SoftwareApplication",
+              name: "Curriculate",
+              applicationCategory: "EducationalApplication",
+              operatingSystem: "Web, Android",
+              url: "https://curriculate.net",
+              description:
+                "AI-powered classroom scavenger hunts plus AI grading. Edsby roster import, gradebook-ready CSV export, per-student improvement tracking.",
+              offers: [
+                {
+                  "@type": "Offer",
+                  name: "Free",
+                  price: "0",
+                  priceCurrency: "USD",
+                },
+                {
+                  "@type": "Offer",
+                  name: "Plus",
+                  price: "6.99",
+                  priceCurrency: "USD",
+                  description: "Class linking, gradebook integration, student-level reports.",
+                },
+                {
+                  "@type": "Offer",
+                  name: "Pro",
+                  price: "12.99",
+                  priceCurrency: "USD",
+                  description: "Per-student improvement reports + advanced analytics.",
+                },
+              ],
             }),
           }}
         />

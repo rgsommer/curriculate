@@ -1,6 +1,8 @@
 // teacher-app/src/pages/TeacherProfile.jsx
 import React, { useEffect, useState } from "react";
 import { fetchMyProfile, updateMyProfile } from "../api/profile";
+import MatchSession from "./MatchSession";
+import ClassRostersAdmin from "./ClassRostersAdmin";
 
 // Options for perspectives (can grow later)
 const PERSPECTIVE_OPTIONS = [
@@ -48,6 +50,9 @@ export default function TeacherProfile() {
     includeRiddleInSets: false,
     includeMysteryCluesInSets: false,
     includeTeamSelfie: true,
+
+    // Plan tier
+    planTier: "FREE",
   });
 
 
@@ -127,6 +132,10 @@ export default function TeacherProfile() {
             typeof data.includeTeamSelfie === "boolean"
               ? data.includeTeamSelfie
               : true,
+
+          // Plan tier (FREE | PLUS | PRO) — gates Match a Session (PLUS) +
+          // any future tier-locked features rendered on this page.
+          planTier: String(data.planTier || "FREE").toUpperCase(),
         };
 
         setProfile(merged);
@@ -285,6 +294,16 @@ export default function TeacherProfile() {
         These settings personalize how Curriculate generates tasks, runs
         live sessions, and prepares reports.
       </p>
+
+      {/* Class linking admin (PLUS+). Two collapsible sections:
+            • Class Rosters — review students, fill in student/parent emails
+            • Match a Session — post-hoc Edsby CSV from any past run */}
+      {(profile.planTier === "PLUS" || profile.planTier === "PRO") && (
+        <>
+          <ClassRostersAdmin teacherEmail={profile.email || ""} />
+          <MatchSession teacherEmail={profile.email || ""} />
+        </>
+      )}
 
       <form onSubmit={handleSubmit}>
         {/* Basic info */}

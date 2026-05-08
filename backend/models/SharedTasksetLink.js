@@ -75,6 +75,17 @@ const SharedTasksetLinkSchema = new mongoose.Schema(
     // Optional: keep it compatible with your access-code world
     entryCode: { type: String, default: "", index: true },
 
+    // Optional: class roster the sending teacher bound to this link.
+    // When set, sessions launched via this link inherit the class binding,
+    // so the student-app shows a name dropdown and the report CSV gets
+    // Edsby Student IDs filled in automatically. Sub teacher does not see
+    // or interact with class selection.
+    classRosterId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ClassRoster",
+      default: null,
+    },
+
     expiresAt: { type: Date, required: true },
     revokedAt: { type: Date },
 
