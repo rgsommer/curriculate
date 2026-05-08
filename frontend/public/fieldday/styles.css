@@ -43,6 +43,8 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 }
 .tab:hover { background: var(--line-2); color: var(--ink); }
 .tab.active { background: var(--primary); color: var(--primary-ink); }
+.tab.tab-link { text-decoration: none; display: inline-flex; align-items: center; }
+.tab.tab-link:hover { background: var(--line-2); color: var(--ink); text-decoration: none; }
 .badge { background: var(--danger); color: white; padding: 1px 7px; border-radius: 999px; font-size: 11px; margin-left: 6px; font-weight: 700; }
 
 /* ===== Layout ===== */
