@@ -135,7 +135,11 @@
   }
   function fmtResult(value, type, unit) {
     if (value == null || value === "") return "—";
-    if (type === "timed") return fmtTimer(value*10);
+    // Timed values are stored as **seconds** (matches displayAttempt /
+    // parseAttemptInput / stopRowTimer / stopTimer). fmtTimer expects ms,
+    // so multiply by 1000. (Previously had ×10 which mis-displayed every
+    // standing/ribbon/summary time as a tiny fraction of the real value.)
+    if (type === "timed") return fmtTimer(Number(value) * 1000);
     const v = Number(value);
     return `${v % 1 === 0 ? v : v.toFixed(2)}${unit ? " " + unit : ""}`;
   }
