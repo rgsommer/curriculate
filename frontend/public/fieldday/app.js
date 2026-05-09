@@ -1505,6 +1505,8 @@
     rowTimers.set(competitorId, { startMs, raf: requestAnimationFrame(tick), intervalId });
     // Synchronous first paint — no waiting for the first animation frame.
     paint();
+    // Mirror the heat clock at the top: first row timer starts the big clock.
+    if (typeof startHeatClock === "function") startHeatClock();
     persistRowTimers();
   }
 
@@ -1514,6 +1516,9 @@
     cancelAnimationFrame(t.raf);
     if (t.intervalId) clearInterval(t.intervalId);
     rowTimers.delete(competitorId);
+    // If this was the last running row, freeze the heat clock at its current
+    // value (so the leader sees the final heat duration on the big display).
+    if (rowTimers.size === 0) stopHeatClock();
     persistRowTimers();
     const elapsedMs = performance.now() - t.startMs;
     const seconds = Math.round(elapsedMs / 10) / 100;
@@ -1598,6 +1603,8 @@
       if (t.intervalId) clearInterval(t.intervalId);
     });
     rowTimers.clear();
+    // Reset the big heat clock display too — fresh state for the next heat.
+    resetTimer();
     persistRowTimers();
     // 3. Null out every attempt slot via the same setAttempt path.
     try {
@@ -1632,6 +1639,25 @@
   }
 
   // ---------- Timer ----------
+  /**
+   * Start the big "Heat Stopwatch" display purely as a visual heat clock —
+   * no target cell, no recording. Idempotent. Used by the row-timer code
+   * so the big clock at the top of the timer card mirrors the heat.
+   */
+  function startHeatClock() {
+    if (timerHandle) return;
+    timerStart = performance.now();
+    timerHandle = requestAnimationFrame(tickTimer);
+  }
+  /**
+   * Stop the big heat clock display without recording anything to a cell.
+   * (Different from stopTimer, which writes elapsed time to timerTarget.)
+   */
+  function stopHeatClock() {
+    if (!timerHandle) return;
+    cancelAnimationFrame(timerHandle);
+    timerHandle = null;
+  }
   function startTimer() {
     if (timerHandle) return;
     timerStart = performance.now();
