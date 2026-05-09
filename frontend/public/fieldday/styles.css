@@ -160,7 +160,23 @@ main { padding: 24px clamp(16px, 4vw, 40px); max-width: 1280px; margin: 0 auto; 
 }
 .competitor-row .attempt-input.target { outline: 2px solid var(--primary); background: white; }
 .competitor-row .attempt-input.best { background: #fff7e6; border-color: #f0c468; }
-.competitor-row .row-actions { display:flex; gap: 4px; }
+.competitor-row .row-actions { display:flex; gap: 4px; align-items: center; }
+.competitor-row .row-timer {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--ink); color: #d4ffd2;
+  font-family: "SF Mono","Menlo","Consolas",monospace; font-size: 12px; font-weight: 700;
+  font-variant-numeric: tabular-nums; letter-spacing: .03em;
+}
+.competitor-row .row-timer-btn {
+  width: 30px; height: 30px; border-radius: 50%;
+  border: 0; background: var(--primary); color: white;
+  font-size: 14px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.competitor-row .row-timer-btn:hover { background: var(--primary-2); }
+.competitor-row .row-timer-btn.running { background: var(--danger); }
+.competitor-row .row-timer-btn.running:hover { background: #b91c1c; }
 .competitor-row .place-tag {
   font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--line-2); color: var(--muted); white-space: nowrap;
 }

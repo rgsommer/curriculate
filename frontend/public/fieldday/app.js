@@ -153,9 +153,8 @@
   // session isn't interrupted. Drained when stopTimer() / resetTimer() are called.
   const pendingCelebrations = [];
   function showRecordCelebration(payload) {
-    if (timerHandle) {
+    if (anyTimerRunning && anyTimerRunning()) {
       pendingCelebrations.push(payload);
-      // Tiny non-disruptive toast so the timer-er knows something happened.
       showToast(`🎺 New record by ${payload.name} — celebration queued`);
       return;
     }
@@ -556,6 +555,7 @@
     $("#evAttempts").value = prefill.attempts || 1;
     $("#evUnit").value = prefill.unit || defaultUnitFor(prefill.type || "timed");
     $("#evScoreBy").value = prefill.scoreBy || "event";
+    $("#evFormat").value = prefill.format || "individual";
     $("#evNotes").value = prefill.notes || "";
     $("#evCompetitors").value = "";
     $("#evCompetitors").parentElement.hidden = false;
@@ -579,6 +579,7 @@
     $("#evAttempts").value = ev.attempts;
     $("#evUnit").value = ev.unit;
     $("#evScoreBy").value = ev.scoreBy || "event";
+    $("#evFormat").value = ev.format || "individual";
     $("#evNotes").value = ev.notes || "";
     $("#evCompetitors").value = "";
     $("#evCompetitors").parentElement.hidden = true;
@@ -618,6 +619,7 @@
       attempts: Math.max(1, Math.min(10, parseInt($("#evAttempts").value, 10) || 1)),
       unit: $("#evUnit").value.trim(),
       scoreBy: $("#evScoreBy").value || "event",
+      format: $("#evFormat").value || "individual",
       notes: $("#evNotes").value.trim()
     };
     $("#btnSaveModal").disabled = true;
@@ -660,6 +662,7 @@
 
   // ---------- Event detail ----------
   async function openEventDetail(id) {
+    clearAllRowTimers();
     currentEventId = id;
     VIEWS.forEach(v => $(`#view-${v}`).hidden = true);
     $("#view-event-detail").hidden = false;
@@ -676,10 +679,14 @@
     const ev = state.events.find(e => e.id === currentEventId);
     if (!ev) return;
     $("#eventDetailTitle").textContent = ev.title;
+    const formatBadge = ev.format === "team"
+      ? `<span class="pill" style="background:#fff7e0;color:#8a6d00">Team event · house-only</span>`
+      : "";
     $("#eventDetailMeta").innerHTML = `
       <span>Age ${escapeHtml(ev.age)} · ${escapeHtml(ev.gender)} · ${typeLabel(ev.type)}${ev.unit?" ("+escapeHtml(ev.unit)+")":""} · Best of ${ev.attempts}</span>
       ${ev.notes ? `<span> · ${escapeHtml(ev.notes)}</span>` : ""}
       <span> · Led by ${escapeHtml(ev.leaderName||"")}</span>
+      ${formatBadge ? ` · ${formatBadge}` : ""}
     `;
     // Rules card — pulls from school.eventRules keyed by event title
     const ruleText = (state.school?.eventRules || {})[ev.title] || "";
@@ -707,6 +714,11 @@
     // Hide the add-competitor row when read-only; admins can still add even on completed events.
     const addRow = document.querySelector(".add-competitor-row");
     if (addRow) addRow.style.display = readOnly ? "none" : "";
+    // Relabel "Add Competitor" → "Add Team" for team events
+    const addBtn = $("#btnAddCompetitor");
+    if (addBtn) addBtn.textContent = ev.format === "team" ? "+ Add Team" : "+ Add Competitor";
+    const newNameInput = $("#newCompetitorName");
+    if (newNameInput) newNameInput.placeholder = ev.format === "team" ? "Team name (e.g. Alpha Relay)" : "Competitor name";
 
     const placements = computePlacements(ev, state.school?.tieMethod || "average");
     const list = $("#competitorList");
@@ -741,9 +753,20 @@
                  placeholder="${ev.type === 'timed' ? 'mm:ss.ss' : ev.unit || '0'}"
                  ${readOnly?"disabled":""} />`;
       }).join("");
-      const meta = (c.grade || c.actualAge)
-        ? `<span class="competitor-meta muted small">${c.grade ? "G" + escapeHtml(c.grade) : ""}${c.grade && c.actualAge ? " · " : ""}${c.actualAge ? "age " + escapeHtml(c.actualAge) : ""}</span>`
+      const metaParts = [];
+      if (c.grade) metaParts.push("G" + escapeHtml(c.grade));
+      if (c.actualAge) metaParts.push("age " + escapeHtml(c.actualAge));
+      if (c.house) metaParts.push("🏠 " + escapeHtml(c.house));
+      if (c.members && ev.format === "team") metaParts.push("👥 " + escapeHtml(c.members));
+      const meta = metaParts.length > 0
+        ? `<span class="competitor-meta muted small">${metaParts.join(" · ")}</span>`
         : "";
+      const isTimed = ev.type === "timed" && !readOnly;
+      const running = rowTimers.has(c.id);
+      const inlineTimer = isTimed ? `
+        <div class="row-timer" data-cid="${c.id}" ${running?"":"hidden"}><span class="row-timer-time">${running ? fmtTimer(performance.now()-rowTimers.get(c.id).startMs) : "00:00.00"}</span></div>
+        <button class="row-timer-btn ${running?"running":""}" data-cid="${c.id}" data-row-timer="1" title="${running?"Stop":"Start"} this runner">${running?"⏹":"▶"}</button>
+      ` : "";
       return `
         <div class="competitor-row" data-cid="${c.id}">
           <div class="competitor-name-block">
@@ -752,6 +775,7 @@
           </div>
           <div class="attempts">${attemptInputs}</div>
           <div class="row-actions">
+            ${inlineTimer}
             ${placeTag}
             ${!readOnly ? `<button class="icon-btn" data-edit-meta="${c.id}" title="Edit grade / age / heat">⚙︎</button>` : ""}
             ${!readOnly ? `<button class="icon-btn" data-del="${c.id}" title="Remove">🗑</button>` : ""}
@@ -832,6 +856,13 @@
         } catch (e) { showToast("Delete failed"); }
       });
     });
+    list.querySelectorAll("[data-row-timer]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const cid = btn.dataset.cid;
+        if (rowTimers.has(cid)) stopRowTimer(cid);
+        else                    startRowTimer(cid);
+      });
+    });
     list.querySelectorAll("[data-edit-meta]").forEach(btn => {
       btn.addEventListener("click", async () => {
         const ev2 = state.events.find(e => e.id === currentEventId);
@@ -889,6 +920,70 @@
     const n = parseFloat(text);
     return isNaN(n) ? null : n;
   }
+
+  // ---------- Multi-row timers (heat stopwatch) ----------
+  /** competitorId → { startMs, raf } */
+  const rowTimers = new Map();
+
+  function startRowTimer(competitorId) {
+    if (rowTimers.has(competitorId)) return;
+    const startMs = performance.now();
+    const tick = () => {
+      const display = document.querySelector(`.row-timer[data-cid="${competitorId}"] .row-timer-time`);
+      if (display) display.textContent = fmtTimer(performance.now() - startMs);
+      const t = rowTimers.get(competitorId);
+      if (t) t.raf = requestAnimationFrame(tick);
+    };
+    rowTimers.set(competitorId, { startMs, raf: requestAnimationFrame(tick) });
+    // Reflect button state + class without a full re-render (so other rows keep ticking)
+    const btn = document.querySelector(`.row-timer-btn[data-cid="${competitorId}"]`);
+    if (btn) { btn.classList.add("running"); btn.textContent = "⏹"; }
+  }
+
+  async function stopRowTimer(competitorId) {
+    const t = rowTimers.get(competitorId);
+    if (!t) return;
+    cancelAnimationFrame(t.raf);
+    rowTimers.delete(competitorId);
+    const elapsedMs = performance.now() - t.startMs;
+    const seconds = Math.round(elapsedMs / 10) / 100;
+    // Find next empty attempt slot for this competitor and write the time
+    const ev = state.events.find(e => e.id === currentEventId);
+    const c = ev?.competitors.find(x => x.id === competitorId);
+    if (!ev || !c) return;
+    const slot = (c.attempts||[]).findIndex(v => v == null || v === "");
+    const idx = slot >= 0 ? slot : (c.attempts||[]).length - 1;
+    if (idx < 0) return;
+    try {
+      const resp = await api.setAttempt(currentEventId, competitorId, idx, seconds);
+      if (resp?.competitor) Object.assign(c, resp.competitor);
+      await checkForRecordBreak(ev, c);
+      await checkForPBBreak(ev, c);
+      renderEventDetail();
+      drainCelebrationsAfterTimer();
+    } catch (e) { showToast("Save failed"); }
+  }
+
+  function startAllRowTimers() {
+    const ev = state.events.find(e => e.id === currentEventId);
+    if (!ev) return;
+    (ev.competitors||[]).forEach(c => {
+      if (rowTimers.has(c.id)) return;                     // already running
+      const hasEmpty = (c.attempts||[]).some(v => v == null || v === "");
+      if (!hasEmpty) return;
+      startRowTimer(c.id);
+    });
+  }
+  async function stopAllRowTimers() {
+    const ids = [...rowTimers.keys()];
+    for (const id of ids) await stopRowTimer(id);
+  }
+  function clearAllRowTimers() {
+    rowTimers.forEach(t => cancelAnimationFrame(t.raf));
+    rowTimers.clear();
+  }
+  /** True if any row timer is active. Used to gate celebrations. */
+  function anyTimerRunning() { return timerHandle != null || rowTimers.size > 0; }
 
   // ---------- Timer ----------
   function startTimer() {
@@ -959,6 +1054,29 @@
   async function addCompetitor() {
     const name = $("#newCompetitorName").value.trim();
     if (!name) { $("#newCompetitorName").focus(); return; }
+    const ev = state.events.find(e => e.id === currentEventId);
+    if (ev?.format === "team") {
+      // Optional: prompt for team members + house when adding a team
+      const members = prompt(`Members of ${name}? (comma-separated, optional)`, "");
+      if (members === null) return;
+      const house = (state.school?.houses||[]).length > 0
+        ? prompt(`House for ${name}? (${(state.school.houses||[]).join(", ")})`, "") : "";
+      if (house === null) return;
+      try {
+        const resp = await api.addCompetitor(currentEventId, name);
+        const created = resp?.competitor;
+        if (created) {
+          if (members.trim() || house?.trim()) {
+            const u = await api.updateCompetitor(currentEventId, created.id, { members: members.trim(), house: (house||"").trim() });
+            if (u?.competitor) Object.assign(created, u.competitor);
+          }
+          ev.competitors.push(created);
+        }
+        $("#newCompetitorName").value = "";
+        renderEventDetail();
+      } catch (e) { showToast("Couldn't add team"); }
+      return;
+    }
     try {
       const resp = await api.addCompetitor(currentEventId, name);
       const ev = state.events.find(e => e.id === currentEventId);
@@ -1113,6 +1231,8 @@
   function computeAllPersonTotals(events, tieMethod) {
     const acc = new Map(); // key = "gender|name_lower" → entry
     events.forEach(ev => {
+      // Team / relay events feed only the house standings, not individual totals.
+      if (ev.format === "team") return;
       const placements = computePlacements(ev, tieMethod);
       placements.forEach(p => {
         const c = (ev.competitors||[]).find(c => c.id === p.competitorId);
@@ -1251,6 +1371,7 @@
   function computeTotalsByCategory(events, tieMethod) {
     const totals = {};
     events.forEach(ev => {
+      if (ev.format === "team") return; // team events count for houses, not individuals
       const cat = `Age ${ev.age} ${ev.gender}`;
       const placements = computePlacements(ev, tieMethod);
       placements.forEach(p => {
@@ -2506,6 +2627,8 @@
     $("#btnTimerStart").addEventListener("click", startTimer);
     $("#btnTimerStop").addEventListener("click", stopTimer);
     $("#btnTimerReset").addEventListener("click", resetTimer);
+    $("#btnTimerStartAll").addEventListener("click", startAllRowTimers);
+    $("#btnTimerStopAll").addEventListener("click", stopAllRowTimers);
 
     $("#btnCloseModal").addEventListener("click", () => $("#eventModal").hidden = true);
     $("#btnCancelModal").addEventListener("click", () => $("#eventModal").hidden = true);

@@ -221,14 +221,20 @@
 
       <aside class="detail-side">
         <div class="detail-card" id="timerCard" hidden>
-          <h2>Stopwatch</h2>
+          <h2>Heat Stopwatch</h2>
           <div class="timer-display" id="timerDisplay">00:00.00</div>
           <div class="timer-buttons">
-            <button class="btn primary" id="btnTimerStart">Start</button>
-            <button class="btn" id="btnTimerStop" disabled>Stop</button>
+            <button class="btn primary" id="btnTimerStartAll">Start All</button>
+            <button class="btn" id="btnTimerStopAll">Stop All</button>
             <button class="btn ghost" id="btnTimerReset">Reset</button>
           </div>
-          <div class="timer-target muted">Tap a result cell, then Start. Stop saves the time there.</div>
+          <div class="timer-target muted">
+            <strong>Start All</strong> starts every runner with an empty attempt slot — each row gets its own clock. <strong>Stop All</strong> records times for everyone still running. Or tap each row's ▶ / ⏹ individually.
+          </div>
+          <div class="timer-buttons" style="margin-top:8px">
+            <button class="btn ghost" id="btnTimerStart" hidden>Single-Target Start</button>
+            <button class="btn ghost" id="btnTimerStop"  hidden>Single-Target Stop</button>
+          </div>
         </div>
 
         <div class="detail-card">
@@ -553,9 +559,18 @@
           </select>
         </div>
       </div>
-      <div class="form-row">
-        <label>Notes</label>
-        <input id="evNotes" placeholder="Optional" />
+      <div class="form-row split">
+        <div>
+          <label>Format</label>
+          <select id="evFormat">
+            <option value="individual">Individual competitors</option>
+            <option value="team">Team / Relay (points to houses only, not individuals)</option>
+          </select>
+        </div>
+        <div>
+          <label>Notes</label>
+          <input id="evNotes" placeholder="Optional" />
+        </div>
       </div>
       <div class="form-row">
         <label>Initial Competitors (one per line, optional)</label>
