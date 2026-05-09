@@ -2695,18 +2695,69 @@
     const placements = computePlacements(ev, state.school?.tieMethod || "average").filter(p => p.place != null).sort((a,b) => a.place - b.place);
     $("#announceEyebrow").textContent = `Age ${ev.age} ${ev.gender} · ${typeLabel(ev.type)}`;
     $("#announceTitle").textContent = ev.title;
+    // Top-of-card banner: if anyone in the top 4 broke a record, hit a
+    // standard, or set a PB, surface it loud so the announcer doesn't miss
+    // it while reading the names. Shown above the medal list.
+    const banner = $("#announceBanner");
+    if (banner) {
+      const top4 = placements.slice(0, 4);
+      const topRecord = top4.find(p => {
+        const c = (ev.competitors||[]).find(c => c.id === p.competitorId);
+        const best = c ? bestOf(c.attempts, ev.type) : null;
+        const rec = recordForEvent(ev);
+        return c && best != null && (rec == null || compareResults(best, rec.value, ev.type) < 0);
+      });
+      const topPB = top4.find(p => {
+        const c = (ev.competitors||[]).find(c => c.id === p.competitorId);
+        const best = c ? bestOf(c.attempts, ev.type) : null;
+        const pb = c ? pbForCompetitor(ev, c) : null;
+        return c && pb && best != null && compareResults(best, pb.value, ev.type) < 0;
+      });
+      const std = standardForEvent(ev);
+      const topStandard = std ? top4.find(p => {
+        const c = (ev.competitors||[]).find(c => c.id === p.competitorId);
+        const best = c ? bestOf(c.attempts, ev.type) : null;
+        const better = (a, b) => ev.type === "timed" ? a <= b : a >= b;
+        return c && best != null && (
+          (std.gold   != null && better(best, std.gold)) ||
+          (std.silver != null && better(best, std.silver)) ||
+          (std.bronze != null && better(best, std.bronze))
+        );
+      }) : null;
+      const callouts = [];
+      if (topRecord) {
+        const c = (ev.competitors||[]).find(c => c.id === topRecord.competitorId);
+        callouts.push(`<div class="announce-banner-row record">🎺 <strong>NEW SCHOOL RECORD!</strong> — ${escapeHtml(c?.name||"")}</div>`);
+      }
+      if (topPB) {
+        const c = (ev.competitors||[]).find(c => c.id === topPB.competitorId);
+        callouts.push(`<div class="announce-banner-row pb">🌟 <strong>PERSONAL BEST</strong> — ${escapeHtml(c?.name||"")}</div>`);
+      }
+      if (topStandard && !topRecord) {
+        callouts.push(`<div class="announce-banner-row std">🥇 <strong>Hit a standard!</strong> Highlight the medal placement.</div>`);
+      }
+      banner.innerHTML = callouts.join("");
+      banner.hidden = callouts.length === 0;
+    }
     const medals = ["🥇","🥈","🥉","🏅"];
     $("#announceResults").innerHTML = placements.slice(0, 4).map(p => {
       const c = (ev.competitors||[]).find(c => c.id === p.competitorId);
       const best = c ? bestOf(c.attempts, ev.type) : null;
       const placeIdx = Math.min(3, Math.floor(p.place)-1);
       const cls = ["gold","silver","bronze",""][placeIdx] || "";
-      return `<li class="${cls}">
+      // Compute milestones for this finisher so the announcer can build the
+      // colour commentary into the announcement: "...with a new SCHOOL RECORD!"
+      const milestones = c ? classifyResult(ev, c, best) : [];
+      const milestonesHtml = milestones.length
+        ? `<div class="announce-milestones">${milestones.join(" ")}</div>`
+        : "";
+      return `<li class="${cls}${milestones.length ? " has-milestone" : ""}">
         <div class="place-block">
           <div class="place-medal">${medals[placeIdx]||""}</div>
           <div>
             <div class="name" data-student-name="${escapeHtml(c?.name||"")}">${escapeHtml(c?.name||"")}</div>
             <div class="muted small">${p.tied?"Tied for ":""}${ordinal(p.place)} · ${p.points} pts</div>
+            ${milestonesHtml}
           </div>
         </div>
         <div class="result-val">${fmtResult(best, ev.type, ev.unit)}</div>

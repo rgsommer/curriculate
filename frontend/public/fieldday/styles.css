@@ -156,6 +156,32 @@ main { padding: 24px clamp(16px, 4vw, 40px); max-width: 1280px; margin: 0 auto; 
   background: #f4f0ff; color: #5b3eb1; padding: 1px 7px; border-radius: 999px;
   font-size: 10px; font-weight: 700; border: 1px solid #d9cffc;
 }
+/* Announcer milestone banner — shown at the top of the announce card when a
+   top finisher hit a record/PB/standard. Big, loud, hard to miss while at the mic. */
+.announce-banner {
+  margin: 12px 0 4px 0; display: flex; flex-direction: column; gap: 6px;
+}
+.announce-banner-row {
+  padding: 10px 14px; border-radius: 10px; font-size: 15px;
+  display: flex; align-items: center; gap: 8px;
+}
+.announce-banner-row.record {
+  background: linear-gradient(90deg, #fff7e0, #ffe4d4);
+  color: #8a4d1c; border: 2px solid #f0c468;
+  animation: pb-record-glow 1.6s ease-in-out infinite;
+}
+.announce-banner-row.pb {
+  background: #f4f0ff; color: #5b3eb1; border: 1px solid #d9cffc;
+}
+.announce-banner-row.std {
+  background: #eef4ff; color: #2956ff; border: 1px solid #c3d4ff;
+}
+/* Per-result milestone chips inside the medal list */
+.announce-milestones { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.announce-results li.has-milestone {
+  background: linear-gradient(180deg, #fffaf0, transparent);
+  border-radius: 8px; padding: 6px 8px;
+}
 .btn.ghost { background: transparent; }
 .btn.block { display:flex; width: 100%; margin-top: 8px; }
 .btn.big { padding: 12px 22px; font-size: 16px; }
