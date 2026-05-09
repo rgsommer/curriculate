@@ -2583,14 +2583,59 @@
 
   // ===========================================================
   // Workbook (.xlsx) import / download
+  //
+  // SheetJS (~600KB) is lazy-loaded the first time an admin asks for
+  // Excel functionality, so the initial page load stays light on bad
+  // Wi-Fi. The promise is cached, so subsequent calls are instant.
   // ===========================================================
-  function openWorkbookModal() {
-    if (typeof XLSX === "undefined") { showToast("Excel library not loaded — try reloading"); return; }
-    $("#workbookFile").value = "";
-    $("#workbookFileName").textContent = "No file chosen";
-    $("#workbookLog").innerHTML = "";
-    $("#workbookLog").hidden = true;
-    $("#workbookModal").hidden = false;
+  let _xlsxLoadPromise = null;
+  function loadSheetJS() {
+    if (typeof XLSX !== "undefined") return Promise.resolve(window.XLSX);
+    if (_xlsxLoadPromise) return _xlsxLoadPromise;
+    _xlsxLoadPromise = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      // CDN with a self-host fallback. Adjust URLs if you bundle locally.
+      s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+      s.async = true;
+      s.onload  = () => resolve(window.XLSX);
+      s.onerror = () => {
+        // Fallback: try same-origin copy at /fieldday/vendor/xlsx.full.min.js
+        const s2 = document.createElement("script");
+        s2.src = "/fieldday/vendor/xlsx.full.min.js";
+        s2.async = true;
+        s2.onload = () => resolve(window.XLSX);
+        s2.onerror = () => reject(new Error("Couldn't load Excel library"));
+        document.head.appendChild(s2);
+      };
+      document.head.appendChild(s);
+    });
+    return _xlsxLoadPromise;
+  }
+
+  /** Wraps a button in a "Loading…" state while SheetJS loads. */
+  async function withSheetJS(btnId, work) {
+    const btn = $("#" + btnId);
+    const orig = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = "Loading Excel…"; }
+    try {
+      await loadSheetJS();
+      await work();
+    } catch (e) {
+      showToast("Couldn't load Excel library — check your connection");
+      console.warn(e);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = orig; }
+    }
+  }
+
+  async function openWorkbookModal() {
+    await withSheetJS("btnImportWorkbook", async () => {
+      $("#workbookFile").value = "";
+      $("#workbookFileName").textContent = "No file chosen";
+      $("#workbookLog").innerHTML = "";
+      $("#workbookLog").hidden = true;
+      $("#workbookModal").hidden = false;
+    });
   }
 
   async function handleWorkbookFile(file) {
@@ -2598,6 +2643,8 @@
     $("#workbookFileName").textContent = file.name;
     const log = $("#workbookLog"); log.hidden = false; log.innerHTML = "";
     const append = (cls, msg) => { log.innerHTML += `<div class="${cls}">${msg}</div>`; log.scrollTop = log.scrollHeight; };
+    try { await loadSheetJS(); }
+    catch (e) { append("err", "✗ Couldn't load Excel library — check your connection"); return; }
     let buf;
     try { buf = await file.arrayBuffer(); }
     catch (e) { append("err", "✗ Couldn't read file"); return; }
@@ -2876,7 +2923,9 @@
 
   // ---- Workbook download (pre-populated) -----------------------------------
   function downloadWorkbook() {
-    if (typeof XLSX === "undefined") { showToast("Excel library not loaded"); return; }
+    return withSheetJS("btnDownloadWorkbook", () => _doDownloadWorkbook());
+  }
+  function _doDownloadWorkbook() {
     const school = state.school; if (!school) return;
     const wb = XLSX.utils.book_new();
 

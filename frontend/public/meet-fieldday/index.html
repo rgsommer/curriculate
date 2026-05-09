@@ -134,8 +134,8 @@
     </article>
     <article class="pillar">
       <div class="pillar-icon">📥</div>
-      <h3>Roster import in one CSV</h3>
-      <p>Download the template, fill it in from your school SIS, upload — every event and every competitor created in one shot. Supports DOB (auto-computes age on your cutoff date), grade, and per-kid heat assignments.</p>
+      <h3>One Excel workbook, the whole field day</h3>
+      <p>Download a pre-populated workbook with tabs for Roster, Events, Staff, Rules, Standards, Records, PBs, Houses, and Divisions. Fill it in from your school SIS, upload, done. Every entity in one file — no separate sheets to chase.</p>
     </article>
     <article class="pillar">
       <div class="pillar-icon">🎯</div>
@@ -171,6 +171,31 @@
       <div class="pillar-icon">📊</div>
       <h3>One-click Day Summary</h3>
       <p>End-of-day report on a single click: header, top 3 overall, top 3 by gender, top 3 by age band, house standings, current school records, and per-event top 4. Print it for the bulletin board, email it to parents — same content, both ways.</p>
+    </article>
+    <article class="pillar">
+      <div class="pillar-icon">🏛️</div>
+      <h3>Divisions, your way</h3>
+      <p>Junior / Intermediate / Senior — or whatever your school calls them — defined by age range. Drives staff assignments, division-specific rules, and the leader Assignments view.</p>
+    </article>
+    <article class="pillar">
+      <div class="pillar-icon">📜</div>
+      <h3>Rules per division</h3>
+      <p>Long Jump take-off line at 1m for Junior, standard for Intermediate. Shot put 2 kg for Junior, 3 kg for Intermediate. Set the base rules once, override per division, and leaders see the right rules for the kids in front of them.</p>
+    </article>
+    <article class="pillar">
+      <div class="pillar-icon">🧑‍🏫</div>
+      <h3>Staff per event &amp; division</h3>
+      <p>Mr. Smith leads Junior 50m. Mrs. Jones leads Intermediate Long Jump. Any role label works — Leader, Assistant, Scorer, Timekeeper. Assignments come straight from the workbook's Staff tab; the event detail shows who's running what.</p>
+    </article>
+    <article class="pillar">
+      <div class="pillar-icon">📋</div>
+      <h3>Leader Assignments view</h3>
+      <p>Leaders sign in, pick their name from the staff dropdown, and land on a personal Assignments view: each event they're staff on, grouped by division, with status pips — green for done, amber for in-progress, gray for pending. No clutter, no scrolling past events that aren't theirs.</p>
+    </article>
+    <article class="pillar">
+      <div class="pillar-icon">📡</div>
+      <h3>Fast on bad Wi-Fi</h3>
+      <p>The default page load is under 200 KB — no fonts, no analytics, no framework bloat. Heavy features (Excel import) lazy-load only when an admin actually clicks them. Built for a field next to a tree, not a fiber-lit office.</p>
     </article>
   </div>
 </section>
@@ -385,6 +410,22 @@
     <details>
       <summary>Can I get a printable end-of-day summary?</summary>
       <p>Yes — Admin → Day Summary opens a single sheet with every cut: top 3 overall, by gender, by age band, by house, plus current school records and every event's top 4. Click Print and you have a bulletin-board-ready report.</p>
+    </details>
+    <details>
+      <summary>How does the Excel workbook import work?</summary>
+      <p>Admin → <strong>Download Workbook</strong> gives you an .xlsx file pre-populated with your school's current state across nine tabs: Roster, Events, Staff, Rules, Standards, Records, PBs, Houses, Divisions. Edit any tab in Excel or Google Sheets, then Admin → <strong>Import / Update from Excel</strong> to upload the changes. Each tab has its own importer; you can leave tabs you don't need blank. The Roster tab is the wide format: one row per kid, one column per event, cell values are <code>Y</code> or a heat label.</p>
+    </details>
+    <details>
+      <summary>What about divisions — Junior, Intermediate, Senior?</summary>
+      <p>Define them once in Settings (name + min/max age). They drive (1) the Staff tab — leaders/assistants per event × division, (2) division-specific rule overrides — different take-off lines, different equipment, (3) the leader Assignments view — leaders see only their assigned events grouped by division with status colors.</p>
+    </details>
+    <details>
+      <summary>How do leaders find their events?</summary>
+      <p>Leader signs in with the school code, picks their name from a dropdown that's auto-populated from the Staff tab, and lands on an Assignments view. Each event they're staff on is its own card; each division they're assigned to has a status pip — ✓ green when done, ⏱ amber when partly done, · gray when nothing's been started yet. They tap a specific event to score.</p>
+    </details>
+    <details>
+      <summary>What about performance on outdoor / patchy Wi-Fi?</summary>
+      <p>Initial page load is under 200 KB — no analytics, no fonts, no framework runtime. The Excel import library (~600 KB) only loads the moment an admin clicks the Excel button, then caches for the rest of the day. Live polling for the announcer queue is 6 seconds and skips a beat gracefully on bad networks. The app is built to keep working when the Wi-Fi is fighting back.</p>
     </details>
     <details>
       <summary>How does the roster CSV import work?</summary>
