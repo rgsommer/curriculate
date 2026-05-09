@@ -149,7 +149,19 @@
       wrap.appendChild(piece);
     }
   }
-  function showRecordCelebration({ event, name, result, prev }) {
+  // Queue celebrations that arrive while a timer is running so the timing
+  // session isn't interrupted. Drained when stopTimer() / resetTimer() are called.
+  const pendingCelebrations = [];
+  function showRecordCelebration(payload) {
+    if (timerHandle) {
+      pendingCelebrations.push(payload);
+      // Tiny non-disruptive toast so the timer-er knows something happened.
+      showToast(`🎺 New record by ${payload.name} — celebration queued`);
+      return;
+    }
+    _renderCelebration(payload);
+  }
+  function _renderCelebration({ event, name, result, prev }) {
     $("#celebrationEvent").textContent = event;
     $("#celebrationName").textContent  = name;
     $("#celebrationResult").textContent = result;
@@ -161,6 +173,16 @@
   function dismissCelebration() {
     $("#celebration").hidden = true;
     $("#confetti").innerHTML = "";
+    // Drain any queued celebrations one at a time (waits for user to dismiss each).
+    if (pendingCelebrations.length > 0) {
+      const next = pendingCelebrations.shift();
+      setTimeout(() => _renderCelebration(next), 200);
+    }
+  }
+  function drainCelebrationsAfterTimer() {
+    if (pendingCelebrations.length === 0) return;
+    const next = pendingCelebrations.shift();
+    setTimeout(() => _renderCelebration(next), 300);
   }
 
   /**
@@ -576,6 +598,12 @@
     if (type === "weight") return "lbs";
     return "";
   }
+  /** Returns admin-set defaults for a library event title, or a heuristic fallback. */
+  function defaultsForTitle(title) {
+    const overrides = (state.school?.eventDefaults || {})[title];
+    if (overrides) return { type: overrides.type || "timed", attempts: overrides.attempts || 1, unit: overrides.unit || defaultUnitFor(overrides.type) };
+    return inferEventType(title);
+  }
 
   async function saveEventModal() {
     const titleSel = $("#evTitle").value;
@@ -789,6 +817,7 @@
           const c = ev2.competitors.find(x => x.id === inp.dataset.cid);
           if (c && resp?.competitor) Object.assign(c, resp.competitor);
           await checkForRecordBreak(ev2, c);
+          await checkForPBBreak(ev2, c);
           renderEventDetail();
         } catch (e) { showToast("Save failed"); }
       });
@@ -890,8 +919,11 @@
         const c = ev?.competitors.find(x => x.id === timerTarget.competitorId);
         if (c && resp?.competitor) Object.assign(c, resp.competitor);
         await checkForRecordBreak(ev, c);
+        await checkForPBBreak(ev, c);
         advanceTimerTarget();
         renderEventDetail();
+        // Now that timer's done for this run, drain any queued celebrations.
+        drainCelebrationsAfterTimer();
       } catch (e) { showToast("Save failed"); }
     } else {
       showToast("Tap a result cell first, then Start.");
@@ -903,6 +935,7 @@
     $("#timerDisplay").textContent = "00:00.00";
     $("#btnTimerStart").disabled = false;
     $("#btnTimerStop").disabled = true;
+    drainCelebrationsAfterTimer();
   }
   function advanceTimerTarget() {
     const ev = state.events.find(e => e.id === currentEventId);
@@ -1032,6 +1065,7 @@
     $("#kpiCompetitors").textContent = competitors.size;
 
     renderOverallStandings(events);
+    renderHouseStandings(events);
     renderRecordsBlock();
 
     const totals = computeTotalsByCategory(events, state.school?.tieMethod || "average");
@@ -1291,12 +1325,12 @@
    */
   function buildLabels() {
     const tie = state.school?.tieMethod || "average";
-    const mode = state.school?.scoringMode || "placement";
+    const scoring = state.school?.scoring || { placement: true, standard: false };
     const events = state.events.filter(e => e.status === "completed");
     const labels = [];
     events.forEach(ev => {
       const cat = `Age ${ev.age} ${ev.gender}`;
-      if (mode === "placement") {
+      if (scoring.placement) {
         const placements = computePlacements(ev, tie);
         placements.filter(p => p.place != null && p.place <= 4).forEach(p => {
           const c = (ev.competitors||[]).find(c => c.id === p.competitorId);
@@ -1307,28 +1341,97 @@
             placeClass: cls,
             name: c?.name || "",
             event: ev.title, cat,
-            res: fmtResult(bestOf(c?.attempts, ev.type), ev.type, ev.unit)
+            res: fmtResult(bestOf(c?.attempts, ev.type), ev.type, ev.unit) +
+                 (didBeatPB(c, ev) ? " · PB" : "")
           });
         });
-      } else {
-        // Standard mode
-        const std = findStandardForEvent(ev);
-        if (!std) return;
+      }
+      if (scoring.standard) {
         (ev.competitors||[]).forEach(c => {
           const best = bestOf(c.attempts, ev.type);
           if (best == null) return;
+          const std = findStandardForCompetitor(ev, c);
+          if (!std) return;
           const tier = tierForResult(best, std, ev.type);
           if (!tier) return;
           const placeNames = { gold:"Gold", silver:"Silver", bronze:"Bronze" };
           labels.push({
-            place: placeNames[tier], placeClass: tier,
+            place: placeNames[tier] + " Standard", placeClass: tier,
             name: c.name, event: ev.title, cat,
-            res: fmtResult(best, ev.type, ev.unit)
+            res: fmtResult(best, ev.type, ev.unit) + (didBeatPB(c, ev) ? " · PB" : "")
           });
         });
       }
     });
     return labels;
+  }
+
+  /**
+   * Resolves the relevant performance standard for a given (event, competitor).
+   * Uses the competitor's actualAge band when set, otherwise falls back to the
+   * event's age band — which means standards stay accurate to the kid's age
+   * even in grade-grouped events.
+   */
+  function findStandardForCompetitor(ev, c) {
+    const band = bandForAge((c?.actualAge) || ev.age);
+    const std = (state.school?.standards || []).filter(s =>
+      (s.title||"").toLowerCase() === (ev.title||"").toLowerCase() && s.gender === ev.gender);
+    return std.find(s => s.ageBand === band) || std[0] || null;
+  }
+
+  /** Adds-or-updates a school-level personal best for (name, event title, gender). */
+  async function savePersonalBest({ name, title, gender, value, type, unit }) {
+    if (!state.school) return;
+    if (!state.school.personalBests) state.school.personalBests = [];
+    const key = (s) => (s||"").trim().toLowerCase();
+    const existing = state.school.personalBests.find(p =>
+      key(p.name) === key(name) && key(p.title) === key(title) && p.gender === gender);
+    if (existing) {
+      const better = type === "timed" ? value < existing.value : value > existing.value;
+      if (!better) return existing;
+      Object.assign(existing, { value, dateSet: new Date().toISOString().slice(0,10), unit, type });
+    } else {
+      state.school.personalBests.push({
+        id: uid(),
+        name, title, gender, value, type, unit,
+        dateSet: new Date().toISOString().slice(0,10)
+      });
+    }
+    try { await api.updateSchool({ personalBests: state.school.personalBests }); } catch (e) {}
+    return existing;
+  }
+
+  /**
+   * If a competitor's best result on an event beats their personal best,
+   * (a) updates the PB, (b) shows a non-blocking toast (not the full horn —
+   * that's reserved for school records).
+   */
+  async function checkForPBBreak(ev, c) {
+    if (!ev || !c) return;
+    const best = bestOf(c.attempts, ev.type);
+    if (best == null) return;
+    const pbs = state.school?.personalBests || [];
+    const existing = pbs.find(p =>
+      (p.name||"").trim().toLowerCase() === (c.name||"").trim().toLowerCase() &&
+      (p.title||"").toLowerCase() === (ev.title||"").toLowerCase() &&
+      p.gender === ev.gender);
+    if (!existing) return; // no prior PB recorded — nothing to "beat"
+    const better = ev.type === "timed" ? best < existing.value : best > existing.value;
+    if (!better) return;
+    await savePersonalBest({ name: c.name, title: ev.title, gender: ev.gender, value: best, type: ev.type, unit: ev.unit });
+    showToast(`🌟 ${c.name} just beat their PB! (${fmtResult(existing.value, ev.type, ev.unit)} → ${fmtResult(best, ev.type, ev.unit)})`, 3500);
+  }
+
+  function didBeatPB(c, ev) {
+    if (!c) return false;
+    const pbs = state.school?.personalBests || [];
+    const pb = pbs.find(p =>
+      (p.name||"").trim().toLowerCase() === (c.name||"").trim().toLowerCase() &&
+      (p.title||"").toLowerCase() === (ev.title||"").toLowerCase());
+    if (!pb) return false;
+    const best = bestOf(c.attempts, ev.type);
+    if (best == null) return false;
+    return ev.type === "timed" ? best < pb.value : best > pb.value;
   }
 
   function findStandardForEvent(ev) {
@@ -1461,17 +1564,104 @@
     if (!school) return;
     if (!school.eventRules) school.eventRules = {};
     $$("input[name='tieMethod']").forEach(r => r.checked = (r.value === school.tieMethod));
-    $$("input[name='scoringMode']").forEach(r => r.checked = (r.value === (school.scoringMode||"placement")));
+    const scoring = school.scoring || {
+      placement: (school.scoringMode || "placement") !== "standard",
+      standard:  (school.scoringMode || "placement") === "standard"
+    };
+    $("#scoringPlacement").checked = !!scoring.placement;
+    $("#scoringStandard").checked  = !!scoring.standard;
     $("#ageCategories").value = (school.ageCategories||[]).join(", ");
     $("#ageBands").value = (school.ageBands||[]).join(", ");
     $("#ageCutoffDate").value = school.ageCutoffDate || "12-31";
     $("#eventLibrary").value = (school.eventLibrary||[]).join("\n");
-    $("#standardsCard").hidden = (school.scoringMode||"placement") !== "standard";
+    $("#standardsCard").hidden = !scoring.standard;
+    $("#houseList").value = (school.houses||[]).join(", ");
     renderSchoolCodeCard();
+    renderLibraryEditor();
     renderRulesEditor();
     renderRecordsEditor();
     renderStandardsEditor();
     renderArchives();
+  }
+
+  function renderLibraryEditor() {
+    const school = state.school; if (!school) return;
+    const lib = school.eventLibrary || [];
+    const defaults = school.eventDefaults || {};
+    const wrap = $("#eventLibraryEditor");
+    wrap.innerHTML = lib.map(title => {
+      const d = defaults[title] || {};
+      const inferred = inferEventType(title);
+      const type = d.type || inferred.type;
+      const attempts = d.attempts != null ? d.attempts : inferred.attempts;
+      const unit = d.unit != null ? d.unit : inferred.unit;
+      return `
+        <div class="library-row" data-title="${escapeHtml(title)}">
+          <input class="lib-title" data-f="title" value="${escapeHtml(title)}" />
+          <select data-f="type">
+            <option value="timed"    ${type==="timed"?"selected":""}>Timed</option>
+            <option value="distance" ${type==="distance"?"selected":""}>Distance</option>
+            <option value="weight"   ${type==="weight"?"selected":""}>Weight</option>
+          </select>
+          <input data-f="attempts" type="number" min="1" max="10" value="${attempts}" />
+          <input data-f="unit" value="${escapeHtml(unit)}" placeholder="unit" />
+          <button class="icon-btn" data-del-lib="${escapeHtml(title)}" title="Remove">🗑</button>
+        </div>`;
+    }).join("");
+    wrap.querySelectorAll("[data-del-lib]").forEach(btn => btn.addEventListener("click", () => {
+      const t = btn.dataset.delLib;
+      state.school.eventLibrary = (state.school.eventLibrary||[]).filter(x => x !== t);
+      renderLibraryEditor();
+    }));
+  }
+  async function saveHouses() {
+    const list = $("#houseList").value.split(",").map(s => s.trim()).filter(Boolean);
+    try {
+      const resp = await api.updateSchool({ houses: list });
+      if (resp?.school) state.school = resp.school;
+      showToast("Houses saved");
+    } catch (e) { showToast("Save failed"); }
+  }
+
+  function renderHouseStandings(events) {
+    const houses = state.school?.houses || [];
+    const wrap = $("#houseStandings");
+    if (houses.length === 0) {
+      wrap.innerHTML = `<div class="muted small">Set your school's houses in Settings to enable house scoring.</div>`;
+      return;
+    }
+    const tie = state.school?.tieMethod || "average";
+    const totals = new Map(houses.map(h => [h, { points: 0, kids: new Set() }]));
+    events.forEach(ev => {
+      const placements = computePlacements(ev, tie);
+      placements.forEach(p => {
+        const c = (ev.competitors||[]).find(c => c.id === p.competitorId);
+        if (!c?.house || !totals.has(c.house)) return;
+        const entry = totals.get(c.house);
+        entry.points += (p.points || 0);
+        if (c.name) entry.kids.add(c.name.trim().toLowerCase());
+      });
+    });
+    const ranked = [...totals.entries()].map(([name, e]) => ({ name, points: Math.round(e.points*100)/100, kids: e.kids.size }))
+      .sort((a,b) => b.points - a.points);
+    const top = ranked.length > 0 ? ranked[0].points : 0;
+    wrap.innerHTML = ranked.map(h => `
+      <div class="house-card ${h.points === top && top > 0 ? "winner" : ""}">
+        ${h.points === top && top > 0 ? `<div class="house-crown">👑</div>` : ""}
+        <div class="house-name">${escapeHtml(h.name)}</div>
+        <div class="house-points">${h.points}</div>
+        <div class="house-meta">${h.kids} competitor${h.kids===1?"":"s"}</div>
+      </div>`).join("");
+  }
+
+  async function addLibTitle() {
+    const t = $("#newLibTitle").value.trim();
+    if (!t) return;
+    if (!state.school.eventLibrary) state.school.eventLibrary = [];
+    if (state.school.eventLibrary.includes(t)) { showToast("Already in library"); return; }
+    state.school.eventLibrary.push(t);
+    $("#newLibTitle").value = "";
+    renderLibraryEditor();
   }
 
   function renderSchoolCodeCard() {
@@ -1549,13 +1739,23 @@
       showToast("Tie method updated");
     } catch (e) { showToast("Save failed"); }
   }
-  async function saveScoringMode(v) {
+  async function saveScoring() {
+    const placement = $("#scoringPlacement").checked;
+    const standard  = $("#scoringStandard").checked;
+    if (!placement && !standard) {
+      showToast("Pick at least one scoring mode");
+      // revert
+      const cur = state.school?.scoring || { placement: true, standard: false };
+      $("#scoringPlacement").checked = !!cur.placement;
+      $("#scoringStandard").checked  = !!cur.standard;
+      return;
+    }
     try {
-      const resp = await api.updateSchool({ scoringMode: v });
+      const resp = await api.updateSchool({ scoring: { placement, standard } });
       if (resp?.school) state.school = resp.school;
-      $("#standardsCard").hidden = v !== "standard";
+      $("#standardsCard").hidden = !standard;
       renderStandardsEditor();
-      showToast("Scoring mode updated");
+      showToast("Scoring updated");
     } catch (e) { showToast("Save failed"); }
   }
   async function saveAges() {
@@ -1755,10 +1955,24 @@
     } catch (e) { showToast("Re-seed failed"); }
   }
   async function saveLibrary() {
-    const list = $("#eventLibrary").value.split("\n").map(s => s.trim()).filter(Boolean);
+    const rows = $$("#eventLibraryEditor .library-row");
+    const list = [];
+    const defaults = {};
+    rows.forEach(row => {
+      const fields = {};
+      row.querySelectorAll("[data-f]").forEach(f => fields[f.dataset.f] = f.value);
+      const title = (fields.title || "").trim();
+      if (!title) return;
+      list.push(title);
+      defaults[title] = {
+        type: fields.type || "timed",
+        attempts: Math.max(1, Math.min(10, parseInt(fields.attempts, 10) || 1)),
+        unit: (fields.unit || "").trim()
+      };
+    });
     if (list.length === 0) { showToast("Need at least one event title"); return; }
     try {
-      const resp = await api.updateSchool({ eventLibrary: list });
+      const resp = await api.updateSchool({ eventLibrary: list, eventDefaults: defaults });
       if (resp?.school) state.school = resp.school;
       showToast("Library saved");
     } catch (e) { showToast("Save failed"); }
@@ -1882,6 +2096,119 @@
     showToast("Signed out");
   }
 
+  // ---------- Day Summary ----------
+  function buildDaySummary() {
+    const school = state.school;
+    const events = state.events;
+    const tie = school?.tieMethod || "average";
+    const all = computeAllPersonTotals(events, tie);
+
+    const podium = (rows, n=3) => rows.length === 0
+      ? `<tr><td colspan="2" class="muted">—</td></tr>`
+      : rows.slice(0, n).map((r, i) => `
+          <tr><td>${["🥇","🥈","🥉"][i]||""} ${escapeHtml(r.name)}</td><td class="pts">${r.points}</td></tr>`).join("");
+
+    let html = `
+      <div class="summary-section">
+        <h3>${escapeHtml(school?.name || "Field Day")} — ${new Date().toLocaleDateString()}</h3>
+        <p class="muted small">${events.filter(e=>e.status==="completed").length} of ${events.length} events completed.</p>
+      </div>
+
+      <div class="summary-section">
+        <h3>Top 3 Overall</h3>
+        <table><tbody>${podium(all)}</tbody></table>
+      </div>
+
+      <div class="summary-section">
+        <h3>Top 3 by Gender</h3>
+        <table><tbody>
+          ${["Girls","Boys","Mixed"].map(g => {
+            const r = all.filter(x => x.gender === g);
+            if (r.length === 0) return "";
+            return `<tr><td colspan="2"><strong>${g}</strong></td></tr>${podium(r)}`;
+          }).join("")}
+        </tbody></table>
+      </div>
+
+      <div class="summary-section">
+        <h3>Top 3 by Age Band</h3>
+        <table><tbody>
+          ${(school?.ageBands||[]).map(band => {
+            const ages = parseBand(band);
+            const r = all.filter(x => [...x.ages].some(a => ageInBand(a, ages)));
+            if (r.length === 0) return "";
+            return `<tr><td colspan="2"><strong>${escapeHtml(band)}</strong></td></tr>${podium(r)}`;
+          }).join("")}
+        </tbody></table>
+      </div>`;
+
+    if ((school?.houses||[]).length > 0) {
+      const houseTotals = new Map((school.houses||[]).map(h => [h, 0]));
+      events.forEach(ev => {
+        const placements = computePlacements(ev, tie);
+        placements.forEach(p => {
+          const c = (ev.competitors||[]).find(c => c.id === p.competitorId);
+          if (!c?.house || !houseTotals.has(c.house)) return;
+          houseTotals.set(c.house, houseTotals.get(c.house) + (p.points||0));
+        });
+      });
+      const ranked = [...houseTotals.entries()].sort((a,b) => b[1] - a[1]);
+      html += `
+        <div class="summary-section">
+          <h3>House Standings</h3>
+          <table><tbody>
+            ${ranked.map(([name, pts], i) => `
+              <tr><td>${i===0?"👑 ":""}${escapeHtml(name)}</td><td class="pts">${Math.round(pts*100)/100}</td></tr>`).join("")}
+          </tbody></table>
+        </div>`;
+    }
+
+    // Records
+    const records = school?.records || [];
+    if (records.length > 0) {
+      html += `
+        <div class="summary-section">
+          <h3>School Records (current)</h3>
+          <table><thead><tr><th>Event</th><th>Age/Gender</th><th>Holder</th><th>Result</th><th>Set</th></tr></thead><tbody>
+            ${[...records].sort((a,b)=>(b.dateSet||"").localeCompare(a.dateSet||"")).map(r => `
+              <tr>
+                <td>${escapeHtml(r.title||"")}</td>
+                <td>${escapeHtml(r.age||"")} ${escapeHtml(r.gender||"")}</td>
+                <td>${escapeHtml(r.holderName||"")}</td>
+                <td>${fmtResult(r.value, r.type, r.unit)}</td>
+                <td>${escapeHtml(r.dateSet||"")}</td>
+              </tr>`).join("")}
+          </tbody></table>
+        </div>`;
+    }
+
+    // Per-event placements
+    html += `
+      <div class="summary-section">
+        <h3>Event Results</h3>
+        ${events.filter(e => e.status==="completed").sort((a,b) =>
+          (a.age||"").localeCompare(b.age||"") || (a.gender||"").localeCompare(b.gender||"") || (a.title||"").localeCompare(b.title||""))
+          .map(ev => {
+            const placements = computePlacements(ev, tie).filter(p => p.place != null).sort((a,b) => a.place - b.place);
+            if (placements.length === 0) return "";
+            return `
+              <div style="margin-bottom:12px">
+                <div style="font-weight:700">${escapeHtml(ev.title)} — Age ${escapeHtml(ev.age)} ${escapeHtml(ev.gender)}</div>
+                <table><tbody>${placements.slice(0,4).map(p => {
+                  const c = (ev.competitors||[]).find(c => c.id === p.competitorId);
+                  return `<tr><td>${ordinal(p.place)} ${escapeHtml(c?.name||"")}</td><td class="pts">${fmtResult(bestOf(c?.attempts, ev.type), ev.type, ev.unit)}</td></tr>`;
+                }).join("")}</tbody></table>
+              </div>`;
+          }).join("")}
+      </div>`;
+
+    return html;
+  }
+  function openDaySummary() {
+    $("#summaryBody").innerHTML = buildDaySummary();
+    $("#summaryModal").hidden = false;
+  }
+
   // ---------- Roster CSV Import ----------
   /** Minimal RFC-4180-ish CSV parser. Returns an array of arrays of strings. */
   function parseCSV(text) {
@@ -1968,6 +2295,8 @@
     const iActual = colIdx("actualage", ["actual age","real age","home age"]);
     const iDob    = colIdx("dob", ["date of birth","birthdate","birthday"]);
     const iHeat   = colIdx("heat", ["heat number","heat #"]);
+    const iHouse  = colIdx("house", ["team","house team"]);
+    const iPB     = colIdx("personalbest", ["personal best","pb"]);
 
     const required = { Event: iEvent, Age: iAge, Gender: iGender, Name: iName };
     const missing = Object.entries(required).filter(([_, idx]) => idx < 0).map(([k]) => k);
@@ -1986,6 +2315,8 @@
       let actualAge = iActual >= 0 ? (r[iActual]||"").trim() : "";
       const dob   = iDob    >= 0 ? (r[iDob]  ||"").trim() : "";
       const heat  = iHeat   >= 0 ? (r[iHeat] ||"").trim() : "";
+      const house = iHouse  >= 0 ? (r[iHouse]||"").trim() : "";
+      const pb    = iPB     >= 0 ? parseFloat(r[iPB]) : NaN;
       // If DOB is provided and no explicit ActualAge, compute from DOB + cutoff
       if (dob && !actualAge) {
         const computed = computeAge(dob, state.school?.ageCutoffDate);
@@ -2003,7 +2334,7 @@
       const genderTitled = gender[0].toUpperCase() + gender.slice(1).toLowerCase();
       const key = `${eventTitle}||${age}||${genderTitled}`;
       if (!groups.has(key)) groups.set(key, { eventTitle, age, gender: genderTitled, competitors: [] });
-      groups.get(key).competitors.push({ name, grade, actualAge, dob, heat, lineNo });
+      groups.get(key).competitors.push({ name, grade, actualAge, dob, heat, house, pb, eventTitle, gender: genderTitled, age, lineNo });
     });
 
     // Match against existing events; flag those that need creating
@@ -2090,12 +2421,13 @@
         try {
           const resp = await api.addCompetitor(event.id, c.name);
           const created = resp?.competitor;
-          if (created && (c.grade || c.actualAge || c.dob || c.heat)) {
+          if (created && (c.grade || c.actualAge || c.dob || c.heat || c.house)) {
             const patch = {};
             if (c.grade)     patch.grade     = c.grade;
             if (c.actualAge) patch.actualAge = c.actualAge;
             if (c.dob)       patch.dob       = c.dob;
             if (c.heat)      patch.heat      = c.heat;
+            if (c.house)     patch.house     = c.house;
             const u = await api.updateCompetitor(event.id, created.id, patch);
             const ev = state.events.find(e => e.id === event.id);
             const local = ev?.competitors.find(x => x.id === created.id);
@@ -2103,6 +2435,10 @@
           } else if (created) {
             const ev = state.events.find(e => e.id === event.id);
             if (ev) ev.competitors.push(created);
+          }
+          // If a PB was provided, store/update at school level
+          if (!isNaN(c.pb) && c.pb != null) {
+            try { await savePersonalBest({ name: c.name, title: g.eventTitle, gender: g.gender, value: c.pb, type: event.type, unit: event.unit }); } catch (e) {}
           }
           addedCompetitors++;
         } catch (e) {
@@ -2184,12 +2520,23 @@
       const oldDefaults = ["seconds","m","ft","lbs","kg",""];
       if (oldDefaults.includes(cur)) $("#evUnit").value = defaultUnitFor($("#evType").value);
     });
+    // When admin picks an event title, pre-fill type/attempts/unit from school's library defaults
+    $("#evTitle").addEventListener("change", () => {
+      if (editingEventId) return;
+      const d = defaultsForTitle($("#evTitle").value);
+      $("#evType").value = d.type;
+      $("#evAttempts").value = d.attempts;
+      $("#evUnit").value = d.unit;
+    });
 
     $("#btnExportJson").addEventListener("click", exportData);
 
     // Roster CSV import
     $("#btnImportRoster").addEventListener("click", openImportModal);
     $("#btnImportTemplate").addEventListener("click", downloadImportTemplate);
+    $("#btnDaySummary").addEventListener("click", openDaySummary);
+    $("#btnSummaryClose").addEventListener("click", () => $("#summaryModal").hidden = true);
+    $("#btnPrintSummary").addEventListener("click", () => window.print());
     $("#btnImportClose").addEventListener("click", () => $("#importModal").hidden = true);
     $("#btnImportCancel").addEventListener("click", () => $("#importModal").hidden = true);
     $("#btnImportPreview").addEventListener("click", previewImport);
@@ -2215,9 +2562,12 @@
     $("#btnAnnounceRefresh").addEventListener("click", refreshAnnounce);
 
     $$("input[name='tieMethod']").forEach(r => r.addEventListener("change", () => saveTieMethod(r.value)));
-    $$("input[name='scoringMode']").forEach(r => r.addEventListener("change", () => saveScoringMode(r.value)));
+    $("#scoringPlacement").addEventListener("change", saveScoring);
+    $("#scoringStandard").addEventListener("change", saveScoring);
     $("#btnSaveAges").addEventListener("click", saveAges);
+    $("#btnSaveHouses").addEventListener("click", saveHouses);
     $("#btnSaveLibrary").addEventListener("click", saveLibrary);
+    $("#btnAddLibTitle").addEventListener("click", addLibTitle);
     $("#btnSaveRules").addEventListener("click", saveRules);
 
     // School code & admins

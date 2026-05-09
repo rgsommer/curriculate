@@ -253,6 +253,7 @@
       <h1>Admin Overview</h1>
       <div class="view-header-actions">
         <button class="btn primary" id="btnImportRoster">Import Roster (CSV)</button>
+        <button class="btn" id="btnDaySummary">Day Summary</button>
         <button class="btn ghost" id="btnExportJson" title="Download a JSON backup of this season">Backup</button>
       </div>
     </div>
@@ -266,6 +267,9 @@
 
     <h2 class="section-title">Overall Standings</h2>
     <div class="overall-standings" id="overallStandings"></div>
+
+    <h2 class="section-title">House Standings</h2>
+    <div class="house-standings" id="houseStandings"></div>
 
     <h2 class="section-title">School Records</h2>
     <div class="records-block" id="recordsBlock"></div>
@@ -327,19 +331,20 @@
     <div class="view-header"><h1>Settings</h1></div>
 
     <div class="detail-card">
-      <h2>Scoring Mode</h2>
+      <h2>Scoring</h2>
+      <p class="muted small">Turn on either or both. Each kid earns ribbons under whichever scheme they qualify for.</p>
       <label class="radio">
-        <input type="radio" name="scoringMode" value="placement" />
+        <input type="checkbox" id="scoringPlacement" />
         <div>
           <strong>Strict placement (1st / 2nd / 3rd)</strong>
           <div class="muted small">Awards points for ranking within each event. The classic field-day model.</div>
         </div>
       </label>
       <label class="radio">
-        <input type="radio" name="scoringMode" value="standard" />
+        <input type="checkbox" id="scoringStandard" />
         <div>
           <strong>Compete against the standard</strong>
-          <div class="muted small">Each event has 1st / 2nd / 3rd standard targets per age band. Anyone who beats the 3rd standard gets a ribbon.</div>
+          <div class="muted small">Each event has 1st / 2nd / 3rd standard targets per age band. Anyone who beats the 3rd standard earns a ribbon.</div>
         </div>
       </label>
     </div>
@@ -363,6 +368,13 @@
     </div>
 
     <div class="detail-card">
+      <h2>Houses</h2>
+      <p class="muted small">Optional. If your school competes by houses (Alpha / Beta / etc.), list them here. The Admin tab adds a House Standings panel and the CSV import accepts a <code>House</code> column.</p>
+      <input id="houseList" placeholder="Alpha, Beta, Gamma, Delta" />
+      <button class="btn" id="btnSaveHouses">Save Houses</button>
+    </div>
+
+    <div class="detail-card">
       <h2>Age Categories &amp; Bands</h2>
       <p class="muted small">Categories are individual ages used to tag events. Bands are ranges used for standards and overall standings.</p>
       <label class="settings-label">Categories (comma-separated)</label>
@@ -378,10 +390,15 @@
     </div>
 
     <div class="detail-card">
-      <h2>Event Title Library</h2>
-      <p class="muted small">Edit the list of typical events shown in the New Event dropdown.</p>
-      <textarea id="eventLibrary" rows="10"></textarea>
-      <button class="btn" id="btnSaveLibrary">Save Library</button>
+      <h2>Event Library &amp; Defaults</h2>
+      <p class="muted small">Each event's default type, number of attempts, and unit. New events created from a title pre-fill from these defaults.</p>
+      <div id="eventLibraryEditor" class="library-editor"></div>
+      <div class="settings-row">
+        <input id="newLibTitle" placeholder="Add another event title (e.g. Discus)" />
+        <button class="btn" id="btnAddLibTitle">+ Add</button>
+        <button class="btn primary" id="btnSaveLibrary">Save Library</button>
+      </div>
+      <textarea id="eventLibrary" hidden></textarea>
     </div>
 
     <div class="detail-card">
@@ -604,6 +621,20 @@ Shot Put,12,Boys,Noah Reyes,6,2013-10-04,A</pre>
 </div>
 
 <div class="toast" id="toast" hidden></div>
+
+<!-- ============== DAY SUMMARY MODAL ============== -->
+<div class="modal" id="summaryModal" hidden>
+  <div class="modal-card summary-card">
+    <header class="modal-header">
+      <h2>Day Summary</h2>
+      <div style="display:flex;gap:6px">
+        <button class="btn ghost" id="btnPrintSummary">Print</button>
+        <button class="icon-btn" id="btnSummaryClose">✕</button>
+      </div>
+    </header>
+    <div class="modal-body" id="summaryBody"></div>
+  </div>
+</div>
 
 <!-- ============== RECORD-BREAK CELEBRATION OVERLAY ============== -->
 <div class="celebration" id="celebration" hidden aria-live="polite">

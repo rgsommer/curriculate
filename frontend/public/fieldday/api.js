@@ -541,8 +541,12 @@
       eventLibrary,
       eventRules: { ...DEFAULT_EVENT_RULES },
       tieMethod: "average",
-      scoringMode: "placement",
+      scoring: { placement: true, standard: false },
+      scoringMode: "placement", // legacy compatibility
       ageCutoffDate: "12-31",
+      houses: [],
+      personalBests: [],
+      eventDefaults: { /* keyed by title: {type, attempts, unit} */ },
       records: [],
       standards: seedStandardsFor(ageBands, eventLibrary),
       archives: [],
