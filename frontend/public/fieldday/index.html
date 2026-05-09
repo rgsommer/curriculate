@@ -143,6 +143,8 @@
     <button class="tab" data-tab="announce" data-admin="1">Announce <span class="badge" id="announceBadge" hidden>0</span></button>
     <button class="tab" data-tab="settings" data-admin="1">Settings</button>
     <a class="tab tab-link" href="/meet-fieldday/" target="_blank" rel="noopener">About ↗</a>
+    <button class="tab tab-link" id="btnReferTopbar">Recommend ✉︎</button>
+    <button class="tab tab-link" id="btnReportTopbar" title="Report a problem or suggestion">Report 🐞</button>
   </nav>
   <div class="user-chip" id="userChip">
     <div class="user-info">
@@ -519,6 +521,12 @@
       <div class="archive-list" id="archiveList"></div>
     </div>
 
+    <div class="detail-card" style="background:linear-gradient(180deg,#e7eeff,transparent);border-color:#c5d4ff">
+      <h2 style="color:var(--primary)">Liked Field Day?</h2>
+      <p class="muted small">Curriculate is the grading platform that powers Field Day. AI-assisted feedback, batch grading, parent reports — built for teachers.</p>
+      <a class="btn primary" href="https://www.curriculate.net" target="_blank" rel="noopener">See Curriculate →</a>
+    </div>
+
     <div class="detail-card danger-card">
       <h2>Sign Out</h2>
       <p class="muted small">Sign out of this device. Your school's data stays in Curriculate.</p>
@@ -594,6 +602,11 @@
         </div>
       </div>
       <div class="form-row">
+        <label>Wind reading (m/s, optional)</label>
+        <input id="evWind" type="number" step="0.1" placeholder="e.g. 1.4" />
+        <p class="muted small">For sprints / horizontal jumps. Above 2.0 m/s is wind-aided — records broken under this wind will be flagged.</p>
+      </div>
+      <div class="form-row">
         <label>Initial Competitors (one per line, optional)</label>
         <textarea id="evCompetitors" rows="4" placeholder="Alex Chen&#10;Jordan Smith"></textarea>
       </div>
@@ -601,6 +614,87 @@
     <footer class="modal-footer">
       <button class="btn ghost" id="btnCancelModal">Cancel</button>
       <button class="btn primary" id="btnSaveModal">Save Event</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ REPORT A PROBLEM / SUGGESTION ============ -->
+<div class="modal" id="reportModal" hidden>
+  <div class="modal-card">
+    <header class="modal-header">
+      <h2>Report a problem or suggest a feature</h2>
+      <button class="icon-btn" id="btnReportClose">✕</button>
+    </header>
+    <div class="modal-body">
+      <p class="muted small">Sent directly to <strong>admin@curriculate.net</strong>. We read every one. If something is broken on field day, this is the fastest path to a fix.</p>
+      <div class="form-row split">
+        <label class="check"><input type="radio" name="reportKind" value="problem" checked /> 🐞 Problem</label>
+        <label class="check"><input type="radio" name="reportKind" value="suggestion" /> 💡 Suggestion</label>
+      </div>
+      <div class="form-row">
+        <label>What happened? / What would help?</label>
+        <textarea id="reportMessage" rows="6" placeholder="As specific as you can. Include the event title, what you tapped, what you expected, what happened instead." style="border:1px solid var(--line);padding:8px 10px;border-radius:var(--radius-sm);font-family:inherit;width:100%"></textarea>
+      </div>
+      <div class="form-row split">
+        <div>
+          <label>Your name (optional)</label>
+          <input id="reportName" placeholder="Coach Smith" />
+        </div>
+        <div>
+          <label>Your email (optional, for follow-up)</label>
+          <input id="reportEmail" type="email" placeholder="you@school.org" />
+        </div>
+      </div>
+      <p class="muted small">We'll automatically attach: which page you were on, your school code, and your browser. No screenshots, no clipboard.</p>
+    </div>
+    <footer class="modal-footer">
+      <button class="btn ghost" id="btnReportCancel">Cancel</button>
+      <button class="btn primary" id="btnReportSend">Send</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ REFER A SCHOOL MODAL ============ -->
+<div class="modal" id="referModal" hidden>
+  <div class="modal-card">
+    <header class="modal-header">
+      <h2>Recommend Field Day to another teacher</h2>
+      <button class="icon-btn" id="btnReferClose">✕</button>
+    </header>
+    <div class="modal-body">
+      <p class="muted small">We'll send them an email from <strong>Curriculate</strong> describing the products you choose, with links. No mailing list, no follow-ups.</p>
+      <div class="form-row">
+        <label>Recommend</label>
+        <label class="check"><input type="checkbox" name="referProducts" value="curriculate" /> <strong>Curriculate</strong> — the platform overall</label>
+        <label class="check"><input type="checkbox" name="referProducts" value="grading" /> <strong>Curriculate Grading</strong> — AI-assisted grading for teachers</label>
+        <label class="check"><input type="checkbox" name="referProducts" value="fieldday" checked /> <strong>Curriculate Field Day</strong> — the field day app</label>
+      </div>
+      <div class="form-row">
+        <label>Their name</label>
+        <input id="referTeacherName" placeholder="Jane Doe" />
+      </div>
+      <div class="form-row">
+        <label>Their email</label>
+        <input id="referTeacherEmail" type="email" placeholder="jane@otherschool.org" />
+      </div>
+      <div class="form-row">
+        <label>Their school (optional)</label>
+        <input id="referSchoolName" placeholder="e.g. Oakwood Primary" />
+      </div>
+      <div class="form-row split">
+        <div>
+          <label>Your name</label>
+          <input id="referSenderName" placeholder="Your name" />
+        </div>
+        <div>
+          <label>Your school (optional)</label>
+          <input id="referSenderSchool" placeholder="e.g. Maple Elementary" />
+        </div>
+      </div>
+    </div>
+    <footer class="modal-footer">
+      <button class="btn ghost" id="btnReferCancel">Cancel</button>
+      <button class="btn primary" id="btnReferSend">Send Recommendation</button>
     </footer>
   </div>
 </div>
@@ -634,6 +728,24 @@
         </table>
         <p class="muted small">Click <strong>Download Workbook</strong> on the Admin tab for a pre-populated starting file with your school's current state.</p>
       </details>
+
+      <div class="settings-row" style="background:var(--panel-2);border:1px solid var(--line);padding:12px;border-radius:var(--radius-sm);flex-direction:column;align-items:flex-start;gap:8px">
+        <strong style="font-size:14px">Re-import behaviour</strong>
+        <label class="check">
+          <input type="radio" name="wbMode" value="merge" checked />
+          <div>
+            <strong>Merge</strong>
+            <div class="muted small">Add new kids/events; keep what's already there. Duplicate kids (same name in same event) are skipped. Recommended for follow-up uploads after the initial import.</div>
+          </div>
+        </label>
+        <label class="check">
+          <input type="radio" name="wbMode" value="replace" />
+          <div>
+            <strong>Replace</strong>
+            <div class="muted small">Wipe all current events and competitors first, then import. Settings (rules, standards, houses, divisions) are still merged. Use only when you're sure.</div>
+          </div>
+        </label>
+      </div>
 
       <div class="settings-row">
         <label class="btn primary file-btn">
@@ -696,6 +808,11 @@ Sofia Martinez,50m Sprint,9,Girls,2017-11-02,4,Beta,1,9.40,</pre>
           <input type="file" id="importFile" accept=".csv,text/csv" hidden />
         </label>
         <span class="muted small" id="importFileName">No file chosen</span>
+      </div>
+      <div class="settings-row" id="csvImportMode" style="margin-top:8px">
+        <strong style="font-size:13px">If a kid is already in this event:</strong>
+        <label class="check"><input type="radio" name="csvDedup" value="skip" checked /> Skip (don't add a duplicate)</label>
+        <label class="check"><input type="radio" name="csvDedup" value="add" /> Add anyway</label>
       </div>
 
       <textarea id="importPaste" rows="3" placeholder="…or paste CSV text here" style="width:100%;border:1px solid var(--line);padding:8px 10px;border-radius:var(--radius-sm);font-family:monospace;margin-top:10px"></textarea>

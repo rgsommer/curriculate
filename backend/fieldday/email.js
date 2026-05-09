@@ -81,4 +81,124 @@ async function sendInviteEmail(toEmail, schoolName, schoolCode, inviterEmail) {
   });
 }
 
-module.exports = { sendPasskeyEmail, sendCodeChangeEmail, sendInviteEmail, setTransport };
+// Product blocks shared by both text + HTML email rendering.
+const PRODUCT_INFO = {
+  curriculate: {
+    title: "Curriculate",
+    url: "https://www.curriculate.net",
+    short: "the platform that powers grading workflows + Field Day for teachers",
+    bullets: [
+      "AI-assisted feedback on student work",
+      "Batch grading with consistent rubrics",
+      "Parent-ready reports without the spreadsheet wrangling",
+      "Built by and for classroom teachers"
+    ],
+    cta: "Visit Curriculate"
+  },
+  grading: {
+    title: "Curriculate Grading",
+    url: "https://www.curriculate.net/grading",
+    short: "AI-assisted grading that gives teachers their evenings back",
+    bullets: [
+      "Upload student work, get rubric-aligned feedback drafts in seconds",
+      "Reviewer remains the teacher — AI is a starting point, not a replacement",
+      "Tracks grading usage per session for transparency",
+      "Bulk export and parent-ready report generation"
+    ],
+    cta: "See Grading"
+  },
+  fieldday: {
+    title: "Curriculate Field Day",
+    url: "https://www.curriculate.net/meet-fieldday",
+    short: "the free school field day app",
+    bullets: [
+      "Times every race to the hundredth with a multi-runner stopwatch",
+      "Scores by placement, by standards, or both at once",
+      "Tracks school records & personal bests with a horn fanfare on each new record",
+      "Handles houses, divisions, heats, and relay events",
+      "Imports your roster from one Excel workbook; prints Avery 1\"x1\" ribbon labels"
+    ],
+    cta: "Take a look"
+  }
+};
+
+function pickProducts(products) {
+  // Always preserve the order: curriculate, grading, fieldday.
+  const order = ["curriculate", "grading", "fieldday"];
+  const set = new Set((Array.isArray(products) ? products : []).map(p => String(p).toLowerCase()));
+  const list = order.filter(p => set.has(p));
+  // Backwards compatibility: if no products were specified, default to fieldday.
+  return list.length > 0 ? list : ["fieldday"];
+}
+
+function subjectFor(senderName, picked) {
+  if (picked.length === 1) {
+    return `${senderName} thought you'd like ${PRODUCT_INFO[picked[0]].title}`;
+  }
+  if (picked.length === 2) {
+    return `${senderName} thought you'd like ${PRODUCT_INFO[picked[0]].title} and ${PRODUCT_INFO[picked[1]].title}`;
+  }
+  return `${senderName} thought you'd like Curriculate (Grading + Field Day)`;
+}
+
+async function sendReferEmail({ teacherName, teacherEmail, schoolName, senderName, senderSchool, products }) {
+  const picked = pickProducts(products);
+  const subject = subjectFor(senderName, picked);
+
+  const intro = `Hi ${teacherName},
+
+${senderName}${senderSchool ? ` from ${senderSchool}` : ""} thought you might find ${picked.length > 1 ? "these" : "this"} useful at ${schoolName || "your school"}.`;
+
+  const textBlocks = picked.map(key => {
+    const p = PRODUCT_INFO[key];
+    return `\n\n${p.title} — ${p.short}\n${p.url}\n\n${p.bullets.map(b => "  • " + b).join("\n")}`;
+  }).join("");
+
+  const text = `${intro}${textBlocks}\n\n— Curriculate`;
+
+  const htmlBlocks = picked.map(key => {
+    const p = PRODUCT_INFO[key];
+    return `
+      <div style="border:1px solid #e6e8ef;border-radius:10px;padding:16px;margin-top:14px">
+        <div style="font-size:18px;font-weight:700;color:#2956ff">${p.title}</div>
+        <div style="color:#5b6477;font-size:14px;margin-bottom:8px">${p.short}</div>
+        <ul style="padding-left:20px;color:#444;margin:8px 0">${p.bullets.map(b => `<li>${b}</li>`).join("")}</ul>
+        <a href="${p.url}" style="display:inline-block;background:#2956ff;color:white;padding:8px 14px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px">${p.cta} →</a>
+      </div>`;
+  }).join("");
+
+  const html = htmlShell("You've been recommended Curriculate", `
+    <p>Hi ${teacherName},</p>
+    <p><strong>${senderName}</strong>${senderSchool ? ` from <strong>${senderSchool}</strong>` : ""} thought you might find ${picked.length > 1 ? "these" : "this"} useful at ${schoolName ? `<strong>${schoolName}</strong>` : "your school"}.</p>
+    ${htmlBlocks}
+    <p style="color:#5b6477;font-size:13px;margin-top:16px">No mailing list. No follow-ups. Just one email forward from someone you know.</p>
+  `);
+
+  return transport({ from: FROM_ADDR, fromName: FROM_NAME, to: teacherEmail, subject, text, html });
+}
+
+async function sendReportEmail({ kind, message, fromName, fromEmail, schoolCode, context }) {
+  const subject = `[Field Day ${kind === "problem" ? "🐞 Problem" : "💡 Suggestion"}] ${message.slice(0, 60)}${message.length > 60 ? "…" : ""}`;
+  const text = `Type: ${kind}
+From: ${fromName || "(anonymous)"} ${fromEmail ? `<${fromEmail}>` : ""}
+School code: ${schoolCode || "(none)"}
+
+Message:
+${message}
+
+—
+Context:
+${JSON.stringify(context || {}, null, 2)}`;
+  const html = htmlShell("Report",
+    `<p style="font-size:13px;color:#5b6477">Type: <strong>${kind}</strong> · From: ${fromName || "(anonymous)"}${fromEmail ? ` &lt;${fromEmail}&gt;` : ""} · School: ${schoolCode || "(none)"}</p>
+    <div style="background:#f7f8fc;border:1px solid #e6e8ef;padding:12px;border-radius:8px;white-space:pre-wrap">${(message || "").replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))}</div>
+    <details style="margin-top:14px;color:#8993b0;font-size:12px"><summary>Context</summary><pre style="background:#f7f8fc;padding:10px;border-radius:6px;overflow:auto">${JSON.stringify(context || {}, null, 2)}</pre></details>`);
+  return transport({
+    from: FROM_ADDR, fromName: FROM_NAME,
+    to: process.env.FIELDDAY_REPORTS_TO || "admin@curriculate.net",
+    replyTo: fromEmail || undefined,
+    subject, text, html
+  });
+}
+
+module.exports = { sendPasskeyEmail, sendCodeChangeEmail, sendInviteEmail, sendReferEmail, sendReportEmail, setTransport };

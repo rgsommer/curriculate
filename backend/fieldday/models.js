@@ -152,11 +152,21 @@ const CodeChangeSchema = new Schema({
   expiresAt:        { type: Date, required: true, index: { expires: 0 } }
 }, opts);
 
+/* ---------------- Backups (full-school point-in-time snapshot) ---------------- */
+const BackupSchema = new Schema({
+  schoolId:  { type: Schema.Types.ObjectId, ref: "FieldDaySchool", required: true, index: true },
+  label:     { type: String, default: "auto" },     // "auto" | "manual" | "pre-import" etc.
+  takenAt:   { type: Date,   default: Date.now },
+  snapshot:  { type: Schema.Types.Mixed, required: true } // { school, events }
+}, opts);
+BackupSchema.index({ schoolId: 1, takenAt: -1 });
+
 /* ---------------- Exports ---------------- */
 module.exports = {
   School:            mongoose.model("FieldDaySchool",         SchoolSchema,    "fieldday_schools"),
   Event:             mongoose.model("FieldDayEvent",          EventSchema,     "fieldday_events"),
   Passkey:           mongoose.model("FieldDayPasskey",        PasskeySchema,   "fieldday_passkeys"),
   Session:           mongoose.model("FieldDaySession",        SessionSchema,   "fieldday_sessions"),
-  CodeChange:        mongoose.model("FieldDayCodeChange",     CodeChangeSchema,"fieldday_code_changes")
+  CodeChange:        mongoose.model("FieldDayCodeChange",     CodeChangeSchema,"fieldday_code_changes"),
+  Backup:            mongoose.model("FieldDayBackup",         BackupSchema,    "fieldday_backups")
 };

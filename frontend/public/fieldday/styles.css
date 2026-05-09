@@ -792,6 +792,79 @@ main { padding: 24px clamp(16px, 4vw, 40px); max-width: 1280px; margin: 0 auto; 
   .label-sheet-page { row-gap: 0; }
 }
 
+/* ===== Mobile responsive pass =====
+ * Target devices: parent's iPhone (375–390px), small Android (360px),
+ * iPad portrait (768px). Prioritize touch-target size and horizontal
+ * scroll over visual density. */
+@media (max-width: 720px) {
+  /* Topbar: tabs scroll horizontally instead of wrapping into multiple rows */
+  .topbar { padding: 8px 12px; }
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    justify-content: flex-start;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { white-space: nowrap; padding: 8px 12px; min-height: 36px; }
+  .user-chip { display: none; } /* sign-out reachable from settings */
+
+  main { padding: 16px 12px; }
+  .view-header { flex-direction: column; align-items: stretch; gap: 10px; }
+  .view-header-actions { flex-wrap: wrap; gap: 6px; }
+
+  /* Bigger touch targets on inputs */
+  input, select, textarea, .btn {
+    font-size: 16px; /* prevents iOS zoom on focus */
+    min-height: 40px;
+  }
+  .icon-btn { min-width: 36px; min-height: 36px; font-size: 16px; }
+
+  /* Competitor row: stack name above attempts above actions */
+  .competitor-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 12px 10px;
+  }
+  .competitor-row .attempts { flex-wrap: wrap; }
+  .competitor-row .attempt-input { width: 80px; }
+  .competitor-row .row-actions { justify-content: flex-end; }
+
+  /* Event detail: stack the side panel below */
+  .event-detail { grid-template-columns: 1fr; }
+
+  /* Add-record row collapses to a vertical column */
+  .add-record-row { grid-template-columns: 1fr; }
+  .record-edit-row { grid-template-columns: 1fr; }
+  .standard-row    { grid-template-columns: 90px 60px 1fr 1fr 1fr auto; }
+
+  /* Tables: scroll horizontally instead of squishing */
+  .records-block, .ribbon-section, .summary-section { overflow-x: auto; }
+
+  /* Modals: full-width, less padding */
+  .modal-card { max-height: 95vh; max-width: calc(100vw - 16px); }
+  .modal-body { padding: 14px; }
+  .form-row.split { flex-direction: column; gap: 10px; }
+
+  /* KPI cards: 2x2 instead of 4-up */
+  .kpi-row { grid-template-columns: repeat(2, 1fr); }
+
+  /* Library editor row stacks on phones */
+  .library-row { grid-template-columns: 1fr 1fr; }
+
+  /* CSV cols help table: smaller text */
+  .csv-cols { font-size: 11px; }
+}
+
+/* Tablet — iPad portrait */
+@media (min-width: 721px) and (max-width: 1024px) {
+  .pillar-grid       { grid-template-columns: repeat(2, 1fr); }
+  .points-tables     { grid-template-columns: 1fr; }
+  .overall-standings { grid-template-columns: 1fr; }
+}
+
 /* Print */
 @media print {
   body { background: white; }

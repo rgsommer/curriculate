@@ -209,7 +209,9 @@
       holderName: competitor.name,
       dateSet: new Date().toISOString().slice(0,10),
       eventId: ev.id,
-      competitorId: competitor.id
+      competitorId: competitor.id,
+      wind: ev.wind != null ? Number(ev.wind) : null,
+      windAided: ev.wind != null && Number(ev.wind) > 2.0
     };
     try {
       let resp;
@@ -255,6 +257,26 @@
     if (updated.school) state.school = updated.school;
   }
 
+  // ---------- Refresh resilience: persist UI state across reloads ----------
+  // Each piece is independent of session token (so a leader who refreshes
+  // mid-race lands back on the right event with their timers still running
+  // against the original start time).
+  const UI_STATE_KEY = "fielddayUiState";
+  function saveUiState(patch) {
+    try {
+      const cur = JSON.parse(localStorage.getItem(UI_STATE_KEY) || "{}");
+      const next = Object.assign(cur, patch);
+      localStorage.setItem(UI_STATE_KEY, JSON.stringify(next));
+    } catch (e) { /* quota / private mode — silent */ }
+  }
+  function readUiState() {
+    try { return JSON.parse(localStorage.getItem(UI_STATE_KEY) || "{}"); }
+    catch (e) { return {}; }
+  }
+  function clearUiState() {
+    try { localStorage.removeItem(UI_STATE_KEY); } catch (e) {}
+  }
+
   // ---------- Routing ----------
   const VIEWS = ["events","admin","ribbons","announce","settings"];
   function setView(v) {
@@ -266,6 +288,7 @@
     $("#view-event-detail").hidden = true;
     currentEventId = null;
     stopLivePolling();
+    saveUiState({ view: v, eventId: null });
     if (v === "events") renderEvents();
     if (v === "admin")  { renderAdmin();   startLivePolling(renderAdmin); }
     if (v === "ribbons") renderRibbons();
@@ -292,7 +315,29 @@
     $("#userName").textContent = isAdmin() ? `Admin · ${session?.email || ""}` : (session?.leaderName || "Event Leader");
     $("#userSchool").textContent = state.school ? `${state.school.name} · ${state.school.code}` : "";
     $$(".tab[data-admin='1']").forEach(t => t.hidden = !isAdmin());
-    setView("events");
+
+    // Restore last view + event detail + any running row-timers (refresh resilience)
+    const ui = readUiState();
+    const restoreView = (ui.view && (isAdmin() || ui.view === "events")) ? ui.view : "events";
+    setView(restoreView);
+    if (ui.eventId) {
+      const ev = state.events.find(e => e.id === ui.eventId);
+      if (ev) {
+        await openEventDetail(ui.eventId);
+        // Re-attach running timers if their event still matches
+        const rt = ui.runningTimers;
+        if (rt && rt.eventId === ui.eventId && rt.starts) {
+          const epochOffset = Date.now() - performance.now();
+          for (const [cid, startEpoch] of Object.entries(rt.starts)) {
+            const c = ev.competitors.find(c => c.id === cid);
+            if (!c) continue;
+            // Convert stored epoch ms back into a performance.now() reference
+            const perfStart = Number(startEpoch) - epochOffset;
+            startRowTimer(cid, perfStart);
+          }
+        }
+      }
+    }
     updateAnnounceBadge();
   }
 
@@ -516,6 +561,7 @@
 
   async function signOut() {
     await api.signOut();
+    clearUiState();
     state = { school: null, events: [], announceQueue: [] };
     showWelcome();
   }
@@ -724,6 +770,7 @@
     $("#evUnit").value = prefill.unit || defaultUnitFor(prefill.type || "timed");
     $("#evScoreBy").value = prefill.scoreBy || "event";
     $("#evFormat").value = prefill.format || "individual";
+    $("#evWind").value = prefill.wind != null ? prefill.wind : "";
     $("#evNotes").value = prefill.notes || "";
     $("#evCompetitors").value = "";
     $("#evCompetitors").parentElement.hidden = false;
@@ -748,6 +795,7 @@
     $("#evUnit").value = ev.unit;
     $("#evScoreBy").value = ev.scoreBy || "event";
     $("#evFormat").value = ev.format || "individual";
+    $("#evWind").value = ev.wind != null ? ev.wind : "";
     $("#evNotes").value = ev.notes || "";
     $("#evCompetitors").value = "";
     $("#evCompetitors").parentElement.hidden = true;
@@ -788,6 +836,7 @@
       unit: $("#evUnit").value.trim(),
       scoreBy: $("#evScoreBy").value || "event",
       format: $("#evFormat").value || "individual",
+      wind: $("#evWind").value === "" ? null : parseFloat($("#evWind").value),
       notes: $("#evNotes").value.trim()
     };
     $("#btnSaveModal").disabled = true;
@@ -832,6 +881,7 @@
   async function openEventDetail(id) {
     clearAllRowTimers();
     currentEventId = id;
+    saveUiState({ eventId: id });
     VIEWS.forEach(v => $(`#view-${v}`).hidden = true);
     $("#view-event-detail").hidden = false;
     renderEventDetail();
@@ -850,11 +900,15 @@
     const formatBadge = ev.format === "team"
       ? `<span class="pill" style="background:#fff7e0;color:#8a6d00">Team event · house-only</span>`
       : "";
+    const windBadge = ev.wind != null && ev.wind !== ""
+      ? `<span class="pill" style="background:${Number(ev.wind) > 2.0 ? "#fef0ee;color:#d92d20" : "#eef4ff;color:#2956ff"}">Wind ${Number(ev.wind).toFixed(1)} m/s${Number(ev.wind) > 2.0 ? " · wind-aided" : ""}</span>`
+      : "";
     $("#eventDetailMeta").innerHTML = `
       <span>Age ${escapeHtml(ev.age)} · ${escapeHtml(ev.gender)} · ${typeLabel(ev.type)}${ev.unit?" ("+escapeHtml(ev.unit)+")":""} · Best of ${ev.attempts}</span>
       ${ev.notes ? `<span> · ${escapeHtml(ev.notes)}</span>` : ""}
       <span> · Led by ${escapeHtml(ev.leaderName||"")}</span>
       ${formatBadge ? ` · ${formatBadge}` : ""}
+      ${windBadge ? ` · ${windBadge}` : ""}
     `;
     // Rules card — base + division-specific override merged
     const ruleText = rulesForEvent(ev);
@@ -928,10 +982,12 @@
                  ${readOnly?"disabled":""} />`;
       }).join("");
       const metaParts = [];
+      if (c.bib) metaParts.push("#" + escapeHtml(c.bib));
       if (c.grade) metaParts.push("G" + escapeHtml(c.grade));
       if (c.actualAge) metaParts.push("age " + escapeHtml(c.actualAge));
       if (c.house) metaParts.push("🏠 " + escapeHtml(c.house));
       if (c.members && ev.format === "team") metaParts.push("👥 " + escapeHtml(c.members));
+      if (c.dq) metaParts.push(`<span style="color:var(--danger);font-weight:700">DQ${c.dqReason ? " · " + escapeHtml(c.dqReason) : ""}</span>`);
       const meta = metaParts.length > 0
         ? `<span class="competitor-meta muted small">${metaParts.join(" · ")}</span>`
         : "";
@@ -951,7 +1007,8 @@
           <div class="row-actions">
             ${inlineTimer}
             ${placeTag}
-            ${!readOnly ? `<button class="icon-btn" data-edit-meta="${c.id}" title="Edit grade / age / heat">⚙︎</button>` : ""}
+            ${!readOnly ? `<button class="icon-btn" data-toggle-dq="${c.id}" title="${c.dq?"Reinstate":"Mark DQ"}" style="${c.dq?"color:var(--danger)":""}">${c.dq?"⊘":"DQ"}</button>` : ""}
+            ${!readOnly ? `<button class="icon-btn" data-edit-meta="${c.id}" title="Edit bib / grade / age / heat / DQ reason">⚙︎</button>` : ""}
             ${!readOnly ? `<button class="icon-btn" data-del="${c.id}" title="Remove">🗑</button>` : ""}
           </div>
         </div>`;
@@ -1037,11 +1094,34 @@
         else                    startRowTimer(cid);
       });
     });
+    list.querySelectorAll("[data-toggle-dq]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const ev2 = state.events.find(e => e.id === currentEventId);
+        const c = ev2?.competitors.find(x => x.id === btn.dataset.toggleDq);
+        if (!c) return;
+        let patch;
+        if (c.dq) {
+          if (!confirm(`Reinstate ${c.name}? Their result will count again.`)) return;
+          patch = { dq: false, dqReason: "" };
+        } else {
+          const reason = prompt(`Disqualify ${c.name}? Reason (e.g. "false start", "lane infringement", "baton drop"):`, "false start");
+          if (reason === null) return;
+          patch = { dq: true, dqReason: reason.trim() };
+        }
+        try {
+          const resp = await api.updateCompetitor(currentEventId, c.id, patch);
+          if (resp?.competitor) Object.assign(c, resp.competitor);
+          renderEventDetail();
+        } catch (e) { showToast("Save failed"); }
+      });
+    });
     list.querySelectorAll("[data-edit-meta]").forEach(btn => {
       btn.addEventListener("click", async () => {
         const ev2 = state.events.find(e => e.id === currentEventId);
         const c = ev2?.competitors.find(x => x.id === btn.dataset.editMeta);
         if (!c) return;
+        const bib = prompt(`Bib / race number for ${c.name}? (leave blank to clear)`, c.bib || "");
+        if (bib === null) return;
         const grade = prompt(`Grade for ${c.name}? (leave blank to clear)`, c.grade || "");
         if (grade === null) return;
         const actualAge = prompt(`Actual age for ${c.name}? (overrides band rollup; leave blank to use event's age "${ev2.age}")`, c.actualAge || "");
@@ -1049,7 +1129,7 @@
         const heat = prompt(`Heat for ${c.name}? (e.g. "1", "A", "Fast" — leave blank for none)`, c.heat || "");
         if (heat === null) return;
         try {
-          const resp = await api.updateCompetitor(currentEventId, c.id, { grade: grade.trim(), actualAge: actualAge.trim(), heat: heat.trim() });
+          const resp = await api.updateCompetitor(currentEventId, c.id, { bib: bib.trim(), grade: grade.trim(), actualAge: actualAge.trim(), heat: heat.trim() });
           if (resp?.competitor) Object.assign(c, resp.competitor);
           renderEventDetail();
         } catch (e) { showToast("Save failed"); }
@@ -1099,9 +1179,18 @@
   /** competitorId → { startMs, raf } */
   const rowTimers = new Map();
 
-  function startRowTimer(competitorId) {
+  function persistRowTimers() {
+    const ev = state.events.find(e => e.id === currentEventId);
+    if (!ev) return;
+    const epochOffset = Date.now() - performance.now();
+    const snapshot = {};
+    rowTimers.forEach((t, cid) => { snapshot[cid] = t.startMs + epochOffset; }); // store as Date.now() ms
+    saveUiState({ runningTimers: { eventId: currentEventId, starts: snapshot } });
+  }
+
+  function startRowTimer(competitorId, startMsOverride) {
     if (rowTimers.has(competitorId)) return;
-    const startMs = performance.now();
+    const startMs = (typeof startMsOverride === "number") ? startMsOverride : performance.now();
     const tick = () => {
       const display = document.querySelector(`.row-timer[data-cid="${competitorId}"] .row-timer-time`);
       if (display) display.textContent = fmtTimer(performance.now() - startMs);
@@ -1112,6 +1201,7 @@
     // Reflect button state + class without a full re-render (so other rows keep ticking)
     const btn = document.querySelector(`.row-timer-btn[data-cid="${competitorId}"]`);
     if (btn) { btn.classList.add("running"); btn.textContent = "⏹"; }
+    persistRowTimers();
   }
 
   async function stopRowTimer(competitorId) {
@@ -1119,6 +1209,7 @@
     if (!t) return;
     cancelAnimationFrame(t.raf);
     rowTimers.delete(competitorId);
+    persistRowTimers();
     const elapsedMs = performance.now() - t.startMs;
     const seconds = Math.round(elapsedMs / 10) / 100;
     // Find next empty attempt slot for this competitor and write the time
@@ -1878,6 +1969,82 @@
       renderAnnounce();
     } catch (e) { showToast("Update failed"); }
   }
+  // ---------- Report a problem / suggestion ----------
+  function openReportModal() {
+    const session = api.getSession();
+    $("#reportMessage").value = "";
+    $("#reportName").value  = session?.leaderName || session?.email || "";
+    $("#reportEmail").value = session?.email || "";
+    $("#reportModal").hidden = false;
+    setTimeout(() => $("#reportMessage").focus(), 30);
+  }
+  async function sendReport() {
+    const message = $("#reportMessage").value.trim();
+    if (!message) { showToast("Tell us what's wrong"); return; }
+    const kind = document.querySelector("input[name='reportKind']:checked")?.value || "suggestion";
+    const session = api.getSession();
+    const ctx = {
+      view:   $$(".tab.active").map(t => t.dataset.tab)[0] || (document.getElementById("view-event-detail")?.hidden === false ? "event-detail" : null),
+      eventId: currentEventId || null,
+      role:    session?.role || null,
+      url:     location.href,
+      ua:      navigator.userAgent,
+      mode:    api.getMode ? api.getMode() : null
+    };
+    $("#btnReportSend").disabled = true;
+    try {
+      const out = await api.report({
+        kind, message,
+        fromName:  $("#reportName").value.trim(),
+        fromEmail: $("#reportEmail").value.trim().toLowerCase(),
+        schoolCode: state.school?.code || "",
+        context: ctx
+      });
+      $("#reportModal").hidden = true;
+      showToast(out?.sent ? "Thanks — we got it 🙏" : "Saved locally; we'll get it next time you're online");
+    } catch (e) {
+      showToast("Couldn't send — try again");
+    } finally {
+      $("#btnReportSend").disabled = false;
+    }
+  }
+
+  // ---------- Refer-to-school ----------
+  function openReferModal() {
+    const session = api.getSession();
+    $("#referTeacherName").value = "";
+    $("#referTeacherEmail").value = "";
+    $("#referSchoolName").value = "";
+    $("#referSenderName").value = session?.leaderName || "";
+    $("#referSenderSchool").value = state.school?.name || "";
+    $("#referModal").hidden = false;
+    setTimeout(() => $("#referTeacherName").focus(), 30);
+  }
+  async function sendRefer() {
+    const products = $$("input[name='referProducts']:checked").map(cb => cb.value);
+    if (products.length === 0) { showToast("Pick at least one product to recommend"); return; }
+    const payload = {
+      teacherName:  $("#referTeacherName").value.trim(),
+      teacherEmail: $("#referTeacherEmail").value.trim().toLowerCase(),
+      schoolName:   $("#referSchoolName").value.trim(),
+      senderName:   $("#referSenderName").value.trim(),
+      senderSchool: $("#referSenderSchool").value.trim(),
+      products
+    };
+    if (!payload.teacherName || !payload.teacherEmail || !payload.senderName) { showToast("Please fill in their name, their email, and your name"); return; }
+    if (!payload.teacherEmail.includes("@")) { showToast("That doesn't look like a valid email"); return; }
+    $("#btnReferSend").disabled = true;
+    try {
+      const out = await api.refer(payload);
+      $("#referModal").hidden = true;
+      showToast(out?.sent ? `Recommendation sent to ${payload.teacherName}` : "Couldn't send — try again later");
+    } catch (e) {
+      showToast("Couldn't send — try again later");
+    } finally {
+      $("#btnReferSend").disabled = false;
+    }
+  }
+
   async function refreshAnnounce() {
     await refreshState();
     renderAnnounce();
@@ -2395,13 +2562,39 @@
             <div class="ar-meta">Archived ${escapeHtml(date)} · ${(a.events||[]).length} events · ${completedCount} completed</div>
           </div>
           <div class="ar-actions">
+            <button class="btn ghost" data-view-archive="${a.id}">View</button>
             <button class="btn" data-restore="${a.id}">Restore</button>
             <button class="btn danger ghost" data-delete="${a.id}">Delete</button>
           </div>
         </div>`;
     }).join("");
+    list.querySelectorAll("[data-view-archive]").forEach(btn => btn.addEventListener("click", () => viewArchive(btn.dataset.viewArchive)));
     list.querySelectorAll("[data-restore]").forEach(btn => btn.addEventListener("click", () => restoreArchive(btn.dataset.restore)));
     list.querySelectorAll("[data-delete]").forEach(btn => btn.addEventListener("click", () => deleteArchive(btn.dataset.delete)));
+  }
+
+  /**
+   * Read-only viewer for an archived season — reuses the Day Summary
+   * markup but pulls events from the archive payload rather than live state.
+   */
+  function viewArchive(archiveId) {
+    const archive = (state.school?.archives || []).find(a => a.id === archiveId);
+    if (!archive) return;
+    // Temporarily swap state.events with the archive snapshot to render the summary.
+    const liveEvents = state.events;
+    const liveQueue  = state.announceQueue;
+    state.events        = archive.events || [];
+    state.announceQueue = archive.announceQueue || [];
+    const html = buildDaySummary();
+    state.events        = liveEvents;
+    state.announceQueue = liveQueue;
+
+    $("#summaryBody").innerHTML = `
+      <div style="background:#fef3c7;border:1px solid #facc15;color:#92400e;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-weight:600">
+        🔒 Viewing archived season "${escapeHtml(archive.label)}" — read-only
+      </div>
+    ` + html;
+    $("#summaryModal").hidden = false;
   }
   async function archiveCurrentYear() {
     const events = state.events;
@@ -2554,8 +2747,14 @@
         </div>`;
     }
 
-    // Per-event placements
+    // Discover Curriculate — gentle cross-promo at the end of the day
     html += `
+      <div class="summary-section" style="background:linear-gradient(180deg,#e7eeff,transparent);border-radius:var(--radius);padding:18px 20px;margin-top:24px">
+        <h3 style="color:var(--primary)">Loved Field Day? Try Curriculate for the rest of the year.</h3>
+        <p>Field Day is one corner of <strong>Curriculate</strong> — the grading platform for teachers who'd rather spend their evenings with their families. AI-assisted feedback on student work, batch grading, parent reports, all in one place.</p>
+        <p style="margin-top:10px"><a href="https://www.curriculate.net" target="_blank" rel="noopener" style="display:inline-block;background:var(--primary);color:white;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">See Curriculate →</a></p>
+      </div>
+
       <div class="summary-section">
         <h3>Event Results</h3>
         ${events.filter(e => e.status==="completed").sort((a,b) =>
@@ -2651,6 +2850,28 @@
     let wb;
     try { wb = XLSX.read(buf, { type: "array" }); }
     catch (e) { append("err", "✗ Not a valid Excel workbook"); return; }
+
+    const mode = document.querySelector("input[name='wbMode']:checked")?.value || "merge";
+    if (mode === "replace") {
+      if (!confirm("REPLACE will delete every event + competitor for this school first. Continue?")) {
+        append("err", "Cancelled."); return;
+      }
+    }
+
+    // Snapshot the current state before any destructive operation
+    try {
+      append("ok", "📦 Creating safety backup before import…");
+      await api.createBackup("pre-import");
+    } catch (e) { /* non-fatal */ }
+
+    if (mode === "replace") {
+      append("ok", "🗑 Replace mode: deleting current events…");
+      const myEvents = state.events.slice();
+      for (const ev of myEvents) {
+        try { await api.deleteEvent(ev.id); } catch (e) { /* keep going */ }
+      }
+      state.events = []; state.announceQueue = [];
+    }
 
     const tabs = {};
     wb.SheetNames.forEach(n => { tabs[n.toLowerCase().trim()] = wb.Sheets[n]; });
@@ -2847,12 +3068,13 @@
     const iAge      = find("age", "actualage", "actual age");
     const iGrade    = find("grade");
     const iHouse    = find("house");
+    const iBib      = find("bib", "race number", "race #", "number");
     const iActual   = find("actualage", "actual age");
     if (iName < 0 || iGender < 0 || (iDOB < 0 && iAge < 0)) {
       throw new Error("Roster needs Name, Gender, and DOB or Age columns");
     }
     // Event columns are anything else
-    const reservedLow = new Set(["name","gender","dob","date of birth","age","actualage","actual age","grade","house","notes","members"]);
+    const reservedLow = new Set(["name","gender","dob","date of birth","age","actualage","actual age","grade","house","notes","members","bib","race number","race #","number"]);
     const eventCols = header.map((h, i) => ({ h, i })).filter(({h}) => !reservedLow.has(h.toLowerCase()));
 
     let kids = 0, entries = 0, eventsCreated = 0;
@@ -2864,6 +3086,7 @@
       const ageRaw = iAge    >= 0 ? String(r[iAge]||"").trim()  : "";
       const grade  = iGrade  >= 0 ? String(r[iGrade]||"").trim() : "";
       const house  = iHouse  >= 0 ? String(r[iHouse]||"").trim() : "";
+      const bib    = iBib    >= 0 ? String(r[iBib]  ||"").trim() : "";
       let actualAge = iActual >= 0 ? String(r[iActual]||"").trim() : "";
       let computedAge = "";
       if (dob) {
@@ -2897,6 +3120,26 @@
           if (ev) { applyEntityUpdate(resp); eventsCreated++; }
           else continue;
         }
+        // Dedupe: skip if a competitor with the same name (case-insensitive) is already in this event
+        const evLive = state.events.find(e => e.id === ev.id);
+        const dup = (evLive?.competitors || []).find(c => (c.name||"").trim().toLowerCase() === name.trim().toLowerCase());
+        if (dup) {
+          // Update the existing competitor's metadata if the row provides new info
+          const patch = {};
+          if (grade && !dup.grade) patch.grade = grade;
+          if (actualAge && !dup.actualAge) patch.actualAge = actualAge;
+          if (dob && !dup.dob) patch.dob = dob;
+          if (heat && !dup.heat) patch.heat = heat;
+          if (house && !dup.house) patch.house = house;
+          if (Object.keys(patch).length > 0) {
+            try {
+              const u = await api.updateCompetitor(ev.id, dup.id, patch);
+              if (u?.competitor) Object.assign(dup, u.competitor);
+            } catch (e) {}
+          }
+          entries++;
+          continue;
+        }
         // Add competitor
         const r2 = await api.addCompetitor(ev.id, name);
         const created = r2?.competitor;
@@ -2907,6 +3150,7 @@
         if (dob) patch.dob = dob;
         if (heat) patch.heat = heat;
         if (house) patch.house = house;
+        if (bib) patch.bib = bib;
         if (Object.keys(patch).length > 0) {
           const u = await api.updateCompetitor(ev.id, created.id, patch);
           const local = state.events.find(e => e.id === ev.id)?.competitors.find(x => x.id === created.id);
@@ -2933,22 +3177,22 @@
     const events = state.events;
     const eventTitles = [...new Set(events.map(e => e.title))];
     // Each kid (by name) gets one row, with Y/heat per event
-    const kidMap = new Map(); // name → { name, gender, dob, age, grade, house, perEvent: {title: heatOrY} }
+    const kidMap = new Map();
     events.forEach(ev => {
       (ev.competitors||[]).forEach(c => {
         const key = (c.name||"").trim().toLowerCase();
         if (!key) return;
         let entry = kidMap.get(key);
         if (!entry) {
-          entry = { name: c.name, gender: ev.gender, dob: c.dob||"", age: c.actualAge || ev.age, grade: c.grade||"", house: c.house||"", perEvent: {} };
+          entry = { name: c.name, gender: ev.gender, dob: c.dob||"", age: c.actualAge || ev.age, grade: c.grade||"", house: c.house||"", bib: c.bib||"", perEvent: {} };
           kidMap.set(key, entry);
         }
         entry.perEvent[ev.title] = c.heat || "Y";
       });
     });
-    const rosterHeader = ["Name","Gender","DOB","Age","Grade","House", ...eventTitles];
+    const rosterHeader = ["Name","Gender","DOB","Age","Grade","House","Bib", ...eventTitles];
     const rosterRows = [...kidMap.values()].map(k => [
-      k.name, k.gender, k.dob, k.age, k.grade, k.house,
+      k.name, k.gender, k.dob, k.age, k.grade, k.house, k.bib,
       ...eventTitles.map(t => k.perEvent[t] || "")
     ]);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([rosterHeader, ...rosterRows]), "Roster");
@@ -3054,16 +3298,16 @@
     const h0 = houses[0] || "Alpha";
     const h1 = houses[1] || "Beta";
     // Columns grouped: Identity → Slot → Roster → Race day → Team
-    const headers = "Name,Event,Age,Gender,DOB,Grade,House,Heat,PersonalBest,ActualAge,Notes,Members";
+    const headers = "Name,Event,Age,Gender,DOB,Grade,House,Heat,Bib,PersonalBest,ActualAge,Notes,Members";
     const rows = [
       // Same kid in three events — DOB/Grade/House only on first row, inherited downward
-      `Maya Patel,${sampleEvents[0]},8,Girls,2017-04-12,3,${h0},1,8.65,,,`,
-      `Maya Patel,${sampleEvents[1] || sampleEvents[0]},8,Girls,,,,A,3.10,,wears glasses,`,
-      `Maya Patel,${sampleEvents[2] || sampleEvents[0]},9,Girls,,,,B,,,running up,`,
-      `Sofia Martinez,${sampleEvents[0]},9,Girls,2017-11-02,4,${h1},1,9.40,,,`,
-      `Liam Cole,${sampleEvents[1] || sampleEvents[0]},10,Boys,2015-06-19,5,${h0},A,2.80,,,`,
+      `Maya Patel,${sampleEvents[0]},8,Girls,2017-04-12,3,${h0},1,42,8.65,,,`,
+      `Maya Patel,${sampleEvents[1] || sampleEvents[0]},8,Girls,,,,A,42,3.10,,wears glasses,`,
+      `Maya Patel,${sampleEvents[2] || sampleEvents[0]},9,Girls,,,,B,42,,,running up,`,
+      `Sofia Martinez,${sampleEvents[0]},9,Girls,2017-11-02,4,${h1},1,43,9.40,,,`,
+      `Liam Cole,${sampleEvents[1] || sampleEvents[0]},10,Boys,2015-06-19,5,${h0},A,44,2.80,,,`,
       // A team / relay row — Name is the team name, Members lists runners
-      `${h0} Relay Team,4x50m Relay,10,Mixed,,,${h0},,,,,Maya Patel; Liam Cole; Ava Chen; Noah Reyes`
+      `${h0} Relay Team,4x50m Relay,10,Mixed,,,${h0},,,,,,Maya Patel; Liam Cole; Ava Chen; Noah Reyes`
     ];
     const csv = [headers, ...rows].join("\n") + "\n";
     const blob = new Blob([csv], { type: "text/csv" });
@@ -3109,6 +3353,7 @@
     const iHeat   = colIdx("heat", ["heat number","heat #"]);
     const iHouse  = colIdx("house", ["team","house team"]);
     const iPB     = colIdx("personalbest", ["personal best","pb"]);
+    const iBib    = colIdx("bib", ["race number","race #","number"]);
 
     const required = { Event: iEvent, Age: iAge, Gender: iGender, Name: iName };
     const missing = Object.entries(required).filter(([_, idx]) => idx < 0).map(([k]) => k);
@@ -3129,6 +3374,7 @@
       const heat  = iHeat   >= 0 ? (r[iHeat] ||"").trim() : "";
       const house = iHouse  >= 0 ? (r[iHouse]||"").trim() : "";
       const pb    = iPB     >= 0 ? parseFloat(r[iPB]) : NaN;
+      const bib   = iBib    >= 0 ? (r[iBib]  ||"").trim() : "";
       // If DOB is provided and no explicit ActualAge, compute from DOB + cutoff
       if (dob && !actualAge) {
         const computed = computeAge(dob, state.school?.ageCutoffDate);
@@ -3146,7 +3392,7 @@
       const genderTitled = gender[0].toUpperCase() + gender.slice(1).toLowerCase();
       const key = `${eventTitle}||${age}||${genderTitled}`;
       if (!groups.has(key)) groups.set(key, { eventTitle, age, gender: genderTitled, competitors: [] });
-      groups.get(key).competitors.push({ name, grade, actualAge, dob, heat, house, pb, eventTitle, gender: genderTitled, age, lineNo });
+      groups.get(key).competitors.push({ name, grade, actualAge, dob, heat, house, pb, bib, eventTitle, gender: genderTitled, age, lineNo });
     });
 
     // Match against existing events; flag those that need creating
@@ -3233,13 +3479,14 @@
         try {
           const resp = await api.addCompetitor(event.id, c.name);
           const created = resp?.competitor;
-          if (created && (c.grade || c.actualAge || c.dob || c.heat || c.house)) {
+          if (created && (c.grade || c.actualAge || c.dob || c.heat || c.house || c.bib)) {
             const patch = {};
             if (c.grade)     patch.grade     = c.grade;
             if (c.actualAge) patch.actualAge = c.actualAge;
             if (c.dob)       patch.dob       = c.dob;
             if (c.heat)      patch.heat      = c.heat;
             if (c.house)     patch.house     = c.house;
+            if (c.bib)       patch.bib       = c.bib;
             const u = await api.updateCompetitor(event.id, created.id, patch);
             const ev = state.events.find(e => e.id === event.id);
             const local = ev?.competitors.find(x => x.id === created.id);
@@ -3409,6 +3656,15 @@
     $("#btnResetAll").addEventListener("click", resetAll);
 
     $("#btnCelebrationClose").addEventListener("click", dismissCelebration);
+    $("#btnReferTopbar").addEventListener("click", openReferModal);
+    $("#btnReferClose").addEventListener("click", () => $("#referModal").hidden = true);
+    $("#btnReferCancel").addEventListener("click", () => $("#referModal").hidden = true);
+    $("#btnReferSend").addEventListener("click", sendRefer);
+
+    $("#btnReportTopbar").addEventListener("click", openReportModal);
+    $("#btnReportClose").addEventListener("click", () => $("#reportModal").hidden = true);
+    $("#btnReportCancel").addEventListener("click", () => $("#reportModal").hidden = true);
+    $("#btnReportSend").addEventListener("click", sendReport);
 
     $("#btnToggleRules").addEventListener("click", () => {
       const card = $("#eventRulesCard");

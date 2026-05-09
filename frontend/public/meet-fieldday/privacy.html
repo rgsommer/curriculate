@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="Field Day privacy policy — what data we collect, why, and how we protect it." />
+<title>Privacy · Curriculate Field Day</title>
+<link rel="stylesheet" href="/meet-fieldday/landing.css" />
+<style>
+  article.policy { max-width: 760px; margin: 0 auto; padding: 60px 24px; font-size: 16px; line-height: 1.7; color: var(--ink-2); }
+  article.policy h1 { font-size: 36px; margin: 0 0 8px; }
+  article.policy h2 { font-size: 22px; margin: 36px 0 10px; }
+  article.policy .updated { color: var(--muted); margin: 0 0 32px; font-size: 14px; }
+  article.policy ul { padding-left: 22px; }
+</style>
+</head>
+<body>
+<header class="nav">
+  <div class="nav-inner">
+    <a class="nav-brand" href="/meet-fieldday/">
+      <span class="brand-mark">🏅</span>
+      <span class="brand-text">Field Day</span>
+      <span class="brand-by">by Curriculate</span>
+    </a>
+    <nav class="nav-links">
+      <a href="/meet-fieldday/#features">Features</a>
+      <a href="/meet-fieldday/#faq">FAQ</a>
+      <a href="/meet-fieldday/privacy.html">Privacy</a>
+      <a href="/meet-fieldday/terms.html">Terms</a>
+    </nav>
+    <a class="nav-cta" href="/fieldday/">Launch app →</a>
+  </div>
+</header>
+
+<article class="policy">
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated: 2026-05-08</p>
+
+  <p>Field Day is a free product from Curriculate, intended for use by schools running their annual field day. This policy explains what student and staff data the app stores, why, and how we protect it. We've kept it short and concrete on purpose.</p>
+
+  <h2>What data Field Day stores</h2>
+  <p>When a school uses Field Day, the app stores:</p>
+  <ul>
+    <li><strong>Admin information</strong>: email address (used to send sign-in passkeys) and one or more school records associated with that email.</li>
+    <li><strong>Event leader information</strong>: the name a leader types when joining a school. We do not request leader emails.</li>
+    <li><strong>Student information</strong>: names, age (or DOB if provided), grade, gender, optional house affiliation, and event results. The school controls what they enter; we don't pull from any external SIS unless an admin explicitly imports it.</li>
+    <li><strong>Event records</strong>: titles, types, attempts, results, school records, personal bests.</li>
+    <li><strong>Operational metadata</strong>: timestamps for event creation, completion, announcement.</li>
+  </ul>
+  <p>We do <em>not</em> use cookies for advertising, do <em>not</em> embed third-party trackers, and do <em>not</em> sell data to anyone, ever.</p>
+
+  <h2>Where the data is stored</h2>
+  <p>Data is stored in a Curriculate-managed MongoDB database hosted in the United States. The connection between your browser and our server is encrypted via TLS. Database backups are encrypted at rest and rotated according to standard cloud practice.</p>
+  <p>If you use the offline / single-device fallback (no network), data also lives in your browser's <code>localStorage</code> until you explicitly clear it.</p>
+
+  <h2>Who can see student data</h2>
+  <ul>
+    <li>The school's admin(s) — anyone whose email has been added to that school's admin list.</li>
+    <li>Event leaders for that school — but only the events they're staff on or that they themselves create.</li>
+    <li>Curriculate engineers — for support and debugging only, and only when explicitly authorized by your admin.</li>
+  </ul>
+  <p>Student data is never accessible to admins of <em>other</em> schools. The app's authorization model gates every read and write by schoolId.</p>
+
+  <h2>COPPA &amp; FERPA</h2>
+  <p>Field Day is designed to be used by schools acting as the <strong>school official</strong> under FERPA's "school official" exception, with student information entered into the app under the school's authority. The school remains the legal data controller; Curriculate is a service provider acting on the school's instructions.</p>
+  <p>Under COPPA, schools using Field Day are providing consent on behalf of parents for the limited purpose of running their field day. We do not knowingly collect personal information directly from children under 13 outside of this school-authorized context, and the app provides no mechanism for students to create their own accounts or contact other users.</p>
+
+  <h2>Data retention</h2>
+  <p>Active school data is retained as long as the school continues to use Field Day. Schools can:</p>
+  <ul>
+    <li>Archive a season — preserves it but takes it out of the active dashboard.</li>
+    <li>Sign out — ends the device session; data stays in the database.</li>
+    <li>Request deletion — email us at the contact below and we will permanently delete the school's data within 30 days.</li>
+  </ul>
+  <p>Authentication artifacts (passkey codes, session tokens) auto-expire on a TTL: passkeys after 15 minutes, sessions after 14 days.</p>
+
+  <h2>Data export</h2>
+  <p>Admins can download a full JSON backup of their school's data at any time via the Admin tab → Backup button. We don't lock data in.</p>
+
+  <h2>Children's safety</h2>
+  <p>The app contains no chat, no public profiles, no external links to social media, and no advertising. There is no mechanism by which a student's name or result can be made visible to a user outside the school.</p>
+
+  <h2>Email</h2>
+  <p>Field Day sends transactional email only — passkey codes for admin sign-in, school-code change confirmations, admin invites, and school referrals when explicitly initiated by a user. We do not send marketing email, do not maintain a mailing list, and have no plans to.</p>
+
+  <h2>Security incidents</h2>
+  <p>If we ever suspect that student data has been accessed by an unauthorized party, we will notify the affected school's admin within 72 hours of discovery, including what was potentially exposed and the steps we're taking.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>If we change anything material about how Field Day handles data, we'll update this page and notify school admins by email at least 30 days before the change takes effect.</p>
+
+  <h2>Contact</h2>
+  <p>Questions, deletion requests, or security concerns: <a href="mailto:fieldday@curriculate.net">fieldday@curriculate.net</a>.</p>
+</article>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-brand">
+      <span class="brand-mark">🏅</span>
+      <strong>Field Day</strong>
+      <span class="muted">· part of Curriculate</span>
+    </div>
+    <div class="foot-links">
+      <a href="/meet-fieldday/">Home</a>
+      <a href="/meet-fieldday/#faq">FAQ</a>
+      <a href="/meet-fieldday/privacy.html">Privacy</a>
+      <a href="/meet-fieldday/terms.html">Terms</a>
+      <a href="/fieldday/">Launch</a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

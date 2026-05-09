@@ -363,6 +363,33 @@
     /** DELETE /schools/me/standards/:id */
     async deleteStandard(id)  { return mutate("DELETE", `/schools/me/standards/${encodeURIComponent(id)}`, undefined, () => localDeleteStandard(id)); },
 
+    // ---------- Refer / Cross-promotion ----------
+    /** POST /refer {teacherName, teacherEmail, schoolName, senderName, senderSchool} */
+    async refer(payload) {
+      if (isLocal()) return { sent: false, devNote: "Local mode — refer email would be sent in remote mode" };
+      try { return await http("POST", "/refer", payload); }
+      catch (e) {
+        if (e.code === "NETWORK" || e.code === "NOT_FOUND") return { sent: false, devNote: "Backend unreachable" };
+        throw e;
+      }
+    },
+
+    /** POST /report {kind, message, fromName?, fromEmail?, schoolCode?, context?} */
+    async report(payload) {
+      if (isLocal()) return { sent: false, devNote: "Local mode — report email would be sent in remote mode" };
+      try { return await http("POST", "/report", payload); }
+      catch (e) {
+        if (e.code === "NETWORK" || e.code === "NOT_FOUND") return { sent: false, devNote: "Backend unreachable" };
+        throw e;
+      }
+    },
+
+    // ---------- Backups (admin-only) ----------
+    async createBackup(label = "manual") { return mutate("POST",  "/schools/me/backups", { label }, () => ({ backup: null })); },
+    async listBackups()                  { return mutate("GET",   "/schools/me/backups",  undefined, () => ({ backups: [] })); },
+    async restoreBackup(id)              { return mutate("POST",  `/schools/me/backups/${encodeURIComponent(id)}/restore`, {}, () => ({ ok:false })); },
+    async deleteBackup(id)               { return mutate("DELETE", `/schools/me/backups/${encodeURIComponent(id)}`, undefined, () => ({ ok:false })); },
+
     // ---------- Polling ----------
     /**
      * Poll fetchState every ms milliseconds, calling onChange(state) when
