@@ -11,10 +11,10 @@
  * every school. The function is exported so any internal cron worker can
  * use it directly.
  */
-const express = require("express");
-const { School, Event, Backup } = require("../models");
-const { errResp, asyncH } = require("../utils");
-const { requireSchool, requireAdmin } = require("../auth");
+import express from "express";
+import { School, Event, Backup } from "../models.js";
+import { errResp, asyncH } from "../utils.js";
+import { requireSchool, requireAdmin } from "../auth.js";
 
 const router = express.Router();
 router.use(requireSchool, requireAdmin);
@@ -72,6 +72,6 @@ router.delete("/schools/me/backups/:id", asyncH(async (req, res) => {
   res.status(204).end();
 }));
 
-router.snapshotSchool = snapshotSchool; // exported for cron usage
-module.exports = router;
-module.exports.snapshotSchool = snapshotSchool;
+// Named export so cron jobs can call it: import { snapshotSchool } from "./fieldday/routes/backups.js"
+export { snapshotSchool };
+export default router;

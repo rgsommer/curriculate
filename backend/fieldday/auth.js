@@ -1,5 +1,5 @@
 /**
- * Field Day — auth middleware.
+ * Field Day — auth middleware (ESM).
  *
  * Looks for a Bearer token in the Authorization header; falls back to a
  * cookie named `fielddaySession` for same-origin browser usage.
@@ -7,14 +7,9 @@
  * Attaches:
  *   req.fdSession   — { _id, role, schoolId, leaderName, email, expiresAt }
  *   req.fdSchoolId  — ObjectId | null
- *
- * Three middlewares are exported:
- *   requireSession  — any authenticated session (admin OR leader)
- *   requireAdmin    — admin session only
- *   requireSchool   — admin/leader with a schoolId set on the session
  */
-const { Session } = require("./models");
-const { errResp } = require("./utils");
+import { Session } from "./models.js";
+import { errResp } from "./utils.js";
 
 async function loadSession(req) {
   let token = "";
@@ -28,7 +23,7 @@ async function loadSession(req) {
   return sess;
 }
 
-async function requireSession(req, res, next) {
+export async function requireSession(req, res, next) {
   try {
     const sess = await loadSession(req);
     if (!sess) return errResp(res, 401, "unauthorized");
@@ -38,14 +33,12 @@ async function requireSession(req, res, next) {
   } catch (e) { next(e); }
 }
 
-function requireAdmin(req, res, next) {
+export function requireAdmin(req, res, next) {
   if (!req.fdSession || req.fdSession.role !== "admin") return errResp(res, 403, "admin_required");
   next();
 }
 
-function requireSchool(req, res, next) {
+export function requireSchool(req, res, next) {
   if (!req.fdSchoolId) return errResp(res, 400, "no_school_selected");
   next();
 }
-
-module.exports = { requireSession, requireAdmin, requireSchool };

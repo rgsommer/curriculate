@@ -9,10 +9,10 @@
  *   GET  /leader/staff?code=...
  *   POST /sign-out
  */
-const express = require("express");
-const { School, Passkey, Session } = require("../models");
-const { gen6, genToken, hash, verify, passkeyExpiresAt, sessionExpiresAt, errResp, asyncH, publicSchool } = require("../utils");
-const { sendPasskeyEmail } = require("../email");
+import express from "express";
+import { School, Passkey, Session } from "../models.js";
+import { gen6, genToken, hash, verify, passkeyExpiresAt, sessionExpiresAt, errResp, asyncH, publicSchool } from "../utils.js";
+import { sendPasskeyEmail } from "../email.js";
 
 const router = express.Router();
 
@@ -166,4 +166,4 @@ router.post("/sign-out", asyncH(async (req, res) => {
   res.json({ ok: true });
 }));
 
-module.exports = router;
+export default router;

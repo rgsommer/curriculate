@@ -22,6 +22,9 @@ import crypto from "crypto";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
+// Field Day backend module (ESM router)
+import fielddayRouter from "./fieldday/index.js";
+
 // 4) Shared constants (used across server)
 import { TASK_TYPE_META, analyzeBloomsTaxonomy } from "../shared/taskTypes.js";
 import { COLORS } from "../shared/colors.js";
@@ -481,7 +484,7 @@ app.use("/student-contact", studentContactRouter);
 app.use("/student-progress", studentProgressRouter);
 
 // Fieldday
-app.use("/fieldday/api", require("./fieldday"));
+app.use("/fieldday/api", fielddayRouter);
 
 // Recommend Curriculate to a teacher
 app.post("/api/recommend", async (req, res) => {

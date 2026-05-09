@@ -15,11 +15,11 @@
  *   POST   /schools/me/archives/:id/restore
  *   DELETE /schools/me/archives/:id
  */
-const express = require("express");
-const { Types } = require("mongoose");
-const { School, Event } = require("../models");
-const { errResp, asyncH } = require("../utils");
-const { requireSchool, requireAdmin } = require("../auth");
+import express from "express";
+import { Types } from "mongoose";
+import { School, Event } from "../models.js";
+import { errResp, asyncH } from "../utils.js";
+import { requireSchool, requireAdmin } from "../auth.js";
 
 const router = express.Router();
 router.use(requireSchool, requireAdmin);
@@ -149,4 +149,4 @@ router.delete("/schools/me/archives/:id", asyncH(async (req, res) => {
   res.status(204).end();
 }));
 
-module.exports = router;
+export default router;

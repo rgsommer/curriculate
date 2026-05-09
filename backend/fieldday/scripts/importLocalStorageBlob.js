@@ -15,10 +15,10 @@
  * If the school's code already exists in MongoDB, the script aborts unless
  * --force is given (in which case it MERGES events into the existing school).
  */
-const fs = require("fs");
-const path = require("path");
-const mongoose = require("mongoose");
-const { School, Event } = require("../models");
+import fs from "fs";
+import path from "path";
+import mongoose from "mongoose";
+import { School, Event } from "../models.js";
 
 const args = process.argv.slice(2);
 function arg(name, fallback) {

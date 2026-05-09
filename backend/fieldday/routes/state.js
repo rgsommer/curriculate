@@ -7,11 +7,11 @@
  *   POST  /schools/me/code-change
  *   POST  /schools/me/invite-admin
  */
-const express = require("express");
-const { School, Event, CodeChange } = require("../models");
-const { gen6, hash, verify, codeChangeExpiresAt, errResp, asyncH, publicSchool, publicEvent } = require("../utils");
-const { sendCodeChangeEmail, sendInviteEmail } = require("../email");
-const { requireSchool } = require("../auth");
+import express from "express";
+import { School, Event, CodeChange } from "../models.js";
+import { gen6, hash, verify, codeChangeExpiresAt, errResp, asyncH, publicSchool, publicEvent } from "../utils.js";
+import { sendCodeChangeEmail, sendInviteEmail } from "../email.js";
+import { requireSchool } from "../auth.js";
 
 const router = express.Router();
 
@@ -112,4 +112,4 @@ router.post("/schools/me/invite-admin", requireSchool, asyncH(async (req, res) =
   res.json({ sent });
 }));
 
-module.exports = router;
+export default router;

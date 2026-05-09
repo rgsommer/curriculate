@@ -54,7 +54,7 @@ export default function AdminUsageDashboard() {
   const [recsLoading, setRecsLoading] = useState(false);
   const [recForm, setRecForm] = useState({
     teacherName: "", teacherEmail: "", message: "",
-    products: { curriculate: false, grading: false, fieldday: true }
+    products: { curriculate: true, grading: true, fieldday: true }
   });
 
   // Field Day usage stats (loaded on demand)
@@ -1235,7 +1235,7 @@ export default function AdminUsageDashboard() {
                     setRecStatus({ ok: true, text: `Recommendation sent to ${recForm.teacherEmail} (${products.map(p => labels[p]).join(" + ")})` });
                     setRecForm({
                       teacherName: "", teacherEmail: "", message: "",
-                      products: { curriculate: false, grading: false, fieldday: true }
+                      products: { curriculate: true, grading: true, fieldday: true }
                     });
                   } else {
                     const d = await r.json().catch(() => ({}));

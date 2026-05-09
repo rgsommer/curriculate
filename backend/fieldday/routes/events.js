@@ -18,10 +18,10 @@
  * Authorization rule: admin can do everything; leader can only mutate events
  * whose `leaderName` matches their session leaderName.
  */
-const express = require("express");
-const { Event } = require("../models");
-const { errResp, asyncH, publicEvent } = require("../utils");
-const { requireSchool } = require("../auth");
+import express from "express";
+import { Event } from "../models.js";
+import { errResp, asyncH, publicEvent } from "../utils.js";
+import { requireSchool } from "../auth.js";
 
 const router = express.Router();
 
@@ -178,4 +178,4 @@ router.post("/announce/:id/skip", requireSchool, asyncH(async (req, res) => {
   res.json({ ok: true });
 }));
 
-module.exports = router;
+export default router;

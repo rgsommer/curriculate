@@ -3,7 +3,7 @@
  *
  * Mount in your main backend/index.js with:
  *
- *     const fielddayRouter = require("./fieldday");
+ *     import fielddayRouter from "./fieldday.js";
  *     app.use("/fieldday/api", fielddayRouter);
  *
  * That single line wires up all routes documented in BACKEND.md and
@@ -11,20 +11,20 @@
  *
  * If you want to override the email transport with your own sender:
  *
- *     const { setTransport } = require("./fieldday/email");
+ *     import { setTransport } from "./fieldday/email.js";
  *     setTransport(({ from, fromName, to, subject, text, html }) => myMailer.send(...));
  */
-const express = require("express");
-const cookieParser = require("cookie-parser");
+import express from "express";
+import cookieParser from "cookie-parser";
 
-const { requireSession } = require("./auth");
-const authRoutes    = require("./routes/auth");
-const stateRoutes   = require("./routes/state");
-const eventRoutes   = require("./routes/events");
-const recordRoutes  = require("./routes/records");
-const referRoutes   = require("./routes/refer");
-const backupRoutes  = require("./routes/backups");
-const adminStatsRoutes = require("./routes/admin-stats");
+import { requireSession } from "./auth.js";
+import authRoutes from "./routes/auth.js";
+import stateRoutes from "./routes/state.js";
+import eventRoutes from "./routes/events.js";
+import recordRoutes from "./routes/records.js";
+import referRoutes from "./routes/refer.js";
+import backupRoutes from "./routes/backups.js";
+import adminStatsRoutes from "./routes/admin-stats.js";
 
 const router = express.Router();
 router.use(express.json({ limit: "10mb" })); // workbook imports can be sizable
@@ -46,4 +46,4 @@ router.use("/", requireSession, backupRoutes);
 // Health check — handy for uptime monitors
 router.get("/health", (req, res) => res.json({ ok: true, service: "fieldday", ts: Date.now() }));
 
-module.exports = router;
+export default router;

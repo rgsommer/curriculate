@@ -17,7 +17,7 @@ npm install bcryptjs cookie-parser
 In `backend/index.js` (or wherever your Express app lives):
 
 ```js
-const fielddayRouter = require("./fieldday");
+import fielddayRouter from "./fieldday/index.js";
 app.use("/fieldday/api", fielddayRouter);
 ```
 
@@ -36,13 +36,13 @@ become available under `/fieldday/api/*` and match the client's `api.js`.
 
 ## Email transport
 
-`backend/fieldday/email.js` tries to `require('../email')` at boot and uses
+`backend/fieldday/email.js` tries to `import('../email/shareInviteEmailer.js')` at boot and uses
 its `send()` function if present. Adjust to match your existing email
 helper, or call `setTransport(fn)` once at startup:
 
 ```js
-const { setTransport } = require("./fieldday/email");
-const mailer = require("./email/sendEmail");
+import { setTransport } from "./fieldday/email.js";
+import mailer from "./email/sendEmail.js";
 setTransport(({ from, fromName, to, subject, text, html }) =>
   mailer.send({ from: `${fromName} <${from}>`, to, subject, text, html })
 );
@@ -111,8 +111,8 @@ middleware** (it does NOT include its own auth, by design — to defer
 to whatever you already have):
 
 ```js
-const requireCuriculateAdmin = require("./middleware/requireAdmin"); // your existing middleware
-const fielddayStats = require("./fieldday/routes/admin-stats");
+import requireCuriculateAdmin from "./middleware/requireAdmin.js"; // your existing middleware
+import fielddayStats from "./fieldday/routes/admin-stats.js";
 app.use("/admin/api/fieldday", requireCuriculateAdmin, fielddayStats);
 ```
 

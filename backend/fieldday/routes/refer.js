@@ -7,9 +7,9 @@
  * can recommend Field Day to a teacher at another school. Lightweight rate
  * limit prevents abuse: 5 referrals per IP per 10 minutes.
  */
-const express = require("express");
-const { sendReferEmail, sendReportEmail } = require("../email");
-const { errResp, asyncH } = require("../utils");
+import express from "express";
+import { sendReferEmail, sendReportEmail } from "../email.js";
+import { errResp, asyncH } from "../utils.js";
 
 const router = express.Router();
 
@@ -62,4 +62,4 @@ router.post("/report", rateLimit, asyncH(async (req, res) => {
   res.json({ sent });
 }));
 
-module.exports = router;
+export default router;

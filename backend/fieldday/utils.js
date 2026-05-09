@@ -1,35 +1,30 @@
 /**
- * Shared helpers for the Field Day backend.
+ * Shared helpers for the Field Day backend (ESM).
  */
-const crypto = require("crypto");
-const bcrypt = require("bcryptjs");
+import crypto from "crypto";
+import bcrypt from "bcryptjs";
 
 const PASSKEY_TTL_MIN     = parseInt(process.env.FIELDDAY_PASSKEY_TTL_MIN     || "15", 10);
 const SESSION_TTL_DAYS    = parseInt(process.env.FIELDDAY_SESSION_TTL_DAYS    || "14", 10);
 const CODE_CHANGE_TTL_MIN = parseInt(process.env.FIELDDAY_CODE_CHANGE_TTL_MIN || "30", 10);
 
-function gen6() { return String(Math.floor(100000 + Math.random()*900000)); }
-function genToken() { return crypto.randomBytes(32).toString("hex"); }
+export function gen6() { return String(Math.floor(100000 + Math.random()*900000)); }
+export function genToken() { return crypto.randomBytes(32).toString("hex"); }
 
-async function hash(value)            { return bcrypt.hash(String(value), 10); }
-async function verify(value, hashed)  { return bcrypt.compare(String(value), String(hashed||"")); }
+export async function hash(value)            { return bcrypt.hash(String(value), 10); }
+export async function verify(value, hashed)  { return bcrypt.compare(String(value), String(hashed||"")); }
 
-function passkeyExpiresAt() { return new Date(Date.now() + PASSKEY_TTL_MIN * 60 * 1000); }
-function sessionExpiresAt() { return new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000); }
-function codeChangeExpiresAt() { return new Date(Date.now() + CODE_CHANGE_TTL_MIN * 60 * 1000); }
+export function passkeyExpiresAt() { return new Date(Date.now() + PASSKEY_TTL_MIN * 60 * 1000); }
+export function sessionExpiresAt() { return new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000); }
+export function codeChangeExpiresAt() { return new Date(Date.now() + CODE_CHANGE_TTL_MIN * 60 * 1000); }
 
-/** Standardized JSON error response. */
-function errResp(res, status, code) {
-  return res.status(status).json({ error: code });
-}
+export function errResp(res, status, code) { return res.status(status).json({ error: code }); }
 
-/** Promise-aware handler wrapper so route handlers can throw / reject. */
-function asyncH(fn) {
+export function asyncH(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 
-/** Strips a school doc to the public/admin shape the client expects. */
-function publicSchool(school) {
+export function publicSchool(school) {
   if (!school) return null;
   return {
     id:                school._id.toString(),
@@ -56,8 +51,7 @@ function publicSchool(school) {
   };
 }
 
-/** Strips an event doc to the client-friendly shape. */
-function publicEvent(ev) {
+export function publicEvent(ev) {
   if (!ev) return null;
   const o = ev.toObject ? ev.toObject() : ev;
   o.id = o._id ? o._id.toString() : o.id;
@@ -65,10 +59,4 @@ function publicEvent(ev) {
   return o;
 }
 
-module.exports = {
-  PASSKEY_TTL_MIN, SESSION_TTL_DAYS, CODE_CHANGE_TTL_MIN,
-  gen6, genToken, hash, verify,
-  passkeyExpiresAt, sessionExpiresAt, codeChangeExpiresAt,
-  errResp, asyncH,
-  publicSchool, publicEvent
-};
+export { PASSKEY_TTL_MIN, SESSION_TTL_DAYS, CODE_CHANGE_TTL_MIN };

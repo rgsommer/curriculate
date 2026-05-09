@@ -7,16 +7,16 @@
  * It's intended to be mounted behind your existing Curriculate admin
  * middleware in backend/index.js, e.g.:
  *
- *     const requireCuriculateAdmin = require("./middleware/admin");
- *     const fdAdminStats = require("./fieldday/routes/admin-stats");
+ *     import requireCuriculateAdmin from "./middleware/admin.js";
+ *     import fdAdminStats from "./fieldday/routes/admin-stats.js";
  *     app.use("/admin/api/fieldday", requireCuriculateAdmin, fdAdminStats);
  *
  * If you accidentally mount it without auth, anyone with the URL gets your
  * org-wide aggregations. So: do mount it behind admin auth.
  */
-const express = require("express");
-const { School, Event, Backup } = require("../models");
-const { asyncH, errResp } = require("../utils");
+import express from "express";
+import { School, Event, Backup } from "../models.js";
+import { asyncH, errResp } from "../utils.js";
 
 const router = express.Router();
 
@@ -167,4 +167,4 @@ router.get("/stats", asyncH(async (req, res) => {
   });
 }));
 
-module.exports = router;
+export default router;
