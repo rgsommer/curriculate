@@ -862,6 +862,22 @@ Sofia Martinez,50m Sprint,9,Girls,2017-11-02,4,Beta,1,9.40,</pre>
   </div>
 </div>
 
+<!-- Generic form modal — used in place of native prompt() so we get a real
+     title (no "www.curriculate.net says") and can collect multiple fields. -->
+<div class="modal" id="formModal" hidden>
+  <div class="modal-card">
+    <header class="modal-header">
+      <h2 id="formModalTitle">Edit</h2>
+      <button class="icon-btn" id="formModalClose">✕</button>
+    </header>
+    <div class="modal-body" id="formModalBody"></div>
+    <footer class="modal-footer">
+      <button class="btn ghost"   id="formModalCancel">Cancel</button>
+      <button class="btn primary" id="formModalOk">Save</button>
+    </footer>
+  </div>
+</div>
+
 <div class="toast" id="toast" hidden></div>
 
 <!-- Hidden printable credentials sheet — populated when admin clicks

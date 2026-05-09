@@ -59,6 +59,65 @@
   }
   function getSchool() { return state.school; }
   function isAdmin() { return api.getSession()?.role === "admin"; }
+  /**
+   * In-app form modal — replaces window.prompt() (which always shows an
+   * ugly "www.curriculate.net says" header). Returns a Promise that
+   * resolves to a {field: value} object on Save, or null on Cancel.
+   *
+   * Usage:
+   *   const out = await showFormModal({
+   *     title: "Edit Maya Patel",
+   *     fields: [
+   *       { name: "bib",   label: "Bib / race number",   value: c.bib,   placeholder: "42" },
+   *       { name: "grade", label: "Grade",               value: c.grade, placeholder: "3" },
+   *     ],
+   *     submitLabel: "Save"
+   *   });
+   *   if (out) { c.bib = out.bib; c.grade = out.grade; }
+   */
+  function showFormModal({ title, fields, submitLabel = "Save", cancelLabel = "Cancel", body = "" }) {
+    return new Promise((resolve) => {
+      $("#formModalTitle").textContent = title || "Edit";
+      const fieldsHtml = (fields || []).map((f, i) => `
+        <div class="form-row">
+          <label>${escapeHtml(f.label || f.name)}</label>
+          <input data-fm-name="${escapeHtml(f.name)}"
+                 ${f.type === "radio" ? "" : `type="${escapeHtml(f.type || "text")}"`}
+                 ${f.maxLength ? `maxlength="${f.maxLength}"` : ""}
+                 ${f.inputmode ? `inputmode="${escapeHtml(f.inputmode)}"` : ""}
+                 value="${escapeHtml(f.value ?? "")}"
+                 placeholder="${escapeHtml(f.placeholder || "")}"
+                 ${i === 0 ? "data-fm-autofocus" : ""} />
+          ${f.help ? `<p class="muted small">${escapeHtml(f.help)}</p>` : ""}
+        </div>
+      `).join("");
+      $("#formModalBody").innerHTML = (body ? `<p class="muted small">${escapeHtml(body)}</p>` : "") + fieldsHtml;
+      $("#formModalOk").textContent = submitLabel;
+      $("#formModalCancel").textContent = cancelLabel;
+      $("#formModal").hidden = false;
+      const focusEl = $("#formModalBody [data-fm-autofocus]");
+      if (focusEl) setTimeout(() => focusEl.focus(), 30);
+
+      const cleanup = () => {
+        $("#formModal").hidden = true;
+        $("#formModalBody").innerHTML = "";
+        $("#formModalOk").onclick = null;
+        $("#formModalCancel").onclick = null;
+        $("#formModalClose").onclick = null;
+        $("#formModalBody").onkeydown = null;
+      };
+      $("#formModalOk").onclick = () => {
+        const out = {};
+        $$("#formModalBody [data-fm-name]").forEach(el => { out[el.dataset.fmName] = el.value.trim(); });
+        cleanup();
+        resolve(out);
+      };
+      $("#formModalCancel").onclick = () => { cleanup(); resolve(null); };
+      $("#formModalClose").onclick  = () => { cleanup(); resolve(null); };
+      $("#formModalBody").onkeydown = (e) => { if (e.key === "Enter") $("#formModalOk").click(); };
+    });
+  }
+
   function showToast(msg, ms=2200) {
     const el = $("#toast");
     el.textContent = msg;
@@ -1129,10 +1188,23 @@
     });
     list.querySelectorAll("[data-del]").forEach(btn => {
       btn.addEventListener("click", async () => {
+        const ev2 = state.events.find(e => e.id === currentEventId);
+        const c   = ev2?.competitors.find(x => x.id === btn.dataset.del);
+        const nm  = c?.name?.trim() || "this competitor";
+        const hasResult = (c?.attempts || []).some(v => v != null && v !== "");
+        const confirmed = await showFormModal({
+          title: `Remove ${nm}?`,
+          body: hasResult
+            ? `This will remove ${nm} and ALL their results from this event. To clear a score without removing the person, just delete the number in the result box. This cannot be undone.`
+            : `This will remove ${nm} from this event. To clear a score without removing the person, just delete the number in the result box.`,
+          fields: [],
+          submitLabel: "Remove competitor",
+          cancelLabel: "Keep them"
+        });
+        if (!confirmed) return;
         try {
           await api.deleteCompetitor(currentEventId, btn.dataset.del);
-          const ev2 = state.events.find(e => e.id === currentEventId);
-          if (ev2) ev2.competitors = ev2.competitors.filter(c => c.id !== btn.dataset.del);
+          if (ev2) ev2.competitors = ev2.competitors.filter(x => x.id !== btn.dataset.del);
           renderEventDetail();
         } catch (e) { showToast("Delete failed"); }
       });
@@ -1151,12 +1223,27 @@
         if (!c) return;
         let patch;
         if (c.dq) {
-          if (!confirm(`Reinstate ${c.name}? Their result will count again.`)) return;
+          const out = await showFormModal({
+            title: `Reinstate ${c.name}?`,
+            body: "They were disqualified. Reinstating means their result will count toward placement again.",
+            fields: [],
+            submitLabel: "Reinstate",
+            cancelLabel: "Keep DQ"
+          });
+          if (!out) return;
           patch = { dq: false, dqReason: "" };
         } else {
-          const reason = prompt(`Disqualify ${c.name}? Reason (e.g. "false start", "lane infringement", "baton drop"):`, "false start");
-          if (reason === null) return;
-          patch = { dq: true, dqReason: reason.trim() };
+          const out = await showFormModal({
+            title: `Disqualify ${c.name}?`,
+            body: "DQ removes them from placement and points. Standard reasons: false start, lane infringement, baton drop, equipment foul.",
+            fields: [
+              { name: "reason", label: "Reason", value: c.dqReason || "false start", placeholder: "false start" }
+            ],
+            submitLabel: "Disqualify",
+            cancelLabel: "Cancel"
+          });
+          if (!out) return;
+          patch = { dq: true, dqReason: out.reason };
         }
         try {
           const resp = await api.updateCompetitor(currentEventId, c.id, patch);
@@ -1170,16 +1257,19 @@
         const ev2 = state.events.find(e => e.id === currentEventId);
         const c = ev2?.competitors.find(x => x.id === btn.dataset.editMeta);
         if (!c) return;
-        const bib = prompt(`Bib / race number for ${c.name}? (leave blank to clear)`, c.bib || "");
-        if (bib === null) return;
-        const grade = prompt(`Grade for ${c.name}? (leave blank to clear)`, c.grade || "");
-        if (grade === null) return;
-        const actualAge = prompt(`Actual age for ${c.name}? (overrides band rollup; leave blank to use event's age "${ev2.age}")`, c.actualAge || "");
-        if (actualAge === null) return;
-        const heat = prompt(`Heat for ${c.name}? (e.g. "1", "A", "Fast" — leave blank for none)`, c.heat || "");
-        if (heat === null) return;
+        const out = await showFormModal({
+          title: `Edit details — ${c.name}`,
+          submitLabel: "Save details",
+          fields: [
+            { name: "bib",       label: "Bib / race number", value: c.bib       || "", placeholder: "42",   help: "Leave blank to clear." },
+            { name: "grade",     label: "Grade",             value: c.grade     || "", placeholder: "3" },
+            { name: "actualAge", label: "Actual age (override)", value: c.actualAge || "", placeholder: ev2.age, help: `Defaults to event's age "${ev2.age}". Set if running in a different age group than their actual age.` },
+            { name: "heat",      label: "Heat",              value: c.heat      || "", placeholder: "1, A, Fast", help: "Groups competitors visually within the event." }
+          ]
+        });
+        if (!out) return;
         try {
-          const resp = await api.updateCompetitor(currentEventId, c.id, { bib: bib.trim(), grade: grade.trim(), actualAge: actualAge.trim(), heat: heat.trim() });
+          const resp = await api.updateCompetitor(currentEventId, c.id, { bib: out.bib, grade: out.grade, actualAge: out.actualAge, heat: out.heat });
           if (resp?.competitor) Object.assign(c, resp.competitor);
           renderEventDetail();
         } catch (e) { showToast("Save failed"); }
@@ -1241,16 +1331,32 @@
   function startRowTimer(competitorId, startMsOverride) {
     if (rowTimers.has(competitorId)) return;
     const startMs = (typeof startMsOverride === "number") ? startMsOverride : performance.now();
-    const tick = () => {
+    // Paint the current state synchronously so the user sees feedback on the
+    // very same frame as their click — don't wait for the first rAF (which on
+    // some browsers/tabs can be throttled to ~250ms).
+    const paint = () => {
+      const t = rowTimers.get(competitorId);
+      if (!t) return false;
       const display = document.querySelector(`.row-timer[data-cid="${competitorId}"] .row-timer-time`);
       if (display) display.textContent = fmtTimer(performance.now() - startMs);
+      const tDiv = document.querySelector(`.row-timer[data-cid="${competitorId}"]`);
+      if (tDiv && tDiv.hidden) tDiv.hidden = false;
+      const btn = document.querySelector(`.row-timer-btn[data-cid="${competitorId}"]`);
+      if (btn && !btn.classList.contains("running")) { btn.classList.add("running"); btn.textContent = "⏹"; }
+      return true;
+    };
+    const tick = () => {
+      if (!paint()) return;
       const t = rowTimers.get(competitorId);
       if (t) t.raf = requestAnimationFrame(tick);
     };
-    rowTimers.set(competitorId, { startMs, raf: requestAnimationFrame(tick) });
-    // Reflect button state + class without a full re-render (so other rows keep ticking)
-    const btn = document.querySelector(`.row-timer-btn[data-cid="${competitorId}"]`);
-    if (btn) { btn.classList.add("running"); btn.textContent = "⏹"; }
+    // Belt-and-suspenders: a 100ms setInterval keeps painting even if rAF is
+    // throttled (e.g. background tab) — display jitters by at most 100ms,
+    // which is still far smoother than not appearing at all.
+    const intervalId = setInterval(paint, 100);
+    rowTimers.set(competitorId, { startMs, raf: requestAnimationFrame(tick), intervalId });
+    // Synchronous first paint — no waiting for the first animation frame.
+    paint();
     persistRowTimers();
   }
 
@@ -1258,6 +1364,7 @@
     const t = rowTimers.get(competitorId);
     if (!t) return;
     cancelAnimationFrame(t.raf);
+    if (t.intervalId) clearInterval(t.intervalId);
     rowTimers.delete(competitorId);
     persistRowTimers();
     const elapsedMs = performance.now() - t.startMs;
@@ -1294,7 +1401,10 @@
     for (const id of ids) await stopRowTimer(id);
   }
   function clearAllRowTimers() {
-    rowTimers.forEach(t => cancelAnimationFrame(t.raf));
+    rowTimers.forEach(t => {
+      cancelAnimationFrame(t.raf);
+      if (t.intervalId) clearInterval(t.intervalId);
+    });
     rowTimers.clear();
   }
   /** True if any row timer is active. Used to gate celebrations. */
@@ -1380,12 +1490,27 @@
       walkupAt: Date.now()
     };
     if (ev?.format === "team") {
-      // Optional: prompt for team members + house when adding a team
-      const members = prompt(`Members of ${name}? (comma-separated, optional)`, "");
-      if (members === null) return;
-      const house = (state.school?.houses||[]).length > 0
-        ? prompt(`House for ${name}? (${(state.school.houses||[]).join(", ")})`, "") : "";
-      if (house === null) return;
+      // Branded form modal for team metadata (members + house)
+      const houseHelp = (state.school?.houses||[]).length > 0
+        ? `Available houses: ${(state.school.houses||[]).join(", ")}`
+        : "Add houses in Settings if you'd like to track points by house.";
+      const out = await showFormModal({
+        title: `Add team — ${name}`,
+        body: "Optional details for this team. Members are stored on the team record; semicolon-separated names work best (commas can clash with the CSV importer).",
+        fields: [
+          { name: "members", label: "Members",
+            value: "", placeholder: "Maya Patel; Liam Cole; Ava Chen",
+            help: "Optional — semicolon-separated list of runners on this team." },
+          { name: "house",   label: "House",
+            value: "", placeholder: (state.school?.houses?.[0] || "Alpha"),
+            help: houseHelp }
+        ],
+        submitLabel: "Add Team",
+        cancelLabel: "Cancel"
+      });
+      if (!out) return;
+      const members = out.members || "";
+      const house   = out.house   || "";
       try {
         const resp = await api.addCompetitor(currentEventId, name);
         const created = resp?.competitor;
