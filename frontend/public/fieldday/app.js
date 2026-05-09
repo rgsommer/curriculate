@@ -179,6 +179,29 @@
     clearTimeout(showToast._t);
     showToast._t = setTimeout(() => { el.hidden = true; }, ms);
   }
+  /**
+   * Like showToast, but appends an "Undo" button. The toast stays visible
+   * for `ms` (default 15s — destructive ops deserve a generous window) or
+   * until the user clicks Undo. If clicked, undoFn() runs and a small
+   * confirmation toast replaces the undo prompt.
+   */
+  function showUndoToast(msg, undoFn, ms=15000) {
+    const el = $("#toast");
+    el.innerHTML = `<span style="margin-right:14px">${escapeHtml(msg)}</span>
+      <button id="toastUndoBtn" style="background:#ffd166;color:#1c1c1c;border:0;padding:6px 14px;border-radius:999px;font-weight:700;cursor:pointer;font-size:13px;">Undo</button>`;
+    el.hidden = false;
+    clearTimeout(showToast._t);
+    let used = false;
+    const cleanup = () => { el.hidden = true; el.innerHTML = ""; };
+    document.getElementById("toastUndoBtn").addEventListener("click", async () => {
+      if (used) return; used = true;
+      clearTimeout(showToast._t);
+      cleanup();
+      try { await undoFn(); showToast("Undone"); }
+      catch (e) { showToast("Undo failed"); }
+    });
+    showToast._t = setTimeout(() => { if (!used) cleanup(); }, ms);
+  }
   function fmtTimer(ms) {
     if (ms == null || isNaN(ms)) return "--";
     const sign = ms < 0 ? "-" : ""; ms = Math.abs(ms);
@@ -1273,6 +1296,11 @@
           if (!toClear || toClear.length === 0) return;
         }
 
+        // Snapshot the values we're about to clear so we can offer undo.
+        const cidAtClear = c.id;
+        const eventIdAtClear = currentEventId;
+        const undoSnapshot = toClear.map(idx => ({ idx, value: c.attempts[idx] }));
+
         // Stop any running row timer first so it doesn't write back over us.
         if (rowTimers.has(c.id)) {
           const t = rowTimers.get(c.id);
@@ -1287,9 +1315,22 @@
             if (resp?.competitor) Object.assign(c, resp.competitor);
           }
           renderEventDetail();
-          showToast(toClear.length === 1
-            ? `Cleared attempt ${toClear[0]+1} for ${nm}`
-            : `Cleared ${toClear.length} attempts for ${nm}`);
+          showUndoToast(
+            toClear.length === 1
+              ? `Cleared attempt ${toClear[0]+1} for ${nm}`
+              : `Cleared ${toClear.length} attempts for ${nm}`,
+            async () => {
+              for (const { idx, value } of undoSnapshot) {
+                if (value != null && value !== "") {
+                  const resp = await api.setAttempt(eventIdAtClear, cidAtClear, idx, value);
+                  const evNow = state.events.find(e => e.id === eventIdAtClear);
+                  const cNow = evNow?.competitors.find(x => x.id === cidAtClear);
+                  if (cNow && resp?.competitor) Object.assign(cNow, resp.competitor);
+                }
+              }
+              if (currentEventId === eventIdAtClear) renderEventDetail();
+            }
+          );
         } catch (e) { showToast("Clear failed"); }
       });
     });
@@ -1544,14 +1585,21 @@
       cancelLabel: "Keep results"
     });
     if (!confirmed) return;
-    // 1. Cancel every running stopwatch silently (no record).
+    // 1. Snapshot every result so we can offer a 15-second undo window.
+    //    Stored as { [competitorId]: [attempts copy] } — independent of the
+    //    live state objects (which we're about to mutate).
+    const snapshot = {};
+    for (const c of ev.competitors || []) {
+      snapshot[c.id] = (c.attempts || []).slice();
+    }
+    // 2. Cancel every running stopwatch silently (no record).
     rowTimers.forEach(t => {
       cancelAnimationFrame(t.raf);
       if (t.intervalId) clearInterval(t.intervalId);
     });
     rowTimers.clear();
     persistRowTimers();
-    // 2. Null out every attempt slot via the same setAttempt path.
+    // 3. Null out every attempt slot via the same setAttempt path.
     try {
       for (const c of ev.competitors || []) {
         for (let i = 0; i < (c.attempts || []).length; i++) {
@@ -1562,7 +1610,24 @@
         }
       }
       renderEventDetail();
-      showToast(`Event reset · ${ev.competitors.length} competitor${ev.competitors.length===1?"":"s"} ready for a fresh run`);
+      // 4. Offer an Undo for 15 seconds — restore every snapshotted value.
+      const eventIdAtReset = currentEventId;
+      showUndoToast(
+        `Event reset · ${ev.competitors.length} competitor${ev.competitors.length===1?"":"s"} cleared`,
+        async () => {
+          for (const [cid, attempts] of Object.entries(snapshot)) {
+            for (let i = 0; i < attempts.length; i++) {
+              if (attempts[i] != null && attempts[i] !== "") {
+                const resp = await api.setAttempt(eventIdAtReset, cid, i, attempts[i]);
+                const evNow = state.events.find(e => e.id === eventIdAtReset);
+                const cNow = evNow?.competitors.find(x => x.id === cid);
+                if (cNow && resp?.competitor) Object.assign(cNow, resp.competitor);
+              }
+            }
+          }
+          if (currentEventId === eventIdAtReset) renderEventDetail();
+        }
+      );
     } catch (e) { showToast("Reset failed"); }
   }
 
