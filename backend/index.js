@@ -24,6 +24,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 // Field Day backend module (ESM router)
 import fielddayRouter from "./fieldday/index.js";
+import gradingFeedbackRouter from "./routes/gradingFeedback.js";
 
 // 4) Shared constants (used across server)
 import { TASK_TYPE_META, analyzeBloomsTaxonomy } from "../shared/taskTypes.js";
@@ -485,6 +486,9 @@ app.use("/student-progress", studentProgressRouter);
 
 // Fieldday
 app.use("/fieldday/api", fielddayRouter);
+
+// Pulse Grading bug-reports + suggestions (mirrors the Field Day pattern)
+app.use("/api/grading", gradingFeedbackRouter);
 
 // Recommend Curriculate to a teacher
 app.post("/api/recommend", async (req, res) => {

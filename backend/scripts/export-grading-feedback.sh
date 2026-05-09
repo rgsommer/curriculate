@@ -1,12 +1,13 @@
 #!/bin/bash
-# Export Pulse Grading feedback from the Curriculate API.
+# Export Pulse Grading feedback (bug reports + suggestions) from the API.
 # Usage: ADMIN_API_TOKEN=your-key ./export-grading-feedback.sh
 #
-# PLACEHOLDER: this hits /api/grading/feedback-export, which doesn't exist yet.
-# Mirror the pattern in routes/demo.js (/feedback-export) once Pulse Grading
-# has a feedback collection schema. The script writes to feedback-grading.txt
-# at the curriculate repo root, beside feedback-curriculate.txt and
-# feedback-fieldday.txt.
+# Optional filters via env:
+#   STATUS=open  STATUS=in_progress  STATUS=fixed  STATUS=wontfix
+#   SINCE=2026-05-01   (ISO date — only feedback at or after this date)
+#
+# Saves the result to feedback-grading.txt at the curriculate repo root,
+# alongside feedback-curriculate.txt and feedback-fieldday.txt.
 
 set -e
 
@@ -14,22 +15,21 @@ API_BASE="${API_BASE:-https://api.curriculate.net}"
 KEY="${ADMIN_API_TOKEN:-${ADMIN_API_KEY:?Set ADMIN_API_TOKEN environment variable}}"
 OUT="${OUT:-$(cd "$(dirname "$0")/../.." && pwd)/feedback-grading.txt}"
 
-echo "Fetching Grading feedback from $API_BASE ..."
-HTTP_CODE=$(curl -s -o "$OUT" -w "%{http_code}" "$API_BASE/api/grading/feedback-export?key=$KEY")
+QS="key=${KEY}"
+[ -n "$STATUS" ] && QS="${QS}&status=${STATUS}"
+[ -n "$SINCE" ]  && QS="${QS}&since=${SINCE}"
 
-if [ "$HTTP_CODE" = "404" ]; then
-  echo "/api/grading/feedback-export route not built yet — see TODO at top of this script."
-  rm -f "$OUT"
-  exit 2
-fi
+echo "Fetching Pulse Grading feedback from ${API_BASE} ..."
+curl -s "${API_BASE}/api/grading/feedback-export?${QS}" -o "$OUT"
 
-if [ "$HTTP_CODE" = "200" ] && [ -s "$OUT" ]; then
-  echo "Saved to $OUT ($(wc -l < "$OUT") lines)"
+if [ $? -eq 0 ] && [ -s "$OUT" ]; then
+  LINES=$(wc -l < "$OUT")
+  echo "Saved to $OUT ($LINES lines)"
   echo ""
   head -8 "$OUT"
   echo "..."
   echo "(see $OUT for full report)"
 else
-  echo "Failed (HTTP $HTTP_CODE). Check ADMIN_API_TOKEN and network."
+  echo "Failed to fetch feedback. Check ADMIN_API_TOKEN, network, and that the backend has the /api/grading/feedback-export route deployed."
   exit 1
 fi

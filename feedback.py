@@ -48,8 +48,10 @@ PRODUCTS = {
     },
     "grading": {
         "label":      "Pulse Grading",
-        "export_url": "/api/grading/feedback-export",   # PLACEHOLDER — route TBD
-        "clear_url":  None,
+        "export_url": "/api/grading/feedback-export",
+        # Same fixed-only-by-default semantics as Field Day. Pass CLEAR_ALL=1
+        # in env (or answer 'all' at the prompt) to wipe everything.
+        "clear_url":  "/api/grading/feedback-clear",
         "out_file":   os.path.join(ROOT_DIR, "feedback-grading.txt"),
     },
 }
@@ -159,10 +161,11 @@ def clear_one(product_key):
     if not token:
         print("No token provided.")
         return
-    # Field Day supports a "fixed-only" mode; everyone else is a full clear.
-    is_fieldday = product_key == "fieldday"
+    # Field Day and Pulse Grading both support a "fixed-only" mode; the
+    # legacy Curriculate practice endpoint is full-clear-only.
+    supports_fixed_only = product_key in ("fieldday", "grading")
     clear_all_env = os.environ.get("CLEAR_ALL", "").strip() in ("1", "true", "yes")
-    if is_fieldday:
+    if supports_fixed_only:
         prompt = (
             f"\nClear {cfg['label']} feedback. Choose:\n"
             f"  fixed  — only items already triaged as 'fixed'  (default; recommended)\n"
@@ -187,7 +190,7 @@ def clear_one(product_key):
         all_flag = True
 
     qs = f"key={urllib.parse.quote(token)}"
-    if all_flag and is_fieldday:
+    if all_flag and supports_fixed_only:
         qs += "&all=1"
     url = f"{API_BASE}{cfg['clear_url']}?{qs}"
     status, body = _http_get(url)
