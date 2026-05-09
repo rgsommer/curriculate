@@ -118,6 +118,60 @@
     });
   }
 
+  /**
+   * Per-attempt "which results do you want to clear?" modal. Shows one
+   * checkbox per filled attempt + an "All attempts" master toggle. Resolves
+   * to an array of attempt indices to clear, or null on Cancel.
+   */
+  function showAttemptClearModal(name, filled, ev) {
+    return new Promise((resolve) => {
+      $("#formModalTitle").textContent = `Clear results for ${name}?`;
+      const rowsHtml = filled.map(({ v, i }) => `
+        <label class="form-row" style="display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--line);border-radius:8px;cursor:pointer;margin:6px 0;">
+          <input type="checkbox" data-aclear-idx="${i}" />
+          <span><strong>Attempt ${i+1}:</strong> ${escapeHtml(displayAttempt(v, ev.type))}${ev.unit && ev.type !== "timed" ? " " + escapeHtml(ev.unit) : ""}</span>
+        </label>
+      `).join("");
+      $("#formModalBody").innerHTML = `
+        <p class="muted small">Pick which attempts to wipe. The competitor stays in the event — only the numbers are reset.</p>
+        ${rowsHtml}
+        <label class="form-row" style="display:flex;align-items:center;gap:10px;padding:8px;border-top:1px dashed var(--line);margin-top:8px;cursor:pointer;">
+          <input type="checkbox" data-aclear-all />
+          <span><strong>All attempts</strong></span>
+        </label>
+      `;
+      $("#formModalOk").textContent = "Clear selected";
+      $("#formModalCancel").textContent = "Cancel";
+      $("#formModal").hidden = false;
+
+      // "All" toggles every checkbox at once.
+      const all = $("#formModalBody [data-aclear-all]");
+      const boxes = $$("#formModalBody [data-aclear-idx]");
+      all.addEventListener("change", () => boxes.forEach(b => { b.checked = all.checked; }));
+      boxes.forEach(b => b.addEventListener("change", () => {
+        all.checked = boxes.every(x => x.checked);
+      }));
+
+      const cleanup = () => {
+        $("#formModal").hidden = true;
+        $("#formModalBody").innerHTML = "";
+        $("#formModalOk").onclick = null;
+        $("#formModalCancel").onclick = null;
+        $("#formModalClose").onclick = null;
+      };
+      $("#formModalOk").onclick = () => {
+        const picks = $$("#formModalBody [data-aclear-idx]")
+          .filter(b => b.checked)
+          .map(b => parseInt(b.dataset.aclearIdx, 10));
+        cleanup();
+        if (picks.length === 0) { showToast("Nothing selected"); resolve(null); return; }
+        resolve(picks);
+      };
+      $("#formModalCancel").onclick = () => { cleanup(); resolve(null); };
+      $("#formModalClose").onclick  = () => { cleanup(); resolve(null); };
+    });
+  }
+
   function showToast(msg, ms=2200) {
     const el = $("#toast");
     el.textContent = msg;
@@ -1196,16 +1250,29 @@
         const ev2 = state.events.find(e => e.id === currentEventId);
         const c   = ev2?.competitors.find(x => x.id === btn.dataset.clearRow);
         const nm  = c?.name?.trim() || "this competitor";
-        const hasResult = (c?.attempts || []).some(v => v != null && v !== "");
-        if (!hasResult) { showToast("No results to clear"); return; }
-        const confirmed = await showFormModal({
-          title: `Clear results for ${nm}?`,
-          body: `This wipes every attempt time/distance/weight for ${nm} but keeps them in the event so you can re-run them. The competitor stays — only the numbers are reset.`,
-          fields: [],
-          submitLabel: "Clear results",
-          cancelLabel: "Keep results"
-        });
-        if (!confirmed) return;
+        const filled = (c?.attempts || [])
+          .map((v, i) => ({ v, i }))
+          .filter(x => x.v != null && x.v !== "");
+        if (filled.length === 0) { showToast("No results to clear"); return; }
+
+        let toClear = [];
+        if (filled.length === 1) {
+          // Simple one-attempt case: just confirm and clear.
+          const confirmed = await showFormModal({
+            title: `Clear result for ${nm}?`,
+            body: `This wipes ${nm}'s recorded ${typeLabel(ev2.type).toLowerCase()} but keeps them in the event so you can re-run them.`,
+            fields: [],
+            submitLabel: "Clear result",
+            cancelLabel: "Keep it"
+          });
+          if (!confirmed) return;
+          toClear = filled.map(x => x.i);
+        } else {
+          // Multi-attempt: let the user pick which attempts to wipe.
+          toClear = await showAttemptClearModal(nm, filled, ev2);
+          if (!toClear || toClear.length === 0) return;
+        }
+
         // Stop any running row timer first so it doesn't write back over us.
         if (rowTimers.has(c.id)) {
           const t = rowTimers.get(c.id);
@@ -1215,16 +1282,14 @@
           persistRowTimers();
         }
         try {
-          // Walk every attempt slot and null it out via the same setAttempt
-          // path normal edits use — keeps server + local cache consistent.
-          for (let i = 0; i < (c.attempts||[]).length; i++) {
-            if (c.attempts[i] != null && c.attempts[i] !== "") {
-              const resp = await api.setAttempt(currentEventId, c.id, i, null);
-              if (resp?.competitor) Object.assign(c, resp.competitor);
-            }
+          for (const idx of toClear) {
+            const resp = await api.setAttempt(currentEventId, c.id, idx, null);
+            if (resp?.competitor) Object.assign(c, resp.competitor);
           }
           renderEventDetail();
-          showToast(`Cleared results for ${nm}`);
+          showToast(toClear.length === 1
+            ? `Cleared attempt ${toClear[0]+1} for ${nm}`
+            : `Cleared ${toClear.length} attempts for ${nm}`);
         } catch (e) { showToast("Clear failed"); }
       });
     });
@@ -1451,6 +1516,55 @@
   }
   /** True if any row timer is active. Used to gate celebrations. */
   function anyTimerRunning() { return timerHandle != null || rowTimers.size > 0; }
+
+  /**
+   * Reset every result in the current event — useful for a false start or
+   * before re-running the same heat. Stops any in-flight stopwatches WITHOUT
+   * recording (so no bogus 0.42s times get logged), then nulls every attempt
+   * for every competitor in the event.
+   */
+  async function resetAllInEvent() {
+    const ev = state.events.find(e => e.id === currentEventId);
+    if (!ev) return;
+    const filledCount = (ev.competitors || []).reduce((acc, c) =>
+      acc + (c.attempts || []).filter(v => v != null && v !== "").length, 0);
+    const runningCount = rowTimers.size;
+    if (filledCount === 0 && runningCount === 0) {
+      showToast("Nothing to reset");
+      return;
+    }
+    const parts = [];
+    if (runningCount) parts.push(`${runningCount} running stopwatch${runningCount===1?"":"es"}`);
+    if (filledCount) parts.push(`${filledCount} recorded result${filledCount===1?"":"s"}`);
+    const confirmed = await showFormModal({
+      title: `Reset every result in this event?`,
+      body: `This stops ${parts.join(" and ")} for ${escapeHtml(ev.title)}. Stopwatches will be cancelled WITHOUT recording, and every recorded time / distance / weight will be cleared. Competitors stay in the event. This cannot be undone.`,
+      fields: [],
+      submitLabel: "Reset event",
+      cancelLabel: "Keep results"
+    });
+    if (!confirmed) return;
+    // 1. Cancel every running stopwatch silently (no record).
+    rowTimers.forEach(t => {
+      cancelAnimationFrame(t.raf);
+      if (t.intervalId) clearInterval(t.intervalId);
+    });
+    rowTimers.clear();
+    persistRowTimers();
+    // 2. Null out every attempt slot via the same setAttempt path.
+    try {
+      for (const c of ev.competitors || []) {
+        for (let i = 0; i < (c.attempts || []).length; i++) {
+          if (c.attempts[i] != null && c.attempts[i] !== "") {
+            const resp = await api.setAttempt(currentEventId, c.id, i, null);
+            if (resp?.competitor) Object.assign(c, resp.competitor);
+          }
+        }
+      }
+      renderEventDetail();
+      showToast(`Event reset · ${ev.competitors.length} competitor${ev.competitors.length===1?"":"s"} ready for a fresh run`);
+    } catch (e) { showToast("Reset failed"); }
+  }
 
   // ---------- Timer ----------
   function startTimer() {
@@ -4107,7 +4221,7 @@
     $("#btnTimerStop").addEventListener("click", stopTimer);
     $("#btnTimerReset").addEventListener("click", resetTimer);
     $("#btnTimerStartAll").addEventListener("click", startAllRowTimers);
-    $("#btnTimerStopAll").addEventListener("click", stopAllRowTimers);
+    $("#btnTimerResetAll").addEventListener("click", resetAllInEvent);
 
     $("#btnCloseModal").addEventListener("click", () => $("#eventModal").hidden = true);
     $("#btnCancelModal").addEventListener("click", () => $("#eventModal").hidden = true);

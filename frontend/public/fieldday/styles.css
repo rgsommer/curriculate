@@ -96,6 +96,8 @@ main { padding: 24px clamp(16px, 4vw, 40px); max-width: 1280px; margin: 0 auto; 
 .btn.danger { background: var(--danger); border-color: var(--danger); color: white; }
 .btn.danger.ghost { background: transparent; color: var(--danger); border-color: var(--line); }
 .btn.danger.ghost:hover { background: var(--danger-soft); }
+.btn.warn { background: #fff7e0; border-color: #f0c468; color: #8a6d00; }
+.btn.warn:hover { background: #ffeec1; }
 .btn.ghost { background: transparent; }
 .btn.block { display:flex; width: 100%; margin-top: 8px; }
 .btn.big { padding: 12px 22px; font-size: 16px; }
