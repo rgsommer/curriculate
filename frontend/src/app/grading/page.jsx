@@ -5,6 +5,7 @@ import BatchGrading from "./BatchGrading";
 import VideoGrading from "./VideoGrading";
 import AudioGrading from "./AudioGrading";
 import QuestWidget, { GRADING_QUESTS, completeQuest } from "../../components/QuestWidget";
+import PulseFeedbackButton from "./PulseFeedbackButton";
 import { buildResultsPdf, buildStripsPdf, sessionItemToResult, buildSessionEdsbyCsv, preloadPdfLibs } from "./pdfReports";
 
 /**
@@ -5908,6 +5909,14 @@ export default function GradingPage() {
 
         {/* ── Quest widget ── */}
         <QuestWidget quests={GRADING_QUESTS} label="Quests" />
+
+        {/* ── Pulse Grading feedback button (floating, bottom-left) ──
+            Surfaces the existing /api/grading/report endpoint so
+            teachers can flag bugs and suggestions in-context. */}
+        <PulseFeedbackButton
+          surface={inputMode === "batch" ? "grading-batch" : `grading-${inputMode}`}
+          context={{ rubricMode: rubricOverride ? "override" : "default" }}
+        />
 
         {/* ── Enlarged rubric page overlay ── */}
         {enlargedRubricPage && (
