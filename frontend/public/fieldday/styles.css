@@ -234,14 +234,27 @@ main { padding: 24px clamp(16px, 4vw, 40px); max-width: 1280px; margin: 0 auto; 
 /* ===== Detail ===== */
 .event-detail {
   display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px;
+  align-items: start;  /* don't stretch — let each column be its natural height */
 }
 @media (max-width: 900px) { .event-detail { grid-template-columns: 1fr; } }
+/* Left column: Rules card on top, then the side stack (Heat Stopwatch,
+   Event Status, Live Standings) flowing tightly below. The flex column
+   means there's no grid-row gap between Rules and the side stack — Rules
+   is only as tall as its content, and the side cards come up right under it. */
+.event-detail-left { display: flex; flex-direction: column; gap: 14px; }
+.event-detail-left .detail-card { margin-bottom: 0; }
+.event-detail-left .detail-side {
+  display: flex; flex-direction: column; gap: 14px;
+  /* On desktop the aside is just a passive grouping inside the left column. */
+  margin: 0;
+}
 .detail-card {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 16px; margin-bottom: 14px;
 }
 .detail-card h2 { font-size: 15px; margin: 0 0 12px; }
 .detail-side .detail-card:last-child { margin-bottom: 0; }
+.event-detail-right { margin-bottom: 0; }
 
 .competitor-list { display: flex; flex-direction: column; gap: 8px; }
 .heat-group { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px; display: flex; flex-direction: column; gap: 6px; }

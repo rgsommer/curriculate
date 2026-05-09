@@ -234,23 +234,20 @@
     </div>
 
     <div class="event-detail">
-      <div class="detail-card event-rules-card" id="eventRulesCard" hidden>
-        <h2 style="display:flex;justify-content:space-between;align-items:center;">
-          Rules
-          <button class="link" id="btnToggleRules" type="button" style="font-size:13px">Hide</button>
-        </h2>
-        <pre id="eventRulesText"></pre>
-      </div>
-      <div class="detail-card">
-        <h2>Competitors & Results</h2>
-        <div id="competitorList" class="competitor-list"></div>
-        <div class="add-competitor-row">
-          <input id="newCompetitorName" placeholder="Competitor name" />
-          <button class="btn" id="btnAddCompetitor">+ Add Competitor</button>
+      <!-- Left column: Rules + side stack (timer, status, standings).
+           Wrapping Rules and the side aside in a single flex column means
+           they stack tight against each other with no grid-row gap, so
+           Heat Stopwatch sits right below Rules — and Rules only grows to
+           the height of its content. -->
+      <div class="event-detail-left">
+        <div class="detail-card event-rules-card" id="eventRulesCard" hidden>
+          <h2 style="display:flex;justify-content:space-between;align-items:center;">
+            Rules
+            <button class="link" id="btnToggleRules" type="button" style="font-size:13px">Hide</button>
+          </h2>
+          <pre id="eventRulesText"></pre>
         </div>
-      </div>
-
-      <aside class="detail-side">
+        <aside class="detail-side">
         <div class="detail-card" id="timerCard" hidden>
           <h2>Heat Stopwatch</h2>
           <div class="timer-display" id="timerDisplay">00:00.00</div>
@@ -281,6 +278,16 @@
           <ol class="standings" id="liveStandings"></ol>
         </div>
       </aside>
+      </div>
+      <!-- Right column: just the Competitors & Results card -->
+      <div class="detail-card event-detail-right">
+        <h2>Competitors &amp; Results</h2>
+        <div id="competitorList" class="competitor-list"></div>
+        <div class="add-competitor-row">
+          <input id="newCompetitorName" placeholder="Competitor name" />
+          <button class="btn" id="btnAddCompetitor">+ Add Competitor</button>
+        </div>
+      </div>
     </div>
   </section>
 
