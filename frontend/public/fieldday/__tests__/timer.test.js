@@ -277,3 +277,51 @@ test("multi-helper: two simultaneous Stop taps — first wins, second is no-op",
   assert.equal(second.already, true);
   assert.equal(ev.competitors[0].attempts[0], 8.42);  // first wins
 });
+
+// ---------- restrictTimerStarts toggle ----------
+
+/** Mirror of the backend canStartOrReset() decision tree. */
+async function canStartOrReset({ session, school, ev }) {
+  if (!ev || !session) return false;
+  if (session.role === "admin") return true;
+  if (school?.restrictTimerStarts) {
+    return (ev.leaderName || "").trim().toLowerCase() ===
+           (session.leaderName || "").trim().toLowerCase();
+  }
+  return true;  // loose default
+}
+
+/** Stop is always loose. */
+function canStop({ session }) { return !!session; }
+
+test("permissions: default loose mode — any helper can start", async () => {
+  const ev = { leaderName: "Maria" };
+  const school = { restrictTimerStarts: false };
+  assert.equal(await canStartOrReset({ session: { role: "leader", leaderName: "Tom" }, school, ev }), true);
+});
+
+test("permissions: strict mode — only assigned leader can start", async () => {
+  const ev = { leaderName: "Maria" };
+  const school = { restrictTimerStarts: true };
+  assert.equal(await canStartOrReset({ session: { role: "leader", leaderName: "Tom" }, school, ev }), false);
+  assert.equal(await canStartOrReset({ session: { role: "leader", leaderName: "Maria" }, school, ev }), true);
+});
+
+test("permissions: admin always wins, regardless of toggle", async () => {
+  const ev = { leaderName: "Maria" };
+  const school = { restrictTimerStarts: true };
+  assert.equal(await canStartOrReset({ session: { role: "admin", leaderName: "" }, school, ev }), true);
+});
+
+test("permissions: STOP is always allowed, even in strict mode", () => {
+  // The whole point of the toggle: starts/resets are gated, but anyone at
+  // the finish line can stop a runner.
+  const session = { role: "leader", leaderName: "Tom" };
+  assert.equal(canStop({ session }), true);
+});
+
+test("permissions: case-insensitive leaderName match", async () => {
+  const ev = { leaderName: "Maria Gonzalez" };
+  const school = { restrictTimerStarts: true };
+  assert.equal(await canStartOrReset({ session: { role: "leader", leaderName: "  maria gonzalez " }, school, ev }), true);
+});

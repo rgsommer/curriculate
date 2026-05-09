@@ -84,6 +84,12 @@ const SchoolSchema = new Schema({
   // (preserves the simple school-code-only flow). Turn on for events where
   // audit-trail integrity matters.
   requireLeaderPin:   { type: Boolean, default: false },
+  // When true, ONLY the event's assigned leader (or an admin) can Start All
+  // a race or Reset All times. Any signed-in helper can still STOP a timer.
+  // Off by default — most field days run looser, with multiple helpers
+  // collaborating on a single event. Turn on if you want strict ownership
+  // (e.g. one head official per event station).
+  restrictTimerStarts: { type: Boolean, default: false },
   // Map: lowercased-trimmed leader name → { hash: bcrypt, sentAt: ms, sentTo: email }.
   // Stored on the School doc rather than a separate collection because PINs
   // are short-lived per-event-day artifacts.

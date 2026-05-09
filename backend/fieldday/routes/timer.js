@@ -24,28 +24,44 @@
  *     the finish line to tap Stop.
  */
 import express from "express";
-import { Event } from "../models.js";
+import { Event, School } from "../models.js";
 import { errResp, asyncH, publicEvent } from "../utils.js";
 import { requireSchool } from "../auth.js";
 
 const router = express.Router();
 
 /**
- * Stopwatch endpoints intentionally use a LOOSER permission than other
- * event mutations: any authenticated session at the school can start or
- * stop any competitor's clock, even if their leaderName doesn't match
- * the event's assigned leader. That matches real field-day practice —
- * one helper at the start line, another at the finish — without forcing
- * everyone to sign in with the same shared name.
+ * Anyone signed into the school can STOP any clock — that's the field-day
+ * reality where the helper at the finish line wasn't always the one who
+ * pressed Start. The starting/resetting permission is governed by the
+ * school setting `restrictTimerStarts`:
  *
- * The strict canMutate (leaderName match) still applies to event creation,
- * editing, deletion, submit, etc. via the events.js routes.
+ *   - false (default): any helper can Start/Reset.
+ *   - true:  only the event's assigned leader (or an admin) can Start/Reset.
+ *            Stop stays open to everyone in both modes.
  */
-function canTimer(req, ev) {
+function isAssignedLeader(req, ev) {
   if (!ev) return false;
-  // Same-school check is already enforced because we found the event by
-  // schoolId. As long as the requester has an active session for this
-  // school, they can drive the clocks.
+  if (req.fdSession.role === "admin") return true;
+  return (ev.leaderName || "").trim().toLowerCase() ===
+         (req.fdSession.leaderName || "").trim().toLowerCase();
+}
+
+async function canStartOrReset(req, ev) {
+  if (!ev) return false;
+  if (req.fdSession.role === "admin") return true;
+  // Look up the school to read the restrictTimerStarts toggle.
+  const school = await School.findById(req.fdSchoolId).lean();
+  if (school?.restrictTimerStarts) {
+    return isAssignedLeader(req, ev);
+  }
+  // Default loose mode — any helper can.
+  return !!req.fdSession;
+}
+
+/** Stop is always loose — anyone signed into the school can stop a clock. */
+function canStop(req, ev) {
+  if (!ev) return false;
   return !!req.fdSession;
 }
 
@@ -61,7 +77,7 @@ router.get("/clock", (req, res) => {
 router.post("/events/:id/timer/start", requireSchool, asyncH(async (req, res) => {
   const ev = await Event.findOne({ _id: req.params.id, schoolId: req.fdSchoolId });
   if (!ev) return errResp(res, 404, "not_found");
-  if (!canTimer(req, ev)) return errResp(res, 403, "forbidden");
+  if (!(await canStartOrReset(req, ev))) return errResp(res, 403, "forbidden");
   const { competitorId, startedAt, startedBy } = req.body || {};
   if (!competitorId) return errResp(res, 400, "missing_competitorId");
   const c = ev.competitors.find(x => x.id === competitorId);
@@ -86,7 +102,7 @@ router.post("/events/:id/timer/start", requireSchool, asyncH(async (req, res) =>
 router.post("/events/:id/timer/stop", requireSchool, asyncH(async (req, res) => {
   const ev = await Event.findOne({ _id: req.params.id, schoolId: req.fdSchoolId });
   if (!ev) return errResp(res, 404, "not_found");
-  if (!canTimer(req, ev)) return errResp(res, 403, "forbidden");
+  if (!canStop(req, ev)) return errResp(res, 403, "forbidden");
   const { competitorId, stoppedAt } = req.body || {};
   if (!competitorId) return errResp(res, 400, "missing_competitorId");
   const c = ev.competitors.find(x => x.id === competitorId);
@@ -133,7 +149,7 @@ router.post("/events/:id/timer/stop", requireSchool, asyncH(async (req, res) => 
 router.post("/events/:id/timer/start-all", requireSchool, asyncH(async (req, res) => {
   const ev = await Event.findOne({ _id: req.params.id, schoolId: req.fdSchoolId });
   if (!ev) return errResp(res, 404, "not_found");
-  if (!canTimer(req, ev)) return errResp(res, 403, "forbidden");
+  if (!(await canStartOrReset(req, ev))) return errResp(res, 403, "forbidden");
   const startedAt = Number(req.body?.startedAt) || Date.now();
   const startedBy = String(req.body?.startedBy || req.fdSession.leaderName || req.fdSession.email || "");
 
@@ -157,7 +173,7 @@ router.post("/events/:id/timer/start-all", requireSchool, asyncH(async (req, res
 router.post("/events/:id/timer/reset", requireSchool, asyncH(async (req, res) => {
   const ev = await Event.findOne({ _id: req.params.id, schoolId: req.fdSchoolId });
   if (!ev) return errResp(res, 404, "not_found");
-  if (!canTimer(req, ev)) return errResp(res, 403, "forbidden");
+  if (!(await canStartOrReset(req, ev))) return errResp(res, 403, "forbidden");
   ev.liveTimers = {};
   ev.markModified("liveTimers");
   await ev.save();

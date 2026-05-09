@@ -48,7 +48,8 @@ router.patch("/schools/me", requireSchool, asyncH(async (req, res) => {
     "name", "ageCategories", "ageBands", "ageCutoffDate",
     "eventLibrary", "eventDefaults", "eventRules", "eventStaff",
     "divisions", "houses", "tieMethod", "scoring",
-    "records", "standards", "personalBests"
+    "records", "standards", "personalBests",
+    "requireLeaderPin", "restrictTimerStarts"
   ];
   const set = {};
   allowed.forEach(k => { if (k in req.body) set[k] = req.body[k]; });

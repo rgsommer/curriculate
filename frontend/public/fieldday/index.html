@@ -408,6 +408,11 @@
         <label class="check"><input type="checkbox" id="requireLeaderPinToggle" /> Require a 4-digit PIN for leader sign-in</label>
       </div>
 
+      <div class="settings-row">
+        <label class="check"><input type="checkbox" id="restrictTimerStartsToggle" /> Only the assigned event leader can <strong>Start All</strong> a race or <strong>Reset All</strong> times</label>
+      </div>
+      <p class="muted small" style="margin:-4px 0 8px 0">When off (default), any signed-in helper at any event station can drive the clocks. When on, only the leader assigned to a given event (or admin) can start a race or reset times. <em>Stopping</em> a runner's clock is always open to any helper, in both modes.</p>
+
       <div id="inviteLeadersList" class="invite-list"></div>
 
       <div class="settings-row" style="margin-top:10px">

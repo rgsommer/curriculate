@@ -63,6 +63,24 @@
   }
   function getSchool() { return state.school; }
   function isAdmin() { return api.getSession()?.role === "admin"; }
+
+  /**
+   * Returns true if the current user is allowed to Start All / Reset All /
+   * start individual row timers in the given event. Mirrors the backend
+   * canStartOrReset() logic so the UI matches authorization.
+   *
+   *   - admin: always yes
+   *   - school.restrictTimerStarts off: any signed-in helper, yes
+   *   - school.restrictTimerStarts on:  only the event's assigned leader
+   */
+  function canStartOrResetTimers(ev) {
+    if (!ev) return false;
+    if (isAdmin()) return true;
+    if (!state.school?.restrictTimerStarts) return true;
+    const sessLeader = (api.getSession()?.leaderName || "").trim().toLowerCase();
+    const evLeader   = (ev.leaderName || "").trim().toLowerCase();
+    return !!sessLeader && sessLeader === evLeader;
+  }
   /**
    * In-app form modal — replaces window.prompt() (which always shows an
    * ugly "www.curriculate.net says" header). Returns a Promise that
@@ -1123,6 +1141,22 @@
     }
 
     $("#timerCard").hidden = ev.type !== "timed";
+    // Gate the Start/Reset buttons against the school's restrictTimerStarts
+    // setting so helpers see disabled buttons (with explanation) rather
+    // than getting a confusing 403 after a tap.
+    const canStart = canStartOrResetTimers(ev);
+    const startBtn = $("#btnTimerStartAll");
+    const resetBtn = $("#btnTimerResetAll");
+    if (startBtn) {
+      startBtn.disabled = !canStart;
+      startBtn.title = canStart ? "Start every empty runner at once"
+        : `Only ${escapeHtml(ev.leaderName || "the assigned leader")} (or admin) can start this event — Settings has the restriction on.`;
+    }
+    if (resetBtn) {
+      resetBtn.disabled = !canStart;
+      resetBtn.title = canStart ? "Stop every running stopwatch and clear results"
+        : `Only ${escapeHtml(ev.leaderName || "the assigned leader")} (or admin) can reset this event.`;
+    }
     const isCompleted = ev.status === "completed";
     $("#eventStatusDot").className = "dot " + ev.status;
     $("#eventStatusText").textContent = isCompleted ? "Completed" : "In Progress";
@@ -1191,9 +1225,17 @@
         : "";
       const isTimed = ev.type === "timed" && !readOnly;
       const running = rowTimers.has(c.id);
+      // Stop is always allowed for any helper. Start is gated by the
+      // school's restrictTimerStarts toggle — stays clickable in default
+      // loose mode, disabled for non-leaders when the toggle is on.
+      const startDisabled = !running && !canStartOrResetTimers(ev);
+      const startTitle = running ? "Stop this runner"
+        : (startDisabled
+            ? `Only ${ev.leaderName || "the assigned leader"} can start this race (Settings restricts starts).`
+            : "Start this runner");
       const inlineTimer = isTimed ? `
         <div class="row-timer" data-cid="${c.id}" ${running?"":"hidden"}><span class="row-timer-time">${running ? fmtTimer(performance.now()-rowTimers.get(c.id).startMs) : "00:00.00"}</span></div>
-        <button class="row-timer-btn ${running?"running":""}" data-cid="${c.id}" data-row-timer="1" title="${running?"Stop":"Start"} this runner">${running?"⏹":"▶"}</button>
+        <button class="row-timer-btn ${running?"running":""}" data-cid="${c.id}" data-row-timer="1" title="${escapeHtml(startTitle)}" ${startDisabled?"disabled":""}>${running?"⏹":"▶"}</button>
       ` : "";
       return `
         <div class="competitor-row" data-cid="${c.id}">
@@ -2872,6 +2914,8 @@
     const school = state.school; if (!school) return;
     const requireToggle = $("#requireLeaderPinToggle");
     if (requireToggle) requireToggle.checked = !!school.requireLeaderPin;
+    const restrictToggle = $("#restrictTimerStartsToggle");
+    if (restrictToggle) restrictToggle.checked = !!school.restrictTimerStarts;
 
     const names = collectStaffNames();
     const emails = school.staffEmails || {};
@@ -2975,6 +3019,18 @@
       const resp = await api.updateSchool({ requireLeaderPin: v });
       if (resp?.school) state.school = resp.school;
       showToast(v ? "Leader PIN now required" : "Leader PIN no longer required");
+      renderInviteLeadersPanel();
+    } catch (e) { showToast("Save failed"); }
+  }
+
+  async function saveRestrictTimerStarts() {
+    const v = $("#restrictTimerStartsToggle").checked;
+    try {
+      const resp = await api.updateSchool({ restrictTimerStarts: v });
+      if (resp?.school) state.school = resp.school;
+      showToast(v
+        ? "Only assigned leaders can Start/Reset races now"
+        : "Any helper can Start/Reset races now");
       renderInviteLeadersPanel();
     } catch (e) { showToast("Save failed"); }
   }
@@ -4555,6 +4611,7 @@
     $("#btnInviteAllLeaders").addEventListener("click", inviteAllLeaders);
     $("#btnPrintCredentials").addEventListener("click", printCredentialsSheet);
     $("#requireLeaderPinToggle").addEventListener("change", saveRequireLeaderPin);
+    $("#restrictTimerStartsToggle").addEventListener("change", saveRestrictTimerStarts);
     $("#btnAddRecord").addEventListener("click", addRecord);
     $("#standardsTitleFilter").addEventListener("change", renderStandardsEditor);
     $("#btnReseedStandards").addEventListener("click", reseedStandards);

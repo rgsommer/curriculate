@@ -513,6 +513,7 @@
     <details>
       <summary>Can multiple helpers run the same event together?</summary>
       <p>Yes. Stopwatches are server-coordinated — when one helper taps "Start All," every other helper's phone (signed into the same school) shows the same clocks tick at the same moment. Anyone can stop any runner as they cross the line. The recorded time is the elapsed between the start tap and the stop tap, regardless of which helper made each tap, and network latency doesn't enter the measurement (each device timestamps the tap locally before sending). Common pattern: one helper at the start with the bib list, two at the finish line each handling half the lanes, one floater handling DQs and walk-ups.</p>
+      <p>Want stricter ownership? Admin → Settings has a toggle: <em>"Only the assigned event leader can Start All a race or Reset All times."</em> When on, a helper who isn't the named leader for an event sees those buttons disabled (with a tooltip saying who can use them) — but anyone can still stop a runner's clock at the finish line. Off by default; turn on for events where you want one head official per station.</p>
     </details>
     <details>
       <summary>Can I get a printable end-of-day summary?</summary>
