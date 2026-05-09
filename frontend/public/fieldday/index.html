@@ -176,6 +176,7 @@
       <h1>Events</h1>
       <div class="view-header-actions">
         <input class="search" id="eventSearch" placeholder="Search events..." />
+        <button class="btn ghost" id="btnResultsSoFar" hidden title="See school-wide standings so far">📊 Results So Far</button>
         <button class="btn primary" id="btnNewEvent">+ New Event</button>
       </div>
     </div>
@@ -419,6 +420,11 @@
         <label class="check"><input type="checkbox" id="restrictTimerStartsToggle" /> Only the assigned event leader can <strong>Start All</strong> a race or <strong>Reset All</strong> times</label>
       </div>
       <p class="muted small" style="margin:-4px 0 8px 0">When off (default), any signed-in helper at any event station can drive the clocks. When on, only the leader assigned to a given event (or admin) can start a race or reset times. <em>Stopping</em> a runner's clock is always open to any helper, in both modes.</p>
+
+      <div class="settings-row">
+        <label class="check"><input type="checkbox" id="leadersSeeStandingsToggle" /> Let event leaders peek at the <strong>Results So Far</strong> popup (overall standings, houses, divisions, gender, records broken, % complete)</label>
+      </div>
+      <p class="muted small" style="margin:-4px 0 8px 0">Off by default — many schools prefer leaders focus on their own event and let admin announce overall winners. Turn on for transparency: leaders get a 📊 button on the Events screen that opens a read-only school-wide leaderboard, refreshed live.</p>
 
       <div id="inviteLeadersList" class="invite-list"></div>
 
@@ -938,6 +944,25 @@ Sofia Martinez,50m Sprint,9,Girls,2017-11-02,4,Beta,1,9.40,</pre>
       </div>
     </header>
     <div class="modal-body" id="summaryBody"></div>
+  </div>
+</div>
+
+<!-- "Results So Far" — read-only leaderboard popup. Always available to admin;
+     available to leaders when school.leadersSeeStandings is on. -->
+<div class="modal" id="resultsSoFarModal" hidden>
+  <div class="modal-card summary-card">
+    <header class="modal-header">
+      <h2>📊 Results So Far</h2>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span id="resultsSoFarLive" class="live-status" style="margin:0">
+          <span class="live-dot"></span>
+          <span class="live-label">Live</span>
+          <span class="live-detail muted small">Updated <span id="resultsSoFarTime">just now</span></span>
+        </span>
+        <button class="icon-btn" id="btnResultsSoFarClose">✕</button>
+      </div>
+    </header>
+    <div class="modal-body" id="resultsSoFarBody"></div>
   </div>
 </div>
 

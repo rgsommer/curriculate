@@ -49,6 +49,7 @@ export function publicSchool(school) {
     archives:          school.archives || [],
     requireLeaderPin:    !!school.requireLeaderPin,
     restrictTimerStarts: !!school.restrictTimerStarts,
+    leadersSeeStandings: !!school.leadersSeeStandings,
     // Don't expose hashes — only metadata about which staff have a PIN set.
     staffPinStatus:    Object.fromEntries(
                           Object.entries(school.staffPins || {}).map(([k, v]) => [

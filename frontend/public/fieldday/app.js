@@ -779,6 +779,7 @@
 
   // ---------- Events list ----------
   function renderEvents() {
+    updateResultsSoFarButton();
     if (!isAdmin()) { renderLeaderAssignments(); return; }
     populateAgeFilter();
     const search = $("#eventSearch").value.trim().toLowerCase();
@@ -1138,6 +1139,14 @@
     const staffBits = Object.entries(staff).filter(([,v]) => v).map(([role,name]) => `${escapeHtml(name)} (${escapeHtml(role)})`);
     if (staffBits.length > 0) {
       $("#eventDetailMeta").innerHTML += `<br><span class="muted small">Staff: ${staffBits.join(" · ")}</span>`;
+    }
+
+    // Targets line: the school record (if any) and the gold/silver/bronze
+    // standard (if any) applicable to THIS event. Lets leaders and helpers
+    // see exactly what to beat without leaving the screen.
+    const targets = buildEventTargetsHtml(ev);
+    if (targets) {
+      $("#eventDetailMeta").innerHTML += `<br>${targets}`;
     }
 
     $("#timerCard").hidden = ev.type !== "timed";
@@ -2927,6 +2936,8 @@
     if (requireToggle) requireToggle.checked = !!school.requireLeaderPin;
     const restrictToggle = $("#restrictTimerStartsToggle");
     if (restrictToggle) restrictToggle.checked = !!school.restrictTimerStarts;
+    const seeStandingsToggle = $("#leadersSeeStandingsToggle");
+    if (seeStandingsToggle) seeStandingsToggle.checked = !!school.leadersSeeStandings;
 
     const names = collectStaffNames();
     const emails = school.staffEmails || {};
@@ -3044,6 +3055,283 @@
         : "Any helper can Start/Reset races now");
       renderInviteLeadersPanel();
     } catch (e) { showToast("Save failed"); }
+  }
+
+  async function saveLeadersSeeStandings() {
+    const v = $("#leadersSeeStandingsToggle").checked;
+    try {
+      const resp = await api.updateSchool({ leadersSeeStandings: v });
+      if (resp?.school) state.school = resp.school;
+      showToast(v
+        ? "Leaders can now peek at school-wide standings"
+        : "Leaders no longer see overall standings");
+      // Refresh the events-view header so the 📊 button appears/disappears.
+      updateResultsSoFarButton();
+    } catch (e) { showToast("Save failed"); }
+  }
+
+  /**
+   * Show or hide the 📊 Results So Far button on the Events view header.
+   * Always shown for admins; shown for leaders only when the school's
+   * leadersSeeStandings toggle is on.
+   */
+  function updateResultsSoFarButton() {
+    const btn = $("#btnResultsSoFar");
+    if (!btn) return;
+    btn.hidden = !(isAdmin() || state.school?.leadersSeeStandings);
+  }
+
+  /**
+   * Open the "Results So Far" popup — a read-only school-wide leaderboard
+   * any leader (when admin enables it) or admin can pull up at any moment.
+   * Builds a single HTML string covering: y/x % progress, overall top 5,
+   * top 3 by gender, top 3 by age band, house standings, division
+   * standings, records broken today, and the most recent finishes.
+   */
+  function openResultsSoFar() {
+    if (!(isAdmin() || state.school?.leadersSeeStandings)) {
+      showToast("Admin hasn't enabled this view");
+      return;
+    }
+    renderResultsSoFar();
+    $("#resultsSoFarModal").hidden = false;
+    // Refresh on every poll while the modal is open. We reuse the existing
+    // polling cadence — when state changes, re-render the modal contents.
+    if (!openResultsSoFar._poll) {
+      openResultsSoFar._poll = setInterval(() => {
+        if (!$("#resultsSoFarModal").hidden) renderResultsSoFar();
+      }, 6000);
+    }
+  }
+  function closeResultsSoFar() {
+    $("#resultsSoFarModal").hidden = true;
+    if (openResultsSoFar._poll) {
+      clearInterval(openResultsSoFar._poll);
+      openResultsSoFar._poll = null;
+    }
+  }
+
+  function renderResultsSoFar() {
+    const events = state.events || [];
+    const school = state.school || {};
+    const tieMethod = school.tieMethod || "average";
+    const ageBands = school.ageBands || [];
+    const houses = school.houses || [];
+    const divisions = school.divisions || [];
+
+    // Update the live "updated at" timestamp shown in the header.
+    const t = $("#resultsSoFarTime");
+    if (t) {
+      const d = new Date();
+      t.textContent = `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`;
+    }
+
+    // ------- Y of X events complete -------
+    const total = events.length;
+    const completed = events.filter(e => e.status === "completed").length;
+    const inProgress = total - completed;
+    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const progressHtml = `
+      <div class="rsf-progress">
+        <div class="rsf-progress-text"><strong>${completed} of ${total}</strong> events complete · <strong>${pct}%</strong> · ${inProgress} still in progress</div>
+        <div class="rsf-progress-bar"><div class="rsf-progress-fill" style="width:${pct}%"></div></div>
+      </div>`;
+
+    // ------- Overall + by gender + by age band -------
+    const all = computeAllPersonTotals(events, tieMethod);
+    const podium = (rows, limit = 3) => {
+      if (!rows || rows.length === 0) return `<div class="muted small">—</div>`;
+      const medals = ["🥇","🥈","🥉","🏅","🏅"];
+      return `<ol class="standing-podium">${rows.slice(0, limit).map((r, i) => `
+        <li class="standing-row t${Math.min(i+1,3)}">
+          <span class="medal">${medals[i]||""}</span>
+          <span class="name">${escapeHtml(r.name)}</span>
+          <span class="pts">${r.points} pt</span>
+        </li>`).join("")}</ol>`;
+    };
+
+    const overallHtml = `
+      <div class="rsf-card">
+        <h3>Overall — top 5</h3>
+        ${podium(all, 5)}
+      </div>`;
+
+    const byGenderHtml = `
+      <div class="rsf-card">
+        <h3>By gender</h3>
+        ${["Girls","Boys","Mixed"].map(g => {
+          const rows = all.filter(r => r.gender === g);
+          if (rows.length === 0) return "";
+          return `
+            <div class="rsf-section">
+              <div class="rsf-label">${escapeHtml(g)}</div>
+              ${podium(rows)}
+            </div>`;
+        }).join("") || `<div class="muted small">No results yet.</div>`}
+      </div>`;
+
+    const byBandHtml = `
+      <div class="rsf-card">
+        <h3>By age band</h3>
+        ${ageBands.length === 0
+          ? `<div class="muted small">Set age bands in Settings.</div>`
+          : ageBands.map(band => {
+              const ages = parseBand(band);
+              const rows = all.filter(r => [...r.ages].some(a => ageInBand(a, ages)));
+              return `
+                <div class="rsf-section">
+                  <div class="rsf-label">${escapeHtml(band)}</div>
+                  ${podium(rows)}
+                </div>`;
+            }).join("")}
+      </div>`;
+
+    // ------- By house -------
+    const houseTotals = computeHouseTotalsForRSF(events, tieMethod);
+    const houseRows = (houses.length ? houses : Object.keys(houseTotals)).map(h => ({
+      name: h, points: Math.round((houseTotals[h] || 0) * 100) / 100
+    })).sort((a, b) => b.points - a.points);
+    const byHouseHtml = `
+      <div class="rsf-card">
+        <h3>By house</h3>
+        ${houseRows.length === 0 || houseRows.every(h => h.points === 0)
+          ? `<div class="muted small">No house points yet${houses.length === 0 ? " (no houses configured)" : ""}.</div>`
+          : `<ol class="standing-podium">${houseRows.map((r, i) => `
+              <li class="standing-row t${Math.min(i+1,3)}">
+                <span class="medal">${["🥇","🥈","🥉","🏅"][i] || "🏠"}</span>
+                <span class="name">${escapeHtml(r.name)}</span>
+                <span class="pts">${r.points} pt</span>
+              </li>`).join("")}</ol>`}
+      </div>`;
+
+    // ------- By division (groupings of age bands) -------
+    let byDivisionHtml = "";
+    if (divisions.length > 0) {
+      byDivisionHtml = `
+        <div class="rsf-card">
+          <h3>By division</h3>
+          ${divisions.map(div => {
+            const [lo, hi] = div.ageRange || [0, 0];
+            const rows = all.filter(r => [...r.ages].some(a => {
+              const n = parseInt(a, 10);
+              return !isNaN(n) && n >= lo && n <= hi;
+            }));
+            return `
+              <div class="rsf-section">
+                <div class="rsf-label">${escapeHtml(div.name)} <span class="muted small">(ages ${lo}–${hi})</span></div>
+                ${podium(rows)}
+              </div>`;
+          }).join("")}
+        </div>`;
+    }
+
+    // ------- Records broken today -------
+    const today = new Date().toISOString().slice(0, 10);
+    const records = (school.records || []).filter(r => r.dateSet === today);
+    const recordsHtml = `
+      <div class="rsf-card">
+        <h3>🎺 Records broken today</h3>
+        ${records.length === 0
+          ? `<div class="muted small">No new records yet — could be you next.</div>`
+          : `<ul class="rsf-records">${records.map(r => `
+              <li>
+                <strong>${escapeHtml(r.title)}</strong>
+                <span class="muted small">· Age ${escapeHtml(r.age)} ${escapeHtml(r.gender)}</span>
+                <div>${escapeHtml(r.holderName||"—")} — ${fmtResult(r.value, r.type, r.unit)}</div>
+              </li>`).join("")}</ul>`}
+      </div>`;
+
+    // ------- Recent finishes -------
+    const recent = events
+      .filter(e => e.status === "completed" && e.completedAt)
+      .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))
+      .slice(0, 5);
+    const recentHtml = `
+      <div class="rsf-card">
+        <h3>Recently finished</h3>
+        ${recent.length === 0
+          ? `<div class="muted small">No events finished yet.</div>`
+          : `<ul class="rsf-recent">${recent.map(e => {
+              const placements = computePlacements(e, tieMethod).filter(p => p.place === 1);
+              const winner = placements[0];
+              const c = winner ? (e.competitors||[]).find(x => x.id === winner.competitorId) : null;
+              const ago = e.completedAt ? Math.max(0, Math.round((Date.now() - e.completedAt) / 60000)) : null;
+              return `
+                <li>
+                  <strong>${escapeHtml(e.title)}</strong>
+                  <span class="muted small">· Age ${escapeHtml(e.age)} ${escapeHtml(e.gender)} · ${ago != null ? `${ago} min ago` : ""}</span>
+                  ${c ? `<div>🥇 ${escapeHtml(c.name||"")}${winner?.points ? ` · ${winner.points} pt` : ""}</div>` : ""}
+                </li>`;
+            }).join("")}</ul>`}
+      </div>`;
+
+    $("#resultsSoFarBody").innerHTML =
+      progressHtml + overallHtml + byGenderHtml + byBandHtml + byHouseHtml + byDivisionHtml + recordsHtml + recentHtml;
+  }
+
+  /**
+   * Build the inline "🎯 Record · 🥇 Standard" pills for an event. Looks
+   * up the school record + standard that match this event's title +
+   * gender + age (record matches age exactly; standard matches the age
+   * band the kid's age falls into). Returns "" if neither is set.
+   */
+  function buildEventTargetsHtml(ev) {
+    if (!ev) return "";
+    const school = state.school;
+    if (!school) return "";
+
+    // Record match: title + gender + age, optionally type — strictest first.
+    const records = school.records || [];
+    const titleMatch = (a, b) => (a||"").trim().toLowerCase() === (b||"").trim().toLowerCase();
+    const rec = records.find(r =>
+      titleMatch(r.title, ev.title) &&
+      titleMatch(r.gender, ev.gender) &&
+      String(r.age||"") === String(ev.age||"") &&
+      (!r.type || r.type === ev.type)
+    );
+
+    // Standard match: title + gender + ageBand containing this event's age.
+    const standards = school.standards || [];
+    const evAge = parseInt(ev.age, 10);
+    const std = standards.find(s => {
+      if (!titleMatch(s.title, ev.title)) return false;
+      if (!titleMatch(s.gender, ev.gender) && s.gender !== "Mixed") return false;
+      const [lo, hi] = parseBand(s.ageBand || "");
+      return !isNaN(evAge) && evAge >= lo && evAge <= hi;
+    });
+
+    const bits = [];
+    if (rec) {
+      bits.push(`<span class="pill" style="background:#fff7e0;color:#8a6d00" title="School record to beat — set ${escapeHtml(rec.dateSet||"")}">🎺 Record: <strong>${fmtResult(rec.value, rec.type, rec.unit)}</strong> · ${escapeHtml(rec.holderName||"—")}</span>`);
+    }
+    if (std) {
+      const goldStr    = std.gold   != null ? fmtResult(std.gold,   ev.type, ev.unit||std.unit) : null;
+      const silverStr  = std.silver != null ? fmtResult(std.silver, ev.type, ev.unit||std.unit) : null;
+      const bronzeStr  = std.bronze != null ? fmtResult(std.bronze, ev.type, ev.unit||std.unit) : null;
+      const standardBits = [];
+      if (goldStr)   standardBits.push(`🥇 ${goldStr}`);
+      if (silverStr) standardBits.push(`🥈 ${silverStr}`);
+      if (bronzeStr) standardBits.push(`🥉 ${bronzeStr}`);
+      if (standardBits.length) {
+        bits.push(`<span class="pill" style="background:#eef4ff;color:#2956ff" title="Standards for this age band">Standards: ${standardBits.join(" · ")}</span>`);
+      }
+    }
+    if (bits.length === 0) return "";
+    return `<span class="event-targets">${bits.join(" ")}</span>`;
+  }
+
+  /** Sum house points across every event's placements. */
+  function computeHouseTotalsForRSF(events, tieMethod) {
+    const totals = {};
+    for (const ev of events) {
+      const placements = computePlacements(ev, tieMethod);
+      for (const p of placements) {
+        const c = (ev.competitors||[]).find(c => c.id === p.competitorId);
+        if (!c?.house) continue;
+        totals[c.house] = (totals[c.house] || 0) + (p.points || 0);
+      }
+    }
+    return totals;
   }
 
   function renderSchoolCodeCard() {
@@ -4678,6 +4966,9 @@
     $("#btnPrintCredentials").addEventListener("click", printCredentialsSheet);
     $("#requireLeaderPinToggle").addEventListener("change", saveRequireLeaderPin);
     $("#restrictTimerStartsToggle").addEventListener("change", saveRestrictTimerStarts);
+    $("#leadersSeeStandingsToggle").addEventListener("change", saveLeadersSeeStandings);
+    $("#btnResultsSoFar").addEventListener("click", openResultsSoFar);
+    $("#btnResultsSoFarClose").addEventListener("click", closeResultsSoFar);
     $("#btnAddRecord").addEventListener("click", addRecord);
     $("#standardsTitleFilter").addEventListener("change", renderStandardsEditor);
     $("#btnReseedStandards").addEventListener("click", reseedStandards);

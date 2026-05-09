@@ -90,6 +90,12 @@ const SchoolSchema = new Schema({
   // collaborating on a single event. Turn on if you want strict ownership
   // (e.g. one head official per event station).
   restrictTimerStarts: { type: Boolean, default: false },
+  // When true, event leaders can open a "Results So Far" modal showing
+  // the same school-wide standings the admin sees: top 3 overall, by
+  // gender, age band, house, division, records broken, and live progress.
+  // Off by default — many schools prefer leaders focus on their own event
+  // and let the admin announce overall winners. Flip on for transparency.
+  leadersSeeStandings: { type: Boolean, default: false },
   // Map: lowercased-trimmed leader name → { hash: bcrypt, sentAt: ms, sentTo: email }.
   // Stored on the School doc rather than a separate collection because PINs
   // are short-lived per-event-day artifacts.

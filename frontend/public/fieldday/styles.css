@@ -114,6 +114,21 @@ main { padding: 24px clamp(16px, 4vw, 40px); max-width: 1280px; margin: 0 auto; 
   0%   { box-shadow: 0 0 0 0 rgba(16,185,129,0.6); }
   100% { box-shadow: 0 0 0 10px rgba(16,185,129,0); }
 }
+/* Results-So-Far modal */
+.rsf-progress { padding: 12px 16px; background: var(--panel-2); border-radius: 10px; margin-bottom: 14px; }
+.rsf-progress-text { font-size: 14px; margin-bottom: 8px; }
+.rsf-progress-bar { height: 10px; background: #e6e8ee; border-radius: 999px; overflow: hidden; }
+.rsf-progress-fill { height: 100%; background: linear-gradient(90deg, #06d6a0, #1d44d6); transition: width 0.4s ease; }
+.rsf-card { background: white; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+.rsf-card h3 { margin: 0 0 10px 0; font-size: 15px; }
+.rsf-section { margin-top: 8px; }
+.rsf-label { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+.rsf-records, .rsf-recent { list-style: none; padding: 0; margin: 0; }
+.rsf-records li, .rsf-recent li { padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.rsf-records li:last-child, .rsf-recent li:last-child { border-bottom: 0; }
+/* Per-event "what to beat" targets line */
+.event-targets { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.event-targets .pill { font-size: 12px; }
 .btn.ghost { background: transparent; }
 .btn.block { display:flex; width: 100%; margin-top: 8px; }
 .btn.big { padding: 12px 22px; font-size: 16px; }
