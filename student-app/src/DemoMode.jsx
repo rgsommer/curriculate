@@ -291,11 +291,17 @@ function EmailCapture({ onStart, source, classroom, promoCode, conferenceName, c
 // Task Feedback Popup (shown after each completed task)
 // ----------------------------------------------------------------
 
-// ── Quick-tap feedback (emoji based, auto-submits) ──────────────
-// Designed to feel like part of the game, not a form.
+// ── Two-phase feedback (ratings + comment) ──────────────────────
 // Phase 1: two emoji rows (fun + clarity) — tap one in each row.
-// Phase 2 (only if low rating): quick text input for "what was wrong?"
-// Auto-dismisses after 6s if untouched.
+// Phase 2: comment / suggestion box. ALWAYS shown after the user picks
+// ratings, so the student gets a chance to explain or suggest. The
+// dialog only dismisses on Submit (no auto-dismiss timer, no
+// auto-submit on high ratings).
+//
+// Required-feedback rule: if either rating is ≤ 2 ("low" — Boring/Meh
+// for fun, or Lost/Confusing for clarity), Submit is disabled until
+// the student has typed at least a few words. We treat low ratings as
+// the most important moment to capture what went wrong.
 
 const EMOJI_FUN = [
   { val: 1, face: "😴", label: "Boring" },
@@ -312,47 +318,42 @@ const EMOJI_CLARITY = [
   { val: 5, face: "💡", label: "Crystal clear" },
 ];
 
+const MIN_REQUIRED_FEEDBACK_CHARS = 8;
+
 function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip }) {
   const [fun, setFun] = useState(0);
   const [clarity, setClarity] = useState(0);
   const [comment, setComment] = useState("");
-  const [phase, setPhase] = useState("rate"); // "rate" | "comment" | "done"
-  const autoTimer = useRef(null);
-  const submitTimer = useRef(null);
+  const [phase, setPhase] = useState("rate"); // "rate" | "comment"
 
-  // Auto-dismiss after 6s if student doesn't interact at all
-  useEffect(() => {
-    autoTimer.current = setTimeout(() => {
-      if (fun === 0 && clarity === 0) onSkip();
-    }, 6000);
-    return () => { clearTimeout(autoTimer.current); clearTimeout(submitTimer.current); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Once both ratings picked, auto-advance
+  // Once BOTH emojis are picked, advance to Phase 2 (comment).
+  // No auto-submit, no auto-dismiss — the dialog stays open until the
+  // student clicks Submit.
   useEffect(() => {
     if (fun > 0 && clarity > 0 && phase === "rate") {
-      clearTimeout(autoTimer.current);
-      // Low rating? Ask what was wrong (worth bonus points)
-      if (fun <= 2 || clarity <= 2) {
-        setPhase("comment");
-      } else {
-        // Good ratings — auto-submit after brief flash
-        setPhase("done");
-        submitTimer.current = setTimeout(() => {
-          onSubmit({ fun, clarity, confusing: "", suggestion: "", feedbackBonus: 1 });
-        }, 600);
-      }
+      setPhase("comment");
     }
   }, [fun, clarity]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleCommentSubmit = () => {
-    clearTimeout(autoTimer.current);
-    const bonus = comment.trim().length >= 5 ? 4 : 1;
-    onSubmit({ fun, clarity, confusing: comment.trim(), suggestion: "", feedbackBonus: bonus });
-  };
+  const isLowRating = (fun > 0 && fun <= 2) || (clarity > 0 && clarity <= 2);
+  const trimmedComment = comment.trim();
+  const commentMeetsMinimum = trimmedComment.length >= MIN_REQUIRED_FEEDBACK_CHARS;
+  // If either rating is low, comment is REQUIRED. Otherwise, optional.
+  const submitDisabled = isLowRating && !commentMeetsMinimum;
 
-  const handleCommentSkip = () => {
-    onSubmit({ fun, clarity, confusing: "", suggestion: "", feedbackBonus: 1 });
+  const handleSubmit = () => {
+    if (submitDisabled) return;
+    // Bonus tiers: low rating + meaningful comment = 5 (we're paying for it).
+    // Any rating + comment = 4. Just rating = 1.
+    let bonus = 1;
+    if (commentMeetsMinimum) bonus = isLowRating ? 5 : 4;
+    onSubmit({
+      fun,
+      clarity,
+      confusing: isLowRating ? trimmedComment : "",
+      suggestion: !isLowRating && trimmedComment ? trimmedComment : "",
+      feedbackBonus: bonus,
+    });
   };
 
   const EmojiRow = ({ label, items, selected, onSelect }) => (
@@ -364,7 +365,7 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip }) {
         {items.map((e) => (
           <button
             key={e.val}
-            onClick={() => { clearTimeout(autoTimer.current); onSelect(e.val); }}
+            onClick={() => onSelect(e.val)}
             style={{
               width: 52, height: 52,
               borderRadius: 14,
@@ -420,48 +421,107 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip }) {
 
         {phase === "comment" && (
           <>
-            <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: "#fbbf24", marginBottom: 8 }}>
-              Tell us what was wrong — earn <span style={{ color: "#22c55e" }}>+4 pts!</span>
-            </div>
-            <input
-              type="text"
+            {/* Headline: copy + bonus depend on whether the rating was low.
+                Low: required, +5 bonus. Otherwise: optional comment, +4 if filled. */}
+            {isLowRating ? (
+              <>
+                <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: "#fbbf24", marginBottom: 4 }}>
+                  Tell us what was wrong — please
+                </div>
+                <div style={{ textAlign: "center", fontSize: 11, color: "#cbd5e1", marginBottom: 10 }}>
+                  Required when something didn't land. Earn <span style={{ color: "#22c55e", fontWeight: 800 }}>+5 pts</span>.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: "#e2e8f0", marginBottom: 4 }}>
+                  Any comments or suggestions?
+                </div>
+                <div style={{ textAlign: "center", fontSize: 11, color: "#94a3b8", marginBottom: 10 }}>
+                  Optional — but worth <span style={{ color: "#22c55e", fontWeight: 800 }}>+4 pts</span> if you share.
+                </div>
+              </>
+            )}
+            <textarea
               autoFocus
+              rows={3}
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleCommentSubmit()}
-              placeholder="e.g. Instructions were confusing..."
+              onKeyDown={(e) => {
+                // ⌘/Ctrl+Enter submits; plain Enter inserts newline so multi-line
+                // suggestions are easy to write.
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !submitDisabled) {
+                  e.preventDefault();
+                  handleSubmit();
+                }
+              }}
+              placeholder={isLowRating
+                ? "What was confusing or boring? What would have helped?"
+                : "What worked well? What would make it even better?"}
               style={{
-                width: "100%", padding: "12px 14px", borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.15)",
-                background: "rgba(255,255,255,0.07)", color: "#f8fafc",
-                fontSize: 15, outline: "none", boxSizing: "border-box",
-                marginBottom: 10,
+                width: "100%",
+                padding: "12px 14px",
+                borderRadius: 12,
+                border: isLowRating
+                  ? `1px solid ${commentMeetsMinimum ? "rgba(34,197,94,0.4)" : "rgba(245,158,11,0.45)"}`
+                  : "1px solid rgba(255,255,255,0.15)",
+                background: "rgba(255,255,255,0.07)",
+                color: "#f8fafc",
+                fontSize: 15,
+                outline: "none",
+                boxSizing: "border-box",
+                marginBottom: 6,
+                resize: "vertical",
+                minHeight: 64,
+                fontFamily: "inherit",
               }}
             />
+            {isLowRating && (
+              <div style={{ fontSize: 11, color: commentMeetsMinimum ? "#22c55e" : "#94a3b8", marginBottom: 8, textAlign: "right" }}>
+                {commentMeetsMinimum
+                  ? "Thanks — that helps."
+                  : `${Math.max(0, MIN_REQUIRED_FEEDBACK_CHARS - trimmedComment.length)} more character${MIN_REQUIRED_FEEDBACK_CHARS - trimmedComment.length === 1 ? "" : "s"} to unlock Submit`}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={handleCommentSkip} style={{
-                flex: 1, padding: 10, borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.1)", background: "transparent",
-                color: "#94a3b8", fontWeight: 700, fontSize: 13, cursor: "pointer",
-              }}>
-                Skip (+1)
+              <button
+                type="button"
+                onClick={() => setPhase("rate")}
+                style={{
+                  flex: 1, padding: 10, borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.1)", background: "transparent",
+                  color: "#94a3b8", fontWeight: 700, fontSize: 13, cursor: "pointer",
+                }}
+                title="Change your ratings"
+              >
+                Back
               </button>
-              <button onClick={handleCommentSubmit} style={{
-                flex: 2, padding: 10, borderRadius: 10, border: "none",
-                background: "linear-gradient(135deg, #f59e0b, #ef4444)",
-                color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer",
-              }}>
-                Send (+4 pts)
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={submitDisabled}
+                style={{
+                  flex: 2, padding: 10, borderRadius: 10, border: "none",
+                  background: submitDisabled
+                    ? "rgba(100,116,139,0.5)"
+                    : (commentMeetsMinimum
+                        ? "linear-gradient(135deg, #22c55e, #16a34a)"
+                        : "linear-gradient(135deg, #f59e0b, #ef4444)"),
+                  color: "#fff",
+                  fontWeight: 800,
+                  fontSize: 13,
+                  cursor: submitDisabled ? "not-allowed" : "pointer",
+                  opacity: submitDisabled ? 0.7 : 1,
+                }}
+              >
+                {submitDisabled
+                  ? "Add a few words to submit"
+                  : commentMeetsMinimum
+                    ? (isLowRating ? "Submit (+5)" : "Submit (+4)")
+                    : "Submit (+1)"}
               </button>
             </div>
           </>
-        )}
-
-        {phase === "done" && (
-          <div style={{ textAlign: "center", padding: "8px 0" }}>
-            <div style={{ fontSize: 28 }}>✅</div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#22c55e" }}>+1 pt — thanks!</div>
-          </div>
         )}
       </div>
     </div>
