@@ -74,8 +74,8 @@
   <div class="pillar-grid">
     <article class="pillar">
       <div class="pillar-icon">⏱️</div>
-      <h3>Stopwatch built in, to the hundredth</h3>
-      <p>Tap a competitor, hit Start, hit Stop — the time lands in the right cell. No transcribing from a wrist watch, no debate about whether it was 8.4 or 8.5.</p>
+      <h3>Multi-timer, every runner gets one</h3>
+      <p>Each row has its own ▶/⏹ button and live clock. Tap "Start All" to launch the whole heat at once; tap each runner as they finish. Hundredths-of-a-second precision, no transcribing from a wrist watch.</p>
     </article>
     <article class="pillar">
       <div class="pillar-icon">📏</div>
@@ -84,8 +84,8 @@
     </article>
     <article class="pillar">
       <div class="pillar-icon">🧮</div>
-      <h3>Two scoring modes, your call</h3>
-      <p>Strict 1st / 2nd / 3rd placement points, OR compete against the standard — every event has gold/silver/bronze targets per age band, and anyone who beats the bronze standard earns a ribbon. Toggle in Settings.</p>
+      <h3>Two scoring modes, or both at once</h3>
+      <p>Strict 1st / 2nd / 3rd placement points, AND/OR compete-against-the-standard. Turn on either or both in Settings — kids earn ribbons under whichever scheme they qualify for. Standards have gold/silver/bronze targets per event, age band, and gender.</p>
     </article>
     <article class="pillar">
       <div class="pillar-icon">🎺</div>
@@ -146,6 +146,31 @@
       <div class="pillar-icon">🎓</div>
       <h3>Run by grade, score by age</h3>
       <p>Schools that run heats by grade can still score by age. Toggle "Score Within → each age band" on the event, and the 5th-grade heat awards a separate 1st/2nd/3rd to the 10-year-olds and to the 11-year-olds. Standards stay accurate to each kid's age.</p>
+    </article>
+    <article class="pillar">
+      <div class="pillar-icon">🌟</div>
+      <h3>Personal bests, tracked &amp; flagged</h3>
+      <p>Upload each kid's prior PB once via CSV. When a field-day result beats their PB, a 🌟 toast fires and the ribbon shows a "PB" tag. PBs survive the year-end archive — next year picks up where this year left off.</p>
+    </article>
+    <article class="pillar">
+      <div class="pillar-icon">🏠</div>
+      <h3>Houses, with a winning crown</h3>
+      <p>Set up your school's houses (Alpha, Beta, Gryffindor — whatever they're called) and a House Standings panel rolls every event's points up to the right house. Winning house gets a 👑 in real time.</p>
+    </article>
+    <article class="pillar">
+      <div class="pillar-icon">🏃</div>
+      <h3>Relay &amp; team events, scored to houses</h3>
+      <p>Mark an event as Team / Relay and the points flow only to the house standings — not to individual overall totals. Add teams with their roster and house in seconds; the announcer treats them like any other event.</p>
+    </article>
+    <article class="pillar">
+      <div class="pillar-icon">📋</div>
+      <h3>Library defaults, set once</h3>
+      <p>Per-title defaults for type, attempts, and unit. Long Jump always pre-fills as Distance / Best of 3 / metres. Shot Put as Distance / Best of 3 / kg. New events spin up in seconds because the right defaults are already there.</p>
+    </article>
+    <article class="pillar">
+      <div class="pillar-icon">📊</div>
+      <h3>One-click Day Summary</h3>
+      <p>End-of-day report on a single click: header, top 3 overall, top 3 by gender, top 3 by age band, house standings, current school records, and per-event top 4. Print it for the bulletin board, email it to parents — same content, both ways.</p>
     </article>
   </div>
 </section>
@@ -340,6 +365,26 @@
     <details>
       <summary>Best of 3, best of 5?</summary>
       <p>Set Attempts when creating the event (1–10). For field events like Long Jump or Shot Put, this is your best-of count — only the best counts toward placement.</p>
+    </details>
+    <details>
+      <summary>How do houses work?</summary>
+      <p>List your school's houses in Settings (Alpha, Beta, etc. — comma-separated). The CSV import accepts a <code>House</code> column, or you can assign per kid in the event detail. The Admin tab shows a House Standings panel summing up every event's points to the right house, with a 👑 on the leader. Team / relay events feed only the house standings — not individual totals — so your relay points go where they should.</p>
+    </details>
+    <details>
+      <summary>How do personal bests (PBs) work?</summary>
+      <p>Add a <code>PersonalBest</code> column to your CSV with each kid's prior best for the event you're recording. During the day, if their result beats their PB, a 🌟 toast fires and the ribbon shows a "PB" tag. PBs are stored at the school level so they carry across years (and survive the new-year archive).</p>
+    </details>
+    <details>
+      <summary>What about relay and team events?</summary>
+      <p>When creating an event, set <strong>Format</strong> to "Team / Relay." The "Add Competitor" button becomes "Add Team" — give the team a name, the optional members list, and a house. The team's place earns points that go straight to the House Standings, not to any individual's overall total. Records and standards apply per team.</p>
+    </details>
+    <details>
+      <summary>Can I run multiple stopwatches at once?</summary>
+      <p>Yes — every row in a timed event has its own ▶/⏹ button and live clock. Tap "Start All" to launch the whole heat at once; tap each runner's ⏹ as they cross the finish. Or run a one-runner-at-a-time event with just one row's timer. The horn celebration for record-breaks holds itself until any timer is stopped, so the announcement never interrupts a race.</p>
+    </details>
+    <details>
+      <summary>Can I get a printable end-of-day summary?</summary>
+      <p>Yes — Admin → Day Summary opens a single sheet with every cut: top 3 overall, by gender, by age band, by house, plus current school records and every event's top 4. Click Print and you have a bulletin-board-ready report.</p>
     </details>
     <details>
       <summary>How does the roster CSV import work?</summary>
