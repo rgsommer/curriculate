@@ -714,7 +714,7 @@
   const DEMO_CODE = "12345";
   // Bump this whenever the demo seed changes — clients with an older version
   // cached in localStorage will be auto-reseeded on next demo sign-in or boot.
-  const DEMO_SEED_VERSION = 3;
+  const DEMO_SEED_VERSION = 4;
   function isDemoCode(code) { return String(code || "").trim() === DEMO_CODE; }
 
   function seedDemoBlob() {
@@ -785,6 +785,10 @@
       scoring: { placement: true, standard: true },
       // Demo school requires a PIN — same one for everyone, easy to share.
       requireLeaderPin: true,
+      // Show every leader the "📊 Results So Far" button on the demo so
+      // people exploring the app see the school-wide leaderboard immediately
+      // without needing to flip on the toggle in Settings.
+      leadersSeeStandings: true,
       // For the demo we keep the PIN in plain text on the school doc so the
       // browser can validate it without bcrypt. Real schools store hashes
       // in school.staffPins[name].hash, validated server-side.
