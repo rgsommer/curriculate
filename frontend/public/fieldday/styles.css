@@ -40,6 +40,24 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 }
 .brand { display:flex; align-items:center; gap:8px; font-weight: 700; font-size: 18px; }
 .brand-mark { font-size: 22px; }
+.demo-badge {
+  background: linear-gradient(135deg, #ffd166, #f59e0b);
+  color: #5b3700;
+  font-size: 10px; font-weight: 800; letter-spacing: .12em;
+  padding: 3px 8px; border-radius: 999px;
+  text-transform: uppercase;
+}
+.welcome-demo-hint {
+  margin-top: 12px; padding: 10px 14px;
+  background: linear-gradient(135deg, #fff7e0, #ffeac2);
+  border: 1px solid #f1d572;
+  border-radius: var(--radius-sm);
+  color: #5b3700;
+}
+.welcome-demo-hint code {
+  background: white; border: 1px solid #f1d572; padding: 1px 8px; border-radius: 6px;
+  font-family: "SF Mono","Menlo","Consolas",monospace; font-weight: 700;
+}
 .tabs { display:flex; gap: 4px; flex: 1; justify-content: center; flex-wrap: wrap; }
 .tab {
   background: transparent; border: 0; padding: 8px 14px; border-radius: 999px;

@@ -314,6 +314,9 @@
     const session = api.getSession();
     $("#userName").textContent = isAdmin() ? `Admin · ${session?.email || ""}` : (session?.leaderName || "Event Leader");
     $("#userSchool").textContent = state.school ? `${state.school.name} · ${state.school.code}` : "";
+    // Show DEMO badge when running off the demo school code (no server saves).
+    const demoBadge = $("#demoBadge");
+    if (demoBadge) demoBadge.hidden = state.school?.code !== "12345";
     $$(".tab[data-admin='1']").forEach(t => t.hidden = !isAdmin());
 
     // Restore last view + event detail + any running row-timers (refresh resilience)

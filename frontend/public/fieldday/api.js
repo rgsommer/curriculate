@@ -248,6 +248,12 @@
      *   404 {error:"school_not_found"}
      */
     async lookupSchoolStaff(schoolCode) {
+      // Demo code: seed sample data + force local mode, bypass the network entirely.
+      if (isDemoCode(schoolCode)) {
+        installDemoBlob();
+        setMode("local");
+        return localLookupSchoolStaff(DEMO_CODE);
+      }
       if (isLocal()) return localLookupSchoolStaff(schoolCode);
       try {
         return await http("GET", "/leader/staff?code=" + encodeURIComponent(schoolCode));
@@ -264,6 +270,12 @@
      *   404 {error:"school_not_found"}
      */
     async joinAsLeader(schoolCode, leaderName) {
+      // Demo code: seed sample data + force local mode, bypass the network entirely.
+      if (isDemoCode(schoolCode)) {
+        installDemoBlob();
+        setMode("local");
+        return localJoinAsLeader(DEMO_CODE, leaderName);
+      }
       if (isLocal()) return localJoinAsLeader(schoolCode, leaderName);
       try {
         const out = await http("POST", "/leader/join", { schoolCode, leaderName });
@@ -621,6 +633,208 @@
       });
     });
     return { school: { name: school.name, code: school.code }, staff: [...names].sort() };
+  }
+
+  // ---- DEMO MODE ----------------------------------------------------------
+  // School code "12345" boots a self-contained demo with realistic sample
+  // data. Everything runs against localStorage; nothing reaches the server.
+  // Seed is reset on every demo sign-in so the demo always feels fresh.
+  const DEMO_CODE = "12345";
+  function isDemoCode(code) { return String(code || "").trim() === DEMO_CODE; }
+
+  function seedDemoBlob() {
+    const now = Date.now();
+    const ageBands = ["6-7","8-9","10-11","12-13"];
+    const eventLibrary = ["50m Sprint","100m Sprint","Long Jump","High Jump","Shot Put","Softball Throw","Sack Race","4x100m Relay"];
+
+    const school = {
+      id: "demo-school",
+      name: "Maple Elementary (Demo)",
+      code: DEMO_CODE,
+      masterAdminEmail: "demo@curriculate.net",
+      adminEmails: ["demo@curriculate.net"],
+      adminEmail: "demo@curriculate.net",
+      passkey: "000000",
+      ageCategories: ["6","7","8","9","10","11","12","13"],
+      ageBands,
+      ageCutoffDate: "12-31",
+      eventLibrary,
+      eventDefaults: {
+        "50m Sprint":     { type: "timed",    attempts: 1, unit: "seconds" },
+        "100m Sprint":    { type: "timed",    attempts: 1, unit: "seconds" },
+        "Long Jump":      { type: "distance", attempts: 3, unit: "m" },
+        "High Jump":      { type: "distance", attempts: 3, unit: "m" },
+        "Shot Put":       { type: "distance", attempts: 3, unit: "m" },
+        "Softball Throw": { type: "distance", attempts: 3, unit: "m" },
+        "Sack Race":      { type: "timed",    attempts: 1, unit: "seconds" },
+        "4x100m Relay":   { type: "timed",    attempts: 1, unit: "seconds" },
+      },
+      eventRules: { ...DEFAULT_EVENT_RULES },
+      eventStaff: {
+        "50m Sprint": {
+          "Junior":       { Leader: "Coach Smith",  Assistant: "Mrs. Jones" },
+          "Intermediate": { Leader: "Coach Smith",  Assistant: "Mr. Garcia" }
+        },
+        "100m Sprint": {
+          "Intermediate": { Leader: "Coach Smith",  Assistant: "Mr. Garcia" },
+          "Senior":       { Leader: "Coach Bob",    Assistant: "Ms. Thompson" }
+        },
+        "Long Jump": {
+          "Junior":       { Leader: "Mrs. Jones",   Assistant: "Coach Smith" },
+          "Intermediate": { Leader: "Mrs. Jones",   Assistant: "Mr. Garcia" }
+        },
+        "High Jump": {
+          "Intermediate": { Leader: "Coach Bob",    Assistant: "Mrs. Jones" },
+          "Senior":       { Leader: "Coach Bob",    Assistant: "Ms. Thompson" }
+        },
+        "Shot Put": {
+          "Senior":       { Leader: "Coach Bob",    Assistant: "Mr. Garcia" }
+        },
+        "Softball Throw": {
+          "Junior":       { Leader: "Mrs. Jones",   Assistant: "Coach Smith" }
+        },
+        "Sack Race": {
+          "Junior":       { Leader: "Mrs. Jones",   Assistant: "Coach Smith" }
+        },
+        "4x100m Relay": {
+          "Intermediate": { Leader: "Coach Smith",  Assistant: "Mr. Garcia" }
+        }
+      },
+      divisions: [
+        { name: "Junior",       ageRange: [6, 8] },
+        { name: "Intermediate", ageRange: [9, 11] },
+        { name: "Senior",       ageRange: [12, 13] }
+      ],
+      houses: ["Alpha", "Beta", "Gamma", "Delta"],
+      tieMethod: "average",
+      scoring: { placement: true, standard: true },
+      records: [
+        { id: "rec1", title: "50m Sprint",  age: "8", gender: "Girls", type: "timed",    unit: "seconds", value: 8.92, holderName: "Sofia Martinez (last year)", dateSet: "2025-05-12", createdAt: now - 365*24*3600*1000 },
+        { id: "rec2", title: "Long Jump",   age: "9", gender: "Girls", type: "distance", unit: "m",       value: 3.21, holderName: "Olivia James (2024)",         dateSet: "2024-05-10", createdAt: now - 730*24*3600*1000 },
+        { id: "rec3", title: "Shot Put",    age: "12", gender: "Boys", type: "distance", unit: "m",       value: 9.40, holderName: "Lucas Park",                  dateSet: "2024-05-10", createdAt: now - 730*24*3600*1000 },
+        { id: "rec4", title: "100m Sprint", age: "10", gender: "Boys", type: "timed",    unit: "seconds", value: 17.10, holderName: "Liam Cole (older brother)", dateSet: "2023-05-13", createdAt: now - 1095*24*3600*1000 }
+      ],
+      standards: seedStandardsFor(ageBands, eventLibrary),
+      personalBests: [
+        { id: "pb1", name: "Maya Patel",     title: "50m Sprint",  gender: "Girls", value: 9.15,  type: "timed",    unit: "seconds", dateSet: "2025-09-10" },
+        { id: "pb2", name: "Liam Cole",      title: "100m Sprint", gender: "Boys",  value: 17.42, type: "timed",    unit: "seconds", dateSet: "2025-09-10" },
+        { id: "pb3", name: "Sofia Martinez", title: "Long Jump",   gender: "Girls", value: 3.05,  type: "distance", unit: "m",       dateSet: "2025-09-10" }
+      ],
+      archives: [],
+      createdAt: now - 30*24*3600*1000
+    };
+
+    const events = [
+      // 50m Sprint Age 8 Girls — completed (record-breaking result already in)
+      { _id: "demo-ev1", id: "demo-ev1", schoolId: "demo-school", leaderName: "Coach Smith",
+        title: "50m Sprint", age: "8", gender: "Girls", type: "timed", attempts: 1, unit: "seconds",
+        scoreBy: "event", format: "individual", wind: 1.4,
+        status: "completed", completedAt: now - 90*60*1000,
+        competitors: [
+          { id: "c1",  name: "Maya Patel",   attempts: [8.42], grade: "3", actualAge: "8", house: "Alpha", bib: "42" },
+          { id: "c2",  name: "Ava Chen",     attempts: [8.71], grade: "3", actualAge: "8", house: "Beta",  bib: "43" },
+          { id: "c3",  name: "Lila Brooks",  attempts: [9.05], grade: "3", actualAge: "8", house: "Gamma", bib: "44" },
+          { id: "c4",  name: "Hannah Wong",  attempts: [9.18], grade: "3", actualAge: "8", house: "Delta", bib: "45" }
+        ]
+      },
+      // 100m Sprint Age 10 Boys — in progress, two times entered, two pending
+      { _id: "demo-ev2", id: "demo-ev2", schoolId: "demo-school", leaderName: "Coach Smith",
+        title: "100m Sprint", age: "10", gender: "Boys", type: "timed", attempts: 1, unit: "seconds",
+        scoreBy: "event", format: "individual",
+        status: "in_progress",
+        competitors: [
+          { id: "c5",  name: "Liam Cole",      attempts: [16.81], grade: "5", actualAge: "10", house: "Alpha", bib: "10" },
+          { id: "c6",  name: "Noah Reyes",     attempts: [17.22], grade: "5", actualAge: "10", house: "Beta",  bib: "11" },
+          { id: "c7",  name: "Ethan Brooks",   attempts: [null],  grade: "5", actualAge: "10", house: "Gamma", bib: "12" },
+          { id: "c8",  name: "Owen Park",      attempts: [null],  grade: "5", actualAge: "10", house: "Delta", bib: "13" }
+        ]
+      },
+      // Long Jump Age 9 Girls — best of 3, fresh — nothing entered yet
+      { _id: "demo-ev3", id: "demo-ev3", schoolId: "demo-school", leaderName: "Mrs. Jones",
+        title: "Long Jump", age: "9", gender: "Girls", type: "distance", attempts: 3, unit: "m",
+        scoreBy: "event", format: "individual",
+        status: "in_progress",
+        competitors: [
+          { id: "c9",  name: "Sofia Martinez", attempts: [null,null,null], grade: "4", actualAge: "9", house: "Alpha", bib: "21" },
+          { id: "c10", name: "Mia Tanaka",     attempts: [null,null,null], grade: "4", actualAge: "9", house: "Beta",  bib: "22" },
+          { id: "c11", name: "Ella Romero",    attempts: [null,null,null], grade: "4", actualAge: "9", house: "Gamma", bib: "23" },
+          { id: "c12", name: "Sophia Lin",     attempts: [null,null,null], grade: "4", actualAge: "9", house: "Delta", bib: "24" }
+        ]
+      },
+      // Shot Put Age 12 Boys — partial, one good throw on record
+      { _id: "demo-ev4", id: "demo-ev4", schoolId: "demo-school", leaderName: "Coach Bob",
+        title: "Shot Put", age: "12", gender: "Boys", type: "distance", attempts: 3, unit: "m",
+        scoreBy: "event", format: "individual",
+        status: "in_progress",
+        competitors: [
+          { id: "c13", name: "Lucas Park",    attempts: [9.81, null, null], grade: "6", actualAge: "12", house: "Alpha", bib: "60" },
+          { id: "c14", name: "Henry Davis",   attempts: [null, null, null], grade: "6", actualAge: "12", house: "Beta",  bib: "61" },
+          { id: "c15", name: "Aidan Khan",    attempts: [null, null, null], grade: "6", actualAge: "12", house: "Gamma", bib: "62" }
+        ]
+      },
+      // High Jump Age 11 Girls — completed
+      { _id: "demo-ev5", id: "demo-ev5", schoolId: "demo-school", leaderName: "Coach Bob",
+        title: "High Jump", age: "11", gender: "Girls", type: "distance", attempts: 3, unit: "m",
+        scoreBy: "event", format: "individual",
+        status: "completed", completedAt: now - 120*60*1000,
+        competitors: [
+          { id: "c16", name: "Olivia James",  attempts: [1.32, 1.32, 1.35], grade: "5", actualAge: "11", house: "Alpha", bib: "30" },
+          { id: "c17", name: "Charlotte Wu",  attempts: [1.20, 1.25, 1.25], grade: "5", actualAge: "11", house: "Beta",  bib: "31" },
+          { id: "c18", name: "Ruby Singh",    attempts: [1.15, 1.20, 1.20], grade: "5", actualAge: "11", house: "Gamma", bib: "32" }
+        ]
+      },
+      // Sack Race Age 7 Girls — Junior division, not started
+      { _id: "demo-ev6", id: "demo-ev6", schoolId: "demo-school", leaderName: "Mrs. Jones",
+        title: "Sack Race", age: "7", gender: "Girls", type: "timed", attempts: 1, unit: "seconds",
+        scoreBy: "event", format: "individual",
+        status: "in_progress",
+        competitors: [
+          { id: "c19", name: "Mia Patel",     attempts: [null], grade: "2", actualAge: "7", house: "Alpha", bib: "70", heat: "1" },
+          { id: "c20", name: "Lily Brooks",   attempts: [null], grade: "2", actualAge: "7", house: "Beta",  bib: "71", heat: "1" },
+          { id: "c21", name: "Zoe Anderson",  attempts: [null], grade: "2", actualAge: "7", house: "Gamma", bib: "72", heat: "2" },
+          { id: "c22", name: "Emma Davis",    attempts: [null], grade: "2", actualAge: "7", house: "Delta", bib: "73", heat: "2" }
+        ]
+      },
+      // Softball Throw Age 8 Boys — completed
+      { _id: "demo-ev7", id: "demo-ev7", schoolId: "demo-school", leaderName: "Mrs. Jones",
+        title: "Softball Throw", age: "8", gender: "Boys", type: "distance", attempts: 3, unit: "m",
+        scoreBy: "event", format: "individual",
+        status: "completed", completedAt: now - 30*60*1000,
+        competitors: [
+          { id: "c23", name: "Mason Diaz",    attempts: [22.4, 24.1, 23.8], grade: "3", actualAge: "8", house: "Beta",  bib: "80" },
+          { id: "c24", name: "Caleb Wright",  attempts: [20.1, 21.5, 22.0], grade: "3", actualAge: "8", house: "Alpha", bib: "81" },
+          { id: "c25", name: "Aiden Khan",    attempts: [18.5, 19.2, 19.8], grade: "3", actualAge: "8", house: "Gamma", bib: "82" }
+        ]
+      },
+      // 4x100m Relay — team event, points to houses only
+      { _id: "demo-ev8", id: "demo-ev8", schoolId: "demo-school", leaderName: "Coach Smith",
+        title: "4x100m Relay", age: "10", gender: "Mixed", type: "timed", attempts: 1, unit: "seconds",
+        scoreBy: "event", format: "team",
+        status: "in_progress",
+        competitors: [
+          { id: "t1", name: "Alpha Relay Team", attempts: [null], house: "Alpha", members: "Maya Patel; Liam Cole; Olivia James; Mason Diaz" },
+          { id: "t2", name: "Beta Relay Team",  attempts: [null], house: "Beta",  members: "Ava Chen; Noah Reyes; Charlotte Wu; Caleb Wright" },
+          { id: "t3", name: "Gamma Relay Team", attempts: [null], house: "Gamma", members: "Lila Brooks; Ethan Brooks; Ruby Singh; Aiden Khan" },
+          { id: "t4", name: "Delta Relay Team", attempts: [null], house: "Delta", members: "Hannah Wong; Owen Park" }
+        ]
+      }
+    ];
+
+    return { schools: [school], events, announceQueue: ["demo-ev1", "demo-ev5", "demo-ev7"] };
+  }
+
+  function installDemoBlob() {
+    // Reset to canonical demo state. Persist any non-demo schools alongside.
+    const cur = readLocal();
+    const otherSchools = (cur.schools || []).filter(s => s.code !== DEMO_CODE);
+    const otherEvents  = (cur.events  || []).filter(e => e.schoolId !== "demo-school");
+    const demo = seedDemoBlob();
+    const blob = {
+      schools: [...otherSchools, ...demo.schools],
+      events:  [...otherEvents,  ...demo.events],
+      announceQueue: demo.announceQueue
+    };
+    writeLocal(blob);
   }
 
   function localJoinAsLeader(schoolCode, leaderName) {
