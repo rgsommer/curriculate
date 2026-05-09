@@ -1146,6 +1146,8 @@
   function renderEventDetail() {
     const ev = state.events.find(e => e.id === currentEventId);
     if (!ev) return;
+    // Reflect the leadersSeeStandings toggle on the event-detail header too.
+    updateResultsSoFarButton();
     $("#eventDetailTitle").textContent = ev.title;
     const formatBadge = ev.format === "team"
       ? `<span class="pill" style="background:#fff7e0;color:#8a6d00">Team event · house-only</span>`
@@ -3245,14 +3247,19 @@
   }
 
   /**
-   * Show or hide the 📊 Results So Far button on the Events view header.
-   * Always shown for admins; shown for leaders only when the school's
-   * leadersSeeStandings toggle is on.
+   * Show or hide the 📊 Results So Far button on both the Events view
+   * header AND the Event Detail header. Always shown for admins; shown
+   * for leaders only when the school's leadersSeeStandings toggle is on.
+   * Putting the button on the event detail too means a leader running a
+   * specific event can peek at school-wide standings without having to
+   * go back to the events list (and lose their spot in this event).
    */
   function updateResultsSoFarButton() {
-    const btn = $("#btnResultsSoFar");
-    if (!btn) return;
-    btn.hidden = !(isAdmin() || state.school?.leadersSeeStandings);
+    const visible = !!(isAdmin() || state.school?.leadersSeeStandings);
+    const btnList   = $("#btnResultsSoFar");
+    const btnDetail = $("#btnResultsSoFarFromEvent");
+    if (btnList)   btnList.hidden   = !visible;
+    if (btnDetail) btnDetail.hidden = !visible;
   }
 
   /**
@@ -5219,6 +5226,7 @@
     $("#restrictTimerStartsToggle").addEventListener("change", saveRestrictTimerStarts);
     $("#leadersSeeStandingsToggle").addEventListener("change", saveLeadersSeeStandings);
     $("#btnResultsSoFar").addEventListener("click", openResultsSoFar);
+    $("#btnResultsSoFarFromEvent").addEventListener("click", openResultsSoFar);
     $("#btnResultsSoFarClose").addEventListener("click", closeResultsSoFar);
     $("#btnAddRecord").addEventListener("click", addRecord);
     $("#standardsTitleFilter").addEventListener("change", renderStandardsEditor);
