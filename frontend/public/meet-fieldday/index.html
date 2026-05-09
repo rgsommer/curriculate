@@ -216,6 +216,16 @@
       <p>Upload each kid's prior PB once via CSV. When a field-day result beats their PB, a 🌟 toast fires and the ribbon shows a "PB" tag. PBs survive the year-end archive — next year picks up where this year left off.</p>
     </article>
     <article class="pillar">
+      <div class="pillar-icon">🎯</div>
+      <h3>Every row knows what to beat</h3>
+      <p>Each competitor row shows their stored PB right under their name — "🌟 PB 11.42 sec · May 8, 2024" — so leaders, helpers, and the kid know exactly the number to chase. If the kid's PB is already better than the current school record, the pill switches to a glowing gold gradient ("🌟🎺 beats school record!") so the leader knows there's a new record likely coming.</p>
+    </article>
+    <article class="pillar">
+      <div class="pillar-icon">🚨</div>
+      <h3>Live Standings flag every milestone</h3>
+      <p>Every entry in the leader's Live Standings list automatically tags itself when a result hits a milestone: a red <strong>RECORD</strong> badge for school records, 🥇/🥈/🥉 for gold/silver/bronze standards, and a purple 🌟 <strong>PB</strong> for personal bests. Multiple badges stack — a kid who breaks the record, beats their PB, and hits gold gets all three. Flagged rows are softly highlighted so the leader spots them in the corner of their eye.</p>
+    </article>
+    <article class="pillar">
       <div class="pillar-icon">🏠</div>
       <h3>Houses, with a winning crown</h3>
       <p>Set up your school's houses (Alpha, Beta, Gryffindor — whatever they're called) and a House Standings panel rolls every event's points up to the right house. Winning house gets a 👑 in real time.</p>
@@ -498,7 +508,7 @@
     </details>
     <details>
       <summary>What happens when someone breaks a school record?</summary>
-      <p>The horn blows, a celebration banner pops up with the kid's name and result, and the new record is saved with the date and holder. The Admin tab shows the running list of records, with new ones flagged. Admins can also enter records manually (e.g. last year's bests) so the app knows what to compare against.</p>
+      <p>The horn blows, a celebration banner pops up with the kid's name and result, and the new record is saved with the date and holder. The celebration fires on whichever leader's screen captured the result — start-line helper, finish-line helper, or admin — every helper at the school sees it within one poll. The Admin tab shows the running list of records, with new ones flagged. Admins can also enter records manually (e.g. last year's bests) so the app knows what to compare against.</p>
     </details>
     <details>
       <summary>Can I print labels for the ribbons themselves?</summary>
@@ -530,7 +540,7 @@
     </details>
     <details>
       <summary>How do personal bests (PBs) work?</summary>
-      <p>Add a <code>PersonalBest</code> column to your CSV with each kid's prior best for the event you're recording. During the day, if their result beats their PB, a 🌟 toast fires and the ribbon shows a "PB" tag. PBs are stored at the school level so they carry across years (and survive the new-year archive).</p>
+      <p>Add a <code>PersonalBest</code> column to your CSV with each kid's prior best for the event you're recording (or use the workbook PBs tab). The PB shows under the kid's name on every row of every event they're entered in, so leaders know exactly what to beat. During the day, if their result beats their PB, a 🌟 toast fires, the ribbon shows a "PB" tag, and the Live Standings entry gets a purple 🌟 PB badge. PBs are stored at the school level so they carry across years (and survive the new-year archive). When a kid's PB is already better than the current school record, their row pill switches to a glowing gold gradient — heads-up that there's a record likely to fall today.</p>
     </details>
     <details>
       <summary>What about relay and team events?</summary>
