@@ -52,7 +52,15 @@ export default function AdminUsageDashboard() {
   const [diagLogs, setDiagLogs] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [recsLoading, setRecsLoading] = useState(false);
-  const [recForm, setRecForm] = useState({ teacherName: "", teacherEmail: "", message: "" });
+  const [recForm, setRecForm] = useState({
+    teacherName: "", teacherEmail: "", message: "",
+    products: { curriculate: false, grading: false, fieldday: true }
+  });
+
+  // Field Day usage stats (loaded on demand)
+  const [fdStats, setFdStats] = useState(null);
+  const [fdStatsLoading, setFdStatsLoading] = useState(false);
+  const [fdStatsErr, setFdStatsErr] = useState("");
   const [recSending, setRecSending] = useState(false);
   const [recStatus, setRecStatus] = useState(null);
   const [diagLoading, setDiagLoading] = useState(false);
@@ -1100,6 +1108,101 @@ export default function AdminUsageDashboard() {
             </div>
           </Card>
 
+          {/* Field Day Usage */}
+          <Card title="🏅 Field Day Usage">
+            <div className="space-y-3">
+              <button
+                onClick={async () => {
+                  setFdStatsLoading(true);
+                  setFdStatsErr("");
+                  try {
+                    const r = await fetch(`${API}/fieldday/api/admin/stats`, {
+                      headers: { "x-admin-token": adminToken }
+                    });
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    setFdStats(await r.json());
+                  } catch (e) {
+                    setFdStatsErr(e.message || String(e));
+                  }
+                  setFdStatsLoading(false);
+                }}
+                className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/60 hover:bg-white/10 hover:text-white/80"
+              >
+                {fdStatsLoading ? "Loading…" : fdStats ? "Refresh" : "Load Field Day Stats"}
+              </button>
+              {fdStatsErr && (
+                <div className="text-xs text-red-400">Couldn't load: {fdStatsErr}</div>
+              )}
+              {fdStats && (
+                <>
+                  <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <div className="text-2xl font-bold text-blue-300">{fdStats.schools?.total ?? 0}</div>
+                      <div className="text-xs text-white/60">Schools</div>
+                      <div className="text-[10px] text-white/40">{fdStats.schools?.withEvents ?? 0} active · {fdStats.schools?.newThisMonth ?? 0} new this month</div>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <div className="text-2xl font-bold text-blue-300">{fdStats.events?.total ?? 0}</div>
+                      <div className="text-xs text-white/60">Events</div>
+                      <div className="text-[10px] text-white/40">{fdStats.events?.completed ?? 0} done · {fdStats.events?.inProgress ?? 0} live</div>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <div className="text-2xl font-bold text-blue-300">{fdStats.competitors?.uniqueByName ?? 0}</div>
+                      <div className="text-xs text-white/60">Unique competitors</div>
+                      <div className="text-[10px] text-white/40">{fdStats.competitors?.totalEntries ?? 0} total entries</div>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <div className="text-2xl font-bold text-blue-300">{fdStats.records?.total ?? 0}</div>
+                      <div className="text-xs text-white/60">School records</div>
+                      <div className="text-[10px] text-white/40">{fdStats.records?.newThisMonth ?? 0} new this month · {fdStats.schools?.withHouses ?? 0} schools w/ houses</div>
+                    </div>
+                  </div>
+
+                  {fdStats.topSchools?.length > 0 && (
+                    <div>
+                      <div className="text-xs font-bold text-white/70 mb-1">Top schools by competitor count</div>
+                      <div className="overflow-x-auto rounded border border-white/10">
+                        <table className="w-full text-xs">
+                          <thead className="bg-white/5 text-white/50">
+                            <tr><th className="p-2 text-left">School</th><th className="p-2 text-left">Code</th><th className="p-2 text-right">Events</th><th className="p-2 text-right">Competitors</th></tr>
+                          </thead>
+                          <tbody>
+                            {fdStats.topSchools.map(t => (
+                              <tr key={t.id} className="border-t border-white/5">
+                                <td className="p-2">{t.name}</td>
+                                <td className="p-2 font-mono text-white/60">{t.code}</td>
+                                <td className="p-2 text-right">{t.events}</td>
+                                <td className="p-2 text-right font-semibold">{t.competitors}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {fdStats.recentActivity?.length > 0 && (
+                    <div>
+                      <div className="text-xs font-bold text-white/70 mb-1">Recent completed events</div>
+                      <div className="max-h-64 overflow-y-auto text-xs space-y-1 rounded border border-white/10 p-2">
+                        {fdStats.recentActivity.slice(0, 12).map((a, i) => (
+                          <div key={i} className="flex justify-between gap-2 border-b border-white/5 py-1">
+                            <span>
+                              <span className="font-bold text-blue-300">{a.title}</span>
+                              <span className="text-white/40 ml-2">Age {a.age} {a.gender}</span>
+                              <span className="text-white/40 ml-2">@ {a.schoolName} <span className="font-mono">{a.schoolCode}</span></span>
+                            </span>
+                            <span className="text-white/40 whitespace-nowrap">{a.ts ? new Date(a.ts).toLocaleString() : ""}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </Card>
+
           {/* Recommendations */}
           <Card title="📨 Teacher Recommendations">
             {/* --- Recommend-a-Teacher Form --- */}
@@ -1107,6 +1210,11 @@ export default function AdminUsageDashboard() {
               onSubmit={async (e) => {
                 e.preventDefault();
                 if (!recForm.teacherEmail.trim()) return;
+                const products = Object.entries(recForm.products).filter(([, v]) => v).map(([k]) => k);
+                if (products.length === 0) {
+                  setRecStatus({ ok: false, text: "Pick at least one product to recommend" });
+                  return;
+                }
                 setRecSending(true);
                 setRecStatus(null);
                 try {
@@ -1119,11 +1227,16 @@ export default function AdminUsageDashboard() {
                       teacherName: recForm.teacherName.trim(),
                       teacherEmail: recForm.teacherEmail.trim(),
                       message: recForm.message.trim() || undefined,
+                      products, // ["curriculate" | "grading" | "fieldday"]
                     }),
                   });
                   if (r.ok) {
-                    setRecStatus({ ok: true, text: `Recommendation sent to ${recForm.teacherEmail}` });
-                    setRecForm({ teacherName: "", teacherEmail: "", message: "" });
+                    const labels = { curriculate: "Curriculate", grading: "Grading", fieldday: "Field Day" };
+                    setRecStatus({ ok: true, text: `Recommendation sent to ${recForm.teacherEmail} (${products.map(p => labels[p]).join(" + ")})` });
+                    setRecForm({
+                      teacherName: "", teacherEmail: "", message: "",
+                      products: { curriculate: false, grading: false, fieldday: true }
+                    });
                   } else {
                     const d = await r.json().catch(() => ({}));
                     setRecStatus({ ok: false, text: d.error || "Failed to send" });
@@ -1136,6 +1249,25 @@ export default function AdminUsageDashboard() {
               className="mb-4 space-y-2 rounded-lg border border-white/10 bg-white/5 p-3"
             >
               <div className="text-xs font-bold text-white/70 mb-1">Recommend a Teacher</div>
+              <div className="flex flex-wrap gap-3 text-xs text-white/80">
+                {[
+                  { key: "curriculate", label: "Curriculate" },
+                  { key: "grading",     label: "Grading" },
+                  { key: "fieldday",    label: "Field Day" }
+                ].map(p => (
+                  <label key={p.key} className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!recForm.products[p.key]}
+                      onChange={(e) => setRecForm(f => ({
+                        ...f,
+                        products: { ...f.products, [p.key]: e.target.checked }
+                      }))}
+                    />
+                    {p.label}
+                  </label>
+                ))}
+              </div>
               <div className="flex gap-2">
                 <input
                   type="text"

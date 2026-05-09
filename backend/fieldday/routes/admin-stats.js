@@ -16,9 +16,22 @@
  */
 const express = require("express");
 const { School, Event, Backup } = require("../models");
-const { asyncH } = require("../utils");
+const { asyncH, errResp } = require("../utils");
 
 const router = express.Router();
+
+// Optional shared-secret check that matches the existing Curriculate admin
+// pattern (x-admin-token header). If FIELDDAY_ADMIN_TOKEN is set, the
+// header must match. If unset, we assume you're mounting this behind your
+// own admin middleware separately and skip the check.
+function requireAdminToken(req, res, next) {
+  const expected = process.env.FIELDDAY_ADMIN_TOKEN;
+  if (!expected) return next();
+  const got = req.headers["x-admin-token"] || "";
+  if (got !== expected) return errResp(res, 401, "unauthorized");
+  next();
+}
+router.use(requireAdminToken);
 
 const MS_DAY   = 24 * 60 * 60 * 1000;
 const MS_MONTH = 30 * MS_DAY;

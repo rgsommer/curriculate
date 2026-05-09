@@ -24,6 +24,7 @@ const eventRoutes   = require("./routes/events");
 const recordRoutes  = require("./routes/records");
 const referRoutes   = require("./routes/refer");
 const backupRoutes  = require("./routes/backups");
+const adminStatsRoutes = require("./routes/admin-stats");
 
 const router = express.Router();
 router.use(express.json({ limit: "10mb" })); // workbook imports can be sizable
@@ -32,6 +33,9 @@ router.use(cookieParser());
 // Routes that DON'T need a session (sign-in, leader join, public lookups, refer)
 router.use("/", authRoutes);
 router.use("/", referRoutes);
+
+// Curriculate-internal admin stats — guarded by FIELDDAY_ADMIN_TOKEN env var
+router.use("/admin", adminStatsRoutes);
 
 // Everything below requires an authenticated session
 router.use("/", requireSession, stateRoutes);
