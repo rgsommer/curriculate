@@ -190,6 +190,21 @@ const BackupSchema = new Schema({
 }, opts);
 BackupSchema.index({ schoolId: 1, takenAt: -1 });
 
+/* ---------------- Feedback (bug reports + suggestions) ---------------- */
+const FeedbackSchema = new Schema({
+  kind:       { type: String, enum: ["problem", "suggestion"], default: "suggestion", index: true },
+  message:    { type: String, required: true },
+  fromName:   { type: String, default: "" },
+  fromEmail:  { type: String, default: "", lowercase: true },
+  schoolCode: { type: String, default: "", uppercase: true },
+  schoolId:   { type: Schema.Types.ObjectId, ref: "FieldDaySchool", default: null },
+  context:    { type: Schema.Types.Mixed, default: {} },
+  // Triage state — lets the export distinguish open / fixed / wontfix.
+  status:     { type: String, enum: ["open", "in_progress", "fixed", "wontfix"], default: "open", index: true },
+  notes:      { type: String, default: "" }
+}, opts);
+FeedbackSchema.index({ createdAt: -1 });
+
 /* ---------------- Exports ---------------- */
 export const School     = mongoose.models.FieldDaySchool     || mongoose.model("FieldDaySchool",     SchoolSchema,     "fieldday_schools");
 export const Event      = mongoose.models.FieldDayEvent      || mongoose.model("FieldDayEvent",      EventSchema,      "fieldday_events");
@@ -197,3 +212,4 @@ export const Passkey    = mongoose.models.FieldDayPasskey    || mongoose.model("
 export const Session    = mongoose.models.FieldDaySession    || mongoose.model("FieldDaySession",    SessionSchema,    "fieldday_sessions");
 export const CodeChange = mongoose.models.FieldDayCodeChange || mongoose.model("FieldDayCodeChange", CodeChangeSchema, "fieldday_code_changes");
 export const Backup     = mongoose.models.FieldDayBackup     || mongoose.model("FieldDayBackup",     BackupSchema,     "fieldday_backups");
+export const Feedback   = mongoose.models.FieldDayFeedback   || mongoose.model("FieldDayFeedback",   FeedbackSchema,   "fieldday_feedback");

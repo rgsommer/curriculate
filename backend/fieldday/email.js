@@ -158,7 +158,10 @@ export async function sendReferEmail({ teacherName, teacherEmail, schoolName, se
 }
 
 export async function sendReportEmail({ kind, message, fromName, fromEmail, schoolCode, context }) {
-  const subject = `[Field Day ${kind === "problem" ? "🐞 Problem" : "💡 Suggestion"}] ${(message || "").slice(0, 60)}${(message || "").length > 60 ? "…" : ""}`;
+  // Bug reports get a [BUG] prefix that sorts to the top of an alphabetised
+  // Gmail filter and is easy to recognise at a glance on phone notifications.
+  const prefix = kind === "problem" ? "[BUG] 🐞 Field Day" : "[IDEA] 💡 Field Day";
+  const subject = `${prefix} — ${(message || "").slice(0, 60)}${(message || "").length > 60 ? "…" : ""}`;
   const text = `Type: ${kind}\nFrom: ${fromName || "(anonymous)"} ${fromEmail ? `<${fromEmail}>` : ""}\nSchool code: ${schoolCode || "(none)"}\n\nMessage:\n${message}\n\nContext:\n${JSON.stringify(context || {}, null, 2)}`;
   const safe = (s) => (s || "").replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
   const html = htmlShell("Report",
