@@ -1249,10 +1249,16 @@
         const isTarget = (timerTarget?.competitorId === c.id && timerTarget?.attemptIdx === i);
         const isBest = (best != null && Number(v) === best && v != null && v !== "");
         const display = displayAttempt(v, ev.type);
+        // For distance/weight events, mention the double-tap-to-clear shortcut
+        // in the tooltip so users discover it without having to read help text.
+        const tipParts = [];
+        if (ev.type !== "timed" && v != null && v !== "") tipParts.push("Double-tap to clear");
+        const titleAttr = tipParts.length ? ` title="${escapeHtml(tipParts.join(" · "))}"` : "";
         return `<input class="attempt-input ${isTarget?"target":""} ${isBest?"best":""}"
                  data-cid="${c.id}" data-aidx="${i}"
                  value="${display}"
                  placeholder="${ev.type === 'timed' ? 'mm:ss.ss' : ev.unit || '0'}"
+                 ${titleAttr}
                  ${readOnly?"disabled":""} />`;
       }).join("");
       const metaParts = [];
@@ -1382,6 +1388,23 @@
           await checkForPBBreak(ev2, c);
           renderEventDetail();
         } catch (e) { showToast("Save failed"); }
+      });
+      // Double-tap to clear — distance/weight only. Saves backspacing through
+      // a multi-digit number when you've typed a wrong value. Skipped for
+      // timed events since they have a stopwatch ⏹ + a per-row ↺ button
+      // that handle clears more naturally.
+      inp.addEventListener("dblclick", async () => {
+        const ev2 = state.events.find(e => e.id === currentEventId);
+        if (!ev2 || ev2.type === "timed") return;
+        if (!inp.value || !inp.value.trim()) return;  // already empty
+        const idx = parseInt(inp.dataset.aidx, 10);
+        try {
+          const resp = await api.setAttempt(currentEventId, inp.dataset.cid, idx, null);
+          const c = ev2.competitors.find(x => x.id === inp.dataset.cid);
+          if (c && resp?.competitor) Object.assign(c, resp.competitor);
+          renderEventDetail();
+          showToast("Attempt cleared");
+        } catch (e) { showToast("Clear failed"); }
       });
     });
     list.querySelectorAll("[data-clear-row]").forEach(btn => {
