@@ -29,6 +29,11 @@ const RecordSubSchema = new Schema({
   competitorId: { type: String, default: "" },
   wind:         { type: Number, default: null },
   windAided:    { type: Boolean, default: false },
+  // Snapshot of the record this one replaced, so if the breaking result
+  // is later cleared (false start, DQ, mis-entered time) the previous
+  // record can be restored. Null when this is the first-ever record for
+  // the event/age/gender combo. Stored as Mixed to keep the shape flexible.
+  previousRecord: { type: Schema.Types.Mixed, default: null },
   createdAt:    { type: Number, default: () => Date.now() }
 }, { _id: false });
 
@@ -60,7 +65,16 @@ const PBSubSchema = new Schema({
   value:    { type: Number, required: true },
   type:     { type: String, default: "timed" },
   unit:     { type: String, default: "" },
-  dateSet:  { type: String, default: "" }
+  dateSet:  { type: String, default: "" },
+  // Snapshot of the kid's previous PB for this event title — same idea as
+  // record.previousRecord. Lets us roll back the PB if today's beating
+  // result gets cleared (DQ, false start, mis-entered time). Null when no
+  // prior PB existed.
+  previousPB: { type: Schema.Types.Mixed, default: null },
+  // Pointer back to the event/competitor whose result set this PB, so we
+  // can find the right PB to roll back when an attempt is cleared.
+  eventId:      { type: String, default: "" },
+  competitorId: { type: String, default: "" }
 }, { _id: false });
 
 const SchoolSchema = new Schema({

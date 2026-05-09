@@ -55,3 +55,12 @@ curriculate-codex.zip
 /Logo_*.png
 /Prism_logo*.png
 
+
+# Python bytecode (from feedback.py)
+__pycache__/
+*.pyc
+
+# Pulled feedback reports — local artifacts, regenerated on each `feedback.py pull`
+/feedback-curriculate.txt
+/feedback-fieldday.txt
+/feedback-grading.txt
