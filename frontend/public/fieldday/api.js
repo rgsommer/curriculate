@@ -302,7 +302,17 @@
     async fetchState() {
       const session = readSession();
       if (!session?.schoolId) return { school: null, events: [], announceQueue: [] };
-      if (isLocal()) return localFetchState(session);
+      // Demo auto-refresh: if the cached demo school's seed version is older
+      // than the current build, re-install the demo blob so any new sample
+      // events / staff / etc. show up without the user having to re-sign in.
+      if (isLocal()) {
+        const blob = readLocal();
+        const demoSchool = (blob.schools || []).find(s => s.code === DEMO_CODE);
+        if (demoSchool && (demoSchool.demoVersion || 0) < DEMO_SEED_VERSION) {
+          installDemoBlob();
+        }
+        return localFetchState(session);
+      }
       try {
         return await http("GET", "/state");
       } catch (e) {
@@ -646,6 +656,9 @@
   // data. Everything runs against localStorage; nothing reaches the server.
   // Seed is reset on every demo sign-in so the demo always feels fresh.
   const DEMO_CODE = "12345";
+  // Bump this whenever the demo seed changes — clients with an older version
+  // cached in localStorage will be auto-reseeded on next demo sign-in or boot.
+  const DEMO_SEED_VERSION = 2;
   function isDemoCode(code) { return String(code || "").trim() === DEMO_CODE; }
 
   function seedDemoBlob() {
@@ -720,6 +733,7 @@
       // browser can validate it without bcrypt. Real schools store hashes
       // in school.staffPins[name].hash, validated server-side.
       demoPin: "1234",
+      demoVersion: DEMO_SEED_VERSION,
       records: [
         { id: "rec1", title: "50m Sprint",  age: "8", gender: "Girls", type: "timed",    unit: "seconds", value: 8.92, holderName: "Sofia Martinez (last year)", dateSet: "2025-05-12", createdAt: now - 365*24*3600*1000 },
         { id: "rec2", title: "Long Jump",   age: "9", gender: "Girls", type: "distance", unit: "m",       value: 3.21, holderName: "Olivia James (2024)",         dateSet: "2024-05-10", createdAt: now - 730*24*3600*1000 },
