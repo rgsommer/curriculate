@@ -1122,7 +1122,8 @@
             ${placeTag}
             ${!readOnly ? `<button class="icon-btn" data-toggle-dq="${c.id}" title="${c.dq?"Reinstate":"Mark DQ"}" style="${c.dq?"color:var(--danger)":""}">${c.dq?"⊘":"DQ"}</button>` : ""}
             ${!readOnly ? `<button class="icon-btn" data-edit-meta="${c.id}" title="Edit bib / grade / age / heat / DQ reason">⚙︎</button>` : ""}
-            ${!readOnly ? `<button class="icon-btn" data-del="${c.id}" title="Remove">🗑</button>` : ""}
+            ${!readOnly ? `<button class="icon-btn" data-clear-row="${c.id}" title="Clear all results for this competitor (keeps them in the event)">↺</button>` : ""}
+            ${!readOnly ? `<button class="icon-btn" data-del="${c.id}" title="Remove competitor (deletes the person)">🗑</button>` : ""}
           </div>
         </div>`;
     };
@@ -1188,6 +1189,43 @@
           await checkForPBBreak(ev2, c);
           renderEventDetail();
         } catch (e) { showToast("Save failed"); }
+      });
+    });
+    list.querySelectorAll("[data-clear-row]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const ev2 = state.events.find(e => e.id === currentEventId);
+        const c   = ev2?.competitors.find(x => x.id === btn.dataset.clearRow);
+        const nm  = c?.name?.trim() || "this competitor";
+        const hasResult = (c?.attempts || []).some(v => v != null && v !== "");
+        if (!hasResult) { showToast("No results to clear"); return; }
+        const confirmed = await showFormModal({
+          title: `Clear results for ${nm}?`,
+          body: `This wipes every attempt time/distance/weight for ${nm} but keeps them in the event so you can re-run them. The competitor stays — only the numbers are reset.`,
+          fields: [],
+          submitLabel: "Clear results",
+          cancelLabel: "Keep results"
+        });
+        if (!confirmed) return;
+        // Stop any running row timer first so it doesn't write back over us.
+        if (rowTimers.has(c.id)) {
+          const t = rowTimers.get(c.id);
+          cancelAnimationFrame(t.raf);
+          if (t.intervalId) clearInterval(t.intervalId);
+          rowTimers.delete(c.id);
+          persistRowTimers();
+        }
+        try {
+          // Walk every attempt slot and null it out via the same setAttempt
+          // path normal edits use — keeps server + local cache consistent.
+          for (let i = 0; i < (c.attempts||[]).length; i++) {
+            if (c.attempts[i] != null && c.attempts[i] !== "") {
+              const resp = await api.setAttempt(currentEventId, c.id, i, null);
+              if (resp?.competitor) Object.assign(c, resp.competitor);
+            }
+          }
+          renderEventDetail();
+          showToast(`Cleared results for ${nm}`);
+        } catch (e) { showToast("Clear failed"); }
       });
     });
     list.querySelectorAll("[data-del]").forEach(btn => {
