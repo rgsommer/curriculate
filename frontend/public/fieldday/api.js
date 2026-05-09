@@ -24,6 +24,7 @@
   // We optimistically try the backend on first call; if it fails (network
   // error or 404), we permanently switch to local mode for this tab.
   let mode = localStorage.getItem(MODE_KEY) || "auto"; // "auto" | "remote" | "local"
+  let _clockSkew = 0; // Date.now() + _clockSkew ≈ server's Date.now(). Set by calibrateClockSkew().
 
   function setMode(m) { mode = m; try { localStorage.setItem(MODE_KEY, m); } catch (e) {} }
 
@@ -410,6 +411,61 @@
         if (e.code === "NETWORK" || e.code === "NOT_FOUND") return { sent: false, devNote: "Backend unreachable" };
         throw e;
       }
+    },
+
+    // ---------- Server-coordinated stopwatches ----------
+    /**
+     * Calibrate clock skew between this browser and the backend by
+     * round-tripping /clock a few times. Returns the *additive offset to
+     * apply to Date.now()* so that Date.now() + offset ≈ server's Date.now().
+     * Best-of-5 by RTT keeps a stray slow request from poisoning the result.
+     */
+    async calibrateClockSkew() {
+      if (isLocal()) { _clockSkew = 0; return 0; }
+      let bestSkew = 0;
+      let bestRtt = Infinity;
+      for (let i = 0; i < 5; i++) {
+        try {
+          const t0 = Date.now();
+          const r = await http("GET", "/clock");
+          const t1 = Date.now();
+          const rtt = t1 - t0;
+          if (rtt < bestRtt && r?.serverTime) {
+            bestRtt = rtt;
+            // Server time at moment t1 ≈ serverTime + rtt/2 (assume symmetric latency).
+            // skew = (server time at t1) - (client time at t1) = serverTime + rtt/2 - t1.
+            bestSkew = (Number(r.serverTime) + rtt / 2) - t1;
+          }
+        } catch (e) { /* ignore — try again or fall back to skew=0 */ }
+      }
+      _clockSkew = Math.round(bestSkew);
+      return _clockSkew;
+    },
+    /** Returns the cached clock skew. Call calibrateClockSkew() first. */
+    getClockSkew() { return _clockSkew; },
+    /** Server-clock "now" (Date.now() + calibrated skew). */
+    serverNow() { return Date.now() + _clockSkew; },
+    async timerStart(eventId, competitorId, startedBy)   {
+      const startedAt = Date.now() + _clockSkew;
+      return mutate("POST", `/events/${encodeURIComponent(eventId)}/timer/start`,
+        { competitorId, startedAt, startedBy },
+        () => localTimerStart(eventId, competitorId, startedAt, startedBy));
+    },
+    async timerStop(eventId, competitorId)               {
+      const stoppedAt = Date.now() + _clockSkew;
+      return mutate("POST", `/events/${encodeURIComponent(eventId)}/timer/stop`,
+        { competitorId, stoppedAt },
+        () => localTimerStop(eventId, competitorId, stoppedAt));
+    },
+    async timerStartAll(eventId, startedBy)              {
+      const startedAt = Date.now() + _clockSkew;
+      return mutate("POST", `/events/${encodeURIComponent(eventId)}/timer/start-all`,
+        { startedAt, startedBy },
+        () => localTimerStartAll(eventId, startedAt, startedBy));
+    },
+    async timerResetAll(eventId)                         {
+      return mutate("POST", `/events/${encodeURIComponent(eventId)}/timer/reset`, {},
+        () => localTimerResetAll(eventId));
     },
 
     // ---------- Backups (admin-only) ----------
@@ -1007,6 +1063,64 @@
     c.attempts[idx] = value;
     writeLocal(blob);
     return { competitor: c };
+  }
+
+  // ---- live timers (offline / demo fallback) ----
+  function localTimerStart(eventId, competitorId, startedAt, startedBy) {
+    const blob = readLocal();
+    const ev = blob.events.find(e => e.id === eventId);
+    if (!ev) { const err = new Error("not_found"); err.code = 404; throw err; }
+    if (!ev.liveTimers) ev.liveTimers = {};
+    if (!ev.liveTimers[competitorId]) {
+      ev.liveTimers[competitorId] = { startedAt, startedBy };
+      writeLocal(blob);
+    }
+    return { event: ev };
+  }
+  function localTimerStop(eventId, competitorId, stoppedAt) {
+    const blob = readLocal();
+    const ev = blob.events.find(e => e.id === eventId);
+    if (!ev) { const err = new Error("not_found"); err.code = 404; throw err; }
+    const c = ev.competitors.find(x => x.id === competitorId);
+    if (!c) { const err = new Error("not_found"); err.code = 404; throw err; }
+    if (!ev.liveTimers || !ev.liveTimers[competitorId]) {
+      return { event: ev, already: true };
+    }
+    const live = ev.liveTimers[competitorId];
+    const elapsedMs = Math.max(0, stoppedAt - live.startedAt);
+    const seconds = Math.round(elapsedMs / 10) / 100;
+    const slot = (c.attempts || []).findIndex(v => v == null || v === "");
+    const idx = slot >= 0 ? slot : Math.max(0, (c.attempts || []).length - 1);
+    while (c.attempts.length <= idx) c.attempts.push(null);
+    c.attempts[idx] = seconds;
+    delete ev.liveTimers[competitorId];
+    writeLocal(blob);
+    return { event: ev, competitor: c, elapsedSeconds: seconds, attemptIdx: idx };
+  }
+  function localTimerStartAll(eventId, startedAt, startedBy) {
+    const blob = readLocal();
+    const ev = blob.events.find(e => e.id === eventId);
+    if (!ev) { const err = new Error("not_found"); err.code = 404; throw err; }
+    if (!ev.liveTimers) ev.liveTimers = {};
+    let started = 0;
+    for (const c of ev.competitors || []) {
+      if (c.dq) continue;
+      const hasEmpty = (c.attempts || []).some(v => v == null || v === "");
+      if (!hasEmpty) continue;
+      if (ev.liveTimers[c.id]) continue;
+      ev.liveTimers[c.id] = { startedAt, startedBy };
+      started++;
+    }
+    writeLocal(blob);
+    return { event: ev, started };
+  }
+  function localTimerResetAll(eventId) {
+    const blob = readLocal();
+    const ev = blob.events.find(e => e.id === eventId);
+    if (!ev) { const err = new Error("not_found"); err.code = 404; throw err; }
+    ev.liveTimers = {};
+    writeLocal(blob);
+    return { event: ev };
   }
 
   // ---- school ----

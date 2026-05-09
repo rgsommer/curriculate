@@ -133,7 +133,13 @@ const EventSchema = new Schema({
   status:      { type: String, enum: ["in_progress", "completed"], default: "in_progress" },
   completedAt: Number,
   announcedAt: Number,
-  announceQueuePosition: { type: Number, default: null }
+  announceQueuePosition: { type: Number, default: null },
+  // Server-coordinated stopwatches: any event leader can start/stop any
+  // competitor's clock and every other helper's screen reflects it within
+  // one poll. Stored as { [competitorId]: { startedAt, startedBy } } where
+  // `startedAt` is a SERVER-CLOCK timestamp (ms since epoch). Cleared when
+  // the timer is stopped (and elapsed is written into competitor.attempts).
+  liveTimers:  { type: Schema.Types.Mixed, default: {} }
 }, opts);
 
 EventSchema.index({ schoolId: 1, status: 1 });

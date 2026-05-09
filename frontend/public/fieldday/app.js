@@ -16,6 +16,10 @@
   const PLACE_POINTS = { 1: 5, 2: 4, 3: 3, 4: 2 };
   const COMPLETION_POINTS = 1;
   const POLL_MS = 6000;
+  // While a leader is in the event-detail screen we poll faster so other
+  // helpers' Start/Stop actions show up promptly. fetchState is cheap
+  // (single doc read), and 1.5s is comfortable for hand-timing latency.
+  const POLL_MS_EVENT = 1500;
 
   // ---------- App state (in-memory cache; server is source of truth) ----------
   /** @type {{school: object|null, events: object[], announceQueue: string[]}} */
@@ -1078,8 +1082,12 @@
     stopLivePolling();
     stopPoll = api.startPolling((s) => {
       state = { school: s.school || state.school, events: s.events || [], announceQueue: s.announceQueue || [] };
+      // Sync local row-timer Map with server-side liveTimers — picks up other
+      // helpers' Start/Stop actions and renders them on this client.
+      const ev = state.events.find(e => e.id === currentEventId);
+      if (ev) reconcileLiveTimers(ev);
       if (currentEventId && !$("#view-event-detail").hidden) renderEventDetail();
-    }, POLL_MS);
+    }, POLL_MS_EVENT);
   }
 
   function renderEventDetail() {
@@ -1358,10 +1366,22 @@
       });
     });
     list.querySelectorAll("[data-row-timer]").forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         const cid = btn.dataset.cid;
-        if (rowTimers.has(cid)) stopRowTimer(cid);
-        else                    startRowTimer(cid);
+        const ev2 = state.events.find(e => e.id === currentEventId);
+        if (!ev2) return;
+        const isRunningServer = !!(ev2.liveTimers && ev2.liveTimers[cid]);
+        const isRunningLocal  = rowTimers.has(cid);
+        if (isRunningServer || isRunningLocal) {
+          // Stop the server-side timer — server records elapsed and writes
+          // into the next empty attempt slot, then broadcasts via state poll.
+          await sendStopRowTimer(cid);
+        } else {
+          // Optimistic local start so the user sees the clock immediately,
+          // then send to server. Server is source of truth — its response
+          // (or the next poll) will reconcile any drift.
+          await sendStartRowTimer(cid);
+        }
       });
     });
     list.querySelectorAll("[data-toggle-dq]").forEach(btn => {
@@ -1476,7 +1496,45 @@
     saveUiState({ runningTimers: { eventId: currentEventId, starts: snapshot } });
   }
 
-  function startRowTimer(competitorId, startMsOverride) {
+  /**
+   * Reconcile the local rowTimers Map against an event's server-side
+   * liveTimers map. This is what makes multi-leader stopwatches feel live:
+   * if Helper A taps Start, Helper B's next poll sees the row in
+   * ev.liveTimers and starts ticking it on B's screen too.
+   *
+   * Translation: server-clock startedAt → local performance.now() basis,
+   * via the cached clock skew.
+   */
+  function reconcileLiveTimers(ev) {
+    if (!ev) return;
+    const serverLive = ev.liveTimers || {};
+    // 1. Stop any local timers no longer running on the server.
+    for (const cid of [...rowTimers.keys()]) {
+      if (!serverLive[cid]) {
+        const t = rowTimers.get(cid);
+        if (t) {
+          cancelAnimationFrame(t.raf);
+          if (t.intervalId) clearInterval(t.intervalId);
+        }
+        rowTimers.delete(cid);
+      }
+    }
+    // 2. Start any new server-side timers that aren't yet running locally.
+    const skew = (api.getClockSkew && api.getClockSkew()) || 0;
+    const epochOffset = Date.now() - performance.now();
+    for (const [cid, info] of Object.entries(serverLive)) {
+      if (rowTimers.has(cid)) continue;
+      const startedAtServer = Number(info?.startedAt) || (Date.now() + skew);
+      // Convert server-clock ms → wall-clock ms on this device → performance.now().
+      const startedAtWall = startedAtServer - skew;
+      const startedAtPerf = startedAtWall - epochOffset;
+      startRowTimer(cid, startedAtPerf, /*alreadyOnServer=*/true);
+    }
+    if (rowTimers.size === 0) stopHeatClock();
+    else if (!timerHandle) startHeatClock();
+  }
+
+  function startRowTimer(competitorId, startMsOverride, alreadyOnServer) {
     if (rowTimers.has(competitorId)) return;
     const startMs = (typeof startMsOverride === "number") ? startMsOverride : performance.now();
     // Paint the current state synchronously so the user sees feedback on the
@@ -1539,19 +1597,107 @@
     } catch (e) { showToast("Save failed"); }
   }
 
-  function startAllRowTimers() {
+  /**
+   * Tell the server to start a row's stopwatch. The server pins the start
+   * moment with the timestamp we capture LOCALLY before the request — that
+   * way network latency on the request doesn't change the recorded time.
+   * On success we eagerly add the timer to our local rowTimers Map so the
+   * clock paints on the next animation frame; the next poll will confirm.
+   */
+  async function sendStartRowTimer(competitorId) {
+    // Optimistic: paint immediately on this client. The server's startedAt
+    // will match because both are computed as Date.now() + skew.
+    const skew = (api.getClockSkew && api.getClockSkew()) || 0;
+    const epochOffset = Date.now() - performance.now();
+    const startMsLocal = performance.now();   // matches Date.now() + skew via epochOffset
+    startRowTimer(competitorId, startMsLocal, /*alreadyOnServer=*/true);
+    try {
+      const resp = await api.timerStart(currentEventId, competitorId,
+                                        api.getSession()?.leaderName || api.getSession()?.email || "");
+      if (resp?.event) {
+        const idx = state.events.findIndex(e => e.id === resp.event.id);
+        if (idx >= 0) state.events[idx] = resp.event;
+        reconcileLiveTimers(resp.event);
+      }
+    } catch (e) {
+      // Roll back the optimistic timer if the server rejected.
+      if (rowTimers.has(competitorId)) {
+        const t = rowTimers.get(competitorId);
+        cancelAnimationFrame(t.raf);
+        if (t.intervalId) clearInterval(t.intervalId);
+        rowTimers.delete(competitorId);
+      }
+      showToast("Couldn't start timer — check connection");
+    }
+  }
+
+  /**
+   * Tell the server to stop a row's stopwatch. Server computes elapsed
+   * from its stored startedAt and the timestamp we send (captured locally
+   * before the request), writes into the next empty attempt slot, and
+   * returns the updated event. We patch state and re-render.
+   */
+  async function sendStopRowTimer(competitorId) {
+    // Stop the local rAF immediately (snappy UX) — the recorded time
+    // comes from the server's response.
+    const t = rowTimers.get(competitorId);
+    if (t) {
+      cancelAnimationFrame(t.raf);
+      if (t.intervalId) clearInterval(t.intervalId);
+      rowTimers.delete(competitorId);
+    }
+    if (rowTimers.size === 0) stopHeatClock();
+    persistRowTimers();
+    try {
+      const resp = await api.timerStop(currentEventId, competitorId);
+      if (resp?.event) {
+        const idx = state.events.findIndex(e => e.id === resp.event.id);
+        if (idx >= 0) state.events[idx] = resp.event;
+        const ev = state.events[idx >= 0 ? idx : 0];
+        const c = ev?.competitors.find(x => x.id === competitorId);
+        if (c && resp.competitor) Object.assign(c, resp.competitor);
+        reconcileLiveTimers(ev);
+        await checkForRecordBreak(ev, c);
+        await checkForPBBreak(ev, c);
+        renderEventDetail();
+        drainCelebrationsAfterTimer();
+      }
+    } catch (e) {
+      showToast("Couldn't stop timer — check connection");
+    }
+  }
+
+  /**
+   * Mass-start every competitor with an empty attempt slot — server pins
+   * one shared startedAt for all of them, so every helper's screen sees the
+   * exact same race start. The starter's pistol effect is then just one
+   * helper tapping "Start All".
+   */
+  async function startAllRowTimers() {
     const ev = state.events.find(e => e.id === currentEventId);
     if (!ev) return;
-    (ev.competitors||[]).forEach(c => {
-      if (rowTimers.has(c.id)) return;                     // already running
-      const hasEmpty = (c.attempts||[]).some(v => v == null || v === "");
-      if (!hasEmpty) return;
-      startRowTimer(c.id);
-    });
+    try {
+      const resp = await api.timerStartAll(currentEventId,
+        api.getSession()?.leaderName || api.getSession()?.email || "");
+      if (resp?.event) {
+        const idx = state.events.findIndex(e => e.id === resp.event.id);
+        if (idx >= 0) state.events[idx] = resp.event;
+        reconcileLiveTimers(resp.event);
+        renderEventDetail();
+      }
+    } catch (e) { showToast("Couldn't start race — check connection"); }
   }
+  /** Clear every running stopwatch on the server WITHOUT recording. */
   async function stopAllRowTimers() {
-    const ids = [...rowTimers.keys()];
-    for (const id of ids) await stopRowTimer(id);
+    try {
+      const resp = await api.timerResetAll(currentEventId);
+      if (resp?.event) {
+        const idx = state.events.findIndex(e => e.id === resp.event.id);
+        if (idx >= 0) state.events[idx] = resp.event;
+        reconcileLiveTimers(resp.event);
+        renderEventDetail();
+      }
+    } catch (e) { showToast("Couldn't cancel timers — check connection"); }
   }
   function clearAllRowTimers() {
     rowTimers.forEach(t => {
@@ -1606,6 +1752,9 @@
     // Reset the big heat clock display too — fresh state for the next heat.
     resetTimer();
     persistRowTimers();
+    // Also tell the server to clear any running timers for OTHER helpers,
+    // so their screens drop to 0 too.
+    try { await api.timerResetAll(currentEventId); } catch (e) { /* offline ok */ }
     // 3. Null out every attempt slot via the same setAttempt path.
     try {
       for (const c of ev.competitors || []) {
@@ -4446,6 +4595,11 @@
   // ---------- Boot ----------
   async function boot() {
     wire();
+    // Calibrate this browser's clock against the server BEFORE any timer
+    // can be started. Best-of-5 round-trip — takes <500ms on most networks.
+    // Done in parallel with showApp() to avoid noticeable delay.
+    const skewPromise = (api.calibrateClockSkew ? api.calibrateClockSkew() : Promise.resolve(0))
+      .catch(() => 0);
     const session = api.getSession();
     if (session && session.schoolId) {
       try { await showApp(); }
@@ -4453,6 +4607,10 @@
     } else {
       showWelcome();
     }
+    // Recalibrate periodically — clocks drift, especially on phones.
+    skewPromise.then(() => {
+      setInterval(() => { api.calibrateClockSkew && api.calibrateClockSkew(); }, 5 * 60 * 1000);
+    });
   }
   document.addEventListener("DOMContentLoaded", boot);
 })();

@@ -25,6 +25,7 @@ import recordRoutes from "./routes/records.js";
 import referRoutes from "./routes/refer.js";
 import backupRoutes from "./routes/backups.js";
 import adminStatsRoutes from "./routes/admin-stats.js";
+import timerRoutes from "./routes/timer.js";
 
 const router = express.Router();
 router.use(express.json({ limit: "10mb" })); // workbook imports can be sizable
@@ -42,6 +43,7 @@ router.use("/", requireSession, stateRoutes);
 router.use("/", requireSession, eventRoutes);
 router.use("/", requireSession, recordRoutes);
 router.use("/", requireSession, backupRoutes);
+router.use("/", requireSession, timerRoutes);
 
 // Health check — handy for uptime monitors
 router.get("/health", (req, res) => res.json({ ok: true, service: "fieldday", ts: Date.now() }));
