@@ -434,15 +434,22 @@ router.get("/feedback-summary", async (req, res) => {
 
     for (const lead of leads) {
       for (const r of lead.results || []) {
-        if (r.skipped || !r.feedback) continue;
+        if (!r.feedback) continue;
+        // Allow skipped entries through ONLY when they carry a comment
+        // collected via TaskRunner's skip dialog — those are real signal.
+        if (r.skipped && !(r.feedback.confusing || r.feedback.suggestion)) continue;
 
         const tt = r.taskType;
         if (!byType[tt]) {
           byType[tt] = { taskType: tt, title: r.title, funSum: 0, claritySum: 0, count: 0 };
         }
-        byType[tt].funSum += r.feedback.fun || 0;
-        byType[tt].claritySum += r.feedback.clarity || 0;
-        byType[tt].count += 1;
+        // Don't count skip-dialog entries toward fun/clarity averages — they
+        // don't include those ratings.
+        if (!r.skipped) {
+          byType[tt].funSum += r.feedback.fun || 0;
+          byType[tt].claritySum += r.feedback.clarity || 0;
+          byType[tt].count += 1;
+        }
 
         if (r.feedback.confusing) {
           allComments.push({
@@ -451,6 +458,7 @@ router.get("/feedback-summary", async (req, res) => {
             type: "confusing",
             text: r.feedback.confusing,
             from: lead.name,
+            source: r.feedback.source || (r.skipped ? "skip-dialog" : "rating"),
           });
         }
         if (r.feedback.suggestion) {
@@ -460,6 +468,7 @@ router.get("/feedback-summary", async (req, res) => {
             type: "suggestion",
             text: r.feedback.suggestion,
             from: lead.name,
+            source: r.feedback.source || (r.skipped ? "skip-dialog" : "rating"),
           });
         }
       }
@@ -510,23 +519,29 @@ router.get("/feedback-export", async (req, res) => {
 
     for (const lead of leads) {
       for (const r of lead.results || []) {
-        if (r.skipped) continue;
         const tt = r.taskType;
         if (!tt) continue;
+        const fb = r.feedback;
+        // Skip entries that have neither a completion nor any usable comment.
+        // (Old behaviour silently dropped every skipped entry, which lost the
+        //  feedback testers typed into the skip dialog.)
+        if (r.skipped && !(fb && (fb.confusing || fb.suggestion))) continue;
         if (!byType[tt]) {
           byType[tt] = { title: r.title || tt, funScores: [], clarityScores: [], comments: [], responseCount: 0 };
         }
-        byType[tt].responseCount += 1;
+        if (!r.skipped) byType[tt].responseCount += 1;
         // Feedback may be null (popup skipped), an object, or have defaults of 0
-        const fb = r.feedback;
         if (fb) {
-          if (fb.fun > 0) byType[tt].funScores.push(fb.fun);
-          if (fb.clarity > 0) byType[tt].clarityScores.push(fb.clarity);
+          if (!r.skipped) {
+            if (fb.fun > 0) byType[tt].funScores.push(fb.fun);
+            if (fb.clarity > 0) byType[tt].clarityScores.push(fb.clarity);
+          }
+          const skipTag = r.skipped ? " (via skip)" : "";
           if (fb.confusing && fb.confusing.trim()) {
-            byType[tt].comments.push(`  [CONFUSING] "${fb.confusing.trim()}" — ${lead.name}`);
+            byType[tt].comments.push(`  [CONFUSING${skipTag}] "${fb.confusing.trim()}" — ${lead.name}`);
           }
           if (fb.suggestion && fb.suggestion.trim()) {
-            byType[tt].comments.push(`  [SUGGESTION] "${fb.suggestion.trim()}" — ${lead.name}`);
+            byType[tt].comments.push(`  [SUGGESTION${skipTag}] "${fb.suggestion.trim()}" — ${lead.name}`);
           }
         }
       }

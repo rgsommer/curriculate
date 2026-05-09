@@ -785,6 +785,51 @@ function DemoPlayer({ user, onFinish, source }) {
   // Submit handler — earns adaptive points, then shows feedback popup
   const handleSubmit = useCallback(
     (answer) => {
+      // ── Skip-dialog short-circuit ──────────────────────────────────────────
+      // TaskRunner's skip dialog already required the user to type a reason
+      // (see TaskRunner.jsx → handleSkipTask).  When that path fires we get
+      // { skipped: true, skipReason, points: 0, ... } back as `answer`.
+      // We must NOT show the end-of-task <TaskFeedback> popup again — testers
+      // flagged that as redundant.  Record the entry, carry the reason
+      // through as a "confusing" comment, and advance.
+      if (answer && typeof answer === "object" && answer.skipped === true) {
+        const reason = String(answer.skipReason || "").trim().slice(0, 300);
+        const entry = {
+          taskType: task?.taskType,
+          title: task?.title,
+          answer: null,
+          skipped: true,
+          points: 0,
+          completedAt: new Date().toISOString(),
+          // Reuse the same shape the backend export reader (demo.js
+          // /feedback-export) already understands — a `confusing` string —
+          // so these comments show up alongside other [CONFUSING] entries
+          // without a second prompt.
+          feedback: reason
+            ? {
+                confusing: reason,
+                suggestion: "",
+                source: "skip-dialog",
+                fun: 0,
+                clarity: 0,
+                feedbackBonus: 0,
+              }
+            : null,
+        };
+        clearInterval(timerRef.current);
+        setStreak(0);
+        const newResults = [...results, entry];
+        setResults(newResults);
+        setPendingEntry(null);
+        setShowFeedback(false);
+        if (taskIdx < total - 1) {
+          setTaskIdx((i) => i + 1);
+        } else {
+          onFinish(newResults);
+        }
+        return;
+      }
+
       const { pts } = getAdaptivePts(task?.taskType, user.taskPoints, completedTypes);
       const entry = {
         taskType: task?.taskType,
@@ -969,6 +1014,7 @@ function DemoPlayer({ user, onFinish, source }) {
           memberNames={[user.name]}
           roomCode="DEMO"
           playerTeam={user.name}
+          practiceMode={true}
         />
       </div>
 

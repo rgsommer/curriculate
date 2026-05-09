@@ -1842,6 +1842,11 @@ export default function TaskRunner({
   // Inline scanner element (e.g. <QrScanner>) to embed inside task UIs
   // that have their own scanner chrome (e.g. PhysicalMultipleChoiceTask)
   scannerSlot = null,
+
+  // Practice / demo surface (DemoMode.jsx).  Lets task types render
+  // simulators in place of hardware-bound features (e.g. PMC's color
+  // scanner, which can't access the camera in practice mode).
+  practiceMode = false,
 }) {
   if (!task) return null;
 
@@ -2408,6 +2413,7 @@ export default function TaskRunner({
           excludedColor={tp?.stationColor || tp?.config?.stationColor || null}
           excludedColors={[tp?.nextStationColor].filter(Boolean)}
           scannerSlot={scannerSlot}
+          practiceMode={practiceMode}
           onIncorrectScan={() => {
             try {
               const fn = window.__curriculatePlayWrongSound;

@@ -3,7 +3,15 @@ import clsx from "clsx";
 
 import {
   DndContext,
-  closestCenter,
+  // closestCenter requires the *dragged item's* bounding-box centre to be
+  // inside the droppable, which on a small phone screen makes the drop zone
+  // feel like only the middle third of the bucket actually accepts a drop.
+  // pointerWithin tracks the pointer/finger itself — much more forgiving and
+  // matches the user's mental model.  We compose with rectIntersection as a
+  // fallback so flick-style drops (where the pointer leaves the drop zone
+  // before the drop fires) still snap to the closest bucket.
+  pointerWithin,
+  rectIntersection,
   PointerSensor,
   TouchSensor,
   KeyboardSensor,
@@ -412,6 +420,30 @@ export default function SortTask({
     }),
   );
 
+  // Soft "tick" sound on every successful drop — testers asked for audible
+  // feedback so they know the bucket actually accepted the item. Lazy
+  // WebAudio oscillator: zero asset weight, no autoplay-policy issues
+  // because user just interacted (drag = gesture).
+  const playDropTick = () => {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = playDropTick._ctx || (playDropTick._ctx = new Ctx());
+      const t0 = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(620, t0);
+      osc.frequency.exponentialRampToValueAtTime(440, t0 + 0.08);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.18, t0 + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + 0.14);
+    } catch {}
+  };
+
   const handleDragEnd = (event) => {
     if (disabled) return;
 
@@ -465,6 +497,8 @@ export default function SortTask({
     newAssignments[targetBucketId].push(itemId);
 
     setAssignments(newAssignments);
+    // Only chirp when the drop actually moved the item somewhere new.
+    if (fromBucket !== targetBucketId) playDropTick();
   };
 
   const allItemsPlaced =
@@ -505,7 +539,14 @@ export default function SortTask({
       </div>
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        // Pointer-following collision detection: forgiving on touch.
+        // Fall back to rectIntersection (broad rectangle overlap) so users
+        // who release just outside a bucket still get the expected snap.
+        collisionDetection={(args) => {
+          const pw = pointerWithin(args);
+          if (pw && pw.length > 0) return pw;
+          return rectIntersection(args);
+        }}
         onDragEnd={handleDragEnd}
       >
         {/* Unsorted pool at the top */}

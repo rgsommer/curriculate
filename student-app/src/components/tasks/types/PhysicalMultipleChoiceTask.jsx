@@ -28,6 +28,10 @@ export default function PhysicalMultipleChoiceTask({
   excludedColors = null,
   onIncorrectScan = null,
   scannerSlot = null,  // ReactNode: actual <QrScanner> passed from parent
+  // Practice / demo path (no real camera or station QR codes available).
+  // When set, we render clickable color buttons in place of the camera
+  // viewfinder so testers can advance the task by tapping colors.
+  practiceMode = false,
 }) {
   const isReview = mode === "review";
 
@@ -731,20 +735,89 @@ export default function PhysicalMultipleChoiceTask({
             }}
           >
             <div style={{ position: "relative" }}>
-              {scannerSlot || (
+              {practiceMode ? (
+                // ── Practice / demo simulator ──────────────────────────────
+                // No camera in practice mode, so render the four station
+                // colors as big tappable buttons that fire the same scan
+                // event. Lets testers actually advance the task.
                 <div
                   style={{
-                    height: "200px",
+                    padding: "18px 14px",
                     display: "flex",
+                    flexDirection: "column",
                     alignItems: "center",
-                    justifyContent: "center",
-                    color: "rgba(51, 187, 255, 0.8)",
-                    fontSize: "3.5rem",
-                    fontWeight: "bold",
+                    gap: "10px",
+                    background: "#0f172a",
                   }}
                 >
-                  📷
+                  <div
+                    style={{
+                      color: "rgba(255,255,255,0.85)",
+                      fontSize: "0.85rem",
+                      fontWeight: 700,
+                      letterSpacing: "0.04em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Practice mode — tap a color to scan
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(4, 1fr)",
+                      gap: "10px",
+                      width: "100%",
+                      maxWidth: "320px",
+                    }}
+                  >
+                    {letters.map((letter) => {
+                      const color = currentMap[letter];
+                      if (!color) return null;
+                      return (
+                        <button
+                          key={letter}
+                          type="button"
+                          onClick={() => acceptColorScan(color)}
+                          aria-label={`Simulate scanning ${color} (option ${letter})`}
+                          style={{
+                            background: getColorCss(color),
+                            border: "3px solid rgba(255,255,255,0.85)",
+                            borderRadius: "14px",
+                            height: "64px",
+                            cursor: "pointer",
+                            color: "#fff",
+                            fontWeight: 900,
+                            fontSize: "1.4rem",
+                            textShadow: "0 2px 6px rgba(0,0,0,0.5)",
+                            boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
+                            transition: "transform 0.1s ease",
+                          }}
+                          onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.94)")}
+                          onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
+                          onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
+                        >
+                          {letter}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
+              ) : (
+                scannerSlot || (
+                  <div
+                    style={{
+                      height: "200px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "rgba(51, 187, 255, 0.8)",
+                      fontSize: "3.5rem",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    📷
+                  </div>
+                )
               )}
             </div>
 
