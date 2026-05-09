@@ -129,6 +129,33 @@ main { padding: 24px clamp(16px, 4vw, 40px); max-width: 1280px; margin: 0 auto; 
 /* Per-event "what to beat" targets line */
 .event-targets { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .event-targets .pill { font-size: 12px; }
+/* Per-competitor PB line under the meta */
+.pb-line {
+  background: #f4f0ff; color: #5b3eb1; padding: 1px 8px; border-radius: 999px;
+  font-weight: 600; font-size: 12px; border: 1px solid #d9cffc;
+}
+.pb-line.pb-beats-record {
+  background: linear-gradient(90deg, #fff7e0, #ffe4d4);
+  color: #8a4d1c; border-color: #f0c468; font-weight: 700;
+  animation: pb-record-glow 2.4s ease-in-out infinite;
+}
+@keyframes pb-record-glow {
+  0%,100% { box-shadow: 0 0 0 0 rgba(240,196,104,0.5); }
+  50%     { box-shadow: 0 0 0 6px rgba(240,196,104,0); }
+}
+/* Badges shown on Live Standings rows when result hits a milestone */
+.standings-badges { display: inline-flex; gap: 4px; margin-left: 6px; }
+.standings-flagged { background: #fffaf0; border-radius: 6px; padding: 2px 4px; }
+.badge-record {
+  background: #ef476f; color: white; padding: 1px 7px; border-radius: 999px;
+  font-size: 10px; font-weight: 800; letter-spacing: .04em;
+  animation: pb-record-glow 1.6s ease-in-out infinite;
+}
+.badge-std { font-size: 14px; }
+.badge-pb {
+  background: #f4f0ff; color: #5b3eb1; padding: 1px 7px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; border: 1px solid #d9cffc;
+}
 .btn.ghost { background: transparent; }
 .btn.block { display:flex; width: 100%; margin-top: 8px; }
 .btn.big { padding: 12px 22px; font-size: 16px; }

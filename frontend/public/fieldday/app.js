@@ -1248,6 +1248,21 @@
       if (c.members && ev.format === "team") metaParts.push("👥 " + escapeHtml(c.members));
       if (c.dq) metaParts.push(`<span style="color:var(--danger);font-weight:700">DQ${c.dqReason ? " · " + escapeHtml(c.dqReason) : ""}</span>`);
       if (c.walkup) metaParts.push(`<span style="background:#fff7e0;color:#8a6d00;padding:1px 6px;border-radius:4px;font-weight:600">🆕 walk-up${c.walkupBy ? " · " + escapeHtml(c.walkupBy) : ""}</span>`);
+      // Show this competitor's recorded personal best for this event title
+      // so they know exactly what to beat. Only shown when a PB exists.
+      // If their PB is already better than the current school record, flag
+      // it loudly — the leader knows this kid is one to watch.
+      const pb = pbForCompetitor(ev, c);
+      if (pb) {
+        const rec = recordForEvent(ev);
+        const pbBeatsRecord = rec && compareResults(pb.value, rec.value, ev.type) < 0;
+        const pbDate = pb.dateSet ? ` <span class="muted small">${escapeHtml(fmtDate(pb.dateSet))}</span>` : "";
+        if (pbBeatsRecord) {
+          metaParts.push(`<span class="pb-line pb-beats-record" title="This kid's personal best is better than the current school record — watch for a record today!">🌟🎺 PB <strong>${escapeHtml(fmtResult(pb.value, ev.type, ev.unit))}</strong>${pbDate} · beats school record!</span>`);
+        } else {
+          metaParts.push(`<span class="pb-line" title="Personal best to beat">🌟 PB <strong>${escapeHtml(fmtResult(pb.value, ev.type, ev.unit))}</strong>${pbDate}</span>`);
+        }
+      }
       const meta = metaParts.length > 0
         ? `<span class="competitor-meta muted small">${metaParts.join(" · ")}</span>`
         : "";
@@ -1303,15 +1318,23 @@
 
     const sorted = (ev.competitors||[]).map(c => {
       const p = placements.find(x => x.competitorId === c.id);
-      return { name: c.name, result: bestOf(c.attempts, ev.type), place: p?.place, points: p?.points };
+      const result = bestOf(c.attempts, ev.type);
+      return {
+        name: c.name,
+        result,
+        place: p?.place,
+        points: p?.points,
+        badges: classifyResult(ev, c, result)
+      };
     }).filter(x => x.result != null).sort((a,b) => compareResults(a.result, b.result, ev.type));
     $("#liveStandings").innerHTML = sorted.length === 0
       ? `<li class="muted">No results yet</li>`
       : sorted.map(s => `
-          <li>
+          <li${s.badges.length ? ' class="standings-flagged"' : ""}>
             ${s.place ? renderPlaceTag(s.place) : ""}
             <span class="name" data-student-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
             <span class="res">${fmtResult(s.result, ev.type, ev.unit)}${s.points!=null?` · ${s.points}pt`:""}</span>
+            ${s.badges.length ? `<span class="standings-badges">${s.badges.join(" ")}</span>` : ""}
           </li>`).join("");
 
     list.querySelectorAll(".name-input").forEach(inp => {
@@ -3286,6 +3309,75 @@
 
     $("#resultsSoFarBody").innerHTML =
       progressHtml + overallHtml + byGenderHtml + byBandHtml + byHouseHtml + byDivisionHtml + recordsHtml + recentHtml;
+  }
+
+  /**
+   * Find the school's school record matching this event (title + age + gender).
+   * Returns the record object or null.
+   */
+  function recordForEvent(ev) {
+    if (!ev || !state.school) return null;
+    const records = state.school.records || [];
+    const t = (a, b) => (a||"").trim().toLowerCase() === (b||"").trim().toLowerCase();
+    return records.find(r =>
+      t(r.title, ev.title) &&
+      String(r.age||"") === String(ev.age||"") &&
+      t(r.gender, ev.gender) &&
+      (!r.type || r.type === ev.type)
+    ) || null;
+  }
+  /** Find the school standard matching this event (title + gender + age band). */
+  function standardForEvent(ev) {
+    if (!ev || !state.school) return null;
+    const standards = state.school.standards || [];
+    const evAge = parseInt(ev.age, 10);
+    const t = (a, b) => (a||"").trim().toLowerCase() === (b||"").trim().toLowerCase();
+    return standards.find(s => {
+      if (!t(s.title, ev.title)) return false;
+      if (!t(s.gender, ev.gender) && s.gender !== "Mixed") return false;
+      const [lo, hi] = parseBand(s.ageBand || "");
+      return !isNaN(evAge) && evAge >= lo && evAge <= hi;
+    }) || null;
+  }
+  /** Find a competitor's stored personal best for this event title (if any). */
+  function pbForCompetitor(ev, competitor) {
+    if (!ev || !competitor || !state.school) return null;
+    const pbs = state.school.personalBests || [];
+    const cName = (competitor.name||"").trim().toLowerCase();
+    const evTitle = (ev.title||"").trim().toLowerCase();
+    return pbs.find(p =>
+      (p.name||"").trim().toLowerCase() === cName &&
+      (p.title||"").trim().toLowerCase() === evTitle &&
+      (!p.gender || p.gender === ev.gender || p.gender === "Mixed")
+    ) || null;
+  }
+  /**
+   * Given a competitor's best-of result, classify it: does it beat the
+   * current school record, hit gold/silver/bronze standard, or beat their
+   * own PB? Returns an array of badge HTML strings (may be empty).
+   */
+  function classifyResult(ev, competitor, value) {
+    if (value == null || value === "") return [];
+    const badges = [];
+    // Record (strictly better than existing OR first ever)
+    const rec = recordForEvent(ev);
+    if (rec == null || compareResults(value, rec.value, ev.type) < 0) {
+      badges.push(`<span class="badge-record" title="School record!">🎺 RECORD</span>`);
+    }
+    // Standard tier
+    const std = standardForEvent(ev);
+    if (std) {
+      const better = (a, b) => ev.type === "timed" ? a <= b : a >= b;
+      if (std.gold   != null && better(value, std.gold))   badges.push(`<span class="badge-std std-gold" title="Gold standard">🥇</span>`);
+      else if (std.silver != null && better(value, std.silver)) badges.push(`<span class="badge-std std-silver" title="Silver standard">🥈</span>`);
+      else if (std.bronze != null && better(value, std.bronze)) badges.push(`<span class="badge-std std-bronze" title="Bronze standard">🥉</span>`);
+    }
+    // PB (only if PB exists for this kid + this event title)
+    const pb = pbForCompetitor(ev, competitor);
+    if (pb && compareResults(value, pb.value, ev.type) < 0) {
+      badges.push(`<span class="badge-pb" title="New personal best (was ${escapeHtml(fmtResult(pb.value, ev.type, ev.unit))})">🌟 PB</span>`);
+    }
+    return badges;
   }
 
   /**

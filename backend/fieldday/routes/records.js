@@ -22,9 +22,15 @@ import { errResp, asyncH } from "../utils.js";
 import { requireSchool, requireAdmin } from "../auth.js";
 
 const router = express.Router();
-router.use(requireSchool, requireAdmin);
+router.use(requireSchool);
 
-/* ------------------- Records ------------------- */
+/* ------------------- Records -------------------
+ * NOTE: POST is intentionally available to any signed-in leader at the
+ * school. When a kid sets a new record, the leader running the event
+ * is the one whose browser detects the break and writes it. If we
+ * required admin here, record-break celebrations would silently fail
+ * for leaders (the previous bug). PATCH/DELETE stay admin-only so
+ * leaders can't edit historical records. */
 router.post("/schools/me/records", asyncH(async (req, res) => {
   const r = req.body || {};
   if (!r.title || !r.age || !r.gender || r.value == null) return errResp(res, 400, "missing_fields");
@@ -43,7 +49,7 @@ router.post("/schools/me/records", asyncH(async (req, res) => {
   res.json({ record: rec });
 }));
 
-router.patch("/schools/me/records/:id", asyncH(async (req, res) => {
+router.patch("/schools/me/records/:id", requireAdmin, asyncH(async (req, res) => {
   const id = req.params.id;
   const set = {};
   Object.entries(req.body || {}).forEach(([k, v]) => {
@@ -59,14 +65,14 @@ router.patch("/schools/me/records/:id", asyncH(async (req, res) => {
   res.json({ record: rec });
 }));
 
-router.delete("/schools/me/records/:id", asyncH(async (req, res) => {
+router.delete("/schools/me/records/:id", requireAdmin, asyncH(async (req, res) => {
   const r = await School.updateOne({ _id: req.fdSchoolId }, { $pull: { records: { id: req.params.id } } });
   if (!r.modifiedCount) return errResp(res, 404, "not_found");
   res.status(204).end();
 }));
 
-/* ------------------- Standards ------------------- */
-router.post("/schools/me/standards", asyncH(async (req, res) => {
+/* ------------------- Standards (admin-only) ------------------- */
+router.post("/schools/me/standards", requireAdmin, asyncH(async (req, res) => {
   const s = req.body || {};
   if (!s.title || !s.ageBand || !s.gender) return errResp(res, 400, "missing_fields");
   const std = {
@@ -81,7 +87,7 @@ router.post("/schools/me/standards", asyncH(async (req, res) => {
   res.json({ standard: std });
 }));
 
-router.patch("/schools/me/standards/:id", asyncH(async (req, res) => {
+router.patch("/schools/me/standards/:id", requireAdmin, asyncH(async (req, res) => {
   const id = req.params.id;
   const set = {};
   Object.entries(req.body || {}).forEach(([k, v]) => {
@@ -98,14 +104,14 @@ router.patch("/schools/me/standards/:id", asyncH(async (req, res) => {
   res.json({ standard: std });
 }));
 
-router.delete("/schools/me/standards/:id", asyncH(async (req, res) => {
+router.delete("/schools/me/standards/:id", requireAdmin, asyncH(async (req, res) => {
   const r = await School.updateOne({ _id: req.fdSchoolId }, { $pull: { standards: { id: req.params.id } } });
   if (!r.modifiedCount) return errResp(res, 404, "not_found");
   res.status(204).end();
 }));
 
-/* ------------------- Archives ------------------- */
-router.post("/schools/me/archives", asyncH(async (req, res) => {
+/* ------------------- Archives (admin-only) ------------------- */
+router.post("/schools/me/archives", requireAdmin, asyncH(async (req, res) => {
   const label = String(req.body?.label || "").trim();
   if (!label) return errResp(res, 400, "missing_label");
 
@@ -122,7 +128,7 @@ router.post("/schools/me/archives", asyncH(async (req, res) => {
   res.json({ archive });
 }));
 
-router.post("/schools/me/archives/:id/restore", asyncH(async (req, res) => {
+router.post("/schools/me/archives/:id/restore", requireAdmin, asyncH(async (req, res) => {
   const school = await School.findById(req.fdSchoolId);
   if (!school) return errResp(res, 404, "school_not_found");
   const archive = (school.archives || []).find(a => a.id === req.params.id);
@@ -143,7 +149,7 @@ router.post("/schools/me/archives/:id/restore", asyncH(async (req, res) => {
   res.json({ archive, eventsRestored: restoredCount });
 }));
 
-router.delete("/schools/me/archives/:id", asyncH(async (req, res) => {
+router.delete("/schools/me/archives/:id", requireAdmin, asyncH(async (req, res) => {
   const r = await School.updateOne({ _id: req.fdSchoolId }, { $pull: { archives: { id: req.params.id } } });
   if (!r.modifiedCount) return errResp(res, 404, "not_found");
   res.status(204).end();
