@@ -58,6 +58,65 @@ export async function sendCodeChangeEmail(toEmail, code, schoolName) {
   });
 }
 
+/**
+ * Per-leader sign-in invite. Sent to a single event leader with everything
+ * they need: school code, their name, optional PIN, and a step-by-step.
+ */
+export async function sendLeaderInviteEmail({ toEmail, leaderName, schoolName, schoolCode, pin, requirePin }) {
+  const pinLine    = (requirePin && pin) ? `Your 4-digit PIN: ${pin}\n` : "";
+  const pinStepTxt = (requirePin && pin) ? `   4. Enter your PIN: ${pin}\n` : "";
+  const pinStepHtml = (requirePin && pin)
+    ? `<li>Enter your 4-digit PIN: ${bigInline(pin)}</li>`
+    : "";
+  const text = `Hi ${leaderName},
+
+You're set up as an event leader for ${schoolName}'s field day.
+
+Here's how to sign in (takes 10 seconds):
+
+   1. Go to:   https://www.curriculate.net/fieldday
+   2. Tap:     Enter as Event Leader
+   3. Type school code:  ${schoolCode}
+${pinStepTxt}   ${requirePin && pin ? "5" : "4"}. Pick your name from the dropdown:  ${leaderName}
+   ${requirePin && pin ? "6" : "5"}. Tap Continue.
+
+You'll land on an Assignments view showing only the events you're staff
+on, grouped by division with status indicators (gray = pending, amber =
+in progress, green = done). Tap into any to score it. Stopwatches start
+and stop with one tap each. Submit when the heat is done.
+
+${pinLine}
+Need help on the day? Tap the Report button in the top bar.
+
+— Curriculate Field Day`;
+  const html = htmlShell("Field Day invite", `
+    <p>Hi ${leaderName},</p>
+    <p>You're set up as an event leader for <strong>${schoolName}</strong>'s field day.</p>
+    <p style="margin: 18px 0 8px;"><strong>Here's how to sign in (takes 10 seconds):</strong></p>
+    <ol style="padding-left: 22px; color: #333; font-size: 14px; line-height: 1.7;">
+      <li>Go to: <a href="https://www.curriculate.net/fieldday" style="color:#2956ff;font-weight:600">curriculate.net/fieldday</a></li>
+      <li>Tap <em>Enter as Event Leader</em></li>
+      <li>Type school code: ${bigInline(schoolCode)}</li>
+      ${pinStepHtml}
+      <li>Pick your name from the dropdown: <strong>${leaderName}</strong></li>
+      <li>Tap <em>Continue</em>.</li>
+    </ol>
+    <p style="color:#5b6477;font-size:14px;line-height:1.6">
+      You'll land on an Assignments view showing <strong>only the events
+      you're staff on</strong>, grouped by division with status indicators
+      (gray = pending, amber = in progress, green = done). Tap into any
+      event to score it. Stopwatches start and stop with one tap each.
+      Submit when the heat is done.
+    </p>
+    <p style="color:#8993b0;font-size:13px">Need help on the day? Tap the Report button in the top bar — it goes straight to the team.</p>
+  `);
+  return transport({ from: FROM_ADDR, fromName: FROM_NAME, to: toEmail, subject: `Your Field Day login at ${schoolName}`, text, html });
+}
+
+function bigInline(text) {
+  return `<span style="font-family:SFMono-Regular,Menlo,Consolas,monospace;background:#e7eeff;color:#2956ff;padding:2px 10px;border-radius:6px;font-weight:800;letter-spacing:.1em">${text}</span>`;
+}
+
 export async function sendInviteEmail(toEmail, schoolName, schoolCode, inviterEmail) {
   return transport({
     from: FROM_ADDR, fromName: FROM_NAME, to: toEmail,

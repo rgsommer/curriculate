@@ -10,7 +10,7 @@
 import express from "express";
 import { School, Event, CodeChange } from "../models.js";
 import { gen6, hash, verify, codeChangeExpiresAt, errResp, asyncH, publicSchool, publicEvent } from "../utils.js";
-import { sendCodeChangeEmail, sendInviteEmail } from "../email.js";
+import { sendCodeChangeEmail, sendInviteEmail, sendLeaderInviteEmail } from "../email.js";
 import { requireSchool } from "../auth.js";
 
 const router = express.Router();
@@ -110,6 +110,63 @@ router.post("/schools/me/invite-admin", requireSchool, asyncH(async (req, res) =
   try { await sendInviteEmail(email, school.name, school.code, req.fdSession.email); }
   catch (e) { sent = false; }
   res.json({ sent });
+}));
+
+/**
+ * POST /schools/me/invite-leader { name, email, regeneratePin }
+ *
+ * Sends one event leader an invite with the school code, their name, and
+ * (if requireLeaderPin is on, OR regeneratePin is true) a freshly-generated
+ * 4-digit PIN. Caches the email under school.staffEmails[name] so the
+ * admin doesn't have to re-type it next time.
+ */
+router.post("/schools/me/invite-leader", requireSchool, asyncH(async (req, res) => {
+  if (req.fdSession.role !== "admin") return errResp(res, 403, "admin_required");
+  const name  = String(req.body?.name  || "").trim();
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const regenerate = !!req.body?.regeneratePin;
+  if (!name)                          return errResp(res, 400, "missing_name");
+  if (!email || !email.includes("@")) return errResp(res, 400, "bad_email");
+
+  const school = await School.findById(req.fdSchoolId);
+  if (!school) return errResp(res, 404, "school_not_found");
+
+  const key = name.toLowerCase().trim();
+  let plainPin = null;
+
+  // Generate a fresh PIN if asked, or if the school requires PINs and this
+  // person doesn't have one yet.
+  const existing = (school.staffPins || {})[key];
+  const needsPin = school.requireLeaderPin && (!existing || !existing.hash);
+  if (regenerate || needsPin) {
+    plainPin = String(Math.floor(1000 + Math.random() * 9000));
+    const h = await hash(plainPin);
+    school.staffPins = { ...(school.staffPins || {}), [key]: { hash: h, sentAt: Date.now(), sentTo: email } };
+  } else if (existing) {
+    // Don't email an old PIN we can't read (it's hashed). If admin wants to
+    // re-send, they pass regeneratePin: true.
+    plainPin = null;
+  }
+
+  // Cache the email under the staff name
+  school.staffEmails = { ...(school.staffEmails || {}), [key]: email };
+  school.markModified("staffPins");
+  school.markModified("staffEmails");
+  await school.save();
+
+  let sent = true;
+  try {
+    await sendLeaderInviteEmail({
+      toEmail: email,
+      leaderName: name,
+      schoolName: school.name,
+      schoolCode: school.code,
+      pin: plainPin,
+      requirePin: !!school.requireLeaderPin
+    });
+  } catch (e) { console.warn("[fieldday] leader-invite email failed", e); sent = false; }
+
+  res.json({ sent, pinIssued: !!plainPin });
 }));
 
 export default router;

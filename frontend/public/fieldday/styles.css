@@ -488,6 +488,46 @@ main { padding: 24px clamp(16px, 4vw, 40px); max-width: 1280px; margin: 0 auto; 
 .user-name { font-size: 13px; font-weight: 600; }
 .user-school { font-size: 11px; color: var(--muted); }
 
+/* ===== Invite Event Leaders ===== */
+.invite-list { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; padding: 4px; }
+.invite-row {
+  display: grid; grid-template-columns: 1.4fr 2fr 90px auto;
+  gap: 8px; align-items: center;
+  padding: 6px 0; border-bottom: 1px dashed var(--line-2);
+}
+.invite-row:last-child { border-bottom: 0; }
+.invite-row .ir-name { font-weight: 600; }
+.invite-row input[type="email"] {
+  border: 1px solid var(--line); padding: 6px 8px; border-radius: 6px;
+  font-size: 13px; background: var(--panel);
+}
+.invite-row .ir-status {
+  font-size: 11px; color: var(--muted); white-space: nowrap;
+}
+.invite-row .ir-status.has-pin { color: var(--green); font-weight: 600; }
+.invite-row .ir-status.sent { color: var(--primary); font-weight: 600; }
+@media (max-width: 720px) {
+  .invite-row { grid-template-columns: 1fr; }
+}
+
+/* Print-only credentials sheet */
+.credentials-print {
+  display: none;
+  background: white; padding: 24px;
+}
+.credentials-print h1 { font-size: 22px; margin: 0 0 4px; }
+.credentials-print h2 { font-size: 14px; color: var(--muted); margin: 0 0 16px; text-transform: uppercase; letter-spacing: .04em; }
+.credentials-print table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.credentials-print th, .credentials-print td { padding: 6px 8px; border-bottom: 1px solid var(--line-2); text-align: left; }
+.credentials-print th { background: var(--panel-2); color: var(--muted); font-weight: 600; }
+.credentials-print .code { font-family: "SF Mono","Menlo","Consolas",monospace; font-weight: 700; }
+
+@media print {
+  body.printing-creds * { visibility: hidden; }
+  body.printing-creds .credentials-print, body.printing-creds .credentials-print * { visibility: visible; }
+  body.printing-creds .credentials-print { display: block; position: absolute; top: 0; left: 0; width: 100%; }
+}
+
 /* ===== School-code section ===== */
 .code-display {
   background: var(--primary-soft); border: 1px solid #c5d4ff;

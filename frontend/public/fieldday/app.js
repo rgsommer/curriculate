@@ -2200,6 +2200,7 @@
     $("#standardsCard").hidden = !scoring.standard;
     $("#houseList").value = (school.houses||[]).join(", ");
     renderSchoolCodeCard();
+    renderInviteLeadersPanel();
     renderDivisionsEditor();
     renderLibraryEditor();
     renderRulesEditor();
@@ -2331,6 +2332,130 @@
     state.school.eventLibrary.push(t);
     $("#newLibTitle").value = "";
     renderLibraryEditor();
+  }
+
+  /**
+   * Lists every staff name (collected from school.eventStaff across all
+   * events/divisions/roles) with an email field and a Send Invite button.
+   * Stores entered emails locally so the admin doesn't have to retype.
+   */
+  function collectStaffNames() {
+    const staff = state.school?.eventStaff || {};
+    const set = new Set();
+    Object.values(staff).forEach(byDiv => Object.values(byDiv || {}).forEach(byRole =>
+      Object.values(byRole || {}).forEach(n => { if (n && String(n).trim()) set.add(String(n).trim()); })));
+    return [...set].sort();
+  }
+
+  function renderInviteLeadersPanel() {
+    const school = state.school; if (!school) return;
+    const requireToggle = $("#requireLeaderPinToggle");
+    if (requireToggle) requireToggle.checked = !!school.requireLeaderPin;
+
+    const names = collectStaffNames();
+    const emails = school.staffEmails || {};
+    const pinStatus = school.staffPinStatus || {};
+    const wrap = $("#inviteLeadersList");
+    if (!wrap) return;
+    if (names.length === 0) {
+      wrap.innerHTML = `<div class="muted small">No staff names yet. Add them via the Staff tab in your Excel workbook upload, then come back here.</div>`;
+      return;
+    }
+    wrap.innerHTML = names.map(name => {
+      const key = name.toLowerCase().trim();
+      const email = emails[key] || "";
+      const pi = pinStatus[key] || {};
+      let status = "";
+      if (school.requireLeaderPin && pi.hasPin) status = `<span class="ir-status has-pin">PIN set</span>`;
+      else if (school.requireLeaderPin)         status = `<span class="ir-status">no PIN yet</span>`;
+      else if (pi.sentAt)                        status = `<span class="ir-status sent">sent</span>`;
+      return `
+        <div class="invite-row" data-name="${escapeHtml(name)}">
+          <div class="ir-name">${escapeHtml(name)}</div>
+          <input type="email" data-invite-email value="${escapeHtml(email)}" placeholder="leader@school.org" autocomplete="off" />
+          <div>${status}</div>
+          <button class="btn" data-invite-send>Send Invite</button>
+        </div>`;
+    }).join("");
+
+    wrap.querySelectorAll("[data-invite-send]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const row = btn.closest(".invite-row");
+        const name = row.dataset.name;
+        const email = row.querySelector("[data-invite-email]").value.trim().toLowerCase();
+        if (!email || !email.includes("@")) { showToast("Enter a valid email"); return; }
+        await inviteOneLeader(name, email, true /* always regenerate so we can email a fresh PIN */);
+      });
+    });
+  }
+
+  async function inviteOneLeader(name, email, regeneratePin) {
+    try {
+      const out = await api.inviteLeader({ name, email, regeneratePin });
+      showToast(out?.sent ? `Invite sent to ${name}` : `Couldn't email ${name} — try again later`);
+      // Refresh state so PIN status pills update
+      await refreshState();
+      renderInviteLeadersPanel();
+      return out;
+    } catch (e) {
+      showToast(`Couldn't invite ${name}`);
+      return { sent: false };
+    }
+  }
+
+  async function inviteAllLeaders() {
+    const rows = $$("#inviteLeadersList .invite-row");
+    const queue = rows
+      .map(r => ({ name: r.dataset.name, email: r.querySelector("[data-invite-email]").value.trim().toLowerCase() }))
+      .filter(x => x.email && x.email.includes("@"));
+    if (queue.length === 0) { showToast("Add at least one email"); return; }
+    if (!confirm(`Send invite emails to ${queue.length} leader${queue.length===1?"":"s"}? Each gets a freshly-generated PIN.`)) return;
+    let sent = 0, failed = 0;
+    for (const q of queue) {
+      const out = await inviteOneLeader(q.name, q.email, true);
+      if (out?.sent) sent++; else failed++;
+    }
+    $("#inviteSummary").textContent = `${sent} sent · ${failed} failed`;
+    showToast(`${sent} of ${queue.length} invites sent`);
+  }
+
+  /**
+   * Print-friendly fallback for admins who'd rather hand out paper. Builds
+   * a single sheet with name / email / PIN columns. PINs are only printable
+   * for staff invited in the current session (PINs in the DB are hashed).
+   */
+  function printCredentialsSheet() {
+    const school = state.school; if (!school) return;
+    const names = collectStaffNames();
+    const emails = school.staffEmails || {};
+    $("#credPrintTitle").textContent = `${school.name} · Field Day Event Leader Credentials`;
+    $("#credPrintSub").textContent  = `School code: ${school.code}${school.requireLeaderPin ? " · PIN required" : ""}`;
+    const rows = names.map(n => {
+      const key = n.toLowerCase().trim();
+      // We can't recover hashed PINs — leave the cell blank with a note that
+      // each leader's PIN was emailed to them. Admin can regenerate if lost.
+      return `<tr>
+        <td>${escapeHtml(n)}</td>
+        <td>${escapeHtml(emails[key] || "")}</td>
+        <td class="code">${school.requireLeaderPin ? "(emailed — Send Invite to regenerate)" : "—"}</td>
+      </tr>`;
+    }).join("");
+    $("#credPrintBody").innerHTML = rows;
+    document.body.classList.add("printing-creds");
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => document.body.classList.remove("printing-creds"), 300);
+    }, 100);
+  }
+
+  async function saveRequireLeaderPin() {
+    const v = $("#requireLeaderPinToggle").checked;
+    try {
+      const resp = await api.updateSchool({ requireLeaderPin: v });
+      if (resp?.school) state.school = resp.school;
+      showToast(v ? "Leader PIN now required" : "Leader PIN no longer required");
+      renderInviteLeadersPanel();
+    } catch (e) { showToast("Save failed"); }
   }
 
   function renderSchoolCodeCard() {
@@ -3905,6 +4030,10 @@
     $("#btnInviteAdmin").addEventListener("click", startInvite);
     $("#btnSendInvite").addEventListener("click", sendInvite);
     $("#btnCancelInvite").addEventListener("click", cancelInvite);
+
+    $("#btnInviteAllLeaders").addEventListener("click", inviteAllLeaders);
+    $("#btnPrintCredentials").addEventListener("click", printCredentialsSheet);
+    $("#requireLeaderPinToggle").addEventListener("change", saveRequireLeaderPin);
     $("#btnAddRecord").addEventListener("click", addRecord);
     $("#standardsTitleFilter").addEventListener("change", renderStandardsEditor);
     $("#btnReseedStandards").addEventListener("click", reseedStandards);

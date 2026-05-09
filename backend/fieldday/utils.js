@@ -54,6 +54,7 @@ export function publicSchool(school) {
                             k, { hasPin: !!(v && v.hash), sentAt: v?.sentAt || null, sentTo: v?.sentTo || "" }
                           ])
                         ),
+    staffEmails:       school.staffEmails || {},
     createdAt:         school.createdAt
   };
 }

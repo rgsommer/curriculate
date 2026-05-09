@@ -88,6 +88,9 @@ const SchoolSchema = new Schema({
   // Stored on the School doc rather than a separate collection because PINs
   // are short-lived per-event-day artifacts.
   staffPins:          { type: Schema.Types.Mixed, default: {} },
+  // Map: lowercased-trimmed leader name → email address. Cached so the Invite
+  // panel doesn't make admin re-type addresses every time.
+  staffEmails:        { type: Schema.Types.Mixed, default: {} },
   records:            { type: [RecordSubSchema], default: [] },
   standards:          { type: [StandardSubSchema], default: [] },
   personalBests:      { type: [PBSubSchema], default: [] },

@@ -401,6 +401,23 @@
     </div>
 
     <div class="detail-card">
+      <h2>Invite Event Leaders</h2>
+      <p class="muted small">One row per staff name from the Staff tab. Type each leader's email, click Send Invite — they get a single email with the school code, their PIN (if required), and step-by-step instructions. The PIN is freshly generated on each send.</p>
+
+      <div class="settings-row">
+        <label class="check"><input type="checkbox" id="requireLeaderPinToggle" /> Require a 4-digit PIN for leader sign-in</label>
+      </div>
+
+      <div id="inviteLeadersList" class="invite-list"></div>
+
+      <div class="settings-row" style="margin-top:10px">
+        <button class="btn primary" id="btnInviteAllLeaders">Send All</button>
+        <button class="btn ghost"   id="btnPrintCredentials">Print Credentials Sheet</button>
+        <span class="muted small" id="inviteSummary"></span>
+      </div>
+    </div>
+
+    <div class="detail-card">
       <h2>Divisions</h2>
       <p class="muted small">Optional. Many schools group ages into named divisions (Junior / Intermediate / Senior). Used for division-specific event rules and per-division staff assignments.</p>
       <div id="divisionsEditor" class="divisions-editor"></div>
@@ -846,6 +863,20 @@ Sofia Martinez,50m Sprint,9,Girls,2017-11-02,4,Beta,1,9.40,</pre>
 </div>
 
 <div class="toast" id="toast" hidden></div>
+
+<!-- Hidden printable credentials sheet — populated when admin clicks
+     "Print Credentials Sheet" in the Invite Event Leaders panel. -->
+<div class="credentials-print" id="credentialsPrint">
+  <h1 id="credPrintTitle">Field Day · Event Leader Credentials</h1>
+  <h2 id="credPrintSub"></h2>
+  <table>
+    <thead><tr><th>Leader</th><th>Email</th><th>PIN</th></tr></thead>
+    <tbody id="credPrintBody"></tbody>
+  </table>
+  <p style="color:var(--muted);font-size:11px;margin-top:14px">
+    Each leader visits curriculate.net/fieldday → Enter as Event Leader → school code, name, PIN.
+  </p>
+</div>
 
 <!-- ============ EVENT-COMPLETION PROGRESS BAR ============ -->
 <div class="completion-bar" id="completionBar" hidden>

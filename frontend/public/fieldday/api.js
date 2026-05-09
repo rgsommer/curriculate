@@ -386,6 +386,12 @@
       }
     },
 
+    /** POST /schools/me/invite-leader { name, email, regeneratePin? } */
+    async inviteLeader({ name, email, regeneratePin }) {
+      return mutate("POST", "/schools/me/invite-leader", { name, email, regeneratePin: !!regeneratePin },
+        () => ({ sent: false, devNote: "Local mode — leader-invite email would be sent in remote mode" }));
+    },
+
     /** POST /report {kind, message, fromName?, fromEmail?, schoolCode?, context?} */
     async report(payload) {
       if (isLocal()) return { sent: false, devNote: "Local mode — report email would be sent in remote mode" };
