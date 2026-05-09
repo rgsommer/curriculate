@@ -110,8 +110,14 @@
       <div class="form-row">
         <label>School Code</label>
         <input id="leaderSchoolCode" placeholder="MAPLE26" maxlength="10" autocomplete="off" />
+        <button class="link" type="button" id="btnLeaderLookup">Look up names →</button>
       </div>
-      <div class="form-row">
+      <div class="form-row" id="leaderNameDropdownRow" hidden>
+        <label>Your Name</label>
+        <select id="leaderNameSelect"></select>
+        <button class="link" type="button" id="btnLeaderUseFreeText">My name isn't listed</button>
+      </div>
+      <div class="form-row" id="leaderNameTextRow">
         <label>Your Name</label>
         <input id="leaderName" placeholder="Coach Smith" autocomplete="name" />
       </div>
@@ -258,7 +264,9 @@
     <div class="view-header">
       <h1>Admin Overview</h1>
       <div class="view-header-actions">
-        <button class="btn primary" id="btnImportRoster">Import Roster (CSV)</button>
+        <button class="btn primary" id="btnImportWorkbook">Import / Update from Excel</button>
+        <button class="btn ghost" id="btnDownloadWorkbook">Download Workbook</button>
+        <button class="btn ghost" id="btnImportRoster">CSV (legacy)</button>
         <button class="btn" id="btnDaySummary">Day Summary</button>
         <button class="btn ghost" id="btnExportJson" title="Download a JSON backup of this season">Backup</button>
       </div>
@@ -371,6 +379,19 @@
           <div class="muted small">Tie for 1st: each gets 5. Next is 3rd. Easier and more encouraging.</div>
         </div>
       </label>
+    </div>
+
+    <div class="detail-card">
+      <h2>Divisions</h2>
+      <p class="muted small">Optional. Many schools group ages into named divisions (Junior / Intermediate / Senior). Used for division-specific event rules and per-division staff assignments.</p>
+      <div id="divisionsEditor" class="divisions-editor"></div>
+      <div class="settings-row">
+        <input id="newDivName" placeholder="Division name" />
+        <input id="newDivLow"  type="number" placeholder="Min age" style="width:80px" />
+        <input id="newDivHigh" type="number" placeholder="Max age" style="width:80px" />
+        <button class="btn" id="btnAddDivision">+ Add Division</button>
+        <button class="btn primary" id="btnSaveDivisions">Save</button>
+      </div>
     </div>
 
     <div class="detail-card">
@@ -584,6 +605,52 @@
   </div>
 </div>
 
+<!-- ============ WORKBOOK IMPORT MODAL ============ -->
+<div class="modal" id="workbookModal" hidden>
+  <div class="modal-card import-card">
+    <header class="modal-header">
+      <h2>Import / Update from Excel</h2>
+      <button class="icon-btn" id="btnWorkbookClose">✕</button>
+    </header>
+    <div class="modal-body">
+      <p class="muted small">
+        Upload an Excel/Google Sheets workbook with the structure shown below. Each tab maps to a different importer; tabs you don't need can be left blank or removed.
+      </p>
+      <details class="csv-help">
+        <summary>Workbook tabs reference</summary>
+        <table class="csv-cols">
+          <thead><tr><th>Tab</th><th>Purpose</th><th>Shape</th></tr></thead>
+          <tbody>
+            <tr><td><code>Roster</code></td><td>Kids and what events they're in</td><td>One row per kid; one column per event title; cell value = empty (not in), <code>Y</code> (in, no heat), or a heat label (in, in that heat).</td></tr>
+            <tr><td><code>Events</code></td><td>Per-title defaults</td><td>Title, Type, Attempts, Unit, Format, ScoreBy, Rules (base text).</td></tr>
+            <tr><td><code>Staff</code></td><td>Leaders / assistants per division</td><td>One row per event title; columns are <code>Division Role</code> (e.g. <code>Junior Leader</code>, <code>Junior Assistant</code>). Any role labels work.</td></tr>
+            <tr><td><code>Rules</code></td><td>Division-specific rule overrides</td><td>One row per (event, division). Columns: Event, Division, Rules.</td></tr>
+            <tr><td><code>Standards</code></td><td>Performance targets</td><td>Event, AgeBand, Gender, Gold, Silver, Bronze.</td></tr>
+            <tr><td><code>Records</code></td><td>School records</td><td>Event, Age, Gender, Holder, Result, DateSet.</td></tr>
+            <tr><td><code>PBs</code></td><td>Personal bests</td><td>Name, Event, Result.</td></tr>
+            <tr><td><code>Houses</code></td><td>House list (optional)</td><td>One column "House" with one house per row.</td></tr>
+            <tr><td><code>Divisions</code></td><td>Division definitions (optional)</td><td>Name, MinAge, MaxAge.</td></tr>
+          </tbody>
+        </table>
+        <p class="muted small">Click <strong>Download Workbook</strong> on the Admin tab for a pre-populated starting file with your school's current state.</p>
+      </details>
+
+      <div class="settings-row">
+        <label class="btn primary file-btn">
+          Choose Workbook (.xlsx)
+          <input type="file" id="workbookFile" accept=".xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
+        </label>
+        <span class="muted small" id="workbookFileName">No file chosen</span>
+      </div>
+
+      <div id="workbookLog" class="import-log" hidden></div>
+    </div>
+    <footer class="modal-footer">
+      <button class="btn ghost" id="btnWorkbookCancel">Close</button>
+    </footer>
+  </div>
+</div>
+
 <!-- ============ ROSTER IMPORT MODAL ============ -->
 <div class="modal" id="importModal" hidden>
   <div class="modal-card import-card">
@@ -596,21 +663,30 @@
         Upload a CSV with one row per competitor-in-event. The app will create any missing events and add the competitors.
       </p>
       <details class="csv-help">
-        <summary>CSV format &amp; example</summary>
-        <p><strong>Required columns:</strong> <code>Event, Age, Gender, Name</code></p>
-        <p><strong>Optional columns:</strong> <code>Grade, DOB, ActualAge, Heat</code></p>
-        <p class="muted small">
-          <strong>Age</strong> = the event's competition tier (an 8-year-old running with the 9s gets <code>Age=9</code>).
-          <strong>DOB</strong> = date of birth in YYYY-MM-DD; the app computes the kid's actual age as of the school's cutoff date (default Dec 31 — change in Settings).
-          <strong>ActualAge</strong> = override if you don't want to use DOB or computed age.
-          <strong>Heat</strong> = a label like "1", "A", or "Fast" — the event detail groups competitors by heat.
-        </p>
-        <pre class="csv-example">Event,Age,Gender,Name,Grade,DOB,Heat
-50m Sprint,8,Girls,Maya Patel,3,2017-04-12,1
-50m Sprint,8,Girls,Ava Chen,3,2017-08-30,1
-50m Sprint,9,Girls,Sofia Martinez,4,2017-11-02,2
-Long Jump,10,Boys,Liam Cole,5,2015-06-19,A
-Shot Put,12,Boys,Noah Reyes,6,2013-10-04,A</pre>
+        <summary>CSV format — column groups &amp; example</summary>
+        <table class="csv-cols">
+          <thead><tr><th>Group</th><th>Column</th><th>Required?</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td rowspan="2">Identity</td><td><code>Name</code></td><td>yes</td><td>Competitor or team name. Same kid across rows is merged automatically.</td></tr>
+            <tr><td><code>Event</code></td><td>yes</td><td>Event title — matches the library, or auto-creates with library defaults.</td></tr>
+            <tr><td rowspan="2">Event slot</td><td><code>Age</code></td><td>yes</td><td>The event's competition tier (an 8-year-old running with the 9s = <code>Age=9</code>).</td></tr>
+            <tr><td><code>Gender</code></td><td>yes</td><td>Girls / Boys / Mixed</td></tr>
+            <tr><td rowspan="4">Roster info</td><td><code>DOB</code></td><td>optional</td><td>YYYY-MM-DD. Auto-computes ActualAge using your cutoff (default Dec 31).</td></tr>
+            <tr><td><code>Grade</code></td><td>optional</td><td>Class grade (1–12, K, etc.).</td></tr>
+            <tr><td><code>House</code></td><td>optional</td><td>Must match a house from Settings, or it'll be flagged.</td></tr>
+            <tr><td><code>ActualAge</code></td><td>optional</td><td>Fallback if no DOB.</td></tr>
+            <tr><td rowspan="3">Race day</td><td><code>Heat</code></td><td>optional</td><td>Heat label (1, A, "Fast"); groups visually in event detail.</td></tr>
+            <tr><td><code>PersonalBest</code></td><td>optional</td><td>Prior PB in the event's unit. Flagged if beaten on the day.</td></tr>
+            <tr><td><code>Notes</code></td><td>optional</td><td>Free-text annotation, kept on the entry.</td></tr>
+            <tr><td>Team only</td><td><code>Members</code></td><td>optional</td><td>Semicolon-separated for team / relay events. Use semicolons (commas conflict with the CSV).</td></tr>
+          </tbody>
+        </table>
+        <p class="muted small">Roster info (DOB, Grade, House) only needs to be filled in once per kid — the importer merges by Name. Conflicting values flag a warning at preview.</p>
+        <pre class="csv-example">Name,Event,Age,Gender,DOB,Grade,House,Heat,PersonalBest,Notes
+Maya Patel,50m Sprint,8,Girls,2017-04-12,3,Alpha,1,8.65,
+Maya Patel,Long Jump,8,Girls,,,,A,3.10,wears glasses
+Maya Patel,Shot Put,9,Girls,,,,B,,running up
+Sofia Martinez,50m Sprint,9,Girls,2017-11-02,4,Beta,1,9.40,</pre>
       </details>
 
       <div class="settings-row">
@@ -664,6 +740,8 @@ Shot Put,12,Boys,Noah Reyes,6,2013-10-04,A</pre>
   <div class="confetti" id="confetti" aria-hidden="true"></div>
 </div>
 
+<!-- SheetJS — for the Excel/Sheets workbook upload + download -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="/fieldday/api.js"></script>
 <script src="/fieldday/app.js"></script>
 </body>

@@ -242,6 +242,22 @@
     },
 
     /**
+     * Public: list staff names registered for a school (no auth).
+     * Lets the leader-sign-in dropdown pre-populate before they're authenticated.
+     * Server contract: GET /leader/staff?code=ABC → {school:{name,code}, staff:[name...]}
+     *   404 {error:"school_not_found"}
+     */
+    async lookupSchoolStaff(schoolCode) {
+      if (isLocal()) return localLookupSchoolStaff(schoolCode);
+      try {
+        return await http("GET", "/leader/staff?code=" + encodeURIComponent(schoolCode));
+      } catch (e) {
+        if (e.code === "NETWORK" || e.code === "NOT_FOUND") return localLookupSchoolStaff(schoolCode);
+        throw e;
+      }
+    },
+
+    /**
      * Leader: join a school by code.
      * Server contract: POST /leader/join {schoolCode, leaderName}
      *   200 {sessionToken, school:{id,name,code,...}}
@@ -539,12 +555,20 @@
       ageCategories: ["5","6","7","8","9","10","11","12","13","14"],
       ageBands,
       eventLibrary,
+      // eventRules can be either a string (legacy: just the base rule)
+      // or { base: "...", byDivision: { "Junior": "..." } }. Reader normalizes.
       eventRules: { ...DEFAULT_EVENT_RULES },
       tieMethod: "average",
       scoring: { placement: true, standard: false },
       scoringMode: "placement", // legacy compatibility
       ageCutoffDate: "12-31",
       houses: [],
+      divisions: [
+        { name: "Junior",       ageRange: [5, 8]  },
+        { name: "Intermediate", ageRange: [9, 11] },
+        { name: "Senior",       ageRange: [12, 14] }
+      ],
+      eventStaff: { /* { eventTitle: { divisionName: { Leader: "...", Assistant: "..." } } } */ },
       personalBests: [],
       eventDefaults: { /* keyed by title: {type, attempts, unit} */ },
       records: [],
@@ -557,6 +581,19 @@
     writeLocal(blob);
     writeSession({ ...session, schoolId: school.id, _pendingPasskey: undefined });
     return { school };
+  }
+
+  function localLookupSchoolStaff(schoolCode) {
+    const blob = readLocal();
+    const school = (blob.schools||[]).find(s => s.code === schoolCode);
+    if (!school) { const err = new Error("school_not_found"); err.code = 404; throw err; }
+    const names = new Set();
+    Object.values(school.eventStaff || {}).forEach(byDiv => {
+      Object.values(byDiv || {}).forEach(byRole => {
+        Object.values(byRole || {}).forEach(name => { if (name && String(name).trim()) names.add(String(name).trim()); });
+      });
+    });
+    return { school: { name: school.name, code: school.code }, staff: [...names].sort() };
   }
 
   function localJoinAsLeader(schoolCode, leaderName) {

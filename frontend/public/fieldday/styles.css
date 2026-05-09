@@ -325,11 +325,58 @@ main { padding: 24px clamp(16px, 4vw, 40px); max-width: 1280px; margin: 0 auto; 
 
 #ageCategories, #eventLibrary { width: 100%; border: 1px solid var(--line); padding: 8px; border-radius: var(--radius-sm); margin-bottom: 8px; font-family: inherit; }
 
+/* ===== Leader Assignments view ===== */
+.assignments { display: flex; flex-direction: column; gap: 14px; }
+.assignment-event {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.assignment-event h3 { margin: 0 0 8px; font-size: 15px; }
+.assignment-divisions { display: flex; flex-direction: column; gap: 10px; }
+.assignment-division {
+  border-left: 4px solid var(--line); padding: 6px 0 6px 12px;
+}
+.assignment-division.completed { border-left-color: var(--green); }
+.assignment-division.in_progress { border-left-color: #eab308; }
+.assignment-division.pending { border-left-color: var(--line); }
+.assignment-division-header {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 600; font-size: 14px;
+}
+.status-pip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  font-size: 12px;
+}
+.status-pip.completed { background: #d6f4dc; color: var(--green); }
+.status-pip.in_progress { background: #fef3c7; color: #b45309; }
+.status-pip.pending { background: var(--line-2); color: var(--muted); }
+.assignment-event-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px;
+  margin-top: 6px;
+}
+.assignment-event-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  font-size: 13px; cursor: pointer; background: var(--panel);
+}
+.assignment-event-card:hover { border-color: var(--primary); background: var(--panel-2); }
+.assignment-event-card.completed { background: linear-gradient(180deg, #f4f9f4, var(--panel)); }
+.assignment-event-card.in_progress { background: #fff8e0; border-color: #f0c468; }
+.assignment-event-card .age-gender { color: var(--muted); }
+.assignment-event-card .ev-pip { font-size: 14px; }
+.empty-assignments { padding: 40px 20px; text-align: center; color: var(--muted); }
+
 /* ===== Roster Import ===== */
 .import-card { max-width: 760px; }
 .csv-help { margin: 8px 0 14px; font-size: 13px; }
 .csv-help summary { cursor: pointer; color: var(--primary); font-weight: 600; }
 .csv-help code { background: var(--line-2); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+.csv-cols { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0; }
+.csv-cols th, .csv-cols td { padding: 4px 8px; border-bottom: 1px solid var(--line-2); text-align: left; vertical-align: top; }
+.csv-cols th { background: var(--panel-2); color: var(--muted); font-weight: 600; }
+.csv-cols td:nth-child(1) { font-weight: 600; color: var(--primary); width: 90px; }
+.csv-cols td:nth-child(3) { width: 70px; color: var(--muted); }
 .csv-example {
   background: var(--ink); color: #d4ffd2;
   padding: 12px 14px; border-radius: var(--radius-sm);
@@ -443,6 +490,17 @@ main { padding: 24px clamp(16px, 4vw, 40px); max-width: 1280px; margin: 0 auto; 
 /* ===== Settings layout helpers ===== */
 .settings-label { display: block; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 10px 0 4px; font-weight: 600; }
 .settings-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+/* Divisions editor */
+.divisions-editor { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.division-row {
+  display: grid; grid-template-columns: 1.5fr 90px 90px auto;
+  gap: 8px; align-items: center;
+}
+.division-row input {
+  border: 1px solid var(--line); padding: 6px 8px; border-radius: 6px;
+  font-size: 13px; background: var(--panel);
+}
 
 /* Library editor (per event title: type/attempts/unit) */
 .library-editor { display: flex; flex-direction: column; gap: 4px; max-height: 360px; overflow-y: auto; padding: 4px; }

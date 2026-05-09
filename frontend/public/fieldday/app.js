@@ -459,13 +459,46 @@
   function openLeaderAuth() {
     $("#leaderSchoolCode").value = "";
     $("#leaderName").value = "";
+    $("#leaderNameDropdownRow").hidden = true;
+    $("#leaderNameTextRow").hidden = false;
     $("#leaderAuthModal").hidden = false;
     setTimeout(() => $("#leaderSchoolCode").focus(), 50);
   }
 
+  async function leaderLookup() {
+    const code = $("#leaderSchoolCode").value.trim().toUpperCase();
+    if (!code) { showToast("Enter the school code first"); return; }
+    $("#btnLeaderLookup").textContent = "Looking up…";
+    try {
+      const out = await api.lookupSchoolStaff(code);
+      const names = out?.staff || [];
+      if (names.length === 0) {
+        showToast("No staff names registered yet — type yours below");
+        $("#leaderAuthHint").textContent = "Welcome to " + (out?.school?.name || "the school") + ". Your admin hasn't registered staff yet — type your name.";
+        return;
+      }
+      const sel = $("#leaderNameSelect");
+      sel.innerHTML = `<option value="">— pick your name —</option>` + names.map(n => `<option>${escapeHtml(n)}</option>`).join("");
+      $("#leaderNameDropdownRow").hidden = false;
+      $("#leaderNameTextRow").hidden = true;
+      $("#leaderAuthHint").textContent = "Welcome to " + (out?.school?.name || "the school") + ". Pick your name from the list.";
+      setTimeout(() => sel.focus(), 30);
+    } catch (e) {
+      showToast(e.message === "school_not_found" ? "School code not found" : "Lookup failed");
+    } finally {
+      $("#btnLeaderLookup").textContent = "Look up names →";
+    }
+  }
+  function leaderUseFreeText() {
+    $("#leaderNameDropdownRow").hidden = true;
+    $("#leaderNameTextRow").hidden = false;
+    setTimeout(() => $("#leaderName").focus(), 30);
+  }
+
   async function leaderAuthSubmit() {
     const code = $("#leaderSchoolCode").value.trim().toUpperCase();
-    const name = $("#leaderName").value.trim();
+    const dropdownVisible = !$("#leaderNameDropdownRow").hidden;
+    const name = (dropdownVisible ? $("#leaderNameSelect").value : $("#leaderName").value).trim();
     if (!code) { showToast("Enter the school code"); return; }
     if (!name) { showToast("Enter your name"); return; }
     $("#btnLeaderAuthSubmit").disabled = true;
@@ -489,6 +522,7 @@
 
   // ---------- Events list ----------
   function renderEvents() {
+    if (!isAdmin()) { renderLeaderAssignments(); return; }
     populateAgeFilter();
     const search = $("#eventSearch").value.trim().toLowerCase();
     const fStatus = $("#filterStatus").value;
@@ -504,6 +538,8 @@
     events.sort((a,b) => (b.completedAt||0) - (a.completedAt||0) || (b.createdAt||0) - (a.createdAt||0));
 
     const grid = $("#eventGrid");
+    grid.classList.add("event-grid");
+    grid.classList.remove("assignments");
     if (events.length === 0) {
       grid.innerHTML = "";
       $("#eventsEmpty").hidden = false;
@@ -531,6 +567,138 @@
     }
   }
   function typeLabel(t) { return t === "timed" ? "Timed" : t === "distance" ? "Distance" : "Weight"; }
+
+  /**
+   * Builds the leader's Assignments view: events grouped by title, then by division,
+   * with status pips per division and per individual event. The leader sees only
+   * events whose staff list (any division/role) contains their name — plus any
+   * events they personally created (legacy fallback).
+   */
+  function renderLeaderAssignments() {
+    populateAgeFilter();
+    const session = api.getSession();
+    const myName = (session?.leaderName || "").trim().toLowerCase();
+    const staff = state.school?.eventStaff || {};
+
+    // Collect (eventTitle, division) pairs where this leader is staff
+    const assignedKeys = new Set();    // "title|division"
+    const titleToDivisions = new Map(); // title → Set(divisionName)
+    Object.entries(staff).forEach(([title, byDiv]) => {
+      Object.entries(byDiv || {}).forEach(([division, byRole]) => {
+        const isMine = Object.values(byRole||{}).some(n => (n||"").trim().toLowerCase() === myName);
+        if (!isMine) return;
+        assignedKeys.add(`${title}|${division}`);
+        if (!titleToDivisions.has(title)) titleToDivisions.set(title, new Set());
+        titleToDivisions.get(title).add(division);
+      });
+    });
+
+    // For each (title, division) key, find the actual event records that match
+    const grid = $("#eventGrid");
+    grid.classList.remove("event-grid"); // we'll use our own assignments class instead
+    grid.classList.add("assignments");
+
+    // Always also include events the leader personally created (legacy fallback)
+    const legacyMine = state.events.filter(e => (e.leaderName||"").trim().toLowerCase() === myName);
+    legacyMine.forEach(e => {
+      const div = divisionForAge(e.age) || "—";
+      const key = `${e.title}|${div}`;
+      assignedKeys.add(key);
+      if (!titleToDivisions.has(e.title)) titleToDivisions.set(e.title, new Set());
+      titleToDivisions.get(e.title).add(div);
+    });
+
+    if (titleToDivisions.size === 0) {
+      grid.innerHTML = `<div class="empty-assignments">
+        <div class="empty-icon">🎽</div>
+        <h2>No assignments yet</h2>
+        <p>Your admin hasn't listed you as staff for any event.<br>
+        You can still create your own event below.</p>
+        <button class="btn primary" id="leaderCreateOwn" style="margin-top:14px">+ Start a new event</button>
+      </div>`;
+      $("#leaderCreateOwn")?.addEventListener("click", () => openNewEventModal());
+      $("#eventsEmpty").hidden = true;
+      return;
+    }
+
+    $("#eventsEmpty").hidden = true;
+
+    // Sort titles alphabetically; divisions in the school's defined order
+    const titles = [...titleToDivisions.keys()].sort();
+    const divOrder = (state.school?.divisions||[]).map(d => d.name);
+    const divSort = (a, b) => {
+      const ai = divOrder.indexOf(a), bi = divOrder.indexOf(b);
+      if (ai >= 0 && bi >= 0) return ai - bi;
+      if (ai >= 0) return -1;
+      if (bi >= 0) return 1;
+      return a.localeCompare(b);
+    };
+
+    grid.innerHTML = titles.map(title => {
+      const divs = [...titleToDivisions.get(title)].sort(divSort);
+      return `
+        <article class="assignment-event">
+          <h3>${escapeHtml(title)}</h3>
+          <div class="assignment-divisions">
+            ${divs.map(divisionName => {
+              const matching = state.events.filter(ev => {
+                if ((ev.title||"").toLowerCase() !== title.toLowerCase()) return false;
+                if (divisionName === "—") return divisionForAge(ev.age) == null;
+                const range = (state.school?.divisions||[]).find(d => d.name === divisionName)?.ageRange;
+                if (!range) return false;
+                return ageInBand(ev.age, range);
+              });
+              const status = computeDivisionStatus(matching);
+              return `
+                <div class="assignment-division ${status}">
+                  <div class="assignment-division-header">
+                    <span class="status-pip ${status}">${status === "completed" ? "✓" : status === "in_progress" ? "⏱" : "·"}</span>
+                    <span>${escapeHtml(divisionName)}</span>
+                    <span class="muted small" style="margin-left:auto">${describeStatus(status, matching.length)}</span>
+                  </div>
+                  ${matching.length > 0 ? `
+                    <div class="assignment-event-list">
+                      ${matching.sort((a,b) => (a.age||"").localeCompare(b.age||"") || (a.gender||"").localeCompare(b.gender||""))
+                        .map(ev => `
+                          <div class="assignment-event-card ${ev.status}" data-id="${ev.id}">
+                            <span class="age-gender">Age ${escapeHtml(ev.age)} ${escapeHtml(ev.gender)}</span>
+                            <span class="ev-pip">${ev.status === "completed" ? "✓" : ev.status === "in_progress" ? "⏱" : "·"}</span>
+                          </div>`).join("")}
+                    </div>` : `
+                    <div class="muted small" style="margin-top:4px">
+                      No events created yet — <a href="#" data-create-for="${escapeHtml(title)}" data-division="${escapeHtml(divisionName)}">create one</a>
+                    </div>`}
+                </div>`;
+            }).join("")}
+          </div>
+        </article>
+      `;
+    }).join("");
+
+    grid.querySelectorAll(".assignment-event-card").forEach(card => {
+      card.addEventListener("click", () => openEventDetail(card.dataset.id));
+    });
+    grid.querySelectorAll("[data-create-for]").forEach(a => {
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        openNewEventModal({ title: a.dataset.createFor });
+      });
+    });
+  }
+
+  /** Returns 'completed' if all events under a division are completed, 'in_progress' if any started, else 'pending'. */
+  function computeDivisionStatus(events) {
+    if (events.length === 0) return "pending";
+    if (events.every(e => e.status === "completed")) return "completed";
+    if (events.some(e => e.status === "in_progress" || (e.status === "completed"))) return "in_progress";
+    return "pending";
+  }
+  function describeStatus(status, n) {
+    if (n === 0) return "not yet created";
+    if (status === "completed") return `${n} done`;
+    if (status === "in_progress") return `${n} in progress`;
+    return `${n} pending`;
+  }
 
   function populateAgeFilter() {
     const ages = state.school?.ageCategories || [];
@@ -688,13 +856,19 @@
       <span> · Led by ${escapeHtml(ev.leaderName||"")}</span>
       ${formatBadge ? ` · ${formatBadge}` : ""}
     `;
-    // Rules card — pulls from school.eventRules keyed by event title
-    const ruleText = (state.school?.eventRules || {})[ev.title] || "";
+    // Rules card — base + division-specific override merged
+    const ruleText = rulesForEvent(ev);
     if (ruleText) {
       $("#eventRulesCard").hidden = false;
       $("#eventRulesText").textContent = ruleText;
     } else {
       $("#eventRulesCard").hidden = true;
+    }
+    // Add staff line under the meta if any leaders are recorded
+    const staff = staffForEvent(ev);
+    const staffBits = Object.entries(staff).filter(([,v]) => v).map(([role,name]) => `${escapeHtml(name)} (${escapeHtml(role)})`);
+    if (staffBits.length > 0) {
+      $("#eventDetailMeta").innerHTML += `<br><span class="muted small">Staff: ${staffBits.join(" · ")}</span>`;
     }
 
     $("#timerCard").hidden = ev.type !== "timed";
@@ -1333,6 +1507,37 @@
     }
     return null;
   }
+  /** Returns the division name (e.g. "Junior") for a given age, or null. */
+  function divisionForAge(age) {
+    const divs = state.school?.divisions || [];
+    for (const d of divs) {
+      const [lo, hi] = d.ageRange || [0, 999];
+      if (ageInBand(age, [lo, hi])) return d.name;
+    }
+    return null;
+  }
+  /**
+   * Resolves rules text for an event — merges the base rule with any
+   * division-specific override. eventRules[title] may be a plain string
+   * (legacy) or { base, byDivision: { divisionName: text } }.
+   */
+  function rulesForEvent(ev) {
+    const entry = (state.school?.eventRules || {})[ev.title];
+    if (!entry) return "";
+    if (typeof entry === "string") return entry;
+    const base = entry.base || "";
+    const div = divisionForAge(ev.age);
+    const override = div && entry.byDivision ? entry.byDivision[div] : "";
+    if (base && override) return base + "\n\n" + `[${div}] ${override}`;
+    return base || override || "";
+  }
+  /** Returns the staff record for an event { Leader, Assistant, ... } or {}. */
+  function staffForEvent(ev) {
+    const all = state.school?.eventStaff || {};
+    const entry = all[ev.title] || {};
+    const div = divisionForAge(ev.age);
+    return (div && entry[div]) || {};
+  }
 
   function renderRecordsBlock() {
     const records = state.school?.records || [];
@@ -1698,6 +1903,7 @@
     $("#standardsCard").hidden = !scoring.standard;
     $("#houseList").value = (school.houses||[]).join(", ");
     renderSchoolCodeCard();
+    renderDivisionsEditor();
     renderLibraryEditor();
     renderRulesEditor();
     renderRecordsEditor();
@@ -1735,6 +1941,51 @@
       renderLibraryEditor();
     }));
   }
+  function renderDivisionsEditor() {
+    const school = state.school; if (!school) return;
+    if (!school.divisions) school.divisions = [];
+    const wrap = $("#divisionsEditor");
+    wrap.innerHTML = school.divisions.map((d, i) => `
+      <div class="division-row" data-idx="${i}">
+        <input data-f="name" value="${escapeHtml(d.name||"")}" placeholder="Division name" />
+        <input data-f="lo"   type="number" value="${(d.ageRange||[0,0])[0]}" placeholder="Min age" />
+        <input data-f="hi"   type="number" value="${(d.ageRange||[0,0])[1]}" placeholder="Max age" />
+        <button class="icon-btn" data-del-div="${i}" title="Remove">🗑</button>
+      </div>
+    `).join("");
+    wrap.querySelectorAll("[data-del-div]").forEach(btn => btn.addEventListener("click", () => {
+      const idx = parseInt(btn.dataset.delDiv, 10);
+      state.school.divisions.splice(idx, 1);
+      renderDivisionsEditor();
+    }));
+  }
+  function addDivision() {
+    const name = $("#newDivName").value.trim();
+    const lo = parseInt($("#newDivLow").value, 10);
+    const hi = parseInt($("#newDivHigh").value, 10);
+    if (!name || isNaN(lo) || isNaN(hi)) { showToast("Need a name and age range"); return; }
+    if (!state.school.divisions) state.school.divisions = [];
+    state.school.divisions.push({ name, ageRange: [lo, hi] });
+    ["newDivName","newDivLow","newDivHigh"].forEach(id => $("#"+id).value = "");
+    renderDivisionsEditor();
+  }
+  async function saveDivisions() {
+    const rows = $$("#divisionsEditor .division-row");
+    const list = [];
+    rows.forEach(row => {
+      const fields = {};
+      row.querySelectorAll("[data-f]").forEach(f => fields[f.dataset.f] = f.value);
+      const name = (fields.name || "").trim();
+      const lo = parseInt(fields.lo, 10), hi = parseInt(fields.hi, 10);
+      if (name && !isNaN(lo) && !isNaN(hi)) list.push({ name, ageRange: [lo, hi] });
+    });
+    try {
+      const resp = await api.updateSchool({ divisions: list });
+      if (resp?.school) state.school = resp.school;
+      showToast("Divisions saved");
+    } catch (e) { showToast("Save failed"); }
+  }
+
   async function saveHouses() {
     const list = $("#houseList").value.split(",").map(s => s.trim()).filter(Boolean);
     try {
@@ -2330,6 +2581,390 @@
     $("#summaryModal").hidden = false;
   }
 
+  // ===========================================================
+  // Workbook (.xlsx) import / download
+  // ===========================================================
+  function openWorkbookModal() {
+    if (typeof XLSX === "undefined") { showToast("Excel library not loaded — try reloading"); return; }
+    $("#workbookFile").value = "";
+    $("#workbookFileName").textContent = "No file chosen";
+    $("#workbookLog").innerHTML = "";
+    $("#workbookLog").hidden = true;
+    $("#workbookModal").hidden = false;
+  }
+
+  async function handleWorkbookFile(file) {
+    if (!file) return;
+    $("#workbookFileName").textContent = file.name;
+    const log = $("#workbookLog"); log.hidden = false; log.innerHTML = "";
+    const append = (cls, msg) => { log.innerHTML += `<div class="${cls}">${msg}</div>`; log.scrollTop = log.scrollHeight; };
+    let buf;
+    try { buf = await file.arrayBuffer(); }
+    catch (e) { append("err", "✗ Couldn't read file"); return; }
+    let wb;
+    try { wb = XLSX.read(buf, { type: "array" }); }
+    catch (e) { append("err", "✗ Not a valid Excel workbook"); return; }
+
+    const tabs = {};
+    wb.SheetNames.forEach(n => { tabs[n.toLowerCase().trim()] = wb.Sheets[n]; });
+    const sheetToRows = (sheet) => sheet ? XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false }) : [];
+
+    // Order matters: divisions / houses / events first (they configure the school),
+    // then standards / records / PBs, then roster (which references the above).
+    const importers = [
+      { tab: "divisions", label: "Divisions", run: importDivisionsTab },
+      { tab: "houses",    label: "Houses",    run: importHousesTab    },
+      { tab: "events",    label: "Events",    run: importEventsTab    },
+      { tab: "staff",     label: "Staff",     run: importStaffTab     },
+      { tab: "rules",     label: "Rules",     run: importRulesTab     },
+      { tab: "standards", label: "Standards", run: importStandardsTab },
+      { tab: "records",   label: "Records",   run: importRecordsTab   },
+      { tab: "pbs",       label: "PBs",       run: importPBsTab       },
+      { tab: "roster",    label: "Roster",    run: importRosterTab    }
+    ];
+
+    for (const i of importers) {
+      const sheet = tabs[i.tab];
+      if (!sheet) continue;
+      const rows = sheetToRows(sheet);
+      if (rows.length === 0) continue;
+      try {
+        const summary = await i.run(rows, append);
+        append("ok", `✓ ${i.label}: ${summary || "imported"}`);
+      } catch (e) {
+        append("err", `✗ ${i.label}: ${e.message || e}`);
+      }
+    }
+
+    await refreshState();
+    renderAdmin();
+    append("ok", `<br/><strong>Done.</strong>`);
+  }
+
+  // ---- Tab parsers ----------------------------------------------------------
+  function rowsToHeaderObjects(rows) {
+    const header = (rows[0]||[]).map(h => String(h||"").trim());
+    return rows.slice(1).filter(r => r.some(v => String(v||"").trim() !== "")).map(r => {
+      const obj = {};
+      header.forEach((h, i) => { obj[h.toLowerCase()] = String(r[i] ?? "").trim(); });
+      return obj;
+    });
+  }
+
+  async function importDivisionsTab(rows) {
+    const items = rowsToHeaderObjects(rows);
+    const list = items.map(o => ({
+      name: o.name || o.division || "",
+      ageRange: [parseInt(o.minage||o["min age"]||o.lo||"0",10), parseInt(o.maxage||o["max age"]||o.hi||"0",10)]
+    })).filter(d => d.name);
+    if (list.length === 0) return "no rows";
+    const resp = await api.updateSchool({ divisions: list });
+    if (resp?.school) state.school = resp.school;
+    return `${list.length} division(s)`;
+  }
+  async function importHousesTab(rows) {
+    const items = rowsToHeaderObjects(rows);
+    const list = items.map(o => o.house || o.name || "").filter(Boolean);
+    if (list.length === 0) return "no rows";
+    const resp = await api.updateSchool({ houses: list });
+    if (resp?.school) state.school = resp.school;
+    return `${list.length} house(s)`;
+  }
+  async function importEventsTab(rows) {
+    const items = rowsToHeaderObjects(rows);
+    const lib = []; const defaults = {}; const rules = state.school?.eventRules || {};
+    items.forEach(o => {
+      const title = o.title || o.event || "";
+      if (!title) return;
+      lib.push(title);
+      defaults[title] = {
+        type: (o.type || "timed").toLowerCase(),
+        attempts: parseInt(o.attempts || "1", 10) || 1,
+        unit: (o.unit || "").trim()
+      };
+      if (o.rules) {
+        const existing = rules[title];
+        if (existing && typeof existing === "object") existing.base = o.rules;
+        else rules[title] = { base: o.rules, byDivision: {} };
+      }
+    });
+    const resp = await api.updateSchool({ eventLibrary: lib, eventDefaults: defaults, eventRules: rules });
+    if (resp?.school) state.school = resp.school;
+    return `${lib.length} event(s)`;
+  }
+  async function importStaffTab(rows) {
+    const items = rowsToHeaderObjects(rows);
+    const staff = state.school?.eventStaff || {};
+    items.forEach(o => {
+      const title = o.title || o.event || "";
+      if (!title) return;
+      if (!staff[title]) staff[title] = {};
+      Object.entries(o).forEach(([k, v]) => {
+        if (k === "title" || k === "event" || !v) return;
+        // Header is "Junior Leader" — split off division (first word) + role (rest)
+        const parts = k.split(/\s+/);
+        if (parts.length < 2) return;
+        const division = parts[0].replace(/\b\w/g, c => c.toUpperCase());
+        const role     = parts.slice(1).join(" ").replace(/\b\w/g, c => c.toUpperCase());
+        if (!staff[title][division]) staff[title][division] = {};
+        staff[title][division][role] = v;
+      });
+    });
+    const resp = await api.updateSchool({ eventStaff: staff });
+    if (resp?.school) state.school = resp.school;
+    return `${items.length} event-staff row(s)`;
+  }
+  async function importRulesTab(rows) {
+    const items = rowsToHeaderObjects(rows);
+    const rules = state.school?.eventRules || {};
+    items.forEach(o => {
+      const title = o.event || o.title || "";
+      const division = o.division || "";
+      const text = o.rules || "";
+      if (!title || !division || !text) return;
+      const cur = rules[title];
+      if (typeof cur === "string") rules[title] = { base: cur, byDivision: {} };
+      else if (!cur) rules[title] = { base: "", byDivision: {} };
+      rules[title].byDivision[division] = text;
+    });
+    const resp = await api.updateSchool({ eventRules: rules });
+    if (resp?.school) state.school = resp.school;
+    return `${items.length} override(s)`;
+  }
+  async function importStandardsTab(rows) {
+    const items = rowsToHeaderObjects(rows);
+    const existing = state.school?.standards || [];
+    let added = 0, updated = 0;
+    for (const o of items) {
+      const title = o.event || o.title || "";
+      const ageBand = o.ageband || o["age band"] || "";
+      const gender = (o.gender||"").trim();
+      if (!title || !ageBand || !gender) continue;
+      const gold   = parseFloat(o.gold);
+      const silver = parseFloat(o.silver);
+      const bronze = parseFloat(o.bronze);
+      if ([gold,silver,bronze].some(isNaN)) continue;
+      const match = existing.find(s => s.title === title && s.ageBand === ageBand && s.gender === gender);
+      const payload = { title, ageBand, gender, gold, silver, bronze, type: o.type || (match?.type||"timed"), unit: o.unit || (match?.unit||"") };
+      if (match) { await api.updateStandard(match.id, payload); updated++; }
+      else       { await api.createStandard(payload);            added++; }
+    }
+    return `${added} added, ${updated} updated`;
+  }
+  async function importRecordsTab(rows) {
+    const items = rowsToHeaderObjects(rows);
+    let n = 0;
+    for (const o of items) {
+      const title = o.event || o.title || "";
+      const age = o.age || ""; const gender = o.gender || "";
+      const value = parseFloat(o.result || o.value);
+      if (!title || !age || !gender || isNaN(value)) continue;
+      await api.createRecord({
+        title, age, gender, value,
+        type: o.type || "timed", unit: o.unit || "",
+        holderName: o.holder || o["holder name"] || "",
+        dateSet: o.dateset || o["date set"] || ""
+      });
+      n++;
+    }
+    return `${n} record(s)`;
+  }
+  async function importPBsTab(rows) {
+    const items = rowsToHeaderObjects(rows);
+    let n = 0;
+    for (const o of items) {
+      const name = o.name || ""; const title = o.event || ""; const value = parseFloat(o.result || o.value);
+      if (!name || !title || isNaN(value)) continue;
+      // Find an existing event with this title to derive type/gender/unit
+      const ev = state.events.find(e => (e.title||"").toLowerCase() === title.toLowerCase());
+      await savePersonalBest({
+        name, title,
+        gender: ev?.gender || "Mixed",
+        value, type: ev?.type || "timed", unit: ev?.unit || ""
+      });
+      n++;
+    }
+    return `${n} PB(s)`;
+  }
+  async function importRosterTab(rows, append) {
+    if (rows.length < 2) return "no rows";
+    const header = rows[0].map(h => String(h||"").trim());
+    const headerLow = header.map(h => h.toLowerCase());
+    const find = (...names) => {
+      for (const n of names) { const i = headerLow.indexOf(n.toLowerCase()); if (i >= 0) return i; }
+      return -1;
+    };
+    const iName     = find("name", "competitor");
+    const iGender   = find("gender");
+    const iDOB      = find("dob", "date of birth");
+    const iAge      = find("age", "actualage", "actual age");
+    const iGrade    = find("grade");
+    const iHouse    = find("house");
+    const iActual   = find("actualage", "actual age");
+    if (iName < 0 || iGender < 0 || (iDOB < 0 && iAge < 0)) {
+      throw new Error("Roster needs Name, Gender, and DOB or Age columns");
+    }
+    // Event columns are anything else
+    const reservedLow = new Set(["name","gender","dob","date of birth","age","actualage","actual age","grade","house","notes","members"]);
+    const eventCols = header.map((h, i) => ({ h, i })).filter(({h}) => !reservedLow.has(h.toLowerCase()));
+
+    let kids = 0, entries = 0, eventsCreated = 0;
+    for (const r of rows.slice(1)) {
+      const name   = String(r[iName]||"").trim();
+      if (!name) continue;
+      const gender = String(r[iGender]||"").trim();
+      const dob    = iDOB    >= 0 ? String(r[iDOB]||"").trim()  : "";
+      const ageRaw = iAge    >= 0 ? String(r[iAge]||"").trim()  : "";
+      const grade  = iGrade  >= 0 ? String(r[iGrade]||"").trim() : "";
+      const house  = iHouse  >= 0 ? String(r[iHouse]||"").trim() : "";
+      let actualAge = iActual >= 0 ? String(r[iActual]||"").trim() : "";
+      let computedAge = "";
+      if (dob) {
+        const a = computeAge(dob, state.school?.ageCutoffDate);
+        if (a != null) computedAge = String(a);
+      }
+      const eventTier = ageRaw || computedAge;
+      if (!actualAge) actualAge = computedAge || ageRaw;
+      if (!eventTier) { append("err", `✗ Skipped ${name}: no Age or DOB`); continue; }
+      kids++;
+
+      for (const ec of eventCols) {
+        const cell = String(r[ec.i]||"").trim();
+        if (!cell) continue;
+        const heat = /^(y|yes|true|x|✓)$/i.test(cell) ? "" : cell;
+        const eventTitle = ec.h;
+        // Find or create event
+        let ev = state.events.find(e =>
+          (e.title||"").toLowerCase() === eventTitle.toLowerCase() &&
+          String(e.age) === String(eventTier) && e.gender === gender);
+        if (!ev) {
+          const d = defaultsForTitle(eventTitle);
+          const session = api.getSession();
+          const resp = await api.createEvent({
+            title: eventTitle, age: eventTier, gender,
+            type: d.type, attempts: d.attempts, unit: d.unit, notes: "",
+            leaderName: session?.leaderName || session?.email || "Admin",
+            competitors: []
+          });
+          ev = resp?.event;
+          if (ev) { applyEntityUpdate(resp); eventsCreated++; }
+          else continue;
+        }
+        // Add competitor
+        const r2 = await api.addCompetitor(ev.id, name);
+        const created = r2?.competitor;
+        if (!created) continue;
+        const patch = {};
+        if (grade) patch.grade = grade;
+        if (actualAge) patch.actualAge = actualAge;
+        if (dob) patch.dob = dob;
+        if (heat) patch.heat = heat;
+        if (house) patch.house = house;
+        if (Object.keys(patch).length > 0) {
+          const u = await api.updateCompetitor(ev.id, created.id, patch);
+          const local = state.events.find(e => e.id === ev.id)?.competitors.find(x => x.id === created.id);
+          if (local && u?.competitor) Object.assign(local, u.competitor);
+        } else {
+          const local = state.events.find(e => e.id === ev.id);
+          if (local) local.competitors.push(created);
+        }
+        entries++;
+      }
+    }
+    return `${kids} kid(s), ${entries} entries, ${eventsCreated} event(s) created`;
+  }
+
+  // ---- Workbook download (pre-populated) -----------------------------------
+  function downloadWorkbook() {
+    if (typeof XLSX === "undefined") { showToast("Excel library not loaded"); return; }
+    const school = state.school; if (!school) return;
+    const wb = XLSX.utils.book_new();
+
+    // ----- Roster (wide) -----
+    const events = state.events;
+    const eventTitles = [...new Set(events.map(e => e.title))];
+    // Each kid (by name) gets one row, with Y/heat per event
+    const kidMap = new Map(); // name → { name, gender, dob, age, grade, house, perEvent: {title: heatOrY} }
+    events.forEach(ev => {
+      (ev.competitors||[]).forEach(c => {
+        const key = (c.name||"").trim().toLowerCase();
+        if (!key) return;
+        let entry = kidMap.get(key);
+        if (!entry) {
+          entry = { name: c.name, gender: ev.gender, dob: c.dob||"", age: c.actualAge || ev.age, grade: c.grade||"", house: c.house||"", perEvent: {} };
+          kidMap.set(key, entry);
+        }
+        entry.perEvent[ev.title] = c.heat || "Y";
+      });
+    });
+    const rosterHeader = ["Name","Gender","DOB","Age","Grade","House", ...eventTitles];
+    const rosterRows = [...kidMap.values()].map(k => [
+      k.name, k.gender, k.dob, k.age, k.grade, k.house,
+      ...eventTitles.map(t => k.perEvent[t] || "")
+    ]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([rosterHeader, ...rosterRows]), "Roster");
+
+    // ----- Events -----
+    const evRows = (school.eventLibrary||[]).map(title => {
+      const d = (school.eventDefaults||{})[title] || {};
+      const inferred = inferEventType(title);
+      const rule = (school.eventRules||{})[title];
+      const ruleBase = typeof rule === "string" ? rule : (rule?.base || "");
+      return [title, d.type || inferred.type, d.attempts != null ? d.attempts : inferred.attempts, d.unit || inferred.unit, "", "event", ruleBase];
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Title","Type","Attempts","Unit","Format","ScoreBy","Rules"], ...evRows
+    ]), "Events");
+
+    // ----- Staff -----
+    const divs = (school.divisions||[]);
+    const roleNames = ["Leader","Assistant"];
+    const staff = school.eventStaff || {};
+    const staffHeader = ["Title", ...divs.flatMap(d => roleNames.map(r => `${d.name} ${r}`))];
+    const staffRows = (school.eventLibrary||[]).map(title => {
+      const row = [title];
+      for (const d of divs) for (const r of roleNames) row.push((staff[title]?.[d.name]?.[r])||"");
+      return row;
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([staffHeader, ...staffRows]), "Staff");
+
+    // ----- Rules (per-division overrides) -----
+    const rulesRows = [];
+    Object.entries(school.eventRules||{}).forEach(([title, entry]) => {
+      if (typeof entry !== "object" || !entry?.byDivision) return;
+      Object.entries(entry.byDivision).forEach(([division, text]) => {
+        if (text) rulesRows.push([title, division, text]);
+      });
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Event","Division","Rules"], ...rulesRows
+    ]), "Rules");
+
+    // ----- Standards / Records / PBs -----
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Event","AgeBand","Gender","Type","Unit","Gold","Silver","Bronze"],
+      ...((school.standards||[]).map(s => [s.title, s.ageBand, s.gender, s.type||"", s.unit||"", s.gold, s.silver, s.bronze]))
+    ]), "Standards");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Event","Age","Gender","Type","Unit","Result","Holder","DateSet"],
+      ...((school.records||[]).map(r => [r.title, r.age, r.gender, r.type||"", r.unit||"", r.value, r.holderName||"", r.dateSet||""]))
+    ]), "Records");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Name","Event","Gender","Result","Type","Unit","DateSet"],
+      ...((school.personalBests||[]).map(p => [p.name, p.title, p.gender, p.value, p.type||"", p.unit||"", p.dateSet||""]))
+    ]), "PBs");
+
+    // ----- Houses / Divisions -----
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["House"], ...((school.houses||[]).map(h => [h]))
+    ]), "Houses");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Name","MinAge","MaxAge"], ...((school.divisions||[]).map(d => [d.name, (d.ageRange||[])[0]||"", (d.ageRange||[])[1]||""]))
+    ]), "Divisions");
+
+    XLSX.writeFile(wb, `${(school.code||"fieldday")}-workbook-${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
   // ---------- Roster CSV Import ----------
   /** Minimal RFC-4180-ish CSV parser. Returns an array of arrays of strings. */
   function parseCSV(text) {
@@ -2366,13 +3001,20 @@
   function downloadImportTemplate() {
     const lib = state.school?.eventLibrary || ["50m Sprint","Long Jump","Shot Put"];
     const sampleEvents = lib.slice(0, 3);
-    const headers = "Event,Age,Gender,Name,Grade,DOB,Heat,ActualAge";
+    const houses = (state.school?.houses||[]);
+    const h0 = houses[0] || "Alpha";
+    const h1 = houses[1] || "Beta";
+    // Columns grouped: Identity → Slot → Roster → Race day → Team
+    const headers = "Name,Event,Age,Gender,DOB,Grade,House,Heat,PersonalBest,ActualAge,Notes,Members";
     const rows = [
-      `${sampleEvents[0]},8,Girls,Maya Patel,3,2017-04-12,1,`,
-      `${sampleEvents[0]},8,Girls,Ava Chen,3,2017-08-30,1,`,
-      `${sampleEvents[0]},9,Girls,Sofia Martinez,4,2017-11-02,2,8`,
-      `${sampleEvents[1] || sampleEvents[0]},10,Boys,Liam Cole,5,2015-06-19,A,`,
-      `${sampleEvents[2] || sampleEvents[0]},12,Boys,Noah Reyes,6,2013-10-04,A,`,
+      // Same kid in three events — DOB/Grade/House only on first row, inherited downward
+      `Maya Patel,${sampleEvents[0]},8,Girls,2017-04-12,3,${h0},1,8.65,,,`,
+      `Maya Patel,${sampleEvents[1] || sampleEvents[0]},8,Girls,,,,A,3.10,,wears glasses,`,
+      `Maya Patel,${sampleEvents[2] || sampleEvents[0]},9,Girls,,,,B,,,running up,`,
+      `Sofia Martinez,${sampleEvents[0]},9,Girls,2017-11-02,4,${h1},1,9.40,,,`,
+      `Liam Cole,${sampleEvents[1] || sampleEvents[0]},10,Boys,2015-06-19,5,${h0},A,2.80,,,`,
+      // A team / relay row — Name is the team name, Members lists runners
+      `${h0} Relay Team,4x50m Relay,10,Mixed,,,${h0},,,,,Maya Patel; Liam Cole; Ava Chen; Noah Reyes`
     ];
     const csv = [headers, ...rows].join("\n") + "\n";
     const blob = new Blob([csv], { type: "text/csv" });
@@ -2602,6 +3244,8 @@
     $("#btnLeaderAuthClose").addEventListener("click", () => $("#leaderAuthModal").hidden = true);
     $("#btnLeaderAuthCancel").addEventListener("click", () => $("#leaderAuthModal").hidden = true);
     $("#btnLeaderAuthSubmit").addEventListener("click", leaderAuthSubmit);
+    $("#btnLeaderLookup").addEventListener("click", leaderLookup);
+    $("#btnLeaderUseFreeText").addEventListener("click", leaderUseFreeText);
     $("#leaderAuthModal").addEventListener("keydown", (e) => { if (e.key === "Enter") leaderAuthSubmit(); });
 
     $("#btnSignOut").addEventListener("click", signOut);
@@ -2657,6 +3301,13 @@
     // Roster CSV import
     $("#btnImportRoster").addEventListener("click", openImportModal);
     $("#btnImportTemplate").addEventListener("click", downloadImportTemplate);
+    $("#btnImportWorkbook").addEventListener("click", openWorkbookModal);
+    $("#btnDownloadWorkbook").addEventListener("click", downloadWorkbook);
+    $("#btnWorkbookClose").addEventListener("click", () => $("#workbookModal").hidden = true);
+    $("#btnWorkbookCancel").addEventListener("click", () => $("#workbookModal").hidden = true);
+    $("#workbookFile").addEventListener("change", (e) => {
+      if (e.target.files[0]) handleWorkbookFile(e.target.files[0]);
+    });
     $("#btnDaySummary").addEventListener("click", openDaySummary);
     $("#btnSummaryClose").addEventListener("click", () => $("#summaryModal").hidden = true);
     $("#btnPrintSummary").addEventListener("click", () => window.print());
@@ -2689,6 +3340,8 @@
     $("#scoringStandard").addEventListener("change", saveScoring);
     $("#btnSaveAges").addEventListener("click", saveAges);
     $("#btnSaveHouses").addEventListener("click", saveHouses);
+    $("#btnAddDivision").addEventListener("click", addDivision);
+    $("#btnSaveDivisions").addEventListener("click", saveDivisions);
     $("#btnSaveLibrary").addEventListener("click", saveLibrary);
     $("#btnAddLibTitle").addEventListener("click", addLibTitle);
     $("#btnSaveRules").addEventListener("click", saveRules);
