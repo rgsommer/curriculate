@@ -676,7 +676,7 @@
           "Intermediate": { Leader: "Coach Smith",  Assistant: "Mr. Garcia" }
         },
         "100m Sprint": {
-          "Intermediate": { Leader: "Coach Smith",  Assistant: "Mr. Garcia" },
+          "Intermediate": { Leader: "Coach Smith",  Assistant: "Mr. Garcia",   "Recall Starter": "Coach Bob" },
           "Senior":       { Leader: "Coach Bob",    Assistant: "Ms. Thompson" }
         },
         "Long Jump": {
@@ -810,6 +810,35 @@
           { id: "c23", name: "Mason Diaz",    attempts: [22.4, 24.1, 23.8], grade: "3", actualAge: "8", house: "Beta",  bib: "80" },
           { id: "c24", name: "Caleb Wright",  attempts: [20.1, 21.5, 22.0], grade: "3", actualAge: "8", house: "Alpha", bib: "81" },
           { id: "c25", name: "Aiden Khan",    attempts: [18.5, 19.2, 19.8], grade: "3", actualAge: "8", house: "Gamma", bib: "82" }
+        ]
+      },
+      // 50m Sprint Age 9 Girls — FRESH, perfect for demoing the multi-row timer.
+      // Two heats × 3 runners each; everyone's attempts are empty so the user
+      // can hit "Start All" or each row's ▶ individually.
+      { _id: "demo-ev9", id: "demo-ev9", schoolId: "demo-school", leaderName: "Coach Smith",
+        title: "50m Sprint", age: "9", gender: "Girls", type: "timed", attempts: 1, unit: "seconds",
+        scoreBy: "event", format: "individual",
+        status: "in_progress",
+        competitors: [
+          { id: "c30", name: "Sofia Martinez", attempts: [null], grade: "4", actualAge: "9", house: "Alpha", bib: "31", heat: "1" },
+          { id: "c31", name: "Mia Tanaka",     attempts: [null], grade: "4", actualAge: "9", house: "Beta",  bib: "32", heat: "1" },
+          { id: "c32", name: "Ella Romero",    attempts: [null], grade: "4", actualAge: "9", house: "Gamma", bib: "33", heat: "1" },
+          { id: "c33", name: "Sophia Lin",     attempts: [null], grade: "4", actualAge: "9", house: "Delta", bib: "34", heat: "2" },
+          { id: "c34", name: "Charlotte Wu",   attempts: [null], grade: "4", actualAge: "9", house: "Alpha", bib: "35", heat: "2" },
+          { id: "c35", name: "Ruby Singh",     attempts: [null], grade: "4", actualAge: "9", house: "Beta",  bib: "36", heat: "2" }
+        ]
+      },
+      // 100m Run Age 11 Mixed — also fresh; another sprint in a different division
+      // so demoers see the timer at multiple ages, with a mix of Boys/Girls.
+      { _id: "demo-ev10", id: "demo-ev10", schoolId: "demo-school", leaderName: "Coach Bob",
+        title: "100m Sprint", age: "11", gender: "Girls", type: "timed", attempts: 1, unit: "seconds",
+        scoreBy: "event", format: "individual",
+        status: "in_progress",
+        competitors: [
+          { id: "c36", name: "Olivia James",  attempts: [null], grade: "5", actualAge: "11", house: "Alpha", bib: "41" },
+          { id: "c37", name: "Charlotte Wu",  attempts: [null], grade: "5", actualAge: "11", house: "Beta",  bib: "42" },
+          { id: "c38", name: "Ruby Singh",    attempts: [null], grade: "5", actualAge: "11", house: "Gamma", bib: "43" },
+          { id: "c39", name: "Hannah Wong",   attempts: [null], grade: "5", actualAge: "11", house: "Delta", bib: "44" }
         ]
       },
       // 4x100m Relay — team event, points to houses only
