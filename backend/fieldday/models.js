@@ -80,6 +80,14 @@ const SchoolSchema = new Schema({
   houses:             { type: [String], default: [] },
   tieMethod:          { type: String, enum: ["average", "higher"], default: "average" },
   scoring:            { type: { placement: Boolean, standard: Boolean }, default: () => ({ placement: true, standard: false }) },
+  // When true, leaders must supply a 4-digit PIN at sign-in. Off by default
+  // (preserves the simple school-code-only flow). Turn on for events where
+  // audit-trail integrity matters.
+  requireLeaderPin:   { type: Boolean, default: false },
+  // Map: lowercased-trimmed leader name → { hash: bcrypt, sentAt: ms, sentTo: email }.
+  // Stored on the School doc rather than a separate collection because PINs
+  // are short-lived per-event-day artifacts.
+  staffPins:          { type: Schema.Types.Mixed, default: {} },
   records:            { type: [RecordSubSchema], default: [] },
   standards:          { type: [StandardSubSchema], default: [] },
   personalBests:      { type: [PBSubSchema], default: [] },

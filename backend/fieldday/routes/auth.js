@@ -122,13 +122,25 @@ router.post("/admin/select-school", asyncH(async (req, res) => {
   res.json({ ok: true });
 }));
 
-/* POST /leader/join { schoolCode, leaderName } */
+/* POST /leader/join { schoolCode, leaderName, pin? } */
 router.post("/leader/join", asyncH(async (req, res) => {
   const code = String(req.body?.schoolCode || "").trim().toUpperCase();
   const name = String(req.body?.leaderName || "").trim();
+  const pin  = String(req.body?.pin || "").trim();
   if (!code || !name) return errResp(res, 400, "missing_fields");
   const school = await School.findOne({ code }).lean();
   if (!school) return errResp(res, 404, "school_not_found");
+
+  // PIN gate (when enabled): the leader's name must have a PIN entry and the
+  // supplied PIN must match. Lookup is case-insensitive on the trimmed name.
+  if (school.requireLeaderPin) {
+    const key = name.toLowerCase().trim();
+    const entry = (school.staffPins || {})[key];
+    if (!entry || !entry.hash) return errResp(res, 401, "pin_required");
+    if (!pin || pin.length < 4)  return errResp(res, 401, "pin_required");
+    const ok = await verify(pin, entry.hash);
+    if (!ok) return errResp(res, 401, "bad_pin");
+  }
 
   const sessionToken = genToken();
   await Session.create({
@@ -137,7 +149,7 @@ router.post("/leader/join", asyncH(async (req, res) => {
   });
   res.json({
     sessionToken,
-    school: { id: school._id.toString(), name: school.name, code: school.code }
+    school: { id: school._id.toString(), name: school.name, code: school.code, requireLeaderPin: !!school.requireLeaderPin }
   });
 }));
 

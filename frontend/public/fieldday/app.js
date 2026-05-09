@@ -541,6 +541,8 @@
   function openLeaderAuth() {
     $("#leaderSchoolCode").value = "";
     $("#leaderName").value = "";
+    $("#leaderPin") && ($("#leaderPin").value = "");
+    $("#leaderPinRow") && ($("#leaderPinRow").hidden = true);
     $("#leaderNameDropdownRow").hidden = true;
     $("#leaderNameTextRow").hidden = false;
     $("#leaderAuthModal").hidden = false;
@@ -554,6 +556,12 @@
     try {
       const out = await api.lookupSchoolStaff(code);
       const names = out?.staff || [];
+      // Show PIN field if the school requires one (demo always does).
+      const requiresPin = !!out?.school?.requireLeaderPin || code === "12345";
+      $("#leaderPinRow").hidden = !requiresPin;
+      if (code === "12345") {
+        $("#leaderPin").placeholder = "1234 (demo)";
+      }
       if (names.length === 0) {
         showToast("No staff names registered yet — type yours below");
         $("#leaderAuthHint").textContent = "Welcome to " + (out?.school?.name || "the school") + ". Your admin hasn't registered staff yet — type your name.";
@@ -563,7 +571,7 @@
       sel.innerHTML = `<option value="">— pick your name —</option>` + names.map(n => `<option>${escapeHtml(n)}</option>`).join("");
       $("#leaderNameDropdownRow").hidden = false;
       $("#leaderNameTextRow").hidden = true;
-      $("#leaderAuthHint").textContent = "Welcome to " + (out?.school?.name || "the school") + ". Pick your name from the list.";
+      $("#leaderAuthHint").textContent = "Welcome to " + (out?.school?.name || "the school") + (requiresPin ? ". Pick your name and enter your PIN." : ". Pick your name from the list.");
       setTimeout(() => sel.focus(), 30);
     } catch (e) {
       showToast(e.message === "school_not_found" ? "School code not found" : "Lookup failed");
@@ -581,16 +589,20 @@
     const code = $("#leaderSchoolCode").value.trim().toUpperCase();
     const dropdownVisible = !$("#leaderNameDropdownRow").hidden;
     const name = (dropdownVisible ? $("#leaderNameSelect").value : $("#leaderName").value).trim();
+    const pin  = ($("#leaderPin")?.value || "").trim();
     if (!code) { showToast("Enter the school code"); return; }
     if (!name) { showToast("Enter your name"); return; }
     $("#btnLeaderAuthSubmit").disabled = true;
     try {
-      await api.joinAsLeader(code, name);
+      await api.joinAsLeader(code, name, pin);
       $("#leaderAuthModal").hidden = true;
       await showApp();
       showToast(`Welcome, ${name}`);
     } catch (e) {
-      showToast(e.message === "school_not_found" ? "School code not found" : "Couldn't join school");
+      if (e.message === "school_not_found") showToast("School code not found");
+      else if (e.message === "pin_required") showToast("This school requires a PIN — ask your admin");
+      else if (e.message === "bad_pin")      showToast("That PIN doesn't match — try again");
+      else                                    showToast("Couldn't join school");
     } finally {
       $("#btnLeaderAuthSubmit").disabled = false;
     }

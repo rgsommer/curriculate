@@ -269,20 +269,20 @@
      *   200 {sessionToken, school:{id,name,code,...}}
      *   404 {error:"school_not_found"}
      */
-    async joinAsLeader(schoolCode, leaderName) {
+    async joinAsLeader(schoolCode, leaderName, pin) {
       // Demo code: seed sample data + force local mode, bypass the network entirely.
       if (isDemoCode(schoolCode)) {
         installDemoBlob();
         setMode("local");
-        return localJoinAsLeader(DEMO_CODE, leaderName);
+        return localJoinAsLeader(DEMO_CODE, leaderName, pin);
       }
-      if (isLocal()) return localJoinAsLeader(schoolCode, leaderName);
+      if (isLocal()) return localJoinAsLeader(schoolCode, leaderName, pin);
       try {
-        const out = await http("POST", "/leader/join", { schoolCode, leaderName });
+        const out = await http("POST", "/leader/join", { schoolCode, leaderName, pin: pin || "" });
         writeSession({ token: out.sessionToken, role: "leader", schoolId: out.school.id, leaderName });
         return out;
       } catch (e) {
-        if (e.code === "NETWORK" || e.code === "NOT_FOUND") return localJoinAsLeader(schoolCode, leaderName);
+        if (e.code === "NETWORK" || e.code === "NOT_FOUND") return localJoinAsLeader(schoolCode, leaderName, pin);
         throw e;
       }
     },
@@ -708,6 +708,12 @@
       houses: ["Alpha", "Beta", "Gamma", "Delta"],
       tieMethod: "average",
       scoring: { placement: true, standard: true },
+      // Demo school requires a PIN — same one for everyone, easy to share.
+      requireLeaderPin: true,
+      // For the demo we keep the PIN in plain text on the school doc so the
+      // browser can validate it without bcrypt. Real schools store hashes
+      // in school.staffPins[name].hash, validated server-side.
+      demoPin: "1234",
       records: [
         { id: "rec1", title: "50m Sprint",  age: "8", gender: "Girls", type: "timed",    unit: "seconds", value: 8.92, holderName: "Sofia Martinez (last year)", dateSet: "2025-05-12", createdAt: now - 365*24*3600*1000 },
         { id: "rec2", title: "Long Jump",   age: "9", gender: "Girls", type: "distance", unit: "m",       value: 3.21, holderName: "Olivia James (2024)",         dateSet: "2024-05-10", createdAt: now - 730*24*3600*1000 },
@@ -837,13 +843,29 @@
     writeLocal(blob);
   }
 
-  function localJoinAsLeader(schoolCode, leaderName) {
+  function localJoinAsLeader(schoolCode, leaderName, pin) {
     const blob = readLocal();
     const school = (blob.schools||[]).find(s => s.code === schoolCode);
     if (!school) { const err = new Error("school_not_found"); err.code = 404; throw err; }
+    if (school.requireLeaderPin) {
+      if (!pin || String(pin).length < 4) { const err = new Error("pin_required"); err.code = 401; throw err; }
+      // Demo school: single shared plain-text PIN. Real schools store hashes,
+      // but in local-only mode we have no bcrypt — fall back to comparing
+      // against demoPin or the staff entry's plain `pin` field if present.
+      if (school.demoPin && String(pin).trim() === String(school.demoPin).trim()) {
+        // ok — demo PIN matched
+      } else {
+        const key = (leaderName||"").trim().toLowerCase();
+        const entry = (school.staffPins||{})[key];
+        const expected = entry?.pin || entry?.plain || null;
+        if (!expected || String(pin).trim() !== String(expected).trim()) {
+          const err = new Error("bad_pin"); err.code = 401; throw err;
+        }
+      }
+    }
     const token = "local-" + uid();
     writeSession({ token, role: "leader", schoolId: school.id, leaderName });
-    return { sessionToken: token, school: { id: school.id, name: school.name, code: school.code } };
+    return { sessionToken: token, school: { id: school.id, name: school.name, code: school.code, requireLeaderPin: !!school.requireLeaderPin } };
   }
 
   // ---- state ----

@@ -34,7 +34,7 @@
       </button>
     </div>
     <p class="welcome-foot"><a class="welcome-about" href="/meet-fieldday/">About Field Day →</a></p>
-    <p class="welcome-demo-hint muted small">Want to try it without setup? Sign in as Event Leader with school code <code>12345</code> for a demo with sample data — no server saves.</p>
+    <p class="welcome-demo-hint muted small">Want to try it without setup? Sign in as Event Leader with school code <code>12345</code> &amp; PIN <code>1234</code> for a demo with sample data — no server saves.</p>
   </div>
 </section>
 
@@ -128,6 +128,11 @@
       <div class="form-row" id="leaderNameTextRow">
         <label>Your Name</label>
         <input id="leaderName" placeholder="Coach Smith" autocomplete="name" />
+      </div>
+      <div class="form-row" id="leaderPinRow" hidden>
+        <label>Your 4-digit PIN</label>
+        <input id="leaderPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="one-time-code" placeholder="••••" />
+        <p class="muted small">Your admin shared this PIN with you when they invited you.</p>
       </div>
       <p class="muted small" id="leaderAuthHint">Ask your field day admin for the school code.</p>
     </div>
