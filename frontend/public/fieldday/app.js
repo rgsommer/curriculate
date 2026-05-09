@@ -720,44 +720,59 @@
   }
 
   function openLeaderAuth() {
+    // Reset to STEP 1: only the school code field is visible. Name +
+    // PIN inputs and the Continue button stay hidden until lookup succeeds.
     $("#leaderSchoolCode").value = "";
     $("#leaderName").value = "";
     $("#leaderPin") && ($("#leaderPin").value = "");
     $("#leaderPinRow") && ($("#leaderPinRow").hidden = true);
     $("#leaderNameDropdownRow").hidden = true;
-    $("#leaderNameTextRow").hidden = false;
+    $("#leaderNameTextRow").hidden = true;
+    $("#leaderStep2").hidden = true;
+    $("#leaderStep1").hidden = false;
+    $("#btnLeaderLookup").hidden = false;
+    $("#btnLeaderAuthSubmit").hidden = true;
+    $("#leaderAuthHint").innerHTML = "Type your school code, then tap <strong>Next →</strong>.";
     $("#leaderAuthModal").hidden = false;
     setTimeout(() => $("#leaderSchoolCode").focus(), 50);
   }
 
   async function leaderLookup() {
     const code = $("#leaderSchoolCode").value.trim().toUpperCase();
-    if (!code) { showToast("Enter the school code first"); return; }
+    if (!code) { showToast("Enter the school code first"); $("#leaderSchoolCode").focus(); return; }
     $("#btnLeaderLookup").textContent = "Looking up…";
+    $("#btnLeaderLookup").disabled = true;
     try {
       const out = await api.lookupSchoolStaff(code);
       const names = out?.staff || [];
-      // Show PIN field if the school requires one (demo always does).
       const requiresPin = !!out?.school?.requireLeaderPin || code === "12345";
+      // Move into STEP 2: hide the Next button, reveal Step 2, show Continue.
+      $("#leaderStep2").hidden = false;
+      $("#btnLeaderLookup").hidden = true;
+      $("#btnLeaderAuthSubmit").hidden = false;
       $("#leaderPinRow").hidden = !requiresPin;
       if (code === "12345") {
         $("#leaderPin").placeholder = "1234 (demo)";
       }
       if (names.length === 0) {
-        showToast("No staff names registered yet — type yours below");
-        $("#leaderAuthHint").textContent = "Welcome to " + (out?.school?.name || "the school") + ". Your admin hasn't registered staff yet — type your name.";
-        return;
+        // No staff registered — let them type freely.
+        $("#leaderNameTextRow").hidden = false;
+        $("#leaderNameDropdownRow").hidden = true;
+        $("#leaderAuthHint").innerHTML = `Welcome to <strong>${escapeHtml(out?.school?.name || "the school")}</strong>. Your admin hasn't registered staff yet — type your name${requiresPin?" and your PIN":""}, then tap <strong>Continue</strong>.`;
+        setTimeout(() => $("#leaderName").focus(), 30);
+      } else {
+        const sel = $("#leaderNameSelect");
+        sel.innerHTML = `<option value="">— pick your name —</option>` + names.map(n => `<option>${escapeHtml(n)}</option>`).join("");
+        $("#leaderNameDropdownRow").hidden = false;
+        $("#leaderNameTextRow").hidden = true;
+        $("#leaderAuthHint").innerHTML = `Welcome to <strong>${escapeHtml(out?.school?.name || "the school")}</strong>. Pick your name${requiresPin?" and enter your PIN":""}, then tap <strong>Continue</strong>.`;
+        setTimeout(() => sel.focus(), 30);
       }
-      const sel = $("#leaderNameSelect");
-      sel.innerHTML = `<option value="">— pick your name —</option>` + names.map(n => `<option>${escapeHtml(n)}</option>`).join("");
-      $("#leaderNameDropdownRow").hidden = false;
-      $("#leaderNameTextRow").hidden = true;
-      $("#leaderAuthHint").textContent = "Welcome to " + (out?.school?.name || "the school") + (requiresPin ? ". Pick your name and enter your PIN." : ". Pick your name from the list.");
-      setTimeout(() => sel.focus(), 30);
     } catch (e) {
       showToast(e.message === "school_not_found" ? "School code not found" : "Lookup failed");
     } finally {
-      $("#btnLeaderLookup").textContent = "Look up names →";
+      $("#btnLeaderLookup").textContent = "Next →";
+      $("#btnLeaderLookup").disabled = false;
     }
   }
   function leaderUseFreeText() {
@@ -4956,7 +4971,14 @@
     $("#btnLeaderAuthSubmit").addEventListener("click", leaderAuthSubmit);
     $("#btnLeaderLookup").addEventListener("click", leaderLookup);
     $("#btnLeaderUseFreeText").addEventListener("click", leaderUseFreeText);
-    $("#leaderAuthModal").addEventListener("keydown", (e) => { if (e.key === "Enter") leaderAuthSubmit(); });
+    // Enter does the right thing depending on which step is showing:
+    // Step 1 (Step2 hidden) → triggers Next/lookup
+    // Step 2 (Continue visible) → triggers final Continue/submit
+    $("#leaderAuthModal").addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      if (!$("#leaderStep2").hidden) leaderAuthSubmit();
+      else                            leaderLookup();
+    });
 
     $("#btnSignOut").addEventListener("click", signOut);
 

@@ -108,6 +108,7 @@
 </div>
 
 <!-- ============ LEADER SIGN-IN MODAL ============ -->
+<!-- Two-step flow: (1) enter school code → tap "Next" → (2) pick name + PIN → tap "Continue". -->
 <div class="modal" id="leaderAuthModal" hidden>
   <div class="modal-card">
     <header class="modal-header">
@@ -115,30 +116,37 @@
       <button class="icon-btn" id="btnLeaderAuthClose">✕</button>
     </header>
     <div class="modal-body">
-      <div class="form-row">
-        <label>School Code</label>
+      <!-- STEP 1: school code -->
+      <div class="form-row" id="leaderStep1">
+        <label>Step 1 of 2 — School Code</label>
         <input id="leaderSchoolCode" placeholder="MAPLE26" maxlength="10" autocomplete="off" />
-        <button class="link" type="button" id="btnLeaderLookup">Look up names →</button>
+        <p class="muted small">Ask your field day admin for the code, or use <code>12345</code> for the demo.</p>
       </div>
-      <div class="form-row" id="leaderNameDropdownRow" hidden>
-        <label>Your Name</label>
-        <select id="leaderNameSelect"></select>
-        <button class="link" type="button" id="btnLeaderUseFreeText">My name isn't listed</button>
+      <!-- STEP 2: name + (optional) PIN — hidden until lookup succeeds -->
+      <div id="leaderStep2" hidden>
+        <div class="form-row" id="leaderNameDropdownRow" hidden>
+          <label>Step 2 of 2 — Pick your name</label>
+          <select id="leaderNameSelect"></select>
+          <button class="link" type="button" id="btnLeaderUseFreeText">My name isn't listed</button>
+        </div>
+        <div class="form-row" id="leaderNameTextRow" hidden>
+          <label>Step 2 of 2 — Your name</label>
+          <input id="leaderName" placeholder="Coach Smith" autocomplete="name" />
+        </div>
+        <div class="form-row" id="leaderPinRow" hidden>
+          <label>Your 4-digit PIN</label>
+          <input id="leaderPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="one-time-code" placeholder="••••" />
+          <p class="muted small">Your admin emailed this when they invited you. (Demo PIN: <code>1234</code>)</p>
+        </div>
       </div>
-      <div class="form-row" id="leaderNameTextRow">
-        <label>Your Name</label>
-        <input id="leaderName" placeholder="Coach Smith" autocomplete="name" />
-      </div>
-      <div class="form-row" id="leaderPinRow" hidden>
-        <label>Your 4-digit PIN</label>
-        <input id="leaderPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="one-time-code" placeholder="••••" />
-        <p class="muted small">Your admin shared this PIN with you when they invited you.</p>
-      </div>
-      <p class="muted small" id="leaderAuthHint">Ask your field day admin for the school code.</p>
+      <p class="muted small" id="leaderAuthHint">Type your school code, then tap <strong>Next →</strong>.</p>
     </div>
     <footer class="modal-footer">
       <button class="btn ghost" id="btnLeaderAuthCancel">Cancel</button>
-      <button class="btn primary" id="btnLeaderAuthSubmit">Continue</button>
+      <!-- Step 1 button: Next → triggers the staff lookup. -->
+      <button class="btn primary" id="btnLeaderLookup">Next →</button>
+      <!-- Step 2 button: hidden until lookup completes. -->
+      <button class="btn primary" id="btnLeaderAuthSubmit" hidden>Continue</button>
     </footer>
   </div>
 </div>
