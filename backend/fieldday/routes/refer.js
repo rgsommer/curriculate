@@ -86,6 +86,29 @@ router.post("/report", rateLimit, asyncH(async (req, res) => {
 }));
 
 /* ------------------------------------------------------------------ */
+/*  GET /feedback-clear                                               */
+/*  Wipes Field Day feedback. By default deletes ONLY items already   */
+/*  marked status=fixed (safe cleanup). Pass ?all=1 to nuke every     */
+/*  feedback row regardless of status (use with care). Same admin     */
+/*  token gate as /feedback-export.                                   */
+/* ------------------------------------------------------------------ */
+router.get("/feedback-clear", asyncH(async (req, res) => {
+  const key = req.query.key;
+  const expected = process.env.ADMIN_API_TOKEN || process.env.ADMIN_API_KEY;
+  if (!expected || key !== expected) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const all = req.query.all === "1" || req.query.all === "true";
+  const filter = all ? {} : { status: "fixed" };
+  const result = await Feedback.deleteMany(filter);
+  res.json({
+    ok: true,
+    deletedCount: result.deletedCount || 0,
+    scope: all ? "all" : "fixed-only"
+  });
+}));
+
+/* ------------------------------------------------------------------ */
 /*  GET /feedback-export                                              */
 /*  Plain-text dump of every Field Day report (problems + suggestions)*/
 /*  for pasting into chat with an AI / triage tool.                   */

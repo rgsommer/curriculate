@@ -40,9 +40,10 @@ PRODUCTS = {
     "fieldday": {
         "label":      "Field Day",
         "export_url": "/fieldday/api/feedback-export",
-        "clear_url":  None,   # not built yet — leaders' bug reports are
-                              # an audit trail; clearing wipes history.
-                              # Add when needed.
+        # Default behaviour: clear only items marked status=fixed (safe
+        # cleanup, preserves open / in-progress reports). Set CLEAR_ALL=1
+        # in the env to wipe every report regardless of status.
+        "clear_url":  "/fieldday/api/feedback-clear",
         "out_file":   os.path.join(ROOT_DIR, "feedback-fieldday.txt"),
     },
     "grading": {
@@ -143,7 +144,10 @@ def pull_all():
     print(f"\nDone — {ok} of {len(PRODUCTS)} products pulled successfully.")
 
 def clear_one(product_key):
-    """Wipe stored feedback for one product (where supported)."""
+    """Wipe stored feedback for one product. By default the Field Day
+    endpoint clears only items marked `fixed`; set env CLEAR_ALL=1 (or
+    answer 'all' at the prompt) to nuke every report regardless of status.
+    The Curriculate practice endpoint always clears everything."""
     cfg = PRODUCTS.get(product_key)
     if not cfg:
         print(f"Unknown product '{product_key}'. Choices: {', '.join(PRODUCTS)}")
@@ -155,18 +159,44 @@ def clear_one(product_key):
     if not token:
         print("No token provided.")
         return
-    confirm = input(
-        f"\nReally wipe ALL {cfg['label']} feedback? (yes/no): "
-    ).strip().lower()
-    if confirm not in ("yes", "y"):
-        print("Cancelled.")
-        return
-    url = f"{API_BASE}{cfg['clear_url']}?key={urllib.parse.quote(token)}"
+    # Field Day supports a "fixed-only" mode; everyone else is a full clear.
+    is_fieldday = product_key == "fieldday"
+    clear_all_env = os.environ.get("CLEAR_ALL", "").strip() in ("1", "true", "yes")
+    if is_fieldday:
+        prompt = (
+            f"\nClear {cfg['label']} feedback. Choose:\n"
+            f"  fixed  — only items already triaged as 'fixed'  (default; recommended)\n"
+            f"  all    — every report regardless of status      (use with care)\n"
+            f"  no     — cancel\n"
+            f"Choice [fixed]: "
+        )
+        choice = input(prompt).strip().lower() or "fixed"
+        if clear_all_env and choice == "fixed":
+            choice = "all"  # env wins if user just hit Enter
+        if choice in ("no", "n", "cancel"):
+            print("Cancelled.")
+            return
+        all_flag = (choice == "all")
+    else:
+        confirm = input(
+            f"\nReally wipe ALL {cfg['label']} feedback? (yes/no): "
+        ).strip().lower()
+        if confirm not in ("yes", "y"):
+            print("Cancelled.")
+            return
+        all_flag = True
+
+    qs = f"key={urllib.parse.quote(token)}"
+    if all_flag and is_fieldday:
+        qs += "&all=1"
+    url = f"{API_BASE}{cfg['clear_url']}?{qs}"
     status, body = _http_get(url)
     if status == 200:
         try:
             data = json.loads(body)
-            print(f"Done. Modified: {data.get('modifiedCount', '?')}")
+            count = data.get("deletedCount") or data.get("modifiedCount") or "?"
+            scope = data.get("scope") or ("all" if all_flag else "fixed-only")
+            print(f"Done. Cleared {count} ({scope}).")
         except Exception:
             print(f"Done.")
     else:
