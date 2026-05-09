@@ -714,7 +714,7 @@
   const DEMO_CODE = "12345";
   // Bump this whenever the demo seed changes — clients with an older version
   // cached in localStorage will be auto-reseeded on next demo sign-in or boot.
-  const DEMO_SEED_VERSION = 2;
+  const DEMO_SEED_VERSION = 3;
   function isDemoCode(code) { return String(code || "").trim() === DEMO_CODE; }
 
   function seedDemoBlob() {
@@ -794,13 +794,25 @@
         { id: "rec1", title: "50m Sprint",  age: "8", gender: "Girls", type: "timed",    unit: "seconds", value: 8.92, holderName: "Sofia Martinez (last year)", dateSet: "2025-05-12", createdAt: now - 365*24*3600*1000 },
         { id: "rec2", title: "Long Jump",   age: "9", gender: "Girls", type: "distance", unit: "m",       value: 3.21, holderName: "Olivia James (2024)",         dateSet: "2024-05-10", createdAt: now - 730*24*3600*1000 },
         { id: "rec3", title: "Shot Put",    age: "12", gender: "Boys", type: "distance", unit: "m",       value: 9.40, holderName: "Lucas Park",                  dateSet: "2024-05-10", createdAt: now - 730*24*3600*1000 },
-        { id: "rec4", title: "100m Sprint", age: "10", gender: "Boys", type: "timed",    unit: "seconds", value: 17.10, holderName: "Liam Cole (older brother)", dateSet: "2023-05-13", createdAt: now - 1095*24*3600*1000 }
+        { id: "rec4", title: "100m Sprint", age: "10", gender: "Boys",  type: "timed",    unit: "seconds", value: 17.10, holderName: "Liam Cole (older brother)", dateSet: "2023-05-13", createdAt: now - 1095*24*3600*1000 },
+        { id: "rec5", title: "100m Sprint", age: "11", gender: "Girls", type: "timed",    unit: "seconds", value: 14.92, holderName: "Mia Carter (2023)",         dateSet: "2023-05-13", createdAt: now - 1095*24*3600*1000 }
       ],
       standards: seedStandardsFor(ageBands, eventLibrary),
       personalBests: [
-        { id: "pb1", name: "Maya Patel",     title: "50m Sprint",  gender: "Girls", value: 9.15,  type: "timed",    unit: "seconds", dateSet: "2025-09-10" },
-        { id: "pb2", name: "Liam Cole",      title: "100m Sprint", gender: "Boys",  value: 17.42, type: "timed",    unit: "seconds", dateSet: "2025-09-10" },
-        { id: "pb3", name: "Sofia Martinez", title: "Long Jump",   gender: "Girls", value: 3.05,  type: "distance", unit: "m",       dateSet: "2025-09-10" }
+        // The first three were already here — feature triggers the moment a kid beats these.
+        { id: "pb1", name: "Maya Patel",     title: "50m Sprint",   gender: "Girls", value: 9.15,  type: "timed",    unit: "seconds", dateSet: "2025-09-10" },
+        { id: "pb2", name: "Liam Cole",      title: "100m Sprint",  gender: "Boys",  value: 17.42, type: "timed",    unit: "seconds", dateSet: "2025-09-10" },
+        { id: "pb3", name: "Sofia Martinez", title: "Long Jump",    gender: "Girls", value: 3.05,  type: "distance", unit: "m",       dateSet: "2025-09-10" },
+        // Added so the 100m Age 11 Girls demo event shows PBs under each row:
+        { id: "pb4", name: "Olivia James",   title: "100m Sprint",  gender: "Girls", value: 15.80, type: "timed",    unit: "seconds", dateSet: "2025-09-10" },
+        { id: "pb5", name: "Charlotte Wu",   title: "100m Sprint",  gender: "Girls", value: 16.21, type: "timed",    unit: "seconds", dateSet: "2025-09-10" },
+        { id: "pb6", name: "Ruby Singh",     title: "100m Sprint",  gender: "Girls", value: 16.97, type: "timed",    unit: "seconds", dateSet: "2025-09-10" },
+        // PB beats the school record (14.92) → triggers the gold-glow "beats school record" pill.
+        { id: "pb7", name: "Hannah Wong",    title: "100m Sprint",  gender: "Girls", value: 14.71, type: "timed",    unit: "seconds", dateSet: "2025-09-10" },
+        // A few more sprinkled across other events so PBs are visible app-wide.
+        { id: "pb8", name: "Ava Chen",       title: "50m Sprint",   gender: "Girls", value: 9.05,  type: "timed",    unit: "seconds", dateSet: "2025-09-10" },
+        { id: "pb9", name: "Noah Reyes",     title: "100m Sprint",  gender: "Boys",  value: 17.95, type: "timed",    unit: "seconds", dateSet: "2025-09-10" },
+        { id: "pb10", name: "Lucas Park",    title: "Shot Put",     gender: "Boys",  value: 8.55,  type: "distance", unit: "m",       dateSet: "2025-09-10" }
       ],
       archives: [],
       createdAt: now - 30*24*3600*1000
