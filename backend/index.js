@@ -391,6 +391,20 @@ function getSampleReportPdf() {
   }
   return _sampleReportPdf;
 }
+let _fieldDaySamplePdf = null;
+function getFieldDaySamplePdf() {
+  if (!_fieldDaySamplePdf) {
+    // Drop the actual sample at frontend/public/pdfs/Curriculate-FieldDay-Sample.pdf.
+    // Generated from a real Day Summary printout — see Admin → Day Summary → Print.
+    // Falls back to the generic teacher report if the Field Day-specific one isn't there.
+    try {
+      _fieldDaySamplePdf = fs.readFileSync(path.resolve(__indexDir, "../frontend/public/pdfs/Curriculate-FieldDay-Sample.pdf"));
+    } catch {
+      _fieldDaySamplePdf = getSampleReportPdf();
+    }
+  }
+  return _fieldDaySamplePdf;
+}
 app.set("trust proxy", 1); // trust first proxy (Render) — required for express-rate-limit
 
 const server = http.createServer(app);
@@ -472,13 +486,25 @@ app.use("/fieldday/api", require("./fieldday"));
 // Recommend Curriculate to a teacher
 app.post("/api/recommend", async (req, res) => {
   try {
-    const { recommenderName, recommenderEmail, teacherName, teacherEmail, message } = req.body || {};
+    const { recommenderName, recommenderEmail, teacherName, teacherEmail, message, products } = req.body || {};
     const name = String(recommenderName || "").trim();
     const myEmail = String(recommenderEmail || "").trim().toLowerCase();
     const tName = String(teacherName || "").trim();
     const email = String(teacherEmail || "").trim().toLowerCase();
     if (!name || !email || !email.includes("@")) {
       return res.status(400).json({ error: "Your name and a valid teacher email are required." });
+    }
+
+    // products = ["curriculate" | "grading" | "fieldday"] (any subset).
+    // If omitted (legacy callers), default to all three so behavior matches the old handler.
+    const ALL_PRODUCTS = ["curriculate", "grading", "fieldday"];
+    const selected = new Set(
+      Array.isArray(products) && products.length > 0
+        ? products.map(p => String(p).toLowerCase()).filter(p => ALL_PRODUCTS.includes(p))
+        : ALL_PRODUCTS
+    );
+    if (selected.size === 0) {
+      return res.status(400).json({ error: "Pick at least one product to recommend." });
     }
 
     const esc = (s) => String(s || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -670,32 +696,161 @@ app.post("/api/recommend", async (req, res) => {
       </div>
     `;
 
+    // ----- Field Day email (only when products includes "fieldday") -----
+    const fielddayHtml = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 0;">
+        <div style="background: linear-gradient(135deg, #2956ff, #6f4dff); border-radius: 16px 16px 0 0; padding: 28px 24px; text-align: center;">
+          <div style="font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.3px;">🏅 Curriculate Field Day</div>
+          <div style="font-size: 13px; color: rgba(255,255,255,0.75); margin-top: 4px;">The free school field day app</div>
+        </div>
+
+        <div style="background: #ffffff; padding: 28px 24px; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">
+          <p style="margin: 0 0 16px; font-size: 17px; color: #1e293b; font-weight: 700; line-height: 1.5;">
+            Hi ${greeting} — ${esc(name)} thought you'd like Field Day for your school.
+          </p>
+          ${message ? `<div style="background: #f8fafc; border-left: 4px solid #2956ff; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;"><p style="margin: 0; font-size: 15px; color: #475569; font-style: italic; line-height: 1.5;">"${esc(message).slice(0, 500)}"</p></div>` : ""}
+          <p style="margin: 0 0 20px; font-size: 15px; color: #475569; line-height: 1.6;">
+            Field Day turns the chaos of school field day into a calm, scored, ribbon-ready event. Multi-runner stopwatch to the hundredth, automatic scoring, school records with horn fanfare, ribbons sheet — all on any tablet or phone, free for every school.
+          </p>
+
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+            <tr>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #eff6ff; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #1e40af; margin-bottom: 4px;">⏱️ Multi-runner stopwatch</div>
+                  <div style="font-size: 12px; color: #2563eb; line-height: 1.4;">Hundredths-precision, every runner gets their own clock</div>
+                </div>
+              </td>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #f5f3ff; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #5b21b6; margin-bottom: 4px;">🧮 Automatic scoring</div>
+                  <div style="font-size: 12px; color: #7c3aed; line-height: 1.4;">Placement, standards, or both at once</div>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #ecfdf5; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #065f46; margin-bottom: 4px;">🎺 Horn for new records</div>
+                  <div style="font-size: 12px; color: #059669; line-height: 1.4;">School records + PBs tracked automatically</div>
+                </div>
+              </td>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #fef3c7; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #92400e; margin-bottom: 4px;">🎀 Ribbon labels</div>
+                  <div style="font-size: 12px; color: #b45309; line-height: 1.4;">Print 1"x1" Avery sheets, peel and stick</div>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #fce7f3; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #9d174d; margin-bottom: 4px;">🏠 Houses + divisions</div>
+                  <div style="font-size: 12px; color: #db2777; line-height: 1.4;">Junior / Intermediate / Senior, custom rules per division</div>
+                </div>
+              </td>
+              <td style="padding: 10px; width: 50%; vertical-align: top;">
+                <div style="background: #f0fdfa; border-radius: 10px; padding: 14px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #115e59; margin-bottom: 4px;">📥 One Excel workbook</div>
+                  <div style="font-size: 12px; color: #0d9488; line-height: 1.4;">Roster, events, staff, standards in one upload</div>
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <p style="margin: 0 0 24px; font-size: 14px; color: #64748b; text-align: center; line-height: 1.5;">
+            Plus: relays, walk-up registrations, day summary, multi-admin with code-based join, refresh-resilient timers. <strong>No installs, no accounts for volunteers, free for every school.</strong>
+          </p>
+
+          <div style="background: linear-gradient(135deg, #eff6ff, #dbeafe); border: 2px solid #93c5fd; border-radius: 12px; padding: 20px; margin: 0 0 20px;">
+            <div style="font-size: 15px; color: #1e40af; font-weight: 800; margin-bottom: 8px;">
+              📄 We attached a sample Day Summary
+            </div>
+            <div style="font-size: 14px; color: #334155; line-height: 1.5;">
+              At the end of every field day, Curriculate generates a printable summary: top 3 overall, by gender, by age band, by house, current school records, and per-event top 4. Have a look at the sample attached to this email — it's a one-click report.
+            </div>
+          </div>
+
+          <div style="text-align: center; margin-bottom: 8px;">
+            <a href="https://www.curriculate.net/meet-fieldday?utm_source=recommendation&utm_medium=email"
+               style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #2956ff, #6f4dff); color: #ffffff; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 16px;">
+              Take a Look — It's Free
+            </a>
+          </div>
+          <div style="text-align: center; margin-top: 12px;">
+            <a href="https://www.curriculate.net/fieldday?utm_source=recommendation&utm_medium=email" style="font-size: 13px; color: #2956ff; text-decoration: none;">Or launch the app directly →</a>
+          </div>
+        </div>
+
+        <div style="background: #fffbeb; border: 1px solid #e2e8f0; border-top: none; padding: 16px 24px; text-align: center;">
+          <p style="margin: 0 0 8px; font-size: 13px; font-weight: 700; color: #92400e;">Know another teacher running a field day this spring?</p>
+          <a href="https://www.curriculate.net/meet-fieldday?utm_source=recommendation&utm_medium=email#recommend"
+             style="display: inline-block; padding: 8px 20px; background: #f59e0b; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 800; font-size: 13px;">
+            Recommend to a Teacher
+          </a>
+        </div>
+
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 16px 16px; padding: 18px 24px; text-align: center;">
+          <p style="margin: 0; font-size: 12px; color: #94a3b8;">
+            Sent via <a href="https://www.curriculate.net" style="color: #2956ff; text-decoration: none; font-weight: 600;">Curriculate</a> because someone recommended the tool to you.
+          </p>
+        </div>
+      </div>
+    `;
+
     const { sendSystemEmail } = await import("./email/shareInviteEmailer.js");
 
-    // Send both emails (grading first, platform second)
-    await sendSystemEmail({
-      to: email,
-      subject: `${name} thinks you should try Curriculate Pulse — grading made easy`,
-      html: gradingHtml,
-    });
+    // Send the chosen products' emails. Order: grading first, platform second
+    // (so they arrive in the same order as before for backward-compat), then
+    // Field Day if selected.
+    if (selected.has("grading")) {
+      await sendSystemEmail({
+        to: email,
+        subject: `${name} thinks you should try Curriculate Pulse — grading made easy`,
+        html: gradingHtml,
+      });
+    }
 
-    // Send platform email after a brief delay so it arrives second (with sample report attached)
-    const samplePdf = getSampleReportPdf();
-    setTimeout(async () => {
-      try {
-        const platformOpts = {
-          to: email,
-          subject: `One more from ${name} — Curriculate runs classroom scavenger hunts too`,
-          html: platformHtml,
-        };
-        if (samplePdf) {
-          platformOpts.attachments = [{ filename: "Curriculate-Sample-Report.pdf", content: samplePdf }];
+    if (selected.has("curriculate")) {
+      // Send platform email after a brief delay so it arrives second (with sample report attached)
+      const samplePdf = getSampleReportPdf();
+      setTimeout(async () => {
+        try {
+          const platformOpts = {
+            to: email,
+            subject: `${selected.has("grading") ? `One more from ${name} — ` : ""}Curriculate runs classroom scavenger hunts too`,
+            html: platformHtml,
+          };
+          if (samplePdf) {
+            platformOpts.attachments = [{ filename: "Curriculate-Sample-Report.pdf", content: samplePdf }];
+          }
+          await sendSystemEmail(platformOpts);
+        } catch (err) {
+          console.warn("[recommend] Platform email failed:", err?.message);
         }
-        await sendSystemEmail(platformOpts);
-      } catch (err) {
-        console.warn("[recommend] Platform email failed:", err?.message);
-      }
-    }, 3000);
+      }, 3000);
+    }
+
+    if (selected.has("fieldday")) {
+      // Stagger Field Day so it doesn't land in the same instant as the others
+      const delay = (selected.has("grading") ? 1500 : 0) + (selected.has("curriculate") ? 1500 : 0);
+      setTimeout(async () => {
+        try {
+          const fdSample = getFieldDaySamplePdf();
+          const fielddayOpts = {
+            to: email,
+            subject: `${name} thought you'd like Curriculate Field Day for your school's field day`,
+            html: fielddayHtml,
+          };
+          if (fdSample) {
+            fielddayOpts.attachments = [{ filename: "Curriculate-FieldDay-Sample.pdf", content: fdSample }];
+          }
+          await sendSystemEmail(fielddayOpts);
+        } catch (err) {
+          console.warn("[recommend] Field Day email failed:", err?.message);
+        }
+      }, delay);
+    }
 
     // Log recommendation and track referral credit
     let totalCreditMonths = 0;
@@ -708,6 +863,7 @@ app.post("/api/recommend", async (req, res) => {
         teacherEmail: email,
         message: message || "",
         source: req.body?.source || "pulse",
+        products: [...selected], // ["curriculate" | "grading" | "fieldday"]
         creditMonths: myEmail ? 1 : 0,
       });
 
