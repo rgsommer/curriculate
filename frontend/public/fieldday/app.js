@@ -339,6 +339,7 @@
       }
     }
     updateAnnounceBadge();
+    updateCompletionBar();
   }
 
   function showWelcome() {
@@ -346,6 +347,39 @@
     $("#welcomeScreen").hidden = false;
     $("#topbar").hidden = true;
     $("#app").hidden = true;
+    $("#completionBar").hidden = true;
+  }
+
+  /**
+   * Recomputes the completion percentage and updates the fixed bottom bar.
+   * For admin: based on every event in the school.
+   * For leader: based on events the leader is staff on (and any they created).
+   */
+  function updateCompletionBar() {
+    const session = api.getSession();
+    if (!session?.schoolId) { $("#completionBar").hidden = true; return; }
+    let events = state.events;
+    if (!isAdmin()) {
+      const myName = (session.leaderName || "").trim().toLowerCase();
+      const staff = state.school?.eventStaff || {};
+      events = events.filter(e => {
+        if ((e.leaderName||"").trim().toLowerCase() === myName) return true;
+        const byDiv = staff[e.title];
+        if (!byDiv) return false;
+        return Object.values(byDiv).some(byRole =>
+          Object.values(byRole||{}).some(n => (n||"").trim().toLowerCase() === myName));
+      });
+    }
+    const total = events.length;
+    const done  = events.filter(e => e.status === "completed").length;
+    const pct = total === 0 ? 0 : Math.round((done / total) * 100);
+    $("#completionBar").hidden = false;
+    const fill = $("#completionFill");
+    fill.style.width = pct + "%";
+    fill.classList.toggle("full", pct === 100 && total > 0);
+    $("#completionLabel").textContent = total === 0
+      ? "No events yet"
+      : `${done} of ${total} events complete · ${pct}%${pct === 100 ? " 🎉" : ""}`;
   }
 
   // ---------- Auth flows ----------
@@ -988,6 +1022,7 @@
       if (c.house) metaParts.push("🏠 " + escapeHtml(c.house));
       if (c.members && ev.format === "team") metaParts.push("👥 " + escapeHtml(c.members));
       if (c.dq) metaParts.push(`<span style="color:var(--danger);font-weight:700">DQ${c.dqReason ? " · " + escapeHtml(c.dqReason) : ""}</span>`);
+      if (c.walkup) metaParts.push(`<span style="background:#fff7e0;color:#8a6d00;padding:1px 6px;border-radius:4px;font-weight:600">🆕 walk-up${c.walkupBy ? " · " + escapeHtml(c.walkupBy) : ""}</span>`);
       const meta = metaParts.length > 0
         ? `<span class="competitor-meta muted small">${metaParts.join(" · ")}</span>`
         : "";
@@ -1041,7 +1076,7 @@
       : sorted.map(s => `
           <li>
             ${s.place ? renderPlaceTag(s.place) : ""}
-            <span class="name">${escapeHtml(s.name)}</span>
+            <span class="name" data-student-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
             <span class="res">${fmtResult(s.result, ev.type, ev.unit)}${s.points!=null?` · ${s.points}pt`:""}</span>
           </li>`).join("");
 
@@ -1320,6 +1355,15 @@
     const name = $("#newCompetitorName").value.trim();
     if (!name) { $("#newCompetitorName").focus(); return; }
     const ev = state.events.find(e => e.id === currentEventId);
+    const session = api.getSession();
+    // Tag the addition so admin can reconcile walk-ups later. Even admins
+    // adding directly here are flagged "walkup" — admin can flick the flag
+    // off via the Walk-ups panel.
+    const walkupPatch = {
+      walkup: true,
+      walkupBy: session?.leaderName || session?.email || "",
+      walkupAt: Date.now()
+    };
     if (ev?.format === "team") {
       // Optional: prompt for team members + house when adding a team
       const members = prompt(`Members of ${name}? (comma-separated, optional)`, "");
@@ -1331,23 +1375,32 @@
         const resp = await api.addCompetitor(currentEventId, name);
         const created = resp?.competitor;
         if (created) {
-          if (members.trim() || house?.trim()) {
-            const u = await api.updateCompetitor(currentEventId, created.id, { members: members.trim(), house: (house||"").trim() });
-            if (u?.competitor) Object.assign(created, u.competitor);
-          }
+          const patch = Object.assign({ members: members.trim(), house: (house||"").trim() }, walkupPatch);
+          const u = await api.updateCompetitor(currentEventId, created.id, patch);
+          if (u?.competitor) Object.assign(created, u.competitor);
           ev.competitors.push(created);
         }
         $("#newCompetitorName").value = "";
         renderEventDetail();
+        showToast(`Added ${name} (walk-up)`);
       } catch (e) { showToast("Couldn't add team"); }
       return;
     }
     try {
       const resp = await api.addCompetitor(currentEventId, name);
-      const ev = state.events.find(e => e.id === currentEventId);
-      if (ev && resp?.competitor) ev.competitors.push(resp.competitor);
+      const created = resp?.competitor;
+      const evLive = state.events.find(e => e.id === currentEventId);
+      if (evLive && created) {
+        // Tag as walk-up so admin can reconcile later.
+        try {
+          const u = await api.updateCompetitor(currentEventId, created.id, walkupPatch);
+          if (u?.competitor) Object.assign(created, u.competitor);
+        } catch (e) {}
+        evLive.competitors.push(created);
+      }
       $("#newCompetitorName").value = "";
       renderEventDetail();
+      showToast(`Added ${name} — admin will see them on the Walk-ups list`);
     } catch (e) { showToast("Couldn't add competitor"); }
   }
 
@@ -1361,6 +1414,7 @@
       if (!state.announceQueue.includes(currentEventId)) state.announceQueue.push(currentEventId);
       renderEventDetail();
       updateAnnounceBadge();
+      updateCompletionBar();
       showToast("Event submitted ✓");
     } catch (e) { showToast("Submit failed"); }
   }
@@ -1371,6 +1425,7 @@
       state.announceQueue = state.announceQueue.filter(id => id !== currentEventId);
       renderEventDetail();
       updateAnnounceBadge();
+      updateCompletionBar();
     } catch (e) { showToast("Reopen failed"); }
   }
   async function deleteEvent() {
@@ -1447,6 +1502,7 @@
     $("#kpiInProgress").textContent = inProgress.length;
     $("#kpiCompetitors").textContent = competitors.size;
 
+    renderWalkupsBlock(events);
     renderOverallStandings(events);
     renderHouseStandings(events);
     renderRecordsBlock();
@@ -1531,7 +1587,7 @@
       return `<ol class="standing-podium">${rows.slice(0, limit).map((r, i) => `
         <li class="standing-row t${i+1}">
           <span class="medal">${medals[i]||""}</span>
-          <span class="name">${escapeHtml(r.name)}</span>
+          <span class="name" data-student-name="${escapeHtml(r.name)}">${escapeHtml(r.name)}</span>
           <span class="pts">${r.points} pt</span>
         </li>`).join("")}</ol>`;
     }
@@ -1630,6 +1686,64 @@
     return (div && entry[div]) || {};
   }
 
+  function renderWalkupsBlock(events) {
+    // Collect every walk-up across the school's events
+    const walkups = [];
+    events.forEach(ev => {
+      (ev.competitors||[]).forEach(c => {
+        if (c.walkup) walkups.push({ ev, c });
+      });
+    });
+    const block = $("#walkupsBlock");
+    const title = $("#walkupsTitle");
+    if (walkups.length === 0) { block.hidden = true; title.hidden = true; return; }
+    block.hidden = false; title.hidden = false;
+    walkups.sort((a, b) => (b.c.walkupAt||0) - (a.c.walkupAt||0));
+    block.innerHTML = `
+      <table>
+        <thead><tr><th>Competitor</th><th>Event</th><th>Added by</th><th>When</th><th>Tags</th><th></th></tr></thead>
+        <tbody>
+          ${walkups.map(w => {
+            const missing = [];
+            if (!w.c.grade) missing.push("grade");
+            if (!w.c.house && (state.school?.houses||[]).length > 0) missing.push("house");
+            if (!w.c.dob && !w.c.actualAge) missing.push("age");
+            if (!w.c.bib) missing.push("bib");
+            return `
+              <tr>
+                <td><strong data-student-name="${escapeHtml(w.c.name)}">${escapeHtml(w.c.name)}</strong></td>
+                <td>${escapeHtml(w.ev.title)} <span class="muted small">— Age ${escapeHtml(w.ev.age)} ${escapeHtml(w.ev.gender)}</span></td>
+                <td>${escapeHtml(w.c.walkupBy || "—")}</td>
+                <td><span class="muted small">${escapeHtml(fmtDateTime(w.c.walkupAt))}</span></td>
+                <td>${missing.length === 0 ? `<span style="color:var(--green);font-weight:600">✓ complete</span>` : `<span class="muted small">missing: ${missing.join(", ")}</span>`}</td>
+                <td class="actions">
+                  <button class="btn ghost" data-walkup-open="${escapeHtml(w.ev.id)}">Open</button>
+                  <button class="btn" data-walkup-edit="${escapeHtml(w.ev.id)}|${escapeHtml(w.c.id)}">Edit</button>
+                  <button class="btn primary" data-walkup-accept="${escapeHtml(w.ev.id)}|${escapeHtml(w.c.id)}">Accept</button>
+                </td>
+              </tr>`;
+          }).join("")}
+        </tbody>
+      </table>`;
+    block.querySelectorAll("[data-walkup-open]").forEach(b => b.addEventListener("click", () => openEventDetail(b.dataset.walkupOpen)));
+    block.querySelectorAll("[data-walkup-accept]").forEach(b => b.addEventListener("click", async () => {
+      const [eventId, cid] = b.dataset.walkupAccept.split("|");
+      try {
+        const resp = await api.updateCompetitor(eventId, cid, { walkup: false, walkupBy: "", walkupAt: null });
+        const ev2 = state.events.find(e => e.id === eventId);
+        const c = ev2?.competitors.find(x => x.id === cid);
+        if (c && resp?.competitor) Object.assign(c, resp.competitor);
+        renderAdmin();
+        showToast("Walk-up accepted into the roster");
+      } catch (e) { showToast("Couldn't update"); }
+    }));
+    block.querySelectorAll("[data-walkup-edit]").forEach(b => b.addEventListener("click", () => {
+      const [eventId, cid] = b.dataset.walkupEdit.split("|");
+      // Open event detail — admin can use the gear icon to fill in details
+      openEventDetail(eventId);
+    }));
+  }
+
   function renderRecordsBlock() {
     const records = state.school?.records || [];
     const block = $("#recordsBlock");
@@ -1717,7 +1831,7 @@
                     const cls = ["","gold","silver","bronze","fourth"][Math.min(4, Math.floor(p.place))] || "";
                     return `<tr>
                       <td class="place ${cls}">${p.tied?"T-":""}${ordinal(p.place)}</td>
-                      <td>${escapeHtml(c?.name || "")}</td>
+                      <td data-student-name="${escapeHtml(c?.name || "")}">${escapeHtml(c?.name || "")}</td>
                       <td class="res">${fmtResult(best, ev.type, ev.unit)}</td>
                       <td class="pts">${p.points}</td>
                     </tr>`;
@@ -1936,7 +2050,7 @@
         <div class="place-block">
           <div class="place-medal">${medals[placeIdx]||""}</div>
           <div>
-            <div class="name">${escapeHtml(c?.name||"")}</div>
+            <div class="name" data-student-name="${escapeHtml(c?.name||"")}">${escapeHtml(c?.name||"")}</div>
             <div class="muted small">${p.tied?"Tied for ":""}${ordinal(p.place)} · ${p.points} pts</div>
           </div>
         </div>
@@ -1947,6 +2061,7 @@
       ? `${state.announceQueue.length - 1} more event${state.announceQueue.length-1===1?"":"s"} queued.`
       : "";
     updateAnnounceBadge();
+    updateCompletionBar();
   }
   async function markAnnounced() {
     const evId = state.announceQueue[0];
@@ -2661,6 +2776,123 @@
     showToast("Signed out");
   }
 
+  // ---------- Student Detail ----------
+  function fmtTimeOfDay(ts) {
+    if (!ts) return "—";
+    const d = new Date(Number(ts));
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  function fmtDateTime(ts) {
+    if (!ts) return "—";
+    const d = new Date(Number(ts));
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  /**
+   * Opens a modal showing every event a competitor (matched by name,
+   * case-insensitive trim) has been entered into, with their result,
+   * placement, points, time-of-day, and PB / record / DQ flags.
+   *
+   * Looks across ALL of state.events — for admin this is the whole school;
+   * for leader it's whatever events they have visibility into.
+   */
+  function openStudentDetail(name) {
+    const norm = (s) => (s || "").trim().toLowerCase();
+    const target = norm(name);
+    if (!target) return;
+    const tie = state.school?.tieMethod || "average";
+    const ageBands = state.school?.ageBands || [];
+
+    const matches = [];   // { ev, c, placement, isRecord, beatPB }
+    state.events.forEach(ev => {
+      (ev.competitors||[]).forEach(c => {
+        if (norm(c.name) !== target) return;
+        const placements = computePlacements(ev, tie);
+        const p = placements.find(x => x.competitorId === c.id) || {};
+        const best = bestOfCompetitor(c, ev.type);
+        const beatPB = didBeatPB(c, ev);
+        const record = (state.school?.records || []).find(r =>
+          (r.title||"").toLowerCase() === (ev.title||"").toLowerCase() &&
+          String(r.age) === String(ev.age) && r.gender === ev.gender);
+        const isCurrentRecordHolder = record && norm(record.holderName) === target;
+        matches.push({ ev, c, placement: p, best, beatPB, isCurrentRecordHolder });
+      });
+    });
+
+    if (matches.length === 0) { showToast(`No events found for ${name}`); return; }
+
+    // Use the first match for kid metadata (DOB, grade, house, bib are per-row but
+    // typically consistent for the same kid).
+    const first = matches[0].c;
+    const totalPoints = matches
+      .filter(m => m.ev.format !== "team")
+      .reduce((s, m) => s + (m.placement.points || 0), 0);
+    const recordsHeld = matches.filter(m => m.isCurrentRecordHolder).length;
+    const pbBeats = matches.filter(m => m.beatPB).length;
+
+    const metaBits = [];
+    if (first.bib)       metaBits.push(`#${escapeHtml(first.bib)}`);
+    if (first.grade)     metaBits.push(`Grade ${escapeHtml(first.grade)}`);
+    if (first.actualAge) metaBits.push(`Age ${escapeHtml(first.actualAge)}`);
+    else if (matches[0].ev.age) metaBits.push(`Age ${escapeHtml(matches[0].ev.age)}`);
+    if (first.house)     metaBits.push(`🏠 ${escapeHtml(first.house)}`);
+    if (first.dob)       metaBits.push(`DOB ${escapeHtml(first.dob)}`);
+
+    const placeClass = (p) => p == null ? "" : ["","gold","silver","bronze","fourth"][Math.min(4, Math.floor(p))] || "";
+
+    const sorted = matches.slice().sort((a,b) => (a.ev.completedAt||a.ev.createdAt||0) - (b.ev.completedAt||b.ev.createdAt||0));
+    const rows = sorted.map(m => {
+      const tags = [];
+      if (m.beatPB)              tags.push(`<span class="se-tag pb">🌟 PB</span>`);
+      if (m.isCurrentRecordHolder) tags.push(`<span class="se-tag record">🏅 Record</span>`);
+      if (m.c.dq)                tags.push(`<span class="se-tag dq">⊘ DQ</span>`);
+      const ts = m.ev.completedAt || m.ev.updatedAt || m.ev.createdAt;
+      return `
+        <div class="student-event-row" data-event-id="${escapeHtml(m.ev.id)}">
+          <div>
+            <strong>${escapeHtml(m.ev.title)}</strong><br>
+            <span class="muted small">Age ${escapeHtml(m.ev.age)} ${escapeHtml(m.ev.gender)}${m.ev.format === "team" ? " · Team" : ""}</span>
+          </div>
+          <div class="se-place ${placeClass(m.placement.place)}">
+            ${m.placement.place == null ? (m.c.dq ? "DQ" : "—") : ordinal(m.placement.place)}
+          </div>
+          <div>${m.placement.points != null ? m.placement.points + " pt" : ""}</div>
+          <div class="se-result">${fmtResult(m.best, m.ev.type, m.ev.unit)}</div>
+          <div>
+            <div class="se-time">${escapeHtml(fmtDateTime(ts))}</div>
+            <div class="se-tags">${tags.join("")}</div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    $("#studentModalTitle").textContent = first.name;
+    $("#studentModalBody").innerHTML = `
+      <div class="student-detail-header">
+        <h3>${escapeHtml(first.name)}</h3>
+        <div class="student-detail-meta">${metaBits.join(" · ") || ""}</div>
+      </div>
+      <div class="student-detail-totals">
+        <div class="total-card"><div class="total-num">${matches.length}</div><div class="total-lbl">events</div></div>
+        <div class="total-card"><div class="total-num">${totalPoints}</div><div class="total-lbl">individual points</div></div>
+        <div class="total-card"><div class="total-num">${pbBeats} / ${recordsHeld}</div><div class="total-lbl">PBs today / records held</div></div>
+      </div>
+      <h3 style="font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:18px 0 8px">Events</h3>
+      <div class="student-event-list">${rows}</div>
+      <p class="muted small" style="margin-top:14px">Click any row to open that event.</p>
+    `;
+    $("#studentModalBody").querySelectorAll(".student-event-row").forEach(r => {
+      r.addEventListener("click", () => {
+        const id = r.dataset.eventId;
+        $("#studentModal").hidden = true;
+        if (id) openEventDetail(id);
+      });
+    });
+    $("#studentModal").hidden = false;
+  }
+
   // ---------- Day Summary ----------
   function buildDaySummary() {
     const school = state.school;
@@ -2671,7 +2903,7 @@
     const podium = (rows, n=3) => rows.length === 0
       ? `<tr><td colspan="2" class="muted">—</td></tr>`
       : rows.slice(0, n).map((r, i) => `
-          <tr><td>${["🥇","🥈","🥉"][i]||""} ${escapeHtml(r.name)}</td><td class="pts">${r.points}</td></tr>`).join("");
+          <tr><td><span data-student-name="${escapeHtml(r.name)}">${["🥇","🥈","🥉"][i]||""} ${escapeHtml(r.name)}</span></td><td class="pts">${r.points}</td></tr>`).join("");
 
     let html = `
       <div class="summary-section">
@@ -3607,6 +3839,15 @@
     $("#btnDaySummary").addEventListener("click", openDaySummary);
     $("#btnSummaryClose").addEventListener("click", () => $("#summaryModal").hidden = true);
     $("#btnPrintSummary").addEventListener("click", () => window.print());
+
+    // Student detail modal — any element with [data-student-name] opens it
+    $("#btnStudentClose").addEventListener("click", () => $("#studentModal").hidden = true);
+    document.body.addEventListener("click", (e) => {
+      const el = e.target.closest("[data-student-name]");
+      if (!el) return;
+      e.preventDefault();
+      openStudentDetail(el.dataset.studentName);
+    });
     $("#btnImportClose").addEventListener("click", () => $("#importModal").hidden = true);
     $("#btnImportCancel").addEventListener("click", () => $("#importModal").hidden = true);
     $("#btnImportPreview").addEventListener("click", previewImport);

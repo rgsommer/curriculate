@@ -3,7 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Field Day</title>
+<title>Launch Field Day · Curriculate</title>
+<meta name="description" content="Sign in or join a school to run your field day with Curriculate Field Day — multi-runner timing, automatic scoring, school records, ribbons." />
+<meta name="theme-color" content="#2956ff" />
+<link rel="canonical" href="https://www.curriculate.net/fieldday/" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Curriculate Field Day — Launch the App" />
+<meta property="og:description" content="Free school field day app: multi-runner timing, scoring, records, ribbons." />
+<meta property="og:url" content="https://www.curriculate.net/fieldday/" />
 <link rel="stylesheet" href="/fieldday/styles.css" />
 </head>
 <body>
@@ -280,6 +287,9 @@
       <div class="kpi"><div class="kpi-num" id="kpiInProgress">0</div><div class="kpi-lbl">In Progress</div></div>
       <div class="kpi"><div class="kpi-num" id="kpiCompetitors">0</div><div class="kpi-lbl">Competitors</div></div>
     </div>
+
+    <h2 class="section-title" id="walkupsTitle" hidden>Walk-up Competitors <span class="muted small" style="text-transform:none">(added at-event by leaders)</span></h2>
+    <div class="walkups-block" id="walkupsBlock" hidden></div>
 
     <h2 class="section-title">Overall Standings</h2>
     <div class="overall-standings" id="overallStandings"></div>
@@ -829,6 +839,27 @@ Sofia Martinez,50m Sprint,9,Girls,2017-11-02,4,Beta,1,9.40,</pre>
 </div>
 
 <div class="toast" id="toast" hidden></div>
+
+<!-- ============ EVENT-COMPLETION PROGRESS BAR ============ -->
+<div class="completion-bar" id="completionBar" hidden>
+  <div class="completion-bar-inner">
+    <div class="completion-bar-track">
+      <div class="completion-bar-fill" id="completionFill"></div>
+    </div>
+    <div class="completion-bar-label" id="completionLabel">0 of 0 events complete</div>
+  </div>
+</div>
+
+<!-- ============== STUDENT DETAIL MODAL ============== -->
+<div class="modal" id="studentModal" hidden>
+  <div class="modal-card summary-card">
+    <header class="modal-header">
+      <h2 id="studentModalTitle">Student</h2>
+      <button class="icon-btn" id="btnStudentClose">✕</button>
+    </header>
+    <div class="modal-body" id="studentModalBody"></div>
+  </div>
+</div>
 
 <!-- ============== DAY SUMMARY MODAL ============== -->
 <div class="modal" id="summaryModal" hidden>

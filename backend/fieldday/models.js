@@ -102,7 +102,13 @@ const CompetitorSchema = new Schema({
   dob:        { type: String, default: "" },
   heat:       { type: String, default: "" },
   house:      { type: String, default: "" },
-  members:    { type: String, default: "" }
+  members:    { type: String, default: "" },
+  bib:        { type: String, default: "" },
+  dq:         { type: Boolean, default: false },
+  dqReason:   { type: String, default: "" },
+  walkup:     { type: Boolean, default: false },
+  walkupBy:   { type: String, default: "" },
+  walkupAt:   { type: Number,  default: null }
 }, { _id: false });
 
 const EventSchema = new Schema({
@@ -117,6 +123,7 @@ const EventSchema = new Schema({
   notes:       { type: String, default: "" },
   scoreBy:     { type: String, enum: ["event", "ageBand"], default: "event" },
   format:      { type: String, enum: ["individual", "team"], default: "individual" },
+  wind:        { type: Number, default: null },        // m/s, > 2.0 flags wind-aided records
   competitors: { type: [CompetitorSchema], default: [] },
   status:      { type: String, enum: ["in_progress", "completed"], default: "in_progress" },
   completedAt: Number,

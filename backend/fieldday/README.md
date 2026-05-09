@@ -103,6 +103,30 @@ curl localhost:3000/fieldday/api/state \
   -H "Authorization: Bearer ..."
 ```
 
+## Curriculate-internal admin stats
+
+If you want a Field Day usage dashboard on `/admin`, mount the
+`admin-stats` router behind your **existing Curriculate admin
+middleware** (it does NOT include its own auth, by design — to defer
+to whatever you already have):
+
+```js
+const requireCuriculateAdmin = require("./middleware/requireAdmin"); // your existing middleware
+const fielddayStats = require("./fieldday/routes/admin-stats");
+app.use("/admin/api/fieldday", requireCuriculateAdmin, fielddayStats);
+```
+
+Then on the `/admin` page, drop in the widget:
+
+```html
+<script src="/fieldday/admin-stats.js" defer></script>
+<div id="fieldday-stats"></div>
+```
+
+It auto-mounts, polls every 60 s, and shows: schools / events /
+competitors / records KPIs, top 10 schools by competitor count, and a
+recent-completed-events feed.
+
 ## Migrating from localStorage
 
 If you have admins running the localStorage demo and want to bring their

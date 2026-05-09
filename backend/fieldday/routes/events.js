@@ -46,6 +46,7 @@ router.post("/events", requireSchool, asyncH(async (req, res) => {
     notes:       body.notes || "",
     scoreBy:     body.scoreBy || "event",
     format:      body.format  || "individual",
+    wind:        body.wind == null ? null : Number(body.wind),
     competitors: Array.isArray(body.competitors) ? body.competitors : []
   });
   res.json({ event: publicEvent(ev) });
@@ -56,7 +57,7 @@ router.patch("/events/:id", requireSchool, asyncH(async (req, res) => {
   const ev = await Event.findOne({ _id: req.params.id, schoolId: req.fdSchoolId });
   if (!ev) return errResp(res, 404, "not_found");
   if (!canMutate(req, ev)) return errResp(res, 403, "forbidden");
-  const allowed = ["title","age","gender","type","attempts","unit","notes","scoreBy","format","competitors","leaderName"];
+  const allowed = ["title","age","gender","type","attempts","unit","notes","scoreBy","format","wind","competitors","leaderName"];
   allowed.forEach(k => { if (k in req.body) ev[k] = req.body[k]; });
   await ev.save();
   res.json({ event: publicEvent(ev) });
@@ -122,7 +123,7 @@ router.patch("/events/:id/competitors/:cid", requireSchool, asyncH(async (req, r
   if (!canMutate(req, ev)) return errResp(res, 403, "forbidden");
   const c = ev.competitors.find(c => c.id === req.params.cid);
   if (!c) return errResp(res, 404, "competitor_not_found");
-  const allowed = ["name","attempts","grade","actualAge","dob","heat","house","members"];
+  const allowed = ["name","attempts","grade","actualAge","dob","heat","house","members","bib","dq","dqReason","walkup","walkupBy","walkupAt"];
   allowed.forEach(k => { if (k in req.body) c[k] = req.body[k]; });
   await ev.save();
   res.json({ competitor: c.toObject ? c.toObject() : c });
