@@ -224,6 +224,25 @@
     });
     showToast._t = setTimeout(() => { if (!used) cleanup(); }, ms);
   }
+  /**
+   * Format an ISO date string ("2024-05-08") for human display ("May 8, 2024").
+   * Returns "" for empty/invalid input. Used on record pills, records tables,
+   * and anywhere a "set on" date is shown.
+   */
+  function fmtDate(iso) {
+    if (!iso) return "";
+    // Build a Date directly from y/m/d so we don't get UTC-shift surprises
+    // (a date string like "2024-05-08" can otherwise render as May 7 in PST).
+    const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    let d;
+    if (m) {
+      d = new Date(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10));
+    } else {
+      d = new Date(iso);
+    }
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
   function fmtTimer(ms) {
     if (ms == null || isNaN(ms)) return "--";
     const sign = ms < 0 ? "-" : ""; ms = Math.abs(ms);
@@ -2370,7 +2389,7 @@
               <td>${escapeHtml(r.gender||"")}</td>
               <td class="res">${fmtResult(r.value, r.type, r.unit)}${recently(r.dateSet) ? `<span class="new-since">NEW</span>`:""}</td>
               <td>${escapeHtml(r.holderName||"—")}</td>
-              <td>${escapeHtml(r.dateSet||"—")}</td>
+              <td>${r.dateSet ? escapeHtml(fmtDate(r.dateSet)) : "—"}</td>
             </tr>`).join("")}
         </tbody>
       </table>`;
@@ -3302,7 +3321,8 @@
 
     const bits = [];
     if (rec) {
-      bits.push(`<span class="pill" style="background:#fff7e0;color:#8a6d00" title="School record to beat — set ${escapeHtml(rec.dateSet||"")}">🎺 Record: <strong>${fmtResult(rec.value, rec.type, rec.unit)}</strong> · ${escapeHtml(rec.holderName||"—")}</span>`);
+      const datePart = rec.dateSet ? ` · <span class="muted small" style="font-weight:500">set ${escapeHtml(fmtDate(rec.dateSet))}</span>` : "";
+      bits.push(`<span class="pill" style="background:#fff7e0;color:#8a6d00" title="School record to beat">🎺 Record: <strong>${fmtResult(rec.value, rec.type, rec.unit)}</strong> · ${escapeHtml(rec.holderName||"—")}${datePart}</span>`);
     }
     if (std) {
       const goldStr    = std.gold   != null ? fmtResult(std.gold,   ev.type, ev.unit||std.unit) : null;

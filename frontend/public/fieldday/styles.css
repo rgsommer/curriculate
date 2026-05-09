@@ -982,6 +982,17 @@ main { padding-bottom: 64px !important; }
  * iPad portrait (768px). Prioritize touch-target size and horizontal
  * scroll over visual density. */
 @media (max-width: 720px) {
+  /* Compact the live-status pill: drop the verbose "refreshing every 6s"
+     trailing line so it fits on a 375px iPhone. The dot still pulses,
+     the timestamp still updates — that's enough signal. */
+  .live-status { padding: 5px 10px; font-size: 12px; flex-wrap: wrap; }
+  .live-status .live-detail { display: none; }
+  .live-status .live-detail.always { display: inline; } /* opt-in for important detail */
+  /* Per-event Targets pills wrap to a new line if both record + standards
+     are present so we don't horizontal-scroll the meta line. */
+  .event-targets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .event-targets .pill { font-size: 11px; padding: 3px 8px; }
+
   /* Topbar: tabs scroll horizontally instead of wrapping into multiple rows */
   .topbar { padding: 8px 12px; }
   .tabs {
