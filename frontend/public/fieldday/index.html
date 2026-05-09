@@ -284,8 +284,15 @@
         <button class="btn ghost" id="btnDownloadWorkbook">Download Workbook</button>
         <button class="btn ghost" id="btnImportRoster">CSV (legacy)</button>
         <button class="btn" id="btnDaySummary">Day Summary</button>
+        <button class="btn ghost" id="btnSnapshotNow" title="Save a timestamped snapshot of every result right now — proves what was recorded as of this moment">📸 Snapshot Now</button>
         <button class="btn ghost" id="btnExportJson" title="Download a JSON backup of this season">Backup</button>
       </div>
+    </div>
+
+    <div id="liveStatus" class="live-status">
+      <span class="live-dot"></span>
+      <span class="live-label">Live</span>
+      <span class="live-detail muted small">Updated <span id="liveUpdatedTime">just now</span> · refreshing every 6 seconds while you're on this screen</span>
     </div>
 
     <div class="kpi-row">

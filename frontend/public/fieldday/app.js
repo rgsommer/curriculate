@@ -2070,6 +2070,17 @@
 
   // ---------- Admin ----------
   function renderAdmin() {
+    // Stamp the "live · updated HH:MM:SS" indicator so the admin can see at
+    // a glance that the page is current — eliminates the worst end-of-day
+    // worry ("did we actually record anything?"). Updates on every poll.
+    const liveTime = $("#liveUpdatedTime");
+    if (liveTime) {
+      const d = new Date();
+      const hh = String(d.getHours()).padStart(2,"0");
+      const mm = String(d.getMinutes()).padStart(2,"0");
+      const ss = String(d.getSeconds()).padStart(2,"0");
+      liveTime.textContent = `${hh}:${mm}:${ss}`;
+    }
     const events = state.events;
     const completed = events.filter(e => e.status === "completed");
     const inProgress = events.filter(e => e.status === "in_progress");
@@ -3484,6 +3495,60 @@
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
+
+  /**
+   * "Snapshot Now" — one-click, timestamped CSV of every recorded result
+   * across the whole day. Lets the admin prove what was on the books at
+   * any moment ("at 11:47 AM we had 142 results recorded across 18 events")
+   * and gives them a paper-trail file to keep alongside the live system.
+   *
+   * Format: one row per (event × competitor × attempt) with columns the
+   * principal can scan in Excel without a manual.
+   */
+  function snapshotNow() {
+    const events = state.events || [];
+    const rows = [["Event","Age","Gender","Status","Leader","Competitor","Bib","House","Heat","Attempt#","Result","Unit","Place","Points","DQ","DQ Reason"]];
+    const tieMethod = state.school?.tieMethod || "average";
+    let resultCount = 0;
+    for (const ev of events) {
+      const placements = computePlacements(ev, tieMethod);
+      for (const c of (ev.competitors || [])) {
+        const place = placements.find(p => p.competitorId === c.id);
+        const attempts = c.attempts || [];
+        if (attempts.every(v => v == null || v === "")) {
+          // Still emit a row for unfinished competitors so admin sees they exist.
+          rows.push([ev.title, ev.age, ev.gender, ev.status, ev.leaderName||"", c.name||"", c.bib||"", c.house||"", c.heat||"", "", "", ev.unit||"", "", "", c.dq?"yes":"", c.dqReason||""]);
+          continue;
+        }
+        attempts.forEach((v, i) => {
+          if (v == null || v === "") return;
+          resultCount++;
+          rows.push([
+            ev.title, ev.age, ev.gender, ev.status, ev.leaderName||"",
+            c.name||"", c.bib||"", c.house||"", c.heat||"",
+            (i+1), v, ev.unit||"",
+            place?.place || "", place?.points ?? "",
+            c.dq?"yes":"", c.dqReason||""
+          ]);
+        });
+      }
+    }
+    // CSV-escape: wrap any cell containing comma/quote/newline in quotes, double internal quotes.
+    const csv = rows.map(r => r.map(cell => {
+      const s = String(cell == null ? "" : cell);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(",")).join("\n");
+    const stamp = new Date();
+    const stampPretty = stamp.toLocaleString();
+    const fname = `${state.school?.code || "fieldday"}-snapshot-${stamp.toISOString().replace(/[:.]/g,"-").slice(0,19)}.csv`;
+    const blob = new Blob([`# Field Day snapshot — ${stampPretty}\n# ${events.length} events · ${resultCount} recorded results · ${state.school?.name||""}\n${csv}`], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = fname;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    showToast(`Snapshot saved · ${resultCount} results across ${events.length} events`);
+  }
   async function resetAll() {
     if (!confirm("Sign out of this device? Your school's data stays in Curriculate; you can sign back in any time.")) return;
     try { await api.signOut(); } catch (e) {}
@@ -4542,6 +4607,7 @@
     });
 
     $("#btnExportJson").addEventListener("click", exportData);
+    $("#btnSnapshotNow").addEventListener("click", snapshotNow);
 
     // Roster CSV import
     $("#btnImportRoster").addEventListener("click", openImportModal);
