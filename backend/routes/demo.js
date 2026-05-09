@@ -241,18 +241,38 @@ router.post("/results", resultsLimiter, async (req, res) => {
       return res.status(400).json({ error: "Email and results are required" });
     }
 
-    // Accept adaptive points from frontend (with sanity cap per task)
-    // Frontend applies 1.5× for new task types, 0.5× for repeats
-    const MAX_PTS_PER_TASK = 25; // hard cap to prevent abuse
+    // Accept adaptive points from frontend (with sanity cap per task).
+    //
+    // The frontend computes per-task points as:
+    //   base × 1.5 (new task type) or × 0.5 (repeat) + feedback bonus (1, 4, or 5)
+    // For typical base values (10–20), legitimate per-task points can reach
+    // ~35 (20 × 1.5 + 5). The previous cap of 25 was suppressing legitimate
+    // scoring AND the over-cap fallback dropped to `base` (losing the
+    // multiplier AND the bonus), which manifested as user-visible
+    // discrepancies between the on-screen total and the emailed total.
+    //
+    // New behavior: cap at a level that comfortably accommodates legitimate
+    // adaptive + bonus stacking, and CLAMP to the cap when over (don't fall
+    // back to `base`). Log clamping events so we can see if real abuse ever
+    // happens.
+    const MAX_PTS_PER_TASK = 60;
     let totalPoints = 0;
     const scoredResults = results.map((r) => {
       if (r.skipped) return { ...r, points: 0 };
       const base = getTaskPoints(r.taskType);
-      // Trust frontend points if reasonable, otherwise fall back to base
       const frontendPts = typeof r.points === "number" ? r.points : 0;
-      const pts = (frontendPts > 0 && frontendPts <= MAX_PTS_PER_TASK)
-        ? frontendPts
-        : base;
+      let pts;
+      if (frontendPts <= 0) {
+        pts = base;
+      } else if (frontendPts <= MAX_PTS_PER_TASK) {
+        pts = frontendPts; // legitimate (most cases)
+      } else {
+        pts = MAX_PTS_PER_TASK;
+        console.warn(
+          `[demo/results] Per-task points clamped: ${frontendPts} → ${MAX_PTS_PER_TASK} ` +
+            `(taskType=${r.taskType}, email=${email})`
+        );
+      }
       totalPoints += pts;
       return { ...r, points: pts };
     });
