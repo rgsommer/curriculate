@@ -152,7 +152,8 @@ const GradingUsage = mongoose.models.GradingUsage || mongoose.model(
       subject: String,
       assessmentType: String,
       gradeLevel: String,
-      inputMode: String,       // "photo" | "paste" | "batch" | "video" | "audio"
+      inputMode: { type: String, index: true },   // "photo" | "paste" | "batch" | "video" | "audio" | "upload"
+      appName:   { type: String, index: true },   // "pulse-grading" | "curriculate" | "fieldday"
       imageCount: Number,
       overrideInputUsed: Boolean,
       responseTimeMs: Number,
@@ -162,6 +163,31 @@ const GradingUsage = mongoose.models.GradingUsage || mongoose.model(
     { timestamps: false }
   )
 );
+
+/**
+ * Resolve which Curriculate product generated this submission.
+ * Priority:
+ *   1. Explicit req.body.meta.appName (client-supplied)
+ *   2. Origin / Referer header heuristic
+ *      - "/grading"     → "pulse-grading"
+ *      - host contains "fieldday" → "fieldday"
+ *      - any other curriculate.net page → "curriculate"
+ *   3. Default → "pulse-grading" (the most common path)
+ */
+function resolveAppName(req) {
+  try {
+    const explicit = String(req?.body?.meta?.appName || "").trim().toLowerCase();
+    if (explicit) return explicit;
+    const ref = String(req?.headers?.referer || req?.headers?.origin || "").toLowerCase();
+    if (!ref) return "pulse-grading";
+    if (ref.includes("fieldday")) return "fieldday";
+    if (ref.includes("/grading")) return "pulse-grading";
+    if (ref.includes("curriculate")) return "curriculate";
+    return "pulse-grading";
+  } catch {
+    return "pulse-grading";
+  }
+}
 
 function computeAuthorDisplay(ownerName) {
   const s = String(ownerName || "").trim();
@@ -439,6 +465,9 @@ app.use("/class-roster", classRosterRouter);
 app.use("/student-scavenger-progress", studentScavengerProgressRouter);
 app.use("/student-contact", studentContactRouter);
 app.use("/student-progress", studentProgressRouter);
+
+// Fieldday
+app.use("/fieldday/api", require("./fieldday"));
 
 // Recommend Curriculate to a teacher
 app.post("/api/recommend", async (req, res) => {
@@ -12378,6 +12407,8 @@ function buildRubricInstructions({
               subject: "Other",
               assessmentType: "Other",
               gradeLevel: band,
+              inputMode: req.body?.meta?.inputMode || (batchMode ? "batch" : (trimmed ? "paste" : "photo")),
+              appName: resolveAppName(req),
               imageCount: Array.isArray(images) ? images.length : 0,
               overrideInputUsed: Boolean(String(rubricOverride || "").trim()),
               responseTimeMs,
@@ -12648,9 +12679,10 @@ function buildRubricInstructions({
             assessmentType: inferredAssessmentType,
             gradeLevel: inferredGradeLevel,
             inputMode: req.body?.meta?.inputMode || (batchMode ? "batch" : (trimmed ? "paste" : "photo")),
+            appName: resolveAppName(req),
 
             imageCount: Array.isArray(images) ? images.length : 0,
-            overrideInputUsed: Boolean(String(rubricOverride || "").trim()),
+            rubricOverrideUsed: Boolean(String(rubricOverride || "").trim()),
             responseTimeMs,
 
             refCode,
@@ -12733,7 +12765,7 @@ function buildRubricInstructions({
         const escH = (s) => String(s ?? "")
           .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
           .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
-        const refLink = r.refCode ? `https://www.curriculate.net/results/${encodeURIComponent(r.refCode)}` : "";
+        const refLink = r.refCode ? `https://www.curriculate.net/results/${encodeURIComponent(r.refCode)}?src=email` : "";
         const score = (r.score != null && r.outOf != null) ? `${r.score} / ${r.outOf}` : (r.score != null ? String(r.score) : "");
         const pct = (r.percent != null) ? `${Math.round(Number(r.percent))}%` : "";
         const subject = `Your result — ${taskSetName || "Pulse Grading"}`;
@@ -14283,6 +14315,7 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
           subject: grade.inferred_subject || "Other",
           assessmentType: grade.inferred_assessment_type || "Performance",
           inputMode: "video",
+          appName: resolveAppName(req),
           gradeLevel: gradeBand,
           imageCount: frames.length,
           overrideInputUsed: Boolean(rubricOverride),
@@ -14506,6 +14539,7 @@ app.post("/grading/audio", audioUpload.single("audio"), async (req, res) => {
           subject: grade.inferred_subject || "Music",
           assessmentType: grade.inferred_assessment_type || "Performance",
           inputMode: "audio",
+          appName: resolveAppName(req),
           gradeLevel: gradeBand,
           imageCount: 0,
           overrideInputUsed: Boolean(rubricOverride),

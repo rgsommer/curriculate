@@ -229,7 +229,7 @@ export function buildSessionEdsbyCsv({
     if (refCode) {
       comment +=
         (comment ? " " : "") +
-        `For detailed feedback, check www.curriculate.net/results/${refCode}`;
+        `For detailed feedback, check www.curriculate.net/results/${refCode}?src=email`;
       comment += ` For all results, check www.curriculate.net/progress`;
     }
 

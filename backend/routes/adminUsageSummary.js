@@ -100,6 +100,8 @@ router.get("/usage-summary", requireAdminToken, async (req, res) => {
       inputModes30d,
 
       topCountries30d,
+      topCities30d,
+      topApps30d,
 
       repeatUsersMonthly12,
 
@@ -203,6 +205,31 @@ router.get("/usage-summary", requireAdminToken, async (req, res) => {
         { $group: { _id: "$location.country", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: 15 },
+      ]),
+
+      // top cities 30d (combined with country for disambiguation:
+      // "Toronto, CA" vs "Toronto, US" if both happen)
+      GradingUsage.aggregate([
+        { $match: { timestamp: { $gte: since30 }, "location.city": { $ne: null } } },
+        {
+          $group: {
+            _id: {
+              city: "$location.city",
+              country: { $ifNull: ["$location.country", ""] },
+            },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { count: -1 } },
+        { $limit: 15 },
+      ]),
+
+      // app breakdown 30d ("pulse-grading" | "curriculate" | "fieldday")
+      // Defaults to "pulse-grading" for legacy docs that didn't write an appName.
+      GradingUsage.aggregate([
+        { $match: { timestamp: { $gte: since30 } } },
+        { $group: { _id: { $ifNull: ["$appName", "pulse-grading"] }, count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
       ]),
 
       // Repeat users by month (last 12 months)
@@ -356,6 +383,12 @@ router.get("/usage-summary", requireAdminToken, async (req, res) => {
         topGradeLevels: topGradeLevels30d.map((x) => ({ gradeLevel: x._id, count: x.count })),
         inputModes: inputModes30d.map((x) => ({ mode: x._id, count: x.count })),
         topCountries: topCountries30d.map((x) => ({ country: x._id, count: x.count })),
+        topCities: topCities30d.map((x) => ({
+          city: x._id?.city || "Unknown",
+          country: x._id?.country || "",
+          count: x.count,
+        })),
+        apps: topApps30d.map((x) => ({ app: x._id, count: x.count })),
       },
 
       performance30d: { latency },

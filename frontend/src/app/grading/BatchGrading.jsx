@@ -2409,7 +2409,7 @@ export default function BatchGrading({
           `${r.studentName}: ${r.score}/${r.outOf} (${r.pct != null ? r.pct + "%" : "?"}) ${r.letter}${r.refCode ? `  [${r.refCode}]` : ""}`
         );
         if (r.comment) lines.push(`  ${r.comment}`);
-        if (r.refCode) lines.push(`  For results & feedback: www.curriculate.net/results/${r.refCode}`);
+        if (r.refCode) lines.push(`  For results & feedback: www.curriculate.net/results/${r.refCode}?src=email`);
       });
 
       if (includeFooter) {
@@ -2529,7 +2529,7 @@ export default function BatchGrading({
       html += `<td style="padding: 7px 10px; text-align: center; font-weight: 800; color: ${r.letter !== "?" ? gradeColor(r.letter) : "#999"};">${r.letter}</td>`;
       html += `<td style="padding: 7px 10px; text-align: center; font-family: monospace; font-weight: 700; font-size: 12px;">`;
       if (r.refCode) {
-        html += `<a href="https://www.curriculate.net/results/${r.refCode}" style="color: #2563eb; text-decoration: none;">${r.refCode}</a>`;
+        html += `<a href="https://www.curriculate.net/results/${r.refCode}?src=email" style="color: #2563eb; text-decoration: none;">${r.refCode}</a>`;
       } else {
         html += `—`;
       }
@@ -2541,7 +2541,7 @@ export default function BatchGrading({
       if (r.refCode) {
         html += `<tr style="background: ${bg};">`;
         html += `<td></td><td colspan="6" style="padding: 0 10px 7px; font-size: 12px;">`;
-        html += `<a href="https://www.curriculate.net/results/${r.refCode}" style="color: #2563eb;">Results &amp; feedback: www.curriculate.net/results/${r.refCode}</a>`;
+        html += `<a href="https://www.curriculate.net/results/${r.refCode}?src=email" style="color: #2563eb;">Results &amp; feedback: www.curriculate.net/results/${r.refCode}</a>`;
         html += `</td></tr>`;
       }
     });

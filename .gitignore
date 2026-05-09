@@ -30,5 +30,28 @@ feedback-report.txt
 .next
 frontend/.next
 curriculate-codex.zip
-curriculate-codex.zip
-curriculate-codex.zip
+
+# ─── Marketing collateral & working drafts at the repo root ───
+# These are local working files (campaign plans, ad copy, valuation drafts,
+# parent letters, demo handouts, etc.) — kept locally, not tracked. Binary
+# .docx / .xlsx files generate noisy diffs nobody can review and bloat the
+# repo. Move to a docs/ folder or external drive when shared.
+/Conference-*.docx
+/Curriculate-*.docx
+/Curriculate-*.xlsx
+/Curriculate-*.html
+/Curriculate-Report-*.pdf
+/Curriculate-Valuation-*.docx
+/Elementary-*.docx
+/Parent-Letter-*.docx
+/Student-Practice-*.docx
+/email-preview.html
+/x-banner.html
+/report-preview.pdf
+
+# ─── Source / reference logos at the repo root ───
+# Designer source files. Exported web versions live in frontend/public/.
+/Curriculate_logo.png
+/Logo_*.png
+/Prism_logo*.png
+

@@ -315,6 +315,24 @@ export default function AdminUsageDashboard() {
     return arr.slice(0, 10).map((x) => ({ name: x.country || "Unknown", count: x.count || 0 }));
   }, [data]);
 
+  const topCities = useMemo(() => {
+    const arr = data?.breakdowns30d?.topCities || [];
+    return arr.slice(0, 10).map((x) => ({
+      name: x.country ? `${x.city}, ${x.country}` : x.city,
+      count: x.count || 0,
+    }));
+  }, [data]);
+
+  const apps = useMemo(() => {
+    const arr = data?.breakdowns30d?.apps || [];
+    const labels = {
+      "pulse-grading": "Pulse Grading",
+      "curriculate": "Curriculate",
+      "fieldday": "FieldDay",
+    };
+    return arr.map((x) => ({ name: labels[x.app] || x.app || "Unknown", count: x.count || 0 }));
+  }, [data]);
+
   const momGrowth = data?.derived?.monthOverMonth?.growthPercent;
   const momMethod = data?.derived?.monthOverMonth?.method;
 
@@ -577,6 +595,37 @@ export default function AdminUsageDashboard() {
                   <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11 }} />
                   <Tooltip />
                   <Bar dataKey="count" fill="#34d399" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+        </div>
+
+        {/* New: Cities + App breakdown (30d) */}
+        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card title="Cities (30d)">
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topCities} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <YAxis type="category" dataKey="name" width={150} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#22d3ee" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+
+          <Card title="App (30d)">
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={apps}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#fb7185" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
