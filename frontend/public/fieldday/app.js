@@ -1639,48 +1639,85 @@
       startRowTimer(cid, startedAtPerf, /*alreadyOnServer=*/true);
     }
     if (rowTimers.size === 0) stopHeatClock();
-    else if (!timerHandle) startHeatClock();
+    else if (!timerHandle) {
+      // Anchor the heat clock to the EARLIEST row's start so all clocks
+      // (including the big heat one) tick from the same zero. With server-
+      // coordinated Start All, every row shares the same startMs; without
+      // it, this still picks the oldest local start.
+      let earliest = Infinity;
+      rowTimers.forEach(t => { if (t.startMs < earliest) earliest = t.startMs; });
+      startHeatClock(isFinite(earliest) ? earliest : undefined);
+    }
+  }
+
+  /**
+   * One shared tick that paints EVERY running clock — heat + each row —
+   * from a single performance.now() snapshot. Critical for synchronisation:
+   * if each row had its own rAF/setInterval, they'd each read perf.now()
+   * a few microseconds apart and one might round to .85 while another
+   * rounds to .86 on the same frame. With a shared tick they all read the
+   * same now and show the same number.
+   */
+  let _sharedTickRaf = null;
+  let _sharedTickInterval = null;
+  function _sharedTick() {
+    const now = performance.now();
+    // Heat clock (the big black panel)
+    if (timerHandle && typeof timerStart === "number") {
+      const display = $("#timerDisplay");
+      if (display) display.textContent = fmtTimer(now - timerStart);
+    }
+    // Each row clock — same `now`, so they're guaranteed to agree to the centisecond.
+    rowTimers.forEach((t, cid) => {
+      const display = document.querySelector(`.row-timer[data-cid="${cid}"] .row-timer-time`);
+      if (display) display.textContent = fmtTimer(now - t.startMs);
+      const tDiv = document.querySelector(`.row-timer[data-cid="${cid}"]`);
+      if (tDiv && tDiv.hidden) tDiv.hidden = false;
+      const btn = document.querySelector(`.row-timer-btn[data-cid="${cid}"]`);
+      if (btn && !btn.classList.contains("running")) { btn.classList.add("running"); btn.textContent = "⏹"; }
+    });
+    // Idle? Stop everything.
+    if (!timerHandle && rowTimers.size === 0) {
+      _sharedTickRaf = null;
+      if (_sharedTickInterval) { clearInterval(_sharedTickInterval); _sharedTickInterval = null; }
+      return;
+    }
+    _sharedTickRaf = requestAnimationFrame(_sharedTick);
+  }
+  function _ensureSharedTick() {
+    if (_sharedTickRaf == null) {
+      _sharedTickRaf = requestAnimationFrame(_sharedTick);
+    }
+    // Belt-and-suspenders: setInterval keeps painting even if rAF is
+    // throttled (background tabs) — display jitters by at most 100ms.
+    if (_sharedTickInterval == null) {
+      _sharedTickInterval = setInterval(_sharedTick, 100);
+    }
   }
 
   function startRowTimer(competitorId, startMsOverride, alreadyOnServer) {
     if (rowTimers.has(competitorId)) return;
     const startMs = (typeof startMsOverride === "number") ? startMsOverride : performance.now();
-    // Paint the current state synchronously so the user sees feedback on the
-    // very same frame as their click — don't wait for the first rAF (which on
-    // some browsers/tabs can be throttled to ~250ms).
-    const paint = () => {
-      const t = rowTimers.get(competitorId);
-      if (!t) return false;
-      const display = document.querySelector(`.row-timer[data-cid="${competitorId}"] .row-timer-time`);
-      if (display) display.textContent = fmtTimer(performance.now() - startMs);
-      const tDiv = document.querySelector(`.row-timer[data-cid="${competitorId}"]`);
-      if (tDiv && tDiv.hidden) tDiv.hidden = false;
-      const btn = document.querySelector(`.row-timer-btn[data-cid="${competitorId}"]`);
-      if (btn && !btn.classList.contains("running")) { btn.classList.add("running"); btn.textContent = "⏹"; }
-      return true;
-    };
-    const tick = () => {
-      if (!paint()) return;
-      const t = rowTimers.get(competitorId);
-      if (t) t.raf = requestAnimationFrame(tick);
-    };
-    // Belt-and-suspenders: a 100ms setInterval keeps painting even if rAF is
-    // throttled (e.g. background tab) — display jitters by at most 100ms,
-    // which is still far smoother than not appearing at all.
-    const intervalId = setInterval(paint, 100);
-    rowTimers.set(competitorId, { startMs, raf: requestAnimationFrame(tick), intervalId });
-    // Synchronous first paint — no waiting for the first animation frame.
-    paint();
-    // Mirror the heat clock at the top: first row timer starts the big clock.
-    if (typeof startHeatClock === "function") startHeatClock();
+    rowTimers.set(competitorId, { startMs });
+    // Synchronous first paint — set the display + button immediately so the
+    // user sees feedback on the very same frame as their click. The shared
+    // tick will then keep updating them.
+    const display = document.querySelector(`.row-timer[data-cid="${competitorId}"] .row-timer-time`);
+    if (display) display.textContent = fmtTimer(performance.now() - startMs);
+    const tDiv = document.querySelector(`.row-timer[data-cid="${competitorId}"]`);
+    if (tDiv) tDiv.hidden = false;
+    const btn = document.querySelector(`.row-timer-btn[data-cid="${competitorId}"]`);
+    if (btn) { btn.classList.add("running"); btn.textContent = "⏹"; }
+    // Mirror the heat clock at the top, anchored to THIS row's startMs so
+    // every clock — heat plus rows — shares the exact same zero point.
+    if (typeof startHeatClock === "function") startHeatClock(startMs);
+    _ensureSharedTick();
     persistRowTimers();
   }
 
   async function stopRowTimer(competitorId) {
     const t = rowTimers.get(competitorId);
     if (!t) return;
-    cancelAnimationFrame(t.raf);
-    if (t.intervalId) clearInterval(t.intervalId);
     rowTimers.delete(competitorId);
     // If this was the last running row, freeze the heat clock at its current
     // value (so the leader sees the final heat duration on the big display).
@@ -1900,36 +1937,43 @@
    * Start the big "Heat Stopwatch" display purely as a visual heat clock —
    * no target cell, no recording. Idempotent. Used by the row-timer code
    * so the big clock at the top of the timer card mirrors the heat.
+   *
+   * Pass `startMs` (a performance.now() value) to anchor the heat clock to
+   * the same instant the row clocks use. Critical for "Start All": without
+   * this, the heat clock would start at the moment of THIS function call
+   * (after the network round-trip), running ~10-50ms behind the rows. With
+   * an explicit startMs, all five clocks share an exact zero point.
    */
-  function startHeatClock() {
+  function startHeatClock(startMs) {
     if (timerHandle) return;
-    timerStart = performance.now();
-    timerHandle = requestAnimationFrame(tickTimer);
+    timerStart = (typeof startMs === "number") ? startMs : performance.now();
+    timerHandle = "running";  // sentinel — not an rAF id; shared tick paints
+    // Synchronous first paint so the display flips off "00:00.00" immediately.
+    const display = $("#timerDisplay");
+    if (display) display.textContent = fmtTimer(performance.now() - timerStart);
+    _ensureSharedTick();
   }
   /**
    * Stop the big heat clock display without recording anything to a cell.
-   * (Different from stopTimer, which writes elapsed time to timerTarget.)
+   * The shared tick will detect nothing is running and stop itself.
    */
   function stopHeatClock() {
-    if (!timerHandle) return;
-    cancelAnimationFrame(timerHandle);
     timerHandle = null;
   }
   function startTimer() {
     if (timerHandle) return;
     timerStart = performance.now();
-    timerHandle = requestAnimationFrame(tickTimer);
+    timerHandle = "running";
     $("#btnTimerStart").disabled = true;
     $("#btnTimerStop").disabled = false;
+    _ensureSharedTick();
   }
-  function tickTimer() {
-    const ms = performance.now() - timerStart;
-    $("#timerDisplay").textContent = fmtTimer(ms);
-    timerHandle = requestAnimationFrame(tickTimer);
-  }
+  // tickTimer kept for backwards-compat callers but is now a no-op — the
+  // shared tick paints the heat clock alongside row clocks from one
+  // performance.now() snapshot, guaranteeing they all read the same value.
+  function tickTimer() { /* shared tick handles all displays */ }
   async function stopTimer() {
     if (!timerHandle) return;
-    cancelAnimationFrame(timerHandle);
     timerHandle = null;
     const elapsedMs = performance.now() - timerStart;
     const seconds = Math.round(elapsedMs/10)/100;
@@ -1954,7 +1998,6 @@
     }
   }
   function resetTimer() {
-    if (timerHandle) cancelAnimationFrame(timerHandle);
     timerHandle = null;
     $("#timerDisplay").textContent = "00:00.00";
     $("#btnTimerStart").disabled = false;
