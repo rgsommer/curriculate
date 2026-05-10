@@ -354,7 +354,7 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-demo-admin-key"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-demo-admin-key", "x-admin-token"],
   optionsSuccessStatus: 204,
 };
 
