@@ -1,0 +1,8 @@
+{
+  "_comment": "Segment override for cat/all.mp4 — original Grok clip is 10s with 2s per mood. Replace with a longer (25s+) clip and delete this file to use defaults.",
+  "idle":        [0, 2],
+  "eatingBad":   [2, 4],
+  "eatingGood":  [4, 6],
+  "celebrating": [6, 8],
+  "sick":        [8, 10]
+}

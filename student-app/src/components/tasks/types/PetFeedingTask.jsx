@@ -80,6 +80,85 @@ function PetVideo({ src }) {
   );
 }
 
+/**
+ * PetVideoSegment — plays a single all.mp4 file but only loops the
+ * segment matching the current mood.  Lets you ship ONE video per pet
+ * (15 files) instead of five (75 files).
+ *
+ * Default segment map assumes the user's all.mp4 has 5 moods at
+ * 5-second intervals (25s total — matches the new combined-clip
+ * Runway prompt):
+ *
+ *    0–5s   idle
+ *    5–10s  eatingBad
+ *   10–15s  eatingGood
+ *   15–20s  celebrating
+ *   20–25s  sick
+ *
+ * If /pets/<type>/all.json exists with a custom map, that overrides
+ * the defaults — drop one in next to a 10s-per-mood (50s total) clip,
+ * a 2s-per-mood (10s) clip, or any other layout.  Shape:
+ *   { "idle": [0, 5], "eatingBad": [5, 10], … }
+ */
+const DEFAULT_MOOD_SEGMENTS = {
+  idle:        [0,   5],
+  eatingBad:   [5,  10],
+  eatingGood:  [10, 15],
+  celebrating: [15, 20],
+  sick:        [20, 25],
+};
+function PetVideoSegment({ src, mood, segments }) {
+  const videoRef = useRef(null);
+  const seg = (segments && segments[mood]) || DEFAULT_MOOD_SEGMENTS[mood] || [0, 2];
+  const [start, end] = seg;
+
+  // On mood change → seek to segment start and play.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const seek = () => {
+      try {
+        v.currentTime = Math.max(0, start);
+        const p = v.play();
+        if (p && typeof p.catch === "function") p.catch(() => {});
+      } catch {}
+    };
+    if (v.readyState >= 1) seek();
+    else v.addEventListener("loadedmetadata", seek, { once: true });
+    return () => v.removeEventListener("loadedmetadata", seek);
+  }, [start, mood, src]);
+
+  // While playing → if we cross the segment end, seek back to start.
+  // This is what makes the video "loop just the relevant mood".
+  const onTimeUpdate = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.currentTime >= end - 0.05) {
+      try { v.currentTime = start; } catch {}
+    }
+  };
+
+  return (
+    <video
+      ref={videoRef}
+      src={src}
+      // We DON'T set `loop` — we manage looping ourselves via the
+      // timeupdate seek above.
+      autoPlay
+      muted
+      playsInline
+      preload="auto"
+      onTimeUpdate={onTimeUpdate}
+      style={{
+        width: "100%",
+        height: "100%",
+        objectFit: "contain",
+        borderRadius: 12,
+      }}
+    />
+  );
+}
+
 // Lottie-react is loaded lazily so the bundle stays small until a
 // Lottie .json is actually present for some pet+mood combo.
 let _LottiePromise = null;
@@ -108,28 +187,88 @@ function PetLottie({ src }) {
 }
 
 function AnimatedPet({ type, mood, scale = 1 }) {
-  // Resolve which asset (if any) to render.  null while still probing,
-  // "svg" once we've decided to fall back, or { kind, src } when an
-  // actual asset is available.
-  const [asset, setAsset] = useState(null);
+  // Resolution order (first file that 200s wins):
+  //   /pets/<type>/all.mp4         — single 10s video; loop just the
+  //                                   segment for the current mood
+  //   /pets/<type>/all.json        — segment override map for all.mp4
+  //   /pets/<type>/<mood>.mp4      — per-mood looping clip
+  //   /pets/<type>/<mood>.json     — per-mood Lottie animation
+  //   inline SVG                   — final fallback
+  //
+  // The all.mp4 path is preferred because shipping ONE 10s clip per
+  // pet (15 total) is dramatically less work than shipping five
+  // 3s clips per pet (75 total).
+  const t = encodeURIComponent(type || "dog");
+  const m = encodeURIComponent(mood || "idle");
+  const [resolved, setResolved] = useState(null);
+
+  // Probe once per type — independent of mood — so all.mp4 stays put
+  // and just the segment range changes when mood changes.
+  const [bundle, setBundle] = useState(null);
   useEffect(() => {
     let cancelled = false;
-    const base = `/pets/${encodeURIComponent(type || "dog")}/${encodeURIComponent(mood || "idle")}`;
     (async () => {
-      // Prefer mp4 (smaller assets to source / record), then Lottie.
-      const mp4  = await probeAsset(`${base}.mp4`);
+      const allMp4 = await probeAsset(`/pets/${t}/all.mp4`);
       if (cancelled) return;
-      if (mp4) { setAsset({ kind: "video", src: mp4 }); return; }
-      const json = await probeAsset(`${base}.json`);
-      if (cancelled) return;
-      if (json) { setAsset({ kind: "lottie", src: json }); return; }
-      setAsset({ kind: "svg" });
+      if (allMp4) {
+        // Optional segment override.
+        let segments = null;
+        try {
+          const allJson = await probeAsset(`/pets/${t}/all.json`);
+          if (allJson) {
+            const r = await fetch(allJson);
+            if (r.ok) segments = await r.json();
+          }
+        } catch {}
+        if (cancelled) return;
+        setBundle({ kind: "all-mp4", src: allMp4, segments });
+        return;
+      }
+      setBundle({ kind: "per-mood" });
     })();
     return () => { cancelled = true; };
-  }, [type, mood]);
-  if (asset?.kind === "video")  return <div style={{ width: 220 * scale, height: 220 * scale }}><PetVideo src={asset.src} /></div>;
-  if (asset?.kind === "lottie") return <div style={{ width: 220 * scale, height: 220 * scale }}><PetLottie src={asset.src} /></div>;
-  // Default + asset==="svg": fall through to the inline SVG below.
+  }, [t]);
+
+  // For per-mood mode: probe the specific mood file each time mood changes.
+  useEffect(() => {
+    if (!bundle || bundle.kind !== "per-mood") {
+      setResolved(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const mp4 = await probeAsset(`/pets/${t}/${m}.mp4`);
+      if (cancelled) return;
+      if (mp4) { setResolved({ kind: "video", src: mp4 }); return; }
+      const lottie = await probeAsset(`/pets/${t}/${m}.json`);
+      if (cancelled) return;
+      if (lottie) { setResolved({ kind: "lottie", src: lottie }); return; }
+      setResolved({ kind: "svg" });
+    })();
+    return () => { cancelled = true; };
+  }, [bundle, t, m]);
+
+  if (bundle?.kind === "all-mp4") {
+    return (
+      <div style={{ width: 220 * scale, height: 220 * scale }}>
+        <PetVideoSegment src={bundle.src} mood={mood} segments={bundle.segments} />
+      </div>
+    );
+  }
+  if (resolved?.kind === "video") {
+    return (
+      <div style={{ width: 220 * scale, height: 220 * scale }}>
+        <PetVideo src={resolved.src} />
+      </div>
+    );
+  }
+  if (resolved?.kind === "lottie") {
+    return (
+      <div style={{ width: 220 * scale, height: 220 * scale }}>
+        <PetLottie src={resolved.src} />
+      </div>
+    );
+  }
   return <PetSvg type={type} mood={mood} scale={scale} />;
 }
 
