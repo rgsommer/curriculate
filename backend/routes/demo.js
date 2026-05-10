@@ -726,6 +726,180 @@ router.get("/nudge-inactive", async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  GET /followup-conference-visitors                                  */
+/*                                                                    */
+/*  One-tap intro email to every ConferenceLead that:                 *
+/*    • came in via source==="conference"                              *
+/*    • registeredAt within the last 60 days (so we're not emailing    *
+/*      ancient leads from old events)                                 *
+/*    • has NOT been followed-up before (conferenceFollowupAt null)   *
+/*                                                                    *
+/*  Sends a friendly intro: features highlight, what other Curriculate */
+/*  tools exist, and an offer to redeem their 1-month free trial      */
+/*  that expires 30 days after the conference (registeredAt + 30d).   */
+/* ------------------------------------------------------------------ */
+router.get("/followup-conference-visitors", async (req, res) => {
+  try {
+    const key = req.query.key;
+    const expected = process.env.ADMIN_API_TOKEN || process.env.ADMIN_API_KEY;
+    if (!expected || key !== expected) {
+      return res.status(401).type("html").send("<h1>Unauthorized</h1>");
+    }
+
+    const now = new Date();
+    const sixtyDays = new Date(now.getTime() - 60 * 86400e3);
+
+    const candidates = await ConferenceLead.find({
+      email: { $exists: true, $ne: "" },
+      source: "conference",
+      registeredAt: { $gte: sixtyDays },
+      $or: [
+        { conferenceFollowupAt: { $exists: false } },
+        { conferenceFollowupAt: null },
+      ],
+    }).limit(200).lean();
+
+    if (candidates.length === 0) {
+      return res.type("html").send(
+        `<html><body style="font-family:system-ui;padding:32px;max-width:540px;margin:0 auto;">
+        <h1>No conference visitors to follow up</h1>
+        <p>Everyone in the last 60 days who registered as a conference
+        visitor has already been contacted.</p>
+        </body></html>`
+      );
+    }
+
+    let sent = 0;
+    const failed = [];
+    for (const lead of candidates) {
+      const firstName = String(lead.name || "").split(" ")[0] || "there";
+      const conferenceLabel = lead.conference && lead.conference !== "general"
+        ? lead.conference
+        : "the conference";
+      const trialExpires = new Date(
+        new Date(lead.registeredAt || now).getTime() + 30 * 86400e3
+      );
+      const expiresStr = trialExpires.toLocaleDateString("en-CA", {
+        month: "long", day: "numeric", year: "numeric",
+      });
+      const promoCode = lead.promoCode || "CONFERENCE2025";
+
+      const html = `
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:580px;margin:0 auto;background:#fff;">
+          <div style="text-align:center;background:linear-gradient(135deg,#2563eb,#7c3aed);border-radius:16px 16px 0 0;padding:30px 20px;">
+            <img src="https://curriculate.net/images/mascot/promo/1.png" alt="Curriculate mascot" style="width:80px;height:80px;margin-bottom:6px;" />
+            <div style="font-size:26px;font-weight:900;color:#fff;letter-spacing:-0.3px;">Great meeting you, ${esc(firstName)}!</div>
+            <div style="font-size:13px;color:rgba(255,255,255,0.92);margin-top:6px;font-weight:700;">
+              From everyone at Curriculate — thanks for stopping by ${esc(conferenceLabel)}.
+            </div>
+          </div>
+
+          <div style="padding:24px 24px 14px;border:1px solid #e2e8f0;border-top:none;color:#0f172a;line-height:1.55;">
+            <p style="margin:0 0 14px;font-size:15px;">
+              Quick recap of what's in the toolkit so you can pick what fits your classroom first:
+            </p>
+
+            <!-- Feature cards -->
+            <div style="display:block;margin:0 0 14px;">
+              <div style="border:1px solid #e2e8f0;border-radius:14px;padding:14px 16px;background:linear-gradient(135deg,#fafafa,#f1f5f9);margin-bottom:10px;">
+                <div style="font-weight:900;font-size:14px;color:#0f172a;">🎮 Curriculate (Scavenger Hunts)</div>
+                <div style="font-size:13px;color:#475569;margin-top:4px;">
+                  AI-generated interactive task stations.  Describe a lesson, the AI builds activities (sort, mime, mad-dash, peer-edit, riddles, debate…), kids work through them in teams.
+                </div>
+                <div style="font-size:11px;color:#3b82f6;margin-top:6px;font-weight:800;">
+                  → curriculate.net
+                </div>
+              </div>
+
+              <div style="border:1px solid #e2e8f0;border-radius:14px;padding:14px 16px;background:linear-gradient(135deg,#fef3c7,#fde68a);margin-bottom:10px;">
+                <div style="font-weight:900;font-size:14px;color:#0f172a;">📝 Pulse Grading</div>
+                <div style="font-size:13px;color:#475569;margin-top:4px;">
+                  Snap a photo of a quiz, journal, or rubric.  AI returns a graded report
+                  with feedback voice, per-student trend, well-being concerns, and Edsby-ready CSV.
+                </div>
+                <div style="font-size:11px;color:#92400e;margin-top:6px;font-weight:800;">
+                  → curriculate.net/grading
+                </div>
+              </div>
+
+              <div style="border:1px solid #e2e8f0;border-radius:14px;padding:14px 16px;background:linear-gradient(135deg,#dcfce7,#bbf7d0);">
+                <div style="font-weight:900;font-size:14px;color:#0f172a;">🏃 Field Day</div>
+                <div style="font-size:13px;color:#475569;margin-top:4px;">
+                  Outdoor track-meet manager — events, heats, scoring, records, and personal-best tracking.
+                </div>
+                <div style="font-size:11px;color:#15803d;margin-top:6px;font-weight:800;">
+                  → curriculate.net/fieldday
+                </div>
+              </div>
+            </div>
+
+            <!-- Trial offer -->
+            <div style="margin-top:18px;border-radius:16px;border:2px solid #f59e0b;background:linear-gradient(135deg,#fffbeb,#fef3c7);padding:16px;text-align:center;">
+              <div style="font-size:12px;font-weight:900;color:#92400e;letter-spacing:0.5px;text-transform:uppercase;">
+                🎟️ Conference offer — yours
+              </div>
+              <div style="font-size:22px;font-weight:1000;color:#78350f;margin-top:4px;">
+                1 month FREE
+              </div>
+              <div style="font-size:13px;color:#78350f;margin-top:4px;">
+                Use code <span style="display:inline-block;padding:4px 10px;background:#fff;border:2px dashed #f59e0b;border-radius:8px;font-weight:900;letter-spacing:1px;color:#78350f;">${esc(promoCode)}</span>
+              </div>
+              <div style="font-size:12px;color:#92400e;margin-top:8px;font-weight:700;">
+                Expires ${expiresStr} — 30 days from when we met.
+              </div>
+              <a href="https://www.curriculate.net/pricing?promo=${encodeURIComponent(promoCode)}&ref=conference-followup"
+                 style="display:inline-block;margin-top:14px;padding:12px 28px;background:linear-gradient(135deg,#f97316,#dc2626);color:#fff;text-decoration:none;border-radius:12px;font-weight:900;font-size:14px;box-shadow:0 6px 18px rgba(220,38,38,0.35);">
+                Redeem free month →
+              </a>
+            </div>
+
+            <p style="margin:18px 0 4px;font-size:13px;color:#64748b;text-align:center;">
+              Questions, feedback, or wanting a walkthrough?  Reply to this email — it goes to a real person.
+            </p>
+          </div>
+
+          <div style="background:#f8fafc;border-radius:0 0 16px 16px;padding:14px 20px;border:1px solid #e2e8f0;border-top:none;text-align:center;font-size:11px;color:#94a3b8;">
+            Curriculate · <a href="https://www.curriculate.net" style="color:#3b82f6;text-decoration:none;">curriculate.net</a>
+          </div>
+        </div>
+      `;
+      try {
+        await sendSystemEmail({
+          to: lead.email,
+          subject: `${firstName}, your Curriculate free month is waiting (1 of 3 tools to try)`,
+          html,
+        });
+        await ConferenceLead.updateOne(
+          { _id: lead._id },
+          { $set: { conferenceFollowupAt: now } }
+        );
+        sent += 1;
+      } catch (e) {
+        console.warn("[demo/followup-conference-visitors] failed for", lead.email, e.message);
+        failed.push(lead.email);
+      }
+    }
+
+    res.type("html").send(`
+      <html><body style="font-family:system-ui;padding:32px;max-width:540px;margin:0 auto;">
+      <h1>📬 ${sent} conference follow-up${sent === 1 ? "" : "s"} sent</h1>
+      <p>Recipients: registered ≤60 days ago · source=conference · never contacted before.</p>
+      ${failed.length ? `<p style="color:#dc2626;"><b>${failed.length} failed:</b> ${failed.join(", ")}</p>` : ""}
+      <ul>
+        ${candidates
+          .filter((l) => !failed.includes(l.email))
+          .map((l) => `<li>${l.name} &lt;${l.email}&gt; · ${l.conference || "general"}</li>`)
+          .join("")}
+      </ul>
+      </body></html>
+    `);
+  } catch (err) {
+    console.error("[demo/followup-conference-visitors] Error:", err.message);
+    res.status(500).type("html").send(`<h1>Failed</h1><pre>${String(err.message)}</pre>`);
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  GET /activity                                                      */
 /*  Teacher dashboard: list student activity, filterable by source/    */
 /*  classroom. Auth via query param or teacher token.                  */
@@ -1216,6 +1390,7 @@ async function sendAdminNotification(lead) {
   const skipped = (lead.results || []).filter((r) => r.skipped);
   const engagement = classifyEngagement(lead.results, lead.totalPoints);
   const isClassroom = lead.source === "classroom";
+  const isConference = lead.source === "conference";
   const wasOfferedReferral = engagement.level === "keener" && !isClassroom;
 
   // ── Top 3 weekly + Top 3 all-time → gift card decisions ──────────────
@@ -1433,18 +1608,25 @@ async function sendAdminNotification(lead) {
       ${allTimeTopHtml}
       ${leaderboardHtml}
 
-      <!-- Admin actions: nudge inactive practicers.  Tokenised GET so
-           the button works directly from the email client. -->
+      <!-- Admin actions: nudge inactive practicers.  Tokenised GETs so
+           the buttons work directly from the email client. -->
       <div style="background:#fff;padding:14px 24px;border:1px solid #e2e8f0;border-top:none;text-align:center;">
         <div style="font-weight:900;font-size:13px;margin-bottom:8px;color:#1e293b;">
-          📬 Re-engagement
+          📬 Outreach
         </div>
         <a href="${process.env.PUBLIC_API_BASE || "https://api.curriculate.net"}/api/conference/nudge-inactive?key=${encodeURIComponent(process.env.ADMIN_API_TOKEN || process.env.ADMIN_API_KEY || "")}"
-           style="display:inline-block;padding:10px 20px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:800;font-size:13px;text-decoration:none;">
+           style="display:inline-block;padding:10px 20px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:800;font-size:13px;text-decoration:none;margin:4px;">
           Nudge inactive practicers
         </a>
+        ${isConference ? `
+        <a href="${process.env.PUBLIC_API_BASE || "https://api.curriculate.net"}/api/conference/followup-conference-visitors?key=${encodeURIComponent(process.env.ADMIN_API_TOKEN || process.env.ADMIN_API_KEY || "")}"
+           style="display:inline-block;padding:10px 20px;border-radius:10px;background:linear-gradient(135deg,#f97316,#dc2626);color:#fff;font-weight:800;font-size:13px;text-decoration:none;margin:4px;">
+          Follow up with conference visitors
+        </a>
+        ` : ""}
         <div style="margin-top:8px;font-size:11px;color:#64748b;">
-          Sends a personalised email to anyone idle ≥4 days who hasn't been nudged in the last 7.
+          Practice nudge: idle ≥4 days, not nudged in 7.
+          ${isConference ? "<br/>Conference follow-up: registered ≤60 days ago, never contacted, with 30-day free-trial offer." : ""}
         </div>
       </div>
 

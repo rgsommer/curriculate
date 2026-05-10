@@ -30,6 +30,14 @@ const conferenceLeadSchema = new mongoose.Schema(
     // returning practicer never gets spammed more than once a week.
     lastNudgeAt: { type: Date, default: null },
 
+    // First-touch conference follow-up.  Set once when the admin
+    // tap-fires the conference-visitor introductory email.  Stays
+    // set forever after — the button only ever sends to leads who
+    // have NEVER been followed up.  Conference visitors get one
+    // intro email; ongoing engagement is handled by the regular
+    // nudge flow above.
+    conferenceFollowupAt: { type: Date, default: null },
+
     // Trail of recent session subtotals so the admin notification can
     // compute a "this week" leaderboard (top 3 → weekly gift card).
     // Capped to the last 30 entries via $push $slice on insert; that's
