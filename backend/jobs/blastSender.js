@@ -267,7 +267,7 @@ const DEFAULT_TEMPLATES = {
         </p>
         {{role_pitch}}
         {{christian_perspective}}
-        <p style="margin:14px 0 0;font-size:14px;color:#475569;">You can explore a live demo and sample student work at <a href="https://www.curriculate.net" style="color:#2563eb;">curriculate.net</a>. If it seems like a fit, I'd be happy to help one of your teachers pilot it free during this R&D phase.</p>
+        <p style="margin:14px 0 0;font-size:14px;color:#475569;">You can explore a live demo and sample student work at <a href="https://www.curriculate.net" style="color:#2563eb;">curriculate.net</a>. If it seems like a fit, please feel free to encourage your teachers to pilot it free during this R&D phase.</p>
       `),
     },
     fr: {
@@ -281,7 +281,7 @@ const DEFAULT_TEMPLATES = {
         </p>
         {{role_pitch}}
         {{christian_perspective}}
-        <p style="margin:14px 0 0;font-size:14px;color:#475569;">Vous pouvez explorer une démonstration et des exemples sur <a href="https://www.curriculate.net" style="color:#2563eb;">curriculate.net</a>. Si cela vous semble pertinent, je serais ravi d'aider un de vos enseignants à l'essayer gratuitement durant cette phase de R&D.</p>
+        <p style="margin:14px 0 0;font-size:14px;color:#475569;">Vous pouvez explorer une démonstration et des exemples sur <a href="https://www.curriculate.net" style="color:#2563eb;">curriculate.net</a>. Si cela vous semble pertinent, n'hésitez pas à encourager vos enseignants à l'essayer gratuitement durant cette phase de R&D.</p>
       `),
     },
   },
@@ -295,7 +295,7 @@ const DEFAULT_TEMPLATES = {
         {{role_pitch}}
         {{christian_perspective}}
         ${PROOF_BLOCK_EN}
-        <p style="margin:14px 0 0;font-size:14px;color:#475569;">You can explore a live demo and sample student reports at <a href="https://www.curriculate.net/pulse" style="color:#2563eb;">curriculate.net/pulse</a>. If it seems like a fit for your teachers, I'd be happy to help your staff pilot it free during this R&D phase — or send a sample graded paper if you'd rather just see one first.</p>
+        <p style="margin:14px 0 0;font-size:14px;color:#475569;">You can explore a live demo and sample student reports at <a href="https://www.curriculate.net/pulse" style="color:#2563eb;">curriculate.net/pulse</a>. If it seems like a fit, please feel free to encourage your teachers to pilot it free during this R&D phase — or just reply if you'd rather see a sample graded paper first.</p>
       `),
     },
     fr: {
@@ -307,7 +307,7 @@ const DEFAULT_TEMPLATES = {
         {{role_pitch}}
         {{christian_perspective}}
         ${PROOF_BLOCK_FR}
-        <p style="margin:14px 0 0;font-size:14px;color:#475569;">Vous pouvez explorer une démonstration et des exemples de rapports sur <a href="https://www.curriculate.net/pulse" style="color:#2563eb;">curriculate.net/pulse</a>. Si cela vous semble pertinent, je serais ravi d'aider votre équipe à l'essayer gratuitement durant cette phase de R&D — ou simplement de vous envoyer un exemple de copie corrigée.</p>
+        <p style="margin:14px 0 0;font-size:14px;color:#475569;">Vous pouvez explorer une démonstration et des exemples de rapports sur <a href="https://www.curriculate.net/pulse" style="color:#2563eb;">curriculate.net/pulse</a>. Si cela vous semble pertinent, n'hésitez pas à encourager vos enseignants à l'essayer gratuitement durant cette phase de R&D — ou répondez simplement à cet e-mail si vous préférez d'abord voir un exemple de copie corrigée.</p>
       `),
     },
   },
@@ -326,7 +326,7 @@ const DEFAULT_TEMPLATES = {
           <li>Import your Excel roster, print 1″×1″ Avery ribbon labels</li>
         </ul>
         {{role_pitch}}
-        <p style="margin:14px 0 0;font-size:14px;color:#475569;">There's a short demo and free pilot access at <a href="https://www.curriculate.net/meet-fieldday" style="color:#2563eb;">curriculate.net/meet-fieldday</a>. If it looks useful for your athletics team, I'd be glad to help you set it up before this year's field day.</p>
+        <p style="margin:14px 0 0;font-size:14px;color:#475569;">There's a short demo and free pilot access at <a href="https://www.curriculate.net/meet-fieldday" style="color:#2563eb;">curriculate.net/meet-fieldday</a>. If it looks useful, please feel free to encourage your athletics team or PE department to pilot it free before this year's field day.</p>
       `),
     },
     fr: {
@@ -343,7 +343,7 @@ const DEFAULT_TEMPLATES = {
           <li>Importation Excel et étiquettes Avery 1″×1″ pour les rubans</li>
         </ul>
         {{role_pitch}}
-        <p style="margin:14px 0 0;font-size:14px;color:#475569;">Une démonstration et un accès pilote gratuit sont disponibles sur <a href="https://www.curriculate.net/meet-fieldday" style="color:#2563eb;">curriculate.net/meet-fieldday</a>. Si cela vous semble utile pour votre équipe sportive, je serais ravi de vous aider à le mettre en place avant la journée des jeux.</p>
+        <p style="margin:14px 0 0;font-size:14px;color:#475569;">Une démonstration et un accès pilote gratuit sont disponibles sur <a href="https://www.curriculate.net/meet-fieldday" style="color:#2563eb;">curriculate.net/meet-fieldday</a>. Si cela vous semble utile, n'hésitez pas à encourager votre équipe sportive ou votre département d'éducation physique à l'essayer gratuitement avant la journée des jeux.</p>
       `),
     },
   },
