@@ -141,9 +141,9 @@ function bucketRole(role = "") {
 
 const ROLE_PITCH = {
   curriculate: {
-    principal: `<p>For principals I talk to, this is mostly a <strong>teacher-retention</strong> story — staff who use it tell me it gives them back their evenings and makes lesson prep feel manageable again. The parent-facing reports also raise the school's communication game without adding to anyone's plate.</p>`,
+    principal: `<p>For principals I talk to, this is mostly a <strong>teacher-retention</strong> story — staff who use it tell me it gives them back their evenings and makes review-day and substitute-day prep feel manageable again. Gr 5-9 students stay engaged in ways a worksheet doesn't quite manage.</p>`,
     vp:        `<p>For VPs the easiest wins are workflow — Curriculate handles station rotation and student management during a lesson so teachers can actually circulate and coach. Implementation is about <strong>10 minutes per teacher</strong> in my experience.</p>`,
-    ad:        `<p>If your program runs eligibility checks, post-game reflections, or weekly accountability work, Curriculate's task templates make it a 5-minute job instead of paperwork. Students get instant feedback and you get a record.</p>`,
+    ad:        `<p>If your program runs eligibility check-ins, post-game reflections, or weekly accountability work, Curriculate's station templates turn that into a 5-minute classroom routine instead of paperwork.</p>`,
     default:   `<p>The teachers in our pilots are using it for review-day stations, end-of-unit consolidation, and substitute-day plans that don't fall apart.</p>`,
   },
   pulse: {
@@ -259,25 +259,29 @@ const DEFAULT_TEMPLATES = {
     en: {
       subject: "Interactive lessons built by an Ontario classroom teacher",
       body: wrap(`
-        <p>Hey! It's Richard. I just ran <strong>Curriculate</strong> scavenger-hunt activities with my own students at {{school}} (well — at a school much like {{school}}) and wanted to share it with one or two principals I respect in the area.</p>
-        <p>Quick context: I'm a junior-high teacher in Ontario who built Curriculate after personally running it with my own classes for months. It's in an active pilot phase — we're inviting a small number of schools to use it free of charge during R&D in exchange for thoughtful feedback from teachers, students, and parents.</p>
-        <p>What it actually does: you type a lesson topic, the system generates a station-based activity in about 30 seconds, students rotate through it on phones or Chromebooks, and you get a live view of where each student is and what they're stuck on.</p>
+        <p>Hey! It's Richard. I just ran <strong>Curriculate</strong> scavenger-hunt activities with my own Ontario junior-high classes and wanted to share it with one or two principals I respect in the area.</p>
+        <p>Quick context: I'm a junior-high teacher in Ontario who built Curriculate after personally running it with my own classes for months. It's in an active pilot phase — we're inviting a small number of schools to use it free of charge during R&D in exchange for thoughtful feedback from teachers and students.</p>
+        <p>In practice, teachers type a lesson topic, Curriculate generates a station-based activity in about 30 seconds, students rotate through it on phones or Chromebooks, and the teacher gets a live view of participation, progress, and misconceptions.</p>
+        <p style="margin:14px 0;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:14px;">
+          Concrete example: last month my Grade 7 students worked through a <em>War of 1812</em> station activity — teams rotating through QR-coded historical challenges while I monitored progress live from my laptop. By the end of the period every student had hit every station. That doesn't happen with a worksheet.
+        </p>
         {{role_pitch}}
         {{christian_perspective}}
-        ${PROOF_BLOCK_EN}
-        <p>If you'd like to try it with one of your teachers, I can set up a free pilot account and walk them through it in 15 minutes — or just send a sample activity for {{school}}'s subject area. Either is fine.</p>
+        <p style="margin:14px 0 0;font-size:14px;color:#475569;">If you'd like to try it with one of your teachers, I can set up a free pilot account and walk them through it in 15 minutes — or just send a sample activity tailored to a subject area at {{school}}. Either is fine.</p>
       `),
     },
     fr: {
       subject: "Leçons interactives conçues par un enseignant ontarien",
       body: wrap(`
-        <p>Bonjour ! Je m'appelle Richard. Je viens d'utiliser <strong>Curriculate</strong> avec mes propres élèves et je voulais en parler à quelques directions que j'estime dans la région.</p>
-        <p>Contexte rapide : je suis enseignant au secondaire premier cycle en Ontario. J'ai bâti Curriculate après l'avoir utilisé personnellement dans mes classes pendant des mois. Nous sommes en phase pilote — nous invitons un petit nombre d'écoles à utiliser l'outil gratuitement durant cette phase de R&D, en échange de commentaires réfléchis.</p>
-        <p>Ce qu'il fait : vous tapez un sujet, le système génère une activité par stations en environ 30 secondes, les élèves circulent sur leurs appareils, et vous obtenez une vue en direct de leur progression.</p>
+        <p>Bonjour ! Je m'appelle Richard. Je viens d'utiliser <strong>Curriculate</strong> avec mes propres élèves du premier cycle du secondaire en Ontario et je voulais en parler à quelques directions que j'estime.</p>
+        <p>Contexte rapide : je suis enseignant en Ontario. J'ai bâti Curriculate après l'avoir utilisé personnellement dans mes classes pendant des mois. Nous sommes en phase pilote — nous invitons un petit nombre d'écoles à l'utiliser gratuitement durant cette phase de R&D, en échange de commentaires réfléchis.</p>
+        <p>En pratique, l'enseignant tape un sujet, Curriculate génère une activité par stations en environ 30 secondes, les élèves circulent sur téléphones ou Chromebooks, et l'enseignant obtient une vue en direct de la participation, des progrès et des conceptions erronées.</p>
+        <p style="margin:14px 0;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:14px;">
+          Exemple concret : le mois dernier, mes élèves de 7<sup>e</sup> année ont fait une activité par stations sur la <em>Guerre de 1812</em> — des équipes circulaient entre des défis historiques avec codes QR pendant que je suivais leurs progrès depuis mon ordinateur. À la fin de la période, chaque élève avait visité chaque station.
+        </p>
         {{role_pitch}}
         {{christian_perspective}}
-        ${PROOF_BLOCK_FR}
-        <p>Si vous souhaitez l'essayer avec un de vos enseignants, je peux ouvrir un compte pilote gratuit et faire une démonstration de 15 minutes — ou simplement envoyer un exemple d'activité adaptée à {{school}}.</p>
+        <p style="margin:14px 0 0;font-size:14px;color:#475569;">Si vous souhaitez l'essayer avec un de vos enseignants, je peux ouvrir un compte pilote gratuit et faire une démonstration de 15 minutes — ou envoyer un exemple d'activité adaptée à {{school}}.</p>
       `),
     },
   },
