@@ -169,7 +169,32 @@ export default function MadDashTask({
     return p.map(normalizeColorName).filter(Boolean);
   }, [task]);
 
-  const route = useMemo(() => pickGivenRoute(task, palette), [task, palette]);
+  // routeKey bumps every time we want a fresh sequence (e.g. after a
+  // wrong scan).  The route memo is keyed off it so a new sequence is
+  // generated on demand.
+  const [routeKey, setRouteKey] = useState(0);
+  const route = useMemo(
+    () => pickGivenRoute(task, palette),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [task, palette, routeKey]
+  );
+
+  // Practice-mode tappable buttons used to render in palette order,
+  // which incidentally matched the route order — testers noted the
+  // task became trivial.  Shuffle a copy of the palette per routeKey
+  // (so it changes every time we generate a new route) but keep it
+  // stable within the same route so a player isn't whip-lashed mid-run.
+  const practiceButtonOrder = useMemo(() => {
+    const arr = [...palette].slice(0, 8);
+    // Fisher-Yates with a routeKey-derived seed for determinism in tests.
+    let seed = (routeKey + 1) * 9301 + 49297;
+    for (let i = arr.length - 1; i > 0; i -= 1) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      const j = seed % (i + 1);
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, [palette, routeKey]);
 
   const revealMs = Number(task?.config?.revealMs || 6000);
   const goVideoSrc = String(task?.config?.goVideoSrc || "/1-2-3-go.mp4");
@@ -231,8 +256,12 @@ export default function MadDashTask({
     if (!ok) {
       setErrorFlash(true);
       window.setTimeout(() => setErrorFlash(false), 220);
-      // Wrong scan resets progress but timer keeps running (never resets)
+      // Tester request: a wrong scan should hand the player a NEW
+      // sequence to start over (not just reset progress on the same
+      // route).  Bump routeKey to regenerate route + reset progress.
+      // Timer keeps running — that's the penalty.
       setScanIdx(0);
+      setRouteKey((k) => k + 1);
       return false;
     }
 
@@ -675,7 +704,7 @@ export default function MadDashTask({
                     gap: 10,
                   }}
                 >
-                  {palette.slice(0, 8).map((c) => (
+                  {practiceButtonOrder.map((c) => (
                     <button
                       key={c}
                       type="button"

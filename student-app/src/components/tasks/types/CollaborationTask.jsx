@@ -54,11 +54,24 @@ export default function CollaborationTask({
   showPartnerReply,
   onPartnerReply,
   memberNames = [],
+  practiceMode = false,
 }) {
-  const safeMembers = useMemo(
-    () => (Array.isArray(memberNames) ? memberNames.filter(Boolean) : []),
-    [memberNames]
-  );
+  // In practice mode, manufacture three "bot teammates" so the
+  // simulator actually demonstrates the multi-player attribution
+  // experience (otherwise there's only one bubble to drag, which
+  // testers found pointless).  Real classroom / conference sessions
+  // fall through to the actual roster.
+  const PRACTICE_BOTS = ["Paul (bot)", "Bernadette (bot)"];
+  const safeMembers = useMemo(() => {
+    const real = (Array.isArray(memberNames) ? memberNames : [])
+      .map((n) => String(n || "").trim())
+      .filter(Boolean);
+    if (practiceMode) {
+      const me = real[0] || "You";
+      return [me, ...PRACTICE_BOTS];
+    }
+    return real;
+  }, [memberNames, practiceMode]);
   const hasMembers = safeMembers.length > 0;
 
   // Structured points the team is composing.  Each point has its
@@ -188,6 +201,19 @@ export default function CollaborationTask({
     return Math.round(100 * (0.7 * attrShare + 0.3 * breadth));
   })();
 
+  // Per-player contribution count.  Tester wanted to see "Richard 1,
+  // Paul 0, Bernadette 0" instead of a single 1/1 fraction.
+  const perMemberCount = useMemo(() => {
+    const map = Object.fromEntries(safeMembers.map((n) => [n, 0]));
+    writtenPoints.forEach((p) =>
+      p.contributors.forEach((n) => {
+        if (n in map) map[n] += 1;
+        else map[n] = (map[n] || 0) + 1; // mark non-roster names too
+      })
+    );
+    return map;
+  }, [safeMembers, writtenPoints]);
+
   const handleMainSubmit = () => {
     if (disabled || !canSubmitMain) return;
     const main = writtenPoints.map((p) => p.text.trim()).join("\n");
@@ -204,6 +230,7 @@ export default function CollaborationTask({
       })),
       uniqueContributors,
       engagementPct,
+      perMemberCount,
     });
   };
 
@@ -419,9 +446,46 @@ export default function CollaborationTask({
               + Add point
             </GhostButton>
             <Pill style={{ fontSize: 11, fontWeight: 800, color: "#7c3aed" }}>
-              Engagement {engagementPct}% · {uniqueContributors}/{safeMembers.length || "?"} voices
+              Engagement {engagementPct}%
             </Pill>
           </div>
+
+          {/* Per-player engagement breakdown (e.g. "Richard 1 · Paul 0 ·
+              Bernadette 0").  Tester wanted to see contribution counts
+              named individually rather than just 1/1. */}
+          {hasMembers && (
+            <div
+              style={{
+                marginTop: 8,
+                padding: "8px 12px",
+                borderRadius: 12,
+                background: "rgba(124,58,237,0.06)",
+                border: "1px solid rgba(124,58,237,0.18)",
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                alignItems: "center",
+                fontSize: 12,
+                fontWeight: 800,
+                color: "rgba(15,23,42,0.85)",
+              }}
+            >
+              <span style={{ color: "#7c3aed" }}>Per-player:</span>
+              {safeMembers.map((n) => {
+                const c = perMemberCount[n] || 0;
+                return (
+                  <span
+                    key={n}
+                    style={{
+                      color: c > 0 ? "#16a34a" : "rgba(15,23,42,0.5)",
+                    }}
+                  >
+                    {n} {c}
+                  </span>
+                );
+              })}
+            </div>
+          )}
 
           <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
             <PrimaryButton

@@ -202,12 +202,81 @@ export default function RolePlayDeckTask({
     });
   };
 
-  const finish = () => {
-    if (disabled) return;
+  // ──────────────────────────────────────────────────────────────────
+  // Peer-evaluation phase (tester request).  After "End role-play",
+  // each player in turn secretly rates the others 1–5 stars (15s
+  // timer) and the device passes around the team.
+  // ──────────────────────────────────────────────────────────────────
+  const PEER_EVAL_SECONDS = 15;
+  // null  → not in eval; "pass" → device-pass screen for next rater;
+  // "rate" → rater is rating; "done" → wraps up + auto-submit.
+  const [peerEvalPhase, setPeerEvalPhase] = useState(null);
+  const [peerEvalRaterIdx, setPeerEvalRaterIdx] = useState(0);
+  const [peerEvalSecondsLeft, setPeerEvalSecondsLeft] = useState(PEER_EVAL_SECONDS);
+  // ratings shape: { [raterIndex]: { [ratedIndex]: stars } }
+  const [peerEvalRatings, setPeerEvalRatings] = useState({});
 
+  // Hide automatically after the 15s timer + advance to next rater.
+  useEffect(() => {
+    if (peerEvalPhase !== "rate") return;
+    if (peerEvalSecondsLeft <= 0) {
+      // Move to the next rater (or finish).
+      const next = peerEvalRaterIdx + 1;
+      if (next >= playerCount) {
+        setPeerEvalPhase("done");
+      } else {
+        setPeerEvalRaterIdx(next);
+        setPeerEvalSecondsLeft(PEER_EVAL_SECONDS);
+        setPeerEvalPhase("pass");
+      }
+      return;
+    }
+    const t = setTimeout(
+      () => setPeerEvalSecondsLeft((s) => Math.max(0, s - 1)),
+      1000
+    );
+    return () => clearTimeout(t);
+  }, [peerEvalPhase, peerEvalSecondsLeft, peerEvalRaterIdx, playerCount]);
+
+  const setPeerStar = (ratedIdx, stars) => {
+    setPeerEvalRatings((prev) => {
+      const cur = prev[peerEvalRaterIdx] || {};
+      return {
+        ...prev,
+        [peerEvalRaterIdx]: { ...cur, [ratedIdx]: stars },
+      };
+    });
+  };
+
+  // Average per player across all rater scores.
+  const averageStarsPerPlayer = useMemo(() => {
+    const out = {};
+    Object.entries(peerEvalRatings).forEach(([raterIdx, scores]) => {
+      Object.entries(scores).forEach(([rIdx, stars]) => {
+        const k = String(rIdx);
+        if (!out[k]) out[k] = { sum: 0, count: 0 };
+        out[k].sum += Number(stars) || 0;
+        out[k].count += 1;
+      });
+    });
+    return Object.fromEntries(
+      Object.entries(out).map(([k, v]) => [k, v.count ? v.sum / v.count : 0])
+    );
+  }, [peerEvalRatings]);
+
+  // Once peerEvalPhase === "done" we wrap up and call finish().
+  useEffect(() => {
+    if (peerEvalPhase === "done") {
+      // small delay so the player sees the "All done — sending results" UI
+      const t = setTimeout(() => doFinishWithRatings(), 800);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peerEvalPhase]);
+
+  const doFinishWithRatings = () => {
     setOverlayMessage("✅ Role-play complete!");
     startOverlayTimer();
-
     onSubmit?.({
       type: task?.taskType || task?.type || "role-play-deck",
       completed: true,
@@ -217,9 +286,23 @@ export default function RolePlayDeckTask({
       assignedRoles,
       scenario,
       rolePlayComplete: true,
+      peerEvaluations: peerEvalRatings,
+      averageStarsPerPlayer,
     });
-
     socketEmit("roleplay:complete", { roomCode, teamId, taskId: task?._id || task?.id || null });
+  };
+
+  const finish = () => {
+    if (disabled) return;
+    if (playerCount < 2) {
+      // Solo / unknown roster — skip the peer-eval phase, just submit.
+      doFinishWithRatings();
+      return;
+    }
+    setPeerEvalRaterIdx(0);
+    setPeerEvalSecondsLeft(PEER_EVAL_SECONDS);
+    setPeerEvalRatings({});
+    setPeerEvalPhase("pass");
   };
 
   const headerBadge =
@@ -376,20 +459,29 @@ export default function RolePlayDeckTask({
                 <div style={{ marginTop: 12, display: "flex", justifyContent: "center" }}>
                   <button
                     type="button"
-                    onClick={() => setMysteryStage("draw")}
-                    disabled={disabled}
+                    onClick={() => {
+                      // Tester reported needing to tap Draw twice each turn.
+                      // Cause: two-button gate (this "I am X" button only set
+                      // mysteryStage to "draw"; you then had to tap a second
+                      // "Draw role card" button).  Now the same tap also
+                      // triggers drawRole on the next tick — single tap to
+                      // draw your card.
+                      setMysteryStage("draw");
+                      setTimeout(() => drawRole(), 0);
+                    }}
+                    disabled={disabled || deckSpinning}
                     style={{
                       padding: "12px 16px",
                       borderRadius: 999,
                       border: "none",
-                      background: disabled ? "#9ca3af" : ACCENT_PURPLE,
+                      background: disabled || deckSpinning ? "#9ca3af" : ACCENT_PURPLE,
                       color: "#fff",
                       fontWeight: 1000,
-                      cursor: disabled ? "not-allowed" : "pointer",
+                      cursor: disabled || deckSpinning ? "not-allowed" : "pointer",
                       minWidth: 260,
                     }}
                   >
-                    I am {currentPlayerLabel} — show my card
+                    {deckSpinning ? "🎴 Drawing…" : `I am ${currentPlayerLabel} — show my card`}
                   </button>
                 </div>
                 <div style={{ marginTop: 10, fontSize: "0.9rem", color: "#64748b" }}>
@@ -398,33 +490,30 @@ export default function RolePlayDeckTask({
               </div>
             )}
 
-            <div style={{ marginTop: 12, display: "flex", justifyContent: "center" }}>
-              <button
-                type="button"
-                onClick={drawRole}
-                disabled={disabled || deckSpinning || (mode === "mystery" && mysteryStage !== "draw")}
-                style={{
-                  padding: "14px 18px",
-                  borderRadius: 999,
-                  border: "none",
-                  background:
-                    disabled || deckSpinning || (mode === "mystery" && mysteryStage !== "draw")
-                      ? "#9ca3af"
-                      : ACCENT_GREEN,
-                  color: "#fff",
-                  fontWeight: 1000,
-                  fontSize: "1.05rem",
-                  cursor:
-                    disabled || deckSpinning || (mode === "mystery" && mysteryStage !== "draw")
-                      ? "not-allowed"
-                      : "pointer",
-                  minWidth: 220,
-                }}
-                title={mode === "mystery" && mysteryStage !== "draw" ? "Pass the device to the correct player first." : undefined}
-              >
-                {deckSpinning ? "🎴 Drawing…" : "🎴 Draw role card"}
-              </button>
-            </div>
+            {/* Standalone Draw Card button — kept for classic mode and as a
+                fallback if mystery mode is already in the "draw" stage. */}
+            {(mode === "classic" || (mode === "mystery" && mysteryStage === "draw")) && (
+              <div style={{ marginTop: 12, display: "flex", justifyContent: "center" }}>
+                <button
+                  type="button"
+                  onClick={drawRole}
+                  disabled={disabled || deckSpinning}
+                  style={{
+                    padding: "14px 18px",
+                    borderRadius: 999,
+                    border: "none",
+                    background: disabled || deckSpinning ? "#9ca3af" : ACCENT_GREEN,
+                    color: "#fff",
+                    fontWeight: 1000,
+                    fontSize: "1.05rem",
+                    cursor: disabled || deckSpinning ? "not-allowed" : "pointer",
+                    minWidth: 220,
+                  }}
+                >
+                  {deckSpinning ? "🎴 Drawing…" : "🎴 Draw role card"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -680,6 +769,154 @@ export default function RolePlayDeckTask({
           <div>
             <div style={{ fontSize: "2.4rem", fontWeight: 1000 }}>{overlayMessage}</div>
             <div style={{ marginTop: 18, fontSize: "1.2rem", opacity: 0.9 }}>Next in {overlayTimer}s…</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Peer-evaluation phase ────────────────────────────────────
+          Tester-requested: after the role-play wraps, each player in
+          turn rates the others 1–5 stars in 15s, then passes the
+          device.  Auto-advances to the next rater when the timer
+          hits 0 OR when the rater taps Done. */}
+      {peerEvalPhase && (
+        <div
+          style={{
+            position: "fixed", inset: 0,
+            background: "rgba(2,6,23,0.92)",
+            zIndex: 2200,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 18,
+          }}
+        >
+          <div
+            style={{
+              width: "min(560px, 92vw)",
+              borderRadius: 22,
+              background: "linear-gradient(180deg, #ffffff, #f8fafc)",
+              border: "1px solid rgba(226,232,240,1)",
+              boxShadow: "0 30px 80px rgba(0,0,0,0.35)",
+              padding: 22,
+              color: "#0f172a",
+              textAlign: "center",
+            }}
+          >
+            {peerEvalPhase === "pass" && (
+              <>
+                <div style={{ fontSize: "1.6rem", fontWeight: 1000 }}>
+                  📲 Pass the device
+                </div>
+                <div style={{ marginTop: 8, fontSize: "1.05rem", color: "#475569", fontWeight: 800 }}>
+                  Hand it to <span style={{ color: "#7c3aed" }}>{playerNames[peerEvalRaterIdx] || `Player ${peerEvalRaterIdx + 1}`}</span>.
+                </div>
+                <div style={{ marginTop: 4, fontSize: "0.95rem", color: "#64748b" }}>
+                  Rate the others 1–5 stars on their acting in the role-play. Auto-hides after 15s.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPeerEvalSecondsLeft(PEER_EVAL_SECONDS);
+                    setPeerEvalPhase("rate");
+                  }}
+                  style={{
+                    marginTop: 18,
+                    padding: "12px 18px",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#7c3aed",
+                    color: "#fff",
+                    fontWeight: 1000,
+                    cursor: "pointer",
+                    minWidth: 220,
+                  }}
+                >
+                  Start my 15s
+                </button>
+              </>
+            )}
+
+            {peerEvalPhase === "rate" && (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                  <div style={{ fontSize: "1.1rem", fontWeight: 1000 }}>
+                    {playerNames[peerEvalRaterIdx] || `Player ${peerEvalRaterIdx + 1}`} rates the others
+                  </div>
+                  <div style={{ fontSize: "1.4rem", fontWeight: 1000, color: peerEvalSecondsLeft <= 5 ? "#dc2626" : "#0f172a" }}>
+                    {peerEvalSecondsLeft}s
+                  </div>
+                </div>
+                <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                  {playerNames.map((name, idx) => {
+                    if (idx === peerEvalRaterIdx) return null;
+                    const stars = peerEvalRatings[peerEvalRaterIdx]?.[idx] || 0;
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          display: "flex", alignItems: "center",
+                          justifyContent: "space-between", gap: 10,
+                          padding: "10px 12px",
+                          borderRadius: 12,
+                          background: "#f1f5f9",
+                          border: "1px solid #e2e8f0",
+                        }}
+                      >
+                        <div style={{ fontWeight: 900 }}>{name}</div>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() => setPeerStar(idx, n)}
+                              style={{
+                                width: 32, height: 32,
+                                borderRadius: 8,
+                                border: "1px solid rgba(15,23,42,0.18)",
+                                background: stars >= n ? "#fbbf24" : "#fff",
+                                fontWeight: 1000,
+                                fontSize: 14,
+                                cursor: "pointer",
+                                color: stars >= n ? "#7c2d12" : "#94a3b8",
+                              }}
+                              aria-label={`Give ${name} ${n} stars`}
+                            >
+                              {stars >= n ? "★" : "☆"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Done early — collapse the timer to 0 so the
+                    // existing effect rolls us to the next rater.
+                    setPeerEvalSecondsLeft(0);
+                  }}
+                  style={{
+                    marginTop: 18,
+                    padding: "10px 16px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(15,23,42,0.18)",
+                    background: "#fff",
+                    fontWeight: 900,
+                    cursor: "pointer",
+                  }}
+                >
+                  I'm done — pass it on ▶
+                </button>
+              </>
+            )}
+
+            {peerEvalPhase === "done" && (
+              <div>
+                <div style={{ fontSize: "1.6rem", fontWeight: 1000 }}>✨ All ratings in</div>
+                <div style={{ marginTop: 8, fontSize: "0.95rem", color: "#64748b" }}>
+                  Sending the team's results…
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

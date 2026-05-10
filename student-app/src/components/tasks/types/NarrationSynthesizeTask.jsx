@@ -540,6 +540,31 @@ export default function NarrationSynthesizeTask({
         </div>
       )}
 
+      {/* Speaker hand-off banner — large, unmistakable. */}
+      {phase === "prompt" && (
+        <div
+          style={{
+            margin: "12px 0 0",
+            padding: "14px 16px",
+            borderRadius: 14,
+            background: "linear-gradient(135deg, rgba(254,243,199,0.85), rgba(255,255,255,0.95))",
+            border: "1.5px solid rgba(202,138,4,0.45)",
+            textAlign: "center",
+            fontWeight: 900,
+          }}
+        >
+          <div style={{ fontSize: 14, color: "#78350f", letterSpacing: 0.2 }}>
+            📲 Pass the device to
+          </div>
+          <div style={{ fontSize: 22, color: "#0f172a", marginTop: 2 }}>
+            {currentName}
+          </div>
+          <div style={{ fontSize: 12, color: "#92400e", fontWeight: 700, marginTop: 2 }}>
+            They'll explain the concept out loud.
+          </div>
+        </div>
+      )}
+
       {/* Start Turn button */}
       {phase === "prompt" && (
         <div style={footerRow}>
@@ -547,7 +572,7 @@ export default function NarrationSynthesizeTask({
             style={btnPrimaryActive}
             onClick={goToSpeaking}
           >
-            🎤 Start Turn
+            🎤 {currentName} — Start Turn
           </button>
         </div>
       )}
@@ -564,8 +589,13 @@ export default function NarrationSynthesizeTask({
         </div>
       )}
 
-      {/* Rating section */}
-      {phase === "rate" && (
+      {/* Rating section.  The NEXT player around the table rates the
+          one who just spoke — so it's a true peer rating, not self.
+          Identify both clearly so it doesn't get muddled. */}
+      {phase === "rate" && (() => {
+        const raterIdx = (turnIndex + 1) % playerCount;
+        const raterName = playerNames[raterIdx] || `Player ${raterIdx + 1}`;
+        return (
         <div style={{ marginTop: 18, animation: "slideUp 0.5s ease" }}>
           <div
             style={{
@@ -579,8 +609,14 @@ export default function NarrationSynthesizeTask({
             <div style={{ fontSize: 15, fontWeight: 900, color: "#0f172a", display: "flex", gap: 6, alignItems: "center" }}>
               ⭐ Peer Rating
             </div>
-            <div style={{ marginTop: 8, fontSize: 13, color: "#334155" }}>
-              Rate this explanation on: <b>{ratingScale.label}</b>
+            <div style={{
+              marginTop: 8, fontSize: 13, color: "#334155",
+              padding: "8px 10px", borderRadius: 10,
+              background: "rgba(124,58,237,0.08)",
+              border: "1px solid rgba(124,58,237,0.20)",
+            }}>
+              📲 Pass the device to <b>{raterName}</b> — they'll rate{" "}
+              <b>{currentName}</b>'s explanation on: <b>{ratingScale.label}</b>
             </div>
 
             <div style={{ marginTop: 14 }}>
@@ -658,7 +694,8 @@ export default function NarrationSynthesizeTask({
             </button>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Completion celebration */}
       {phase === "done" && (

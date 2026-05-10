@@ -106,7 +106,7 @@ export default function FlashcardsTask({ task, onSubmit, disabled, memberNames }
     setFlipped(false);
     setBuzzedBy(null);
     setRevealed(false);
-    // setRevealLocked(false); // (kept as comment; revealLocked no longer used)
+    setBuzzCountdown(null);
   };
 
   const bumpScore = (playerName, field) => {
@@ -118,12 +118,34 @@ export default function FlashcardsTask({ task, onSubmit, disabled, memberNames }
     });
   };
 
+  // Buzz countdown: tester wanted a 10s pause between buzz and the
+  // card flip so the buzzer has time to actually say their answer
+  // out loud.  buzzCountdown counts seconds remaining (or null when
+  // not running); a useEffect ticks it down and auto-flips at 0.
+  const [buzzCountdown, setBuzzCountdown] = useState(null);
+  useEffect(() => {
+    if (buzzCountdown == null) return;
+    if (buzzCountdown <= 0) {
+      setRevealed(true);
+      setFlipped(true);
+      setBuzzCountdown(null);
+      return;
+    }
+    const t = setTimeout(() => setBuzzCountdown((c) => (c == null ? null : c - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [buzzCountdown]);
+
   const handleBuzz = (playerIdx) => {
     if (disabled) return;
-    if (revealed) return;
+    if (revealed || buzzCountdown != null) return;
     setBuzzedBy(playerIdx);
-    setRevealed(true);
-    setFlipped(true);
+    setBuzzCountdown(10); // 10s for the buzzer to say the answer
+  };
+
+  // Skip the wait (player wants to flip early once they've spoken).
+  const skipBuzzCountdown = () => {
+    if (buzzCountdown == null || revealed) return;
+    setBuzzCountdown(0);
   };
 
   const markBuzzResult = (wasRight) => {
@@ -323,7 +345,39 @@ export default function FlashcardsTask({ task, onSubmit, disabled, memberNames }
         {/* Buzz controls */}
         <div style={{ marginTop: 18 }}>
           <div style={{ textAlign: "center", marginBottom: 10 }}>
-            {!revealed ? (
+            {buzzCountdown != null ? (
+              <div
+                style={{
+                  fontWeight: 1000,
+                  color: "#0f172a",
+                  background: "linear-gradient(135deg, #fef3c7, #fde68a)",
+                  border: "2px solid #f59e0b",
+                  borderRadius: 14,
+                  padding: "10px 16px",
+                  display: "inline-block",
+                }}
+              >
+                <span style={{ color: "#2563eb" }}>{playerNames[buzzedBy] || "Player"}</span>
+                {" — "}say the answer!{" "}
+                <span style={{ fontSize: 22, color: "#dc2626" }}>{buzzCountdown}s</span>
+                <button
+                  type="button"
+                  onClick={skipBuzzCountdown}
+                  style={{
+                    marginLeft: 12,
+                    padding: "4px 10px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(15,23,42,0.18)",
+                    background: "#fff",
+                    fontWeight: 800,
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  Reveal now
+                </button>
+              </div>
+            ) : !revealed ? (
               <div style={{ fontWeight: 1000, color: "#0f172a" }}>
                 Say the answer out loud. First person to hit <span style={{ fontWeight: 1100 }}>BUZZ</span> gets checked.
               </div>

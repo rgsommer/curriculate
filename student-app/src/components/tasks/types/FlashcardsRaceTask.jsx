@@ -17,7 +17,15 @@ import confetti from "canvas-confetti";
  *   - If no socket OR roomCode === "DEMO" OR task.demoMode === true, runs locally.
  */
 export default function FlashcardsRaceTask(props) {
-  const { task, socket, roomCode, playerTeam, disabled, onSubmit } = props || {};
+  const { task, socket, roomCode, playerTeam, disabled, onSubmit, memberNames = [] } = props || {};
+
+  const safeMembers = useMemo(
+    () =>
+      (Array.isArray(memberNames) ? memberNames : [])
+        .map((n) => String(n || "").trim())
+        .filter(Boolean),
+    [memberNames]
+  );
 
   const isDemoLocal = useMemo(() => {
     const rc = String(roomCode || "").trim().toUpperCase();
@@ -264,6 +272,7 @@ export default function FlashcardsRaceTask(props) {
     setCardIndex(0);
     setCard(deck[0] || null);
     setBuzzedBy(null);
+    setBuzzedByName("");
     setAnswer("");
     setTimedOut(false);
     setWinner(null);
@@ -332,6 +341,7 @@ export default function FlashcardsRaceTask(props) {
     setCardIndex(nextIdx);
     setCard(cards[nextIdx] || null);
     setBuzzedBy(null);
+    setBuzzedByName("");
     setAnswer("");
     setTimedOut(false);
     setSecondsLeft(20);
@@ -339,15 +349,33 @@ export default function FlashcardsRaceTask(props) {
     sfx.shuffle();
   }
 
-  function buzzYou() {
+  // Track which named player buzzed in (when memberNames is populated).
+  // Stored alongside the legacy "you"/"other" string used by the live
+  // socket path so existing logic still works.
+  const [buzzedByName, setBuzzedByName] = useState("");
+
+  function buzzYou(playerName = "") {
     if (disabled) return;
     if (!isDemoLocal) return; // in live mode, server should manage buzz
     if (phase !== "show") return;
     setBuzzedBy("you");
+    setBuzzedByName(playerName || "");
     setPhase("buzzed");
     sfx.buzz();
     try { if (navigator?.vibrate) navigator.vibrate(20); } catch {}
   }
+
+  // Auto-focus the answer input the instant we enter the buzzed phase
+  // so the player doesn't have to tap the box to start typing.
+  const answerInputRef = useRef(null);
+  useEffect(() => {
+    if (phase === "buzzed" && buzzedBy === "you" && answerInputRef.current) {
+      // Defer one tick so the input has rendered.
+      requestAnimationFrame(() => {
+        try { answerInputRef.current.focus(); } catch {}
+      });
+    }
+  }, [phase, buzzedBy]);
 
   function submitAnswer() {
     if (disabled) return;
@@ -565,26 +593,89 @@ export default function FlashcardsRaceTask(props) {
           </div>
         ) : (
           <>
-            <div style={bigQ}>{card?.question}</div>
+            {/* Card-style question wrapper — animated tilt-in so the
+                card actually feels like it's been dealt to the table. */}
+            <div
+              key={`card-${cardIndex}`}
+              style={{
+                position: "relative",
+                margin: "8px auto",
+                maxWidth: 680,
+                borderRadius: 22,
+                padding: "28px 26px 22px",
+                background: "linear-gradient(180deg, #ffffff, #f8fafc)",
+                color: "#0f172a",
+                boxShadow:
+                  "0 28px 50px rgba(15,23,42,0.45), inset 0 0 0 1px rgba(15,23,42,0.05), inset 0 -4px 0 rgba(15,23,42,0.06)",
+                animation: "fcDeal 0.45s cubic-bezier(0.2,0.8,0.2,1) both",
+              }}
+            >
+              <style>{`
+                @keyframes fcDeal {
+                  0% { transform: translateY(-30px) rotate(-6deg) scale(0.92); opacity: 0; }
+                  60% { transform: translateY(4px) rotate(1deg) scale(1.02); opacity: 1; }
+                  100% { transform: translateY(0) rotate(0deg) scale(1); opacity: 1; }
+                }
+              `}</style>
+              <div
+                style={{
+                  position: "absolute", top: 12, left: 16,
+                  fontSize: 11, fontWeight: 900, letterSpacing: 1.5,
+                  color: "rgba(15,23,42,0.45)", textTransform: "uppercase",
+                }}
+              >
+                Card {cardIndex + 1} / {totalCards}
+              </div>
+              <div style={{ ...bigQ, color: "#0f172a", textAlign: "center", marginTop: 14 }}>
+                {card?.question}
+              </div>
+            </div>
 
             {phase === "show" && (
-              <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button
-                  type="button"
-                  style={btn("primary", { fontSize: 28, padding: "18px 22px", borderRadius: 18 })}
-                  onClick={buzzYou}
-                  disabled={disabled || !isDemoLocal}
-                >
-                  🔔 Buzz!
-                </button>
-
+              <div style={{ marginTop: 14 }}>
                 {!isDemoLocal ? (
                   <div style={{ opacity: 0.8, fontWeight: 900 }}>
                     Live race: waiting for server buzz/next events…
                   </div>
+                ) : safeMembers.length > 0 ? (
+                  // Per-player buzz buttons.  First name to buzz gets to
+                  // answer (+5 bonus); the rest of the team can still
+                  // help out loud.
+                  <>
+                    <div style={{ fontWeight: 900, marginBottom: 8 }}>
+                      Whoever knows it first — buzz in!
+                    </div>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      {safeMembers.map((name) => (
+                        <button
+                          key={name}
+                          type="button"
+                          style={btn("primary", { fontSize: 18, padding: "14px 18px", borderRadius: 16 })}
+                          onClick={() => buzzYou(name)}
+                          disabled={disabled}
+                        >
+                          🔔 Buzz {name}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ marginTop: 8, opacity: 0.75, fontWeight: 800, fontSize: 12 }}>
+                      First to buzz gets to answer (+{firstBuzzBonus} bonus).
+                    </div>
+                  </>
                 ) : (
-                  <div style={{ opacity: 0.8, fontWeight: 900 }}>
-                    First to buzz gets to answer (+{firstBuzzBonus} bonus).
+                  // Fallback when we don't know team-member names.
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      style={btn("primary", { fontSize: 28, padding: "18px 22px", borderRadius: 18 })}
+                      onClick={() => buzzYou("")}
+                      disabled={disabled}
+                    >
+                      🔔 Buzz!
+                    </button>
+                    <div style={{ opacity: 0.8, fontWeight: 900, alignSelf: "center" }}>
+                      First to buzz gets to answer (+{firstBuzzBonus} bonus).
+                    </div>
                   </div>
                 )}
               </div>
@@ -593,16 +684,31 @@ export default function FlashcardsRaceTask(props) {
             {phase === "buzzed" && (
               <div style={{ marginTop: 16 }}>
                 <div style={{ fontWeight: 1000, marginBottom: 8 }}>
-                  {buzzedBy === "you" ? "You buzzed first!" : "Other team buzzed first!"}
+                  {buzzedBy === "you"
+                    ? (buzzedByName
+                        ? `${buzzedByName} buzzed first!`
+                        : "You buzzed first!")
+                    : "Other team buzzed first!"}
                 </div>
 
                 {buzzedBy === "you" ? (
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                     <input
+                      ref={answerInputRef}
                       value={answer}
                       onChange={(e) => setAnswer(e.target.value)}
-                      placeholder="Type your answer…"
+                      onKeyDown={(e) => {
+                        // Enter submits — saves a tap, tester request.
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          submitAnswer();
+                        }
+                      }}
+                      placeholder={
+                        buzzedByName ? `${buzzedByName}, type your answer…` : "Type your answer…"
+                      }
                       disabled={disabled}
+                      autoFocus
                       style={{
                         flex: "1 1 320px",
                         minWidth: 240,
@@ -616,7 +722,7 @@ export default function FlashcardsRaceTask(props) {
                       }}
                     />
                     <button type="button" style={btn("primary")} onClick={submitAnswer} disabled={disabled}>
-                      Submit
+                      Submit (↵)
                     </button>
                   </div>
                 ) : (

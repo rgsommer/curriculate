@@ -2871,6 +2871,7 @@ case TASK_TYPES.COLLABORATION:
           showPartnerReply={showPartnerReply}
           onPartnerReply={onPartnerReply}
           memberNames={memberNames}
+          practiceMode={practiceMode}
         />
       );
       break;
@@ -3024,6 +3025,7 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
           roomCode={roomCode}
           playerTeam={playerTeam}
           disabled={effectiveDisabled || isReview}
+          memberNames={memberNames}
         />
       );
       break;
