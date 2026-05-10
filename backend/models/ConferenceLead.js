@@ -39,6 +39,27 @@ const conferenceLeadSchema = new mongoose.Schema(
       },
     ],
 
+    // Append-only feedback log: every task that the player rated or
+    // commented on lands here, preserved across all replays.  Lives
+    // outside `results` (which gets overwritten with each new session
+    // because the per-session email shows only the latest run).  This
+    // is what /feedback-export now reads, so historical comments aren't
+    // wiped when the same email plays again.  Capped at 500 entries.
+    feedbackEntries: [
+      {
+        _id: false,
+        taskType: { type: String, default: "" },
+        title: { type: String, default: "" },
+        fun: { type: Number, default: 0 },
+        clarity: { type: Number, default: 0 },
+        confusing: { type: String, default: "" },
+        suggestion: { type: String, default: "" },
+        skipped: { type: Boolean, default: false },
+        source: { type: String, default: "" }, // "rating" | "skip-dialog"
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
+
     // Task results captured during demo play
     results: [
       {

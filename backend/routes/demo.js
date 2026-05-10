@@ -290,6 +290,35 @@ router.post("/results", resultsLimiter, async (req, res) => {
     const sessionCompletedCount = scoredResults.filter((r) => !r.skipped).length;
     const now = new Date();
 
+    // Collect every feedback-bearing entry (real ratings, written
+    // comments, or skip-dialog reasons) so we can push them onto the
+    // lead's append-only feedbackEntries log.  /feedback-export reads
+    // this log, so historical comments survive every replay even
+    // though `results` gets overwritten with each new session for the
+    // sake of the per-session email.
+    const newFeedbackEntries = scoredResults
+      .map((r) => {
+        const fb = r.feedback || {};
+        const hasContent =
+          (fb.fun && fb.fun > 0) ||
+          (fb.clarity && fb.clarity > 0) ||
+          (fb.confusing && String(fb.confusing).trim()) ||
+          (fb.suggestion && String(fb.suggestion).trim());
+        if (!hasContent) return null;
+        return {
+          taskType: r.taskType || "",
+          title: r.title || "",
+          fun: Number(fb.fun) || 0,
+          clarity: Number(fb.clarity) || 0,
+          confusing: String(fb.confusing || "").slice(0, 1000),
+          suggestion: String(fb.suggestion || "").slice(0, 1000),
+          skipped: !!r.skipped,
+          source: fb.source || (r.skipped ? "skip-dialog" : "rating"),
+          createdAt: now,
+        };
+      })
+      .filter(Boolean);
+
     const lead = await ConferenceLead.findOneAndUpdate(
       { email: email.toLowerCase().trim(), conference: conference || "general" },
       {
@@ -305,7 +334,7 @@ router.post("/results", resultsLimiter, async (req, res) => {
         },
         // Append this session's subtotal + completedAt to the trail so
         // we can compute weekly leaderboards.  Capped to the last 30
-        // entries.
+        // entries.  feedbackEntries is added below conditionally.
         $push: {
           sessions: {
             $each: [
@@ -325,6 +354,27 @@ router.post("/results", resultsLimiter, async (req, res) => {
 
     if (!lead) {
       return res.status(404).json({ error: "Lead not found — register first" });
+    }
+
+    // Append this session's feedback entries to the lead's append-only
+    // log.  Done as a separate update so the conditional doesn't bloat
+    // the main upsert.  Capped at 500 entries / lead.
+    if (newFeedbackEntries.length > 0) {
+      try {
+        await ConferenceLead.updateOne(
+          { _id: lead._id },
+          {
+            $push: {
+              feedbackEntries: {
+                $each: newFeedbackEntries,
+                $slice: -500,
+              },
+            },
+          }
+        );
+      } catch (e) {
+        console.error("[demo/results] feedbackEntries push failed:", e.message);
+      }
     }
 
     // Carry the per-session subtotal through to the email helpers — the
@@ -482,42 +532,62 @@ router.get("/feedback-summary", async (req, res) => {
     const allComments = [];
 
     for (const lead of leads) {
-      for (const r of lead.results || []) {
-        if (!r.feedback) continue;
-        // Allow skipped entries through ONLY when they carry a comment
-        // collected via TaskRunner's skip dialog — those are real signal.
-        if (r.skipped && !(r.feedback.confusing || r.feedback.suggestion)) continue;
+      // Prefer the append-only feedbackEntries log (preserves history
+      // across replays).  Fall back to lead.results for legacy docs
+      // that were created before feedbackEntries existed.
+      const entries =
+        Array.isArray(lead.feedbackEntries) && lead.feedbackEntries.length > 0
+          ? lead.feedbackEntries
+          : (lead.results || []).map((r) => ({
+              taskType: r.taskType,
+              title: r.title,
+              fun: r.feedback?.fun || 0,
+              clarity: r.feedback?.clarity || 0,
+              confusing: r.feedback?.confusing || "",
+              suggestion: r.feedback?.suggestion || "",
+              skipped: !!r.skipped,
+              source: r.feedback?.source || (r.skipped ? "skip-dialog" : "rating"),
+            }));
 
-        const tt = r.taskType;
+      for (const e of entries) {
+        const tt = e.taskType;
+        if (!tt) continue;
+        const hasContent =
+          (e.fun && e.fun > 0) ||
+          (e.clarity && e.clarity > 0) ||
+          (e.confusing && String(e.confusing).trim()) ||
+          (e.suggestion && String(e.suggestion).trim());
+        if (!hasContent) continue;
+
         if (!byType[tt]) {
-          byType[tt] = { taskType: tt, title: r.title, funSum: 0, claritySum: 0, count: 0 };
+          byType[tt] = { taskType: tt, title: e.title, funSum: 0, claritySum: 0, count: 0 };
         }
-        // Don't count skip-dialog entries toward fun/clarity averages — they
-        // don't include those ratings.
-        if (!r.skipped) {
-          byType[tt].funSum += r.feedback.fun || 0;
-          byType[tt].claritySum += r.feedback.clarity || 0;
+        // Skip-dialog entries don't include fun/clarity ratings, so
+        // they don't roll into the averages.
+        if (!e.skipped) {
+          byType[tt].funSum += e.fun || 0;
+          byType[tt].claritySum += e.clarity || 0;
           byType[tt].count += 1;
         }
 
-        if (r.feedback.confusing) {
+        if (e.confusing) {
           allComments.push({
             taskType: tt,
-            title: r.title,
+            title: e.title,
             type: "confusing",
-            text: r.feedback.confusing,
+            text: e.confusing,
             from: lead.name,
-            source: r.feedback.source || (r.skipped ? "skip-dialog" : "rating"),
+            source: e.source || (e.skipped ? "skip-dialog" : "rating"),
           });
         }
-        if (r.feedback.suggestion) {
+        if (e.suggestion) {
           allComments.push({
             taskType: tt,
-            title: r.title,
+            title: e.title,
             type: "suggestion",
-            text: r.feedback.suggestion,
+            text: e.suggestion,
             from: lead.name,
-            source: r.feedback.source || (r.skipped ? "skip-dialog" : "rating"),
+            source: e.source || (e.skipped ? "skip-dialog" : "rating"),
           });
         }
       }
@@ -567,31 +637,52 @@ router.get("/feedback-export", async (req, res) => {
     const byType = {};
 
     for (const lead of leads) {
+      // Prefer the append-only feedbackEntries log; fall back to
+      // results for legacy docs that pre-date the log.
+      const entries =
+        Array.isArray(lead.feedbackEntries) && lead.feedbackEntries.length > 0
+          ? lead.feedbackEntries
+          : (lead.results || []).map((r) => ({
+              taskType: r.taskType,
+              title: r.title,
+              fun: r.feedback?.fun || 0,
+              clarity: r.feedback?.clarity || 0,
+              confusing: r.feedback?.confusing || "",
+              suggestion: r.feedback?.suggestion || "",
+              skipped: !!r.skipped,
+            }));
+
+      // Also count completions from the lifetime counter so the
+      // "Completed" stat per task type still reflects real volume even
+      // for leads who haven't left feedback.  We collect type → count
+      // separately first, so completion counts don't depend on whether
+      // feedback was left.
       for (const r of lead.results || []) {
         const tt = r.taskType;
         if (!tt) continue;
-        const fb = r.feedback;
-        // Skip entries that have neither a completion nor any usable comment.
-        // (Old behaviour silently dropped every skipped entry, which lost the
-        //  feedback testers typed into the skip dialog.)
-        if (r.skipped && !(fb && (fb.confusing || fb.suggestion))) continue;
+        if (r.skipped) continue;
         if (!byType[tt]) {
           byType[tt] = { title: r.title || tt, funScores: [], clarityScores: [], comments: [], responseCount: 0 };
         }
-        if (!r.skipped) byType[tt].responseCount += 1;
-        // Feedback may be null (popup skipped), an object, or have defaults of 0
-        if (fb) {
-          if (!r.skipped) {
-            if (fb.fun > 0) byType[tt].funScores.push(fb.fun);
-            if (fb.clarity > 0) byType[tt].clarityScores.push(fb.clarity);
-          }
-          const skipTag = r.skipped ? " (via skip)" : "";
-          if (fb.confusing && fb.confusing.trim()) {
-            byType[tt].comments.push(`  [CONFUSING${skipTag}] "${fb.confusing.trim()}" — ${lead.name}`);
-          }
-          if (fb.suggestion && fb.suggestion.trim()) {
-            byType[tt].comments.push(`  [SUGGESTION${skipTag}] "${fb.suggestion.trim()}" — ${lead.name}`);
-          }
+        byType[tt].responseCount += 1;
+      }
+
+      for (const e of entries) {
+        const tt = e.taskType;
+        if (!tt) continue;
+        if (!byType[tt]) {
+          byType[tt] = { title: e.title || tt, funScores: [], clarityScores: [], comments: [], responseCount: 0 };
+        }
+        if (!e.skipped) {
+          if (e.fun > 0) byType[tt].funScores.push(e.fun);
+          if (e.clarity > 0) byType[tt].clarityScores.push(e.clarity);
+        }
+        const skipTag = e.skipped ? " (via skip)" : "";
+        if (e.confusing && String(e.confusing).trim()) {
+          byType[tt].comments.push(`  [CONFUSING${skipTag}] "${String(e.confusing).trim()}" — ${lead.name}`);
+        }
+        if (e.suggestion && String(e.suggestion).trim()) {
+          byType[tt].comments.push(`  [SUGGESTION${skipTag}] "${String(e.suggestion).trim()}" — ${lead.name}`);
         }
       }
     }
