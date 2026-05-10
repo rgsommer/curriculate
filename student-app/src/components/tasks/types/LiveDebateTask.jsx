@@ -3,6 +3,56 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
+/**
+ * scoreDebate — rule-based coach feedback for the practice flow.
+ * Real classroom mode can swap this out with an AI-side scoring call;
+ * for the solo demo we want immediate, actionable feedback without
+ * a network round-trip.  Heuristics: argument length, evidence
+ * vocabulary ("because", "for example"), and rebuttal vocabulary
+ * ("however", "but", "in contrast").
+ */
+function scoreDebate(responses) {
+  const arr = Array.isArray(responses) ? responses : [];
+  const evidenceTerms = ["because", "since", "for example", "for instance", "evidence", "research", "studies", "data", "according to"];
+  const rebuttalTerms = ["however", "but", "in contrast", "on the other hand", "actually", "while", "whereas"];
+  const sides = { for: { score: 0, n: 0, words: 0, evidence: 0, rebuttal: 0 }, against: { score: 0, n: 0, words: 0, evidence: 0, rebuttal: 0 } };
+  for (const r of arr) {
+    const side = r?.side === "against" ? "against" : "for";
+    const text = String(r?.text || "").trim();
+    if (!text) continue;
+    const lower = text.toLowerCase();
+    const words = text.split(/\s+/).filter(Boolean).length;
+    const lengthScore = Math.min(20, Math.floor(words / 3));
+    const ev = evidenceTerms.reduce((sum, t) => sum + (lower.includes(t) ? 1 : 0), 0);
+    const rb = rebuttalTerms.reduce((sum, t) => sum + (lower.includes(t) ? 1 : 0), 0);
+    sides[side].score += lengthScore + ev * 5 + rb * 3;
+    sides[side].n += 1;
+    sides[side].words += words;
+    sides[side].evidence += ev;
+    sides[side].rebuttal += rb;
+  }
+  const winningSide = sides.for.score === sides.against.score
+    ? "tie"
+    : (sides.for.score > sides.against.score ? "for" : "against");
+  const avgWords = (sides.for.words + sides.against.words) / Math.max(1, (sides.for.n + sides.against.n));
+  const totalEvidence = sides.for.evidence + sides.against.evidence;
+  const totalRebuttal = sides.for.rebuttal + sides.against.rebuttal;
+  const tips = [];
+  if (avgWords < 20) tips.push("Try fleshing out each turn — even one extra sentence of detail helps.");
+  if (totalEvidence === 0) tips.push("Cite evidence: words like \"because\", \"for example\", or \"research shows\" make arguments stronger.");
+  if (totalRebuttal === 0) tips.push("Try directly answering the other side: \"However…\", \"In contrast…\".");
+  if (tips.length === 0) tips.push("Solid rounds — strong length, evidence and rebuttal mix. Keep it up!");
+  return {
+    winningSide,
+    forScore: sides.for.score,
+    againstScore: sides.against.score,
+    avgWords: Math.round(avgWords),
+    evidenceCount: totalEvidence,
+    rebuttalCount: totalRebuttal,
+    tips,
+  };
+}
+
 export default function LiveDebateTask({
   task,
   onSubmit,
@@ -19,6 +69,18 @@ export default function LiveDebateTask({
     return cleaned.length ? cleaned : ["Player 1", "Player 2", "Player 3"];
   }, [memberNames, teamMembersFallback]);
 
+  // Bot opponent name for solo / single-player practice — tester saw
+  // "FOR: Richard vs AGAINST: ???" in demo because there was no
+  // opponent.  Pick a friendly stable name so the matchup reads
+  // properly even when the player is alone.
+  const BOT_NAMES = ["Quinn", "Avery", "Sam", "Riley", "Jamie", "Casey", "Drew", "Morgan"];
+  const botName = useMemo(() => {
+    const seedSrc = String(task?.id || task?._id || task?.title || "lb");
+    let h = 0;
+    for (let i = 0; i < seedSrc.length; i += 1) h = (h * 31 + seedSrc.charCodeAt(i)) | 0;
+    return BOT_NAMES[Math.abs(h) % BOT_NAMES.length] + " (bot)";
+  }, [task?.id, task?._id, task?.title]);
+
   const roomCode = roomCodeProp || task?.roomCode;
   const canEmit = Boolean(socket && typeof socket.emit === "function");
   const connected = socket && (socket.connected === undefined ? true : socket.connected);
@@ -27,15 +89,21 @@ export default function LiveDebateTask({
   // Solo if: no room, no socket, OR server never assigned a side (single team in room)
   const isSolo = !roomCode || !canEmit || !connected || !task.mySide;
 
-  // Split team members into two sides for intra-team mode
+  // Split team members into two sides for intra-team mode.  When the
+  // player is alone (only one human name), pad the AGAINST side with
+  // the bot so the matchup reads "Richard vs Quinn (bot)" instead of
+  // "Richard vs ???".
   const { forMembers, againstMembers } = useMemo(() => {
     if (!isSolo) return { forMembers: names, againstMembers: [] };
+    if (names.length <= 1) {
+      return { forMembers: names, againstMembers: [botName] };
+    }
     const half = Math.ceil(names.length / 2);
     return {
       forMembers: names.slice(0, half),
       againstMembers: names.slice(half),
     };
-  }, [names, isSolo]);
+  }, [names, isSolo, botName]);
 
   // ── State ──────────────────────────────────────────────────
   const [responses, setResponses] = useState(task.responses || []);
@@ -46,6 +114,7 @@ export default function LiveDebateTask({
   const [winner, setWinner] = useState(task.winner);
   const [debateOver, setDebateOver] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [coachFeedback, setCoachFeedback] = useState(null);
 
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -184,7 +253,14 @@ export default function LiveDebateTask({
 
       if (newForCount >= turnsPerSide && newAgainstCount >= turnsPerSide) {
         setDebateOver(true);
-        // Submit everything to the server for scoring
+        // Compute a rule-based coach score on the way out so the
+        // tester gets actionable feedback without waiting on a
+        // server-side AI call.  Tester: 'will the argument be
+        // evaluated/aiscored? feedback would be nice.'
+        const coach = scoreDebate(nextResponses);
+        setCoachFeedback(coach);
+        // Submit everything to the server for scoring (server may
+        // also run a richer AI pass and surface that later).
         onSubmit?.({
           type: "live-debate",
           taskType: "live-debate",
@@ -195,6 +271,7 @@ export default function LiveDebateTask({
           forMembers,
           againstMembers,
           turnsPerSide,
+          coach,
         });
       } else {
         // Alternate turns
@@ -311,13 +388,36 @@ export default function LiveDebateTask({
           <span className="text-green-600">{winner} Wins!</span>
         </div>
       ) : debateOver ? (
-        <div className="p-6 text-center bg-indigo-50 border-t">
-          <div className="text-2xl font-bold text-indigo-700">
+        <div className="p-6 bg-indigo-50 border-t">
+          <div className="text-center text-2xl font-bold text-indigo-700">
             All arguments submitted!
           </div>
-          <div className="text-slate-600 mt-2">
+          <div className="text-center text-slate-600 mt-2">
             {isSolo ? "Great debate, team!" : "The judge is reviewing the debate..."}
           </div>
+          {/* Coach feedback (rule-based) — visible immediately while
+              the server-side AI scoring (if any) catches up. */}
+          {coachFeedback && (
+            <div className="mt-4 max-w-2xl mx-auto p-4 rounded-2xl bg-white border border-indigo-200 shadow-sm text-slate-900">
+              <div className="font-extrabold text-base mb-2">🤖 Coach feedback</div>
+              <div className="text-sm font-semibold mb-2">
+                Edge:{" "}
+                {coachFeedback.winningSide === "tie"
+                  ? <span className="text-slate-700">Tied — both sides matched</span>
+                  : coachFeedback.winningSide === "for"
+                    ? <span className="text-emerald-700">FOR side ({coachFeedback.forScore} vs {coachFeedback.againstScore})</span>
+                    : <span className="text-rose-700">AGAINST side ({coachFeedback.againstScore} vs {coachFeedback.forScore})</span>}
+              </div>
+              <div className="text-xs text-slate-700 mb-2">
+                Avg argument length: <b>{coachFeedback.avgWords}</b> words ·
+                Evidence cues: <b>{coachFeedback.evidenceCount}</b> ·
+                Rebuttal cues: <b>{coachFeedback.rebuttalCount}</b>
+              </div>
+              <ul className="list-disc pl-5 text-sm text-slate-800 space-y-1">
+                {coachFeedback.tips.map((t, i) => (<li key={i}>{t}</li>))}
+              </ul>
+            </div>
+          )}
         </div>
       ) : (
         <div className="p-4 border-t bg-gray-50">

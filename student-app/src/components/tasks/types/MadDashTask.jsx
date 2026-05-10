@@ -421,8 +421,9 @@ export default function MadDashTask({
             <div className="text-4xl font-black">Mad Dash</div>
             <div className="text-slate-600 mt-1">
               Memorize a route of {route.length} coloured stations, then run
-              and scan them <em>in the same order</em>. Wrong scan ⇒ progress
-              resets, but the timer keeps running — fastest run wins.
+              and scan them <em>in the same order</em>. Wrong scan ⇒ a
+              fresh route is generated and you start over (timer keeps
+              running). Fastest run wins.
             </div>
           </div>
 
@@ -530,7 +531,7 @@ export default function MadDashTask({
                     ? "Tap the colour buttons in the same order you saw."
                     : "Run to each coloured station and scan its QR code in the same order you saw."}
                 </li>
-                <li>Wrong scan ⇒ your progress resets to 0 but the clock keeps ticking. Fastest run wins.</li>
+                <li>Wrong scan ⇒ a <strong>brand-new route</strong> is dealt and you start over (clock keeps ticking). Fastest run wins.</li>
               </ol>
               {practiceMode && (
                 <div className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -745,7 +746,7 @@ export default function MadDashTask({
               <div className="text-slate-600 text-sm mt-1">
                 {!startAtRef.current && scanIdx === 0
                   ? "Timer starts on your first scan."
-                  : "Wrong scan resets progress (timer keeps running)."}
+                  : "Wrong scan ⇒ a NEW route is dealt — start over (clock keeps running)."}
               </div>
             </div>
           </div>

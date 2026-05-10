@@ -3189,6 +3189,27 @@ config: {
       The jokeOption must also be different from all 3 options.
       If any duplicates exist, replace the duplicate with a new plausible-but-wrong answer.
 
+      CROSS-ROUND UNIQUENESS RULE (MANDATORY):
+
+      Across ALL rounds in this task, no option text and no jokeOption may appear in more than one round
+      (case-insensitive).  Treat the entire task as one set of unique strings.  If you generate the same
+      jokeOption for two different prompts -- e.g. "Treaty of Pineapple Pizza" for both Seven Years' War
+      AND General Wolfe rounds -- regenerate so each round has a fresh, topically-relevant joke.
+      Tester reported the same fake-out clue appearing for both questions; this rule prevents that.
+
+      JOKE OPTION RELEVANCE RULE (MANDATORY):
+
+      The jokeOption must be FUNNY because it is on-topic but obviously wrong, not generic.
+      It should reference something specific to that round's prompt -- a known person, place, term,
+      or category from the question itself, twisted into something silly.
+      Bad: "Mr. Banana"  (no connection to the question).
+      Bad: "Floofy McFlooferton" (generic joke name unconnected to the topic).
+      Good: for "Which treaty ended the Seven Years' War?" -> "Treaty of Pineapple Pizza"
+            (because it riffs on the form "Treaty of X").
+      Good: for "Who painted the Mona Lisa?" -> "Bob Ross" (in-genre but obviously wrong era).
+      Good: for "Capital of Australia?" -> "Bondi Beach" (Australian, but not a city / not a capital).
+      Tester reported "the obviously fake answer provided by ai did not fit"; this rule fixes that.
+
       ANTI-PATTERN CHECK (MANDATORY):
 
       If correctIndex is the same value for all rounds, regenerate the entire task.

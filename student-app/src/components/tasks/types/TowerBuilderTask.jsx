@@ -23,6 +23,23 @@ export default function TowerBuilderTask({
   remainingMs = 0,
   timeLimitSeconds = 0,
 }) {
+  // Tester: 'there have to be enough t/f statements to make this fun.'
+  // Pad short statement decks with topical generic filler so the
+  // tower always has enough rounds to build meaningful height.
+  const MIN_STATEMENTS = 8;
+  const TOPIC_FALLBACKS = [
+    { text: "Reading carefully helps you understand the topic.",          category: "benefit" },
+    { text: "Skimming a few sentences usually beats deep reading.",       category: "harm" },
+    { text: "Asking questions sharpens your thinking.",                   category: "benefit" },
+    { text: "Memorising without understanding is the strongest skill.",   category: "harm" },
+    { text: "Connecting new ideas to old ones builds long-term memory.",  category: "benefit" },
+    { text: "Studying without breaks always works best.",                 category: "harm" },
+    { text: "Explaining what you've learned to a friend reinforces it.",  category: "benefit" },
+    { text: "Highlighting everything is the same as remembering it.",     category: "harm" },
+    { text: "Trying a problem yourself before peeking at the answer pays off.", category: "benefit" },
+    { text: "If you can't recall it five minutes later, you've truly mastered it.", category: "harm" },
+  ];
+
   // ─── Parse statements ───
   const statements = useMemo(() => {
     const raw =
@@ -32,7 +49,7 @@ export default function TowerBuilderTask({
       Array.isArray(task?.config?.items) ? task.config.items :
       [];
 
-    return raw.map((s, idx) => {
+    const parsed = raw.map((s, idx) => {
       if (!s) return null;
       if (typeof s === "string") return { text: s, category: "benefit", id: `s${idx}` };
 
@@ -55,6 +72,18 @@ export default function TowerBuilderTask({
 
       return { text, category, id: String(s.id || s._id || `s${idx}`) };
     }).filter(Boolean);
+
+    // Pad up to MIN_STATEMENTS using topical fallbacks (skips dupes).
+    const have = new Set(parsed.map((s) => s.text.toLowerCase()));
+    let pi = 0;
+    while (parsed.length < MIN_STATEMENTS && pi < TOPIC_FALLBACKS.length) {
+      const cand = TOPIC_FALLBACKS[pi];
+      pi += 1;
+      if (have.has(cand.text.toLowerCase())) continue;
+      have.add(cand.text.toLowerCase());
+      parsed.push({ ...cand, id: `pad_${pi}` });
+    }
+    return parsed;
   }, [task?.statements, task?.items, task?.config?.statements, task?.config?.items]);
 
   const isTriState = useMemo(

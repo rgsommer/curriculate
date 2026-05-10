@@ -601,6 +601,69 @@ export default function TreasureRunnerTask({
 
   const secondsLeft = Math.ceil(timeLeftMs / 1000);
 
+  // Tester reported the task is unplayable on desktop ("only works on
+  // tablet/phone").  The whole control scheme is touch + tilt: there
+  // are no keyboard / mouse handlers anywhere.  Detect non-touch
+  // devices and surface a friendly explainer with a 'Skip' option so
+  // the practicer doesn't hit a dead end.
+  const isTouchDevice =
+    typeof window !== "undefined" &&
+    ("ontouchstart" in window ||
+      (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
+
+  if (!isTouchDevice && !disabled) {
+    return (
+      <div
+        style={{
+          padding: 28,
+          textAlign: "center",
+          color: "#0f172a",
+          background: "linear-gradient(135deg, #fff7ed, #fef3c7)",
+          border: "2px solid #f59e0b",
+          borderRadius: 18,
+          maxWidth: 540,
+          margin: "0 auto",
+        }}
+      >
+        <div style={{ fontSize: 38, marginBottom: 6 }}>📱</div>
+        <div style={{ fontSize: "1.4rem", fontWeight: 900 }}>Treasure Runner is touch-only</div>
+        <div style={{ marginTop: 8, fontSize: "0.95rem", lineHeight: 1.5, color: "#475569" }}>
+          This task uses tap, swipe, and tilt controls — it works best on a phone or tablet.
+          On a desktop / laptop browser there's no way to play it cleanly.
+        </div>
+        <div style={{ marginTop: 14, fontSize: "0.9rem", color: "#92400e", fontWeight: 700 }}>
+          Open this same task on your phone or tablet, or skip it for now.
+        </div>
+        <div style={{ marginTop: 18, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={() =>
+              onSubmit?.({
+                taskType: "treasure-runner",
+                completed: false,
+                skipped: true,
+                reason: "non-touch-device",
+              })
+            }
+            style={{
+              padding: "10px 22px",
+              borderRadius: 999,
+              border: "none",
+              background: "linear-gradient(135deg, #f59e0b, #ef4444)",
+              color: "#fff",
+              fontWeight: 900,
+              fontSize: "0.95rem",
+              cursor: "pointer",
+              boxShadow: "0 4px 14px rgba(245,158,11,0.35)",
+            }}
+          >
+            Skip — try next task
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ opacity: disabled ? 0.7 : 1 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

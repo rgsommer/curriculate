@@ -145,17 +145,47 @@ export default function SequenceTask({
     pushDraft(next);
   };
 
+  // Tester: 'no layover for answer' — the user wants a brief reveal
+  // showing which positions were right vs. wrong before advancing.
+  // Compute the canonical order (by original input position) and
+  // hold the answer-reveal state for ~3.5s before submitting.
+  const correctOrderIds = useMemo(() => items.map((x) => x.id), [items]);
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewResult, setReviewResult] = useState(null); // { correctSlots: number, total: number }
+  const reviewTimerRef = useRef(null);
+
   const handleSubmit = () => {
     if (!onSubmit) return;
-    onSubmit({ order: orderIds });
+    const correctSlots = orderIds.reduce(
+      (n, id, idx) => n + (id === correctOrderIds[idx] ? 1 : 0),
+      0
+    );
+    setReviewResult({ correctSlots, total: orderIds.length });
+    setReviewing(true);
+    // Auto-submit after a short hold so the player gets to see what
+    // they got right and where they slipped.
+    if (reviewTimerRef.current) clearTimeout(reviewTimerRef.current);
+    reviewTimerRef.current = setTimeout(() => {
+      onSubmit({
+        order: orderIds,
+        correctOrder: correctOrderIds,
+        correctSlots,
+        total: orderIds.length,
+      });
+    }, 3500);
   };
+
+  // Cleanup any pending submission timer if the task unmounts early.
+  useEffect(() => () => {
+    if (reviewTimerRef.current) clearTimeout(reviewTimerRef.current);
+  }, []);
 
   const promptText =
     (typeof task?.prompt === "string" && task.prompt.trim())
       ? task.prompt.trim()
       : "Put the items in the correct order.";
 
-  const canSubmit = !disabled && Array.isArray(orderIds) && orderIds.length >= 2;
+  const canSubmit = !disabled && !reviewing && Array.isArray(orderIds) && orderIds.length >= 2;
 
   const cardBg = isDark ? "rgba(255,255,255,0.06)" : "rgba(248,250,252,1)";
   const borderColor = isDark ? "rgba(255,255,255,0.15)" : "rgba(15,23,42,0.12)";
@@ -177,18 +207,63 @@ export default function SequenceTask({
 
       <h2 className="font-bold text-xl mb-3">{promptText}</h2>
 
+      {/* Review banner — appears for ~3.5s after Submit so the
+          tester sees what they got right before advancing. */}
+      {reviewing && reviewResult && (
+        <div
+          className="mb-3 px-4 py-3 rounded-xl"
+          style={{
+            background: reviewResult.correctSlots === reviewResult.total
+              ? "rgba(34,197,94,0.18)"
+              : "rgba(245,158,11,0.18)",
+            border: `2px solid ${reviewResult.correctSlots === reviewResult.total ? "#22c55e" : "#f59e0b"}`,
+            color: textColor,
+            fontWeight: 800,
+            textAlign: "center",
+          }}
+        >
+          {reviewResult.correctSlots === reviewResult.total
+            ? "🎉 Perfect order! "
+            : `${reviewResult.correctSlots}/${reviewResult.total} in the right spot. `}
+          <span style={{ fontWeight: 600 }}>
+            Green = correct slot · Red = wrong slot. Advancing in a moment…
+          </span>
+        </div>
+      )}
+
       <div className="space-y-2 mb-4">
         {orderIds.map((id, idx) => {
           const it = byId.get(id);
           if (!it) return null;
+          const isCorrectSlot = reviewing && correctOrderIds[idx] === id;
+          const slotBorder = reviewing
+            ? (isCorrectSlot ? "#22c55e" : "#ef4444")
+            : borderColor;
+          const slotBg = reviewing
+            ? (isCorrectSlot ? "rgba(34,197,94,0.10)" : "rgba(239,68,68,0.10)")
+            : cardBg;
 
           return (
             <div
               key={id}
               className="flex items-stretch justify-between rounded px-3 py-2"
-              style={{ border: `1px solid ${borderColor}`, background: cardBg }}
+              style={{ border: `2px solid ${slotBorder}`, background: slotBg, transition: "all 0.2s" }}
             >
               <div className="flex gap-3 min-w-0">
+                {reviewing && (
+                  <div
+                    style={{
+                      fontSize: 20,
+                      width: 28,
+                      textAlign: "center",
+                      alignSelf: "center",
+                      color: isCorrectSlot ? "#22c55e" : "#ef4444",
+                      fontWeight: 900,
+                    }}
+                  >
+                    {isCorrectSlot ? "✓" : "✗"}
+                  </div>
+                )}
                 {it.imageUrl ? (
                   <img
                     src={it.imageUrl}
@@ -221,7 +296,7 @@ export default function SequenceTask({
                     className="rounded px-2 text-xs"
                     style={{ border: `1px solid ${borderColor}`, background: btnBg, color: textColor }}
                     onClick={() => move(idx, -1)}
-                    disabled={disabled}
+                    disabled={disabled || reviewing}
                     aria-label="Move up"
                   >
                     ↑
@@ -234,7 +309,7 @@ export default function SequenceTask({
                     className="rounded px-2 text-xs"
                     style={{ border: `1px solid ${borderColor}`, background: btnBg, color: textColor }}
                     onClick={() => move(idx, 1)}
-                    disabled={disabled}
+                    disabled={disabled || reviewing}
                     aria-label="Move down"
                   >
                     ↓
