@@ -1390,8 +1390,21 @@ async function sendAdminNotification(lead) {
   const skipped = (lead.results || []).filter((r) => r.skipped);
   const engagement = classifyEngagement(lead.results, lead.totalPoints);
   const isClassroom = lead.source === "classroom";
-  const isConference = lead.source === "conference";
-  const wasOfferedReferral = engagement.level === "keener" && !isClassroom;
+  // Tighten the conference check the same way the user-facing email
+  // does: only treat this as a *real* conference run if both
+  // source==="conference" AND the conference field is something other
+  // than the default "general" (booth visits always pass ?event=...).
+  // Stops a stuck source="conference" on an old lead doc from
+  // re-labelling a /practice session as "Conference Completion".
+  const isConference =
+    lead.source === "conference" &&
+    !!lead.conference &&
+    lead.conference !== "general";
+  // Anything that isn't strictly classroom-or-conference (typically a
+  // /practice run with stale source) is treated as practice for
+  // labelling.  Practice == not conference.
+  const isPractice = !isConference;
+  const wasOfferedReferral = engagement.level === "keener" && isConference;
 
   // ── Top 3 weekly + Top 3 all-time → gift card decisions ──────────────
   let weeklyTopHtml = "";
@@ -1535,8 +1548,11 @@ async function sendAdminNotification(lead) {
     }
   }
 
-  const modeLabel = isClassroom ? "🎓 Practice" : "🎯 Conference";
-  const subjectLine = `${engagement.label} ${isClassroom ? "Student" : "Visitor"}: ${lead.name} (${lead.totalPoints} pts)`;
+  // Label off the *positive* isConference check — practice / classroom
+  // / unknown all collapse to "Practice" so a stuck source="conference"
+  // never mis-labels a /practice run as a conference visit.
+  const modeLabel = isConference ? "🎯 Conference" : "🎓 Practice";
+  const subjectLine = `${engagement.label} ${isConference ? "Visitor" : "Student"}: ${lead.name} (${lead.totalPoints} pts)`;
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 20px;">
@@ -1564,7 +1580,7 @@ async function sendAdminNotification(lead) {
             <td style="padding: 8px 0; color: #64748b;">Avg Fun</td>
             <td style="padding: 8px 0; text-align: right;">${engagement.avgFun ? engagement.avgFun.toFixed(1) + "/5" : "N/A"}</td>
           </tr>
-          ${!isClassroom ? `
+          ${isConference ? `
           <tr>
             <td style="padding: 8px 0; color: #64748b;">Referral Offered</td>
             <td style="padding: 8px 0; text-align: right; font-weight: 700; color: ${wasOfferedReferral ? "#16a34a" : "#94a3b8"};">
