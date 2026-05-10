@@ -18,15 +18,21 @@ import { API_BASE_URL } from "./config.js";
 // Helpers
 // ----------------------------------------------------------------
 
-// Activity-based auto-skip:
-//   - INACTIVITY_GRACE_MS  → how long the player can sit idle before
-//                            the countdown starts.
-//   - WARN_COUNTDOWN_MS    → the visible countdown at which point we
-//                            actually auto-skip if still idle.
-//   ANY pointer / key / touch / scroll resets the inactivity clock,
-//   so an active player NEVER gets auto-skipped.
-const INACTIVITY_GRACE_MS = 30_000;  // 30s idle → countdown begins
-const WARN_COUNTDOWN_MS  = 30_000;   // then 30s warning → auto-skip
+// Practice idle behaviour (changed per tester request):
+//
+//   1. After IDLE_PROMPT_MS of no activity → show a "Done practicing?"
+//      modal asking the player whether to keep going on this task or
+//      finish the whole practice session.
+//   2. If they don't answer the modal AND remain idle for another
+//      IDLE_AUTO_END_MS, we auto-finish the entire practice session
+//      (not just skip the current task) — same outcome as tapping
+//      "I'm done".  Any activity dismisses the modal and resets the
+//      clock.
+//
+// This replaces the old "silent auto-skip after 60s" which testers
+// hated (lost their place / typed feedback).
+const IDLE_PROMPT_MS    = 10 * 60 * 1000;  // 10 min → "Done practicing?"
+const IDLE_AUTO_END_MS  =  5 * 60 * 1000;  // + 5 min → auto end session
 
 // ---- Mascot images & videos (served from frontend/public/images/mascot/) ----
 const MASCOT_BASE = "https://curriculate.net/images/mascot";
@@ -713,7 +719,9 @@ function DemoPlayer({ user, onFinish, source }) {
   const [completedTypes, setCompletedTypes] = useState(new Set());
   // null while the player is active or still in the grace window.
   // A number once the warning countdown is running.
-  const [remainingMs, setRemainingMs] = useState(null);
+  // (legacy remainingMs kept null — the old inactivity countdown UI was
+  // removed in favour of the IDLE_PROMPT_MS "Done practicing?" modal.)
+  const remainingMs = null;
   const [paused, setPaused] = useState(false);
   const [totalPoints, setTotalPoints] = useState(0);
   const [lastEarned, setLastEarned] = useState(null); // for pop animation
@@ -837,63 +845,52 @@ function DemoPlayer({ user, onFinish, source }) {
   // boolean actually flips.
   const timerEffectivelyPaused = paused || showFeedback || typingActive;
 
-  // Activity-based auto-skip.
+  // Inactivity-driven "Done practicing?" prompt.
   //
-  // The clock measures *inactivity*, not total elapsed time on the
-  // task.  As long as the player is doing something, they never get
-  // booted.  Once they've been idle for INACTIVITY_GRACE_MS, a
-  // visible WARN_COUNTDOWN_MS countdown begins; ANY event during the
-  // countdown bumps lastActivityRef and hides the countdown.  Only
-  // sustained inactivity through grace + countdown auto-skips.
+  //   Idle ≥ IDLE_PROMPT_MS    → show the modal (player can choose to
+  //                               keep going or finish the session).
+  //   Idle ≥ IDLE_PROMPT_MS + IDLE_AUTO_END_MS  → auto-finish session.
+  //
+  // ANY activity bumps lastActivityRef and dismisses the modal.  No
+  // task ever gets silently skipped any more.
+  const [showDoneModal, setShowDoneModal] = useState(false);
   useEffect(() => {
-    // Fresh idle clock on every task switch.
     lastActivityRef.current = Date.now();
-    setRemainingMs(null);
+    setShowDoneModal(false);
 
     if (timerEffectivelyPaused) {
-      // Skip dialog / feedback popup / typing in any input freezes
-      // the clock.  Bump so the player gets the full grace window
-      // back when they close the dialog.
       lastActivityRef.current = Date.now();
       return;
     }
 
     timerRef.current = setInterval(() => {
       const idleFor = Date.now() - lastActivityRef.current;
-      if (idleFor < INACTIVITY_GRACE_MS) {
-        // Still in the silent grace window — no countdown shown.
-        setRemainingMs((prev) => (prev === null ? prev : null));
+      if (idleFor >= IDLE_PROMPT_MS + IDLE_AUTO_END_MS) {
+        // 15 minutes of nothing → finish the session entirely.
+        clearInterval(timerRef.current);
+        onFinish(results);
         return;
       }
-      const intoCountdown = idleFor - INACTIVITY_GRACE_MS;
-      const rem = WARN_COUNTDOWN_MS - intoCountdown;
-      if (rem <= 0) {
-        // Auto-skip: still idle after grace + full countdown.
-        clearInterval(timerRef.current);
-        setResults((prev) => [
-          ...prev,
-          {
-            taskType: task?.taskType,
-            title: task?.title,
-            answer: null,
-            skipped: true,
-            points: 0,
-            completedAt: new Date().toISOString(),
-          },
-        ]);
-        setStreak(0);
-        if (taskIdx < total - 1) {
-          setTaskIdx((i) => i + 1);
-        } else {
-          onFinish(results);
-        }
+      if (idleFor >= IDLE_PROMPT_MS) {
+        setShowDoneModal((prev) => prev || true);
       } else {
-        setRemainingMs(rem);
+        setShowDoneModal((prev) => (prev ? false : prev));
       }
-    }, 250);
+    }, 1000);
 
     return () => clearInterval(timerRef.current);
-  }, [taskIdx, timerEffectivelyPaused]);
+  }, [taskIdx, timerEffectivelyPaused, results, onFinish]);
+
+  // Modal handlers.  "Keep going" just bumps activity so the popup goes
+  // away; "I'm done" finishes the session immediately.
+  const handleStillPracticing = () => {
+    lastActivityRef.current = Date.now();
+    setShowDoneModal(false);
+  };
+  const handleEndPractice = () => {
+    setShowDoneModal(false);
+    onFinish(results);
+  };
 
   // Submit handler — earns adaptive points, then shows feedback popup
   const handleSubmit = useCallback(
@@ -1034,10 +1031,9 @@ function DemoPlayer({ user, onFinish, source }) {
 
   const progressPct = ((taskIdx + 1) / total) * 100;
   // Width of the inactivity-warning bar (only shown when the warn
-  // countdown is active; remainingMs === null otherwise).
-  const timerPct =
-    remainingMs == null ? 100 : (remainingMs / WARN_COUNTDOWN_MS) * 100;
-  const showInactivityWarning = remainingMs != null;
+  // No more on-screen idle countdown bar — replaced by the modal.
+  const timerPct = 100;
+  const showInactivityWarning = false;
 
   return (
     <div style={styles.playerOuter}>
@@ -1049,6 +1045,81 @@ function DemoPlayer({ user, onFinish, source }) {
 
       {/* Treat toast — conference mode, after 3 completions */}
       {showTreat && <TreatToast onDismiss={() => setShowTreat(false)} />}
+
+      {/* "Done practicing?" idle prompt — fires after 10 min of
+          inactivity.  Player can keep going (resets idle clock) or
+          finish the whole session.  Replaces the silent auto-skip
+          that testers complained about. */}
+      {showDoneModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={handleStillPracticing}
+          style={{
+            position: "fixed", inset: 0, zIndex: 10001,
+            background: "rgba(15,23,42,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%", maxWidth: 380,
+              background: "#0f172a",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 20,
+              padding: "24px 22px",
+              color: "#f1f5f9",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: 40, marginBottom: 8 }}>👋</div>
+            <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>
+              Done practicing?
+            </div>
+            <div style={{ fontSize: 13, color: "rgba(226,232,240,0.7)", lineHeight: 1.5, marginBottom: 18 }}>
+              You've been idle for about 10 minutes.
+              <br />
+              Tap <b>Keep going</b> to stay on this task, or <b>I'm done</b>{" "}
+              to finish your practice session.
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                type="button"
+                onClick={handleStillPracticing}
+                style={{
+                  flex: 1, padding: "10px 16px", borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.16)",
+                  background: "rgba(255,255,255,0.06)",
+                  color: "#f1f5f9", fontWeight: 800, fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                Keep going
+              </button>
+              <button
+                type="button"
+                onClick={handleEndPractice}
+                style={{
+                  flex: 1, padding: "10px 16px", borderRadius: 12,
+                  border: "none",
+                  background: "linear-gradient(135deg, #f59e0b, #ef4444)",
+                  color: "#fff", fontWeight: 900, fontSize: 14,
+                  cursor: "pointer",
+                  boxShadow: "0 4px 14px rgba(239,68,68,0.4)",
+                }}
+              >
+                I'm done
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: "rgba(148,163,184,0.6)", marginTop: 14 }}>
+              We'll auto-finish in ~5 minutes if no one taps.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Task feedback popup */}
       {showFeedback && pendingEntry && (

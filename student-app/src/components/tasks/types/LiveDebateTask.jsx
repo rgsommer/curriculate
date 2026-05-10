@@ -297,7 +297,9 @@ export default function LiveDebateTask({
                 {r.speaker}
               </span>
             </div>
-            <div className="text-base text-slate-800 leading-relaxed">{r.text}</div>
+            {/* text-slate-900 (was -slate-800) for stronger contrast
+                on the green-50 / red-50 message bubbles. */}
+            <div className="text-base text-slate-900 leading-relaxed font-medium">{r.text}</div>
           </div>
         ))}
         <div ref={threadEndRef} />
@@ -384,7 +386,10 @@ export default function LiveDebateTask({
                       ? "Transcribing your speech..."
                       : `${currentSpeaker}, speak or type your argument...`
                   }
-                  className="w-full p-4 pr-16 border-2 rounded-xl resize-none text-lg"
+                  // Explicit bg + text colour: tester reported the typed
+                  // text was invisible — likely the parent dark theme
+                  // was bleeding into the unstyled textarea.
+                  className="w-full p-4 pr-16 border-2 border-slate-300 rounded-xl resize-none text-lg bg-white text-slate-900 placeholder:text-slate-400"
                   rows="4"
                   disabled={isRecording || isTranscribing}
                 />

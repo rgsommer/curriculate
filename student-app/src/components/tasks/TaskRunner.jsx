@@ -2576,6 +2576,7 @@ case "multi_player_feedback":
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled}
           memberNames={memberNames}
+          practiceMode={practiceMode}
         />
       );
       break;
@@ -2587,6 +2588,7 @@ case "multi_player_feedback":
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled}
           memberNames={memberNames}
+          practiceMode={practiceMode}
         />
       );
       break;
@@ -3058,7 +3060,14 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
 
     case TASK_TYPES.SPEED_DRAW:
       content = (
-        <SpeedDrawTask task={tp} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
+        <SpeedDrawTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+          memberNames={memberNames}
+          practiceMode={practiceMode}
+        />
       );
       break;
 

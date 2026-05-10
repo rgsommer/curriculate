@@ -415,8 +415,11 @@ export default function TrueFalseTicTacToeTask({
               onTouchEnd={handleTouchEnd}
               onClick={() => handleStatementClick(stmt)}
               className={[
-                "p-4 rounded-lg text-lg font-medium text-center transition-all duration-200 cursor-pointer select-none",
-                "bg-amber-50 border-2 border-amber-400",
+                "p-4 rounded-lg text-lg font-bold text-center transition-all duration-200 cursor-pointer select-none",
+                // text-slate-900 (was unspecified, defaulting to whatever
+                // the dark theme inherited).  Tester said statements were
+                // unreadable — locking in dark text on the amber bg.
+                "bg-amber-50 border-2 border-amber-400 text-slate-900",
                 disabled ? "opacity-50" : "hover:scale-105 active:scale-95",
                 isActive ? "ring-4 ring-indigo-500 scale-105 shadow-lg" : "",
               ].join(" ")}

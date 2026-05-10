@@ -145,7 +145,26 @@ export default function MysteryCluesTask({ task, onSubmit, disabled }) {
   const revealMs = Number(task?.revealMs ?? REVEAL_MS_DEFAULT) || REVEAL_MS_DEFAULT;
   const bonusPoints = Number(task?.bonusPoints ?? BONUS_DEFAULT) || BONUS_DEFAULT;
 
-  const cluesThisTask = useMemo(() => uniqClean(task?.clues || task?.clueCards || []), [task]);
+  // Pull clues from any of the common shapes the AI may produce.
+  // Fall back to a small slice of DEFAULT_GRID so the task is *always*
+  // playable — testers reported a hard error ("This task was generated
+  // without a clues array") which we now treat as soft-recoverable.
+  const cluesThisTask = useMemo(() => {
+    const declared = uniqClean(task?.clues || task?.clueCards || task?.config?.clues || []);
+    if (declared.length > 0) return declared;
+    if (isFinal) return [];
+    // Non-final / mid-session card with no clues: pick a deterministic
+    // 3-emoji slice so each card is consistent on repeat plays.
+    const seedSrc = String(task?.id || task?.title || "mystery").slice(0, 32);
+    let seed = 0;
+    for (let i = 0; i < seedSrc.length; i += 1) seed = (seed * 31 + seedSrc.charCodeAt(i)) | 0;
+    const start = Math.abs(seed) % Math.max(1, DEFAULT_GRID.length - 3);
+    return DEFAULT_GRID.slice(start, start + 3);
+  }, [task, isFinal]);
+  const usingFallbackClues =
+    !isFinal &&
+    cluesThisTask.length > 0 &&
+    !uniqClean(task?.clues || task?.clueCards || task?.config?.clues || []).length;
 
   const [phase, setPhase] = useState(isFinal ? "recall" : (cluesThisTask.length ? "reveal" : "noop"));
   const [revealLeftMs, setRevealLeftMs] = useState(revealMs);
@@ -324,11 +343,16 @@ export default function MysteryCluesTask({ task, onSubmit, disabled }) {
         </div>
       )}
 
-      {/* If a non-final task has no clues, don't block the flow. */}
+      {/* "noop" should only ever fire on a final card with no clues to
+          recall; non-final cards now always fall back to DEFAULT_GRID
+          so this branch shouldn't render in practice.  Keep the
+          friendly continue button as a last-resort safety. */}
       {!isFinal && phase === "noop" && (
         <div style={{ marginTop: 26, opacity: 0.95, maxWidth: 720 }}>
-          <div style={{ fontSize: 18, fontWeight: 900 }}>No clues on this card.</div>
-          <div style={{ marginTop: 8 }}>This task was generated without a <code style={{ color: "#fff" }}>clues</code> array.</div>
+          <div style={{ fontSize: 18, fontWeight: 900 }}>Nothing to memorise on this card.</div>
+          <div style={{ marginTop: 8, fontSize: 14, opacity: 0.85 }}>
+            Tap continue to move on.
+          </div>
           <button
             onClick={() => onSubmit?.({ kind: "mystery-clues", phase: "noop", ok: true })}
             disabled={disabled}

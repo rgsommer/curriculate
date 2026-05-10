@@ -53,7 +53,7 @@ async function fetchFallbackImage(config) {
   }
 }
 
-export default function ArtViewTask({ task, onSubmit, disabled, memberNames = [] }) {
+export default function ArtViewTask({ task, onSubmit, disabled, memberNames = [], practiceMode = false }) {
   const config = task?.config || {};
   const originalUrl = config.imageUrl || "";
   const viewingSec = Math.max(10, Number(config.viewingSeconds) || 60);
@@ -68,7 +68,10 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
   const [observations, setObservations] = useState([]);
   const [inputValue, setInputValue] = useState("");
   const [submitted, setSubmitted] = useState(false);
-  const [useScreen, setUseScreen] = useState(false); // default: paper mode
+  // Default to screen mode in practice (no real paper, no camera UX);
+  // classroom + conference still default to paper.  Tester reported
+  // "no place to comment" — paper mode hid the textarea.
+  const [useScreen, setUseScreen] = useState(practiceMode);
   const inputRef = useRef(null);
 
   // ── Image preload + fallback ──

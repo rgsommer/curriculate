@@ -57,7 +57,7 @@ async function fetchFallbackImage(config) {
   }
 }
 
-export default function HistoricalDocTask({ task, onSubmit, disabled, memberNames = [] }) {
+export default function HistoricalDocTask({ task, onSubmit, disabled, memberNames = [], practiceMode = false }) {
   const config = task?.config || {};
   const originalUrl = config.imageUrl || "";
   const viewingSec = Math.max(10, Number(config.viewingSeconds) || 90);
@@ -77,7 +77,10 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
     analysisPrompts.map((prompt) => ({ prompt, response: "" }))
   );
   const [submitted, setSubmitted] = useState(false);
-  const [useScreen, setUseScreen] = useState(false); // default: paper mode
+  // Default to screen mode in practice (no paper, no camera).  Tester
+  // reported "no historical document visible, no place to comment" —
+  // because paper mode hid the on-screen textareas.
+  const [useScreen, setUseScreen] = useState(practiceMode);
   const firstInputRef = useRef(null);
 
   // ── Image preload + fallback ──

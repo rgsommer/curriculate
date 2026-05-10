@@ -191,16 +191,25 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
       setAiResult(result);
       setAssessing(false);
       setSubmitted(true);
-
-      if (onSubmit) {
-        onSubmit({
-          ...submission,
-          ...result,
-          taskType: "teach-back",
-        });
-      }
+      // Defer onSubmit until the player taps the "Thanks — got it"
+      // button on the result screen.  Previously we fired onSubmit
+      // immediately, which advanced to the next task before the
+      // player could read the AI feedback.  See pendingSubmissionRef.
+      pendingSubmissionRef.current = {
+        ...submission,
+        ...result,
+        taskType: "teach-back",
+      };
     }, 1500);
-  }, [explanation, inputMode, concepts, targetAge, priorEntries, onSubmit]);
+  }, [explanation, inputMode, concepts, targetAge, priorEntries]);
+
+  const pendingSubmissionRef = useRef(null);
+  const acknowledgeAiFeedback = useCallback(() => {
+    if (onSubmit && pendingSubmissionRef.current) {
+      onSubmit(pendingSubmissionRef.current);
+      pendingSubmissionRef.current = null;
+    }
+  }, [onSubmit]);
 
   // Cleanup
   useEffect(() => {
@@ -246,14 +255,27 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
         {/* Feedback */}
         <div className="rounded-2xl bg-blue-50 border border-blue-200 p-4">
           <div className="text-sm font-bold text-blue-800 mb-1">AI Feedback</div>
-          <p className="text-sm text-blue-700">{aiResult.feedback}</p>
+          {/* text-blue-900 (was -700) for stronger contrast on bg-blue-50. */}
+          <p className="text-base text-blue-900 leading-relaxed font-medium">{aiResult.feedback}</p>
         </div>
 
         {/* Your explanation */}
         <div className="rounded-2xl bg-gray-50 border border-gray-200 p-4">
           <div className="text-sm font-bold text-gray-700 mb-1">Your explanation</div>
-          <p className="text-sm text-gray-600 whitespace-pre-wrap">{explanation}</p>
+          {/* text-slate-900 (was -gray-600) so the player can re-read what they wrote. */}
+          <p className="text-sm text-slate-900 whitespace-pre-wrap font-medium">{explanation}</p>
         </div>
+
+        {/* "Thanks — got it" — gives the player time to read the AI
+            feedback before advancing to the next task.  Tester reported
+            the feedback used to disappear too quickly. */}
+        <button
+          type="button"
+          onClick={acknowledgeAiFeedback}
+          className="w-full mt-2 px-5 py-3 rounded-2xl text-base font-black bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg active:scale-95 transition-transform"
+        >
+          Thanks — got it ▶
+        </button>
       </div>
     );
   }
@@ -321,7 +343,8 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
         ))}
       </div>
 
-      {/* Input area */}
+      {/* Input area — explicit bg-white + text-slate-900 so the typed
+          text is always readable.  Tester reported invisible text. */}
       {inputMode === "text" && (
         <textarea
           value={explanation}
@@ -329,7 +352,7 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
           placeholder={`Explain ${concepts.join(", ")} in simple words that ${targetAge} would understand...`}
           disabled={disabled}
           rows={6}
-          className="w-full rounded-2xl border border-gray-300 p-4 text-sm font-medium focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none resize-none disabled:opacity-50"
+          className="w-full rounded-2xl border border-gray-300 p-4 text-sm font-medium focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none resize-none disabled:opacity-50 bg-white text-slate-900 placeholder:text-slate-400"
         />
       )}
 
@@ -340,7 +363,9 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
             onChange={(e) => setExplanation(e.target.value)}
             placeholder="Your speech will appear here. You can also edit it."
             rows={5}
-            className="w-full rounded-2xl border border-gray-300 p-4 text-sm font-medium focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none resize-none"
+            // bg-white + text-slate-900 keeps the dictated text visible
+            // regardless of theme inheritance.
+            className="w-full rounded-2xl border border-gray-300 p-4 text-sm font-medium focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none resize-none bg-white text-slate-900 placeholder:text-slate-400"
           />
           <button
             onClick={isListening ? stopListening : startListening}
