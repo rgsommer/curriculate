@@ -162,11 +162,34 @@ export default function MakeAndSnapTask({
     reader.readAsDataURL(file);
   };
 
+  // Tester: 'submit should go green only when there is at least 1
+  // proper sentence — start with a capital letter, and end with
+  // punctuation'.  Counts sentences that satisfy both rules.
+  const properSentenceCount = (() => {
+    const t = String(note || "").trim();
+    if (!t) return 0;
+    const candidates = t.split(/(?<=[.!?])\s+/);
+    let n = 0;
+    for (const raw of candidates) {
+      const s = raw.trim();
+      if (!s) continue;
+      const startsCap = /^[A-Z]/.test(s);
+      const endsPunct = /[.!?]$/.test(s);
+      if (startsCap && endsPunct && s.split(/\s+/).length >= 2) n += 1;
+    }
+    return n;
+  })();
+  const noteAcceptable = properSentenceCount >= 1;
+
   const handleSubmit = async () => {
     if (uiDisabled) return;
 
     if (!imagePreview) {
       alert("Please take a photo of what you made before submitting.");
+      return;
+    }
+    if (!noteAcceptable) {
+      alert("Write at least one proper sentence — start with a capital letter and end with . ! or ?");
       return;
     }
 
@@ -422,10 +445,28 @@ export default function MakeAndSnapTask({
         }}
       />
 
+      {/* Live sentence-quality hint so the player knows why Submit is grey */}
+      {note.trim() && !noteAcceptable && (
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            color: "#fbbf24",
+            marginBottom: 8,
+            padding: "6px 10px",
+            background: "rgba(245,158,11,0.08)",
+            border: "1px solid rgba(245,158,11,0.30)",
+            borderRadius: 8,
+          }}
+        >
+          Need at least 1 proper sentence — capital letter at the start, . ! or ? at the end.
+        </div>
+      )}
+
       <button
         type="button"
         onClick={handleSubmit}
-        disabled={uiDisabled || !imagePreview || !note.trim()}
+        disabled={uiDisabled || !imagePreview || !noteAcceptable}
         style={{
           display: "block",
           width: "100%",
@@ -433,12 +474,16 @@ export default function MakeAndSnapTask({
           borderRadius: 10,
           border: "none",
           background:
-            uiDisabled || !imagePreview ? "#64748b" : "#22c55e",
+            uiDisabled || !imagePreview || !noteAcceptable
+              ? "#64748b"
+              : "#22c55e",
           color: "#fff",
           fontSize: "1rem",
           fontWeight: 600,
           cursor:
-            uiDisabled || !imagePreview ? "default" : "pointer",
+            uiDisabled || !imagePreview || !noteAcceptable
+              ? "default"
+              : "pointer",
         }}
       >
         {submitted ? "Submitted" : uploading ? "Uploading…" : "Submit"}

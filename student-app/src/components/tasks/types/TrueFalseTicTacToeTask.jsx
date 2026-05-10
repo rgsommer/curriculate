@@ -84,6 +84,12 @@ export default function TrueFalseTicTacToeTask({
     }
   }, [task.winner, currentRole]);
 
+  // Misplay popup state — surfaces when the player picks a statement
+  // whose truth value places a piece for the OTHER team.  Tester:
+  // 'if the true player places a false or a false player places a
+  // true, popup must say you scored 1 for the other team or the like'.
+  const [misplayMsg, setMisplayMsg] = useState(null);
+
   // Core logic: given a statement + board index, apply the move.
   // The piece color is determined by the STATEMENT's truth value, not by who plays it.
   // True statement → Blue O, False statement → Red X — always.
@@ -92,6 +98,21 @@ export default function TrueFalseTicTacToeTask({
 
     // Statement truth determines the piece: true → O (Blue), false → X (Red)
     const placedRole = statement.isFalse ? "X" : "O";
+
+    // Detect a misplay: the placed piece doesn't match the active
+    // player's team.  Triggers an explanatory popup so kids understand
+    // why the wrong square just appeared.
+    if (placedRole !== currentRole) {
+      const otherTeam = placedRole === "X" ? "FALSE (Red)" : "TRUE (Blue)";
+      const myTeam = currentRole === "X" ? "FALSE (Red)" : "TRUE (Blue)";
+      setMisplayMsg(
+        statement.isFalse
+          ? `That was a FALSE statement! ${myTeam} just gave ${otherTeam} a square.`
+          : `That was a TRUE statement! ${myTeam} just gave ${otherTeam} a square.`
+      );
+      // Auto-dismiss after 2.6s.
+      setTimeout(() => setMisplayMsg(null), 2600);
+    }
 
     const newBoard = [...board];
     newBoard[index] = placedRole;
@@ -451,6 +472,40 @@ export default function TrueFalseTicTacToeTask({
       {/* Victory overlay */}
       {showVictory && (
         <VictoryScreen onClose={() => setShowVictory(false)} />
+      )}
+
+      {/* Misplay popup — explains that picking the wrong-truth-value
+          statement just gave a square to the other team. */}
+      {misplayMsg && (
+        <div
+          role="status"
+          style={{
+            position: "fixed",
+            top: 80,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 9999,
+            padding: "14px 22px",
+            borderRadius: 16,
+            background: "linear-gradient(135deg, #f59e0b, #ef4444)",
+            color: "#fff",
+            fontWeight: 900,
+            fontSize: 14,
+            maxWidth: "min(92vw, 440px)",
+            textAlign: "center",
+            lineHeight: 1.4,
+            boxShadow: "0 12px 32px rgba(239,68,68,0.4)",
+            animation: "tttMisplayPop 0.32s cubic-bezier(0.2,0.7,0.2,1.4) both",
+          }}
+        >
+          ⚠️ {misplayMsg}
+          <style>{`
+            @keyframes tttMisplayPop {
+              0% { transform: translateX(-50%) scale(0.7); opacity: 0; }
+              100% { transform: translateX(-50%) scale(1); opacity: 1; }
+            }
+          `}</style>
+        </div>
       )}
     </div>
   );

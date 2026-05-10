@@ -30,17 +30,51 @@ export default function TriviaTask({ task, onSubmit, disabled }) {
     setSelectedAnswer(answer);
   }
 
+  // Lazy WebAudio click — sound on correct / wrong reveal so the
+  // task feels alive (tester: 'maybe correct answer sounds?').
+  const playTriviaTone = (kind) => {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = playTriviaTone._ctx || (playTriviaTone._ctx = new Ctx());
+      const t0 = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = kind === "correct" ? "triangle" : "sawtooth";
+      if (kind === "correct") {
+        osc.frequency.setValueAtTime(660, t0);
+        osc.frequency.exponentialRampToValueAtTime(990, t0 + 0.18);
+      } else if (kind === "wrong") {
+        osc.frequency.setValueAtTime(280, t0);
+        osc.frequency.exponentialRampToValueAtTime(180, t0 + 0.22);
+      } else { // victory
+        osc.frequency.setValueAtTime(523, t0);
+        osc.frequency.linearRampToValueAtTime(784, t0 + 0.18);
+        osc.frequency.linearRampToValueAtTime(1046, t0 + 0.36);
+      }
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.22, t0 + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.4);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + 0.45);
+    } catch {}
+  };
+
   function handleReveal() {
     if (revealed) return;
     setRevealed(true);
-    // Check if correct
+    // Check if correct + play matching sound
+    let isCorrect = false;
     if (mode === "bluff") {
-      if (selectedAnswer === round.fakeIndex) setScore((s) => s + 1);
+      isCorrect = selectedAnswer === round.fakeIndex;
     } else if (mode === "truefalse") {
-      if (selectedAnswer === round.answer) setScore((s) => s + 1);
+      isCorrect = selectedAnswer === round.answer;
     } else if (mode === "closerto") {
-      if (selectedAnswer === round.correctChoice) setScore((s) => s + 1);
+      isCorrect = selectedAnswer === round.correctChoice;
     }
+    if (isCorrect) setScore((s) => s + 1);
+    playTriviaTone(isCorrect ? "correct" : "wrong");
   }
 
   function handleNext() {
@@ -50,6 +84,7 @@ export default function TriviaTask({ task, onSubmit, disabled }) {
       setRevealed(false);
     } else {
       setFinished(true);
+      playTriviaTone("victory");
     }
   }
 
@@ -61,10 +96,63 @@ export default function TriviaTask({ task, onSubmit, disabled }) {
 
   // ── Finished state ──
   if (finished || rounds.length === 0) {
+    const isPerfect = rounds.length > 0 && score === rounds.length;
     return (
       <div style={styles.container}>
-        <div style={{ fontSize: "3rem" }}>🧠</div>
-        <div style={styles.tag}>Trivia Complete!</div>
+        <style>{`
+          @keyframes trivPop {
+            0% { transform: scale(0.6) rotate(-12deg); opacity: 0; }
+            60% { transform: scale(1.15) rotate(4deg); opacity: 1; }
+            100% { transform: scale(1) rotate(0); opacity: 1; }
+          }
+          @keyframes trivBounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+          }
+          @keyframes trivConfettiFall {
+            0% { transform: translateY(-30px) rotate(0deg); opacity: 0; }
+            10% { opacity: 1; }
+            100% { transform: translateY(420px) rotate(540deg); opacity: 0; }
+          }
+        `}</style>
+
+        {/* Confetti only on a perfect score */}
+        {isPerfect && (
+          <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
+            {Array.from({ length: 24 }).map((_, i) => {
+              const colors = ["#fbbf24", "#22c55e", "#3b82f6", "#a855f7", "#ef4444", "#06b6d4"];
+              const left = 5 + (i * 4.1) % 90;
+              const delay = (i * 0.07) % 1.4;
+              const dur = 1.8 + ((i * 0.13) % 1.2);
+              return (
+                <div
+                  key={i}
+                  style={{
+                    position: "absolute",
+                    left: `${left}%`,
+                    top: -20,
+                    width: 8,
+                    height: 14,
+                    background: colors[i % colors.length],
+                    borderRadius: 2,
+                    animation: `trivConfettiFall ${dur}s linear ${delay}s infinite`,
+                    transform: "rotate(15deg)",
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
+
+        <div
+          style={{
+            fontSize: "4rem",
+            animation: "trivPop 0.5s ease-out, trivBounce 1.4s ease-in-out 0.5s infinite",
+          }}
+        >
+          {isPerfect ? "🏆" : score >= rounds.length / 2 ? "🎉" : "🧠"}
+        </div>
+        <div style={styles.tag}>{isPerfect ? "PERFECT SCORE!" : "Trivia Complete!"}</div>
         {rounds.length > 0 && (
           <div style={styles.scoreBox}>
             {score}/{rounds.length} correct

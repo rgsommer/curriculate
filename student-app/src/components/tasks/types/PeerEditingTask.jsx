@@ -666,18 +666,21 @@ export default function PeerEditingTask({ task, onSubmit, disabled }) {
           <div
             style={{
               display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
-              padding: "10px 12px", borderRadius: 14,
-              background: "rgba(245,158,11,0.08)",
-              border: "1px solid rgba(245,158,11,0.25)",
+              padding: "12px 14px", borderRadius: 14,
+              // Solid surface (was 8% amber on dark theme — invisible).
+              // Tester reported the whole status box was hard to read.
+              background: "linear-gradient(135deg, #fef3c7, #fde68a)",
+              border: "2px solid #f59e0b",
+              boxShadow: "0 4px 12px rgba(245,158,11,0.18)",
               marginBottom: 12,
             }}
           >
-            <span style={{ fontSize: 18 }}>🔍</span>
+            <span style={{ fontSize: 22 }}>🔍</span>
             <div style={{ flex: 1, minWidth: 140 }}>
-              <div style={{ fontSize: 13, fontWeight: 900, color: "#fbbf24" }}>
+              <div style={{ fontSize: 14, fontWeight: 900, color: "#78350f" }}>
                 {totalIssuesToFind} {totalIssuesToFind === 1 ? "issue" : "issues"} hidden in this passage
               </div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(226,232,240,0.7)" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#92400e" }}>
                 {found > 0
                   ? `Marked ${found} of ${totalIssuesToFind}${remaining > 0 ? ` — ${remaining} to go.` : " — nice work!"}`
                   : "Mark words you think are wrong. Stuck? Use a hint."}
@@ -689,14 +692,15 @@ export default function PeerEditingTask({ task, onSubmit, disabled }) {
               disabled={remaining === 0}
               title={remaining === 0 ? "All issues marked" : "Reveals which sentence has an unfound issue"}
               style={{
-                padding: "8px 14px", borderRadius: 12,
-                border: "1px solid rgba(251,191,36,0.4)",
+                padding: "10px 16px", borderRadius: 12,
+                border: "none",
                 background: remaining === 0
-                  ? "rgba(255,255,255,0.04)"
-                  : "linear-gradient(135deg, rgba(251,191,36,0.18), rgba(245,158,11,0.18))",
-                color: remaining === 0 ? "rgba(255,255,255,0.4)" : "#fbbf24",
-                fontWeight: 900, fontSize: 12,
+                  ? "rgba(15,23,42,0.10)"
+                  : "linear-gradient(135deg, #f59e0b, #d97706)",
+                color: remaining === 0 ? "rgba(15,23,42,0.4)" : "#fff",
+                fontWeight: 900, fontSize: 13,
                 cursor: remaining === 0 ? "default" : "pointer",
+                boxShadow: remaining === 0 ? "none" : "0 4px 12px rgba(245,158,11,0.4)",
               }}
             >
               💡 Hint{hintsUsed > 0 ? ` (${hintsUsed} used)` : ""}

@@ -656,7 +656,7 @@ export default function OpenTextTask({
                 backdropFilter: "blur(10px)",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
                 {/* Word count badge */}
                 <div
                   style={{
@@ -674,6 +674,41 @@ export default function OpenTextTask({
                   <span style={{ fontSize: "16px" }}>📝</span>
                   {computedMinWords > 0 ? `${wordCount}/${computedMinWords}` : `${wordCount}`}
                 </div>
+
+                {/* Length-bonus indicator (tester ask): visualises bonus
+                    points the player is "earning" just for being substantive.
+                    AI scoring at submit can claw it back if the words are
+                    nonsense — but seeing the bonus tick up encourages
+                    longer answers. */}
+                {(() => {
+                  // Bonus tiers tied to length: <20 = 0; 20-39 = +1;
+                  // 40-79 = +3; 80-149 = +5; 150+ = +7.
+                  const bonus =
+                    wordCount >= 150 ? 7 :
+                    wordCount >= 80  ? 5 :
+                    wordCount >= 40  ? 3 :
+                    wordCount >= 20  ? 1 : 0;
+                  return (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        background: bonus > 0 ? "rgba(245,158,11,0.25)" : "rgba(255,255,255,0.06)",
+                        border: bonus > 0 ? "1px solid rgba(245,158,11,0.55)" : "1px solid rgba(255,255,255,0.10)",
+                        color: bonus > 0 ? "#fbbf24" : "rgba(255,255,255,0.5)",
+                        borderRadius: 8,
+                        padding: "6px 10px",
+                        fontWeight: 800,
+                        fontSize: 13,
+                        transition: "all 0.2s",
+                      }}
+                      title="Substantive-answer bonus.  AI may dock it at submit if the words don't make sense."
+                    >
+                      ✨ +{bonus} bonus
+                    </div>
+                  );
+                })()}
 
                 {/* Character count */}
                 <div
