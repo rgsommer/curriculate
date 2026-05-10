@@ -128,7 +128,7 @@ export function scheduleSlots({
  *                               and for non-Christian recipients)
  * ────────────────────────────────────────────────────────────────────── */
 
-const VAR_PATTERN = /\{\{\s*(firstName|lastName|school|board|role|level|salutation|role_pitch|christian_perspective)\s*\}\}/g;
+const VAR_PATTERN = /\{\{\s*(firstName|lastName|school|board|role|level|salutation|role_pitch|christian_perspective|credential_intro)\s*\}\}/g;
 
 // Role bucketing — normalize whatever the CSV row says into one of four buckets
 function bucketRole(role = "") {
@@ -160,6 +160,21 @@ const ROLE_PITCH = {
   },
 };
 
+// Sender credential — the very first sentence after "Hey! It's Richard.".
+// Christian-school recipients get the Papua New Guinea + leadership-roles
+// framing (resonates with OACS / mission-school audiences); everyone else
+// gets the broader "25+ years in education, teaching and leadership" line.
+const CREDENTIAL_INTRO = {
+  default: {
+    en: `After <strong>more than 25 years in education across Ontario and international schools</strong> — including teaching and school leadership roles — I went back into the classroom.`,
+    fr: `Après <strong>plus de 25 ans en éducation en Ontario et dans des écoles internationales</strong> — y compris en enseignement et en direction scolaire — je suis retourné en classe.`,
+  },
+  christian: {
+    en: `After <strong>more than 25 years in education across Ontario and Papua New Guinea</strong>, including school leadership roles, I went back into the classroom.`,
+    fr: `Après <strong>plus de 25 ans en éducation en Ontario et en Papouasie-Nouvelle-Guinée</strong>, y compris en direction scolaire, je suis retourné en classe.`,
+  },
+};
+
 // Christian-school perspective overlay — only for Curriculate + Pulse
 const CHRISTIAN_PERSPECTIVE = {
   curriculate: {
@@ -188,12 +203,16 @@ export function renderTemplate(html, vars, opts = {}) {
   const christian = isChristian
     ? (CHRISTIAN_PERSPECTIVE[product]?.[language] || "")
     : "";
+  const credIntro = (isChristian
+    ? (CREDENTIAL_INTRO.christian[language] || CREDENTIAL_INTRO.christian.en)
+    : (CREDENTIAL_INTRO.default[language]   || CREDENTIAL_INTRO.default.en));
 
   return String(html || "").replace(VAR_PATTERN, (_m, key) => {
     const v = vars[key];
     if (key === "salutation") return v || (vars.firstName ? `Hi ${vars.firstName},` : "Hello,");
     if (key === "role_pitch") return rolePitch;
     if (key === "christian_perspective") return christian;
+    if (key === "credential_intro") return credIntro;
     return v == null ? "" : String(v);
   });
 }
@@ -260,7 +279,7 @@ const DEFAULT_TEMPLATES = {
       subject: "Interactive lessons built by a former school administrator",
       body: wrap(`
         <p>Hey! It's Richard. I just ran <strong>Curriculate</strong> scavenger-hunt activities (think station-based learning) with my own Ontario junior-high classes and wanted to share it with one or two principals I respect in the area.</p>
-        <p>Quick context: I spent <strong>26 years as a school administrator</strong> in Ontario and international schools before going back to the classroom. <em>Curriculate is what I wished I'd had — both as a principal and now as a teacher.</em> It's in an active pilot phase: we're inviting a small number of schools to use it free of charge during R&D in exchange for thoughtful feedback from teachers and students.</p>
+        <p>Quick context: {{credential_intro}} <em>Curriculate is what I wished I'd had — both as a school leader and now as a teacher.</em> It's in an active pilot phase: we're inviting a small number of schools to use it free of charge during R&D in exchange for thoughtful feedback from teachers and students.</p>
         <p>In practice, teachers type a lesson topic, Curriculate generates a station-based activity in about 30 seconds, students rotate through it on phones or Chromebooks, and the teacher gets a live view of participation, progress, and misconceptions.</p>
         <p style="margin:14px 0;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:14px;">
           Concrete example: last month my Grade 7 students worked through a <em>War of 1812</em> station activity — teams rotating through QR-directed historical challenges while I monitored progress live from my laptop. By the end of the period every student had hit every station. That doesn't happen with a worksheet.
@@ -275,7 +294,7 @@ const DEFAULT_TEMPLATES = {
       subject: "Leçons interactives conçues par un ancien directeur d'école",
       body: wrap(`
         <p>Bonjour ! Je m'appelle Richard. Je viens d'utiliser <strong>Curriculate</strong> avec mes propres élèves du premier cycle du secondaire en Ontario et je voulais en parler à quelques directions que j'estime.</p>
-        <p>Contexte rapide : j'ai été <strong>administrateur scolaire pendant 26 ans</strong> en Ontario et dans des écoles internationales avant de retourner à l'enseignement. <em>Curriculate est l'outil que j'aurais voulu avoir — comme directeur, et maintenant comme enseignant.</em> Nous sommes en phase pilote : nous invitons un petit nombre d'écoles à l'utiliser gratuitement durant cette phase de R&D, en échange de commentaires réfléchis.</p>
+        <p>Contexte rapide : {{credential_intro}} <em>Curriculate est l'outil que j'aurais voulu avoir — comme directeur, et maintenant comme enseignant.</em> Nous sommes en phase pilote : nous invitons un petit nombre d'écoles à l'utiliser gratuitement durant cette phase de R&D, en échange de commentaires réfléchis.</p>
         <p>En pratique, l'enseignant tape un sujet, Curriculate génère une activité par stations en environ 30 secondes, les élèves circulent sur téléphones ou Chromebooks, et l'enseignant obtient une vue en direct de la participation, des progrès et des conceptions erronées.</p>
         <p style="margin:14px 0;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:14px;">
           Exemple concret : le mois dernier, mes élèves de 7<sup>e</sup> année ont fait une activité par stations sur la <em>Guerre de 1812</em> — des équipes circulaient entre des défis historiques accessibles par codes QR pendant que je suivais leurs progrès depuis mon ordinateur. À la fin de la période, chaque élève avait visité chaque station.
@@ -292,7 +311,7 @@ const DEFAULT_TEMPLATES = {
       subject: "Reduce grading time by 90% — built by a former school administrator",
       body: wrap(`
         <p>Hey! It's Richard. I just tried <strong>Curriculate Practice</strong> on my own students' work this week and wanted to write to one or two thoughtful schools about it.</p>
-        <p>Quick context: I spent <strong>26 years as a school administrator</strong> in Ontario and international schools before going back to the classroom. I've now personally graded over 1,500 student papers with Curriculate Practice — <em>it's what I wished I'd had both as a principal watching teacher workload, and now as a teacher facing that same workload myself.</em> We're in an active pilot/R&D phase, inviting a small number of schools to use it free in exchange for thoughtful feedback.</p>
+        <p>Quick context: {{credential_intro}} I've now personally graded over 1,500 student papers with Curriculate Practice — <em>it's what I wished I'd had both as a school leader watching teacher workload, and now as a teacher facing that same workload myself.</em> We're in an active pilot/R&D phase, inviting a small number of schools to use it free in exchange for thoughtful feedback.</p>
         <p>How it works: snap a photo (or upload a PDF, video, or audio file) of student work and you get rubric-aligned feedback plus a score in about ten seconds. The teacher stays the final reviewer — Practice drafts, you finalize.</p>
         {{role_pitch}}
         {{christian_perspective}}
@@ -304,7 +323,7 @@ const DEFAULT_TEMPLATES = {
       subject: "Réduisez le temps de correction de 90 % — par un ancien directeur d'école",
       body: wrap(`
         <p>Bonjour ! Je m'appelle Richard. Je viens d'essayer <strong>Curriculate Practice</strong> sur les travaux de mes propres élèves et je tenais à écrire à quelques écoles que j'estime.</p>
-        <p>Contexte rapide : j'ai été <strong>administrateur scolaire pendant 26 ans</strong> en Ontario et dans des écoles internationales avant de retourner à l'enseignement. J'ai personnellement corrigé plus de 1 500 travaux d'élèves avec Curriculate Practice — <em>c'est l'outil que j'aurais voulu avoir comme directeur en observant la charge de mes enseignants, et maintenant comme enseignant moi-même.</em> Nous sommes en phase pilote : un petit nombre d'écoles l'utilise gratuitement en échange de commentaires réfléchis.</p>
+        <p>Contexte rapide : {{credential_intro}} J'ai personnellement corrigé plus de 1 500 travaux d'élèves avec Curriculate Practice — <em>c'est l'outil que j'aurais voulu avoir comme directeur en observant la charge de mes enseignants, et maintenant comme enseignant moi-même.</em> Nous sommes en phase pilote : un petit nombre d'écoles l'utilise gratuitement en échange de commentaires réfléchis.</p>
         <p>Comment ça marche : on prend une photo (ou téléverse un PDF, une vidéo ou un audio) du travail d'un élève, et on obtient une rétroaction alignée à la grille d'évaluation plus une note en environ dix secondes. L'enseignant reste responsable de la décision finale — Practice propose, vous validez.</p>
         {{role_pitch}}
         {{christian_perspective}}
@@ -317,7 +336,7 @@ const DEFAULT_TEMPLATES = {
     en: {
       subject: "Free field-day app — built by a former school administrator",
       body: wrap(`
-        <p>Hey! It's Richard. I spent <strong>26 years as a school administrator</strong> in Ontario and international schools before going back to the classroom — and I built <strong>Curriculate Field Day</strong> after running too many of my own schools' field days on spreadsheets. <em>It's what I wished I'd had every June.</em></p>
+        <p>Hey! It's Richard. {{credential_intro}} I built <strong>Curriculate Field Day</strong> after running too many of my own schools' field days on spreadsheets — <em>it's what I wished I'd had every June.</em></p>
         <p>It's in active pilot phase. We're inviting a small number of schools to use it free during R&D in exchange for thoughtful feedback after their field day.</p>
         <p>What it actually does (the stuff that matters on field-day morning):</p>
         <ul style="padding-left:20px;margin:6px 0 14px;">
@@ -334,7 +353,7 @@ const DEFAULT_TEMPLATES = {
     fr: {
       subject: "Application gratuite pour journée des jeux — par un ancien directeur d'école",
       body: wrap(`
-        <p>Bonjour ! Je m'appelle Richard. J'ai été <strong>administrateur scolaire pendant 26 ans</strong> en Ontario et dans des écoles internationales avant de retourner à l'enseignement — et j'ai bâti <strong>Curriculate Field Day</strong> après avoir organisé trop de journées des jeux à l'aide de feuilles de calcul. <em>C'est l'outil que j'aurais voulu avoir chaque mois de juin.</em></p>
+        <p>Bonjour ! Je m'appelle Richard. {{credential_intro}} J'ai bâti <strong>Curriculate Field Day</strong> après avoir organisé trop de journées des jeux à l'aide de feuilles de calcul — <em>c'est l'outil que j'aurais voulu avoir chaque mois de juin.</em></p>
         <p>L'application est en phase pilote. Nous invitons un petit nombre d'écoles à l'utiliser gratuitement en échange de commentaires réfléchis après leur journée des jeux.</p>
         <p>Ce que ça fait (l'essentiel pour la matinée) :</p>
         <ul style="padding-left:20px;margin:6px 0 14px;">
