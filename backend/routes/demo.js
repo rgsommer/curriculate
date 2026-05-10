@@ -1694,17 +1694,64 @@ async function sendDemoResultsEmail(lead) {
   const sessionCount = lead.sessionCount || 1;
   const isReturning = sessionCount > 1;
 
-  // Build task result rows
-  const taskRows = lead.results
-    .map((r) => {
+  // ── Per-task timeline + duration estimate ──────────────────────────
+  // Each entry has a completedAt; the previous entry's completedAt
+  // (or the first entry's, for the very first row) anchors the
+  // duration.  Conference reports show this column; practice emails
+  // hide it to keep the table tight.
+  const fmtDur = (ms) => {
+    if (!ms || ms < 1000) return "<1s";
+    const sec = Math.round(ms / 1000);
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return s ? `${m}m ${s}s` : `${m}m`;
+  };
+  const enriched = (() => {
+    const out = [];
+    let prevTs = null;
+    for (const r of lead.results) {
+      const completedAt = r.completedAt ? new Date(r.completedAt) : null;
+      const durationMs = completedAt && prevTs ? Math.max(0, completedAt - prevTs) : null;
+      out.push({ r, durationMs });
+      if (completedAt) prevTs = completedAt;
+    }
+    return out;
+  })();
+  const sessionDurationMs =
+    enriched.length > 1 && enriched[0].r?.completedAt && enriched[enriched.length - 1].r?.completedAt
+      ? new Date(enriched[enriched.length - 1].r.completedAt) -
+        new Date(enriched[0].r.completedAt)
+      : 0;
+
+  // Build task result rows.  Conference adds a Time column + a
+  // feedback line under tasks the visitor commented on, so the report
+  // mirrors what a teacher gets for a taskset.
+  const taskRows = enriched
+    .map(({ r, durationMs }) => {
       const icon = r.skipped ? "⏭️" : "✅";
       const status = r.skipped ? "Skipped" : "Completed";
       const statusColor = r.skipped ? "#94a3b8" : "#16a34a";
       const pts = r.points || 0;
+      const fb = r.feedback || null;
+      const fbBlob = fb
+        ? [fb.confusing, fb.suggestion].filter(Boolean).join(" · ")
+        : "";
+      const fbRow =
+        isConference && fbBlob
+          ? `<div style="margin-top:4px;font-size:12px;color:#64748b;font-style:italic;line-height:1.4;">"${esc(
+              fbBlob.length > 240 ? fbBlob.slice(0, 240) + "…" : fbBlob
+            )}"</div>`
+          : "";
+      const timeCell = isConference
+        ? `<td style="padding: 10px 12px; border-bottom: 1px solid #f1f5f9; font-size: 12px; color: #64748b; text-align: right;">${
+            durationMs ? fmtDur(durationMs) : "—"
+          }</td>`
+        : "";
       return `
         <tr>
           <td style="padding: 10px 12px; border-bottom: 1px solid #f1f5f9; font-size: 14px; color: #334155;">
-            ${icon} ${esc(r.title || r.taskType)}
+            ${icon} ${esc(r.title || r.taskType)}${fbRow}
           </td>
           <td style="padding: 10px 12px; border-bottom: 1px solid #f1f5f9; font-size: 13px; color: #64748b;">
             ${esc(r.taskType)}
@@ -1712,12 +1759,29 @@ async function sendDemoResultsEmail(lead) {
           <td style="padding: 10px 12px; border-bottom: 1px solid #f1f5f9; font-size: 13px; font-weight: 600; color: ${statusColor};">
             ${status}
           </td>
+          ${timeCell}
           <td style="padding: 10px 12px; border-bottom: 1px solid #f1f5f9; font-size: 13px; font-weight: 800; color: ${pts > 0 ? '#f59e0b' : '#cbd5e1'}; text-align: center;">
             ${pts > 0 ? `+${pts}` : "—"}
           </td>
         </tr>`;
     })
     .join("");
+
+  const timeColHeader = isConference
+    ? `<th style="padding: 10px 12px; text-align: right; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; border-bottom: 2px solid #e2e8f0;">Time</th>`
+    : "";
+
+  // Conference-only: a session-duration banner above the results
+  // table mirroring a teacher's "session lasted Xm" line.
+  const sessionBanner =
+    isConference && sessionDurationMs > 1000
+      ? `
+        <div style="margin: 0 0 18px; padding: 12px 16px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px; font-size: 13px; color: #0c4a6e;">
+          <strong>📋 Booth session report</strong> — about <strong>${esc(fmtDur(sessionDurationMs))}</strong> on the floor, ${esc(String(completed.length))} task${completed.length === 1 ? "" : "s"} completed${
+          skipped.length ? `, ${esc(String(skipped.length))} skipped` : ""
+        }.
+        </div>`
+      : "";
 
   // Promo section (only for conference visitors).  Conference-only
   // by exact match — anything else (classroom, unknown, blank) gets
@@ -1789,6 +1853,8 @@ async function sendDemoResultsEmail(lead) {
             Session #${sessionCount} for ${esc(lead.email)} — points carry over across all your visits.
           </div>` : ""}
 
+        ${sessionBanner}
+
         <!-- Results table -->
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
           <thead>
@@ -1796,6 +1862,7 @@ async function sendDemoResultsEmail(lead) {
               <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; border-bottom: 2px solid #e2e8f0;">Task</th>
               <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; border-bottom: 2px solid #e2e8f0;">Type</th>
               <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; border-bottom: 2px solid #e2e8f0;">Status</th>
+              ${timeColHeader}
               <th style="padding: 10px 12px; text-align: center; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; border-bottom: 2px solid #e2e8f0;">Pts</th>
             </tr>
           </thead>

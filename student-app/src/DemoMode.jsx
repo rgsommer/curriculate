@@ -34,6 +34,15 @@ import { API_BASE_URL } from "./config.js";
 const IDLE_PROMPT_MS    = 10 * 60 * 1000;  // 10 min → "Done practicing?"
 const IDLE_AUTO_END_MS  =  5 * 60 * 1000;  // + 5 min → auto end session
 
+// Conference mode is much shorter.  Booth visitors might scan ONE QR
+// code and then get pulled away by another exhibitor — we still want
+// to capture their activity (with a final report email) instead of
+// leaving the session open forever.  No modal, no warning: 30s of
+// inactivity = session ends, report goes out.  Per Richard: "even if
+// it is their first one, this captures their activity no matter what
+// their intentions were in case they get distracted."
+const CONFERENCE_IDLE_END_MS = 30 * 1000;
+
 // ---- Mascot images & videos (served from frontend/public/images/mascot/) ----
 const MASCOT_BASE = "https://curriculate.net/images/mascot";
 const MASCOT_COUNTS = {
@@ -958,14 +967,21 @@ function DemoPlayer({
   // boolean actually flips.
   const timerEffectivelyPaused = paused || showFeedback || typingActive;
 
-  // Inactivity-driven "Done practicing?" prompt.
+  // Inactivity-driven session end.
   //
+  // Practice / classroom mode:
   //   Idle ≥ IDLE_PROMPT_MS    → show the modal (player can choose to
   //                               keep going or finish the session).
   //   Idle ≥ IDLE_PROMPT_MS + IDLE_AUTO_END_MS  → auto-finish session.
   //
-  // ANY activity bumps lastActivityRef and dismisses the modal.  No
-  // task ever gets silently skipped any more.
+  // Conference mode (booth visitor):
+  //   Idle ≥ CONFERENCE_IDLE_END_MS  → silently auto-finish.  No modal,
+  //   no warning — the visitor probably walked off to another booth and
+  //   we still want the report email to go out so we capture whatever
+  //   they did do.
+  //
+  // ANY activity bumps lastActivityRef and (in practice) dismisses the
+  // modal.  No task is ever silently skipped any more.
   const [showDoneModal, setShowDoneModal] = useState(false);
   useEffect(() => {
     lastActivityRef.current = Date.now();
@@ -978,6 +994,15 @@ function DemoPlayer({
 
     timerRef.current = setInterval(() => {
       const idleFor = Date.now() - lastActivityRef.current;
+
+      if (isConference) {
+        if (idleFor >= CONFERENCE_IDLE_END_MS) {
+          clearInterval(timerRef.current);
+          onFinish(results);
+        }
+        return;
+      }
+
       if (idleFor >= IDLE_PROMPT_MS + IDLE_AUTO_END_MS) {
         // 15 minutes of nothing → finish the session entirely.
         clearInterval(timerRef.current);
@@ -992,7 +1017,7 @@ function DemoPlayer({
     }, 1000);
 
     return () => clearInterval(timerRef.current);
-  }, [taskIdx, timerEffectivelyPaused, results, onFinish]);
+  }, [taskIdx, timerEffectivelyPaused, results, onFinish, isConference]);
 
   // Modal handlers.  "Keep going" just bumps activity so the popup goes
   // away; "I'm done" finishes the session immediately.
@@ -1855,7 +1880,10 @@ function buildPracticeInvite(name) {
   return (
     `Hey! ${me} just tried Curriculate Practice — it's a quick, ` +
     `actually-fun way to stretch your brain between classes. ` +
-    `60+ mini-tasks, free to try:\n\n` +
+    `60+ mini-tasks, free to try.\n\n` +
+    `Heads up: they're in their testing phase right now and want ` +
+    `real user feedback, so the top weekly performers get prizes ` +
+    `(I think there's a Tim's card up for grabs). Worth a try:\n\n` +
     `https://curriculate.net/practice`
   );
 }
@@ -2269,6 +2297,38 @@ function DemoResults({
   const basePoints = results.reduce((s, r) => s + (r.points || 0), 0);
   const totalPoints = basePoints + recommendBonus;
 
+  // Per-task duration estimate for the conference report.  Each entry
+  // has a completedAt; the previous entry's completedAt (or session
+  // start) is the start.  We render seconds rounded.
+  const timeline = useMemo(() => {
+    if (!Array.isArray(results) || results.length === 0) return [];
+    const out = [];
+    let prevTs = null;
+    for (const r of results) {
+      const completedAt = r.completedAt ? new Date(r.completedAt) : null;
+      let durationMs = null;
+      if (completedAt && prevTs) {
+        durationMs = Math.max(0, completedAt - prevTs);
+      }
+      out.push({ ...r, durationMs });
+      if (completedAt) prevTs = completedAt;
+    }
+    return out;
+  }, [results]);
+  const sessionDurationMs =
+    timeline.length > 0 && timeline[0]?.completedAt
+      ? new Date(timeline[timeline.length - 1].completedAt) -
+        new Date(timeline[0].completedAt)
+      : 0;
+  const fmtDur = (ms) => {
+    if (!ms || ms < 1000) return "<1s";
+    const sec = Math.round(ms / 1000);
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return s ? `${m}m ${s}s` : `${m}m`;
+  };
+
   // Show ambassador popup after a brief delay for keeners (conference only)
   useEffect(() => {
     if (!isConference) return;
@@ -2350,30 +2410,130 @@ function DemoResults({
           )}
         </div>
 
-        {/* Task badges */}
-        <div style={{ width: "100%", marginBottom: 20 }}>
-          <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8 }}>Tasks you completed:</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {completed.map((r, i) => (
-              <span
-                key={i}
-                style={{
-                  padding: "4px 10px",
-                  borderRadius: 8,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  background: "#dcfce7",
-                  color: "#15803d",
-                  border: "1px solid #bbf7d0",
-                }}
-              >
-                ✓ {r.title} (+{r.points || 0})
+        {/* Conference: per-task report table.  Booth visitors get a
+            real per-task breakdown (time, score, feedback) like a
+            teacher's taskset report — not just badges.  Practice
+            keeps the simpler badge row below. */}
+        {isConference && timeline.length > 0 && (
+          <div
+            style={{
+              width: "100%",
+              marginBottom: 20,
+              borderRadius: 12,
+              border: "1px solid #e2e8f0",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "10px 14px",
+                background: "#f8fafc",
+                borderBottom: "1px solid #e2e8f0",
+                fontWeight: 800,
+                fontSize: 13,
+                color: "#0f172a",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <span>📋 Demo session report</span>
+              <span style={{ fontWeight: 600, fontSize: 12, color: "#64748b" }}>
+                {fmtDur(sessionDurationMs)} at the booth
               </span>
-            ))}
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: "#fff" }}>
+                  <th style={{ padding: "6px 10px", textAlign: "left", color: "#64748b", fontWeight: 700, fontSize: 11, textTransform: "uppercase" }}>Task</th>
+                  <th style={{ padding: "6px 8px", textAlign: "left", color: "#64748b", fontWeight: 700, fontSize: 11, textTransform: "uppercase" }}>Status</th>
+                  <th style={{ padding: "6px 8px", textAlign: "right", color: "#64748b", fontWeight: 700, fontSize: 11, textTransform: "uppercase" }}>Time</th>
+                  <th style={{ padding: "6px 10px", textAlign: "right", color: "#64748b", fontWeight: 700, fontSize: 11, textTransform: "uppercase" }}>Pts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {timeline.map((r, i) => {
+                  const isSkip = r.skipped;
+                  const fb = r.feedback || null;
+                  const fbBlob = fb
+                    ? [fb.confusing, fb.suggestion].filter(Boolean).join(" · ")
+                    : "";
+                  return (
+                    <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "8px 10px", color: "#0f172a", fontWeight: 600 }}>
+                        {isSkip ? "⏭️" : "✅"} {r.title || r.taskType}
+                        {fbBlob && (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "#64748b",
+                              fontWeight: 400,
+                              marginTop: 2,
+                              fontStyle: "italic",
+                              lineHeight: 1.3,
+                            }}
+                          >
+                            "{fbBlob.length > 110 ? fbBlob.slice(0, 110) + "…" : fbBlob}"
+                          </div>
+                        )}
+                      </td>
+                      <td
+                        style={{
+                          padding: "8px 8px",
+                          color: isSkip ? "#94a3b8" : "#16a34a",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {isSkip ? "Skipped" : "Done"}
+                      </td>
+                      <td style={{ padding: "8px 8px", color: "#64748b", textAlign: "right" }}>
+                        {r.durationMs ? fmtDur(r.durationMs) : "—"}
+                      </td>
+                      <td
+                        style={{
+                          padding: "8px 10px",
+                          color: r.points > 0 ? "#f59e0b" : "#cbd5e1",
+                          fontWeight: 800,
+                          textAlign: "right",
+                        }}
+                      >
+                        {r.points > 0 ? `+${r.points}` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        </div>
+        )}
 
-        {skipped.length > 0 && (
+        {/* Task badges (practice / classroom — conference uses the
+            report table above instead). */}
+        {!isConference && (
+          <div style={{ width: "100%", marginBottom: 20 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8 }}>Tasks you completed:</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {completed.map((r, i) => (
+                <span
+                  key={i}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    background: "#dcfce7",
+                    color: "#15803d",
+                    border: "1px solid #bbf7d0",
+                  }}
+                >
+                  ✓ {r.title} (+{r.points || 0})
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {skipped.length > 0 && !isConference && (
           <div style={{ width: "100%", marginBottom: 20 }}>
             <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8, opacity: 0.6 }}>
               Skipped ({skipped.length}):
