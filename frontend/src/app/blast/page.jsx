@@ -110,15 +110,17 @@ export default function BlastAdminPage() {
           <Btn variant="ghost" onClick={() => setAdminToken("")}>Sign out</Btn>
         </div>
 
-        <div className="flex gap-2 mb-4 border-b border-white/10 pb-2">
+        <div className="flex gap-2 mb-4 border-b border-white/10 pb-2 flex-wrap">
           <Btn variant={tab === "new" ? "primary" : "ghost"} onClick={() => setTab("new")}>New Campaign</Btn>
           <Btn variant={tab === "campaigns" ? "primary" : "ghost"} onClick={() => setTab("campaigns")}>Campaigns</Btn>
           <Btn variant={tab === "contacts" ? "primary" : "ghost"} onClick={() => setTab("contacts")}>Contacts</Btn>
+          <Btn variant={tab === "research" ? "primary" : "ghost"} onClick={() => setTab("research")}>Research</Btn>
         </div>
 
         {tab === "new" && <NewCampaign adminToken={adminToken} defaults={defaults} onCreated={() => setTab("campaigns")} />}
         {tab === "campaigns" && <CampaignList adminToken={adminToken} />}
         {tab === "contacts" && <Contacts adminToken={adminToken} />}
+        {tab === "research" && <Research adminToken={adminToken} />}
       </div>
     </div>
   );
@@ -619,6 +621,215 @@ function CampaignList({ adminToken }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────── */
+/* RESEARCH — queue + presets + xlsx auto-import + pending review          */
+/* ────────────────────────────────────────────────────────────────────── */
+const PRESET_REGIONS = [
+  { name: "Toronto District School Board",        board: "TDSB",   url: "https://www.tdsb.on.ca/Find-your/School" },
+  { name: "Toronto Catholic District School Board", board: "TCDSB", url: "https://www.tcdsb.org/schools/Pages/default.aspx" },
+  { name: "Peel District School Board",            board: "PDSB",   url: "https://www.peelschools.org/schools/find-a-school" },
+  { name: "Dufferin-Peel Catholic DSB",            board: "DPCDSB", url: "https://www3.dpcdsb.org/schools" },
+  { name: "York Region District School Board",     board: "YRDSB",  url: "https://www2.yrdsb.ca/schools" },
+  { name: "York Catholic District School Board",   board: "YCDSB",  url: "https://www.ycdsb.ca/our-schools/" },
+  { name: "Ottawa-Carleton DSB",                   board: "OCDSB",  url: "https://ocdsb.ca/our_schools" },
+  { name: "Ottawa Catholic School Board",          board: "OCSB",   url: "https://www.ocsb.ca/our-schools/" },
+  { name: "Waterloo Region DSB",                   board: "WRDSB",  url: "https://www.wrdsb.ca/schools/" },
+  { name: "Waterloo Catholic DSB",                 board: "WCDSB",  url: "https://www.wcdsb.ca/our-schools/" },
+  { name: "Thames Valley DSB (London area)",       board: "TVDSB",  url: "https://www.tvdsb.ca/en/our-schools/" },
+  { name: "Durham DSB",                            board: "DDSB",   url: "https://www.ddsb.ca/en/our-schools/" },
+  { name: "Limestone DSB (Kingston area)",         board: "LDSB",   url: "https://www.limestone.on.ca/our_schools" },
+  { name: "Upper Grand DSB (Guelph area)",         board: "UGDSB",  url: "https://www.ugdsb.ca/schools/" },
+];
+
+function Research({ adminToken }) {
+  const [jobs, setJobs] = useState([]);
+  const [pending, setPending] = useState([]);
+  const [form, setForm] = useState({ name: "", boardName: "", indexUrl: "", maxSchools: 30 });
+  const [msg, setMsg] = useState("");
+  const [scanMsg, setScanMsg] = useState("");
+
+  async function loadJobs() {
+    const j = await fetch(`${API}/admin/blast/research`, { headers: { "x-admin-token": adminToken } }).then(r => r.json());
+    setJobs(j.jobs || []);
+  }
+  async function loadPending() {
+    const j = await fetch(`${API}/admin/blast/contacts/pending`, { headers: { "x-admin-token": adminToken } }).then(r => r.json());
+    setPending(j.contacts || []);
+  }
+  useEffect(() => { loadJobs(); loadPending(); }, []);
+
+  async function addJob() {
+    if (!form.name || !form.indexUrl) { setMsg("Name + index URL required"); return; }
+    setMsg("Adding…");
+    const res = await fetch(`${API}/admin/blast/research`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-token": adminToken },
+      body: JSON.stringify(form),
+    });
+    const j = await res.json();
+    setMsg(j.ok ? "✓ Queued" : `✗ ${j.error}`);
+    if (j.ok) { setForm({ name: "", boardName: "", indexUrl: "", maxSchools: 30 }); loadJobs(); }
+  }
+
+  async function addPreset(p) {
+    await fetch(`${API}/admin/blast/research`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-token": adminToken },
+      body: JSON.stringify({ name: p.name, boardName: p.board, indexUrl: p.url, maxSchools: 30 }),
+    });
+    loadJobs();
+  }
+
+  async function runNow(id) {
+    await fetch(`${API}/admin/blast/research/${id}/run`, { method: "POST", headers: { "x-admin-token": adminToken } });
+    setTimeout(() => { loadJobs(); loadPending(); }, 2000);
+  }
+  async function delJob(id) {
+    if (!confirm("Remove this research job?")) return;
+    await fetch(`${API}/admin/blast/research/${id}`, { method: "DELETE", headers: { "x-admin-token": adminToken } });
+    loadJobs();
+  }
+
+  async function scanFolder() {
+    setScanMsg("Scanning…");
+    const res = await fetch(`${API}/admin/blast/import-folder`, {
+      method: "POST", headers: { "Content-Type": "application/json", "x-admin-token": adminToken }, body: "{}",
+    });
+    const j = await res.json();
+    setScanMsg(j.ok ? `✓ ${j.inserted || 0} new, ${j.updated || 0} updated across ${j.files?.length || 0} files` : `✗ ${j.error}`);
+  }
+
+  async function approvePending(emails) {
+    await fetch(`${API}/admin/blast/contacts/approve`, {
+      method: "POST", headers: { "Content-Type": "application/json", "x-admin-token": adminToken },
+      body: JSON.stringify({ emails }),
+    });
+    loadPending();
+  }
+  async function rejectPending(emails) {
+    if (!confirm(`Delete ${emails.length} pending contact(s)?`)) return;
+    await fetch(`${API}/admin/blast/contacts/reject`, {
+      method: "POST", headers: { "Content-Type": "application/json", "x-admin-token": adminToken },
+      body: JSON.stringify({ emails }),
+    });
+    loadPending();
+  }
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-2">
+      <div className="space-y-5">
+        <div className="rounded-xl border border-white/10 bg-white/5 p-5">
+          <H>Add a region to the research queue</H>
+          <p className="text-xs text-white/60 mb-3">
+            The worker picks up one job per calendar day (configurable via <code>BLAST_RESEARCH_JOBS_PER_DAY</code>),
+            fetches the index URL, extracts up to <code>maxSchools</code> school links, and uses OpenAI to pull
+            principal/VP/AD names + emails. Findings land in Contacts as <Pill color="amber">pendingReview</Pill> until you approve.
+          </p>
+
+          <L>Quick-add: Ontario boards</L>
+          <div className="flex gap-1 flex-wrap mb-4">
+            {PRESET_REGIONS.map(p => (
+              <button key={p.board} onClick={() => addPreset(p)}
+                className="px-2 py-1 text-xs rounded bg-white/5 border border-white/10 hover:bg-white/10">
+                + {p.board}
+              </button>
+            ))}
+          </div>
+
+          <L>Custom region</L>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <input placeholder="Name (e.g. TDSB schools)" value={form.name}
+              onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
+              className="px-2 py-1 rounded bg-white/5 border border-white/10" />
+            <input placeholder="Board tag (e.g. TDSB)" value={form.boardName}
+              onChange={(e) => setForm(f => ({ ...f, boardName: e.target.value }))}
+              className="px-2 py-1 rounded bg-white/5 border border-white/10" />
+            <input placeholder="Index URL (https://...)" value={form.indexUrl}
+              onChange={(e) => setForm(f => ({ ...f, indexUrl: e.target.value }))}
+              className="px-2 py-1 rounded bg-white/5 border border-white/10 col-span-2" />
+            <input type="number" min={1} max={100} placeholder="Max schools" value={form.maxSchools}
+              onChange={(e) => setForm(f => ({ ...f, maxSchools: parseInt(e.target.value, 10) || 30 }))}
+              className="px-2 py-1 rounded bg-white/5 border border-white/10" />
+            <Btn onClick={addJob}>Queue job</Btn>
+          </div>
+          {msg && <div className="mt-2 text-xs">{msg}</div>}
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-white/5 p-5">
+          <H>Auto-import xlsx</H>
+          <p className="text-xs text-white/60 mb-3">
+            Scans the workspace folder for <code>*-school-admins.xlsx</code> and <code>*-schools.xlsx</code>
+            and adds every row to the master Contacts list. Runs automatically at server boot — click below to re-run now.
+          </p>
+          <Btn variant="ghost" onClick={scanFolder}>Scan workspace folder</Btn>
+          {scanMsg && <div className="mt-2 text-xs">{scanMsg}</div>}
+        </div>
+      </div>
+
+      <div className="space-y-5">
+        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+          <H>Queued / completed jobs</H>
+          {jobs.length === 0 && <div className="text-white/60 text-sm">No research jobs yet.</div>}
+          <div className="space-y-2">
+            {jobs.map(j => {
+              const color = j.status === "running" ? "amber" : j.status === "done" ? "green" : j.status === "failed" ? "red" : "slate";
+              return (
+                <div key={j._id} className="rounded-lg border border-white/10 bg-white/5 p-3 text-sm">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="font-semibold">{j.name}</div>
+                    <Pill color={color}>{j.status}</Pill>
+                  </div>
+                  <div className="text-xs text-white/60 break-all">{j.boardName} · {j.indexUrl}</div>
+                  <div className="text-xs text-white/60 mt-1">
+                    {j.schoolsAttempted || 0}/{j.maxSchools} schools attempted · {j.contactsAdded || 0} contacts added
+                    {j.lastRunAt && ` · last run ${new Date(j.lastRunAt).toLocaleString()}`}
+                  </div>
+                  {j.lastError && <div className="text-xs text-red-300 mt-1">{j.lastError}</div>}
+                  <div className="flex gap-1 mt-2">
+                    <Btn variant="ghost" onClick={() => runNow(j._id)}>Run now</Btn>
+                    <Btn variant="danger" onClick={() => delJob(j._id)}>Remove</Btn>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+          <H>Pending review ({pending.length})</H>
+          <p className="text-xs text-white/60 mb-3">
+            Research-discovered contacts land here until you approve them. Approved contacts become available in the
+            main Contacts list and can be selected for campaigns.
+          </p>
+          {pending.length === 0 && <div className="text-white/60 text-sm">Nothing pending.</div>}
+          {pending.length > 0 && (
+            <>
+              <div className="flex gap-2 mb-2">
+                <Btn onClick={() => approvePending(pending.map(c => c.email))}>Approve all</Btn>
+                <Btn variant="danger" onClick={() => rejectPending(pending.map(c => c.email))}>Reject all</Btn>
+              </div>
+              <div className="max-h-96 overflow-y-auto text-xs">
+                {pending.map(c => (
+                  <div key={c.email} className="flex items-center justify-between gap-2 py-1 border-b border-white/5">
+                    <div>
+                      <div>{c.firstName} {c.lastName} <span className="text-white/40">({c.role})</span></div>
+                      <div className="text-white/50">{c.email} · {c.school} / {c.board}</div>
+                    </div>
+                    <div className="flex gap-1">
+                      <button onClick={() => approvePending([c.email])} className="px-2 py-0.5 rounded bg-emerald-700 text-emerald-100">✓</button>
+                      <button onClick={() => rejectPending([c.email])} className="px-2 py-0.5 rounded bg-red-700 text-red-100">✗</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

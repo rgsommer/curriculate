@@ -49,6 +49,15 @@ const blastContactSchema = new mongoose.Schema(
     unsubscribedAt: { type: Date, default: null },
     bouncedAt: { type: Date, default: null },
     notes: { type: String, default: "" },
+
+    // Provenance: where did this contact come from?
+    //   "manual-upload"   = added via /blast UI CSV upload
+    //   "xlsx-auto-import"= picked up by the boot-time workspace scan (A)
+    //   "research-trickle"= added by the autonomous research worker (B)
+    source: { type: String, default: "manual-upload", index: true },
+    // Auto-discovered contacts start here so the admin can review before
+    // the contact is selectable for a campaign.
+    pendingReview: { type: Boolean, default: false, index: true },
   },
   { timestamps: true }
 );

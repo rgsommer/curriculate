@@ -12,6 +12,7 @@ import { requireAdminToken } from "../middleware/requireAdminToken.js";
 import BlastCampaign from "../models/BlastCampaign.js";
 import BlastRecipient from "../models/BlastRecipient.js";
 import BlastContact from "../models/BlastContact.js";
+import ResearchJob from "../models/ResearchJob.js";
 import { sendSystemEmail } from "../email/shareInviteEmailer.js";
 import {
   scheduleSlots,
@@ -19,6 +20,8 @@ import {
   defaultTemplateForProduct,
   detectLanguageForBoard,
 } from "../jobs/blastSender.js";
+import { importContactsFromFolder } from "../jobs/contactImporter.js";
+import { runJob as runResearchJob, researchWorkerTick } from "../jobs/researchWorker.js";
 
 const router = express.Router();
 
@@ -429,6 +432,105 @@ router.delete("/blast/campaigns/:id", requireAdminToken, async (req, res) => {
   await BlastRecipient.deleteMany({ campaignId: camp._id });
   await BlastCampaign.findByIdAndDelete(camp._id);
   res.json({ ok: true });
+});
+
+/* ──────────────────────────────────────────────────────────────────────
+ * (A) Auto-import: scan workspace folder for *-schools.xlsx / *-school-admins.xlsx
+ *
+ * POST /admin/blast/import-folder           → trigger a scan on demand
+ * body: { folder?: string }
+ * ────────────────────────────────────────────────────────────────────── */
+router.post("/blast/import-folder", requireAdminToken, async (req, res) => {
+  try {
+    const result = await importContactsFromFolder({ folder: req.body?.folder || undefined });
+    res.json(result);
+  } catch (e) {
+    console.error("POST /admin/blast/import-folder error:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ──────────────────────────────────────────────────────────────────────
+ * (B) Research trickle — admin manages a queue of "areas to research".
+ * The worker (jobs/researchWorker.js) processes 1 job per calendar day by
+ * default so OpenAI cost stays predictable.
+ *
+ * POST   /admin/blast/research                → create a job
+ * GET    /admin/blast/research                → list jobs
+ * DELETE /admin/blast/research/:id            → remove
+ * POST   /admin/blast/research/:id/run        → run NOW (bypasses daily cap)
+ * POST   /admin/blast/research/tick           → manually trigger one worker tick
+ * ────────────────────────────────────────────────────────────────────── */
+router.post("/blast/research", requireAdminToken, async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!b.name || !b.indexUrl) {
+      return res.status(400).json({ error: "name + indexUrl required" });
+    }
+    const job = await ResearchJob.create({
+      name: String(b.name).slice(0, 200),
+      boardName: b.boardName || "",
+      indexUrl: String(b.indexUrl),
+      maxSchools: Math.min(100, Math.max(1, parseInt(b.maxSchools, 10) || 30)),
+      scheduledFor: b.scheduledFor ? new Date(b.scheduledFor) : new Date(),
+      notes: b.notes || "",
+    });
+    res.json({ ok: true, job });
+  } catch (e) {
+    console.error("POST /admin/blast/research error:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/blast/research", requireAdminToken, async (req, res) => {
+  const jobs = await ResearchJob.find({}).sort({ createdAt: -1 }).lean();
+  res.json({ ok: true, jobs });
+});
+
+router.delete("/blast/research/:id", requireAdminToken, async (req, res) => {
+  await ResearchJob.findByIdAndDelete(req.params.id);
+  res.json({ ok: true });
+});
+
+router.post("/blast/research/:id/run", requireAdminToken, async (req, res) => {
+  // Force-run a job immediately, bypassing the daily cap. Useful for
+  // testing or for catching up when behind on the send pipeline.
+  res.json({ ok: true, started: true });
+  // Run async so we don't hold the HTTP connection open for minutes
+  runResearchJob(req.params.id).catch(e => console.error("[research] manual run failed:", e));
+});
+
+router.post("/blast/research/tick", requireAdminToken, async (req, res) => {
+  res.json({ ok: true });
+  researchWorkerTick().catch(e => console.error("[research] manual tick failed:", e));
+});
+
+/* ──────────────────────────────────────────────────────────────────────
+ * Review queue for research-discovered contacts
+ *
+ * GET  /admin/blast/contacts/pending          → list contacts pendingReview=true
+ * POST /admin/blast/contacts/approve          → flip pendingReview=false  body:{emails:[...]}
+ * POST /admin/blast/contacts/reject           → delete those contacts     body:{emails:[...]}
+ * ────────────────────────────────────────────────────────────────────── */
+router.get("/blast/contacts/pending", requireAdminToken, async (req, res) => {
+  const limit = Math.min(500, parseInt(req.query.limit, 10) || 200);
+  const items = await BlastContact.find({ pendingReview: true })
+    .sort({ createdAt: -1 }).limit(limit).lean();
+  res.json({ ok: true, contacts: items, total: items.length });
+});
+
+router.post("/blast/contacts/approve", requireAdminToken, async (req, res) => {
+  const emails = (req.body?.emails || []).map(e => String(e).toLowerCase().trim()).filter(Boolean);
+  if (!emails.length) return res.status(400).json({ error: "emails[] required" });
+  const r = await BlastContact.updateMany({ email: { $in: emails } }, { pendingReview: false });
+  res.json({ ok: true, modified: r.modifiedCount });
+});
+
+router.post("/blast/contacts/reject", requireAdminToken, async (req, res) => {
+  const emails = (req.body?.emails || []).map(e => String(e).toLowerCase().trim()).filter(Boolean);
+  if (!emails.length) return res.status(400).json({ error: "emails[] required" });
+  const r = await BlastContact.deleteMany({ email: { $in: emails }, pendingReview: true });
+  res.json({ ok: true, deleted: r.deletedCount });
 });
 
 export default router;

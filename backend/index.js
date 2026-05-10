@@ -88,6 +88,8 @@ import adminFeedbackRouter from "./routes/adminFeedback.js";
 import adminTeacherOutreachRouter from "./routes/adminTeacherOutreach.js";
 import adminBlastRouter from "./routes/adminBlast.js";
 import { startBlastWorker } from "./jobs/blastSender.js";
+import { startContactImporter } from "./jobs/contactImporter.js";
+import { startResearchWorker } from "./jobs/researchWorker.js";
 import feedbackRouter from "./routes/feedback.js";
 import { listFeedback } from "./controllers/adminFeedbackController.js";
 import { requireAdminJson } from "./middleware/requireAdminJson.js";
@@ -483,6 +485,13 @@ app.use("/admin", adminBlastRouter);
 // Start the trickle-send worker once the DB + Express are wired up.
 // Honours BLAST_GLOBAL_DAILY_CAP (default 50) and BLAST_RESEND_CEILING (default 90).
 startBlastWorker(60_000);
+// (A) On boot, scan the workspace folder for *-school-admins.xlsx / *-schools.xlsx
+// and upsert every row into BlastContact. Self-maintains as the user drops
+// new research xlsx into the repo.
+startContactImporter();
+// (B) Research trickle: every hour, check for pending research jobs; runs
+// at most BLAST_RESEARCH_JOBS_PER_DAY (default 1) jobs per calendar day.
+startResearchWorker();
 
 // Class roster management (Edsby CSV upload, student lookup)
 app.use("/class-roster", classRosterRouter);

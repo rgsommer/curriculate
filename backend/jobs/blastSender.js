@@ -552,10 +552,26 @@ export async function blastWorkerTick() {
   }
 }
 
+/** If the process died after claiming a recipient ("sending") but before
+ *  the send result was recorded, the row is stuck. On boot we reset any
+ *  rows that have been "sending" for more than `staleMin` minutes back to
+ *  "queued" so the next tick picks them up cleanly. */
+export async function recoverStaleSends(staleMin = 10) {
+  const cutoff = new Date(Date.now() - staleMin * 60_000);
+  const r = await BlastRecipient.updateMany(
+    { status: "sending", updatedAt: { $lt: cutoff } },
+    { status: "queued" }
+  );
+  if (r.modifiedCount > 0) console.log(`[blast] recovered ${r.modifiedCount} stuck 'sending' rows → queued`);
+  return r.modifiedCount;
+}
+
 let intervalHandle = null;
 export function startBlastWorker(periodMs = 60_000) {
   if (intervalHandle) return;
-  // Fire one tick immediately to clear any startup backlog (safe — guarded by `running`)
+  // Recover from interrupted runs before resuming.
+  recoverStaleSends().catch(e => console.error("[blast] recovery failed:", e));
+  // Fire one tick after 5s (DB connection settled).
   setTimeout(() => blastWorkerTick(), 5_000);
   intervalHandle = setInterval(() => blastWorkerTick(), periodMs);
   intervalHandle.unref?.();
