@@ -25,6 +25,11 @@ const conferenceLeadSchema = new mongoose.Schema(
     lifetimeTaskCount: { type: Number, default: 0 },
     lifetimeCompletedCount: { type: Number, default: 0 },
 
+    // Last time a "we miss you, come back" nudge email was sent to
+    // this lead.  Used to throttle the admin-triggered nudge so a
+    // returning practicer never gets spammed more than once a week.
+    lastNudgeAt: { type: Date, default: null },
+
     // Trail of recent session subtotals so the admin notification can
     // compute a "this week" leaderboard (top 3 → weekly gift card).
     // Capped to the last 30 entries via $push $slice on insert; that's

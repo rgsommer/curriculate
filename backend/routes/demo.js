@@ -472,6 +472,147 @@ router.post("/orphan-feedback", async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  GET /nudge-inactive                                                */
+/*                                                                    */
+/*  Admin-triggered re-engagement.  Sends a personalized "we miss     *
+/*  you, come back" email to every ConferenceLead that:               *
+/*    • hasn't submitted results in the last INACTIVE_DAYS days       *
+/*    • hasn't been nudged in the last NUDGE_COOLDOWN_DAYS days       *
+/*                                                                    *
+/*  Idempotent — safe to retap; cooldown handles dedup.  Returns      *
+/*  HTML with a count + the list of recipients so the admin sees      *
+/*  exactly what just went out.                                       */
+/* ------------------------------------------------------------------ */
+const INACTIVE_DAYS = 4;
+const NUDGE_COOLDOWN_DAYS = 7;
+
+router.get("/nudge-inactive", async (req, res) => {
+  try {
+    const key = req.query.key;
+    const expected = process.env.ADMIN_API_TOKEN || process.env.ADMIN_API_KEY;
+    if (!expected || key !== expected) {
+      return res.status(401).type("html").send(
+        "<h1>Unauthorized</h1><p>Token missing or wrong.</p>"
+      );
+    }
+
+    const now = new Date();
+    const inactiveCutoff = new Date(now.getTime() - INACTIVE_DAYS * 86400e3);
+    const cooldownCutoff = new Date(now.getTime() - NUDGE_COOLDOWN_DAYS * 86400e3);
+
+    // Match leads who registered with an email AND haven't done anything
+    // in the inactive window AND haven't been nudged in the cooldown window.
+    const candidates = await ConferenceLead.find({
+      email: { $exists: true, $ne: "" },
+      $and: [
+        {
+          $or: [
+            { resultsSentAt: { $exists: false } },
+            { resultsSentAt: null },
+            { resultsSentAt: { $lte: inactiveCutoff } },
+          ],
+        },
+        {
+          $or: [
+            { lastNudgeAt: { $exists: false } },
+            { lastNudgeAt: null },
+            { lastNudgeAt: { $lte: cooldownCutoff } },
+          ],
+        },
+      ],
+    }).limit(200).lean();
+
+    if (candidates.length === 0) {
+      return res.type("html").send(`
+        <html><body style="font-family:system-ui;padding:32px;max-width:540px;margin:0 auto;">
+        <h1>No nudges sent</h1>
+        <p>No practicer matched the criteria right now:
+        no submission in ${INACTIVE_DAYS}+ days AND no nudge in the last
+        ${NUDGE_COOLDOWN_DAYS} days.</p>
+        </body></html>
+      `);
+    }
+
+    let sent = 0;
+    const failed = [];
+    for (const lead of candidates) {
+      const firstName = String(lead.name || "").split(" ")[0] || "there";
+      const lifetime = Number(lead.totalPoints || 0);
+      const sessions = Number(lead.sessionCount || 0);
+      const lastPlayed = lead.resultsSentAt
+        ? new Date(lead.resultsSentAt).toLocaleDateString("en-CA")
+        : "a while ago";
+
+      const html = `
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:540px;margin:0 auto;padding:24px;">
+          <div style="text-align:center;background:linear-gradient(135deg,#2563eb,#7c3aed);border-radius:16px 16px 0 0;padding:28px 20px;">
+            <img src="https://curriculate.net/images/mascot/streak/1.png" alt="Curriculate mascot" style="width:72px;height:72px;margin-bottom:6px;" />
+            <div style="font-size:24px;font-weight:900;color:#fff;letter-spacing:-0.3px;">We miss you!</div>
+            <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px;">${sessions > 0 ? `Your last practice was ${lastPlayed}` : "Time to get started"}</div>
+          </div>
+          <div style="background:#fff;padding:24px 20px;border:1px solid #e2e8f0;border-top:none;color:#0f172a;line-height:1.55;">
+            <p style="margin:0 0 12px;font-size:15px;">
+              Hey ${firstName} 👋 — just a quick nudge.
+            </p>
+            <p style="margin:0 0 12px;font-size:14px;color:#334155;">
+              ${lifetime > 0
+                ? `You're at <b>${lifetime}</b> lifetime points across ${sessions} session${sessions === 1 ? "" : "s"}. A few more rounds and your streak keeps climbing.`
+                : "Curriculate's practice tasks only take a couple of minutes each — a perfect study break."}
+            </p>
+            <p style="margin:0 0 16px;font-size:14px;color:#334155;">
+              We've shipped a stack of fixes since you last played — clearer instructions,
+              proper animated pet, real animated reveals, fewer dead ends.  Worth a fresh look.
+            </p>
+            <div style="text-align:center;margin:18px 0 8px;">
+              <a href="https://www.curriculate.net/practice"
+                 style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;text-decoration:none;border-radius:12px;font-weight:800;font-size:15px;">
+                Open practice →
+              </a>
+            </div>
+          </div>
+          <div style="background:#f8fafc;border-radius:0 0 16px 16px;padding:16px 20px;border:1px solid #e2e8f0;border-top:none;text-align:center;font-size:11px;color:#94a3b8;">
+            Curriculate · <a href="https://www.curriculate.net" style="color:#3b82f6;text-decoration:none;">curriculate.net</a>
+          </div>
+        </div>
+      `;
+      try {
+        await sendSystemEmail({
+          to: lead.email,
+          subject: `${firstName}, ready for another round?`,
+          html,
+        });
+        await ConferenceLead.updateOne(
+          { _id: lead._id },
+          { $set: { lastNudgeAt: now } }
+        );
+        sent += 1;
+      } catch (e) {
+        console.warn("[demo/nudge-inactive] send failed for", lead.email, e.message);
+        failed.push(lead.email);
+      }
+    }
+
+    res.type("html").send(`
+      <html><body style="font-family:system-ui;padding:32px;max-width:540px;margin:0 auto;">
+      <h1>📬 ${sent} nudge${sent === 1 ? "" : "s"} sent</h1>
+      <p>Inactive ${INACTIVE_DAYS}+ days · last nudge >${NUDGE_COOLDOWN_DAYS} days ago.</p>
+      ${failed.length ? `<p style="color:#dc2626;"><b>${failed.length} failed:</b> ${failed.join(", ")}</p>` : ""}
+      <h3 style="margin-top:24px;">Recipients</h3>
+      <ul>
+        ${candidates
+          .filter((l) => !failed.includes(l.email))
+          .map((l) => `<li>${l.name} &lt;${l.email}&gt; · last played ${l.resultsSentAt ? new Date(l.resultsSentAt).toLocaleDateString("en-CA") : "—"} · ${l.totalPoints || 0} pts</li>`)
+          .join("")}
+      </ul>
+      </body></html>
+    `);
+  } catch (err) {
+    console.error("[demo/nudge-inactive] Error:", err.message);
+    res.status(500).type("html").send(`<h1>Failed</h1><pre>${String(err.message)}</pre>`);
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  GET /activity                                                      */
 /*  Teacher dashboard: list student activity, filterable by source/    */
 /*  classroom. Auth via query param or teacher token.                  */
@@ -1178,6 +1319,21 @@ async function sendAdminNotification(lead) {
       ${weeklyTopHtml}
       ${allTimeTopHtml}
       ${leaderboardHtml}
+
+      <!-- Admin actions: nudge inactive practicers.  Tokenised GET so
+           the button works directly from the email client. -->
+      <div style="background:#fff;padding:14px 24px;border:1px solid #e2e8f0;border-top:none;text-align:center;">
+        <div style="font-weight:900;font-size:13px;margin-bottom:8px;color:#1e293b;">
+          📬 Re-engagement
+        </div>
+        <a href="${process.env.PUBLIC_API_BASE || "https://api.curriculate.net"}/api/conference/nudge-inactive?key=${encodeURIComponent(process.env.ADMIN_API_TOKEN || process.env.ADMIN_API_KEY || "")}"
+           style="display:inline-block;padding:10px 20px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:800;font-size:13px;text-decoration:none;">
+          Nudge inactive practicers
+        </a>
+        <div style="margin-top:8px;font-size:11px;color:#64748b;">
+          Sends a personalised email to anyone idle ≥4 days who hasn't been nudged in the last 7.
+        </div>
+      </div>
 
       <div style="background: #f1f5f9; padding: 12px 24px; border-radius: 0 0 16px 16px; border: 1px solid #e2e8f0; border-top: none;">
         <div style="font-size: 11px; color: #94a3b8; text-align: center;">
