@@ -710,7 +710,13 @@ function TreatToast({ onDismiss }) {
   );
 }
 
-function DemoPlayer({ user, onFinish, source }) {
+function DemoPlayer({ user, onFinish, source, target = null, bonus = 0 }) {
+  // Whether the player set a commitment (3/5/10 tasks) on entry.
+  // When set, finishing the Nth completion triggers an auto-end with
+  // the bonus.  Skipped tasks don't count toward the target.
+  const hasCommitment = typeof target === "number" && target > 0;
+  const bonusAwardedRef = useRef(false);
+
   // Build a smart task order: one of each type first, then repeats
   const taskOrder = useMemo(() => buildSmartTaskOrder(DEMO_TASKS), []);
 
@@ -805,6 +811,37 @@ function DemoPlayer({ user, onFinish, source }) {
   const taskAreaRef = useRef(null);
   const popKeyRef = useRef(0);
   const isClassroom = source === "classroom";
+
+  // Append a synthetic commitment-bonus entry when the player hits
+  // their committed target.  Single-shot via bonusAwardedRef so the
+  // bonus can never be doubled even if multiple end-paths fire.
+  const finishWithBonus = useCallback(
+    (entries) => {
+      let outEntries = entries;
+      if (hasCommitment && !bonusAwardedRef.current && bonus > 0) {
+        bonusAwardedRef.current = true;
+        outEntries = [
+          ...entries,
+          {
+            taskType: "commitment-bonus",
+            title: `Commitment bonus (${target} tasks)`,
+            answer: null,
+            skipped: false,
+            points: bonus,
+            commitmentBonus: bonus,
+            completedAt: new Date().toISOString(),
+          },
+        ];
+        // Pop a celebratory indicator so the bonus award is visible on
+        // screen before the results screen appears.
+        popKeyRef.current += 1;
+        setLastEarned({ pts: bonus, key: popKeyRef.current, label: "commitment" });
+        setTotalPoints((p) => p + bonus);
+      }
+      onFinish(outEntries);
+    },
+    [hasCommitment, bonus, target, onFinish]
+  );
 
   // Smart demo socket — simulates server responses for team task types
   const demoSocket = useMemo(() => {
@@ -1061,13 +1098,25 @@ function DemoPlayer({ user, onFinish, source }) {
       setShowFeedback(false);
       setPendingEntry(null);
 
+      // ── Commitment auto-end ────────────────────────────────────────
+      // If the player committed to N tasks on entry and just hit it,
+      // award the bonus and end the session immediately.  Skips don't
+      // count — only real completions get the player to the target.
+      if (hasCommitment) {
+        const completedCount = newResults.filter((r) => !r.skipped).length;
+        if (completedCount >= target) {
+          finishWithBonus(newResults);
+          return;
+        }
+      }
+
       if (taskIdx < total - 1) {
         setTaskIdx((i) => i + 1);
       } else {
         onFinish(newResults);
       }
     },
-    [pendingEntry, results, taskIdx, total, onFinish]
+    [pendingEntry, results, taskIdx, total, onFinish, hasCommitment, target, finishWithBonus]
   );
 
   const goNext = useCallback(() => {
@@ -1098,7 +1147,13 @@ function DemoPlayer({ user, onFinish, source }) {
     onFinish(results);
   }, [results, onFinish]);
 
-  const progressPct = ((taskIdx + 1) / total) * 100;
+  // Commitment-aware progress.  When a target is set, the bar tracks
+  // completions toward target; otherwise it tracks position in the
+  // task order as before.
+  const completedCount = results.filter((r) => !r.skipped).length;
+  const progressPct = hasCommitment
+    ? Math.min(100, (completedCount / target) * 100)
+    : ((taskIdx + 1) / total) * 100;
   // Width of the inactivity-warning bar (only shown when the warn
   // No more on-screen idle countdown bar — replaced by the modal.
   const timerPct = 100;
@@ -1252,8 +1307,27 @@ function DemoPlayer({ user, onFinish, source }) {
             {isClassroom ? "Practice Mode" : "Curriculate Demo"}
           </span>
           <span style={styles.badge}>
-            {taskIdx + 1} / {total}
+            {hasCommitment
+              ? `${completedCount} / ${target}`
+              : `${taskIdx + 1} / ${total}`}
           </span>
+          {hasCommitment && bonus > 0 && (
+            <span
+              style={{
+                padding: "3px 9px",
+                borderRadius: 8,
+                fontSize: 11,
+                fontWeight: 800,
+                background: "rgba(245,158,11,0.18)",
+                color: "#fbbf24",
+                border: "1px solid rgba(245,158,11,0.3)",
+                whiteSpace: "nowrap",
+              }}
+              title={`Hit ${target} tasks to earn the +${bonus} commitment bonus`}
+            >
+              +{bonus} at finish
+            </span>
+          )}
         </div>
         <div style={styles.topBarRight}>
           {/* Points counter */}
@@ -1751,7 +1825,18 @@ function RecommendTeacher({ user, onPointsEarned }) {
   );
 }
 
-function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
+function DemoResults({
+  user,
+  results,
+  source,
+  promoCode = "CONFERENCE2025",
+  commitment = null,
+  onPlayAgain,
+}) {
+  const hitCommitment =
+    commitment &&
+    typeof commitment.target === "number" &&
+    results.filter((r) => !r.skipped).length >= commitment.target;
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [showAmbassador, setShowAmbassador] = useState(false);
@@ -1834,6 +1919,23 @@ function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
           <div style={{ fontSize: 12, color: "#a16207", marginTop: 2 }}>
             {new Set(completed.map((r) => r.taskType)).size} unique task types tried
           </div>
+          {hitCommitment && (
+            <div
+              style={{
+                marginTop: 10,
+                display: "inline-block",
+                padding: "5px 12px",
+                borderRadius: 999,
+                background: "rgba(245,158,11,0.18)",
+                color: "#92400e",
+                fontWeight: 800,
+                fontSize: 12,
+                border: "1px solid rgba(245,158,11,0.4)",
+              }}
+            >
+              ✨ Hit your {commitment.target}-task commitment · +{commitment.bonus} bonus
+            </div>
+          )}
         </div>
 
         {/* Task badges */}
@@ -1940,22 +2042,28 @@ function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
             : ""}
         </p>
 
-        {/* Play again */}
+        {/* Play again — keeps the email + lifetime points, drops the
+            user back at the commitment picker (or straight into a new
+            session in conference mode). */}
         <button
-          onClick={() => window.location.reload()}
+          onClick={() => {
+            if (typeof onPlayAgain === "function") onPlayAgain();
+            else window.location.reload();
+          }}
           style={{
             marginTop: 12,
-            padding: "10px 24px",
+            padding: "12px 28px",
             borderRadius: 12,
-            border: "1px solid #e2e8f0",
-            background: "#fff",
-            fontWeight: 800,
-            fontSize: 14,
+            border: "none",
+            background: "linear-gradient(135deg, #3b82f6, #8b5cf6)",
+            fontWeight: 900,
+            fontSize: 15,
             cursor: "pointer",
-            color: "#475569",
+            color: "#fff",
+            boxShadow: "0 4px 12px rgba(59,130,246,0.3)",
           }}
         >
-          Play Again
+          Play Again →
         </button>
       </div>
 
@@ -1968,13 +2076,161 @@ function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
 }
 
 // ----------------------------------------------------------------
+// Phase: Commitment Picker (practice mode)
+// ----------------------------------------------------------------
+//
+// After email capture (and only in practice / non-conference flows),
+// the player picks a commitment level: 3 / 5 / 10 tasks.  Hitting that
+// target awards a bonus and ends the session — so practice has a
+// natural stopping point instead of dragging on indefinitely.
+
+const COMMITMENT_OPTIONS = [
+  {
+    target: 3,
+    bonus: 10,
+    label: "Quick taste",
+    blurb: "3 tasks · finish them all and pocket a bonus",
+  },
+  {
+    target: 5,
+    bonus: 15,
+    label: "Half session",
+    blurb: "5 tasks · solid stretch, mid-tier bonus",
+  },
+  {
+    target: 10,
+    bonus: 50,
+    label: "Full commit",
+    blurb: "10 tasks · max bonus for the long-haulers",
+  },
+];
+
+function CommitPicker({ user, onPick, isConference }) {
+  // Conference attendees skip the commitment picker entirely — they get
+  // the open-ended booth flow.  This guard exists as a fallback; the
+  // parent only renders CommitPicker when !isConference.
+  useEffect(() => {
+    if (isConference) onPick(null);
+  }, [isConference, onPick]);
+
+  return (
+    <div style={styles.captureOuter}>
+      <div style={{ ...styles.captureCard, maxWidth: 480 }}>
+        <Mascot
+          category="practice-signin"
+          size={120}
+          style={{ marginBottom: 4, filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.15))" }}
+        />
+        <h1 style={{ ...styles.captureTitle, fontSize: 24 }}>
+          Pick your commitment, {user.name.split(/\s+/)[0]}
+        </h1>
+        <p style={{ ...styles.captureSubtitle, marginBottom: 20 }}>
+          Set a target and we'll celebrate you when you hit it. Bigger
+          target = bigger bonus.
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%" }}>
+          {COMMITMENT_OPTIONS.map((opt) => (
+            <button
+              key={opt.target}
+              onClick={() => onPick(opt)}
+              style={{
+                width: "100%",
+                padding: "16px 18px",
+                borderRadius: 16,
+                border: "1px solid rgba(255,255,255,0.15)",
+                background: "rgba(255,255,255,0.06)",
+                color: "#f8fafc",
+                cursor: "pointer",
+                textAlign: "left",
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                transition: "all 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(255,255,255,0.1)";
+                e.currentTarget.style.borderColor = "rgba(245,158,11,0.4)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)";
+              }}
+            >
+              <div
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 14,
+                  background: "linear-gradient(135deg, #3b82f6, #8b5cf6)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 22,
+                  fontWeight: 900,
+                  color: "#fff",
+                  flexShrink: 0,
+                }}
+              >
+                {opt.target}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2 }}>
+                  {opt.label}
+                </div>
+                <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.4 }}>
+                  {opt.blurb}
+                </div>
+              </div>
+              <div
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 10,
+                  background: "rgba(245,158,11,0.18)",
+                  color: "#fbbf24",
+                  border: "1px solid rgba(245,158,11,0.3)",
+                  fontWeight: 900,
+                  fontSize: 14,
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}
+              >
+                +{opt.bonus}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={() => onPick(null)}
+          style={{
+            marginTop: 14,
+            background: "transparent",
+            border: "none",
+            color: "#94a3b8",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "pointer",
+            textDecoration: "underline",
+          }}
+        >
+          Skip — just let me roam
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------
 // Main DemoMode Component
 // ----------------------------------------------------------------
 
 export default function DemoMode({ source = "conference", classroom = "" }) {
-  const [phase, setPhase] = useState("capture"); // capture | play | results
+  // capture → commit (practice only) → play → results
+  const [phase, setPhase] = useState("capture");
   const [user, setUser] = useState(null);
   const [results, setResults] = useState([]);
+  const [commitment, setCommitment] = useState(null); // { target, bonus } | null
 
   // Allow URL params to override source/classroom
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
@@ -1985,8 +2241,24 @@ export default function DemoMode({ source = "conference", classroom = "" }) {
   const conferenceLocation = params.get("location") || "";
   const conferenceDate = params.get("date") || "";
 
-  const handleStart = useCallback((u) => {
-    setUser(u);
+  // Conference attendees keep the open-ended flow; commitment picker
+  // is practice / classroom only.  Same gate logic as DemoResults.
+  const isConference =
+    effectiveSource === "conference" && !!conferenceName.trim();
+
+  const handleStart = useCallback(
+    (u) => {
+      setUser(u);
+      // Conference flow → straight to play, no commitment picker.
+      // Practice / classroom → commit phase first.
+      setPhase(isConference ? "play" : "commit");
+    },
+    [isConference]
+  );
+
+  const handleCommit = useCallback((opt) => {
+    // null = "skip — just let me roam"; treat as no commitment.
+    setCommitment(opt || null);
     setPhase("play");
   }, []);
 
@@ -1994,6 +2266,14 @@ export default function DemoMode({ source = "conference", classroom = "" }) {
     setResults(r);
     setPhase("results");
   }, []);
+
+  const handlePlayAgain = useCallback(() => {
+    // Keep the user's email; clear results + commitment, return to
+    // commit picker so they can set a new target (or skip).
+    setResults([]);
+    setCommitment(null);
+    setPhase(isConference ? "play" : "commit");
+  }, [isConference]);
 
   return (
     <div style={styles.root}>
@@ -2008,11 +2288,27 @@ export default function DemoMode({ source = "conference", classroom = "" }) {
           conferenceDate={conferenceDate}
         />
       )}
+      {phase === "commit" && user && (
+        <CommitPicker user={user} onPick={handleCommit} isConference={isConference} />
+      )}
       {phase === "play" && user && (
-        <DemoPlayer user={user} onFinish={handleFinish} source={effectiveSource} />
+        <DemoPlayer
+          user={user}
+          onFinish={handleFinish}
+          source={effectiveSource}
+          target={commitment?.target || null}
+          bonus={commitment?.bonus || 0}
+        />
       )}
       {phase === "results" && user && (
-        <DemoResults user={user} results={results} source={effectiveSource} promoCode={effectivePromo} />
+        <DemoResults
+          user={user}
+          results={results}
+          source={effectiveSource}
+          promoCode={effectivePromo}
+          commitment={commitment}
+          onPlayAgain={handlePlayAgain}
+        />
       )}
     </div>
   );
