@@ -76,6 +76,7 @@ export default function BlastAdminPage() {
   const [adminToken, setAdminToken] = useState("");
   const [tab, setTab] = useState("new");
   const [defaults, setDefaults] = useState(null);
+  const [defaultsError, setDefaultsError] = useState("");
 
   // Hydrate token from localStorage so the gate doesn't show every visit.
   // Sign out clears it.
@@ -92,15 +93,24 @@ export default function BlastAdminPage() {
 
   // Load templates once admin token is provided. If the saved token is stale,
   // /templates will return 401; clear the cached token so the gate shows again.
+  // On network/route errors, surface a diagnostic banner so the user knows
+  // it's a backend-reachability problem rather than a missing template.
   useEffect(() => {
     if (!adminToken) return;
+    setDefaultsError("");
     fetch(`${API}/admin/blast/templates`, { headers: { "x-admin-token": adminToken } })
-      .then(r => {
+      .then(async r => {
         if (r.status === 401) { setAdminToken(""); return null; }
+        if (!r.ok) {
+          setDefaultsError(`Templates endpoint returned ${r.status}. The backend may not have the new /admin/blast routes deployed yet (commit a8e4d794+).`);
+          return null;
+        }
         return r.json();
       })
       .then(j => { if (j) setDefaults(j.templates || {}); })
-      .catch(() => setDefaults({}));
+      .catch((e) => {
+        setDefaultsError(`Failed to reach ${API}/admin/blast/templates (${e.message || "network error"}). Likely causes: backend not deployed with new routes, NEXT_PUBLIC_BACKEND_URL pointed somewhere wrong, or CORS misconfigured.`);
+      });
   }, [adminToken]);
 
   if (!adminToken) {
@@ -136,6 +146,13 @@ export default function BlastAdminPage() {
           <Btn variant={tab === "contacts" ? "primary" : "ghost"} onClick={() => setTab("contacts")}>Contacts</Btn>
           <Btn variant={tab === "research" ? "primary" : "ghost"} onClick={() => setTab("research")}>Research</Btn>
         </div>
+
+        {defaultsError && (
+          <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-100">
+            <div className="font-semibold mb-1">⚠ Backend unreachable</div>
+            <div className="text-red-200/90">{defaultsError}</div>
+          </div>
+        )}
 
         {tab === "new" && <NewCampaign adminToken={adminToken} defaults={defaults} onCreated={() => setTab("campaigns")} />}
         {tab === "campaigns" && <CampaignList adminToken={adminToken} />}
@@ -284,7 +301,10 @@ function NewCampaign({ adminToken, defaults, onCreated }) {
   async function sendTest() {
     if (!testEmail) return;
     const t = templates[editProduct];
-    if (!t) { setTestMsg("Pick a product first"); return; }
+    if (!t || !t.subjectEn) {
+      setTestMsg("Templates haven't loaded — the backend's /admin/blast routes may not be deployed yet. Check the red banner at the top of the page for details.");
+      return;
+    }
     setTestMsg("Sending…");
     try {
       // Create a far-future tiny draft so we can use /test, then clean up.
