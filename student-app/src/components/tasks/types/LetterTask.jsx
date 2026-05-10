@@ -71,6 +71,11 @@ export default function LetterTask({
 
   const basePoints = task?.points || 10;
 
+  // Track the payload across handleSubmit (which loads the reply) and
+  // handleContinue (which finally hands control back to the parent).
+  const submittedRef = useRef(false);
+  const pendingPayloadRef = useRef(null);
+
   const handleSubmit = async () => {
     if (isDisabled || !meetsMin) return;
     setIsSubmitting(true);
@@ -80,8 +85,12 @@ export default function LetterTask({
 
     setConceptsFound(matchedConcepts);
 
-    // Submit to parent for scoring
-    const payload = {
+    // Build the payload now, but defer onSubmit until the user has
+    // actually read the AI reply.  Per tester feedback ("practice
+    // mode should let user see the letter written back!"), submitting
+    // immediately let the parent advance past the reply view before
+    // the AI response could even load.
+    pendingPayloadRef.current = {
       type: "letter",
       correct: false,
       basePoints,
@@ -98,7 +107,6 @@ export default function LetterTask({
         handwritingPhotoUrl: handwritingPhoto || undefined,
       }),
     };
-    onSubmit?.(payload);
 
     // Request AI reply
     setLoadingReply(true);
@@ -132,6 +140,19 @@ export default function LetterTask({
     } finally {
       setLoadingReply(false);
     }
+  };
+
+  const handleContinue = () => {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    const payload = pendingPayloadRef.current || {
+      type: "letter",
+      correct: false,
+      basePoints,
+      response: value,
+    };
+    if (aiReply) payload.aiReply = aiReply;
+    onSubmit?.(payload);
   };
 
   const styleBadge = letterStyle === "business"
@@ -225,6 +246,33 @@ export default function LetterTask({
               </div>
             )}
           </div>
+        )}
+
+        {/* Continue — only enabled once the AI reply has loaded so
+            the user actually gets to read it.  Replaces the previous
+            'submit and immediately advance' flow. */}
+        {!loadingReply && (
+          <button
+            type="button"
+            onClick={handleContinue}
+            disabled={submittedRef.current}
+            style={{
+              width: "100%",
+              marginTop: 14,
+              padding: "12px 0",
+              borderRadius: 12,
+              border: "none",
+              background: "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)",
+              color: "#fff",
+              fontSize: 15,
+              fontWeight: 700,
+              cursor: submittedRef.current ? "default" : "pointer",
+              opacity: submittedRef.current ? 0.6 : 1,
+              boxShadow: "0 4px 12px rgba(34,197,94,0.3)",
+            }}
+          >
+            Continue →
+          </button>
         )}
       </div>
     );

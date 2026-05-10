@@ -8804,6 +8804,87 @@ Write a reply letter back to the student, IN CHARACTER as ${charName}. Guideline
 });
 
 /* ------------------------------------------------------------------ */
+/*  Photo task — AI vision scoring + coaching feedback                 */
+/*  Body: { image (data: URL or https URL), prompt, note?, gradeLevel? }*/
+/*  Returns: { score: 0-100, feedback: string, headline: string }       */
+/* ------------------------------------------------------------------ */
+app.post("/api/evaluate/photo", async (req, res) => {
+  try {
+    const { image, prompt, note, gradeLevel } = req.body || {};
+    const imgStr = String(image || "").trim();
+    if (!imgStr) return res.status(400).json({ error: "Missing image" });
+    const isDataUrl = imgStr.startsWith("data:image/");
+    const isHttpUrl = /^https?:\/\//i.test(imgStr);
+    if (!isDataUrl && !isHttpUrl) {
+      return res.status(400).json({ error: "Invalid image — must be data: URL or http(s) URL" });
+    }
+    if (imgStr.length > 15_000_000) {
+      return res.status(413).json({ error: "Image too large. Please use a smaller photo." });
+    }
+
+    const challenge = String(prompt || "Take a photo that matches the teacher's instructions.").slice(0, 800);
+    const studentNote = String(note || "").slice(0, 500);
+    const grade = parseInt(gradeLevel, 10) || 7;
+
+    const systemPrompt = `You are an encouraging classroom photo coach for a grade ${grade} student. Score how well a photo answers a "Photo Challenge" prompt and give SHORT, kind, actionable feedback.
+
+Return ONLY valid JSON in this exact shape:
+{
+  "score": 0-100,
+  "headline": "short 4-7 word reaction (e.g. 'Spot on!' or 'Close — try one more thing')",
+  "feedback": "1-2 sentences, max ~40 words. Specific to what's actually IN the photo. Mention one concrete strength + one concrete tip if score < 90."
+}
+
+Scoring guidance:
+- 90-100: clearly answers the prompt with detail visible.
+- 70-89: clearly answers but missing detail / off-center / blurry.
+- 50-69: partial match — related but doesn't fully satisfy the prompt.
+- 0-49: doesn't match the prompt, or unreadable / off-topic.
+
+Be encouraging. Never harsh. If the photo is genuinely off-prompt, still suggest a kind retake idea.`;
+
+    const userText = `Photo Challenge: ${challenge}${
+      studentNote ? `\n\nStudent's note about their photo: "${studentNote}"` : ""
+    }\n\nReply with the JSON object only.`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: userText },
+            { type: "image_url", image_url: { url: imgStr, detail: "low" } },
+          ],
+        },
+      ],
+      temperature: 0.4,
+      max_tokens: 250,
+      response_format: { type: "json_object" },
+    });
+
+    const raw = (response.choices?.[0]?.message?.content || "").trim();
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
+    }
+    const score = Math.max(0, Math.min(100, Math.round(Number(parsed?.score) || 0)));
+    const headline = String(parsed?.headline || "Got it!").slice(0, 80);
+    const feedback = String(
+      parsed?.feedback || "Nice photo! Keep matching the prompt as closely as you can."
+    ).slice(0, 400);
+
+    return res.json({ score, headline, feedback });
+  } catch (err) {
+    console.error("Photo evaluation error:", err?.message || err);
+    return res.status(500).json({ error: "Photo evaluation failed" });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  Interview — live AI conversation with historical / topical figure  */
 /* ------------------------------------------------------------------ */
 app.post("/api/evaluate/interview-reply", async (req, res) => {

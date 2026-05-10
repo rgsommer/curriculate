@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/PhotoTask.jsx
 import React, { useRef, useState, useEffect } from "react";
+import { API_BASE_URL } from "../../../config.js";
 
 // Keyframe animations
 const styles = `
@@ -113,6 +114,20 @@ export default function PhotoTask({ task, onSubmit, disabled, memberNames, remai
   const [showCelebration, setShowCelebration] = useState(false);
   const [confetti, setConfetti] = useState([]);
 
+  // ── AI scoring + coaching feedback (per tester request).
+  // After the user taps Submit, we POST the photo + prompt to the
+  // /api/evaluate/photo endpoint and surface the score + feedback
+  // before passing control back to the parent.  onSubmit only fires
+  // once the user reads the feedback and taps Continue, so they
+  // actually get to see the AI critique instead of being whisked
+  // away to the next task.
+  const [evaluating, setEvaluating] = useState(false);
+  const [aiScore, setAiScore] = useState(null);
+  const [aiHeadline, setAiHeadline] = useState("");
+  const [aiFeedback, setAiFeedback] = useState("");
+  const [aiError, setAiError] = useState(false);
+  const submittedRef = useRef(false);
+
   const fileRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -120,7 +135,11 @@ export default function PhotoTask({ task, onSubmit, disabled, memberNames, remai
     task?.prompt ||
     "Use your device to take a photo that matches your teacher's instructions.";
 
-  const uiDisabled = disabled || submitted;
+  // After Submit, the AI panel takes over.  Lock the camera/textarea
+  // /submit button until the user dismisses it via Continue (which
+  // sets submitted=true via handleContinue).
+  const evaluationActive = evaluating || aiScore != null || !!aiFeedback;
+  const uiDisabled = disabled || submitted || evaluationActive;
 
   const roomCode = task?.roomCode || task?.config?.roomCode || null;
   const teamId = task?.teamId || task?.config?.teamId || null;
@@ -191,6 +210,46 @@ export default function PhotoTask({ task, onSubmit, disabled, memberNames, remai
     reader.readAsDataURL(file);
   };
 
+  // Run AI scoring + feedback against the photo + prompt.  Falls
+  // back to a friendly default if the endpoint is unreachable.
+  const runAiEvaluation = async (dataUrl) => {
+    setEvaluating(true);
+    setAiError(false);
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+      const resp = await fetch(`${API_BASE_URL}/api/evaluate/photo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          image: dataUrl,
+          prompt: promptText,
+          note: note.trim(),
+          gradeLevel: task?.gradeLevel || task?.config?.gradeLevel,
+        }),
+      });
+      clearTimeout(timeout);
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || typeof data?.score !== "number") {
+        throw new Error(data?.error || "Bad response");
+      }
+      setAiScore(data.score);
+      setAiHeadline(data.headline || "Got it!");
+      setAiFeedback(data.feedback || "Nice photo! Keep matching the prompt.");
+    } catch (err) {
+      console.warn("[PhotoTask] AI evaluation failed:", err?.message || err);
+      setAiError(true);
+      setAiScore(null);
+      setAiHeadline("Photo received");
+      setAiFeedback(
+        "We couldn't reach the AI photo coach this time, but your photo is in. Nice work!"
+      );
+    } finally {
+      setEvaluating(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (uiDisabled) return;
 
@@ -200,14 +259,6 @@ export default function PhotoTask({ task, onSubmit, disabled, memberNames, remai
     }
 
     setUploading(true);
-
-    const parts = [];
-    parts.push("[PHOTO TAKEN]");
-    if (note.trim()) {
-      parts.push(`Note: ${note.trim()}`);
-    }
-
-    const answerText = parts.join(" ");
 
     let s3 = null;
     try {
@@ -222,14 +273,24 @@ export default function PhotoTask({ task, onSubmit, disabled, memberNames, remai
       console.warn("S3 upload unavailable (PhotoTask), continuing without key:", e);
     }
 
-    const enriched = s3?.s3Key
-      ? `${answerText} [S3:${s3.s3Key}]`
-      : answerText;
-
-    onSubmit(enriched);
-    setSubmitted(true);
-    triggerConfetti();
     setUploading(false);
+    triggerConfetti();
+    // Run the AI vision call against the local data: URL preview.
+    // No S3 round-trip needed — it's already in the browser.
+    runAiEvaluation(imagePreview);
+  };
+
+  // User taps Continue on the AI feedback panel → THEN we hand
+  // control back to the parent so the next task can advance.
+  const handleContinue = () => {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    const parts = ["[PHOTO TAKEN]"];
+    if (note.trim()) parts.push(`Note: ${note.trim()}`);
+    if (aiScore != null) parts.push(`AI Score: ${aiScore}/100`);
+    if (aiFeedback) parts.push(`AI Feedback: ${aiFeedback}`);
+    onSubmit(parts.join(" "));
+    setSubmitted(true);
   };
 
   // Calculate time remaining
@@ -707,7 +768,145 @@ export default function PhotoTask({ task, onSubmit, disabled, memberNames, remai
         )}
       </button>
 
-      {/* Success message */}
+      {/* AI evaluation panel — shows after Submit, before Continue. */}
+      {(evaluating || aiScore != null || aiFeedback) && !submitted && (
+        <div
+          style={{
+            marginTop: 16,
+            padding: 16,
+            borderRadius: 12,
+            background: "linear-gradient(135deg, rgba(59,130,246,0.12) 0%, rgba(139,92,246,0.12) 100%)",
+            border: "1px solid rgba(96,165,250,0.4)",
+            animation: "float-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "0.75rem",
+              fontWeight: 700,
+              color: "#93c5fd",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              marginBottom: 8,
+              textAlign: "center",
+            }}
+          >
+            🤖 AI photo coach
+          </div>
+          {evaluating ? (
+            <div style={{ textAlign: "center", padding: "8px 0" }}>
+              <div
+                style={{
+                  fontSize: "0.95rem",
+                  color: "#cbd5e1",
+                  fontWeight: 600,
+                }}
+              >
+                Looking at your photo…
+              </div>
+              <div
+                style={{
+                  marginTop: 8,
+                  height: 4,
+                  borderRadius: 4,
+                  background: "rgba(255,255,255,0.1)",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: "40%",
+                    background: "linear-gradient(90deg, #60a5fa, #a78bfa)",
+                    animation: "progress-slide 1.4s linear infinite",
+                  }}
+                />
+              </div>
+            </div>
+          ) : (
+            <>
+              {aiScore != null && (
+                <div
+                  style={{
+                    textAlign: "center",
+                    fontSize: "2rem",
+                    fontWeight: 900,
+                    color:
+                      aiScore >= 90 ? "#34d399" : aiScore >= 70 ? "#fbbf24" : "#f87171",
+                    marginBottom: 4,
+                    lineHeight: 1.1,
+                  }}
+                >
+                  {aiScore}
+                  <span style={{ fontSize: "1rem", color: "#94a3b8", fontWeight: 600 }}>
+                    {" "}
+                    / 100
+                  </span>
+                </div>
+              )}
+              {aiHeadline && (
+                <div
+                  style={{
+                    textAlign: "center",
+                    fontWeight: 800,
+                    color: "#e2e8f0",
+                    marginBottom: 6,
+                    fontSize: "1rem",
+                  }}
+                >
+                  {aiHeadline}
+                </div>
+              )}
+              <div
+                style={{
+                  color: "#cbd5e1",
+                  fontSize: "0.9rem",
+                  lineHeight: 1.5,
+                  textAlign: "center",
+                }}
+              >
+                {aiFeedback}
+              </div>
+              {aiError && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "rgba(255,255,255,0.5)",
+                    marginTop: 6,
+                    fontStyle: "italic",
+                    textAlign: "center",
+                  }}
+                >
+                  (Live AI was unavailable)
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleContinue}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  marginTop: 14,
+                  padding: "12px 16px",
+                  borderRadius: 12,
+                  border: "none",
+                  background: "linear-gradient(135deg, #22c55e 0%, #34d399 100%)",
+                  color: "#fff",
+                  fontSize: "1rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  letterSpacing: "0.5px",
+                  boxShadow: "0 0 20px rgba(34,197,94,0.4)",
+                }}
+              >
+                Continue →
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Success message — final state after Continue. */}
       {submitted && (
         <div
           style={{
