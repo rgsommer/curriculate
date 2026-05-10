@@ -507,15 +507,32 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
               </div>
             )}
 
-            {/* No motion support — just a "Done" button */}
+            {/* No motion support — explain the real-classroom flow,
+                then offer a Done button so the player isn't stuck.
+                Tester (laptop): "a laptop does not have motion sensing
+                ... assure me that on a mobile device it would work,
+                for each player". */}
             {noMotionSupport && (
-              <button
-                type="button"
-                onClick={endTurn}
-                className="px-8 py-3 rounded-3xl text-2xl font-black shadow-2xl border bg-green-400 text-black border-green-200 hover:scale-[1.02] transition"
-              >
-                Done!
-              </button>
+              <>
+                <div
+                  className="w-full max-w-sm rounded-2xl border border-yellow-300/40 bg-yellow-300/10 px-4 py-3 text-sm leading-snug text-yellow-100 mb-1"
+                  role="note"
+                >
+                  📱 <b>No motion sensor on this device.</b> On a phone or
+                  tablet (which every player will be using in a real
+                  classroom), each player's device counts jumps, shakes,
+                  and movements live via the accelerometer — and scores
+                  them individually. For this practice run, tap{" "}
+                  <b>Done</b> to finish your turn.
+                </div>
+                <button
+                  type="button"
+                  onClick={endTurn}
+                  className="px-8 py-3 rounded-3xl text-2xl font-black shadow-2xl border bg-green-400 text-black border-green-200 hover:scale-[1.02] transition"
+                >
+                  Done!
+                </button>
+              </>
             )}
           </div>
         </div>

@@ -30,6 +30,11 @@ export default function LetterTask({
 
   const [value, setValue] = useState(answerDraft?.response || "");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Transient toast shown when the student tries to paste (or drag/drop
+  // text) into the letter input.  Tester: "disallow pasting into the
+  // letter input so ai cannot be used."  We block the operation AND
+  // tell them why so it doesn't feel like a glitch.
+  const [pasteBlockedToast, setPasteBlockedToast] = useState(false);
   const [aiReply, setAiReply] = useState(null);
   const [loadingReply, setLoadingReply] = useState(false);
   const [replyError, setReplyError] = useState(false);
@@ -397,46 +402,88 @@ export default function LetterTask({
         </div>
       )}
 
-      {/* Text area */}
-      <textarea
-        value={value}
-        onChange={(e) => {
-          const next = e.target.value;
-          const prev = value;
-          const now = Date.now();
-          const charDiff = prev.length - next.length;
-          const shouldSnapshot =
-            charDiff > 10 ||
-            (now - lastSnapshotRef.current.ts > 2000 && prev !== lastSnapshotRef.current.text);
-          if (shouldSnapshot && prev.trim()) {
-            setUndoStack((stack) => [...stack.slice(-19), prev]);
-            lastSnapshotRef.current = { text: next, ts: now };
+      {/* Text area — paste blocked to keep AI-generated text out. */}
+      <div style={{ position: "relative" }}>
+        <textarea
+          value={value}
+          onChange={(e) => {
+            const next = e.target.value;
+            const prev = value;
+            const now = Date.now();
+            const charDiff = prev.length - next.length;
+            const shouldSnapshot =
+              charDiff > 10 ||
+              (now - lastSnapshotRef.current.ts > 2000 && prev !== lastSnapshotRef.current.text);
+            if (shouldSnapshot && prev.trim()) {
+              setUndoStack((stack) => [...stack.slice(-19), prev]);
+              lastSnapshotRef.current = { text: next, ts: now };
+            }
+            setValue(next);
+          }}
+          onPaste={(e) => {
+            e.preventDefault();
+            setPasteBlockedToast(true);
+            window.clearTimeout(window.__letterPasteToastT);
+            window.__letterPasteToastT = window.setTimeout(
+              () => setPasteBlockedToast(false),
+              3500
+            );
+          }}
+          onDrop={(e) => {
+            // Block drag-and-drop text too — same intent as paste-block.
+            e.preventDefault();
+            setPasteBlockedToast(true);
+            window.clearTimeout(window.__letterPasteToastT);
+            window.__letterPasteToastT = window.setTimeout(
+              () => setPasteBlockedToast(false),
+              3500
+            );
+          }}
+          disabled={isDisabled}
+          placeholder={
+            letterStyle === "business"
+              ? `Dear ${character},\n\nI am writing to you regarding...`
+              : `Dear ${character},\n\nI wanted to write to you because...`
           }
-          setValue(next);
-        }}
-        disabled={isDisabled}
-        placeholder={
-          letterStyle === "business"
-            ? `Dear ${character},\n\nI am writing to you regarding...`
-            : `Dear ${character},\n\nI wanted to write to you because...`
-        }
-        rows={8}
-        style={{
-          width: "100%",
-          padding: "12px 14px",
-          borderRadius: 12,
-          border: "1px solid #d1d5db",
-          fontSize: 15,
-          lineHeight: 1.6,
-          fontFamily: letterStyle === "business"
-            ? "'Georgia', serif"
-            : "system-ui, sans-serif",
-          resize: "vertical",
-          color: "#1e293b",
-          background: "#fff",
-          minHeight: 180,
-        }}
-      />
+          rows={8}
+          style={{
+            width: "100%",
+            padding: "12px 14px",
+            borderRadius: 12,
+            border: "1px solid #d1d5db",
+            fontSize: 15,
+            lineHeight: 1.6,
+            fontFamily: letterStyle === "business"
+              ? "'Georgia', serif"
+              : "system-ui, sans-serif",
+            resize: "vertical",
+            color: "#1e293b",
+            background: "#fff",
+            minHeight: 180,
+          }}
+        />
+        {pasteBlockedToast && (
+          <div
+            style={{
+              position: "absolute",
+              top: 8,
+              right: 8,
+              padding: "6px 12px",
+              borderRadius: 10,
+              background: "#fef3c7",
+              border: "1px solid #f59e0b",
+              color: "#78350f",
+              fontSize: 12,
+              fontWeight: 700,
+              boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+              pointerEvents: "none",
+              maxWidth: 280,
+            }}
+          >
+            ✋ Pasting is off for letters — write it in your own words.
+          </div>
+        )}
+      </div>
 
       {/* Word count + concept count */}
       <div style={{

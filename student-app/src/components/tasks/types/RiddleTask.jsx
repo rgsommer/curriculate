@@ -12,9 +12,39 @@ export default function RiddleTask({ task, onSubmit, disabled }) {
   const [revealed, setRevealed] = useState(false);
 
   const cfg = task?.config || {};
-  const riddleText = cfg.riddle || task?.prompt || "No riddle provided!";
-  const answer = cfg.answer || "¯\\_(ツ)_/¯";
-  const hint = cfg.hint || null;
+
+  // Riddle rotation.  Practice loops through DEMO_TASKS and can land
+  // on the same riddle multiple times in one session — tester:
+  // "same riddle every practice".  If the task supplies a `riddles[]`
+  // pool, pick one based on the player-visible task index so each
+  // encounter shows a different riddle.  Falls back to the single
+  // legacy fields for backward compatibility.
+  const riddlePool = Array.isArray(cfg.riddles) ? cfg.riddles : null;
+  const pickedRiddle = (() => {
+    if (riddlePool && riddlePool.length > 0) {
+      const idx =
+        typeof task?._taskIndex === "number"
+          ? task._taskIndex
+          : (String(task?.id || "")
+              .split("")
+              .reduce((s, c) => (s * 31 + c.charCodeAt(0)) >>> 0, 0)) || 0;
+      const r = riddlePool[idx % riddlePool.length] || {};
+      return {
+        text: r.text || r.riddle || r.prompt || "",
+        answer: r.answer || "¯\\_(ツ)_/¯",
+        hint: r.hint || null,
+      };
+    }
+    return null;
+  })();
+
+  const riddleText =
+    (pickedRiddle && pickedRiddle.text) ||
+    cfg.riddle ||
+    task?.prompt ||
+    "No riddle provided!";
+  const answer = (pickedRiddle && pickedRiddle.answer) || cfg.answer || "¯\\_(ツ)_/¯";
+  const hint = (pickedRiddle && pickedRiddle.hint) || cfg.hint || null;
 
   const handleReveal = () => setRevealed(true);
 

@@ -61,9 +61,22 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
   const minObs = Number(config.minObservations) || 5;
   const focusHints = Array.isArray(config.focusHints) ? config.focusHints : [];
 
-  const [phase, setPhase] = useState(PHASE.LOADING);
-  const [resolvedUrl, setResolvedUrl] = useState("");
+  // Public-domain Wikimedia default — used both as the very last
+  // fallback and as the *initial* image when the task ships with no
+  // imageUrl at all.  Tester: "No art is viewed! just display a
+  // picture with a prompt to comment on it."
+  const DEFAULT_ART_URL =
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1280px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg";
+
+  // Skip the LOADING preload-validation step entirely — it was sticking
+  // the practicer on a black spinner whenever the preload promise hung
+  // (e.g. CORS quirks, slow image hosts).  Render the image directly
+  // and use <img onError> to swap to the default if it fails to load.
+  // The practicer always sees *some* artwork right away.
+  const [phase, setPhase] = useState(PHASE.VIEWING);
+  const [resolvedUrl, setResolvedUrl] = useState(originalUrl || DEFAULT_ART_URL);
   const [loadError, setLoadError] = useState("");
+  const [usedDefaultFallback, setUsedDefaultFallback] = useState(!originalUrl);
   const [secondsLeft, setSecondsLeft] = useState(viewingSec);
   const [observations, setObservations] = useState([]);
   const [inputValue, setInputValue] = useState("");
@@ -74,70 +87,31 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
   const [useScreen, setUseScreen] = useState(practiceMode);
   const inputRef = useRef(null);
 
-  // ── Image preload + fallback ──
-  useEffect(() => {
-    let cancelled = false;
-
-    async function validateImage() {
-      // Try the original URL first
-      if (originalUrl) {
-        try {
-          const url = await preloadImage(originalUrl);
-          if (!cancelled) {
-            setResolvedUrl(url);
-            setPhase(PHASE.VIEWING);
-            return;
-          }
-        } catch {
-          console.warn("[ArtView] Original image failed, trying fallback...", originalUrl);
-        }
-      }
-
-      // Try fallback via Wikimedia Commons
-      const fallbackUrl = await fetchFallbackImage(config);
-      if (cancelled) return;
-
-      if (fallbackUrl) {
-        try {
-          const url = await preloadImage(fallbackUrl);
-          if (!cancelled) {
-            console.log("[ArtView] Fallback image loaded:", url);
-            setResolvedUrl(url);
-            setPhase(PHASE.VIEWING);
-            return;
-          }
-        } catch {
-          console.warn("[ArtView] Fallback image also failed to load");
-        }
-      }
-
-      // Both failed — last-resort default so the practicer always sees
-      // *some* artwork to study.  Public-domain Van Gogh "Starry Night"
-      // from Wikimedia.  Tester: "If there is no art or historical
-      // document supplied, fall back to a default one."
-      const DEFAULT_ART_URL =
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1280px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg";
-      try {
-        const url = await preloadImage(DEFAULT_ART_URL);
-        if (!cancelled) {
-          setResolvedUrl(url);
-          setPhase(PHASE.VIEWING);
-          return;
-        }
-      } catch {
-        console.warn("[ArtView] Default fallback also failed to load");
-      }
-
-      // Even the default failed (offline?) — fall through to description-only.
-      if (!cancelled) {
-        setLoadError("Image unavailable");
-        setPhase(PHASE.VIEWING);
-      }
+  // (Preload + LOADING-phase validation removed — see state init above.
+  //  The viewing phase now starts immediately with the original URL,
+  //  and <img onError> swaps to DEFAULT_ART_URL if the network request
+  //  fails.  Server-side fetch fallback is still available but
+  //  triggered lazily on image error, not as a blocking preload.)
+  const handleImageError = useCallback(() => {
+    if (usedDefaultFallback) {
+      // Already on the default and it ALSO failed — fall through to
+      // description-only mode.
+      setLoadError("Image unavailable");
+      setResolvedUrl("");
+      return;
     }
-
-    validateImage();
-    return () => { cancelled = true; };
-  }, [originalUrl]);
+    // Try server-side replacement first; if that fails, snap to the
+    // hard-coded default.
+    (async () => {
+      const fb = await fetchFallbackImage(config);
+      if (fb && fb !== resolvedUrl) {
+        setResolvedUrl(fb);
+        return;
+      }
+      setResolvedUrl(DEFAULT_ART_URL);
+      setUsedDefaultFallback(true);
+    })();
+  }, [config, resolvedUrl, usedDefaultFallback, DEFAULT_ART_URL]);
 
   // ── Phase timer (only ticks during VIEWING and RESPONDING) ──
   useEffect(() => {
@@ -311,6 +285,7 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
             <img
               src={resolvedUrl}
               alt={config.imageDescription || "Study this image"}
+              onError={handleImageError}
               style={{
                 width: "100%",
                 maxWidth: 900,

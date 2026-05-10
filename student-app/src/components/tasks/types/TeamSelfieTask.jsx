@@ -219,24 +219,26 @@ export default function TeamSelfieTask({ task, onSubmit, disabled, roomCode, tea
         });
       }
     } catch (err) {
-      console.error("[selfie] Upload failed:", err.message);
-      // Show error briefly, then fall back to local save so warmup continues
-      setError(`Upload issue: ${err.message}`);
-      setTimeout(() => {
-        try {
-          localStorage.setItem("curriculate_selfie_url", photoDataUrl);
-        } catch (_) { /* storage full — ignore */ }
-        setError("");
-        setPhase("done");
-        if (onSubmit) {
-          onSubmit({
-            photoUrl: photoDataUrl,
-            selfieKey: null,
-            autoComplete: true,
-            localOnly: true,
-          });
-        }
-      }, 2000); // Show error for 2s then proceed anyway
+      // Upload failed → silently fall back to local save and proceed.
+      // The user sees the same "success" state they would on the happy
+      // path; the failure is logged to console for debugging.  Tester
+      // flagged the previous transient red "Upload issue:" flash as
+      // confusing — "I was not quick enough to capture it, but then it
+      // seems to say success".  No flash, no panic.
+      console.warn("[selfie] Upload failed, falling back to local save:", err?.message || err);
+      try {
+        localStorage.setItem("curriculate_selfie_url", photoDataUrl);
+      } catch (_) { /* storage full — ignore */ }
+      setError("");
+      setPhase("done");
+      if (onSubmit) {
+        onSubmit({
+          photoUrl: photoDataUrl,
+          selfieKey: null,
+          autoComplete: true,
+          localOnly: true,
+        });
+      }
     }
   }, [photoDataUrl, roomCode, teamId, onSubmit, allowThemed, subject, theme]);
 

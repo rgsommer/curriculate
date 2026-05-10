@@ -21,18 +21,40 @@ export default function TimelineTask({ task, onSubmit, disabled }) {
     "If dragging feels tricky on your device, use the ← and → buttons on each card. " +
     "When you are happy with the order, press Submit.";
 
+  // Strip any embedded dates / years from item text so students have to
+  // reason about chronology, not just sort numerically.  Catches the
+  // common AI-generator patterns: "Magna Carta signed (1215)",
+  // "1969 — Moon landing", "Battle of Hastings, 1066", "1066 AD …".
+  // Tester: "this task is made ridiculously easy by including the
+  // dates. eliminate specific dates!"
+  const stripDates = (s) =>
+    String(s || "")
+      // (1969) / (c. 1969) / (1066 AD) — parenthesised
+      .replace(/\s*\([^)]*\b(?:c\.?\s*)?\d{1,4}(?:\s*(?:AD|BC|CE|BCE))?[^)]*\)\s*/gi, " ")
+      // Leading year: "1969 — Moon landing" or "1066: Battle..."
+      .replace(/^\s*(?:c\.?\s*)?\d{1,4}(?:\s*(?:AD|BC|CE|BCE))?\s*[—–:-]\s*/i, "")
+      // Trailing year: "... , 1066" or "... 1066 AD"
+      .replace(/[,;–—-]?\s*(?:c\.?\s*)?\d{1,4}(?:\s*(?:AD|BC|CE|BCE))?\s*$/i, "")
+      // Any remaining bare 4-digit year fragment with a connector
+      .replace(/\bin\s+\d{3,4}(?:\s*(?:AD|BC|CE|BCE))?\b/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+
   const normalizeItems = (raw) => {
     const arr = Array.isArray(raw) ? raw : [];
     return arr
       .map((it, idx) => {
         if (it == null) return null;
         if (typeof it === "string") {
-          return { id: `${idx}`, text: it, year: null };
+          return { id: `${idx}`, text: stripDates(it), year: null };
         }
         const id = String(it.id ?? it._id ?? idx);
-        const text = String(it.text ?? it.label ?? it.event ?? it.title ?? it.name ?? "").trim();
+        const rawText = String(
+          it.text ?? it.label ?? it.event ?? it.title ?? it.name ?? ""
+        ).trim();
+        const text = stripDates(rawText) || `Event ${idx + 1}`;
         const year = it.year ?? it.date ?? it.when ?? null;
-        return { id, text: text || `Event ${idx + 1}`, year };
+        return { id, text, year };
       })
       .filter(Boolean);
   };
@@ -243,19 +265,21 @@ export default function TimelineTask({ task, onSubmit, disabled }) {
   // sort numerically). The card now shows only the event text; the
   // underlying `it.year` is preserved on the task object for grading.
 
-  // Shared style for the ← → reorder buttons. Earlier rendering used a
-  // near-invisible 14%-opacity border on a white background, which had
-  // very low contrast against the white card. Bump to a dark outline +
-  // tinted fill so the buttons read clearly.
+  // Shared style for the ← → reorder buttons.  Tester re-flagged
+  // "sorting arrows contrast is wrong" — the previous tinted-fill +
+  // dark-outline still read as washed-out against a white card.  Make
+  // them a solid blue button with white arrows, the same way every
+  // other reorder/nav button in the app looks.
   const arrowBtn = {
     borderRadius: 10,
-    border: "1px solid rgba(15,23,42,0.45)",
-    background: "#eef2ff",
-    color: "#0f172a",
-    padding: "4px 10px",
+    border: "1px solid #1d4ed8",
+    background: "#2563eb",
+    color: "#ffffff",
+    padding: "6px 12px",
     fontWeight: 900,
-    fontSize: "1rem",
+    fontSize: "1.05rem",
     lineHeight: 1,
+    boxShadow: "0 2px 6px rgba(37,99,235,0.35)",
   };
 
   return (

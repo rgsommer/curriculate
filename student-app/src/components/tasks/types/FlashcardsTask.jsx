@@ -1,5 +1,5 @@
 // student-app/src/components/tasks/types/FlashcardsTask.jsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import BuzzButton from "../../ui/BuzzButton";
 
 /**

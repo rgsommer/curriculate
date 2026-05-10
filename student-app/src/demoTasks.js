@@ -214,24 +214,42 @@ const DEMO_TASKS = [
   },
 
   // 15. Pet Feeding (uses config.foodItems with label + good)
+  //
+  // Tester feedback: "the pro/con statements are not supposed to be
+  // obviously good and bad foods! they are supposed to be pro/con/meh
+  // in connection with a topic related to the taskset. the link
+  // between the feeding and the feed items is once-removed."
+  //
+  // So the pet is a stand-in for a topic (here: a student's brain at
+  // study time), and the "foods" are study habits.  Pro habits make
+  // the brain thrive, con habits sap it, and meh habits (good: null)
+  // are neutral.  The decision is about the topic, not about literal
+  // junk food vs. carrots — the metaphor is one step removed.
   {
     taskType: "pet-feeding",
-    title: "Feed the Pet!",
-    prompt: "Feed the hungry pet the right foods!",
+    title: "Feed Your Study Brain",
+    prompt:
+      "This pet is your brain at study time. Feed it habits that help you learn — skip the ones that drain it. Some are clearly neutral.",
+    topic: "Healthy study habits",
     config: {
       pack: "classic",
       goal: 4,
       maxMistakes: 3,
       foodItems: [
-        { label: "Fresh carrots", good: true, emoji: "🥕" },
-        { label: "Clean water", good: true, emoji: "💧" },
-        { label: "Healthy kibble", good: true, emoji: "🦴" },
-        { label: "Fish fillet", good: true, emoji: "🐟" },
-        { label: "Apple slices", good: true, emoji: "🍎" },
-        { label: "Chocolate bar", good: false, emoji: "🍫" },
-        { label: "Soda pop", good: false, emoji: "🥤" },
-        { label: "Old leftovers", good: false, emoji: "🗑️" },
-        { label: "Spoiled milk", good: false, emoji: "🥛" },
+        // PRO (good: true) — habits that genuinely help learning.
+        { label: "Eight hours of sleep", good: true, emoji: "😴" },
+        { label: "Practice problems", good: true, emoji: "📝" },
+        { label: "Asking 'why?' out loud", good: true, emoji: "❓" },
+        { label: "Spacing study across days", good: true, emoji: "📅" },
+        { label: "Teaching a friend the concept", good: true, emoji: "🧑‍🏫" },
+        // CON (good: false) — habits that look like studying but hurt it.
+        { label: "All-night cramming", good: false, emoji: "🌙" },
+        { label: "Scrolling TikTok during 'study time'", good: false, emoji: "📱" },
+        { label: "Re-reading notes 10 times without testing", good: false, emoji: "🔁" },
+        { label: "Studying with the TV on", good: false, emoji: "📺" },
+        // MEH (good: null) — neutral; neither dramatically helps nor hurts.
+        { label: "Studying at a desk vs. a couch", good: null, emoji: "💺" },
+        { label: "Highlighter colour choice", good: null, emoji: "🖍️" },
       ],
     },
   },
@@ -282,13 +300,43 @@ const DEMO_TASKS = [
     },
   },
 
-  // 18. Riddle
+  // 18. Riddle — pool so repeat encounters surface a different one.
+  // RiddleTask picks by _taskIndex % pool.length (see RiddleTask.jsx).
   {
     taskType: "riddle",
     title: "Riddle Me This",
     prompt: "Can you solve this riddle?",
     config: {
-      riddle: "I have cities, but no houses live there. I have mountains, but no trees grow there. I have water, but no fish swim there. What am I?",
+      riddles: [
+        {
+          text: "I have cities, but no houses live there. I have mountains, but no trees grow there. I have water, but no fish swim there. What am I?",
+          answer: "A map",
+        },
+        {
+          text: "The more you take, the more you leave behind. What am I?",
+          answer: "Footsteps",
+        },
+        {
+          text: "I'm tall when I'm young, and short when I'm old. What am I?",
+          answer: "A candle",
+        },
+        {
+          text: "I speak without a mouth and hear without ears. I have no body, but I come alive with wind. What am I?",
+          answer: "An echo",
+        },
+        {
+          text: "What has hands but cannot clap?",
+          answer: "A clock",
+        },
+        {
+          text: "I have keys but no locks. I have space but no room. You can enter, but not go inside. What am I?",
+          answer: "A keyboard",
+        },
+      ],
+      // Legacy single-riddle fields kept as a hard fallback if a
+      // future generator strips the pool.
+      riddle:
+        "I have cities, but no houses live there. I have mountains, but no trees grow there. I have water, but no fish swim there. What am I?",
       answer: "A map",
     },
   },
@@ -559,10 +607,14 @@ const DEMO_TASKS = [
   // =========================================================================
 
   // 40. Draw (standalone draw, rendered by DrawMimeTask)
+  // clues[] gives the wizard a real list of subjects to cycle through;
+  // without it the parser falls back to either the task title or the
+  // generic "Draw or Mime" string, which testers flagged as nonsense.
   {
     taskType: "draw",
     title: "Draw It!",
-    prompt: "Draw your interpretation of 'The Future Classroom'. Be creative!",
+    prompt: "Sketch the subject below. Your team guesses what it is!",
+    clues: ["elephant", "spaceship", "umbrella", "lighthouse", "treehouse"],
     config: {
       durationSeconds: 60,
     },
@@ -572,7 +624,8 @@ const DEMO_TASKS = [
   {
     taskType: "mime",
     title: "Act It Out!",
-    prompt: "Without speaking, act out 'A teacher grading papers at midnight'. Your team guesses!",
+    prompt: "Without speaking, act out the subject below. Your team guesses!",
+    clues: ["brushing teeth", "fishing", "yawning", "tying a shoe", "carrying a heavy box"],
     config: {
       durationSeconds: 45,
     },
@@ -583,6 +636,7 @@ const DEMO_TASKS = [
     taskType: "draw-mime",
     title: "Draw vs Mime!",
     prompt: "One person draws, another acts — who can get the team to guess first?",
+    clues: ["volcano", "pizza", "robot dance", "fireworks", "snorkelling"],
     config: {
       durationSeconds: 60,
     },
