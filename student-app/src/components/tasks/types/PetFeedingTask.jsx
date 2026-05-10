@@ -1,6 +1,361 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 
 /**
+ * AnimatedPet — SVG-based pet character with state-driven animations.
+ * Replaces the giant-emoji placeholder.  Same component renders for
+ * every animal type; we just tint it and swap a couple of accent
+ * shapes (ear style, tail shape) so dogs feel different from cats
+ * and dragons.
+ *
+ * State-driven animations (CSS keyframes injected once below):
+ *   idle          → gentle body bob + tail sway + slow blink
+ *   eatingGood    → chew jaw + tail wag fast + body bounce
+ *   eatingBad     → frown + body slump shake + ears droop
+ *   celebrating   → big bounce + spin tail
+ *   sick          → green tint + slumped posture
+ */
+const PET_PALETTES = {
+  // [body, ears, tummy, accent]
+  dog:        ["#c98549", "#a0683a", "#f4d8b3", "#3b1f0e"],
+  cat:        ["#9aa3ac", "#6b757d", "#dde2e7", "#1f2937"],
+  bunny:      ["#fafafa", "#f4f4f5", "#fde2e4", "#1f2937"],
+  cow:        ["#f8fafc", "#0f172a", "#fde2e4", "#0f172a"],
+  pig:        ["#f9a8d4", "#ec4899", "#fde2e4", "#9d174d"],
+  chicken:    ["#fde68a", "#fbbf24", "#fff7d6", "#7c2d12"],
+  dolphin:    ["#7dd3fc", "#0ea5e9", "#bae6fd", "#0c4a6e"],
+  octopus:    ["#c084fc", "#9333ea", "#e9d5ff", "#3b0764"],
+  shark:      ["#94a3b8", "#475569", "#cbd5e1", "#0f172a"],
+  trex:       ["#84cc16", "#4d7c0f", "#bef264", "#365314"],
+  triceratops:["#34d399", "#059669", "#a7f3d0", "#064e3b"],
+  raptor:     ["#f59e0b", "#b45309", "#fde68a", "#451a03"],
+  dragon:     ["#a855f7", "#6b21a8", "#e9d5ff", "#1e1b4b"],
+  unicorn:    ["#fef3c7", "#f9a8d4", "#fce7f3", "#581c87"],
+  phoenix:    ["#fb923c", "#dc2626", "#fed7aa", "#7c2d12"],
+};
+function paletteFor(type) {
+  return PET_PALETTES[type] || PET_PALETTES.dog;
+}
+
+/**
+ * Asset paths for higher-fidelity pet animations.  If a file exists at
+ * one of these URLs we'll prefer it over the inline SVG fallback:
+ *
+ *   /pets/{type}/{mood}.mp4   — short looping video (3–5s, mp4/webm)
+ *   /pets/{type}/{mood}.json  — Lottie animation
+ *
+ * type:  dog | cat | bunny | dragon | unicorn | … (whatever animal.type is)
+ * mood:  idle | eatingGood | eatingBad | celebrating | sick
+ *
+ * Drop new files into frontend/public/pets/<type>/ and they take effect
+ * automatically — no code changes needed.  Until those assets exist the
+ * inline SVG keeps the task playable.
+ */
+const PET_ASSET_PROBE_CACHE = new Map();
+function probeAsset(url) {
+  if (PET_ASSET_PROBE_CACHE.has(url)) return PET_ASSET_PROBE_CACHE.get(url);
+  const p = fetch(url, { method: "HEAD" })
+    .then((r) => (r.ok ? url : null))
+    .catch(() => null);
+  PET_ASSET_PROBE_CACHE.set(url, p);
+  return p;
+}
+
+function PetVideo({ src }) {
+  return (
+    <video
+      key={src}
+      src={src}
+      autoPlay
+      loop
+      muted
+      playsInline
+      preload="auto"
+      style={{
+        width: "100%",
+        height: "100%",
+        objectFit: "contain",
+        borderRadius: 12,
+      }}
+    />
+  );
+}
+
+// Lottie-react is loaded lazily so the bundle stays small until a
+// Lottie .json is actually present for some pet+mood combo.
+let _LottiePromise = null;
+function getLottie() {
+  if (!_LottiePromise) {
+    _LottiePromise = import("lottie-react").catch(() => null);
+  }
+  return _LottiePromise;
+}
+function PetLottie({ src }) {
+  const [data, setData] = useState(null);
+  const [Lottie, setLottie] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(src)
+      .then((r) => r.json())
+      .then((j) => { if (!cancelled) setData(j); })
+      .catch(() => {});
+    getLottie().then((mod) => {
+      if (!cancelled) setLottie(() => mod?.default || null);
+    });
+    return () => { cancelled = true; };
+  }, [src]);
+  if (!data || !Lottie) return null;
+  return <Lottie animationData={data} loop style={{ width: "100%", height: "100%" }} />;
+}
+
+function AnimatedPet({ type, mood, scale = 1 }) {
+  // Resolve which asset (if any) to render.  null while still probing,
+  // "svg" once we've decided to fall back, or { kind, src } when an
+  // actual asset is available.
+  const [asset, setAsset] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const base = `/pets/${encodeURIComponent(type || "dog")}/${encodeURIComponent(mood || "idle")}`;
+    (async () => {
+      // Prefer mp4 (smaller assets to source / record), then Lottie.
+      const mp4  = await probeAsset(`${base}.mp4`);
+      if (cancelled) return;
+      if (mp4) { setAsset({ kind: "video", src: mp4 }); return; }
+      const json = await probeAsset(`${base}.json`);
+      if (cancelled) return;
+      if (json) { setAsset({ kind: "lottie", src: json }); return; }
+      setAsset({ kind: "svg" });
+    })();
+    return () => { cancelled = true; };
+  }, [type, mood]);
+  if (asset?.kind === "video")  return <div style={{ width: 220 * scale, height: 220 * scale }}><PetVideo src={asset.src} /></div>;
+  if (asset?.kind === "lottie") return <div style={{ width: 220 * scale, height: 220 * scale }}><PetLottie src={asset.src} /></div>;
+  // Default + asset==="svg": fall through to the inline SVG below.
+  return <PetSvg type={type} mood={mood} scale={scale} />;
+}
+
+function PetSvg({ type, mood, scale = 1 }) {
+  const [body, ears, tummy, accent] = paletteFor(type);
+  // Ear / tail / horn variants by type — keeps generic shape but
+  // visually distinguishes the families.
+  const isFloppy = ["dog", "bunny", "pig"].includes(type);
+  const isPointy = ["cat", "shark", "raptor", "dragon"].includes(type);
+  const hasHorn  = ["unicorn"].includes(type);
+  const hasFin   = ["dolphin", "shark"].includes(type);
+  const hasSpike = ["dragon", "trex", "triceratops"].includes(type);
+
+  // Map mood → CSS animation name on the whole body group.
+  const bodyAnim = ({
+    idle:        "petIdle 3.2s ease-in-out infinite",
+    eatingGood:  "petBounce 0.9s cubic-bezier(.2,.7,.2,1.6) infinite",
+    eatingBad:   "petGag 0.55s ease",
+    celebrating: "petDance 0.7s ease infinite",
+    sick:        "petSlump 1.6s ease-in-out infinite",
+  }[mood]) || "petIdle 3.2s ease-in-out infinite";
+
+  // Mouth state
+  const isChewing = mood === "eatingGood" || mood === "celebrating";
+  const isFrowning = mood === "eatingBad" || mood === "sick";
+
+  // Eye state — sad eyes when sick, sparkle eyes when celebrating,
+  // happy crescents when eating good.
+  const eyeShape =
+    mood === "celebrating" ? "sparkle" :
+    mood === "eatingGood"  ? "happy" :
+    mood === "eatingBad" || mood === "sick" ? "sad" :
+    "open";
+
+  return (
+    <div
+      style={{
+        width: 220 * scale,
+        height: 220 * scale,
+        position: "relative",
+        filter: mood === "sick" ? "saturate(0.45) hue-rotate(40deg)" : "none",
+        transition: "filter 0.4s ease",
+      }}
+      aria-label="Animated pet"
+    >
+      <svg viewBox="0 0 220 220" width="100%" height="100%">
+        {/* Ground shadow */}
+        <ellipse cx="110" cy="200" rx="58" ry="8" fill="rgba(0,0,0,0.18)">
+          <animate
+            attributeName="rx"
+            values="58;48;58"
+            dur="3.2s"
+            repeatCount="indefinite"
+          />
+        </ellipse>
+
+        {/* Whole pet — animated as a unit */}
+        <g style={{ animation: bodyAnim, transformOrigin: "110px 180px" }}>
+          {/* Tail */}
+          <g style={{ transformOrigin: "70px 130px" }}>
+            <g
+              style={{
+                animation:
+                  mood === "eatingGood" || mood === "celebrating"
+                    ? "tailWag 0.18s ease-in-out infinite"
+                    : "tailSway 2.4s ease-in-out infinite",
+                transformOrigin: "70px 130px",
+              }}
+            >
+              {isFloppy ? (
+                // Round wagging tail
+                <path
+                  d="M62 130 Q 38 100, 50 80"
+                  stroke={ears}
+                  strokeWidth="14"
+                  strokeLinecap="round"
+                  fill="none"
+                />
+              ) : isPointy ? (
+                // Long pointy tail
+                <path
+                  d="M62 130 Q 30 120, 22 90"
+                  stroke={body}
+                  strokeWidth="11"
+                  strokeLinecap="round"
+                  fill="none"
+                />
+              ) : (
+                <ellipse cx="58" cy="120" rx="14" ry="8" fill={ears} />
+              )}
+            </g>
+          </g>
+
+          {/* Body */}
+          <ellipse cx="110" cy="155" rx="60" ry="42" fill={body} />
+          {/* Tummy */}
+          <ellipse cx="110" cy="170" rx="38" ry="22" fill={tummy} />
+
+          {/* Spikes (dragons / dinos) along the back */}
+          {hasSpike && (
+            <g fill={accent}>
+              <polygon points="80,118 86,108 92,118" />
+              <polygon points="98,113 104,101 110,113" />
+              <polygon points="116,113 122,101 128,113" />
+              <polygon points="134,118 140,108 146,118" />
+            </g>
+          )}
+
+          {/* Fin (dolphin / shark) */}
+          {hasFin && (
+            <polygon points="104,115 116,80 128,115" fill={ears} />
+          )}
+
+          {/* Front legs */}
+          <ellipse cx="92"  cy="192" rx="10" ry="8" fill={ears} />
+          <ellipse cx="128" cy="192" rx="10" ry="8" fill={ears} />
+
+          {/* Head */}
+          <circle cx="110" cy="100" r="42" fill={body} />
+          <ellipse cx="110" cy="115" rx="22" ry="14" fill={tummy} />
+
+          {/* Ears */}
+          {isFloppy && (
+            <g>
+              <ellipse cx="80" cy="80"
+                rx="14" ry="22" fill={ears}
+                style={{
+                  transformOrigin: "80px 70px",
+                  animation: mood === "eatingBad" || mood === "sick"
+                    ? "earDroop 0.4s ease forwards"
+                    : "earSway 2.6s ease-in-out infinite",
+                }}
+              />
+              <ellipse cx="140" cy="80"
+                rx="14" ry="22" fill={ears}
+                style={{
+                  transformOrigin: "140px 70px",
+                  animation: mood === "eatingBad" || mood === "sick"
+                    ? "earDroop 0.4s ease forwards"
+                    : "earSwayR 2.6s ease-in-out infinite",
+                }}
+              />
+            </g>
+          )}
+          {isPointy && (
+            <g fill={ears}>
+              <polygon points="78,72 90,40 96,76" />
+              <polygon points="142,72 130,40 124,76" />
+            </g>
+          )}
+          {hasHorn && (
+            // Unicorn horn
+            <polygon points="106,52 110,18 114,52" fill="#fcd34d" stroke="#a16207" strokeWidth="1" />
+          )}
+
+          {/* Eyes */}
+          {eyeShape === "open" && (
+            <g fill={accent}>
+              <circle cx="95"  cy="98" r="5">
+                <animate attributeName="ry" values="5;5;0.5;5;5" dur="4.6s" repeatCount="indefinite" />
+              </circle>
+              <circle cx="125" cy="98" r="5">
+                <animate attributeName="ry" values="5;5;0.5;5;5" dur="4.6s" repeatCount="indefinite" />
+              </circle>
+              <circle cx="96"  cy="96" r="1.5" fill="#fff" />
+              <circle cx="126" cy="96" r="1.5" fill="#fff" />
+            </g>
+          )}
+          {eyeShape === "happy" && (
+            <g stroke={accent} strokeWidth="3" fill="none" strokeLinecap="round">
+              <path d="M88 100 Q 95 90, 102 100" />
+              <path d="M118 100 Q 125 90, 132 100" />
+            </g>
+          )}
+          {eyeShape === "sad" && (
+            <g stroke={accent} strokeWidth="3" fill="none" strokeLinecap="round">
+              <path d="M88 96 Q 95 104, 102 96" />
+              <path d="M118 96 Q 125 104, 132 96" />
+            </g>
+          )}
+          {eyeShape === "sparkle" && (
+            <g>
+              <text x="88" y="105" fontSize="18">✨</text>
+              <text x="118" y="105" fontSize="18">✨</text>
+            </g>
+          )}
+
+          {/* Cheeks (only when happy) */}
+          {(mood === "eatingGood" || mood === "celebrating") && (
+            <g fill="rgba(244,63,94,0.45)">
+              <circle cx="82"  cy="115" r="6" />
+              <circle cx="138" cy="115" r="6" />
+            </g>
+          )}
+
+          {/* Mouth */}
+          {isFrowning ? (
+            <path
+              d="M96 128 Q 110 116, 124 128"
+              stroke={accent} strokeWidth="3" fill="none" strokeLinecap="round"
+            />
+          ) : isChewing ? (
+            <ellipse cx="110" cy="124" rx="11" ry="7" fill={accent}>
+              <animate attributeName="ry" values="3;9;3" dur="0.34s" repeatCount="indefinite" />
+              <animate attributeName="rx" values="13;9;13" dur="0.34s" repeatCount="indefinite" />
+            </ellipse>
+          ) : (
+            <path
+              d="M96 124 Q 110 134, 124 124"
+              stroke={accent} strokeWidth="3" fill="none" strokeLinecap="round"
+            />
+          )}
+
+          {/* Tongue (shows during good chew) */}
+          {isChewing && (
+            <ellipse cx="110" cy="130" rx="6" ry="3" fill="#f87171">
+              <animate attributeName="cy" values="129;132;129" dur="0.34s" repeatCount="indefinite" />
+            </ellipse>
+          )}
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+/**
  * PetFeedingTask — showstopper edition.
  *
  * Students tap food cards to feed their pet. Good foods grow the pet and
@@ -363,18 +718,24 @@ export default function PetFeedingTask({ task, onSubmit, disabled }) {
           </div>
         ))}
 
-        {/* Pet character */}
-        <div style={{
-          ...S.petCharacter,
-          transform: `scale(${petScale})`,
-          animation:
-            lastResult === "good" ? "petBounce 0.6s ease" :
-            lastResult === "bad" ? "petGag 0.5s ease" :
-            celebration ? "petDance 0.8s ease infinite" :
-            "petIdle 3s ease-in-out infinite",
-        }}>
-          <div style={S.petEmoji}>{animal.emoji}</div>
-          <div style={S.petExpression}>{expression}</div>
+        {/* Pet character — proper animated SVG (was a giant emoji). */}
+        <div
+          style={{
+            ...S.petCharacter,
+            transform: `scale(${petScale})`,
+          }}
+        >
+          <AnimatedPet
+            type={animal?.type || "dog"}
+            mood={
+              celebration              ? "celebrating" :
+              mistakes >= maxMistakes  ? "sick" :
+              lastResult === "good"    ? "eatingGood" :
+              lastResult === "bad"     ? "eatingBad" :
+                                         "idle"
+            }
+            scale={1}
+          />
         </div>
 
         {/* Pet name + message */}
@@ -518,6 +879,30 @@ export default function PetFeedingTask({ task, onSubmit, disabled }) {
         @keyframes slideUp {
           0% { transform: translateY(20px); opacity: 0; }
           100% { transform: translateY(0); opacity: 1; }
+        }
+        /* AnimatedPet keyframes */
+        @keyframes tailWag {
+          0%, 100% { transform: rotate(-25deg); }
+          50%      { transform: rotate(25deg); }
+        }
+        @keyframes tailSway {
+          0%, 100% { transform: rotate(-8deg); }
+          50%      { transform: rotate(8deg); }
+        }
+        @keyframes earSway {
+          0%, 100% { transform: rotate(-4deg); }
+          50%      { transform: rotate(4deg); }
+        }
+        @keyframes earSwayR {
+          0%, 100% { transform: rotate(4deg); }
+          50%      { transform: rotate(-4deg); }
+        }
+        @keyframes earDroop {
+          to { transform: rotate(35deg) scaleY(0.8); }
+        }
+        @keyframes petSlump {
+          0%, 100% { transform: translateY(2px) rotate(-2deg); }
+          50%      { transform: translateY(6px) rotate(2deg); }
         }
       `}</style>
     </div>
