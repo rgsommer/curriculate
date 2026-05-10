@@ -277,13 +277,47 @@ router.post("/results", resultsLimiter, async (req, res) => {
       return { ...r, points: pts };
     });
 
+    // Accumulate points across sessions for the same (email, conference).
+    //
+    // Previously this used `$set: { totalPoints }` which threw away every
+    // prior session's points the moment the same email played again — so
+    // returning practicers always ranked as if they were brand-new.  We
+    // now $inc totalPoints (lifetime score, drives the leaderboard) and
+    // $set results to just this session's tasks (so the per-session email
+    // table stays focused on what they just did).  sessionCount is a
+    // small counter so the email/admin can show "session #N".
+    const sessionTaskCount = scoredResults.length;
+    const sessionCompletedCount = scoredResults.filter((r) => !r.skipped).length;
+    const now = new Date();
+
     const lead = await ConferenceLead.findOneAndUpdate(
       { email: email.toLowerCase().trim(), conference: conference || "general" },
       {
         $set: {
           results: scoredResults,
+          resultsSentAt: now,
+        },
+        $inc: {
           totalPoints,
-          resultsSentAt: new Date(),
+          sessionCount: 1,
+          lifetimeTaskCount: sessionTaskCount,
+          lifetimeCompletedCount: sessionCompletedCount,
+        },
+        // Append this session's subtotal + completedAt to the trail so
+        // we can compute weekly leaderboards.  Capped to the last 30
+        // entries.
+        $push: {
+          sessions: {
+            $each: [
+              {
+                points: totalPoints,
+                completedAt: now,
+                completedCount: sessionCompletedCount,
+                taskCount: sessionTaskCount,
+              },
+            ],
+            $slice: -30,
+          },
         },
       },
       { new: true }
@@ -292,6 +326,10 @@ router.post("/results", resultsLimiter, async (req, res) => {
     if (!lead) {
       return res.status(404).json({ error: "Lead not found — register first" });
     }
+
+    // Carry the per-session subtotal through to the email helpers — the
+    // ConferenceLead doc now reflects lifetime totals.
+    lead._sessionPoints = totalPoints;
 
     // Send results email to user (fire-and-forget)
     sendDemoResultsEmail(lead).catch((err) =>
@@ -303,7 +341,12 @@ router.post("/results", resultsLimiter, async (req, res) => {
       console.error("[demo/results] Admin email failed:", err.message)
     );
 
-    res.json({ ok: true, totalPoints });
+    res.json({
+      ok: true,
+      sessionPoints: totalPoints,           // earned this session
+      totalPoints: lead.totalPoints || 0,   // lifetime, after accumulation
+      sessionCount: lead.sessionCount || 1,
+    });
   } catch (err) {
     console.error("[demo/results] Error:", err.message);
     res.status(500).json({ error: "Failed to save results" });
@@ -333,10 +376,16 @@ router.get("/activity", async (req, res) => {
       .limit(Number(req.query.limit) || 500)
       .lean();
 
-    // Summary stats
+    // Summary stats — prefer the lifetime counters (populated since
+    // sessions started accumulating); fall back to results.length for
+    // legacy docs that pre-date the counter.
     const totalStudents = leads.length;
     const totalCompleted = leads.reduce(
-      (sum, l) => sum + (l.results || []).filter((r) => !r.skipped).length,
+      (sum, l) =>
+        sum +
+        (typeof l.lifetimeCompletedCount === "number" && l.lifetimeCompletedCount > 0
+          ? l.lifetimeCompletedCount
+          : (l.results || []).filter((r) => !r.skipped).length),
       0
     );
     const avgPoints =
@@ -651,6 +700,69 @@ router.get("/leads", async (req, res) => {
 /*  Sent to admin@curriculate.net for every conference/practice run    */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/*  lastCompletedWeek: most recent Sun 00:00 → Sat 23:59:59.999 that  */
+/*  has FULLY ELAPSED.  Used for the "top 3 → gift card" weekly       */
+/*  leaderboard: the current (in-progress) week is excluded so admins */
+/*  see a stable window from the moment Saturday rolls into Sunday.   */
+/* ------------------------------------------------------------------ */
+function lastCompletedWeek(now = new Date()) {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  const dayOfWeek = d.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  // Days back to the most recent Saturday strictly before today's start.
+  // Sun=1, Mon=2, …, Sat=7. (If today is Sat, this week is still in
+  // progress, so we want the previous Saturday — 7 days back.)
+  const daysBack = dayOfWeek + 1;
+  const end = new Date(d);
+  end.setDate(end.getDate() - daysBack);
+  end.setHours(23, 59, 59, 999);
+  const start = new Date(end);
+  start.setDate(start.getDate() - 6);
+  start.setHours(0, 0, 0, 0);
+  return { start, end };
+}
+
+/* ------------------------------------------------------------------ */
+/*  buildTopThreeBlock: renders a small ranked table of the top 3     */
+/*  performers from a list of {name, points, secondary?}.  Used for   */
+/*  both the weekly and the all-time leaderboards in the admin email. */
+/* ------------------------------------------------------------------ */
+function buildTopThreeBlock(title, rows, currentEmail) {
+  if (!rows || rows.length === 0) {
+    return `
+      <div style="background:#fff;padding:14px 24px;border:1px solid #e2e8f0;border-top:none;">
+        <div style="font-weight:900;font-size:13px;margin-bottom:6px;color:#1e293b;">${title}</div>
+        <div style="font-size:12px;color:#94a3b8;font-style:italic;">No results in this window yet.</div>
+      </div>`;
+  }
+  const top3 = rows.slice(0, 3);
+  const rowHtml = top3
+    .map((r, i) => {
+      const rank = i + 1;
+      const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : "🥉";
+      const isCurrent =
+        currentEmail && r.email && r.email.toLowerCase() === currentEmail.toLowerCase();
+      const rowBg = isCurrent ? "#fefce8" : "#fff";
+      const nameStyle = isCurrent ? "font-weight:900;color:#b45309;" : "font-weight:700;color:#0f172a;";
+      const arrow = isCurrent ? " ← just submitted" : "";
+      return `<tr style="background:${rowBg};">
+        <td style="padding:6px 10px;font-size:18px;text-align:center;width:36px;">${medal}</td>
+        <td style="padding:6px 10px;font-size:14px;${nameStyle}">${esc(r.name || "—")}${arrow}</td>
+        <td style="padding:6px 10px;font-size:11px;color:#64748b;">${esc(r.email || "")}</td>
+        <td style="padding:6px 10px;font-size:14px;font-weight:800;color:#f59e0b;text-align:right;">${r.points || 0} pts</td>
+      </tr>`;
+    })
+    .join("");
+  return `
+    <div style="background:#fff;padding:14px 24px;border:1px solid #e2e8f0;border-top:none;">
+      <div style="font-weight:900;font-size:13px;margin-bottom:8px;color:#1e293b;">${title}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <tbody>${rowHtml}</tbody>
+      </table>
+    </div>`;
+}
+
 async function sendAdminNotification(lead) {
   const completed = (lead.results || []).filter((r) => !r.skipped);
   const skipped = (lead.results || []).filter((r) => r.skipped);
@@ -658,7 +770,68 @@ async function sendAdminNotification(lead) {
   const isClassroom = lead.source === "classroom";
   const wasOfferedReferral = engagement.level === "keener" && !isClassroom;
 
-  // ── Build leaderboard: all students who have submitted results ──
+  // ── Top 3 weekly + Top 3 all-time → gift card decisions ──────────────
+  let weeklyTopHtml = "";
+  let allTimeTopHtml = "";
+  try {
+    const scopeFilter = {};
+    if (isClassroom && lead.classroom) scopeFilter.classroom = lead.classroom;
+    else if (!isClassroom && lead.conference) scopeFilter.conference = lead.conference;
+
+    // ALL-TIME top 3 (lifetime totalPoints, already cumulative)
+    const allTimeLeads = await ConferenceLead.find({
+      ...scopeFilter,
+      totalPoints: { $gt: 0 },
+    })
+      .sort({ totalPoints: -1, createdAt: 1 })
+      .limit(3)
+      .select("name email totalPoints sessionCount lifetimeCompletedCount")
+      .lean();
+
+    allTimeTopHtml = buildTopThreeBlock(
+      "🏆 All-Time Top 3 (lifetime points)",
+      allTimeLeads.map((l) => ({
+        name: l.name,
+        email: l.email,
+        points: l.totalPoints || 0,
+      })),
+      lead.email
+    );
+
+    // WEEKLY top 3 — last completed Sun→Sat window
+    const { start: weekStart, end: weekEnd } = lastCompletedWeek(new Date());
+    const weeklyLeads = await ConferenceLead.find({
+      ...scopeFilter,
+      "sessions.completedAt": { $gte: weekStart, $lte: weekEnd },
+    })
+      .select("name email sessions")
+      .lean();
+
+    const weeklyRanked = weeklyLeads
+      .map((l) => {
+        const weekPts = (l.sessions || [])
+          .filter((s) => {
+            const t = s?.completedAt ? new Date(s.completedAt).getTime() : 0;
+            return t >= weekStart.getTime() && t <= weekEnd.getTime();
+          })
+          .reduce((sum, s) => sum + (s.points || 0), 0);
+        return { name: l.name, email: l.email, points: weekPts };
+      })
+      .filter((r) => r.points > 0)
+      .sort((a, b) => b.points - a.points);
+
+    const weekFmt = (d) => d.toISOString().slice(0, 10);
+    weeklyTopHtml = buildTopThreeBlock(
+      `🎁 Weekly Top 3 — ${weekFmt(weekStart)} → ${weekFmt(weekEnd)} (gift-card window)`,
+      weeklyRanked,
+      lead.email
+    );
+  } catch (err) {
+    console.error("[demo/admin-email] Top-3 query failed:", err.message);
+    // Non-fatal — leaderboards just won't appear
+  }
+
+  // ── Full leaderboard (lifetime, top 50) ─────────────────────────────
   let leaderboardHtml = "";
   try {
     const filter = { totalPoints: { $gt: 0 } };
@@ -808,6 +981,8 @@ async function sendAdminNotification(lead) {
       </div>
       ` : ""}
 
+      ${weeklyTopHtml}
+      ${allTimeTopHtml}
       ${leaderboardHtml}
 
       <div style="background: #f1f5f9; padding: 12px 24px; border-radius: 0 0 16px 16px; border: 1px solid #e2e8f0; border-top: none;">
@@ -834,6 +1009,17 @@ async function sendDemoResultsEmail(lead) {
   const skipped = lead.results.filter((r) => r.skipped);
   const firstName = (lead.name || "").split(" ")[0] || "there";
   const isClassroom = lead.source === "classroom";
+  // Lifetime totalPoints (cumulative across sessions for this email) vs.
+  // just-this-session points (passed through on the lead object before
+  // the email was queued). Returning practicers see both, so a third
+  // session that earned 50 doesn't look like they only have 50 lifetime.
+  const lifetimePoints = lead.totalPoints || 0;
+  const sessionPoints =
+    typeof lead._sessionPoints === "number"
+      ? lead._sessionPoints
+      : lifetimePoints;
+  const sessionCount = lead.sessionCount || 1;
+  const isReturning = sessionCount > 1;
 
   // Build task result rows
   const taskRows = lead.results
@@ -880,8 +1066,12 @@ async function sendDemoResultsEmail(lead) {
         </div>`;
 
   const greeting = isClassroom
-    ? `Hey ${esc(firstName)}! Here's a summary of your practice session:`
-    : `Hey ${esc(firstName)}! 👋 Thanks for trying Curriculate at the conference. Here's a summary of your demo session:`;
+    ? (isReturning
+        ? `Hey ${esc(firstName)}! Welcome back — here's session #${sessionCount}:`
+        : `Hey ${esc(firstName)}! Here's a summary of your practice session:`)
+    : (isReturning
+        ? `Hey ${esc(firstName)}! 👋 Welcome back — here's session #${sessionCount}:`
+        : `Hey ${esc(firstName)}! 👋 Thanks for trying Curriculate at the conference. Here's a summary of your demo session:`);
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 0; background: #ffffff;">
@@ -905,14 +1095,18 @@ async function sendDemoResultsEmail(lead) {
             <div style="font-size: 12px; color: #15803d; font-weight: 600;">Completed</div>
           </div>
           <div style="flex: 1; background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 16px; text-align: center;">
-            <div style="font-size: 28px; font-weight: 900; color: #f59e0b;">${lead.totalPoints || 0}</div>
-            <div style="font-size: 12px; color: #d97706; font-weight: 600;">Points</div>
+            <div style="font-size: 28px; font-weight: 900; color: #f59e0b;">${sessionPoints}</div>
+            <div style="font-size: 12px; color: #d97706; font-weight: 600;">This Session</div>
           </div>
           <div style="flex: 1; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 16px; text-align: center;">
-            <div style="font-size: 28px; font-weight: 900; color: #2563eb;">${lead.results.length}</div>
-            <div style="font-size: 12px; color: #3b82f6; font-weight: 600;">Total Tasks</div>
+            <div style="font-size: 28px; font-weight: 900; color: #2563eb;">${lifetimePoints}</div>
+            <div style="font-size: 12px; color: #3b82f6; font-weight: 600;">Lifetime Points</div>
           </div>
         </div>
+        ${isReturning ? `
+          <div style="margin: -8px 0 24px; text-align:center; font-size:12px; color:#64748b;">
+            Session #${sessionCount} for ${esc(lead.email)} — points carry over across all your visits.
+          </div>` : ""}
 
         <!-- Results table -->
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
