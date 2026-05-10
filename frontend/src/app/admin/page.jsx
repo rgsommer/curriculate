@@ -366,6 +366,14 @@ export default function AdminUsageDashboard() {
           </div>
 
           <div className="flex items-center gap-2">
+            <a
+              href="/blast"
+              className="rounded-xl border border-blue-400/40 bg-blue-500/15 px-3 py-2 text-sm font-semibold text-blue-100 hover:bg-blue-500/25"
+              title="Outbound email tool — campaigns, contacts, research queue"
+            >
+              📣 Blast →
+            </a>
+
             <button
               onClick={() => { load(force); loadFeedback(); }}
               className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
