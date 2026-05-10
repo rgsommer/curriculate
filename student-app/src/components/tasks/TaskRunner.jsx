@@ -3253,9 +3253,31 @@ const SKIP_EXCLUDED_TYPES = new Set([
   TASK_TYPES.BODY_BREAK, "body-break",
 ]);
 const canSkip = mode === "play" && !isReview && !effectiveDisabled && !SKIP_EXCLUDED_TYPES.has(type);
+// Persist the in-progress skip-reason text to localStorage so an
+// accidental refresh mid-typing doesn't lose what the user wrote.
+// Keyed per (roomCode, taskType) — practice mode uses roomCode "DEMO".
+const skipDraftKey = `cw_skip_v1:${roomCode || "DEMO"}:${type || "unknown"}`;
+const skipDraftInitial = (() => {
+  try {
+    return localStorage.getItem(skipDraftKey) || "";
+  } catch {
+    return "";
+  }
+})();
 const [showSkipDialog, setShowSkipDialog] = useState(false);
-const [skipReason, setSkipReason] = useState("");
+const [skipReason, setSkipReason] = useState(skipDraftInitial);
 const [skipSubmitting, setSkipSubmitting] = useState(false);
+
+// Save every keystroke; clear on submit or explicit cancel.
+useEffect(() => {
+  try {
+    if (skipReason && skipReason.length > 0) {
+      localStorage.setItem(skipDraftKey, skipReason);
+    } else {
+      localStorage.removeItem(skipDraftKey);
+    }
+  } catch {}
+}, [skipReason, skipDraftKey]);
 
 const handleSkipTask = async () => {
   if (!skipReason.trim()) return;
@@ -3272,7 +3294,12 @@ const handleSkipTask = async () => {
   setSkipSubmitting(false);
   setShowSkipDialog(false);
   setSkipReason("");
+  try { localStorage.removeItem(skipDraftKey); } catch {}
 };
+
+// (No auto-open — the draft just sits in state, ready in the textarea
+// the next time the user clicks Skip on this task.  Auto-popping the
+// dialog on every task with a leftover draft would be overkill.)
 
 const showVictory = (taskVictory?.key || tasksetVictoryKey) && mode !== "review";
 const showStageVideo = categoryVideoSrc && !stageDone && mode === "play";
@@ -3592,7 +3619,13 @@ return (
           </div>
           <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" }}>
             <button
-              onClick={() => { setShowSkipDialog(false); setSkipReason(""); }}
+              onClick={() => {
+                // "Go back" just closes the dialog — keeps the draft so
+                // accidental closes don't lose work.  The user will
+                // see the same text the next time they click Skip on
+                // this task.  An explicit submit clears it.
+                setShowSkipDialog(false);
+              }}
               style={{
                 padding: "8px 18px",
                 borderRadius: 10,

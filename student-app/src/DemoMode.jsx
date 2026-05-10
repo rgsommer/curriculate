@@ -18,7 +18,15 @@ import { API_BASE_URL } from "./config.js";
 // Helpers
 // ----------------------------------------------------------------
 
-const AUTO_ADVANCE_MS = 90_000; // 90 seconds per task
+// Activity-based auto-skip:
+//   - INACTIVITY_GRACE_MS  → how long the player can sit idle before
+//                            the countdown starts.
+//   - WARN_COUNTDOWN_MS    → the visible countdown at which point we
+//                            actually auto-skip if still idle.
+//   ANY pointer / key / touch / scroll resets the inactivity clock,
+//   so an active player NEVER gets auto-skipped.
+const INACTIVITY_GRACE_MS = 30_000;  // 30s idle → countdown begins
+const WARN_COUNTDOWN_MS  = 30_000;   // then 30s warning → auto-skip
 
 // ---- Mascot images & videos (served from frontend/public/images/mascot/) ----
 const MASCOT_BASE = "https://curriculate.net/images/mascot";
@@ -63,12 +71,10 @@ function Mascot({ category, size = 120, style = {} }) {
 
   return <span style={wrapStyle}>{media}</span>;
 }
-const ACTIVITY_EXTEND_MS = 30_000; // keep timer alive for 30s after last keystroke
-const TEXT_HEAVY_TYPES = new Set([
-  "case-study", "open-text", "storytelling", "short-answer",
-  "letter", "peer-editing", "interview", "teach-back", "cloze",
-  "brain-spark-notes",
-]);
+// (Legacy ACTIVITY_EXTEND_MS / TEXT_HEAVY_TYPES removed — the new
+// document-wide activity-based timer makes per-task-type extensions
+// unnecessary; ANY keystroke / pointer event resets the idle clock
+// for ANY task.)
 
 // Default points per task type (backend is source of truth; these are fallback)
 const DEFAULT_TASK_POINTS = {
@@ -320,11 +326,55 @@ const EMOJI_CLARITY = [
 
 const MIN_REQUIRED_FEEDBACK_CHARS = 8;
 
-function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip }) {
-  const [fun, setFun] = useState(0);
-  const [clarity, setClarity] = useState(0);
-  const [comment, setComment] = useState("");
-  const [phase, setPhase] = useState("rate"); // "rate" | "comment"
+// localStorage key namespace for in-progress practice feedback drafts.
+// Keyed per (email, taskType) so a refresh mid-typing doesn't blow
+// away what the user has written.  Cleared on submit or explicit skip.
+const FB_DRAFT_NS = "cw_practice_fb_v1";
+function fbDraftKey(email, taskType) {
+  const e = String(email || "anon").toLowerCase().trim();
+  const t = String(taskType || "unknown");
+  return `${FB_DRAFT_NS}:${e}:${t}`;
+}
+function loadFbDraft(email, taskType) {
+  try {
+    const raw = localStorage.getItem(fbDraftKey(email, taskType));
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj || typeof obj !== "object") return null;
+    return {
+      fun: Number(obj.fun) || 0,
+      clarity: Number(obj.clarity) || 0,
+      comment: typeof obj.comment === "string" ? obj.comment : "",
+    };
+  } catch {
+    return null;
+  }
+}
+function saveFbDraft(email, taskType, draft) {
+  try {
+    localStorage.setItem(fbDraftKey(email, taskType), JSON.stringify(draft));
+  } catch {}
+}
+function clearFbDraft(email, taskType) {
+  try {
+    localStorage.removeItem(fbDraftKey(email, taskType));
+  } catch {}
+}
+
+function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
+  // Hydrate from localStorage so an accidental refresh doesn't lose work.
+  const draft = loadFbDraft(userEmail, taskType);
+  const [fun, setFun] = useState(draft?.fun || 0);
+  const [clarity, setClarity] = useState(draft?.clarity || 0);
+  const [comment, setComment] = useState(draft?.comment || "");
+  const [phase, setPhase] = useState(
+    (draft?.fun > 0 && draft?.clarity > 0) ? "comment" : "rate"
+  );
+
+  // Persist every change so a refresh keeps everything typed so far.
+  useEffect(() => {
+    saveFbDraft(userEmail, taskType, { fun, clarity, comment });
+  }, [fun, clarity, comment, userEmail, taskType]);
 
   // Once BOTH emojis are picked, advance to Phase 2 (comment).
   // No auto-submit, no auto-dismiss — the dialog stays open until the
@@ -347,6 +397,8 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip }) {
     // Any rating + comment = 4. Just rating = 1.
     let bonus = 1;
     if (commentMeetsMinimum) bonus = isLowRating ? 5 : 4;
+    // Submission committed — drop the draft so the next visit starts clean.
+    clearFbDraft(userEmail, taskType);
     onSubmit({
       fun,
       clarity,
@@ -354,6 +406,14 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip }) {
       suggestion: !isLowRating && trimmedComment ? trimmedComment : "",
       feedbackBonus: bonus,
     });
+  };
+
+  // Wrap onSkip so the draft is cleared if the user explicitly closes
+  // the popup (we don't want stale text re-appearing on the next task
+  // of the same type).
+  const handleSkip = () => {
+    clearFbDraft(userEmail, taskType);
+    onSkip?.();
   };
 
   const EmojiRow = ({ label, items, selected, onSelect }) => (
@@ -651,7 +711,9 @@ function DemoPlayer({ user, onFinish, source }) {
   const [taskIdx, setTaskIdx] = useState(0);
   const [results, setResults] = useState([]);
   const [completedTypes, setCompletedTypes] = useState(new Set());
-  const [remainingMs, setRemainingMs] = useState(AUTO_ADVANCE_MS);
+  // null while the player is active or still in the grace window.
+  // A number once the warning countdown is running.
+  const [remainingMs, setRemainingMs] = useState(null);
   const [paused, setPaused] = useState(false);
   const [totalPoints, setTotalPoints] = useState(0);
   const [lastEarned, setLastEarned] = useState(null); // for pop animation
@@ -718,44 +780,95 @@ function DemoPlayer({ user, onFinish, source }) {
     ? getAdaptivePts(task.taskType, user.taskPoints, completedTypes)
     : { pts: 0, isNew: false };
 
-  // Activity-based timer extension: for text-heavy tasks, keep timer alive while student types
-  const isTextHeavy = TEXT_HEAVY_TYPES.has(task?.taskType);
-
+  // Global activity listener — captures every pointer / key / touch /
+  // scroll / wheel / input event document-wide and bumps the idle
+  // clock.  Replaces the old "text-heavy task" extension hack: now
+  // ANY activity counts, on every task type, so an active player is
+  // never auto-skipped.
   useEffect(() => {
-    if (!isTextHeavy) return;
-    const el = taskAreaRef.current;
-    if (!el) return;
-
-    const onActivity = () => {
+    const bump = () => {
       lastActivityRef.current = Date.now();
-      // Push startedRef forward so there's always at least ACTIVITY_EXTEND_MS left
-      const elapsed = Date.now() - startedRef.current;
-      const rem = AUTO_ADVANCE_MS - elapsed;
-      if (rem < ACTIVITY_EXTEND_MS) {
-        startedRef.current = Date.now() - (AUTO_ADVANCE_MS - ACTIVITY_EXTEND_MS);
-      }
     };
-
-    el.addEventListener("input", onActivity, true);
-    el.addEventListener("keydown", onActivity, true);
+    const events = [
+      "pointerdown",
+      "pointermove",
+      "keydown",
+      "touchstart",
+      "wheel",
+      "scroll",
+      "input",
+    ];
+    events.forEach((e) =>
+      document.addEventListener(e, bump, { passive: true, capture: true })
+    );
     return () => {
-      el.removeEventListener("input", onActivity, true);
-      el.removeEventListener("keydown", onActivity, true);
+      events.forEach((e) =>
+        document.removeEventListener(e, bump, { capture: true })
+      );
     };
-  }, [taskIdx, isTextHeavy]);
+  }, []);
 
-  // Auto-advance timer
+  // Track whether the user is actively typing in any input/textarea
+  // anywhere on the page.  Auto-advance has to pause while they're
+  // mid-sentence — testers were repeatedly losing their typed skip
+  // reasons and feedback comments to the 90-second auto-skip.
+  const [typingActive, setTypingActive] = useState(false);
   useEffect(() => {
-    startedRef.current = Date.now();
-    lastActivityRef.current = Date.now();
-    setRemainingMs(AUTO_ADVANCE_MS);
+    const evaluate = () => {
+      const ae = typeof document !== "undefined" ? document.activeElement : null;
+      const tag = (ae?.tagName || "").toUpperCase();
+      const typing =
+        !!ae && (tag === "TEXTAREA" || tag === "INPUT" || ae.isContentEditable);
+      setTypingActive(typing);
+    };
+    const onFocusIn = () => evaluate();
+    // focusout fires before activeElement updates — defer one tick.
+    const onFocusOut = () => setTimeout(evaluate, 50);
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
+    return () => {
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
+    };
+  }, []);
 
-    if (paused) return;
+  // Effective pause = explicit pause || feedback popup || typing.
+  // Memoised so the auto-advance effect only re-subscribes when this
+  // boolean actually flips.
+  const timerEffectivelyPaused = paused || showFeedback || typingActive;
+
+  // Activity-based auto-skip.
+  //
+  // The clock measures *inactivity*, not total elapsed time on the
+  // task.  As long as the player is doing something, they never get
+  // booted.  Once they've been idle for INACTIVITY_GRACE_MS, a
+  // visible WARN_COUNTDOWN_MS countdown begins; ANY event during the
+  // countdown bumps lastActivityRef and hides the countdown.  Only
+  // sustained inactivity through grace + countdown auto-skips.
+  useEffect(() => {
+    // Fresh idle clock on every task switch.
+    lastActivityRef.current = Date.now();
+    setRemainingMs(null);
+
+    if (timerEffectivelyPaused) {
+      // Skip dialog / feedback popup / typing in any input freezes
+      // the clock.  Bump so the player gets the full grace window
+      // back when they close the dialog.
+      lastActivityRef.current = Date.now();
+      return;
+    }
 
     timerRef.current = setInterval(() => {
-      const elapsed = Date.now() - startedRef.current;
-      const rem = AUTO_ADVANCE_MS - elapsed;
+      const idleFor = Date.now() - lastActivityRef.current;
+      if (idleFor < INACTIVITY_GRACE_MS) {
+        // Still in the silent grace window — no countdown shown.
+        setRemainingMs((prev) => (prev === null ? prev : null));
+        return;
+      }
+      const intoCountdown = idleFor - INACTIVITY_GRACE_MS;
+      const rem = WARN_COUNTDOWN_MS - intoCountdown;
       if (rem <= 0) {
+        // Auto-skip: still idle after grace + full countdown.
         clearInterval(timerRef.current);
         setResults((prev) => [
           ...prev,
@@ -780,7 +893,7 @@ function DemoPlayer({ user, onFinish, source }) {
     }, 250);
 
     return () => clearInterval(timerRef.current);
-  }, [taskIdx, paused]);
+  }, [taskIdx, timerEffectivelyPaused]);
 
   // Submit handler — earns adaptive points, then shows feedback popup
   const handleSubmit = useCallback(
@@ -920,7 +1033,11 @@ function DemoPlayer({ user, onFinish, source }) {
   }, [results, onFinish]);
 
   const progressPct = ((taskIdx + 1) / total) * 100;
-  const timerPct = (remainingMs / AUTO_ADVANCE_MS) * 100;
+  // Width of the inactivity-warning bar (only shown when the warn
+  // countdown is active; remainingMs === null otherwise).
+  const timerPct =
+    remainingMs == null ? 100 : (remainingMs / WARN_COUNTDOWN_MS) * 100;
+  const showInactivityWarning = remainingMs != null;
 
   return (
     <div style={styles.playerOuter}>
@@ -938,6 +1055,7 @@ function DemoPlayer({ user, onFinish, source }) {
         <TaskFeedback
           taskType={pendingEntry.taskType}
           taskTitle={pendingEntry.title}
+          userEmail={user?.email}
           onSubmit={(fb) => handleFeedback(fb)}
           onSkip={() => handleFeedback(null)}
         />
@@ -960,9 +1078,22 @@ function DemoPlayer({ user, onFinish, source }) {
             <span style={styles.pointsValue}>{totalPoints}</span>
           </div>
 
-          <span style={{ fontSize: 13, fontWeight: 600, color: remainingMs < 10000 ? "#ef4444" : "#64748b" }}>
-            {formatTime(remainingMs)}
-          </span>
+          {/* Only show the timer label when the inactivity warning
+              is actually running.  Otherwise the player would see a
+              countdown ticking down all the time even while they're
+              actively working — confusing and unnecessary. */}
+          {showInactivityWarning ? (
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: remainingMs < 10000 ? "#ef4444" : "#f59e0b",
+              }}
+              title="Move or tap to keep going"
+            >
+              Idle… {formatTime(remainingMs)}
+            </span>
+          ) : null}
           <button onClick={handleDone} style={styles.doneBtn}>
             I'm done
           </button>
@@ -974,20 +1105,24 @@ function DemoPlayer({ user, onFinish, source }) {
         <div style={{ ...styles.progressInner, width: `${progressPct}%` }} />
       </div>
 
-      {/* Timer bar */}
-      <div style={styles.timerOuter}>
-        <div
-          style={{
-            height: "100%",
-            width: `${timerPct}%`,
-            background: remainingMs < 15000
-              ? "linear-gradient(90deg, #ef4444, #f97316)"
-              : "linear-gradient(90deg, #3b82f6, #8b5cf6)",
-            borderRadius: 2,
-            transition: "width 0.25s linear",
-          }}
-        />
-      </div>
+      {/* Inactivity warning bar — only rendered while the countdown
+          is actually running.  Active players never see it. */}
+      {showInactivityWarning ? (
+        <div style={styles.timerOuter}>
+          <div
+            style={{
+              height: "100%",
+              width: `${timerPct}%`,
+              background:
+                remainingMs < 15000
+                  ? "linear-gradient(90deg, #ef4444, #f97316)"
+                  : "linear-gradient(90deg, #f59e0b, #ef4444)",
+              borderRadius: 2,
+              transition: "width 0.25s linear",
+            }}
+          />
+        </div>
+      ) : null}
 
       {/* Task type label + points preview */}
       <div style={styles.taskTypeLabel}>
