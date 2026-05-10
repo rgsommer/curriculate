@@ -73,33 +73,34 @@ async function readContactsSheet(filePath) {
   return rows;
 }
 
-/** Upsert one parsed row into BlastContact. */
-async function upsertRow(r, sourceFile) {
+/** Build a single bulk-upsert operation for a row. Returns null if the row
+ *  lacks a valid email (caller should skip). */
+function buildBulkOp(r) {
   const email = String(r.Email || "").toLowerCase().trim();
-  if (!email || !email.includes("@")) return { skipped: true };
-
+  if (!email || !email.includes("@")) return null;
   const board = r.Board || "";
-  const update = {
-    $setOnInsert: {
-      email,
-      firstName: r.FirstName || "",
-      lastName:  r.LastName  || "",
-      source:    "xlsx-auto-import",
-      pendingReview: false, // xlsx imports are already curated
-    },
-    $set: {
-      school:      r.School || undefined,
-      board:       board    || undefined,
-      role:        r.Role   || undefined,
-      level:       r.Level  || undefined,
-      language:    detectLanguage(board),
-      isChristian: detectChristian(r),
-    },
-  };
-  const result = await BlastContact.updateOne({ email }, update, { upsert: true });
   return {
-    inserted: result.upsertedCount > 0,
-    updated:  result.modifiedCount > 0 && result.upsertedCount === 0,
+    updateOne: {
+      filter: { email },
+      update: {
+        $setOnInsert: {
+          email,
+          firstName: r.FirstName || "",
+          lastName:  r.LastName  || "",
+          source:    "xlsx-auto-import",
+          pendingReview: false,
+        },
+        $set: {
+          school:      r.School || undefined,
+          board:       board    || undefined,
+          role:        r.Role   || undefined,
+          level:       r.Level  || undefined,
+          language:    detectLanguage(board),
+          isChristian: detectChristian(r),
+        },
+      },
+      upsert: true,
+    },
   };
 }
 
@@ -124,18 +125,32 @@ export async function importContactsFromFolder({ folder = importDir(), patterns 
 
   for (const filename of matching) {
     const full = path.join(folder, filename);
+    const t0 = Date.now();
     try {
       const rows = await readContactsSheet(full);
-      let inserted = 0, updated = 0, skipped = 0;
+
+      // Build all bulk-upsert ops up-front; skip rows missing email
+      const ops = [];
+      let skipped = 0;
       for (const r of rows) {
-        const res = await upsertRow(r, filename);
-        if (res.skipped) skipped++;
-        else if (res.inserted) inserted++;
-        else if (res.updated) updated++;
+        const op = buildBulkOp(r);
+        if (op) ops.push(op);
+        else skipped++;
       }
-      perFile.push({ file: filename, rows: rows.length, inserted, updated, skipped });
+
+      // Single round-trip to MongoDB instead of one per row. With 1,200+ rows
+      // this drops import time from ~60s to a few seconds.
+      let inserted = 0, updated = 0;
+      if (ops.length) {
+        const res = await BlastContact.bulkWrite(ops, { ordered: false });
+        inserted = res.upsertedCount || 0;
+        updated  = (res.modifiedCount || 0); // matchedCount-upsertedCount also possible; modifiedCount is what we care about
+      }
+
+      const ms = Date.now() - t0;
+      perFile.push({ file: filename, rows: rows.length, inserted, updated, skipped, ms });
       totalInserted += inserted; totalUpdated += updated; totalSkipped += skipped;
-      console.log(`[contactImporter] ${filename}: ${rows.length} rows → +${inserted} new, ~${updated} updated, ${skipped} skipped`);
+      console.log(`[contactImporter] ${filename}: ${rows.length} rows → +${inserted} new, ~${updated} updated, ${skipped} skipped (${ms}ms)`);
     } catch (e) {
       console.error(`[contactImporter] FAIL ${filename}: ${e.message}`);
       perFile.push({ file: filename, error: e.message });

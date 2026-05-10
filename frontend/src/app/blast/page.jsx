@@ -520,8 +520,10 @@ function NewCampaign({ adminToken, defaults, onCreated }) {
       {/* RIGHT: templates + actions */}
       <div className="space-y-5">
         <div className="rounded-xl border border-white/10 bg-white/5 p-5">
-          <H>4. Email templates</H>
-          <p className="text-xs text-white/60 mb-3">Variables: <code>{"{{firstName}}"}</code>, <code>{"{{school}}"}</code>, <code>{"{{board}}"}</code>, <code>{"{{role}}"}</code>, <code>{"{{salutation}}"}</code></p>
+          <H>4. Email templates <span className="text-xs font-normal text-emerald-300 ml-1">(optional — already configured)</span></H>
+          <p className="text-xs text-white/60 mb-3">
+            Templates are <strong>pre-loaded</strong> with the current default copy (teacher-voice opener, role-specific pitch, Christian overlay for OACS/ACSI schools, etc). You don't need to edit anything — just expand below if you want to customize the subject or body for this specific campaign.
+          </p>
 
           {/* Tabs — one per selected product */}
           <div className="flex gap-1 mb-3 border-b border-white/10">
@@ -535,20 +537,34 @@ function NewCampaign({ adminToken, defaults, onCreated }) {
 
           {(() => {
             const t = templates[editProduct] || { subjectEn: "", bodyEn: "", subjectFr: "", bodyFr: "" };
+            const loaded = !!(t.subjectEn || t.bodyEn);
             return (
               <>
-                <details open className="mb-3">
-                  <summary className="cursor-pointer text-sm font-semibold text-white/80">English</summary>
+                {loaded ? (
+                  <div className="mb-3 text-xs text-emerald-300/80 flex items-start gap-2">
+                    <span>✓</span>
+                    <div>
+                      <div><strong>Loaded:</strong> "{t.subjectEn}"</div>
+                      <div className="text-white/40">{(t.bodyEn || "").replace(/<[^>]+>/g, "").trim().slice(0, 110)}…</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-3 text-xs text-amber-300">Loading default template…</div>
+                )}
+
+                <details className="mb-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-white/70 hover:text-white">▸ Customize English template</summary>
                   <L>Subject (EN)</L>
                   <input value={t.subjectEn} onChange={(e) => patchTemplate(editProduct, { subjectEn: e.target.value })}
                     className="w-full px-3 py-2 rounded-md bg-white/5 border border-white/10 mb-2" />
                   <L>HTML body (EN)</L>
                   <textarea value={t.bodyEn} onChange={(e) => patchTemplate(editProduct, { bodyEn: e.target.value })}
                     rows={10} className="w-full px-3 py-2 rounded-md bg-white/5 border border-white/10 font-mono text-xs" />
+                  <p className="text-xs text-white/50 mt-2">Variables: <code>{"{{firstName}}"}</code> <code>{"{{school}}"}</code> <code>{"{{board}}"}</code> <code>{"{{role}}"}</code> <code>{"{{salutation}}"}</code> <code>{"{{role_pitch}}"}</code> <code>{"{{credential_intro}}"}</code> <code>{"{{christian_perspective}}"}</code></p>
                 </details>
 
                 <details>
-                  <summary className="cursor-pointer text-sm font-semibold text-white/80">Français (auto-applied to Viamonde + MonAvenir)</summary>
+                  <summary className="cursor-pointer text-sm font-semibold text-white/70 hover:text-white">▸ Customize French template (auto-applied to Viamonde + MonAvenir)</summary>
                   <L>Sujet (FR)</L>
                   <input value={t.subjectFr} onChange={(e) => patchTemplate(editProduct, { subjectFr: e.target.value })}
                     className="w-full px-3 py-2 rounded-md bg-white/5 border border-white/10 mb-2" />
@@ -690,7 +706,8 @@ function Research({ adminToken }) {
   const [pending, setPending] = useState([]);
   const [form, setForm] = useState({ name: "", boardName: "", indexUrl: "", maxSchools: 30 });
   const [msg, setMsg] = useState("");
-  const [scanMsg, setScanMsg] = useState("");
+  // Scan state: { status: idle|scanning|done|error, elapsed?, result? }
+  const [scan, setScan] = useState({ status: "idle" });
 
   async function loadJobs() {
     const j = await fetch(`${API}/admin/blast/research`, { headers: { "x-admin-token": adminToken } }).then(r => r.json());
@@ -735,12 +752,30 @@ function Research({ adminToken }) {
   }
 
   async function scanFolder() {
-    setScanMsg("Scanning…");
-    const res = await fetch(`${API}/admin/blast/import-folder`, {
-      method: "POST", headers: { "Content-Type": "application/json", "x-admin-token": adminToken }, body: "{}",
-    });
-    const j = await res.json();
-    setScanMsg(j.ok ? `✓ ${j.inserted || 0} new, ${j.updated || 0} updated across ${j.files?.length || 0} files` : `✗ ${j.error}`);
+    const startedAt = Date.now();
+    setScan({ status: "scanning", startedAt });
+    // Tick the elapsed counter every 250ms so the user sees it isn't frozen
+    const tickInt = setInterval(() => {
+      setScan(s => s.status === "scanning" ? { ...s, elapsed: Math.floor((Date.now() - startedAt) / 100) / 10 } : s);
+    }, 250);
+    try {
+      const res = await fetch(`${API}/admin/blast/import-folder`, {
+        method: "POST", headers: { "Content-Type": "application/json", "x-admin-token": adminToken }, body: "{}",
+      });
+      const j = await res.json();
+      clearInterval(tickInt);
+      const totalMs = Date.now() - startedAt;
+      if (j.ok) {
+        setScan({ status: "done", result: j, totalMs });
+        // refresh the pending list in case research-discovered contacts were affected
+        loadPending();
+      } else {
+        setScan({ status: "error", error: j.error || "Unknown error", totalMs });
+      }
+    } catch (e) {
+      clearInterval(tickInt);
+      setScan({ status: "error", error: e.message, totalMs: Date.now() - startedAt });
+    }
   }
 
   async function approvePending(emails) {
@@ -805,8 +840,53 @@ function Research({ adminToken }) {
             Scans the workspace folder for <code>*-school-admins.xlsx</code> and <code>*-schools.xlsx</code>
             and adds every row to the master Contacts list. Runs automatically at server boot — click below to re-run now.
           </p>
-          <Btn variant="ghost" onClick={scanFolder}>Scan workspace folder</Btn>
-          {scanMsg && <div className="mt-2 text-xs">{scanMsg}</div>}
+          <Btn variant="ghost" onClick={scanFolder} disabled={scan.status === "scanning"}>
+            {scan.status === "scanning" ? "Scanning…" : "Scan workspace folder"}
+          </Btn>
+
+          {scan.status === "scanning" && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-white/70">
+              <span className="inline-block h-3 w-3 rounded-full border-2 border-white/30 border-t-blue-400 animate-spin" />
+              Scanning xlsx files… <span className="text-white/40">({(scan.elapsed ?? 0).toFixed(1)}s)</span>
+            </div>
+          )}
+
+          {scan.status === "done" && (
+            <div className="mt-3 text-xs">
+              <div className="text-emerald-300 font-semibold mb-2">
+                ✓ {scan.result.inserted || 0} new, {scan.result.updated || 0} updated, {scan.result.skipped || 0} skipped — in {(scan.totalMs / 1000).toFixed(1)}s
+              </div>
+              {scan.result.files && scan.result.files.length > 0 && (
+                <table className="w-full text-[11px] border border-white/10 rounded">
+                  <thead className="bg-white/5 text-white/50">
+                    <tr>
+                      <th className="text-left px-2 py-1">File</th>
+                      <th className="text-right px-2 py-1">Rows</th>
+                      <th className="text-right px-2 py-1">New</th>
+                      <th className="text-right px-2 py-1">Updated</th>
+                      <th className="text-right px-2 py-1">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scan.result.files.map(f => (
+                      <tr key={f.file} className="border-t border-white/5">
+                        <td className="px-2 py-1 text-white/80">{f.file}</td>
+                        <td className="px-2 py-1 text-right text-white/60">{f.rows ?? "—"}</td>
+                        <td className="px-2 py-1 text-right text-emerald-400">{f.inserted ?? "—"}</td>
+                        <td className="px-2 py-1 text-right text-white/60">{f.updated ?? "—"}</td>
+                        <td className="px-2 py-1 text-right text-white/40">{f.ms ? `${f.ms}ms` : f.error ? <span className="text-red-300">{f.error}</span> : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <div className="text-white/40 mt-2">Folder: <code>{scan.result.folder}</code></div>
+            </div>
+          )}
+
+          {scan.status === "error" && (
+            <div className="mt-3 text-xs text-red-300">✗ {scan.error}</div>
+          )}
         </div>
       </div>
 
