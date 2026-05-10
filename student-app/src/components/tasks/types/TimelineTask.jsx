@@ -238,17 +238,24 @@ export default function TimelineTask({ task, onSubmit, disabled }) {
     boxShadow: "0 0 0 6px rgba(14,165,233,0.18)",
   };
 
-  const yearChip = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
+  // Year chip intentionally removed — showing the year on each card made
+  // the chronology task trivial (students could just read the dates and
+  // sort numerically). The card now shows only the event text; the
+  // underlying `it.year` is preserved on the task object for grading.
+
+  // Shared style for the ← → reorder buttons. Earlier rendering used a
+  // near-invisible 14%-opacity border on a white background, which had
+  // very low contrast against the white card. Bump to a dark outline +
+  // tinted fill so the buttons read clearly.
+  const arrowBtn = {
+    borderRadius: 10,
+    border: "1px solid rgba(15,23,42,0.45)",
+    background: "#eef2ff",
+    color: "#0f172a",
     padding: "4px 10px",
-    borderRadius: 999,
-    background: "rgba(99,102,241,0.10)",
-    border: "1px solid rgba(99,102,241,0.25)",
-    color: "#3730a3",
-    fontWeight: 800,
-    fontSize: "0.85rem",
+    fontWeight: 900,
+    fontSize: "1rem",
+    lineHeight: 1,
   };
 
   return (
@@ -302,14 +309,7 @@ export default function TimelineTask({ task, onSubmit, disabled }) {
                     type="button"
                     onClick={() => move(it.id, -1)}
                     disabled={disabled}
-                    style={{
-                      borderRadius: 10,
-                      border: "1px solid rgba(15,23,42,0.14)",
-                      background: "#ffffff",
-                      padding: "4px 8px",
-                      cursor: disabled ? "not-allowed" : "pointer",
-                      fontWeight: 900,
-                    }}
+                    style={{ ...arrowBtn, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1 }}
                     aria-label="Move left"
                     title="Move earlier"
                   >
@@ -321,14 +321,7 @@ export default function TimelineTask({ task, onSubmit, disabled }) {
                     type="button"
                     onClick={() => move(it.id, +1)}
                     disabled={disabled}
-                    style={{
-                      borderRadius: 10,
-                      border: "1px solid rgba(15,23,42,0.14)",
-                      background: "#ffffff",
-                      padding: "4px 8px",
-                      cursor: disabled ? "not-allowed" : "pointer",
-                      fontWeight: 900,
-                    }}
+                    style={{ ...arrowBtn, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1 }}
                     aria-label="Move right"
                     title="Move later"
                   >
@@ -338,11 +331,7 @@ export default function TimelineTask({ task, onSubmit, disabled }) {
                 </div>
               </div>
 
-              {it.year != null && String(it.year).trim() !== "" && (
-                <div style={{ display: "flex", justifyContent: "flex-start" }}>
-                  <span style={yearChip}>📍 {String(it.year).trim()}</span>
-                </div>
-              )}
+              {/* Year deliberately hidden from students — was making the task trivial */}
 
               <div style={{ fontWeight: 800, fontSize: "0.98rem", color: "#0f172a", lineHeight: 1.25 }}>
                 {it.text}
