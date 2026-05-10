@@ -67,6 +67,20 @@ export default function DrawMimeTask({
   const [simplePhase, setSimplePhase] = useState("peek"); // "peek" | "acting"
   const [simplePeeking, setSimplePeeking] = useState(false);
   const [simpleGuesses, setSimpleGuesses] = useState([]); // [{ idx, guesser }]
+  // Per-task random rotation offset so the FIRST clue's actor isn't
+  // always the first roster name.  Tester: 'a player nominated (not
+  // always the first player, btw)'.  Seeded from the task id so the
+  // same task gives the same offset across reloads (deterministic
+  // for class playback) but DIFFERENT tasks pick different starters.
+  const simpleActorOffset = useMemo(() => {
+    const seedSrc = String(task?.id || task?._id || task?.title || "dm");
+    let h = 0;
+    for (let i = 0; i < seedSrc.length; i += 1) h = (h * 31 + seedSrc.charCodeAt(i)) | 0;
+    return Math.abs(h);
+  }, [task?.id, task?._id, task?.title]);
+  // Per-clue manual override of the actor (tap "Switch actor" in peek).
+  // Map<simpleCurrentIdx, actorIdx>.
+  const [simpleActorOverride, setSimpleActorOverride] = useState({});
 
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -777,7 +791,12 @@ export default function DrawMimeTask({
             const teamNames = (Array.isArray(memberNames) ? memberNames : [])
               .map((n) => String(n || "").trim())
               .filter(Boolean);
-            const actorIdx = simpleCurrentIdx % Math.max(1, teamNames.length || 1);
+            const fallbackActorIdx =
+              (simpleCurrentIdx + simpleActorOffset) % Math.max(1, teamNames.length || 1);
+            const actorIdx =
+              typeof simpleActorOverride[simpleCurrentIdx] === "number"
+                ? simpleActorOverride[simpleCurrentIdx]
+                : fallbackActorIdx;
             const actorName = teamNames[actorIdx] || `Player ${actorIdx + 1}`;
             const useSecretReveal = isMimeOnly;
             const advanceClue = (guesser) => {
@@ -804,8 +823,43 @@ export default function DrawMimeTask({
               {useSecretReveal && simplePhase === "peek" && (
                 <>
                   {teamNames.length > 0 && (
-                    <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fde68a" }}>
+                    <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fde68a", textAlign: "center" }}>
                       📲 Pass to <span style={{ color: "#fff" }}>{actorName}</span>
+                    </div>
+                  )}
+
+                  {/* Manual actor picker — tap a different name if you'd
+                      rather someone else act this one out.  Visible
+                      until the actor peeks; locked once they see the clue. */}
+                  {teamNames.length > 1 && !simplePeeking && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, opacity: 0.75, alignSelf: "center" }}>
+                        Switch actor:
+                      </span>
+                      {teamNames.map((nm, i) => (
+                        <button
+                          key={`${nm}-${i}`}
+                          type="button"
+                          onClick={() =>
+                            setSimpleActorOverride((prev) => ({
+                              ...prev,
+                              [simpleCurrentIdx]: i,
+                            }))
+                          }
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: 999,
+                            border: "1px solid rgba(255,255,255,0.4)",
+                            background: i === actorIdx ? "rgba(253,224,71,0.85)" : "rgba(255,255,255,0.10)",
+                            color: i === actorIdx ? "#1f2937" : "#fff",
+                            fontWeight: 800,
+                            fontSize: 11,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {i === actorIdx ? "✓ " : ""}{nm}
+                        </button>
+                      ))}
                     </div>
                   )}
                   <div style={{
