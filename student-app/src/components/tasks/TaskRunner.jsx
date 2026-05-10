@@ -2646,7 +2646,12 @@ case "multi_player_feedback":
 
     case TASK_TYPES.BODY_BREAK:
       content = (
-        <BodyBreakTask task={tp} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+        <BodyBreakTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+          memberNames={memberNames}
+        />
       );
       break;
 
@@ -2863,6 +2868,7 @@ case TASK_TYPES.COLLABORATION:
           partnerAnswer={partnerAnswer}
           showPartnerReply={showPartnerReply}
           onPartnerReply={onPartnerReply}
+          memberNames={memberNames}
         />
       );
       break;
@@ -2874,6 +2880,7 @@ case TASK_TYPES.COLLABORATION:
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled}
           socket={socket}
+          practiceMode={practiceMode}
         />
       );
       break;

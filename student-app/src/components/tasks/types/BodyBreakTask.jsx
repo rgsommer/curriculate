@@ -36,7 +36,7 @@ function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
-export default function BodyBreakTask({ task, onSubmit, disabled, stagingPhase, canStartTask }) {
+export default function BodyBreakTask({ task, onSubmit, disabled, stagingPhase, canStartTask, memberNames = [] }) {
   const promptText = String(task?.prompt || "");
   const SHOW_TOP_MOVES_LIST = false;
 
@@ -399,21 +399,129 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
             </div>
           ) : null}
 
-          <button
-            type="button"
-            style={{ ...styles.btnDone, opacity: disabled ? 0.6 : 1 }}
-            onClick={(e) => {
-              e?.preventDefault?.();
-              e?.stopPropagation?.();
-              onSubmit?.({ done: true });
-            }}
+          {/* Per-player Done buttons (single-device, peer-pressure
+              encouragement).  Each name lights up green as they tap.
+              When everyone has tapped, auto-submit so the task moves
+              on without an extra "submit team" tap.  Falls back to a
+              single big DONE if we don't know team names. */}
+          <PlayerDoneRow
+            memberNames={memberNames}
             disabled={disabled}
-          >
-            DONE ✅
-          </button>
+            onAllDone={(names) =>
+              onSubmit?.({ done: true, doneBy: names, count: names.length })
+            }
+          />
 
           <div style={styles.footer}>{finishText}</div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  PlayerDoneRow                                                     */
+/*  Per-player "Done" button — single device, social pressure.        */
+/* ------------------------------------------------------------------ */
+function PlayerDoneRow({ memberNames = [], disabled, onAllDone }) {
+  const names = (Array.isArray(memberNames) ? memberNames : []).filter(Boolean);
+  const [doneSet, setDoneSet] = useState(() => new Set());
+  const submittedRef = useRef(false);
+
+  const total = names.length;
+  const doneCount = doneSet.size;
+
+  // Auto-submit once everyone's marked done.
+  useEffect(() => {
+    if (submittedRef.current) return;
+    if (total === 0) return;
+    if (doneCount >= total) {
+      submittedRef.current = true;
+      onAllDone?.([...doneSet]);
+    }
+  }, [doneCount, total, doneSet, onAllDone]);
+
+  // Fallback: no team names known → single big DONE button (legacy UX).
+  if (total === 0) {
+    return (
+      <button
+        type="button"
+        style={{
+          padding: "16px 22px",
+          borderRadius: 16,
+          border: "none",
+          background: "linear-gradient(135deg, #22c55e, #16a34a)",
+          color: "#fff",
+          fontWeight: 900,
+          fontSize: 16,
+          cursor: "pointer",
+          boxShadow: "0 6px 20px rgba(34,197,94,0.4)",
+          opacity: disabled ? 0.6 : 1,
+        }}
+        onClick={() => {
+          if (submittedRef.current) return;
+          submittedRef.current = true;
+          onAllDone?.([]);
+        }}
+        disabled={disabled}
+      >
+        DONE ✅
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 800,
+          color: "rgba(15,23,42,0.7)",
+          marginBottom: 8,
+        }}
+      >
+        Tap your name when you finish — {doneCount}/{total} done
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {names.map((name) => {
+          const isDone = doneSet.has(name);
+          return (
+            <button
+              key={name}
+              type="button"
+              onClick={() => {
+                if (disabled || submittedRef.current) return;
+                setDoneSet((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(name)) next.delete(name);
+                  else next.add(name);
+                  return next;
+                });
+              }}
+              disabled={disabled}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 14,
+                border: "2px solid",
+                borderColor: isDone ? "#16a34a" : "rgba(15,23,42,0.18)",
+                background: isDone
+                  ? "linear-gradient(135deg, #22c55e, #16a34a)"
+                  : "rgba(255,255,255,0.94)",
+                color: isDone ? "#fff" : "#0f172a",
+                fontWeight: 900,
+                fontSize: 14,
+                cursor: disabled ? "default" : "pointer",
+                boxShadow: isDone ? "0 4px 14px rgba(34,197,94,0.45)" : "0 2px 6px rgba(0,0,0,0.08)",
+                transform: isDone ? "scale(1.02)" : "scale(1)",
+                transition: "transform 0.12s ease, box-shadow 0.12s ease",
+              }}
+              aria-pressed={isDone}
+              title={isDone ? `Tap again to undo ${name}'s Done` : `Mark ${name} as done`}
+            >
+              {name}{isDone ? " ✅" : " — Done?"}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

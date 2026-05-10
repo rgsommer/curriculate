@@ -221,10 +221,34 @@ export default function MatchingTask({
     setActiveLeft(null);
   };
 
+  // After Submit, enter a local review state that shows the answer
+  // key overlaid on the matches: green lines for the student's correct
+  // picks, red for incorrect, plus the correct line drawn alongside in
+  // dashed green.  User taps Continue when they've absorbed it.
+  // Falls back to immediate submit when there's no correct-answer key
+  // (some matching tasks don't ship one).
+  const [localReview, setLocalReview] = useState(false);
+  const hasAnswerKey =
+    correctMatches && Object.keys(correctMatches).length > 0;
+
   const handleSubmit = () => {
     if (!isComplete || isDisabled) return;
+    if (hasAnswerKey && !localReview && !isReview) {
+      setLocalReview(true);
+      return;
+    }
     onSubmit?.({ matches });
   };
+
+  // Score for the review banner.
+  const reviewScore = useMemo(() => {
+    if (!hasAnswerKey) return null;
+    let correct = 0;
+    leftItems.forEach((l) => {
+      if (matches[l.id] === correctMatches[l.id]) correct += 1;
+    });
+    return { correct, total: leftItems.length };
+  }, [matches, correctMatches, leftItems, hasAnswerKey]);
 
   // ── SVG line drawing ─────────────────────────────────────────────────
   const containerRef = useRef(null);
@@ -237,10 +261,30 @@ export default function MatchingTask({
 
     const next = [];
 
-    if (isReview) {
+    // Treat localReview the same as the official review mode for line drawing.
+    const inReview = isReview || localReview;
+    if (inReview) {
+      // 1) Draw the student's actual picks coloured by correctness.
+      for (const [leftId, rightId] of Object.entries(matches)) {
+        const correctRightId = correctMatches?.[leftId];
+        const le = document.getElementById(`ml-${leftId}`);
+        const re = document.getElementById(`mr-${rightId}`);
+        if (!le || !re) continue;
+        const lr = le.getBoundingClientRect();
+        const rr = re.getBoundingClientRect();
+        const x1 = lr.right - crect.left;
+        const y1 = lr.top + lr.height / 2 - crect.top;
+        const x2 = rr.left - crect.left;
+        const y2 = rr.top + rr.height / 2 - crect.top;
+        const ok = correctRightId && rightId === correctRightId;
+        next.push({ x1, y1, x2, y2, color: ok ? "#22c55e" : "#ef4444", review: true });
+      }
+      // 2) For wrong picks, also draw the CORRECT answer in dashed green.
       for (const left of leftItems) {
         const correctRightId = correctMatches?.[left.id];
         if (!correctRightId) continue;
+        const studentPicked = matches?.[left.id];
+        if (studentPicked === correctRightId) continue; // already drawn solid green
         const le = document.getElementById(`ml-${left.id}`);
         const re = document.getElementById(`mr-${correctRightId}`);
         if (!le || !re) continue;
@@ -250,9 +294,7 @@ export default function MatchingTask({
         const y1 = lr.top + lr.height / 2 - crect.top;
         const x2 = rr.left - crect.left;
         const y2 = rr.top + rr.height / 2 - crect.top;
-        const studentPicked = matches?.[left.id];
-        const ok = studentPicked === correctRightId;
-        next.push({ x1, y1, x2, y2, color: ok ? "#22c55e" : "#ef4444", review: true });
+        next.push({ x1, y1, x2, y2, color: "#22c55e", review: true, dashed: true });
       }
     } else {
       for (const [leftId, rightId] of Object.entries(matches)) {
@@ -270,7 +312,7 @@ export default function MatchingTask({
     }
 
     setLines(next);
-  }, [matches, correctMatches, isReview, leftItems]);
+  }, [matches, correctMatches, isReview, leftItems, localReview]);
 
   // Recompute lines on any relevant change + on resize
   useEffect(() => {
@@ -345,8 +387,32 @@ export default function MatchingTask({
         </div>
       </div>
 
+      {/* First-time tip — only when nothing's been matched yet, no
+          left selected.  Several testers expected drag-and-drop on
+          first encounter; spell out the tap-tap rhythm. */}
+      {!isReview && !localReview && Object.keys(matches).length === 0 && !activeLeft && (
+        <div
+          style={{
+            background: "rgba(34,197,94,0.10)",
+            border: "1px solid rgba(34,197,94,0.30)",
+            borderRadius: 12,
+            padding: "10px 14px",
+            fontSize: "0.85rem",
+            fontWeight: 700,
+            textAlign: "center",
+            lineHeight: 1.4,
+            color: "rgba(220,252,231,0.95)",
+          }}
+        >
+          👉 <b>Tap</b> a term on the <b>left</b>, then <b>tap</b> its match on the <b>right</b>.
+          <span style={{ display: "block", fontWeight: 600, opacity: 0.8, marginTop: 2 }}>
+            (No dragging — just two taps per pair.)
+          </span>
+        </div>
+      )}
+
       {/* Instructions bar */}
-      {!isReview && (
+      {!isReview && !localReview && (
         <div
           style={{
             background: activeLeft
@@ -369,19 +435,34 @@ export default function MatchingTask({
         </div>
       )}
 
-      {isReview && (
+      {(isReview || localReview) && (
         <div
           style={{
             background: "rgba(255,255,255,0.07)",
             border: "1px solid rgba(255,255,255,0.15)",
             borderRadius: 12,
-            padding: "8px 14px",
-            fontSize: "0.88rem",
-            fontWeight: 600,
+            padding: "10px 14px",
+            fontSize: "0.92rem",
+            fontWeight: 700,
             textAlign: "center",
+            lineHeight: 1.4,
           }}
         >
-          ✅ Green = correct match &nbsp;|&nbsp; ❌ Red = incorrect match
+          {reviewScore && (
+            <div
+              style={{
+                fontSize: "1rem",
+                fontWeight: 900,
+                color: reviewScore.correct === reviewScore.total ? "#22c55e" : "#fbbf24",
+                marginBottom: 4,
+              }}
+            >
+              You got {reviewScore.correct}/{reviewScore.total} correct
+            </div>
+          )}
+          <span style={{ color: "#22c55e" }}>—— Solid green</span> = your right answer&nbsp;
+          <span style={{ color: "#22c55e" }}>· · ·</span> = correct answer (dashed)&nbsp;
+          <span style={{ color: "#ef4444" }}>—— Red</span> = your wrong pick
         </div>
       )}
 
@@ -428,6 +509,8 @@ export default function MatchingTask({
                   strokeWidth="4"
                   fill="none"
                   strokeLinecap="round"
+                  strokeDasharray={ln.dashed ? "8 6" : undefined}
+                  opacity={ln.dashed ? 0.85 : 1}
                 />
                 {/* End dots */}
                 <circle cx={ln.x1} cy={ln.y1} r="6" fill={ln.color} />
@@ -603,32 +686,36 @@ export default function MatchingTask({
             marginTop: 4,
           }}
         >
-          <button
-            type="button"
-            onClick={clearAll}
-            disabled={isDisabled || Object.keys(matches).length === 0}
-            style={{
-              padding: "10px 22px",
-              borderRadius: 999,
-              fontWeight: 800,
-              fontSize: "0.95rem",
-              border: "none",
-              cursor:
-                isDisabled || Object.keys(matches).length === 0
-                  ? "not-allowed"
-                  : "pointer",
-              background:
-                isDisabled || Object.keys(matches).length === 0
-                  ? "rgba(255,255,255,0.08)"
-                  : "rgba(239,68,68,0.75)",
-              color:
-                isDisabled || Object.keys(matches).length === 0
-                  ? "rgba(255,255,255,0.3)"
-                  : "#fff",
-            }}
-          >
-            Clear All
-          </button>
+          {/* Clear All hidden during localReview — once you've submitted
+              and we're showing the answer key, undoing makes no sense. */}
+          {!localReview && (
+            <button
+              type="button"
+              onClick={clearAll}
+              disabled={isDisabled || Object.keys(matches).length === 0}
+              style={{
+                padding: "10px 22px",
+                borderRadius: 999,
+                fontWeight: 800,
+                fontSize: "0.95rem",
+                border: "none",
+                cursor:
+                  isDisabled || Object.keys(matches).length === 0
+                    ? "not-allowed"
+                    : "pointer",
+                background:
+                  isDisabled || Object.keys(matches).length === 0
+                    ? "rgba(255,255,255,0.08)"
+                    : "rgba(239,68,68,0.75)",
+                color:
+                  isDisabled || Object.keys(matches).length === 0
+                    ? "rgba(255,255,255,0.3)"
+                    : "#fff",
+              }}
+            >
+              Clear All
+            </button>
+          )}
 
           <button
             type="button"
@@ -643,7 +730,9 @@ export default function MatchingTask({
               cursor: isComplete && !isDisabled ? "pointer" : "not-allowed",
               background:
                 isComplete && !isDisabled
-                  ? "linear-gradient(135deg, #22c55e, #16a34a)"
+                  ? (localReview
+                      ? "linear-gradient(135deg, #2563eb, #4338ca)"
+                      : "linear-gradient(135deg, #22c55e, #16a34a)")
                   : "rgba(255,255,255,0.08)",
               color: isComplete && !isDisabled ? "#fff" : "rgba(255,255,255,0.3)",
               boxShadow:
@@ -654,9 +743,11 @@ export default function MatchingTask({
               transition: "all 0.2s",
             }}
           >
-            {isComplete
-              ? "✓ Submit"
-              : `${leftItems.length - Object.keys(matches).length} left to match`}
+            {!isComplete
+              ? `${leftItems.length - Object.keys(matches).length} left to match`
+              : localReview
+                ? "Continue ▶"
+                : (hasAnswerKey ? "✓ Submit & See Answers" : "✓ Submit")}
           </button>
         </div>
       )}

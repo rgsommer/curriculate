@@ -440,12 +440,57 @@ export default function PeerEditingTask({ task, onSubmit, disabled }) {
   const passage = task?.passage || "";
   const words = useMemo(() => passage.split(/\s+/).filter(Boolean), [passage]);
 
+  // Expected error indices come from the AI-generated errors[] array.
+  // We use these to (a) show a "X issues to find" counter and (b) power
+  // the Hint button which reveals the sentence/line where an unfound
+  // issue lives.
+  const errorIndices = useMemo(() => {
+    const arr = Array.isArray(task?.errors) ? task.errors : [];
+    return arr
+      .map((e) => Number(e?.wordIndex))
+      .filter((n) => Number.isInteger(n) && n >= 0 && n < words.length);
+  }, [task, words.length]);
+  const totalIssuesToFind = errorIndices.length;
+
+  // Build a wordIdx → sentenceIdx map.  We split on .!? so the hint
+  // can say "Sentence 3" (stable across device widths — flex-wrap
+  // line breaks aren't reliable for this).
+  const sentences = useMemo(() => {
+    if (!passage) return [];
+    // Greedy sentence split keeping terminator with the sentence.
+    const matches = passage.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [passage];
+    return matches.map((s) => s.trim()).filter(Boolean);
+  }, [passage]);
+
+  const wordIdxToSentence = useMemo(() => {
+    const map = new Array(words.length).fill(0);
+    let cursor = 0;
+    sentences.forEach((sent, sIdx) => {
+      const wordsInSent = sent.split(/\s+/).filter(Boolean).length;
+      for (let i = 0; i < wordsInSent && cursor < words.length; i += 1) {
+        map[cursor] = sIdx;
+        cursor += 1;
+      }
+    });
+    // any trailing words → last sentence
+    while (cursor < words.length) {
+      map[cursor] = Math.max(0, sentences.length - 1);
+      cursor += 1;
+    }
+    return map;
+  }, [words.length, sentences]);
+
   // --- state ---
   const [marks, setMarks] = useState(new Map());      // wordIndex -> markCode
   const [popupIdx, setPopupIdx] = useState(null);      // which word's popup is open
   const [submitted, setSubmitted] = useState(false);
   const [photoData, setPhotoData] = useState(null);
   const fileRef = useRef(null);
+  // Hint mechanic: students can request a sentence-level hint when
+  // they're stuck.  Hints are tracked so we can ding the score later.
+  const [hintsUsed, setHintsUsed] = useState(0);
+  const [hintMessage, setHintMessage] = useState(null); // { sentenceIdx, text } | null
+  const hintTimerRef = useRef(null);
 
   const timerActive = mode === "timed" && !submitted;
   const timeRemaining = useCountdown(TIMED_DURATION, timerActive);
@@ -499,16 +544,61 @@ export default function PeerEditingTask({ task, onSubmit, disabled }) {
         category: POSITIVE_CODES.has(code) ? "positive" : "correction",
       });
     });
+    // How many actual errors were caught? Marks placed on wordIndices
+    // listed in task.errors count as hits regardless of the chosen mark code.
+    const errSet = new Set(errorIndices);
+    const issuesFound = editsArr.filter((e) => errSet.has(e.wordIndex)).length;
     onSubmit({
       edits: editsArr,
       mode,
       editCount: editsArr.length,
       corrections: editsArr.filter((e) => e.category === "correction").length,
       positives: editsArr.filter((e) => e.category === "positive").length,
+      // Hint accounting — back-end can apply a small score penalty per hint.
+      issuesToFind: totalIssuesToFind,
+      issuesFound,
+      hintsUsed,
+      hintPenaltyPct:
+        totalIssuesToFind > 0
+          ? Math.round((hintsUsed / totalIssuesToFind) * 30)
+          : 0,
       photoData: mode === "paper" ? photoData : null,
       timeRemaining: mode === "timed" ? timeRemaining : null,
     });
-  }, [submitted, marks, words, mode, photoData, timeRemaining, onSubmit]);
+  }, [submitted, marks, words, mode, photoData, timeRemaining, onSubmit, errorIndices, hintsUsed, totalIssuesToFind]);
+
+  // Hint: pick an unfound error and surface its sentence number + a
+  // short snippet.  Uses errorIndices (set by the task author) and
+  // wordIdxToSentence to translate.  Hint banner auto-clears after
+  // 6s so it doesn't crowd the UI.
+  const requestHint = useCallback(() => {
+    if (submitted || disabled) return;
+    if (errorIndices.length === 0) return;
+    const remaining = errorIndices.filter((idx) => !marks.has(idx));
+    if (remaining.length === 0) {
+      setHintMessage({
+        sentenceIdx: -1,
+        text: "Nice — you've already caught every issue. Tap Submit when you're ready.",
+      });
+    } else {
+      const pick = remaining[Math.floor(Math.random() * remaining.length)];
+      const sIdx = wordIdxToSentence[pick] ?? 0;
+      const sentText = (sentences[sIdx] || "").slice(0, 80);
+      setHintMessage({
+        sentenceIdx: sIdx,
+        text: `Look more carefully at sentence ${sIdx + 1}${sentText ? `: "${sentText}${sentText.length === 80 ? "…" : ""}"` : ""}`,
+      });
+      setHintsUsed((h) => h + 1);
+    }
+    if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+    hintTimerRef.current = setTimeout(() => setHintMessage(null), 6000);
+  }, [submitted, disabled, errorIndices, marks, wordIdxToSentence, sentences]);
+
+  useEffect(() => {
+    return () => {
+      if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+    };
+  }, []);
 
   const handlePhoto = useCallback((e) => {
     const file = e.target.files?.[0];
@@ -563,6 +653,71 @@ export default function PeerEditingTask({ task, onSubmit, disabled }) {
         }}>
           <span style={{ fontSize: 16 }}>👆</span>
           Tap any word to mark it — just like a teacher correcting a paper
+        </div>
+      )}
+
+      {/* --- Issues-to-find counter + Hint button (on-screen mode only) --- */}
+      {!isPaper && !submitted && totalIssuesToFind > 0 && (() => {
+        // Marks placed on wordIndices listed in task.errors count as hits.
+        const errSet = new Set(errorIndices);
+        const found = [...marks.keys()].filter((idx) => errSet.has(idx)).length;
+        const remaining = totalIssuesToFind - found;
+        return (
+          <div
+            style={{
+              display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+              padding: "10px 12px", borderRadius: 14,
+              background: "rgba(245,158,11,0.08)",
+              border: "1px solid rgba(245,158,11,0.25)",
+              marginBottom: 12,
+            }}
+          >
+            <span style={{ fontSize: 18 }}>🔍</span>
+            <div style={{ flex: 1, minWidth: 140 }}>
+              <div style={{ fontSize: 13, fontWeight: 900, color: "#fbbf24" }}>
+                {totalIssuesToFind} {totalIssuesToFind === 1 ? "issue" : "issues"} hidden in this passage
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(226,232,240,0.7)" }}>
+                {found > 0
+                  ? `Marked ${found} of ${totalIssuesToFind}${remaining > 0 ? ` — ${remaining} to go.` : " — nice work!"}`
+                  : "Mark words you think are wrong. Stuck? Use a hint."}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={requestHint}
+              disabled={remaining === 0}
+              title={remaining === 0 ? "All issues marked" : "Reveals which sentence has an unfound issue"}
+              style={{
+                padding: "8px 14px", borderRadius: 12,
+                border: "1px solid rgba(251,191,36,0.4)",
+                background: remaining === 0
+                  ? "rgba(255,255,255,0.04)"
+                  : "linear-gradient(135deg, rgba(251,191,36,0.18), rgba(245,158,11,0.18))",
+                color: remaining === 0 ? "rgba(255,255,255,0.4)" : "#fbbf24",
+                fontWeight: 900, fontSize: 12,
+                cursor: remaining === 0 ? "default" : "pointer",
+              }}
+            >
+              💡 Hint{hintsUsed > 0 ? ` (${hintsUsed} used)` : ""}
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* --- Hint banner (auto-clears after 6s) --- */}
+      {!isPaper && !submitted && hintMessage && (
+        <div
+          style={{
+            padding: "10px 14px", borderRadius: 14,
+            background: "rgba(251,191,36,0.12)",
+            border: "1px solid rgba(251,191,36,0.4)",
+            color: "#fde68a", fontSize: 13, fontWeight: 700,
+            marginBottom: 12, lineHeight: 1.5,
+            animation: "pe-slideUp 0.2s ease",
+          }}
+        >
+          💡 {hintMessage.text}
         </div>
       )}
 

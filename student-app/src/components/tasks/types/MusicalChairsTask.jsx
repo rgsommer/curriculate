@@ -20,7 +20,7 @@ import VictoryScreen from "../../VictoryScreen";
  * - We emit scan payload with optional answer details. Server can ignore extras safely.
  */
 
-export default function MusicalChairsTask({ task, onSubmit, disabled, socket, presenter }) {
+export default function MusicalChairsTask({ task, onSubmit, disabled, socket, presenter, practiceMode = false }) {
   const [showVictory, setShowVictory] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -31,6 +31,16 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
   // Question state
   const items = useMemo(() => (Array.isArray(task?.items) ? task.items : []), [task?.items]);
   const hasEnoughQuestions = items.length >= 7;
+
+  // Practice-mode round simulator.  No real server / sockets / station
+  // colours, so we fake 4 rounds locally to give the practicer the
+  // shape of the game: round N starts with (5 - N + 1) stations, you
+  // survive each round, last round = victory.
+  const practiceRoundsTotal = 4;
+  const [practiceRound, setPracticeRound] = useState(1);
+  const stationsLeftLocal = practiceMode
+    ? Math.max(2, 6 - practiceRound)
+    : null;
 
   const [idx, setIdx] = useState(0);
   const current = items[idx] || null;
@@ -141,6 +151,46 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
   const handleScan = () => {
     if (!canScan) return;
 
+    // Practice mode: no real server.  We just bump the local round
+    // counter and advance to the next question so the practicer feels
+    // the rhythm of "answer → scan → survive → next round".  After the
+    // final practice round, fire onSubmit with a synthetic victory.
+    if (practiceMode) {
+      setErrorMsg("");
+      setScannedThisRound(true);
+      window.setTimeout(() => {
+        const isFinalRound = practiceRound >= practiceRoundsTotal;
+        const isLastQuestion = idx >= items.length - 1;
+        if (isFinalRound || isLastQuestion) {
+          try {
+            onSubmit?.({
+              itemId: currentId,
+              selectedIndex,
+              correctAnswer: current?.correctAnswer,
+              isCorrect:
+                typeof current?.correctAnswer === "number"
+                  ? selectedIndex === current.correctAnswer
+                  : null,
+              round: practiceRound,
+              totalRounds: practiceRoundsTotal,
+              practiceMode: true,
+              survived: true,
+              finished: true,
+            });
+          } catch {}
+          setShowVictory(true);
+          setLocked(true);
+          return;
+        }
+        setPracticeRound((r) => r + 1);
+        setIdx((n) => n + 1);
+        setSelectedIndex(null);
+        setLocked(false);
+        setScannedThisRound(false);
+      }, 250);
+      return;
+    }
+
     // do not fail silently
     if (!task?.roomCode) {
       setErrorMsg("Scan not sent: room code is missing.");
@@ -234,44 +284,91 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
         </div>
       )}
 
-      <div className="max-w-3xl w-full rounded-3xl bg-white border border-slate-200 shadow-xl p-5 md:p-6 mb-6">
+      <div className="max-w-3xl w-full rounded-3xl bg-white border border-slate-200 shadow-xl p-5 md:p-6 mb-6 text-left">
         <div className="text-xl md:text-2xl font-extrabold text-slate-900">How it works</div>
         <div className="mt-2 text-lg md:text-xl text-slate-700 font-semibold">{instructions}</div>
-        <div className="mt-3 text-base md:text-lg text-slate-500">
-          Step 1: <span className="font-bold">TAP</span> your answer. Step 2: <span className="font-bold">SCAN</span>{" "}
-          to get the next question.
-        </div>
+        <ul className="mt-3 text-base md:text-lg text-slate-700 list-disc pl-6 space-y-1">
+          <li>Each round there's <b>one fewer station</b> than there are teams (chairs!).</li>
+          <li><b>Tap</b> your answer, then <b>run + scan</b> a station.</li>
+          <li>The team that scans <b>last each round is OUT</b>.</li>
+          <li>Survive every round to win the game.</li>
+        </ul>
+        {practiceMode && (
+          <div className="mt-3 text-sm md:text-base font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-xl p-3">
+            🎯 <b>Practice mode</b>: we'll simulate {practiceRoundsTotal} rounds.
+            Round {practiceRound} of {practiceRoundsTotal} —
+            {" "}{stationsLeftLocal} {stationsLeftLocal === 1 ? "station" : "stations"} left.
+            Tap an answer, then tap SCAN to survive into the next round.
+          </div>
+        )}
       </div>
 
-      {/* Rotating chairs animation */}
-      <div className="relative w-72 h-72 md:w-80 md:h-80 mb-6">
-        <div
-          className="absolute inset-0 rounded-full bg-gradient-to-br from-rose-200 to-indigo-200 blur-2xl opacity-70"
-          style={{ animation: "chairBob 1.6s ease-in-out infinite" }}
-        />
-        <div
-          className="absolute inset-8 rounded-full border-8 border-white shadow-2xl bg-white/80"
-          style={{ animation: "chairSpin 3.6s linear infinite" }}
-        />
-        {Array.from({ length: 8 }).map((_, i) => {
-          const angle = (i / 8) * Math.PI * 2;
-          const r = 110;
-          const x = 140 + Math.cos(angle) * r;
-          const y = 140 + Math.sin(angle) * r;
-          return (
+      {/* Rotating chairs turntable.
+          The chairs sit on an absolutely-positioned ring that we
+          rotate as a group, so they actually orbit the center while
+          the music plays.  Spin only while the player hasn't yet
+          scanned (i.e. the music is still going); pause once they
+          scan to mirror the real-game cue ("music stops!"). */}
+      {(() => {
+        const chairsSpinning = phase === "play" && !scannedThisRound;
+        return (
+          <div className="relative w-72 h-72 md:w-80 md:h-80 mb-6">
             <div
-              key={i}
-              className="absolute text-4xl md:text-5xl drop-shadow"
-              style={{ left: x, top: y, transform: "translate(-50%,-50%)" }}
+              className="absolute inset-0 rounded-full bg-gradient-to-br from-rose-200 to-indigo-200 blur-2xl opacity-70"
+              style={{ animation: "chairBob 1.6s ease-in-out infinite" }}
+            />
+            <div
+              className="absolute inset-8 rounded-full border-8 border-white shadow-2xl bg-white/80"
+            />
+            {/* The actual rotating ring: holds the chair emojis at
+                fixed angular positions, and spins as a unit. */}
+            <div
+              className="absolute inset-0"
+              style={{
+                animation: chairsSpinning ? "chairSpin 6s linear infinite" : undefined,
+                transformOrigin: "center",
+              }}
             >
-              🪑
+              {Array.from({ length: 8 }).map((_, i) => {
+                const angle = (i / 8) * Math.PI * 2;
+                const r = 110;
+                const x = 140 + Math.cos(angle) * r;
+                const y = 140 + Math.sin(angle) * r;
+                return (
+                  <div
+                    key={i}
+                    className="absolute text-4xl md:text-5xl drop-shadow"
+                    style={{
+                      left: x,
+                      top: y,
+                      // Counter-rotate each chair so it stays upright
+                      // even as the parent ring spins — looks like the
+                      // chairs are travelling around the circle, not
+                      // tumbling end-over-end.
+                      transform: "translate(-50%,-50%)",
+                    }}
+                  >
+                    🪑
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-6xl md:text-7xl font-black text-slate-900 drop-shadow">🎵</div>
-        </div>
-      </div>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div
+                className="text-6xl md:text-7xl font-black text-slate-900 drop-shadow"
+                style={{
+                  // Note pulses while music plays, freezes when stopped.
+                  animation: chairsSpinning ? "chairBob 0.6s ease-in-out infinite" : undefined,
+                  opacity: chairsSpinning ? 1 : 0.4,
+                }}
+                title={chairsSpinning ? "Music's playing — answer + scan!" : "Music stopped"}
+              >
+                {chairsSpinning ? "🎵" : "🤫"}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Question + options (tap-based) */}
       {phase === "play" && hasEnoughQuestions && current && (
@@ -335,6 +432,11 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
       {typeof task?.stationsLeft === "number" && (
         <div className="text-5xl md:text-6xl font-black text-indigo-700 mb-6">
           {task.stationsLeft} STATIONS LEFT
+        </div>
+      )}
+      {practiceMode && stationsLeftLocal != null && task?.stationsLeft == null && (
+        <div className="text-4xl md:text-5xl font-black text-indigo-700 mb-4">
+          ROUND {practiceRound} / {practiceRoundsTotal} · {stationsLeftLocal} STATIONS LEFT
         </div>
       )}
 

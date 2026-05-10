@@ -116,57 +116,50 @@ export default function ScriptPlayTask({ task, onSubmit, disabled = false, membe
   );
 
   const [sceneIndex, setSceneIndex] = useState(0);
-  const [turnIndex, setTurnIndex] = useState(0);
   const [expressiveRating, setExpressiveRating] = useState(3);
 
   const scene = normalizedScenes[sceneIndex];
   const turns = scene?.turns || [];
-  const turn = turns[turnIndex];
 
   const playerCount = Math.max(2, Math.min(8, Number(cfg.playerCount) || 4));
   const showExpressive = !!cfg.bonusExpressivePoints;
+  const isLastScene = sceneIndex >= normalizedScenes.length - 1;
 
-  const globalTurnNumber = useMemo(() => {
-    let n = 0;
-    for (let si = 0; si < normalizedScenes.length; si++) {
-      if (si < sceneIndex) n += normalizedScenes[si]?.turns?.length || 0;
-    }
-    return n + turnIndex + 1;
-  }, [normalizedScenes, sceneIndex, turnIndex]);
-
-  const canGoPrev = sceneIndex > 0 || turnIndex > 0;
+  const canGoPrev = sceneIndex > 0;
 
   function goPrev() {
-    if (disabled) return;
-    if (!canGoPrev) return;
-    if (turnIndex > 0) {
-      setTurnIndex((v) => v - 1);
-      return;
-    }
-    const prevSceneIndex = Math.max(0, sceneIndex - 1);
-    const prevTurns = normalizedScenes[prevSceneIndex]?.turns || [];
-    setSceneIndex(prevSceneIndex);
-    setTurnIndex(Math.max(0, prevTurns.length - 1));
+    if (disabled || !canGoPrev) return;
+    setSceneIndex((v) => Math.max(0, v - 1));
   }
 
   function goNext() {
     if (disabled) return;
-    if (turnIndex < turns.length - 1) {
-      setTurnIndex((v) => v + 1);
-      return;
-    }
-    if (sceneIndex < normalizedScenes.length - 1) {
+    if (!isLastScene) {
       setSceneIndex((v) => v + 1);
-      setTurnIndex(0);
       return;
     }
     const payload = {
       completed: true,
       expressiveRating: showExpressive ? expressiveRating : undefined,
       totalTurns,
+      scenesPerformed: normalizedScenes.length,
     };
     onSubmit?.(payload);
   }
+
+  // Resolve the human + role label for a given turn ("Richard as Ava")
+  // — used in the per-line list so the player can immediately see who
+  // reads each line.
+  const labelForTurn = (t) => {
+    const names = Array.isArray(memberNames) ? memberNames.filter(Boolean) : [];
+    const speakers = scene?.speakers || [];
+    const charName = t?.speakerName || speakers[t?.speakerIndex] || "";
+    const playerName = names[t?.speakerIndex] || "";
+    if (charName && playerName && charName !== playerName) return `${playerName} as ${charName}`;
+    if (playerName) return playerName;
+    if (charName) return charName;
+    return `Speaker ${(t?.speakerIndex ?? 0) + 1}`;
+  };
 
   const styles = {
     wrap: {
@@ -287,7 +280,10 @@ export default function ScriptPlayTask({ task, onSubmit, disabled = false, membe
     }),
   };
 
-  const pct = totalTurns ? Math.round((globalTurnNumber / totalTurns) * 100) : 0;
+  // Whole-scene mode: progress = scene N of M.
+  const pct = normalizedScenes.length
+    ? Math.round(((sceneIndex + 1) / normalizedScenes.length) * 100)
+    : 0;
 
   return (
     <div style={styles.wrap}>
@@ -297,14 +293,14 @@ export default function ScriptPlayTask({ task, onSubmit, disabled = false, membe
           <span>Script Play</span>
         </div>
         <div style={styles.badge}>
-          {globalTurnNumber}/{totalTurns} • {playerCount} roles
+          Scene {sceneIndex + 1}/{normalizedScenes.length} • {turns.length} lines • {playerCount} roles
         </div>
       </div>
 
       <div style={styles.metaRow}>
-        <div style={styles.pill}>Pass the device speaker-to-speaker</div>
-        <div style={styles.pill}>Read with expression</div>
-        <div style={styles.pill}>Intra-team only</div>
+        <div style={styles.pill}>Read the whole scene aloud, taking turns</div>
+        <div style={styles.pill}>Use the cues for tone + direction</div>
+        <div style={styles.pill}>Tap Next Scene when you're done</div>
       </div>
 
       <div
@@ -339,51 +335,56 @@ export default function ScriptPlayTask({ task, onSubmit, disabled = false, membe
         <div style={styles.sceneTitle}>{scene.title}</div>
         {!!scene.contextBefore && <div style={styles.context}>{scene.contextBefore}</div>}
 
-        <div style={styles.lineCard}>
-          <div style={styles.speakerRow}>
-            <div style={styles.speaker}>
-              {(() => {
-                const names = Array.isArray(memberNames) ? memberNames.filter(Boolean) : [];
-                const speakers = scene.speakers || [];
-                const charName = turn.speakerName || speakers[turn.speakerIndex] || "";
-                const playerName = names[turn.speakerIndex] || "";
-                if (charName && playerName) return `${playerName} as ${charName}`;
-                if (playerName) return playerName;
-                if (charName) return charName;
-                return `Speaker ${turn.speakerIndex + 1}`;
-              })()}
-            </div>
-            <div style={styles.speakerHint}>
-              {(() => {
-                // Find next different speaker
-                const nextTurnIdx = turnIndex + 1;
-                const nextTurn = turns[nextTurnIdx];
-                if (!nextTurn) return "Last line!";
-                const names = Array.isArray(memberNames) ? memberNames.filter(Boolean) : [];
-                const nextName = names[nextTurn.speakerIndex] || `Speaker ${nextTurn.speakerIndex + 1}`;
-                return `Pass to ${nextName} next`;
-              })()}
-            </div>
-          </div>
-
-          <div style={styles.cueRow}>
-            {!!turn.tone && <span style={styles.cue}>Tone: {turn.tone}</span>}
-            {!!turn.direction && <span style={styles.cueBlue}>Direction: {turn.direction}</span>}
-          </div>
-
-          {!!turn.before && (
-            <div style={styles.smallContext}>
-              <b>Just before:</b> {turn.before}
-            </div>
-          )}
-
-          <div style={styles.lineText}>{turn.line}</div>
-
-          {!!turn.after && (
-            <div style={styles.smallContext}>
-              <b>Up next:</b> {turn.after}
-            </div>
-          )}
+        {/* Whole-scene script: every line laid out at once with the
+            speaker name prefixed.  The team passes the device after
+            each line themselves; the device only advances when the
+            whole scene's been performed. */}
+        <div
+          style={{
+            marginTop: 12,
+            borderRadius: 18,
+            padding: 16,
+            background: "rgba(0,0,0,0.28)",
+            border: "1px solid rgba(255,255,255,0.14)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+          }}
+        >
+          {turns.map((t, ti) => {
+            const speakerLabel = labelForTurn(t);
+            return (
+              <div
+                key={ti}
+                style={{
+                  borderLeft: "4px solid rgba(168,85,247,0.55)",
+                  paddingLeft: 12,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 900,
+                    letterSpacing: 0.3,
+                    color: "rgba(253,224,71,0.95)",
+                    textTransform: "uppercase",
+                    marginBottom: 4,
+                  }}
+                >
+                  {speakerLabel}:
+                </div>
+                {(t.tone || t.direction) && (
+                  <div style={styles.cueRow}>
+                    {!!t.tone && <span style={styles.cue}>Tone: {t.tone}</span>}
+                    {!!t.direction && <span style={styles.cueBlue}>Direction: {t.direction}</span>}
+                  </div>
+                )}
+                <div style={{ fontSize: 19, fontWeight: 700, lineHeight: 1.35, marginTop: t.tone || t.direction ? 6 : 0 }}>
+                  {t.line}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         {!!scene.contextAfter && <div style={styles.context}>{scene.contextAfter}</div>}
@@ -407,14 +408,12 @@ export default function ScriptPlayTask({ task, onSubmit, disabled = false, membe
         )}
 
         <div style={styles.controls}>
-          <button type="button" style={styles.btn} onClick={goPrev} disabled={(sceneIndex === 0 && turnIndex === 0) || disabled}>
-            ◀ Back
+          <button type="button" style={styles.btn} onClick={goPrev} disabled={!canGoPrev || disabled}>
+            ◀ Previous Scene
           </button>
 
           <button type="button" style={styles.btnPrimary} onClick={goNext} disabled={disabled}>
-            {sceneIndex === normalizedScenes.length - 1 && turnIndex === turns.length - 1
-              ? "Finish Performance"
-              : "Next Line ▶"}
+            {isLastScene ? "Finish Performance" : `Next Scene ▶  (${sceneIndex + 2}/${normalizedScenes.length})`}
           </button>
         </div>
       </div>
