@@ -141,7 +141,7 @@ function bucketRole(role = "") {
 
 const ROLE_PITCH = {
   curriculate: {
-    principal: `<p>For principals I talk to, this is mostly a <strong>teacher-retention</strong> story — staff tell me it gives them back their evenings. It especially shines on <strong>review days, independent-work periods, and substitute-teacher days</strong> — dramatically reducing prep time on the days when coverage is hardest. Gr 5-9 students stay engaged in ways a worksheet doesn't quite manage.</p>`,
+    principal: `<p>For principals I talk to, this is mostly a <strong>teacher-retention</strong> story — staff tell me it gives them back their evenings. It especially shines on <strong>review days, independent-work periods, and substitute-teacher days</strong> — dramatically reducing prep time on the days when coverage is hardest. Students in Grades 5–9 stay engaged in ways a worksheet doesn't quite manage.</p>`,
     vp:        `<p>For VPs the easiest wins are workflow — Curriculate handles station rotation and student management during a lesson so teachers can actually circulate and coach. Implementation is about <strong>10 minutes per teacher</strong> in my experience.</p>`,
     ad:        `<p>If your program runs eligibility check-ins, post-game reflections, or weekly accountability work, Curriculate's station templates turn that into a 5-minute classroom routine instead of paperwork.</p>`,
     default:   `<p>The teachers in our pilots are using it for review-day stations, end-of-unit consolidation, and substitute-day plans that don't fall apart.</p>`,
@@ -276,7 +276,7 @@ const PROOF_BLOCK_FR = `
 const DEFAULT_TEMPLATES = {
   curriculate: {
     en: {
-      subject: "Interactive lessons built by a former school administrator",
+      subject: "What I wished I'd had as both a teacher and a school leader",
       body: wrap(`
         <p>Hey! It's Richard. I just ran <strong>Curriculate</strong> scavenger-hunt activities (think station-based learning) with my own Ontario junior-high classes and wanted to share it with one or two principals I respect in the area.</p>
         <p>Quick context: {{credential_intro}} <em>Curriculate is what I wished I'd had — both as a school leader and now as a teacher.</em> It's in an active pilot phase: we're inviting a small number of schools to use it free of charge during R&D in exchange for thoughtful feedback from teachers and students.</p>
@@ -284,14 +284,14 @@ const DEFAULT_TEMPLATES = {
         <p style="margin:14px 0;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:14px;">
           Concrete example: last month my Grade 7 students worked through a <em>War of 1812</em> station activity — teams rotating through QR-directed historical challenges while I monitored progress live from my laptop. By the end of the period every student had hit every station. That doesn't happen with a worksheet.
         </p>
-        <p>And at the end of every activity, the teacher receives a detailed per-student report and grade — ready to drop into the gradebook.</p>
+        <p>And at the end of every activity, the teacher receives a detailed per-student report and grade — ready to drop into the gradebook. I've personally used Curriculate on more than 1,500 student submissions this year.</p>
         {{role_pitch}}
         {{christian_perspective}}
-        <p style="margin:14px 0 0;font-size:14px;color:#475569;">You can explore a live demo and sample student work at <a href="https://www.curriculate.net" style="color:#2563eb;">curriculate.net</a>. If it seems like a fit, please feel free to encourage your teachers to pilot it free during this R&D phase.</p>
+        <p style="margin:14px 0 0;font-size:14px;color:#475569;">You can explore a live demo and sample student work at <a href="https://www.curriculate.net" style="color:#2563eb;">curriculate.net</a>. If it seems like a fit for your staff, teachers can begin trying it free immediately during this R&D phase.</p>
       `),
     },
     fr: {
-      subject: "Leçons interactives conçues par un ancien directeur d'école",
+      subject: "Ce que j'aurais voulu avoir — comme enseignant et comme directeur",
       body: wrap(`
         <p>Bonjour ! Je m'appelle Richard. Je viens d'utiliser <strong>Curriculate</strong> avec mes propres élèves du premier cycle du secondaire en Ontario et je voulais en parler à quelques directions que j'estime.</p>
         <p>Contexte rapide : {{credential_intro}} <em>Curriculate est l'outil que j'aurais voulu avoir — comme directeur, et maintenant comme enseignant.</em> Nous sommes en phase pilote : nous invitons un petit nombre d'écoles à l'utiliser gratuitement durant cette phase de R&D, en échange de commentaires réfléchis.</p>
@@ -299,10 +299,10 @@ const DEFAULT_TEMPLATES = {
         <p style="margin:14px 0;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:14px;">
           Exemple concret : le mois dernier, mes élèves de 7<sup>e</sup> année ont fait une activité par stations sur la <em>Guerre de 1812</em> — des équipes circulaient entre des défis historiques accessibles par codes QR pendant que je suivais leurs progrès depuis mon ordinateur. À la fin de la période, chaque élève avait visité chaque station.
         </p>
-        <p>Et à la fin de chaque activité, l'enseignant reçoit automatiquement un rapport détaillé avec une note par élève — prêt à être intégré au carnet de notes.</p>
+        <p>Et à la fin de chaque activité, l'enseignant reçoit automatiquement un rapport détaillé avec une note par élève — prêt à être intégré au carnet de notes. J'ai personnellement utilisé Curriculate avec plus de 1 500 travaux d'élèves cette année.</p>
         {{role_pitch}}
         {{christian_perspective}}
-        <p style="margin:14px 0 0;font-size:14px;color:#475569;">Vous pouvez explorer une démonstration et des exemples sur <a href="https://www.curriculate.net" style="color:#2563eb;">curriculate.net</a>. Si cela vous semble pertinent, n'hésitez pas à encourager vos enseignants à l'essayer gratuitement durant cette phase de R&D.</p>
+        <p style="margin:14px 0 0;font-size:14px;color:#475569;">Vous pouvez explorer une démonstration et des exemples sur <a href="https://www.curriculate.net" style="color:#2563eb;">curriculate.net</a>. Si cela vous semble pertinent pour votre équipe, vos enseignants peuvent commencer à l'essayer gratuitement dès maintenant durant cette phase de R&D.</p>
       `),
     },
   },
