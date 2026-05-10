@@ -1009,11 +1009,18 @@ async function sendDemoResultsEmail(lead) {
   const skipped = lead.results.filter((r) => r.skipped);
   const firstName = (lead.name || "").split(" ")[0] || "there";
   const isClassroom = lead.source === "classroom";
-  // Promo / "1 Month Free" CTA is conference-only.  Gate explicitly
-  // so practice and any other source value (including unknown / blank)
-  // never sees it in the email — matching the same hardening in the
-  // student app's DemoResults UI.
-  const isConference = lead.source === "conference";
+  // Conference path requires BOTH source==="conference" AND an explicit
+  // conference name (i.e. not the "general" fallback).  This stops the
+  // greeting + promo from leaking into practice sessions where a stale
+  // `source: "conference"` from a prior visit got stuck on the lead
+  // doc — the user still sees "Thanks for trying at the conference"
+  // even though they came in via /practice.  An *actual* booth visit
+  // always passes ?event=...&source=conference, so this is a safe
+  // upgrade.
+  const isConference =
+    lead.source === "conference" &&
+    !!lead.conference &&
+    lead.conference !== "general";
   // Lifetime totalPoints (cumulative across sessions for this email) vs.
   // just-this-session points (passed through on the lead object before
   // the email was queued). Returning practicers see both, so a third
@@ -1072,13 +1079,19 @@ async function sendDemoResultsEmail(lead) {
           </a>
         </div>`;
 
-  const greeting = isClassroom
+  // Greeting: only the explicit conference path gets the conference
+  // copy.  Practice (lead.source === "classroom"), unknown, blank, or
+  // any stale value all get the neutral practice greeting.  Was a
+  // negative !isClassroom check, which mis-greeted anyone whose lead
+  // doc had source !== "classroom" (e.g. stale "conference" from a
+  // very first visit before /practice was used).
+  const greeting = isConference
     ? (isReturning
-        ? `Hey ${esc(firstName)}! Welcome back — here's session #${sessionCount}:`
-        : `Hey ${esc(firstName)}! Here's a summary of your practice session:`)
-    : (isReturning
         ? `Hey ${esc(firstName)}! 👋 Welcome back — here's session #${sessionCount}:`
-        : `Hey ${esc(firstName)}! 👋 Thanks for trying Curriculate at the conference. Here's a summary of your demo session:`);
+        : `Hey ${esc(firstName)}! 👋 Thanks for trying Curriculate at the conference. Here's a summary of your demo session:`)
+    : (isReturning
+        ? `Hey ${esc(firstName)}! Welcome back — here's session #${sessionCount}:`
+        : `Hey ${esc(firstName)}! Here's a summary of your practice session:`);
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 0; background: #ffffff;">
@@ -1086,7 +1099,7 @@ async function sendDemoResultsEmail(lead) {
       <div style="background: linear-gradient(135deg, #2563eb, #7c3aed); border-radius: 16px 16px 0 0; padding: 32px 24px; text-align: center;">
         <img src="https://curriculate.net/images/mascot/email-results/1.png" alt="Curriculate mascot" style="width: 80px; height: 80px; margin-bottom: 8px;" />
         <div style="font-size: 28px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px;">Curriculate</div>
-        <div style="font-size: 14px; color: rgba(255,255,255,0.8); margin-top: 6px;">${isClassroom ? "Your Practice Results" : "Your Demo Results"}</div>
+        <div style="font-size: 14px; color: rgba(255,255,255,0.8); margin-top: 6px;">${isConference ? "Your Demo Results" : "Your Practice Results"}</div>
       </div>
 
       <!-- Body -->
@@ -1143,9 +1156,12 @@ async function sendDemoResultsEmail(lead) {
     </div>
   `;
 
-  const subject = isClassroom
-    ? `Your Curriculate Practice Results — ${lead.totalPoints || 0} points!`
-    : `Your Curriculate Demo Results 🎯 + Free Month Offer`;
+  // Subject: only the conference path gets the demo+free-month wording.
+  // Everyone else (practice, unknown source, stale data) sees the
+  // neutral practice subject.
+  const subject = isConference
+    ? `Your Curriculate Demo Results 🎯 + Free Month Offer`
+    : `Your Curriculate Practice Results — ${lead.totalPoints || 0} points!`;
 
   await sendSystemEmail({ to: lead.email, subject, html });
 

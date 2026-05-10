@@ -1438,11 +1438,15 @@ function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
   const [showAmbassador, setShowAmbassador] = useState(false);
   const [recommendBonus, setRecommendBonus] = useState(0);
   const isClassroom = source === "classroom";
-  // CTA + ambassador are conference-only.  Gate explicitly on the
-  // string so /practice (or anything that isn't an in-booth conference
-  // run) never sees the "1 Month Free / CONFERENCE2025" promo, even if
-  // a URL param like ?source=… has drifted in.
-  const isConference = source === "conference";
+  // CTA + ambassador require BOTH source==="conference" AND an actual
+  // conference event in the URL (?event=...).  Without that we treat
+  // it as a stray default and skip the in-booth promo.  See email
+  // side: backend/routes/demo.js — same gate.
+  const conferenceEvent =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("event") || ""
+      : "";
+  const isConference = source === "conference" && !!conferenceEvent.trim();
 
   const completed = results.filter((r) => !r.skipped);
   const skipped = results.filter((r) => r.skipped);

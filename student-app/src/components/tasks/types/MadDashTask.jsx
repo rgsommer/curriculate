@@ -3,6 +3,68 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const DEFAULT_COLORS = ["Red", "Blue", "Green", "Yellow", "Purple", "Orange", "Teal", "Pink"];
 
+// Bold Kahoot-style swatches (matches PhysicalMultipleChoiceTask) so the
+// route reveal actually shows the colour the player is looking for.
+function getColorCss(color) {
+  const map = {
+    Red: "#ee3333",
+    Orange: "#ff6633",
+    Yellow: "#ffdd33",
+    Green: "#33dd33",
+    Blue: "#3366ff",
+    Teal: "#00cccc",
+    Purple: "#dd33ff",
+    Pink: "#ff3399",
+  };
+  return map[color] || "#6b7280";
+}
+
+// Light readable text on a coloured swatch — yellow needs dark ink, the
+// rest read fine in white.
+function getColorInk(color) {
+  return color === "Yellow" ? "#1f2937" : "#ffffff";
+}
+
+// Render a single coloured swatch with step number + colour name.  Used
+// in the reveal grid, hint pills, and the big "scan next" target.
+function ColorBlock({ index, color, size = "lg", muted = false }) {
+  const dims =
+    size === "xl"
+      ? { side: 96, font: 18, num: 26 }
+      : size === "lg"
+      ? { side: 72, font: 14, num: 20 }
+      : { side: 52, font: 11, num: 14 };
+  return (
+    <div
+      style={{
+        width: dims.side,
+        height: dims.side,
+        background: getColorCss(color),
+        color: getColorInk(color),
+        borderRadius: 14,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        boxShadow: muted
+          ? "inset 0 0 0 2px rgba(255,255,255,0.4)"
+          : "0 4px 14px rgba(0,0,0,0.18), inset 0 0 0 3px rgba(255,255,255,0.85)",
+        fontWeight: 900,
+        textShadow:
+          color === "Yellow" ? "none" : "0 2px 6px rgba(0,0,0,0.4)",
+        opacity: muted ? 0.55 : 1,
+        transition: "opacity 0.2s, box-shadow 0.2s",
+      }}
+      aria-label={`Step ${index + 1}: ${color}`}
+    >
+      <div style={{ fontSize: dims.num, lineHeight: 1 }}>{index + 1}</div>
+      <div style={{ fontSize: dims.font, marginTop: 4, letterSpacing: 0.5 }}>
+        {String(color || "").toUpperCase()}
+      </div>
+    </div>
+  );
+}
+
 function normalizeColorName(s) {
   if (!s) return null;
   const t = String(s).trim();
@@ -94,6 +156,10 @@ export default function MadDashTask({
   teamId = null,
   teamName = null,
   presenter = null,
+  // Practice / demo surface (DemoMode).  No physical stations or
+  // camera, so we render tappable colour buttons that fire the same
+  // scan handler.
+  practiceMode = false,
 }) {
   const palette = useMemo(() => {
     const p =
@@ -325,7 +391,9 @@ export default function MadDashTask({
           <div>
             <div className="text-4xl font-black">Mad Dash</div>
             <div className="text-slate-600 mt-1">
-              Scan the colour route in order using the on-screen scanner. Wrong scan resets.
+              Memorize a route of {route.length} coloured stations, then run
+              and scan them <em>in the same order</em>. Wrong scan ⇒ progress
+              resets, but the timer keeps running — fastest run wins.
             </div>
           </div>
 
@@ -420,6 +488,28 @@ export default function MadDashTask({
               </span>
             </div>
 
+            {/* Step-by-step explainer so first-time players actually
+                understand what's about to happen. */}
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+              <div className="font-extrabold text-slate-800 mb-2">How this works</div>
+              <ol className="list-decimal pl-5 space-y-1 text-slate-700">
+                <li>Tap <strong>Show route</strong>.</li>
+                <li>You'll see a row of {route.length} coloured blocks — that's your route, in order. Memorize it. (Hidden after a few seconds.)</li>
+                <li>A 1–2–3 GO video plays.</li>
+                <li>
+                  {practiceMode
+                    ? "Tap the colour buttons in the same order you saw."
+                    : "Run to each coloured station and scan its QR code in the same order you saw."}
+                </li>
+                <li>Wrong scan ⇒ your progress resets to 0 but the clock keeps ticking. Fastest run wins.</li>
+              </ol>
+              {practiceMode && (
+                <div className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <strong>Practice mode:</strong> no real stations, so we'll show big colour buttons you can tap to simulate the scan.
+                </div>
+              )}
+            </div>
+
             <div className="mt-5">
               <button
                 className="px-5 py-3 rounded-full bg-emerald-600 text-white font-black disabled:opacity-50"
@@ -434,16 +524,21 @@ export default function MadDashTask({
 
         {phase === "reveal" && (
           <div className="mt-6">
-            <div className="font-extrabold text-xl">Memorize the route:</div>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="font-extrabold text-2xl">Memorize the route, in order:</div>
+            <div
+              className="mt-4 flex flex-wrap gap-3 p-4 rounded-2xl"
+              style={{
+                background:
+                  "linear-gradient(135deg, rgba(99,102,241,0.08), rgba(236,72,153,0.08))",
+                border: "1px solid #e2e8f0",
+              }}
+            >
               {route.map((c, i) => (
-                <span key={i} className="px-3 py-2 rounded-full bg-slate-100 border border-slate-200 font-black">
-                  {i + 1}. {c}
-                </span>
+                <ColorBlock key={i} index={i} color={c} size="xl" />
               ))}
             </div>
             <div className="mt-4 text-slate-600">
-              Starting in {Math.round(revealMs / 1000)}s… You can request hints during the run (costs points).
+              Hides in {Math.round(revealMs / 1000)}s… Need a refresher mid-run? Tap <strong>Hint</strong> (small points cost).
             </div>
           </div>
         )}
@@ -474,18 +569,76 @@ export default function MadDashTask({
               </div>
             </div>
 
-            <div className="mt-4 font-extrabold text-lg">
-              Scan next: <span className="text-emerald-700">{route[scanIdx] || "—"}</span>
+            {/* Big colour target so the player sees what to scan next.
+                Done blocks show muted to confirm progress; remaining blocks
+                show a question mark to remind the player they need to recall
+                the route from memory unless they've used a hint. */}
+            <div className="mt-4">
+              <div className="font-extrabold text-slate-700 mb-2">
+                {scanIdx >= route.length ? "All done!" : `Scan #${scanIdx + 1}`}:
+              </div>
+              <div
+                className="flex items-center gap-3 p-4 rounded-2xl"
+                style={{
+                  background: errorFlash ? "rgba(239,68,68,0.1)" : "#f8fafc",
+                  border: errorFlash
+                    ? "2px solid #ef4444"
+                    : "1px solid #e2e8f0",
+                  transition: "background 0.15s, border-color 0.15s",
+                  minHeight: 120,
+                }}
+              >
+                {/* Done so far (muted) */}
+                {route.slice(0, scanIdx).map((c, i) => (
+                  <ColorBlock key={`done-${i}`} index={i} color={c} size="md" muted />
+                ))}
+                {/* Current target — full size + glow */}
+                {scanIdx < route.length && (
+                  <div style={{ animation: "mdPulse 1.4s ease-in-out infinite" }}>
+                    <ColorBlock
+                      index={scanIdx}
+                      color={route[scanIdx]}
+                      size="xl"
+                    />
+                  </div>
+                )}
+                {/* Remaining (locked, ?-only) */}
+                {route.slice(scanIdx + 1).map((_, i) => (
+                  <div
+                    key={`rest-${i}`}
+                    style={{
+                      width: 52,
+                      height: 52,
+                      borderRadius: 12,
+                      background: "#e2e8f0",
+                      color: "#94a3b8",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontWeight: 900,
+                      fontSize: 22,
+                    }}
+                    aria-label={`Step ${scanIdx + 2 + i}: locked`}
+                  >
+                    ?
+                  </div>
+                ))}
+              </div>
+              <style>{`
+                @keyframes mdPulse {
+                  0%   { transform: scale(1);    filter: drop-shadow(0 0 0 rgba(34,197,94,0)); }
+                  50%  { transform: scale(1.05); filter: drop-shadow(0 0 18px rgba(34,197,94,0.6)); }
+                  100% { transform: scale(1);    filter: drop-shadow(0 0 0 rgba(34,197,94,0)); }
+                }
+              `}</style>
             </div>
 
-            {/* Progressive hints: show revealed colors */}
+            {/* Progressive hints: show revealed colours as colour blocks */}
             {hintsUsed > 0 && (
               <div className="mt-3 flex flex-wrap gap-2 items-center">
                 <span className="text-slate-500 font-bold text-sm">Hints:</span>
                 {route.slice(0, hintsUsed).map((c, i) => (
-                  <span key={i} className="px-2 py-1 rounded-full bg-amber-50 border border-amber-300 font-bold text-amber-800 text-sm">
-                    {i + 1}. {c}
-                  </span>
+                  <ColorBlock key={i} index={i} color={c} size="md" />
                 ))}
               </div>
             )}
@@ -506,12 +659,60 @@ export default function MadDashTask({
               )}
             </div>
 
+            {/* Practice-mode tappable colour buttons (no real camera).
+                Tapping fires the same handleScanValue() used by the
+                physical scanner.  Tester can complete the task without
+                hardware and we still validate the order. */}
+            {practiceMode && (
+              <div className="mt-4 p-4 rounded-2xl bg-slate-900">
+                <div className="text-white text-sm font-extrabold uppercase tracking-wide mb-3 opacity-80">
+                  Practice mode — tap a colour to scan
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(4, 1fr)",
+                    gap: 10,
+                  }}
+                >
+                  {palette.slice(0, 8).map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => handleScanValue(c)}
+                      aria-label={`Tap to simulate scanning ${c}`}
+                      style={{
+                        background: getColorCss(c),
+                        color: getColorInk(c),
+                        border: "3px solid rgba(255,255,255,0.85)",
+                        borderRadius: 14,
+                        height: 56,
+                        cursor: "pointer",
+                        fontWeight: 900,
+                        fontSize: "0.95rem",
+                        textShadow:
+                          c === "Yellow" ? "none" : "0 2px 6px rgba(0,0,0,0.45)",
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.35)",
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      {c.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div
               className={`mt-3 p-4 rounded-2xl border ${
                 errorFlash ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50"
               }`}
             >
-              <div className="text-slate-700 font-bold">Use the on-screen scanner.</div>
+              <div className="text-slate-700 font-bold">
+                {practiceMode
+                  ? "Tap the colour buttons above in the right order."
+                  : "Use the on-screen scanner."}
+              </div>
               <div className="text-slate-600 text-sm mt-1">
                 {!startAtRef.current && scanIdx === 0
                   ? "Timer starts on your first scan."

@@ -2950,6 +2950,8 @@ case TASK_TYPES.MAD_DASH:
       task={tp}
       onSubmit={handleTaskSubmit}
       disabled={effectiveDisabled}
+      memberNames={memberNames}
+      practiceMode={practiceMode}
     />
   );
   break;
