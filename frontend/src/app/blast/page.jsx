@@ -70,16 +70,36 @@ function Pill({ children, color = "slate" }) {
   return <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${colors[color] || colors.slate}`}>{children}</span>;
 }
 
+const TOKEN_STORAGE_KEY = "blastAdminToken";
+
 export default function BlastAdminPage() {
   const [adminToken, setAdminToken] = useState("");
   const [tab, setTab] = useState("new");
   const [defaults, setDefaults] = useState(null);
 
-  // Load templates once admin token is provided
+  // Hydrate token from localStorage so the gate doesn't show every visit.
+  // Sign out clears it.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (saved) setAdminToken(saved);
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (adminToken) window.localStorage.setItem(TOKEN_STORAGE_KEY, adminToken);
+    else window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  }, [adminToken]);
+
+  // Load templates once admin token is provided. If the saved token is stale,
+  // /templates will return 401; clear the cached token so the gate shows again.
   useEffect(() => {
     if (!adminToken) return;
     fetch(`${API}/admin/blast/templates`, { headers: { "x-admin-token": adminToken } })
-      .then(r => r.json()).then(j => setDefaults(j.templates || {}))
+      .then(r => {
+        if (r.status === 401) { setAdminToken(""); return null; }
+        return r.json();
+      })
+      .then(j => { if (j) setDefaults(j.templates || {}); })
       .catch(() => setDefaults({}));
   }, [adminToken]);
 
