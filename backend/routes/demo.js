@@ -1346,6 +1346,26 @@ function lastCompletedWeek(now = new Date()) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  currentWeek: this week's Sun 00:00 → now.  Used for the live      */
+/*  "this week so far" leaderboard alongside the locked gift-card     */
+/*  window — so on Sunday morning when last week is empty (everyone  */
+/*  just started practicing today) the admin still sees what's        */
+/*  happening live.                                                   */
+/* ------------------------------------------------------------------ */
+function currentWeek(now = new Date()) {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  const dayOfWeek = d.getDay(); // 0=Sun ... 6=Sat
+  const start = new Date(d);
+  start.setDate(start.getDate() - dayOfWeek); // back to this Sunday
+  start.setHours(0, 0, 0, 0);
+  // End = the moment this email is rendering — captures everything
+  // posted up to right now, including the session that triggered it.
+  const end = new Date(now);
+  return { start, end };
+}
+
+/* ------------------------------------------------------------------ */
 /*  buildTopThreeBlock: renders a small ranked table of the top 3     */
 /*  performers from a list of {name, points, secondary?}.  Used for   */
 /*  both the weekly and the all-time leaderboards in the admin email. */
@@ -1406,8 +1426,9 @@ async function sendAdminNotification(lead) {
   const isPractice = !isConference;
   const wasOfferedReferral = engagement.level === "keener" && isConference;
 
-  // ── Top 3 weekly + Top 3 all-time → gift card decisions ──────────────
-  let weeklyTopHtml = "";
+  // ── Top 3 weekly (locked + live) + Top 3 all-time → gift card decisions ─
+  let weeklyTopHtml = "";    // last completed Sun→Sat (gift-card window)
+  let liveWeekTopHtml = "";  // current week-in-progress, Sun 00:00 → now
   let allTimeTopHtml = "";
   try {
     const scopeFilter = {};
@@ -1460,6 +1481,35 @@ async function sendAdminNotification(lead) {
     weeklyTopHtml = buildTopThreeBlock(
       `🎁 Weekly Top 3 — ${weekFmt(weekStart)} → ${weekFmt(weekEnd)} (gift-card window)`,
       weeklyRanked,
+      lead.email
+    );
+
+    // LIVE current week (in progress) — same shape, just a different
+    // time window.  On Sunday morning (when last week may be empty)
+    // this is the only board with anything in it, so admins still get
+    // useful signal from the email.
+    const { start: liveStart, end: liveEnd } = currentWeek(new Date());
+    const liveLeads = await ConferenceLead.find({
+      ...scopeFilter,
+      "sessions.completedAt": { $gte: liveStart, $lte: liveEnd },
+    })
+      .select("name email sessions")
+      .lean();
+    const liveRanked = liveLeads
+      .map((l) => {
+        const pts = (l.sessions || [])
+          .filter((s) => {
+            const t = s?.completedAt ? new Date(s.completedAt).getTime() : 0;
+            return t >= liveStart.getTime() && t <= liveEnd.getTime();
+          })
+          .reduce((sum, s) => sum + (s.points || 0), 0);
+        return { name: l.name, email: l.email, points: pts };
+      })
+      .filter((r) => r.points > 0)
+      .sort((a, b) => b.points - a.points);
+    liveWeekTopHtml = buildTopThreeBlock(
+      `🟢 This Week So Far — ${weekFmt(liveStart)} → now (live; gift-card decided Sun)`,
+      liveRanked,
       lead.email
     );
   } catch (err) {
@@ -1620,6 +1670,7 @@ async function sendAdminNotification(lead) {
       </div>
       ` : ""}
 
+      ${liveWeekTopHtml}
       ${weeklyTopHtml}
       ${allTimeTopHtml}
       ${leaderboardHtml}
