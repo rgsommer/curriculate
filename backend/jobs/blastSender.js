@@ -263,7 +263,7 @@ const DEFAULT_TEMPLATES = {
         <p>Quick context: I spent <strong>26 years as a school administrator</strong> in Ontario and international schools before going back to the classroom. <em>Curriculate is what I wished I'd had — both as a principal and now as a teacher.</em> It's in an active pilot phase: we're inviting a small number of schools to use it free of charge during R&D in exchange for thoughtful feedback from teachers and students.</p>
         <p>In practice, teachers type a lesson topic, Curriculate generates a station-based activity in about 30 seconds, students rotate through it on phones or Chromebooks, and the teacher gets a live view of participation, progress, and misconceptions.</p>
         <p style="margin:14px 0;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:14px;">
-          Concrete example: last month my Grade 7 students worked through a <em>War of 1812</em> station activity — teams rotating through QR-coded historical challenges while I monitored progress live from my laptop. By the end of the period every student had hit every station. That doesn't happen with a worksheet.
+          Concrete example: last month my Grade 7 students worked through a <em>War of 1812</em> station activity — teams rotating through QR-directed historical challenges while I monitored progress live from my laptop. By the end of the period every student had hit every station. That doesn't happen with a worksheet.
         </p>
         <p>And at the end of every activity, the teacher automatically receives a rich report with a per-student grade — ready to drop into the gradebook.</p>
         {{role_pitch}}
@@ -278,7 +278,7 @@ const DEFAULT_TEMPLATES = {
         <p>Contexte rapide : j'ai été <strong>administrateur scolaire pendant 26 ans</strong> en Ontario et dans des écoles internationales avant de retourner à l'enseignement. <em>Curriculate est l'outil que j'aurais voulu avoir — comme directeur, et maintenant comme enseignant.</em> Nous sommes en phase pilote : nous invitons un petit nombre d'écoles à l'utiliser gratuitement durant cette phase de R&D, en échange de commentaires réfléchis.</p>
         <p>En pratique, l'enseignant tape un sujet, Curriculate génère une activité par stations en environ 30 secondes, les élèves circulent sur téléphones ou Chromebooks, et l'enseignant obtient une vue en direct de la participation, des progrès et des conceptions erronées.</p>
         <p style="margin:14px 0;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:14px;">
-          Exemple concret : le mois dernier, mes élèves de 7<sup>e</sup> année ont fait une activité par stations sur la <em>Guerre de 1812</em> — des équipes circulaient entre des défis historiques avec codes QR pendant que je suivais leurs progrès depuis mon ordinateur. À la fin de la période, chaque élève avait visité chaque station.
+          Exemple concret : le mois dernier, mes élèves de 7<sup>e</sup> année ont fait une activité par stations sur la <em>Guerre de 1812</em> — des équipes circulaient entre des défis historiques accessibles par codes QR pendant que je suivais leurs progrès depuis mon ordinateur. À la fin de la période, chaque élève avait visité chaque station.
         </p>
         <p>Et à la fin de chaque activité, l'enseignant reçoit automatiquement un rapport détaillé avec une note par élève — prêt à être intégré au carnet de notes.</p>
         {{role_pitch}}
