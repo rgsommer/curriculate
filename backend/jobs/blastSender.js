@@ -284,7 +284,10 @@ const DEFAULT_TEMPLATES = {
       subject: "What I wished I'd had as both a teacher and a school leader",
       body: wrap(`
         <p>Hey! It's Richard. I just ran <strong>Curriculate</strong> scavenger-hunt activities (think station-based learning) with my own Ontario junior-high classes and wanted to share it with one or two principals I respect in the area.</p>
-        <p>Quick context: {{credential_intro}} <em>Curriculate is what I wished I'd had — both as a school leader and now as a teacher.</em> It's in an active pilot phase: we're inviting a small number of schools to use it free of charge during R&D in exchange for thoughtful feedback from teachers and students.</p>
+        <p>Quick context: {{credential_intro}} <em>Curriculate is what I wished I'd had — both as a school leader and now as a teacher.</em></p>
+        <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
+          <strong>Pilot Program:</strong> active R&D phase — Curriculate is free of charge during this period in exchange for thoughtful feedback from teachers and students. <strong>Nothing to download, nothing to buy.</strong>
+        </p>
         <p>In practice, teachers type a lesson topic, Curriculate generates a station-based activity in about 30 seconds, students rotate through it on phones or Chromebooks, and the teacher gets a live view of participation, progress, and misconceptions.</p>
         <p style="margin:14px 0;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:14px;">
           Concrete example: last month my Grade 7 students worked through a <em>War of 1812</em> station activity — teams rotating through QR-directed historical challenges while I monitored progress live from my laptop. By the end of the period every student had hit every station. That doesn't happen with a worksheet.
@@ -299,7 +302,10 @@ const DEFAULT_TEMPLATES = {
       subject: "Ce que j'aurais voulu avoir — comme enseignant et comme directeur",
       body: wrap(`
         <p>Bonjour ! Je m'appelle Richard. Je viens d'utiliser <strong>Curriculate</strong> avec mes propres élèves du premier cycle du secondaire en Ontario et je voulais en parler à quelques directions que j'estime.</p>
-        <p>Contexte rapide : {{credential_intro}} <em>Curriculate est l'outil que j'aurais voulu avoir — comme directeur, et maintenant comme enseignant.</em> Nous sommes en phase pilote : nous invitons un petit nombre d'écoles à l'utiliser gratuitement durant cette phase de R&D, en échange de commentaires réfléchis.</p>
+        <p>Contexte rapide : {{credential_intro}} <em>Curriculate est l'outil que j'aurais voulu avoir — comme directeur, et maintenant comme enseignant.</em></p>
+        <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
+          <strong>Programme pilote :</strong> phase de R&D active — Curriculate est gratuit pendant cette période en échange de commentaires réfléchis. <strong>Rien à télécharger, rien à acheter.</strong>
+        </p>
         <p>En pratique, l'enseignant tape un sujet, Curriculate génère une activité par stations en environ 30 secondes, les élèves circulent sur téléphones ou Chromebooks, et l'enseignant obtient une vue en direct de la participation, des progrès et des conceptions erronées.</p>
         <p style="margin:14px 0;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:14px;">
           Exemple concret : le mois dernier, mes élèves de 7<sup>e</sup> année ont fait une activité par stations sur la <em>Guerre de 1812</em> — des équipes circulaient entre des défis historiques accessibles par codes QR pendant que je suivais leurs progrès depuis mon ordinateur. À la fin de la période, chaque élève avait visité chaque station.
@@ -318,7 +324,7 @@ const DEFAULT_TEMPLATES = {
         <p>Hey! It's Richard. I just tried <strong>Curriculate Practice</strong> on my own students' work this week and wanted to write to one or two thoughtful schools about it.</p>
         <p>Quick context: {{credential_intro}} I've now personally graded over 1,500 student papers with Curriculate Practice — <em>it's what I wished I'd had both as a school leader watching teacher workload, and now as a teacher facing that same workload myself.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
-          <strong>Pilot Program:</strong> active R&D phase — inviting a small number of schools to use Practice free of charge in exchange for thoughtful feedback from teachers, students, and parents.
+          <strong>Pilot Program:</strong> active R&D phase — inviting a small number of schools to use Practice free of charge in exchange for thoughtful feedback from teachers, students, and parents. <strong>Nothing to download, nothing to buy.</strong>
         </p>
         <p>How it works: snap a photo (or upload a PDF, video, or audio file) of student work and you get rubric-aligned feedback plus a score in about ten seconds. The teacher stays the final reviewer — Practice drafts, you finalize.</p>
         {{role_pitch}}
@@ -333,7 +339,7 @@ const DEFAULT_TEMPLATES = {
         <p>Bonjour ! Je m'appelle Richard. Je viens d'essayer <strong>Curriculate Practice</strong> sur les travaux de mes propres élèves et je tenais à écrire à quelques écoles que j'estime.</p>
         <p>Contexte rapide : {{credential_intro}} J'ai personnellement corrigé plus de 1 500 travaux d'élèves avec Curriculate Practice — <em>c'est l'outil que j'aurais voulu avoir comme directeur en observant la charge de mes enseignants, et maintenant comme enseignant moi-même.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
-          <strong>Programme pilote :</strong> phase de R&D active — nous invitons un petit nombre d'écoles à utiliser Practice gratuitement en échange de commentaires réfléchis d'enseignants, d'élèves et de parents.
+          <strong>Programme pilote :</strong> phase de R&D active — nous invitons un petit nombre d'écoles à utiliser Practice gratuitement en échange de commentaires réfléchis d'enseignants, d'élèves et de parents. <strong>Rien à télécharger, rien à acheter.</strong>
         </p>
         <p>Comment ça marche : on prend une photo (ou téléverse un PDF, une vidéo ou un audio) du travail d'un élève, et on obtient une rétroaction alignée à la grille d'évaluation plus une note en environ dix secondes. L'enseignant reste responsable de la décision finale — Practice propose, vous validez.</p>
         {{role_pitch}}
@@ -348,7 +354,9 @@ const DEFAULT_TEMPLATES = {
       subject: "Free field-day app — built after too many field days run on spreadsheets",
       body: wrap(`
         <p>Hey! It's Richard. {{credential_intro}} I built <strong>Curriculate Field Day</strong> after running too many of my own schools' field days on spreadsheets — <em>it's what I wished I'd had every June.</em></p>
-        <p>It's in active pilot phase. We're inviting a small number of schools to use it free during R&D in exchange for thoughtful feedback after their field day.</p>
+        <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
+          <strong>Pilot Program:</strong> active R&D phase — Field Day is free of charge in exchange for thoughtful feedback after your event. <strong>Nothing to download, nothing to buy.</strong>
+        </p>
         <p>What it actually does (the stuff that matters on field-day morning):</p>
         <ul style="padding-left:20px;margin:6px 0 14px;">
           <li>Multi-runner stopwatch, hundredth-second precision, taps to start/stop heats</li>
@@ -366,7 +374,9 @@ const DEFAULT_TEMPLATES = {
       subject: "Application gratuite pour journée des jeux — bâtie après trop de journées sur feuilles de calcul",
       body: wrap(`
         <p>Bonjour ! Je m'appelle Richard. {{credential_intro}} J'ai bâti <strong>Curriculate Field Day</strong> après avoir organisé trop de journées des jeux à l'aide de feuilles de calcul — <em>c'est l'outil que j'aurais voulu avoir chaque mois de juin.</em></p>
-        <p>L'application est en phase pilote. Nous invitons un petit nombre d'écoles à l'utiliser gratuitement en échange de commentaires réfléchis après leur journée des jeux.</p>
+        <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
+          <strong>Programme pilote :</strong> phase de R&D active — Field Day est gratuit en échange de commentaires réfléchis après votre événement. <strong>Rien à télécharger, rien à acheter.</strong>
+        </p>
         <p>Ce que ça fait (l'essentiel pour la matinée) :</p>
         <ul style="padding-left:20px;margin:6px 0 14px;">
           <li>Chronomètre multi-coureurs au centième de seconde</li>
