@@ -3137,6 +3137,8 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
           socket={socketRef}
           roomCode={roomCode}
           teamId={effectiveTeamId}
+          memberNames={memberNames}
+          practiceMode={practiceMode}
         />
       );
       break;

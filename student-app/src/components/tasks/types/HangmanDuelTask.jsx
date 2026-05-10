@@ -269,34 +269,34 @@ function HangmanSVG({ style, parts }) {
     // 0
     '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/></svg>',
     // 1
-    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#cccccc" stroke-width="2"/></svg>',
+    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#475569" stroke-width="2"/></svg>',
     // 2
-    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="220" r="45" fill="#ffffff" stroke="#cccccc" stroke-width="2"/></svg>',
+    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#475569" stroke-width="2"/><circle cx="150" cy="220" r="45" fill="#ffffff" stroke="#475569" stroke-width="2"/></svg>',
     // 3
-    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="220" r="45" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="140" r="30" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="140" cy="135" r="5" fill="#333333"/><circle cx="160" cy="135" r="5" fill="#333333"/></svg>',
+    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#475569" stroke-width="2"/><circle cx="150" cy="220" r="45" fill="#ffffff" stroke="#475569" stroke-width="2"/><circle cx="150" cy="140" r="30" fill="#ffffff" stroke="#475569" stroke-width="2"/><circle cx="140" cy="135" r="5" fill="#333333"/><circle cx="160" cy="135" r="5" fill="#333333"/></svg>',
     // 4
-    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="220" r="45" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="140" r="30" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="140" cy="135" r="5" fill="#333333"/><circle cx="160" cy="135" r="5" fill="#333333"/><polygon points="150,140 180,145 150,150" fill="#f97316"/></svg>',
+    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#475569" stroke-width="2"/><circle cx="150" cy="220" r="45" fill="#ffffff" stroke="#475569" stroke-width="2"/><circle cx="150" cy="140" r="30" fill="#ffffff" stroke="#475569" stroke-width="2"/><circle cx="140" cy="135" r="5" fill="#333333"/><circle cx="160" cy="135" r="5" fill="#333333"/><polygon points="150,140 180,145 150,150" fill="#f97316"/></svg>',
     // 5
-    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="220" r="45" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="140" r="30" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="140" cy="135" r="5" fill="#333333"/><circle cx="160" cy="135" r="5" fill="#333333"/><polygon points="150,140 180,145 150,150" fill="#f97316"/><line x1="100" y1="220" x2="50" y2="180" stroke="#8b4513" stroke-width="8"/><line x1="200" y1="220" x2="250" y2="180" stroke="#8b4513" stroke-width="8"/></svg>',
+    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#475569" stroke-width="2"/><circle cx="150" cy="220" r="45" fill="#ffffff" stroke="#475569" stroke-width="2"/><circle cx="150" cy="140" r="30" fill="#ffffff" stroke="#475569" stroke-width="2"/><circle cx="140" cy="135" r="5" fill="#333333"/><circle cx="160" cy="135" r="5" fill="#333333"/><polygon points="150,140 180,145 150,150" fill="#f97316"/><line x1="100" y1="220" x2="50" y2="180" stroke="#8b4513" stroke-width="8"/><line x1="200" y1="220" x2="250" y2="180" stroke="#8b4513" stroke-width="8"/></svg>',
     // 6
-    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="220" r="45" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="140" r="30" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="140" cy="135" r="5" fill="#333333"/><circle cx="160" cy="135" r="5" fill="#333333"/><polygon points="150,140 180,145 150,150" fill="#f97316"/><line x1="100" y1="220" x2="50" y2="180" stroke="#8b4513" stroke-width="8"/><line x1="200" y1="220" x2="250" y2="180" stroke="#8b4513" stroke-width="8"/><rect x="120" y="100" width="60" height="40" fill="#000000"/><rect x="105" y="120" width="90" height="15" fill="#000000"/></svg>',
+    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#475569" stroke-width="2"/><circle cx="150" cy="220" r="45" fill="#ffffff" stroke="#475569" stroke-width="2"/><circle cx="150" cy="140" r="30" fill="#ffffff" stroke="#475569" stroke-width="2"/><circle cx="140" cy="135" r="5" fill="#333333"/><circle cx="160" cy="135" r="5" fill="#333333"/><polygon points="150,140 180,145 150,150" fill="#f97316"/><line x1="100" y1="220" x2="50" y2="180" stroke="#8b4513" stroke-width="8"/><line x1="200" y1="220" x2="250" y2="180" stroke="#8b4513" stroke-width="8"/><rect x="120" y="100" width="60" height="40" fill="#000000"/><rect x="105" y="120" width="90" height="15" fill="#000000"/></svg>',
   ];
 
   const classicStages = [
     // 0
     '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/></svg>',
     // 1
-    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#333" stroke-width="4"/></svg>',
+    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#0f172a" stroke-width="4"/></svg>',
     // 2
-    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#333" stroke-width="4"/><line x1="180" y1="140" x2="180" y2="220" stroke="#333" stroke-width="4"/></svg>',
+    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#0f172a" stroke-width="4"/><line x1="180" y1="140" x2="180" y2="220" stroke="#0f172a" stroke-width="4"/></svg>',
     // 3
-    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#333" stroke-width="4"/><line x1="180" y1="140" x2="180" y2="220" stroke="#333" stroke-width="4"/><line x1="180" y1="160" x2="140" y2="180" stroke="#333" stroke-width="4"/></svg>',
+    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#0f172a" stroke-width="4"/><line x1="180" y1="140" x2="180" y2="220" stroke="#0f172a" stroke-width="4"/><line x1="180" y1="160" x2="140" y2="180" stroke="#0f172a" stroke-width="4"/></svg>',
     // 4
-    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#333" stroke-width="4"/><line x1="180" y1="140" x2="180" y2="220" stroke="#333" stroke-width="4"/><line x1="180" y1="160" x2="140" y2="180" stroke="#333" stroke-width="4"/><line x1="180" y1="160" x2="220" y2="180" stroke="#333" stroke-width="4"/></svg>',
+    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#0f172a" stroke-width="4"/><line x1="180" y1="140" x2="180" y2="220" stroke="#0f172a" stroke-width="4"/><line x1="180" y1="160" x2="140" y2="180" stroke="#0f172a" stroke-width="4"/><line x1="180" y1="160" x2="220" y2="180" stroke="#0f172a" stroke-width="4"/></svg>',
     // 5
-    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#333" stroke-width="4"/><line x1="180" y1="140" x2="180" y2="220" stroke="#333" stroke-width="4"/><line x1="180" y1="160" x2="140" y2="180" stroke="#333" stroke-width="4"/><line x1="180" y1="160" x2="220" y2="180" stroke="#333" stroke-width="4"/><line x1="180" y1="220" x2="140" y2="260" stroke="#333" stroke-width="4"/></svg>',
+    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#0f172a" stroke-width="4"/><line x1="180" y1="140" x2="180" y2="220" stroke="#0f172a" stroke-width="4"/><line x1="180" y1="160" x2="140" y2="180" stroke="#0f172a" stroke-width="4"/><line x1="180" y1="160" x2="220" y2="180" stroke="#0f172a" stroke-width="4"/><line x1="180" y1="220" x2="140" y2="260" stroke="#0f172a" stroke-width="4"/></svg>',
     // 6
-    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#333" stroke-width="4"/><line x1="180" y1="140" x2="180" y2="220" stroke="#333" stroke-width="4"/><line x1="180" y1="160" x2="140" y2="180" stroke="#333" stroke-width="4"/><line x1="180" y1="160" x2="220" y2="180" stroke="#333" stroke-width="4"/><line x1="180" y1="220" x2="140" y2="260" stroke="#333" stroke-width="4"/><line x1="180" y1="220" x2="220" y2="260" stroke="#333" stroke-width="4"/></svg>',
+    '<svg width="260" height="320" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#0f172a" stroke-width="4"/><line x1="180" y1="140" x2="180" y2="220" stroke="#0f172a" stroke-width="4"/><line x1="180" y1="160" x2="140" y2="180" stroke="#0f172a" stroke-width="4"/><line x1="180" y1="160" x2="220" y2="180" stroke="#0f172a" stroke-width="4"/><line x1="180" y1="220" x2="140" y2="260" stroke="#0f172a" stroke-width="4"/><line x1="180" y1="220" x2="220" y2="260" stroke="#0f172a" stroke-width="4"/></svg>',
   ];
 
   // Simple "decorate the tree" build
@@ -409,7 +409,7 @@ function ScoreTick({ text, show }) {
 // -----------------------------------------------------------------------------
 // Main component
 // -----------------------------------------------------------------------------
-export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roomCode, teamId }) {
+export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roomCode, teamId, memberNames = [], practiceMode = false }) {
   // If `socket` + `roomCode` exist, we mirror state across devices (inter-team).
   // If not, this runs local/pass-and-play (intra-team).
   const socketObj = socket?.current || socket || null;
@@ -507,7 +507,16 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
   // ------------------------------
   // Players, teams, turn order
   // ------------------------------
+  // Real names take precedence in this order:
+  //   1. memberNames prop (live classroom roster)
+  //   2. task.config.players[].name (AI-supplied)
+  //   3. Practice-mode bogus names (so demo doesn't show "Player 1, 2, 3, 4")
+  //   4. Generic "Player N"
+  // Tester reported "show actual player (or in practice, bogus) names".
   const playerNames = useMemo(() => {
+    const fromMembers = (Array.isArray(memberNames) ? memberNames : [])
+      .map((n) => String(n || "").trim())
+      .filter(Boolean);
     const fromConfig =
       (Array.isArray(task?.config?.players) && task.config.players.map((p) => p?.name).filter(Boolean)) ||
       (Array.isArray(task?.players) && task.players.map((p) => p?.name).filter(Boolean)) ||
@@ -515,13 +524,27 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
 
     const count =
       (Number.isInteger(task?.config?.playerCount) && task.config.playerCount) ||
-      fromConfig.length ||
-      2;
+      Math.max(fromMembers.length, fromConfig.length, 2);
 
-    const names = fromConfig.slice(0, count);
-    while (names.length < count) names.push(`Player ${names.length + 1}`);
+    // Take whichever has more real names; pad with practice bots
+    // (only in practice mode) before falling through to "Player N".
+    const PRACTICE_BOTS = ["Riley", "Quinn", "Avery", "Sam", "Jamie", "Morgan", "Casey", "Drew"];
+    const seedSrc = String(task?.id || task?._id || task?.title || "hd");
+    let h = 0;
+    for (let i = 0; i < seedSrc.length; i += 1) h = (h * 31 + seedSrc.charCodeAt(i)) | 0;
+    const botStart = Math.abs(h) % PRACTICE_BOTS.length;
+
+    const names = (fromMembers.length ? fromMembers : fromConfig).slice(0, count);
+    while (names.length < count) {
+      if (practiceMode) {
+        const bi = (botStart + names.length) % PRACTICE_BOTS.length;
+        names.push(`${PRACTICE_BOTS[bi]} (bot)`);
+      } else {
+        names.push(`Player ${names.length + 1}`);
+      }
+    }
     return names;
-  }, [task]);
+  }, [task, memberNames, practiceMode]);
 
   const playerCount = playerNames.length;
 
@@ -1189,9 +1212,32 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
   };
 
   const handleRematch = () => {
+    // Tester: 'rematch not work'.  Root cause: when the word bank
+    // had only one word (or pickNewWord returned the same word) the
+    // setWord() call didn't change state, so the [word, slots,
+    // timeLimitSeconds] reset effect never re-ran — eliminated
+    // players, wrong-counts and guessed letters all carried over.
+    // Now we ALSO force-reset every round-scoped state explicitly
+    // so a rematch is a clean slate even on a single-word bank.
     setRoundResult(null);
     const next = pickNewWord();
     setWord(next);
+    // Explicit per-round reset (mirrors the effect at lines ~730-746):
+    setWrongGuesses(0);
+    setWrongLetters({});
+    setEliminated([]);
+    setCurrentTurn(1);
+    setRoundStarted(false);
+    setTimeLeft(timeLimitSeconds);
+    setTurnsTaken(0);
+    setSelectedLetter(null);
+    setStealActive(false);
+    setExtraShieldActive({});
+    // Slots / placed will follow when `word` changes via the existing
+    // effect; if the word is identical, force a re-blank here.
+    if (next === word) {
+      setPlaced(slots.map((s) => (s.isLetter ? "_" : s.ch)));
+    }
   };
 
   // Submit to TaskRunner
@@ -1279,9 +1325,37 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
         dangerouslySetInnerHTML={{ __html: HangmanSVG({ style: gameStyle, parts: wrongGuesses }) }}
       />
 
-      <div style={{ marginTop: 8, fontSize: 18, fontWeight: 900 }}>
-        Turn: <span style={{ textDecoration: "underline" }}>{currentPlayerName}</span>
-        {eliminated.includes(currentTurn) ? " (Eliminated)" : ""}
+      {/* Turn-prompt banner — colour-tinted to the active team
+          (green = left, blue = right) and updates per turn so the
+          right player knows they're up.  Tester wanted a clearer
+          "whose turn is it" cue + a team-coloured letter box. */}
+      <div
+        style={{
+          marginTop: 10,
+          padding: "10px 14px",
+          borderRadius: 14,
+          maxWidth: 720,
+          marginLeft: "auto",
+          marginRight: "auto",
+          background:
+            activeSide === "left"
+              ? "linear-gradient(135deg, rgba(34,197,94,0.18), rgba(34,197,94,0.05))"
+              : "linear-gradient(135deg, rgba(59,130,246,0.18), rgba(59,130,246,0.05))",
+          border: `2px solid ${activeSide === "left" ? "rgba(34,197,94,0.85)" : "rgba(59,130,246,0.85)"}`,
+          textAlign: "center",
+          fontWeight: 900,
+          fontSize: 18,
+          color: "#0f172a",
+          transition: "all 180ms ease",
+        }}
+      >
+        <span style={{ fontSize: 12, letterSpacing: 1, textTransform: "uppercase", opacity: 0.7, fontWeight: 800 }}>
+          {activeSide === "left" ? "🟢 Left side's turn" : "🔵 Right side's turn"}
+        </span>
+        <div style={{ marginTop: 4, fontSize: 20 }}>
+          📲 Pass to <span style={{ textDecoration: "underline" }}>{currentPlayerName}</span>
+          {eliminated.includes(currentTurn) ? " (Eliminated)" : ""}
+        </div>
       </div>
 
       <div style={{ marginTop: 6, fontSize: 14, opacity: 0.8 }}>
