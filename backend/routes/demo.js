@@ -812,7 +812,14 @@ router.get("/feedback-export", async (req, res) => {
 
 /* ------------------------------------------------------------------ */
 /*  POST /feedback-clear                                               */
-/*  Strips all feedback fields from ConferenceLead results             */
+/*  Strips all feedback from ConferenceLead documents.                */
+/*                                                                    */
+/*  Used to: only $unset the legacy results.[].feedback subpath which *
+/*  left the new append-only feedbackEntries[] log untouched.  After  *
+/*  the .select() fix made the exporter prefer feedbackEntries[],     *
+/*  comments were surviving every clear — tester confirmed.  Now we   *
+/*  wipe BOTH paths in one update.  Lead docs themselves are kept     *
+/*  (totalPoints / sessionCount survive for the leaderboard).         *
 /* ------------------------------------------------------------------ */
 
 router.post("/feedback-clear", feedbackClearHandler);
@@ -825,12 +832,25 @@ async function feedbackClearHandler(req, res) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const result = await ConferenceLead.updateMany(
+    // Two updates: one $unsets the per-result feedback (positional),
+    // the other empties the append-only log.  Keeping them split is
+    // simpler than co-mingling $unset and $set against the same
+    // doc-positional path.
+    const r1 = await ConferenceLead.updateMany(
       { "results.feedback": { $exists: true } },
       { $unset: { "results.$[].feedback": 1 } }
     );
+    const r2 = await ConferenceLead.updateMany(
+      { "feedbackEntries.0": { $exists: true } },
+      { $set: { feedbackEntries: [] } }
+    );
 
-    res.json({ ok: true, modifiedCount: result.modifiedCount });
+    res.json({
+      ok: true,
+      modifiedCount: (r1.modifiedCount || 0) + (r2.modifiedCount || 0),
+      legacyResultsCleared: r1.modifiedCount || 0,
+      feedbackEntriesCleared: r2.modifiedCount || 0,
+    });
   } catch (err) {
     console.error("[demo/feedback-clear] Error:", err.message);
     res.status(500).json({ error: "Failed to clear feedback" });
