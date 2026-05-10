@@ -1855,6 +1855,87 @@ async function sendDemoResultsEmail(lead) {
           </a>
         </div>`;
 
+  // ── "Catch the 2 leaders ahead" challenge block ─────────────────────
+  // Find the two practicers ranked immediately above this one (closest
+  // higher lifetime totals, same scope) and frame them as targets to
+  // catch.  If the practicer is #1 → no block, just a congrats line.
+  // If they're #2 → only one ahead.  Otherwise → two.
+  let leadersAheadHtml = "";
+  try {
+    const ahead =
+      lifetimePoints > 0
+        ? await ConferenceLead.find({
+            ...(isClassroom && lead.classroom
+              ? { classroom: lead.classroom }
+              : !isClassroom && lead.conference
+              ? { conference: lead.conference }
+              : {}),
+            totalPoints: { $gt: lifetimePoints },
+            _id: { $ne: lead._id },
+          })
+            .sort({ totalPoints: 1, createdAt: 1 }) // ASCENDING — closest first
+            .limit(2)
+            .select("name totalPoints")
+            .lean()
+        : [];
+
+    if (ahead.length === 0 && lifetimePoints > 0) {
+      // No-one ahead — you're at the top (or tied).
+      leadersAheadHtml = `
+        <div style="margin: 0 0 24px; padding: 14px 18px; background: linear-gradient(135deg, #fef3c7, #fde68a); border: 1px solid #f59e0b; border-radius: 12px;">
+          <div style="font-weight: 900; font-size: 14px; color: #78350f; margin-bottom: 2px;">
+            👑 You're at the top of the leaderboard.
+          </div>
+          <div style="font-size: 13px; color: #92400e;">
+            Nobody to catch — they're trying to catch <em>you</em>. Keep the streak going.
+          </div>
+        </div>`;
+    } else if (ahead.length > 0) {
+      // Render up to 2 rivals, closest first.
+      const rivalRows = ahead
+        .map((rival, i) => {
+          const rivalFirst =
+            (rival.name || "").split(/\s+/)[0] || "A fellow practicer";
+          const gap = Math.max(1, (rival.totalPoints || 0) - lifetimePoints);
+          const rank = i === 0 ? "Just ahead" : "Right after them";
+          return `
+            <tr>
+              <td style="padding: 8px 12px; font-size: 13px; color: #475569; font-weight: 700; width: 40%;">
+                ${esc(rivalFirst)}
+              </td>
+              <td style="padding: 8px 12px; font-size: 12px; color: #64748b;">
+                ${rank}
+              </td>
+              <td style="padding: 8px 12px; font-size: 13px; font-weight: 800; color: #b45309; text-align: right; white-space: nowrap;">
+                +${gap} pt${gap === 1 ? "" : "s"} to catch up
+              </td>
+            </tr>`;
+        })
+        .join("");
+      const headline =
+        ahead.length === 1
+          ? "🎯 One practicer ahead of you — go pass them!"
+          : "🎯 Catch the 2 practicers ahead of you!";
+      leadersAheadHtml = `
+        <div style="margin: 0 0 24px; border: 1px solid #fde68a; border-radius: 12px; overflow: hidden;">
+          <div style="padding: 12px 16px; background: linear-gradient(135deg, #fffbeb, #fef3c7); font-weight: 900; font-size: 14px; color: #78350f;">
+            ${headline}
+          </div>
+          <table style="width: 100%; border-collapse: collapse; background: #fff;">
+            <tbody>
+              ${rivalRows}
+            </tbody>
+          </table>
+          <div style="padding: 8px 16px; background: #fffbeb; font-size: 11px; color: #92400e; font-style: italic;">
+            Top 3 each week (Sun → Sat) win a Tim's card during our testing phase.
+          </div>
+        </div>`;
+    }
+  } catch (err) {
+    console.warn("[demo/email] leaders-ahead query failed:", err.message);
+    leadersAheadHtml = "";
+  }
+
   // Greeting: only the explicit conference path gets the conference
   // copy.  Practice (lead.source === "classroom"), unknown, blank, or
   // any stale value all get the neutral practice greeting.  Was a
@@ -1903,6 +1984,8 @@ async function sendDemoResultsEmail(lead) {
           <div style="margin: -8px 0 24px; text-align:center; font-size:12px; color:#64748b;">
             Session #${sessionCount} for ${esc(lead.email)} — points carry over across all your visits.
           </div>` : ""}
+
+        ${leadersAheadHtml}
 
         ${sessionBanner}
 
