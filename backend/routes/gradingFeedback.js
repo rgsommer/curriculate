@@ -120,19 +120,20 @@ router.get("/feedback-export", async (req, res) => {
 });
 
 // ---------- GET /api/grading/feedback-clear ----------
+// Wipes every grading feedback row. We don't run a triage workflow against
+// these — `feedback.py clear grading` is the only caller — so the simpler
+// "always all" semantics matches how it's actually used.
 router.get("/feedback-clear", async (req, res) => {
   try {
     const key = req.query.key;
     const expected = process.env.ADMIN_API_TOKEN || process.env.ADMIN_API_KEY;
     if (!expected || key !== expected) return res.status(401).json({ error: "Unauthorized" });
 
-    const all = req.query.all === "1" || req.query.all === "true";
-    const filter = all ? {} : { status: "fixed" };
-    const result = await GradingFeedback.deleteMany(filter);
+    const result = await GradingFeedback.deleteMany({});
     res.json({
       ok: true,
       deletedCount: result.deletedCount || 0,
-      scope: all ? "all" : "fixed-only"
+      scope: "all",
     });
   } catch (err) {
     console.error("[grading/feedback-clear] error", err);

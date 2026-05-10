@@ -13,7 +13,9 @@ Run from the project root:
     python feedback.py pull fieldday
     python feedback.py pull curriculate
     python feedback.py pull grading
+    python feedback.py clear fieldday      (wipes everything)
     python feedback.py clear curriculate
+    python feedback.py clear grading
     python feedback.py token
 
 Token is read in this order: $ADMIN_API_TOKEN env var → ./.feedback-token
@@ -40,17 +42,12 @@ PRODUCTS = {
     "fieldday": {
         "label":      "Field Day",
         "export_url": "/fieldday/api/feedback-export",
-        # Default behaviour: clear only items marked status=fixed (safe
-        # cleanup, preserves open / in-progress reports). Set CLEAR_ALL=1
-        # in the env to wipe every report regardless of status.
         "clear_url":  "/fieldday/api/feedback-clear",
         "out_file":   os.path.join(ROOT_DIR, "feedback-fieldday.txt"),
     },
     "grading": {
         "label":      "Pulse Grading",
         "export_url": "/api/grading/feedback-export",
-        # Same fixed-only-by-default semantics as Field Day. Pass CLEAR_ALL=1
-        # in env (or answer 'all' at the prompt) to wipe everything.
         "clear_url":  "/api/grading/feedback-clear",
         "out_file":   os.path.join(ROOT_DIR, "feedback-grading.txt"),
     },
@@ -146,10 +143,9 @@ def pull_all():
     print(f"\nDone — {ok} of {len(PRODUCTS)} products pulled successfully.")
 
 def clear_one(product_key):
-    """Wipe stored feedback for one product. By default the Field Day
-    endpoint clears only items marked `fixed`; set env CLEAR_ALL=1 (or
-    answer 'all' at the prompt) to nuke every report regardless of status.
-    The Curriculate practice endpoint always clears everything."""
+    """Wipe ALL stored feedback for one product. Single confirmation, no
+    triage statuses — every backend `/feedback-clear` endpoint nukes
+    everything."""
     cfg = PRODUCTS.get(product_key)
     if not cfg:
         print(f"Unknown product '{product_key}'. Choices: {', '.join(PRODUCTS)}")
@@ -161,47 +157,23 @@ def clear_one(product_key):
     if not token:
         print("No token provided.")
         return
-    # Field Day and Pulse Grading both support a "fixed-only" mode; the
-    # legacy Curriculate practice endpoint is full-clear-only.
-    supports_fixed_only = product_key in ("fieldday", "grading")
-    clear_all_env = os.environ.get("CLEAR_ALL", "").strip() in ("1", "true", "yes")
-    if supports_fixed_only:
-        prompt = (
-            f"\nClear {cfg['label']} feedback. Choose:\n"
-            f"  fixed  — only items already triaged as 'fixed'  (default; recommended)\n"
-            f"  all    — every report regardless of status      (use with care)\n"
-            f"  no     — cancel\n"
-            f"Choice [fixed]: "
-        )
-        choice = input(prompt).strip().lower() or "fixed"
-        if clear_all_env and choice == "fixed":
-            choice = "all"  # env wins if user just hit Enter
-        if choice in ("no", "n", "cancel"):
-            print("Cancelled.")
-            return
-        all_flag = (choice == "all")
-    else:
-        confirm = input(
-            f"\nReally wipe ALL {cfg['label']} feedback? (yes/no): "
-        ).strip().lower()
-        if confirm not in ("yes", "y"):
-            print("Cancelled.")
-            return
-        all_flag = True
 
-    qs = f"key={urllib.parse.quote(token)}"
-    if all_flag and supports_fixed_only:
-        qs += "&all=1"
-    url = f"{API_BASE}{cfg['clear_url']}?{qs}"
+    confirm = input(
+        f"\nReally wipe ALL {cfg['label']} feedback? (yes/no): "
+    ).strip().lower()
+    if confirm not in ("yes", "y"):
+        print("Cancelled.")
+        return
+
+    url = f"{API_BASE}{cfg['clear_url']}?key={urllib.parse.quote(token)}"
     status, body = _http_get(url)
     if status == 200:
         try:
             data = json.loads(body)
             count = data.get("deletedCount") or data.get("modifiedCount") or "?"
-            scope = data.get("scope") or ("all" if all_flag else "fixed-only")
-            print(f"Done. Cleared {count} ({scope}).")
+            print(f"Done. Cleared {count}.")
         except Exception:
-            print(f"Done.")
+            print("Done.")
     else:
         print(f"Failed (status {status}): {body[:200]}")
 

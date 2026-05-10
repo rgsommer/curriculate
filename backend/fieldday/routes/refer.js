@@ -87,10 +87,9 @@ router.post("/report", rateLimit, asyncH(async (req, res) => {
 
 /* ------------------------------------------------------------------ */
 /*  GET /feedback-clear                                               */
-/*  Wipes Field Day feedback. By default deletes ONLY items already   */
-/*  marked status=fixed (safe cleanup). Pass ?all=1 to nuke every     */
-/*  feedback row regardless of status (use with care). Same admin     */
-/*  token gate as /feedback-export.                                   */
+/*  Wipes every Field Day feedback row.  Same admin token gate as     */
+/*  /feedback-export.  No status-based triage — `feedback.py clear`   */
+/*  is the only caller and it always means "wipe it".                 */
 /* ------------------------------------------------------------------ */
 router.get("/feedback-clear", asyncH(async (req, res) => {
   const key = req.query.key;
@@ -98,13 +97,11 @@ router.get("/feedback-clear", asyncH(async (req, res) => {
   if (!expected || key !== expected) {
     return res.status(401).json({ error: "Unauthorized" });
   }
-  const all = req.query.all === "1" || req.query.all === "true";
-  const filter = all ? {} : { status: "fixed" };
-  const result = await Feedback.deleteMany(filter);
+  const result = await Feedback.deleteMany({});
   res.json({
     ok: true,
     deletedCount: result.deletedCount || 0,
-    scope: all ? "all" : "fixed-only"
+    scope: "all",
   });
 }));
 
