@@ -168,6 +168,38 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
       })
       .filter((x) => x.statement);
 
+    // De-duplicate fake clues across rounds.  Tester saw the same
+    // bluff text appear in two consecutive rounds (likely an AI
+    // generation slip-up).  Swap any repeat with a generic alternative
+    // so each round at least *looks* like a fresh fake.
+    const seenFakes = new Set();
+    const FILLER_FAKES = [
+      "An informal made-up term",
+      "A regional alternative",
+      "A common but incorrect guess",
+      "A look-alike from a different topic",
+      "A tongue-in-cheek twist on the truth",
+      "A plausible distractor",
+      "A near-miss spelling",
+      "A historical mis-attribution",
+    ];
+    let fillerIdx = 0;
+    for (const round of built) {
+      if (!Array.isArray(round.options)) continue;
+      for (let i = 0; i < round.options.length; i += 1) {
+        if (i === round.correctIndex) continue; // never touch the correct answer
+        const v = String(round.options[i] || "").trim();
+        if (!v) continue;
+        const key = v.toLowerCase();
+        if (seenFakes.has(key)) {
+          round.options[i] = FILLER_FAKES[fillerIdx % FILLER_FAKES.length];
+          fillerIdx += 1;
+        } else {
+          seenFakes.add(key);
+        }
+      }
+    }
+
     // Last-resort fallback: if we can at least show ONE round, do so.
     // (This prevents the UI from hard-failing with "No rounds provided" when the task payload is slightly off.)
     if (built.length > 0) return built;
@@ -632,52 +664,108 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
         </div>
       </div>
 
-      {/* Reveal footer */}
-      {revealed && (
-        <div
-          style={{
-            marginTop: 14,
-            padding: 14,
-            borderRadius: 16,
-            border: "2px solid #e2e8f0",
-            background: "#0f172a",
-            color: "#fff",
-          }}
-        >
-          <div style={{ fontWeight: 1000, fontSize: 16 }}>
-            ✅ Correct: Option {correctIndex + 1}
-          </div>
-          <div style={{ marginTop: 6, fontSize: 14, color: "rgba(255,255,255,0.85)" }}>
-            {correctPlayers.length} correct • {fooledPlayers.length} fooled • Team +{teamPoints} pts
-            {readerBonus ? ` • Reader +${readerBonus} bonus` : ""}
-          </div>
-        </div>
-      )}
+      {/* Reveal footer — shows the correct-answer text + per-player
+          breakdown (who got fooled, who got it right). */}
+      {revealed && (() => {
+        const correctText = String(round?.options?.[correctIndex] || "").trim();
+        return (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 16,
+              borderRadius: 16,
+              border: "2px solid #22c55e",
+              background: "linear-gradient(135deg, #064e3b, #0f172a)",
+              color: "#fff",
+            }}
+          >
+            <div style={{ fontSize: 12, color: "rgba(187,247,208,0.85)", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 800 }}>
+              ✅ Correct answer
+            </div>
+            <div style={{ fontWeight: 1000, fontSize: 18, marginTop: 4 }}>
+              Option {correctIndex + 1}
+              {correctText ? <> — <span style={{ color: "#bbf7d0" }}>"{correctText}"</span></> : null}
+            </div>
 
-      {/* Overlay between rounds */}
-      {revealed && overlaySeconds > 0 && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.88)",
-            zIndex: 1000,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#fff",
-            textAlign: "center",
-            padding: 20,
-          }}
-        >
-          <div>
-            <div style={{ fontSize: "2.2rem", fontWeight: 1000 }}>🎉 Reveal!</div>
-            <div style={{ marginTop: 14, fontSize: "1.4rem" }}>
-              Next round in <span style={{ fontWeight: 1000 }}>{overlaySeconds}</span>…
+            <div style={{ marginTop: 10, fontSize: 13, color: "rgba(255,255,255,0.9)" }}>
+              {correctPlayers.length} correct • {fooledPlayers.length} fooled • Team +{teamPoints} pts
+              {readerBonus ? ` • Reader +${readerBonus} bonus` : ""}
+            </div>
+
+            {/* Per-player breakdown so each tester sees how they did. */}
+            <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {playerNames.map((nm, i) => {
+                if (i === readerIndex) return null;
+                const v = votes[i];
+                const ok = v === correctIndex;
+                const pickText = (typeof v === "number" && round?.options?.[v]) || "—";
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      background: ok ? "rgba(34,197,94,0.18)" : "rgba(239,68,68,0.18)",
+                      border: `1px solid ${ok ? "rgba(34,197,94,0.4)" : "rgba(239,68,68,0.4)"}`,
+                      fontSize: 12,
+                      fontWeight: 800,
+                    }}
+                    title={ok ? `${nm} got it right` : `${nm} picked "${pickText}"`}
+                  >
+                    {ok ? "✅" : "❌"} {nm}
+                  </div>
+                );
+              })}
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* Overlay between rounds — shows the correct-answer TEXT large,
+          plus team result.  Tester said the prior overlay didn't make
+          clear what the right answer was. */}
+      {revealed && overlaySeconds > 0 && (() => {
+        const correctText = String(round?.options?.[correctIndex] || "").trim();
+        return (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.92)",
+              zIndex: 1000,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#fff",
+              textAlign: "center",
+              padding: 20,
+            }}
+          >
+            <div style={{ maxWidth: 540 }}>
+              <div style={{ fontSize: "2.4rem", fontWeight: 1000 }}>🎉 The answer is…</div>
+              <div
+                style={{
+                  marginTop: 16,
+                  padding: "16px 22px",
+                  borderRadius: 18,
+                  background: "linear-gradient(135deg, #16a34a, #15803d)",
+                  fontSize: "1.6rem",
+                  fontWeight: 1000,
+                  lineHeight: 1.3,
+                }}
+              >
+                {correctText || `Option ${correctIndex + 1}`}
+              </div>
+              <div style={{ marginTop: 14, fontSize: "1.05rem", opacity: 0.9 }}>
+                {correctPlayers.length} correct · {fooledPlayers.length} fooled · Team +{teamPoints} pts
+              </div>
+              <div style={{ marginTop: 14, fontSize: "1rem", opacity: 0.7 }}>
+                Next round in <span style={{ fontWeight: 1000 }}>{overlaySeconds}</span>…
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

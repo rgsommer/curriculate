@@ -111,7 +111,24 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
         }
       }
 
-      // Both failed — show description-only mode
+      // Both failed — last-resort default so the practicer always sees
+      // *some* artwork to study.  Public-domain Van Gogh "Starry Night"
+      // from Wikimedia.  Tester: "If there is no art or historical
+      // document supplied, fall back to a default one."
+      const DEFAULT_ART_URL =
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1280px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg";
+      try {
+        const url = await preloadImage(DEFAULT_ART_URL);
+        if (!cancelled) {
+          setResolvedUrl(url);
+          setPhase(PHASE.VIEWING);
+          return;
+        }
+      } catch {
+        console.warn("[ArtView] Default fallback also failed to load");
+      }
+
+      // Even the default failed (offline?) — fall through to description-only.
       if (!cancelled) {
         setLoadError("Image unavailable");
         setPhase(PHASE.VIEWING);

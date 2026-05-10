@@ -59,6 +59,14 @@ export default function DrawMimeTask({
   // Simple-mode state (for standalone "draw" or "mime" tasks)
   const [simpleDone, setSimpleDone] = useState(false);
   const [simpleCurrentIdx, setSimpleCurrentIdx] = useState(0);
+  // Mime/Draw simple-mode: per-clue peek-and-hide state machine.  The
+  // clue is hidden by default so the team doesn't see it on the
+  // device — the actor presses & holds to peek privately, then taps
+  // "Got it — start", which hides the clue and shows the "Who
+  // guessed?" panel.  Tester request to mirror the speed-draw flow.
+  const [simplePhase, setSimplePhase] = useState("peek"); // "peek" | "acting"
+  const [simplePeeking, setSimplePeeking] = useState(false);
+  const [simpleGuesses, setSimpleGuesses] = useState([]); // [{ idx, guesser }]
 
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -759,66 +767,224 @@ export default function DrawMimeTask({
           </div>
 
           {/* Clue display */}
-          {hasMultipleClues ? (
-            // Multiple clues — show as a carousel so students go one at a time
+          {hasMultipleClues ? (() => {
+            // Mime simple-mode now uses the same secret-reveal pattern
+            // as speed-draw / role-play: clue is hidden by default,
+            // actor presses & holds to peek, taps "Got it — start" to
+            // act, then team taps who guessed.  Draw stays open
+            // (the drawer is at paper anyway, so screen visibility
+            // matters less).
+            const teamNames = (Array.isArray(memberNames) ? memberNames : [])
+              .map((n) => String(n || "").trim())
+              .filter(Boolean);
+            const actorIdx = simpleCurrentIdx % Math.max(1, teamNames.length || 1);
+            const actorName = teamNames[actorIdx] || `Player ${actorIdx + 1}`;
+            const useSecretReveal = isMimeOnly;
+            const advanceClue = (guesser) => {
+              setSimpleGuesses((prev) => [
+                ...prev,
+                { idx: simpleCurrentIdx, clue: simpleClues[simpleCurrentIdx], guesser: guesser || null },
+              ]);
+              if (simpleCurrentIdx < simpleClues.length - 1) {
+                setSimpleCurrentIdx((i) => i + 1);
+                setSimplePhase("peek");
+                setSimplePeeking(false);
+              } else {
+                handleSimpleSubmit();
+              }
+            };
+
+            return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
               <div style={{ fontSize: "0.9rem", fontWeight: 700, opacity: 0.85, letterSpacing: 1, textTransform: "uppercase" }}>
                 {isDrawOnly ? "Draw" : "Act out"} {simpleCurrentIdx + 1} of {simpleClues.length}
               </div>
-              <div style={{
-                background: "rgba(0,0,0,0.3)",
-                borderRadius: 24,
-                padding: "28px 36px",
-                fontSize: "2.2rem",
-                fontWeight: 900,
-                textAlign: "center",
-                maxWidth: 440,
-                width: "100%",
-                minHeight: 80,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                lineHeight: 1.3,
-              }}>
-                {simpleClues[simpleCurrentIdx]}
-              </div>
-              <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
-                {simpleCurrentIdx > 0 && (
+
+              {/* PEEK phase (mime simple) — clue hidden, actor presses to peek. */}
+              {useSecretReveal && simplePhase === "peek" && (
+                <>
+                  {teamNames.length > 0 && (
+                    <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fde68a" }}>
+                      📲 Pass to <span style={{ color: "#fff" }}>{actorName}</span>
+                    </div>
+                  )}
+                  <div style={{
+                    background: simplePeeking ? "rgba(253,224,71,0.95)" : "rgba(0,0,0,0.3)",
+                    color: simplePeeking ? "#1f2937" : "#fff",
+                    borderRadius: 24,
+                    padding: "28px 36px",
+                    fontSize: "2.2rem",
+                    fontWeight: 900,
+                    textAlign: "center",
+                    maxWidth: 440,
+                    width: "100%",
+                    minHeight: 80,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    lineHeight: 1.3,
+                    userSelect: "none",
+                  }}>
+                    {simplePeeking ? simpleClues[simpleCurrentIdx] : "🤫 hidden"}
+                  </div>
                   <button
-                    onClick={() => setSimpleCurrentIdx(i => i - 1)}
+                    onMouseDown={() => setSimplePeeking(true)}
+                    onMouseUp={() => setSimplePeeking(false)}
+                    onMouseLeave={() => setSimplePeeking(false)}
+                    onTouchStart={(e) => { e.preventDefault(); setSimplePeeking(true); }}
+                    onTouchEnd={() => setSimplePeeking(false)}
                     style={{
-                      padding: "12px 24px", borderRadius: 14, border: "none",
-                      background: "rgba(255,255,255,0.2)", color: "#fff",
-                      fontSize: "1rem", fontWeight: 700, cursor: "pointer",
-                    }}>
-                    ← Previous
+                      padding: "14px 24px", borderRadius: 14, border: "none",
+                      background: "#f59e0b", color: "#1f2937",
+                      fontSize: "1.05rem", fontWeight: 900, cursor: "pointer",
+                      boxShadow: "0 6px 18px rgba(0,0,0,0.25)",
+                      userSelect: "none",
+                    }}
+                  >
+                    {simplePeeking ? "👀 PEEKING — release to hide" : "👇 Press & hold to peek"}
                   </button>
-                )}
-                {simpleCurrentIdx < simpleClues.length - 1 ? (
                   <button
-                    onClick={() => setSimpleCurrentIdx(i => i + 1)}
+                    onClick={() => { setSimplePhase("acting"); setSimplePeeking(false); }}
                     style={{
-                      padding: "12px 24px", borderRadius: 14, border: "none",
+                      padding: "12px 22px", borderRadius: 14, border: "none",
                       background: "#22c55e", color: "#000",
-                      fontSize: "1rem", fontWeight: 800, cursor: "pointer",
+                      fontSize: "1rem", fontWeight: 900, cursor: "pointer",
                       boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
-                    }}>
-                    Next {isDrawOnly ? "drawing" : "act"} →
+                    }}
+                  >
+                    Got it — start acting!
                   </button>
-                ) : (
-                  <button
-                    onClick={handleSimpleSubmit}
-                    disabled={disabled || simpleDone}
-                    style={{
-                      padding: "14px 28px", borderRadius: 14, border: "none",
-                      background: simpleDone ? "#6b7280" : "#22c55e", color: simpleDone ? "#fff" : "#000",
-                      fontSize: "1.1rem", fontWeight: 900, cursor: simpleDone ? "default" : "pointer",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
-                    }}>
-                    {simpleDone ? "Done! ✅" : "All done — submit ✓"}
-                  </button>
-                )}
-              </div>
+                </>
+              )}
+
+              {/* ACTING phase — clue hidden, team guesses, tap who got it. */}
+              {useSecretReveal && simplePhase === "acting" && (
+                <>
+                  <div style={{
+                    background: "rgba(0,0,0,0.3)",
+                    color: "#fff",
+                    borderRadius: 24,
+                    padding: "20px 28px",
+                    fontSize: "1.2rem",
+                    fontWeight: 800,
+                    maxWidth: 440,
+                    textAlign: "center",
+                  }}>
+                    🤫 {actorName} is acting — team, guess out loud!
+                  </div>
+                  <div style={{ fontSize: "1rem", fontWeight: 800, color: "rgba(255,255,255,0.85)", marginTop: 4 }}>
+                    Who got it?
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center" }}>
+                    {teamNames.length > 0
+                      ? teamNames.map((n, i) =>
+                          i === actorIdx ? null : (
+                            <button
+                              key={n}
+                              onClick={() => advanceClue(n)}
+                              style={{
+                                padding: "10px 18px", borderRadius: 999, border: "none",
+                                background: "#22c55e", color: "#000",
+                                fontWeight: 900, fontSize: "0.95rem",
+                                cursor: "pointer",
+                                boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+                              }}
+                            >
+                              ✅ {n}
+                            </button>
+                          )
+                        )
+                      : (
+                        <button
+                          onClick={() => advanceClue("Team")}
+                          style={{
+                            padding: "10px 22px", borderRadius: 999, border: "none",
+                            background: "#22c55e", color: "#000",
+                            fontWeight: 900, fontSize: "1rem", cursor: "pointer",
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+                          }}
+                        >
+                          ✅ Team got it
+                        </button>
+                      )}
+                    <button
+                      onClick={() => advanceClue(null)}
+                      style={{
+                        padding: "10px 18px", borderRadius: 999,
+                        border: "1px solid rgba(255,255,255,0.4)",
+                        background: "transparent", color: "#fff",
+                        fontWeight: 800, fontSize: "0.95rem",
+                        cursor: "pointer",
+                      }}
+                    >
+                      🦗 Skip — no one
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* DRAW simple-mode keeps the original openly-shown carousel
+                  (drawer is at paper, not on screen). */}
+              {!useSecretReveal && (
+                <div style={{
+                  background: "rgba(0,0,0,0.3)",
+                  borderRadius: 24,
+                  padding: "28px 36px",
+                  fontSize: "2.2rem",
+                  fontWeight: 900,
+                  textAlign: "center",
+                  maxWidth: 440,
+                  width: "100%",
+                  minHeight: 80,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  lineHeight: 1.3,
+                }}>
+                  {simpleClues[simpleCurrentIdx]}
+                </div>
+              )}
+
+              {!useSecretReveal && (
+                <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+                  {simpleCurrentIdx > 0 && (
+                    <button
+                      onClick={() => setSimpleCurrentIdx(i => i - 1)}
+                      style={{
+                        padding: "12px 24px", borderRadius: 14, border: "none",
+                        background: "rgba(255,255,255,0.2)", color: "#fff",
+                        fontSize: "1rem", fontWeight: 700, cursor: "pointer",
+                      }}>
+                      ← Previous
+                    </button>
+                  )}
+                  {simpleCurrentIdx < simpleClues.length - 1 ? (
+                    <button
+                      onClick={() => setSimpleCurrentIdx(i => i + 1)}
+                      style={{
+                        padding: "12px 24px", borderRadius: 14, border: "none",
+                        background: "#22c55e", color: "#000",
+                        fontSize: "1rem", fontWeight: 800, cursor: "pointer",
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+                      }}>
+                      Next {isDrawOnly ? "drawing" : "act"} →
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleSimpleSubmit}
+                      disabled={disabled || simpleDone}
+                      style={{
+                        padding: "14px 28px", borderRadius: 14, border: "none",
+                        background: simpleDone ? "#6b7280" : "#22c55e", color: simpleDone ? "#fff" : "#000",
+                        fontSize: "1.1rem", fontWeight: 900, cursor: simpleDone ? "default" : "pointer",
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+                      }}>
+                      {simpleDone ? "Done! ✅" : "All done — submit ✓"}
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Progress dots */}
               <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
                 {simpleClues.map((_, i) => (
@@ -830,7 +996,8 @@ export default function DrawMimeTask({
                 ))}
               </div>
             </div>
-          ) : (
+            );
+          })() : (
             // Single clue — just show it big
             <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 24 }}>
               <div style={{

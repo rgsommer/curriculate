@@ -118,7 +118,22 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
         }
       }
 
-      // Both failed — show description-only mode
+      // Default fallback — Declaration of Independence, public-domain
+      // image from Wikimedia.  Same justification as ArtView: tester
+      // wants the practicer to always see *something* meaningful.
+      const DEFAULT_DOC_URL =
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/United_States_Declaration_of_Independence.jpg/800px-United_States_Declaration_of_Independence.jpg";
+      try {
+        const url = await preloadImage(DEFAULT_DOC_URL);
+        if (!cancelled) {
+          setResolvedUrl(url);
+          setPhase(PHASE.READING);
+          return;
+        }
+      } catch {
+        console.warn("[HistoricalDoc] Default fallback also failed to load");
+      }
+
       if (!cancelled) {
         setLoadError("Document image unavailable");
         setPhase(PHASE.READING);
