@@ -1009,6 +1009,11 @@ async function sendDemoResultsEmail(lead) {
   const skipped = lead.results.filter((r) => r.skipped);
   const firstName = (lead.name || "").split(" ")[0] || "there";
   const isClassroom = lead.source === "classroom";
+  // Promo / "1 Month Free" CTA is conference-only.  Gate explicitly
+  // so practice and any other source value (including unknown / blank)
+  // never sees it in the email — matching the same hardening in the
+  // student app's DemoResults UI.
+  const isConference = lead.source === "conference";
   // Lifetime totalPoints (cumulative across sessions for this email) vs.
   // just-this-session points (passed through on the lead object before
   // the email was queued). Returning practicers see both, so a third
@@ -1046,8 +1051,10 @@ async function sendDemoResultsEmail(lead) {
     })
     .join("");
 
-  // Promo section (only for conference visitors, not students)
-  const promoSection = isClassroom
+  // Promo section (only for conference visitors).  Conference-only
+  // by exact match — anything else (classroom, unknown, blank) gets
+  // no promo block.
+  const promoSection = !isConference
     ? ""
     : `
         <div style="background: linear-gradient(135deg, #fef3c7, #fde68a); border: 2px solid #f59e0b; border-radius: 16px; padding: 24px; text-align: center; margin-bottom: 24px;">

@@ -1438,6 +1438,11 @@ function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
   const [showAmbassador, setShowAmbassador] = useState(false);
   const [recommendBonus, setRecommendBonus] = useState(0);
   const isClassroom = source === "classroom";
+  // CTA + ambassador are conference-only.  Gate explicitly on the
+  // string so /practice (or anything that isn't an in-booth conference
+  // run) never sees the "1 Month Free / CONFERENCE2025" promo, even if
+  // a URL param like ?source=… has drifted in.
+  const isConference = source === "conference";
 
   const completed = results.filter((r) => !r.skipped);
   const skipped = results.filter((r) => r.skipped);
@@ -1446,7 +1451,7 @@ function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
 
   // Show ambassador popup after a brief delay for keeners (conference only)
   useEffect(() => {
-    if (isClassroom) return;
+    if (!isConference) return;
     if (!isKeener(results)) return;
     const t = setTimeout(() => setShowAmbassador(true), 2500);
     return () => clearTimeout(t);
@@ -1560,8 +1565,10 @@ function DemoResults({ user, results, source, promoCode = "CONFERENCE2025" }) {
         {/* Recommend a Teacher */}
         <RecommendTeacher user={user} onPointsEarned={(pts) => setRecommendBonus(pts)} />
 
-        {/* CTA section */}
-        {!isClassroom && (
+        {/* CTA section — conference-only.  Practice / classroom / unknown
+            sources all skip this so the promo never bleeds outside the
+            in-booth conference flow. */}
+        {isConference && (
           <div
             style={{
               width: "100%",
