@@ -710,7 +710,14 @@ function TreatToast({ onDismiss }) {
   );
 }
 
-function DemoPlayer({ user, onFinish, source, target = null, bonus = 0 }) {
+function DemoPlayer({
+  user,
+  onFinish,
+  source,
+  target = null,
+  bonus = 0,
+  isConference = false,
+}) {
   // Whether the player set a commitment (3/5/10 tasks) on entry.
   // When set, finishing the Nth completion triggers an auto-end with
   // the bonus.  Skipped tasks don't count toward the target.
@@ -1407,7 +1414,18 @@ function DemoPlayer({ user, onFinish, source, target = null, bonus = 0 }) {
           memberNames={[user.name]}
           roomCode="DEMO"
           playerTeam={user.name}
+          /* practiceMode = "single-player solo demo": pads teams with
+             bot teammates, falls back to screen-based art views, etc.
+             True for BOTH practice AND conference — the conference
+             attendee is alone at a booth too. */
           practiceMode={true}
+          /* requireRealScans = "this is a real conference booth with
+             physical QR codes set up".  Hides the tap-to-scan
+             simulator panels in Musical Chairs / Mad Dash and the
+             click-color fallback in Physical Multiple Choice, so the
+             attendee actually has to scan.  Practice mode keeps the
+             simulators on. */
+          requireRealScans={isConference}
         />
       </div>
 
@@ -2298,6 +2316,7 @@ export default function DemoMode({ source = "conference", classroom = "" }) {
           source={effectiveSource}
           target={commitment?.target || null}
           bonus={commitment?.bonus || 0}
+          isConference={isConference}
         />
       )}
       {phase === "results" && user && (

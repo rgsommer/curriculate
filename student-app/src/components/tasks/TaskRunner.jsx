@@ -1875,6 +1875,12 @@ export default function TaskRunner({
   // simulators in place of hardware-bound features (e.g. PMC's color
   // scanner, which can't access the camera in practice mode).
   practiceMode = false,
+
+  // Conference-booth flag: even though practiceMode is true (solo
+  // user, bots, etc.), the player IS in front of physical QR codes
+  // at our booth, so scan-simulator panels and click-color fallbacks
+  // should be hidden — they have to actually scan.
+  requireRealScans = false,
 }) {
   if (!task) return null;
 
@@ -2443,6 +2449,7 @@ export default function TaskRunner({
           excludedColors={[tp?.nextStationColor].filter(Boolean)}
           scannerSlot={scannerSlot}
           practiceMode={practiceMode}
+          requireRealScans={requireRealScans}
           onIncorrectScan={() => {
             try {
               const fn = window.__curriculatePlayWrongSound;
@@ -2913,6 +2920,7 @@ case TASK_TYPES.COLLABORATION:
           disabled={effectiveDisabled}
           socket={socket}
           practiceMode={practiceMode}
+          requireRealScans={requireRealScans}
         />
       );
       break;
@@ -2991,6 +2999,7 @@ case TASK_TYPES.MAD_DASH:
       disabled={effectiveDisabled}
       memberNames={memberNames}
       practiceMode={practiceMode}
+      requireRealScans={requireRealScans}
     />
   );
   break;
@@ -3002,6 +3011,7 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
       onSubmit={handleTaskSubmit}
       disabled={effectiveDisabled}
       socket={socket}
+      requireRealScans={requireRealScans}
     />
   );
   break;

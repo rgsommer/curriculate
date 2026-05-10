@@ -160,7 +160,13 @@ export default function MadDashTask({
   // camera, so we render tappable colour buttons that fire the same
   // scan handler.
   practiceMode = false,
+  // Conference-booth flag.  Even though practiceMode is true (solo
+  // demo, no real socket), the player IS standing in front of physical
+  // QR-coded stations and SHOULD be scanning, so the colour-button
+  // simulator gets replaced with a "scan to continue" prompt.
+  requireRealScans = false,
 }) {
+  const showScanSimulator = practiceMode && !requireRealScans;
   const palette = useMemo(() => {
     const p =
       (Array.isArray(task?.availableColors) && task.availableColors) ||
@@ -527,15 +533,20 @@ export default function MadDashTask({
                 <li>You'll see a row of {route.length} coloured blocks — that's your route, in order. Memorize it. (Hidden after a few seconds.)</li>
                 <li>A 1–2–3 GO video plays.</li>
                 <li>
-                  {practiceMode
+                  {showScanSimulator
                     ? "Tap the colour buttons in the same order you saw."
                     : "Run to each coloured station and scan its QR code in the same order you saw."}
                 </li>
                 <li>Wrong scan ⇒ a <strong>brand-new route</strong> is dealt and you start over (clock keeps ticking). Fastest run wins.</li>
               </ol>
-              {practiceMode && (
+              {showScanSimulator && (
                 <div className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                   <strong>Practice mode:</strong> no real stations, so we'll show big colour buttons you can tap to simulate the scan.
+                </div>
+              )}
+              {requireRealScans && (
+                <div className="mt-3 text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                  📲 <strong>Conference mode:</strong> at the booth you'll scan each coloured station's QR code with your phone — no tap-to-skip here.
                 </div>
               )}
             </div>
@@ -693,7 +704,7 @@ export default function MadDashTask({
                 Tapping fires the same handleScanValue() used by the
                 physical scanner.  Tester can complete the task without
                 hardware and we still validate the order. */}
-            {practiceMode && (
+            {showScanSimulator && (
               <div className="mt-4 p-4 rounded-2xl bg-slate-900">
                 <div className="text-white text-sm font-extrabold uppercase tracking-wide mb-3 opacity-80">
                   Practice mode — tap a colour to scan
@@ -733,13 +744,24 @@ export default function MadDashTask({
               </div>
             )}
 
+            {requireRealScans && (
+              <div className="mt-4 p-4 rounded-2xl bg-slate-900 text-white text-center">
+                <div className="text-xs font-extrabold uppercase tracking-wide opacity-80 mb-1">
+                  📲 Conference mode — scan station QRs
+                </div>
+                <div className="text-sm opacity-90">
+                  At the booth, scan each coloured station's QR with your phone. The colour-tap simulator is hidden so the order has to come from real scans.
+                </div>
+              </div>
+            )}
+
             <div
               className={`mt-3 p-4 rounded-2xl border ${
                 errorFlash ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50"
               }`}
             >
               <div className="text-slate-700 font-bold">
-                {practiceMode
+                {showScanSimulator
                   ? "Tap the colour buttons above in the right order."
                   : "Use the on-screen scanner."}
               </div>

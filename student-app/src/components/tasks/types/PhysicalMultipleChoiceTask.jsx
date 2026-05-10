@@ -32,7 +32,12 @@ export default function PhysicalMultipleChoiceTask({
   // When set, we render clickable color buttons in place of the camera
   // viewfinder so testers can advance the task by tapping colors.
   practiceMode = false,
+  // Conference-booth flag: keep the camera scanner visible (and HIDE
+  // the click-color fallback) so attendees actually scan the
+  // physical station QRs at the booth.
+  requireRealScans = false,
 }) {
+  const showClickColorFallback = practiceMode && !requireRealScans;
   const isReview = mode === "review";
 
   const stationPalette = useMemo(() => {
@@ -735,11 +740,13 @@ export default function PhysicalMultipleChoiceTask({
             }}
           >
             <div style={{ position: "relative" }}>
-              {practiceMode ? (
+              {showClickColorFallback ? (
                 // ── Practice / demo simulator ──────────────────────────────
                 // No camera in practice mode, so render the four station
                 // colors as big tappable buttons that fire the same scan
                 // event. Lets testers actually advance the task.
+                // Conference mode (requireRealScans) skips this branch and
+                // keeps the camera scanner so attendees actually scan.
                 <div
                   style={{
                     padding: "18px 14px",

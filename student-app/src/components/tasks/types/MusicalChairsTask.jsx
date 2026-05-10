@@ -20,7 +20,12 @@ import VictoryScreen from "../../VictoryScreen";
  * - We emit scan payload with optional answer details. Server can ignore extras safely.
  */
 
-export default function MusicalChairsTask({ task, onSubmit, disabled, socket, presenter, practiceMode = false }) {
+export default function MusicalChairsTask({ task, onSubmit, disabled, socket, presenter, practiceMode = false, requireRealScans = false }) {
+  // Show the tap-to-scan simulator only in true practice (no real
+  // booth hardware).  Conference attendees see practiceMode=true
+  // (solo demo, fake rounds), but requireRealScans=true means they
+  // still have to actually scan with their phone.
+  const showScanSimulator = practiceMode && !requireRealScans;
   const [showVictory, setShowVictory] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -293,12 +298,17 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
           <li>The team that scans <b>last each round is OUT</b>.</li>
           <li>Survive every round to win the game.</li>
         </ul>
-        {practiceMode && (
+        {showScanSimulator && (
           <div className="mt-3 text-sm md:text-base font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-xl p-3">
             🎯 <b>Practice mode</b>: we'll simulate {practiceRoundsTotal} rounds.
             Round {practiceRound} of {practiceRoundsTotal} —
             {" "}{stationsLeftLocal} {stationsLeftLocal === 1 ? "station" : "stations"} left.
             Tap an answer, then tap SCAN to survive into the next round.
+          </div>
+        )}
+        {requireRealScans && (
+          <div className="mt-3 text-sm md:text-base font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-xl p-3">
+            📲 Walk to a station, tap an answer, then <b>scan the QR code</b> with your phone to survive.
           </div>
         )}
       </div>
@@ -451,7 +461,34 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
               with tappable colour buttons.  Tester wanted the same
               "tap a color on a row of colors" pattern other tasks
               already use. */}
-          {practiceMode && phase === "play" && current && (
+          {/* Conference-mode dummy scanner.  No colour buttons — at a
+              real booth the player would scan a station QR code.  This
+              "Scan station" button stands in for the real scan and is
+              clearly labelled so the demo audience sees the difference
+              from practice mode. */}
+          {requireRealScans && phase === "play" && current && (
+            <div className="mt-4 p-4 rounded-2xl bg-slate-900 text-white text-center">
+              <div className="text-xs font-extrabold uppercase tracking-wide opacity-80 mb-2">
+                📲 At a real booth you scan a station QR with your phone
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedIndex == null) {
+                    setErrorMsg("Pick an answer first.");
+                    return;
+                  }
+                  handleScan();
+                }}
+                disabled={selectedIndex == null}
+                className="px-6 py-3 rounded-xl bg-blue-600 text-white font-extrabold disabled:opacity-40"
+              >
+                Simulate scan to continue →
+              </button>
+            </div>
+          )}
+
+          {showScanSimulator && phase === "play" && current && (
             <div className="mt-4 p-4 rounded-2xl bg-slate-900 text-white">
               <div className="text-xs font-extrabold uppercase tracking-wide opacity-80 mb-2 text-center">
                 Practice mode — tap your colour to simulate scanning
