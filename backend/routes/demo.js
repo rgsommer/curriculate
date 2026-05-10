@@ -1905,6 +1905,72 @@ router.post("/recommend", recommendLimiter, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  POST /recommend-practice                                            */
+/*  Practicer shared the practice link with a friend.  Award lifetime   */
+/*  + session points, capped to PRACTICE_RECOMMEND_DAILY_CAP per email  */
+/*  per day so it can't be farmed.  No email is sent — the friend gets  */
+/*  the message via whatever channel the user chose (SMS / iMessage /   */
+/*  WhatsApp / copy-paste).  We just record that the share happened.    */
+/* ------------------------------------------------------------------ */
+
+const PRACTICE_RECOMMEND_POINTS = 10;
+const PRACTICE_RECOMMEND_DAILY_CAP = 3; // 3 friends/day = 30 pts/day max
+
+router.post("/recommend-practice", recommendLimiter, async (req, res) => {
+  try {
+    const { studentName, studentEmail, channel, recipientHint } = req.body || {};
+    const meEmail = String(studentEmail || "").toLowerCase().trim();
+    if (!meEmail) {
+      return res.status(400).json({ error: "Student email is required" });
+    }
+
+    const lead = await ConferenceLead.findOne({ email: meEmail });
+    if (!lead) {
+      // Lead always exists if the user is on the results screen — but
+      // bail gracefully if not.
+      return res.status(404).json({ error: "Lead not found" });
+    }
+
+    // Daily cap: count practice-recommend entries in the last 24h.
+    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const recent = (lead.practiceShares || []).filter(
+      (s) => s.createdAt && new Date(s.createdAt) > dayAgo
+    );
+    if (recent.length >= PRACTICE_RECOMMEND_DAILY_CAP) {
+      return res.json({
+        ok: false,
+        capped: true,
+        message: `Daily cap of ${PRACTICE_RECOMMEND_DAILY_CAP} share bonuses reached. Come back tomorrow!`,
+      });
+    }
+
+    const points = PRACTICE_RECOMMEND_POINTS;
+    const entry = {
+      channel: String(channel || "unknown").slice(0, 32),
+      recipientHint: String(recipientHint || "").slice(0, 200),
+      points,
+      createdAt: new Date(),
+    };
+
+    await ConferenceLead.updateOne(
+      { _id: lead._id },
+      {
+        $inc: { totalPoints: points },
+        $push: { practiceShares: { $each: [entry], $slice: -200 } },
+      }
+    );
+
+    console.log(
+      `[demo/recommend-practice] ${studentName || meEmail} shared via ${entry.channel} (+${points} pts)`
+    );
+    res.json({ ok: true, points, dailyRemaining: PRACTICE_RECOMMEND_DAILY_CAP - recent.length - 1 });
+  } catch (err) {
+    console.error("[demo/recommend-practice] Error:", err.message);
+    res.status(500).json({ error: "Recommendation failed" });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  GET /check-recommendation                                           */
 /*  Check if a teacher has already been recommended                     */
 /* ------------------------------------------------------------------ */

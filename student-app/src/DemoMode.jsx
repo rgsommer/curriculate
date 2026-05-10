@@ -1843,6 +1843,400 @@ function RecommendTeacher({ user, onPointsEarned }) {
   );
 }
 
+// ----------------------------------------------------------------
+// Recommend Practice to a Friend — paste a message + share, earn pts
+// ----------------------------------------------------------------
+
+const PRACTICE_SHARE_POINTS = 10;
+const PRACTICE_SHARE_DAILY_CAP = 3;
+
+function buildPracticeInvite(name) {
+  const me = (name || "").split(/\s+/)[0] || "I";
+  return (
+    `Hey! ${me} just tried Curriculate Practice — it's a quick, ` +
+    `actually-fun way to stretch your brain between classes. ` +
+    `60+ mini-tasks, free to try:\n\n` +
+    `https://curriculate.net/practice`
+  );
+}
+
+function RecommendPractice({ user, onPointsEarned }) {
+  const [expanded, setExpanded] = useState(false);
+  const [message, setMessage] = useState(() => buildPracticeInvite(user?.name));
+  const [status, setStatus] = useState("idle"); // idle | sending | sent | capped | error
+  const [earnedPoints, setEarnedPoints] = useState(0);
+  const [copied, setCopied] = useState(false);
+  const [dailyRemaining, setDailyRemaining] = useState(null);
+  const recordedRef = useRef(false);
+
+  const recordShare = useCallback(
+    async (channel) => {
+      // Single-shot per session — first share earns the bonus, the
+      // rest just trigger the OS share / clipboard.  Daily cap is
+      // enforced server-side too.
+      if (recordedRef.current) return;
+      recordedRef.current = true;
+      setStatus("sending");
+      try {
+        const resp = await fetch(
+          `${API_BASE_URL}/api/conference/recommend-practice`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              studentName: user.name,
+              studentEmail: user.email,
+              channel,
+              recipientHint: "",
+            }),
+          }
+        );
+        const data = await resp.json().catch(() => ({}));
+        if (data?.ok) {
+          setStatus("sent");
+          setEarnedPoints(data.points || PRACTICE_SHARE_POINTS);
+          setDailyRemaining(
+            typeof data.dailyRemaining === "number" ? data.dailyRemaining : null
+          );
+          onPointsEarned?.(data.points || PRACTICE_SHARE_POINTS);
+        } else if (data?.capped) {
+          setStatus("capped");
+          recordedRef.current = false; // allow retry tomorrow if they reload
+        } else {
+          setStatus("error");
+          recordedRef.current = false;
+        }
+      } catch (err) {
+        console.warn("[recommend-practice] failed:", err);
+        setStatus("error");
+        recordedRef.current = false;
+      }
+    },
+    [user, onPointsEarned]
+  );
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(message);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      // Fallback: select + copy
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = message;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch {}
+    }
+    recordShare("copy");
+  }, [message, recordShare]);
+
+  const handleNativeShare = useCallback(async () => {
+    if (typeof navigator === "undefined" || !navigator.share) {
+      handleCopy();
+      return;
+    }
+    try {
+      await navigator.share({
+        title: "Try Curriculate Practice",
+        text: message,
+        url: "https://curriculate.net/practice",
+      });
+      recordShare("share");
+    } catch (err) {
+      // User cancelled — silent.
+    }
+  }, [message, handleCopy, recordShare]);
+
+  const handleSms = useCallback(() => {
+    const body = encodeURIComponent(message);
+    // iOS uses ?, Android both work — `?` is the safer cross-platform.
+    window.location.href = `sms:?&body=${body}`;
+    recordShare("sms");
+  }, [message, recordShare]);
+
+  const handleEmail = useCallback(() => {
+    const subject = encodeURIComponent("Try this — Curriculate Practice");
+    const body = encodeURIComponent(message);
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+    recordShare("email");
+  }, [message, recordShare]);
+
+  if (status === "sent") {
+    return (
+      <div
+        style={{
+          width: "100%",
+          padding: 20,
+          borderRadius: 16,
+          background: "linear-gradient(135deg, #ecfeff, #cffafe)",
+          border: "2px solid #67e8f9",
+          textAlign: "center",
+          marginBottom: 20,
+        }}
+      >
+        <Mascot
+          category="recommend"
+          size={80}
+          style={{ marginBottom: 4, filter: "drop-shadow(0 3px 8px rgba(0,0,0,0.1))" }}
+        />
+        <div style={{ fontSize: 16, fontWeight: 900, color: "#0e7490", marginBottom: 4 }}>
+          Invite shared!
+        </div>
+        <div style={{ fontSize: 13, color: "#0891b2" }}>
+          Thanks for spreading the word.
+          {dailyRemaining != null && dailyRemaining > 0 && (
+            <> {dailyRemaining} more share{dailyRemaining === 1 ? "" : "s"} count for points today.</>
+          )}
+        </div>
+        <div
+          style={{
+            marginTop: 12,
+            padding: "6px 14px",
+            borderRadius: 8,
+            background: "#fef3c7",
+            border: "1px solid #fde68a",
+            display: "inline-block",
+            fontSize: 14,
+            fontWeight: 800,
+            color: "#f59e0b",
+          }}
+        >
+          +{earnedPoints} pts earned!
+        </div>
+      </div>
+    );
+  }
+
+  if (!expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        style={{
+          width: "100%",
+          padding: "14px 20px",
+          borderRadius: 14,
+          border: "2px dashed #67e8f9",
+          background: "linear-gradient(135deg, #ecfeff, #cffafe)",
+          cursor: "pointer",
+          textAlign: "center",
+          marginBottom: 20,
+          transition: "all 0.2s",
+        }}
+      >
+        <Mascot
+          category="recommend"
+          size={44}
+          style={{
+            marginRight: 4,
+            verticalAlign: "middle",
+            filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.1))",
+          }}
+        />
+        <span style={{ fontSize: 15, fontWeight: 800, color: "#0e7490" }}>
+          Recommend Practice to a Friend — Earn {PRACTICE_SHARE_POINTS} pts!
+        </span>
+        <div style={{ fontSize: 12, color: "#0891b2", marginTop: 4 }}>
+          Paste a message and send it to a friend who'd love this!
+        </div>
+      </button>
+    );
+  }
+
+  const canShare = typeof navigator !== "undefined" && !!navigator.share;
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        padding: 20,
+        borderRadius: 16,
+        background: "linear-gradient(135deg, #ecfeff, #cffafe)",
+        border: "2px solid #67e8f9",
+        marginBottom: 20,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+        <Mascot
+          category="recommend"
+          size={64}
+          style={{ filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.1))" }}
+        />
+      </div>
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 900,
+          color: "#0e7490",
+          marginBottom: 4,
+          textAlign: "center",
+        }}
+      >
+        Invite a Friend to Practice
+      </div>
+      <div style={{ fontSize: 12, color: "#0891b2", marginBottom: 12, textAlign: "center" }}>
+        Edit the message, then send it however your friends chat. Earn{" "}
+        {PRACTICE_SHARE_POINTS} bonus points (max {PRACTICE_SHARE_DAILY_CAP}/day).
+      </div>
+
+      <textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        rows={5}
+        style={{
+          width: "100%",
+          padding: "10px 14px",
+          borderRadius: 10,
+          border: "1px solid #a5f3fc",
+          fontSize: 14,
+          marginBottom: 12,
+          boxSizing: "border-box",
+          resize: "vertical",
+          fontFamily: "inherit",
+          lineHeight: 1.4,
+          color: "#0c4a6e",
+          background: "#fff",
+        }}
+      />
+
+      {status === "capped" && (
+        <div
+          style={{
+            padding: "8px 12px",
+            borderRadius: 8,
+            background: "#fef3c7",
+            border: "1px solid #fde68a",
+            fontSize: 13,
+            color: "#92400e",
+            marginBottom: 12,
+            textAlign: "center",
+          }}
+        >
+          You've hit today's share-bonus cap. Sharing still works — points reset tomorrow.
+        </div>
+      )}
+      {status === "error" && (
+        <div
+          style={{
+            padding: "8px 12px",
+            borderRadius: 8,
+            background: "#fee2e2",
+            border: "1px solid #fca5a5",
+            fontSize: 13,
+            color: "#991b1b",
+            marginBottom: 12,
+            textAlign: "center",
+          }}
+        >
+          Couldn't record that — your share went through, but the bonus didn't stick. Try again?
+        </div>
+      )}
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: canShare ? "1fr 1fr" : "1fr 1fr 1fr",
+          gap: 8,
+          marginBottom: 8,
+        }}
+      >
+        {canShare ? (
+          <button
+            type="button"
+            onClick={handleNativeShare}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "none",
+              background: "linear-gradient(135deg, #0891b2, #06b6d4)",
+              color: "#fff",
+              fontWeight: 800,
+              fontSize: 14,
+              cursor: "pointer",
+            }}
+          >
+            📤 Share…
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={handleSms}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #a5f3fc",
+                background: "#fff",
+                color: "#0e7490",
+                fontWeight: 800,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              💬 Text
+            </button>
+            <button
+              type="button"
+              onClick={handleEmail}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #a5f3fc",
+                background: "#fff",
+                color: "#0e7490",
+                fontWeight: 800,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              ✉️ Email
+            </button>
+          </>
+        )}
+        <button
+          type="button"
+          onClick={handleCopy}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: "1px solid #a5f3fc",
+            background: "#fff",
+            color: "#0e7490",
+            fontWeight: 800,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          {copied ? "✓ Copied!" : "📋 Copy"}
+        </button>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setExpanded(false)}
+        style={{
+          width: "100%",
+          padding: "8px 12px",
+          borderRadius: 10,
+          border: "1px solid #e2e8f0",
+          background: "transparent",
+          color: "#64748b",
+          fontWeight: 700,
+          fontSize: 12,
+          cursor: "pointer",
+        }}
+      >
+        Close
+      </button>
+    </div>
+  );
+}
+
 function DemoResults({
   user,
   results,
@@ -2006,7 +2400,10 @@ function DemoResults({
         )}
 
         {/* Recommend a Teacher */}
-        <RecommendTeacher user={user} onPointsEarned={(pts) => setRecommendBonus(pts)} />
+        <RecommendTeacher user={user} onPointsEarned={(pts) => setRecommendBonus((b) => b + pts)} />
+
+        {/* Recommend Practice to a Friend */}
+        <RecommendPractice user={user} onPointsEarned={(pts) => setRecommendBonus((b) => b + pts)} />
 
         {/* CTA section — conference-only.  Practice / classroom / unknown
             sources all skip this so the promo never bleeds outside the

@@ -52,6 +52,20 @@ const conferenceLeadSchema = new mongoose.Schema(
       },
     ],
 
+    // Append-only log of every "share /practice with a friend" tap.
+    // Drives the daily-cap check on POST /recommend-practice (3
+    // shares/day = +30 lifetime pts max), and gives the admin email a
+    // simple "Friends invited: N" stat.  Capped to 200 entries.
+    practiceShares: [
+      {
+        _id: false,
+        channel: { type: String, default: "" }, // "share" | "sms" | "email" | "copy" | ...
+        recipientHint: { type: String, default: "" }, // free-form, e.g. "Sam"
+        points: { type: Number, default: 0 },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
+
     // Append-only feedback log: every task that the player rated or
     // commented on lands here, preserved across all replays.  Lives
     // outside `results` (which gets overwritten with each new session
