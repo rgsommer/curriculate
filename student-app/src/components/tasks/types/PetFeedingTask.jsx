@@ -789,13 +789,34 @@ export default function PetFeedingTask({ task, onSubmit, disabled }) {
         animation: shakeScreen ? "screenShake 0.5s ease" : "none",
       }}
     >
-      {/* Header */}
+      {/* Header — surface the actual task title (which carries the
+          pro/con topic) above the static "FEED THE PET!" tagline so
+          students see e.g. "Feed the Pet: The Water Cycle" with the
+          metaphor explained right beneath it. */}
       <div style={S.header}>
         <div style={S.titleRow}>
           <span style={S.titleEmoji}>🐾</span>
-          <h2 style={S.title}>FEED THE PET!</h2>
+          <h2 style={S.title}>{safeTask?.title || "FEED THE PET!"}</h2>
         </div>
         <div style={S.packBadge}>{pack.name}</div>
+      </div>
+      <div
+        style={{
+          maxWidth: 560,
+          width: "100%",
+          margin: "-2px auto 10px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: "#475569",
+          textAlign: "center",
+          lineHeight: 1.4,
+        }}
+      >
+        Cards below are <span style={{ color: "#16a34a" }}>pros</span> /
+        <span style={{ color: "#dc2626" }}> cons</span> /
+        <span style={{ color: "#64748b" }}> meh</span> about the topic.
+        Feed the pet only the <strong>good</strong> ones —
+        bad ones make it sick.
       </div>
 
       {/* Status bars */}

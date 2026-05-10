@@ -170,12 +170,37 @@ export default function MoodCheckInTask({
         <div
           style={{
             fontSize: "1.05rem",
-            marginBottom: 22,
+            marginBottom: 8,
             fontWeight: 600,
             opacity: 0.92,
           }}
         >
           Tap an emoji for each player — then let's start strong.
+        </div>
+
+        {/* Tester: 'What happens to this mood checkin information?'
+            Brief reassurance so players + parents know where the
+            data lands.  Aggregate-only by default; individual flags
+            stay on the device unless something concerning trips a
+            wellbeing alert. */}
+        <div
+          style={{
+            margin: "0 auto 18px",
+            maxWidth: 540,
+            fontSize: "0.78rem",
+            lineHeight: 1.45,
+            padding: "8px 14px",
+            borderRadius: 10,
+            background: "rgba(255,255,255,0.55)",
+            border: "1px solid rgba(255,255,255,0.7)",
+            color: "#0f172a",
+            fontWeight: 700,
+          }}
+        >
+          🔒 Your teacher sees the <em>class average</em> mood for the day —
+          not individual answers — so they know how the room is feeling.
+          Flagged moods only surface when paired with worrying language so
+          a trusted adult can check in.
         </div>
 
         {Array.from({ length: playerCount }, (_, i) => (

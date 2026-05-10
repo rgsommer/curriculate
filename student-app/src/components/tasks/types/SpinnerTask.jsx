@@ -116,7 +116,22 @@ export default function SpinnerTask({ task, onSubmit, disabled }) {
               : "none",
           }}
         >
-          <svg viewBox="0 0 200 200" style={{ width: "80vw", maxWidth: 340, height: "auto" }}>
+          {/* Tester: "resize the wheel to be 80% of narrowest side
+              (width on portrait, height on landscape)".  min(80vw, 80vh)
+              picks the smaller of the two so the wheel uses ~80% of
+              the narrowest dimension on every orientation, capped so
+              it doesn't blow up on huge desktops. */}
+          <svg
+            viewBox="0 0 200 200"
+            style={{
+              width: "min(80vw, 80vh)",
+              height: "min(80vw, 80vh)",
+              maxWidth: 540,
+              maxHeight: 540,
+              display: "block",
+              margin: "0 auto",
+            }}
+          >
             {wedges.map((wedge, i) => {
               const startAngle = i * segmentAngle;
               const endAngle = startAngle + segmentAngle;

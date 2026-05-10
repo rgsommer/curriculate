@@ -19,6 +19,47 @@ const PTS_GOOD = 12;
 const PTS_BASIC = 6;
 
 /* ─── Helpers ─── */
+
+// Forgiving concept-coverage check: returns true if the explanation
+// mentions ANY content word from the concept (>=4 chars, not a stop
+// word).  Old logic only matched the literal first word of the
+// concept, which made multi-word topics ("photosynthesis stages") fail
+// when the student said only "stages".  Tester reported recording was
+// not being credited even when concepts were verbally covered.
+const STOP_WORDS = new Set([
+  "the","a","an","and","or","of","in","on","to","for","with","by",
+  "is","are","was","were","be","been","at","as","it","its","this",
+  "that","these","those","from","into","about","over","under",
+]);
+function _wordStems(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((w) => w.length >= 4 && !STOP_WORDS.has(w));
+}
+function coversConcept(explanation, concept) {
+  const exLower = String(explanation || "").toLowerCase();
+  if (!exLower) return false;
+  const conceptWords = _wordStems(concept);
+  if (conceptWords.length === 0) {
+    // Fall back to literal first-word check for very short concepts.
+    const first = String(concept || "").toLowerCase().split(/\s+/)[0] || "";
+    return Boolean(first) && exLower.includes(first);
+  }
+  // Match on any content word — also allow loose stem match (drop
+  // trailing s/es/ed/ing) so "photosynthesis" / "photosynthesize" /
+  // "photosynthesizing" all count.
+  for (const w of conceptWords) {
+    if (exLower.includes(w)) return true;
+    // Try stripping common inflections.
+    const stem = w.replace(/(ing|ed|es|s)$/, "");
+    if (stem.length >= 4 && exLower.includes(stem)) return true;
+  }
+  return false;
+}
+
 function ConceptChip({ concept, done }) {
   return (
     <span
@@ -170,8 +211,16 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
       : explanation.length > 50 ? PTS_GOOD
       : PTS_BASIC;
 
+    // Tester: 'in my recording, I did mention all the concepts, but
+    // it said try to mention specifics: did it not parse the
+    // recording?'  Old logic only matched the FIRST word of the
+    // concept (case-insensitive includes), which fails on phrases
+    // like "Photosynthesis stages" if the explanation says
+    // "stages" but not "photosynthesis", or vice-versa.  New rule:
+    // match if ANY content word (>=4 chars, not a stop word) from
+    // the concept appears in the explanation.
     const conceptsCovered = concepts.filter((c) =>
-      explanation.toLowerCase().includes(c.toLowerCase().split(" ")[0])
+      coversConcept(explanation, c)
     );
 
     setTimeout(() => {
@@ -246,7 +295,7 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
               <ConceptChip
                 key={c}
                 concept={c}
-                done={explanation.toLowerCase().includes(c.toLowerCase().split(" ")[0])}
+                done={coversConcept(explanation, c)}
               />
             ))}
           </div>
@@ -303,7 +352,7 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
             <ConceptChip
               key={c}
               concept={c}
-              done={explanation.toLowerCase().includes(c.toLowerCase().split(" ")[0])}
+              done={coversConcept(explanation, c)}
             />
           ))}
         </div>
@@ -424,7 +473,7 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
         </span>
         <span>
           {concepts.filter((c) =>
-            explanation.toLowerCase().includes(c.toLowerCase().split(" ")[0])
+            coversConcept(explanation, c)
           ).length}{" "}
           / {concepts.length} concepts mentioned
         </span>

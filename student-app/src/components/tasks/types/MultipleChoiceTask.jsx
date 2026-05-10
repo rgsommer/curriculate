@@ -109,10 +109,6 @@ export default function MultipleChoiceTask({ task, onComplete, memberNames = [] 
 
     setSubmitLocked(true);
 
-    // Keep payload compatible with typical runner expectations:
-    // - selectedIndex
-    // - isCorrect if available
-    // - per-question and overall
     const payload = {
       selectedIndex: selectedIdx,
       selectedText: choices[selectedIdx],
@@ -122,9 +118,15 @@ export default function MultipleChoiceTask({ task, onComplete, memberNames = [] 
       question: prompt,
     };
 
-    // If your platform advances on "onComplete", keep that.
-    // If it advances elsewhere, this still provides correct scoring payload.
-    onComplete?.(payload);
+    // Tester: 'answer layover should show'.  Hold the post-submit
+    // state — which already highlights the correct option green and
+    // wrong picks red — for ~3s before passing the result up.  The
+    // parent runner is what actually advances the task, so deferring
+    // the onComplete call gives the player time to see what was right.
+    const delay = correctIndex != null ? 3000 : 0;
+    setTimeout(() => {
+      onComplete?.(payload);
+    }, delay);
   }
 
   // UI helpers
