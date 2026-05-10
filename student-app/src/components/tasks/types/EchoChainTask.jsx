@@ -24,7 +24,7 @@ const playerColors = [
 ];
 const playerEmojis = ["🎤", "🎸", "🎹", "🎺", "🥁", "🎻", "🎷", "🎼", "🎧", "🎙️", "🎪", "🎭"];
 
-export default function EchoChainTask({ task, memberNames = [] }) {
+export default function EchoChainTask({ task, memberNames = [], practiceMode = false }) {
   /* ── seed term ── */
   const seed = useMemo(() => {
     const cfgSeed = task?.config?.seedTerm;
@@ -38,9 +38,20 @@ export default function EchoChainTask({ task, memberNames = [] }) {
     return "";
   }, [task]);
 
+  // Pad practice with bots so the "who said that?" attribution buttons
+  // demonstrate the multi-player flow.  Tester: '(in practice mode,
+  // add 2 other names)'.
+  const ECHO_BOTS = ["Riley (bot)", "Quinn (bot)", "Avery (bot)"];
   const names = useMemo(
-    () => (Array.isArray(memberNames) ? memberNames.filter(Boolean) : []),
-    [memberNames],
+    () => {
+      const real = (Array.isArray(memberNames) ? memberNames.filter(Boolean) : []);
+      if (practiceMode && real.length < 3) {
+        const me = real[0] || "You";
+        return [me, ...ECHO_BOTS.slice(0, 2)];
+      }
+      return real;
+    },
+    [memberNames, practiceMode],
   );
 
   /* ── state ── */
@@ -151,14 +162,29 @@ export default function EchoChainTask({ task, memberNames = [] }) {
     setRevealTemporarily(false);
     setConfirmed(false);         // lock Add until next player confirms
     setCurrentPlayer((p) => p + 1);
+    setHeardIt(false);
+    setTranscript("");
+    setMicError("");
 
-    // Start listening for the last word in the chain (the word just added)
-    startListening(newWord);
+    // Tester ask: don't auto-start the mic; the next player taps
+    // "Listen & Check" themselves.  Stays manual on/off after that.
+    // (startListening can still be called from the toggle button below.)
+    targetWordRef.current = newWord;
 
     if (chain.length >= 4) {
       setCelebrationActive(true);
       try { new Audio("/sounds/yay.mp3").play().catch(() => {}); } catch {}
       setTimeout(() => setCelebrationActive(false), 1500);
+    }
+  };
+
+  // Last-added word — "Listen & Check" tries to detect this on mic.
+  const targetWordRef = useRef("");
+  const toggleListen = () => {
+    if (listening) {
+      stopListening();
+    } else if (targetWordRef.current) {
+      startListening(targetWordRef.current);
     }
   };
 
@@ -346,26 +372,78 @@ export default function EchoChainTask({ task, memberNames = [] }) {
           </div>
         )}
 
-        {/* Confirm button — shown when waiting for confirmation */}
+        {/* Confirm flow — when waiting for the next player to recite. */}
         {seed && !confirmed && (
           <div style={{ margin: "12px 0", textAlign: "center" }}>
+            {/* Step 1: tap-toggle Listen & Check.  Was auto-on; tester
+                wanted explicit on/off control so the chain is recited
+                when ready. */}
             <button
-              className="ec-btn ec-confirm"
-              onClick={handleConfirm}
-              disabled={false}
+              type="button"
+              onClick={toggleListen}
+              className="ec-btn"
+              style={{
+                background: listening
+                  ? "linear-gradient(135deg, #ef4444, #b91c1c)"
+                  : "linear-gradient(135deg, #3b82f6, #2563eb)",
+                color: "#fff",
+                fontWeight: 900,
+                padding: "12px 24px",
+                boxShadow: listening
+                  ? "0 0 0 4px rgba(239,68,68,0.25)"
+                  : "0 4px 12px rgba(59,130,246,.3)",
+                animation: listening ? "ec-pulse 1.4s ease infinite" : "none",
+              }}
             >
-              {playerEmojis[(currentPlayer - 1) % playerEmojis.length]} {playerName(currentPlayer)} said that ✅
+              {listening ? "🎤 Listening — tap to stop" : "🎤 Listen & Check"}
             </button>
-            {!heardIt && !micError && listening && (
-              <div style={{ marginTop: 8, color: "#94a3b8", fontSize: ".85em", fontWeight: 600 }}>
-                Waiting to hear "<strong>{chain[chain.length - 1]}</strong>" …
+
+            {!heardIt && listening && (
+              <div style={{ marginTop: 8, color: "#fca5a5", fontSize: ".85em", fontWeight: 700 }}>
+                Recite the chain — mic is open until you tap stop.
+                Listening for "<strong>{chain[chain.length - 1]}</strong>"…
               </div>
             )}
-            {(micError || (!listening && !heardIt)) && (
-              <div style={{ marginTop: 8, color: "#94a3b8", fontSize: ".85em", fontWeight: 600 }}>
-                Tap above once {playerName(currentPlayer)} has said the chain out loud.
+            {heardIt && (
+              <div style={{ marginTop: 8, color: "#6ee7b7", fontSize: ".95em", fontWeight: 800 }}>
+                ✅ Heard the last word!
               </div>
             )}
+            {micError && (
+              <div style={{ marginTop: 8, color: "#fca5a5", fontSize: ".85em", fontWeight: 700 }}>
+                {micError}
+              </div>
+            )}
+
+            {/* Step 2: tap which player just recited.  Tester:
+                "the player who said it taps 'Richard said that'". */}
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: ".82em", color: "#cbd5e1", fontWeight: 800, marginBottom: 8, letterSpacing: 0.4, textTransform: "uppercase" }}>
+                Who just recited the chain?
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
+                {(names.length > 0 ? names : [playerName(currentPlayer)]).map((nm, i) => (
+                  <button
+                    key={`${nm}-${i}`}
+                    type="button"
+                    onClick={handleConfirm}
+                    style={{
+                      padding: "10px 16px",
+                      borderRadius: 999,
+                      border: "none",
+                      background: "linear-gradient(135deg, #10b981, #059669)",
+                      color: "#fff",
+                      fontWeight: 900,
+                      fontSize: ".9em",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 12px rgba(16,185,129,.3)",
+                    }}
+                  >
+                    {nm} said that ✅
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 

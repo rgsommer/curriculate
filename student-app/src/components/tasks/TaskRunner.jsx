@@ -991,7 +991,7 @@ function containsTokensInOrder(transcriptTokens, targetTokens) {
   return j >= targetTokens.length;
 }
 
-function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNames = [] }) {
+function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNames = [], practiceMode = false }) {
   const seed = String(task?.seedTerm || task?.config?.seedTerm || "").trim();
   const perTurnSeconds =
     Number(task?.config?.perTurnSeconds ?? task?.perTurnSeconds ?? 10) || 0;
@@ -1020,9 +1020,20 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
     setListening(false);
   }, [task?.id, task?._id, task?.taskId, readOnly]);
 
+  // Pad practice mode with bot teammates so the per-player "X said
+  // that ✅" attribution row demonstrates the multi-player flow even
+  // without a real roster.  Tester request.
+  const ECHO_BOTS_INLINE = ["Riley (bot)", "Quinn (bot)", "Avery (bot)"];
+  const allNames = (() => {
+    const real = Array.isArray(memberNames) ? memberNames.filter(Boolean) : [];
+    if (practiceMode && real.length < 3) {
+      const me = real[0] || "You";
+      return [me, ...ECHO_BOTS_INLINE.slice(0, 2)];
+    }
+    return real;
+  })();
   const getSpeakerLabel = (idx) => {
-    const names = Array.isArray(memberNames) ? memberNames.filter(Boolean) : [];
-    if (names.length > 0) return names[idx % names.length];
+    if (allNames.length > 0) return allNames[idx % allNames.length];
     return `Player ${idx + 1}`;
   };
 
@@ -1045,8 +1056,11 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
     const rec = new SR();
     recognitionRef.current = rec;
 
-    rec.continuous = false;
-    rec.interimResults = false;
+    // Tester: 'Listen and check does not stay on to listen, it should
+    // tap on to listen and then tap off to stop'.  continuous=true
+    // keeps the mic open until the user explicitly stops it.
+    rec.continuous = true;
+    rec.interimResults = true;
     rec.lang = "en-US";
 
     setLastTranscript("");
@@ -1054,13 +1068,12 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
     setListening(true);
 
     rec.onresult = (event) => {
-      const text =
-        event?.results?.[0]?.[0]?.transcript ||
-        Array.from(event?.results || [])
-          .map((r) => r?.[0]?.transcript)
-          .filter(Boolean)
-          .join(" ") ||
-        "";
+      // continuous=true means we may get many partial results;
+      // accumulate them all and re-check the chain on every update.
+      const text = Array.from(event?.results || [])
+        .map((r) => r?.[0]?.transcript)
+        .filter(Boolean)
+        .join(" ");
 
       setLastTranscript(text);
 
@@ -1073,8 +1086,7 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
         missing: ok ? [] : target,
         heard,
       });
-
-      setListening(false);
+      // Don't auto-stop — leave the mic open until the user taps Stop.
     };
 
     rec.onerror = () => {
@@ -1337,33 +1349,49 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
             {listening ? "Stop mic" : "Listen & check"}
           </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              // Lightweight "I said that" checkpoint — backend can award points if desired.
-              onSubmit?.({
-                type: TASK_TYPES.ECHO_CHAIN,
-                checkpoint: true,
-                speaker: getSpeakerLabel(speakerIndex),
-                chainLength: chain.length,
-                lastTranscript,
-                lastCheck,
-              });
-            }}
-            disabled={disabled || readOnly}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 999,
-              border: "none",
-              background: "#16a34a",
-              color: "#ffffff",
-              fontWeight: 900,
-              cursor: disabled || readOnly ? "not-allowed" : "pointer",
-            }}
-            title="Checkpoint (optional): record that the current speaker attempted the chain"
-          >
-            {getSpeakerLabel(speakerIndex)} said that ✅
-          </button>
+        </div>
+      )}
+
+      {/* Per-player attribution row — one button per teammate.  Tester:
+          'the player who said it taps "Richard said that"'.  Tap any
+          name to attribute the recital to that player. */}
+      {!readOnly && allNames.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, alignItems: "center" }}>
+          <span style={{ fontSize: 12, fontWeight: 800, color: CONTRAST_TEXT_DARK, opacity: 0.7, textTransform: "uppercase", letterSpacing: 0.4 }}>
+            Who recited?
+          </span>
+          {allNames.map((nm, i) => (
+            <button
+              key={`${nm}-${i}`}
+              type="button"
+              onClick={() => {
+                onSubmit?.({
+                  type: TASK_TYPES.ECHO_CHAIN,
+                  checkpoint: true,
+                  speaker: nm,
+                  speakerIndex: i,
+                  chainLength: chain.length,
+                  lastTranscript,
+                  lastCheck,
+                });
+                setSpeakerIndex(i + 1);
+              }}
+              disabled={disabled}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 999,
+                border: "none",
+                background: "#16a34a",
+                color: "#fff",
+                fontWeight: 900,
+                fontSize: 13,
+                cursor: disabled ? "not-allowed" : "pointer",
+                boxShadow: "0 4px 10px rgba(22,163,74,0.25)",
+              }}
+            >
+              {nm} said that ✅
+            </button>
+          ))}
         </div>
       )}
 
@@ -2327,6 +2355,7 @@ export default function TaskRunner({
           disabled={effectiveDisabled || isReview}
           readOnly={isReview}
           memberNames={memberNames}
+          practiceMode={practiceMode}
         />
       );
       break;

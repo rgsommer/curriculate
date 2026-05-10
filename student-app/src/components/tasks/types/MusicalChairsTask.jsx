@@ -390,42 +390,108 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
 
           <div className="text-xl md:text-2xl font-extrabold text-slate-900">{current.prompt}</div>
 
-          <div
-            className={`mt-3 grid ${
-              (Array.isArray(current.options) ? current.options.length : 0) <= 2 ? "grid-cols-2" : "grid-cols-2"
-            } gap-3`}
-          >
-            {(Array.isArray(current.options) ? current.options : []).map((opt, i) => {
-              const isPicked = selectedIndex === i;
-              const correctIdx = typeof current?.correctAnswer === "number" ? current.correctAnswer : null;
-              const showOverlay = locked && correctIdx != null;
-              const isCorrectOpt = showOverlay && i === correctIdx;
-              const isWrongPick = showOverlay && isPicked && i !== correctIdx;
+          {/* Tester ask: 'options should be a color (spread out the colors
+              over the teams) so kids race to scan at that color'.  Each
+              option is now branded with one of 4 station colours; in
+              practice mode the colour swatch doubles as the simulated
+              scanner target. */}
+          {(() => {
+            const STATION_COLOURS = [
+              { name: "RED",    hex: "#ef4444", text: "#fff" },
+              { name: "BLUE",   hex: "#3b82f6", text: "#fff" },
+              { name: "YELLOW", hex: "#facc15", text: "#1f2937" },
+              { name: "GREEN",  hex: "#22c55e", text: "#fff" },
+            ];
+            const optsArr = Array.isArray(current.options) ? current.options : [];
+            return (
+              <div className={`mt-3 grid ${optsArr.length <= 2 ? "grid-cols-2" : "grid-cols-2"} gap-3`}>
+                {optsArr.map((opt, i) => {
+                  const isPicked = selectedIndex === i;
+                  const correctIdx = typeof current?.correctAnswer === "number" ? current.correctAnswer : null;
+                  const showOverlay = locked && correctIdx != null;
+                  const isCorrectOpt = showOverlay && i === correctIdx;
+                  const isWrongPick = showOverlay && isPicked && i !== correctIdx;
+                  const colour = STATION_COLOURS[i % STATION_COLOURS.length];
+                  const ringStyle = isCorrectOpt
+                    ? "ring-4 ring-green-400"
+                    : isWrongPick
+                    ? "ring-4 ring-red-500 opacity-70"
+                    : isPicked
+                    ? "ring-4 ring-slate-900"
+                    : "";
+                  return (
+                    <button
+                      key={`${currentId}-opt-${i}`}
+                      onClick={() => tapOption(i)}
+                      disabled={!canTap}
+                      className={`p-4 rounded-xl font-extrabold text-lg border-2 transition shadow-md ${ringStyle}`}
+                      style={{
+                        background: colour.hex,
+                        color: colour.text,
+                        borderColor: "rgba(255,255,255,0.85)",
+                        boxShadow: "0 8px 18px rgba(0,0,0,0.18)",
+                        textShadow:
+                          colour.text === "#fff" ? "0 2px 6px rgba(0,0,0,0.35)" : "none",
+                      }}
+                    >
+                      <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1.5, opacity: 0.9 }}>
+                        🚦 {colour.name}
+                      </div>
+                      <div style={{ marginTop: 4 }}>
+                        {isCorrectOpt ? "✓ " : isWrongPick ? "✗ " : ""}{opt}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
 
-              const base =
-                "p-4 rounded-xl font-bold text-lg border-2 transition shadow-sm";
-              let cls;
-              if (isCorrectOpt) {
-                cls = `${base} bg-green-100 text-green-900 border-green-500`;
-              } else if (isWrongPick) {
-                cls = `${base} bg-red-100 text-red-900 border-red-500`;
-              } else if (isPicked) {
-                cls = `${base} bg-slate-900 text-white border-slate-900`;
-              } else {
-                cls = `${base} bg-white text-slate-900 border-slate-200 hover:bg-slate-50`;
-              }
-              return (
-                <button
-                  key={`${currentId}-opt-${i}`}
-                  onClick={() => tapOption(i)}
-                  disabled={!canTap}
-                  className={cls}
-                >
-                  {isCorrectOpt ? "✓ " : isWrongPick ? "✗ " : ""}{opt}
-                </button>
-              );
-            })}
-          </div>
+          {/* Practice-mode scanner simulator — fake scanner viewfinder
+              with tappable colour buttons.  Tester wanted the same
+              "tap a color on a row of colors" pattern other tasks
+              already use. */}
+          {practiceMode && phase === "play" && current && (
+            <div className="mt-4 p-4 rounded-2xl bg-slate-900 text-white">
+              <div className="text-xs font-extrabold uppercase tracking-wide opacity-80 mb-2 text-center">
+                Practice mode — tap your colour to simulate scanning
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { name: "RED",    hex: "#ef4444", text: "#fff" },
+                  { name: "BLUE",   hex: "#3b82f6", text: "#fff" },
+                  { name: "YELLOW", hex: "#facc15", text: "#1f2937" },
+                  { name: "GREEN",  hex: "#22c55e", text: "#fff" },
+                ].map((c, i) => (
+                  <button
+                    key={c.name}
+                    type="button"
+                    onClick={() => {
+                      // Picking a colour selects + locks the
+                      // corresponding option, then runs the scan.
+                      if (selectedIndex == null) tapOption(i);
+                      handleScan();
+                    }}
+                    style={{
+                      background: c.hex,
+                      color: c.text,
+                      border: "3px solid rgba(255,255,255,0.85)",
+                      borderRadius: 12,
+                      padding: "12px 6px",
+                      fontWeight: 900,
+                      fontSize: ".9rem",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 10px rgba(0,0,0,0.35)",
+                      textShadow:
+                        c.text === "#fff" ? "0 2px 6px rgba(0,0,0,0.45)" : "none",
+                    }}
+                  >
+                    {c.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
