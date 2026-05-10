@@ -265,6 +265,7 @@ const DEFAULT_TEMPLATES = {
         <p style="margin:14px 0;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:14px;">
           Concrete example: last month my Grade 7 students worked through a <em>War of 1812</em> station activity — teams rotating through QR-coded historical challenges while I monitored progress live from my laptop. By the end of the period every student had hit every station. That doesn't happen with a worksheet.
         </p>
+        <p>And at the end of every activity, the teacher automatically receives a rich report with a per-student grade — ready to drop into the gradebook.</p>
         {{role_pitch}}
         {{christian_perspective}}
         <p style="margin:14px 0 0;font-size:14px;color:#475569;">You can explore a live demo and sample student work at <a href="https://www.curriculate.net" style="color:#2563eb;">curriculate.net</a>. If it seems like a fit, please feel free to encourage your teachers to pilot it free during this R&D phase.</p>
@@ -279,6 +280,7 @@ const DEFAULT_TEMPLATES = {
         <p style="margin:14px 0;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:14px;">
           Exemple concret : le mois dernier, mes élèves de 7<sup>e</sup> année ont fait une activité par stations sur la <em>Guerre de 1812</em> — des équipes circulaient entre des défis historiques avec codes QR pendant que je suivais leurs progrès depuis mon ordinateur. À la fin de la période, chaque élève avait visité chaque station.
         </p>
+        <p>Et à la fin de chaque activité, l'enseignant reçoit automatiquement un rapport détaillé avec une note par élève — prêt à être intégré au carnet de notes.</p>
         {{role_pitch}}
         {{christian_perspective}}
         <p style="margin:14px 0 0;font-size:14px;color:#475569;">Vous pouvez explorer une démonstration et des exemples sur <a href="https://www.curriculate.net" style="color:#2563eb;">curriculate.net</a>. Si cela vous semble pertinent, n'hésitez pas à encourager vos enseignants à l'essayer gratuitement durant cette phase de R&D.</p>
