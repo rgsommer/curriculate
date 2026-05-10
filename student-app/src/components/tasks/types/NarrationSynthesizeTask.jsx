@@ -214,7 +214,11 @@ export default function NarrationSynthesizeTask({
   }
 
   function setRatingForTurn(val) {
-    const v = clampInt(val, ratingScale.min, ratingScale.max, ratingScale.min);
+    // Tester: 'allow .5 gradations'.  Round to 0.5 and clamp.
+    const num = Number(val);
+    if (!Number.isFinite(num)) return;
+    const halfStep = Math.round(num * 2) / 2;
+    const v = Math.max(ratingScale.min, Math.min(ratingScale.max, halfStep));
     setRatings((prev) => {
       const next = [...prev];
       next[turnIndex] = { value: v };
@@ -620,11 +624,17 @@ export default function NarrationSynthesizeTask({
             </div>
 
             <div style={{ marginTop: 14 }}>
+              {/* Make the slider role unmistakable: explicit instruction
+                  + visible "drag here" arrows.  Allow 0.5 increments. */}
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a", textAlign: "center", marginBottom: 6 }}>
+                ← drag the slider to rate · {Number(ratings[turnIndex]?.value || ratingScale.min).toFixed(1)}/{ratingScale.max} →
+              </div>
               <input
                 type="range"
+                step="0.5"
                 min={ratingScale.min}
                 max={ratingScale.max}
-                value={clampInt(ratings[turnIndex]?.value, ratingScale.min, ratingScale.max, ratingScale.min)}
+                value={Number(ratings[turnIndex]?.value || ratingScale.min)}
                 onChange={(e) => setRatingForTurn(e.target.value)}
                 style={{
                   width: "100%",

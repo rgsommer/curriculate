@@ -533,6 +533,39 @@ router.get("/nudge-inactive", async (req, res) => {
       `);
     }
 
+    // ── Compute leaderboards ONCE so every nudge can show standings ──
+    const allLeads = await ConferenceLead.find({
+      email: { $exists: true, $ne: "" },
+    })
+      .select("name email totalPoints sessions sessionCount")
+      .lean();
+
+    // Lifetime ranking
+    const allTimeRanked = [...allLeads]
+      .filter((l) => (l.totalPoints || 0) > 0)
+      .sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
+
+    // Last completed Sunday → Saturday
+    const { start: weekStart, end: weekEnd } = lastCompletedWeek(now);
+    const weeklyRanked = allLeads
+      .map((l) => {
+        const wp = (l.sessions || []).reduce((sum, s) => {
+          const t = s?.completedAt ? new Date(s.completedAt).getTime() : 0;
+          return t >= weekStart.getTime() && t <= weekEnd.getTime()
+            ? sum + (s.points || 0)
+            : sum;
+        }, 0);
+        return { _id: l._id, email: l.email, name: l.name, weeklyPts: wp };
+      })
+      .filter((r) => r.weeklyPts > 0)
+      .sort((a, b) => b.weeklyPts - a.weeklyPts);
+
+    const ord = (n) => {
+      const s = ["th", "st", "nd", "rd"], v = n % 100;
+      return n + (s[(v - 20) % 10] || s[v] || s[0]);
+    };
+    const fmtDay = (d) => d.toLocaleDateString("en-CA", { month: "short", day: "numeric" });
+
     let sent = 0;
     const failed = [];
     for (const lead of candidates) {
@@ -541,36 +574,116 @@ router.get("/nudge-inactive", async (req, res) => {
       const sessions = Number(lead.sessionCount || 0);
       const lastPlayed = lead.resultsSentAt
         ? new Date(lead.resultsSentAt).toLocaleDateString("en-CA")
-        : "a while ago";
+        : null;
+      const idleDays = lead.resultsSentAt
+        ? Math.floor((now - new Date(lead.resultsSentAt)) / 86400e3)
+        : null;
+
+      const allTimeRank = allTimeRanked.findIndex((l) => String(l._id) === String(lead._id));
+      const allTimeRow =
+        allTimeRank >= 0
+          ? `<tr><td>You</td><td><b>${lifetime} pts</b></td><td>${ord(allTimeRank + 1)} of ${allTimeRanked.length}</td></tr>`
+          : `<tr><td>You</td><td><b>${lifetime} pts</b></td><td>Unranked yet</td></tr>`;
+      const allTimeTop3 = allTimeRanked.slice(0, 3).map((l, i) => {
+        const isMe = String(l._id) === String(lead._id);
+        const medal = ["🥇", "🥈", "🥉"][i];
+        return `<tr style="${isMe ? "background:#fef9c3;" : ""}"><td>${medal} ${esc(l.name)}${isMe ? " (you)" : ""}</td><td><b>${l.totalPoints || 0} pts</b></td><td>${ord(i + 1)}</td></tr>`;
+      }).join("");
+
+      const weeklyEntry = weeklyRanked.find((r) => String(r._id) === String(lead._id));
+      const weeklyRank = weeklyEntry
+        ? weeklyRanked.findIndex((r) => String(r._id) === String(lead._id))
+        : -1;
+      const weeklyTop3 = weeklyRanked.slice(0, 3).map((r, i) => {
+        const isMe = String(r._id) === String(lead._id);
+        const medal = ["🥇", "🥈", "🥉"][i];
+        return `<tr style="${isMe ? "background:#fef9c3;" : ""}"><td>${medal} ${esc(r.name)}${isMe ? " (you)" : ""}</td><td><b>${r.weeklyPts} pts</b></td><td>${ord(i + 1)}</td></tr>`;
+      }).join("");
+      const weeklyMyRow =
+        weeklyEntry && weeklyRank >= 3
+          ? `<tr><td>You</td><td><b>${weeklyEntry.weeklyPts} pts</b></td><td>${ord(weeklyRank + 1)} of ${weeklyRanked.length}</td></tr>`
+          : weeklyEntry
+            ? "" // already shown in top 3
+            : `<tr><td>You</td><td><b>0 pts</b></td><td>Sit out — get back in!</td></tr>`;
+
+      // Playful copy that varies a bit by where they are.
+      const greetings = [
+        `Hey ${firstName} 👋`,
+        `Yo ${firstName} 🎯`,
+        `Psst — ${firstName} 🤫`,
+        `${firstName}! 👀`,
+      ];
+      const greeting = greetings[Math.abs((firstName.charCodeAt(0) || 0) + sessions) % greetings.length];
+      const idleLine = idleDays != null
+        ? `You've been off the leaderboard for <b>${idleDays} day${idleDays === 1 ? "" : "s"}</b>.`
+        : `Haven't seen you on the leaderboard yet — let's fix that.`;
+      const closeRank = weeklyRank > 2 && weeklyRank < 6
+        ? ` You're <b>${ord(weeklyRank + 1)}</b> this week — top 3 is <em>so close</em>.`
+        : weeklyRank === -1
+          ? " A few quick rounds will get you on the weekly board fast."
+          : weeklyRank === 0
+            ? " You're sitting at <b>#1</b> this week — defend it!"
+            : "";
 
       const html = `
-        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:540px;margin:0 auto;padding:24px;">
-          <div style="text-align:center;background:linear-gradient(135deg,#2563eb,#7c3aed);border-radius:16px 16px 0 0;padding:28px 20px;">
-            <img src="https://curriculate.net/images/mascot/streak/1.png" alt="Curriculate mascot" style="width:72px;height:72px;margin-bottom:6px;" />
-            <div style="font-size:24px;font-weight:900;color:#fff;letter-spacing:-0.3px;">We miss you!</div>
-            <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px;">${sessions > 0 ? `Your last practice was ${lastPlayed}` : "Time to get started"}</div>
-          </div>
-          <div style="background:#fff;padding:24px 20px;border:1px solid #e2e8f0;border-top:none;color:#0f172a;line-height:1.55;">
-            <p style="margin:0 0 12px;font-size:15px;">
-              Hey ${firstName} 👋 — just a quick nudge.
-            </p>
-            <p style="margin:0 0 12px;font-size:14px;color:#334155;">
-              ${lifetime > 0
-                ? `You're at <b>${lifetime}</b> lifetime points across ${sessions} session${sessions === 1 ? "" : "s"}. A few more rounds and your streak keeps climbing.`
-                : "Curriculate's practice tasks only take a couple of minutes each — a perfect study break."}
-            </p>
-            <p style="margin:0 0 16px;font-size:14px;color:#334155;">
-              We've shipped a stack of fixes since you last played — clearer instructions,
-              proper animated pet, real animated reveals, fewer dead ends.  Worth a fresh look.
-            </p>
-            <div style="text-align:center;margin:18px 0 8px;">
-              <a href="https://www.curriculate.net/practice"
-                 style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;text-decoration:none;border-radius:12px;font-weight:800;font-size:15px;">
-                Open practice →
-              </a>
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:0;background:#fff;">
+          <!-- Header -->
+          <div style="text-align:center;background:linear-gradient(135deg,#f97316,#dc2626);border-radius:16px 16px 0 0;padding:28px 20px;">
+            <img src="https://curriculate.net/images/mascot/streak/1.png" alt="Curriculate mascot" style="width:80px;height:80px;margin-bottom:6px;" />
+            <div style="font-size:26px;font-weight:900;color:#fff;letter-spacing:-0.3px;">☕ Tim's Card up for grabs.</div>
+            <div style="font-size:14px;color:rgba(255,255,255,0.92);margin-top:6px;font-weight:700;">
+              Top 3 in this week's leaderboard win one. ${idleDays != null ? `It's been ${idleDays} day${idleDays === 1 ? "" : "s"}.` : ""}
             </div>
           </div>
-          <div style="background:#f8fafc;border-radius:0 0 16px 16px;padding:16px 20px;border:1px solid #e2e8f0;border-top:none;text-align:center;font-size:11px;color:#94a3b8;">
+
+          <!-- Body -->
+          <div style="background:#fff;padding:22px 22px 8px;border:1px solid #e2e8f0;border-top:none;color:#0f172a;line-height:1.55;">
+            <p style="margin:0 0 10px;font-size:16px;">${greeting} —</p>
+            <p style="margin:0 0 12px;font-size:14px;color:#334155;">
+              ${idleLine}${closeRank}
+            </p>
+            <p style="margin:0 0 14px;font-size:14px;color:#334155;">
+              We've shipped <b>a pile of fixes</b> since you last played: animated pet, mood-checkin polish, mad-dash reveals, hangman with real names, sequence answer-reveal, and a bunch of contrast/visibility cleanups.
+              Hop in for a few quick rounds — the leaderboard window is the last completed Sunday→Saturday week, and it resets every Sunday morning.
+            </p>
+
+            <!-- Weekly leaderboard -->
+            <div style="margin-top:14px;border-radius:14px;border:2px solid #f59e0b;background:linear-gradient(135deg,#fffbeb,#fef3c7);padding:12px 14px;">
+              <div style="font-weight:900;font-size:13px;color:#78350f;letter-spacing:0.4px;text-transform:uppercase;">
+                🎁 This week's top 3 — ${fmtDay(weekStart)} → ${fmtDay(weekEnd)}
+              </div>
+              <table style="width:100%;border-collapse:collapse;font-size:14px;color:#0f172a;margin-top:6px;">
+                ${weeklyTop3 || `<tr><td colspan="3" style="padding:6px 0;color:#92400e;">No results in this week's window yet — wide open.</td></tr>`}
+                ${weeklyMyRow}
+              </table>
+              <div style="font-size:11px;color:#92400e;margin-top:6px;font-weight:700;">
+                Top 3 each week → coffee on us ☕
+              </div>
+            </div>
+
+            <!-- All-time leaderboard -->
+            <div style="margin-top:12px;border-radius:14px;border:1px solid #e2e8f0;background:#f8fafc;padding:12px 14px;">
+              <div style="font-weight:900;font-size:13px;color:#1e293b;letter-spacing:0.4px;text-transform:uppercase;">
+                🏆 All-time top 3
+              </div>
+              <table style="width:100%;border-collapse:collapse;font-size:14px;color:#0f172a;margin-top:6px;">
+                ${allTimeTop3}
+                ${allTimeRank >= 3 ? allTimeRow : ""}
+              </table>
+            </div>
+
+            <div style="text-align:center;margin:22px 0 10px;">
+              <a href="https://www.curriculate.net/practice"
+                 style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#f97316,#dc2626);color:#fff;text-decoration:none;border-radius:14px;font-weight:900;font-size:16px;box-shadow:0 6px 18px rgba(220,38,38,0.35);">
+                Climb the board →
+              </a>
+            </div>
+            <div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:6px;">
+              Lifetime: ${lifetime} pts · ${sessions} session${sessions === 1 ? "" : "s"}${lastPlayed ? ` · last played ${lastPlayed}` : ""}
+            </div>
+          </div>
+
+          <div style="background:#f8fafc;border-radius:0 0 16px 16px;padding:14px 20px;border:1px solid #e2e8f0;border-top:none;text-align:center;font-size:11px;color:#94a3b8;">
             Curriculate · <a href="https://www.curriculate.net" style="color:#3b82f6;text-decoration:none;">curriculate.net</a>
           </div>
         </div>
@@ -578,7 +691,7 @@ router.get("/nudge-inactive", async (req, res) => {
       try {
         await sendSystemEmail({
           to: lead.email,
-          subject: `${firstName}, ready for another round?`,
+          subject: `${firstName}, you could win a Tim's card this week ☕`,
           html,
         });
         await ConferenceLead.updateOne(

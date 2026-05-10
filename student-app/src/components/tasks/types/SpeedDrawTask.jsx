@@ -43,9 +43,20 @@ export default function SpeedDrawTask({
   const difficulty = task?.difficulty || task?.config?.difficulty || "MEDIUM";
   const totalSeconds = Math.max(15, Number(task?.timeLimitSeconds || task?.config?.timeLimitSeconds) || 60);
 
-  const safeMembers = (Array.isArray(memberNames) ? memberNames : [])
-    .map((n) => String(n || "").trim())
-    .filter(Boolean);
+  // Pad practice mode with bogus team-mates so the drawer/guesser
+  // flow has names attached.  Tester: 'add fake names in practice
+  // mode so it will be more like the real task'.
+  const PRACTICE_BOTS = ["Riley", "Quinn", "Avery", "Sam"];
+  const safeMembers = (() => {
+    const real = (Array.isArray(memberNames) ? memberNames : [])
+      .map((n) => String(n || "").trim())
+      .filter(Boolean);
+    if (practiceMode && real.length < 3) {
+      const me = real[0] || "You";
+      return [me, ...PRACTICE_BOTS.slice(0, 3).map((b) => `${b} (bot)`)];
+    }
+    return real;
+  })();
   const hasNames = safeMembers.length > 0;
 
   // Phase + per-phase state

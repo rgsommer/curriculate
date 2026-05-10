@@ -19,18 +19,25 @@ import confetti from "canvas-confetti";
 export default function FlashcardsRaceTask(props) {
   const { task, socket, roomCode, playerTeam, disabled, onSubmit, memberNames = [] } = props || {};
 
-  const safeMembers = useMemo(
-    () =>
-      (Array.isArray(memberNames) ? memberNames : [])
-        .map((n) => String(n || "").trim())
-        .filter(Boolean),
-    [memberNames]
-  );
-
   const isDemoLocal = useMemo(() => {
     const rc = String(roomCode || "").trim().toUpperCase();
     return !socket || rc === "DEMO" || task?.demoMode === true;
   }, [socket, roomCode, task]);
+
+  // Pad practice with bogus team-mates so per-player buzz buttons
+  // demonstrate the multi-player flow.  Tester: 'add other player
+  // names in practice'.
+  const FRR_BOTS = ["Riley", "Quinn", "Avery"];
+  const safeMembers = useMemo(() => {
+    const real = (Array.isArray(memberNames) ? memberNames : [])
+      .map((n) => String(n || "").trim())
+      .filter(Boolean);
+    if (isDemoLocal && real.length < 3) {
+      const me = real[0] || "You";
+      return [me, ...FRR_BOTS.map((b) => `${b} (bot)`)];
+    }
+    return real;
+  }, [memberNames, isDemoLocal]);
 
   const [cards, setCards] = useState(() => []);
   const [cardIndex, setCardIndex] = useState(0);
@@ -593,18 +600,24 @@ export default function FlashcardsRaceTask(props) {
           </div>
         ) : (
           <>
-            {/* Card-style question wrapper — animated tilt-in so the
-                card actually feels like it's been dealt to the table. */}
+            {/* Card-style question wrapper — proper playing-card
+                proportions (~30% of available width on desktop, taller
+                than wide).  Animated tilt-in so it feels dealt. */}
             <div
               key={`card-${cardIndex}`}
               style={{
                 position: "relative",
                 margin: "8px auto",
-                maxWidth: 680,
+                width: "min(30vw, 360px)",
+                minWidth: 220,
+                aspectRatio: "5 / 7",        // playing-card proportions
                 borderRadius: 22,
-                padding: "28px 26px 22px",
+                padding: "28px 18px 22px",
                 background: "linear-gradient(180deg, #ffffff, #f8fafc)",
                 color: "#0f172a",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
                 boxShadow:
                   "0 28px 50px rgba(15,23,42,0.45), inset 0 0 0 1px rgba(15,23,42,0.05), inset 0 -4px 0 rgba(15,23,42,0.06)",
                 animation: "fcDeal 0.45s cubic-bezier(0.2,0.8,0.2,1) both",
