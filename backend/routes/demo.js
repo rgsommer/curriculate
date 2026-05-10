@@ -404,6 +404,74 @@ router.post("/results", resultsLimiter, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  POST /orphan-feedback                                              */
+/*                                                                    */
+/*  Recovery endpoint for in-progress practice feedback drafts that   */
+/*  the user typed but never submitted (e.g. they tapped "I'm done"   */
+/*  mid-feedback or closed the browser).  The student app scans       */
+/*  localStorage on session start and posts any orphaned drafts here. */
+/*  Each entry appends to the lead's append-only feedbackEntries log. */
+/* ------------------------------------------------------------------ */
+router.post("/orphan-feedback", async (req, res) => {
+  try {
+    const { email, conference, entries } = req.body || {};
+    if (!email) return res.status(400).json({ error: "email is required" });
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return res.status(400).json({ error: "entries array is required" });
+    }
+
+    const cleaned = entries
+      .map((e) => {
+        const taskType = String(e?.taskType || "").trim();
+        const fun = Number(e?.fun) || 0;
+        const clarity = Number(e?.clarity) || 0;
+        const confusing = String(e?.confusing || "").trim().slice(0, 1000);
+        const suggestion = String(e?.suggestion || "").trim().slice(0, 1000);
+        if (!taskType) return null;
+        const hasContent =
+          fun > 0 || clarity > 0 || confusing || suggestion;
+        if (!hasContent) return null;
+        return {
+          taskType,
+          title: String(e?.title || "").slice(0, 200),
+          fun, clarity, confusing, suggestion,
+          skipped: false,
+          source: "orphan-recovery",
+          createdAt: new Date(),
+        };
+      })
+      .filter(Boolean)
+      .slice(0, 50); // safety cap per call
+
+    if (cleaned.length === 0) {
+      return res.json({ ok: true, savedCount: 0 });
+    }
+
+    const lead = await ConferenceLead.findOneAndUpdate(
+      {
+        email: String(email).toLowerCase().trim(),
+        conference: conference || "general",
+      },
+      {
+        $push: {
+          feedbackEntries: { $each: cleaned, $slice: -500 },
+        },
+      },
+      { new: false }
+    );
+
+    if (!lead) {
+      return res.status(404).json({ error: "Lead not found — register first" });
+    }
+
+    res.json({ ok: true, savedCount: cleaned.length });
+  } catch (err) {
+    console.error("[demo/orphan-feedback] Error:", err.message);
+    res.status(500).json({ error: "Failed to recover drafts" });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  GET /activity                                                      */
 /*  Teacher dashboard: list student activity, filterable by source/    */
 /*  classroom. Auth via query param or teacher token.                  */
@@ -523,8 +591,17 @@ router.get("/feedback-summary", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const leads = await ConferenceLead.find({ "results.0": { $exists: true } })
-      .select("results name")
+    // IMPORTANT: include feedbackEntries — Mongoose .select() will
+    // omit it otherwise and the exporter falls back to lead.results
+    // (only the latest session) instead of the full append-only log.
+    // This was the root cause of the "where did my comments go?" bug.
+    const leads = await ConferenceLead.find({
+      $or: [
+        { "results.0": { $exists: true } },
+        { "feedbackEntries.0": { $exists: true } },
+      ],
+    })
+      .select("results name feedbackEntries")
       .lean();
 
     // Aggregate feedback by task type
@@ -628,8 +705,14 @@ router.get("/feedback-export", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const leads = await ConferenceLead.find({ "results.0": { $exists: true } })
-      .select("results name email source classroom createdAt")
+    // Same fix as /feedback-summary above — include feedbackEntries.
+    const leads = await ConferenceLead.find({
+      $or: [
+        { "results.0": { $exists: true } },
+        { "feedbackEntries.0": { $exists: true } },
+      ],
+    })
+      .select("results name email source classroom createdAt feedbackEntries")
       .lean();
 
     // Build per-task-type aggregation

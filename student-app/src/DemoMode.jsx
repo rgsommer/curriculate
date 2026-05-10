@@ -714,6 +714,75 @@ function DemoPlayer({ user, onFinish, source }) {
   // Build a smart task order: one of each type first, then repeats
   const taskOrder = useMemo(() => buildSmartTaskOrder(DEMO_TASKS), []);
 
+  // ── Orphan-feedback recovery ───────────────────────────────────────
+  // Drafts the user typed in TaskFeedback but never submitted (e.g.
+  // they tapped "I'm done" mid-feedback or closed the browser) live in
+  // localStorage keyed by FB_DRAFT_NS:<email>:<taskType>.  On session
+  // start, scan for any non-empty drafts for THIS email, POST them to
+  // /orphan-feedback so they make it into the lead's feedbackEntries
+  // log, then clear the keys.  Runs once per mount.
+  const [recoveredDrafts, setRecoveredDrafts] = useState(null);
+  useEffect(() => {
+    if (!user?.email) return;
+    const meKey = String(user.email).toLowerCase().trim();
+    const prefix = `${FB_DRAFT_NS}:${meKey}:`;
+    let drafts;
+    try {
+      drafts = Object.keys(localStorage)
+        .filter((k) => k.startsWith(prefix))
+        .map((k) => {
+          let v;
+          try { v = JSON.parse(localStorage.getItem(k) || "null"); } catch { v = null; }
+          if (!v || typeof v !== "object") return null;
+          const trimmedComment = String(v.comment || "").trim();
+          const fun = Number(v.fun) || 0;
+          const clarity = Number(v.clarity) || 0;
+          if (!trimmedComment && !fun && !clarity) return null;
+          const taskType = k.slice(prefix.length);
+          // Reuse the same low/high split as the live feedback flow:
+          // low rating → "confusing"; otherwise → "suggestion".
+          const isLow = (fun > 0 && fun <= 2) || (clarity > 0 && clarity <= 2);
+          return {
+            _key: k,
+            taskType,
+            fun, clarity,
+            confusing: isLow ? trimmedComment : "",
+            suggestion: !isLow ? trimmedComment : "",
+          };
+        })
+        .filter(Boolean);
+    } catch {
+      return;
+    }
+    if (!drafts || drafts.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(`${API_BASE_URL}/api/conference/orphan-feedback`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: meKey,
+            conference: "general",
+            entries: drafts.map(({ _key, ...rest }) => rest), // strip local-only field
+          }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (cancelled) return;
+        if (data?.ok && data.savedCount > 0) {
+          drafts.forEach((d) => {
+            try { localStorage.removeItem(d._key); } catch {}
+          });
+          setRecoveredDrafts(data.savedCount);
+        }
+      } catch (err) {
+        console.warn("[demo] orphan-feedback recovery failed:", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.email]);
+
   const [taskIdx, setTaskIdx] = useState(0);
   const [results, setResults] = useState([]);
   const [completedTypes, setCompletedTypes] = useState(new Set());
@@ -1045,6 +1114,50 @@ function DemoPlayer({ user, onFinish, source }) {
 
       {/* Treat toast — conference mode, after 3 completions */}
       {showTreat && <TreatToast onDismiss={() => setShowTreat(false)} />}
+
+      {/* Orphan-draft recovery toast.  Auto-dismisses; reassures the
+          user that the comments they typed last session weren't lost. */}
+      {recoveredDrafts != null && (
+        <div
+          style={{
+            position: "fixed",
+            top: 110,
+            left: "50%",
+            transform: "translateX(-50%)",
+            padding: "10px 18px",
+            borderRadius: 14,
+            background: "linear-gradient(135deg, #16a34a, #059669)",
+            color: "#fff",
+            fontWeight: 800,
+            fontSize: 13,
+            zIndex: 9999,
+            boxShadow: "0 6px 20px rgba(22,163,74,0.45)",
+            animation: "streakSlide 0.4s ease-out",
+            maxWidth: "min(92vw, 420px)",
+            textAlign: "center",
+          }}
+          role="status"
+        >
+          ✅ Recovered {recoveredDrafts} feedback comment
+          {recoveredDrafts === 1 ? "" : "s"} from your last session.
+          <button
+            onClick={() => setRecoveredDrafts(null)}
+            style={{
+              marginLeft: 10,
+              background: "rgba(255,255,255,0.2)",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              padding: "2px 10px",
+              fontSize: 11,
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* "Done practicing?" idle prompt — fires after 10 min of
           inactivity.  Player can keep going (resets idle clock) or
