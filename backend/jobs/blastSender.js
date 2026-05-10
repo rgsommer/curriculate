@@ -148,7 +148,7 @@ const ROLE_PITCH = {
   },
   pulse: {
     principal: `<p>For principals, the question I always hear is <em>"will my staff actually adopt this?"</em> — so Curriculate Practice is structured to keep the <strong>teacher as final reviewer</strong>. It drafts feedback in seconds; you finalize in another few. Several teachers in our pilot tell me it's the reason they're still in the classroom.</p>`,
-    vp:        `<p>The VP-facing win is parent-facing reports — students can no longer hide a missing or weak assignment because parents see a per-question breakdown automatically. Discipline conversations get a lot easier when everyone's looking at the same evidence.</p>`,
+    vp:        `<p>The VP-facing win is parent-facing reports — students can no longer hide a missing or weak assignment because parents see a per-question breakdown automatically. Support conversations become much more evidence-based when everyone's looking at the same data.</p>`,
     ad:        `<p>For ADs running eligibility checks: Practice can grade weekly progress checks in under a minute per student, which means you can do eligibility cuts the day before a meet instead of three days before.</p>`,
     default:   `<p>It works for handwritten essays, math, video performances, audio (speeches, music, drama), and batch PDFs — whatever you're already collecting from kids.</p>`,
   },
@@ -254,14 +254,14 @@ const PROOF_BLOCK_EN = `
   <blockquote style="margin:0 0 14px;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-style:italic;font-size:14px;">
     "I really appreciate the idea of uploading test papers — it's very helpful to clearly see where she needs improvement. This visibility will definitely help us support her better at home."
   </blockquote>
-  <p style="margin:0 0 14px;font-size:14px;color:#475569;">I've personally used this on 1,500+ student papers in my own classroom this year. Happy to share a sample graded paper or a 60-second video on request.</p>
+  <p style="margin:0 0 14px;font-size:14px;color:#475569;">Happy to share a sample graded paper or a 60-second video on request.</p>
 `;
 const PROOF_BLOCK_FR = `
   <p style="margin:18px 0 6px;font-size:14px;color:#475569;">La semaine dernière, un parent ontarien m'a écrit après avoir vu le premier rapport de sa fille :</p>
   <blockquote style="margin:0 0 14px;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-style:italic;font-size:14px;">
     « J'apprécie vraiment l'idée de téléverser les copies — il est très utile de voir clairement où elle a besoin de s'améliorer. Cette visibilité nous aidera à mieux la soutenir à la maison. »
   </blockquote>
-  <p style="margin:0 0 14px;font-size:14px;color:#475569;">J'ai utilisé l'outil sur plus de 1 500 travaux d'élèves dans ma propre classe cette année. Je peux vous envoyer un exemple de copie corrigée ou une vidéo de 60 secondes sur demande.</p>
+  <p style="margin:0 0 14px;font-size:14px;color:#475569;">Je peux vous envoyer un exemple de copie corrigée ou une vidéo de 60 secondes sur demande.</p>
 `;
 
 // Templates are written in the voice of Richard, an Ontario junior-high
@@ -308,10 +308,13 @@ const DEFAULT_TEMPLATES = {
   },
   pulse: {
     en: {
-      subject: "Reduce grading time by 90% — built by a former school administrator",
+      subject: "A grading tool designed to give teachers their evenings back",
       body: wrap(`
         <p>Hey! It's Richard. I just tried <strong>Curriculate Practice</strong> on my own students' work this week and wanted to write to one or two thoughtful schools about it.</p>
-        <p>Quick context: {{credential_intro}} I've now personally graded over 1,500 student papers with Curriculate Practice — <em>it's what I wished I'd had both as a school leader watching teacher workload, and now as a teacher facing that same workload myself.</em> We're in an active pilot/R&D phase, inviting a small number of schools to use it free in exchange for thoughtful feedback.</p>
+        <p>Quick context: {{credential_intro}} I've now personally graded over 1,500 student papers with Curriculate Practice — <em>it's what I wished I'd had both as a school leader watching teacher workload, and now as a teacher facing that same workload myself.</em></p>
+        <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
+          <strong>Pilot Program:</strong> active R&D phase — inviting a small number of schools to use Practice free of charge in exchange for thoughtful feedback from teachers, students, and parents.
+        </p>
         <p>How it works: snap a photo (or upload a PDF, video, or audio file) of student work and you get rubric-aligned feedback plus a score in about ten seconds. The teacher stays the final reviewer — Practice drafts, you finalize.</p>
         {{role_pitch}}
         {{christian_perspective}}
@@ -320,10 +323,13 @@ const DEFAULT_TEMPLATES = {
       `),
     },
     fr: {
-      subject: "Réduisez le temps de correction de 90 % — par un ancien directeur d'école",
+      subject: "Un outil de correction conçu pour rendre leurs soirées aux enseignants",
       body: wrap(`
         <p>Bonjour ! Je m'appelle Richard. Je viens d'essayer <strong>Curriculate Practice</strong> sur les travaux de mes propres élèves et je tenais à écrire à quelques écoles que j'estime.</p>
-        <p>Contexte rapide : {{credential_intro}} J'ai personnellement corrigé plus de 1 500 travaux d'élèves avec Curriculate Practice — <em>c'est l'outil que j'aurais voulu avoir comme directeur en observant la charge de mes enseignants, et maintenant comme enseignant moi-même.</em> Nous sommes en phase pilote : un petit nombre d'écoles l'utilise gratuitement en échange de commentaires réfléchis.</p>
+        <p>Contexte rapide : {{credential_intro}} J'ai personnellement corrigé plus de 1 500 travaux d'élèves avec Curriculate Practice — <em>c'est l'outil que j'aurais voulu avoir comme directeur en observant la charge de mes enseignants, et maintenant comme enseignant moi-même.</em></p>
+        <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
+          <strong>Programme pilote :</strong> phase de R&D active — nous invitons un petit nombre d'écoles à utiliser Practice gratuitement en échange de commentaires réfléchis d'enseignants, d'élèves et de parents.
+        </p>
         <p>Comment ça marche : on prend une photo (ou téléverse un PDF, une vidéo ou un audio) du travail d'un élève, et on obtient une rétroaction alignée à la grille d'évaluation plus une note en environ dix secondes. L'enseignant reste responsable de la décision finale — Practice propose, vous validez.</p>
         {{role_pitch}}
         {{christian_perspective}}
@@ -334,7 +340,7 @@ const DEFAULT_TEMPLATES = {
   },
   fieldday: {
     en: {
-      subject: "Free field-day app — built by a former school administrator",
+      subject: "Free field-day app — built after too many field days run on spreadsheets",
       body: wrap(`
         <p>Hey! It's Richard. {{credential_intro}} I built <strong>Curriculate Field Day</strong> after running too many of my own schools' field days on spreadsheets — <em>it's what I wished I'd had every June.</em></p>
         <p>It's in active pilot phase. We're inviting a small number of schools to use it free during R&D in exchange for thoughtful feedback after their field day.</p>
@@ -342,16 +348,17 @@ const DEFAULT_TEMPLATES = {
         <ul style="padding-left:20px;margin:6px 0 14px;">
           <li>Multi-runner stopwatch, hundredth-second precision, taps to start/stop heats</li>
           <li>Placement scoring and standards-based scoring side-by-side</li>
-          <li>Records & PBs trigger an air-horn on the leader's phone — kids love it</li>
+          <li>New records & PBs trigger an air-horn on the leader's phone — kids love it</li>
           <li>Houses, divisions, heats, relays — out of the box</li>
           <li>Import your Excel roster, print 1″×1″ Avery ribbon labels</li>
         </ul>
+        <p style="margin:6px 0 14px;font-size:14px;color:#475569;">Most schools can be fully set up in under 20 minutes from an Excel roster.</p>
         {{role_pitch}}
         <p style="margin:14px 0 0;font-size:14px;color:#475569;">There's a short demo and free pilot access at <a href="https://www.curriculate.net/meet-fieldday" style="color:#2563eb;">curriculate.net/meet-fieldday</a>. If it looks useful, please feel free to encourage your athletics team or PE department to pilot it free before this year's field day.</p>
       `),
     },
     fr: {
-      subject: "Application gratuite pour journée des jeux — par un ancien directeur d'école",
+      subject: "Application gratuite pour journée des jeux — bâtie après trop de journées sur feuilles de calcul",
       body: wrap(`
         <p>Bonjour ! Je m'appelle Richard. {{credential_intro}} J'ai bâti <strong>Curriculate Field Day</strong> après avoir organisé trop de journées des jeux à l'aide de feuilles de calcul — <em>c'est l'outil que j'aurais voulu avoir chaque mois de juin.</em></p>
         <p>L'application est en phase pilote. Nous invitons un petit nombre d'écoles à l'utiliser gratuitement en échange de commentaires réfléchis après leur journée des jeux.</p>
@@ -359,10 +366,11 @@ const DEFAULT_TEMPLATES = {
         <ul style="padding-left:20px;margin:6px 0 14px;">
           <li>Chronomètre multi-coureurs au centième de seconde</li>
           <li>Pointage par classement et selon des barèmes, côte à côte</li>
-          <li>Records et meilleurs résultats déclenchent une fanfare</li>
+          <li>Nouveaux records et meilleurs résultats déclenchent une fanfare</li>
           <li>Maisons, divisions, vagues, relais — prêts à l'emploi</li>
           <li>Importation Excel et étiquettes Avery 1″×1″ pour les rubans</li>
         </ul>
+        <p style="margin:6px 0 14px;font-size:14px;color:#475569;">La plupart des écoles peuvent être entièrement configurées en moins de 20 minutes à partir d'une liste Excel.</p>
         {{role_pitch}}
         <p style="margin:14px 0 0;font-size:14px;color:#475569;">Une démonstration et un accès pilote gratuit sont disponibles sur <a href="https://www.curriculate.net/meet-fieldday" style="color:#2563eb;">curriculate.net/meet-fieldday</a>. Si cela vous semble utile, n'hésitez pas à encourager votre équipe sportive ou votre département d'éducation physique à l'essayer gratuitement avant la journée des jeux.</p>
       `),
