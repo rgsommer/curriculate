@@ -32,6 +32,11 @@ const blastCampaignSchema = new mongoose.Schema(
     // Scheduling
     dailyCap: { type: Number, default: 50, min: 1, max: 100 },
     sendDays: { type: [Number], default: [2, 3, 4] }, // 0=Sun..6=Sat → default Tue/Wed/Thu
+    // Months when this campaign is allowed to send (1-12). Empty array means
+    // every month. Used to enforce seasonal relevance — e.g. Field Day
+    // campaigns set [4, 5, 6] so they never accidentally send in July or
+    // November when the topic is irrelevant.
+    enabledMonths: { type: [Number], default: [] },
     sendStartHour: { type: Number, default: 7 }, // local ET hour (0-23) — start of send window
     sendStartMinute: { type: Number, default: 30 },
     sendEndHour: { type: Number, default: 8 },

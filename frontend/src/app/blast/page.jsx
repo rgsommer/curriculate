@@ -145,6 +145,7 @@ function NewCampaign({ adminToken, defaults, onCreated }) {
   const [dailyCap, setDailyCap] = useState(50);
   const [startInDays, setStartInDays] = useState(0);
   const [sendDays, setSendDays] = useState([2, 3, 4]);
+  const [enabledMonths, setEnabledMonths] = useState([]); // empty = always active
   const [startHour, setStartHour] = useState(7);
   const [startMin,  setStartMin]  = useState(30);
   const [endHour,   setEndHour]   = useState(8);
@@ -246,6 +247,9 @@ function NewCampaign({ adminToken, defaults, onCreated }) {
   function toggleSendDay(d) {
     setSendDays(arr => arr.includes(d) ? arr.filter(x => x !== d) : [...arr, d].sort());
   }
+  function toggleMonth(m) {
+    setEnabledMonths(arr => arr.includes(m) ? arr.filter(x => x !== m) : [...arr, m].sort((a,b) => a-b));
+  }
 
   // Estimate how many calendar days one product's campaign occupies — used
   // to stagger sequential campaigns so the same person doesn't get hit twice
@@ -324,6 +328,7 @@ function NewCampaign({ adminToken, defaults, onCreated }) {
             dailyCap,
             startInDays: offset,
             sendDays,
+            enabledMonths,
             sendStartHour: startHour, sendStartMinute: startMin,
             sendEndHour:   endHour,   sendEndMinute:   endMin,
           }),
@@ -450,6 +455,21 @@ function NewCampaign({ adminToken, defaults, onCreated }) {
                 <Btn key={d} variant={sendDays.includes(i) ? "primary" : "ghost"} onClick={() => toggleSendDay(i)}>{d}</Btn>
               ))}
             </div>
+          </div>
+
+          <div className="mt-3">
+            <L>Active months {enabledMonths.length === 0 ? "(all months — always active)" : `(${enabledMonths.length} selected; outside these months sends are paused)`}</L>
+            <div className="flex gap-1 flex-wrap">
+              {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => (
+                <button key={m} onClick={() => toggleMonth(i+1)}
+                  className={`px-2 py-1 text-xs rounded ${enabledMonths.includes(i+1) ? "bg-blue-600 text-white" : "bg-white/5 border border-white/10 hover:bg-white/10 text-white/70"}`}>
+                  {m}
+                </button>
+              ))}
+            </div>
+            {products.includes("fieldday") && enabledMonths.length === 0 && (
+              <p className="mt-2 text-xs text-amber-300/80">Tip: Field Day is seasonal — consider selecting Apr/May/Jun only so the worker never sends outside relevance.</p>
+            )}
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-3">

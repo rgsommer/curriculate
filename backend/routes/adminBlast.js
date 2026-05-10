@@ -129,6 +129,7 @@ router.post("/blast/campaigns", requireAdminToken, async (req, res) => {
       replyTo:     b.replyTo     || "",
       dailyCap:        Math.min(100, Math.max(1, parseInt(b.dailyCap, 10) || 50)),
       sendDays:        Array.isArray(b.sendDays) && b.sendDays.length ? b.sendDays.map(Number) : [2, 3, 4],
+      enabledMonths:   Array.isArray(b.enabledMonths) ? b.enabledMonths.map(Number).filter(n => n >= 1 && n <= 12) : [],
       sendStartHour:   b.sendStartHour   ?? 7,
       sendStartMinute: b.sendStartMinute ?? 30,
       sendEndHour:     b.sendEndHour     ?? 8,

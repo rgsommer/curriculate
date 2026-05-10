@@ -58,6 +58,11 @@ export function tzWallClockToUtc(year, month, day, hour, minute, timeZone = "Ame
 /** Returns true if `d` falls inside the campaign's send window (in TZ). */
 function inSendWindow(d, c) {
   const p = tzParts(d, c.timezone);
+  // Seasonal gate first — Field Day campaigns set enabledMonths: [4,5,6] to
+  // ensure they never send outside spring even if the campaign overruns.
+  if (Array.isArray(c.enabledMonths) && c.enabledMonths.length && !c.enabledMonths.includes(p.month)) {
+    return false;
+  }
   if (!c.sendDays.includes(p.weekday)) return false;
   const startMin = c.sendStartHour * 60 + c.sendStartMinute;
   const endMin   = c.sendEndHour   * 60 + c.sendEndMinute;
