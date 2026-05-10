@@ -141,7 +141,7 @@ function bucketRole(role = "") {
 
 const ROLE_PITCH = {
   curriculate: {
-    principal: `<p>For principals I talk to, this is mostly a <strong>teacher-retention</strong> story — staff who use it tell me it gives them back their evenings and makes review-day and substitute-day prep feel manageable again. Gr 5-9 students stay engaged in ways a worksheet doesn't quite manage.</p>`,
+    principal: `<p>For principals I talk to, this is mostly a <strong>teacher-retention</strong> story — staff tell me it gives them back their evenings. It especially shines on <strong>review days, independent-work periods, and substitute-teacher days</strong> — dramatically reducing prep time on the days when coverage is hardest. Gr 5-9 students stay engaged in ways a worksheet doesn't quite manage.</p>`,
     vp:        `<p>For VPs the easiest wins are workflow — Curriculate handles station rotation and student management during a lesson so teachers can actually circulate and coach. Implementation is about <strong>10 minutes per teacher</strong> in my experience.</p>`,
     ad:        `<p>If your program runs eligibility check-ins, post-game reflections, or weekly accountability work, Curriculate's station templates turn that into a 5-minute classroom routine instead of paperwork.</p>`,
     default:   `<p>The teachers in our pilots are using it for review-day stations, end-of-unit consolidation, and substitute-day plans that don't fall apart.</p>`,
@@ -265,7 +265,7 @@ const DEFAULT_TEMPLATES = {
         <p style="margin:14px 0;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:14px;">
           Concrete example: last month my Grade 7 students worked through a <em>War of 1812</em> station activity — teams rotating through QR-directed historical challenges while I monitored progress live from my laptop. By the end of the period every student had hit every station. That doesn't happen with a worksheet.
         </p>
-        <p>And at the end of every activity, the teacher automatically receives a rich report with a per-student grade — ready to drop into the gradebook.</p>
+        <p>And at the end of every activity, the teacher receives a detailed per-student report and grade — ready to drop into the gradebook.</p>
         {{role_pitch}}
         {{christian_perspective}}
         <p style="margin:14px 0 0;font-size:14px;color:#475569;">You can explore a live demo and sample student work at <a href="https://www.curriculate.net" style="color:#2563eb;">curriculate.net</a>. If it seems like a fit, please feel free to encourage your teachers to pilot it free during this R&D phase.</p>
