@@ -2668,7 +2668,7 @@ const COMMITMENT_OPTIONS = [
   },
   {
     target: 5,
-    bonus: 15,
+    bonus: 25,
     label: "Half session",
     blurb: "5 tasks · solid stretch, mid-tier bonus",
   },
