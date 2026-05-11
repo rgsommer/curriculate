@@ -1115,7 +1115,7 @@ function Contacts({ adminToken }) {
         </select>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+      <div className="rounded-xl border border-white/10 bg-white/5 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
             <tr>
@@ -1124,24 +1124,49 @@ function Contacts({ adminToken }) {
               <th className="text-left px-3 py-2">School / Board</th>
               <th className="text-left px-3 py-2">Role</th>
               <th className="text-left px-3 py-2">Last contacted</th>
-              <th className="text-left px-3 py-2">Campaigns</th>
+              <th className="text-left px-3 py-2">Products sent</th>
+              <th className="text-left px-3 py-2">Tracking key</th>
             </tr>
           </thead>
           <tbody>
-            {contacts.map(c => (
-              <tr key={c.email} className="border-t border-white/5">
-                <td className="px-3 py-2">{c.firstName} {c.lastName}</td>
-                <td className="px-3 py-2 text-white/70">{c.email}</td>
-                <td className="px-3 py-2 text-white/70">{c.school} <span className="text-white/40">/ {c.board}</span></td>
-                <td className="px-3 py-2 text-white/70">{c.role}</td>
-                <td className="px-3 py-2">
-                  {c.lastContactedAt
-                    ? <span className="text-emerald-400">{new Date(c.lastContactedAt).toLocaleDateString()} · {c.lastProduct}</span>
-                    : <span className="text-amber-400">never</span>}
-                </td>
-                <td className="px-3 py-2">{c.totalCampaigns} <span className="text-white/40">({c.sentCount} sent)</span></td>
-              </tr>
-            ))}
+            {contacts.map(c => {
+              // Distinct products this contact has been successfully sent
+              const sentProducts = Array.from(new Set(
+                (c.history || []).filter(h => h.status === "sent").map(h => h.product)
+              )).filter(Boolean);
+              const queuedProducts = Array.from(new Set(
+                (c.history || []).filter(h => h.status === "queued").map(h => h.product)
+              )).filter(Boolean).filter(p => !sentProducts.includes(p));
+              // utm_content key used in all email links for this contact
+              const trackingKey = c._id ? String(c._id).slice(-8) : "—";
+              return (
+                <tr key={c.email} className="border-t border-white/5">
+                  <td className="px-3 py-2">{c.firstName} {c.lastName}</td>
+                  <td className="px-3 py-2 text-white/70">{c.email}</td>
+                  <td className="px-3 py-2 text-white/70">{c.school} <span className="text-white/40">/ {c.board}</span></td>
+                  <td className="px-3 py-2 text-white/70">{c.role}</td>
+                  <td className="px-3 py-2">
+                    {c.lastContactedAt
+                      ? <span className="text-emerald-400">{new Date(c.lastContactedAt).toLocaleDateString()}</span>
+                      : <span className="text-amber-400">never</span>}
+                  </td>
+                  <td className="px-3 py-2">
+                    {sentProducts.length === 0 && queuedProducts.length === 0 && <span className="text-white/40">—</span>}
+                    <div className="flex gap-1 flex-wrap">
+                      {sentProducts.map(p => (
+                        <span key={p} className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-700/60 text-emerald-100 font-medium" title={`Sent: ${p}`}>{p} ✓</span>
+                      ))}
+                      {queuedProducts.map(p => (
+                        <span key={p} className="px-1.5 py-0.5 text-[10px] rounded bg-amber-700/60 text-amber-100 font-medium" title={`Queued: ${p}`}>{p} ⏱</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-white/50 font-mono text-[11px]" title={`Full utm_content for analytics: ${c._id || "(no id)"}`}>
+                    …{trackingKey}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
