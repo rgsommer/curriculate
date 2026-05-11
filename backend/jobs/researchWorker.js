@@ -35,14 +35,19 @@ function openai() {
  * Helpers
  * ────────────────────────────────────────────────────────────────────── */
 
-async function fetchText(url, { timeoutMs = 15000 } = {}) {
+// Browser-like headers so school-board WAFs don't reject obvious-bot UAs
+// (Peel returns 403 for "CurriculateResearchBot/1.0" — most boards do).
+const BROWSER_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-CA,en;q=0.9",
+  "Accept-Encoding": "gzip, deflate, br",
+};
+async function fetchText(url, { timeoutMs = 20000 } = {}) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
-      signal: ctrl.signal,
-      headers: { "User-Agent": "CurriculateResearchBot/1.0 (+https://curriculate.net)" },
-    });
+    const res = await fetch(url, { signal: ctrl.signal, headers: BROWSER_HEADERS, redirect: "follow" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.text();
   } finally {
@@ -62,26 +67,35 @@ function htmlToText(html) {
     .trim();
 }
 
-/** Pull plausible school links from a directory page. Returns absolute URLs. */
+/** Pull plausible school links from a directory page. Returns absolute URLs.
+ *  Tightened heuristic: prefers links where the anchor text reads like a
+ *  school NAME (capitalized words + "School|Academy|Institute|...") rather
+ *  than just any URL containing the word "school" — which catches listing/
+ *  filter pages and badly poisons the per-school crawl. */
+const SCHOOL_TYPE_RE = /\b(Elementary|Secondary|Middle|Junior|Senior|High|Public|Catholic|Academy|Institute|Collegiate|Heights?|Park|Grove|College|Saint|St\.?)\b/;
 function extractSchoolLinks(html, baseUrl) {
-  const links = new Set();
+  const candidates = new Map(); // url -> anchor text (best one wins)
   const base = new URL(baseUrl);
   const re = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([^<]{2,120})<\/a>/gi;
   let m;
   while ((m = re.exec(html)) !== null) {
-    const href = m[1]; const text = m[2].trim();
-    if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) continue;
+    const href = m[1]; const text = m[2].trim().replace(/\s+/g, " ");
+    if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:") || href.startsWith("javascript:")) continue;
     let abs;
     try { abs = new URL(href, base).toString(); } catch { continue; }
-    // Heuristic: keep links whose URL or text suggests "school"
-    if (
-      /school/i.test(abs) ||
-      /school|elementary|secondary|high|public|catholic|college|academy/i.test(text)
-    ) {
-      links.add(abs);
-    }
+    // Same-origin only — don't crawl off-board
+    if (new URL(abs).host !== base.host) continue;
+    // Anchor text scoring: prefer links that look like specific school names
+    const looksLikeSchoolName =
+      SCHOOL_TYPE_RE.test(text) &&
+      /[A-Z][a-z]+/.test(text) &&         // has capitalized words
+      text.split(/\s+/).length <= 8;       // not a paragraph
+    if (!looksLikeSchoolName) continue;
+    // De-prioritise pure listing/category pages even if they match
+    if (/\/(list|find|directory|category|tag|search|page)\b/i.test(abs)) continue;
+    candidates.set(abs, text);
   }
-  return [...links];
+  return [...candidates.keys()];
 }
 
 /** Ask OpenAI to extract admin info from a school page. Returns array of contacts. */
@@ -167,9 +181,17 @@ export async function runJob(jobId) {
     // 3. For each, fetch + extract
     for (const url of links) {
       schoolsTried++;
+      let pageOutcome = "no-contacts"; // no-contacts | added | fetch-failed | extract-failed
+      let addedHere = 0;
       try {
         const html = await fetchText(url, { timeoutMs: 12000 });
-        const contacts = await extractContactsFromPage({ html, schoolUrl: url, boardName: job.boardName });
+        let contacts = [];
+        try {
+          contacts = await extractContactsFromPage({ html, schoolUrl: url, boardName: job.boardName });
+        } catch (extractErr) {
+          pageOutcome = "extract-failed";
+          console.error(`[research]   extract failed ${url}: ${extractErr.message}`);
+        }
         for (const c of contacts) {
           if (!c.email) continue; // require email for upsert key
           await BlastContact.updateOne(
@@ -192,10 +214,14 @@ export async function runJob(jobId) {
             { upsert: true }
           );
           totalContacts++;
+          addedHere++;
         }
+        if (addedHere > 0) pageOutcome = "added";
       } catch (e) {
-        console.error(`[research] page failed ${url}: ${e.message}`);
+        pageOutcome = "fetch-failed";
+        console.error(`[research]   fetch failed ${url}: ${e.message}`);
       }
+      console.log(`[research]   ${pageOutcome.padEnd(15)} +${addedHere}  ${url}`);
     }
   } catch (e) {
     lastError = e.message || String(e);

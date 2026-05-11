@@ -789,7 +789,7 @@ function CampaignList({ adminToken }) {
 /* ────────────────────────────────────────────────────────────────────── */
 const PRESET_REGIONS = [
   { name: "Toronto District School Board",        board: "TDSB",   url: "https://www.tdsb.on.ca/Find-your/School" },
-  { name: "Toronto Catholic District School Board", board: "TCDSB", url: "https://www.tcdsb.org/schools/Pages/default.aspx" },
+  { name: "Toronto Catholic District School Board", board: "TCDSB", url: "https://www.tcdsb.org/Schools" },
   { name: "Peel District School Board",            board: "PDSB",   url: "https://www.peelschools.org/schools/find-a-school" },
   { name: "Dufferin-Peel Catholic DSB",            board: "DPCDSB", url: "https://www3.dpcdsb.org/schools" },
   { name: "York Region District School Board",     board: "YRDSB",  url: "https://www2.yrdsb.ca/schools" },
