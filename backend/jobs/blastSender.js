@@ -264,6 +264,17 @@ export function detectLanguageForBoard(board) {
  * Users can overwrite these on the campaign-create form.
  * ────────────────────────────────────────────────────────────────────── */
 
+// Reusable hero block: small Curriculate mascot image at the top of each
+// email. The actual JPG files live in frontend/public/blast/ and are
+// served at https://www.curriculate.net/blast/. Width capped at 220px so
+// the image stays small and email clients don't strip it for being too
+// "marketing-heavy."
+function heroImage(filename, altText) {
+  return `<div style="text-align:center;margin:0 0 18px;">
+    <img src="https://www.curriculate.net/blast/${filename}" alt="${altText}" width="220" style="max-width:100%;height:auto;border-radius:14px;display:block;margin:0 auto;" />
+  </div>`;
+}
+
 // Plain, low-branding email shell. Per anti-spam recommendations: no giant
 // header bar, no big images, no excessive logos. Looks like a real email
 // from a real person, not a marketing template.
@@ -314,6 +325,7 @@ const DEFAULT_TEMPLATES = {
     en: {
       subject: "What I wished I'd had as both a teacher and a school leader",
       body: wrap(`
+        ${heroImage("mascot-curriculate.jpg", "Curriculate")}
         <p>{{salutation}}</p>
         <p>Hey! It's Richard. I just ran <strong>Curriculate</strong> scavenger-hunt activities (think station-based learning) with my own Ontario junior-high classes and wanted to share it with one or two principals I respect in the area.</p>
         <p>Quick context: {{credential_intro}} <em>Curriculate is what I wished I'd had — both as a school leader and now as a teacher.</em></p>
@@ -333,6 +345,7 @@ const DEFAULT_TEMPLATES = {
     fr: {
       subject: "Ce que j'aurais voulu avoir — comme enseignant et comme directeur",
       body: wrap(`
+        ${heroImage("mascot-curriculate.jpg", "Curriculate")}
         <p>{{salutation}}</p>
         <p>Je m'appelle Richard. Je viens d'utiliser <strong>Curriculate</strong> avec mes propres élèves du premier cycle du secondaire en Ontario et je voulais en parler à quelques directions que j'estime.</p>
         <p>Contexte rapide : {{credential_intro}} <em>Curriculate est l'outil que j'aurais voulu avoir — comme directeur, et maintenant comme enseignant.</em></p>
@@ -354,6 +367,7 @@ const DEFAULT_TEMPLATES = {
     en: {
       subject: "A grading tool designed to give teachers their evenings back",
       body: wrap(`
+        ${heroImage("mascot-pulse.jpg", "Curriculate Practice")}
         <p>{{salutation}}</p>
         <p>Hey! It's Richard. I just tried <strong>Curriculate Practice</strong> on my own students' work this week and wanted to write to one or two thoughtful schools about it.</p>
         <p>Quick context: {{credential_intro}} I've now personally graded over 1,500 student papers with Curriculate Practice — <em>it's what I wished I'd had both as a school leader watching teacher workload, and now as a teacher facing that same workload myself.</em></p>
@@ -364,12 +378,13 @@ const DEFAULT_TEMPLATES = {
         {{role_pitch}}
         {{christian_perspective}}
         ${PROOF_BLOCK_EN}
-        <p style="margin:14px 0 0;font-size:14px;color:#475569;">You can explore a live demo and sample student reports at <a href="https://www.curriculate.net/pulse" style="color:#2563eb;">curriculate.net/pulse</a>. If it seems like a fit, please feel free to encourage your teachers to pilot it free during this R&D phase — or just reply if you'd rather see a sample graded paper first.</p>
+        <p style="margin:14px 0 0;font-size:14px;color:#475569;">You can <a href="https://www.curriculate.net/blast/Curriculate-Report-WATER-42.pdf" style="color:#2563eb;">see a real graded paper (PDF, 1-pager)</a> or explore a live demo at <a href="https://www.curriculate.net/pulse" style="color:#2563eb;">curriculate.net/pulse</a>. If it seems like a fit, please feel free to encourage your teachers to pilot it free during this R&D phase.</p>
       `),
     },
     fr: {
       subject: "Un outil de correction conçu pour rendre leurs soirées aux enseignants",
       body: wrap(`
+        ${heroImage("mascot-pulse.jpg", "Curriculate Practice")}
         <p>{{salutation}}</p>
         <p>Je m'appelle Richard. Je viens d'essayer <strong>Curriculate Practice</strong> sur les travaux de mes propres élèves et je tenais à écrire à quelques écoles que j'estime.</p>
         <p>Contexte rapide : {{credential_intro}} J'ai personnellement corrigé plus de 1 500 travaux d'élèves avec Curriculate Practice — <em>c'est l'outil que j'aurais voulu avoir comme directeur en observant la charge de mes enseignants, et maintenant comme enseignant moi-même.</em></p>
@@ -380,7 +395,7 @@ const DEFAULT_TEMPLATES = {
         {{role_pitch}}
         {{christian_perspective}}
         ${PROOF_BLOCK_FR}
-        <p style="margin:14px 0 0;font-size:14px;color:#475569;">Vous pouvez explorer une démonstration et des exemples de rapports sur <a href="https://www.curriculate.net/pulse" style="color:#2563eb;">curriculate.net/pulse</a>. Si cela vous semble pertinent, n'hésitez pas à encourager vos enseignants à l'essayer gratuitement durant cette phase de R&D — ou répondez simplement à cet e-mail si vous préférez d'abord voir un exemple de copie corrigée.</p>
+        <p style="margin:14px 0 0;font-size:14px;color:#475569;">Vous pouvez <a href="https://www.curriculate.net/blast/Curriculate-Report-WATER-42.pdf" style="color:#2563eb;">voir un exemple de copie corrigée (PDF, 1 page)</a> ou explorer une démonstration sur <a href="https://www.curriculate.net/pulse" style="color:#2563eb;">curriculate.net/pulse</a>. Si cela vous semble pertinent, n'hésitez pas à encourager vos enseignants à l'essayer gratuitement durant cette phase de R&D.</p>
       `),
     },
   },
@@ -388,6 +403,7 @@ const DEFAULT_TEMPLATES = {
     en: {
       subject: "Free field-day app — built after too many field days run on spreadsheets",
       body: wrap(`
+        ${heroImage("mascot-fieldday.jpg", "Curriculate Field Day")}
         <p>{{salutation}}</p>
         <p>Hey! It's Richard. {{credential_intro}} I built <strong>Curriculate Field Day</strong> after running too many of my own schools' field days on spreadsheets — <em>it's what I wished I'd had every June.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
@@ -403,12 +419,13 @@ const DEFAULT_TEMPLATES = {
         </ul>
         <p style="margin:6px 0 14px;font-size:14px;color:#475569;">Most schools can be fully set up in under 20 minutes from an Excel roster.</p>
         {{role_pitch}}
-        <p style="margin:14px 0 0;font-size:14px;color:#475569;">There's a short demo and free pilot access at <a href="https://www.curriculate.net/meet-fieldday" style="color:#2563eb;">curriculate.net/meet-fieldday</a>. If it looks useful, please feel free to encourage your athletics team or PE department to pilot it free before this year's field day.</p>
+        <p style="margin:14px 0 0;font-size:14px;color:#475569;"><a href="https://www.curriculate.net/blast/Curriculate-FieldDay-Sample.pdf" style="color:#2563eb;">See a sample event sheet (PDF)</a> or visit <a href="https://www.curriculate.net/meet-fieldday" style="color:#2563eb;">curriculate.net/meet-fieldday</a> for a short demo and free pilot access. If it looks useful, please feel free to encourage your athletics team or PE department to pilot it free before this year's field day.</p>
       `),
     },
     fr: {
       subject: "Application gratuite pour journée des jeux — bâtie après trop de journées sur feuilles de calcul",
       body: wrap(`
+        ${heroImage("mascot-fieldday.jpg", "Curriculate Field Day")}
         <p>{{salutation}}</p>
         <p>Je m'appelle Richard. {{credential_intro}} J'ai bâti <strong>Curriculate Field Day</strong> après avoir organisé trop de journées des jeux à l'aide de feuilles de calcul — <em>c'est l'outil que j'aurais voulu avoir chaque mois de juin.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
@@ -424,7 +441,7 @@ const DEFAULT_TEMPLATES = {
         </ul>
         <p style="margin:6px 0 14px;font-size:14px;color:#475569;">La plupart des écoles peuvent être entièrement configurées en moins de 20 minutes à partir d'une liste Excel.</p>
         {{role_pitch}}
-        <p style="margin:14px 0 0;font-size:14px;color:#475569;">Une démonstration et un accès pilote gratuit sont disponibles sur <a href="https://www.curriculate.net/meet-fieldday" style="color:#2563eb;">curriculate.net/meet-fieldday</a>. Si cela vous semble utile, n'hésitez pas à encourager votre équipe sportive ou votre département d'éducation physique à l'essayer gratuitement avant la journée des jeux.</p>
+        <p style="margin:14px 0 0;font-size:14px;color:#475569;"><a href="https://www.curriculate.net/blast/Curriculate-FieldDay-Sample.pdf" style="color:#2563eb;">Voir un exemple de feuille d'événement (PDF)</a> ou visitez <a href="https://www.curriculate.net/meet-fieldday" style="color:#2563eb;">curriculate.net/meet-fieldday</a> pour une démonstration et un accès pilote gratuit. Si cela vous semble utile, n'hésitez pas à encourager votre équipe sportive ou votre département d'éducation physique à l'essayer gratuitement avant la journée des jeux.</p>
       `),
     },
   },
