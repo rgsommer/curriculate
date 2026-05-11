@@ -1431,9 +1431,18 @@ async function sendAdminNotification(lead) {
   let liveWeekTopHtml = "";  // current week-in-progress, Sun 00:00 → now
   let allTimeTopHtml = "";
   try {
+    // Scope leaderboards:
+    //   - Classroom mode → scope by classroom (different teachers'
+    //     classes should never see each other's students).
+    //   - Everything else (practice + conference) → UNSCOPED.  We want
+    //     one global pool of practicers across all events + /practice.
+    //     Previously this scoped to `conference: lead.conference`,
+    //     which fragmented the leaderboard whenever a new conference
+    //     name came in — e.g. Lilly registered under "OHA" and the
+    //     admin email then showed only OHA, hiding every prior /practice
+    //     practicer.
     const scopeFilter = {};
     if (isClassroom && lead.classroom) scopeFilter.classroom = lead.classroom;
-    else if (!isClassroom && lead.conference) scopeFilter.conference = lead.conference;
 
     // ALL-TIME top 3 (lifetime totalPoints, already cumulative)
     const allTimeLeads = await ConferenceLead.find({
@@ -1521,9 +1530,10 @@ async function sendAdminNotification(lead) {
   let leaderboardHtml = "";
   try {
     const filter = { totalPoints: { $gt: 0 } };
-    // Scope to classroom if applicable
+    // Scope to classroom if applicable; otherwise unscoped (same
+    // rationale as the Top-3 query above — conference scoping was
+    // fragmenting the practicer pool across conference names).
     if (isClassroom && lead.classroom) filter.classroom = lead.classroom;
-    else if (!isClassroom && lead.conference) filter.conference = lead.conference;
 
     const allLeads = await ConferenceLead.find(filter)
       .sort({ totalPoints: -1, createdAt: 1 })
@@ -1865,10 +1875,11 @@ async function sendDemoResultsEmail(lead) {
     const ahead =
       lifetimePoints > 0
         ? await ConferenceLead.find({
+            // Classroom mode stays scoped to the same teacher's class
+            // (different schools shouldn't see each other's kids).
+            // Everything else (practice + conference) is one global pool.
             ...(isClassroom && lead.classroom
               ? { classroom: lead.classroom }
-              : !isClassroom && lead.conference
-              ? { conference: lead.conference }
               : {}),
             totalPoints: { $gt: lifetimePoints },
             _id: { $ne: lead._id },
