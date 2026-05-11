@@ -199,7 +199,7 @@ function NewCampaign({ adminToken, defaults, onCreated }) {
     setPulling(true);
     setPullMsg("");
     try {
-      const params = new URLSearchParams({ limit: 500 });
+      const params = new URLSearchParams({ limit: 5000 });
       for (const [k, v] of Object.entries(contactFilter)) if (v) params.set(k, v);
       const j = await fetch(`${API}/admin/blast/contacts?${params}`, { headers: { "x-admin-token": adminToken } }).then(r => r.json());
       const cleaned = (j.contacts || []).map(c => ({

@@ -384,7 +384,7 @@ router.get("/blast/contacts", requireAdminToken, async (req, res) => {
       ];
     }
 
-    const limit = Math.min(500, parseInt(req.query.limit, 10) || 200);
+    const limit = Math.min(5000, parseInt(req.query.limit, 10) || 200);
     const skip  = Math.max(0, parseInt(req.query.skip,  10) || 0);
 
     const [contacts, total] = await Promise.all([
