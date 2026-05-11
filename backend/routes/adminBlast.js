@@ -19,6 +19,7 @@ import {
   renderTemplate,
   defaultTemplateForProduct,
   detectLanguageForBoard,
+  getHeroBuffer,
 } from "../jobs/blastSender.js";
 import { importContactsFromFolder } from "../jobs/contactImporter.js";
 import { runJob as runResearchJob, researchWorkerTick } from "../jobs/researchWorker.js";
@@ -339,11 +340,19 @@ router.post("/blast/campaigns/:id/test", requireAdminToken, async (req, res) => 
       school:    "Sample Secondary School",
       board:     "HWDSB",
       role:      "Principal",
-    });
+    }, { product: camp.product, isChristian: false, language });
+
+    // Inline hero image so the test preview matches what a real send looks like
+    const heroBuf = getHeroBuffer(camp.product);
+    const attachments = heroBuf
+      ? [{ filename: `hero-${camp.product}.jpg`, content: heroBuf, contentType: "image/jpeg", content_id: "hero" }]
+      : undefined;
+
     await sendSystemEmail({
       to: toEmail,
       subject: `[TEST] ${subject}`,
       html,
+      attachments,
     });
     res.json({ ok: true });
   } catch (e) {

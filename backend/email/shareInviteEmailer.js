@@ -26,9 +26,16 @@ async function sendViaResend({ to, cc, subject, html, attachments, fromAddress, 
   };
   if (cc) payload.cc = Array.isArray(cc) ? cc : [cc];
   if (attachments?.length) {
+    // Resend supports two extra fields per attachment:
+    //   content_id  → references the attachment from HTML as src="cid:<content_id>"
+    //   contentType → MIME type (for inline images, e.g. "image/jpeg")
+    // Inline images shown in the body use content_id + are referenced via
+    // cid:foo in the HTML. Outlook respects this (unlike data: URIs).
     payload.attachments = attachments.map((a) => ({
       filename: a.filename,
       content: a.content instanceof Buffer ? a.content.toString("base64") : a.content,
+      ...(a.contentType ? { contentType: a.contentType } : {}),
+      ...(a.content_id  ? { content_id:  a.content_id  } : {}),
     }));
   }
 

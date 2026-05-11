@@ -7,10 +7,39 @@
 //   • Resend hard cap    (BLAST_RESEND_CEILING env, default 90, leaving headroom on the 100/day free tier)
 //   • only sends inside the campaign's send window (default Tue/Wed/Thu 7:30–8:30 ET)
 
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import BlastCampaign  from "../models/BlastCampaign.js";
 import BlastRecipient from "../models/BlastRecipient.js";
 import BlastContact   from "../models/BlastContact.js";
 import { sendSystemEmail } from "../email/shareInviteEmailer.js";
+
+// ──────────────────────────────────────────────────────────────────────
+// Inline hero attachments — load each product's mascot JPG once at boot
+// and attach with content_id="hero" so the HTML can reference it as
+// <img src="cid:hero" />. This works in Gmail, Apple Mail AND Outlook,
+// and removes any dependency on the public-asset URL being deployed.
+// ──────────────────────────────────────────────────────────────────────
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const HERO_PATH_BY_PRODUCT = {
+  curriculate: "../../frontend/public/images/mascot/ambassador/1-email.jpg",
+  pulse:       "../../frontend/public/images/mascot/grading/1-email.jpg",
+  fieldday:    "../../frontend/public/images/mascot/fieldday/1-email.jpg",
+};
+const heroCache = {}; // { [product]: Buffer | null }
+export function getHeroBuffer(product) {
+  if (heroCache[product] !== undefined) return heroCache[product];
+  const rel = HERO_PATH_BY_PRODUCT[product];
+  if (!rel) return (heroCache[product] = null);
+  try {
+    heroCache[product] = fs.readFileSync(path.resolve(__dirname, rel));
+  } catch (e) {
+    console.warn(`[blast] hero image missing for ${product}: ${e.message}`);
+    heroCache[product] = null;
+  }
+  return heroCache[product];
+}
 
 /* ──────────────────────────────────────────────────────────────────────
  * Time-zone helpers (no extra dependencies)
@@ -275,9 +304,13 @@ export function detectLanguageForBoard(board) {
 // text renders inside a nice 220×140 gradient box rather than the
 // default tiny broken-image icon. Once the JPG drops in, the image
 // takes over the same slot — no template change needed.
-function heroImage(filename, altText) {
+function heroImage(_filenameUnused, altText) {
+  // src="cid:hero" — resolved at send time by the worker, which attaches
+  // the right product's JPG with content_id="hero". For local preview
+  // rendering (render_samples.mjs) this src will fail and the fallback
+  // gradient box is shown; in the actual email it loads inline.
   return `<div style="text-align:center;margin:0 0 18px;">
-    <img src="https://www.curriculate.net/${filename}"
+    <img src="cid:hero"
          alt="${altText}"
          width="220" height="140"
          style="display:block;margin:0 auto;width:220px;max-width:100%;height:auto;min-height:140px;
@@ -583,11 +616,23 @@ export async function blastWorkerTick() {
         const html = addLinkTracking(rendered, { campaign: c, recipient: r });
         const renderedSubject = renderTemplate(subject, vars, opts);
 
+        // Inline hero image (Resend will reference via cid:hero in the html)
+        const heroBuf = getHeroBuffer(c.product);
+        const attachments = heroBuf
+          ? [{
+              filename: `hero-${c.product}.jpg`,
+              content: heroBuf,
+              contentType: "image/jpeg",
+              content_id: "hero",
+            }]
+          : undefined;
+
         try {
           const sendResult = await sendSystemEmail({
             to: r.email,
             subject: renderedSubject,
             html,
+            attachments,
           });
           const sentAt = new Date();
           await BlastRecipient.findByIdAndUpdate(r._id, {
