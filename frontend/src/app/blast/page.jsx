@@ -179,6 +179,43 @@ function NewCampaign({ adminToken, defaults, onCreated }) {
   const [recipients, setRecipients] = useState([]);
   const [csvName, setCsvName] = useState("");
 
+  // "existing" = pick from master Contacts list with filters
+  // "csv"      = upload a CSV file (original behavior)
+  const [recipientMode, setRecipientMode] = useState("existing");
+  const [contactFilter, setContactFilter] = useState({ board: "", role: "", level: "", status: "" });
+  const [contactStats, setContactStats] = useState(null);
+  const [pulling, setPulling] = useState(false);
+  const [pullMsg, setPullMsg] = useState("");
+
+  // Load contact stats once to populate filter options
+  useEffect(() => {
+    fetch(`${API}/admin/blast/contacts/stats`, { headers: { "x-admin-token": adminToken } })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (j?.ok) setContactStats(j); })
+      .catch(() => {});
+  }, [adminToken]);
+
+  async function pullFromContacts() {
+    setPulling(true);
+    setPullMsg("");
+    try {
+      const params = new URLSearchParams({ limit: 500 });
+      for (const [k, v] of Object.entries(contactFilter)) if (v) params.set(k, v);
+      const j = await fetch(`${API}/admin/blast/contacts?${params}`, { headers: { "x-admin-token": adminToken } }).then(r => r.json());
+      const cleaned = (j.contacts || []).map(c => ({
+        email: c.email, firstName: c.firstName, lastName: c.lastName,
+        school: c.school, board: c.board, role: c.role, level: c.level,
+      })).filter(c => c.email);
+      setRecipients(cleaned);
+      setCsvName("");
+      setPullMsg(`✓ Loaded ${cleaned.length} contacts (of ${j.total || 0} matching). Adjust filters and re-pull to refine.`);
+    } catch (e) {
+      setPullMsg(`✗ ${e.message}`);
+    } finally {
+      setPulling(false);
+    }
+  }
+
   const [dailyCap, setDailyCap] = useState(50);
   const [startInDays, setStartInDays] = useState(0);
   const [sendDays, setSendDays] = useState([2, 3, 4]);
@@ -427,14 +464,60 @@ function NewCampaign({ adminToken, defaults, onCreated }) {
         </div>
 
         <div className="rounded-xl border border-white/10 bg-white/5 p-5">
-          <H>2. Recipient CSV</H>
-          <p className="text-xs text-white/60 mb-2">
-            Expected columns: <code className="bg-black/30 px-1">Email, FirstName, LastName, School, Board, Role, Level</code>.
-            French language is auto-applied to <code>Viamonde</code> and <code>MonAvenir</code> rows.
-          </p>
-          <input type="file" accept=".csv" onChange={handleCsv}
-            className="block w-full text-sm text-white/80 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-3 file:py-1.5 file:text-white" />
-          {csvName && <div className="mt-2 text-xs text-white/60">Loaded {csvName} — {recipients.length} rows</div>}
+          <H>2. Recipients</H>
+
+          <div className="flex gap-1 mb-3 border-b border-white/10">
+            <button onClick={() => setRecipientMode("existing")}
+              className={`px-3 py-1.5 text-sm rounded-t-md ${recipientMode === "existing" ? "bg-white/10 text-white" : "text-white/60 hover:text-white"}`}>
+              Pick from Contacts {contactStats ? `(${contactStats.total} available)` : ""}
+            </button>
+            <button onClick={() => setRecipientMode("csv")}
+              className={`px-3 py-1.5 text-sm rounded-t-md ${recipientMode === "csv" ? "bg-white/10 text-white" : "text-white/60 hover:text-white"}`}>
+              Upload new CSV
+            </button>
+          </div>
+
+          {recipientMode === "existing" ? (
+            <>
+              <p className="text-xs text-white/60 mb-2">
+                Filter the master Contact list, then pull. French language is auto-applied to <code>Viamonde</code> / <code>MonAvenir</code>; Christian-school overlay auto-applies to OACS/ACSI/etc.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm mb-3">
+                <select value={contactFilter.board} onChange={(e) => setContactFilter(f => ({ ...f, board: e.target.value }))}
+                  className="px-2 py-1 rounded bg-white/5 border border-white/10">
+                  <option value="">All boards</option>
+                  {contactStats?.byBoard?.map(b => <option key={b._id} value={b._id}>{b._id || "(no board)"} ({b.n})</option>)}
+                </select>
+                <select value={contactFilter.role} onChange={(e) => setContactFilter(f => ({ ...f, role: e.target.value }))}
+                  className="px-2 py-1 rounded bg-white/5 border border-white/10">
+                  <option value="">All roles</option>
+                  {contactStats?.byRole?.map(r => <option key={r._id} value={r._id}>{r._id || "(no role)"} ({r.n})</option>)}
+                </select>
+                <input placeholder="Level" value={contactFilter.level}
+                  onChange={(e) => setContactFilter(f => ({ ...f, level: e.target.value }))}
+                  className="px-2 py-1 rounded bg-white/5 border border-white/10" />
+                <select value={contactFilter.status} onChange={(e) => setContactFilter(f => ({ ...f, status: e.target.value }))}
+                  className="px-2 py-1 rounded bg-white/5 border border-white/10">
+                  <option value="">Any status</option>
+                  <option value="never">Never contacted</option>
+                  <option value="contacted">Already contacted</option>
+                </select>
+              </div>
+              <Btn onClick={pullFromContacts} disabled={pulling}>
+                {pulling ? "Pulling…" : "Pull contacts into campaign"}
+              </Btn>
+              {pullMsg && <div className="mt-2 text-xs text-white/70">{pullMsg}</div>}
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-white/60 mb-2">
+                Expected CSV columns: <code className="bg-black/30 px-1">Email, FirstName, LastName, School, Board, Role, Level</code>. (Skip this tab and use Pick from Contacts if your data is already in the master list.)
+              </p>
+              <input type="file" accept=".csv" onChange={handleCsv}
+                className="block w-full text-sm text-white/80 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-3 file:py-1.5 file:text-white" />
+              {csvName && <div className="mt-2 text-xs text-white/60">Loaded {csvName} — {recipients.length} rows</div>}
+            </>
+          )}
 
           {recipients.length > 0 && (
             <>

@@ -212,14 +212,45 @@ export function renderTemplate(html, vars, opts = {}) {
     ? (CREDENTIAL_INTRO.christian[language] || CREDENTIAL_INTRO.christian.en)
     : (CREDENTIAL_INTRO.default[language]   || CREDENTIAL_INTRO.default.en));
 
+  // Language-aware default salutation. "Dear" in English reads slightly
+  // formal; "Hi {firstName}," is the warm peer-to-peer register.
+  const defaultSalutation = vars.firstName
+    ? (language === "fr" ? `Bonjour ${vars.firstName},` : `Hi ${vars.firstName},`)
+    : (language === "fr" ? "Bonjour," : "Hello,");
+
   return String(html || "").replace(VAR_PATTERN, (_m, key) => {
     const v = vars[key];
-    if (key === "salutation") return v || (vars.firstName ? `Hi ${vars.firstName},` : "Hello,");
+    if (key === "salutation") return v || defaultSalutation;
     if (key === "role_pitch") return rolePitch;
     if (key === "christian_perspective") return christian;
     if (key === "credential_intro") return credIntro;
     return v == null ? "" : String(v);
   });
+}
+
+/** Append UTM parameters to every curriculate.net link in `html` so clicks
+ *  show up in Google Analytics segmented by campaign + recipient. Called
+ *  per send in the worker after renderTemplate. */
+export function addLinkTracking(html, { campaign, recipient }) {
+  if (!html) return html;
+  const utm = {
+    utm_source:   "blast",
+    utm_medium:   "email",
+    utm_campaign: encodeURIComponent(campaign?.product || "curriculate"),
+    utm_content:  String(recipient?._id || ""),
+  };
+  const qs = Object.entries(utm).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join("&");
+
+  // Match any href that points to a curriculate.net URL — keep the unsub
+  // link untouched (the {{email}} placeholder is already there for it).
+  return String(html).replace(
+    /(href=["'])(https?:\/\/(?:www\.)?curriculate\.net[^"']*)(["'])/gi,
+    (_m, pre, url, post) => {
+      if (url.includes("/unsubscribe")) return `${pre}${url}${post}`;
+      const sep = url.includes("?") ? "&" : "?";
+      return `${pre}${url}${sep}${qs}${post}`;
+    }
+  );
 }
 
 export function detectLanguageForBoard(board) {
@@ -283,6 +314,7 @@ const DEFAULT_TEMPLATES = {
     en: {
       subject: "What I wished I'd had as both a teacher and a school leader",
       body: wrap(`
+        <p>{{salutation}}</p>
         <p>Hey! It's Richard. I just ran <strong>Curriculate</strong> scavenger-hunt activities (think station-based learning) with my own Ontario junior-high classes and wanted to share it with one or two principals I respect in the area.</p>
         <p>Quick context: {{credential_intro}} <em>Curriculate is what I wished I'd had — both as a school leader and now as a teacher.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
@@ -301,7 +333,8 @@ const DEFAULT_TEMPLATES = {
     fr: {
       subject: "Ce que j'aurais voulu avoir — comme enseignant et comme directeur",
       body: wrap(`
-        <p>Bonjour ! Je m'appelle Richard. Je viens d'utiliser <strong>Curriculate</strong> avec mes propres élèves du premier cycle du secondaire en Ontario et je voulais en parler à quelques directions que j'estime.</p>
+        <p>{{salutation}}</p>
+        <p>Je m'appelle Richard. Je viens d'utiliser <strong>Curriculate</strong> avec mes propres élèves du premier cycle du secondaire en Ontario et je voulais en parler à quelques directions que j'estime.</p>
         <p>Contexte rapide : {{credential_intro}} <em>Curriculate est l'outil que j'aurais voulu avoir — comme directeur, et maintenant comme enseignant.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
           <strong>Programme pilote :</strong> phase de R&D active — Curriculate est gratuit pendant cette période en échange de commentaires réfléchis. <strong>Rien à télécharger, rien à acheter.</strong>
@@ -321,6 +354,7 @@ const DEFAULT_TEMPLATES = {
     en: {
       subject: "A grading tool designed to give teachers their evenings back",
       body: wrap(`
+        <p>{{salutation}}</p>
         <p>Hey! It's Richard. I just tried <strong>Curriculate Practice</strong> on my own students' work this week and wanted to write to one or two thoughtful schools about it.</p>
         <p>Quick context: {{credential_intro}} I've now personally graded over 1,500 student papers with Curriculate Practice — <em>it's what I wished I'd had both as a school leader watching teacher workload, and now as a teacher facing that same workload myself.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
@@ -336,7 +370,8 @@ const DEFAULT_TEMPLATES = {
     fr: {
       subject: "Un outil de correction conçu pour rendre leurs soirées aux enseignants",
       body: wrap(`
-        <p>Bonjour ! Je m'appelle Richard. Je viens d'essayer <strong>Curriculate Practice</strong> sur les travaux de mes propres élèves et je tenais à écrire à quelques écoles que j'estime.</p>
+        <p>{{salutation}}</p>
+        <p>Je m'appelle Richard. Je viens d'essayer <strong>Curriculate Practice</strong> sur les travaux de mes propres élèves et je tenais à écrire à quelques écoles que j'estime.</p>
         <p>Contexte rapide : {{credential_intro}} J'ai personnellement corrigé plus de 1 500 travaux d'élèves avec Curriculate Practice — <em>c'est l'outil que j'aurais voulu avoir comme directeur en observant la charge de mes enseignants, et maintenant comme enseignant moi-même.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
           <strong>Programme pilote :</strong> phase de R&D active — nous invitons un petit nombre d'écoles à utiliser Practice gratuitement en échange de commentaires réfléchis d'enseignants, d'élèves et de parents. <strong>Rien à télécharger, rien à acheter.</strong>
@@ -353,6 +388,7 @@ const DEFAULT_TEMPLATES = {
     en: {
       subject: "Free field-day app — built after too many field days run on spreadsheets",
       body: wrap(`
+        <p>{{salutation}}</p>
         <p>Hey! It's Richard. {{credential_intro}} I built <strong>Curriculate Field Day</strong> after running too many of my own schools' field days on spreadsheets — <em>it's what I wished I'd had every June.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
           <strong>Pilot Program:</strong> active R&D phase — Field Day is free of charge in exchange for thoughtful feedback after your event. <strong>Nothing to download, nothing to buy.</strong>
@@ -373,7 +409,8 @@ const DEFAULT_TEMPLATES = {
     fr: {
       subject: "Application gratuite pour journée des jeux — bâtie après trop de journées sur feuilles de calcul",
       body: wrap(`
-        <p>Bonjour ! Je m'appelle Richard. {{credential_intro}} J'ai bâti <strong>Curriculate Field Day</strong> après avoir organisé trop de journées des jeux à l'aide de feuilles de calcul — <em>c'est l'outil que j'aurais voulu avoir chaque mois de juin.</em></p>
+        <p>{{salutation}}</p>
+        <p>Je m'appelle Richard. {{credential_intro}} J'ai bâti <strong>Curriculate Field Day</strong> après avoir organisé trop de journées des jeux à l'aide de feuilles de calcul — <em>c'est l'outil que j'aurais voulu avoir chaque mois de juin.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
           <strong>Programme pilote :</strong> phase de R&D active — Field Day est gratuit en échange de commentaires réfléchis après votre événement. <strong>Rien à télécharger, rien à acheter.</strong>
         </p>
@@ -508,8 +545,11 @@ export async function blastWorkerTick() {
           isChristian: !!r.isChristian,
           language: r.language || "en",
         };
-        const html = renderTemplate(body, vars, opts)
+        const rendered = renderTemplate(body, vars, opts)
           .replace(/\{\{\s*email\s*\}\}/g, encodeURIComponent(r.email));
+        // Add utm_* params to every curriculate.net link so clicks pivot
+        // by campaign + recipient in Google Analytics.
+        const html = addLinkTracking(rendered, { campaign: c, recipient: r });
         const renderedSubject = renderTemplate(subject, vars, opts);
 
         try {
