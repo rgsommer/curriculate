@@ -4,20 +4,21 @@ Files in this directory are referenced by the cold-outreach email
 templates in `backend/jobs/blastSender.js`. They're served publicly at
 `https://www.curriculate.net/blast/<filename>`.
 
-## Mascot images (drop these in)
+## Mascot images
 
-The email templates expect THREE mascot JPGs. Save the fox-mascot
-images you generated as:
+Mascot images live alongside the rest of the project's mascot library
+at `frontend/public/images/mascot/<scenario>/1.png`. The email
+templates reference them via:
 
-| Filename                  | Used in            | Image description                                                 |
-|---------------------------|--------------------|-------------------------------------------------------------------|
-| `mascot-curriculate.jpg`  | Curriculate emails | Fox at TECH-ED booth holding a tablet with "Language Quest"       |
-| `mascot-fieldday.jpg`     | Field Day emails   | Fox at "Elementary Field Day" with trophy + rainbow medal         |
-| `mascot-pulse.jpg`        | Pulse emails       | Fox at classroom desk with stack of tests and phone showing G+    |
+| Email      | Path                                            |
+|------------|-------------------------------------------------|
+| Curriculate| `/images/mascot/ambassador/1.png`               |
+| Field Day  | `/images/mascot/fieldday/1.png`                 |
+| Pulse      | `/images/mascot/grading/1.png`                  |
 
-Recommended size: ~600px wide JPG (renders at 220px width in email
-clients, with retina-sharpness margin). Aspect ratio roughly 16:9 or
-3:2 works best with the email layout.
+To swap which variant is used, either rename the file you want to
+`1.png`, or update the path in `backend/jobs/blastSender.js`
+(search for `heroImage(`).
 
 ## Sample PDFs (already in place)
 
