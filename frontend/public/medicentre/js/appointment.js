@@ -17,17 +17,20 @@
  * --------------------------------------------------------------- */
 
 (function () {
-  // Replace OFFICE_EMAIL with the real reception address once it is provided.
-  // Leaving blank for now so we never send to a fake mailbox. When empty,
-  // the form skips the office mailto and relies on the local store +
-  // (future) backend POST to /api/appointments.
-  const OFFICE_EMAIL = '';
+  // The API routes live in the Next.js app at /api/medicentre/* and handle
+  // PIN generation, email delivery (via Resend), and PIN verification.
+  // No PII is stored in the browser anymore.
+  const API_REQUEST_PIN  = '/api/medicentre/request-pin';
+  const API_APPOINTMENTS = '/api/medicentre/appointments';
+
   const CLINIC_NAME = 'St. George Medical Centre Waterdown';
   const CLINIC_PHONE = '(289) 895-7862';
-  const REPLY_FROM  = 'St. George Medical Centre Waterdown';
 
-  // Backend mode flag — swap to 'outlook' when ready.
-  const BACKEND_MODE = 'email'; // 'email' | 'outlook'
+  // BACKEND_MODE controls how submission is wired:
+  //   'api'    — POST to the Next.js API routes above (production)
+  //   'demo'   — generate PIN client-side and only persist locally
+  //              (offline preview; admin dashboard works without a server)
+  const BACKEND_MODE = 'api';
 
   // -------- Prefill doctor from query string ----------
   const params = new URLSearchParams(location.search);
@@ -108,60 +111,64 @@
      dispatchPin() with a server call (e.g. POST /api/verify-pin).
   --------------------------------------------------------------- */
 
-  let activePin = null;
+  // PIN state is stored only as long as the user is on this page.
+  // The actual PIN never lives in the browser — only an opaque server token
+  // (HMAC-signed by the API) that the server validates on final submit.
+  let activeToken = null;     // server-issued JWT-style token (api mode)
+  let activeDemoPin = null;   // local PIN string (demo mode only)
   let activePinAttempts = 0;
   let activePinExpiresAt = 0;
 
-  function startEmailVerification(data) {
+  async function startEmailVerification(data) {
     const targetEmail = (data.bookingFor === 'Other') ? data.bookerEmail : data.email;
-    activePin = String(Math.floor(10000 + Math.random() * 90000));
     activePinAttempts = 0;
-    activePinExpiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+    activePinExpiresAt = Date.now() + 10 * 60 * 1000;
 
-    dispatchPin(targetEmail, activePin, data.firstName || '');
+    if (BACKEND_MODE === 'api') {
+      // Show a small "sending…" state while the API generates + emails the PIN.
+      const box = document.getElementById('appt-status');
+      box.innerHTML = '<div class="alert alert-info">Sending a verification code to <strong>' + escapeHtml(targetEmail) + '</strong>…</div>';
+      try {
+        const res = await fetch(API_REQUEST_PIN, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: targetEmail, firstName: data.firstName || '' })
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json.token) {
+          showError(json.error || 'Could not send a verification code. Please try again, or call ' + CLINIC_PHONE + '.');
+          return;
+        }
+        activeToken = json.token;
+        activeDemoPin = null;
+        renderPinPrompt(targetEmail, data);
+      } catch (err) {
+        showError('Could not reach the server. Please call ' + CLINIC_PHONE + '.');
+      }
+      return;
+    }
+
+    // demo mode: generate PIN client-side and surface it on screen
+    activeToken = null;
+    activeDemoPin = String(Math.floor(10000 + Math.random() * 90000));
     renderPinPrompt(targetEmail, data);
-  }
-
-  function dispatchPin(toEmail, pin, firstName) {
-    // FUTURE: replace with: fetch('/api/verify-pin', { method:'POST', body: JSON.stringify({ email: toEmail, pin }) })
-    // For now: open a hidden mailto so the office sees it,
-    // and surface the PIN in the demo notice. In a static-site
-    // deployment without a mail relay, the on-screen PIN is the
-    // only reliable channel.
-    try {
-      const subject = encodeURIComponent('Your St. George Medical Centre verification code: ' + pin);
-      const body = encodeURIComponent(
-`Hi ${firstName || 'there'},
-
-Your appointment-request verification code is:
-
-    ${pin}
-
-Enter this 5-digit code on the booking page to confirm your request. This code expires in 10 minutes.
-
-If you didn't request an appointment, please ignore this message.
-
-— St. George Medical Centre`
-      );
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = 'mailto:' + encodeURIComponent(toEmail) + '?subject=' + subject + '&body=' + body;
-      document.body.appendChild(iframe);
-      setTimeout(() => iframe.remove(), 4000);
-    } catch (_) { /* ignore */ }
   }
 
   function renderPinPrompt(targetEmail, data) {
     const box = document.getElementById('appt-status');
+    const demoBanner = (BACKEND_MODE === 'demo' && activeDemoPin)
+      ? `<div class="alert alert-info" id="demo-pin-banner" style="font-size:.9rem;">
+           <strong>Demo mode:</strong> the email backend isn't running, so we generated the code locally:
+           <code style="background:#fff;padding:.1rem .4rem;border-radius:4px;letter-spacing:.15em;">${activeDemoPin}</code>.
+         </div>`
+      : '';
+
     box.innerHTML = `
       <div class="card" id="pin-card">
         <h3 style="font-family:var(--serif);color:var(--primary-dark);">📧 Confirm your email</h3>
         <p>We've sent a 5-digit verification code to <strong>${escapeHtml(targetEmail)}</strong>.
            Enter it below to submit your appointment request.</p>
-        <div class="alert alert-info" id="demo-pin-banner" style="font-size:.9rem;">
-          <strong>Demo mode:</strong> until the email backend is connected, your code is
-          <code style="background:#fff;padding:.1rem .4rem;border-radius:4px;letter-spacing:.15em;">${activePin}</code>.
-        </div>
+        ${demoBanner}
         <div class="form-row" style="grid-template-columns: 1fr auto; gap:.75rem;">
           <input type="text" id="pin-input" maxlength="5" inputmode="numeric" pattern="[0-9]{5}"
                  placeholder="• • • • •"
@@ -192,59 +199,118 @@ If you didn't request an appointment, please ignore this message.
     verifyBtn.addEventListener('click', async () => {
       errBox.innerHTML = '';
       const entered = pinInput.value.trim();
+      if (!/^\d{5}$/.test(entered)) {
+        errBox.innerHTML = '<div class="alert alert-danger mt-2">Please enter the 5-digit code from your email.</div>';
+        return;
+      }
       if (Date.now() > activePinExpiresAt) {
         errBox.innerHTML = '<div class="alert alert-danger mt-2">That code has expired. Click "Resend code" to get a new one.</div>';
         return;
       }
-      activePinAttempts++;
-      if (entered !== activePin) {
-        if (activePinAttempts >= 5) {
-          errBox.innerHTML = '<div class="alert alert-danger mt-2">Too many incorrect attempts. Please refresh the page and try again, or call us at ' + CLINIC_PHONE + '.</div>';
-          verifyBtn.disabled = true;
-          return;
-        }
-        errBox.innerHTML = `<div class="alert alert-danger mt-2">That code didn't match — please check your email and try again. (Attempt ${activePinAttempts} of 5.)</div>`;
-        pinInput.select();
-        return;
-      }
-      // PIN verified ✓ — submit the request
+
       verifyBtn.disabled = true;
       verifyBtn.textContent = 'Submitting…';
+
       try {
-        const result = await submitAppointmentRequest(data);
-        result.emailVerified = true;
-        showSuccess(result);
+        if (BACKEND_MODE === 'api') {
+          const result = await submitViaApi(data, entered);
+          showSuccess(result);
+        } else {
+          // demo mode: local check
+          activePinAttempts++;
+          if (entered !== activeDemoPin) {
+            if (activePinAttempts >= 5) {
+              errBox.innerHTML = '<div class="alert alert-danger mt-2">Too many incorrect attempts. Please refresh the page and try again, or call us at ' + CLINIC_PHONE + '.</div>';
+              verifyBtn.disabled = true;
+              return;
+            }
+            errBox.innerHTML = `<div class="alert alert-danger mt-2">That code didn't match — please check your email and try again. (Attempt ${activePinAttempts} of 5.)</div>`;
+            pinInput.select();
+            verifyBtn.disabled = false;
+            verifyBtn.textContent = 'Verify & submit';
+            return;
+          }
+          const stored = persistLocally(data);
+          showSuccess(stored);
+        }
+
         form.reset();
-        // Reset visual state of optional/conditional fields
         document.querySelectorAll('input[name="visitCategory"]').forEach(r => r.checked = false);
-        ['urgency-detail-group','new-patient-group','followup-group','booker-block'].forEach(id => {
+        ['urgency-detail-group','new-patient-group','followup-group','booker-block','flexible-doctor-row'].forEach(id => {
           const el = document.getElementById(id); if (el) el.style.display = 'none';
         });
       } catch (err) {
-        errBox.innerHTML = '<div class="alert alert-danger mt-2">Sorry — we could not submit your request right now. Please call us at ' + CLINIC_PHONE + '.</div>';
+        const msg = (err && err.message) ? err.message : 'Sorry — we could not submit your request right now. Please call ' + CLINIC_PHONE + '.';
+        errBox.innerHTML = '<div class="alert alert-danger mt-2">' + escapeHtml(msg) + '</div>';
         verifyBtn.disabled = false;
         verifyBtn.textContent = 'Verify & submit';
       }
     });
 
-    document.getElementById('pin-resend').addEventListener('click', (ev) => {
+    document.getElementById('pin-resend').addEventListener('click', async (ev) => {
       ev.preventDefault();
-      activePin = String(Math.floor(10000 + Math.random() * 90000));
+      errBox.innerHTML = '<div class="alert alert-info mt-2">Sending a new code…</div>';
       activePinAttempts = 0;
       activePinExpiresAt = Date.now() + 10 * 60 * 1000;
-      dispatchPin(targetEmail, activePin, data.firstName || '');
-      const banner = document.getElementById('demo-pin-banner');
-      if (banner) banner.innerHTML = '<strong>Demo mode:</strong> a new code was generated. Your code is now <code style="background:#fff;padding:.1rem .4rem;border-radius:4px;letter-spacing:.15em;">' + activePin + '</code>.';
-      errBox.innerHTML = '<div class="alert alert-success mt-2">A new code was sent to your email.</div>';
+
+      if (BACKEND_MODE === 'api') {
+        try {
+          const res = await fetch(API_REQUEST_PIN, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: targetEmail, firstName: data.firstName || '' })
+          });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok || !json.token) {
+            errBox.innerHTML = '<div class="alert alert-danger mt-2">' + escapeHtml(json.error || 'Could not send a new code.') + '</div>';
+            return;
+          }
+          activeToken = json.token;
+          errBox.innerHTML = '<div class="alert alert-success mt-2">A new code was sent to your email.</div>';
+        } catch {
+          errBox.innerHTML = '<div class="alert alert-danger mt-2">Could not reach the server. Please call ' + CLINIC_PHONE + '.</div>';
+        }
+      } else {
+        activeDemoPin = String(Math.floor(10000 + Math.random() * 90000));
+        const banner = document.getElementById('demo-pin-banner');
+        if (banner) banner.innerHTML = '<strong>Demo mode:</strong> a new code was generated. Your code is now <code style="background:#fff;padding:.1rem .4rem;border-radius:4px;letter-spacing:.15em;">' + activeDemoPin + '</code>.';
+        errBox.innerHTML = '<div class="alert alert-success mt-2">A new code was generated.</div>';
+      }
     });
 
     document.getElementById('pin-change-email').addEventListener('click', (ev) => {
       ev.preventDefault();
       box.innerHTML = '';
-      // Scroll back to the email field
       const target = (data.bookingFor === 'Other') ? form.querySelector('input[name="bookerEmail"]') : form.querySelector('input[name="email"]');
       if (target) { target.focus(); target.scrollIntoView({behavior:'smooth', block:'center'}); }
     });
+  }
+
+  // ----- API submission ----------------------------------------------------
+  async function submitViaApi(data, pin) {
+    const payload = Object.assign({}, data, { token: activeToken, pin });
+    delete payload.consent;
+    const res = await fetch(API_APPOINTMENTS, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.ok) {
+      throw new Error(json.error || 'The clinic could not be reached.');
+    }
+    return Object.assign({}, data, {
+      id: json.id,
+      emailVerified: true,
+      submittedAt: new Date().toISOString()
+    });
+  }
+
+  function persistLocally(data) {
+    return MC.store.add(Object.assign({
+      emailVerified: true,
+      status: 'Pending'
+    }, data));
   }
 
   function setSubmitting(on) {
@@ -294,131 +360,7 @@ If you didn't request an appointment, please ignore this message.
     }[c]));
   }
 
-  /* ---------------- Submission backend ---------------- */
-  /**
-   * Single entry point — swap the inside of this function
-   * when the Outlook / backend API is ready.
-   */
-  async function submitAppointmentRequest(data) {
-    // 1) Persist to local store so the Admin dashboard sees it.
-    //    In production this becomes: await fetch('/api/appointments', { method:'POST', body: JSON.stringify(data) })
-    const stored = MC.store.add({
-      emailVerified: true,                        // submitted only after 5-digit PIN matched
-      // Patient
-      firstName: data.firstName,
-      lastName: data.lastName,
-      email: data.email,
-      phone: data.phone,
-      address: data.address,
-      dob: data.dob,
-      ohip: data.ohip,
-      // Booker (when not the patient)
-      bookingFor: data.bookingFor || 'Self',     // 'Self' | 'Other'
-      bookerName: data.bookerName,
-      bookerRelation: data.bookerRelation,
-      bookerEmail: data.bookerEmail,
-      bookerPhone: data.bookerPhone,
-      // Visit
-      preferredDoctor: data.preferredDoctor,
-      flexibleOnDoctor: !!data.flexibleOnDoctor, // true = ok to see another physician if preferred is unavailable
-      visitCategory: data.visitCategory,         // 'Urgent' | 'New patient' | 'Follow-up' | 'Routine'
-      // New patient extras
-      previousDoctor: data.previousDoctor,
-      previousDoctorLastVisit: data.previousDoctorLastVisit,
-      recordsTransfer: data.recordsTransfer,
-      medicalConditions: data.medicalConditions,
-      medications: data.medications,
-      allergies: data.allergies,
-      surgeries: data.surgeries,
-      familyHistory: data.familyHistory,
-      // Follow-up extras
-      followupContext: data.followupContext,
-      urgency: data.urgency,
-      symptoms: data.symptoms,
-      timing: data.timing,
-      visitType: data.visitType,
-      notes: data.notes,
-      status: 'Pending'
-    });
-
-    if (BACKEND_MODE === 'email' && OFFICE_EMAIL) {
-      // 2) Email the office (opens a pre-filled message in their default mail client).
-      //    Only fires when a real OFFICE_EMAIL is configured at the top of this file.
-      const officeMail = buildOfficeEmailLink(stored);
-      const f = document.createElement('iframe');
-      f.style.display = 'none';
-      f.src = officeMail;
-      document.body.appendChild(f);
-      setTimeout(() => f.remove(), 4000);
-    }
-
-    if (BACKEND_MODE === 'outlook') {
-      // Placeholder for the future Graph integration:
-      // await fetch('/api/appointments/outlook', { method:'POST', body: JSON.stringify(stored) })
-      // The server side will: 1) find a slot in the clinic calendar
-      //                       2) create a calendar event
-      //                       3) email the confirmation to the patient
-      console.info('[appointment] Outlook backend not yet wired up — payload:', stored);
-    }
-
-    return stored;
-  }
-
-  function buildOfficeEmailLink(r) {
-    const tag = r.visitCategory ? '[' + r.visitCategory.toUpperCase() + '] ' : '';
-    const subject = `${tag}Appointment request — ${r.firstName} ${r.lastName} (${r.id})`;
-    const bookerBlock = r.bookingFor === 'Other'
-      ? `\nBOOKED BY (NOT THE PATIENT)
-  Name:     ${r.bookerName || '(not provided)'}
-  Relation: ${r.bookerRelation || '(not provided)'}
-  Email:    ${r.bookerEmail || '(not provided)'}
-  Phone:    ${r.bookerPhone || '(not provided)'}\n`
-      : '';
-
-    const body =
-`A new appointment request was submitted via the website.
-
-Reference:    ${r.id}
-Submitted:    ${new Date(r.submittedAt).toLocaleString()}
-Visit type:   ${r.visitCategory || '(not specified)'}${r.visitCategory === 'Urgent' && r.urgency ? '  ['+r.urgency+']' : ''}
-${bookerBlock}
-PATIENT
-  Name:    ${r.firstName} ${r.lastName}
-  Email:   ${r.email || '(not provided)'}
-  Phone:   ${r.phone || '(not provided)'}
-  Address: ${r.address || '(not provided)'}
-  DOB:     ${r.dob || '(not provided)'}
-  OHIP:    ${r.ohip || '(not provided)'}
-
-REQUEST
-  Preferred doctor: ${r.preferredDoctor || 'Any available'}${r.preferredDoctor && r.preferredDoctor !== 'Any available' && r.preferredDoctor !== 'Walk-in / Urgent' ? (r.flexibleOnDoctor ? '  (or any if unavailable)' : '  (this doctor only — patient prefers to wait)') : ''}
-  Category:         ${r.visitCategory || '(not specified)'}
-  ${r.visitCategory === 'Urgent'      ? 'Urgency window:   ' + (r.urgency || '(not specified)') : ''}
-  ${r.visitCategory === 'New patient' ? 'Previous doctor:  ' + (r.previousDoctor || '(not specified)') + (r.previousDoctorLastVisit ? '  (last seen '+r.previousDoctorLastVisit+')' : '') : ''}
-  ${r.visitCategory === 'New patient' ? 'Records transfer: ' + (r.recordsTransfer || '(not specified)') : ''}
-  ${r.visitCategory === 'New patient' ? 'Conditions:       ' + (r.medicalConditions || '(none listed)') : ''}
-  ${r.visitCategory === 'New patient' ? 'Medications:      ' + (r.medications || '(none listed)') : ''}
-  ${r.visitCategory === 'New patient' ? 'Allergies:        ' + (r.allergies || '(none listed)') : ''}
-  ${r.visitCategory === 'New patient' ? 'Surgeries/hosp.:  ' + (r.surgeries || '(none listed)') : ''}
-  ${r.visitCategory === 'New patient' ? 'Family history:   ' + (r.familyHistory || '(none listed)') : ''}
-  ${r.visitCategory === 'Follow-up'   ? 'Following up on:  ' + (r.followupContext || '(not specified)') : ''}
-  Visit format:     ${r.visitType || '(not specified)'}
-  Timing prefs:     ${(r.timing || []).join(', ') || '(none)'}
-
-REASON FOR VISIT
-${r.symptoms || ''}
-
-ADDITIONAL NOTES
-${r.notes || '(none)'}
-
-—
-Please review and confirm via the Admin dashboard.
-${CLINIC_NAME}`;
-    return 'mailto:' + OFFICE_EMAIL +
-      '?subject=' + encodeURIComponent(subject) +
-      '&body=' + encodeURIComponent(body);
-  }
-
+  // ----- Patient "save a copy" mailto link (offered on the receipt screen) -----
   function buildPatientEmailLink(r) {
     const subject = `Your appointment request — ${CLINIC_NAME} (${r.id})`;
     const body =
@@ -439,9 +381,9 @@ ${r.symptoms || ''}
 If anything changes or you'd like to reach us, call ${CLINIC_PHONE}.
 
 —
-${REPLY_FROM}
+${CLINIC_NAME}
 250 Dundas St E, Unit 3, Waterdown, ON L8B 0E7`;
-    const to = r.email ? r.email : '';
+    const to = r.email || r.bookerEmail || '';
     return 'mailto:' + to +
       '?subject=' + encodeURIComponent(subject) +
       '&body=' + encodeURIComponent(body);

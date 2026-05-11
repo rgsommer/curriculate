@@ -288,6 +288,10 @@
 
           <form id="appt-form" novalidate>
             <input type="hidden" name="preferredDoctor" id="preferredDoctorHidden" value="" />
+            <!-- Honeypot for bots: real users never fill this; CSS keeps it off-screen. -->
+            <div style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" aria-hidden="true">
+              <label>Company<input type="text" name="company" tabindex="-1" autocomplete="off"></label>
+            </div>
 
             <fieldset>
               <legend>Who is this appointment for?</legend>
@@ -363,7 +367,29 @@
               <div class="form-row">
                 <div class="form-group">
                   <label><span class="lbl-dob">Your</span> date of birth <span class="req">*</span></label>
-                  <input type="date" name="dob" required />
+                  <div class="dob-grid" style="display:grid;grid-template-columns:1.4fr 1fr 1.2fr;gap:.5rem;">
+                    <select id="dobMonth" aria-label="Month of birth" required>
+                      <option value="">Month</option>
+                      <option value="01">January</option>
+                      <option value="02">February</option>
+                      <option value="03">March</option>
+                      <option value="04">April</option>
+                      <option value="05">May</option>
+                      <option value="06">June</option>
+                      <option value="07">July</option>
+                      <option value="08">August</option>
+                      <option value="09">September</option>
+                      <option value="10">October</option>
+                      <option value="11">November</option>
+                      <option value="12">December</option>
+                    </select>
+                    <select id="dobDay" aria-label="Day of birth" required>
+                      <option value="">Day</option>
+                    </select>
+                    <input type="text" id="dobYear" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="Year (e.g. 1967)" aria-label="Year of birth" required />
+                  </div>
+                  <p class="help">Type the year directly — no need to scroll through a calendar.</p>
+                  <input type="hidden" name="dob" id="dob" />
                 </div>
                 <div class="form-group">
                   <label><span class="lbl-ohip">Your</span> OHIP number <span class="opt">optional</span></label>
@@ -653,6 +679,39 @@
     r.addEventListener('change', () => setLabels(r.value === 'Self'));
   });
   setLabels(true);
+
+  // DOB: combine Month / Day / Year selects into the hidden YYYY-MM-DD field.
+  (function () {
+    const m = document.getElementById('dobMonth');
+    const d = document.getElementById('dobDay');
+    const y = document.getElementById('dobYear');
+    const hidden = document.getElementById('dob');
+    if (!m || !d || !y || !hidden) return;
+
+    // Populate day options 1–31
+    for (let i = 1; i <= 31; i++) {
+      const o = document.createElement('option');
+      o.value = String(i).padStart(2, '0');
+      o.textContent = i;
+      d.appendChild(o);
+    }
+
+    function combine() {
+      const yr = y.value.trim();
+      if (m.value && d.value && /^\d{4}$/.test(yr) && +yr >= 1900 && +yr <= new Date().getFullYear()) {
+        hidden.value = yr + '-' + m.value + '-' + d.value;
+      } else {
+        hidden.value = '';
+      }
+    }
+    [m, d, y].forEach(el => el.addEventListener('input', combine));
+    [m, d, y].forEach(el => el.addEventListener('change', combine));
+
+    // Restrict year input to digits, max 4
+    y.addEventListener('input', () => {
+      y.value = y.value.replace(/\D/g, '').slice(0, 4);
+    });
+  })();
 })();
 </script>
 <script src="js/appointment.js"></script>
