@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Patients — MediCentre Admin</title>
+<link rel="stylesheet" href="../css/styles.css" />
+</head>
+<body>
+<div class="admin-shell">
+  <aside class="admin-sidebar">
+    <a class="brand" href="../index.html" style="text-decoration:none;color:#fff;">
+      <div class="brand-mark">+</div>
+      <div class="brand-text">
+        <div class="name">St. George Medical</div>
+        <div class="sub">Reception Admin</div>
+      </div>
+    </a>
+    <nav>
+      <a href="dashboard.html">📋 Appointments</a>
+      <a href="schedule.html">📅 Schedule</a>
+      <a href="reminders.html">📨 Reminders</a>
+      <a href="patients.html" class="active">👤 Patients</a>
+      <a href="settings.html">⚙️ Settings</a>
+    </nav>
+  </aside>
+  <main class="admin-main">
+    <div class="admin-topbar"><h1>Patients</h1></div>
+    <div class="alert alert-info">
+      <strong>Coming soon.</strong> The patient directory will connect to your EMR once Outlook and the patient database are linked. For now, patient details live within each appointment record on the <a href="dashboard.html">Appointments dashboard</a>.
+    </div>
+
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Patient</th><th>DOB</th><th>Last seen</th><th>Family doctor</th></tr></thead>
+        <tbody id="patients-tbody"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script src="../js/main.js"></script>
+<script>
+(function () {
+  MC.store.seedIfEmpty();
+  const seen = new Map();
+  MC.store.list().forEach(a => {
+    const key = (a.firstName + '|' + a.lastName + '|' + (a.dob || '')).toLowerCase();
+    const prev = seen.get(key);
+    if (!prev || (a.submittedAt > prev.submittedAt)) seen.set(key, a);
+  });
+  const rows = [...seen.values()];
+  const tbody = document.getElementById('patients-tbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:2rem;">No patient records yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(a => `
+    <tr>
+      <td><strong>${esc(a.firstName + ' ' + a.lastName)}</strong><br><small class="text-muted">${esc(a.email || a.phone || '')}</small></td>
+      <td>${esc(a.dob || '—')}</td>
+      <td>${esc(new Date(a.submittedAt).toLocaleDateString())}</td>
+      <td>${esc(a.preferredDoctor || 'Any available')}</td>
+    </tr>
+  `).join('');
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Reminders — MediCentre Admin</title>
+<link rel="stylesheet" href="../css/styles.css" />
+</head>
+<body>
+
+<div class="admin-shell">
+  <aside class="admin-sidebar">
+    <a class="brand" href="../index.html" style="text-decoration:none;color:#fff;">
+      <div class="brand-mark">+</div>
+      <div class="brand-text">
+        <div class="name">St. George Medical</div>
+        <div class="sub">Reception Admin</div>
+      </div>
+    </a>
+    <nav>
+      <a href="dashboard.html">📋 Appointments</a>
+      <a href="schedule.html">📅 Schedule</a>
+      <a href="reminders.html" class="active">📨 Reminders</a>
+      <a href="patients.html">👤 Patients</a>
+      <a href="settings.html">⚙️ Settings</a>
+    </nav>
+  </aside>
+
+  <main class="admin-main">
+    <div class="admin-topbar">
+      <h1>Reminders</h1>
+    </div>
+
+    <div class="alert alert-info">
+      <strong>How reminders work.</strong> Once an appointment is confirmed, two reminders are queued automatically — one 24 hours before, and one 2 hours before. Each reminder is personalized using the visit type, doctor's instructions, and AI-generated preparation notes where appropriate.
+    </div>
+
+    <div class="grid grid-2 mb-4">
+      <div class="card">
+        <h3>🕐 24-hour reminder template</h3>
+        <p class="text-muted" style="font-size:.92rem;">Sent the day before the visit. Personalised by visit type.</p>
+        <textarea rows="10" style="width:100%;font-family:inherit;padding:.75rem;border:1px solid var(--border);border-radius:var(--radius-sm);">Hi {patient_first_name},
+
+This is a friendly reminder that your appointment with {doctor} is scheduled for {appointment_time} tomorrow at St. George Medical Centre.
+
+  Address:  250 Dundas St E, Unit 3, Waterdown, ON L8B 0E7
+  Bring:    OHIP card and list of current medications
+
+{ai_visit_specific_instructions}
+
+Need to reschedule? Call (289) 895-7862.
+
+— St. George Medical Centre Waterdown</textarea>
+      </div>
+      <div class="card">
+        <h3>🕑 2-hour reminder template</h3>
+        <p class="text-muted" style="font-size:.92rem;">Sent two hours before. Short and operational.</p>
+        <textarea rows="10" style="width:100%;font-family:inherit;padding:.75rem;border:1px solid var(--border);border-radius:var(--radius-sm);">Hi {patient_first_name},
+
+Quick reminder — your appointment with {doctor} is at {appointment_time} today.
+
+  📍 250 Dundas St E, Unit 3, Waterdown
+
+Running late? Call (289) 895-7862 so we can adjust the schedule.
+
+— St. George Medical Centre Waterdown</textarea>
+      </div>
+    </div>
+
+    <h2 style="font-family:var(--serif);color:var(--primary-dark);">Upcoming reminders</h2>
+
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr><th>Patient</th><th>Appointment</th><th>Reminder type</th><th>Send at</th><th>Channel</th><th>Status</th></tr>
+        </thead>
+        <tbody id="reminders-tbody"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script src="../js/main.js"></script>
+<script>
+(function () {
+  MC.store.seedIfEmpty();
+  const all = MC.store.list().filter(a => a.scheduledAt && (a.status === 'Confirmed' || a.status === 'Scheduled'));
+  const rows = [];
+  all.forEach(a => {
+    const t = new Date(a.scheduledAt);
+    const t24 = new Date(t); t24.setHours(t24.getHours() - 24);
+    const t2 = new Date(t); t2.setHours(t2.getHours() - 2);
+    const channel = a.email ? 'Email' + (a.phone ? ' + SMS' : '') : (a.phone ? 'SMS' : 'Email (none)');
+    rows.push({ patient: a.firstName + ' ' + a.lastName, appt: t, type: '24-hour', send: t24, channel,
+                status: t24 > new Date() ? 'Queued' : 'Sent' });
+    rows.push({ patient: a.firstName + ' ' + a.lastName, appt: t, type: '2-hour',  send: t2,  channel,
+                status: t2 > new Date() ? 'Queued' : 'Sent' });
+  });
+  rows.sort((x,y) => x.send - y.send);
+  const tbody = document.getElementById('reminders-tbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No upcoming reminders. Confirm an appointment first.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td><strong>${escapeHtml(r.patient)}</strong></td>
+      <td>${r.appt.toLocaleString()}</td>
+      <td>${r.type}</td>
+      <td>${r.send.toLocaleString()}</td>
+      <td>${escapeHtml(r.channel)}</td>
+      <td><span class="badge ${r.status === 'Queued' ? 'badge-warning' : 'badge-accent'}">${r.status}</span></td>
+    </tr>
+  `).join('');
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+    }[c]));
+  }
+})();
+</script>
+</body>
+</html>

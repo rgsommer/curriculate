@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dashboard — MediCentre Admin</title>
+<link rel="stylesheet" href="../css/styles.css" />
+<style>
+  /* Compact admin tweaks */
+  .filters {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    margin-bottom: 1.25rem;
+    display: flex;
+    gap: .75rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .filters input, .filters select {
+    padding: .5rem .7rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: .92rem;
+    font-family: inherit;
+  }
+  .filters input { min-width: 220px; }
+  .status-pill { font-size: .72rem; padding: .15rem .55rem; }
+  .row-actions button {
+    background: transparent;
+    border: 1px solid var(--border);
+    padding: .35rem .65rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: .85rem;
+    color: var(--text);
+    margin-right: .2rem;
+  }
+  .row-actions button:hover { border-color: var(--primary); color: var(--primary-dark); }
+  .row-actions button.confirm-btn { background: var(--accent); color:#fff; border-color: var(--accent); }
+  .row-actions button.confirm-btn:hover { background: var(--accent-dark); }
+  .row-actions button.danger-btn:hover { border-color: var(--danger); color: var(--danger); }
+  .empty-state {
+    padding: 3rem 1rem;
+    text-align: center;
+    color: var(--text-muted);
+  }
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: .5rem 1rem;
+    font-size: .94rem;
+  }
+  .detail-grid dt { color: var(--text-muted); font-weight: 500; }
+  .detail-grid dd { margin: 0; color: var(--text); }
+  .timing-prefs span {
+    display:inline-block;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: .15rem .55rem;
+    border-radius: 999px;
+    font-size: .82rem;
+    margin: 0 .2rem .25rem 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="admin-shell">
+  <aside class="admin-sidebar">
+    <a class="brand" href="../index.html" style="text-decoration:none;color:#fff;">
+      <div class="brand-mark">+</div>
+      <div class="brand-text">
+        <div class="name">St. George Medical</div>
+        <div class="sub">Reception Admin</div>
+      </div>
+    </a>
+    <nav>
+      <a href="dashboard.html" class="active">📋 Appointments</a>
+      <a href="schedule.html">📅 Schedule</a>
+      <a href="reminders.html">📨 Reminders</a>
+      <a href="patients.html">👤 Patients</a>
+      <a href="settings.html">⚙️ Settings</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div id="signed-in-as">Signed in</div>
+      <a href="#" id="signout-link" style="color:rgba(255,255,255,.7);">Sign out</a>
+    </div>
+  </aside>
+
+  <main class="admin-main">
+    <div class="admin-topbar">
+      <h1>Appointment requests</h1>
+      <div class="admin-user">
+        <span id="topbar-name" class="text-muted">—</span>
+        <div class="avatar" id="topbar-avatar">L</div>
+      </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="grid grid-4 mb-4" id="kpi-row">
+      <div class="stat-card"><div class="label">Pending review</div><div class="value" id="kpi-pending">—</div><div class="delta delta-up" id="kpi-pending-delta">&nbsp;</div></div>
+      <div class="stat-card"><div class="label">Urgent requests</div><div class="value" id="kpi-urgent">—</div><div class="delta" id="kpi-urgent-delta">&nbsp;</div></div>
+      <div class="stat-card"><div class="label">Scheduled today</div><div class="value" id="kpi-today">—</div></div>
+      <div class="stat-card"><div class="label">New patients (30d)</div><div class="value" id="kpi-newpts">—</div></div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="active" data-tab="all">All</button>
+      <button data-tab="pending">Pending</button>
+      <button data-tab="urgent">Urgent</button>
+      <button data-tab="newpatient">New patients</button>
+      <button data-tab="scheduled">Scheduled</button>
+      <button data-tab="confirmed">Confirmed</button>
+      <button data-tab="declined">Declined</button>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters">
+      <input type="search" id="filter-search" placeholder="Search by name, email, phone, or ref…" />
+      <select id="filter-doctor">
+        <option value="">All doctors</option>
+        <option>Dr. Marc Habib</option>
+        <option>Dr. Safaa Tawfik-Helmy</option>
+        <option>Dr. Eskander</option>
+        <option value="Any available">Any available</option>
+        <option value="Walk-in / Urgent">Walk-in / Urgent</option>
+      </select>
+      <select id="filter-category">
+        <option value="">All visit types</option>
+        <option>Urgent</option>
+        <option>New patient</option>
+        <option>Follow-up</option>
+        <option>Routine</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" id="reset-filters">Reset</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-outline btn-sm" id="seed-btn">Load sample data</button>
+      <button class="btn btn-outline btn-sm" id="clear-btn">Clear all</button>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Ref</th>
+            <th>Patient</th>
+            <th>Visit type</th>
+            <th>Preferred doctor</th>
+            <th>Submitted</th>
+            <th>Status</th>
+            <th style="text-align:right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="appt-table-body"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Detail / scheduling modal -->
+<div class="modal-backdrop" id="detail-modal">
+  <div class="modal">
+    <header>
+      <h3 id="detail-title">Appointment request</h3>
+      <button class="modal-close" data-modal-close>×</button>
+    </header>
+    <div class="modal-body" id="detail-body"></div>
+    <div class="modal-foot" id="detail-foot"></div>
+  </div>
+</div>
+
+<script src="../js/main.js"></script>
+<script src="../js/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Schedule — MediCentre Admin</title>
+<link rel="stylesheet" href="../css/styles.css" />
+<style>
+  .day-col {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+  }
+  .day-col h3 {
+    color: var(--primary-dark);
+    font-family: var(--serif);
+    font-size: 1rem;
+    margin-bottom: .75rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: .5rem;
+  }
+  .slot {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--primary);
+    border-radius: var(--radius-sm);
+    padding: .65rem .75rem;
+    margin-bottom: .5rem;
+    font-size: .88rem;
+  }
+  .slot .time { font-weight: 600; color: var(--primary-dark); }
+  .slot .who  { font-size: .82rem; color: var(--text-muted); }
+  .slot.urgent { border-left-color: var(--danger); }
+  .slot.new    { border-left-color: var(--accent); }
+  .slot.followup { border-left-color: var(--warning); }
+  .legend span { font-size:.82rem; margin-right:.75rem; }
+  .legend span::before {
+    content:''; display:inline-block; width:10px; height:10px; margin-right:.35rem;
+    border-radius:2px; vertical-align:middle;
+  }
+  .legend .l-routine::before { background: var(--primary); }
+  .legend .l-urgent::before  { background: var(--danger); }
+  .legend .l-new::before     { background: var(--accent); }
+  .legend .l-follow::before  { background: var(--warning); }
+  .schedule-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: .75rem;
+  }
+  @media (max-width: 1100px) { .schedule-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 700px)  { .schedule-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="admin-shell">
+  <aside class="admin-sidebar">
+    <a class="brand" href="../index.html" style="text-decoration:none;color:#fff;">
+      <div class="brand-mark">+</div>
+      <div class="brand-text">
+        <div class="name">St. George Medical</div>
+        <div class="sub">Reception Admin</div>
+      </div>
+    </a>
+    <nav>
+      <a href="dashboard.html">📋 Appointments</a>
+      <a href="schedule.html" class="active">📅 Schedule</a>
+      <a href="reminders.html">📨 Reminders</a>
+      <a href="patients.html">👤 Patients</a>
+      <a href="settings.html">⚙️ Settings</a>
+    </nav>
+  </aside>
+
+  <main class="admin-main">
+    <div class="admin-topbar">
+      <h1>Weekly schedule</h1>
+      <div class="legend">
+        <span class="l-routine">Routine</span>
+        <span class="l-urgent">Urgent</span>
+        <span class="l-new">New patient</span>
+        <span class="l-follow">Follow-up</span>
+      </div>
+    </div>
+
+    <div class="alert alert-info">
+      <strong>Preview mode.</strong> This week's schedule is populated from confirmed bookings in this browser. Once Outlook is connected, this view will read directly from the clinic calendar.
+    </div>
+
+    <div class="schedule-grid" id="schedule-grid"></div>
+  </main>
+</div>
+
+<script src="../js/main.js"></script>
+<script>
+(function () {
+  MC.store.seedIfEmpty();
+  const grid = document.getElementById('schedule-grid');
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const today = new Date(); today.setHours(0,0,0,0);
+  const start = new Date(today); start.setDate(today.getDate() - today.getDay()); // Sunday
+
+  // Build map of slots per day
+  const all = MC.store.list().filter(a => a.scheduledAt && (a.status === 'Confirmed' || a.status === 'Scheduled'));
+  const buckets = Array.from({length: 7}, () => []);
+  all.forEach(a => {
+    const d = new Date(a.scheduledAt);
+    const offset = Math.floor((d - start) / (24*3600*1000));
+    if (offset >= 0 && offset < 7) buckets[offset].push(a);
+  });
+  buckets.forEach(b => b.sort((x,y) => new Date(x.scheduledAt) - new Date(y.scheduledAt)));
+
+  grid.innerHTML = buckets.map((slots, i) => {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const label = days[i] + ' ' + (d.getMonth()+1) + '/' + d.getDate();
+    const inner = slots.length
+      ? slots.map(slotHtml).join('')
+      : '<div style="color:var(--text-muted);font-size:.85rem;padding:1rem 0;text-align:center;">No bookings</div>';
+    return `<div class="day-col">
+      <h3>${label}</h3>
+      ${inner}
+    </div>`;
+  }).join('');
+
+  function slotHtml(a) {
+    const t = new Date(a.scheduledAt);
+    const time = t.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+    let cls = '';
+    if (a.visitCategory === 'Urgent') cls = 'urgent';
+    else if (a.visitCategory === 'New patient') cls = 'new';
+    else if (a.visitCategory === 'Follow-up') cls = 'followup';
+    return `<div class="slot ${cls}">
+      <div class="time">${time}</div>
+      <div><strong>${escapeHtml(a.firstName + ' ' + a.lastName)}</strong></div>
+      <div class="who">${escapeHtml(a.scheduledWith || a.preferredDoctor || '')}</div>
+    </div>`;
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+    }[c]));
+  }
+})();
+</script>
+</body>
+</html>

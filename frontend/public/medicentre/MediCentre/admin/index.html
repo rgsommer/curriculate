@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Staff sign-in — MediCentre Admin</title>
+<link rel="stylesheet" href="../css/styles.css" />
+<style>
+  body { background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 60%, var(--accent) 100%); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:1rem; }
+  .login-card {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    max-width: 420px;
+    width: 100%;
+    padding: 2.25rem 2rem;
+  }
+  .login-card .brand { justify-content:center; margin-bottom:1.25rem; }
+  .login-card h1 { font-family:var(--serif); color:var(--primary-dark); text-align:center; font-size:1.4rem; margin-bottom:.25rem; }
+  .login-card p.sub { text-align:center; color: var(--text-muted); margin-bottom:1.5rem; font-size:.95rem; }
+  .login-card .footer-note { text-align:center; margin-top:1rem; font-size:.85rem; color:var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div class="login-card">
+  <a class="brand" href="../index.html">
+    <div class="brand-mark">+</div>
+    <div class="brand-text">
+      <div class="name">St. George Medical Centre</div>
+      <div class="sub">Reception Admin</div>
+    </div>
+  </a>
+  <h1>Sign in</h1>
+  <p class="sub">For clinic staff only. Patient bookings happen on the <a href="../appointment.html">main site</a>.</p>
+
+  <form id="login-form">
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" name="email" placeholder="reception email" required />
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" name="password" placeholder="••••••••" required />
+    </div>
+    <label style="display:flex;align-items:center;gap:.55rem;font-weight:500;font-size:.9rem;margin-bottom:1rem;">
+      <input type="checkbox" name="remember" /> Keep me signed in on this device
+    </label>
+    <button type="submit" class="btn btn-primary btn-block btn-lg">Sign in</button>
+    <div id="login-status"></div>
+  </form>
+
+  <p class="footer-note">
+    Forgot your password? Please contact the clinic administrator.<br>
+    <a href="../index.html">← Back to public site</a>
+  </p>
+</div>
+
+<script>
+document.getElementById('login-form').addEventListener('submit', function (e) {
+  e.preventDefault();
+  // Demo authentication — replace with real auth backend.
+  // Any non-empty credentials sign in for this prototype.
+  const fd = new FormData(e.target);
+  if (fd.get('email') && fd.get('password')) {
+    sessionStorage.setItem('mc.admin', JSON.stringify({
+      email: fd.get('email'),
+      name: fd.get('email').split('@')[0],
+      role: 'Reception',
+      signedInAt: new Date().toISOString()
+    }));
+    location.href = 'dashboard.html';
+  } else {
+    document.getElementById('login-status').innerHTML =
+      '<div class="alert alert-danger mt-2">Please enter your email and password.</div>';
+  }
+});
+</script>
+
+</body>
+</html>

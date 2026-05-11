@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Book an Appointment Online — St. George Medical Centre, Waterdown</title>
+<meta name="description" content="Request an appointment online with a family physician at St. George Medical Centre in Waterdown, Ontario. Most patients receive a confirmation within one business day." />
+<meta name="keywords" content="book doctor online Waterdown, family doctor appointment Ontario, virtual visit booking, online medical appointment Hamilton, urgent care booking Waterdown" />
+<meta name="robots" content="index,follow" />
+<link rel="canonical" href="https://curriculate.net/medicentre/appointment.html" />
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://curriculate.net/medicentre/appointment.html" />
+<meta property="og:title" content="Book an appointment — St. George Medical Centre" />
+<meta property="og:description" content="Request a family-doctor appointment online in under 2 minutes." />
+<meta name="twitter:card" content="summary" />
+<link rel="stylesheet" href="css/styles.css" />
+<style>
+  .doctor-pick-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+  .doctor-pick {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all .15s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .5rem;
+    user-select: none;
+  }
+  .doctor-pick:hover {
+    border-color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+  }
+  .doctor-pick.selected {
+    border-color: var(--primary);
+    background: var(--primary-light);
+    box-shadow: 0 0 0 4px rgba(14,92,126,.10);
+  }
+  .doctor-pick .pick-photo {
+    width: 80px; height: 80px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary-light), #E7F6EE);
+    color: var(--primary);
+    font-family: var(--serif);
+    font-size: 1.6rem;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: .25rem;
+  }
+  .doctor-pick .pick-photo.any {
+    background: linear-gradient(135deg, var(--accent), var(--primary));
+    color: #fff;
+    font-size: 1.5rem;
+  }
+  .doctor-pick .pick-name { font-weight:600; color:var(--primary-dark); font-family:var(--serif); }
+  .doctor-pick .pick-meta { font-size:.78rem; color:var(--text-muted); }
+  .doctor-pick.selected .pick-photo {
+    box-shadow: 0 0 0 3px var(--primary);
+  }
+  #step-form { display:none; }
+  #step-form.show { display:block; animation: slideIn .25s ease; }
+  @keyframes slideIn { from { opacity:0; transform: translateY(8px);} to {opacity:1; transform:none;} }
+  .step-pill {
+    display:inline-flex; align-items:center; gap:.45rem;
+    background:var(--primary-light); color:var(--primary-dark);
+    padding:.3rem .75rem; border-radius:999px;
+    font-size:.82rem; font-weight:600;
+    margin-bottom:.75rem;
+  }
+  .step-pill .num {
+    width:18px; height:18px; background:var(--primary); color:#fff;
+    border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:.7rem;
+  }
+  .chosen-doctor-summary {
+    background: var(--primary-light);
+    border: 1px solid var(--primary);
+    border-radius: var(--radius-sm);
+    padding: .85rem 1rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .5rem;
+  }
+  .chosen-doctor-summary strong { color: var(--primary-dark); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="container">
+    <div class="topbar-info">
+      <span>📍 250 Dundas St E, Unit 3, Waterdown, ON</span>
+      <span>📞 <a href="tel:+12898957862" style="color:#DCEAF0;">(289) 895-7862</a></span>
+    </div>
+    <div class="topbar-info">
+      <a href="appointment.html">Book appointment →</a>
+      <a href="admin/index.html">Staff sign-in</a>
+    </div>
+  </div>
+</div>
+
+<header class="header">
+  <div class="container">
+    <a class="brand" href="index.html">
+      <div class="brand-mark">+</div>
+      <div class="brand-text">
+        <div class="name">St. George Medical Centre</div>
+        <div class="sub">Waterdown · Family Medicine</div>
+      </div>
+    </a>
+    <button class="nav-toggle" data-nav-toggle aria-label="Open menu">☰</button>
+    <nav class="primary">
+      <a href="index.html">Home</a>
+      <a href="about.html">About</a>
+      <a href="doctors.html">Our Team</a>
+      <a href="services.html">Services</a>
+      <a href="features.html">Features</a>
+      <a href="hours.html">Hours</a>
+      <a href="forms.html">Patient Forms</a>
+      <a href="contact.html">Contact</a>
+      <a class="nav-cta" href="appointment.html">Book Appointment</a>
+    </nav>
+  </div>
+</header>
+
+<section class="page-header">
+  <div class="container">
+    <div class="breadcrumb"><a href="index.html">Home</a> / Request an appointment</div>
+    <h1>Request an appointment</h1>
+    <p>Choose a doctor or pick "Any available", then tell us a few details about your visit. Most patients hear back within one business day.</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="grid grid-2" style="grid-template-columns: 2fr 1fr; gap:2.5rem; align-items:start;">
+
+      <div>
+        <div id="appt-status"></div>
+
+        <!-- STEP 1 — choose a doctor -->
+        <div id="step-doctor">
+          <div class="step-pill"><span class="num">1</span> Step 1 of 2 · Choose a doctor</div>
+          <h2 style="font-family:var(--serif);color:var(--primary-dark);margin-bottom:.35rem;">Who would you like to see?</h2>
+          <p class="text-muted mb-3">Pick a specific doctor, or choose "Any available" and we'll match you with the first physician who fits your timing.</p>
+
+          <div class="doctor-pick-grid">
+            <div class="doctor-pick" data-doctor="Any available">
+              <div class="pick-photo any">★</div>
+              <div class="pick-name">Any available</div>
+              <div class="pick-meta">First open slot</div>
+            </div>
+            <div class="doctor-pick" data-doctor="Dr. Marc Habib">
+              <div class="pick-photo">MH</div>
+              <div class="pick-name">Dr. Marc Habib</div>
+              <div class="pick-meta">Family medicine</div>
+            </div>
+            <div class="doctor-pick" data-doctor="Dr. Safaa Tawfik-Helmy">
+              <div class="pick-photo">ST</div>
+              <div class="pick-name">Dr. Tawfik-Helmy</div>
+              <div class="pick-meta">Family medicine</div>
+            </div>
+            <div class="doctor-pick" data-doctor="Dr. Eskander">
+              <div class="pick-photo">ES</div>
+              <div class="pick-name">Dr. Eskander</div>
+              <div class="pick-meta">Family medicine</div>
+            </div>
+            <div class="doctor-pick" data-doctor="Walk-in / Urgent">
+              <div class="pick-photo any" style="background:linear-gradient(135deg,#B23A48,#C97B2E);">⏱</div>
+              <div class="pick-name">Walk-in / Urgent</div>
+              <div class="pick-meta">Same-day care</div>
+            </div>
+          </div>
+
+          <div class="alert alert-info mt-3" style="margin-bottom:0;">
+            <strong>Tip:</strong> Not sure who's the best fit? Pick <em>"Any available"</em> — our reception team will route your request to the right provider.
+          </div>
+        </div>
+
+        <!-- STEP 2 — the rest of the form -->
+        <div id="step-form">
+          <div class="step-pill"><span class="num">2</span> Step 2 of 2 · Tell us about your visit</div>
+
+          <div class="chosen-doctor-summary">
+            <div>
+              <span class="text-muted" style="font-size:.85rem;">Requesting an appointment with:</span><br>
+              <strong id="chosen-doctor-name">Any available</strong>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" id="change-doctor-btn">Change</button>
+          </div>
+
+          <div class="alert alert-info">
+            <strong>For urgent or life-threatening concerns:</strong> please call <strong>911</strong> or go to your nearest emergency department. For non-emergency after-hours advice, call Telehealth Ontario at <strong>811</strong>.
+          </div>
+
+          <form id="appt-form" novalidate>
+            <input type="hidden" name="preferredDoctor" id="preferredDoctorHidden" value="" />
+
+            <fieldset>
+              <legend>Who is this appointment for?</legend>
+              <div class="form-group">
+                <div class="radio-row" id="booker-row">
+                  <label><input type="radio" name="bookingFor" value="Self" checked /> 🙋 Myself</label>
+                  <label><input type="radio" name="bookingFor" value="Other" /> 👥 Someone else</label>
+                </div>
+              </div>
+
+              <div id="booker-block" style="display:none;">
+                <p class="help" style="margin-top:-.25rem;">Please tell us about <strong>yourself</strong> (the person booking).</p>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Your name</label>
+                    <input type="text" name="bookerName" />
+                  </div>
+                  <div class="form-group">
+                    <label>Your relation to the patient</label>
+                    <select name="bookerRelation">
+                      <option value="">Select…</option>
+                      <option>Parent / Guardian</option>
+                      <option>Spouse / Partner</option>
+                      <option>Adult child</option>
+                      <option>Sibling</option>
+                      <option>Caregiver</option>
+                      <option>Power of attorney</option>
+                      <option>Other</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Your email</label>
+                    <input type="email" name="bookerEmail" placeholder="you@example.com" />
+                  </div>
+                  <div class="form-group">
+                    <label>Your phone</label>
+                    <input type="tel" name="bookerPhone" placeholder="(905) 555-0123" />
+                  </div>
+                </div>
+                <p class="help" style="margin-top:-.25rem;">We'll send appointment updates to you, and copy the patient where appropriate.</p>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend><span id="patient-legend">About you</span></legend>
+              <div class="form-row">
+                <div class="form-group">
+                  <label><span class="lbl-first">Your</span> first name <span class="req">*</span></label>
+                  <input type="text" name="firstName" required />
+                </div>
+                <div class="form-group">
+                  <label><span class="lbl-last">Your</span> last name <span class="req">*</span></label>
+                  <input type="text" name="lastName" required />
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label><span class="lbl-email">Your</span> email</label>
+                  <input type="email" name="email" placeholder="patient@example.com" />
+                </div>
+                <div class="form-group">
+                  <label><span class="lbl-phone">Your</span> phone</label>
+                  <input type="tel" name="phone" placeholder="(905) 555-0123" />
+                </div>
+              </div>
+              <p class="help" style="margin-top:-.5rem;margin-bottom:1rem;">Please provide at least one of these so we can reach the patient.</p>
+              <div class="form-group">
+                <label><span class="lbl-addr">Your</span> mailing address <span class="opt">optional</span></label>
+                <input type="text" name="address" placeholder="Street, city, postal code" />
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label><span class="lbl-dob">Your</span> date of birth <span class="req">*</span></label>
+                  <input type="date" name="dob" required />
+                </div>
+                <div class="form-group">
+                  <label><span class="lbl-ohip">Your</span> OHIP number <span class="opt">optional</span></label>
+                  <input type="text" name="ohip" placeholder="0000-000-000-XX" autocomplete="off" />
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>About your visit</legend>
+
+              <div class="form-group">
+                <label>What type of appointment is this? <span class="req">*</span></label>
+                <div class="radio-row" id="visit-category-row">
+                  <label><input type="radio" name="visitCategory" value="Urgent" required /> 🚨 Urgent</label>
+                  <label><input type="radio" name="visitCategory" value="New patient" /> 🆕 New patient</label>
+                  <label><input type="radio" name="visitCategory" value="Follow-up" /> 🔁 Follow-up</label>
+                  <label><input type="radio" name="visitCategory" value="Routine" /> 🩺 Routine / check-up</label>
+                </div>
+                <p class="help">Choosing "Urgent" tells reception to triage your request first.</p>
+              </div>
+
+              <div class="form-group" id="urgency-detail-group" style="display:none;">
+                <label>How urgent is this?</label>
+                <select name="urgency">
+                  <option value="">Select…</option>
+                  <option>Today if possible</option>
+                  <option>Within 24 hours</option>
+                  <option>Within a few days</option>
+                </select>
+              </div>
+
+              <div id="new-patient-group" style="display:none;">
+                <div class="alert alert-info" style="margin-bottom:1rem;">
+                  Welcome — a few extra details help us prepare for your first visit. You can also complete the full <a href="forms.html">new-patient form</a> before you arrive.
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Previous family doctor <span class="opt">optional</span></label>
+                    <input type="text" name="previousDoctor" placeholder="Dr. Smith, Hamilton Family Clinic" />
+                  </div>
+                  <div class="form-group">
+                    <label>Approximate date of last visit <span class="opt">optional</span></label>
+                    <input type="text" name="previousDoctorLastVisit" placeholder="e.g. June 2024" />
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>Can we request your records from your previous doctor?</label>
+                  <div class="radio-row">
+                    <label><input type="radio" name="recordsTransfer" value="Yes" /> Yes, please request them</label>
+                    <label><input type="radio" name="recordsTransfer" value="No" /> No, I'll bring them</label>
+                    <label><input type="radio" name="recordsTransfer" value="N/A" /> Not applicable</label>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>Current medical conditions <span class="opt">optional</span></label>
+                  <textarea name="medicalConditions" rows="2" placeholder="e.g. high blood pressure, asthma, type 2 diabetes"></textarea>
+                </div>
+                <div class="form-group">
+                  <label>Current medications <span class="opt">optional</span></label>
+                  <textarea name="medications" rows="2" placeholder="Medication name, dose, frequency (one per line)"></textarea>
+                </div>
+                <div class="form-group">
+                  <label>Allergies <span class="opt">optional</span></label>
+                  <input type="text" name="allergies" placeholder="e.g. penicillin, peanuts — or 'none known'" />
+                </div>
+                <div class="form-group">
+                  <label>Notable surgeries or hospitalizations <span class="opt">optional</span></label>
+                  <textarea name="surgeries" rows="2" placeholder="With approximate dates if you remember"></textarea>
+                </div>
+                <div class="form-group">
+                  <label>Relevant family history <span class="opt">optional</span></label>
+                  <textarea name="familyHistory" rows="2" placeholder="e.g. parent with heart disease, sibling with diabetes"></textarea>
+                </div>
+              </div>
+
+              <div class="form-group" id="followup-group" style="display:none;">
+                <label>What is this a follow-up to?</label>
+                <input type="text" name="followupContext" placeholder="e.g. lab work from April 12, prescription renewal, recent ER visit" />
+              </div>
+
+              <div class="form-group">
+                <label>Reason for visit <span class="req">*</span></label>
+                <textarea name="symptoms" placeholder="A brief description of your symptoms or what you'd like to discuss." required></textarea>
+                <p class="help">Please do not include sensitive personal information beyond what's needed to triage your visit.</p>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>When would you like to come in?</legend>
+              <p class="help mt-0 mb-2">Choose any that work — we'll match you with the next available slot that fits.</p>
+              <div class="checkbox-row">
+                <label><input type="checkbox" name="timing" value="First available" /> First available</label>
+                <label><input type="checkbox" name="timing" value="Mornings" /> Mornings</label>
+                <label><input type="checkbox" name="timing" value="Afternoons" /> Afternoons</label>
+                <label><input type="checkbox" name="timing" value="Evenings" /> Evenings</label>
+                <label><input type="checkbox" name="timing" value="Mondays after 5 PM" /> Mondays after 5 PM</label>
+                <label><input type="checkbox" name="timing" value="Wednesdays after 5 PM" /> Wednesdays after 5 PM</label>
+                <label><input type="checkbox" name="timing" value="Fridays after 5 PM" /> Fridays after 5 PM</label>
+                <label><input type="checkbox" name="timing" value="Saturday morning" /> Saturday morning</label>
+              </div>
+
+              <div class="form-group mt-3">
+                <label>Visit type</label>
+                <div class="radio-row">
+                  <label><input type="radio" name="visitType" value="In-person" checked /> In-person</label>
+                  <label><input type="radio" name="visitType" value="Phone (telehealth)" /> Phone (telehealth)</label>
+                  <label><input type="radio" name="visitType" value="Either" /> Either is fine</label>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>Anything else we should know? <span class="opt">optional</span></label>
+                <textarea name="notes" rows="3" placeholder="e.g. accessibility needs, interpreter, accompanied by family member"></textarea>
+              </div>
+            </fieldset>
+
+            <div class="form-group">
+              <label style="display:flex;align-items:flex-start;gap:.55rem;font-weight:500;">
+                <input type="checkbox" name="consent" value="1" required style="margin-top:.25rem;" />
+                <span>I consent to be contacted by St. George Medical Centre about this appointment request, by email, phone, or text.</span>
+              </label>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-lg">Submit appointment request</button>
+            <p class="text-muted mt-2" style="font-size:.85rem;">
+              Submitting this form sends your request to our reception team. Until our Outlook calendar integration is live, confirmations will be sent by email or text.
+            </p>
+          </form>
+        </div>
+
+      </div>
+
+      <aside>
+        <div class="card" style="position:sticky;top:90px;">
+          <h3>How it works</h3>
+          <ol style="padding-left:1.25rem;margin:0 0 1rem;">
+            <li>Pick a doctor (or "Any available").</li>
+            <li>Tell us about your visit.</li>
+            <li>Reception confirms your time by email or text.</li>
+            <li>Reminders go out 24 hours and 2 hours before.</li>
+          </ol>
+          <h3>Need to reach us now?</h3>
+          <p style="margin-bottom:.5rem;"><strong>📞 <a href="tel:+12898957862">(289) 895-7862</a></strong></p>
+          <p class="text-muted" style="font-size:.9rem;">Available during clinic hours. For after-hours non-emergency advice, call Telehealth Ontario at 811.</p>
+          <hr style="border:0;border-top:1px solid var(--border);margin:1rem 0;" />
+          <h3>Privacy</h3>
+          <p class="text-muted" style="font-size:.9rem;">Your information is used only to coordinate your visit. We're committed to PHIPA-compliant handling of your personal health information.</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <h4>St. George Medical Centre</h4>
+        <p>Family medicine, walk-in and urgent care in Waterdown, Ontario.</p>
+        <p>250 Dundas St E, Unit 3<br>Waterdown, ON L8B 0E7</p>
+      </div>
+      <div>
+        <h4>Care</h4>
+        <ul>
+          <li><a href="services.html">Services</a></li>
+          <li><a href="doctors.html">Our team</a></li>
+          <li><a href="hours.html">Hours</a></li>
+          <li><a href="forms.html">Patient forms</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Visit</h4>
+        <ul>
+          <li><a href="appointment.html">Book appointment</a></li>
+          <li><a href="contact.html">Contact us</a></li>
+          <li><a href="about.html">About the clinic</a></li>
+          <li><a href="reviews.html">Patient reviews</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Get in touch</h4>
+        <ul>
+          <li>📞 <a href="tel:+12898957862">(289) 895-7862</a></li>
+          <li>🚨 In an emergency, call 911</li>
+          <li>📋 After-hours: Telehealth Ontario 811</li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      © <span data-year>2026</span> St. George Medical Centre · Waterdown, ON. All rights reserved.
+    </div>
+  </div>
+</footer>
+
+<script src="js/main.js"></script>
+<script>
+/* Step-1 → Step-2 wiring */
+(function () {
+  const stepDoctor = document.getElementById('step-doctor');
+  const stepForm   = document.getElementById('step-form');
+  const hiddenField = document.getElementById('preferredDoctorHidden');
+  const chosenName = document.getElementById('chosen-doctor-name');
+  const changeBtn  = document.getElementById('change-doctor-btn');
+
+  function selectDoctor(name) {
+    hiddenField.value = name;
+    chosenName.textContent = name;
+    document.querySelectorAll('.doctor-pick').forEach(el => {
+      el.classList.toggle('selected', el.dataset.doctor === name);
+    });
+    stepForm.classList.add('show');
+    setTimeout(() => stepForm.scrollIntoView({behavior:'smooth', block:'start'}), 60);
+  }
+
+  document.querySelectorAll('.doctor-pick').forEach(el => {
+    el.addEventListener('click', () => selectDoctor(el.dataset.doctor));
+  });
+
+  changeBtn.addEventListener('click', () => {
+    stepForm.classList.remove('show');
+    stepDoctor.scrollIntoView({behavior:'smooth', block:'start'});
+  });
+
+  // Prefill from query string (e.g. ?doctor=Dr.+Marc+Habib)
+  const params = new URLSearchParams(location.search);
+  const pre = params.get('doctor');
+  if (pre) {
+    const match = [...document.querySelectorAll('.doctor-pick')]
+      .find(el => el.dataset.doctor.toLowerCase() === pre.toLowerCase());
+    if (match) selectDoctor(match.dataset.doctor);
+  }
+
+  // Show/hide conditional groups based on visit category
+  const conditional = {
+    'Urgent':      'urgency-detail-group',
+    'New patient': 'new-patient-group',
+    'Follow-up':   'followup-group'
+  };
+  document.querySelectorAll('input[name="visitCategory"]').forEach(r => {
+    r.addEventListener('change', () => {
+      Object.values(conditional).forEach(id => {
+        document.getElementById(id).style.display = 'none';
+      });
+      const target = conditional[r.value];
+      if (target) document.getElementById(target).style.display = '';
+    });
+  });
+
+  // Booking for self vs. someone else — switch labels & show booker block
+  const bookerBlock = document.getElementById('booker-block');
+  const patientLegend = document.getElementById('patient-legend');
+  const setLabels = (forSelf) => {
+    bookerBlock.style.display = forSelf ? 'none' : '';
+    patientLegend.textContent = forSelf ? 'About you' : 'About the patient';
+    const map = {
+      'lbl-first': forSelf ? 'Your' : "Patient's",
+      'lbl-last':  forSelf ? 'Your' : "Patient's",
+      'lbl-email': forSelf ? 'Your' : "Patient's",
+      'lbl-phone': forSelf ? 'Your' : "Patient's",
+      'lbl-addr':  forSelf ? 'Your' : "Patient's",
+      'lbl-dob':   forSelf ? 'Your' : "Patient's",
+      'lbl-ohip':  forSelf ? 'Your' : "Patient's"
+    };
+    Object.entries(map).forEach(([cls, txt]) => {
+      document.querySelectorAll('.' + cls).forEach(s => s.textContent = txt);
+    });
+  };
+  document.querySelectorAll('input[name="bookingFor"]').forEach(r => {
+    r.addEventListener('change', () => setLabels(r.value === 'Self'));
+  });
+  setLabels(true);
+})();
+</script>
+<script src="js/appointment.js"></script>
+</body>
+</html>

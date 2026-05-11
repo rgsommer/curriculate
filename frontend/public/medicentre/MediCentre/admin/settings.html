@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Settings — MediCentre Admin</title>
+<link rel="stylesheet" href="../css/styles.css" />
+</head>
+<body>
+<div class="admin-shell">
+  <aside class="admin-sidebar">
+    <a class="brand" href="../index.html" style="text-decoration:none;color:#fff;">
+      <div class="brand-mark">+</div>
+      <div class="brand-text">
+        <div class="name">St. George Medical</div>
+        <div class="sub">Reception Admin</div>
+      </div>
+    </a>
+    <nav>
+      <a href="dashboard.html">📋 Appointments</a>
+      <a href="schedule.html">📅 Schedule</a>
+      <a href="reminders.html">📨 Reminders</a>
+      <a href="patients.html">👤 Patients</a>
+      <a href="settings.html" class="active">⚙️ Settings</a>
+    </nav>
+  </aside>
+  <main class="admin-main">
+    <div class="admin-topbar"><h1>Settings</h1></div>
+
+    <h2 style="font-family:var(--serif);color:var(--primary-dark);">Clinic profile</h2>
+    <div class="card mb-3">
+      <div class="form-row">
+        <div class="form-group"><label>Clinic name</label><input type="text" value="St. George Medical Centre Waterdown"></div>
+        <div class="form-group"><label>Main phone</label><input type="tel" value="(289) 895-7862"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Reception email</label><input type="email" placeholder="Add the clinic's reception email"></div>
+        <div class="form-group"><label>Fax</label><input type="tel" placeholder="Add the clinic's fax number"></div>
+      </div>
+      <div class="form-group"><label>Address</label><input type="text" value="250 Dundas St E, Unit 3, Waterdown, ON L8B 0E7"></div>
+    </div>
+
+    <h2 style="font-family:var(--serif);color:var(--primary-dark);">Appointment scheduling</h2>
+    <div class="card mb-3">
+      <div class="form-group">
+        <label>Scheduling mode</label>
+        <div class="radio-row">
+          <label><input type="radio" name="mode" value="assisted" checked> Reception-assisted (recommended)</label>
+          <label><input type="radio" name="mode" value="auto"> Automated (when Outlook is connected)</label>
+        </div>
+        <p class="help">Today we run in reception-assisted mode: each request is reviewed by staff. Switch to automated once the Outlook integration is wired up and validated.</p>
+      </div>
+      <div class="form-group">
+        <label>Office email for new requests</label>
+        <input type="email" placeholder="Add the clinic's reception email">
+        <p class="help">Once configured, all new appointment requests are emailed here for review.</p>
+      </div>
+    </div>
+
+    <h2 style="font-family:var(--serif);color:var(--primary-dark);">Integrations</h2>
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>📅 Microsoft Outlook</h3>
+        <p>Sync confirmed appointments directly to the clinic's shared Outlook calendar, and auto-check availability when scheduling.</p>
+        <p><span class="badge badge-warning">Not connected</span></p>
+        <button class="btn btn-primary btn-sm" disabled>Connect Outlook (coming soon)</button>
+      </div>
+      <div class="card">
+        <h3>📱 SMS reminders</h3>
+        <p>Send 24-hour and 2-hour reminders via SMS in addition to email.</p>
+        <p><span class="badge badge-warning">Not connected</span></p>
+        <button class="btn btn-primary btn-sm" disabled>Set up SMS (coming soon)</button>
+      </div>
+      <div class="card">
+        <h3>🤖 AI-personalised reminders</h3>
+        <p>Generate custom preparation instructions based on visit type, doctor preferences, and patient notes.</p>
+        <p><span class="badge badge-accent">Enabled</span></p>
+        <button class="btn btn-outline btn-sm">Manage prompt templates</button>
+      </div>
+      <div class="card">
+        <h3>🔐 PHIPA / privacy</h3>
+        <p>Audit logs, access reviews, and patient data export.</p>
+        <p><span class="badge badge-accent">Active</span></p>
+        <button class="btn btn-outline btn-sm">View audit log</button>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="../js/main.js"></script>
+</body>
+</html>

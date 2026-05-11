@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /medicentre/
+Disallow: /medicentre/admin/
+
+Sitemap: https://curriculate.net/medicentre/sitemap.xml
