@@ -269,9 +269,23 @@ export function detectLanguageForBoard(board) {
 // served at https://www.curriculate.net/blast/. Width capped at 220px so
 // the image stays small and email clients don't strip it for being too
 // "marketing-heavy."
+//
+// IMPORTANT: this <img> is styled so that even if the JPG hasn't been
+// uploaded yet (or the recipient's email client blocks images), the alt
+// text renders inside a nice 220×140 gradient box rather than the
+// default tiny broken-image icon. Once the JPG drops in, the image
+// takes over the same slot — no template change needed.
 function heroImage(filename, altText) {
   return `<div style="text-align:center;margin:0 0 18px;">
-    <img src="https://www.curriculate.net/blast/${filename}" alt="${altText}" width="220" style="max-width:100%;height:auto;border-radius:14px;display:block;margin:0 auto;" />
+    <img src="https://www.curriculate.net/blast/${filename}"
+         alt="${altText}"
+         width="220" height="140"
+         style="display:block;margin:0 auto;width:220px;max-width:100%;height:auto;min-height:140px;
+                background:linear-gradient(135deg,#eef2ff 0%,#dbeafe 100%);
+                border:1px solid #c7d2fe;border-radius:14px;
+                color:#1e3a8a;font:700 18px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+                text-align:center;padding:60px 20px;box-sizing:border-box;
+                text-decoration:none;" />
   </div>`;
 }
 
