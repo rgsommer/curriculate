@@ -226,7 +226,43 @@ export default function WordWeaverDuelTask({
 
     setBoard((prev) => {
       const b = prev.map((row) => row.map((cell) => ({ ...cell })));
-      const check = canPlaceWord(r, c, word, wordOri, b);
+
+      // First try the literal drop position (start cell = drop cell).
+      let check = canPlaceWord(r, c, word, wordOri, b);
+      let anchorR = r, anchorC = c;
+
+      // If literal placement fails, be generous: when the drop cell has an
+      // existing letter that matches one of the dragged word's letters,
+      // anchor the word so the matching letter lands on the drop cell.
+      // (Per tester feedback: "Dragging TEACH into the E of LEARN should
+      // automatically place in the correct spot — don't be too fussy.")
+      if (!check.ok) {
+        const dropChar = String(b[r]?.[c]?.ch || "").toUpperCase();
+        if (dropChar) {
+          // Try every matching letter position in the word
+          for (let i = 0; i < word.length; i++) {
+            if (word[i] !== dropChar) continue;
+            const tryR = wordOri === "V" ? r - i : r;
+            const tryC = wordOri === "H" ? c - i : c;
+            if (tryR < 0 || tryC < 0) continue;
+            const tryCheck = canPlaceWord(tryR, tryC, word, wordOri, b);
+            if (tryCheck.ok) { check = tryCheck; anchorR = tryR; anchorC = tryC; break; }
+          }
+        }
+        // Second-pass tolerance: try a 1-cell shift in each direction along
+        // the word axis. Helps when the user drops near (but not exactly on)
+        // a valid intersection cell.
+        if (!check.ok) {
+          for (const delta of [-1, 1, -2, 2]) {
+            const tryR = wordOri === "V" ? r + delta : r;
+            const tryC = wordOri === "H" ? c + delta : c;
+            if (tryR < 0 || tryC < 0) continue;
+            const tryCheck = canPlaceWord(tryR, tryC, word, wordOri, b);
+            if (tryCheck.ok) { check = tryCheck; anchorR = tryR; anchorC = tryC; break; }
+          }
+        }
+      }
+
       if (!check.ok) {
         setPlacementError(check.reason);
         return prev;
@@ -234,19 +270,19 @@ export default function WordWeaverDuelTask({
 
       setPlacementError(null);
 
-      const intersections = computeIntersections(r, c, word, wordOri, b);
+      const intersections = computeIntersections(anchorR, anchorC, word, wordOri, b);
       const points = word.length + intersections * 2;
 
       for (let i = 0; i < word.length; i++) {
-        const rr = wordOri === "V" ? r + i : r;
-        const cc = wordOri === "H" ? c + i : c;
+        const rr = wordOri === "V" ? anchorR + i : anchorR;
+        const cc = wordOri === "H" ? anchorC + i : anchorC;
         const cur = b[rr][cc];
         b[rr][cc] = { ch: word[i], wordId: cur?.wordId ?? wordIdx }; // preserve earlier ownership on intersections
       }
 
       setPlaced((p) => ({
         ...(p || {}),
-        [wordIdx]: { r, c, orientation: wordOri, playerIndex: activePlayer, points, intersections },
+        [wordIdx]: { r: anchorR, c: anchorC, orientation: wordOri, playerIndex: activePlayer, points, intersections },
       }));
 
       setScores((s) => ({

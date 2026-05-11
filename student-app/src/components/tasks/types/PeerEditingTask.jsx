@@ -889,6 +889,38 @@ export default function PeerEditingTask({ task, onSubmit, disabled }) {
             )}
           </div>
 
+          {/* --- Feedback summary: how many issues caught vs missed.
+                Added per tester feedback: "Excellent! There should be feedback." */}
+          {!isPaper && totalIssuesToFind > 0 && (() => {
+            const errSet = new Set(errorIndices);
+            const found = [...marks.keys()].filter((idx) => errSet.has(idx)).length;
+            const missed = totalIssuesToFind - found;
+            const pct = Math.round((found / totalIssuesToFind) * 100);
+            const color = pct >= 80 ? "#22c55e" : pct >= 50 ? "#f59e0b" : "#ef4444";
+            const bg    = pct >= 80 ? "rgba(34,197,94,0.10)" : pct >= 50 ? "rgba(245,158,11,0.10)" : "rgba(239,68,68,0.10)";
+            const bd    = pct >= 80 ? "rgba(34,197,94,0.4)"  : pct >= 50 ? "rgba(245,158,11,0.4)"  : "rgba(239,68,68,0.4)";
+            return (
+              <div style={{
+                marginTop: 16, padding: "14px 18px", borderRadius: 14,
+                background: bg, border: `1px solid ${bd}`,
+              }}>
+                <div style={{ fontSize: 15, fontWeight: 900, color }}>
+                  You caught {found} of {totalIssuesToFind} issue{totalIssuesToFind !== 1 ? "s" : ""} ({pct}%)
+                </div>
+                {missed > 0 && (
+                  <div style={{ fontSize: 12, marginTop: 4, color: "rgba(226,232,240,0.7)" }}>
+                    {missed} issue{missed !== 1 ? "s" : ""} not flagged — your teacher can review your marks against the answer key.
+                  </div>
+                )}
+                {hintsUsed > 0 && (
+                  <div style={{ fontSize: 12, marginTop: 4, color: "rgba(226,232,240,0.6)" }}>
+                    Hints used: {hintsUsed} (a small score penalty applies)
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Show all marks in summary */}
           {markCount > 0 && !isPaper && (
             <div style={{

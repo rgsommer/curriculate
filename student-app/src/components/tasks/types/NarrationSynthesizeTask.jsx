@@ -281,7 +281,12 @@ export default function NarrationSynthesizeTask({
       ? `0 0 20px rgba(59,130,246,0.25), 0 10px 30px rgba(2,6,23,0.08)`
       : "0 10px 30px rgba(2,6,23,0.08)",
     background: `linear-gradient(135deg, ${currentPhaseColor.bg} 0%, rgba(255,255,255,0.95) 100%)`,
+    // Fix per tester feedback: card was shrinking to content width on
+    // mobile, leaving a "very narrow backdrop." Force full-width fill
+    // with a max-width cap for desktop.
+    width: "100%",
     maxWidth: 900,
+    boxSizing: "border-box",
     margin: "0 auto",
     transition: "all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)",
     animation: phase === "speaking" ? "pulse 2s ease-in-out infinite" : "none",
