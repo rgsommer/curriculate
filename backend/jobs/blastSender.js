@@ -306,19 +306,13 @@ export function detectLanguageForBoard(board) {
 // takes over the same slot — no template change needed.
 function heroImage(_filenameUnused, altText) {
   // src="cid:hero" — resolved at send time by the worker, which attaches
-  // the right product's JPG with content_id="hero". For local preview
-  // rendering (render_samples.mjs) this src will fail and the fallback
-  // gradient box is shown; in the actual email it loads inline.
+  // the right product's JPG with content_id="hero". Clean centered image,
+  // no background bubble.
   return `<div style="text-align:center;margin:0 0 18px;">
     <img src="cid:hero"
          alt="${altText}"
-         width="220" height="140"
-         style="display:block;margin:0 auto;width:220px;max-width:100%;height:auto;min-height:140px;
-                background:linear-gradient(135deg,#eef2ff 0%,#dbeafe 100%);
-                border:1px solid #c7d2fe;border-radius:14px;
-                color:#1e3a8a;font:700 18px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-                text-align:center;padding:60px 20px;box-sizing:border-box;
-                text-decoration:none;" />
+         width="320"
+         style="display:block;margin:0 auto;max-width:100%;height:auto;border-radius:12px;" />
   </div>`;
 }
 
