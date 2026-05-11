@@ -272,6 +272,16 @@
             <button type="button" class="btn btn-ghost btn-sm" id="change-doctor-btn">Change</button>
           </div>
 
+          <div id="flexible-doctor-row" class="form-group" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.85rem 1rem;margin-bottom:1.5rem;">
+            <label style="display:flex;align-items:flex-start;gap:.6rem;font-weight:500;margin-bottom:0;">
+              <input type="checkbox" name="flexibleOnDoctor" id="flexibleOnDoctor" value="1" checked style="margin-top:.25rem;" />
+              <span>
+                <span id="flexible-doctor-text">If <strong>Dr. X</strong> isn't available within my preferred timing, I'm happy to see another physician instead.</span>
+                <span class="help" style="display:block;margin-top:.2rem;">Uncheck if you'd prefer to wait for your chosen doctor only.</span>
+              </span>
+            </label>
+          </div>
+
           <div class="alert alert-info">
             <strong>For urgent or life-threatening concerns:</strong> please call <strong>911</strong> or go to your nearest emergency department. For non-emergency after-hours advice, call Telehealth Ontario at <strong>811</strong>.
           </div>
@@ -562,12 +572,26 @@
   const chosenName = document.getElementById('chosen-doctor-name');
   const changeBtn  = document.getElementById('change-doctor-btn');
 
+  const flexRow  = document.getElementById('flexible-doctor-row');
+  const flexText = document.getElementById('flexible-doctor-text');
+  const flexCb   = document.getElementById('flexibleOnDoctor');
+
   function selectDoctor(name) {
     hiddenField.value = name;
     chosenName.textContent = name;
     document.querySelectorAll('.doctor-pick').forEach(el => {
       el.classList.toggle('selected', el.dataset.doctor === name);
     });
+    // Show "or any if not available" only when a SPECIFIC doctor is chosen.
+    const isSpecific = name && name !== 'Any available' && name !== 'Walk-in / Urgent';
+    if (isSpecific) {
+      flexRow.style.display = '';
+      flexText.innerHTML = "If <strong>" + name + "</strong> isn't available within my preferred timing, I'm happy to see another physician instead.";
+      flexCb.checked = true; // default to flexible
+    } else {
+      flexRow.style.display = 'none';
+      flexCb.checked = false;
+    }
     stepForm.classList.add('show');
     setTimeout(() => stepForm.scrollIntoView({behavior:'smooth', block:'start'}), 60);
   }

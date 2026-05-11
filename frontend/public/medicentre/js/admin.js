@@ -125,7 +125,7 @@
           <small class="text-muted">${escapeHtml(a.email || a.phone || '')}</small>
         </td>
         <td>${catBadge}</td>
-        <td>${escapeHtml(a.preferredDoctor || 'Any available')}</td>
+        <td>${escapeHtml(a.preferredDoctor || 'Any available')}${doctorFlexibilityNote(a)}</td>
         <td><small>${formatRelative(a.submittedAt)}</small></td>
         <td><span class="badge ${statusClass(a.status)} status-pill">${escapeHtml(a.status)}</span></td>
         <td class="row-actions" style="text-align:right;white-space:nowrap;">
@@ -185,6 +185,15 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
       '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
     }[c]));
+  }
+
+  // Inline tag describing whether the patient is flexible if their preferred doctor isn't available.
+  function doctorFlexibilityNote(a) {
+    const d = a.preferredDoctor;
+    if (!d || d === 'Any available' || d === 'Walk-in / Urgent') return '';
+    return a.flexibleOnDoctor
+      ? ' <span class="badge badge-accent" style="font-size:.7rem;margin-left:.3rem;">or any if unavailable</span>'
+      : ' <span class="badge badge-warning" style="font-size:.7rem;margin-left:.3rem;">this doctor only</span>';
   }
 
   // -------- Tabs & filters --------
@@ -293,7 +302,7 @@
 
       <h4 style="margin-top:1.25rem;color:var(--primary-dark);font-family:var(--serif);">Visit</h4>
       <dl class="detail-grid">
-        <dt>Preferred doctor</dt><dd>${escapeHtml(a.preferredDoctor || 'Any available')}</dd>
+        <dt>Preferred doctor</dt><dd>${escapeHtml(a.preferredDoctor || 'Any available')}${doctorFlexibilityNote(a)}</dd>
         <dt>Category</dt><dd>${escapeHtml(a.visitCategory || '—')}</dd>
         ${a.urgency ? `<dt>Urgency</dt><dd>${escapeHtml(a.urgency)}</dd>` : ''}
         <dt>Visit format</dt><dd>${escapeHtml(a.visitType || '—')}</dd>

@@ -320,6 +320,7 @@ If you didn't request an appointment, please ignore this message.
       bookerPhone: data.bookerPhone,
       // Visit
       preferredDoctor: data.preferredDoctor,
+      flexibleOnDoctor: !!data.flexibleOnDoctor, // true = ok to see another physician if preferred is unavailable
       visitCategory: data.visitCategory,         // 'Urgent' | 'New patient' | 'Follow-up' | 'Routine'
       // New patient extras
       previousDoctor: data.previousDoctor,
@@ -390,7 +391,7 @@ PATIENT
   OHIP:    ${r.ohip || '(not provided)'}
 
 REQUEST
-  Preferred doctor: ${r.preferredDoctor || 'Any available'}
+  Preferred doctor: ${r.preferredDoctor || 'Any available'}${r.preferredDoctor && r.preferredDoctor !== 'Any available' && r.preferredDoctor !== 'Walk-in / Urgent' ? (r.flexibleOnDoctor ? '  (or any if unavailable)' : '  (this doctor only — patient prefers to wait)') : ''}
   Category:         ${r.visitCategory || '(not specified)'}
   ${r.visitCategory === 'Urgent'      ? 'Urgency window:   ' + (r.urgency || '(not specified)') : ''}
   ${r.visitCategory === 'New patient' ? 'Previous doctor:  ' + (r.previousDoctor || '(not specified)') + (r.previousDoctorLastVisit ? '  (last seen '+r.previousDoctorLastVisit+')' : '') : ''}
@@ -427,7 +428,7 @@ Thank you for submitting an appointment request with ${CLINIC_NAME}. Our team wi
 
 YOUR REQUEST
   Reference:        ${r.id}
-  Preferred doctor: ${r.preferredDoctor || 'Any available'}
+  Preferred doctor: ${r.preferredDoctor || 'Any available'}${r.preferredDoctor && r.preferredDoctor !== 'Any available' && r.preferredDoctor !== 'Walk-in / Urgent' ? (r.flexibleOnDoctor ? '  (or any if unavailable)' : '  (this doctor only)') : ''}
   Urgency:          ${r.urgency || '(not specified)'}
   Visit type:       ${r.visitType || '(not specified)'}
   Timing prefs:     ${(r.timing || []).join(', ') || '(none)'}
