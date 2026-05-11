@@ -20,6 +20,7 @@ import {
   defaultTemplateForProduct,
   detectLanguageForBoard,
   getHeroBuffer,
+  addLinkTracking,
 } from "../jobs/blastSender.js";
 import { importContactsFromFolder } from "../jobs/contactImporter.js";
 import { runJob as runResearchJob, researchWorkerTick } from "../jobs/researchWorker.js";
@@ -334,13 +335,20 @@ router.post("/blast/campaigns/:id/test", requireAdminToken, async (req, res) => 
     const body    = language === "fr" ? camp.bodyFr    : camp.bodyEn;
 
     // Use placeholder values for variable substitution preview
-    const html = renderTemplate(body, {
+    const rendered = renderTemplate(body, {
       firstName: "TEST",
       lastName:  "RECIPIENT",
       school:    "Sample Secondary School",
       board:     "HWDSB",
       role:      "Principal",
     }, { product: camp.product, isChristian: false, language });
+
+    // Apply UTM link tracking so test emails match what real sends look like
+    // (otherwise testers can't verify the GA tracking will fire).
+    const html = addLinkTracking(rendered, {
+      campaign: camp,
+      recipient: { _id: "test-" + Date.now().toString(36) },
+    });
 
     // Inline hero image so the test preview matches what a real send looks like
     const heroBuf = getHeroBuffer(camp.product);
