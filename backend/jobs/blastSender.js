@@ -339,7 +339,7 @@ const DEFAULT_TEMPLATES = {
     en: {
       subject: "What I wished I'd had as both a teacher and a school leader",
       body: wrap(`
-        ${heroImage("images/mascot/ambassador/1.png", "Curriculate")}
+        ${heroImage("images/mascot/ambassador/1-email.jpg", "Curriculate")}
         <p>{{salutation}}</p>
         <p>Hey! It's Richard. I just ran <strong>Curriculate</strong> scavenger-hunt activities (think station-based learning) with my own Ontario junior-high classes and wanted to share it with one or two principals I respect in the area.</p>
         <p>Quick context: {{credential_intro}} <em>Curriculate is what I wished I'd had — both as a school leader and now as a teacher.</em></p>
@@ -359,7 +359,7 @@ const DEFAULT_TEMPLATES = {
     fr: {
       subject: "Ce que j'aurais voulu avoir — comme enseignant et comme directeur",
       body: wrap(`
-        ${heroImage("images/mascot/ambassador/1.png", "Curriculate")}
+        ${heroImage("images/mascot/ambassador/1-email.jpg", "Curriculate")}
         <p>{{salutation}}</p>
         <p>Je m'appelle Richard. Je viens d'utiliser <strong>Curriculate</strong> avec mes propres élèves du premier cycle du secondaire en Ontario et je voulais en parler à quelques directions que j'estime.</p>
         <p>Contexte rapide : {{credential_intro}} <em>Curriculate est l'outil que j'aurais voulu avoir — comme directeur, et maintenant comme enseignant.</em></p>
@@ -381,7 +381,7 @@ const DEFAULT_TEMPLATES = {
     en: {
       subject: "A grading tool designed to give teachers their evenings back",
       body: wrap(`
-        ${heroImage("images/mascot/grading/1.png", "Curriculate Practice")}
+        ${heroImage("images/mascot/grading/1-email.jpg", "Curriculate Practice")}
         <p>{{salutation}}</p>
         <p>Hey! It's Richard. I just tried <strong>Curriculate Practice</strong> on my own students' work this week and wanted to write to one or two thoughtful schools about it.</p>
         <p>Quick context: {{credential_intro}} I've now personally graded over 1,500 student papers with Curriculate Practice — <em>it's what I wished I'd had both as a school leader watching teacher workload, and now as a teacher facing that same workload myself.</em></p>
@@ -398,7 +398,7 @@ const DEFAULT_TEMPLATES = {
     fr: {
       subject: "Un outil de correction conçu pour rendre leurs soirées aux enseignants",
       body: wrap(`
-        ${heroImage("images/mascot/grading/1.png", "Curriculate Practice")}
+        ${heroImage("images/mascot/grading/1-email.jpg", "Curriculate Practice")}
         <p>{{salutation}}</p>
         <p>Je m'appelle Richard. Je viens d'essayer <strong>Curriculate Practice</strong> sur les travaux de mes propres élèves et je tenais à écrire à quelques écoles que j'estime.</p>
         <p>Contexte rapide : {{credential_intro}} J'ai personnellement corrigé plus de 1 500 travaux d'élèves avec Curriculate Practice — <em>c'est l'outil que j'aurais voulu avoir comme directeur en observant la charge de mes enseignants, et maintenant comme enseignant moi-même.</em></p>
@@ -417,7 +417,7 @@ const DEFAULT_TEMPLATES = {
     en: {
       subject: "Free field-day app — built after too many field days run on spreadsheets",
       body: wrap(`
-        ${heroImage("images/mascot/fieldday/1.png", "Curriculate Field Day")}
+        ${heroImage("images/mascot/fieldday/1-email.jpg", "Curriculate Field Day")}
         <p>{{salutation}}</p>
         <p>Hey! It's Richard. {{credential_intro}} I built <strong>Curriculate Field Day</strong> after running too many of my own schools' field days on spreadsheets — <em>it's what I wished I'd had every June.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
@@ -439,7 +439,7 @@ const DEFAULT_TEMPLATES = {
     fr: {
       subject: "Application gratuite pour journée des jeux — bâtie après trop de journées sur feuilles de calcul",
       body: wrap(`
-        ${heroImage("images/mascot/fieldday/1.png", "Curriculate Field Day")}
+        ${heroImage("images/mascot/fieldday/1-email.jpg", "Curriculate Field Day")}
         <p>{{salutation}}</p>
         <p>Je m'appelle Richard. {{credential_intro}} J'ai bâti <strong>Curriculate Field Day</strong> après avoir organisé trop de journées des jeux à l'aide de feuilles de calcul — <em>c'est l'outil que j'aurais voulu avoir chaque mois de juin.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
