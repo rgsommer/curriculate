@@ -909,7 +909,7 @@ function Research({ adminToken }) {
           </p>
 
           <L>Quick-add: Ontario boards</L>
-          <div className="flex gap-1 flex-wrap mb-4">
+          <div className="flex gap-1 flex-wrap mb-2">
             {PRESET_REGIONS.map(p => (
               <button key={p.board} onClick={() => addPreset(p)}
                 className="px-2 py-1 text-xs rounded bg-white/5 border border-white/10 hover:bg-white/10">
@@ -917,6 +917,23 @@ function Research({ adminToken }) {
               </button>
             ))}
           </div>
+          <button
+            onClick={async () => {
+              if (!confirm(`Queue all ${PRESET_REGIONS.length} Ontario boards as research jobs? Worker processes one per day by default.`)) return;
+              for (const p of PRESET_REGIONS) {
+                await fetch(`${API}/admin/blast/research`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "x-admin-token": adminToken },
+                  body: JSON.stringify({ name: p.name, boardName: p.board, indexUrl: p.url, maxSchools: 30 }),
+                });
+              }
+              loadJobs();
+            }}
+            className="mb-4 px-3 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-500 font-semibold"
+            title="Creates a research job for every Ontario board listed above. Worker runs 1 job/day by default — use Run now to force individual jobs."
+          >
+            ⚡ Queue all {PRESET_REGIONS.length} Ontario boards
+          </button>
 
           <L>Custom region</L>
           <div className="grid grid-cols-2 gap-2 text-sm">
