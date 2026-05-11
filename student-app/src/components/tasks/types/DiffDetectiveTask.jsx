@@ -150,11 +150,13 @@ export default function DiffDetectiveTask({
 
   return (
     <TaskCardFrame badge="🕵️ Diff Detective" title={prompt} subtitle={`Find ${numExpected} change${numExpected === 1 ? "" : "s"} between the passages.`} right={right}>
-      {/* Passages */}
+      {/* Passages — auto-fit so the two panels stack on narrow (phone)
+          screens instead of squishing to ~150px wide and looking broken.
+          Tester reported this as "not available yet on student devices." */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
           gap: 14,
           marginBottom: 14,
         }}
