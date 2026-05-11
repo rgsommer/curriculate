@@ -23,7 +23,7 @@ import { sendSystemEmail } from "../email/shareInviteEmailer.js";
 // ──────────────────────────────────────────────────────────────────────
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HERO_PATH_BY_PRODUCT = {
-  curriculate: "../../frontend/public/images/mascot/ambassador/1-email.jpg",
+  curriculate: "../../frontend/public/images/mascot/curriculate/1-email.jpg",
   pulse:       "../../frontend/public/images/mascot/grading/1-email.jpg",
   fieldday:    "../../frontend/public/images/mascot/fieldday/1-email.jpg",
 };
@@ -366,7 +366,7 @@ const DEFAULT_TEMPLATES = {
     en: {
       subject: "What I wished I'd had as both a teacher and a school leader",
       body: wrap(`
-        ${heroImage("images/mascot/ambassador/1-email.jpg", "Curriculate")}
+        ${heroImage("images/mascot/curriculate/1-email.jpg", "Curriculate")}
         <p>{{salutation}}</p>
         <p>Hey! It's Richard. I just ran <strong>Curriculate</strong> scavenger-hunt activities (think station-based learning) with my own Ontario junior-high classes and wanted to share it with one or two principals I respect in the area.</p>
         <p>Quick context: {{credential_intro}} <em>Curriculate is what I wished I'd had — both as a school leader and now as a teacher.</em></p>
@@ -386,7 +386,7 @@ const DEFAULT_TEMPLATES = {
     fr: {
       subject: "Ce que j'aurais voulu avoir — comme enseignant et comme directeur",
       body: wrap(`
-        ${heroImage("images/mascot/ambassador/1-email.jpg", "Curriculate")}
+        ${heroImage("images/mascot/curriculate/1-email.jpg", "Curriculate")}
         <p>{{salutation}}</p>
         <p>Je m'appelle Richard. Je viens d'utiliser <strong>Curriculate</strong> avec mes propres élèves du premier cycle du secondaire en Ontario et je voulais en parler à quelques directions que j'estime.</p>
         <p>Contexte rapide : {{credential_intro}} <em>Curriculate est l'outil que j'aurais voulu avoir — comme directeur, et maintenant comme enseignant.</em></p>
