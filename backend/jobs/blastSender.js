@@ -371,7 +371,7 @@ const DEFAULT_TEMPLATES = {
         <p>Hey! It's Richard. I just ran <strong>Curriculate</strong> scavenger-hunt activities (think station-based learning) with my own Ontario junior-high classes and wanted to share it with one or two principals I respect in the area.</p>
         <p>Quick context: {{credential_intro}} <em>Curriculate is what I wished I'd had — both as a school leader and now as a teacher.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
-          <strong>Pilot Program:</strong> active R&D phase — Curriculate is free of charge during this period in exchange for thoughtful feedback from teachers and students. <strong>Nothing to download, nothing to buy.</strong>
+          <strong>Pilot Program:</strong> we're inviting a <strong>limited number of schools</strong> to use Curriculate free for a full school year in exchange for thoughtful feedback from teachers and students. <strong>Nothing to download, nothing to buy.</strong> Sister tools (Curriculate Practice for grading, Field Day for athletics) are also available to pilot schools on request.
         </p>
         <p>In practice, teachers type a lesson topic, Curriculate generates a station-based activity in about 30 seconds, students rotate through it on phones or Chromebooks, and the teacher gets a live view of participation, progress, and misconceptions.</p>
         <p style="margin:14px 0;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:14px;">
@@ -391,7 +391,7 @@ const DEFAULT_TEMPLATES = {
         <p>Je m'appelle Richard. Je viens d'utiliser <strong>Curriculate</strong> avec mes propres élèves du premier cycle du secondaire en Ontario et je voulais en parler à quelques directions que j'estime.</p>
         <p>Contexte rapide : {{credential_intro}} <em>Curriculate est l'outil que j'aurais voulu avoir — comme directeur, et maintenant comme enseignant.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
-          <strong>Programme pilote :</strong> phase de R&D active — Curriculate est gratuit pendant cette période en échange de commentaires réfléchis. <strong>Rien à télécharger, rien à acheter.</strong>
+          <strong>Programme pilote :</strong> nous invitons un <strong>nombre limité d'écoles</strong> à utiliser Curriculate gratuitement pendant une année scolaire complète, en échange de commentaires réfléchis. <strong>Rien à télécharger, rien à acheter.</strong> Outils complémentaires (Curriculate Practice pour la correction, Field Day pour l'athlétisme) également disponibles sur demande.
         </p>
         <p>En pratique, l'enseignant tape un sujet, Curriculate génère une activité par stations en environ 30 secondes, les élèves circulent sur téléphones ou Chromebooks, et l'enseignant obtient une vue en direct de la participation, des progrès et des conceptions erronées.</p>
         <p style="margin:14px 0;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:14px;">
@@ -413,7 +413,7 @@ const DEFAULT_TEMPLATES = {
         <p>Hey! It's Richard. I just tried <strong>Curriculate Practice</strong> on my own students' work this week and wanted to write to one or two thoughtful schools about it.</p>
         <p>Quick context: {{credential_intro}} I've now personally graded over 1,500 student papers with Curriculate Practice — <em>it's what I wished I'd had both as a school leader watching teacher workload, and now as a teacher facing that same workload myself.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
-          <strong>Pilot Program:</strong> active R&D phase — inviting a small number of schools to use Practice free of charge in exchange for thoughtful feedback from teachers, students, and parents. <strong>Nothing to download, nothing to buy.</strong>
+          <strong>Pilot Program:</strong> we're inviting a <strong>limited number of schools</strong> to use Practice free for a full school year in exchange for thoughtful feedback from teachers, students, and parents. <strong>Nothing to download, nothing to buy.</strong> Sister tools (Curriculate scavenger hunts, Field Day for athletics) are also available to pilot schools on request.
         </p>
         <p>How it works: snap a photo (or upload a PDF, video, or audio file) of student work and you get rubric-aligned feedback plus a score in about ten seconds. The teacher stays the final reviewer — Practice drafts, you finalize.</p>
         {{role_pitch}}
@@ -430,7 +430,7 @@ const DEFAULT_TEMPLATES = {
         <p>Je m'appelle Richard. Je viens d'essayer <strong>Curriculate Practice</strong> sur les travaux de mes propres élèves et je tenais à écrire à quelques écoles que j'estime.</p>
         <p>Contexte rapide : {{credential_intro}} J'ai personnellement corrigé plus de 1 500 travaux d'élèves avec Curriculate Practice — <em>c'est l'outil que j'aurais voulu avoir comme directeur en observant la charge de mes enseignants, et maintenant comme enseignant moi-même.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
-          <strong>Programme pilote :</strong> phase de R&D active — nous invitons un petit nombre d'écoles à utiliser Practice gratuitement en échange de commentaires réfléchis d'enseignants, d'élèves et de parents. <strong>Rien à télécharger, rien à acheter.</strong>
+          <strong>Programme pilote :</strong> nous invitons un <strong>nombre limité d'écoles</strong> à utiliser Practice gratuitement pendant une année scolaire complète, en échange de commentaires réfléchis d'enseignants, d'élèves et de parents. <strong>Rien à télécharger, rien à acheter.</strong> Outils complémentaires (chasses au trésor Curriculate, Field Day pour l'athlétisme) également disponibles sur demande.
         </p>
         <p>Comment ça marche : on prend une photo (ou téléverse un PDF, une vidéo ou un audio) du travail d'un élève, et on obtient une rétroaction alignée à la grille d'évaluation plus une note en environ dix secondes. L'enseignant reste responsable de la décision finale — Practice propose, vous validez.</p>
         {{role_pitch}}
@@ -448,7 +448,7 @@ const DEFAULT_TEMPLATES = {
         <p>{{salutation}}</p>
         <p>Hey! It's Richard. {{credential_intro}} I built <strong>Curriculate Field Day</strong> after running too many of my own schools' field days on spreadsheets — <em>it's what I wished I'd had every June.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
-          <strong>Pilot Program:</strong> active R&D phase — Field Day is free of charge in exchange for thoughtful feedback after your event. <strong>Nothing to download, nothing to buy.</strong>
+          <strong>Pilot Program:</strong> we're inviting a <strong>limited number of schools</strong> to use Field Day free this season in exchange for thoughtful feedback after your event. <strong>Nothing to download, nothing to buy.</strong> Sister tools (Curriculate scavenger hunts, Curriculate Practice for grading) are also available to pilot schools on request.
         </p>
         <p>What it actually does (the stuff that matters on field-day morning):</p>
         <ul style="padding-left:20px;margin:6px 0 14px;">
@@ -470,7 +470,7 @@ const DEFAULT_TEMPLATES = {
         <p>{{salutation}}</p>
         <p>Je m'appelle Richard. {{credential_intro}} J'ai bâti <strong>Curriculate Field Day</strong> après avoir organisé trop de journées des jeux à l'aide de feuilles de calcul — <em>c'est l'outil que j'aurais voulu avoir chaque mois de juin.</em></p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
-          <strong>Programme pilote :</strong> phase de R&D active — Field Day est gratuit en échange de commentaires réfléchis après votre événement. <strong>Rien à télécharger, rien à acheter.</strong>
+          <strong>Programme pilote :</strong> nous invitons un <strong>nombre limité d'écoles</strong> à utiliser Field Day gratuitement cette saison en échange de commentaires réfléchis après votre événement. <strong>Rien à télécharger, rien à acheter.</strong> Outils complémentaires (chasses au trésor Curriculate, Curriculate Practice pour la correction) également disponibles sur demande.
         </p>
         <p>Ce que ça fait (l'essentiel pour la matinée) :</p>
         <ul style="padding-left:20px;margin:6px 0 14px;">
