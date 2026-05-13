@@ -110,7 +110,17 @@ router.post("/signup", async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = await User.create({ email, name, passwordHash });
+
+    // Blast-campaign attribution: capture utm_* params from the signup form
+    // so we can later answer "principal X got the email -> teacher Y at the
+    // same school signed up". Frontend should stash utm_content from the
+    // landing URL into localStorage and post it back on signup.
+    const blastUtmContent  = String(req.body?.utm_content  || req.body?.utmContent  || "").slice(0, 64);
+    const blastUtmCampaign = String(req.body?.utm_campaign || req.body?.utmCampaign || "").slice(0, 64);
+    const blastUtmSource   = String(req.body?.utm_source   || req.body?.utmSource   || "").slice(0, 64);
+
+    const user = await User.create({ email, name, passwordHash,
+      blastUtmContent, blastUtmCampaign, blastUtmSource });
 
     // Optional: create a TeacherProfile shell so profile/me works immediately
     try {

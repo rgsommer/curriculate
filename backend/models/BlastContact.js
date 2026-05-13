@@ -54,6 +54,13 @@ const blastContactSchema = new mongoose.Schema(
     bouncedAt: { type: Date, default: null },
     notes: { type: String, default: "" },
 
+    // Aggregate engagement across all campaigns sent to this contact.
+    // Updated by the Resend webhook handler.
+    openCount:     { type: Number, default: 0 },
+    clickCount:    { type: Number, default: 0 },
+    lastOpenedAt:  { type: Date, default: null },
+    lastClickedAt: { type: Date, default: null },
+
     // Provenance: where did this contact come from?
     //   "manual-upload"   = added via /blast UI CSV upload
     //   "xlsx-auto-import"= picked up by the boot-time workspace scan (A)

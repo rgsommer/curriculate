@@ -40,9 +40,21 @@ const blastRecipientSchema = new mongoose.Schema(
     },
     scheduledFor: { type: Date, required: true, index: true },
     sentAt: { type: Date, default: null },
-    resendId: { type: String, default: "" },     // Resend message ID for bounce-tracking
+    resendId: { type: String, default: "", index: true },     // Resend message ID — webhook payloads carry this
     errorMessage: { type: String, default: "" },
     attempts: { type: Number, default: 0 },
+
+    // Webhook-driven engagement (Resend posts events to /resend-webhook)
+    deliveredAt:   { type: Date, default: null },
+    openedAt:      { type: Date, default: null }, // first open
+    lastOpenedAt:  { type: Date, default: null },
+    openCount:     { type: Number, default: 0 },
+    clickedAt:     { type: Date, default: null }, // first click
+    lastClickedAt: { type: Date, default: null },
+    clickCount:    { type: Number, default: 0 },
+    bouncedAt:     { type: Date, default: null },
+    bounceType:    { type: String, default: "" }, // hard / soft / undetermined
+    complainedAt:  { type: Date, default: null }, // spam complaint
   },
   { timestamps: true }
 );

@@ -182,7 +182,7 @@ function NewCampaign({ adminToken, defaults, onCreated }) {
   // "existing" = pick from master Contacts list with filters
   // "csv"      = upload a CSV file (original behavior)
   const [recipientMode, setRecipientMode] = useState("existing");
-  const [contactFilter, setContactFilter] = useState({ board: "", role: "", level: "", status: "" });
+  const [contactFilter, setContactFilter] = useState({ board: "", role: "", level: "", status: "", excludeTargeted: "" });
   const [contactStats, setContactStats] = useState(null);
   const [pulling, setPulling] = useState(false);
   const [pullMsg, setPullMsg] = useState("");
@@ -503,6 +503,18 @@ function NewCampaign({ adminToken, defaults, onCreated }) {
                   <option value="">Any status</option>
                   <option value="never">Never contacted</option>
                   <option value="contacted">Already contacted</option>
+                </select>
+              </div>
+              <div className="mt-2">
+                <L>Exclude contacts already targeted (in any campaign, queued or sent)</L>
+                <select value={contactFilter.excludeTargeted}
+                  onChange={(e) => setContactFilter(f => ({ ...f, excludeTargeted: e.target.value }))}
+                  className="px-2 py-1 rounded bg-white/5 border border-white/10 text-sm">
+                  <option value="">Don't exclude (default)</option>
+                  <option value="any">Exclude if targeted in ANY product campaign</option>
+                  <option value="curriculate">Exclude if targeted in a Curriculate campaign</option>
+                  <option value="pulse">Exclude if targeted in a Pulse campaign</option>
+                  <option value="fieldday">Exclude if targeted in a Field Day campaign</option>
                 </select>
               </div>
               <Btn onClick={pullFromContacts} disabled={pulling}>
@@ -1162,6 +1174,8 @@ function Contacts({ adminToken }) {
               <th className="text-left px-3 py-2">Role</th>
               <th className="text-left px-3 py-2">Last contacted</th>
               <th className="text-left px-3 py-2">Products sent</th>
+              <th className="text-right px-3 py-2" title="Email opens (Resend webhook)">Opens</th>
+              <th className="text-right px-3 py-2" title="Email-link clicks (Resend webhook)">Clicks</th>
               <th className="text-left px-3 py-2">Tracking key</th>
             </tr>
           </thead>
@@ -1197,6 +1211,16 @@ function Contacts({ adminToken }) {
                         <span key={p} className="px-1.5 py-0.5 text-[10px] rounded bg-amber-700/60 text-amber-100 font-medium" title={`Queued: ${p}`}>{p} ⏱</span>
                       ))}
                     </div>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {c.openCount > 0
+                      ? <span className="font-semibold text-emerald-300" title={c.lastOpenedAt ? `Last opened ${new Date(c.lastOpenedAt).toLocaleString()}` : ""}>{c.openCount}</span>
+                      : <span className="text-white/30">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {c.clickCount > 0
+                      ? <span className="font-semibold text-blue-300" title={c.lastClickedAt ? `Last clicked ${new Date(c.lastClickedAt).toLocaleString()}` : ""}>{c.clickCount}</span>
+                      : <span className="text-white/30">—</span>}
                   </td>
                   <td className="px-3 py-2 text-white/50 font-mono text-[11px]" title={`Full utm_content for analytics: ${c._id || "(no id)"}`}>
                     …{trackingKey}

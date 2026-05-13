@@ -35,6 +35,19 @@ export default function LoginPage() {
       const body: Record<string, string> = { email: email.trim(), password };
       if (mode === "signup" && name.trim()) body.name = name.trim();
 
+      // Blast-campaign attribution: utm_* params from the landing URL are
+      // stashed in localStorage on first visit; replay them with the signup
+      // payload so the backend can record "principal X's email -> teacher
+      // Y signed up". Captured by an inline script on the root layout.
+      if (mode === "signup" && typeof window !== "undefined") {
+        try {
+          const utm = JSON.parse(localStorage.getItem("curriculate_utm") || "{}");
+          if (utm.utm_content)  body.utm_content  = String(utm.utm_content);
+          if (utm.utm_campaign) body.utm_campaign = String(utm.utm_campaign);
+          if (utm.utm_source)   body.utm_source   = String(utm.utm_source);
+        } catch { /* no-op */ }
+      }
+
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

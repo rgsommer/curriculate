@@ -122,6 +122,30 @@ export default function RootLayout({
       </head>
 
       <body className="min-h-screen bg-white text-gray-900 antialiased">
+        {/* Blast-campaign attribution: stash utm_* params from the landing
+            URL into localStorage on first visit. Replayed by the signup
+            form so backend can record "principal X's email -> teacher Y
+            signed up". Runs before any page interaction. */}
+        <Script id="blast-utm-capture" strategy="afterInteractive">
+          {`
+            (function() {
+              try {
+                var u = new URLSearchParams(window.location.search);
+                var keys = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
+                var captured = {};
+                var anyFound = false;
+                for (var i = 0; i < keys.length; i++) {
+                  var v = u.get(keys[i]);
+                  if (v) { captured[keys[i]] = v; anyFound = true; }
+                }
+                if (anyFound) {
+                  captured.capturedAt = new Date().toISOString();
+                  localStorage.setItem("curriculate_utm", JSON.stringify(captured));
+                }
+              } catch(e) {}
+            })();
+          `}
+        </Script>
         {/* Detect Capacitor native app shell and hide website chrome */}
         <Script id="capacitor-detect" strategy="afterInteractive">
           {`

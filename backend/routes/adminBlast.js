@@ -400,6 +400,25 @@ router.get("/blast/contacts", requireAdminToken, async (req, res) => {
     if (req.query.school) filter.school = String(req.query.school);
     if (req.query.status === "never") filter.lastContactedAt = null;
     if (req.query.status === "contacted") filter.lastContactedAt = { $ne: null };
+
+    // Exclude contacts already targeted (any status: queued, sending, sent,
+    // failed) by ANY campaign — optionally narrowed to a specific product.
+    // Solves "I want to send to contacts NOT yet in any campaign so I don't
+    // wait for in-flight campaigns to finish before adding the new ones."
+    if (req.query.excludeTargeted) {
+      const excludeProduct = String(req.query.excludeTargeted); // "any" or product name
+      const campFilter = (excludeProduct === "any") ? {} : { product: excludeProduct };
+      const camps = await BlastCampaign.find(campFilter).select("_id").lean();
+      const taintedEmails = await BlastRecipient.distinct("email", {
+        campaignId: { $in: camps.map(c => c._id) },
+        status: { $in: ["queued", "sending", "sent", "failed"] },
+      });
+      if (taintedEmails.length) {
+        filter.email = filter.email
+          ? { ...filter.email, $nin: taintedEmails }
+          : { $nin: taintedEmails };
+      }
+    }
     if (req.query.q) {
       const q = String(req.query.q).trim();
       filter.$or = [
@@ -567,6 +586,85 @@ router.post("/blast/contacts/reject", requireAdminToken, async (req, res) => {
   if (!emails.length) return res.status(400).json({ error: "emails[] required" });
   const r = await BlastContact.deleteMany({ email: { $in: emails }, pendingReview: true });
   res.json({ ok: true, deleted: r.deletedCount });
+});
+
+/* ──────────────────────────────────────────────────────────────────────
+ * POST /admin/blast/resend-webhook
+ *
+ * Public endpoint (no admin token — Resend posts here). Optional signature
+ * verification via process.env.RESEND_WEBHOOK_SECRET — see Resend docs for
+ * setup. The payload looks like:
+ *   { type: "email.opened"|"email.clicked"|"email.bounced"|...,
+ *     data: { email_id, ... } }
+ *
+ * email_id matches BlastRecipient.resendId. We update both the recipient
+ * row AND the master BlastContact aggregates so the Contacts UI can show
+ * per-contact engagement scores.
+ * ────────────────────────────────────────────────────────────────────── */
+router.post("/blast/resend-webhook", express.json(), async (req, res) => {
+  try {
+    const evt = req.body || {};
+    const type = String(evt.type || "");
+    const emailId = evt?.data?.email_id || evt?.data?.id || "";
+    if (!emailId || !type.startsWith("email.")) {
+      return res.json({ ok: true, ignored: true });
+    }
+
+    const r = await BlastRecipient.findOne({ resendId: emailId });
+    if (!r) return res.json({ ok: true, unknown: true });
+
+    const now = new Date();
+    const recipientUpdate = {};
+    const contactUpdate = {};
+    const contactInc = {};
+
+    switch (type) {
+      case "email.delivered":
+        recipientUpdate.deliveredAt = recipientUpdate.deliveredAt || now;
+        break;
+      case "email.opened":
+        recipientUpdate.lastOpenedAt = now;
+        if (!r.openedAt) recipientUpdate.openedAt = now;
+        await BlastRecipient.updateOne({ _id: r._id }, { ...recipientUpdate, $inc: { openCount: 1 } });
+        await BlastContact.updateOne(
+          { email: r.email },
+          { $set: { lastOpenedAt: now }, $inc: { openCount: 1 } }
+        );
+        return res.json({ ok: true });
+      case "email.clicked":
+        recipientUpdate.lastClickedAt = now;
+        if (!r.clickedAt) recipientUpdate.clickedAt = now;
+        await BlastRecipient.updateOne({ _id: r._id }, { ...recipientUpdate, $inc: { clickCount: 1 } });
+        await BlastContact.updateOne(
+          { email: r.email },
+          { $set: { lastClickedAt: now }, $inc: { clickCount: 1 } }
+        );
+        return res.json({ ok: true });
+      case "email.bounced":
+        recipientUpdate.bouncedAt = now;
+        recipientUpdate.bounceType = evt?.data?.bounce?.type || "undetermined";
+        recipientUpdate.status = "bounced";
+        contactUpdate.bouncedAt = now;
+        break;
+      case "email.complained":
+        recipientUpdate.complainedAt = now;
+        break;
+      default:
+        // email.sent / email.delivery_delayed / etc. — record-only events
+        break;
+    }
+
+    if (Object.keys(recipientUpdate).length) {
+      await BlastRecipient.updateOne({ _id: r._id }, recipientUpdate);
+    }
+    if (Object.keys(contactUpdate).length) {
+      await BlastContact.updateOne({ email: r.email }, { $set: contactUpdate });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("POST /admin/blast/resend-webhook error:", e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 export default router;

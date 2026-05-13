@@ -18,6 +18,13 @@ const UserSchema = new Schema(
     // Referral attribution — which agent code was used at checkout
     referralCode: { type: String, default: null },
 
+    // Blast-campaign attribution — captured from utm_* params on the landing
+    // page that brought this user here. Lets us answer "principal at School X
+    // got the email -> teacher Y at School X signed up 3 days later".
+    blastUtmContent:  { type: String, default: "" }, // = BlastRecipient._id
+    blastUtmCampaign: { type: String, default: "" }, // = product (curriculate/pulse/fieldday)
+    blastUtmSource:   { type: String, default: "" }, // = "blast"
+
     // Subscription fields
     subscriptionTier: {
       type: String,
