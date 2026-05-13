@@ -52,7 +52,10 @@ function b64url(buf: Buffer) {
   return buf.toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
-export function signToken(payload: object) {
+// Local helpers — NOT exported because Next.js routes only allow HTTP
+// method handlers + a few config names as route exports (build error
+// otherwise: "X is not a valid Route export field").
+function signToken(payload: object) {
   const secret = process.env.MEDICENTRE_SECRET;
   if (!secret) throw new Error("MEDICENTRE_SECRET not configured");
   const body = b64url(Buffer.from(JSON.stringify(payload)));
@@ -60,7 +63,7 @@ export function signToken(payload: object) {
   return `${body}.${sig}`;
 }
 
-export function pinHash(pin: string, email: string) {
+function pinHash(pin: string, email: string) {
   const secret = process.env.MEDICENTRE_SECRET || "";
   return crypto.createHash("sha256").update(pin + "|" + email.toLowerCase() + "|" + secret).digest("hex");
 }
