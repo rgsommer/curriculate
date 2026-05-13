@@ -3923,11 +3923,18 @@ export default function GradingPage() {
                   // teacher notices they're about to throw the result
                   // away before it's been saved to anyone's progress.
                   const hasResult = !!serverText;
-                  const isMatched =
+                  // A real match requires BOTH a student AND a class.
+                  // Class alone (or student alone) doesn't qualify —
+                  // the result needs to land in a specific class's
+                  // progress portal under a named student.
+                  const hasStudent =
                     !!(matchedRosterStudent?.studentId ||
                       matchedRosterStudent?.edsbyId ||
-                      (detectedStudentName || "").trim() ||
-                      (selectedClassName || "").trim());
+                      (detectedStudentName || "").trim());
+                  const hasClass =
+                    !!((selectedClassName || "").trim() ||
+                      (matchedRosterStudent?.className || "").trim());
+                  const isMatched = hasStudent && hasClass;
                   const warnUnmatched = hasResult && !isMatched;
                   const hasAnyCaptured =
                     stickyRubricText ||
