@@ -1,8 +1,298 @@
 // student-app/src/components/tasks/types/DrawMimeTask.jsx
-import React, { useRef, useState, useEffect, useMemo } from "react";
+import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TaskCardFrame } from "../taskStyles";
 import StepCircle from "../StepCircle";
+
+// ─── Inline drawing canvas (simple-mode "Draw on screen" option) ──────
+//
+// Finger / mouse / stylus drawing.  Used by simple-mode draw tasks
+// when the player picks "Draw on screen".  Paper drawing is still the
+// default and earns a bonus.  Teacher profile flag minimizeOnScreen
+// hides the on-screen choice entirely so a classroom can stay
+// paper-only by policy.
+const SIMPLE_DRAW_COLOURS = [
+  { name: "Black",  css: "#0f172a" },
+  { name: "Red",    css: "#ef4444" },
+  { name: "Blue",   css: "#2563eb" },
+  { name: "Green",  css: "#16a34a" },
+  { name: "Orange", css: "#f97316" },
+  { name: "Purple", css: "#7c3aed" },
+];
+const SIMPLE_DRAW_SIZES = [
+  { label: "Fine",   px: 3 },
+  { label: "Medium", px: 6 },
+  { label: "Bold",   px: 12 },
+];
+
+function SimpleDrawCanvas({ onClear, registerSnapshot }) {
+  const canvasRef = useRef(null);
+  const ctxRef = useRef(null);
+  const drawingRef = useRef(false);
+  const lastRef = useRef({ x: 0, y: 0 });
+  const [colour, setColour] = useState(SIMPLE_DRAW_COLOURS[0].css);
+  const [sizePx, setSizePx] = useState(SIMPLE_DRAW_SIZES[1].px);
+  const strokeHistoryRef = useRef([]); // stack of dataURL snapshots for undo
+
+  // Resize the canvas to its container so the drawing surface matches
+  // the visible box on any device.  Also fills with white so the
+  // captured snapshot reads as a "real" drawing on a page.
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const fit = () => {
+      const rect = c.getBoundingClientRect();
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      // Preserve any existing drawing across resizes.
+      const prev = strokeHistoryRef.current[strokeHistoryRef.current.length - 1] || null;
+      c.width = Math.max(200, Math.floor(rect.width * dpr));
+      c.height = Math.max(180, Math.floor(rect.height * dpr));
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctxRef.current = ctx;
+      if (prev) {
+        const img = new Image();
+        img.onload = () => ctx.drawImage(img, 0, 0, c.width, c.height);
+        img.src = prev;
+      }
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, []);
+
+  const getPos = useCallback((evt) => {
+    const c = canvasRef.current;
+    if (!c) return { x: 0, y: 0 };
+    const rect = c.getBoundingClientRect();
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const clientX = evt.clientX ?? evt.touches?.[0]?.clientX ?? 0;
+    const clientY = evt.clientY ?? evt.touches?.[0]?.clientY ?? 0;
+    return {
+      x: (clientX - rect.left) * dpr,
+      y: (clientY - rect.top) * dpr,
+    };
+  }, []);
+
+  const start = useCallback(
+    (evt) => {
+      evt.preventDefault();
+      const ctx = ctxRef.current;
+      if (!ctx) return;
+      drawingRef.current = true;
+      const { x, y } = getPos(evt);
+      lastRef.current = { x, y };
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = sizePx * (Math.max(1, window.devicePixelRatio || 1));
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + 0.01, y + 0.01); // dot for tap-only
+      ctx.stroke();
+    },
+    [colour, sizePx, getPos]
+  );
+
+  const move = useCallback(
+    (evt) => {
+      if (!drawingRef.current) return;
+      evt.preventDefault();
+      const ctx = ctxRef.current;
+      if (!ctx) return;
+      const { x, y } = getPos(evt);
+      ctx.beginPath();
+      ctx.moveTo(lastRef.current.x, lastRef.current.y);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      lastRef.current = { x, y };
+    },
+    [getPos]
+  );
+
+  const end = useCallback(() => {
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    const c = canvasRef.current;
+    if (!c) return;
+    try {
+      const snap = c.toDataURL("image/png");
+      strokeHistoryRef.current.push(snap);
+      if (strokeHistoryRef.current.length > 20) strokeHistoryRef.current.shift();
+    } catch {}
+  }, []);
+
+  const handleClear = useCallback(() => {
+    const c = canvasRef.current;
+    const ctx = ctxRef.current;
+    if (!c || !ctx) return;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, c.width, c.height);
+    strokeHistoryRef.current = [];
+    if (typeof onClear === "function") onClear();
+  }, [onClear]);
+
+  const handleUndo = useCallback(() => {
+    const c = canvasRef.current;
+    const ctx = ctxRef.current;
+    if (!c || !ctx) return;
+    const history = strokeHistoryRef.current;
+    if (history.length === 0) return;
+    history.pop();
+    const prev = history[history.length - 1];
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, c.width, c.height);
+    if (prev) {
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, c.width, c.height);
+      img.src = prev;
+    }
+  }, []);
+
+  // Expose a snapshot fetch to the parent so the submit handler can
+  // include the dataURL in the answer payload.
+  useEffect(() => {
+    if (typeof registerSnapshot === "function") {
+      registerSnapshot(() => {
+        const c = canvasRef.current;
+        if (!c) return null;
+        try {
+          return c.toDataURL("image/png");
+        } catch {
+          return null;
+        }
+      });
+    }
+    return () => {
+      if (typeof registerSnapshot === "function") registerSnapshot(null);
+    };
+  }, [registerSnapshot]);
+
+  return (
+    <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {SIMPLE_DRAW_COLOURS.map((c) => (
+          <button
+            key={c.name}
+            type="button"
+            onClick={() => setColour(c.css)}
+            aria-label={`Colour ${c.name}`}
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 999,
+              background: c.css,
+              border:
+                colour === c.css
+                  ? "3px solid #fff"
+                  : "2px solid rgba(255,255,255,0.45)",
+              cursor: "pointer",
+              boxShadow:
+                colour === c.css
+                  ? "0 0 0 2px rgba(0,0,0,0.3), 0 0 12px rgba(255,255,255,0.5)"
+                  : "0 1px 3px rgba(0,0,0,0.25)",
+            }}
+          />
+        ))}
+        <span style={{ width: 1, height: 22, background: "rgba(255,255,255,0.3)" }} />
+        {SIMPLE_DRAW_SIZES.map((s) => (
+          <button
+            key={s.label}
+            type="button"
+            onClick={() => setSizePx(s.px)}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border:
+                sizePx === s.px
+                  ? "2px solid #fff"
+                  : "1px solid rgba(255,255,255,0.35)",
+              background:
+                sizePx === s.px ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.08)",
+              color: "#fff",
+              fontWeight: 800,
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      <canvas
+        ref={canvasRef}
+        style={{
+          width: "100%",
+          height: 320,
+          maxWidth: 520,
+          marginInline: "auto",
+          borderRadius: 16,
+          background: "#ffffff",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+          touchAction: "none",
+          cursor: "crosshair",
+        }}
+        onMouseDown={start}
+        onMouseMove={move}
+        onMouseUp={end}
+        onMouseLeave={end}
+        onTouchStart={start}
+        onTouchMove={move}
+        onTouchEnd={end}
+      />
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          justifyContent: "center",
+        }}
+      >
+        <button
+          type="button"
+          onClick={handleUndo}
+          style={{
+            padding: "8px 16px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.4)",
+            background: "rgba(255,255,255,0.12)",
+            color: "#fff",
+            fontWeight: 800,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          ↶ Undo
+        </button>
+        <button
+          type="button"
+          onClick={handleClear}
+          style={{
+            padding: "8px 16px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.4)",
+            background: "rgba(255,255,255,0.12)",
+            color: "#fff",
+            fontWeight: 800,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          🧽 Clear
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function DrawMimeTask({
   task,
@@ -59,6 +349,23 @@ export default function DrawMimeTask({
   // Simple-mode state (for standalone "draw" or "mime" tasks)
   const [simpleDone, setSimpleDone] = useState(false);
   const [simpleCurrentIdx, setSimpleCurrentIdx] = useState(0);
+
+  // Draw-on-paper (+bonus) vs draw-on-screen entry choice.  Null
+  // until the player picks.  Teacher profile flag minimizeOnScreen
+  // forces "paper" automatically so the on-screen option doesn't
+  // appear when the class policy is paper-only.
+  const teacherMinimizeOnScreen =
+    !!task?.minimizeOnScreen || !!task?.config?.minimizeOnScreen;
+  const PAPER_DRAW_BONUS = 5;
+  const [drawMethod, setDrawMethod] = useState(
+    teacherMinimizeOnScreen ? "paper" : null
+  );
+  // Snapshot getter the canvas registers so submit can include the
+  // dataURL in the answer payload.
+  const drawSnapshotRef = useRef(null);
+  const registerDrawSnapshot = useCallback((fn) => {
+    drawSnapshotRef.current = fn || null;
+  }, []);
   // Mime/Draw simple-mode: per-clue peek-and-hide state machine.  The
   // clue is hidden by default so the team doesn't see it on the
   // device — the actor presses & holds to peek privately, then taps
@@ -727,11 +1034,28 @@ export default function DrawMimeTask({
     const handleSimpleSubmit = () => {
       if (disabled || simpleDone) return;
       setSimpleDone(true);
+      // For draw tasks, include the chosen method + any on-screen
+      // canvas snapshot + the paper bonus (if applicable).  DemoMode
+      // / TaskRunner can apply paperBonus to the awarded points.
+      const drawingPayload = {};
+      if (isDrawOnly) {
+        const effectiveMethod = drawMethod || "paper"; // default to paper
+        drawingPayload.drawingMethod = effectiveMethod;
+        if (effectiveMethod === "paper") {
+          drawingPayload.paperBonus = PAPER_DRAW_BONUS;
+        } else if (effectiveMethod === "screen") {
+          try {
+            const snap = drawSnapshotRef.current?.();
+            if (snap) drawingPayload.drawingDataUrl = snap;
+          } catch {}
+        }
+      }
       onSubmit?.({
         type: isDrawOnly ? "drawing" : "mime",
         mode: isDrawOnly ? "draw" : "mime",
         completed: true,
         simple: true,
+        ...drawingPayload,
       });
     };
 
@@ -761,6 +1085,69 @@ export default function DrawMimeTask({
             )}
           </div>
 
+          {/* Method picker — drawing only.  Hidden once chosen,
+              hidden entirely when teacher profile has
+              minimizeOnScreen (paper is forced) or for mime tasks. */}
+          {isDrawOnly && !drawMethod && !teacherMinimizeOnScreen && (
+            <div
+              style={{
+                background: "rgba(0,0,0,0.25)",
+                borderRadius: 16,
+                padding: 16,
+                marginBottom: 16,
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: "1rem", fontWeight: 800, marginBottom: 10 }}>
+                How are you drawing?
+              </div>
+              <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => setDrawMethod("paper")}
+                  style={{
+                    padding: "14px 18px",
+                    borderRadius: 14,
+                    border: "2px solid rgba(253,224,71,0.85)",
+                    background: "rgba(253,224,71,0.18)",
+                    color: "#fff",
+                    fontWeight: 900,
+                    fontSize: "0.95rem",
+                    cursor: "pointer",
+                    minWidth: 180,
+                    textAlign: "left",
+                  }}
+                >
+                  📝 On paper
+                  <div style={{ fontSize: "0.78rem", fontWeight: 700, opacity: 0.95, marginTop: 4 }}>
+                    +{PAPER_DRAW_BONUS} pt bonus · brain & hand together
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDrawMethod("screen")}
+                  style={{
+                    padding: "14px 18px",
+                    borderRadius: 14,
+                    border: "2px solid rgba(255,255,255,0.45)",
+                    background: "rgba(255,255,255,0.10)",
+                    color: "#fff",
+                    fontWeight: 900,
+                    fontSize: "0.95rem",
+                    cursor: "pointer",
+                    minWidth: 180,
+                    textAlign: "left",
+                  }}
+                >
+                  🖍 On screen
+                  <div style={{ fontSize: "0.78rem", fontWeight: 700, opacity: 0.85, marginTop: 4 }}>
+                    Finger or stylus drawing
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Instructions */}
           <div style={{
             background: "rgba(0,0,0,0.2)",
@@ -771,7 +1158,30 @@ export default function DrawMimeTask({
           }}>
             {isDrawOnly ? (
               <div style={{ fontSize: "1rem", lineHeight: 1.6 }}>
-                <strong>Grab paper and a pen.</strong> Draw each concept below — no words or letters allowed!
+                {drawMethod === "screen" ? (
+                  <>
+                    <strong>Draw on screen.</strong> Use the canvas
+                    below — no words or letters allowed!
+                  </>
+                ) : (
+                  <>
+                    <strong>
+                      Grab paper and a pen.
+                      {drawMethod === "paper" && (
+                        <span style={{ color: "#fde68a" }}>
+                          {" "}(+{PAPER_DRAW_BONUS} pt bonus)
+                        </span>
+                      )}
+                    </strong>{" "}
+                    Draw each concept below — no words or letters
+                    allowed!
+                    {teacherMinimizeOnScreen && (
+                      <div style={{ marginTop: 6, fontSize: "0.85rem", opacity: 0.85 }}>
+                        Your teacher has set this class to paper-only.
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             ) : (
               <div style={{ fontSize: "1rem", lineHeight: 1.6 }}>
@@ -779,6 +1189,15 @@ export default function DrawMimeTask({
               </div>
             )}
           </div>
+
+          {/* On-screen canvas — appears only when player chose
+              "screen".  Tucked right above the clue display so
+              they can glance at the clue and draw in one view. */}
+          {isDrawOnly && drawMethod === "screen" && (
+            <div style={{ marginBottom: 18 }}>
+              <SimpleDrawCanvas registerSnapshot={registerDrawSnapshot} />
+            </div>
+          )}
 
           {/* Clue display */}
           {hasMultipleClues ? (() => {

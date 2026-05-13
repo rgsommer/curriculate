@@ -1079,15 +1079,27 @@ function DemoPlayer({
       }
 
       const { pts } = getAdaptivePts(task?.taskType, user.taskPoints, completedTypes);
+      // Paper-draw bonus: DrawMimeTask emits paperBonus: <n> when the
+      // player chose "Draw on paper" in the simple-mode method picker.
+      // Stack it on top of the adaptive points so paper drawers earn
+      // a small reward for keeping their hand on the page.  Capped to
+      // prevent any odd inflation from a future generator passing a
+      // huge value.
+      const paperBonus =
+        answer && typeof answer === "object" && Number(answer.paperBonus) > 0
+          ? Math.min(20, Number(answer.paperBonus) | 0)
+          : 0;
+      const totalPts = pts + paperBonus;
       const entry = {
         taskType: task?.taskType,
         title: task?.title,
         answer: typeof answer === "object" ? JSON.stringify(answer) : String(answer ?? ""),
         skipped: false,
-        points: pts,
+        points: totalPts,
+        ...(paperBonus > 0 ? { paperBonus } : {}),
         completedAt: new Date().toISOString(),
       };
-      setTotalPoints((p) => p + pts);
+      setTotalPoints((p) => p + totalPts);
       setStreak((s) => s + 1);
 
       // Track this type as completed
