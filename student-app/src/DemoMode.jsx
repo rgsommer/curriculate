@@ -2281,6 +2281,14 @@ function DemoResults({
   const [sent, setSent] = useState(false);
   const [showAmbassador, setShowAmbassador] = useState(false);
   const [recommendBonus, setRecommendBonus] = useState(0);
+  // Lifetime totals from the backend response (POST /results returns
+  // sessionPoints + cumulative totalPoints + sessionCount).  Tester
+  // (Harnoor): "I did the 10 task, 50 pointer one three times, and I
+  // thought when I redid, it'd add on to my previous 50, but it
+  // reset" — the on-screen hero used to show session-only.  We now
+  // surface lifetime alongside so replays clearly stack.
+  const [lifetimeTotal, setLifetimeTotal] = useState(null);
+  const [lifetimeSessionCount, setLifetimeSessionCount] = useState(null);
   const isClassroom = source === "classroom";
   // CTA + ambassador require BOTH source==="conference" AND an actual
   // conference event in the URL (?event=...).  Without that we treat
@@ -2353,7 +2361,18 @@ function DemoResults({
         completedAt: new Date().toISOString(),
       }),
     })
-      .then(() => setSent(true))
+      .then(async (r) => {
+        try {
+          const data = await r.json();
+          if (data && typeof data.totalPoints === "number") {
+            setLifetimeTotal(data.totalPoints);
+          }
+          if (data && typeof data.sessionCount === "number") {
+            setLifetimeSessionCount(data.sessionCount);
+          }
+        } catch {}
+        setSent(true);
+      })
       .catch((err) => {
         console.warn("[demo] results submit failed:", err);
         setSent(true);
@@ -2382,7 +2401,7 @@ function DemoResults({
           }}
         >
           <div style={{ fontSize: 14, color: "#92400e", fontWeight: 700, marginBottom: 4 }}>
-            Total Points Earned
+            This Session
           </div>
           <div style={{ fontSize: 48, fontWeight: 900, color: "#f59e0b" }}>{totalPoints}</div>
           <div style={{ fontSize: 13, color: "#a16207" }}>
@@ -2391,6 +2410,35 @@ function DemoResults({
           <div style={{ fontSize: 12, color: "#a16207", marginTop: 2 }}>
             {new Set(completed.map((r) => r.taskType)).size} unique task types tried
           </div>
+
+          {/* Lifetime stack — shows on the second render after the
+              backend confirms totalPoints.  Tester (Harnoor) expected
+              the on-screen total to keep climbing across replays; this
+              row makes the cumulative total explicit. */}
+          {typeof lifetimeTotal === "number" && lifetimeTotal > 0 && (
+            <div
+              style={{
+                marginTop: 14,
+                paddingTop: 12,
+                borderTop: "1px dashed rgba(146,64,14,0.25)",
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#92400e", fontWeight: 700, opacity: 0.85 }}>
+                Lifetime
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: "#b45309" }}>
+                {lifetimeTotal}
+                <span style={{ fontSize: 12, fontWeight: 700, marginLeft: 6, opacity: 0.85 }}>
+                  pts
+                </span>
+              </div>
+              {typeof lifetimeSessionCount === "number" && lifetimeSessionCount > 1 && (
+                <div style={{ fontSize: 11, color: "#a16207", marginTop: 2 }}>
+                  across {lifetimeSessionCount} sessions — every replay adds to this.
+                </div>
+              )}
+            </div>
+          )}
           {hitCommitment && (
             <div
               style={{

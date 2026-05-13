@@ -1068,6 +1068,13 @@ export default function PhysicalMultipleChoiceTask({
             const baseColor = getColorCss(stationColor);
             const isShaken = shakedLetter === letter;
 
+            // In practice mode, the answer-option cards also act as a
+            // shortcut for "scan this colour".  Testers were tapping
+            // the big coloured A/B/C/D cards expecting them to pick
+            // an answer — they read as buttons — but only the small
+            // scanner-tile row below was actually wired up.  Let both
+            // surfaces fire the same scan.
+            const cardTappable = showClickColorFallback && !disabled && !isReview && !showingFeedback;
             return (
               <div
                 key={letter}
@@ -1082,6 +1089,19 @@ export default function PhysicalMultipleChoiceTask({
                       ? "pmcPulse 0.8s ease-in-out"
                       : `pmcCardPop 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) ${idx * 100}ms backwards`,
                 }}
+                onClick={cardTappable ? () => acceptColorScan(stationColor) : undefined}
+                role={cardTappable ? "button" : undefined}
+                tabIndex={cardTappable ? 0 : undefined}
+                onKeyDown={
+                  cardTappable
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          acceptColorScan(stationColor);
+                        }
+                      }
+                    : undefined
+                }
               >
                 <div
                   style={{

@@ -24,7 +24,10 @@ export default function CaseStudyTask({
   const relevantConcepts = Array.isArray(cfg.relevantConcepts) ? cfg.relevantConcepts : [];
 
   const gradeLevel = parseInt(task?.gradeLevel || task?.config?.gradeLevel || task?.settings?.gradeLevel || "7", 10);
-  const minWords = gradeLevel * 20;
+  // Tester (Harnoor): "shorten the word count to 100 words".
+  // Lowered the per-grade multiplier and capped at 100 — grade 7 used
+  // to require 140 words which felt too long for a quick demo.
+  const minWords = Math.min(100, gradeLevel * 12);
 
   const [value, setValue] = useState(answerDraft?.response || "");
   const [isSubmitting, setIsSubmitting] = useState(false);

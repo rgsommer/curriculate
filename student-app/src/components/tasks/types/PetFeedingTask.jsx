@@ -53,8 +53,25 @@ function paletteFor(type) {
 const PET_ASSET_PROBE_CACHE = new Map();
 function probeAsset(url) {
   if (PET_ASSET_PROBE_CACHE.has(url)) return PET_ASSET_PROBE_CACHE.get(url);
+  // Verify both that the request succeeds AND that the response is the
+  // right media type.  Some hosts (Next.js dev server, generic SPA
+  // catch-alls) reply 200 + text/html for unknown asset paths, which
+  // used to fool this probe into "yes, the mp4 exists" — then the
+  // <video> element silently failed to render and the practicer saw
+  // nothing where the pet should have been.
+  const expectedPrefix = url.endsWith(".mp4")
+    ? "video/"
+    : url.endsWith(".json")
+    ? "application/json"
+    : null;
   const p = fetch(url, { method: "HEAD" })
-    .then((r) => (r.ok ? url : null))
+    .then((r) => {
+      if (!r.ok) return null;
+      if (!expectedPrefix) return url;
+      const ct = (r.headers.get("content-type") || "").toLowerCase();
+      if (!ct.startsWith(expectedPrefix)) return null;
+      return url;
+    })
     .catch(() => null);
   PET_ASSET_PROBE_CACHE.set(url, p);
   return p;
@@ -107,7 +124,7 @@ const DEFAULT_MOOD_SEGMENTS = {
   celebrating: [15, 20],
   sick:        [20, 25],
 };
-function PetVideoSegment({ src, mood, segments }) {
+function PetVideoSegment({ src, mood, segments, onError }) {
   const videoRef = useRef(null);
   const seg = (segments && segments[mood]) || DEFAULT_MOOD_SEGMENTS[mood] || [0, 2];
   const [start, end] = seg;
@@ -149,6 +166,11 @@ function PetVideoSegment({ src, mood, segments }) {
       playsInline
       preload="auto"
       onTimeUpdate={onTimeUpdate}
+      onError={() => {
+        // Surface load failures to the parent so it can swap to the
+        // SVG fallback instead of leaving a blank rectangle.
+        if (typeof onError === "function") onError();
+      }}
       style={{
         width: "100%",
         height: "100%",
@@ -187,6 +209,11 @@ function PetLottie({ src }) {
 }
 
 function AnimatedPet({ type, mood, scale = 1 }) {
+  // If a probed video URL turns out to be unloadable at <video> time
+  // (404, codec issue, etc.), we mark it failed and fall through to
+  // the SVG renderer below so the practicer never sees a blank where
+  // the pet should be.
+  const [bundleFailed, setBundleFailed] = useState(false);
   // Resolution order (first file that 200s wins):
   //   /pets/<type>/all.mp4         — single 10s video; loop just the
   //                                   segment for the current mood
@@ -248,14 +275,19 @@ function AnimatedPet({ type, mood, scale = 1 }) {
     return () => { cancelled = true; };
   }, [bundle, t, m]);
 
-  if (bundle?.kind === "all-mp4") {
+  if (bundle?.kind === "all-mp4" && !bundleFailed) {
     return (
       <div style={{ width: 220 * scale, height: 220 * scale }}>
-        <PetVideoSegment src={bundle.src} mood={mood} segments={bundle.segments} />
+        <PetVideoSegment
+          src={bundle.src}
+          mood={mood}
+          segments={bundle.segments}
+          onError={() => setBundleFailed(true)}
+        />
       </div>
     );
   }
-  if (resolved?.kind === "video") {
+  if (resolved?.kind === "video" && !bundleFailed) {
     return (
       <div style={{ width: 220 * scale, height: 220 * scale }}>
         <PetVideo src={resolved.src} />

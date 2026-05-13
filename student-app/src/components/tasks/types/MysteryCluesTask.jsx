@@ -215,7 +215,12 @@ export default function MysteryCluesTask({ task, onSubmit, disabled }) {
     };
   }, [phase, isFinal, revealMs]);
 
-  // Auto-submit non-final reveal tasks shortly after hiding, to keep flow moving.
+  // Auto-submit non-final reveal tasks shortly after hiding, to keep
+  // flow moving.  Bumped from 450ms → 1500ms so the "✅ Cards
+  // memorized" confirmation panel (rendered below for phase === 'done')
+  // is actually visible before the next task pops up.  Tester:
+  // "we didn't do anything afte rthe seconds" — the screen used to
+  // go blank for 450ms and then jump straight to the next task.
   useEffect(() => {
     if (isFinal) return;
     if (phase !== "done") return;
@@ -230,7 +235,7 @@ export default function MysteryCluesTask({ task, onSubmit, disabled }) {
           ok: true,
         });
       }
-    }, 450);
+    }, 1500);
     return () => window.clearTimeout(t);
   }, [phase, isFinal, onSubmit, cluesThisTask, task]);
 
@@ -339,6 +344,33 @@ export default function MysteryCluesTask({ task, onSubmit, disabled }) {
                 }}
               />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* DONE PHASE (non-final) — countdown reached zero.  Show a
+          short confirmation so the screen isn't blank between
+          "Hiding in 0s" and the next task.  Auto-submits ~1.5s later
+          (see effect above). */}
+      {!isFinal && phase === "done" && (
+        <div
+          style={{
+            marginTop: 26,
+            padding: "18px 20px",
+            borderRadius: 14,
+            background: "rgba(34,197,94,0.18)",
+            border: "1px solid rgba(34,197,94,0.4)",
+            textAlign: "center",
+            maxWidth: 480,
+            marginInline: "auto",
+          }}
+        >
+          <div style={{ fontSize: 32, marginBottom: 6 }}>✅</div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: "#dcfce7" }}>
+            Cards hidden — keep them in mind!
+          </div>
+          <div style={{ marginTop: 6, fontSize: 13, opacity: 0.85 }}>
+            You'll need them later. Moving on…
           </div>
         </div>
       )}

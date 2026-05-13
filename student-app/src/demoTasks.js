@@ -190,7 +190,10 @@ const DEMO_TASKS = [
     prompt: "What's one thing you'd like to see AI do for education in the next 5 years?",
   },
 
-  // 13. Hangman Duel
+  // 13. Hangman Duel — wordBank gives the Rematch button a new word
+  // to pick (tester: "It was the same word when we rematched").
+  // HangmanDuelTask.pickNewWord() filters the current word out and
+  // picks at random from the rest.
   {
     taskType: "hangman-duel",
     title: "Hangman Duel",
@@ -199,6 +202,18 @@ const DEMO_TASKS = [
       word: "CURRICULUM",
       hint: "A plan for teaching and learning",
       maxGuesses: 8,
+      wordBank: [
+        "CURRICULUM",
+        "PRACTICE",
+        "TEACHER",
+        "STUDENT",
+        "SCHOOL",
+        "HOMEWORK",
+        "LIBRARY",
+        "RECESS",
+        "CLASSROOM",
+        "ASSEMBLY",
+      ],
     },
   },
 
@@ -513,11 +528,29 @@ const DEMO_TASKS = [
     },
   },
 
-  // 33. Mad Dash Sequence
+  // 33. Mad Dash Sequence — items[] + correctOrder give the task a
+  // real sequence to reveal.  Without them, MadDashSequenceTask
+  // skipped its mapping effect and the reveal screen rendered empty
+  // (tester: "no color sequence is ever presented").
   {
     taskType: "mad-dash-sequence",
     title: "Mad Dash Sequence",
     prompt: "Scan the stations in the right order as fast as you can!",
+    items: [
+      "Sun rises",
+      "Have breakfast",
+      "Walk to school",
+      "Lunch bell rings",
+      "Sun sets",
+    ],
+    config: {
+      // Items are already listed in correct chronological order
+      // above, so correctOrder is the identity sequence 0..4.  The
+      // task internally shuffles them for display and the reveal
+      // shows the corresponding colours-in-correct-order.
+      correctOrder: [0, 1, 2, 3, 4],
+      revealMs: 8000,
+    },
   },
 
   // 34. Team Selfie
@@ -564,20 +597,28 @@ const DEMO_TASKS = [
   // =========================================================================
 
   // 38. True/False Tic-Tac-Toe (uses task.statements or task.items)
+  //
+  // Statements are CLAIMS for the student to evaluate as true or
+  // false.  Avoid wording that reads as a confident assertion of an
+  // urban myth (e.g. "Dolphins are fish") — testers misread those
+  // as the game claiming the falsehood is true, and got mad at us
+  // instead of at the claim.  Prefer either obviously-checkable
+  // facts or claims framed as common myths.
   {
     taskType: "true-false-tictactoe",
     title: "T/F Tic-Tac-Toe",
-    prompt: "Answer true or false, then place your piece on the board!",
+    prompt:
+      "Each tile holds a claim. Decide if the claim is TRUE or FALSE, then place your piece!",
     statements: [
-      { text: "The Amazon River is the longest river in the world.", correct: false },
+      { text: "The Amazon is the world's longest river.", correct: false },
       { text: "Venus is the hottest planet in our solar system.", correct: true },
-      { text: "Dolphins are fish.", correct: false },
+      { text: "Many people think dolphins are fish — but they're actually mammals. (True or false: dolphins are mammals.)", correct: true },
       { text: "An ostrich's eye is bigger than its brain.", correct: true },
-      { text: "The speed of light is approximately 300,000 km/s.", correct: true },
-      { text: "Humans only use 10% of their brains.", correct: false },
+      { text: "Light travels at about 300,000 km/s in a vacuum.", correct: true },
+      { text: "Common myth: humans only use 10% of their brains.", correct: false },
       { text: "A day on Venus is longer than a year on Venus.", correct: true },
-      { text: "The Great Barrier Reef is in the Pacific Ocean.", correct: false },
-      { text: "Bats are blind.", correct: false },
+      { text: "The Great Barrier Reef is in the Atlantic Ocean.", correct: false },
+      { text: "Common myth: bats are blind.", correct: false },
     ],
   },
 
@@ -772,20 +813,30 @@ const DEMO_TASKS = [
   },
 
   // 52. Role Play Deck (uses config.roles + config.scenario)
+  //
+  // Tester (Ranbir, Fun 1/5, Clarity 1/5): "If you are playing on
+  // your own it should only give you one player tasks".  Removed the
+  // hard playerCount:4 override — the component now falls back to
+  // memberNames.length, which is 1 in practice, so the player gets
+  // one card and a solo-playable scenario.  Real classroom tasksets
+  // can still pass playerCount via the AI generator.
   {
     taskType: "role-play-deck",
     title: "Role Play",
-    prompt: "Act out the scenario using your assigned character!",
+    prompt: "Pick a card and act out the role solo (or with friends).",
     config: {
-      scenario: "You are at a town meeting debating whether to build a new park or a new library. Each person plays a different community member.",
+      scenario:
+        "You're a detective interviewing a nervous witness at the scene of a missing-cookie investigation. Improvise the conversation aloud — switch between detective voice and witness voice. (Got friends nearby? Each of you take a different card.)",
       roles: [
-        { name: "The Mayor", description: "You must make the final decision. Listen to all sides.", gender: "any" },
-        { name: "The Librarian", description: "You believe reading is the most important skill. Argue for the library.", gender: "any" },
-        { name: "The Coach", description: "You believe kids need more outdoor play. Argue for the park.", gender: "any" },
-        { name: "The Student", description: "You want both! Try to find a compromise.", gender: "any" },
+        { name: "The Detective", description: "Calm, methodical. Asks careful questions. Wants the truth.", gender: "any" },
+        { name: "The Nervous Witness", description: "Knows something but is afraid to say. Stalls a lot.", gender: "any" },
+        { name: "The Cookie's Owner", description: "Outraged but secretly relieved (they were on a diet anyway).", gender: "any" },
+        { name: "The Bakery Cat", description: "Silent. Eyes everyone suspiciously. Maybe meow.", gender: "any" },
       ],
       mode: "choose",
-      playerCount: 4,
+      // playerCount intentionally omitted — defaults to
+      // memberNames.length (1 in practice mode) so solo players
+      // only get one role.
     },
   },
 
