@@ -8,6 +8,7 @@
 //   4. Inspect per-recipient delivery status
 
 import express from "express";
+import crypto from "crypto";
 import { requireAdminToken } from "../middleware/requireAdminToken.js";
 import BlastCampaign from "../models/BlastCampaign.js";
 import BlastRecipient from "../models/BlastRecipient.js";
@@ -648,8 +649,49 @@ router.post("/blast/unsubscribe", express.json(), async (req, res) => {
  * row AND the master BlastContact aggregates so the Contacts UI can show
  * per-contact engagement scores.
  * ────────────────────────────────────────────────────────────────────── */
-router.post("/blast/resend-webhook", express.json(), async (req, res) => {
+/**
+ * Verify the Svix-style signature Resend attaches to webhook requests.
+ * Reads RESEND_WEBHOOK_SECRET from env (looks like "whsec_..."). Returns:
+ *   true  — signature valid (or env var unset, which is dev mode + a warning)
+ *   false — signature missing / invalid / replay attempt
+ */
+function verifyResendSignature(req) {
+  const secret = process.env.RESEND_WEBHOOK_SECRET;
+  if (!secret) {
+    console.warn("[blast] RESEND_WEBHOOK_SECRET not set — webhook running unsigned (DEV-ONLY)");
+    return true;
+  }
+  const svixId = req.get("svix-id") || req.get("webhook-id");
+  const svixTs = req.get("svix-timestamp") || req.get("webhook-timestamp");
+  const svixSig = req.get("svix-signature") || req.get("webhook-signature");
+  if (!svixId || !svixTs || !svixSig || !req.rawBody) return false;
+
+  // 5-minute replay window
+  const tsNum = parseInt(svixTs, 10);
+  if (!Number.isFinite(tsNum) || Math.abs(Date.now() / 1000 - tsNum) > 300) return false;
+
+  const secretBytes = Buffer.from(String(secret).replace(/^whsec_/, ""), "base64");
+  const signedContent = `${svixId}.${svixTs}.${req.rawBody}`;
+  const expected = crypto.createHmac("sha256", secretBytes).update(signedContent).digest("base64");
+
+  // Header format: "v1,sig1 v1,sig2 ..." (Svix supports key rotation)
+  return svixSig.split(" ").some((entry) => {
+    const sig = entry.split(",")[1];
+    if (!sig) return false;
+    try {
+      return crypto.timingSafeEqual(Buffer.from(sig, "base64"), Buffer.from(expected, "base64"));
+    } catch { return false; }
+  });
+}
+
+router.post("/blast/resend-webhook",
+  express.json({ verify: (req, _res, buf) => { req.rawBody = buf.toString("utf8"); } }),
+  async (req, res) => {
   try {
+    if (!verifyResendSignature(req)) {
+      console.warn(`[blast] webhook signature INVALID from ${req.ip} — rejected`);
+      return res.status(401).json({ ok: false, error: "Invalid signature" });
+    }
     const evt = req.body || {};
     const type = String(evt.type || "");
     const emailId = evt?.data?.email_id || evt?.data?.id || "";
