@@ -606,7 +606,7 @@ router.post("/blast/contacts/reject", requireAdminToken, async (req, res) => {
  *
  * Body: { email: string }
  * ────────────────────────────────────────────────────────────────────── */
-router.post("/blast/unsubscribe", express.json(), async (req, res) => {
+router.post("/blast/unsubscribe", async (req, res) => {
   try {
     const email = String(req.body?.email || "").toLowerCase().trim();
     if (!email || !email.includes("@")) {
@@ -684,9 +684,7 @@ function verifyResendSignature(req) {
   }
 }
 
-router.post("/blast/resend-webhook",
-  express.json({ verify: (req, _res, buf) => { req.rawBody = buf.toString("utf8"); } }),
-  async (req, res) => {
+router.post("/blast/resend-webhook", async (req, res) => {
   try {
     if (!verifyResendSignature(req)) {
       console.warn(`[blast] webhook signature INVALID from ${req.ip} — rejected`);

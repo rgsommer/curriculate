@@ -428,7 +428,14 @@ app.use(
 
 // 2) CORS + parsers first
 app.use(cors(corsOptions));
-app.use(express.json({ limit: "25mb" }));
+app.use(express.json({
+  limit: "25mb",
+  // Capture raw body for routes that need HMAC signature verification (Resend
+  // webhook, etc). Tiny memory overhead per request, but lets downstream
+  // handlers access the un-parsed bytes via req.rawBody — necessary because
+  // body-parser consumes the stream so route-level capture is too late.
+  verify: (req, _res, buf) => { req.rawBody = buf.toString("utf8"); },
+}));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
 // 3) Health check (before auth — must be publicly reachable by load balancers)
