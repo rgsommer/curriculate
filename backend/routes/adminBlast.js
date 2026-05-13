@@ -401,6 +401,14 @@ router.get("/blast/contacts", requireAdminToken, async (req, res) => {
     if (req.query.status === "never") filter.lastContactedAt = null;
     if (req.query.status === "contacted") filter.lastContactedAt = { $ne: null };
 
+    // Always exclude contacts who have unsubscribed or hard-bounced — they
+    // shouldn't appear in any campaign pool. Caller can opt back in with
+    // ?includeSuppressed=1 if they want to see the full master list.
+    if (!req.query.includeSuppressed) {
+      filter.unsubscribedAt = null;
+      filter.bouncedAt = null;
+    }
+
     // Exclude contacts already targeted (any status: queued, sending, sent,
     // failed) by ANY campaign — optionally narrowed to a specific product.
     // Solves "I want to send to contacts NOT yet in any campaign so I don't
