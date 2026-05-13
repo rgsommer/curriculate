@@ -699,8 +699,20 @@ router.post("/blast/resend-webhook",
       return res.json({ ok: true, ignored: true });
     }
 
-    const r = await BlastRecipient.findOne({ resendId: emailId });
-    if (!r) return res.json({ ok: true, unknown: true });
+    // Try to match by resendId first (real campaign sends). If that fails,
+    // fall back to matching by the recipient email in the payload — covers
+    // test sends, where the temp BlastRecipient row gets deleted but the
+    // master BlastContact still exists and SHOULD still receive aggregate
+    // open/click counts so the user sees their test loop close.
+    const recipientEmail = Array.isArray(evt?.data?.to) ? String(evt.data.to[0] || "") : String(evt?.data?.to || "");
+    let r = await BlastRecipient.findOne({ resendId: emailId });
+    if (!r && recipientEmail) {
+      // Synthesise a partial recipient-like object so the rest of the handler
+      // works. r._id is null → per-row updates safely skip via filter.
+      r = { _id: null, email: recipientEmail.toLowerCase().trim() };
+      console.log(`[blast] webhook ${type} matched via email fallback (no resendId match): ${r.email}`);
+    }
+    if (!r || !r.email) return res.json({ ok: true, unknown: true });
 
     const now = new Date();
     const recipientUpdate = {};
