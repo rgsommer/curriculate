@@ -8,7 +8,7 @@
 //   4. Inspect per-recipient delivery status
 
 import express from "express";
-import crypto from "crypto";
+import { Webhook } from "svix";
 import { requireAdminToken } from "../middleware/requireAdminToken.js";
 import BlastCampaign from "../models/BlastCampaign.js";
 import BlastRecipient from "../models/BlastRecipient.js";
@@ -651,9 +651,17 @@ router.post("/blast/unsubscribe", express.json(), async (req, res) => {
  * ────────────────────────────────────────────────────────────────────── */
 /**
  * Verify the Svix-style signature Resend attaches to webhook requests.
- * Reads RESEND_WEBHOOK_SECRET from env (looks like "whsec_..."). Returns:
- *   true  — signature valid (or env var unset, which is dev mode + a warning)
- *   false — signature missing / invalid / replay attempt
+ * Uses the official `svix` npm package (the same library Resend uses
+ * server-side, so it's guaranteed to verify correctly). Reads
+ * RESEND_WEBHOOK_SECRET from env (format: "whsec_...").
+ *
+ * Previous hand-rolled HMAC implementation rejected legitimate Resend
+ * events with "Invalid signature" — base64 padding / header parsing /
+ * timestamp encoding edge cases. Swapping in the canonical lib removes
+ * the entire class of bugs.
+ *
+ * Returns true on success, false otherwise. If env var is unset, returns
+ * true with a dev-mode warning so initial setup is frictionless.
  */
 function verifyResendSignature(req) {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
@@ -661,27 +669,19 @@ function verifyResendSignature(req) {
     console.warn("[blast] RESEND_WEBHOOK_SECRET not set — webhook running unsigned (DEV-ONLY)");
     return true;
   }
-  const svixId = req.get("svix-id") || req.get("webhook-id");
-  const svixTs = req.get("svix-timestamp") || req.get("webhook-timestamp");
-  const svixSig = req.get("svix-signature") || req.get("webhook-signature");
-  if (!svixId || !svixTs || !svixSig || !req.rawBody) return false;
-
-  // 5-minute replay window
-  const tsNum = parseInt(svixTs, 10);
-  if (!Number.isFinite(tsNum) || Math.abs(Date.now() / 1000 - tsNum) > 300) return false;
-
-  const secretBytes = Buffer.from(String(secret).replace(/^whsec_/, ""), "base64");
-  const signedContent = `${svixId}.${svixTs}.${req.rawBody}`;
-  const expected = crypto.createHmac("sha256", secretBytes).update(signedContent).digest("base64");
-
-  // Header format: "v1,sig1 v1,sig2 ..." (Svix supports key rotation)
-  return svixSig.split(" ").some((entry) => {
-    const sig = entry.split(",")[1];
-    if (!sig) return false;
-    try {
-      return crypto.timingSafeEqual(Buffer.from(sig, "base64"), Buffer.from(expected, "base64"));
-    } catch { return false; }
-  });
+  if (!req.rawBody) return false;
+  try {
+    const wh = new Webhook(secret);
+    wh.verify(req.rawBody, {
+      "svix-id":        req.get("svix-id")        || req.get("webhook-id")        || "",
+      "svix-timestamp": req.get("svix-timestamp") || req.get("webhook-timestamp") || "",
+      "svix-signature": req.get("svix-signature") || req.get("webhook-signature") || "",
+    });
+    return true;
+  } catch (e) {
+    console.warn(`[blast] svix verify failed: ${e.message}`);
+    return false;
+  }
 }
 
 router.post("/blast/resend-webhook",
