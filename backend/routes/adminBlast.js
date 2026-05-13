@@ -19,6 +19,7 @@ import {
   renderTemplate,
   defaultTemplateForProduct,
   detectLanguageForBoard,
+  inferTimezoneForBoard,
   getHeroBuffer,
   addLinkTracking,
 } from "../jobs/blastSender.js";
@@ -64,6 +65,7 @@ function normalizeRecipient(r) {
     level:     String(r.level     || r.Level     || "").trim(),
     language,
     isChristian: detectChristian(r),
+    timezone:    inferTimezoneForBoard(board), // "" if unknown — caller falls back to campaign TZ
   };
 }
 
@@ -142,26 +144,40 @@ router.post("/blast/campaigns", requireAdminToken, async (req, res) => {
       notes:           b.notes || "",
     });
 
-    // Build the schedule of send slots
+    // Build the schedule of send slots — GROUPED BY RECIPIENT TIMEZONE so
+    // each recipient's "Tue 7:30 AM" is computed in their own clock.
+    // Recipients with no inferred TZ fall back to the campaign default.
     const startInDays = Math.max(0, parseInt(b.startInDays, 10) || 0);
-    const slots = scheduleSlots({
-      count: unique.length,
-      dailyCap: campaign.dailyCap,
-      sendDays: campaign.sendDays,
-      startHour: campaign.sendStartHour,
-      startMinute: campaign.sendStartMinute,
-      endHour: campaign.sendEndHour,
-      endMinute: campaign.sendEndMinute,
-      timezone: campaign.timezone,
-      startInDays,
-    });
-
-    // Bulk-insert recipients (skip duplicates within the campaign via the unique index)
-    const docs = unique.map((r, i) => ({
-      ...r,
-      campaignId: campaign._id,
-      scheduledFor: slots[i] || slots[slots.length - 1],
-    }));
+    const byTz = new Map();
+    for (const r of unique) {
+      const tz = r.timezone || campaign.timezone;
+      if (!byTz.has(tz)) byTz.set(tz, []);
+      byTz.get(tz).push(r);
+    }
+    const docs = [];
+    for (const [tz, group] of byTz.entries()) {
+      const slots = scheduleSlots({
+        count: group.length,
+        dailyCap: campaign.dailyCap,
+        sendDays: campaign.sendDays,
+        startHour: campaign.sendStartHour,
+        startMinute: campaign.sendStartMinute,
+        endHour: campaign.sendEndHour,
+        endMinute: campaign.sendEndMinute,
+        timezone: tz,
+        startInDays,
+      });
+      group.forEach((r, i) => {
+        docs.push({
+          ...r,
+          campaignId: campaign._id,
+          scheduledFor: slots[i] || slots[slots.length - 1],
+        });
+      });
+    }
+    // First / last for summary returned to the UI
+    const firstSendAt = docs.reduce((acc, d) => !acc || d.scheduledFor < acc ? d.scheduledFor : acc, null);
+    const lastSendAt  = docs.reduce((acc, d) => !acc || d.scheduledFor > acc ? d.scheduledFor : acc, null);
     try {
       await BlastRecipient.insertMany(docs, { ordered: false });
     } catch (e) {
@@ -189,6 +205,7 @@ router.post("/blast/campaigns", requireAdminToken, async (req, res) => {
             level: r.level || undefined,
             language: r.language || "en",
             isChristian: r.isChristian || false,
+            timezone: r.timezone || undefined,
           },
           $inc: { totalCampaigns: 1 },
           $push: {
@@ -216,8 +233,9 @@ router.post("/blast/campaigns", requireAdminToken, async (req, res) => {
       ok: true,
       campaign: campaign.toJSON(),
       scheduled: docs.length,
-      firstSendAt: slots[0],
-      lastSendAt:  slots[slots.length - 1],
+      firstSendAt,
+      lastSendAt,
+      timezoneBreakdown: Object.fromEntries([...byTz.entries()].map(([tz, g]) => [tz, g.length])),
     });
   } catch (e) {
     console.error("POST /admin/blast/campaigns error:", e);

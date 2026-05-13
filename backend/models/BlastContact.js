@@ -33,6 +33,10 @@ const blastContactSchema = new mongoose.Schema(
     level:     { type: String, default: "" },
     language:  { type: String, enum: ["en", "fr"], default: "en" },
     isChristian: { type: Boolean, default: false },
+    // IANA timezone — derived from `board` on import. The worker uses this
+    // to gate the send-window check per recipient, so an Aussie principal
+    // gets the email at 7:30 AM Sydney time instead of 7:30 AM Toronto.
+    timezone:  { type: String, default: "" },
 
     // Counters + latest contact info
     totalCampaigns: { type: Number, default: 0 },     // distinct campaigns this contact appeared in

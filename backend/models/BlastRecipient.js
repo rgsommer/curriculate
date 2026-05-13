@@ -26,6 +26,10 @@ const blastRecipientSchema = new mongoose.Schema(
     level: { type: String, default: "" },    // Elementary / Secondary
     language: { type: String, enum: ["en", "fr"], default: "en", index: true },
     isChristian: { type: Boolean, default: false }, // → unlocks Christian-perspective copy block
+    // IANA timezone — copied from BlastContact at campaign creation, drives
+    // per-recipient send-window check so recipients in different TZs each
+    // get the email at 7:30 AM LOCAL time, not 7:30 AM Toronto.
+    timezone: { type: String, default: "" },
 
     // Delivery state
     status: {

@@ -84,9 +84,12 @@ export function tzWallClockToUtc(year, month, day, hour, minute, timeZone = "Ame
   return new Date(utc);
 }
 
-/** Returns true if `d` falls inside the campaign's send window (in TZ). */
-function inSendWindow(d, c) {
-  const p = tzParts(d, c.timezone);
+/** Returns true if `d` falls inside the campaign's send window for a specific
+ *  recipient. The recipient's `timezone` (if set) overrides the campaign's
+ *  timezone — so an Aussie recipient gets the window check against AEST, not ET. */
+function inSendWindow(d, c, recipientTz) {
+  const tz = recipientTz || c.timezone;
+  const p = tzParts(d, tz);
   // Seasonal gate first — Field Day campaigns set enabledMonths: [4,5,6] to
   // ensure they never send outside spring even if the campaign overruns.
   if (Array.isArray(c.enabledMonths) && c.enabledMonths.length && !c.enabledMonths.includes(p.month)) {
@@ -286,6 +289,62 @@ export function detectLanguageForBoard(board) {
   const b = String(board || "").toLowerCase();
   if (b === "viamonde" || b === "monavenir") return "fr";
   return "en";
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Per-recipient timezone inference. Each known board maps to an IANA
+// timezone — the worker uses this to ensure every recipient gets the
+// email at 7:30 AM in THEIR local time, not 7:30 AM Toronto.
+// Unknown boards fall back to the campaign's default timezone.
+// ────────────────────────────────────────────────────────────────────────
+const BOARD_TZ_MAP = {
+  // Ontario — all in Eastern Time
+  HWDSB: "America/Toronto", HWCDSB: "America/Toronto",
+  HDSB: "America/Toronto",  HCDSB: "America/Toronto",
+  DSBN: "America/Toronto",  NCDSB: "America/Toronto",
+  TDSB: "America/Toronto",  TCDSB: "America/Toronto",
+  PDSB: "America/Toronto",  DPCDSB: "America/Toronto",
+  YRDSB: "America/Toronto", YCDSB: "America/Toronto",
+  OCDSB: "America/Toronto", OCSB: "America/Toronto",
+  WRDSB: "America/Toronto", WCDSB: "America/Toronto",
+  TVDSB: "America/Toronto", DDSB: "America/Toronto",
+  LDSB: "America/Toronto",  UGDSB: "America/Toronto",
+  Viamonde: "America/Toronto", MonAvenir: "America/Toronto",
+  // Ontario Christian + private
+  Edvance: "America/Toronto", OACS: "America/Toronto", ACSI: "America/Toronto",
+  CAIS: "America/Toronto", "CIS-Ontario": "America/Toronto",
+  // Australia — per-state (DST handling deferred to Intl.DateTimeFormat)
+  CSA: "Australia/Sydney", CEN: "Australia/Sydney", ISNSW: "Australia/Sydney",
+  "AHISA-NSW": "Australia/Sydney",
+  "AHISA-VIC": "Australia/Melbourne",
+  "AHISA-QLD": "Australia/Brisbane",
+  "AHISA-WA":  "Australia/Perth",
+  "AHISA-SA":  "Australia/Adelaide",
+  // Papua New Guinea
+  IEA: "Pacific/Port_Moresby",
+  "PNG-Catholic":    "Pacific/Port_Moresby",
+  "PNG-Lutheran":    "Pacific/Port_Moresby",
+  "PNG-National":    "Pacific/Port_Moresby",
+  "PNG-Independent": "Pacific/Port_Moresby",
+  "PNG-Government":  "Pacific/Port_Moresby",
+  "PNG-Adventist":   "Pacific/Port_Moresby",
+  // Thailand
+  ISAT: "Asia/Bangkok",
+  "TH-Christian":          "Asia/Bangkok",
+  "TH-EP":                 "Asia/Bangkok",
+  "Thailand-International": "Asia/Bangkok",
+  "Thailand-EP":            "Asia/Bangkok",
+};
+export function inferTimezoneForBoard(board) {
+  if (!board) return "";
+  if (BOARD_TZ_MAP[board]) return BOARD_TZ_MAP[board];
+  // Fuzzy fallbacks for slight variations
+  const b = String(board).toLowerCase();
+  if (b.includes("png") || b.includes("papua")) return "Pacific/Port_Moresby";
+  if (b.includes("ahisa") || b.includes("aussie")) return "Australia/Sydney";
+  if (b.startsWith("th-") || b.includes("thailand") || b.includes("isat")) return "Asia/Bangkok";
+  if (b.includes("christian") || b.includes("oacs")) return "America/Toronto";
+  return ""; // unknown → caller falls back to campaign default
 }
 
 /* ──────────────────────────────────────────────────────────────────────
@@ -542,11 +601,10 @@ export async function blastWorkerTick() {
 
     let remainingGlobal = Math.min(GLOBAL_DAILY_CAP, RESEND_CEILING) - sentToday;
 
-    // 3. For each campaign, if it's in its window, dispatch up to its
-    //    remaining cap (and the global cap)
+    // 3. For each campaign, dispatch up to its remaining cap (and the global
+    //    cap). The window check is per-recipient now (their TZ), not per-campaign.
     for (const c of camps) {
       if (remainingGlobal <= 0) break;
-      if (!inSendWindow(now, c)) continue;
 
       // How many has this campaign sent today?
       const campSentToday = await BlastRecipient.countDocuments({
@@ -562,7 +620,7 @@ export async function blastWorkerTick() {
       const due = await BlastRecipient
         .find({ campaignId: c._id, status: "queued", scheduledFor: { $lte: now } })
         .sort({ scheduledFor: 1 })
-        .limit(limit);
+        .limit(limit * 4); // overfetch — some will fail their per-TZ window check
 
       if (!due.length) {
         // Mark running on first tick that fires for the campaign
@@ -577,8 +635,13 @@ export async function blastWorkerTick() {
         await BlastCampaign.findByIdAndUpdate(c._id, { status: "running" });
       }
 
+      let sentThisTick = 0;
       for (const r of due) {
+        if (sentThisTick >= limit) break;
         if (remainingGlobal <= 0 || campRemaining <= 0) break;
+
+        // Per-recipient window gate (handles different timezones)
+        if (!inSendWindow(now, c, r.timezone)) continue;
 
         // Atomic claim — guards against multiple workers (deployed instances)
         const claimed = await BlastRecipient.findOneAndUpdate(
@@ -587,6 +650,8 @@ export async function blastWorkerTick() {
           { new: true }
         );
         if (!claimed) continue;
+
+        sentThisTick++;
 
         const subject = r.language === "fr" ? c.subjectFr : c.subjectEn;
         const body    = r.language === "fr" ? c.bodyFr    : c.bodyEn;

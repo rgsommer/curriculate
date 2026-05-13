@@ -220,6 +220,7 @@ function NewCampaign({ adminToken, defaults, onCreated }) {
   const [startInDays, setStartInDays] = useState(0);
   const [sendDays, setSendDays] = useState([2, 3, 4]);
   const [enabledMonths, setEnabledMonths] = useState([]); // empty = always active
+  const [campaignTimezone, setCampaignTimezone] = useState("America/Toronto"); // fallback only — recipients with known boards override this
   const [startHour, setStartHour] = useState(7);
   const [startMin,  setStartMin]  = useState(30);
   const [endHour,   setEndHour]   = useState(8);
@@ -406,6 +407,7 @@ function NewCampaign({ adminToken, defaults, onCreated }) {
             startInDays: offset,
             sendDays,
             enabledMonths,
+            timezone: campaignTimezone,
             sendStartHour: startHour, sendStartMinute: startMin,
             sendEndHour:   endHour,   sendEndMinute:   endMin,
           }),
@@ -595,16 +597,34 @@ function NewCampaign({ adminToken, defaults, onCreated }) {
             )}
           </div>
 
+          <div className="mt-3">
+            <L>Fallback timezone (used for recipients whose board isn't recognised — e.g. AHISA, ISAT, IEA auto-route to their local TZ regardless)</L>
+            <select value={campaignTimezone} onChange={(e) => setCampaignTimezone(e.target.value)}
+              className="w-full px-2 py-1 rounded bg-white/5 border border-white/10 text-sm">
+              <option value="America/Toronto">America/Toronto (Ontario default)</option>
+              <option value="America/New_York">America/New_York (US Eastern)</option>
+              <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
+              <option value="Australia/Melbourne">Australia/Melbourne</option>
+              <option value="Australia/Brisbane">Australia/Brisbane (QLD)</option>
+              <option value="Australia/Perth">Australia/Perth</option>
+              <option value="Australia/Adelaide">Australia/Adelaide</option>
+              <option value="Pacific/Port_Moresby">Pacific/Port_Moresby (PNG)</option>
+              <option value="Asia/Bangkok">Asia/Bangkok (Thailand)</option>
+              <option value="Europe/London">Europe/London (UK)</option>
+              <option value="UTC">UTC</option>
+            </select>
+          </div>
+
           <div className="mt-3 grid grid-cols-2 gap-3">
             <div>
-              <L>Window start (ET)</L>
+              <L>Window start (local time)</L>
               <div className="flex gap-1">
                 <input type="number" min={0} max={23} value={startHour} onChange={(e) => setStartHour(+e.target.value)} className="w-20 px-2 py-1 rounded bg-white/5 border border-white/10" />
                 <input type="number" min={0} max={59} value={startMin}  onChange={(e) => setStartMin(+e.target.value)}  className="w-20 px-2 py-1 rounded bg-white/5 border border-white/10" />
               </div>
             </div>
             <div>
-              <L>Window end (ET)</L>
+              <L>Window end (local time)</L>
               <div className="flex gap-1">
                 <input type="number" min={0} max={23} value={endHour} onChange={(e) => setEndHour(+e.target.value)} className="w-20 px-2 py-1 rounded bg-white/5 border border-white/10" />
                 <input type="number" min={0} max={59} value={endMin}  onChange={(e) => setEndMin(+e.target.value)}  className="w-20 px-2 py-1 rounded bg-white/5 border border-white/10" />

@@ -18,6 +18,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import ExcelJS from "exceljs";
 import BlastContact from "../models/BlastContact.js";
+import { inferTimezoneForBoard } from "./blastSender.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -97,6 +98,7 @@ function buildBulkOp(r) {
           level:       r.Level  || undefined,
           language:    detectLanguage(board),
           isChristian: detectChristian(r),
+          timezone:    inferTimezoneForBoard(board) || undefined,
         },
       },
       upsert: true,
