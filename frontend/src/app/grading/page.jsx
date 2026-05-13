@@ -4602,21 +4602,75 @@ export default function GradingPage() {
               <button ref={tourTargetCopySessionRef} onClick={emailReports} disabled={!sessionItems.length || summarizingSession} style={styles.secondaryBtn}>
                 {summarizingSession ? `Analyzing… (${sessionItems.length})` : sessionEmailSent ? `Sent! (${sessionItems.length})` : `Email Reports (${sessionItems.length})`}
               </button>
-              <button
-                onClick={() => {
-                  setSessionItems([]);
-                  setStickyRubricText("");
-                  setStickyRubricSource("");
-                  setStickyRubricCapturedAt("");
-                  setStickyAnswerKeyText("");
-                  setStickyAnswerKeyCapturedAt("");
-                  setRubricOverride("");
-                }}
-                disabled={!sessionItems.length && !(stickyRubricText || "").trim().length && !(rubricOverride || "").trim().length && !(stickyAnswerKeyText || "").trim().length}
-                style={styles.ghostBtn}
-              >
-                Clear
-              </button>
+              {(() => {
+                // Mirror the photo-mode Clear's warn-red logic, but at
+                // session scope: tint red if there's a result on screen
+                // OR any session item that hasn't been matched to BOTH
+                // a student AND a class.  Clearing the session would
+                // throw those unmatched results away before they could
+                // be linked to anyone's progress.
+                const currentHasResult = !!serverText;
+                const currentStudent =
+                  !!(matchedRosterStudent?.studentId ||
+                    matchedRosterStudent?.edsbyId ||
+                    (detectedStudentName || "").trim());
+                const currentClass =
+                  !!((selectedClassName || "").trim() ||
+                    (matchedRosterStudent?.className || "").trim());
+                const currentUnmatched =
+                  currentHasResult && !(currentStudent && currentClass);
+                const anySessionUnmatched = (sessionItems || []).some((it) => {
+                  const sName =
+                    (it?.rosterStudent?.firstName || it?.rosterStudent?.lastName)
+                      ? `${it.rosterStudent.firstName || ""} ${it.rosterStudent.lastName || ""}`.trim()
+                      : (it?.studentName || "").trim();
+                  const sId =
+                    it?.rosterStudent?.studentId ||
+                    it?.rosterStudent?.edsbyId ||
+                    "";
+                  const cls =
+                    (it?.rosterStudent?.className || it?.className || "").trim();
+                  return !((sName || sId) && cls);
+                });
+                const warnSessionUnmatched =
+                  currentUnmatched || anySessionUnmatched;
+                return (
+                  <button
+                    onClick={() => {
+                      setSessionItems([]);
+                      setStickyRubricText("");
+                      setStickyRubricSource("");
+                      setStickyRubricCapturedAt("");
+                      setStickyAnswerKeyText("");
+                      setStickyAnswerKeyCapturedAt("");
+                      setRubricOverride("");
+                    }}
+                    disabled={
+                      !sessionItems.length &&
+                      !(stickyRubricText || "").trim().length &&
+                      !(rubricOverride || "").trim().length &&
+                      !(stickyAnswerKeyText || "").trim().length
+                    }
+                    style={{
+                      ...styles.ghostBtn,
+                      ...(warnSessionUnmatched
+                        ? {
+                            background: "#fee2e2",
+                            borderColor: "#fca5a5",
+                            color: "#991b1b",
+                          }
+                        : {}),
+                    }}
+                    title={
+                      warnSessionUnmatched
+                        ? "⚠ Some results aren't linked to a student + class yet — clearing will discard them."
+                        : "Clear the session and reset captured rubric/answer key."
+                    }
+                  >
+                    {warnSessionUnmatched ? "Clear ⚠" : "Clear"}
+                  </button>
+                );
+              })()}
 
             </div>
 
