@@ -622,6 +622,26 @@ export async function blastWorkerTick() {
         .sort({ scheduledFor: 1 })
         .limit(limit * 4); // overfetch — some will fail their per-TZ window check
 
+      // Suppression: drop any recipient whose master contact has been
+      // unsubscribed since they were queued. Mark them as such so the
+      // status surfaces in the Campaigns view.
+      if (due.length) {
+        const suppressedEmails = await BlastContact.distinct("email", {
+          email: { $in: due.map(r => r.email) },
+          unsubscribedAt: { $ne: null },
+        });
+        if (suppressedEmails.length) {
+          await BlastRecipient.updateMany(
+            { _id: { $in: due.filter(r => suppressedEmails.includes(r.email)).map(r => r._id) } },
+            { status: "unsubscribed", errorMessage: "recipient unsubscribed" }
+          );
+          // Remove them from the due list so we don't try to send
+          for (let i = due.length - 1; i >= 0; i--) {
+            if (suppressedEmails.includes(due[i].email)) due.splice(i, 1);
+          }
+        }
+      }
+
       if (!due.length) {
         // Mark running on first tick that fires for the campaign
         if (c.status === "scheduled") {

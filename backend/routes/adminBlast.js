@@ -589,6 +589,45 @@ router.post("/blast/contacts/reject", requireAdminToken, async (req, res) => {
 });
 
 /* ──────────────────────────────────────────────────────────────────────
+ * POST /admin/blast/unsubscribe  (PUBLIC — no admin token)
+ *
+ * Called by the public /unsubscribe?email=... page. Flips the contact's
+ * unsubscribedAt timestamp AND cancels any pending recipient rows so the
+ * worker won't send anything else to that address.
+ *
+ * Body: { email: string }
+ * ────────────────────────────────────────────────────────────────────── */
+router.post("/blast/unsubscribe", express.json(), async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").toLowerCase().trim();
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ ok: false, error: "Valid email required" });
+    }
+
+    // 1. Mark the master contact as unsubscribed (creates row if not present
+    //    so even if they import again the suppression sticks).
+    const now = new Date();
+    await BlastContact.updateOne(
+      { email },
+      { $setOnInsert: { email, source: "manual-upload" }, $set: { unsubscribedAt: now } },
+      { upsert: true }
+    );
+
+    // 2. Cancel any pending recipient rows across all campaigns
+    await BlastRecipient.updateMany(
+      { email, status: { $in: ["queued", "sending"] } },
+      { status: "unsubscribed", errorMessage: "recipient unsubscribed" }
+    );
+
+    console.log(`[blast] unsubscribed ${email} (timestamp ${now.toISOString()})`);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("POST /admin/blast/unsubscribe error:", e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+/* ──────────────────────────────────────────────────────────────────────
  * POST /admin/blast/resend-webhook
  *
  * Public endpoint (no admin token — Resend posts here). Optional signature
