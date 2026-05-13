@@ -3915,29 +3915,74 @@ export default function GradingPage() {
                   {busyUpload ? "Processing…" : "Upload"}
                 </button>
 
-                <button
-                  onClick={clearAll}
-                  onDoubleClick={() => {
-                    clearAll();
-                    setStickyRubricText("");
-                    setStickyRubricSource("");
-                    setStickyRubricCapturedAt("");
-                    setStickyAnswerKeyText("");
-                    setStickyAnswerKeyCapturedAt("");
-                    setRubricOverride("");
-                  }}
-                  style={{
-                    ...styles.secondaryBtn,
-                    ...((stickyRubricText || stickyAnswerKeyText || rubricOverride || serverText) ? {
-                      background: "#dbeafe", borderColor: "#93c5fd", color: "#1d4ed8",
-                    } : {}),
-                  }}
-                  disabled={submitting || busyCapture || busyUpload || (!photos.length && !serverText && !stickyRubricText && !stickyAnswerKeyText && !rubricOverride)}
-                  type="button"
-                  title="Click to clear photos & work. Double-click to also clear captured rubric, answer key & override input."
-                >
-                  Clear
-                </button>
+                {(() => {
+                  // Warn-before-clear styling.  If there's a grading
+                  // result on screen but it hasn't been tied to a
+                  // student (no roster match, no typed name, no
+                  // selected class), tint the Clear button red so the
+                  // teacher notices they're about to throw the result
+                  // away before it's been saved to anyone's progress.
+                  const hasResult = !!serverText;
+                  const isMatched =
+                    !!(matchedRosterStudent?.studentId ||
+                      matchedRosterStudent?.edsbyId ||
+                      (detectedStudentName || "").trim() ||
+                      (selectedClassName || "").trim());
+                  const warnUnmatched = hasResult && !isMatched;
+                  const hasAnyCaptured =
+                    stickyRubricText ||
+                    stickyAnswerKeyText ||
+                    rubricOverride ||
+                    serverText;
+                  return (
+                    <button
+                      onClick={clearAll}
+                      onDoubleClick={() => {
+                        clearAll();
+                        setStickyRubricText("");
+                        setStickyRubricSource("");
+                        setStickyRubricCapturedAt("");
+                        setStickyAnswerKeyText("");
+                        setStickyAnswerKeyCapturedAt("");
+                        setRubricOverride("");
+                      }}
+                      style={{
+                        ...styles.secondaryBtn,
+                        ...(warnUnmatched
+                          ? {
+                              background: "#fee2e2",
+                              borderColor: "#fca5a5",
+                              color: "#991b1b",
+                            }
+                          : hasAnyCaptured
+                          ? {
+                              background: "#dbeafe",
+                              borderColor: "#93c5fd",
+                              color: "#1d4ed8",
+                            }
+                          : {}),
+                      }}
+                      disabled={
+                        submitting ||
+                        busyCapture ||
+                        busyUpload ||
+                        (!photos.length &&
+                          !serverText &&
+                          !stickyRubricText &&
+                          !stickyAnswerKeyText &&
+                          !rubricOverride)
+                      }
+                      type="button"
+                      title={
+                        warnUnmatched
+                          ? "⚠ This result hasn't been linked to a student or class yet — clearing will discard it."
+                          : "Click to clear photos & work. Double-click to also clear captured rubric, answer key & override input."
+                      }
+                    >
+                      {warnUnmatched ? "Clear ⚠" : "Clear"}
+                    </button>
+                  );
+                })()}
               </div>
 
               {/* Only render the meta row when it has something to show. Once a teacher has
