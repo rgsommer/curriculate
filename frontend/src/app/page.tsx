@@ -450,7 +450,7 @@ function MobileNav() {
     { href: "/contact", label: "Contact" },
     { href: "/referrals", label: "Referral Program" },
     { href: "/signup", label: "Sign up" },
-    { href: "/dashboard", label: "Login" },
+    { href: "/login", label: "Login" },
   ];
 
   return (
@@ -645,7 +645,7 @@ export default function Home() {
 
           <div className="grid grid-cols-1 sm:flex sm:flex-row gap-3 sm:gap-4 justify-center mb-10 sm:mb-14 max-w-md sm:max-w-none mx-auto">
             <Link
-              href="/dashboard"
+              href="/login"
               className="group inline-flex w-full sm:w-auto items-center justify-center gap-3 bg-blue-600 hover:bg-blue-700 text-white text-lg sm:text-xl font-bold py-4 sm:py-5 px-6 sm:px-10 rounded-2xl shadow-2xl transform hover:scale-[1.02] transition-all"
             >
               Get Started Free
@@ -1151,7 +1151,7 @@ export default function Home() {
 
           <div className="mt-6 flex flex-col sm:flex-row gap-4 justify-center">
             <Link
-              href="/dashboard"
+              href="/login"
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-6 py-4 text-white text-lg font-black shadow-xl hover:bg-blue-700"
             >
               Start Free <ArrowRight className="w-5 h-5" />
@@ -1263,7 +1263,7 @@ export default function Home() {
             </p>
             <div className="mt-8 flex flex-col sm:flex-row gap-4">
               <Link
-                href="/dashboard"
+                href="/login"
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-6 py-4 text-gray-900 text-lg font-black shadow-xl hover:bg-gray-100"
               >
                 Get Started Free <ArrowRight className="w-5 h-5" />

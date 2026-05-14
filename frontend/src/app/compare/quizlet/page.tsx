@@ -112,7 +112,7 @@ export default function CompareQuizletPage() {
 
           <div className="mt-10 flex flex-col sm:flex-row gap-4">
             <Link
-              href="/dashboard"
+              href="/login"
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-6 py-4 text-white text-lg font-black shadow-xl hover:bg-blue-700"
             >
               Try Curriculate Free <ArrowRight className="w-5 h-5" />

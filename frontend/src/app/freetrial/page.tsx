@@ -35,7 +35,10 @@ export default function FreeTrialPage() {
           priceId: PRICES.TEACHER_PRO_MONTHLY,
           email: billingEmail.trim(),
           successUrl: `${window.location.origin}/billing/success`,
-          cancelUrl: `${window.location.origin}/free-trial`,
+          // Cancel routes back to this same page.  Previously typoed
+          // as /free-trial (with hyphen) which 404s — Next.js route
+          // lives at /freetrial.
+          cancelUrl: `${window.location.origin}/freetrial`,
         }),
       });
 

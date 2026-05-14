@@ -96,6 +96,14 @@ export default function PricingPage() {
     const rt = url.searchParams.get("returnTo");
     setReturnTo(rt);
 
+    // Pre-fill the referral / promo code field from ?promo= or
+    // ?code=.  Our practice + conference emails advertise
+    // "Use code CONFERENCE2025" and link here with ?promo=...; without
+    // this hook the user saw the code but had to type it manually,
+    // and most just landed at full price.
+    const promoFromUrl = (url.searchParams.get("promo") || url.searchParams.get("code") || "").trim();
+    if (promoFromUrl) setReferralCode(promoFromUrl);
+
     // Bug 5: Fetch prices from backend
     fetchPrices().then(setPrices).catch(() => {
       console.warn("Could not fetch prices from backend");

@@ -115,6 +115,7 @@ router.post("/create-checkout-session", async (req, res) => {
     // 2.5) Validate referral code if provided
     let validatedReferralCode = "";
     let referralDiscount = 0;
+    let stripePromotionCodeId = null; // direct Stripe promo (e.g. CONFERENCE2025)
     if (rawReferralCode) {
       const rc = String(rawReferralCode).toUpperCase().trim();
       const refDoc = await ReferralCode.findOne({ code: rc, disabled: { $ne: true } }).lean();
@@ -125,10 +126,34 @@ router.post("/create-checkout-session", async (req, res) => {
           referralDiscount = refDoc.customerDiscountPercent || 0;
         }
       }
+      // Fallback: if the code isn't in our ReferralCode collection,
+      // try to resolve it as a Stripe-side promotion code (e.g. our
+      // CONFERENCE2025 emails advertise this code; it lives in the
+      // Stripe dashboard, not in our DB).  When found, attach it to
+      // the checkout session so the discount auto-applies — the user
+      // doesn't have to retype it on Stripe's page.
+      if (!referralDiscount) {
+        try {
+          const promoList = await stripe.promotionCodes.list({
+            code: rc,
+            active: true,
+            limit: 1,
+          });
+          const promo = promoList?.data?.[0];
+          if (promo?.id) {
+            stripePromotionCodeId = promo.id;
+            validatedReferralCode = rc;
+          }
+        } catch (promoErr) {
+          console.warn("[stripe] Promotion-code lookup failed:", promoErr.message);
+        }
+      }
     }
 
     // 3) Create checkout session
-    // If the referral code offers a customer discount, create a Stripe coupon
+    // If the referral code offers a customer discount, create a Stripe coupon.
+    // If the referral code IS a Stripe promotion code (e.g. CONFERENCE2025),
+    // attach the promotion_code directly so it auto-applies.
     let discounts = undefined;
     if (referralDiscount > 0) {
       try {
@@ -141,6 +166,8 @@ router.post("/create-checkout-session", async (req, res) => {
       } catch (couponErr) {
         console.warn("[stripe] Failed to create referral coupon:", couponErr.message);
       }
+    } else if (stripePromotionCodeId) {
+      discounts = [{ promotion_code: stripePromotionCodeId }];
     }
 
     const session = await stripe.checkout.sessions.create({

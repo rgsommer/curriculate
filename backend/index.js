@@ -699,7 +699,7 @@ app.post("/api/recommend", async (req, res) => {
           </p>
 
           <div style="text-align: center; margin-bottom: 8px;">
-            <a href="https://www.curriculate.net/dashboard?utm_source=recommendation&utm_medium=email"
+            <a href="https://www.curriculate.net/login?utm_source=recommendation&utm_medium=email"
                style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #dc2626, #ea580c); color: #ffffff; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 16px;">
               Build a Scavenger Hunt — Free
             </a>
