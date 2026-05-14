@@ -40,12 +40,17 @@ export default function HideNSeekTask({ task, onSubmit, disabled }) {
     (Array.isArray(task?.clues) && task.clues) ||
     [];
 
-  // Teacher-facing page/location reference, saved with the taskset
+  // Teacher-facing page/location reference, saved with the taskset.
+  // No hard default any more — the previous fallback ("Page 212,
+  // Figure 2.3 in your textbook.") sent practice users home without
+  // their textbook on a wild goose chase.  Tester Yuvraj: "I don't
+  // have my textbook at home."  When unset the location pill is
+  // simply omitted and the prompt + clues carry the task.
   const pageReference =
     task?.config?.pageReference ||
     task?.config?.pageRef ||
     task?.pageReference ||
-    "Page 212, Figure 2.3 in your textbook.";
+    "";
 
   const isHard = task.difficulty === "HARD";
 

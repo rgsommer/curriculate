@@ -570,14 +570,24 @@ const DEMO_TASKS = [
     prompt: "Tilt your phone to collect coins and dodge obstacles!",
   },
 
-  // 36. Hide N Seek
+  // 36. Hide N Seek — practice demo intentionally references "any
+  // object around you" instead of a textbook page so practicers at
+  // home (no schoolbook) can still play.  In a real classroom the
+  // teacher's taskset supplies pageReference + cluueSource.
   {
     taskType: "hidenseek",
     title: "Hide & Seek",
-    prompt: "Find something in the room that connects to today's topic. Take a photo and explain why it's important.",
+    prompt:
+      "Find an object near you (in your room, kitchen, anywhere) that fits one of the clues below. Take a photo and explain in 2+ sentences why it fits.",
     config: {
-      clueSource: "your teacher",
-      clues: ["Look for something that represents change", "Find an object with more than one purpose"],
+      clueSource: "the clues below",
+      clues: [
+        "Something that represents change",
+        "An object with more than one purpose",
+        "Something older than you are",
+        "Something that holds another thing inside",
+      ],
+      // pageReference intentionally omitted — see HideNSeekTask.jsx.
     },
   },
 
