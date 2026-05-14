@@ -427,6 +427,31 @@ export default function TrueFalseTask({
   const safePrompt =
     safeText(task?.prompt, "").trim() || safeText(task?.text, "").trim() || "";
 
+  // If the task has items, NEVER fall through to the single-T/F render —
+  // that path shows only `safePrompt` ("Test your knowledge!") with two
+  // big True/False buttons and no statement to evaluate.  Tester
+  // (Amelia): "What are we trueing or falseing".  Even if
+  // presentedItems hasn't been built yet (initial render before
+  // useEffect runs), stay in this branch and show a brief loading
+  // placeholder so the user never sees naked T/F buttons.
+  if (hasItems && presentedItems.length === 0) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "200px",
+          padding: 16,
+          color: "#475569",
+          fontWeight: 600,
+        }}
+      >
+        Loading {(task?.items || []).length} statement{(task?.items || []).length === 1 ? "" : "s"}…
+      </div>
+    );
+  }
+
   if (hasItems && presentedItems.length > 0) {
     const answeredCount = Array.isArray(multiSelectedValues)
       ? multiSelectedValues.filter((v) => v === "true" || v === "false").length

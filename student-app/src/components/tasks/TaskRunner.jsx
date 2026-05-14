@@ -1218,6 +1218,27 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
             again.
           </li>
         </ul>
+        {/* Practice / solo notice — Echo Chain pads with bots but
+            testers (Ranbir) read that as "this task needs other
+            players I don't have."  Spell out what to do when alone. */}
+        {practiceMode &&
+          (Array.isArray(memberNames) ? memberNames.filter(Boolean) : []).length < 2 && (
+            <div
+              style={{
+                marginTop: 8,
+                padding: "8px 10px",
+                borderRadius: 10,
+                background: "rgba(245,158,11,0.10)",
+                border: "1px solid rgba(245,158,11,0.35)",
+                color: "#92400e",
+                fontSize: "0.85rem",
+                lineHeight: 1.4,
+              }}
+            >
+              👤 <b>Playing solo?</b> You'll take every turn — the
+              bot names are stand-ins.
+            </div>
+          )}
         {rotationBonus > 0 && (
           <div style={{ marginTop: 6, fontSize: "0.9rem", color: "#334155" }}>
             ⭐ Bonus idea: +{rotationBonus} points for a full rotation without

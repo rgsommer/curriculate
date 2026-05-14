@@ -33,11 +33,13 @@ const DEMO_TASKS = [
     ],
   },
 
-  // 2. True/False (uses task.items with statement + correct)
+  // 2. True/False (uses task.items with statement + correct).
+  // Prompt rewritten to explicitly point at the statements below —
+  // tester Amelia: "What are we trueing or falseing".
   {
     taskType: "true-false",
     title: "True or False?",
-    prompt: "Test your knowledge!",
+    prompt: "Decide whether each statement below is TRUE or FALSE.",
     items: [
       { statement: "Honey never spoils — archaeologists have found 3,000-year-old edible honey.", correct: true },
       { statement: "The Great Wall of China is visible from space with the naked eye.", correct: false },

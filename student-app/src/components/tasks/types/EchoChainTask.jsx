@@ -259,6 +259,33 @@ export default function EchoChainTask({ task, memberNames = [], practiceMode = f
           The mic is listening — when it hears the last word, your teammate confirms and adds the next!
         </div>
 
+        {/* Solo banner — Echo Chain is fundamentally multi-player.
+            In practice mode we pad the player list with two bots so
+            the chain still rotates, but testers (Ranbir) thought
+            they were getting a "multiplayer task" they couldn't do.
+            Surfacing it explicitly: you're playing all turns; the
+            bot names are placeholders for whoever's beside you. */}
+        {practiceMode &&
+          (Array.isArray(memberNames) ? memberNames.filter(Boolean) : []).length < 2 && (
+            <div
+              style={{
+                margin: "14px 0",
+                padding: "12px 14px",
+                borderRadius: 12,
+                background: "rgba(245,158,11,0.12)",
+                border: "1px solid rgba(245,158,11,0.4)",
+                color: "#fde68a",
+                fontSize: 13,
+                lineHeight: 1.5,
+              }}
+            >
+              👤 <b>Playing solo?</b> You'll take every turn — the bot
+              names are just stand-ins for teammates so the chain still
+              rotates.  Got friends nearby?  Take turns; each player
+              says the chain then adds a word.
+            </div>
+          )}
+
         {!seed && (
           <div className="ec-error-banner">
             ⚠️ Missing seed term! The task generator must supply config.seedTerm for the game to start.
