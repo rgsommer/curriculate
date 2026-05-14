@@ -341,6 +341,39 @@ const EMOJI_CLARITY = [
 
 const MIN_REQUIRED_FEEDBACK_CHARS = 8;
 
+// ── Vague-comment detector (low-rating only) ─────────────────────────
+// When a tester rates fun/clarity ≤ 2 and leaves a comment that's
+// effectively content-free ("it didn't work", "broken", "stupid",
+// pure keysmash like "asdfgh"), we want to gently prompt them for
+// specifics rather than letting that go straight to the feedback log
+// where it's not actionable.  Pattern list is intentionally narrow —
+// any half-decent description (e.g. "the buttons wouldn't click")
+// passes through immediately.
+const VAGUE_COMMENT_PATTERNS = [
+  /^\s*(?:it\s+)?(?:did\s*n[o']?t|does\s*n[o']?t|didnt|doesnt|don[o']?t)\s+work\s*\.?\s*$/i,
+  /^\s*(?:it\s+)?(?:is|was|s|wasnt|isnt|aint)\s*(?:broken|bad|stupid|dumb|ugly|terrible|awful|garbage|trash|boring|lame)\s*\.?\s*$/i,
+  /^\s*(?:broken|stupid|bad|dumb|trash|garbage|lame|boring|ugly|terrible|awful|nope|nothing|nothings|n\/a|na|none|nada|huh|idk)\s*\.?\s*$/i,
+  /^\s*nothing\s+(?:happened|works|worked)\s*\.?\s*$/i,
+  /^\s*(?:hate|hated|hates)\s+it\s*\.?\s*$/i,
+];
+function looksTooVague(rawComment) {
+  const c = String(rawComment || "").trim().toLowerCase();
+  if (!c) return false;
+  if (VAGUE_COMMENT_PATTERNS.some((re) => re.test(c))) return true;
+  // Keysmash heuristic: ≥ 6 chars, no word with a vowel + ≥ 3 letters
+  // (real words almost always have one).  Catches "fb tegr", "qefffff",
+  // "wggggg", "asdfgh".  Bypassed for short content (so a clipped
+  // "fine" or "ok" isn't flagged).
+  if (c.length >= 6) {
+    const words = c.split(/\s+/);
+    const realLike = words.filter(
+      (w) => /^[a-z]{3,}$/i.test(w) && /[aeiouy]/i.test(w)
+    );
+    if (realLike.length === 0) return true;
+  }
+  return false;
+}
+
 // localStorage key namespace for in-progress practice feedback drafts.
 // Keyed per (email, taskType) so a refresh mid-typing doesn't blow
 // away what the user has written.  Cleared on submit or explicit skip.
@@ -385,6 +418,12 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
   const [phase, setPhase] = useState(
     (draft?.fun > 0 && draft?.clarity > 0) ? "comment" : "rate"
   );
+  // Vague-comment follow-up: one-shot per session.  When the user
+  // clicks Submit on a low-rating + vague comment, we DON'T submit —
+  // we set this to the comment we saw, expand the prompt with
+  // examples, and let them edit.  If they hit Submit again (even
+  // unchanged), it goes through.  Never pesters twice.
+  const [vagueFollowupShown, setVagueFollowupShown] = useState(false);
 
   // Persist every change so a refresh keeps everything typed so far.
   useEffect(() => {
@@ -408,6 +447,18 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
 
   const handleSubmit = () => {
     if (submitDisabled) return;
+    // Vague low-rating comment?  Stop, prompt for specifics, and let
+    // the user edit before resubmitting.  One-shot per dialog so we
+    // never block them twice on the same task.
+    if (
+      !vagueFollowupShown &&
+      isLowRating &&
+      commentMeetsMinimum &&
+      looksTooVague(trimmedComment)
+    ) {
+      setVagueFollowupShown(true);
+      return;
+    }
     // Bonus tiers: low rating + meaningful comment = 5 (we're paying for it).
     // Any rating + comment = 4. Just rating = 1.
     let bonus = 1;
@@ -516,6 +567,39 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
                   Optional — but worth <span style={{ color: "#22c55e", fontWeight: 800 }}>+4 pts</span> if you share.
                 </div>
               </>
+            )}
+
+            {/* Follow-up nudge — surfaces once when the user submits a
+                vague low-rating comment like "it didn't work" or
+                keysmash.  Gives concrete examples and asks them to
+                edit.  A second Submit click goes through regardless. */}
+            {vagueFollowupShown && (
+              <div
+                style={{
+                  marginBottom: 10,
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  background: "rgba(245,158,11,0.12)",
+                  border: "1px solid rgba(245,158,11,0.45)",
+                  color: "#fde68a",
+                  fontSize: 12,
+                  lineHeight: 1.45,
+                }}
+              >
+                <div style={{ fontWeight: 800, color: "#fbbf24", marginBottom: 4 }}>
+                  One more thing — what specifically?
+                </div>
+                <div>
+                  "It didn't work" is hard to fix.  Add a sentence with
+                  what you tried and what happened — e.g.{" "}
+                  <i>"tapped the colour tiles, nothing reacted"</i>{" "}
+                  or <i>"the camera permission popup never appeared"</i>{" "}
+                  or <i>"I couldn't tell whose turn it was"</i>.
+                </div>
+                <div style={{ marginTop: 4, opacity: 0.85, fontStyle: "italic" }}>
+                  (Submit again to send anyway — your bonus is unchanged.)
+                </div>
+              </div>
             )}
             <textarea
               autoFocus
