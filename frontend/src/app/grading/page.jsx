@@ -5674,6 +5674,47 @@ export default function GradingPage() {
               </div>
             )}
 
+            {/* Progress-portal link.  Renders whenever there's a
+                result on screen, so a teacher can pop into the
+                full student/class progress view without losing
+                their grading session.  Opens in a new tab. */}
+            {(assessment || serverText) && (
+              <div
+                style={{
+                  marginTop: 12,
+                  display: "flex",
+                  justifyContent: "center",
+                }}
+              >
+                <a
+                  href="/progress"
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "8px 16px",
+                    borderRadius: 999,
+                    background: "linear-gradient(135deg, #eff6ff, #dbeafe)",
+                    border: "1px solid #93c5fd",
+                    color: "#1d4ed8",
+                    fontWeight: 800,
+                    fontSize: 13,
+                    textDecoration: "none",
+                    boxShadow: "0 1px 3px rgba(59,130,246,0.15)",
+                  }}
+                  title={
+                    matchedRosterStudent
+                      ? `Open the progress portal — ${matchedRosterStudent.firstName || ""} ${matchedRosterStudent.lastName || ""}'s grades will be listed.`
+                      : "Open the student / class progress portal"
+                  }
+                >
+                  📈 View progress portal →
+                </a>
+              </div>
+            )}
+
             <div style={styles.footerHint}>Free to try until subscription plan is enforced.</div>
           </div>
         </div>
