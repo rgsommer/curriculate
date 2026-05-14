@@ -501,9 +501,13 @@ router.get("/nudge-inactive", async (req, res) => {
     const cooldownCutoff = new Date(now.getTime() - NUDGE_COOLDOWN_DAYS * 86400e3);
 
     // Match leads who registered with an email AND haven't done anything
-    // in the inactive window AND haven't been nudged in the cooldown window.
+    // in the inactive window AND haven't been nudged in the cooldown
+    // window AND aren't on the internal/dev exclusion list (we
+    // shouldn't email ourselves "we miss you").
+    const nudgeExcludedArr = Array.from(LEADERBOARD_EXCLUDED_EMAILS);
     const candidates = await ConferenceLead.find({
       email: { $exists: true, $ne: "" },
+      ...(nudgeExcludedArr.length > 0 ? { email: { $nin: nudgeExcludedArr, $exists: true, $ne: "" } } : {}),
       $and: [
         {
           $or: [
@@ -534,8 +538,11 @@ router.get("/nudge-inactive", async (req, res) => {
     }
 
     // ── Compute leaderboards ONCE so every nudge can show standings ──
+    // Internal / dev emails are excluded so the standings inside the
+    // nudge match the public-facing leaderboards.
     const allLeads = await ConferenceLead.find({
       email: { $exists: true, $ne: "" },
+      ...(nudgeExcludedArr.length > 0 ? { email: { $nin: nudgeExcludedArr, $exists: true, $ne: "" } } : {}),
     })
       .select("name email totalPoints sessions sessionCount")
       .lean();
@@ -749,8 +756,14 @@ router.get("/followup-conference-visitors", async (req, res) => {
     const now = new Date();
     const sixtyDays = new Date(now.getTime() - 60 * 86400e3);
 
+    // Internal / dev emails (see LEADERBOARD_EXCLUDED_EMAILS) get
+    // skipped so we don't send ourselves a "thanks for visiting the
+    // conference" intro email.
+    const followupExcludedArr = Array.from(LEADERBOARD_EXCLUDED_EMAILS);
     const candidates = await ConferenceLead.find({
-      email: { $exists: true, $ne: "" },
+      ...(followupExcludedArr.length > 0
+        ? { email: { $nin: followupExcludedArr, $exists: true, $ne: "" } }
+        : { email: { $exists: true, $ne: "" } }),
       source: "conference",
       registeredAt: { $gte: sixtyDays },
       $or: [
@@ -1323,6 +1336,26 @@ router.get("/leads", async (req, res) => {
 /* ------------------------------------------------------------------ */
 
 /* ------------------------------------------------------------------ */
+/*  Leaderboard exclusion list                                          */
+/*  Emails in this set are hidden from EVERY leaderboard (all-time,    */
+/*  weekly, live-this-week, full leaderboard, and the "Catch the 2     */
+/*  ahead" challenge block).  Used to keep the project owner / dev /   */
+/*  internal accounts out of the gift-card pool — they're playing for  */
+/*  QA, not to win.  Comparison is lowercased+trimmed.                  */
+/* ------------------------------------------------------------------ */
+const LEADERBOARD_EXCLUDED_EMAILS = new Set(
+  [
+    "rsommer@bramptoncs.org",
+    // Add additional internal / dev accounts here.
+  ].map((e) => String(e).toLowerCase().trim())
+);
+function isExcludedFromLeaderboards(email) {
+  return LEADERBOARD_EXCLUDED_EMAILS.has(
+    String(email || "").toLowerCase().trim()
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  lastCompletedWeek: most recent Sun 00:00 → Sat 23:59:59.999 that  */
 /*  has FULLY ELAPSED.  Used for the "top 3 → gift card" weekly       */
 /*  leaderboard: the current (in-progress) week is excluded so admins */
@@ -1444,9 +1477,17 @@ async function sendAdminNotification(lead) {
     const scopeFilter = {};
     if (isClassroom && lead.classroom) scopeFilter.classroom = lead.classroom;
 
+    // Internal / dev emails get filtered out of every leaderboard
+    // query.  Mongo-side via $nin so excluded accounts can't even
+    // appear in a top-3 slice.
+    const excludedEmailsArr = Array.from(LEADERBOARD_EXCLUDED_EMAILS);
+    const excludeEmailFilter =
+      excludedEmailsArr.length > 0 ? { email: { $nin: excludedEmailsArr } } : {};
+
     // ALL-TIME top 3 (lifetime totalPoints, already cumulative)
     const allTimeLeads = await ConferenceLead.find({
       ...scopeFilter,
+      ...excludeEmailFilter,
       totalPoints: { $gt: 0 },
     })
       .sort({ totalPoints: -1, createdAt: 1 })
@@ -1468,6 +1509,7 @@ async function sendAdminNotification(lead) {
     const { start: weekStart, end: weekEnd } = lastCompletedWeek(new Date());
     const weeklyLeads = await ConferenceLead.find({
       ...scopeFilter,
+      ...excludeEmailFilter,
       "sessions.completedAt": { $gte: weekStart, $lte: weekEnd },
     })
       .select("name email sessions")
@@ -1500,6 +1542,7 @@ async function sendAdminNotification(lead) {
     const { start: liveStart, end: liveEnd } = currentWeek(new Date());
     const liveLeads = await ConferenceLead.find({
       ...scopeFilter,
+      ...excludeEmailFilter,
       "sessions.completedAt": { $gte: liveStart, $lte: liveEnd },
     })
       .select("name email sessions")
@@ -1534,6 +1577,9 @@ async function sendAdminNotification(lead) {
     // rationale as the Top-3 query above — conference scoping was
     // fragmenting the practicer pool across conference names).
     if (isClassroom && lead.classroom) filter.classroom = lead.classroom;
+    // Drop internal / dev emails so they can't appear in the table.
+    const excludedArr = Array.from(LEADERBOARD_EXCLUDED_EMAILS);
+    if (excludedArr.length > 0) filter.email = { $nin: excludedArr };
 
     const allLeads = await ConferenceLead.find(filter)
       .sort({ totalPoints: -1, createdAt: 1 })
@@ -1872,6 +1918,7 @@ async function sendDemoResultsEmail(lead) {
   // If they're #2 → only one ahead.  Otherwise → two.
   let leadersAheadHtml = "";
   try {
+    const aheadExcludedArr = Array.from(LEADERBOARD_EXCLUDED_EMAILS);
     const ahead =
       lifetimePoints > 0
         ? await ConferenceLead.find({
@@ -1880,6 +1927,9 @@ async function sendDemoResultsEmail(lead) {
             // Everything else (practice + conference) is one global pool.
             ...(isClassroom && lead.classroom
               ? { classroom: lead.classroom }
+              : {}),
+            ...(aheadExcludedArr.length > 0
+              ? { email: { $nin: aheadExcludedArr } }
               : {}),
             totalPoints: { $gt: lifetimePoints },
             _id: { $ne: lead._id },
