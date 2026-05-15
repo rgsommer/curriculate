@@ -39,8 +39,9 @@ const LIMIT =
     : 0;
 
 // Lines we should NEVER treat as a candidate title.  These are
-// payload-format markers that appear at the top of various result
-// types.
+// payload-format markers / section headings that appear inside
+// result payloads.  Anything ending in a colon is a heading by
+// convention, so we also reject those wholesale.
 const NON_TITLE_PREFIXES = [
   /^grade\s*:/i,
   /^ref\s*:/i,
@@ -50,9 +51,45 @@ const NON_TITLE_PREFIXES = [
   /^deduction/i,
   /^strengths?:/i,
   /^next steps?:/i,
+  /^overall comment/i,
+  /^comment\s*:/i,
+  /^teacher comment/i,
   /^achievement categor/i,
-  /^[-•*\d]\s/, // bullet / numbered list
+  /^mark\s*:/i,
+  /^score\s*:/i,
+  /^total\s*:/i,
+  /^note\s*:/i,
+  /^[-•*]\s/, // bullet
+  /^\d+[.)]\s/, // numbered list
   /^https?:\/\//i,
+  /^no links/i,
+  /^submitted as/i,
+  // Header metadata lines that look like "Student: Naomi",
+  // "Name: J. Smith", "Date: 5/10/26", "Class: 8A":
+  // not assignment titles, just transcribed paper headers.
+  /^student\s*:/i,
+  /^name\s*:/i,
+  /^date\s*:/i,
+  /^class\s*:/i,
+  /^period\s*:/i,
+  /^teacher\s*:/i,
+  /^by\s+\w+/i, // "By Kristen Chan; Pg. 139…" — author line
+  /^video\s*:/i, // "Video: 31s, 1 frames analyzed" — video-grading header
+  /^audio\s*:/i,
+  /^performance\s+type\s*:/i,
+  /^rubric\s*:/i,
+  /^must have/i, // rubric criterion
+  /^<!doctype/i,
+  /^<html/i,
+  /^transcript\s*:/i,
+  /^duration\s*:/i,
+  /^frames? analyzed/i,
+  /^<[a-z!]/i, // any leading HTML / XML tag
+  /^level\s+\d/i, // rubric levels: "Level 4 (Excellent)…"
+  /^instrument\s*:/i, // music rubric header
+  /^q\d+\s*[.\-)]/i, // "Q1 -", "Q2." — question prompt, not title
+  /^question\s+\d/i,
+  /^in your opinion/i, // student-prompt openers
 ];
 
 function looksLikeTitle(line) {
@@ -60,6 +97,8 @@ function looksLikeTitle(line) {
   if (!t) return false;
   if (t.length > 160) return false; // titles are short
   if (t.length < 3) return false;
+  // Section headings end in a colon — never a real title.
+  if (/:\s*$/.test(t)) return false;
   for (const re of NON_TITLE_PREFIXES) {
     if (re.test(t)) return false;
   }
@@ -68,15 +107,32 @@ function looksLikeTitle(line) {
 
 function extractTitleFromPayload(payload) {
   if (typeof payload !== "string") return "";
-  // Walk first ~10 non-empty lines; first one that passes the heuristic
-  // is our candidate.
   const lines = payload.split(/\r?\n/);
+
+  // Priority 1: paste-mode results put the AI-detected title (or the
+  // student's own first line) right after the "Submitted text
+  // (evidence):" marker.  This is the highest-confidence source.
+  const markerIdx = lines.findIndex((l) =>
+    /^submitted text\s*\(evidence\)\s*:/i.test(String(l || "").trim())
+  );
+  if (markerIdx !== -1) {
+    let scanned = 0;
+    for (let i = markerIdx + 1; i < lines.length && scanned < 6; i++) {
+      const line = String(lines[i] || "").trim();
+      if (!line) continue;
+      scanned += 1;
+      if (looksLikeTitle(line)) return line;
+    }
+  }
+
+  // Priority 2: single-graded photo-mode payloads put detected_title
+  // as the very first line of the file (see buildFullTeacherPayloadText).
   let checked = 0;
   for (const raw of lines) {
-    const line = raw.trim();
+    const line = String(raw || "").trim();
     if (!line) continue;
     checked += 1;
-    if (checked > 10) break;
+    if (checked > 8) break;
     if (looksLikeTitle(line)) return line;
   }
   return "";
@@ -158,6 +214,23 @@ async function main() {
 
     if (recovered.title === currentTitle) {
       unchangedCount += 1;
+      continue;
+    }
+
+    // Safety: the payload-first-line heuristic is high-recall but
+    // medium-precision (for essay submissions it can grab the first
+    // paragraph instead of the actual title).  When the current
+    // meta.title already has a non-empty value, refuse to overwrite
+    // it UNLESS the recovered title came from the authoritative
+    // meta.detectedTitle field.  This means we'll fill empty slots
+    // freely but never clobber a teacher-assigned / AI-assigned
+    // title with a worse guess.
+    if (
+      currentTitle &&
+      recovered.source !== "meta.detectedTitle"
+    ) {
+      // Skip — keep the existing title.  Don't even count this as
+      // "would rewrite" because we're intentionally NOT touching it.
       continue;
     }
 
