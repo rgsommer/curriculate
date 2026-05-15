@@ -899,6 +899,9 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
         </div>
         <div className="sa-stat"><div className="label">Risk profile</div><div className="value" style={{ textTransform: "capitalize" }}>{user.riskTolerance}</div></div>
       </div>
+      {/* Per-ticker performance — multi-line chart, range tabs */}
+      <TickerPerformanceCard tickers={agg.map(a => a.ticker).slice(0, 10)} />
+
       <div className="sa-grid-2">
         <div className="sa-card">
           <h3>Allocation</h3>
@@ -1680,6 +1683,181 @@ function PerformanceView({ sessionToken }) {
         {!busy && snaps && snaps.length > 0 && <PortfolioChart snaps={snaps} />}
       </div>
     </div>
+  );
+}
+
+// =============================================================================
+// Per-ticker performance chart — multi-line, range-switchable
+// =============================================================================
+const TICKER_COLORS = [
+  "#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed", "#0891b2",
+  "#ec4899", "#84cc16", "#f97316", "#6366f1", "#14b8a6", "#a855f7",
+];
+
+function TickerPerformanceCard({ tickers }) {
+  const [range, setRange] = useState("1d");
+  const [busy, setBusy] = useState(false);
+  const [data, setData] = useState({}); // { ticker: { points, currency } }
+  const [failed, setFailed] = useState([]);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    if (!tickers || tickers.length === 0) return;
+    let cancelled = false;
+    setBusy(true); setErr(null);
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-prices/history`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers, range }),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        if (cancelled) return;
+        setData(j.data || {});
+        setFailed(j.failed || []);
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || "Failed to load history");
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [tickers.join(","), range]);
+
+  const labels = tickers.filter(t => data[t]?.points?.length > 0);
+  const colorFor = (i) => TICKER_COLORS[i % TICKER_COLORS.length];
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+        <h3 style={{ margin: 0 }}>Per-ticker performance</h3>
+        <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
+          {[
+            ["1d", "1D"], ["3d", "3D"], ["7d", "7D"], ["30d", "30D"],
+          ].map(([v, label]) => (
+            <button
+              key={v}
+              onClick={() => setRange(v)}
+              style={{
+                padding: "5px 12px", fontSize: 12, fontWeight: 600,
+                border: "none", borderRadius: 6, cursor: "pointer",
+                background: range === v ? "var(--sa-accent)" : "transparent",
+                color: range === v ? "#fff" : "var(--sa-text-2)",
+              }}
+            >{label}</button>
+          ))}
+        </div>
+      </div>
+      {err && <div className="sa-err">{err}</div>}
+      {busy && !labels.length && <div className="sa-muted" style={{ padding: 20, textAlign: "center" }}>Loading prices…</div>}
+      {!busy && !labels.length && !err && <div className="sa-muted" style={{ padding: 20, textAlign: "center" }}>No data returned.</div>}
+      {labels.length > 0 && (
+        <>
+          <MultiLineChart series={labels.map((t, i) => ({ ticker: t, points: data[t].points, color: colorFor(tickers.indexOf(t)) }))} range={range} />
+          {/* Legend with final % */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 14, fontSize: 12 }}>
+            {labels.map((t) => {
+              const pts = data[t].points;
+              const finalPct = pts[pts.length - 1].pct;
+              const color = colorFor(tickers.indexOf(t));
+              return (
+                <div key={t} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 2, background: color, display: "inline-block" }} />
+                  <span style={{ fontWeight: 600 }}>{t}</span>
+                  <span style={{ color: finalPct >= 0 ? "var(--sa-green)" : "var(--sa-red)", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
+                    {finalPct >= 0 ? "+" : ""}{finalPct.toFixed(2)}%
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          {failed.length > 0 && (
+            <div style={{ marginTop: 10, fontSize: 11, color: "var(--sa-muted)" }}>
+              Could not fetch: {failed.join(", ")}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function MultiLineChart({ series, range }) {
+  const W = 720, H = 280, PADL = 44, PADR = 14, PADT = 14, PADB = 30;
+  // Pool all points to find min/max pct and time bounds
+  let minPct = Infinity, maxPct = -Infinity;
+  let minT = Infinity, maxT = -Infinity;
+  for (const s of series) {
+    for (const p of s.points) {
+      if (p.pct < minPct) minPct = p.pct;
+      if (p.pct > maxPct) maxPct = p.pct;
+      if (p.t < minT) minT = p.t;
+      if (p.t > maxT) maxT = p.t;
+    }
+  }
+  if (!isFinite(minPct)) { minPct = -1; maxPct = 1; }
+  // Padding for nice axes
+  const padPct = (maxPct - minPct) * 0.08 || 1;
+  minPct -= padPct; maxPct += padPct;
+  // Ensure 0% line is visible
+  if (minPct > 0) minPct = -0.5;
+  if (maxPct < 0) maxPct = 0.5;
+  const pctRange = maxPct - minPct;
+  const tRange = (maxT - minT) || 1;
+
+  const xOf = (t) => PADL + ((t - minT) / tRange) * (W - PADL - PADR);
+  const yOf = (pct) => PADT + (1 - (pct - minPct) / pctRange) * (H - PADT - PADB);
+  const yOfZero = yOf(0);
+
+  // X-axis tick labels — based on range
+  const fmtTick = (t) => {
+    const d = new Date(t * 1000);
+    if (range === "1d") return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  };
+  const tickTs = [minT, minT + tRange * 0.33, minT + tRange * 0.66, maxT];
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
+      {/* Y gridlines */}
+      {[0, 0.25, 0.5, 0.75, 1].map((t) => {
+        const y = PADT + t * (H - PADT - PADB);
+        const pct = maxPct - t * pctRange;
+        return (
+          <g key={t}>
+            <line x1={PADL} x2={W - PADR} y1={y} y2={y} stroke="#e4e8ef" strokeWidth="1" />
+            <text x={PADL - 8} y={y + 4} fontSize="10" fill="#7a8499" textAnchor="end">
+              {pct >= 0 ? "+" : ""}{pct.toFixed(pctRange < 4 ? 2 : 1)}%
+            </text>
+          </g>
+        );
+      })}
+      {/* Zero line — emphasized */}
+      <line x1={PADL} x2={W - PADR} y1={yOfZero} y2={yOfZero} stroke="#94a3b8" strokeWidth="1.2" strokeDasharray="3,3" />
+
+      {/* Lines */}
+      {series.map((s) => {
+        if (s.points.length < 2) return null;
+        const d = s.points.map((p, i) => (i === 0 ? "M" : "L") + xOf(p.t).toFixed(1) + "," + yOf(p.pct).toFixed(1)).join(" ");
+        const last = s.points[s.points.length - 1];
+        return (
+          <g key={s.ticker}>
+            <path d={d} fill="none" stroke={s.color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
+            {/* Final dot */}
+            <circle cx={xOf(last.t)} cy={yOf(last.pct)} r="3" fill={s.color} />
+          </g>
+        );
+      })}
+
+      {/* X-axis ticks */}
+      {tickTs.map((t, i) => (
+        <text key={i} x={xOf(t)} y={H - 8} fontSize="10" fill="#7a8499" textAnchor={i === 0 ? "start" : i === tickTs.length - 1 ? "end" : "middle"}>
+          {fmtTick(t)}
+        </text>
+      ))}
+    </svg>
   );
 }
 
