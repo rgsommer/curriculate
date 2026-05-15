@@ -25,6 +25,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 // Field Day backend module (ESM router)
 import fielddayRouter from "./fieldday/index.js";
 import gradingFeedbackRouter from "./routes/gradingFeedback.js";
+import cardsRouter from "./routes/cards.js";
 
 // 4) Shared constants (used across server)
 import { TASK_TYPE_META, analyzeBloomsTaxonomy } from "../shared/taskTypes.js";
@@ -511,6 +512,9 @@ app.use("/fieldday/api", fielddayRouter);
 
 // Pulse Grading bug-reports + suggestions (mirrors the Field Day pattern)
 app.use("/api/grading", gradingFeedbackRouter);
+
+// Trading-card evaluator — public /cards page on curriculate.net
+app.use("/cards", cardsRouter);
 
 // Recommend Curriculate to a teacher
 app.post("/api/recommend", async (req, res) => {

@@ -4,8 +4,8 @@
  * /cards — Trading card evaluator
  *
  * Mobile-friendly UI. The user snaps front + back of any trading card
- * (Pokemon, hockey, baseball, MTG, etc.). The page calls /api/cards/grade
- * twice:
+ * (Pokemon, hockey, baseball, MTG, etc.). The page calls
+ * ${NEXT_PUBLIC_BACKEND_URL}/cards/grade twice:
  *   1. mode=identify (fires automatically once both photos are present) —
  *      prefills the metadata fields from what the model can read off the card.
  *   2. mode=evaluate (when the user taps "Evaluate card") — returns condition
@@ -219,8 +219,14 @@ function matchGraded(s: string): GradedKind {
 }
 
 // ---------- API calls ----------
+// Backend lives on Render (api.curriculate.net), same env that holds
+// OPENAI_API_KEY. Override at build time via NEXT_PUBLIC_BACKEND_URL.
+const BACKEND_URL =
+  (typeof process !== "undefined" && process.env && process.env.NEXT_PUBLIC_BACKEND_URL) ||
+  "https://api.curriculate.net";
+
 async function callGradeApi(payload: object): Promise<any> {
-  const res = await fetch("/api/cards/grade", {
+  const res = await fetch(`${BACKEND_URL}/cards/grade`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
