@@ -176,6 +176,19 @@ function scorePnl(rec, currentPrice) {
   return 0;
 }
 
+// Strip Claude web_search citation markers from model output.
+// Web_search results include inline <cite index="...">...</cite> wrappers
+// that we don't want appearing in advice card bodies — citations are
+// returned separately as the `sources` array.
+function stripCiteTags(s) {
+  if (!s) return s;
+  return s
+    .replace(/<cite[^>]*>([\s\S]*?)<\/cite>/gi, "$1")
+    .replace(/<\/?cite[^>]*>/gi, "")
+    // also strip any stray Anthropic search-result reference markers
+    .replace(/\[(?:cite[:_]?)?\d+(?:[-,]\d+)*\]/g, "");
+}
+
 // Extract first balanced JSON object from a string
 function extractJson(text) {
   if (!text) return null;
@@ -231,10 +244,12 @@ router.post("/", requireStocksAuth, async (req, res) => {
     const j = await r.json();
 
     // Collect text blocks (Anthropic returns content[] mixed with tool_use/tool_result)
-    const textOut = (j?.content || [])
-      .filter((b) => b.type === "text")
-      .map((b) => b.text)
-      .join("\n");
+    const textOut = stripCiteTags(
+      (j?.content || [])
+        .filter((b) => b.type === "text")
+        .map((b) => b.text)
+        .join("\n")
+    );
 
     // Collect web_search citations as sources
     const sources = [];
@@ -254,6 +269,14 @@ router.post("/", requireStocksAuth, async (req, res) => {
         error: "AI returned unparseable response",
         raw: textOut.slice(0, 800),
       });
+    }
+
+    // Defense-in-depth: also strip cite tags from each card's text fields
+    // in case Claude embedded them inside the JSON payload itself.
+    for (const card of parsed.advice) {
+      if (card.title) card.title = stripCiteTags(card.title);
+      if (card.body) card.body = stripCiteTags(card.body);
+      if (card.meta) card.meta = stripCiteTags(card.meta);
     }
 
     // Persist parsed recommendations so we can compute "if-followed" P&L later

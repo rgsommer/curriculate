@@ -170,8 +170,13 @@ async function generateBriefing(profile) {
     throw new Error(`Anthropic ${r.status}: ${e.slice(0, 200)}`);
   }
   const j = await r.json();
-  const md = (j?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
-  if (!md) throw new Error("Empty briefing");
+  const raw = (j?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+  if (!raw) throw new Error("Empty briefing");
+  // Strip Claude web_search citation markers — they're noise in the email body.
+  const md = raw
+    .replace(/<cite[^>]*>([\s\S]*?)<\/cite>/gi, "$1")
+    .replace(/<\/?cite[^>]*>/gi, "")
+    .replace(/\[(?:cite[:_]?)?\d+(?:[-,]\d+)*\]/g, "");
   return md;
 }
 
