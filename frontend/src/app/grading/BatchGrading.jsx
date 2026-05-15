@@ -406,6 +406,16 @@ function buildBatchPayloadText(result, refCode, gradeBandForKita) {
   const a = result.raw || {};
   const lines = [];
 
+  // Detected title — emit at the very top of the payload so a future
+  // backfill / debug pass can recover it even if meta.title gets
+  // overwritten somewhere downstream.  This was the failure mode that
+  // gave teachers generic batch-label titles on /progress.
+  const detTitle = String(result?.detectedTitle || a?.detected_title || "").trim();
+  if (detTitle) {
+    lines.push(detTitle);
+    lines.push("");
+  }
+
   // Grade line
   lines.push(`Grade: ${result.score} / ${result.outOf}${refCode ? `  Ref: ${refCode}` : ""}`);
   lines.push("");
