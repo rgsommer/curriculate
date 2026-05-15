@@ -86,9 +86,20 @@ function num(v) {
 function applyLeg(positions, accountId, leg) {
   const { side, ticker, shares, price, currency } = leg;
 
+  // settleCcy = which CASH SUB the trade settles through; subCcy on the
+  // position row is the SAME as settleCcy (since that's where the holding
+  // is "parked"). Defaults to the trading currency.
+  const settleCcy = leg.settleCcy || currency;
+
   if (side === "BUY") {
+    // Match existing rows by acct + ticker + currency + subCcy so a USD stock
+    // bought in CAD sub remains separate from the same stock bought in USD sub.
     const idx = positions.findIndex(
-      (p) => p.acct === accountId && p.ticker === ticker && p.ccy === currency
+      (p) =>
+        p.acct === accountId &&
+        p.ticker === ticker &&
+        p.ccy === currency &&
+        (p.subCcy || p.ccy) === settleCcy
     );
     if (idx >= 0) {
       const existing = positions[idx];
@@ -114,6 +125,7 @@ function applyLeg(positions, accountId, leg) {
         name: "",
         qty: shares,
         ccy: currency,
+        subCcy: settleCcy,
         ...(currency === "USD"
           ? { priceUsd: price, priceCad: null, costBasisUsd: price, costBasisCad: null }
           : { priceCad: price, priceUsd: null, costBasisCad: price, costBasisUsd: null }),
@@ -122,10 +134,16 @@ function applyLeg(positions, accountId, leg) {
     return;
   }
 
-  // SELL — aggregate across all matching lots, deduct FIFO
+  // SELL — aggregate across matching lots (same acct + ticker + currency +
+  // matching sub). FIFO deduction within those lots.
   const matchIdxs = positions
     .map((p, i) => ({ p, i }))
-    .filter(({ p }) => p.acct === accountId && p.ticker === ticker && p.ccy === currency)
+    .filter(({ p }) =>
+      p.acct === accountId &&
+      p.ticker === ticker &&
+      p.ccy === currency &&
+      (p.subCcy || p.ccy) === settleCcy
+    )
     .map(({ i }) => i);
 
   if (matchIdxs.length === 0) {
@@ -172,11 +190,16 @@ function netCashCadOfTrade(legs, fx) {
 }
 
 // Mutates the account row's cash balance.
-//   BUY/WITHDRAW  → cash[currency] -= grossValue
-//   SELL/DEPOSIT  → cash[currency] += grossValue
+//   BUY/WITHDRAW  → cash[bucket] -= grossValue
+//   SELL/DEPOSIT  → cash[bucket] += grossValue
+//
+// `bucket` is the SUB-ACCOUNT cash bucket the trade settles in. Defaults to
+// the leg's currency, but a leg can pass `settleCcy` to settle a USD trade
+// out of CAD cash (cross-currency purchase) and vice versa.
 function adjustAccountCash(account, leg) {
   if (!account) return;
-  const cashKey = leg.currency === "USD" ? "cashUsd" : "cashCad";
+  const settleCcy = leg.settleCcy || leg.currency;
+  const cashKey = settleCcy === "USD" ? "cashUsd" : "cashCad";
   const gross = Number(leg.grossValue) || 0;
   const sign = leg.side === "SELL" || leg.side === "DEPOSIT" ? 1 : -1;
   account[cashKey] = (account[cashKey] || 0) + sign * gross;
@@ -207,18 +230,21 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
       }
 
       if (!["BUY", "SELL"].includes(side)) return res.status(400).json({ error: `Bad side: ${side}` });
-      // Strip trailing periods that can leak in from AI-generated text
-      // ("Action: BUY 40 sh PLTR." → "PLTR.") before persisting.
       const ticker = String(raw?.ticker || "").toUpperCase().trim().replace(/\.+$/, "");
       const shares = num(raw?.shares);
       const price = num(raw?.price);
       if (!/^[A-Z0-9.\-]{1,16}$/.test(ticker)) return res.status(400).json({ error: `Bad ticker: ${ticker}` });
       if (shares == null || shares <= 0) return res.status(400).json({ error: `Bad shares for ${ticker}` });
       if (price == null || price < 0) return res.status(400).json({ error: `Bad price for ${ticker}` });
+      // Optional settleCcy: which sub-account cash bucket this trade settles
+      // through. Defaults to currency. Lets BUY of USD stock be settled out
+      // of CAD cash (with the FX friction the user accepts).
+      const settleCcy = raw?.settleCcy === "USD" || raw?.settleCcy === "CAD" ? raw.settleCcy : currency;
       normLegs.push({
         side, ticker, shares,
         pricePerShare: price,
         currency,
+        settleCcy,
         grossValue: shares * price,
       });
     }
@@ -239,6 +265,7 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
           applyLeg(newPositions, account, {
             side: leg.side, ticker: leg.ticker, shares: leg.shares,
             price: leg.pricePerShare, currency: leg.currency,
+            settleCcy: leg.settleCcy,
           });
         }
         // Cash adjustment for ALL leg types

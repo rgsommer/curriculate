@@ -27,7 +27,13 @@ const PositionSchema = new mongoose.Schema(
     ticker: { type: String, required: true, uppercase: true, trim: true },
     name: { type: String, default: "" },
     qty: { type: Number, required: true },
+    // Trading currency — the exchange the stock trades on (USD or CAD).
     ccy: { type: String, enum: ["USD", "CAD"], required: true },
+    // Settlement currency — which CURRENCY SUB-ACCOUNT actually holds the
+    // position. Often equal to ccy, but a USD-listed stock CAN be held in the
+    // CAD sub of an RRSP/TFSA (with FX friction on purchase and sale). When
+    // null, assume same as ccy.
+    subCcy: { type: String, enum: ["USD", "CAD", null], default: null },
     priceUsd: { type: Number, default: null },
     priceCad: { type: Number, default: null },
     costBasisUsd: { type: Number, default: null },

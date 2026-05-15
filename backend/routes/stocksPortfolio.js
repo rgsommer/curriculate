@@ -151,10 +151,13 @@ function sanitizePortfolioInput(body, email) {
       .slice(0, 500)
       .map((p) => ({
         acct: String(p.acct || "").slice(0, 64),
-        ticker: String(p.ticker || "").toUpperCase().slice(0, 16),
+        // Strip trailing dots — defensive cleanup at the persistence layer
+        // in case bad tickers slip through the AI parser.
+        ticker: String(p.ticker || "").toUpperCase().slice(0, 16).replace(/\.+$/, ""),
         name: String(p.name || "").slice(0, 200),
         qty: Number(p.qty) || 0,
         ccy: p.ccy === "CAD" ? "CAD" : "USD",
+        subCcy: p.subCcy === "CAD" ? "CAD" : p.subCcy === "USD" ? "USD" : null,
         priceUsd: typeof p.priceUsd === "number" ? p.priceUsd : null,
         priceCad: typeof p.priceCad === "number" ? p.priceCad : null,
         costBasisUsd: typeof p.costBasisUsd === "number" ? p.costBasisUsd : null,
@@ -214,6 +217,58 @@ router.delete("/", requireStocksAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error("stocks-portfolio DELETE error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// POST /api/stocks-portfolio/migrate
+//
+// Cleans up the authenticated user's portfolio:
+//   1. Strips trailing dots from any ticker (PLTR./ENB./SOFI./BBAI. → PLTR/ENB/SOFI/BBAI)
+//   2. Infers subCcy from position name if it contains "(CAD sub)" or "(USD sub)"
+//      so the existing seed data correctly reflects RBC's sub-account split.
+// Returns counts of fixes applied. Idempotent — safe to call multiple times.
+// ─────────────────────────────────────────────────────────────────────
+router.post("/migrate", requireStocksAuth, async (req, res) => {
+  try {
+    const doc = await StocksPortfolio.findOne({ email: req.stocksUser.email });
+    if (!doc) return res.json({ tickerFixes: 0, subCcyFixes: 0, message: "No portfolio." });
+
+    let tickerFixes = 0;
+    let subCcyFixes = 0;
+
+    doc.positions = (doc.positions || []).map((p) => {
+      const next = { ...(p.toObject?.() || p) };
+      // 1. Trailing-dot cleanup
+      const cleanedTicker = String(next.ticker || "").toUpperCase().replace(/\.+$/, "");
+      if (cleanedTicker !== next.ticker) {
+        next.ticker = cleanedTicker;
+        tickerFixes++;
+      }
+      // 2. Infer subCcy from name field if it carries the hint
+      if (next.subCcy == null && typeof next.name === "string") {
+        const lc = next.name.toLowerCase();
+        if (lc.includes("cad sub")) { next.subCcy = "CAD"; subCcyFixes++; }
+        else if (lc.includes("usd sub")) { next.subCcy = "USD"; subCcyFixes++; }
+      }
+      return next;
+    });
+
+    if (tickerFixes > 0 || subCcyFixes > 0) {
+      doc.markModified("positions");
+      doc.lastSyncedAt = new Date();
+      await doc.save();
+    }
+
+    res.json({
+      tickerFixes,
+      subCcyFixes,
+      positionsTotal: doc.positions.length,
+      message: tickerFixes + subCcyFixes === 0 ? "Nothing to migrate." : `Cleaned ${tickerFixes} tickers and inferred ${subCcyFixes} sub-account currencies.`,
+    });
+  } catch (err) {
+    console.error("stocks-portfolio migrate error:", err);
     res.status(500).json({ error: "Internal error" });
   }
 });
