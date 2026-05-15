@@ -384,34 +384,34 @@ export default function StocksAdvisorPage() {
   const user = profile;
   const updateUser = updateProfile;
 
-  // Shared refresh-prices flow (used by Positions and Advice tabs)
+  // Shared refresh-prices flow — uses backend proxy to avoid Yahoo CORS
   const refreshPrices = async () => {
     const tickers = [...new Set(user.positions.map((p) => p.ticker))];
     if (tickers.length === 0) { showToast("No positions to refresh."); return { ok: 0, fail: 0 }; }
     showToast(`Fetching ${tickers.length} tickers…`);
-    let ok = 0, fail = 0;
-    const updated = [...user.positions];
-    for (const t of tickers) {
-      try {
-        const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=1d`);
-        if (!r.ok) throw 0;
-        const j = await r.json();
-        const price = j?.chart?.result?.[0]?.meta?.regularMarketPrice;
-        const ccy = j?.chart?.result?.[0]?.meta?.currency;
-        if (price) {
-          updated.forEach((p, i) => {
-            if (p.ticker === t) {
-              if (ccy === "USD") updated[i] = { ...p, priceUsd: price };
-              else if (ccy === "CAD") updated[i] = { ...p, priceCad: price };
-            }
-          });
-          ok++;
-        } else fail++;
-      } catch { fail++; }
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-prices`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const { prices, failed } = await r.json();
+      const updated = user.positions.map((p) => {
+        const q = prices?.[p.ticker];
+        if (!q) return p;
+        if (q.currency === "USD") return { ...p, priceUsd: q.price };
+        if (q.currency === "CAD") return { ...p, priceCad: q.price };
+        return p;
+      });
+      updateUser(() => ({ positions: updated }));
+      const ok = tickers.length - (failed?.length || 0);
+      showToast(`Fetched ${ok}/${tickers.length}.${failed?.length ? ` Failed: ${failed.join(", ")}` : ""}`);
+      return { ok, fail: failed?.length || 0 };
+    } catch (e) {
+      showToast(`Price fetch failed: ${e?.message || "network"}`);
+      return { ok: 0, fail: tickers.length };
     }
-    updateUser(() => ({ positions: updated }));
-    showToast(`Fetched ${ok}/${tickers.length}. ${fail ? `${fail} CORS-blocked — enter manually.` : ""}`);
-    return { ok, fail };
   };
 
   return (
@@ -424,6 +424,7 @@ export default function StocksAdvisorPage() {
               ["dashboard", "Dashboard"],
               ["positions", "Positions"],
               ["advice", "Advice"],
+              ["performance", "Performance"],
               ["settings", "Settings"],
             ].map(([k, label]) => (
               <button
@@ -475,7 +476,8 @@ export default function StocksAdvisorPage() {
               onRefreshPrices={refreshPrices}
             />
           )}
-          {currentTab === "advice" && <AdviceView user={user} onRefresh={refreshPrices} />}
+          {currentTab === "advice" && <AdviceView user={user} onRefresh={refreshPrices} sessionToken={auth.sessionToken} />}
+          {currentTab === "performance" && <PerformanceView sessionToken={auth.sessionToken} />}
           {currentTab === "settings" && (
             <SettingsView
               user={user}
@@ -801,10 +803,12 @@ function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPri
   );
 }
 
-function AdviceView({ user, onRefresh }) {
+function AdviceView({ user, onRefresh, sessionToken }) {
   const [busy, setBusy] = useState(false);
-  // useMemo on `user` ensures advice recomputes immediately when prices update
-  const advice = useMemo(() => generateAdvice(user), [user]);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiAdvice, setAiAdvice] = useState(null); // { advice, sources, generatedAt }
+  const [aiError, setAiError] = useState(null);
+  const ruleAdvice = useMemo(() => generateAdvice(user), [user]);
 
   const handleRefresh = async () => {
     if (busy) return;
@@ -812,25 +816,78 @@ function AdviceView({ user, onRefresh }) {
     try { await onRefresh(); } finally { setBusy(false); }
   };
 
+  const handleAi = async () => {
+    if (aiBusy) return;
+    setAiBusy(true); setAiError(null);
+    try {
+      // Refresh prices first so the AI sees fresh quotes
+      await onRefresh();
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({}),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setAiAdvice(j);
+    } catch (e) {
+      setAiError(e?.message || "Failed");
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const shown = aiAdvice?.advice || ruleAdvice;
+  const showingAi = !!aiAdvice;
+
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 4 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 4, flexWrap: "wrap" }}>
         <div>
           <h2>Advice</h2>
-          <div className="sa-breadcrumb">Rule-based signals from your current portfolio</div>
+          <div className="sa-breadcrumb">
+            {showingAi
+              ? `🧠 AI-generated · ${new Date(aiAdvice.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+              : "Rule-based signals from your current portfolio"}
+          </div>
         </div>
-        <button className="sa-btn" onClick={handleRefresh} disabled={busy} title="Re-fetch prices from Yahoo Finance and re-run the advice engine">
-          {busy ? "Refreshing…" : "↻ Refresh prices + advice"}
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="sa-btn secondary" onClick={handleRefresh} disabled={busy || aiBusy} title="Re-fetch prices and re-run the rule engine">
+            {busy ? "Refreshing…" : "↻ Refresh prices"}
+          </button>
+          <button className="sa-btn" onClick={handleAi} disabled={aiBusy || busy} title="Search the web for fresh news on each holding and run Claude over the portfolio">
+            {aiBusy ? "Thinking…" : "🧠 Get fresh AI advice"}
+          </button>
+        </div>
       </div>
       <div className="sa-disclaimer">⚠️ Research and education only. Not licensed investment advice. Decisions are yours.</div>
-      {advice.map((c, i) => (
+      {aiError && <div className="sa-err">{aiError}</div>}
+      {showingAi && (
+        <div style={{ marginBottom: 12, textAlign: "right" }}>
+          <button className="sa-btn ghost" onClick={() => setAiAdvice(null)}>Back to rule-based view</button>
+        </div>
+      )}
+      {shown.map((c, i) => (
         <div key={i} className={`sa-advice-card ${c.sev === "danger" ? "danger" : c.sev === "warn" ? "warn" : c.sev === "good" ? "good" : ""}`}>
           <h3>{c.title}</h3>
           <p>{c.body}</p>
           {c.meta && <div className="meta">{c.meta}</div>}
         </div>
       ))}
+      {showingAi && aiAdvice.sources?.length > 0 && (
+        <div className="sa-card" style={{ marginTop: 14 }}>
+          <h3>Sources</h3>
+          <ul style={{ paddingLeft: 18, margin: 0, color: "var(--sa-text-2)", fontSize: 13, lineHeight: 1.7 }}>
+            {aiAdvice.sources.slice(0, 12).map((s, i) => (
+              <li key={i}>
+                <a href={s.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--sa-accent-2)" }}>
+                  {s.title || s.url}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -923,6 +980,190 @@ function FullscreenShell({ children }) {
     return () => document.body.classList.remove("stocks-app-mode");
   }, []);
   return <div className="stocks-root">{children}</div>;
+}
+
+// =============================================================================
+// Performance view — portfolio time series + "if-followed" advisor scorecard
+// =============================================================================
+function PerformanceView({ sessionToken }) {
+  const [snaps, setSnaps] = useState(null);
+  const [advisorPerf, setAdvisorPerf] = useState(null);
+  const [busy, setBusy] = useState(true);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setBusy(true); setErr(null);
+      try {
+        const [snapRes, perfRes] = await Promise.all([
+          fetch(`${BACKEND_URL}/api/stocks-portfolio/performance?days=365`, {
+            headers: { Authorization: `Bearer ${sessionToken}` },
+          }),
+          fetch(`${BACKEND_URL}/api/stocks-advice/performance?days=30`, {
+            headers: { Authorization: `Bearer ${sessionToken}` },
+          }),
+        ]);
+        const snapJ = await snapRes.json();
+        const perfJ = await perfRes.json();
+        if (!cancelled) {
+          setSnaps(snapJ?.snapshots || []);
+          setAdvisorPerf(perfJ);
+        }
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || "Failed to load");
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken]);
+
+  return (
+    <div>
+      <h2>Performance</h2>
+      <div className="sa-breadcrumb">Portfolio value over time · advisor scorecard</div>
+
+      {/* ── Advisor scorecard ── */}
+      <div className="sa-card" style={{ marginBottom: 18 }}>
+        <h3>If you had followed my advice</h3>
+        {busy && <div className="sa-muted">Loading…</div>}
+        {err && <div className="sa-err">{err}</div>}
+        {!busy && advisorPerf && (
+          advisorPerf.windows?.every((w) => w.recCount === 0) ? (
+            <div className="sa-muted" style={{ fontSize: 13 }}>
+              No tracked recommendations yet. Visit the Advice tab and click <b>🧠 Get fresh AI advice</b> — every actionable recommendation gets logged and scored here.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+              {advisorPerf.windows.map((w) => (
+                <div key={w.days} style={{ background: "var(--sa-panel-2)", padding: 14, borderRadius: 10 }}>
+                  <div className="sa-muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 600 }}>
+                    Last {w.days} days
+                  </div>
+                  <div style={{ fontSize: 26, fontWeight: 700, marginTop: 4, color: w.avgPnlPct == null ? "var(--sa-muted)" : (w.avgPnlPct >= 0 ? "var(--sa-green)" : "var(--sa-red)") }}>
+                    {w.avgPnlPct == null ? "—" : (w.avgPnlPct >= 0 ? "+" : "") + w.avgPnlPct.toFixed(2) + "%"}
+                  </div>
+                  <div className="sa-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                    {w.recCount} {w.recCount === 1 ? "rec" : "recs"}{w.hitRate != null ? ` · ${w.hitRate.toFixed(0)}% hit rate` : ""}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+      </div>
+
+      {/* ── Recent recommendations table ── */}
+      {advisorPerf?.recent?.length > 0 && (
+        <div className="sa-card" style={{ marginBottom: 18, padding: 0 }}>
+          <div style={{ padding: "18px 22px 8px" }}>
+            <h3 style={{ margin: 0 }}>Recent recommendations</h3>
+          </div>
+          <table className="sa-table">
+            <thead><tr>
+              <th>Generated</th><th>Ticker</th><th>Action</th><th>Entry</th><th>Target</th><th>Stop</th><th>Now</th><th>P&amp;L</th>
+            </tr></thead>
+            <tbody>
+              {advisorPerf.recent.map((r, i) => (
+                <tr key={i}>
+                  <td style={{ textAlign: "left" }}>{new Date(r.generatedAt).toLocaleDateString()}</td>
+                  <td style={{ textAlign: "left", fontWeight: 600 }}>{r.ticker}</td>
+                  <td style={{ textAlign: "left" }}><span className={`sa-badge ${r.action === "BUY" ? "green" : r.action === "SELL" || r.action === "TRIM" ? "red" : "amber"}`}>{r.action}</span></td>
+                  <td>{r.entryPrice ? "$" + r.entryPrice.toFixed(2) : "—"}</td>
+                  <td>{r.targetPrice ? "$" + r.targetPrice.toFixed(2) : "—"}</td>
+                  <td>{r.stopPrice ? "$" + r.stopPrice.toFixed(2) : "—"}</td>
+                  <td>{r.currentPrice ? "$" + r.currentPrice.toFixed(2) : "—"}</td>
+                  <td style={{ fontWeight: 600, color: r.pnlPct == null ? "var(--sa-muted)" : (r.pnlPct >= 0 ? "var(--sa-green)" : "var(--sa-red)") }}>
+                    {r.pnlPct == null ? "—" : (r.pnlPct >= 0 ? "+" : "") + r.pnlPct.toFixed(2) + "%"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Portfolio value chart ── */}
+      <div className="sa-card">
+        <h3>Portfolio total value (last 12 months)</h3>
+        {busy && <div className="sa-muted">Loading…</div>}
+        {!busy && (snaps == null || snaps.length === 0) && (
+          <div className="sa-muted" style={{ fontSize: 13 }}>
+            No history yet. Every time you save changes on /stocks, a daily snapshot is recorded — the chart will fill in over the coming days.
+          </div>
+        )}
+        {!busy && snaps && snaps.length > 0 && <PortfolioChart snaps={snaps} />}
+      </div>
+    </div>
+  );
+}
+
+// Inline SVG line chart — zero deps
+function PortfolioChart({ snaps }) {
+  const W = 720, H = 240, PADX = 40, PADY = 18;
+  const vals = snaps.map((s) => s.totalCad);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const range = max - min || 1;
+  const xStep = (W - PADX * 2) / Math.max(1, snaps.length - 1);
+
+  const points = snaps.map((s, i) => {
+    const x = PADX + i * xStep;
+    const y = PADY + (1 - (s.totalCad - min) / range) * (H - PADY * 2);
+    return [x, y];
+  });
+
+  const linePath = points.map(([x, y], i) => (i === 0 ? `M${x},${y}` : `L${x},${y}`)).join(" ");
+  const areaPath = linePath + ` L${points[points.length - 1][0]},${H - PADY} L${PADX},${H - PADY} Z`;
+
+  const firstVal = snaps[0].totalCad;
+  const lastVal = snaps[snaps.length - 1].totalCad;
+  const totalChange = ((lastVal - firstVal) / firstVal) * 100;
+  const totalChangeAbs = lastVal - firstVal;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 26, fontWeight: 700 }}>${lastVal.toLocaleString(undefined, { maximumFractionDigits: 0 })} CAD</div>
+          <div className="sa-muted" style={{ fontSize: 13 }}>Today</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 18, fontWeight: 600, color: totalChange >= 0 ? "var(--sa-green)" : "var(--sa-red)" }}>
+            {totalChange >= 0 ? "+" : ""}{totalChange.toFixed(2)}%
+          </div>
+          <div className="sa-muted" style={{ fontSize: 12 }}>
+            {totalChangeAbs >= 0 ? "+" : "−"}${Math.abs(totalChangeAbs).toLocaleString(undefined, { maximumFractionDigits: 0 })} since first snapshot
+          </div>
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
+        <defs>
+          <linearGradient id="saGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="rgba(29,78,216,.18)" />
+            <stop offset="100%" stopColor="rgba(29,78,216,0)" />
+          </linearGradient>
+        </defs>
+        {/* Gridlines */}
+        {[0, 0.25, 0.5, 0.75, 1].map((t) => (
+          <line key={t} x1={PADX} x2={W - PADX} y1={PADY + t * (H - PADY * 2)} y2={PADY + t * (H - PADY * 2)} stroke="#e4e8ef" strokeWidth="1" />
+        ))}
+        <path d={areaPath} fill="url(#saGrad)" />
+        <path d={linePath} fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinejoin="round" />
+        {/* Endpoint dot */}
+        {points.length > 0 && (
+          <circle cx={points[points.length - 1][0]} cy={points[points.length - 1][1]} r="4" fill="#1d4ed8" />
+        )}
+        {/* Y-axis labels */}
+        <text x="8" y={PADY + 4} fontSize="10" fill="#7a8499">${(max / 1000).toFixed(0)}K</text>
+        <text x="8" y={H - PADY + 4} fontSize="10" fill="#7a8499">${(min / 1000).toFixed(0)}K</text>
+        {/* X-axis (first + last dates) */}
+        <text x={PADX} y={H - 2} fontSize="10" fill="#7a8499">{snaps[0].date}</text>
+        <text x={W - PADX} y={H - 2} fontSize="10" fill="#7a8499" textAnchor="end">{snaps[snaps.length - 1].date}</text>
+      </svg>
+    </div>
+  );
 }
 
 // =============================================================================

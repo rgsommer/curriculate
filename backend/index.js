@@ -120,6 +120,9 @@ import studentScavengerProgressRouter from "./routes/studentScavengerProgress.js
 import studentContactRouter from "./routes/studentContact.js";
 import studentProgressRouter from "./routes/studentProgress.js";
 import stocksPortfolioRouter from "./routes/stocksPortfolio.js";
+import stocksPricesRouter from "./routes/stocksPrices.js";
+import stocksAdviceRouter from "./routes/stocksAdvice.js";
+import { scheduleDailyBriefing } from "./jobs/stocksDailyBriefing.js";
 
 function renderEmailTemplate(str, vars) {
   let out = String(str || "");
@@ -508,6 +511,8 @@ app.use("/student-scavenger-progress", studentScavengerProgressRouter);
 app.use("/student-contact", studentContactRouter);
 app.use("/student-progress", studentProgressRouter);
 app.use("/api/stocks-portfolio", stocksPortfolioRouter);
+app.use("/api/stocks-prices", stocksPricesRouter);
+app.use("/api/stocks-advice", stocksAdviceRouter);
 
 // Fieldday
 app.use("/fieldday/api", fielddayRouter);
@@ -16031,4 +16036,5 @@ const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log("Curriculate backend running on port", PORT);
   scheduleWeeklyDigest();
+  scheduleDailyBriefing();
 })
