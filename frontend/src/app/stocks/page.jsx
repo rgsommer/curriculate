@@ -246,6 +246,9 @@ export default function StocksAdvisorPage() {
   const [modalIdx, setModalIdx] = useState(undefined);
   const saveTimerRef = useRef(null);
   const savedTimerRef = useRef(null);
+  // Cross-tab AI advice request — when set, the Advice tab auto-triggers
+  // a fresh AI fetch on mount, then resets the flag.
+  const [pendingAiFetch, setPendingAiFetch] = useState(false);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -459,7 +462,18 @@ export default function StocksAdvisorPage() {
           </div>
         </aside>
         <main className="sa-main">
-          {currentTab === "dashboard" && <DashboardView user={user} onTab={setCurrentTab} />}
+          {currentTab === "dashboard" && (
+            <DashboardView
+              user={user}
+              onTab={setCurrentTab}
+              onRefresh={refreshPrices}
+              onAiAdvice={() => {
+                // Switch to Advice tab and have it auto-run the AI fetch
+                setPendingAiFetch(true);
+                setCurrentTab("advice");
+              }}
+            />
+          )}
           {currentTab === "positions" && (
             <PositionsView
               user={user}
@@ -476,7 +490,15 @@ export default function StocksAdvisorPage() {
               onRefreshPrices={refreshPrices}
             />
           )}
-          {currentTab === "advice" && <AdviceView user={user} onRefresh={refreshPrices} sessionToken={auth.sessionToken} />}
+          {currentTab === "advice" && (
+            <AdviceView
+              user={user}
+              onRefresh={refreshPrices}
+              sessionToken={auth.sessionToken}
+              autoFetchAi={pendingAiFetch}
+              onAutoFetchConsumed={() => setPendingAiFetch(false)}
+            />
+          )}
           {currentTab === "performance" && <PerformanceView sessionToken={auth.sessionToken} />}
           {currentTab === "settings" && (
             <SettingsView
@@ -705,7 +727,9 @@ function OnboardingView({ onPick }) {
   );
 }
 
-function DashboardView({ user, onTab }) {
+function DashboardView({ user, onTab, onRefresh, onAiAdvice }) {
+  const [busyRefresh, setBusyRefresh] = useState(false);
+  const [busyAi, setBusyAi] = useState(false);
   const fx = user.fxUsdCad || 1.37;
   const total = totalCad(user.positions, fx);
   const agg = aggregateByTicker(user.positions, fx);
@@ -713,11 +737,34 @@ function DashboardView({ user, onTab }) {
   const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const advice = generateAdvice(user).slice(0, 3);
 
+  const handleRefresh = async () => {
+    if (busyRefresh) return;
+    setBusyRefresh(true);
+    try { await onRefresh(); } finally { setBusyRefresh(false); }
+  };
+  const handleAi = async () => {
+    if (busyAi) return;
+    setBusyAi(true);
+    try { await onAiAdvice(); } finally { setBusyAi(false); }
+  };
+
   return (
     <div>
-      <h2>Dashboard</h2>
-      <div className="sa-breadcrumb">{today}</div>
-      <div className="sa-disclaimer">Research and education only. Not licensed investment advice. Prices stored locally; refresh prices on the Positions tab.</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 4 }}>
+        <div>
+          <h2>Dashboard</h2>
+          <div className="sa-breadcrumb">{today}</div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="sa-btn secondary" onClick={handleRefresh} disabled={busyRefresh || busyAi} title="Re-fetch live prices from Yahoo Finance via the backend proxy">
+            {busyRefresh ? "Refreshing…" : "↻ Refresh prices"}
+          </button>
+          <button className="sa-btn" onClick={handleAi} disabled={busyAi || busyRefresh} title="Search the web for fresh news and have Claude generate updated advice">
+            {busyAi ? "Thinking…" : "🧠 Get fresh AI advice"}
+          </button>
+        </div>
+      </div>
+      <div className="sa-disclaimer">Research and education only. Not licensed investment advice.</div>
       <div className="sa-stats">
         <div className="sa-stat"><div className="label">Total value (CAD)</div><div className="value">{fmtMoney(total, "CAD")}</div></div>
         <div className="sa-stat"><div className="label">Positions</div><div className="value">{user.positions.length}</div></div>
@@ -803,7 +850,7 @@ function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPri
   );
 }
 
-function AdviceView({ user, onRefresh, sessionToken }) {
+function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchConsumed }) {
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiAdvice, setAiAdvice] = useState(null); // { advice, sources, generatedAt }
@@ -836,6 +883,15 @@ function AdviceView({ user, onRefresh, sessionToken }) {
       setAiBusy(false);
     }
   };
+
+  // Auto-trigger AI fetch when arriving from the Dashboard button
+  useEffect(() => {
+    if (autoFetchAi) {
+      onAutoFetchConsumed?.();
+      handleAi();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFetchAi]);
 
   const shown = aiAdvice?.advice || ruleAdvice;
   const showingAi = !!aiAdvice;
