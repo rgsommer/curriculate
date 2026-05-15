@@ -170,6 +170,32 @@ function buildPrompt(profile, summary, monitorAlerts = []) {
     ? `\nPLANNED WITHDRAWALS (cash that MUST be available by target date — recommendations must avoid locking it up):\n${pending.join("\n")}\n`
     : "";
 
+  const orderTicketBlock = `
+ORDER-TICKET GUIDANCE (gap-protection — every BUY/SELL rec must include this):
+- Equity recommendations execute at OPEN by default if not specified, which exposes the trade to overnight gap moves.
+- For EVERY BUY or SELL/TRIM rec, include an "Order ticket" line specifying:
+  • Order type: LIMIT (preferred — protects against unfavorable opens) vs MARKET (only when fill certainty matters more than price, e.g., stop-out)
+  • Limit price (in the security's native currency)
+  • Duration: "Day" (default — cancels EOD) or "GTC" (good-til-cancelled, fine for stop-losses)
+- Sizing the limit:
+  • BUY: limit price = upper end of entry zone, or current ask + small buffer (~0.3% for liquid names, ~1% for thinly-traded). Never higher than the rec's target.
+  • SELL: limit price = lower end of desired exit zone, or current bid − small buffer. Never lower than the rec's stop level.
+- For BUY recs, ALWAYS add an "After fill" line recommending a STOP-LOSS SELL order to enter once the buy executes:
+  • Stop price = the rec's Stop level
+  • Order type: STOP-LIMIT (avoid pure STOP-MARKET in case of flash-crash slippage). Limit = stop − 1-2%.
+  • Duration: GTC
+
+Example format inside the rec body:
+
+  Action: BUY 40 sh ENB. Entry: $75-$76 CAD. Target: $84 CAD (12mo). Stop: $69 CAD. Horizon: 12 months.
+  Order ticket: LIMIT BUY 40 ENB @ $76.00 CAD max, Day order. (Caps price; protects vs gap-up.)
+  After fill: GTC STOP-LIMIT SELL 40 ENB, stop $69.00 / limit $68.00 CAD. (Auto-protects downside.)
+  Source: RRSP CAD sub · uses $3,040 of $4,500 CAD available.
+  Cost note: commission ~$6.95 per order = ~$13.90 total (entry + stop). FX impact: none.
+
+For "swap" recs (sell one, buy another), the SELL leg also needs a LIMIT SELL ticket so a gap-down doesn't dump shares cheap.
+`;
+
   const priceCurrencyBlock = `
 PRICE CURRENCY CONVENTION (strict — applies to every rec, alert, and discussion):
 - Every position has a native trading currency shown in the Holdings list (e.g., "TSLA (USD)" trades in USD, "ENB (CAD)" trades in CAD).
@@ -255,6 +281,7 @@ ${summary.text}
 ${cashBlock}
 ${alertsBlock}
 ${priceCurrencyBlock}
+${orderTicketBlock}
 ${tradingCostsBlock}
 ${CANADIAN_TAX_BLOCK}
 ${SIGNALS_CHECKLIST}

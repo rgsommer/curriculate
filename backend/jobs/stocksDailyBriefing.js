@@ -280,6 +280,19 @@ function buildBriefingPrompt(profile, summary, monitorAlerts = []) {
     ? `\nPLANNED WITHDRAWALS (cash that MUST be available by target date):\n${pending.join("\n")}\nSubtract these from deployable cash. If short, recommend SPECIFIC TRIMS by date to raise the needed cash. Do not lock new BUYs past these dates.\n`
     : "";
 
+  const orderTicketBlock = `
+ORDER-TICKET GUIDANCE (gap-protection — every BUY/SELL rec must include):
+- Default to LIMIT orders, not market — protects vs overnight gaps at the open.
+- BUY limit = upper end of entry zone (or current ask + ~0.3% liquid / ~1% thin), never above the target.
+- SELL limit = lower end of exit zone (or current bid − small buffer), never below the stop.
+- After every BUY fill, recommend a GTC STOP-LIMIT SELL to enter at the rec's stop level (stop = stop price, limit = stop − 1-2% as gap protection).
+- Note duration: "Day" cancels EOD; "GTC" persists.
+
+Required addition per rec body:
+  Order ticket: LIMIT BUY/SELL <N> <TICKER> @ $<limit> <CCY> <max/min>, Day/GTC.
+  After fill: GTC STOP-LIMIT SELL <N> <TICKER>, stop $<stop> / limit $<stop-1%> <CCY>.
+`;
+
   const priceCurrencyBlock = `
 PRICE CURRENCY CONVENTION (strict):
 - Every position has a native trading currency shown in the Holdings list (e.g., "TSLA (USD)", "ENB (CAD)").
@@ -339,6 +352,7 @@ ${summary.table}
 ${cashBlock}
 ${alertsBlock}
 ${priceCurrencyBlock}
+${orderTicketBlock}
 ${tradingCostsBlock}
 ${CANADIAN_TAX_BLOCK}
 ${SIGNALS_CHECKLIST}
