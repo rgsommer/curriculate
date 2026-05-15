@@ -29,6 +29,18 @@ const StocksAdviceRecSchema = new mongoose.Schema(
     lastScoredAt: { type: Date, default: null },
     lastScoredPrice: { type: Number, default: null },
     lastPnlPct: { type: Number, default: null }, // signed by action direction
+
+    // Lifecycle — updated by monitorOpenRecs() before each briefing
+    status: {
+      type: String,
+      enum: ["open", "target-hit", "stop-hit", "expired"],
+      default: "open",
+      index: true,
+    },
+    hitAt: { type: Date, default: null },
+    hitPrice: { type: Number, default: null },
+    lastCheckedAt: { type: Date, default: null },
+    lastCheckedPrice: { type: Number, default: null },
   },
   { timestamps: true }
 );

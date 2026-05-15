@@ -22,6 +22,95 @@ import cron from "node-cron";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 
+// Shared current-price fetcher (server-side; no CORS) — used by the
+// open-recommendation monitor below.
+async function fetchCurrentPrice(ticker) {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": "Mozilla/5.0 (Curriculate)" } });
+    clearTimeout(tid);
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j?.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
+  } catch { return null; }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Monitor every still-open AI rec for this user. For each rec, check
+// whether the live price has crossed its target or stop. Update the
+// rec's status in Mongo and return an array of alert strings (markdown)
+// that the briefing will prepend to the AI-generated body.
+//
+// Direction-aware:
+//   BUY  : target hit when price ≥ target ; stop hit when price ≤ stop
+//   SELL/TRIM : target hit when price ≤ target ; stop hit when price ≥ stop
+// ─────────────────────────────────────────────────────────────────────
+export async function monitorOpenRecs(email) {
+  const openRecs = await StocksAdviceRec.find({ email, status: "open" }).lean();
+  if (openRecs.length === 0) return { alerts: [], hits: 0, inRange: 0 };
+
+  // De-dupe tickers and fetch one price per ticker
+  const tickers = [...new Set(openRecs.map(r => r.ticker))];
+  const priceMap = {};
+  await Promise.all(tickers.map(async t => { priceMap[t] = await fetchCurrentPrice(t); }));
+
+  const targetAlerts = [];
+  const stopAlerts = [];
+  const updates = [];
+  let inRangeCount = 0;
+  const now = new Date();
+
+  for (const rec of openRecs) {
+    const px = priceMap[rec.ticker];
+    if (px == null) continue;
+
+    let targetHit = false;
+    let stopHit = false;
+    if (rec.action === "BUY") {
+      if (rec.targetPrice != null && px >= rec.targetPrice) targetHit = true;
+      else if (rec.stopPrice != null && px <= rec.stopPrice) stopHit = true;
+    } else if (rec.action === "SELL" || rec.action === "TRIM") {
+      if (rec.targetPrice != null && px <= rec.targetPrice) targetHit = true;
+      else if (rec.stopPrice != null && px >= rec.stopPrice) stopHit = true;
+    }
+
+    const ccyMarker = rec.entryCurrency === "CAD" ? "CAD" : "USD";
+    const dateStr = new Date(rec.generatedAt).toISOString().slice(0, 10);
+
+    if (targetHit) {
+      updates.push({ id: rec._id, set: { status: "target-hit", hitAt: now, hitPrice: px, lastCheckedAt: now, lastCheckedPrice: px } });
+      const dir = rec.action === "BUY" ? "above target" : "below target";
+      const exit = rec.action === "BUY" ? "Consider TRIMming to lock in gains." : "Consider re-entering the position.";
+      targetAlerts.push(
+        `🎯 **${rec.ticker} hit target.** Rec from ${dateStr}: ${rec.action} ${rec.shares || ""} sh @ $${rec.entryPrice} → target $${rec.targetPrice}. Current $${px.toFixed(2)} ${ccyMarker} (${dir}). ${exit}`
+      );
+    } else if (stopHit) {
+      updates.push({ id: rec._id, set: { status: "stop-hit", hitAt: now, hitPrice: px, lastCheckedAt: now, lastCheckedPrice: px } });
+      const exit = rec.action === "BUY"
+        ? `Thesis invalidated. **SELL the position** at market unless you have a high-conviction reason to override.`
+        : `Position is moving against you. **Cover / re-evaluate the SHORT thesis** now.`;
+      stopAlerts.push(
+        `🛑 **${rec.ticker} hit stop.** Rec from ${dateStr}: ${rec.action} @ $${rec.entryPrice} with stop $${rec.stopPrice}. Current $${px.toFixed(2)} ${ccyMarker}. ${exit}`
+      );
+    } else {
+      updates.push({ id: rec._id, set: { lastCheckedAt: now, lastCheckedPrice: px } });
+      inRangeCount++;
+    }
+  }
+
+  // Best-effort writeback
+  if (updates.length) {
+    await Promise.all(
+      updates.map(u => StocksAdviceRec.updateOne({ _id: u.id }, { $set: u.set }).catch(() => null))
+    );
+  }
+
+  const alerts = [...stopAlerts, ...targetAlerts]; // stops first — more urgent
+  return { alerts, hits: alerts.length, inRange: inRangeCount };
+}
+
 // Lightweight markdown → HTML for email bodies. Good enough for tables,
 // headings, bold, code, lists, links. (We don't import a heavier lib here.)
 export function md2html(md) {
@@ -100,8 +189,70 @@ export function portfolioSummary(profile) {
   };
 }
 
-function buildBriefingPrompt(profile, summary) {
+// Signals checklist — what the AI MUST web_search for and incorporate
+const SIGNALS_CHECKLIST = `
+Mandatory signals to search and weigh for EACH top-holding before writing recs.
+Use web_search calls — don't guess. If a signal isn't found, say "no signal" rather than skipping.
+
+A. NEWS (last 24h):
+   - Breaking corporate news, M&A, regulatory action, lawsuits
+   - Material announcements (product launches, partnerships)
+   - CEO/leadership changes
+
+B. PERIODIC REPORTING:
+   - Next earnings date (within 14 days = high-attention; flag in briefing)
+   - Most recent earnings: revenue/EPS vs consensus (beat/miss/in-line)
+   - Guidance changes (raised/lowered/maintained)
+   - Conference call commentary highlights
+
+C. CORPORATE ACTIONS:
+   - Ex-dividend dates upcoming (within 14 days)
+   - Dividend changes (raises/cuts/suspensions)
+   - Splits, special distributions, buybacks
+   - Spin-offs / mergers / tender offers (DJT/Truth Social spin-off is live)
+
+D. ANALYST ACTION:
+   - Upgrades / downgrades in last 7 days from top-tier shops (Goldman, JPM, MS, Wells, BofA, Wedbush, Piper Sandler)
+   - Price target changes >10% in either direction
+   - Initiation of coverage
+
+E. INSIDER + OWNERSHIP:
+   - Form 4 filings (insider buys/sells) in last 30 days — flag clusters
+   - 13F changes (institutional ownership swings, e.g., Berkshire/Buffett, Burry)
+   - Short interest changes (>20% of float = signal; rising short = pressure)
+
+F. TECHNICAL / FLOW (web_search for these — sources include Finviz, StockAnalysis, TradingView):
+   - 50-day and 200-day moving averages (price vs MA, golden/death crosses recently)
+   - RSI: <30 (oversold) or >70 (overbought)
+   - Unusual options flow (large call/put sweeps)
+   - Volume spikes vs 20-day average
+
+G. MACRO:
+   - Fed/BoC rate decisions or commentary today
+   - Oil price moves (matters for ENB, SU, CNQ)
+   - USD/CAD daily move (matters for any USD-denominated holding)
+   - VIX level (>20 = elevated; >25 = risk-off mode)
+
+For each top-7 holding, the briefing must NAME at least one specific signal from the categories above that informs the call (BUY/HOLD/TRIM/SELL). Don't write generic prose — cite the actual signal.
+`;
+
+// Canadian tax + account-placement guidance — applied to every prompt
+const CANADIAN_TAX_BLOCK = `
+Account-placement & tax notes (Canadian investor):
+- Eligible Canadian-corp dividends (ENB, BCE, TD, RY, BNS, T, CNQ, SU, etc.) receive the Canadian dividend tax credit when held in non-registered accounts. ENB's ~6% yield is materially more tax-efficient than the headline number suggests for the Non-Spousal account.
+- US dividend stocks held in an RRSP are EXEMPT from US 15% withholding tax under the Canada–US tax treaty (Article XXI). In TFSA or Non-Spousal, the withholding applies (15%; recoverable as foreign tax credit only in Non-Spousal).
+- Therefore: prefer US dividend payers (broad index ETFs, ENB cross-listing aside, dividend aristocrats) in RRSP. Prefer Canadian eligible dividend payers in Non-Spousal or TFSA.
+- TFSA: tax-free capital gains — best home for high-conviction high-volatility growth bets (NVDA, PLTR, RKLB) where you expect big multiples.
+- Non-Spousal: capital gains taxable at 50% inclusion rate; capital losses harvestable. Avoid US dividends here unless deliberate.
+- Suggest the specific account (Non-Spousal / RRSP / TFSA) for any new BUY rec, especially Canadian-corp dividend payers vs US growth names.
+`;
+
+function buildBriefingPrompt(profile, summary, monitorAlerts = []) {
   const today = new Date().toISOString().slice(0, 10);
+
+  const alertsBlock = monitorAlerts.length
+    ? `\n⚠️ OPEN RECOMMENDATION ALERTS (computed deterministically from current prices — include these verbatim at the very top of the briefing):\n${monitorAlerts.map(a => `- ${a}`).join("\n")}\n`
+    : `\nOpen-recommendation monitor: no targets or stops hit since last check.\n`;
 
   const hasCash = summary.cashUsd > 5 || summary.cashCad > 5;
   const cashBlock = hasCash
@@ -127,16 +278,21 @@ Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()}
 Holdings:
 ${summary.table}
 ${cashBlock}
-Use the web_search tool to gather overnight news on the top 6-7 holdings and pre-market signals (futures, VIX, USD/CAD, oil).
+${alertsBlock}
+${CANADIAN_TAX_BLOCK}
+${SIGNALS_CHECKLIST}
+
+Use the web_search tool aggressively — at least 6-10 searches across the signal categories above for the top holdings.
 
 Write a markdown briefing with these sections:
-1. **Overnight & pre-market** — ES/NQ futures, VIX, USD/CAD, oil, key macro
-2. **News on holdings** — top-7 ticker news from last 24h
-3. **Performance snapshot** — week/month/3M moves
-4. **Today's one action** — single trade. MUST include all four: Action: BUY/SELL/TRIM <N> sh <TICKER>. Entry: $X (specific price OR tight zone like "$74-$76", never "at market" or "current"). Target: $Y (timeframe). Stop: $Z. Horizon: <N> months.
+0. **🚨 Open recommendation alerts** — surface verbatim the ALERTS block above if non-empty. Otherwise write "No targets or stops hit overnight."
+1. **Overnight & pre-market** — ES/NQ futures, VIX, USD/CAD, oil, Fed/BoC actions
+2. **Signals per holding** — for EACH top-7 ticker, a 2-3 line block citing specific signals you found via web_search (news + earnings + corporate actions + analyst moves + insider activity + technical setup + applicable macro). Format: "**TICKER**: news=... · earnings=... · analyst=... · insider=... · technicals=... · call: [HOLD/TRIM/ADD/EXIT at $X]"
+3. **Performance snapshot** — week/month/3M moves on top names
+4. **Today's one action** — single trade, all four levels (Entry/Target/Stop/Horizon), plus the specific account (Non-Spousal / RRSP / TFSA) per the Canadian tax notes above.
 ${cashSection}
 6. **Watch list** — 2-3 levels to monitor today (specific price triggers)
-7. **Aggressive new ideas** — 1-2 unowned names with price targets
+7. **Aggressive new ideas** — 1-2 unowned names with price targets. For each, suggest the optimal account based on Canadian tax treatment (e.g., "US growth name → TFSA"; "Canadian dividend payer → Non-Spousal for the dividend tax credit").
 
 Length: 700-1100 words. Date-stamp the top. Add disclaimer at bottom: "Research and education only. Not licensed investment advice."
 
@@ -179,7 +335,13 @@ export function parseRecsFromBriefing(text) {
 export async function generateBriefing(profile) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
   const summary = portfolioSummary(profile);
-  const prompt = buildBriefingPrompt(profile, summary);
+  // Check every open rec for target/stop hits BEFORE generating the briefing
+  // so they can be surfaced at the top.
+  const { alerts: monitorAlerts } = await monitorOpenRecs(profile.email).catch((e) => {
+    console.warn("[monitorOpenRecs] warn:", e?.message);
+    return { alerts: [] };
+  });
+  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts);
 
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -191,7 +353,7 @@ export async function generateBriefing(profile) {
     body: JSON.stringify({
       model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-5",
       max_tokens: 4096,
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 8 }],
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 12 }],
       messages: [{ role: "user", content: prompt }],
     }),
   });

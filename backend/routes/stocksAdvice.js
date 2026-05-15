@@ -24,6 +24,7 @@ import {
   emailBriefing,
   md2html,
   parseRecsFromBriefing,
+  monitorOpenRecs,
 } from "../jobs/stocksDailyBriefing.js";
 
 const router = express.Router();
@@ -105,9 +106,38 @@ function portfolioSummary(profile) {
   return { total, agg, text: lines.join("\n"), cashUsd, cashCad, cashCadEquiv, perAccountCash };
 }
 
-function buildPrompt(profile, summary) {
+// Signals checklist — what the AI MUST search for and incorporate
+const SIGNALS_CHECKLIST = `
+Mandatory signals to search and weigh for each top-holding before writing recs:
+
+A. NEWS — corporate, regulatory, M&A, leadership changes (last 24h)
+B. PERIODIC REPORTING — next earnings date (flag if within 14d), most recent EPS/revenue vs consensus, guidance changes
+C. CORPORATE ACTIONS — ex-dividend dates within 14d, dividend changes, splits, spin-offs (DJT's Truth Social spin-off is live)
+D. ANALYST ACTION — upgrades/downgrades from top-tier shops in last 7d, price-target moves >10%, new coverage
+E. INSIDER + OWNERSHIP — Form 4 buys/sells last 30d (cluster patterns), 13F shifts (Berkshire/Buffett etc.), short interest changes (>20% of float)
+F. TECHNICAL / FLOW — 50d/200d MA, golden/death crosses, RSI <30 or >70, unusual options flow, volume vs 20-day average
+G. MACRO — Fed/BoC commentary, oil moves (ENB/SU/CNQ), USD/CAD, VIX level
+
+Make 6-10 web_search calls covering these categories. For EACH actionable rec, cite at least one specific signal from above that drives the call.
+`;
+
+// Canadian tax + account-placement guidance
+const CANADIAN_TAX_BLOCK = `
+Account-placement & tax notes (Canadian investor):
+- Eligible Canadian-corp dividends (ENB, BCE, TD, RY, BNS, T, CNQ, SU, etc.) receive the Canadian dividend tax credit in non-registered accounts. ENB's ~6% yield is materially more tax-efficient than headline.
+- US dividend stocks held in an RRSP are EXEMPT from US 15% withholding under the Canada–US tax treaty. In TFSA or Non-Spousal, withholding applies (recoverable only in Non-Spousal as a foreign tax credit).
+- TFSA: tax-free capital gains — best home for high-conviction, high-volatility growth bets (NVDA, PLTR, RKLB).
+- Non-Spousal: capital gains at 50% inclusion; losses are harvestable. Avoid US dividend payers here.
+- For every BUY rec, suggest the specific account (Non-Spousal / RRSP / TFSA) using these rules.
+`;
+
+function buildPrompt(profile, summary, monitorAlerts = []) {
   const risk = profile.riskTolerance || "aggressive";
   const today = new Date().toISOString().slice(0, 10);
+
+  const alertsBlock = monitorAlerts.length
+    ? `\n⚠️ OPEN-RECOMMENDATION ALERTS (computed deterministically — surface these prominently as a dedicated card at the TOP of the advice list, severity "warn" or "danger"):\n${monitorAlerts.map(a => `- ${a}`).join("\n")}\n`
+    : "";
 
   // Cash section — drives the deployment recommendations
   const hasCash = summary.cashUsd > 5 || summary.cashCad > 5;
@@ -140,7 +170,11 @@ Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()}.
 Holdings:
 ${summary.text}
 ${cashBlock}
-Use the web_search tool to pull the latest news on the top 6 holdings (and any names that appear in recent material news flow). Then write 4–7 advice cards as a JSON array. Each card MUST have:
+${alertsBlock}
+${CANADIAN_TAX_BLOCK}
+${SIGNALS_CHECKLIST}
+
+Use the web_search tool aggressively (6-10 calls covering the signal categories above). Then write 4–7 advice cards as a JSON array. Each card MUST have:
 
   - "sev": one of "danger" | "warn" | "good" | "info"
   - "title": short headline (under 90 chars)
@@ -265,7 +299,11 @@ router.post("/", requireStocksAuth, async (req, res) => {
     }
 
     const summary = portfolioSummary(profile);
-    const prompt = buildPrompt(profile, summary);
+
+    // Monitor open recs for target/stop hits BEFORE generating advice
+    const { alerts: monitorAlerts } = await monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] }));
+
+    const prompt = buildPrompt(profile, summary, monitorAlerts);
 
     // Anthropic Messages API call with web_search server-side tool
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -278,7 +316,7 @@ router.post("/", requireStocksAuth, async (req, res) => {
       body: JSON.stringify({
         model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-5",
         max_tokens: 4096,
-        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 8 }],
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 12 }],
         messages: [{ role: "user", content: prompt }],
       }),
     });
