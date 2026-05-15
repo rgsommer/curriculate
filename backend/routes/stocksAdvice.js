@@ -138,17 +138,38 @@ function buildPrompt(profile, summary, monitorAlerts = []) {
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
   const fx = Number(profile.fxUsdCad || 1.37);
 
+  // Per-account cash inventory — surfaced ONCE here in a hard-to-miss block
+  const accountCashTable = (profile.accounts || [])
+    .map(a => `  ${a.name}: $${(a.cashCad || 0).toFixed(0)} CAD · $${(a.cashUsd || 0).toFixed(0)} USD`)
+    .join("\n") || "  (no accounts configured)";
+
   const tradingCostsBlock = `
 Real-world trading-cost frictions (factor these into every rec):
 - Commission: $${commission.toFixed(2)} per trade (each BUY and each SELL counts separately; a Swap = 2 commissions = $${(commission * 2).toFixed(2)})
 - FX spread on USD↔CAD conversion: ~${fxSpread}% one-way (round-trip ${(fxSpread * 2).toFixed(1)}%)
 - Current FX rate: ${fx.toFixed(3)} USD/CAD
 
+Per-account cash inventory (CRITICAL — read this carefully):
+${accountCashTable}
+
 Sizing rules:
-- Reject trades where commissions exceed 1% of gross trade value (~$${(commission * 100).toFixed(0)} minimum trade size). If a recommendation falls below that, either upsize it, batch it with another rec in the same currency, or say "wait for more cash."
-- For USD↔CAD swaps (selling USD position and buying CAD position or vice versa), the round-trip FX drag is ~${(fxSpread * 2).toFixed(1)}% — name this drag in the rec and only recommend if the expected upside exceeds it by a comfortable margin.
-- PREFER trades that don't require currency conversion. If Richard has $1,200 USD cash, buy USD-listed names with it. If he has $2,500 CAD cash, buy CAD-listed names. Only suggest converting when the strategic case is strong (e.g., truly oversized cash bucket in a currency with poor opportunities).
-- For every BUY rec, include a "Cost note" line stating: "Commission ~$${commission.toFixed(2)}, FX impact: <none / X% drag>".
+- Reject trades where commissions exceed 1% of gross trade value (~$${(commission * 100).toFixed(0)} minimum). If a rec falls below that, upsize, batch in the same currency, or say "wait for more cash."
+- For USD↔CAD swaps, the round-trip FX drag is ~${(fxSpread * 2).toFixed(1)}% — name this drag in the rec and only recommend if expected upside exceeds it materially.
+- PREFER trades that don't require currency conversion.
+
+ACCOUNT-SOURCE RULE (mandatory — no exceptions):
+- Every BUY recommendation MUST name a single source account (Non-Spousal / RRSP / TFSA).
+- The trade size MUST fit within THAT account's cash balance in the trade's currency. Look at the per-account inventory above. Do NOT propose sizes that exceed any single account's bucket.
+- NEVER recommend trades that would require:
+  * Cross-account transfers (e.g., "move $2,000 from RRSP to TFSA then buy")
+  * Splitting one buy across multiple accounts
+  * Pooling cash from two accounts
+- If the tax-optimal account (per Canadian tax block) doesn't have enough cash, do ONE of:
+  (a) Recommend a smaller size that fits the tax-optimal account's actual balance
+  (b) Recommend the trade in a different account that DOES have the cash, and explicitly note the tax tradeoff ("Ideal in TFSA but only $400 USD there; using RRSP USD instead — you lose tax-free growth on the gain, gain treaty exemption on dividends")
+  (c) Recommend ADDING cash to the preferred account first via Deposit, then buying once funded
+- Every BUY rec must include a "Source" line: "Source: RRSP · uses $X of $Y CAD/USD available in that account."
+- Every BUY rec must include a "Cost note" line: "Commission ~$${commission.toFixed(2)}, FX impact: <none / X% drag>".
 `;
 
   const alertsBlock = monitorAlerts.length

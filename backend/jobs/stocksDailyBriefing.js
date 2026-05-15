@@ -253,13 +253,27 @@ function buildBriefingPrompt(profile, summary, monitorAlerts = []) {
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
   const fx = Number(profile.fxUsdCad || 1.37);
 
+  // Per-account cash inventory — same hard-to-miss treatment as the advice endpoint
+  const accountCashTable = (profile.accounts || [])
+    .map(a => `  ${a.name}: $${(a.cashCad || 0).toFixed(0)} CAD · $${(a.cashUsd || 0).toFixed(0)} USD`)
+    .join("\n") || "  (no accounts configured)";
+
   const tradingCostsBlock = `
 Trading-cost frictions (factor into every recommendation):
-- Commission: $${commission.toFixed(2)} per trade. Each leg counts separately (Swap = 2 × $${commission.toFixed(2)} = $${(commission * 2).toFixed(2)}).
+- Commission: $${commission.toFixed(2)} per trade. Each leg counts separately (Swap = $${(commission * 2).toFixed(2)}).
 - FX spread on USD↔CAD: ~${fxSpread}% one-way; round-trip ${(fxSpread * 2).toFixed(1)}%.
-- Minimum efficient trade size: ~$${(commission * 100).toFixed(0)} (so commission < 1% of trade).
-- PREFER trades that match Richard's cash currency — don't recommend converting unless the strategic case clearly clears the FX-spread hurdle.
-- For every BUY rec, append a "Cost note" stating commission + any FX drag.
+- Minimum efficient trade: ~$${(commission * 100).toFixed(0)}.
+- PREFER currency-matched trades.
+
+Per-account cash inventory (CRITICAL):
+${accountCashTable}
+
+ACCOUNT-SOURCE RULE (mandatory):
+- Every BUY rec names ONE source account (Non-Spousal / RRSP / TFSA).
+- The trade size MUST fit within that account's cash balance in the trade's currency.
+- NO cross-account transfers, NO splits across multiple accounts.
+- If the tax-optimal account is short on cash, either: (a) downsize to fit, (b) use a different account and note the tax tradeoff, or (c) recommend depositing first.
+- Every BUY rec includes a "Source: <account> · uses $X of $Y available" line and a "Cost note: commission ~$${commission.toFixed(2)}, FX: <impact>" line.
 `;
 
   const alertsBlock = monitorAlerts.length
