@@ -111,46 +111,125 @@ export async function monitorOpenRecs(email) {
   return { alerts, hits: alerts.length, inRange: inRangeCount };
 }
 
-// Lightweight markdown → HTML for email bodies. Good enough for tables,
-// headings, bold, code, lists, links. (We don't import a heavier lib here.)
+// Lightweight markdown → HTML for email bodies, with a second pass that
+// recognises briefing-specific patterns (trade recs, order tickets, etc.)
+// and applies real visual structure.
 export function md2html(md) {
   if (!md) return "";
   let h = md
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  // headings
-  h = h.replace(/^######\s+(.+)$/gm, "<h6>$1</h6>")
-       .replace(/^#####\s+(.+)$/gm, "<h5>$1</h5>")
-       .replace(/^####\s+(.+)$/gm, "<h4>$1</h4>")
-       .replace(/^###\s+(.+)$/gm, "<h3>$1</h3>")
-       .replace(/^##\s+(.+)$/gm, "<h2>$1</h2>")
-       .replace(/^#\s+(.+)$/gm, "<h1>$1</h1>");
+  // headings — visually distinct h2 / h3 with separators
+  h = h.replace(/^######\s+(.+)$/gm, "<h6 style='margin:18px 0 6px;font-size:13px;color:#0b1220'>$1</h6>")
+       .replace(/^#####\s+(.+)$/gm, "<h5 style='margin:18px 0 6px;font-size:14px;color:#0b1220'>$1</h5>")
+       .replace(/^####\s+(.+)$/gm, "<h4 style='margin:20px 0 8px;font-size:15px;color:#0b1220'>$1</h4>")
+       .replace(/^###\s+(.+)$/gm, "<h3 style='margin:22px 0 10px;font-size:16px;font-weight:600;color:#0b1220'>$1</h3>")
+       .replace(/^##\s+(.+)$/gm, "<h2 style='margin:30px 0 12px;font-size:19px;font-weight:700;color:#0b1220;letter-spacing:-.01em;padding-bottom:8px;border-bottom:2px solid #e4e8ef'>$1</h2>")
+       .replace(/^#\s+(.+)$/gm, "<h1 style='margin:24px 0 14px;font-size:22px;font-weight:700;color:#0b1220'>$1</h1>");
   // bold / italic / code
   h = h.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
        .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
-       .replace(/`([^`]+)`/g, "<code style='background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:90%'>$1</code>");
+       .replace(/`([^`]+)`/g, "<code style='background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:90%;font-family:SF Mono,Menlo,Consolas,monospace'>$1</code>");
   // links
-  h = h.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<a href='$2' style='color:#1d4ed8'>$1</a>");
-  // tables (minimal)
+  h = h.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<a href='$2' style='color:#1d4ed8;text-decoration:none'>$1</a>");
+  // tables
   h = h.replace(/((?:^\|.*\|\s*\n)+)/gm, (block) => {
     const rows = block.trim().split("\n").map((r) => r.replace(/^\||\|$/g, "").split("|").map((c) => c.trim()));
     if (rows.length < 2) return block;
     const [header, sep, ...body] = rows;
     if (!sep || !sep.every((c) => /^[-: ]+$/.test(c))) return block;
-    const th = header.map((c) => `<th style='text-align:left;border-bottom:1px solid #e4e8ef;padding:8px 10px;font-size:12px;color:#7a8499'>${c}</th>`).join("");
-    const tr = body.map((r) => `<tr>${r.map((c) => `<td style='border-bottom:1px solid #f1f5f9;padding:8px 10px'>${c}</td>`).join("")}</tr>`).join("");
-    return `<table style='border-collapse:collapse;width:100%;margin:12px 0'><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table>`;
+    const th = header.map((c) => `<th style='text-align:left;border-bottom:2px solid #e4e8ef;padding:10px 12px;font-size:11px;color:#7a8499;text-transform:uppercase;letter-spacing:.06em;font-weight:600'>${c}</th>`).join("");
+    const tr = body.map((r) => `<tr>${r.map((c) => `<td style='border-bottom:1px solid #f1f5f9;padding:10px 12px;font-variant-numeric:tabular-nums'>${c}</td>`).join("")}</tr>`).join("");
+    return `<table style='border-collapse:collapse;width:100%;margin:16px 0;font-size:13px'><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table>`;
   });
   // unordered lists
   h = h.replace(/(?:^- .+(?:\n|$))+/gm, (block) => {
-    const items = block.trim().split("\n").map((l) => l.replace(/^-\s+/, "")).map((i) => `<li>${i}</li>`).join("");
-    return `<ul style='margin:8px 0;padding-left:22px'>${items}</ul>`;
+    const items = block.trim().split("\n").map((l) => l.replace(/^-\s+/, "")).map((i) => `<li style='margin:6px 0'>${i}</li>`).join("");
+    return `<ul style='margin:10px 0;padding-left:24px;color:#374151'>${items}</ul>`;
   });
   // paragraphs (blank-line separated)
   h = h.split(/\n{2,}/).map((b) => {
     if (b.match(/^<(h[1-6]|ul|table|p|div|hr)/i)) return b;
-    return `<p style='margin:8px 0;line-height:1.6'>${b.replace(/\n/g, "<br>")}</p>`;
+    return `<p style='margin:10px 0;line-height:1.65;color:#1f2937'>${b.replace(/\n/g, "<br>")}</p>`;
   }).join("\n");
+
+  // ─── PRETTIFY pass: recognise briefing patterns and apply real structure ───
+  h = prettifyBriefing(h);
   return h;
+}
+
+// Briefing-specific HTML prettifier. Looks for known textual patterns the AI
+// emits inside <p> blocks and rewrites them into visually structured blocks:
+//   • Action: BUY/SELL/TRIM ... → header card with colored side badge
+//   • Order ticket: ...         → monospaced blue block
+//   • After fill: ...           → monospaced amber block
+//   • Source: ...               → small muted line
+//   • Cost note: ...            → small muted line
+// Each "Action:" starts a new trade-rec card; subsequent Order/After/Source/
+// Cost lines that follow within the same <p> are pulled into the card.
+function prettifyBriefing(html) {
+  // First, split paragraphs that contain multiple Action: lines so each rec
+  // gets its own block. (The AI sometimes packs several into one paragraph.)
+  html = html.replace(/<p ([^>]*)>([\s\S]*?)<\/p>/g, (match, attrs, inner) => {
+    // Split inner at "Action: " boundaries while preserving the marker
+    const parts = inner.split(/(?=Action:\s*(?:BUY|SELL|TRIM|HOLD))/i);
+    if (parts.length <= 1) return match;
+    return parts.map(p => p.trim() ? `<p ${attrs}>${p.trim()}</p>` : "").join("\n");
+  });
+
+  // Now process each <p> that starts with "Action:" — render as a rec card.
+  html = html.replace(/<p [^>]*>(\s*Action:\s*(BUY|SELL|TRIM|HOLD)[\s\S]*?)<\/p>/gi, (m, body, side) => {
+    const sideUp = side.toUpperCase();
+    const palette =
+      sideUp === "BUY"
+        ? { bg: "#ecfdf5", border: "#bbf7d0", text: "#065f46", badge: "#059669" }
+        : sideUp === "SELL" || sideUp === "TRIM"
+          ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b", badge: "#dc2626" }
+          : { bg: "#fffbeb", border: "#fde68a", text: "#92400e", badge: "#b45309" };
+
+    // Extract the Action line itself plus any extra labeled fields that follow.
+    const lines = body.replace(/<br\s*\/?>/g, "\n").split(/\n/).map(l => l.trim()).filter(Boolean);
+    const out = [];
+    for (const line of lines) {
+      // Action: header
+      const mA = line.match(/^Action:\s*(BUY|SELL|TRIM|HOLD)\s*(\d[\d,]*)?\s*(?:sh)?\s*([A-Z][A-Z0-9.\-]{0,15})\b\.?\s*(.*)$/i);
+      if (mA) {
+        const [, action, shares, ticker, rest] = mA;
+        out.push(`
+          <div style="margin-top:6px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+            <span style="background:${palette.badge};color:#fff;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;letter-spacing:.04em">${action.toUpperCase()}</span>
+            <span style="font-size:16px;font-weight:700;color:#0b1220">${shares ? shares + " sh " : ""}${ticker.toUpperCase()}</span>
+          </div>
+          <div style="color:${palette.text};font-size:13px;margin-top:6px;line-height:1.55">${rest || ""}</div>`);
+        continue;
+      }
+      if (/^Order ticket:/i.test(line)) {
+        out.push(`<div style="margin-top:10px;padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-family:SF Mono,Menlo,Consolas,monospace;font-size:12px;color:#1e3a8a"><b style="font-family:inherit;font-size:10px;letter-spacing:.06em;color:#1d4ed8">📋 ORDER TICKET</b><br>${line.replace(/^Order ticket:\s*/i, "")}</div>`);
+        continue;
+      }
+      if (/^After fill:/i.test(line)) {
+        out.push(`<div style="margin-top:6px;padding:8px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;font-family:SF Mono,Menlo,Consolas,monospace;font-size:12px;color:#78350f"><b style="font-family:inherit;font-size:10px;letter-spacing:.06em;color:#b45309">🛡 AFTER FILL</b><br>${line.replace(/^After fill:\s*/i, "")}</div>`);
+        continue;
+      }
+      if (/^Source:/i.test(line)) {
+        out.push(`<div style="margin-top:8px;font-size:11.5px;color:#6b7280"><b style="color:#374151">Source:</b> ${line.replace(/^Source:\s*/i, "")}</div>`);
+        continue;
+      }
+      if (/^Cost note:/i.test(line)) {
+        out.push(`<div style="margin-top:2px;font-size:11.5px;color:#6b7280"><b style="color:#374151">Cost:</b> ${line.replace(/^Cost note:\s*/i, "")}</div>`);
+        continue;
+      }
+      // Fall-through: plain prose inside the card
+      out.push(`<div style="margin-top:6px;font-size:13px;line-height:1.6;color:#1f2937">${line}</div>`);
+    }
+
+    return `<div style="margin:14px 0;padding:14px 16px;background:${palette.bg};border:1px solid ${palette.border};border-left:4px solid ${palette.badge};border-radius:10px">${out.join("")}</div>`;
+  });
+
+  // Highlight the open-rec alerts at the top (🎯 target, 🛑 stop)
+  html = html.replace(/<li[^>]*>(🎯[^<]*)<\/li>/g, `<li style="margin:8px 0;padding:8px 12px;background:#ecfdf5;border-left:3px solid #059669;border-radius:6px;list-style:none">$1</li>`);
+  html = html.replace(/<li[^>]*>(🛑[^<]*)<\/li>/g, `<li style="margin:8px 0;padding:8px 12px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:6px;list-style:none">$1</li>`);
+
+  return html;
 }
 
 export function portfolioSummary(profile) {
@@ -369,9 +448,14 @@ ${cashSection}
 6. **Watch list** — 2-3 levels to monitor today (specific price triggers)
 7. **Aggressive new ideas** — 1-2 unowned names with price targets. For each, suggest the optimal account based on Canadian tax treatment (e.g., "US growth name → TFSA"; "Canadian dividend payer → Non-Spousal for the dividend tax credit").
 
-Length: 700-1100 words. Date-stamp the top. Add disclaimer at bottom: "Research and education only. Not licensed investment advice."
+Length: 700-1100 words. Date-stamp the top.
 
-Return ONLY the markdown briefing. No JSON, no wrapping prose.`;
+CRITICAL OUTPUT FORMAT RULES:
+- START the briefing DIRECTLY with the markdown title heading (e.g. "# Daily Briefing — May 22, 2026"). Do NOT preamble with "I'll search the web for...", "Let me pull the latest news...", "Now let me write your briefing.", or any other chatty narration. The user is reading an email, not chatting.
+- Do NOT include any sentence describing what you're about to do. Just do it.
+- End with the disclaimer: "Research and education only. Not licensed investment advice."
+
+Return ONLY the markdown briefing. No JSON, no wrapping prose. First character of your response must be a # symbol.`;
 }
 
 // Parse trade recommendations from the briefing text and save them for the
@@ -440,12 +524,19 @@ export async function generateBriefing(profile) {
   const j = await r.json();
   const raw = (j?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
   if (!raw) throw new Error("Empty briefing");
-  // Strip Claude web_search citation markers — they're noise in the email body.
-  const md = raw
+  // Strip Claude web_search citation markers AND any chatty preamble before
+  // the first markdown heading (e.g. "I'll search the web for...", "Let me
+  // pull the latest news...", "Now let me write your briefing.").
+  let md = raw
     .replace(/<cite[^>]*>([\s\S]*?)<\/cite>/gi, "$1")
     .replace(/<\/?cite[^>]*>/gi, "")
     .replace(/\[(?:cite[:_]?)?\d+(?:[-,]\d+)*\]/g, "");
-  return md;
+  // Drop everything before the first '#' heading line — that's the title.
+  const firstHeading = md.search(/^#{1,6}\s/m);
+  if (firstHeading > 0) {
+    md = md.slice(firstHeading);
+  }
+  return md.trim();
 }
 
 export async function emailBriefing({ to, subject, md }) {
