@@ -95,6 +95,7 @@ const SEND_MAX_DIM = 1024;
 const THUMB_MAX_DIM = 400;
 const STORAGE_KEY = "card_evaluator_history_v1";
 const MAX_HISTORY = 20;
+const MAX_PHOTOS_PER_SIDE = 6;
 const CARD_TYPES: CardType[] = [
   "",
   "Pokemon",
@@ -297,8 +298,8 @@ async function callGradeApi(payload: object): Promise<any> {
 
 // ---------- Component ----------
 export default function CardsPage() {
-  const [front, setFront] = useState<ProcessedImage | null>(null);
-  const [back, setBack] = useState<ProcessedImage | null>(null);
+  const [fronts, setFronts] = useState<ProcessedImage[]>([]);
+  const [backs, setBacks] = useState<ProcessedImage[]>([]);
   const [meta, setMeta] = useState<Meta>(EMPTY_META);
   const [autofilled, setAutofilled] = useState<Partial<Record<keyof Meta, boolean>>>({});
   const [identStatus, setIdentStatus] = useState<{ text: string; tone: "info" | "done" | "err" | "loading" } | null>(null);
@@ -324,9 +325,10 @@ export default function CardsPage() {
     } catch {}
   }, [history]);
 
-  const bothPhotos = !!(front && back);
+  const bothPhotos = fronts.length > 0 && backs.length > 0;
 
-  // Auto-identify when both photos are present.
+  // Auto-identify when both sides have at least one photo.
+  // Re-runs if the user adds/removes photos.
   useEffect(() => {
     if (!bothPhotos) return;
     let cancelled = false;
@@ -336,8 +338,8 @@ export default function CardsPage() {
       try {
         const raw = await callGradeApi({
           mode: "identify",
-          frontDataUrl: front!.sendUrl,
-          backDataUrl: back!.sendUrl,
+          frontDataUrls: fronts.map((p) => p.sendUrl),
+          backDataUrls: backs.map((p) => p.sendUrl),
         });
         if (cancelled || token !== identifyTokenRef.current) return;
         const fills: Partial<Record<keyof Meta, boolean>> = {};
@@ -370,19 +372,24 @@ export default function CardsPage() {
     return () => {
       cancelled = true;
     };
-  }, [front, back, bothPhotos]);
+    // Only re-run when the set of send URLs actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fronts.map((p) => p.sendUrl).join("|"), backs.map((p) => p.sendUrl).join("|")]);
 
-  const onFile = useCallback(
+  const onAddPhoto = useCallback(
     (side: "front" | "back") => async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+      const files = e.target.files ? Array.from(e.target.files) : [];
+      if (!files.length) return;
       try {
-        const processed = await processFile(file);
-        if (side === "front") setFront(processed);
-        else setBack(processed);
+        const processed = await Promise.all(files.map((f) => processFile(f)));
+        if (side === "front") {
+          setFronts((prev) => [...prev, ...processed].slice(0, MAX_PHOTOS_PER_SIDE));
+        } else {
+          setBacks((prev) => [...prev, ...processed].slice(0, MAX_PHOTOS_PER_SIDE));
+        }
         setError(null);
       } catch {
-        setError("Could not read that image. Try another photo.");
+        setError("Could not read one of those images. Try a different photo.");
       } finally {
         e.target.value = "";
       }
@@ -390,10 +397,9 @@ export default function CardsPage() {
     []
   );
 
-  const clearSlot = useCallback((side: "front" | "back") => {
-    if (side === "front") setFront(null);
-    else setBack(null);
-    setIdentStatus(null);
+  const onRemovePhoto = useCallback((side: "front" | "back", idx: number) => {
+    if (side === "front") setFronts((prev) => prev.filter((_, i) => i !== idx));
+    else setBacks((prev) => prev.filter((_, i) => i !== idx));
   }, []);
 
   const updateMeta = useCallback(<K extends keyof Meta>(key: K, value: Meta[K]) => {
@@ -402,8 +408,8 @@ export default function CardsPage() {
   }, []);
 
   const reset = useCallback(() => {
-    setFront(null);
-    setBack(null);
+    setFronts([]);
+    setBacks([]);
     setMeta(EMPTY_META);
     setAutofilled({});
     setIdentStatus(null);
@@ -413,15 +419,15 @@ export default function CardsPage() {
   }, []);
 
   const onEvaluate = useCallback(async () => {
-    if (!front || !back) return;
+    if (!bothPhotos) return;
     setEvaluating(true);
     setError(null);
     setResult(null);
     try {
       const raw = await callGradeApi({
         mode: "evaluate",
-        frontDataUrl: front.sendUrl,
-        backDataUrl: back.sendUrl,
+        frontDataUrls: fronts.map((p) => p.sendUrl),
+        backDataUrls: backs.map((p) => p.sendUrl),
         meta,
       });
       const evalResult = normalizeEvaluation(raw);
@@ -431,18 +437,18 @@ export default function CardsPage() {
     } finally {
       setEvaluating(false);
     }
-  }, [front, back, meta]);
+  }, [fronts, backs, meta, bothPhotos]);
 
   const onSaveHistory = useCallback(() => {
-    if (!result || !front) return;
+    if (!result || fronts.length === 0) return;
     const item: HistoryItem = {
       savedAt: Date.now(),
       meta,
       result,
-      thumb: front.thumbUrl,
+      thumb: fronts[0].thumbUrl,
     };
     setHistory((h) => [item, ...h].slice(0, MAX_HISTORY));
-  }, [result, front, meta]);
+  }, [result, fronts, meta]);
 
   const clearHistory = useCallback(() => {
     if (typeof window !== "undefined" && window.confirm("Clear all saved evaluations?")) {
@@ -483,20 +489,24 @@ export default function CardsPage() {
         {/* Step 1: photos */}
         <section className="ce-card">
           <div className="ce-section-title">1. Photograph the card</div>
-          <div className="ce-photos">
-            <PhotoSlot
-              label="FRONT"
-              image={front}
-              onPick={onFile("front")}
-              onClear={() => clearSlot("front")}
-            />
-            <PhotoSlot
-              label="BACK"
-              image={back}
-              onPick={onFile("back")}
-              onClear={() => clearSlot("back")}
-            />
-          </div>
+          <p className="ce-strip-hint">
+            One front + one back is enough — add extra angles or close-ups if there's glare or you
+            want a sharper read on condition. Up to {MAX_PHOTOS_PER_SIDE} per side.
+          </p>
+          <PhotoStrip
+            label="Front"
+            images={fronts}
+            onAdd={onAddPhoto("front")}
+            onRemove={(idx) => onRemovePhoto("front", idx)}
+            max={MAX_PHOTOS_PER_SIDE}
+          />
+          <PhotoStrip
+            label="Back"
+            images={backs}
+            onAdd={onAddPhoto("back")}
+            onRemove={(idx) => onRemovePhoto("back", idx)}
+            max={MAX_PHOTOS_PER_SIDE}
+          />
         </section>
 
         {/* Step 2: details — summary by default, form expands on edit or identify failure */}
@@ -778,53 +788,61 @@ export default function CardsPage() {
 }
 
 // ---------- Sub-components ----------
-function PhotoSlot({
+function PhotoStrip({
   label,
-  image,
-  onPick,
-  onClear,
+  images,
+  onAdd,
+  onRemove,
+  max,
 }: {
   label: string;
-  image: ProcessedImage | null;
-  onPick: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onClear: () => void;
+  images: ProcessedImage[];
+  onAdd: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemove: (idx: number) => void;
+  max: number;
 }) {
+  const canAdd = images.length < max;
   return (
-    <label className={"ce-photo-slot" + (image ? " has-image" : "")}>
-      <span className="ce-photo-label">{label}</span>
-      {image ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img alt={`${label} of card`} src={image.sendUrl} />
-      ) : (
-        <span className="ce-photo-placeholder">
-          <span className="icon">📷</span>
-          Tap to take photo
-          <br />
-          or choose image
+    <div className="ce-strip">
+      <div className="ce-strip-header">
+        <span className="ce-strip-label">{label}</span>
+        <span className="ce-strip-count">
+          {images.length}/{max}
         </span>
-      )}
-      <input
-        type="file"
-        accept="image/*"
-        capture="environment"
-        onChange={onPick}
-        style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
-      />
-      {image && (
-        <button
-          type="button"
-          aria-label={`Remove ${label.toLowerCase()} photo`}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onClear();
-          }}
-          className="ce-clear-btn"
-        >
-          ×
-        </button>
-      )}
-    </label>
+      </div>
+      <div className="ce-strip-photos">
+        {images.map((img, idx) => (
+          <div className="ce-thumb has-image" key={idx}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img alt={`${label} ${idx + 1}`} src={img.sendUrl} />
+            <button
+              type="button"
+              aria-label={`Remove ${label} photo ${idx + 1}`}
+              onClick={() => onRemove(idx)}
+              className="ce-clear-btn"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        {canAdd && (
+          <label className={"ce-thumb ce-thumb-add" + (images.length === 0 ? " first" : "")}>
+            <span className="ce-thumb-add-icon">📷</span>
+            <span className="ce-thumb-add-text">
+              {images.length === 0 ? "Tap to add photo" : "Add another"}
+            </span>
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              multiple
+              onChange={onAdd}
+              style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
+            />
+          </label>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -927,14 +945,20 @@ const styles = `
   .ce-section-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #8a8a8a; margin: 0 0 10px; font-weight: 600; }
   .ce-section-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
 
-  .ce-photos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .ce-photo-slot { position: relative; aspect-ratio: 3 / 4; background: #fafaf7; border: 1.5px dashed #d6d1c6; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-  .ce-photo-slot.has-image { border-style: solid; border-color: #c8c2b3; }
-  .ce-photo-slot img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .ce-photo-label { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.55); color: #fff; font-size: 11px; padding: 3px 8px; border-radius: 999px; letter-spacing: 0.04em; z-index: 2; }
-  .ce-photo-placeholder { text-align: center; color: #9a948a; font-size: 13px; padding: 12px; pointer-events: none; }
-  .ce-photo-placeholder .icon { font-size: 28px; display: block; margin-bottom: 6px; }
-  .ce-clear-btn { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.55); color: #fff; border: none; border-radius: 999px; width: 26px; height: 26px; font-size: 14px; cursor: pointer; z-index: 3; }
+  .ce-strip-hint { color: #6b6b6b; font-size: 12.5px; margin: -4px 0 12px; line-height: 1.45; }
+  .ce-strip { margin-bottom: 12px; }
+  .ce-strip:last-child { margin-bottom: 0; }
+  .ce-strip-header { display: flex; justify-content: space-between; align-items: baseline; margin: 0 2px 6px; }
+  .ce-strip-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #4a4a4a; font-weight: 600; }
+  .ce-strip-count { font-size: 11px; color: #9a948a; font-variant-numeric: tabular-nums; }
+  .ce-strip-photos { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ce-thumb { position: relative; width: 92px; aspect-ratio: 3 / 4; background: #fafaf7; border: 1px solid #c8c2b3; border-radius: 10px; overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .ce-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ce-thumb-add { border: 1.5px dashed #d6d1c6; cursor: pointer; color: #9a948a; text-align: center; padding: 8px; }
+  .ce-thumb-add.first { width: 100%; max-width: 240px; aspect-ratio: 3 / 4; }
+  .ce-thumb-add-icon { font-size: 24px; display: block; margin-bottom: 4px; }
+  .ce-thumb-add-text { font-size: 11.5px; line-height: 1.25; pointer-events: none; }
+  .ce-clear-btn { position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.6); color: #fff; border: none; border-radius: 999px; width: 22px; height: 22px; font-size: 13px; cursor: pointer; z-index: 3; display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1; }
 
   .ce-grid { display: grid; gap: 10px; }
   .ce-grid-2 { grid-template-columns: 1fr 1fr; }

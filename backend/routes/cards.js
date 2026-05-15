@@ -4,10 +4,13 @@
  *   POST /cards/grade
  *     body: {
  *       mode: "identify" | "evaluate",
- *       frontDataUrl: "data:image/jpeg;base64,...",
- *       backDataUrl:  "data:image/jpeg;base64,...",
+ *       frontDataUrls: ["data:image/jpeg;base64,...", ...],   // 1–6 images
+ *       backDataUrls:  ["data:image/jpeg;base64,...", ...],   // 1–6 images
  *       meta?: { type, year, name, set, number, graded, notes }   // evaluate only
  *     }
+ *     (Legacy single-image fields `frontDataUrl` / `backDataUrl` are also
+ *     accepted for backwards compat.)
+ *
  *     returns: { result: <parsed-json-from-openai> }
  *
  * Backs the public /cards page on curriculate.net. Uses the same OpenAI
@@ -52,9 +55,15 @@ function rateLimit(req, res, next) {
 }
 
 // ---------- prompts ----------
-function identifyPrompt() {
+function identifyPrompt(frontCount, backCount) {
+  const sentence =
+    frontCount === 1 && backCount === 1
+      ? "The first image is the FRONT and the second image is the BACK of one trading card."
+      : `The first ${frontCount} image(s) are FRONT shots of one trading card; the next ${backCount} image(s) are BACK shots of the same card (different angles or lighting). Treat them all as one card.`;
   return [
-    "You are an expert trading-card identifier. Look at the two attached images of a single trading card (front, then back) and identify what it is.",
+    "You are an expert trading-card identifier.",
+    sentence,
+    "Identify what it is.",
     "",
     "Return ONLY a single JSON object — no prose, no markdown, no code fences. Use this exact schema:",
     "{",
@@ -70,11 +79,15 @@ function identifyPrompt() {
   ].join("\n");
 }
 
-function evaluatePrompt(meta = {}) {
+function evaluatePrompt(meta = {}, frontCount = 1, backCount = 1) {
+  const layout =
+    frontCount === 1 && backCount === 1
+      ? "Two images of a single trading card are attached (front, then back)"
+      : `${frontCount} FRONT image(s) of a single trading card are attached first, followed by ${backCount} BACK image(s) of the same card (these may be different angles or lighting — treat them all as the same physical card)`;
   return [
     "You are an expert trading-card grader and appraiser with deep knowledge of Pokemon, sports cards (baseball, hockey, basketball, football, soccer), MTG, Yu-Gi-Oh!, and other collectibles.",
     "",
-    "Two images of a single trading card are attached (front, then back), followed by user-supplied details. Inspect the images for centering, corner wear, edge whitening/chipping, surface scratches/print defects, glossiness, and any condition issues. If the images are unclear, lean conservatively but still produce an estimate using the user's details.",
+    `${layout}, followed by user-supplied details. Inspect the images for centering, corner wear, edge whitening/chipping, surface scratches/print defects, glossiness, and any condition issues. If the images are unclear, lean conservatively but still produce an estimate using the user's details.`,
     "",
     "Return ONLY a single JSON object — no prose, no markdown, no code fences. Use this exact schema:",
     "{",
@@ -120,8 +133,39 @@ function isDataUrl(s) {
   return typeof s === "string" && s.startsWith("data:image/");
 }
 
+const MAX_PHOTOS_PER_SIDE = 6;
+
+// Coerce input that may be a single data URL, an array of data URLs, or missing.
+// Returns { ok: true, urls: [...] } or { ok: false, error: "..." }.
+function coercePhotos(input, fallbackSingle, sideLabel) {
+  let urls = [];
+  if (Array.isArray(input)) {
+    urls = input.filter((s) => typeof s === "string");
+  } else if (typeof input === "string") {
+    urls = [input];
+  } else if (typeof fallbackSingle === "string") {
+    urls = [fallbackSingle];
+  }
+  if (urls.length === 0) {
+    return { ok: false, error: `Missing ${sideLabel} photo(s).` };
+  }
+  if (urls.length > MAX_PHOTOS_PER_SIDE) {
+    return { ok: false, error: `Too many ${sideLabel} photos (max ${MAX_PHOTOS_PER_SIDE}).` };
+  }
+  for (const u of urls) {
+    if (!isDataUrl(u)) {
+      return { ok: false, error: `${sideLabel} photos must be base64 data: URLs (image/*).` };
+    }
+  }
+  return { ok: true, urls };
+}
+
 // ---------- one OpenAI call ----------
-async function runOpenAI({ prompt, frontDataUrl, backDataUrl, temperature }) {
+async function runOpenAI({ prompt, frontDataUrls, backDataUrls, temperature }) {
+  const imageContent = [
+    ...frontDataUrls.map((url) => ({ type: "image_url", image_url: { url, detail: "high" } })),
+    ...backDataUrls.map((url) => ({ type: "image_url", image_url: { url, detail: "high" } })),
+  ];
   const completion = await openai().chat.completions.create({
     model: MODEL,
     response_format: { type: "json_object" },
@@ -129,11 +173,7 @@ async function runOpenAI({ prompt, frontDataUrl, backDataUrl, temperature }) {
     messages: [
       {
         role: "user",
-        content: [
-          { type: "text", text: prompt },
-          { type: "image_url", image_url: { url: frontDataUrl, detail: "high" } },
-          { type: "image_url", image_url: { url: backDataUrl, detail: "high" } },
-        ],
+        content: [{ type: "text", text: prompt }, ...imageContent],
       },
     ],
   });
@@ -257,33 +297,38 @@ function aggregateEvaluations(runs) {
 // ---------- POST /cards/grade ----------
 router.post("/grade", rateLimit, async (req, res) => {
   try {
-    const { mode, frontDataUrl, backDataUrl, meta } = req.body || {};
+    const { mode, frontDataUrl, backDataUrl, frontDataUrls, backDataUrls, meta } = req.body || {};
 
     if (mode !== "identify" && mode !== "evaluate") {
       return res.status(400).json({ error: "mode must be 'identify' or 'evaluate'." });
     }
-    if (!isDataUrl(frontDataUrl) || !isDataUrl(backDataUrl)) {
-      return res
-        .status(400)
-        .json({ error: "frontDataUrl and backDataUrl must be base64 data: URLs (image/*)." });
-    }
+
+    const front = coercePhotos(frontDataUrls, frontDataUrl, "front");
+    if (!front.ok) return res.status(400).json({ error: front.error });
+    const back = coercePhotos(backDataUrls, backDataUrl, "back");
+    if (!back.ok) return res.status(400).json({ error: back.error });
 
     // Identify mode: single deterministic call.
     if (mode === "identify") {
       const result = await runOpenAI({
-        prompt: identifyPrompt(),
-        frontDataUrl,
-        backDataUrl,
+        prompt: identifyPrompt(front.urls.length, back.urls.length),
+        frontDataUrls: front.urls,
+        backDataUrls: back.urls,
         temperature: 0.2,
       });
       return res.json({ result });
     }
 
     // Evaluate mode: fan out N parallel calls and aggregate.
-    const prompt = evaluatePrompt(meta || {});
+    const prompt = evaluatePrompt(meta || {}, front.urls.length, back.urls.length);
     const settled = await Promise.allSettled(
       Array.from({ length: EVAL_RUNS }, () =>
-        runOpenAI({ prompt, frontDataUrl, backDataUrl, temperature: EVAL_TEMPERATURE })
+        runOpenAI({
+          prompt,
+          frontDataUrls: front.urls,
+          backDataUrls: back.urls,
+          temperature: EVAL_TEMPERATURE,
+        })
       )
     );
     const runs = settled
