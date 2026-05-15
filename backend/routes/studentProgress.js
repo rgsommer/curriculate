@@ -936,6 +936,53 @@ router.get("/teacher/students", teacherAuth, async (req, res) => {
     const filtered = students.filter((s) => s.totalAssignments > 0)
       .sort((a, b) => (a.lastName || "").localeCompare(b.lastName || ""));
 
+    // ── Verified-email + portal-access annotation ────────────────────
+    // Look up StudentAccount for every student id we're about to
+    // return so the UI can show a ✉ badge per student and a class
+    // banner with "N of M students viewing results via email".  Cheap:
+    // single $in query indexed on studentId.
+    const accountIds = [...new Set(filtered.map((s) => s.studentId))];
+    const accounts = accountIds.length
+      ? await StudentAccount.find({ studentId: { $in: accountIds } })
+          .select("studentId emails loginCount lastLoginAt parentLoginCount lastParentLoginAt")
+          .lean()
+      : [];
+    const acctByStudent = {};
+    for (const a of accounts) acctByStudent[a.studentId] = a;
+    for (const s of filtered) {
+      const a = acctByStudent[s.studentId];
+      const emails = Array.isArray(a?.emails) ? a.emails.filter(Boolean) : [];
+      s.emailCount = emails.length;
+      s.hasEmail = emails.length > 0;
+      s.studentLoginCount = Number(a?.loginCount || 0);
+      s.parentLoginCount = Number(a?.parentLoginCount || 0);
+      s.lastLoginAt = a?.lastLoginAt || a?.lastParentLoginAt || null;
+      // "Verified" = email on file AND someone (student or parent) has
+      // actually logged in via that email.
+      s.emailVerified = s.hasEmail && (s.studentLoginCount > 0 || s.parentLoginCount > 0);
+    }
+
+    // Class-level reach stats: dedupe by studentId (a student can
+    // appear in multiple class rows when in multiple sections).
+    const uniqueIds = new Set(filtered.map((s) => s.studentId));
+    const uniqueWithEmail = new Set(
+      filtered.filter((s) => s.hasEmail).map((s) => s.studentId)
+    );
+    const uniqueVerified = new Set(
+      filtered.filter((s) => s.emailVerified).map((s) => s.studentId)
+    );
+    const emailStats = {
+      totalStudents: uniqueIds.size,
+      withEmail: uniqueWithEmail.size,
+      verified: uniqueVerified.size,
+      withEmailPct: uniqueIds.size
+        ? Math.round((uniqueWithEmail.size / uniqueIds.size) * 100)
+        : 0,
+      verifiedPct: uniqueIds.size
+        ? Math.round((uniqueVerified.size / uniqueIds.size) * 100)
+        : 0,
+    };
+
     // Full roster list (all students, including those without grades) for reassignment
     const rosterStudents = [];
     const seenRoster = new Set();
@@ -962,6 +1009,7 @@ router.get("/teacher/students", teacherAuth, async (req, res) => {
       classNames: [...classNames].sort(),
       totalStudents: new Set(filtered.map((s) => s.studentId)).size,
       totalAssignments: allResults.length,
+      emailStats,
     });
   } catch (err) {
     console.error("GET /student-progress/teacher/students error:", err?.message || err);

@@ -209,6 +209,12 @@ export default function ProgressPage() {
   // Recommendation badge
   const [recommendCount, setRecommendCount] = useState(0);
 
+  // Email-reach stats (teacher overview): how many of the teacher's
+  // students have entered an email AND how many have actually used
+  // the portal at least once.  Populated from the /teacher/students
+  // response.
+  const [emailStats, setEmailStats] = useState(null);
+
   // Settings
   const [showSettings, setShowSettings] = useState(false);
   const [profileEmails, setProfileEmails] = useState([]);
@@ -272,6 +278,7 @@ export default function ProgressPage() {
           setTeacherStudents(data.students || []);
           if (data.rosterStudents) setRosterStudents(data.rosterStudents);
           if (data.classNames) setTeacherClassNames(data.classNames);
+          if (data.emailStats) setEmailStats(data.emailStats);
         }
         setLoading(false);
       })
@@ -519,6 +526,65 @@ export default function ProgressPage() {
           <div style={{ ...s.avgCard, background: "linear-gradient(135deg, #0f766e, #2563eb)" }}>
             <div style={{ fontSize: 13, opacity: 0.8 }}>{teacherStudents.length} students with graded work</div>
           </div>
+
+          {/* Email-reach banner: how many students are linked to an
+              email and have actually viewed their results via the
+              progress portal.  Hidden when there's nothing to show
+              (no students yet OR backend didn't include emailStats). */}
+          {emailStats && emailStats.totalStudents > 0 && (
+            <div
+              style={{
+                marginBottom: 14,
+                padding: "12px 16px",
+                borderRadius: 14,
+                border: "1px solid #bae6fd",
+                background: "linear-gradient(135deg, #eff6ff, #f0f9ff)",
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                gap: 10,
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#0c4a6e", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                  📬 Email on file
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: "#0c4a6e", lineHeight: 1.15 }}>
+                  {emailStats.withEmail}
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#0369a1", marginLeft: 4 }}>
+                    / {emailStats.totalStudents}
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: "#0369a1" }}>
+                  {emailStats.withEmailPct}% of class
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#14532d", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                  ✅ Viewing results
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: "#14532d", lineHeight: 1.15 }}>
+                  {emailStats.verified}
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#16a34a", marginLeft: 4 }}>
+                    / {emailStats.totalStudents}
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: "#16a34a" }}>
+                  {emailStats.verifiedPct}% logged in at least once
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#78350f", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                  ⏳ Not yet reached
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: "#78350f", lineHeight: 1.15 }}>
+                  {Math.max(0, emailStats.totalStudents - emailStats.withEmail)}
+                </div>
+                <div style={{ fontSize: 11, color: "#b45309" }}>
+                  students still need an email
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Bulk tools */}
           <div style={{ textAlign: "right", marginBottom: 8, display: "flex", justifyContent: "flex-end", gap: 12 }}>
@@ -798,7 +864,69 @@ export default function ProgressPage() {
                 onMouseEnter={(e) => { e.currentTarget.style.background = "#f8fafc"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
               >
-                <div style={{ flex: 2, fontWeight: 700, fontSize: 14 }}>{ts.firstName} {ts.lastName}</div>
+                <div style={{ flex: 2, fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>{ts.firstName} {ts.lastName}</span>
+                  {/* Verified-email indicator:
+                      ✅ green = email on file AND someone (student or
+                      parent) has logged into the portal at least once
+                      📬 blue  = email on file but never logged in
+                      no badge = no email collected yet */}
+                  {ts.emailVerified ? (
+                    <span
+                      title={`Verified — student${
+                        ts.parentLoginCount > 0 ? " or parent" : ""
+                      } logged in via email${
+                        ts.lastLoginAt
+                          ? " (last visit: " + new Date(ts.lastLoginAt).toLocaleDateString() + ")"
+                          : ""
+                      }`}
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        padding: "2px 7px",
+                        borderRadius: 999,
+                        background: "#dcfce7",
+                        border: "1px solid #86efac",
+                        color: "#15803d",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      ✅ verified
+                    </span>
+                  ) : ts.hasEmail ? (
+                    <span
+                      title={`Email on file (${ts.emailCount}), but the portal hasn't been opened yet.`}
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        padding: "2px 7px",
+                        borderRadius: 999,
+                        background: "#dbeafe",
+                        border: "1px solid #93c5fd",
+                        color: "#1d4ed8",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      📬 invited
+                    </span>
+                  ) : (
+                    <span
+                      title="No email collected yet — student / parent will see results only via the printed reference code."
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        padding: "2px 7px",
+                        borderRadius: 999,
+                        background: "#fef3c7",
+                        border: "1px solid #fde68a",
+                        color: "#a16207",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      no email
+                    </span>
+                  )}
+                </div>
                 {showClass && <div style={{ flex: 1, textAlign: "center", fontSize: 12, color: "#64748b" }}>{ts.className}</div>}
                 <div style={{ flex: 1, textAlign: "center", fontSize: 13 }}>{ts.totalAssignments}</div>
                 <div style={{ flex: 1, textAlign: "center" }}>
