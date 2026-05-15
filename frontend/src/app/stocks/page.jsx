@@ -1099,8 +1099,54 @@ function TradeModal({ user, onClose, onSubmit }) {
   else if (mode === "sell") netCash = sellCadVal;
   else netCash = sellCadVal - buyCadVal;
 
-  // Tickers visible in the user's portfolio for autocomplete suggestion
+  // Tickers visible in the user's portfolio for BUY autocomplete suggestion
   const ownedTickers = [...new Set(user.positions.map(p => p.ticker))];
+
+  // Aggregate holdings in the currently-selected account, by (ticker, ccy).
+  // The SELL dropdown uses this so the user can only sell things they own,
+  // and we can show "X available" + last known price as a fill-price hint.
+  const accountHoldings = useMemo(() => {
+    const m = new Map();
+    for (const p of user.positions) {
+      if (p.acct !== account) continue;
+      const key = `${p.ticker}|${p.ccy}`;
+      const last = p.ccy === "USD" ? p.priceUsd : p.priceCad;
+      if (!m.has(key)) {
+        m.set(key, { ticker: p.ticker, ccy: p.ccy, qty: 0, lastPrice: last, name: p.name || "" });
+      }
+      const h = m.get(key);
+      h.qty += p.qty || 0;
+      if (last && (h.lastPrice == null || h.lastPrice === 0)) h.lastPrice = last;
+    }
+    return [...m.values()].sort((a, b) => (b.qty * (b.lastPrice || 0)) - (a.qty * (a.lastPrice || 0)));
+  }, [user.positions, account]);
+
+  // When account changes (or when selecting an option), reset sell fields if
+  // current selection isn't valid in the new account.
+  useEffect(() => {
+    if ((mode === "sell" || mode === "swap") && sellTicker) {
+      const match = accountHoldings.find(h => h.ticker === sellTicker && h.ccy === sellCcy);
+      if (!match) {
+        setSellTicker(""); setSellShares(""); setSellPrice(""); setSellCcy("USD");
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account]);
+
+  const selectedHolding = accountHoldings.find(h => h.ticker === sellTicker && h.ccy === sellCcy) || null;
+  const selectSellHolding = (key) => {
+    if (!key) {
+      setSellTicker(""); setSellShares(""); setSellPrice(""); setSellCcy("USD");
+      return;
+    }
+    const [ticker, ccy] = key.split("|");
+    const h = accountHoldings.find(x => x.ticker === ticker && x.ccy === ccy);
+    if (!h) return;
+    setSellTicker(h.ticker);
+    setSellCcy(h.ccy);
+    setSellShares(String(h.qty));         // default to selling the whole position; user adjusts down
+    setSellPrice(h.lastPrice ? String(h.lastPrice) : "");
+  };
 
   const handleSubmit = async () => {
     setErr(null);
@@ -1165,29 +1211,58 @@ function TradeModal({ user, onClose, onSubmit }) {
         {(mode === "sell" || mode === "swap") && (
           <div style={{ background: "var(--sa-red-soft)", border: "1px solid #fecaca", borderRadius: 10, padding: 14, marginBottom: 12 }}>
             <div style={{ fontWeight: 600, fontSize: 12, color: "var(--sa-red)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 10 }}>Sell</div>
-            <div className="sa-modal-row">
+
+            <div className="sa-modal-row" style={{ gridTemplateColumns: "1fr" }}>
               <div>
-                <label>Ticker</label>
-                <input value={sellTicker} onChange={(e) => setSellTicker(e.target.value)} placeholder="DJT" list="owned-tickers" />
-                <datalist id="owned-tickers">
-                  {ownedTickers.map(t => <option key={t} value={t} />)}
-                </datalist>
-              </div>
-              <div>
-                <label>Currency</label>
-                <select value={sellCcy} onChange={(e) => setSellCcy(e.target.value)}>
-                  <option value="USD">USD</option><option value="CAD">CAD</option>
-                </select>
+                <label>Position to sell from</label>
+                {accountHoldings.length === 0 ? (
+                  <div style={{ padding: "10px 12px", background: "#fff", border: "1.5px solid var(--sa-border)", borderRadius: 10, color: "var(--sa-muted)", fontSize: 13 }}>
+                    No positions in this account.
+                  </div>
+                ) : (
+                  <select value={sellTicker && sellCcy ? `${sellTicker}|${sellCcy}` : ""} onChange={(e) => selectSellHolding(e.target.value)}>
+                    <option value="">— pick a holding —</option>
+                    {accountHoldings.map((h) => (
+                      <option key={`${h.ticker}|${h.ccy}`} value={`${h.ticker}|${h.ccy}`}>
+                        {h.ticker} ({h.ccy}) — {h.qty.toLocaleString()} sh{h.lastPrice ? ` · last $${h.lastPrice.toFixed(2)}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             </div>
-            <div className="sa-modal-row">
-              <div><label>Shares</label><input type="number" step="any" value={sellShares} onChange={(e) => setSellShares(e.target.value)} placeholder="250" /></div>
-              <div><label>Fill price</label><input type="number" step="any" value={sellPrice} onChange={(e) => setSellPrice(e.target.value)} placeholder="8.85" /></div>
-            </div>
-            {sellCadVal > 0 && (
-              <div style={{ fontSize: 12, color: "var(--sa-text-2)", marginTop: 4 }}>
-                Gross: {sellCcy === "USD" ? `$${sellNum.toFixed(2)} USD ≈ ` : ""}${sellCadVal.toFixed(2)} CAD
-              </div>
+
+            {selectedHolding && (
+              <>
+                <div className="sa-modal-row">
+                  <div>
+                    <label>Shares to sell</label>
+                    <input type="number" step="any" min="0" max={selectedHolding.qty}
+                      value={sellShares} onChange={(e) => setSellShares(e.target.value)} placeholder="250" />
+                    <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 4, display: "flex", justifyContent: "space-between" }}>
+                      <span>Available: {selectedHolding.qty.toLocaleString()} sh</span>
+                      <button type="button" className="sa-btn ghost" style={{ padding: "0", fontSize: 11, color: "var(--sa-accent-2)" }}
+                        onClick={() => setSellShares(String(selectedHolding.qty))}>
+                        Sell all
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label>Fill price ({sellCcy})</label>
+                    <input type="number" step="any" value={sellPrice} onChange={(e) => setSellPrice(e.target.value)} placeholder="8.85" />
+                    {selectedHolding.lastPrice && (
+                      <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 4 }}>
+                        Last known: ${selectedHolding.lastPrice.toFixed(2)} {sellCcy}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {sellCadVal > 0 && (
+                  <div style={{ fontSize: 12, color: "var(--sa-text-2)", marginTop: 4 }}>
+                    Gross: {sellCcy === "USD" ? `$${sellNum.toFixed(2)} USD ≈ ` : ""}${sellCadVal.toFixed(2)} CAD
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1741,14 +1816,19 @@ body.stocks-app-mode {
 /* Modal */
 .sa-modal-bg {
   position: fixed; inset: 0; background: rgba(11,18,32,.5);
-  backdrop-filter: blur(4px); display: flex; align-items: center;
+  backdrop-filter: blur(4px); display: flex; align-items: flex-start;
   justify-content: center; padding: 24px; z-index: 100;
+  overflow-y: auto; /* allow scrolling the backdrop on very tall content */
   animation: sa-fade .15s ease;
 }
 .sa-modal {
   background: var(--sa-panel); border: 1px solid var(--sa-border);
   border-radius: 18px; padding: 28px; width: 100%; max-width: 500px;
   box-shadow: var(--sa-shadow-lg); animation: sa-pop .2s ease;
+  margin: auto; /* center vertically when content fits; align-top when it doesn't */
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;     /* scroll inside the modal so action buttons stay reachable */
+  display: flex; flex-direction: column;
 }
 .sa-modal h3 { margin: 0 0 20px; font-size: 17px; font-weight: 600; }
 .sa-modal-row {

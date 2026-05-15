@@ -74,40 +74,40 @@ function num(v) {
 }
 
 // Apply a single leg to the portfolio's positions array (mutates).
-// On BUY: if a matching position exists, increase qty and update price.
-//   If cost basis is tracked, compute weighted average.
-// On SELL: reduce qty; remove the row when qty hits zero. Refuses
-//   over-selling unless the SELL also targets the only lot in the account.
+//
+// BUY: if a matching position exists (same account+ticker+currency), increase qty
+//   and update price; recompute weighted-average cost basis. Otherwise create a
+//   new row.
+//
+// SELL: deduct FIFO from all matching position rows (handles the case where the
+//   same ticker is held across multiple lots in the same account, e.g. DJT in
+//   both the CAD-sub and USD-sub of an RRSP). Refuses over-selling against the
+//   aggregate. Removes rows that hit zero.
 function applyLeg(positions, accountId, leg) {
   const { side, ticker, shares, price, currency } = leg;
-  // Find the row to mutate — prefer same currency, same account.
-  // If multiple lots exist in the same account, target the first match.
-  const idx = positions.findIndex(
-    (p) => p.acct === accountId && p.ticker === ticker && p.ccy === currency
-  );
 
   if (side === "BUY") {
+    const idx = positions.findIndex(
+      (p) => p.acct === accountId && p.ticker === ticker && p.ccy === currency
+    );
     if (idx >= 0) {
       const existing = positions[idx];
       const oldQty = existing.qty || 0;
       const oldCostKey = currency === "USD" ? "costBasisUsd" : "costBasisCad";
       const newQty = oldQty + shares;
-      // weighted-average cost basis when we have one
       let newCost = existing[oldCostKey];
       if (existing[oldCostKey] != null && oldQty > 0) {
         newCost = (existing[oldCostKey] * oldQty + price * shares) / newQty;
       } else if (existing[oldCostKey] == null) {
-        newCost = price; // first time we're recording a cost basis
+        newCost = price;
       }
       positions[idx] = {
         ...existing,
         qty: newQty,
         [oldCostKey]: newCost,
-        // update last-known price too
         ...(currency === "USD" ? { priceUsd: price } : { priceCad: price }),
       };
     } else {
-      // New position row
       positions.push({
         acct: accountId,
         ticker,
@@ -122,24 +122,40 @@ function applyLeg(positions, accountId, leg) {
     return;
   }
 
-  // SELL
-  if (idx < 0) {
+  // SELL — aggregate across all matching lots, deduct FIFO
+  const matchIdxs = positions
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => p.acct === accountId && p.ticker === ticker && p.ccy === currency)
+    .map(({ i }) => i);
+
+  if (matchIdxs.length === 0) {
     throw new Error(`Can't sell ${ticker}: no matching position in this account/currency.`);
   }
-  const existing = positions[idx];
-  if (existing.qty < shares - 1e-6) {
-    throw new Error(`Can't sell ${shares} sh of ${ticker}: only ${existing.qty} on file.`);
+  const totalAvail = matchIdxs.reduce((s, i) => s + (positions[i].qty || 0), 0);
+  if (totalAvail < shares - 1e-6) {
+    throw new Error(`Can't sell ${shares} sh of ${ticker}: only ${totalAvail} on file across all lots.`);
   }
-  const newQty = existing.qty - shares;
-  if (newQty <= 1e-6) {
-    // Remove the row entirely
-    positions.splice(idx, 1);
-  } else {
-    positions[idx] = {
-      ...existing,
-      qty: newQty,
-      ...(currency === "USD" ? { priceUsd: price } : { priceCad: price }),
-    };
+
+  let remaining = shares;
+  // Deduct in array order (first stored = first sold)
+  for (const i of matchIdxs) {
+    if (remaining <= 1e-6) break;
+    const row = positions[i];
+    if (row.qty <= remaining + 1e-6) {
+      remaining -= row.qty;
+      positions[i] = { ...row, qty: 0 }; // mark empty; we'll prune after
+    } else {
+      positions[i] = {
+        ...row,
+        qty: row.qty - remaining,
+        ...(currency === "USD" ? { priceUsd: price } : { priceCad: price }),
+      };
+      remaining = 0;
+    }
+  }
+  // Prune zero-qty rows
+  for (let i = positions.length - 1; i >= 0; i--) {
+    if ((positions[i].qty || 0) <= 1e-6) positions.splice(i, 1);
   }
 }
 
