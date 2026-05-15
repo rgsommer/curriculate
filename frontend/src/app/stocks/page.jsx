@@ -152,6 +152,40 @@ function aggregateByTicker(positions, fx) {
 const totalCad = (positions, fx) =>
   positions.reduce((s, p) => s + valueOfPosition(p, fx).cad, 0);
 
+// Per-ticker P/L (in CAD) using stored cost basis. Positions without a
+// recorded cost basis are excluded from cost totals; if a ticker's lots
+// have NO basis recorded at all, pnlCad/pnlPct are null and the UI shows
+// a "no basis" hint.
+function pnlByTicker(positions, fx) {
+  const out = {};
+  for (const p of positions) {
+    if (!out[p.ticker]) {
+      out[p.ticker] = { ticker: p.ticker, qty: 0, valueCad: 0, costCad: 0, hasBasis: false };
+    }
+    const row = out[p.ticker];
+    const fxMult = p.ccy === "USD" ? fx : 1;
+    const price = p.ccy === "USD" ? (p.priceUsd ?? (p.priceCad ? p.priceCad / fx : 0)) : (p.priceCad ?? 0);
+    const cost = p.ccy === "USD" ? p.costBasisUsd : p.costBasisCad;
+    row.qty += p.qty || 0;
+    row.valueCad += price * (p.qty || 0) * fxMult;
+    if (cost != null) {
+      row.costCad += cost * (p.qty || 0) * fxMult;
+      row.hasBasis = true;
+    }
+  }
+  for (const t of Object.keys(out)) {
+    const r = out[t];
+    if (r.hasBasis && r.costCad > 0) {
+      r.pnlCad = r.valueCad - r.costCad;
+      r.pnlPct = (r.pnlCad / r.costCad) * 100;
+    } else {
+      r.pnlCad = null;
+      r.pnlPct = null;
+    }
+  }
+  return out;
+}
+
 // Sum cash across all accounts, converted to CAD.
 function totalCashCad(accounts, fx) {
   if (!accounts) return 0;
@@ -1125,6 +1159,9 @@ function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPri
 }
 
 function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchConsumed, onExecuteRec, executedRecKeys, recKey, onClearExecuted }) {
+  // Per-ticker P/L (CAD) used to annotate each rec row with the position's
+  // current performance. Recomputed when prices or basis change.
+  const pnlMap = useMemo(() => pnlByTicker(user.positions, user.fxUsdCad || 1.37), [user.positions, user.fxUsdCad]);
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiAdvice, setAiAdvice] = useState(null); // { advice, sources, generatedAt }
@@ -1214,6 +1251,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
                   onExecuteRec={onExecuteRec}
                   executedRecKeys={executedRecKeys}
                   recKey={recKey}
+                  pnlMap={pnlMap}
                 />
                 {parsed.outro && <p style={{ marginTop: 10, fontStyle: "italic", color: "var(--sa-text-2)" }}>{parsed.outro}</p>}
               </>
@@ -1337,6 +1375,19 @@ function PositionModal({ user, idx, onClose, onSave, onDelete }) {
           <div><label>Price (USD)</label><input type="number" step="any" value={form.priceUsd ?? ""} onChange={(e) => update("priceUsd", parseFloat(e.target.value) || null)} /></div>
           <div><label>Price (CAD)</label><input type="number" step="any" value={form.priceCad ?? ""} onChange={(e) => update("priceCad", parseFloat(e.target.value) || null)} /></div>
         </div>
+        <div className="sa-modal-row">
+          <div>
+            <label>Cost basis per share (USD)</label>
+            <input type="number" step="any" value={form.costBasisUsd ?? ""} onChange={(e) => update("costBasisUsd", parseFloat(e.target.value) || null)} placeholder="Your avg buy price" />
+          </div>
+          <div>
+            <label>Cost basis per share (CAD)</label>
+            <input type="number" step="any" value={form.costBasisCad ?? ""} onChange={(e) => update("costBasisCad", parseFloat(e.target.value) || null)} placeholder="Your avg buy price" />
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 4, background: "var(--sa-panel-2)", padding: 8, borderRadius: 6 }}>
+          💡 Enter cost basis (your avg purchase price per share) to enable the position P/L column on Advice cards. Use whichever currency matches the position above. If you don't know exact basis, use a reasonable average — you can update later.
+        </div>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
           {idx != null && <button className="sa-btn danger" onClick={onDelete}>Delete</button>}
           <button className="sa-btn secondary" onClick={onClose}>Cancel</button>
@@ -1356,7 +1407,7 @@ function PositionModal({ user, idx, onClose, onSave, onDelete }) {
 // table inside an advice card body. Each row has an Execute button that
 // opens the trade modal pre-populated with that rec's details.
 // =============================================================================
-function RecsTable({ recs, onExecuteRec, executedRecKeys, recKey }) {
+function RecsTable({ recs, onExecuteRec, executedRecKeys, recKey, pnlMap }) {
   return (
     <div style={{
       border: "1px solid var(--sa-border)", borderRadius: 10,
@@ -1368,6 +1419,7 @@ function RecsTable({ recs, onExecuteRec, executedRecKeys, recKey }) {
           <tr style={{ background: "var(--sa-panel-2)" }}>
             <th style={recHeaderCellLeft}>Action</th>
             <th style={recHeaderCell}>Ticker</th>
+            <th style={recHeaderCell}>Position P/L</th>
             <th style={recHeaderCell}>Qty</th>
             <th style={recHeaderCell}>Entry</th>
             <th style={recHeaderCell}>Target</th>
@@ -1380,6 +1432,7 @@ function RecsTable({ recs, onExecuteRec, executedRecKeys, recKey }) {
         <tbody>
           {recs.map((r, i) => {
             const isExecuted = executedRecKeys && recKey && executedRecKeys.has(recKey(r));
+            const pnl = pnlMap?.[r.ticker];
 
             const sideColor =
               r.side === "BUY" ? "var(--sa-green)"
@@ -1402,6 +1455,24 @@ function RecsTable({ recs, onExecuteRec, executedRecKeys, recKey }) {
                   }}>{r.side}</span>
                 </td>
                 <td style={{ ...recCell, fontWeight: 600 }}>{r.ticker}</td>
+                <td style={recCell}>
+                  {!pnl || pnl.qty === 0 ? (
+                    <span style={{ color: "var(--sa-muted)", fontSize: 11 }}>no position</span>
+                  ) : pnl.pnlPct == null ? (
+                    <span title="No cost basis on file for this ticker. Edit the position to add it." style={{ color: "var(--sa-muted)", fontSize: 11, fontStyle: "italic" }}>
+                      no basis
+                    </span>
+                  ) : (
+                    <div style={{ lineHeight: 1.25 }}>
+                      <div style={{ color: pnl.pnlPct >= 0 ? "var(--sa-green)" : "var(--sa-red)", fontWeight: 600 }}>
+                        {pnl.pnlPct >= 0 ? "+" : ""}{pnl.pnlPct.toFixed(1)}%
+                      </div>
+                      <div style={{ fontSize: 10, color: pnl.pnlCad >= 0 ? "var(--sa-green)" : "var(--sa-red)", opacity: 0.85 }}>
+                        {pnl.pnlCad >= 0 ? "+" : "−"}${Math.abs(pnl.pnlCad).toLocaleString(undefined, { maximumFractionDigits: 0 })} CAD
+                      </div>
+                    </div>
+                  )}
+                </td>
                 <td style={recCell}>{r.shares ? r.shares.toLocaleString() : "—"}</td>
                 <td style={recCell}>{r.entryText || "—"}</td>
                 <td style={recCell}>{r.targetText || "—"}</td>
