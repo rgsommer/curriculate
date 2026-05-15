@@ -89,12 +89,49 @@ function portfolioSummary(profile) {
   const lines = agg.map(
     (a) => `${a.ticker}: ${a.qty.toLocaleString()} sh  ≈ $${Math.round(a.cad).toLocaleString()} CAD  (${total > 0 ? ((a.cad / total) * 100).toFixed(1) : "0"}%)`
   );
-  return { total, agg, text: lines.join("\n") };
+
+  // Per-currency cash totals across all accounts
+  let cashUsd = 0, cashCad = 0;
+  const perAccountCash = [];
+  for (const a of profile.accounts || []) {
+    cashUsd += a.cashUsd || 0;
+    cashCad += a.cashCad || 0;
+    if ((a.cashUsd || 0) > 0 || (a.cashCad || 0) > 0) {
+      perAccountCash.push(`  ${a.name}: $${(a.cashCad || 0).toFixed(0)} CAD, $${(a.cashUsd || 0).toFixed(0)} USD`);
+    }
+  }
+  const cashCadEquiv = cashCad + cashUsd * fx;
+
+  return { total, agg, text: lines.join("\n"), cashUsd, cashCad, cashCadEquiv, perAccountCash };
 }
 
 function buildPrompt(profile, summary) {
   const risk = profile.riskTolerance || "aggressive";
   const today = new Date().toISOString().slice(0, 10);
+
+  // Cash section — drives the deployment recommendations
+  const hasCash = summary.cashUsd > 5 || summary.cashCad > 5;
+  const cashBlock = hasCash
+    ? `\nAvailable cash on hand:
+  $${summary.cashCad.toFixed(2)} CAD
+  $${summary.cashUsd.toFixed(2)} USD
+  Total ≈ $${Math.round(summary.cashCadEquiv).toLocaleString()} CAD at FX ${(profile.fxUsdCad || 1.37).toFixed(3)}
+${summary.perAccountCash.length ? "Per account:\n" + summary.perAccountCash.join("\n") : ""}
+`
+    : `\nAvailable cash on hand: $0 (no cash to deploy).\n`;
+
+  const cashInstructions = hasCash
+    ? `Richard has CASH READY TO DEPLOY (see above). You MUST include a "Cash deployment — using existing cash" card with concrete BUY recs sized to actually use that cash. Compute share counts from the cash budget at the proposed Entry price.
+
+Example format if he has $2,500 CAD and $500 USD:
+  Action: BUY 30 sh ENB. Entry: $74.80 CAD (current $75.58). Target: $84 CAD (12mo). Stop: $69. Horizon: 12 months.
+    Uses ~$2,244 CAD of $2,500 CAD available.
+  Action: BUY 3 sh NVDA. Entry: $130 USD (on a pullback; current $134). Target: $200 USD (12mo). Stop: $108. Horizon: 12 months.
+    Uses ~$390 USD of $500 USD available.
+
+Do NOT recommend more spending than the cash he has. Don't suggest fractional shares. If the cash in a currency is too small for any reasonable buy (< $200 in that currency), say so and suggest pooling or FX-converting.`
+    : `Richard has no cash available to deploy right now. Do NOT recommend new BUYs unless they can be funded by TRIMming an existing position you explicitly call out in the same card (e.g., "Trim DJT for $X CAD, redeploy to ENB"). Otherwise focus on hold/trim/watch-list calls.`;
+
   return `You are Richard's personal stock advisor. Today is ${today}.
 
 His risk tolerance: ${risk}.
@@ -102,24 +139,27 @@ Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()}.
 
 Holdings:
 ${summary.text}
-
+${cashBlock}
 Use the web_search tool to pull the latest news on the top 6 holdings (and any names that appear in recent material news flow). Then write 4–7 advice cards as a JSON array. Each card MUST have:
 
   - "sev": one of "danger" | "warn" | "good" | "info"
   - "title": short headline (under 90 chars)
   - "body": 2–4 sentences. Every actionable recommendation MUST follow this exact format with all four levels:
        Action: BUY/SELL/TRIM/HOLD <N> sh <TICKER>. Entry: $X (or "$X-$Y" zone). Target: $Y (timeframe). Stop: $Z. Horizon: <weeks/months>.
-     NEVER write "at market", "current levels", or "now" as the Entry — always give a specific price or tight zone. If you want him to wait for a dip, give the dip price. If you want him to buy at the prevailing price, write that exact price.
+     NEVER write "at market", "current levels", or "now" as the Entry — always give a specific price or tight zone.
      For "hold" calls, state the trigger that would change the call.
   - "meta": one-line supporting fact (price moves, news date, position size)
 
 Severity rules:
 - "danger" — concentration risk above 30%, thesis-break news, severe drawdown
 - "warn"   — sector overhangs, earnings misses, watchlist breakouts
-- "good"   — confirming positive catalysts
+- "good"   — confirming positive catalysts, executed cash deployments
 - "info"   — general context, non-urgent ideas
 
-Always include at least one "new cash deployment" card with tiers $500 / $1,000 / $5,000 / $10,000. Each tier MUST contain explicit BUY recs in the format above, each with an Entry price/zone, Target, Stop, and Horizon. Never write "deploy into NVDA" without specifying the entry price you want him to pay. Tilt new-cash ideas AWAY from existing concentration.
+CASH DEPLOYMENT INSTRUCTIONS:
+${cashInstructions}
+
+Tilt all new BUYs AWAY from existing concentration. Especially do NOT add to DJT, DJTWW, or RUM unless prices are clearly oversold at a specific technical level you can defend.
 
 Return ONLY valid JSON: { "advice": [...], "sources": [{"title":"...","url":"..."}] }
 No prose outside the JSON.`;

@@ -161,6 +161,17 @@ function totalCashCad(accounts, fx) {
   );
 }
 
+// Per-currency cash totals across all accounts.
+function totalCashByCurrency(accounts) {
+  const out = { cad: 0, usd: 0 };
+  if (!accounts) return out;
+  for (const a of accounts) {
+    out.cad += a.cashCad || 0;
+    out.usd += a.cashUsd || 0;
+  }
+  return out;
+}
+
 // =============================================================================
 // Advice engine
 // =============================================================================
@@ -825,6 +836,7 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
   const fx = user.fxUsdCad || 1.37;
   const positionsCad = totalCad(user.positions, fx);
   const cashCad = totalCashCad(user.accounts, fx);
+  const cashSplit = totalCashByCurrency(user.accounts);
   const total = positionsCad + cashCad;
   const agg = aggregateByTicker(user.positions, fx);
   const top = agg.slice(0, 8);
@@ -870,10 +882,19 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
         <div className="sa-stat"><div className="label">Total value (CAD)</div><div className="value">{fmtMoney(total, "CAD")}</div><div className="delta muted" style={{ fontSize: 11, marginTop: 2 }}>{user.positions.length} positions · {fmtMoney(cashCad, "CAD")} cash</div></div>
         <div className="sa-stat"><div className="label">Equities</div><div className="value">{fmtMoney(positionsCad, "CAD")}</div><div className="delta muted" style={{ fontSize: 11, marginTop: 2 }}>{total > 0 ? ((positionsCad / total) * 100).toFixed(1) : "0"}% of book</div></div>
         <div className="sa-stat" style={{ borderColor: cashPct < 5 ? "#fde68a" : "var(--sa-border)" }}>
-          <div className="label">Cash</div>
-          <div className="value">{fmtMoney(cashCad, "CAD")}</div>
-          <div className="delta" style={{ fontSize: 11, marginTop: 2, color: cashPct < 5 ? "var(--sa-amber)" : "var(--sa-muted)" }}>
-            {cashPct.toFixed(1)}% of book{cashPct < 5 ? " · low" : ""}
+          <div className="label">Cash on hand</div>
+          <div style={{ display: "flex", gap: 14, alignItems: "baseline", marginTop: 2 }}>
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>${cashSplit.cad.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+              <div style={{ fontSize: 10, color: "var(--sa-muted)", letterSpacing: ".06em", textTransform: "uppercase" }}>CAD</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>${cashSplit.usd.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+              <div style={{ fontSize: 10, color: "var(--sa-muted)", letterSpacing: ".06em", textTransform: "uppercase" }}>USD</div>
+            </div>
+          </div>
+          <div className="delta" style={{ fontSize: 11, marginTop: 6, color: cashPct < 5 ? "var(--sa-amber)" : "var(--sa-muted)" }}>
+            {fmtMoney(cashCad, "CAD")} total · {cashPct.toFixed(1)}% of book{cashPct < 5 ? " · low" : ""}
           </div>
         </div>
         <div className="sa-stat"><div className="label">Risk profile</div><div className="value" style={{ textTransform: "capitalize" }}>{user.riskTolerance}</div></div>

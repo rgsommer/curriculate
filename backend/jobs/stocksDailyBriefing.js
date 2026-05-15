@@ -78,16 +78,46 @@ export function portfolioSummary(profile) {
   }
   const sorted = Object.values(agg).sort((a, b) => b.cad - a.cad);
   const total = sorted.reduce((s, a) => s + a.cad, 0);
+
+  // Cash totals
+  let cashUsd = 0, cashCad = 0;
+  const perAccountCash = [];
+  for (const a of profile.accounts || []) {
+    cashUsd += a.cashUsd || 0;
+    cashCad += a.cashCad || 0;
+    if ((a.cashUsd || 0) > 0 || (a.cashCad || 0) > 0) {
+      perAccountCash.push(`  ${a.name}: $${(a.cashCad || 0).toFixed(0)} CAD, $${(a.cashUsd || 0).toFixed(0)} USD`);
+    }
+  }
+  const cashCadEquiv = cashCad + cashUsd * fx;
+
   return {
     total,
     table: sorted
       .map((a) => `${a.ticker}: ${a.qty.toLocaleString()} sh ≈ $${Math.round(a.cad).toLocaleString()} CAD (${total > 0 ? ((a.cad / total) * 100).toFixed(1) : "0"}%)`)
       .join("\n"),
+    cashUsd, cashCad, cashCadEquiv, perAccountCash,
   };
 }
 
 function buildBriefingPrompt(profile, summary) {
   const today = new Date().toISOString().slice(0, 10);
+
+  const hasCash = summary.cashUsd > 5 || summary.cashCad > 5;
+  const cashBlock = hasCash
+    ? `\nAvailable cash:
+  $${summary.cashCad.toFixed(2)} CAD
+  $${summary.cashUsd.toFixed(2)} USD
+  Total ≈ $${Math.round(summary.cashCadEquiv).toLocaleString()} CAD
+${summary.perAccountCash.length ? "Per account:\n" + summary.perAccountCash.join("\n") : ""}
+`
+    : `\nAvailable cash: $0 (no cash to deploy).\n`;
+
+  // Section 5 changes based on whether cash is on hand
+  const cashSection = hasCash
+    ? `5. **💵 Cash deployment — your actual cash** — REQUIRED. He has $${summary.cashCad.toFixed(0)} CAD + $${summary.cashUsd.toFixed(0)} USD ready. Recommend specific BUYs sized to actually use that cash. Compute exact share counts from the cash budget at the Entry price you propose. Format each: "Action: BUY N sh TICKER. Entry: $X (current $Y). Target: $Z (timeframe). Stop: $W. Horizon: N months. Uses ~$A of $B available." Do not recommend buys that exceed available cash; do not propose fractional shares; tilt AWAY from current concentration (DJT/DJTWW/RUM)`
+    : `5. **💵 Cash deployment** — He has $0 cash. Either (a) skip this section, or (b) recommend a specific TRIM that would FREE UP cash for a redeploy, with both legs spec'd in the rec format.`;
+
   return `You are a personal stock advisor. Generate today's morning briefing for ${profile.email}.
 
 Today: ${today}
@@ -96,7 +126,7 @@ Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()}
 
 Holdings:
 ${summary.table}
-
+${cashBlock}
 Use the web_search tool to gather overnight news on the top 6-7 holdings and pre-market signals (futures, VIX, USD/CAD, oil).
 
 Write a markdown briefing with these sections:
@@ -104,8 +134,8 @@ Write a markdown briefing with these sections:
 2. **News on holdings** — top-7 ticker news from last 24h
 3. **Performance snapshot** — week/month/3M moves
 4. **Today's one action** — single trade. MUST include all four: Action: BUY/SELL/TRIM <N> sh <TICKER>. Entry: $X (specific price OR tight zone like "$74-$76", never "at market" or "current"). Target: $Y (timeframe). Stop: $Z. Horizon: <N> months.
-5. **💵 New cash deployment** — REQUIRED. Tiers $500 / $1,000 / $5,000 / $10,000. EACH rec in EACH tier must include a specific Entry price (or tight zone), Target, Stop, and Horizon — never "deploy into NVDA" without an entry price. Tilt AWAY from current concentration.
-6. **Watch list** — 2-3 levels to monitor today
+${cashSection}
+6. **Watch list** — 2-3 levels to monitor today (specific price triggers)
 7. **Aggressive new ideas** — 1-2 unowned names with price targets
 
 Length: 700-1100 words. Date-stamp the top. Add disclaimer at bottom: "Research and education only. Not licensed investment advice."
