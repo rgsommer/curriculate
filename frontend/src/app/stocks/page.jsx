@@ -557,7 +557,10 @@ export default function StocksAdvisorPage() {
       const r = await fetch(`${BACKEND_URL}/api/stocks-advice/send-briefing`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.sessionToken}` },
-        body: JSON.stringify({ send: true }),
+        // Pass the previously-previewed markdown so the backend reuses it
+        // instead of regenerating — keeps the sent email identical to what
+        // you just saw, and saves a 30s Claude call.
+        body: JSON.stringify({ send: true, markdown: briefingPreview.markdown }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
@@ -718,6 +721,8 @@ export default function StocksAdvisorPage() {
               user={user}
               onChangeRisk={(v) => { updateUser(() => ({ riskTolerance: v })); showToast("Risk tolerance updated"); }}
               onChangeFx={(v) => { updateUser(() => ({ fxUsdCad: v })); showToast("FX updated"); }}
+              onChangeCommission={(v) => { updateUser(() => ({ commissionPerTrade: v })); showToast("Commission updated"); }}
+              onChangeFxSpread={(v) => { updateUser(() => ({ fxSpreadPct: v })); showToast("FX spread updated"); }}
               onReset={async () => {
                 if (!confirm("Wipe all your positions and settings on the server?")) return;
                 try {
@@ -1238,7 +1243,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
   );
 }
 
-function SettingsView({ user, onChangeRisk, onChangeFx, onReset }) {
+function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onReset }) {
   return (
     <div>
       <h2>Settings</h2>
@@ -1254,9 +1259,39 @@ function SettingsView({ user, onChangeRisk, onChangeFx, onReset }) {
         </div>
       </div>
       <div className="sa-card" style={{ marginBottom: 14 }}>
+        <h3>Trading costs at your broker</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div>
+            <label>Commission per trade (CAD)</label>
+            <input
+              type="number" step="0.01" min="0"
+              defaultValue={user.commissionPerTrade ?? 9.95}
+              onChange={(e) => onChangeCommission(parseFloat(e.target.value) || 0)}
+            />
+            <div className="sa-muted" style={{ fontSize: 12, marginTop: 6 }}>
+              Each BUY and SELL counts separately. A swap = 2 commissions.
+            </div>
+          </div>
+          <div>
+            <label>FX spread, one-way (%)</label>
+            <input
+              type="number" step="0.05" min="0" max="10"
+              defaultValue={user.fxSpreadPct ?? 1.5}
+              onChange={(e) => onChangeFxSpread(parseFloat(e.target.value) || 0)}
+            />
+            <div className="sa-muted" style={{ fontSize: 12, marginTop: 6 }}>
+              Your broker's spread when converting USD↔CAD. Round-trip cost is 2× this.
+            </div>
+          </div>
+        </div>
+        <div className="sa-muted" style={{ fontSize: 12, marginTop: 10, padding: 10, background: "var(--sa-panel-2)", borderRadius: 8 }}>
+          Recommendations now factor these in: trades smaller than ~${((user.commissionPerTrade ?? 9.95) * 100).toFixed(0)} get rejected as too small, and USD↔CAD conversions need to clear a {(((user.fxSpreadPct ?? 1.5) * 2).toFixed(1))}% round-trip drag.
+        </div>
+      </div>
+      <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>FX rate (USD → CAD)</h3>
         <input type="number" step="0.001" defaultValue={user.fxUsdCad} style={{ maxWidth: 200 }} onChange={(e) => onChangeFx(parseFloat(e.target.value) || 1.37)} />
-        <div className="sa-muted" style={{ fontSize: 12, marginTop: 6 }}>Used to compute CAD-equivalent of USD positions.</div>
+        <div className="sa-muted" style={{ fontSize: 12, marginTop: 6 }}>Used to compute CAD-equivalent of USD positions. Update manually for now; auto-pull TBD.</div>
       </div>
       <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>Notifications</h3>
@@ -1785,6 +1820,36 @@ function TradeModal({ user, onClose, onSubmit, prefill }) {
             <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g., Reduce DJT concentration per Friday's briefing" maxLength={500} />
           </div>
         </div>
+
+        {/* Cost preview — commissions + optional FX-spread warning */}
+        {mode !== "cash" && (() => {
+          const commission = Number(user.commissionPerTrade ?? 9.95);
+          const fxSpread = Number(user.fxSpreadPct ?? 1.5);
+          const legCount = mode === "swap" ? 2 : 1;
+          const commTotal = commission * legCount;
+          // FX warning only if a swap mixes currencies
+          const mixedCcy = mode === "swap" && sellCcy && buyCcy && sellCcy !== buyCcy;
+          const fxRoundtripPct = mixedCcy ? fxSpread : 0;
+          const fxCadCost = mixedCcy ? (Math.min(sellCadVal, buyCadVal) * fxSpread / 100) : 0;
+          if (commTotal <= 0 && !mixedCcy) return null;
+          return (
+            <div style={{ background: "var(--sa-amber-soft)", border: "1px solid #fde68a", padding: "10px 14px", borderRadius: 10, marginTop: 12, fontSize: 12, color: "var(--sa-amber)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Est. commission ({legCount} {legCount === 1 ? "leg" : "legs"})</span>
+                <span style={{ fontWeight: 600 }}>~${commTotal.toFixed(2)} CAD</span>
+              </div>
+              {mixedCcy && (
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                  <span>FX spread ({fxSpread}% one-way × {sellCcy}→{buyCcy})</span>
+                  <span style={{ fontWeight: 600 }}>~${fxCadCost.toFixed(2)} CAD drag</span>
+                </div>
+              )}
+              <div style={{ color: "var(--sa-muted)", fontSize: 11, marginTop: 6 }}>
+                Costs are estimates based on Settings. Adjust there if your broker differs.
+              </div>
+            </div>
+          );
+        })()}
 
         {Math.abs(netCash) > 0.005 && (
           <div style={{

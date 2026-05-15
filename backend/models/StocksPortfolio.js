@@ -46,6 +46,13 @@ const StocksPortfolioSchema = new mongoose.Schema(
       default: null,
     },
     fxUsdCad: { type: Number, default: 1.37 },
+    // Real-world trading-cost knobs the AI factors into trade sizing.
+    // commissionPerTrade  — flat per-trade fee (CAD) at this user's broker
+    //                       (RBC Direct = $9.95 normally, $6.95 if Royal Circle).
+    // fxSpreadPct         — round-trip FX spread when swapping USD↔CAD via
+    //                       the broker's currency conversion (typically 1.5%).
+    commissionPerTrade: { type: Number, default: 9.95 },
+    fxSpreadPct: { type: Number, default: 1.5 },
     accounts: { type: [AccountSchema], default: [] },
     positions: { type: [PositionSchema], default: [] },
     lastSyncedAt: { type: Date, default: Date.now },

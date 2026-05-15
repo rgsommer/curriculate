@@ -249,6 +249,18 @@ Account-placement & tax notes (Canadian investor):
 
 function buildBriefingPrompt(profile, summary, monitorAlerts = []) {
   const today = new Date().toISOString().slice(0, 10);
+  const commission = Number(profile.commissionPerTrade ?? 9.95);
+  const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
+  const fx = Number(profile.fxUsdCad || 1.37);
+
+  const tradingCostsBlock = `
+Trading-cost frictions (factor into every recommendation):
+- Commission: $${commission.toFixed(2)} per trade. Each leg counts separately (Swap = 2 × $${commission.toFixed(2)} = $${(commission * 2).toFixed(2)}).
+- FX spread on USD↔CAD: ~${fxSpread}% one-way; round-trip ${(fxSpread * 2).toFixed(1)}%.
+- Minimum efficient trade size: ~$${(commission * 100).toFixed(0)} (so commission < 1% of trade).
+- PREFER trades that match Richard's cash currency — don't recommend converting unless the strategic case clearly clears the FX-spread hurdle.
+- For every BUY rec, append a "Cost note" stating commission + any FX drag.
+`;
 
   const alertsBlock = monitorAlerts.length
     ? `\n⚠️ OPEN RECOMMENDATION ALERTS (computed deterministically from current prices — include these verbatim at the very top of the briefing):\n${monitorAlerts.map(a => `- ${a}`).join("\n")}\n`
@@ -279,6 +291,7 @@ Holdings:
 ${summary.table}
 ${cashBlock}
 ${alertsBlock}
+${tradingCostsBlock}
 ${CANADIAN_TAX_BLOCK}
 ${SIGNALS_CHECKLIST}
 

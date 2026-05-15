@@ -134,6 +134,22 @@ Account-placement & tax notes (Canadian investor):
 function buildPrompt(profile, summary, monitorAlerts = []) {
   const risk = profile.riskTolerance || "aggressive";
   const today = new Date().toISOString().slice(0, 10);
+  const commission = Number(profile.commissionPerTrade ?? 9.95);
+  const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
+  const fx = Number(profile.fxUsdCad || 1.37);
+
+  const tradingCostsBlock = `
+Real-world trading-cost frictions (factor these into every rec):
+- Commission: $${commission.toFixed(2)} per trade (each BUY and each SELL counts separately; a Swap = 2 commissions = $${(commission * 2).toFixed(2)})
+- FX spread on USD↔CAD conversion: ~${fxSpread}% one-way (round-trip ${(fxSpread * 2).toFixed(1)}%)
+- Current FX rate: ${fx.toFixed(3)} USD/CAD
+
+Sizing rules:
+- Reject trades where commissions exceed 1% of gross trade value (~$${(commission * 100).toFixed(0)} minimum trade size). If a recommendation falls below that, either upsize it, batch it with another rec in the same currency, or say "wait for more cash."
+- For USD↔CAD swaps (selling USD position and buying CAD position or vice versa), the round-trip FX drag is ~${(fxSpread * 2).toFixed(1)}% — name this drag in the rec and only recommend if the expected upside exceeds it by a comfortable margin.
+- PREFER trades that don't require currency conversion. If Richard has $1,200 USD cash, buy USD-listed names with it. If he has $2,500 CAD cash, buy CAD-listed names. Only suggest converting when the strategic case is strong (e.g., truly oversized cash bucket in a currency with poor opportunities).
+- For every BUY rec, include a "Cost note" line stating: "Commission ~$${commission.toFixed(2)}, FX impact: <none / X% drag>".
+`;
 
   const alertsBlock = monitorAlerts.length
     ? `\n⚠️ OPEN-RECOMMENDATION ALERTS (computed deterministically — surface these prominently as a dedicated card at the TOP of the advice list, severity "warn" or "danger"):\n${monitorAlerts.map(a => `- ${a}`).join("\n")}\n`
@@ -171,6 +187,7 @@ Holdings:
 ${summary.text}
 ${cashBlock}
 ${alertsBlock}
+${tradingCostsBlock}
 ${CANADIAN_TAX_BLOCK}
 ${SIGNALS_CHECKLIST}
 
@@ -495,37 +512,56 @@ router.get("/performance", requireStocksAuth, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────
 router.post("/send-briefing", requireStocksAuth, async (req, res) => {
   try {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return res.status(503).json({ error: "ANTHROPIC_API_KEY not set on backend" });
-    }
     const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
     if (!profile || !profile.positions?.length) {
       return res.status(400).json({ error: "No portfolio with positions found." });
     }
 
-    const markdown = await generateBriefing(profile);
+    // Two paths:
+    //   1) PREVIEW (send=false) — always generates fresh briefing
+    //   2) SEND (send=true) — if client provides the markdown it just previewed,
+    //      reuse it instead of generating again (avoids 30s wait + ensures the
+    //      email matches the preview character-for-character).
+    const wantsSend = !!req.body?.send;
+    const providedMarkdown = typeof req.body?.markdown === "string" && req.body.markdown.trim();
+    const reuse = wantsSend && providedMarkdown;
+
+    let markdown;
+    let tracked = 0;
+
+    if (reuse) {
+      markdown = req.body.markdown;
+    } else {
+      if (!process.env.ANTHROPIC_API_KEY) {
+        return res.status(503).json({ error: "ANTHROPIC_API_KEY not set on backend" });
+      }
+      markdown = await generateBriefing(profile);
+
+      // Track recommendations only on fresh generations (so we don't re-insert
+      // them when the client is just sending a previously-previewed briefing).
+      const recs = parseRecsFromBriefing(markdown);
+      if (recs.length) {
+        StocksAdviceRec.insertMany(
+          recs.map((r) => ({
+            email: profile.email,
+            generatedAt: new Date(),
+            source: "ai",
+            ...r,
+            rationale: "On-demand briefing",
+          }))
+        ).catch((e) => console.warn("brief-recs save warning:", e?.message));
+        tracked = recs.length;
+      }
+    }
+
     const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
     const inner = md2html(markdown);
     const html = `<!DOCTYPE html><html><body style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:680px;margin:24px auto;padding:24px;line-height:1.6;color:#0b1220;background:#fff">${inner}<hr style="border:none;border-top:1px solid #e4e8ef;margin:24px 0"><div style="font-size:11px;color:#7a8499">Research and education only. Not licensed investment advice.</div></body></html>`;
 
-    // Track recommendations on every generation (cron does this too)
-    const recs = parseRecsFromBriefing(markdown);
-    if (recs.length) {
-      StocksAdviceRec.insertMany(
-        recs.map((r) => ({
-          email: profile.email,
-          generatedAt: new Date(),
-          source: "ai",
-          ...r,
-          rationale: "On-demand briefing",
-        }))
-      ).catch((e) => console.warn("brief-recs save warning:", e?.message));
-    }
-
     // Email it if requested
     let sent = false;
     let sendError = null;
-    if (req.body?.send) {
+    if (wantsSend) {
       const to = (typeof req.body?.to === "string" && req.body.to.trim()) || profile.email;
       try {
         await emailBriefing({ to, subject, md: markdown });
@@ -535,7 +571,7 @@ router.post("/send-briefing", requireStocksAuth, async (req, res) => {
       }
     }
 
-    res.json({ markdown, html, subject, sent, sendError, tracked: recs.length });
+    res.json({ markdown, html, subject, sent, sendError, tracked, reused: !!reuse });
   } catch (err) {
     console.error("send-briefing error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });

@@ -126,6 +126,12 @@ function sanitizePortfolioInput(body, email) {
   if (typeof body.fxUsdCad === "number" && body.fxUsdCad > 0 && body.fxUsdCad < 10) {
     out.fxUsdCad = body.fxUsdCad;
   }
+  if (typeof body.commissionPerTrade === "number" && body.commissionPerTrade >= 0 && body.commissionPerTrade < 1000) {
+    out.commissionPerTrade = body.commissionPerTrade;
+  }
+  if (typeof body.fxSpreadPct === "number" && body.fxSpreadPct >= 0 && body.fxSpreadPct < 10) {
+    out.fxSpreadPct = body.fxSpreadPct;
+  }
   if (Array.isArray(body.accounts)) {
     out.accounts = body.accounts
       .filter((a) => a && typeof a.id === "string" && typeof a.name === "string")
