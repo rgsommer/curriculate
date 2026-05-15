@@ -173,6 +173,115 @@ function totalCashByCurrency(accounts) {
 }
 
 // =============================================================================
+// Recommendation parser — extracts structured BUY/SELL/TRIM rows from
+// the prose body of an AI advice card.
+//
+// Input: a body string that may contain one or more "Action:" lines like
+//   "Action: BUY 80 sh NVDA. Entry: $132-$135 USD. Target: $185 USD (9mo).
+//    Stop: $115. Horizon: 9 months. Uses ~$10,640 USD."
+// Output: { intro, recs: [{...}], outro }
+// =============================================================================
+function parseRecsFromBody(body) {
+  if (!body || typeof body !== "string") return { intro: "", recs: [], outro: "" };
+  // Find every "Action:" marker and the span of text that belongs to each rec
+  // (from this Action: up to the next Action: or end of body).
+  const actionRe = /\bAction:\s*/gi;
+  const indices = [];
+  let m;
+  while ((m = actionRe.exec(body)) !== null) indices.push(m.index);
+  if (indices.length === 0) return { intro: body, recs: [], outro: "" };
+
+  const intro = body.slice(0, indices[0]).trim();
+  const recs = [];
+  let outro = "";
+  for (let i = 0; i < indices.length; i++) {
+    const start = indices[i];
+    const end = i + 1 < indices.length ? indices[i + 1] : body.length;
+    const chunk = body.slice(start, end);
+    const parsed = parseSingleRec(chunk);
+    if (parsed) recs.push(parsed);
+  }
+  // If the last rec ends before body end, anything after the last "." inside
+  // the last chunk's content is intro/outro material — try to capture a tail
+  // sentence like "Remaining ~$2,486 USD reserve for dip-buying."
+  const lastIdx = indices[indices.length - 1];
+  const tailStart = body.lastIndexOf(".", body.length - 1);
+  if (tailStart > lastIdx + 20) {
+    // Walk forward from the start of the last chunk to find the trailing prose
+    const chunk = body.slice(lastIdx);
+    // Strip out the parsed key/value fields and keep anything that wasn't matched
+    const stripped = chunk
+      .replace(/Action:[^.]*\./i, "")
+      .replace(/Entry:[^.]*\./i, "")
+      .replace(/Target:[^.]*\./i, "")
+      .replace(/Stop:[^.]*\./i, "")
+      .replace(/Horizon:[^.]*\./i, "")
+      .replace(/Uses[^.]*\./i, "")
+      .trim();
+    if (stripped.length > 10) outro = stripped;
+  }
+  return { intro, recs, outro };
+}
+
+function parseSingleRec(chunk) {
+  // Strip the leading "Action:"
+  const text = chunk.replace(/^\s*Action:\s*/i, "");
+  // Side
+  const sideM = text.match(/^(BUY|SELL|TRIM|HOLD)\b/i);
+  if (!sideM) return null;
+  const side = sideM[1].toUpperCase();
+  // After side: optional shares + ticker
+  const headM = text.match(/^(BUY|SELL|TRIM|HOLD)\s+(\d[\d,]*)?\s*(?:sh)?\s*([A-Z][A-Z0-9.\-]{0,15})/i);
+  if (!headM) return null;
+  const shares = headM[2] ? parseInt(headM[2].replace(/,/g, ""), 10) : null;
+  const ticker = headM[3].toUpperCase();
+
+  // Extract each labeled field's value up to the next period
+  const fieldVal = (label) => {
+    const re = new RegExp(`${label}:\\s*([^.\\n]+?)(?:\\.|$)`, "i");
+    const m = text.match(re);
+    return m ? m[1].trim() : null;
+  };
+  const entryRaw = fieldVal("Entry");
+  const targetRaw = fieldVal("Target");
+  const stopRaw = fieldVal("Stop");
+  const horizonRaw = fieldVal("Horizon");
+  const usesM = text.match(/Uses[^$0-9]*([~$]?\s*[\d.,]+)\s*(USD|CAD)?/i);
+  const usesRaw = usesM ? usesM[1].trim() : null;
+  const usesCcy = usesM?.[2]?.toUpperCase() || null;
+
+  // Try to detect currency from any of the price strings
+  const ccyFromText = (s) => {
+    if (!s) return null;
+    if (/\bCAD\b/i.test(s)) return "CAD";
+    if (/\bUSD\b/i.test(s)) return "USD";
+    return null;
+  };
+  const currency =
+    ccyFromText(entryRaw) || ccyFromText(targetRaw) || ccyFromText(stopRaw) || usesCcy || "USD";
+
+  // Parse a price scalar (low number of a range, or the single number)
+  const priceLow = (s) => {
+    if (!s) return null;
+    const m = s.match(/\$?\s*([\d.]+)/);
+    return m ? parseFloat(m[1]) : null;
+  };
+
+  return {
+    side, ticker, shares,
+    currency,
+    entryText: entryRaw,
+    entryLow: priceLow(entryRaw),
+    targetText: targetRaw,
+    targetVal: priceLow(targetRaw),
+    stopText: stopRaw,
+    stopVal: priceLow(stopRaw),
+    horizonText: horizonRaw,
+    usesText: usesRaw ? (usesRaw + (usesCcy ? ` ${usesCcy}` : "")) : null,
+  };
+}
+
+// =============================================================================
 // Advice engine
 // =============================================================================
 function generateAdvice(profile) {
@@ -276,6 +385,7 @@ export default function StocksAdvisorPage() {
   const [toast, setToast] = useState(null);
   const [modalIdx, setModalIdx] = useState(undefined);
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
+  const [tradePrefill, setTradePrefill] = useState(null); // optional prefill for TradeModal
   const [briefingPreview, setBriefingPreview] = useState(null); // { html, sent, error, busy }
   const saveTimerRef = useRef(null);
   const savedTimerRef = useRef(null);
@@ -578,6 +688,10 @@ export default function StocksAdvisorPage() {
               sessionToken={auth.sessionToken}
               autoFetchAi={pendingAiFetch}
               onAutoFetchConsumed={() => setPendingAiFetch(false)}
+              onExecuteRec={(rec) => {
+                setTradePrefill(rec);
+                setTradeModalOpen(true);
+              }}
             />
           )}
           {currentTab === "performance" && <PerformanceView sessionToken={auth.sessionToken} />}
@@ -628,11 +742,13 @@ export default function StocksAdvisorPage() {
         {tradeModalOpen && (
           <TradeModal
             user={user}
-            onClose={() => setTradeModalOpen(false)}
+            prefill={tradePrefill}
+            onClose={() => { setTradeModalOpen(false); setTradePrefill(null); }}
             onSubmit={async (trade) => {
               try {
                 await recordTrade(trade);
                 setTradeModalOpen(false);
+                setTradePrefill(null);
               } catch (e) {
                 throw e; // let the modal show the error
               }
@@ -981,7 +1097,7 @@ function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPri
   );
 }
 
-function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchConsumed }) {
+function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchConsumed, onExecuteRec }) {
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiAdvice, setAiAdvice] = useState(null); // { advice, sources, generatedAt }
@@ -1054,13 +1170,23 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
           <button className="sa-btn ghost" onClick={() => setAiAdvice(null)}>Back to rule-based view</button>
         </div>
       )}
-      {shown.map((c, i) => (
-        <div key={i} className={`sa-advice-card ${c.sev === "danger" ? "danger" : c.sev === "warn" ? "warn" : c.sev === "good" ? "good" : ""}`}>
-          <h3>{c.title}</h3>
-          <p>{c.body}</p>
-          {c.meta && <div className="meta">{c.meta}</div>}
-        </div>
-      ))}
+      {shown.map((c, i) => {
+        const parsed = parseRecsFromBody(c.body);
+        return (
+          <div key={i} className={`sa-advice-card ${c.sev === "danger" ? "danger" : c.sev === "warn" ? "warn" : c.sev === "good" ? "good" : ""}`}>
+            <h3>{c.title}</h3>
+            {parsed.intro && <p>{parsed.intro}</p>}
+            {parsed.recs.length > 0 ? (
+              <RecsTable recs={parsed.recs} onExecuteRec={onExecuteRec} />
+            ) : (
+              // No structured recs detected — show original body as prose
+              <p>{c.body}</p>
+            )}
+            {parsed.outro && <p style={{ marginTop: 10, fontStyle: "italic", color: "var(--sa-text-2)" }}>{parsed.outro}</p>}
+            {c.meta && <div className="meta">{c.meta}</div>}
+          </div>
+        );
+      })}
       {showingAi && aiAdvice.sources?.length > 0 && (
         <div className="sa-card" style={{ marginTop: 14 }}>
           <h3>Sources</h3>
@@ -1158,6 +1284,80 @@ function PositionModal({ user, idx, onClose, onSave, onDelete }) {
 }
 
 // =============================================================================
+// RecsTable — renders an array of parsed trade recommendations as a structured
+// table inside an advice card body. Each row has an Execute button that
+// opens the trade modal pre-populated with that rec's details.
+// =============================================================================
+function RecsTable({ recs, onExecuteRec }) {
+  return (
+    <div style={{
+      border: "1px solid var(--sa-border)", borderRadius: 10,
+      overflowX: "auto", margin: "10px 0",
+      background: "#fff",
+    }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontSize: 13 }}>
+        <thead>
+          <tr style={{ background: "var(--sa-panel-2)" }}>
+            <th style={recHeaderCellLeft}>Action</th>
+            <th style={recHeaderCell}>Ticker</th>
+            <th style={recHeaderCell}>Qty</th>
+            <th style={recHeaderCell}>Entry</th>
+            <th style={recHeaderCell}>Target</th>
+            <th style={recHeaderCell}>Stop</th>
+            <th style={recHeaderCell}>Horizon</th>
+            <th style={recHeaderCell}>Uses</th>
+            <th style={recHeaderCell}></th>
+          </tr>
+        </thead>
+        <tbody>
+          {recs.map((r, i) => {
+            const sideColor =
+              r.side === "BUY" ? "var(--sa-green)"
+              : r.side === "SELL" || r.side === "TRIM" ? "var(--sa-red)"
+              : "var(--sa-amber)";
+            const sideBg =
+              r.side === "BUY" ? "var(--sa-green-soft)"
+              : r.side === "SELL" || r.side === "TRIM" ? "var(--sa-red-soft)"
+              : "var(--sa-amber-soft)";
+            return (
+              <tr key={i} style={{ borderTop: i > 0 ? "1px solid var(--sa-border)" : "none" }}>
+                <td style={recCellLeft}>
+                  <span style={{
+                    padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 700,
+                    background: sideBg, color: sideColor,
+                  }}>{r.side}</span>
+                </td>
+                <td style={{ ...recCell, fontWeight: 600 }}>{r.ticker}</td>
+                <td style={recCell}>{r.shares ? r.shares.toLocaleString() : "—"}</td>
+                <td style={recCell}>{r.entryText || "—"}</td>
+                <td style={recCell}>{r.targetText || "—"}</td>
+                <td style={recCell}>{r.stopText || "—"}</td>
+                <td style={recCell}>{r.horizonText || "—"}</td>
+                <td style={recCell}>{r.usesText || "—"}</td>
+                <td style={recCell}>
+                  {onExecuteRec && r.side !== "HOLD" && (
+                    <button
+                      className="sa-btn"
+                      style={{ padding: "5px 12px", fontSize: 12 }}
+                      onClick={() => onExecuteRec(r)}
+                      title="Open the Record Trade modal with this rec pre-filled"
+                    >Execute →</button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+const recHeaderCell = { padding: "10px 8px", textAlign: "right", fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--sa-muted)", fontWeight: 600, borderBottom: "1px solid var(--sa-border)", whiteSpace: "nowrap" };
+const recHeaderCellLeft = { ...recHeaderCell, textAlign: "left", paddingLeft: 14 };
+const recCell = { padding: "10px 8px", textAlign: "right", whiteSpace: "nowrap" };
+const recCellLeft = { ...recCell, textAlign: "left", paddingLeft: 14 };
+
+// =============================================================================
 // Briefing preview modal — shows what the daily email will look like
 // =============================================================================
 function BriefingPreviewModal({ preview, recipient, onClose, onSend }) {
@@ -1237,21 +1437,28 @@ function BriefingPreviewModal({ preview, recipient, onClose, onSend }) {
 // =============================================================================
 // Trade modal — Buy / Sell / Swap
 // =============================================================================
-function TradeModal({ user, onClose, onSubmit }) {
-  const [mode, setMode] = useState("swap"); // "buy" | "sell" | "swap" | "cash"
+function TradeModal({ user, onClose, onSubmit, prefill }) {
+  // Decide initial mode + leg pre-population based on prefill (from an
+  // Advice rec's Execute button). BUY → buy mode; SELL/TRIM → sell mode.
+  const initialMode = prefill
+    ? (prefill.side === "BUY" ? "buy"
+        : (prefill.side === "SELL" || prefill.side === "TRIM") ? "sell"
+        : "swap")
+    : "swap";
+  const [mode, setMode] = useState(initialMode);
   const [account, setAccount] = useState(user.accounts?.[0]?.id || "");
   const [executedAt] = useState(() => new Date().toISOString().slice(0, 10));
 
-  // Equity leg state
-  const [sellTicker, setSellTicker] = useState("");
-  const [sellShares, setSellShares] = useState("");
-  const [sellPrice, setSellPrice] = useState("");
-  const [sellCcy, setSellCcy] = useState("USD");
+  // Equity leg state (prefilled when a rec is being executed)
+  const [sellTicker, setSellTicker] = useState(prefill && (prefill.side === "SELL" || prefill.side === "TRIM") ? prefill.ticker : "");
+  const [sellShares, setSellShares] = useState(prefill && (prefill.side === "SELL" || prefill.side === "TRIM") && prefill.shares ? String(prefill.shares) : "");
+  const [sellPrice, setSellPrice] = useState(prefill && (prefill.side === "SELL" || prefill.side === "TRIM") && prefill.entryLow ? String(prefill.entryLow) : "");
+  const [sellCcy, setSellCcy] = useState(prefill && (prefill.side === "SELL" || prefill.side === "TRIM") ? (prefill.currency || "USD") : "USD");
 
-  const [buyTicker, setBuyTicker] = useState("");
-  const [buyShares, setBuyShares] = useState("");
-  const [buyPrice, setBuyPrice] = useState("");
-  const [buyCcy, setBuyCcy] = useState("CAD");
+  const [buyTicker, setBuyTicker] = useState(prefill && prefill.side === "BUY" ? prefill.ticker : "");
+  const [buyShares, setBuyShares] = useState(prefill && prefill.side === "BUY" && prefill.shares ? String(prefill.shares) : "");
+  const [buyPrice, setBuyPrice] = useState(prefill && prefill.side === "BUY" && prefill.entryLow ? String(prefill.entryLow) : "");
+  const [buyCcy, setBuyCcy] = useState(prefill && prefill.side === "BUY" ? (prefill.currency || "USD") : "CAD");
 
   // Cash leg state
   const [cashDirection, setCashDirection] = useState("DEPOSIT"); // DEPOSIT | WITHDRAW
