@@ -1785,6 +1785,13 @@ function TradeModal({ user, onClose, onSubmit, prefill }) {
   const [cashAmount, setCashAmount] = useState(prefill?.amount ? String(prefill.amount) : "");
   const [cashCcy, setCashCcy] = useState(prefill?.currency || "CAD");
 
+  // Order-plan state — comes from the prefill if executing a rec.
+  // Target = expected upside (limit-sell take-profit)
+  // Stop   = downside invalidation (stop-limit-sell)
+  const [planTarget, setPlanTarget] = useState(prefill?.targetVal != null ? String(prefill.targetVal) : "");
+  const [planStop, setPlanStop] = useState(prefill?.stopVal != null ? String(prefill.stopVal) : "");
+  const [showPlan, setShowPlan] = useState(prefill?.targetVal != null || prefill?.stopVal != null);
+
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -2093,6 +2100,114 @@ function TradeModal({ user, onClose, onSubmit, prefill }) {
             <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g., Reduce DJT concentration per Friday's briefing" maxLength={500} />
           </div>
         </div>
+
+        {/* Order plan — bracket / OCO instructions to paste into RBC Direct */}
+        {(mode === "buy" || mode === "sell" || mode === "swap") && (() => {
+          const commission = Number(user.commissionPerTrade ?? 9.95);
+          // Determine which leg drives the plan
+          const isBuyDriven = (mode === "buy" || mode === "swap") && buyTicker && buyShares && buyPrice;
+          const isSellDriven = mode === "sell" && sellTicker && sellShares && sellPrice;
+          const driverTicker = isBuyDriven ? buyTicker.toUpperCase() : (isSellDriven ? sellTicker.toUpperCase() : "");
+          const driverShares = isBuyDriven ? parseFloat(buyShares) : (isSellDriven ? parseFloat(sellShares) : 0);
+          const driverPrice = isBuyDriven ? parseFloat(buyPrice) : (isSellDriven ? parseFloat(sellPrice) : 0);
+          const driverCcy = isBuyDriven ? buyCcy : (isSellDriven ? sellCcy : "USD");
+          if (!driverTicker || !driverShares || !driverPrice) return null;
+
+          const target = parseFloat(planTarget);
+          const stop = parseFloat(planStop);
+          const hasTarget = Number.isFinite(target) && target > 0;
+          const hasStop = Number.isFinite(stop) && stop > 0;
+          const stopLimit = hasStop ? (driverCcy === "CAD" ? (stop * 0.985) : (stop * 0.985)) : null; // ~1.5% below stop
+
+          // Order count for commission estimate
+          let orderCount = 1;
+          if (mode === "swap") orderCount = 2;
+          if (isBuyDriven && hasStop) orderCount += 1;
+          if (isBuyDriven && hasTarget) orderCount += 1;
+          const totalCommish = orderCount * commission;
+
+          return (
+            <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: 14, marginTop: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ fontWeight: 600, fontSize: 12, color: "var(--sa-accent-2)", textTransform: "uppercase", letterSpacing: ".06em" }}>
+                  📋 Order plan (RBC Direct ready)
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPlan(!showPlan)}
+                  style={{ background: "transparent", border: "none", color: "var(--sa-accent-2)", fontSize: 11, cursor: "pointer", fontWeight: 600 }}
+                >{showPlan ? "Hide" : "Show"}</button>
+              </div>
+              {showPlan && (
+                <>
+                  {/* Optional inputs for target/stop if prefill didn't have them */}
+                  <div className="sa-modal-row">
+                    <div>
+                      <label>Take-profit target ({driverCcy})</label>
+                      <input type="number" step="any" value={planTarget} onChange={(e) => setPlanTarget(e.target.value)} placeholder={isBuyDriven ? "84.00 (sell limit)" : ""} />
+                    </div>
+                    <div>
+                      <label>Stop-loss trigger ({driverCcy})</label>
+                      <input type="number" step="any" value={planStop} onChange={(e) => setPlanStop(e.target.value)} placeholder={isBuyDriven ? "69.00 (stop)" : ""} />
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#fff", border: "1px solid #cfd6e0", borderRadius: 8, fontFamily: "SF Mono, Menlo, Consolas, monospace", fontSize: 12, padding: 0, marginTop: 10 }}>
+                    {/* Order 1: Entry */}
+                    <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--sa-border)" }}>
+                      <div style={{ fontWeight: 700, fontSize: 11, color: isBuyDriven ? "var(--sa-green)" : "var(--sa-red)", letterSpacing: ".06em" }}>1. ENTRY ORDER · place now</div>
+                      <div style={{ marginTop: 4 }}>
+                        <b>LIMIT {isBuyDriven ? "BUY" : "SELL"}</b> {driverShares} {driverTicker} @ <b>${driverPrice.toFixed(2)} {driverCcy}</b> {isBuyDriven ? "(max)" : "(min)"}, <b>Day</b>
+                      </div>
+                    </div>
+
+                    {/* Order 2: Stop (only for BUY) */}
+                    {isBuyDriven && hasStop && (
+                      <div style={{ padding: "10px 14px", borderBottom: hasTarget ? "1px solid var(--sa-border)" : "none" }}>
+                        <div style={{ fontWeight: 700, fontSize: 11, color: "var(--sa-red)", letterSpacing: ".06em" }}>2. PROTECTIVE STOP · place once #1 fills</div>
+                        <div style={{ marginTop: 4 }}>
+                          <b>GTC STOP-LIMIT SELL</b> {driverShares} {driverTicker}, stop <b>${stop.toFixed(2)}</b> / limit <b>${stopLimit.toFixed(2)}</b> {driverCcy}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Order 3: Take profit (only for BUY) */}
+                    {isBuyDriven && hasTarget && (
+                      <div style={{ padding: "10px 14px" }}>
+                        <div style={{ fontWeight: 700, fontSize: 11, color: "var(--sa-green)", letterSpacing: ".06em" }}>3. TAKE-PROFIT · place once #1 fills</div>
+                        <div style={{ marginTop: 4 }}>
+                          <b>GTC LIMIT SELL</b> {driverShares} {driverTicker} @ <b>${target.toFixed(2)} {driverCcy}</b>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {isBuyDriven && hasStop && hasTarget && (
+                    <div style={{ fontSize: 11, color: "var(--sa-text-2)", marginTop: 8, padding: 8, background: "rgba(255,255,255,.7)", borderRadius: 6 }}>
+                      💡 <b>Bracket / OCO setup:</b> at RBC Direct, link orders #2 and #3 as a One-Cancels-Other pair (Conditional Order → OCO). Whichever fires first auto-cancels the other so you never end up double-sold.
+                    </div>
+                  )}
+
+                  <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+                    <span>Estimated commission: {orderCount} orders × ${commission.toFixed(2)} = <b>${totalCommish.toFixed(2)} CAD</b></span>
+                    <button
+                      type="button"
+                      style={{ background: "transparent", border: "1px solid var(--sa-border)", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: "var(--sa-text-2)", cursor: "pointer" }}
+                      onClick={() => {
+                        const lines = [
+                          `1. LIMIT ${isBuyDriven ? "BUY" : "SELL"} ${driverShares} ${driverTicker} @ $${driverPrice.toFixed(2)} ${driverCcy} (${isBuyDriven ? "max" : "min"}), Day`,
+                        ];
+                        if (isBuyDriven && hasStop) lines.push(`2. GTC STOP-LIMIT SELL ${driverShares} ${driverTicker}, stop $${stop.toFixed(2)} / limit $${stopLimit.toFixed(2)} ${driverCcy}`);
+                        if (isBuyDriven && hasTarget) lines.push(`3. GTC LIMIT SELL ${driverShares} ${driverTicker} @ $${target.toFixed(2)} ${driverCcy}`);
+                        navigator.clipboard?.writeText(lines.join("\n"));
+                      }}
+                    >📋 Copy to clipboard</button>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Cost preview — commissions + optional FX-spread warning */}
         {mode !== "cash" && (() => {
