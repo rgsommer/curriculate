@@ -89,6 +89,15 @@ function evaluatePrompt(meta = {}, frontCount = 1, backCount = 1) {
     "",
     `${layout}, followed by user-supplied details. Inspect the images for centering, corner wear, edge whitening/chipping, surface scratches/print defects, glossiness, and any condition issues. If the images are unclear, lean conservatively but still produce an estimate using the user's details.`,
     "",
+    "PRICING REFERENCES — base your valuation_usd on typical recent prices from these three sources (use your training knowledge of how they price; you don't have live access):",
+    "  • LOW  ≈ PriceCharting 'loose / ungraded' price tier for the same card. PriceCharting is the standard reference for the bottom end of the market — raw cards in played condition.",
+    "  • MID  ≈ Recent eBay SOLD listings for the same card in roughly the condition you've graded above (raw if the user said Raw; graded at that company at that grade if slabbed). eBay sold listings are the most reliable real-world signal.",
+    "  • HIGH ≈ Active TCGplayer market price (or near-mint asking) for the same card in similar or better condition. TCGplayer leans higher than eBay sold.",
+    "",
+    "If a source typically doesn't carry the card type (e.g., TCGplayer has limited sports-card depth), use your best judgment and lean on the others. Always produce three numbers, even if the spread is wide. Be realistic — don't anchor on hype prices.",
+    "",
+    "Also produce a clean 'search_query' string the user can paste into any of those sites to verify (e.g. '1999 Pokemon Base Set Charizard 4/102 Holo' — include year, set, name, card number, and rarity if visible). Keep it 4–10 words, no punctuation other than slashes for card numbers.",
+    "",
     "Return ONLY a single JSON object — no prose, no markdown, no code fences. Use this exact schema:",
     "{",
     '  "identification": { "type": "...", "player_or_character": "...", "year": "...", "set": "...", "card_number": "...", "rarity": "...", "notes": "..." },',
@@ -97,6 +106,8 @@ function evaluatePrompt(meta = {}, frontCount = 1, backCount = 1) {
     '  "grade_label": "Gem Mint | Mint | NM-MT | Near Mint | EX-MT | Excellent | VG-EX | Very Good | Good | Fair | Poor",',
     '  "authenticity_confidence": "High | Medium | Low",',
     '  "valuation_usd": { "low": <number>, "mid": <number>, "high": <number> },',
+    '  "valuation_basis": { "low": "short note: e.g. \\"PriceCharting loose ~$30\\"", "mid": "short note: e.g. \\"recent eBay sold avg ~$50 for NM raw\\"", "high": "short note: e.g. \\"TCGplayer market ~$72\\"" },',
+    '  "search_query": "compact query string for comp lookup",',
     '  "highlights": ["..."],',
     '  "concerns": ["..."],',
     '  "recommendations": ["..."]',
@@ -256,6 +267,29 @@ function aggregateEvaluations(runs) {
     }
   }
 
+  // search_query: prefer the longest non-empty value across runs.
+  const queries = runs
+    .map((r) => (typeof r?.search_query === "string" ? r.search_query.trim() : ""))
+    .filter(Boolean);
+  const search_query = queries.sort((a, b) => b.length - a.length)[0] || "";
+
+  // valuation_basis: take from the run that's "most complete" (most non-empty notes).
+  const basisScore = (b) => {
+    if (!b) return -1;
+    let s = 0;
+    for (const v of ["low", "mid", "high"]) if (b[v] && String(b[v]).trim()) s++;
+    return s;
+  };
+  let bestBasis = runs[0]?.valuation_basis || {};
+  let bestBasisScore = basisScore(bestBasis);
+  for (let i = 1; i < runs.length; i++) {
+    const s = basisScore(runs[i]?.valuation_basis);
+    if (s > bestBasisScore) {
+      bestBasisScore = s;
+      bestBasis = runs[i].valuation_basis;
+    }
+  }
+
   return {
     identification: bestIdRun?.identification || {},
     scales: {
@@ -272,6 +306,12 @@ function aggregateEvaluations(runs) {
       mid: median(valAt("mid")),
       high: median(valAt("high")),
     },
+    valuation_basis: {
+      low: bestBasis?.low || "",
+      mid: bestBasis?.mid || "",
+      high: bestBasis?.high || "",
+    },
+    search_query,
     highlights: unionDedupe(runs.map((r) => r?.highlights)),
     concerns: unionDedupe(runs.map((r) => r?.concerns)),
     recommendations: unionDedupe(runs.map((r) => r?.recommendations)),

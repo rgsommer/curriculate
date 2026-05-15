@@ -59,6 +59,12 @@ interface RunSpread {
   valuation_usd: { low: number[]; mid: number[]; high: number[] };
 }
 
+interface ValuationBasis {
+  low: string;
+  mid: string;
+  high: string;
+}
+
 interface Evaluation {
   identification: Identification;
   scales: {
@@ -71,6 +77,8 @@ interface Evaluation {
   grade_label: string;
   authenticity_confidence: string;
   valuation_usd: { low: number | null; mid: number | null; high: number | null };
+  valuation_basis: ValuationBasis;
+  search_query: string;
   highlights: string[];
   concerns: string[];
   recommendations: string[];
@@ -232,11 +240,59 @@ function normalizeEvaluation(raw: any): Evaluation {
       mid: num(v.mid),
       high: num(v.high),
     },
+    valuation_basis: {
+      low: raw?.valuation_basis?.low || "",
+      mid: raw?.valuation_basis?.mid || "",
+      high: raw?.valuation_basis?.high || "",
+    },
+    search_query: typeof raw?.search_query === "string" ? raw.search_query : "",
     highlights: Array.isArray(raw?.highlights) ? raw.highlights : [],
     concerns: Array.isArray(raw?.concerns) ? raw.concerns : [],
     recommendations: Array.isArray(raw?.recommendations) ? raw.recommendations : [],
     runs,
   };
+}
+
+// Comp-lookup URLs the user can click to verify the model's pricing.
+// Pricing source by source:
+//   • eBay  — sold listings (mid-of-market truth)
+//   • TCGplayer — active market price (high end)
+//   • PriceCharting — ungraded / loose price (low end)
+function buildCompUrls(query: string): { name: string; url: string; tag: string }[] {
+  const q = encodeURIComponent(query.trim());
+  return [
+    {
+      name: "eBay sold",
+      tag: "mid",
+      url: `https://www.ebay.com/sch/i.html?_nkw=${q}&LH_Sold=1&LH_Complete=1`,
+    },
+    {
+      name: "TCGplayer",
+      tag: "high",
+      url: `https://www.tcgplayer.com/search/all/product?q=${q}`,
+    },
+    {
+      name: "PriceCharting",
+      tag: "low",
+      url: `https://www.pricecharting.com/search-products?q=${q}`,
+    },
+  ];
+}
+
+function deriveSearchQuery(ev: Evaluation, meta: Meta): string {
+  if (ev.search_query && ev.search_query.trim()) return ev.search_query.trim();
+  const id = ev.identification;
+  const parts = [
+    id.year || meta.year,
+    id.type || meta.type,
+    id.set || meta.set,
+    id.player_or_character || meta.name,
+    id.card_number || meta.number,
+    id.rarity,
+  ]
+    .map((s) => (s ? String(s).trim() : ""))
+    .filter(Boolean);
+  return parts.join(" ");
 }
 
 // Spread helpers — produce a "8.5 (8.0–9.0)" style suffix when we have ≥2 samples.
@@ -719,10 +775,51 @@ export default function CardsPage() {
               Estimated value (USD)
             </div>
             <div className="ce-valuation">
-              <ValBox label="Low" amount={result.valuation_usd.low} range={spreadRange(result.runs?.valuation_usd?.low)} />
-              <ValBox label="Mid" amount={result.valuation_usd.mid} range={spreadRange(result.runs?.valuation_usd?.mid)} highlighted />
-              <ValBox label="High" amount={result.valuation_usd.high} range={spreadRange(result.runs?.valuation_usd?.high)} />
+              <ValBox
+                label="Low"
+                amount={result.valuation_usd.low}
+                range={spreadRange(result.runs?.valuation_usd?.low)}
+                note={result.valuation_basis?.low}
+              />
+              <ValBox
+                label="Mid"
+                amount={result.valuation_usd.mid}
+                range={spreadRange(result.runs?.valuation_usd?.mid)}
+                note={result.valuation_basis?.mid}
+                highlighted
+              />
+              <ValBox
+                label="High"
+                amount={result.valuation_usd.high}
+                range={spreadRange(result.runs?.valuation_usd?.high)}
+                note={result.valuation_basis?.high}
+              />
             </div>
+
+            {(() => {
+              const query = deriveSearchQuery(result, meta);
+              if (!query) return null;
+              const comps = buildCompUrls(query);
+              return (
+                <div className="ce-comp-row">
+                  <div className="ce-comp-label">Verify live comps:</div>
+                  <div className="ce-comp-chips">
+                    {comps.map((c) => (
+                      <a
+                        key={c.name}
+                        href={c.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`ce-comp-chip ce-comp-${c.tag}`}
+                      >
+                        {c.name}
+                        <span className="ce-comp-arrow">↗</span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             <ResultList title="Highlights" items={result.highlights} />
             <ResultList title="Concerns" items={result.concerns} />
@@ -867,15 +964,17 @@ function ValBox({
   label,
   amount,
   range,
+  note,
   highlighted,
 }: {
   label: string;
   amount: number | null;
   range?: { lo: number; hi: number } | null;
+  note?: string;
   highlighted?: boolean;
 }) {
   return (
-    <div className={"ce-val-box" + (highlighted ? " mid" : "")}>
+    <div className={"ce-val-box" + (highlighted ? " mid" : "")} title={note || undefined}>
       <div className="lbl">{label}</div>
       <div className="amt">{fmtMoney(amount)}</div>
       {range && (
@@ -883,6 +982,7 @@ function ValBox({
           {fmtMoney(range.lo)}–{fmtMoney(range.hi)}
         </div>
       )}
+      {note && <div className="ce-val-note">{note}</div>}
     </div>
   );
 }
@@ -1019,6 +1119,23 @@ const styles = `
   .ce-val-box.mid .lbl { color: #c4c4c4; }
   .ce-val-range { font-size: 10.5px; color: #8a8a8a; margin-top: 3px; font-variant-numeric: tabular-nums; }
   .ce-val-box.mid .ce-val-range { color: #b8b3a4; }
+  .ce-val-note { font-size: 10px; color: #8a8a8a; margin-top: 4px; line-height: 1.3; }
+  .ce-val-box.mid .ce-val-note { color: #b8b3a4; }
+
+  .ce-comp-row { margin-top: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .ce-comp-label { font-size: 11.5px; color: #8a8a8a; }
+  .ce-comp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ce-comp-chip {
+    font-size: 12px; padding: 6px 11px; border-radius: 999px;
+    background: #f0ece3; color: #1a1a1a; text-decoration: none; font-weight: 500;
+    display: inline-flex; align-items: center; gap: 4px; border: 1px solid #e0dccf;
+  }
+  .ce-comp-chip:hover { background: #e7e1d3; }
+  .ce-comp-arrow { font-size: 10px; opacity: 0.6; }
+  .ce-comp-low  { background: #f7f3e9; }
+  .ce-comp-mid  { background: #1f1f1f; color: #fff; border-color: #1f1f1f; }
+  .ce-comp-mid:hover { background: #2a2a2a; }
+  .ce-comp-high { background: #eef1f8; border-color: #d4dbef; }
 
   .ce-scale-spread { font-weight: 400; color: #8a8a8a; font-size: 12px; }
   .ce-spread-note { font-size: 11.5px; color: #8a8a8a; margin-top: 8px; }
