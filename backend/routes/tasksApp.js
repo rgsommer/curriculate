@@ -243,6 +243,24 @@ function sanitizeRecurrence(input, fallback = "none") {
   return LIFE_TASK_RECURRENCES.includes(r) ? r : fallback;
 }
 
+// Like advanceDate but keeps stepping until the result is in the future,
+// so completing a long-overdue recurring task doesn't immediately spawn
+// another overdue one. Caps the loop to avoid runaway iteration on
+// pathological inputs (e.g. 200 years of weekly = 10400 iterations max).
+function advanceDateToFuture(from, recurrence) {
+  let next = advanceDate(from, recurrence);
+  if (!next) return null;
+  const now = Date.now();
+  let safety = 0;
+  while (next.getTime() <= now && safety < 20000) {
+    const stepped = advanceDate(next, recurrence);
+    if (!stepped) break;
+    next = stepped;
+    safety++;
+  }
+  return next;
+}
+
 // Advance a date by `recurrence`. Handles month-end rollover correctly:
 // Jan 31 + 1 month → Feb 28 (or Feb 29 in leap years), not Mar 3.
 // `from` is the anchor date; if null, "now" is used.
@@ -355,12 +373,15 @@ router.patch("/tasks/:id", authRequired, async (req, res) => {
 
     // If we just transitioned a recurring task into a completed state, spawn
     // the next occurrence. We anchor the new dueAt off the original dueAt
-    // (so a weekly task stays on its weekly slot even if completed late);
-    // if there was no dueAt, anchor off "now".
+    // (so a weekly task stays on its weekly slot — same day of week, etc.).
+    // advanceDateToFuture skips past any intervals that have already lapsed,
+    // so finishing a 3-weeks-overdue weekly task lands on the next *future*
+    // Monday rather than another overdue Monday. If there was no dueAt at
+    // all, anchor off "now".
     let spawnedTask = null;
     const justCompleted = wasIncomplete && !!task.completedAt;
     if (justCompleted && task.recurrence && task.recurrence !== "none") {
-      const nextDue = advanceDate(task.dueAt || new Date(), task.recurrence);
+      const nextDue = advanceDateToFuture(task.dueAt || new Date(), task.recurrence);
       if (nextDue) {
         spawnedTask = await LifeTask.create({
           userId: task.userId,

@@ -167,6 +167,33 @@ function sortActive(a, b) {
   return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
 }
 
+// For a recurring "event" (same title + category + recurrence), only one
+// instance should appear in Active at a time. If multiple exist, the most
+// pressing wins: an overdue instance always beats a future one, then the
+// soonest dueAt wins. Non-recurring tasks pass through untouched.
+function dedupeRecurring(activeTasks) {
+  const passthrough = [];
+  const groups = new Map();
+  const now = Date.now();
+  const score = (t) => {
+    const due = t.dueAt ? new Date(t.dueAt).getTime() : Number.POSITIVE_INFINITY;
+    const overdue = t.dueAt && due < now;
+    // Smaller score = more pressing. Overdue items get a -Infinity-ish bonus,
+    // but among overdue items the *most* overdue (smallest dueAt) wins.
+    return overdue ? due - Number.MAX_SAFE_INTEGER : due;
+  };
+  for (const t of activeTasks) {
+    if (!t.recurrence || t.recurrence === "none") {
+      passthrough.push(t);
+      continue;
+    }
+    const key = `${t.title.trim().toLowerCase()}|${t.category}|${t.recurrence}`;
+    const existing = groups.get(key);
+    if (!existing || score(t) < score(existing)) groups.set(key, t);
+  }
+  return [...passthrough, ...groups.values()];
+}
+
 // ── Login screen ─────────────────────────────────────────────────────
 
 function LoginScreen({ onAuthed }) {
@@ -709,12 +736,15 @@ function TasksApp({ token, me, onSignOut }) {
   }
 
   const { active, completed, nextUp } = useMemo(() => {
-    const a = tasks.filter((t) => !t.completedAt);
+    const allActive = tasks.filter((t) => !t.completedAt);
     const c = tasks.filter((t) => t.completedAt)
       .sort((x, y) => new Date(y.completedAt) - new Date(x.completedAt));
-    a.sort(sortActive);
-    const filteredA = filterCat === "all" ? a : a.filter((t) => t.category === filterCat);
-    return { active: filteredA, completed: c, nextUp: a[0] || null };
+    // Dedupe recurring series so each event shows only its most pressing
+    // instance (overdue wins over future). Then sort the result.
+    const deduped = dedupeRecurring(allActive);
+    deduped.sort(sortActive);
+    const filteredA = filterCat === "all" ? deduped : deduped.filter((t) => t.category === filterCat);
+    return { active: filteredA, completed: c, nextUp: deduped[0] || null };
   }, [tasks, filterCat]);
 
   return (
@@ -757,7 +787,7 @@ function TasksApp({ token, me, onSignOut }) {
           <div style={styles.tabs}>
             <button type="button" onClick={() => setTab("active")}
               style={{ ...styles.tab, ...(tab === "active" ? styles.tabActive : {}) }}>
-              Active <span style={styles.tabCount}>{tasks.filter((t) => !t.completedAt).length}</span>
+              Active <span style={styles.tabCount}>{dedupeRecurring(tasks.filter((t) => !t.completedAt)).length}</span>
             </button>
             <button type="button" onClick={() => setTab("completed")}
               style={{ ...styles.tab, ...(tab === "completed" ? styles.tabActive : {}) }}>
