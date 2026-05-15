@@ -101,8 +101,9 @@ Use the web_search tool to pull the latest news on the top 6 holdings (and any n
 
   - "sev": one of "danger" | "warn" | "good" | "info"
   - "title": short headline (under 90 chars)
-  - "body": 2–4 sentences. Include any trade recommendation in this exact format:
-       Action: BUY/SELL/TRIM/HOLD <N> sh <TICKER>. Entry: $X. Target: $Y (timeframe). Stop: $Z. Horizon: <weeks/months>.
+  - "body": 2–4 sentences. Every actionable recommendation MUST follow this exact format with all four levels:
+       Action: BUY/SELL/TRIM/HOLD <N> sh <TICKER>. Entry: $X (or "$X-$Y" zone). Target: $Y (timeframe). Stop: $Z. Horizon: <weeks/months>.
+     NEVER write "at market", "current levels", or "now" as the Entry — always give a specific price or tight zone. If you want him to wait for a dip, give the dip price. If you want him to buy at the prevailing price, write that exact price.
      For "hold" calls, state the trigger that would change the call.
   - "meta": one-line supporting fact (price moves, news date, position size)
 
@@ -112,7 +113,7 @@ Severity rules:
 - "good"   — confirming positive catalysts
 - "info"   — general context, non-urgent ideas
 
-Tilt new-cash ideas AWAY from existing concentration. Always include at least one "new cash deployment" card with tiers $500 / $1,000 / $5,000 / $10,000.
+Always include at least one "new cash deployment" card with tiers $500 / $1,000 / $5,000 / $10,000. Each tier MUST contain explicit BUY recs in the format above, each with an Entry price/zone, Target, Stop, and Horizon. Never write "deploy into NVDA" without specifying the entry price you want him to pay. Tilt new-cash ideas AWAY from existing concentration.
 
 Return ONLY valid JSON: { "advice": [...], "sources": [{"title":"...","url":"..."}] }
 No prose outside the JSON.`;

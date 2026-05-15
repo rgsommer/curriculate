@@ -8,14 +8,19 @@
 
 import mongoose from "mongoose";
 
+// A leg can be one of:
+//   BUY / SELL      — equity trade. ticker + shares + pricePerShare required.
+//   DEPOSIT         — cash added to the account. Only `amount` + `currency`.
+//   WITHDRAW        — cash removed from the account. Only `amount` + `currency`.
+// `grossValue` is the abs CAD-or-USD value of the leg in its native currency.
 const TradeLegSchema = new mongoose.Schema(
   {
-    side: { type: String, enum: ["BUY", "SELL"], required: true },
-    ticker: { type: String, required: true, uppercase: true, trim: true },
-    shares: { type: Number, required: true, min: 0 },
-    pricePerShare: { type: Number, required: true, min: 0 },
+    side: { type: String, enum: ["BUY", "SELL", "DEPOSIT", "WITHDRAW"], required: true },
+    ticker: { type: String, uppercase: true, trim: true, default: null },
+    shares: { type: Number, min: 0, default: null },
+    pricePerShare: { type: Number, min: 0, default: null },
     currency: { type: String, enum: ["USD", "CAD"], required: true },
-    grossValue: { type: Number, required: true }, // shares * pricePerShare in `currency`
+    grossValue: { type: Number, required: true }, // value of the leg in `currency`
   },
   { _id: false }
 );

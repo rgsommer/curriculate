@@ -13,6 +13,10 @@ const AccountSchema = new mongoose.Schema(
   {
     id: { type: String, required: true },
     name: { type: String, required: true },
+    // Sweep-account cash held within this brokerage account. RBC Direct and
+    // similar brokerages keep a separate USD and CAD cash balance per account.
+    cashUsd: { type: Number, default: 0 },
+    cashCad: { type: Number, default: 0 },
   },
   { _id: false }
 );

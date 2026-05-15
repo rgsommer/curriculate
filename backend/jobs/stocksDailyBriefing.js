@@ -103,8 +103,8 @@ Write a markdown briefing with these sections:
 1. **Overnight & pre-market** — ES/NQ futures, VIX, USD/CAD, oil, key macro
 2. **News on holdings** — top-7 ticker news from last 24h
 3. **Performance snapshot** — week/month/3M moves
-4. **Today's one action** — single trade. MUST include: Action: BUY/SELL/TRIM <N> sh <TICKER>. Entry: $X. Target: $Y (timeframe). Stop: $Z. Horizon: <N> months.
-5. **💵 New cash deployment** — REQUIRED. Tiers $500 / $1,000 / $5,000 / $10,000. Each with full trade rec format. Tilt AWAY from current concentration.
+4. **Today's one action** — single trade. MUST include all four: Action: BUY/SELL/TRIM <N> sh <TICKER>. Entry: $X (specific price OR tight zone like "$74-$76", never "at market" or "current"). Target: $Y (timeframe). Stop: $Z. Horizon: <N> months.
+5. **💵 New cash deployment** — REQUIRED. Tiers $500 / $1,000 / $5,000 / $10,000. EACH rec in EACH tier must include a specific Entry price (or tight zone), Target, Stop, and Horizon — never "deploy into NVDA" without an entry price. Tilt AWAY from current concentration.
 6. **Watch list** — 2-3 levels to monitor today
 7. **Aggressive new ideas** — 1-2 unowned names with price targets
 

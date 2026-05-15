@@ -152,6 +152,15 @@ function aggregateByTicker(positions, fx) {
 const totalCad = (positions, fx) =>
   positions.reduce((s, p) => s + valueOfPosition(p, fx).cad, 0);
 
+// Sum cash across all accounts, converted to CAD.
+function totalCashCad(accounts, fx) {
+  if (!accounts) return 0;
+  return accounts.reduce(
+    (s, a) => s + (a.cashCad || 0) + (a.cashUsd || 0) * fx,
+    0
+  );
+}
+
 // =============================================================================
 // Advice engine
 // =============================================================================
@@ -766,11 +775,14 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade }) {
   const [busyRefresh, setBusyRefresh] = useState(false);
   const [busyAi, setBusyAi] = useState(false);
   const fx = user.fxUsdCad || 1.37;
-  const total = totalCad(user.positions, fx);
+  const positionsCad = totalCad(user.positions, fx);
+  const cashCad = totalCashCad(user.accounts, fx);
+  const total = positionsCad + cashCad;
   const agg = aggregateByTicker(user.positions, fx);
   const top = agg.slice(0, 8);
   const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const advice = generateAdvice(user).slice(0, 3);
+  const cashPct = total > 0 ? (cashCad / total) * 100 : 0;
 
   const handleRefresh = async () => {
     if (busyRefresh) return;
@@ -804,9 +816,15 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade }) {
       </div>
       <div className="sa-disclaimer">Research and education only. Not licensed investment advice.</div>
       <div className="sa-stats">
-        <div className="sa-stat"><div className="label">Total value (CAD)</div><div className="value">{fmtMoney(total, "CAD")}</div></div>
-        <div className="sa-stat"><div className="label">Positions</div><div className="value">{user.positions.length}</div></div>
-        <div className="sa-stat"><div className="label">Unique tickers</div><div className="value">{agg.length}</div></div>
+        <div className="sa-stat"><div className="label">Total value (CAD)</div><div className="value">{fmtMoney(total, "CAD")}</div><div className="delta muted" style={{ fontSize: 11, marginTop: 2 }}>{user.positions.length} positions · {fmtMoney(cashCad, "CAD")} cash</div></div>
+        <div className="sa-stat"><div className="label">Equities</div><div className="value">{fmtMoney(positionsCad, "CAD")}</div><div className="delta muted" style={{ fontSize: 11, marginTop: 2 }}>{total > 0 ? ((positionsCad / total) * 100).toFixed(1) : "0"}% of book</div></div>
+        <div className="sa-stat" style={{ borderColor: cashPct < 5 ? "#fde68a" : "var(--sa-border)" }}>
+          <div className="label">Cash</div>
+          <div className="value">{fmtMoney(cashCad, "CAD")}</div>
+          <div className="delta" style={{ fontSize: 11, marginTop: 2, color: cashPct < 5 ? "var(--sa-amber)" : "var(--sa-muted)" }}>
+            {cashPct.toFixed(1)}% of book{cashPct < 5 ? " · low" : ""}
+          </div>
+        </div>
         <div className="sa-stat"><div className="label">Risk profile</div><div className="value" style={{ textTransform: "capitalize" }}>{user.riskTolerance}</div></div>
       </div>
       <div className="sa-grid-2">
@@ -1068,11 +1086,11 @@ function PositionModal({ user, idx, onClose, onSave, onDelete }) {
 // Trade modal — Buy / Sell / Swap
 // =============================================================================
 function TradeModal({ user, onClose, onSubmit }) {
-  const [mode, setMode] = useState("swap"); // "buy" | "sell" | "swap"
+  const [mode, setMode] = useState("swap"); // "buy" | "sell" | "swap" | "cash"
   const [account, setAccount] = useState(user.accounts?.[0]?.id || "");
   const [executedAt] = useState(() => new Date().toISOString().slice(0, 10));
 
-  // Leg 1 is always the primary; for swap, leg 2 is the BUY side
+  // Equity leg state
   const [sellTicker, setSellTicker] = useState("");
   const [sellShares, setSellShares] = useState("");
   const [sellPrice, setSellPrice] = useState("");
@@ -1082,6 +1100,11 @@ function TradeModal({ user, onClose, onSubmit }) {
   const [buyShares, setBuyShares] = useState("");
   const [buyPrice, setBuyPrice] = useState("");
   const [buyCcy, setBuyCcy] = useState("CAD");
+
+  // Cash leg state
+  const [cashDirection, setCashDirection] = useState("DEPOSIT"); // DEPOSIT | WITHDRAW
+  const [cashAmount, setCashAmount] = useState("");
+  const [cashCcy, setCashCcy] = useState("CAD");
 
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1093,11 +1116,15 @@ function TradeModal({ user, onClose, onSubmit }) {
   const sellCadVal = isNaN(sellNum) ? 0 : (sellCcy === "USD" ? sellNum * fx : sellNum);
   const buyCadVal = isNaN(buyNum) ? 0 : (buyCcy === "USD" ? buyNum * fx : buyNum);
 
+  const cashAmtNum = parseFloat(cashAmount);
+  const cashCadVal = isNaN(cashAmtNum) ? 0 : (cashCcy === "USD" ? cashAmtNum * fx : cashAmtNum);
+
   // Cash impact: positive = cash in, negative = cash used
   let netCash = 0;
   if (mode === "buy") netCash = -buyCadVal;
   else if (mode === "sell") netCash = sellCadVal;
-  else netCash = sellCadVal - buyCadVal;
+  else if (mode === "swap") netCash = sellCadVal - buyCadVal;
+  else if (mode === "cash") netCash = cashDirection === "DEPOSIT" ? cashCadVal : -cashCadVal;
 
   // Tickers visible in the user's portfolio for BUY autocomplete suggestion
   const ownedTickers = [...new Set(user.positions.map(p => p.ticker))];
@@ -1152,16 +1179,24 @@ function TradeModal({ user, onClose, onSubmit }) {
     setErr(null);
     if (!account) return setErr("Pick an account.");
     const legs = [];
-    if (mode === "buy" || mode === "swap") {
-      const s = parseFloat(buyShares); const p = parseFloat(buyPrice);
-      if (!buyTicker || !s || s <= 0 || !(p >= 0)) return setErr("BUY leg needs ticker, shares > 0, and a price.");
-      legs.push({ side: "BUY", ticker: buyTicker.trim().toUpperCase(), shares: s, price: p, currency: buyCcy });
+
+    if (mode === "cash") {
+      const a = parseFloat(cashAmount);
+      if (!a || a <= 0) return setErr("Amount must be > 0.");
+      legs.push({ side: cashDirection, amount: a, currency: cashCcy });
+    } else {
+      if (mode === "buy" || mode === "swap") {
+        const s = parseFloat(buyShares); const p = parseFloat(buyPrice);
+        if (!buyTicker || !s || s <= 0 || !(p >= 0)) return setErr("BUY leg needs ticker, shares > 0, and a price.");
+        legs.push({ side: "BUY", ticker: buyTicker.trim().toUpperCase(), shares: s, price: p, currency: buyCcy });
+      }
+      if (mode === "sell" || mode === "swap") {
+        const s = parseFloat(sellShares); const p = parseFloat(sellPrice);
+        if (!sellTicker || !s || s <= 0 || !(p >= 0)) return setErr("SELL leg needs ticker, shares > 0, and a price.");
+        legs.unshift({ side: "SELL", ticker: sellTicker.trim().toUpperCase(), shares: s, price: p, currency: sellCcy });
+      }
     }
-    if (mode === "sell" || mode === "swap") {
-      const s = parseFloat(sellShares); const p = parseFloat(sellPrice);
-      if (!sellTicker || !s || s <= 0 || !(p >= 0)) return setErr("SELL leg needs ticker, shares > 0, and a price.");
-      legs.unshift({ side: "SELL", ticker: sellTicker.trim().toUpperCase(), shares: s, price: p, currency: sellCcy });
-    }
+
     if (legs.length === 0) return setErr("Nothing to do.");
     setBusy(true);
     try {
@@ -1179,11 +1214,12 @@ function TradeModal({ user, onClose, onSubmit }) {
         <h3>Record a trade</h3>
 
         {/* Mode picker */}
-        <div style={{ display: "flex", gap: 6, background: "var(--sa-panel-2)", padding: 4, borderRadius: 10, marginBottom: 18 }}>
+        <div style={{ display: "flex", gap: 6, background: "var(--sa-panel-2)", padding: 4, borderRadius: 10, marginBottom: 18, flexWrap: "wrap" }}>
           {[
             ["buy", "Buy"],
             ["sell", "Sell"],
-            ["swap", "Swap (sell → buy)"],
+            ["swap", "Swap"],
+            ["cash", "Cash"],
           ].map(([v, label]) => (
             <button
               key={v}
@@ -1294,6 +1330,48 @@ function TradeModal({ user, onClose, onSubmit }) {
             )}
           </div>
         )}
+
+        {/* CASH leg (deposit/withdraw) */}
+        {mode === "cash" && (() => {
+          const acctRow = user.accounts.find(a => a.id === account);
+          return (
+            <div style={{ background: "var(--sa-accent-soft)", border: "1px solid #bfdbfe", borderRadius: 10, padding: 14, marginBottom: 12 }}>
+              <div style={{ fontWeight: 600, fontSize: 12, color: "var(--sa-accent-2)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 10 }}>Cash movement</div>
+              <div className="sa-modal-row">
+                <div>
+                  <label>Direction</label>
+                  <select value={cashDirection} onChange={(e) => setCashDirection(e.target.value)}>
+                    <option value="DEPOSIT">Deposit (add cash)</option>
+                    <option value="WITHDRAW">Withdraw (remove cash)</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Currency</label>
+                  <select value={cashCcy} onChange={(e) => setCashCcy(e.target.value)}>
+                    <option value="CAD">CAD</option>
+                    <option value="USD">USD</option>
+                  </select>
+                </div>
+              </div>
+              <div className="sa-modal-row" style={{ gridTemplateColumns: "1fr" }}>
+                <div>
+                  <label>Amount ({cashCcy})</label>
+                  <input type="number" step="any" min="0" value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} placeholder="5000" />
+                  {acctRow && (
+                    <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 4 }}>
+                      Current balance in this account: ${(cashCcy === "USD" ? (acctRow.cashUsd || 0) : (acctRow.cashCad || 0)).toFixed(2)} {cashCcy}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {cashCadVal > 0 && cashCcy === "USD" && (
+                <div style={{ fontSize: 12, color: "var(--sa-text-2)", marginTop: 4 }}>
+                  ≈ ${cashCadVal.toFixed(2)} CAD (at FX {fx.toFixed(3)})
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         <div className="sa-modal-row" style={{ gridTemplateColumns: "1fr" }}>
           <div>

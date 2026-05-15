@@ -160,15 +160,26 @@ function applyLeg(positions, accountId, leg) {
 }
 
 function netCashCadOfTrade(legs, fx) {
-  // Cash in = sells. Cash out = buys. Positive net = cash inflow.
-  // legs use `grossValue` (shares * pricePerShare in `currency`).
+  // Cash in: SELL, DEPOSIT. Cash out: BUY, WITHDRAW. Positive net = cash inflow.
   let net = 0;
   for (const leg of legs) {
     const gross = Number(leg.grossValue) || 0;
     const cadValue = leg.currency === "USD" ? gross * fx : gross;
-    net += (leg.side === "SELL" ? 1 : -1) * cadValue;
+    const sign = leg.side === "SELL" || leg.side === "DEPOSIT" ? 1 : -1;
+    net += sign * cadValue;
   }
   return Number.isFinite(net) ? net : 0;
+}
+
+// Mutates the account row's cash balance.
+//   BUY/WITHDRAW  → cash[currency] -= grossValue
+//   SELL/DEPOSIT  → cash[currency] += grossValue
+function adjustAccountCash(account, leg) {
+  if (!account) return;
+  const cashKey = leg.currency === "USD" ? "cashUsd" : "cashCad";
+  const gross = Number(leg.grossValue) || 0;
+  const sign = leg.side === "SELL" || leg.side === "DEPOSIT" ? 1 : -1;
+  account[cashKey] = (account[cashKey] || 0) + sign * gross;
 }
 
 // ── handlers ───────────────────────────────────────────────────────
@@ -183,18 +194,27 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
     const normLegs = [];
     for (const raw of legs) {
       const side = String(raw?.side || "").toUpperCase();
+      const currency = raw?.currency === "CAD" ? "CAD" : "USD";
+
+      if (side === "DEPOSIT" || side === "WITHDRAW") {
+        const amount = num(raw?.amount);
+        if (amount == null || amount <= 0) return res.status(400).json({ error: `Bad amount for ${side}` });
+        normLegs.push({
+          side, ticker: null, shares: null, pricePerShare: null,
+          currency, grossValue: amount,
+        });
+        continue;
+      }
+
+      if (!["BUY", "SELL"].includes(side)) return res.status(400).json({ error: `Bad side: ${side}` });
       const ticker = String(raw?.ticker || "").toUpperCase().trim();
       const shares = num(raw?.shares);
       const price = num(raw?.price);
-      const currency = raw?.currency === "CAD" ? "CAD" : "USD";
-      if (!["BUY", "SELL"].includes(side)) return res.status(400).json({ error: `Bad side: ${side}` });
       if (!/^[A-Z0-9.\-]{1,16}$/.test(ticker)) return res.status(400).json({ error: `Bad ticker: ${ticker}` });
       if (shares == null || shares <= 0) return res.status(400).json({ error: `Bad shares for ${ticker}` });
       if (price == null || price < 0) return res.status(400).json({ error: `Bad price for ${ticker}` });
       normLegs.push({
-        side,
-        ticker,
-        shares,
+        side, ticker, shares,
         pricePerShare: price,
         currency,
         grossValue: shares * price,
@@ -208,20 +228,26 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
     const acctRow = portfolio.accounts.find((a) => a.id === account);
     if (!acctRow) return res.status(400).json({ error: "Unknown account id" });
 
-    // Apply legs to a copy of the positions array
+    // Apply legs to a copy of the positions array (and adjust cash inline)
     const newPositions = [...portfolio.positions.map((p) => ({ ...(p.toObject?.() || p) }))];
     try {
       for (const leg of normLegs) {
-        applyLeg(newPositions, account, {
-          side: leg.side, ticker: leg.ticker, shares: leg.shares,
-          price: leg.pricePerShare, currency: leg.currency,
-        });
+        // Position update only for BUY/SELL
+        if (leg.side === "BUY" || leg.side === "SELL") {
+          applyLeg(newPositions, account, {
+            side: leg.side, ticker: leg.ticker, shares: leg.shares,
+            price: leg.pricePerShare, currency: leg.currency,
+          });
+        }
+        // Cash adjustment for ALL leg types
+        adjustAccountCash(acctRow, leg);
       }
     } catch (e) {
       return res.status(400).json({ error: e.message });
     }
 
     portfolio.positions = newPositions;
+    portfolio.markModified("accounts");
     portfolio.lastSyncedAt = new Date();
     await portfolio.save();
 
