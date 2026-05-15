@@ -1446,6 +1446,23 @@ mongoose
     } catch (e) {
       console.warn("[seed] failed:", e?.message || e);
     }
+    // Force-sync the PublishedResult unique index on `code`.
+    // Mongoose doesn't drop & rebuild indexes automatically when a
+    // schema flag changes; if the production DB was provisioned with
+    // a non-unique index for this field originally, duplicates can
+    // silently slip through.  We saw two records share code RI554
+    // for that reason.  syncIndexes() drops outdated indexes for
+    // this model and creates the schema-declared ones, including the
+    // unique constraint, so the unique index is actually enforced.
+    try {
+      const { default: PublishedResultModel } = await import(
+        "./models/PublishedResult.js"
+      );
+      await PublishedResultModel.syncIndexes();
+      console.log("[indexes] PublishedResult indexes synced (unique on code).");
+    } catch (e) {
+      console.warn("[indexes] PublishedResult.syncIndexes() failed:", e?.message || e);
+    }
   })
   .catch((err) => {
     console.error("Mongo initial connection error:", err);

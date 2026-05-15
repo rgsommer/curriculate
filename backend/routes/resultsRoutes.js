@@ -161,9 +161,51 @@ router.post("/", createLimiter, async (req, res) => {
       }
     }
 
-    // New result — retry on code collision
-    for (let attempt = 0; attempt < 10; attempt++) {
+    // New result — generate a code that isn't already in use by an
+    // un-expired record.  Belt-and-suspenders:
+    //   (1) Explicit findOne({ code, expiresAt > now }) BEFORE create
+    //       — protects us even if the unique index isn't being
+    //         enforced for some reason (stale build / index dropped
+    //         and never rebuilt, mixed-write race against TTL deletion
+    //         that briefly opens a window for a duplicate, etc.).
+    //         A teacher reported seeing the same RI554 on two
+    //         different assignments — the cause is exactly that
+    //         the unique index alone wasn't catching the collision.
+    //   (2) Mongo unique-index catch on 11000 stays as last-resort.
+    //   (3) Bumped retry budget from 10 → 50.  AA123 keyspace is
+    //         ~650k codes (676 letter-pairs × 1000 numbers minus the
+    //         blocked pairs), so even with 100k active codes the
+    //         expected attempts per success is < 2.
+    //   (4) Warn loudly if we ever need > 25 attempts so we notice
+    //         when the keyspace is filling up.
+    const now = new Date();
+    for (let attempt = 0; attempt < 50; attempt++) {
       const code = genAA123();
+      // (1) Active-code precheck.  A code whose record has already
+      // expired is fair game — TTL will (or already has) cleaned it
+      // up.  We only reject codes currently belonging to a live
+      // record.
+      try {
+        const clash = await PublishedResult.findOne({
+          code,
+          expiresAt: { $gt: now },
+        })
+          .select("_id")
+          .lean();
+        if (clash) {
+          if (attempt >= 25) {
+            console.warn(
+              `[results] Ref-code keyspace pressure: attempt ${attempt + 1} ` +
+                `for ${code} found an active clash.`
+            );
+          }
+          continue;
+        }
+      } catch (precheckErr) {
+        console.warn("[results] Active-code precheck failed:", precheckErr?.message);
+        // Fall through and try the insert anyway — the unique index
+        // is still our backstop.
+      }
       try {
         await PublishedResult.create({
           code,
@@ -176,7 +218,7 @@ router.post("/", createLimiter, async (req, res) => {
         fireGradeNotify(code, meta, payload);
         return res.json({ code, expiresAt });
       } catch (e) {
-        // Duplicate code -> retry
+        // Duplicate code -> retry (unique-index race we missed in (1))
         if (String(e?.code) === "11000") continue;
         throw e;
       }
