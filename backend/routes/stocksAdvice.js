@@ -87,9 +87,25 @@ function portfolioSummary(profile) {
   const fx = profile.fxUsdCad || 1.37;
   const agg = aggregateByTicker(profile.positions || [], fx);
   const total = agg.reduce((s, a) => s + a.cad, 0);
-  const lines = agg.map(
-    (a) => `${a.ticker}: ${a.qty.toLocaleString()} sh  ≈ $${Math.round(a.cad).toLocaleString()} CAD  (${total > 0 ? ((a.cad / total) * 100).toFixed(1) : "0"}%)`
-  );
+
+  // Determine each ticker's native trading currency + last-known native price.
+  // Used to render prices in the SAME currency Richard trades them in.
+  const nativeCcy = {};
+  const nativePrice = {};
+  for (const p of profile.positions || []) {
+    if (!nativeCcy[p.ticker]) {
+      nativeCcy[p.ticker] = p.ccy;
+      nativePrice[p.ticker] = p.ccy === "USD" ? p.priceUsd : p.priceCad;
+    }
+  }
+
+  const lines = agg.map((a) => {
+    const ccy = nativeCcy[a.ticker] || "USD";
+    const px = nativePrice[a.ticker];
+    const pxStr = px ? `@ $${px.toFixed(2)} ${ccy}` : "";
+    const pctStr = total > 0 ? `(${((a.cad / total) * 100).toFixed(1)}%)` : "";
+    return `${a.ticker} (${ccy}): ${a.qty.toLocaleString()} sh ${pxStr} ≈ $${Math.round(a.cad).toLocaleString()} CAD ${pctStr}`;
+  });
 
   // Per-currency cash totals across all accounts
   let cashUsd = 0, cashCad = 0;
@@ -142,6 +158,17 @@ function buildPrompt(profile, summary, monitorAlerts = []) {
   const accountCashTable = (profile.accounts || [])
     .map(a => `  ${a.name}: $${(a.cashCad || 0).toFixed(0)} CAD · $${(a.cashUsd || 0).toFixed(0)} USD`)
     .join("\n") || "  (no accounts configured)";
+
+  const priceCurrencyBlock = `
+PRICE CURRENCY CONVENTION (strict — applies to every rec, alert, and discussion):
+- Every position has a native trading currency shown in the Holdings list (e.g., "TSLA (USD)" trades in USD, "ENB (CAD)" trades in CAD).
+- When stating a price for a security, use its NATIVE currency only.
+  ✓ "TSLA at $442" or "TSLA at $442 USD"
+  ✗ "TSLA at $607 CAD" — NEVER convert US-listed stock prices to CAD for price discussion
+  ✓ "ENB at $75.58" or "ENB at $75.58 CAD"
+- For Entry/Target/Stop in trade recs: use the SECURITY's native currency, never the converted one.
+- A CAD or USD conversion in parentheses is ONLY appropriate when discussing portfolio TOTALS or sizing math (e.g., "Uses ~$10,640 USD ≈ $14,600 CAD of available cash"), not when stating a security's price.
+`;
 
   const tradingCostsBlock = `
 Real-world trading-cost frictions (factor these into every rec):
@@ -208,6 +235,7 @@ Holdings:
 ${summary.text}
 ${cashBlock}
 ${alertsBlock}
+${priceCurrencyBlock}
 ${tradingCostsBlock}
 ${CANADIAN_TAX_BLOCK}
 ${SIGNALS_CHECKLIST}

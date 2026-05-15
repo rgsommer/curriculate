@@ -156,7 +156,14 @@ export function md2html(md) {
 export function portfolioSummary(profile) {
   const fx = profile.fxUsdCad || 1.37;
   const agg = {};
+  // Track native currency + last price per ticker (first position wins)
+  const nativeCcy = {};
+  const nativePrice = {};
   for (const p of profile.positions || []) {
+    if (!nativeCcy[p.ticker]) {
+      nativeCcy[p.ticker] = p.ccy;
+      nativePrice[p.ticker] = p.ccy === "USD" ? p.priceUsd : p.priceCad;
+    }
     const val =
       p.ccy === "USD"
         ? (p.priceCad ?? (p.priceUsd ? p.priceUsd * fx : 0)) * (p.qty || 0)
@@ -183,7 +190,12 @@ export function portfolioSummary(profile) {
   return {
     total,
     table: sorted
-      .map((a) => `${a.ticker}: ${a.qty.toLocaleString()} sh ≈ $${Math.round(a.cad).toLocaleString()} CAD (${total > 0 ? ((a.cad / total) * 100).toFixed(1) : "0"}%)`)
+      .map((a) => {
+        const ccy = nativeCcy[a.ticker] || "USD";
+        const px = nativePrice[a.ticker];
+        const pxStr = px ? `@ $${px.toFixed(2)} ${ccy}` : "";
+        return `${a.ticker} (${ccy}): ${a.qty.toLocaleString()} sh ${pxStr} ≈ $${Math.round(a.cad).toLocaleString()} CAD (${total > 0 ? ((a.cad / total) * 100).toFixed(1) : "0"}%)`;
+      })
       .join("\n"),
     cashUsd, cashCad, cashCadEquiv, perAccountCash,
   };
@@ -258,6 +270,16 @@ function buildBriefingPrompt(profile, summary, monitorAlerts = []) {
     .map(a => `  ${a.name}: $${(a.cashCad || 0).toFixed(0)} CAD · $${(a.cashUsd || 0).toFixed(0)} USD`)
     .join("\n") || "  (no accounts configured)";
 
+  const priceCurrencyBlock = `
+PRICE CURRENCY CONVENTION (strict):
+- Every position has a native trading currency shown in the Holdings list (e.g., "TSLA (USD)", "ENB (CAD)").
+- Always state prices in the security's NATIVE currency. Never convert US-listed prices to CAD for price discussion.
+  ✓ "TSLA at $442 USD" · ✗ "TSLA at $607 CAD"
+  ✓ "ENB at $75.58 CAD" · ✗ "ENB at $55.10 USD"
+- Entry/Target/Stop in trade recs MUST be in the security's native currency.
+- CAD/USD conversions in parentheses are OK only for portfolio totals or cash-sizing math, not for stock prices.
+`;
+
   const tradingCostsBlock = `
 Trading-cost frictions (factor into every recommendation):
 - Commission: $${commission.toFixed(2)} per trade. Each leg counts separately (Swap = $${(commission * 2).toFixed(2)}).
@@ -305,6 +327,7 @@ Holdings:
 ${summary.table}
 ${cashBlock}
 ${alertsBlock}
+${priceCurrencyBlock}
 ${tradingCostsBlock}
 ${CANADIAN_TAX_BLOCK}
 ${SIGNALS_CHECKLIST}

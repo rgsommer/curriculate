@@ -2145,17 +2145,25 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37 }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
         <div>
           <h3 style={{ margin: 0 }}>Per-ticker performance</h3>
-          {showTotal && (
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 6 }}>
-              <span style={{ fontSize: 22, fontWeight: 700, color: totalColor, fontVariantNumeric: "tabular-nums", letterSpacing: "-.01em" }}>
-                {totalPct >= 0 ? "+" : ""}{totalPct.toFixed(2)}%
-              </span>
-              <span style={{ fontSize: 14, fontWeight: 500, color: totalColor, fontVariantNumeric: "tabular-nums" }}>
-                {totalDeltaCad >= 0 ? "+" : "−"}${Math.abs(totalDeltaCad).toLocaleString(undefined, { maximumFractionDigits: 0 })} CAD
-              </span>
-              <span style={{ fontSize: 12, color: "var(--sa-muted)" }}>over {rangeLabel}</span>
-            </div>
-          )}
+          {showTotal && (() => {
+            const totalDeltaUsd = totalDeltaCad / fx;
+            const sign = totalDeltaCad >= 0 ? "+" : "−";
+            return (
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 22, fontWeight: 700, color: totalColor, fontVariantNumeric: "tabular-nums", letterSpacing: "-.01em" }}>
+                  {totalPct >= 0 ? "+" : ""}{totalPct.toFixed(2)}%
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: totalColor, fontVariantNumeric: "tabular-nums" }}>
+                  {sign}${Math.abs(totalDeltaUsd).toLocaleString(undefined, { maximumFractionDigits: 0 })} USD
+                </span>
+                <span style={{ fontSize: 14, color: "var(--sa-muted)" }}>·</span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: totalColor, fontVariantNumeric: "tabular-nums" }}>
+                  {sign}${Math.abs(totalDeltaCad).toLocaleString(undefined, { maximumFractionDigits: 0 })} CAD
+                </span>
+                <span style={{ fontSize: 12, color: "var(--sa-muted)" }}>over {rangeLabel}</span>
+              </div>
+            );
+          })()}
         </div>
         <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
           {[
