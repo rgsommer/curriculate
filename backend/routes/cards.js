@@ -22,6 +22,11 @@ import OpenAI from "openai";
 const router = express.Router();
 const MODEL = process.env.CARDS_OPENAI_MODEL || "gpt-4o-mini";
 
+// Self-consistency: fan out N evaluate calls in parallel and aggregate.
+// Set CARDS_EVAL_RUNS=1 to disable. Default 3 ≈ 3× cost (~$0.04–0.06/card).
+const EVAL_RUNS = Math.max(1, Math.min(7, parseInt(process.env.CARDS_EVAL_RUNS || "3", 10)));
+const EVAL_TEMPERATURE = Number(process.env.CARDS_EVAL_TEMPERATURE || "0.7");
+
 // ---------- lazy OpenAI client (same pattern as index.js) ----------
 let _openai = null;
 function openai() {
@@ -115,6 +120,140 @@ function isDataUrl(s) {
   return typeof s === "string" && s.startsWith("data:image/");
 }
 
+// ---------- one OpenAI call ----------
+async function runOpenAI({ prompt, frontDataUrl, backDataUrl, temperature }) {
+  const completion = await openai().chat.completions.create({
+    model: MODEL,
+    response_format: { type: "json_object" },
+    temperature,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: frontDataUrl, detail: "high" } },
+          { type: "image_url", image_url: { url: backDataUrl, detail: "high" } },
+        ],
+      },
+    ],
+  });
+  const text = completion?.choices?.[0]?.message?.content || "";
+  return extractJson(text);
+}
+
+// ---------- aggregation helpers (evaluate mode) ----------
+function isNum(x) {
+  return typeof x === "number" && Number.isFinite(x);
+}
+function mean(nums) {
+  const xs = nums.filter(isNum);
+  if (!xs.length) return null;
+  return xs.reduce((a, b) => a + b, 0) / xs.length;
+}
+function median(nums) {
+  const xs = nums.filter(isNum).slice().sort((a, b) => a - b);
+  if (!xs.length) return null;
+  const m = Math.floor(xs.length / 2);
+  return xs.length % 2 ? xs[m] : (xs[m - 1] + xs[m]) / 2;
+}
+function modeOrFirst(values) {
+  const counts = new Map();
+  let bestKey = null;
+  let bestCount = 0;
+  for (const v of values) {
+    if (v == null || v === "") continue;
+    const k = String(v);
+    const c = (counts.get(k) || 0) + 1;
+    counts.set(k, c);
+    if (c > bestCount) {
+      bestCount = c;
+      bestKey = k;
+    }
+  }
+  return bestKey || "";
+}
+function unionDedupe(arrays) {
+  const seen = new Set();
+  const out = [];
+  for (const arr of arrays) {
+    if (!Array.isArray(arr)) continue;
+    for (const item of arr) {
+      const s = String(item || "").trim();
+      if (!s) continue;
+      const key = s.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(s);
+      }
+    }
+  }
+  return out;
+}
+function num(x) {
+  return isNum(Number(x)) ? Number(x) : null;
+}
+
+function aggregateEvaluations(runs) {
+  // runs: array of raw JSON objects from each call.
+  const grades = runs.map((r) => num(r?.overall_grade)).filter(isNum);
+  const scaleAt = (k) => runs.map((r) => num(r?.scales?.[k])).filter(isNum);
+  const valAt = (k) => runs.map((r) => num(r?.valuation_usd?.[k])).filter(isNum);
+
+  // Identification: prefer the most "complete" run (most non-empty fields), tie-break to first.
+  const idScore = (id) => {
+    if (!id) return -1;
+    let s = 0;
+    for (const v of Object.values(id)) if (v && String(v).trim()) s++;
+    return s;
+  };
+  let bestIdRun = runs[0];
+  let bestScore = idScore(runs[0]?.identification);
+  for (let i = 1; i < runs.length; i++) {
+    const s = idScore(runs[i]?.identification);
+    if (s > bestScore) {
+      bestScore = s;
+      bestIdRun = runs[i];
+    }
+  }
+
+  return {
+    identification: bestIdRun?.identification || {},
+    scales: {
+      centering: mean(scaleAt("centering")),
+      corners: mean(scaleAt("corners")),
+      edges: mean(scaleAt("edges")),
+      surface: mean(scaleAt("surface")),
+    },
+    overall_grade: mean(grades),
+    grade_label: modeOrFirst(runs.map((r) => r?.grade_label)),
+    authenticity_confidence: modeOrFirst(runs.map((r) => r?.authenticity_confidence)),
+    valuation_usd: {
+      low: median(valAt("low")),
+      mid: median(valAt("mid")),
+      high: median(valAt("high")),
+    },
+    highlights: unionDedupe(runs.map((r) => r?.highlights)),
+    concerns: unionDedupe(runs.map((r) => r?.concerns)),
+    recommendations: unionDedupe(runs.map((r) => r?.recommendations)),
+    // Spread metadata — the UI uses this to show ranges next to means/medians.
+    runs: {
+      count: runs.length,
+      overall_grade: grades,
+      scales: {
+        centering: scaleAt("centering"),
+        corners: scaleAt("corners"),
+        edges: scaleAt("edges"),
+        surface: scaleAt("surface"),
+      },
+      valuation_usd: {
+        low: valAt("low"),
+        mid: valAt("mid"),
+        high: valAt("high"),
+      },
+    },
+  };
+}
+
 // ---------- POST /cards/grade ----------
 router.post("/grade", rateLimit, async (req, res) => {
   try {
@@ -129,26 +268,41 @@ router.post("/grade", rateLimit, async (req, res) => {
         .json({ error: "frontDataUrl and backDataUrl must be base64 data: URLs (image/*)." });
     }
 
-    const prompt = mode === "identify" ? identifyPrompt() : evaluatePrompt(meta || {});
+    // Identify mode: single deterministic call.
+    if (mode === "identify") {
+      const result = await runOpenAI({
+        prompt: identifyPrompt(),
+        frontDataUrl,
+        backDataUrl,
+        temperature: 0.2,
+      });
+      return res.json({ result });
+    }
 
-    const completion = await openai().chat.completions.create({
-      model: MODEL,
-      response_format: { type: "json_object" },
-      temperature: 0.2,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: frontDataUrl, detail: "high" } },
-            { type: "image_url", image_url: { url: backDataUrl, detail: "high" } },
-          ],
-        },
-      ],
-    });
+    // Evaluate mode: fan out N parallel calls and aggregate.
+    const prompt = evaluatePrompt(meta || {});
+    const settled = await Promise.allSettled(
+      Array.from({ length: EVAL_RUNS }, () =>
+        runOpenAI({ prompt, frontDataUrl, backDataUrl, temperature: EVAL_TEMPERATURE })
+      )
+    );
+    const runs = settled
+      .filter((s) => s.status === "fulfilled")
+      .map((s) => s.value);
 
-    const text = completion?.choices?.[0]?.message?.content || "";
-    const result = extractJson(text);
+    if (runs.length === 0) {
+      const firstErr = settled.find((s) => s.status === "rejected");
+      const message = firstErr?.reason?.message || "All evaluation runs failed.";
+      console.error("[cards/grade] all runs failed:", message);
+      return res.status(502).json({ error: message });
+    }
+
+    const failures = settled.length - runs.length;
+    if (failures > 0) {
+      console.warn(`[cards/grade] ${failures}/${settled.length} runs failed; aggregating the rest`);
+    }
+
+    const result = aggregateEvaluations(runs);
     res.json({ result });
   } catch (err) {
     const message = err?.message || "Unknown error";

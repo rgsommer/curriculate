@@ -52,6 +52,13 @@ interface Identification {
   notes?: string;
 }
 
+interface RunSpread {
+  count: number;
+  overall_grade: number[];
+  scales: { centering: number[]; corners: number[]; edges: number[]; surface: number[] };
+  valuation_usd: { low: number[]; mid: number[]; high: number[] };
+}
+
 interface Evaluation {
   identification: Identification;
   scales: {
@@ -67,6 +74,8 @@ interface Evaluation {
   highlights: string[];
   concerns: string[];
   recommendations: string[];
+  // Present when the backend ran multiple parallel evaluations.
+  runs?: RunSpread;
 }
 
 interface HistoryItem {
@@ -166,10 +175,38 @@ function num(x: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function numArray(x: unknown): number[] {
+  if (!Array.isArray(x)) return [];
+  const out: number[] = [];
+  for (const v of x) {
+    const n = Number(v);
+    if (Number.isFinite(n)) out.push(n);
+  }
+  return out;
+}
+
 function normalizeEvaluation(raw: any): Evaluation {
   const id = (raw && raw.identification) || {};
   const s = (raw && raw.scales) || {};
   const v = (raw && (raw.valuation_usd || raw.valuation)) || {};
+  const r = raw && raw.runs;
+  const runs: RunSpread | undefined = r
+    ? {
+        count: Number.isFinite(Number(r.count)) ? Number(r.count) : 0,
+        overall_grade: numArray(r.overall_grade),
+        scales: {
+          centering: numArray(r.scales?.centering),
+          corners: numArray(r.scales?.corners),
+          edges: numArray(r.scales?.edges),
+          surface: numArray(r.scales?.surface),
+        },
+        valuation_usd: {
+          low: numArray(r.valuation_usd?.low),
+          mid: numArray(r.valuation_usd?.mid),
+          high: numArray(r.valuation_usd?.high),
+        },
+      }
+    : undefined;
   return {
     identification: {
       type: id.type || "",
@@ -197,7 +234,22 @@ function normalizeEvaluation(raw: any): Evaluation {
     highlights: Array.isArray(raw?.highlights) ? raw.highlights : [],
     concerns: Array.isArray(raw?.concerns) ? raw.concerns : [],
     recommendations: Array.isArray(raw?.recommendations) ? raw.recommendations : [],
+    runs,
   };
+}
+
+// Spread helpers — produce a "8.5 (8.0–9.0)" style suffix when we have ≥2 samples.
+function spreadRange(values: number[] | undefined): { lo: number; hi: number } | null {
+  if (!values || values.length < 2) return null;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of values) {
+    if (!Number.isFinite(v)) continue;
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo === hi) return null;
+  return { lo, hi };
 }
 
 function matchCardType(s: string): CardType {
@@ -254,6 +306,7 @@ export default function CardsPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Evaluation | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [formExpanded, setFormExpanded] = useState(false);
   const identifyTokenRef = useRef(0);
 
   // Load history once.
@@ -305,11 +358,13 @@ export default function CardsPage() {
           return next;
         });
         setAutofilled((prev) => ({ ...prev, ...fills }));
-        setIdentStatus({ text: "Auto-filled · review before evaluating", tone: "done" });
+        setIdentStatus({ text: "Identified · tap edit if anything is wrong", tone: "done" });
+        setFormExpanded(false); // collapse on successful identify
       } catch (err) {
         if (cancelled || token !== identifyTokenRef.current) return;
         const message = err instanceof Error ? err.message : "Could not identify card.";
         setIdentStatus({ text: message, tone: "err" });
+        setFormExpanded(true); // show the form so they can enter details manually
       }
     })();
     return () => {
@@ -354,6 +409,7 @@ export default function CardsPage() {
     setIdentStatus(null);
     setResult(null);
     setError(null);
+    setFormExpanded(false);
   }, []);
 
   const onEvaluate = useCallback(async () => {
@@ -443,11 +499,11 @@ export default function CardsPage() {
           </div>
         </section>
 
-        {/* Step 2: details */}
+        {/* Step 2: details — summary by default, form expands on edit or identify failure */}
         <section className="ce-card">
           <div className="ce-section-row">
             <div className="ce-section-title" style={{ marginBottom: 0 }}>
-              2. Card details (auto-fills from photos)
+              2. What we see
             </div>
             {identStatus && (
               <span className={`ce-ident-status ${identStatus.tone}`}>
@@ -457,79 +513,96 @@ export default function CardsPage() {
             )}
           </div>
 
-          <div className="ce-grid ce-grid-2">
-            <Field label="Card type">
-              <select
-                value={meta.type}
-                onChange={(e) => updateMeta("type", e.target.value as CardType)}
-                className={autofilled.type ? "ce-autofilled" : ""}
-              >
-                {CARD_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t || "— Select —"}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Year">
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="e.g. 1999"
-                value={meta.year}
-                onChange={(e) => updateMeta("year", e.target.value)}
-                className={autofilled.year ? "ce-autofilled" : ""}
-              />
-            </Field>
-            <Field label="Player / Character">
-              <input
-                type="text"
-                placeholder="e.g. Charizard, Gretzky"
-                value={meta.name}
-                onChange={(e) => updateMeta("name", e.target.value)}
-                className={autofilled.name ? "ce-autofilled" : ""}
-              />
-            </Field>
-            <Field label="Set / Brand">
-              <input
-                type="text"
-                placeholder="e.g. Base Set, Topps"
-                value={meta.set}
-                onChange={(e) => updateMeta("set", e.target.value)}
-                className={autofilled.set ? "ce-autofilled" : ""}
-              />
-            </Field>
-            <Field label="Card # (if visible)">
-              <input
-                type="text"
-                placeholder="e.g. 4/102"
-                value={meta.number}
-                onChange={(e) => updateMeta("number", e.target.value)}
-                className={autofilled.number ? "ce-autofilled" : ""}
-              />
-            </Field>
-            <Field label="Already graded?">
-              <select
-                value={meta.graded}
-                onChange={(e) => updateMeta("graded", e.target.value as GradedKind)}
-                className={autofilled.graded ? "ce-autofilled" : ""}
-              >
-                <option value="">No / Raw</option>
-                {GRADED_KINDS.filter((g) => g).map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-          <Field label="Your observations (optional)" style={{ marginTop: 10 }}>
-            <textarea
-              placeholder="Sharp corners, slight off-center, surface scratch on the right…"
-              value={meta.notes}
-              onChange={(e) => updateMeta("notes", e.target.value)}
-            />
-          </Field>
+          {!bothPhotos ? (
+            <div className="ce-hint">Snap both photos above and we'll identify the card.</div>
+          ) : identStatus?.tone === "loading" ? (
+            <div className="ce-hint">Reading the card…</div>
+          ) : formExpanded ? (
+            <>
+              <div className="ce-grid ce-grid-2">
+                <Field label="Card type">
+                  <select
+                    value={meta.type}
+                    onChange={(e) => updateMeta("type", e.target.value as CardType)}
+                    className={autofilled.type ? "ce-autofilled" : ""}
+                  >
+                    {CARD_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t || "— Select —"}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Year">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="e.g. 1999"
+                    value={meta.year}
+                    onChange={(e) => updateMeta("year", e.target.value)}
+                    className={autofilled.year ? "ce-autofilled" : ""}
+                  />
+                </Field>
+                <Field label="Player / Character">
+                  <input
+                    type="text"
+                    placeholder="e.g. Charizard, Gretzky"
+                    value={meta.name}
+                    onChange={(e) => updateMeta("name", e.target.value)}
+                    className={autofilled.name ? "ce-autofilled" : ""}
+                  />
+                </Field>
+                <Field label="Set / Brand">
+                  <input
+                    type="text"
+                    placeholder="e.g. Base Set, Topps"
+                    value={meta.set}
+                    onChange={(e) => updateMeta("set", e.target.value)}
+                    className={autofilled.set ? "ce-autofilled" : ""}
+                  />
+                </Field>
+                <Field label="Card # (if visible)">
+                  <input
+                    type="text"
+                    placeholder="e.g. 4/102"
+                    value={meta.number}
+                    onChange={(e) => updateMeta("number", e.target.value)}
+                    className={autofilled.number ? "ce-autofilled" : ""}
+                  />
+                </Field>
+                <Field label="Already graded?">
+                  <select
+                    value={meta.graded}
+                    onChange={(e) => updateMeta("graded", e.target.value as GradedKind)}
+                    className={autofilled.graded ? "ce-autofilled" : ""}
+                  >
+                    <option value="">No / Raw</option>
+                    {GRADED_KINDS.filter((g) => g).map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <Field label="Your observations (optional)" style={{ marginTop: 10 }}>
+                <textarea
+                  placeholder="Sharp corners, slight off-center, surface scratch on the right…"
+                  value={meta.notes}
+                  onChange={(e) => updateMeta("notes", e.target.value)}
+                />
+              </Field>
+              {identStatus?.tone !== "err" && (
+                <div style={{ marginTop: 10, textAlign: "right" }}>
+                  <button className="ce-small-link" onClick={() => setFormExpanded(false)}>
+                    Done editing
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <IdentSummary meta={meta} onEdit={() => setFormExpanded(true)} />
+          )}
         </section>
 
         <div className="ce-actions">
@@ -583,6 +656,16 @@ export default function CardsPage() {
                     </span>
                   )}
                 </div>
+                {(() => {
+                  const r = spreadRange(result.runs?.overall_grade);
+                  if (!r) return null;
+                  return (
+                    <div className="ce-spread-note">
+                      Range across {result.runs?.count ?? 0} runs:{" "}
+                      {fmtGrade(r.lo)}–{fmtGrade(r.hi)}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -600,11 +683,19 @@ export default function CardsPage() {
               ).map(([label, key]) => {
                 const v = result.scales[key];
                 const pct = v == null ? 0 : Math.max(0, Math.min(100, v * 10));
+                const range = spreadRange(result.runs?.scales?.[key]);
                 return (
                   <div className="ce-scale-row" key={key}>
                     <div className="name">
                       <span>{label}</span>
-                      <b>{v == null ? "—" : Math.round(v * 10) / 10}/10</b>
+                      <b>
+                        {v == null ? "—" : Math.round(v * 10) / 10}/10
+                        {range && (
+                          <span className="ce-scale-spread">
+                            {" "}({fmtGrade(range.lo)}–{fmtGrade(range.hi)})
+                          </span>
+                        )}
+                      </b>
                     </div>
                     <div className="ce-scale-bar">
                       <div className="fill" style={{ width: pct + "%" }} />
@@ -618,16 +709,21 @@ export default function CardsPage() {
               Estimated value (USD)
             </div>
             <div className="ce-valuation">
-              <ValBox label="Low" amount={result.valuation_usd.low} />
-              <ValBox label="Mid" amount={result.valuation_usd.mid} highlighted />
-              <ValBox label="High" amount={result.valuation_usd.high} />
+              <ValBox label="Low" amount={result.valuation_usd.low} range={spreadRange(result.runs?.valuation_usd?.low)} />
+              <ValBox label="Mid" amount={result.valuation_usd.mid} range={spreadRange(result.runs?.valuation_usd?.mid)} highlighted />
+              <ValBox label="High" amount={result.valuation_usd.high} range={spreadRange(result.runs?.valuation_usd?.high)} />
             </div>
 
             <ResultList title="Highlights" items={result.highlights} />
             <ResultList title="Concerns" items={result.concerns} />
             <ResultList title="Recommendations" items={result.recommendations} />
 
-            <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
+            <div className="ce-result-footer">
+              {result.runs?.count && result.runs.count > 1 ? (
+                <span className="ce-runs-note">Averaged across {result.runs.count} model runs.</span>
+              ) : (
+                <span />
+              )}
               <button className="ce-small-link" onClick={onSaveHistory}>
                 Save to history
               </button>
@@ -752,16 +848,55 @@ function Field({
 function ValBox({
   label,
   amount,
+  range,
   highlighted,
 }: {
   label: string;
   amount: number | null;
+  range?: { lo: number; hi: number } | null;
   highlighted?: boolean;
 }) {
   return (
     <div className={"ce-val-box" + (highlighted ? " mid" : "")}>
       <div className="lbl">{label}</div>
       <div className="amt">{fmtMoney(amount)}</div>
+      {range && (
+        <div className="ce-val-range">
+          {fmtMoney(range.lo)}–{fmtMoney(range.hi)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IdentSummary({ meta, onEdit }: { meta: Meta; onEdit: () => void }) {
+  const bits = [
+    meta.year,
+    meta.name,
+    meta.type,
+    meta.set,
+    meta.number ? `#${meta.number}` : "",
+    meta.graded || "",
+  ].filter(Boolean);
+  const nothing = bits.length === 0;
+  return (
+    <div className="ce-ident-summary">
+      <div className="ce-ident-summary-text">
+        {nothing ? (
+          <span className="ce-ident-summary-empty">
+            Couldn't make out card details. Tap edit to fill them in.
+          </span>
+        ) : (
+          bits.map((b, i) => (
+            <span key={i} className="ce-ident-chip">
+              {b}
+            </span>
+          ))
+        )}
+      </div>
+      <button type="button" className="ce-small-link" onClick={onEdit}>
+        Edit
+      </button>
     </div>
   );
 }
@@ -858,6 +993,19 @@ const styles = `
   .ce-val-box .amt { font-size: 18px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
   .ce-val-box.mid { background: #1f1f1f; color: #fff; border-color: #1f1f1f; }
   .ce-val-box.mid .lbl { color: #c4c4c4; }
+  .ce-val-range { font-size: 10.5px; color: #8a8a8a; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .ce-val-box.mid .ce-val-range { color: #b8b3a4; }
+
+  .ce-scale-spread { font-weight: 400; color: #8a8a8a; font-size: 12px; }
+  .ce-spread-note { font-size: 11.5px; color: #8a8a8a; margin-top: 8px; }
+  .ce-result-footer { margin-top: 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .ce-runs-note { font-size: 11.5px; color: #8a8a8a; }
+
+  .ce-hint { color: #9a948a; font-size: 13px; text-align: center; padding: 6px 8px 2px; }
+  .ce-ident-summary { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 4px 0 2px; }
+  .ce-ident-summary-text { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+  .ce-ident-summary-empty { font-size: 13px; color: #9a948a; }
+  .ce-ident-chip { font-size: 13px; background: #f3f7eb; color: #4a6a2e; padding: 4px 10px; border-radius: 999px; border: 1px solid #d9e6c1; }
 
   .ce-list { margin: 0; padding-left: 18px; }
   .ce-list li { font-size: 13.5px; line-height: 1.5; margin-bottom: 4px; }
