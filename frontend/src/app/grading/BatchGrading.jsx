@@ -2799,12 +2799,24 @@ export default function BatchGrading({
         setEmailCopied(true);
         setShowEmailPrompt(false);
 
-        // Update published results with the effective title (fire-and-forget, don't block UI)
-        const finalTitle = effectiveTitle;
-        if (finalTitle && resultsUrl) {
+        // Update published results — preserve per-paper detected
+        // titles instead of overwriting them with the batch label.
+        // The AI grader sets each result's r.detectedTitle to the
+        // specific assignment it read off the paper (e.g.
+        // "Ch 8 Fractions Test").  Previously this loop unconditionally
+        // wrote meta.title = effectiveTitle (PDF filename / teacher's
+        // batch label), so /progress portal showed generic labels for
+        // every student.  Per-result detection now wins; the batch
+        // label is only the fallback when detection didn't yield
+        // anything.
+        const fallbackTitle = effectiveTitle;
+        if (resultsUrl) {
           (async () => {
             for (const r of results) {
               if (!r.refCode || r.error) continue;
+              const perResultTitle =
+                (r.detectedTitle || "").trim() || fallbackTitle;
+              if (!perResultTitle) continue; // nothing meaningful to set
               try {
                 const updateUrl = resultsUrl.replace(/\/$/, "") + "/" + r.refCode;
                 fetch(updateUrl, {
@@ -2818,7 +2830,9 @@ export default function BatchGrading({
                       studentId: r.rosterStudentId || r.rosterEdsbyId || r.studentId || null,
                       subject: r.subject || "",
                       assessmentType: r.assessmentType || "",
-                      title: finalTitle,
+                      title: perResultTitle,
+                      detectedTitle: r.detectedTitle || "",
+                      batchTitle: fallbackTitle || "",
                       pdfName: pdfName || "",
                       className: r.rosterClassName || "",
                     },
