@@ -495,6 +495,14 @@ export default function StocksAdvisorPage() {
   // cash, P&L). Market prices and rec entry/target/stop levels stay visible.
   const [privacyMode, setPrivacyMode] = useState(false);
   useEffect(() => { setPrivacyMode(loadPrivacy()); }, []);
+  // Apply / remove the body class whenever privacyMode flips. MUST live up
+  // here with the other hooks — putting it after the early returns below
+  // is a rules-of-hooks violation that causes a runtime crash.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.body.classList.toggle("sa-privacy", privacyMode);
+    return () => document.body.classList.remove("sa-privacy");
+  }, [privacyMode]);
   const togglePrivacy = () => {
     const next = !privacyMode;
     setPrivacyMode(next);
@@ -811,13 +819,6 @@ export default function StocksAdvisorPage() {
       return { ok: 0, fail: tickers.length };
     }
   };
-
-  // Apply privacy class on body — CSS rule below blurs all .sa-amount spans
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    document.body.classList.toggle("sa-privacy", privacyMode);
-    return () => document.body.classList.remove("sa-privacy");
-  }, [privacyMode]);
 
   return (
     <FullscreenShell>
