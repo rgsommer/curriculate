@@ -175,6 +175,24 @@ const fmtMoney = (n, ccy = "CAD") => {
   return (n < 0 ? "−" : "") + "$" + s + " " + ccy;
 };
 
+// Privacy mask — applied to USER-specific dollar amounts (account balances,
+// position values, cash, etc.) when privacy mode is on. Market prices and
+// rec-target prices stay visible since they're not user-private.
+const PRIVACY_KEY = "stocksAdvisor.privacy.v1";
+function loadPrivacy() {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(PRIVACY_KEY) === "1";
+}
+function savePrivacy(on) {
+  if (typeof window === "undefined") return;
+  if (on) localStorage.setItem(PRIVACY_KEY, "1");
+  else localStorage.removeItem(PRIVACY_KEY);
+}
+const MASK = "$•••••";
+const MASK_SHORT = "•••";
+function priv(value, privacy) { return privacy ? MASK : value; }
+function privShort(value, privacy) { return privacy ? MASK_SHORT : value; }
+
 const fmtPct = (n) => (n == null || isNaN(n) ? "—" : (n >= 0 ? "+" : "") + n.toFixed(2) + "%");
 
 function valueOfPosition(p, fx) {
@@ -473,6 +491,15 @@ export default function StocksAdvisorPage() {
   const [executedRecKeys, setExecutedRecKeys] = useState(new Set()); // recs the user has executed in this session
   const [briefingPreview, setBriefingPreview] = useState(null); // { html, sent, error, busy }
   const [pendingOrders, setPendingOrders] = useState([]);
+  // Privacy mode: masks all USER dollar amounts (totals, position values,
+  // cash, P&L). Market prices and rec entry/target/stop levels stay visible.
+  const [privacyMode, setPrivacyMode] = useState(false);
+  useEffect(() => { setPrivacyMode(loadPrivacy()); }, []);
+  const togglePrivacy = () => {
+    const next = !privacyMode;
+    setPrivacyMode(next);
+    savePrivacy(next);
+  };
   const saveTimerRef = useRef(null);
   const savedTimerRef = useRef(null);
   // Cross-tab AI advice request — when set, the Advice tab auto-triggers
@@ -785,6 +812,13 @@ export default function StocksAdvisorPage() {
     }
   };
 
+  // Apply privacy class on body — CSS rule below blurs all .sa-amount spans
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.body.classList.toggle("sa-privacy", privacyMode);
+    return () => document.body.classList.remove("sa-privacy");
+  }, [privacyMode]);
+
   return (
     <FullscreenShell>
       <div className="sa-app">
@@ -809,6 +843,15 @@ export default function StocksAdvisorPage() {
             ))}
           </nav>
           <div className="sa-user">
+            <button
+              className="sa-btn ghost"
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", marginBottom: 8, fontSize: 11, width: "100%" }}
+              onClick={togglePrivacy}
+              title={privacyMode ? "Show dollar amounts" : "Hide dollar amounts (privacy mode)"}
+            >
+              <span style={{ fontSize: 13 }}>{privacyMode ? "🙈" : "👁"}</span>
+              <span>{privacyMode ? "Reveal values" : "Hide values"}</span>
+            </button>
             {user.email}
             <br />
             <span className={`sa-badge ${
@@ -1220,7 +1263,7 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
             {busyRefresh ? "Refreshing…" : "↻ Refresh prices"}
           </button>
           <button className="sa-btn" onClick={handleAi} disabled={busyAi || busyRefresh} title="Search the web for fresh news and have Claude generate updated advice">
-            {busyAi ? "Thinking…" : "🧠 Get fresh AI advice"}
+            {busyAi ? "Thinking…" : "🧠 Update Advice"}
           </button>
         </div>
       </div>
@@ -1432,7 +1475,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
             {busy ? "Refreshing…" : "↻ Refresh prices"}
           </button>
           <button className="sa-btn" onClick={handleAi} disabled={aiBusy || busy} title="Search the web for fresh news on each holding and run Claude over the portfolio">
-            {aiBusy ? "Thinking…" : "🧠 Get fresh AI advice"}
+            {aiBusy ? "Thinking…" : "🧠 Update Advice"}
           </button>
         </div>
       </div>
@@ -1778,7 +1821,7 @@ function RecsTable({ recs, onExecuteRec, executedRecKeys, recKey, pnlMap }) {
                       no basis
                     </span>
                   ) : (
-                    <div style={{ lineHeight: 1.25 }}>
+                    <div style={{ lineHeight: 1.25 }} className="sa-amount">
                       <div style={{ color: pnl.pnlPct >= 0 ? "var(--sa-green)" : "var(--sa-red)", fontWeight: 600 }}>
                         {pnl.pnlPct >= 0 ? "+" : ""}{pnl.pnlPct.toFixed(1)}%
                       </div>
@@ -2526,7 +2569,7 @@ function PerformanceView({ sessionToken }) {
         {!busy && advisorPerf && (
           advisorPerf.windows?.every((w) => w.recCount === 0) ? (
             <div className="sa-muted" style={{ fontSize: 13 }}>
-              No tracked recommendations yet. Visit the Advice tab and click <b>🧠 Get fresh AI advice</b> — every actionable recommendation gets logged and scored here.
+              No tracked recommendations yet. Visit the Advice tab and click <b>🧠 Update Advice</b> — every actionable recommendation gets logged and scored here.
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
@@ -2634,7 +2677,7 @@ function PendingOrdersCard({ orders, accounts, onFill, onCancel }) {
                   </td>
                   <td style={{ ...recCellLeft, fontWeight: 600 }}>{o.ticker}</td>
                   <td style={recCell}>{o.qty.toLocaleString()}</td>
-                  <td style={recCell}>${o.limitPrice.toFixed(2)} {o.currency}</td>
+                  <td style={recCell}><span className="sa-amount">${o.limitPrice.toFixed(2)} {o.currency}</span></td>
                   <td style={{ ...recCellLeft, color: "var(--sa-muted)" }}>{acctName}</td>
                   <td style={{ ...recCellLeft, color: "var(--sa-muted)", fontSize: 12 }}>{ageStr}</td>
                   <td style={{ ...recCell, whiteSpace: "nowrap" }}>
@@ -2761,10 +2804,10 @@ function HoldingsBreakdownCard({ user, fx, onEditPosition }) {
                     {split && <span title="Held in both USD and CAD subs — consider consolidating to avoid FX friction" style={{ marginLeft: 6, padding: "1px 6px", fontSize: 10, fontWeight: 700, background: "var(--sa-amber-soft)", color: "var(--sa-amber)", borderRadius: 4 }}>SPLIT</span>}
                   </td>
                   <td style={recCell}>{fmtQ(r.qtyUsdSub)}</td>
-                  <td style={recCell}>{fmt$(r.valueUsd)}</td>
+                  <td style={recCell}><span className="sa-amount">{fmt$(r.valueUsd)}</span></td>
                   <td style={recCell}>{fmtQ(r.qtyCadSub)}</td>
-                  <td style={recCell}>{fmt$(r.valueCad)}</td>
-                  <td style={{ ...recCell, fontWeight: 600 }}>{fmt$(r.totalCad)}</td>
+                  <td style={recCell}><span className="sa-amount">{fmt$(r.valueCad)}</span></td>
+                  <td style={{ ...recCell, fontWeight: 600 }}><span className="sa-amount">{fmt$(r.totalCad)}</span></td>
                 </tr>
               ];
               if (isExpanded) {
@@ -2823,18 +2866,18 @@ function HoldingsBreakdownCard({ user, fx, onEditPosition }) {
             <tr style={{ borderTop: "1px dashed var(--sa-border)", background: "rgba(91,141,239,.04)" }}>
               <td style={{ ...recCellLeft, fontWeight: 500, color: "var(--sa-text-2)" }}>Cash</td>
               <td style={recCell}>—</td>
-              <td style={{ ...recCell, color: cashUsd > 0 ? "var(--sa-green)" : "var(--sa-muted)" }}>{fmt$(cashUsd)}</td>
+              <td style={{ ...recCell, color: cashUsd > 0 ? "var(--sa-green)" : "var(--sa-muted)" }}><span className="sa-amount">{fmt$(cashUsd)}</span></td>
               <td style={recCell}>—</td>
-              <td style={{ ...recCell, color: cashCad > 0 ? "var(--sa-green)" : "var(--sa-muted)" }}>{fmt$(cashCad)}</td>
-              <td style={{ ...recCell, fontWeight: 600 }}>{fmt$(cashTotalCad)}</td>
+              <td style={{ ...recCell, color: cashCad > 0 ? "var(--sa-green)" : "var(--sa-muted)" }}><span className="sa-amount">{fmt$(cashCad)}</span></td>
+              <td style={{ ...recCell, fontWeight: 600 }}><span className="sa-amount">{fmt$(cashTotalCad)}</span></td>
             </tr>
             <tr style={{ borderTop: "2px solid var(--sa-border)", background: "var(--sa-panel-2)" }}>
               <td style={{ ...recCellLeft, fontWeight: 700 }}>TOTAL</td>
               <td style={recCell}>—</td>
-              <td style={{ ...recCell, fontWeight: 700 }}>{fmt$(totals.valueUsd + cashUsd)}</td>
+              <td style={{ ...recCell, fontWeight: 700 }}><span className="sa-amount">{fmt$(totals.valueUsd + cashUsd)}</span></td>
               <td style={recCell}>—</td>
-              <td style={{ ...recCell, fontWeight: 700 }}>{fmt$(totals.valueCad + cashCad)}</td>
-              <td style={{ ...recCell, fontWeight: 700 }}>{fmt$(grandTotalCad)}</td>
+              <td style={{ ...recCell, fontWeight: 700 }}><span className="sa-amount">{fmt$(totals.valueCad + cashCad)}</span></td>
+              <td style={{ ...recCell, fontWeight: 700 }}><span className="sa-amount">{fmt$(grandTotalCad)}</span></td>
             </tr>
           </tbody>
         </table>
@@ -2906,7 +2949,7 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37 }) {
   const totalPct = totalStartCad > 0 ? (totalDeltaCad / totalStartCad) * 100 : null;
   const showTotal = totalPct != null && Number.isFinite(totalPct) && coveredTickers > 0;
   const totalColor = totalPct == null ? "var(--sa-muted)" : (totalPct >= 0 ? "var(--sa-green)" : "var(--sa-red)");
-  const rangeLabel = { "1d": "today", "3d": "3 days", "7d": "7 days", "30d": "30 days" }[range];
+  const rangeLabel = { "1d": "today", "3d": "3 days", "7d": "7 days", "30d": "30 days", "1y": "1 year", "2y": "2 years" }[range];
 
   return (
     <div className="sa-card" style={{ marginBottom: 24 }}>
@@ -2935,7 +2978,7 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37 }) {
         </div>
         <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
           {[
-            ["1d", "1D"], ["3d", "3D"], ["7d", "7D"], ["30d", "30D"],
+            ["1d", "1D"], ["3d", "3D"], ["7d", "7D"], ["30d", "30D"], ["1y", "1Y"], ["2y", "2Y"],
           ].map(([v, label]) => (
             <button
               key={v}
@@ -3015,6 +3058,7 @@ function MultiLineChart({ series, range }) {
   const fmtTick = (t) => {
     const d = new Date(t * 1000);
     if (range === "1d") return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (range === "1y" || range === "2y") return d.toLocaleDateString([], { month: "short", year: "2-digit" });
     return d.toLocaleDateString([], { month: "short", day: "numeric" });
   };
   const tickTs = [minT, minT + tRange * 0.33, minT + tRange * 0.66, maxT];
@@ -3199,7 +3243,7 @@ function TradesView({ sessionToken }) {
                       })}
                     </td>
                     <td style={{ ...recCell, color: t.netCashCad >= 0 ? "var(--sa-green)" : "var(--sa-red)", fontWeight: 600 }}>
-                      {t.netCashCad >= 0 ? "+" : "−"}${Math.abs(t.netCashCad || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      <span className="sa-amount">{t.netCashCad >= 0 ? "+" : "−"}${Math.abs(t.netCashCad || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                     </td>
                     <td style={{ ...recCellLeft, color: "var(--sa-muted)", fontSize: 12, maxWidth: 220, whiteSpace: "normal" }}>
                       {t.notes || "—"}
@@ -3260,7 +3304,7 @@ function AdviceScorecardCard({ scorecard, days, onChangeDays }) {
 
       {summary.total === 0 ? (
         <div className="sa-muted" style={{ padding: 24, textAlign: "center", fontSize: 13 }}>
-          No AI recommendations in the last {days} days. Click <b>🧠 Get fresh AI advice</b> on the Advice tab to start populating this.
+          No AI recommendations in the last {days} days. Click <b>🧠 Update Advice</b> on the Advice tab to start populating this.
         </div>
       ) : (
         <>
@@ -3398,15 +3442,15 @@ function PortfolioChart({ snaps }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
         <div>
-          <div style={{ fontSize: 26, fontWeight: 700 }}>${lastVal.toLocaleString(undefined, { maximumFractionDigits: 0 })} CAD</div>
+          <div style={{ fontSize: 26, fontWeight: 700 }} className="sa-amount">${lastVal.toLocaleString(undefined, { maximumFractionDigits: 0 })} CAD</div>
           <div className="sa-muted" style={{ fontSize: 13 }}>Today</div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 18, fontWeight: 600, color: totalChange >= 0 ? "var(--sa-green)" : "var(--sa-red)" }}>
+          <div style={{ fontSize: 18, fontWeight: 600, color: totalChange >= 0 ? "var(--sa-green)" : "var(--sa-red)" }} className="sa-amount">
             {totalChange >= 0 ? "+" : ""}{totalChange.toFixed(2)}%
           </div>
           <div className="sa-muted" style={{ fontSize: 12 }}>
-            {totalChangeAbs >= 0 ? "+" : "−"}${Math.abs(totalChangeAbs).toLocaleString(undefined, { maximumFractionDigits: 0 })} since first snapshot
+            <span className="sa-amount">{totalChangeAbs >= 0 ? "+" : "−"}${Math.abs(totalChangeAbs).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span> since first snapshot
           </div>
         </div>
       </div>
@@ -3449,6 +3493,26 @@ const STOCKS_CSS = `
 /* ── Layout: hide site chrome, set app background ─────────────── */
 body.stocks-app-mode .site-header,
 body.stocks-app-mode .site-footer { display: none !important; }
+
+/* Privacy mode — blur every element marked .sa-amount + a few common
+   value-bearing classes automatically. Market prices / rec target prices /
+   stop prices live inside .sa-clear and stay visible. */
+body.sa-privacy .sa-amount,
+body.sa-privacy .sa-stat .value,
+body.sa-privacy .sa-stat .delta {
+  filter: blur(7px) !important;
+  user-select: none !important;
+  transition: filter .15s;
+}
+body.sa-privacy .sa-amount:hover,
+body.sa-privacy .sa-stat .value:hover,
+body.sa-privacy .sa-stat .delta:hover {
+  filter: blur(0) !important;
+}
+/* Anything wrapped in .sa-clear is exempt from privacy blur — used for
+   rec entry/target/stop prices that are market info, not user balances. */
+body.sa-privacy .sa-clear { filter: none !important; }
+
 body.stocks-app-mode {
   background:
     radial-gradient(1100px 600px at 80% -10%, #eef2ff 0%, transparent 60%),

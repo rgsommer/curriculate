@@ -113,6 +113,8 @@ function yahooRangeFor(uiRange) {
     case "3d":  return { range: "5d",  interval: "30m" };
     case "7d":  return { range: "5d",  interval: "60m" };
     case "30d": return { range: "1mo", interval: "1d"  };
+    case "1y":  return { range: "1y",  interval: "1d"  };
+    case "2y":  return { range: "2y",  interval: "1wk" };
     default:    return { range: "1mo", interval: "1d"  };
   }
 }
@@ -126,6 +128,8 @@ function trimToRange(points, uiRange) {
   else if (uiRange === "3d") days = 3.1;
   else if (uiRange === "7d") days = 7.1;
   else if (uiRange === "30d") days = 30.1;
+  else if (uiRange === "1y") days = 366;
+  else if (uiRange === "2y") days = 732;
   const cutoff = lastT - days * 86400;
   return points.filter((p) => p.t >= cutoff);
 }
@@ -179,7 +183,7 @@ async function fetchHistory(ticker, uiRange) {
 router.post("/history", express.json({ limit: "16kb" }), async (req, res) => {
   try {
     const raw = Array.isArray(req.body?.tickers) ? req.body.tickers : null;
-    const range = ["1d", "3d", "7d", "30d"].includes(req.body?.range) ? req.body.range : "1d";
+    const range = ["1d", "3d", "7d", "30d", "1y", "2y"].includes(req.body?.range) ? req.body.range : "1d";
     if (!raw) return res.status(400).json({ error: "tickers[] required" });
     const tickers = [
       ...new Set(
