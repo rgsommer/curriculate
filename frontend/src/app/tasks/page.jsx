@@ -138,6 +138,15 @@ function fmtDue(task) {
   });
 }
 
+// Returns "2026-05-15T17:30" — suitable for <input type="datetime-local">.
+function toLocalInputValue(date) {
+  if (!date) return "";
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function sortActive(a, b) {
   const ad = a.dueAt ? new Date(a.dueAt).getTime() : Number.POSITIVE_INFINITY;
   const bd = b.dueAt ? new Date(b.dueAt).getTime() : Number.POSITIVE_INFINITY;
@@ -335,36 +344,57 @@ function AddTaskForm({ onAdd }) {
 
 // ── Task row ─────────────────────────────────────────────────────────
 
-function TaskRow({ task, onComplete, onUncomplete, onDelete }) {
+function TaskRow({ task, onEdit, onComplete, onUncomplete }) {
   const cat = CATEGORIES.find((c) => c.id === task.category) || CATEGORIES[1];
   const u = urgencyFor(task);
   const palette = URGENCY_STYLES[u] || URGENCY_STYLES.none;
   const completed = !!task.completedAt;
 
-  // Touch devices: implement double-tap manually since dblclick is unreliable.
-  const lastTap = useRef(0);
-  function onTouchEnd() {
-    const now = Date.now();
-    if (now - lastTap.current < 350) {
-      if (completed) onUncomplete(task);
-      else onComplete(task);
-      lastTap.current = 0;
-    } else {
-      lastTap.current = now;
+  // Disambiguate single-tap (edit) from double-tap (complete) by deferring
+  // the single-tap action ~260ms. If a second tap arrives, we cancel the
+  // pending edit and fire complete instead. This works for both mouse and
+  // touch since onClick handles both cleanly on modern devices.
+  const tapTimer = useRef(null);
+  const isUnmounted = useRef(false);
+  useEffect(() => () => {
+    isUnmounted.current = true;
+    if (tapTimer.current) clearTimeout(tapTimer.current);
+  }, []);
+
+  function clearPending() {
+    if (tapTimer.current) {
+      clearTimeout(tapTimer.current);
+      tapTimer.current = null;
     }
+  }
+
+  function handleClick() {
+    clearPending();
+    tapTimer.current = setTimeout(() => {
+      tapTimer.current = null;
+      if (!isUnmounted.current) onEdit(task);
+    }, 260);
+  }
+
+  function handleDoubleClick() {
+    clearPending();
+    if (completed) onUncomplete(task);
+    else onComplete(task);
   }
 
   return (
     <div
-      onDoubleClick={() => (completed ? onUncomplete(task) : onComplete(task))}
-      onTouchEnd={onTouchEnd}
+      onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
       style={{
         ...styles.taskRow,
         background: palette.bg,
         borderColor: palette.border,
         opacity: completed ? 0.7 : 1,
       }}
-      title={completed ? "Double-tap to bring back" : "Double-tap to complete"}
+      title={completed
+        ? "Tap to edit · double-tap to bring back"
+        : "Tap to edit · double-tap to complete"}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1 }}>
         <span aria-hidden style={{ width: 8, height: 8, borderRadius: 4, background: cat.color, flex: "0 0 auto" }} />
@@ -384,15 +414,143 @@ function TaskRow({ task, onComplete, onUncomplete, onDelete }) {
           </div>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); onDelete(task); }}
-        style={styles.iconBtn}
-        title="Delete"
-        aria-label="Delete task"
-      >
-        ×
-      </button>
+    </div>
+  );
+}
+
+// ── Edit modal ───────────────────────────────────────────────────────
+
+function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomplete }) {
+  const [title, setTitle] = useState(task.title);
+  const [category, setCategory] = useState(task.category);
+  const [dueAt, setDueAt] = useState(toLocalInputValue(task.dueAt));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const completed = !!task.completedAt;
+
+  // Close on ESC
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function handleSave(e) {
+    e?.preventDefault?.();
+    const trimmed = title.trim();
+    if (!trimmed) { setErr("Title is required."); return; }
+    setBusy(true); setErr("");
+    try {
+      await onSave(task, {
+        title: trimmed,
+        category,
+        dueAt: dueAt ? new Date(dueAt).toISOString() : null,
+      });
+      onClose();
+    } catch (e) {
+      setErr(e?.message || "Couldn't save changes.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm(`Delete "${task.title}"?`)) return;
+    setBusy(true);
+    try {
+      await onDelete(task);
+      onClose();
+    } catch (e) {
+      setErr(e?.message || "Couldn't delete.");
+      setBusy(false);
+    }
+  }
+
+  function handleToggleComplete() {
+    if (completed) onUncomplete(task);
+    else onComplete(task);
+    onClose();
+  }
+
+  return (
+    <div
+      style={styles.modalBackdrop}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="edit-task-title"
+    >
+      <form onSubmit={handleSave} style={styles.modalCard}>
+        <div id="edit-task-title" style={styles.modalHeader}>Edit task</div>
+
+        <label style={styles.label}>Title</label>
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          autoFocus
+          maxLength={500}
+          style={styles.input}
+          disabled={busy}
+        />
+
+        <label style={styles.label}>Category</label>
+        <div style={{ ...styles.catPicker, marginBottom: 16 }}>
+          {CATEGORIES.map((c) => (
+            <button
+              type="button" key={c.id}
+              onClick={() => setCategory(c.id)}
+              style={{
+                ...styles.catPill,
+                ...(category === c.id
+                  ? { background: c.color, color: "#fff", borderColor: c.color }
+                  : { color: c.color, borderColor: "#e5e7eb" }),
+              }}
+              aria-pressed={category === c.id}
+              disabled={busy}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+
+        <label style={styles.label}>Due</label>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
+          <input
+            type="datetime-local" value={dueAt}
+            onChange={(e) => setDueAt(e.target.value)}
+            style={{ ...styles.dueInput, flex: 1 }}
+            disabled={busy}
+          />
+          {dueAt && (
+            <button
+              type="button" onClick={() => setDueAt("")}
+              style={styles.subtleBtn} disabled={busy}
+              title="Clear due date"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {err && <div style={styles.error}>{err}</div>}
+
+        <div style={styles.modalActions}>
+          <button type="button" onClick={handleDelete} style={styles.dangerBtn} disabled={busy}>
+            Delete
+          </button>
+          <div style={{ flex: 1 }} />
+          <button type="button" onClick={handleToggleComplete} style={styles.subtleBtn} disabled={busy}>
+            {completed ? "Mark incomplete" : "Mark complete"}
+          </button>
+          <button type="button" onClick={onClose} style={styles.subtleBtn} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" style={styles.primaryBtnSm} disabled={busy || !title.trim()}>
+            {busy ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -405,6 +563,7 @@ function TasksApp({ token, me, onSignOut }) {
   const [error, setError] = useState("");
   const [tab, setTab] = useState("active");
   const [filterCat, setFilterCat] = useState("all");
+  const [editing, setEditing] = useState(null); // task being edited
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -445,14 +604,17 @@ function TasksApp({ token, me, onSignOut }) {
   function complete(task) { patchTask(task, { completed: true }); }
   function uncomplete(task) { patchTask(task, { completed: false }); }
 
-  async function remove(task) {
-    if (!window.confirm(`Delete "${task.title}"?`)) return;
+  // Save from edit modal — returns a promise so the modal can show its own busy state.
+  async function saveEdit(task, patch) {
+    const res = await apiCall(`/api/tasks-app/tasks/${task.id}`, {
+      method: "PATCH", body: patch, token,
+    });
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? res.task : t)));
+  }
+
+  async function removeFromModal(task) {
     setTasks((prev) => prev.filter((t) => t.id !== task.id));
-    try {
-      await apiCall(`/api/tasks-app/tasks/${task.id}`, { method: "DELETE", token });
-    } catch (e) {
-      refresh();
-    }
+    await apiCall(`/api/tasks-app/tasks/${task.id}`, { method: "DELETE", token });
   }
 
   const { active, completed, nextUp } = useMemo(() => {
@@ -480,7 +642,8 @@ function TasksApp({ token, me, onSignOut }) {
         <>
           {nextUp && tab === "active" && (
             <div
-              onDoubleClick={() => complete(nextUp)}
+              onClick={() => setEditing(nextUp)}
+              onDoubleClick={(e) => { e.stopPropagation(); complete(nextUp); }}
               style={{
                 ...styles.hero,
                 ...(URGENCY_STYLES[urgencyFor(nextUp)] && {
@@ -488,7 +651,7 @@ function TasksApp({ token, me, onSignOut }) {
                   background: URGENCY_STYLES[urgencyFor(nextUp)].bg,
                 }),
               }}
-              title="Double-tap to mark complete"
+              title="Tap to edit · double-tap to complete"
             >
               <div style={styles.heroLabel}>Next up</div>
               <div style={styles.heroTitle}>{nextUp.title}</div>
@@ -544,13 +707,26 @@ function TasksApp({ token, me, onSignOut }) {
             {(tab === "active" ? active : completed).map((task) => (
               <TaskRow
                 key={task.id} task={task}
-                onComplete={complete} onUncomplete={uncomplete} onDelete={remove}
+                onEdit={setEditing}
+                onComplete={complete}
+                onUncomplete={uncomplete}
               />
             ))}
           </div>
 
-          <div style={styles.footHint}>Tip: double-tap a task to mark it complete.</div>
+          <div style={styles.footHint}>Tip: tap to edit · double-tap to complete.</div>
         </>
+      )}
+
+      {editing && (
+        <EditTaskModal
+          task={editing}
+          onClose={() => setEditing(null)}
+          onSave={saveEdit}
+          onDelete={removeFromModal}
+          onComplete={complete}
+          onUncomplete={uncomplete}
+        />
       )}
     </div>
   );
@@ -739,4 +915,47 @@ const styles = {
     background: "#fff", border: "1px dashed #e5e7eb", borderRadius: 12,
   },
   footHint: { marginTop: 24, textAlign: "center", fontSize: 12, color: "#94a3b8" },
+  // Modal
+  modalBackdrop: {
+    position: "fixed", inset: 0,
+    background: "rgba(15,23,42,0.4)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    padding: 16, zIndex: 50,
+  },
+  modalCard: {
+    width: "100%", maxWidth: 460,
+    background: "#fff", borderRadius: 16,
+    border: "1px solid #e5e7eb",
+    padding: 20,
+    boxShadow: "0 16px 40px rgba(15,23,42,0.18)",
+    maxHeight: "calc(100vh - 32px)",
+    overflowY: "auto",
+  },
+  modalHeader: {
+    fontSize: 16, fontWeight: 700, color: "#0f172a",
+    marginBottom: 16,
+  },
+  modalActions: {
+    marginTop: 18,
+    display: "flex", flexWrap: "wrap", gap: 8,
+    alignItems: "center",
+  },
+  dangerBtn: {
+    padding: "8px 12px", fontSize: 13, fontWeight: 600,
+    borderRadius: 8, border: "1px solid #fecaca",
+    background: "#fff", color: "#b91c1c",
+    cursor: "pointer",
+  },
+  subtleBtn: {
+    padding: "8px 12px", fontSize: 13, fontWeight: 500,
+    borderRadius: 8, border: "1px solid #e2e8f0",
+    background: "#fff", color: "#475569",
+    cursor: "pointer",
+  },
+  primaryBtnSm: {
+    padding: "8px 16px", fontSize: 14, fontWeight: 600,
+    borderRadius: 8, border: "none",
+    background: "#0f172a", color: "#fff",
+    cursor: "pointer",
+  },
 };
