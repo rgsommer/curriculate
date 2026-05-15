@@ -49,30 +49,41 @@ function b64url(buf: Buffer) {
   return buf.toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
-function getSecret(): string {
-  const s = process.env.STOCKS_SECRET || process.env.MEDICENTRE_SECRET;
-  if (!s) throw new Error("STOCKS_SECRET (or MEDICENTRE_SECRET) not configured");
-  return s;
+function getSecret(): string | null {
+  return process.env.STOCKS_SECRET || process.env.MEDICENTRE_SECRET || null;
 }
 
-function signToken(payload: object) {
-  const secret = getSecret();
+function signToken(payload: object, secret: string) {
   const body = b64url(Buffer.from(JSON.stringify(payload)));
   const sig = b64url(crypto.createHmac("sha256", secret).update(body).digest());
   return `${body}.${sig}`;
 }
 
-function pinHash(pin: string, email: string) {
+function pinHash(pin: string, email: string, secret: string) {
   return crypto
     .createHash("sha256")
-    .update(pin + "|" + email.toLowerCase() + "|" + getSecret())
+    .update(pin + "|" + email.toLowerCase() + "|" + secret)
     .digest("hex");
 }
 
 export async function POST(req: Request) {
   try {
+    // Config-check up front with explicit error so the user knows what's missing.
     if (!process.env.RESEND_API_KEY) {
-      return NextResponse.json({ error: "Email service not configured" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Server config missing: RESEND_API_KEY not set in environment" },
+        { status: 500 }
+      );
+    }
+    const secret = getSecret();
+    if (!secret) {
+      return NextResponse.json(
+        {
+          error:
+            "Server config missing: set STOCKS_SECRET in environment (or reuse MEDICENTRE_SECRET if already configured). Vercel: Settings → Environment Variables → add STOCKS_SECRET = <any long random string> → redeploy.",
+        },
+        { status: 500 }
+      );
     }
 
     const ip = getClientIp(req);
@@ -95,7 +106,7 @@ export async function POST(req: Request) {
 
     // Stateless token: email + hash(PIN) + 10-minute expiry
     const exp = Math.floor(Date.now() / 1000) + 10 * 60;
-    const token = signToken({ email, ph: pinHash(pin, email), exp });
+    const token = signToken({ email, ph: pinHash(pin, email, secret), exp }, secret);
 
     // Send by email
     const from = process.env.STOCKS_FROM || "Stocks Advisor <noreply@curriculate.net>";
@@ -123,12 +134,19 @@ If you didn't request this, you can ignore this message.`,
 
     if (send.error) {
       console.error("Resend PIN error:", send.error);
-      return NextResponse.json({ error: "Could not send code" }, { status: 502 });
+      // Surface the underlying Resend reason so the user can act on it
+      // (most common: "from" address not on a verified domain).
+      const msg = (send.error as { message?: string })?.message || "Email send failed";
+      return NextResponse.json(
+        { error: `Could not send code: ${msg}` },
+        { status: 502 }
+      );
     }
 
     return NextResponse.json({ token, expiresIn: 600 });
   } catch (err) {
     console.error("stocks request-pin error:", err);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: `Internal error: ${msg}` }, { status: 500 });
   }
 }

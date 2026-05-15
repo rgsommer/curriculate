@@ -801,10 +801,12 @@ function FullscreenShell({ children }) {
 
 // =============================================================================
 // All component CSS (scoped via .sa-* class prefix)
+//
+// We use a plain <style> tag with dangerouslySetInnerHTML rather than
+// styled-jsx — styled-jsx is not wired into this app's Next.js App
+// Router config, so `<style jsx>` blocks are silently dropped at build.
 // =============================================================================
-function StocksCSS() {
-  return (
-    <style jsx global>{`
+const STOCKS_CSS = `
       body.stocks-app-mode .site-header,
       body.stocks-app-mode .site-footer { display: none !important; }
       body.stocks-app-mode { background: #0b0f17; }
@@ -933,6 +935,8 @@ function StocksCSS() {
         padding: 12px 18px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.4);
         z-index: 200; animation: sa-in .25s; }
       @keyframes sa-in { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-    `}</style>
-  );
+`;
+
+function StocksCSS() {
+  return <style dangerouslySetInnerHTML={{ __html: STOCKS_CSS }} />;
 }

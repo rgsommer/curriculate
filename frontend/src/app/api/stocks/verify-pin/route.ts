@@ -23,16 +23,14 @@ function b64url(buf: Buffer) {
   return buf.toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
-function getSecret(): string {
-  const s = process.env.STOCKS_SECRET || process.env.MEDICENTRE_SECRET;
-  if (!s) throw new Error("STOCKS_SECRET (or MEDICENTRE_SECRET) not configured");
-  return s;
+function getSecret(): string | null {
+  return process.env.STOCKS_SECRET || process.env.MEDICENTRE_SECRET || null;
 }
 
-function verifyToken(token: string): { email: string; ph: string; exp: number } | null {
+function verifyToken(token: string, secret: string): { email: string; ph: string; exp: number } | null {
   const [body, sig] = (token || "").split(".");
   if (!body || !sig) return null;
-  const expected = b64url(crypto.createHmac("sha256", getSecret()).update(body).digest());
+  const expected = b64url(crypto.createHmac("sha256", secret).update(body).digest());
   if (
     sig.length !== expected.length ||
     !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))
@@ -48,23 +46,31 @@ function verifyToken(token: string): { email: string; ph: string; exp: number } 
   }
 }
 
-function pinHash(pin: string, email: string) {
+function pinHash(pin: string, email: string, secret: string) {
   return crypto
     .createHash("sha256")
-    .update(pin + "|" + email.toLowerCase() + "|" + getSecret())
+    .update(pin + "|" + email.toLowerCase() + "|" + secret)
     .digest("hex");
 }
 
-function signSession(email: string) {
+function signSession(email: string, secret: string) {
   const exp = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60; // 30 days
   const payload = { email, exp, sub: "stocks-session" };
   const body = b64url(Buffer.from(JSON.stringify(payload)));
-  const sig = b64url(crypto.createHmac("sha256", getSecret()).update(body).digest());
+  const sig = b64url(crypto.createHmac("sha256", secret).update(body).digest());
   return `${body}.${sig}`;
 }
 
 export async function POST(req: Request) {
   try {
+    const secret = getSecret();
+    if (!secret) {
+      return NextResponse.json(
+        { error: "Server config missing: STOCKS_SECRET not set" },
+        { status: 500 }
+      );
+    }
+
     const body = await req.json().catch(() => null);
     const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
     const pin = typeof body?.pin === "string" ? body.pin.trim() : "";
@@ -77,13 +83,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "PIN must be 5 digits" }, { status: 400 });
     }
 
-    const payload = verifyToken(token);
+    const payload = verifyToken(token, secret);
     if (!payload) return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
     if (payload.email !== email) {
       return NextResponse.json({ error: "Email mismatch" }, { status: 401 });
     }
 
-    const expected = pinHash(pin, email);
+    const expected = pinHash(pin, email, secret);
     if (
       payload.ph.length !== expected.length ||
       !crypto.timingSafeEqual(Buffer.from(payload.ph), Buffer.from(expected))
@@ -91,9 +97,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Incorrect code" }, { status: 401 });
     }
 
-    return NextResponse.json({ ok: true, sessionToken: signSession(email) });
+    return NextResponse.json({ ok: true, sessionToken: signSession(email, secret) });
   } catch (err) {
     console.error("stocks verify-pin error:", err);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: `Internal error: ${msg}` }, { status: 500 });
   }
 }
