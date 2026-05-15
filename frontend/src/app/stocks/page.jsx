@@ -1016,7 +1016,11 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
         <div className="sa-stat"><div className="label">Risk profile</div><div className="value" style={{ textTransform: "capitalize" }}>{user.riskTolerance}</div></div>
       </div>
       {/* Per-ticker performance — multi-line chart, range tabs */}
-      <TickerPerformanceCard tickers={agg.map(a => a.ticker).slice(0, 10)} />
+      <TickerPerformanceCard
+        tickers={agg.map(a => a.ticker).slice(0, 10)}
+        holdings={agg.slice(0, 10)}
+        fx={fx}
+      />
 
       <div className="sa-grid-2">
         <div className="sa-card">
@@ -1901,7 +1905,7 @@ const TICKER_COLORS = [
   "#ec4899", "#84cc16", "#f97316", "#6366f1", "#14b8a6", "#a855f7",
 ];
 
-function TickerPerformanceCard({ tickers }) {
+function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37 }) {
   const [range, setRange] = useState("1d");
   const [busy, setBusy] = useState(false);
   const [data, setData] = useState({}); // { ticker: { points, currency } }
@@ -1936,10 +1940,44 @@ function TickerPerformanceCard({ tickers }) {
   const labels = tickers.filter(t => data[t]?.points?.length > 0);
   const colorFor = (i) => TICKER_COLORS[i % TICKER_COLORS.length];
 
+  // Portfolio-level performance over the selected range (top-10 holdings only)
+  // For each ticker with both holdings + historical data, compute
+  // qty × (lastPrice - firstPrice), converting to CAD via fx for USD names.
+  let totalStartCad = 0, totalEndCad = 0;
+  let coveredTickers = 0;
+  for (const t of labels) {
+    const h = holdings.find(x => x.ticker === t);
+    if (!h || !h.qty) continue;
+    const pts = data[t].points;
+    if (!pts || pts.length < 2) continue;
+    const fxMult = (data[t].currency === "USD") ? fx : 1;
+    totalStartCad += h.qty * pts[0].price * fxMult;
+    totalEndCad   += h.qty * pts[pts.length - 1].price * fxMult;
+    coveredTickers++;
+  }
+  const totalDeltaCad = totalEndCad - totalStartCad;
+  const totalPct = totalStartCad > 0 ? (totalDeltaCad / totalStartCad) * 100 : null;
+  const showTotal = totalPct != null && Number.isFinite(totalPct) && coveredTickers > 0;
+  const totalColor = totalPct == null ? "var(--sa-muted)" : (totalPct >= 0 ? "var(--sa-green)" : "var(--sa-red)");
+  const rangeLabel = { "1d": "today", "3d": "3 days", "7d": "7 days", "30d": "30 days" }[range];
+
   return (
     <div className="sa-card" style={{ marginBottom: 24 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
-        <h3 style={{ margin: 0 }}>Per-ticker performance</h3>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
+        <div>
+          <h3 style={{ margin: 0 }}>Per-ticker performance</h3>
+          {showTotal && (
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 6 }}>
+              <span style={{ fontSize: 22, fontWeight: 700, color: totalColor, fontVariantNumeric: "tabular-nums", letterSpacing: "-.01em" }}>
+                {totalPct >= 0 ? "+" : ""}{totalPct.toFixed(2)}%
+              </span>
+              <span style={{ fontSize: 14, fontWeight: 500, color: totalColor, fontVariantNumeric: "tabular-nums" }}>
+                {totalDeltaCad >= 0 ? "+" : "−"}${Math.abs(totalDeltaCad).toLocaleString(undefined, { maximumFractionDigits: 0 })} CAD
+              </span>
+              <span style={{ fontSize: 12, color: "var(--sa-muted)" }}>over {rangeLabel}</span>
+            </div>
+          )}
+        </div>
         <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
           {[
             ["1d", "1D"], ["3d", "3D"], ["7d", "7D"], ["30d", "30D"],
