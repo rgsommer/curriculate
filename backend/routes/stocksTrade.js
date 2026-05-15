@@ -161,12 +161,14 @@ function applyLeg(positions, accountId, leg) {
 
 function netCashCadOfTrade(legs, fx) {
   // Cash in = sells. Cash out = buys. Positive net = cash inflow.
+  // legs use `grossValue` (shares * pricePerShare in `currency`).
   let net = 0;
   for (const leg of legs) {
-    const cadValue = leg.currency === "USD" ? leg.price * leg.shares * fx : leg.price * leg.shares;
+    const gross = Number(leg.grossValue) || 0;
+    const cadValue = leg.currency === "USD" ? gross * fx : gross;
     net += (leg.side === "SELL" ? 1 : -1) * cadValue;
   }
-  return net;
+  return Number.isFinite(net) ? net : 0;
 }
 
 // ── handlers ───────────────────────────────────────────────────────
