@@ -75,6 +75,17 @@ async function apiDeletePortfolio(sessionToken) {
   return r.json();
 }
 
+async function apiRecordTrade(sessionToken, trade) {
+  const r = await fetch(`${BACKEND_URL}/api/stocks-trade`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+    body: JSON.stringify(trade),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+  return j;
+}
+
 // =============================================================================
 // Seed: Richard's portfolio (auto-loads on first sign-in for rgsommer@me.com)
 // =============================================================================
@@ -244,6 +255,7 @@ export default function StocksAdvisorPage() {
   const [currentTab, setCurrentTab] = useState("dashboard");
   const [toast, setToast] = useState(null);
   const [modalIdx, setModalIdx] = useState(undefined);
+  const [tradeModalOpen, setTradeModalOpen] = useState(false);
   const saveTimerRef = useRef(null);
   const savedTimerRef = useRef(null);
   // Cross-tab AI advice request — when set, the Advice tab auto-triggers
@@ -387,6 +399,14 @@ export default function StocksAdvisorPage() {
   const user = profile;
   const updateUser = updateProfile;
 
+  // Record a trade: post to /api/stocks-trade and refresh local profile
+  const recordTrade = async (trade) => {
+    const result = await apiRecordTrade(auth.sessionToken, trade);
+    setProfile(result.portfolio);
+    showToast(`Trade recorded — ${trade.legs.map(l => `${l.side} ${l.shares} ${l.ticker}`).join(", ")}`);
+    return result;
+  };
+
   // Shared refresh-prices flow — uses backend proxy to avoid Yahoo CORS
   const refreshPrices = async () => {
     const tickers = [...new Set(user.positions.map((p) => p.ticker))];
@@ -472,6 +492,7 @@ export default function StocksAdvisorPage() {
                 setPendingAiFetch(true);
                 setCurrentTab("advice");
               }}
+              onRecordTrade={() => setTradeModalOpen(true)}
             />
           )}
           {currentTab === "positions" && (
@@ -533,6 +554,20 @@ export default function StocksAdvisorPage() {
             onDelete={() => {
               updateUser((u) => ({ positions: u.positions.filter((_, i) => i !== modalIdx) }));
               setModalIdx(undefined);
+            }}
+          />
+        )}
+        {tradeModalOpen && (
+          <TradeModal
+            user={user}
+            onClose={() => setTradeModalOpen(false)}
+            onSubmit={async (trade) => {
+              try {
+                await recordTrade(trade);
+                setTradeModalOpen(false);
+              } catch (e) {
+                throw e; // let the modal show the error
+              }
             }}
           />
         )}
@@ -727,7 +762,7 @@ function OnboardingView({ onPick }) {
   );
 }
 
-function DashboardView({ user, onTab, onRefresh, onAiAdvice }) {
+function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade }) {
   const [busyRefresh, setBusyRefresh] = useState(false);
   const [busyAi, setBusyAi] = useState(false);
   const fx = user.fxUsdCad || 1.37;
@@ -756,6 +791,9 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice }) {
           <div className="sa-breadcrumb">{today}</div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="sa-btn secondary" onClick={onRecordTrade} title="Record a buy / sell / swap — updates positions atomically and logs to your trade journal">
+            + Record trade
+          </button>
           <button className="sa-btn secondary" onClick={handleRefresh} disabled={busyRefresh || busyAi} title="Re-fetch live prices from Yahoo Finance via the backend proxy">
             {busyRefresh ? "Refreshing…" : "↻ Refresh prices"}
           </button>
@@ -1020,6 +1058,194 @@ function PositionModal({ user, idx, onClose, onSave, onDelete }) {
             if (!p.ticker || !p.qty) { alert("Ticker and quantity required."); return; }
             onSave(p);
           }}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// Trade modal — Buy / Sell / Swap
+// =============================================================================
+function TradeModal({ user, onClose, onSubmit }) {
+  const [mode, setMode] = useState("swap"); // "buy" | "sell" | "swap"
+  const [account, setAccount] = useState(user.accounts?.[0]?.id || "");
+  const [executedAt] = useState(() => new Date().toISOString().slice(0, 10));
+
+  // Leg 1 is always the primary; for swap, leg 2 is the BUY side
+  const [sellTicker, setSellTicker] = useState("");
+  const [sellShares, setSellShares] = useState("");
+  const [sellPrice, setSellPrice] = useState("");
+  const [sellCcy, setSellCcy] = useState("USD");
+
+  const [buyTicker, setBuyTicker] = useState("");
+  const [buyShares, setBuyShares] = useState("");
+  const [buyPrice, setBuyPrice] = useState("");
+  const [buyCcy, setBuyCcy] = useState("CAD");
+
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const fx = user.fxUsdCad || 1.37;
+  const sellNum = parseFloat(sellShares) * parseFloat(sellPrice);
+  const buyNum = parseFloat(buyShares) * parseFloat(buyPrice);
+  const sellCadVal = isNaN(sellNum) ? 0 : (sellCcy === "USD" ? sellNum * fx : sellNum);
+  const buyCadVal = isNaN(buyNum) ? 0 : (buyCcy === "USD" ? buyNum * fx : buyNum);
+
+  // Cash impact: positive = cash in, negative = cash used
+  let netCash = 0;
+  if (mode === "buy") netCash = -buyCadVal;
+  else if (mode === "sell") netCash = sellCadVal;
+  else netCash = sellCadVal - buyCadVal;
+
+  // Tickers visible in the user's portfolio for autocomplete suggestion
+  const ownedTickers = [...new Set(user.positions.map(p => p.ticker))];
+
+  const handleSubmit = async () => {
+    setErr(null);
+    if (!account) return setErr("Pick an account.");
+    const legs = [];
+    if (mode === "buy" || mode === "swap") {
+      const s = parseFloat(buyShares); const p = parseFloat(buyPrice);
+      if (!buyTicker || !s || s <= 0 || !(p >= 0)) return setErr("BUY leg needs ticker, shares > 0, and a price.");
+      legs.push({ side: "BUY", ticker: buyTicker.trim().toUpperCase(), shares: s, price: p, currency: buyCcy });
+    }
+    if (mode === "sell" || mode === "swap") {
+      const s = parseFloat(sellShares); const p = parseFloat(sellPrice);
+      if (!sellTicker || !s || s <= 0 || !(p >= 0)) return setErr("SELL leg needs ticker, shares > 0, and a price.");
+      legs.unshift({ side: "SELL", ticker: sellTicker.trim().toUpperCase(), shares: s, price: p, currency: sellCcy });
+    }
+    if (legs.length === 0) return setErr("Nothing to do.");
+    setBusy(true);
+    try {
+      await onSubmit({ account, executedAt: new Date(executedAt + "T12:00:00").toISOString(), legs, notes });
+    } catch (e) {
+      setErr(e?.message || "Trade failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="sa-modal-bg" onClick={onClose}>
+      <div className="sa-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
+        <h3>Record a trade</h3>
+
+        {/* Mode picker */}
+        <div style={{ display: "flex", gap: 6, background: "var(--sa-panel-2)", padding: 4, borderRadius: 10, marginBottom: 18 }}>
+          {[
+            ["buy", "Buy"],
+            ["sell", "Sell"],
+            ["swap", "Swap (sell → buy)"],
+          ].map(([v, label]) => (
+            <button
+              key={v}
+              className={`sa-btn ${mode === v ? "" : "ghost"}`}
+              style={{ flex: 1, padding: "8px 10px", boxShadow: "none", background: mode === v ? "var(--sa-accent)" : "transparent", color: mode === v ? "#fff" : "var(--sa-text-2)" }}
+              onClick={() => setMode(v)}
+            >{label}</button>
+          ))}
+        </div>
+
+        <div className="sa-modal-row">
+          <div>
+            <label>Account</label>
+            <select value={account} onChange={(e) => setAccount(e.target.value)}>
+              {user.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label>Date</label>
+            <input type="date" defaultValue={executedAt} />
+          </div>
+        </div>
+
+        {/* SELL leg */}
+        {(mode === "sell" || mode === "swap") && (
+          <div style={{ background: "var(--sa-red-soft)", border: "1px solid #fecaca", borderRadius: 10, padding: 14, marginBottom: 12 }}>
+            <div style={{ fontWeight: 600, fontSize: 12, color: "var(--sa-red)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 10 }}>Sell</div>
+            <div className="sa-modal-row">
+              <div>
+                <label>Ticker</label>
+                <input value={sellTicker} onChange={(e) => setSellTicker(e.target.value)} placeholder="DJT" list="owned-tickers" />
+                <datalist id="owned-tickers">
+                  {ownedTickers.map(t => <option key={t} value={t} />)}
+                </datalist>
+              </div>
+              <div>
+                <label>Currency</label>
+                <select value={sellCcy} onChange={(e) => setSellCcy(e.target.value)}>
+                  <option value="USD">USD</option><option value="CAD">CAD</option>
+                </select>
+              </div>
+            </div>
+            <div className="sa-modal-row">
+              <div><label>Shares</label><input type="number" step="any" value={sellShares} onChange={(e) => setSellShares(e.target.value)} placeholder="250" /></div>
+              <div><label>Fill price</label><input type="number" step="any" value={sellPrice} onChange={(e) => setSellPrice(e.target.value)} placeholder="8.85" /></div>
+            </div>
+            {sellCadVal > 0 && (
+              <div style={{ fontSize: 12, color: "var(--sa-text-2)", marginTop: 4 }}>
+                Gross: {sellCcy === "USD" ? `$${sellNum.toFixed(2)} USD ≈ ` : ""}${sellCadVal.toFixed(2)} CAD
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* BUY leg */}
+        {(mode === "buy" || mode === "swap") && (
+          <div style={{ background: "var(--sa-green-soft)", border: "1px solid #bbf7d0", borderRadius: 10, padding: 14, marginBottom: 12 }}>
+            <div style={{ fontWeight: 600, fontSize: 12, color: "var(--sa-green)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 10 }}>Buy</div>
+            <div className="sa-modal-row">
+              <div>
+                <label>Ticker</label>
+                <input value={buyTicker} onChange={(e) => setBuyTicker(e.target.value)} placeholder="ENB" list="owned-tickers" />
+              </div>
+              <div>
+                <label>Currency</label>
+                <select value={buyCcy} onChange={(e) => setBuyCcy(e.target.value)}>
+                  <option value="USD">USD</option><option value="CAD">CAD</option>
+                </select>
+              </div>
+            </div>
+            <div className="sa-modal-row">
+              <div><label>Shares</label><input type="number" step="any" value={buyShares} onChange={(e) => setBuyShares(e.target.value)} placeholder="40" /></div>
+              <div><label>Fill price</label><input type="number" step="any" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} placeholder="75.50" /></div>
+            </div>
+            {buyCadVal > 0 && (
+              <div style={{ fontSize: 12, color: "var(--sa-text-2)", marginTop: 4 }}>
+                Gross: {buyCcy === "USD" ? `$${buyNum.toFixed(2)} USD ≈ ` : ""}${buyCadVal.toFixed(2)} CAD
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="sa-modal-row" style={{ gridTemplateColumns: "1fr" }}>
+          <div>
+            <label>Notes (optional)</label>
+            <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g., Reduce DJT concentration per Friday's briefing" maxLength={500} />
+          </div>
+        </div>
+
+        {Math.abs(netCash) > 0.005 && (
+          <div style={{
+            background: "var(--sa-panel-2)", padding: "10px 14px", borderRadius: 10, marginTop: 12,
+            display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13,
+          }}>
+            <span style={{ color: "var(--sa-text-2)" }}>Net cash impact</span>
+            <span style={{ fontWeight: 600, color: netCash >= 0 ? "var(--sa-green)" : "var(--sa-red)" }}>
+              {netCash >= 0 ? "+" : "−"}${Math.abs(netCash).toFixed(2)} CAD {netCash >= 0 ? "(cash in)" : "(cash used)"}
+            </span>
+          </div>
+        )}
+
+        {err && <div className="sa-err" style={{ marginTop: 12 }}>{err}</div>}
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
+          <button className="sa-btn secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          <button className="sa-btn" onClick={handleSubmit} disabled={busy}>
+            {busy ? "Recording…" : "Record trade"}
+          </button>
         </div>
       </div>
     </div>

@@ -1,0 +1,246 @@
+// backend/routes/stocksTrade.js
+//
+// POST /api/stocks-trade
+//   Body: {
+//     account: "<account.id>",
+//     executedAt: ISO date (optional, defaults to now),
+//     legs: [
+//       { side: "SELL", ticker: "DJT", shares: 250, price: 8.85, currency: "USD" },
+//       { side: "BUY",  ticker: "ENB", shares: 40,  price: 75.50, currency: "CAD" }
+//     ],
+//     notes: "Reduce DJT concentration",
+//     linkedAdviceRecId: "..." (optional)
+//   }
+//
+//   Atomically:
+//     • Updates the position rows in StocksPortfolio
+//     • Adjusts cost basis on BUYs (weighted average)
+//     • Removes positions whose qty hits 0
+//     • Writes a StocksTradeJournal entry
+//
+// GET /api/stocks-trade?days=90
+//   Returns recent trade journal entries for the authenticated user.
+
+import express from "express";
+import crypto from "crypto";
+import StocksPortfolio from "../models/StocksPortfolio.js";
+import StocksTradeJournal from "../models/StocksTradeJournal.js";
+
+const router = express.Router();
+
+// ── auth (same HMAC session-token scheme as the rest of /api/stocks-*) ──
+function getSecret() {
+  return process.env.STOCKS_SECRET || process.env.MEDICENTRE_SECRET || "";
+}
+function b64urlDecode(s) {
+  s = String(s || "").replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  return Buffer.from(s, "base64");
+}
+function b64url(buf) {
+  return buf.toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+function verifySessionToken(token) {
+  const secret = getSecret();
+  if (!secret) return null;
+  const [body, sig] = String(token || "").split(".");
+  if (!body || !sig) return null;
+  const expected = b64url(crypto.createHmac("sha256", secret).update(body).digest());
+  if (sig.length !== expected.length) return null;
+  try {
+    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  } catch { return null; }
+  try {
+    const payload = JSON.parse(b64urlDecode(body).toString("utf8"));
+    if (payload?.sub !== "stocks-session") return null;
+    if (typeof payload?.exp !== "number" || payload.exp < Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch { return null; }
+}
+function requireStocksAuth(req, res, next) {
+  const a = req.headers?.authorization || req.headers?.Authorization || "";
+  const token = typeof a === "string" && a.startsWith("Bearer ") ? a.slice(7).trim() : null;
+  if (!token) return res.status(401).json({ error: "Missing Authorization bearer token" });
+  const payload = verifySessionToken(token);
+  if (!payload) return res.status(401).json({ error: "Invalid or expired session" });
+  req.stocksUser = { email: payload.email.toLowerCase() };
+  next();
+}
+
+// ── helpers ────────────────────────────────────────────────────────
+function num(v) {
+  const n = typeof v === "number" ? v : parseFloat(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Apply a single leg to the portfolio's positions array (mutates).
+// On BUY: if a matching position exists, increase qty and update price.
+//   If cost basis is tracked, compute weighted average.
+// On SELL: reduce qty; remove the row when qty hits zero. Refuses
+//   over-selling unless the SELL also targets the only lot in the account.
+function applyLeg(positions, accountId, leg) {
+  const { side, ticker, shares, price, currency } = leg;
+  // Find the row to mutate — prefer same currency, same account.
+  // If multiple lots exist in the same account, target the first match.
+  const idx = positions.findIndex(
+    (p) => p.acct === accountId && p.ticker === ticker && p.ccy === currency
+  );
+
+  if (side === "BUY") {
+    if (idx >= 0) {
+      const existing = positions[idx];
+      const oldQty = existing.qty || 0;
+      const oldCostKey = currency === "USD" ? "costBasisUsd" : "costBasisCad";
+      const newQty = oldQty + shares;
+      // weighted-average cost basis when we have one
+      let newCost = existing[oldCostKey];
+      if (existing[oldCostKey] != null && oldQty > 0) {
+        newCost = (existing[oldCostKey] * oldQty + price * shares) / newQty;
+      } else if (existing[oldCostKey] == null) {
+        newCost = price; // first time we're recording a cost basis
+      }
+      positions[idx] = {
+        ...existing,
+        qty: newQty,
+        [oldCostKey]: newCost,
+        // update last-known price too
+        ...(currency === "USD" ? { priceUsd: price } : { priceCad: price }),
+      };
+    } else {
+      // New position row
+      positions.push({
+        acct: accountId,
+        ticker,
+        name: "",
+        qty: shares,
+        ccy: currency,
+        ...(currency === "USD"
+          ? { priceUsd: price, priceCad: null, costBasisUsd: price, costBasisCad: null }
+          : { priceCad: price, priceUsd: null, costBasisCad: price, costBasisUsd: null }),
+      });
+    }
+    return;
+  }
+
+  // SELL
+  if (idx < 0) {
+    throw new Error(`Can't sell ${ticker}: no matching position in this account/currency.`);
+  }
+  const existing = positions[idx];
+  if (existing.qty < shares - 1e-6) {
+    throw new Error(`Can't sell ${shares} sh of ${ticker}: only ${existing.qty} on file.`);
+  }
+  const newQty = existing.qty - shares;
+  if (newQty <= 1e-6) {
+    // Remove the row entirely
+    positions.splice(idx, 1);
+  } else {
+    positions[idx] = {
+      ...existing,
+      qty: newQty,
+      ...(currency === "USD" ? { priceUsd: price } : { priceCad: price }),
+    };
+  }
+}
+
+function netCashCadOfTrade(legs, fx) {
+  // Cash in = sells. Cash out = buys. Positive net = cash inflow.
+  let net = 0;
+  for (const leg of legs) {
+    const cadValue = leg.currency === "USD" ? leg.price * leg.shares * fx : leg.price * leg.shares;
+    net += (leg.side === "SELL" ? 1 : -1) * cadValue;
+  }
+  return net;
+}
+
+// ── handlers ───────────────────────────────────────────────────────
+router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req, res) => {
+  try {
+    const { account, legs, notes, executedAt, linkedAdviceRecId } = req.body || {};
+    if (!account || !Array.isArray(legs) || legs.length < 1 || legs.length > 4) {
+      return res.status(400).json({ error: "Provide account and 1-4 legs" });
+    }
+
+    // Normalize and validate each leg
+    const normLegs = [];
+    for (const raw of legs) {
+      const side = String(raw?.side || "").toUpperCase();
+      const ticker = String(raw?.ticker || "").toUpperCase().trim();
+      const shares = num(raw?.shares);
+      const price = num(raw?.price);
+      const currency = raw?.currency === "CAD" ? "CAD" : "USD";
+      if (!["BUY", "SELL"].includes(side)) return res.status(400).json({ error: `Bad side: ${side}` });
+      if (!/^[A-Z0-9.\-]{1,16}$/.test(ticker)) return res.status(400).json({ error: `Bad ticker: ${ticker}` });
+      if (shares == null || shares <= 0) return res.status(400).json({ error: `Bad shares for ${ticker}` });
+      if (price == null || price < 0) return res.status(400).json({ error: `Bad price for ${ticker}` });
+      normLegs.push({
+        side,
+        ticker,
+        shares,
+        pricePerShare: price,
+        currency,
+        grossValue: shares * price,
+      });
+    }
+
+    // Load portfolio
+    const portfolio = await StocksPortfolio.findOne({ email: req.stocksUser.email });
+    if (!portfolio) return res.status(404).json({ error: "No portfolio yet — set one up first." });
+
+    const acctRow = portfolio.accounts.find((a) => a.id === account);
+    if (!acctRow) return res.status(400).json({ error: "Unknown account id" });
+
+    // Apply legs to a copy of the positions array
+    const newPositions = [...portfolio.positions.map((p) => ({ ...(p.toObject?.() || p) }))];
+    try {
+      for (const leg of normLegs) {
+        applyLeg(newPositions, account, {
+          side: leg.side, ticker: leg.ticker, shares: leg.shares,
+          price: leg.pricePerShare, currency: leg.currency,
+        });
+      }
+    } catch (e) {
+      return res.status(400).json({ error: e.message });
+    }
+
+    portfolio.positions = newPositions;
+    portfolio.lastSyncedAt = new Date();
+    await portfolio.save();
+
+    // Journal the trade
+    const fx = portfolio.fxUsdCad || 1.37;
+    const entry = await StocksTradeJournal.create({
+      email: req.stocksUser.email,
+      executedAt: executedAt ? new Date(executedAt) : new Date(),
+      account,
+      accountName: acctRow.name,
+      legs: normLegs,
+      netCashCad: netCashCadOfTrade(normLegs, fx),
+      fxUsdCadAtTrade: fx,
+      notes: String(notes || "").slice(0, 500),
+      linkedAdviceRecId: linkedAdviceRecId || null,
+    });
+
+    res.json({ ok: true, portfolio: portfolio.toObject(), trade: entry.toObject() });
+  } catch (err) {
+    console.error("stocks-trade POST error:", err);
+    res.status(500).json({ error: `Internal: ${err?.message || err}` });
+  }
+});
+
+router.get("/", requireStocksAuth, async (req, res) => {
+  try {
+    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 90, 7), 1825);
+    const since = new Date(Date.now() - days * 86400 * 1000);
+    const trades = await StocksTradeJournal.find({
+      email: req.stocksUser.email,
+      executedAt: { $gte: since },
+    }).sort({ executedAt: -1 }).limit(250).lean();
+    res.json({ trades });
+  } catch (err) {
+    console.error("stocks-trade GET error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+export default router;

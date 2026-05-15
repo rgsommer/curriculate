@@ -122,6 +122,7 @@ import studentProgressRouter from "./routes/studentProgress.js";
 import stocksPortfolioRouter from "./routes/stocksPortfolio.js";
 import stocksPricesRouter from "./routes/stocksPrices.js";
 import stocksAdviceRouter from "./routes/stocksAdvice.js";
+import stocksTradeRouter from "./routes/stocksTrade.js";
 import { scheduleDailyBriefing } from "./jobs/stocksDailyBriefing.js";
 
 function renderEmailTemplate(str, vars) {
@@ -513,6 +514,7 @@ app.use("/student-progress", studentProgressRouter);
 app.use("/api/stocks-portfolio", stocksPortfolioRouter);
 app.use("/api/stocks-prices", stocksPricesRouter);
 app.use("/api/stocks-advice", stocksAdviceRouter);
+app.use("/api/stocks-trade", stocksTradeRouter);
 
 // Fieldday
 app.use("/fieldday/api", fielddayRouter);
