@@ -13,8 +13,9 @@ const AccountSchema = new mongoose.Schema(
   {
     id: { type: String, required: true },
     name: { type: String, required: true },
-    // Sweep-account cash held within this brokerage account. RBC Direct and
-    // similar brokerages keep a separate USD and CAD cash balance per account.
+    // Sweep-account cash held within this brokerage account. Most Canadian
+    // brokers (CIBC Investor's Edge, RBC Direct, TD Direct) keep separate
+    // USD and CAD cash balances per account.
     cashUsd: { type: Number, default: 0 },
     cashCad: { type: Number, default: 0 },
   },
@@ -54,7 +55,7 @@ const StocksPortfolioSchema = new mongoose.Schema(
     fxUsdCad: { type: Number, default: 1.37 },
     // Real-world trading-cost knobs the AI factors into trade sizing.
     // commissionPerTrade  — flat per-trade fee (CAD) at this user's broker
-    //                       (RBC Direct = $9.95 normally, $6.95 if Royal Circle).
+    //                       (CIBC Investor's Edge = $6.95; RBC Direct = $9.95).
     // fxSpreadPct         — round-trip FX spread when swapping USD↔CAD via
     //                       the broker's currency conversion (typically 1.5%).
     commissionPerTrade: { type: Number, default: 9.95 },

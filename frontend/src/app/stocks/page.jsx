@@ -96,6 +96,44 @@ async function apiRecordTrade(sessionToken, trade) {
   return j;
 }
 
+async function apiListPendingOrders(sessionToken) {
+  const r = await fetch(`${BACKEND_URL}/api/stocks-pending-orders`, {
+    headers: { Authorization: `Bearer ${sessionToken}` },
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+  return j.orders || [];
+}
+async function apiCreatePendingOrder(sessionToken, order) {
+  const r = await fetch(`${BACKEND_URL}/api/stocks-pending-orders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+    body: JSON.stringify(order),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+  return j.order;
+}
+async function apiFillPendingOrder(sessionToken, id, fill) {
+  const r = await fetch(`${BACKEND_URL}/api/stocks-pending-orders/${id}/fill`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+    body: JSON.stringify(fill || {}),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+  return j;
+}
+async function apiCancelPendingOrder(sessionToken, id) {
+  const r = await fetch(`${BACKEND_URL}/api/stocks-pending-orders/${id}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${sessionToken}` },
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+  return j;
+}
+
 // =============================================================================
 // Seed: Richard's portfolio (auto-loads on first sign-in for rgsommer@me.com)
 // =============================================================================
@@ -434,6 +472,7 @@ export default function StocksAdvisorPage() {
   const [tradePrefill, setTradePrefill] = useState(null); // optional prefill for TradeModal
   const [executedRecKeys, setExecutedRecKeys] = useState(new Set()); // recs the user has executed in this session
   const [briefingPreview, setBriefingPreview] = useState(null); // { html, sent, error, busy }
+  const [pendingOrders, setPendingOrders] = useState([]);
   const saveTimerRef = useRef(null);
   const savedTimerRef = useRef(null);
   // Cross-tab AI advice request — when set, the Advice tab auto-triggers
@@ -450,6 +489,21 @@ export default function StocksAdvisorPage() {
     setAuth(loadAuth());
     setHydrated(true);
   }, []);
+
+  // ── Fetch pending orders alongside profile ───────────────────────
+  const refreshPendingOrders = async () => {
+    if (!auth?.sessionToken) return;
+    try {
+      const list = await apiListPendingOrders(auth.sessionToken);
+      setPendingOrders(list);
+    } catch (e) {
+      console.warn("Could not load pending orders:", e?.message);
+    }
+  };
+  useEffect(() => {
+    if (auth?.sessionToken) refreshPendingOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth?.sessionToken]);
 
   // ── Fetch profile when auth is established ───────────────────────
   useEffect(() => {
@@ -629,12 +683,50 @@ export default function StocksAdvisorPage() {
   // executed (turns the row green in the advice table).
   const recKey = (rec) => `${rec.side}_${rec.ticker}_${rec.shares || ""}_${rec.entryLow || ""}_${rec.currency || ""}`;
 
+  // Submit an order as pending (placed at broker, not yet filled).
+  // Marks the source rec executed (visually) and adds a Pending Order row.
+  const submitPendingOrder = async (order) => {
+    await apiCreatePendingOrder(auth.sessionToken, order);
+    await refreshPendingOrders();
+    if (tradePrefill && !tradePrefill.plannedId) {
+      const k = recKey(tradePrefill);
+      setExecutedRecKeys(prev => { const next = new Set(prev); next.add(k); return next; });
+    }
+    showToast(`Pending order saved — ${order.side} ${order.qty} ${order.ticker} @ $${order.limitPrice}`);
+  };
+
+  // Fill a pending order — converts to a real journal entry, updates portfolio
+  const fillPendingOrder = async (orderId, fill) => {
+    const result = await apiFillPendingOrder(auth.sessionToken, orderId, fill);
+    setProfile(result.portfolio);
+    await refreshPendingOrders();
+    showToast("Order marked filled");
+    return result;
+  };
+  const cancelPendingOrder = async (orderId) => {
+    await apiCancelPendingOrder(auth.sessionToken, orderId);
+    await refreshPendingOrders();
+    showToast("Pending order cancelled");
+  };
+
   // Record a trade: post to /api/stocks-trade and refresh local profile.
   // If the trade originated from an Execute click on a recommendation,
   // mark that rec as executed so the row renders green. If it originated
   // from a planned-withdrawal execution, remove that planned WD from the
-  // user's list (it's now a real journal entry).
+  // user's list (it's now a real journal entry). If it originated from
+  // filling a Pending Order, route through the fill endpoint instead.
   const recordTrade = async (trade) => {
+    // Pending-order fill path: convert the pending order to a real trade
+    if (tradePrefill?._pendingOrderId) {
+      const leg = trade.legs?.[0];
+      if (!leg) throw new Error("No trade leg");
+      const result = await fillPendingOrder(tradePrefill._pendingOrderId, {
+        qty: leg.shares,
+        price: leg.price,
+        executedAt: trade.executedAt,
+      });
+      return result;
+    }
     const result = await apiRecordTrade(auth.sessionToken, trade);
     let nextProfile = result.portfolio;
     if (tradePrefill?.plannedId) {
@@ -747,6 +839,20 @@ export default function StocksAdvisorPage() {
               onRecordTrade={() => setTradeModalOpen(true)}
               onEmailBriefing={previewBriefing}
               onEditPosition={(idx) => setModalIdx(idx)}
+              pendingOrders={pendingOrders}
+              onFillPendingOrder={async (order) => {
+                // Prefill the Trade modal with the pending order so the user
+                // can confirm/adjust the actual fill prices, then submit.
+                setTradePrefill({
+                  side: order.side, ticker: order.ticker,
+                  shares: order.qty, entryLow: order.limitPrice,
+                  currency: order.currency,
+                  targetVal: order.targetPrice, stopVal: order.stopPrice,
+                  _pendingOrderId: order._id, _pendingAccount: order.account,
+                });
+                setTradeModalOpen(true);
+              }}
+              onCancelPendingOrder={cancelPendingOrder}
             />
           )}
           {currentTab === "positions" && (
@@ -859,7 +965,16 @@ export default function StocksAdvisorPage() {
                 setTradeModalOpen(false);
                 setTradePrefill(null);
               } catch (e) {
-                throw e; // let the modal show the error
+                throw e;
+              }
+            }}
+            onSubmitPending={async (order) => {
+              try {
+                await submitPendingOrder(order);
+                setTradeModalOpen(false);
+                setTradePrefill(null);
+              } catch (e) {
+                throw e;
               }
             }}
           />
@@ -1055,7 +1170,7 @@ function OnboardingView({ onPick }) {
   );
 }
 
-function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEmailBriefing, onEditPosition }) {
+function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEmailBriefing, onEditPosition, pendingOrders, onFillPendingOrder, onCancelPendingOrder }) {
   const [busyRefresh, setBusyRefresh] = useState(false);
   const [busyAi, setBusyAi] = useState(false);
   const fx = user.fxUsdCad || 1.37;
@@ -1124,6 +1239,16 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
         </div>
         <div className="sa-stat"><div className="label">Risk profile</div><div className="value" style={{ textTransform: "capitalize" }}>{user.riskTolerance}</div></div>
       </div>
+      {/* Pending orders — submitted at broker but not yet filled */}
+      {pendingOrders && pendingOrders.length > 0 && (
+        <PendingOrdersCard
+          orders={pendingOrders}
+          accounts={user.accounts || []}
+          onFill={onFillPendingOrder}
+          onCancel={onCancelPendingOrder}
+        />
+      )}
+
       {/* Holdings breakdown — one row per ticker, split by USD-sub vs CAD-sub */}
       <HoldingsBreakdownCard user={user} fx={fx} onEditPosition={onEditPosition} />
 
@@ -1751,7 +1876,7 @@ function BriefingPreviewModal({ preview, recipient, onClose, onSend }) {
 // =============================================================================
 // Trade modal — Buy / Sell / Swap
 // =============================================================================
-function TradeModal({ user, onClose, onSubmit, prefill }) {
+function TradeModal({ user, onClose, onSubmit, onSubmitPending, prefill }) {
   // Decide initial mode + leg pre-population based on prefill.
   // BUY → buy mode; SELL/TRIM → sell mode; WITHDRAW/DEPOSIT → cash mode.
   const initialMode = prefill
@@ -2101,7 +2226,7 @@ function TradeModal({ user, onClose, onSubmit, prefill }) {
           </div>
         </div>
 
-        {/* Order plan — bracket / OCO instructions to paste into RBC Direct */}
+        {/* Order plan — bracket / OCO instructions to paste into CIBC Investor's Edge */}
         {(mode === "buy" || mode === "sell" || mode === "swap") && (() => {
           const commission = Number(user.commissionPerTrade ?? 9.95);
           // Determine which leg drives the plan
@@ -2130,7 +2255,7 @@ function TradeModal({ user, onClose, onSubmit, prefill }) {
             <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: 14, marginTop: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <div style={{ fontWeight: 600, fontSize: 12, color: "var(--sa-accent-2)", textTransform: "uppercase", letterSpacing: ".06em" }}>
-                  📋 Order plan (RBC Direct ready)
+                  📋 Order plan (CIBC Investor's Edge ready)
                 </div>
                 <button
                   type="button"
@@ -2184,7 +2309,7 @@ function TradeModal({ user, onClose, onSubmit, prefill }) {
 
                   {isBuyDriven && hasStop && hasTarget && (
                     <div style={{ fontSize: 11, color: "var(--sa-text-2)", marginTop: 8, padding: 8, background: "rgba(255,255,255,.7)", borderRadius: 6 }}>
-                      💡 <b>Bracket / OCO setup:</b> at RBC Direct, link orders #2 and #3 as a One-Cancels-Other pair (Conditional Order → OCO). Whichever fires first auto-cancels the other so you never end up double-sold.
+                      💡 <b>Bracket / OCO setup:</b> at CIBC Investor's Edge, link orders #2 and #3 as a One-Cancels-Other pair (Multi-Leg / Conditional Orders). Whichever fires first auto-cancels the other so you never end up double-sold. Note: CIBC GTC is 30 days max — refresh if your thesis runs longer.
                     </div>
                   )}
 
@@ -2253,10 +2378,42 @@ function TradeModal({ user, onClose, onSubmit, prefill }) {
 
         {err && <div className="sa-err" style={{ marginTop: 12 }}>{err}</div>}
 
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18, flexWrap: "wrap" }}>
           <button className="sa-btn secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          {/* "Submit only" — for the workflow: I just placed the LIMIT order
+              at CIBC and it hasn't filled yet. Logs as a Pending Order. */}
+          {onSubmitPending && (mode === "buy" || mode === "sell") && (
+            <button
+              className="sa-btn secondary"
+              title="Logged as pending until you mark it filled. No journal entry or cash change yet."
+              disabled={busy}
+              onClick={async () => {
+                setErr(null);
+                const isBuy = mode === "buy";
+                const ticker = (isBuy ? buyTicker : sellTicker).trim().toUpperCase().replace(/\.+$/, "");
+                const qty = parseFloat(isBuy ? buyShares : sellShares);
+                const limitPrice = parseFloat(isBuy ? buyPrice : sellPrice);
+                if (!ticker || !qty || !(limitPrice >= 0)) return setErr("Need ticker, qty, and limit price.");
+                setBusy(true);
+                try {
+                  await onSubmitPending({
+                    side: isBuy ? "BUY" : "SELL",
+                    ticker, qty, limitPrice,
+                    currency: isBuy ? buyCcy : sellCcy,
+                    settleCcy: isBuy ? buySubCcy : sellSubCcy,
+                    account,
+                    targetPrice: planTarget ? parseFloat(planTarget) : null,
+                    stopPrice: planStop ? parseFloat(planStop) : null,
+                    notes,
+                  });
+                } catch (e) {
+                  setErr(e?.message || "Submit failed.");
+                } finally { setBusy(false); }
+              }}
+            >📋 Submit as pending</button>
+          )}
           <button className="sa-btn" onClick={handleSubmit} disabled={busy}>
-            {busy ? "Recording…" : "Record trade"}
+            {busy ? "Recording…" : "Record fill now"}
           </button>
         </div>
       </div>
@@ -2394,6 +2551,65 @@ function PerformanceView({ sessionToken }) {
 }
 
 // =============================================================================
+// Pending Orders card — orders submitted at the broker that haven't filled.
+// Each row has a Mark Filled (records the trade with actual fill data) and
+// Cancel (removes the pending order without recording).
+// =============================================================================
+function PendingOrdersCard({ orders, accounts, onFill, onCancel }) {
+  return (
+    <div className="sa-card" style={{ marginBottom: 24, padding: 0, overflow: "hidden", borderColor: "#bfdbfe" }}>
+      <div style={{ padding: "16px 22px 10px", background: "#eff6ff" }}>
+        <h3 style={{ margin: 0 }}>📋 Pending orders at broker</h3>
+        <div className="sa-muted" style={{ fontSize: 12, marginTop: 2 }}>
+          Orders you've placed at CIBC but haven't filled yet. When the broker fills (or you cancel), come back to mark it.
+        </div>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: "var(--sa-panel-2)" }}>
+              <th style={recHeaderCellLeft}>Side</th>
+              <th style={recHeaderCellLeft}>Ticker</th>
+              <th style={recHeaderCell}>Qty</th>
+              <th style={recHeaderCell}>Limit</th>
+              <th style={recHeaderCellLeft}>Account</th>
+              <th style={recHeaderCellLeft}>Submitted</th>
+              <th style={recHeaderCell}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((o) => {
+              const acctName = accounts.find(a => a.id === o.account)?.name || "—";
+              const sideColor = o.side === "BUY" ? "var(--sa-green)" : "var(--sa-red)";
+              const sideBg = o.side === "BUY" ? "var(--sa-green-soft)" : "var(--sa-red-soft)";
+              const age = Math.floor((Date.now() - new Date(o.submittedAt).getTime()) / 60000); // mins
+              const ageStr = age < 60 ? `${age}m ago` : age < 1440 ? `${Math.floor(age / 60)}h ago` : `${Math.floor(age / 1440)}d ago`;
+              return (
+                <tr key={o._id} style={{ borderTop: "1px solid var(--sa-border)" }}>
+                  <td style={recCellLeft}>
+                    <span style={{ padding: "2px 8px", borderRadius: 99, fontSize: 11, fontWeight: 700, background: sideBg, color: sideColor }}>{o.side}</span>
+                  </td>
+                  <td style={{ ...recCellLeft, fontWeight: 600 }}>{o.ticker}</td>
+                  <td style={recCell}>{o.qty.toLocaleString()}</td>
+                  <td style={recCell}>${o.limitPrice.toFixed(2)} {o.currency}</td>
+                  <td style={{ ...recCellLeft, color: "var(--sa-muted)" }}>{acctName}</td>
+                  <td style={{ ...recCellLeft, color: "var(--sa-muted)", fontSize: 12 }}>{ageStr}</td>
+                  <td style={{ ...recCell, whiteSpace: "nowrap" }}>
+                    <button className="sa-btn" style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => onFill(o)}>✓ Mark filled</button>
+                    {" "}
+                    <button className="sa-btn ghost" style={{ padding: "3px 8px", fontSize: 11 }} onClick={() => { if (confirm("Cancel this pending order?")) onCancel(o._id); }}>×</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
 // Holdings breakdown — one row per ticker, split by which currency sub-account
 // the position is parked in (USD-sub vs CAD-sub). Shows total CAD equivalent.
 // Plus a CASH row at the bottom. Plus totals.
@@ -2452,7 +2668,7 @@ function HoldingsBreakdownCard({ user, fx, onEditPosition }) {
       <div style={{ padding: "18px 22px 12px" }}>
         <h3 style={{ margin: 0 }}>Holdings breakdown</h3>
         <div className="sa-muted" style={{ fontSize: 12, marginTop: 2 }}>
-          One row per ticker, split by which currency sub-account holds the position. US stocks held in a CAD sub are flagged so AI recs can plan consolidation.
+          One row per ticker, split by which currency sub-account holds the position. US stocks held in a CAD sub are flagged so AI recs can plan consolidation. Mirrors how CIBC Investor's Edge shows sub-account balances.
         </div>
       </div>
       <div style={{ overflowX: "auto" }}>

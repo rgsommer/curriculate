@@ -241,7 +241,7 @@ router.delete("/", requireStocksAuth, async (req, res) => {
 // Cleans up the authenticated user's portfolio:
 //   1. Strips trailing dots from any ticker (PLTR./ENB./SOFI./BBAI. → PLTR/ENB/SOFI/BBAI)
 //   2. Infers subCcy from position name if it contains "(CAD sub)" or "(USD sub)"
-//      so the existing seed data correctly reflects RBC's sub-account split.
+//      so the existing seed data correctly reflects the broker's sub-account split.
 // Returns counts of fixes applied. Idempotent — safe to call multiple times.
 // ─────────────────────────────────────────────────────────────────────
 router.post("/migrate", requireStocksAuth, async (req, res) => {
