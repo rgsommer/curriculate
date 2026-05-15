@@ -481,7 +481,21 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
       aria-labelledby="edit-task-title"
     >
       <form onSubmit={handleSave} style={styles.modalCard}>
-        <div id="edit-task-title" style={styles.modalHeader}>Edit task</div>
+        <div id="edit-task-title" style={styles.modalHeader}>
+          Edit task
+          {completed && <span style={styles.completedPill}>Completed</span>}
+        </div>
+
+        {completed && (
+          <button
+            type="button"
+            onClick={handleToggleComplete}
+            style={styles.reactivateBtn}
+            disabled={busy}
+          >
+            ↻ Re-activate this task
+          </button>
+        )}
 
         <label style={styles.label}>Title</label>
         <input
@@ -540,9 +554,11 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
             Delete
           </button>
           <div style={{ flex: 1 }} />
-          <button type="button" onClick={handleToggleComplete} style={styles.subtleBtn} disabled={busy}>
-            {completed ? "Mark incomplete" : "Mark complete"}
-          </button>
+          {!completed && (
+            <button type="button" onClick={handleToggleComplete} style={styles.subtleBtn} disabled={busy}>
+              Mark complete
+            </button>
+          )}
           <button type="button" onClick={onClose} style={styles.subtleBtn} disabled={busy}>
             Cancel
           </button>
@@ -934,6 +950,26 @@ const styles = {
   modalHeader: {
     fontSize: 16, fontWeight: 700, color: "#0f172a",
     marginBottom: 16,
+    display: "flex", alignItems: "center", gap: 10,
+  },
+  completedPill: {
+    fontSize: 11, fontWeight: 700, letterSpacing: 0.5,
+    textTransform: "uppercase",
+    background: "#dcfce7", color: "#166534",
+    padding: "3px 8px", borderRadius: 999,
+    border: "1px solid #bbf7d0",
+  },
+  reactivateBtn: {
+    width: "100%",
+    marginBottom: 16,
+    padding: "12px 16px",
+    fontSize: 15, fontWeight: 600,
+    borderRadius: 10,
+    border: "1px solid #16a34a",
+    background: "#16a34a",
+    color: "#fff",
+    cursor: "pointer",
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
   },
   modalActions: {
     marginTop: 18,
