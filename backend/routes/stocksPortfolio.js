@@ -130,7 +130,14 @@ function sanitizePortfolioInput(body, email) {
     out.accounts = body.accounts
       .filter((a) => a && typeof a.id === "string" && typeof a.name === "string")
       .slice(0, 50)
-      .map((a) => ({ id: String(a.id).slice(0, 64), name: String(a.name).slice(0, 120) }));
+      .map((a) => ({
+        id: String(a.id).slice(0, 64),
+        name: String(a.name).slice(0, 120),
+        // Preserve cash balances on every PUT — bug previously stripped these,
+        // wiping cash on the next non-cash profile save.
+        cashUsd: typeof a.cashUsd === "number" && Number.isFinite(a.cashUsd) ? a.cashUsd : 0,
+        cashCad: typeof a.cashCad === "number" && Number.isFinite(a.cashCad) ? a.cashCad : 0,
+      }));
   }
   if (Array.isArray(body.positions)) {
     out.positions = body.positions
