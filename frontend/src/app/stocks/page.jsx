@@ -268,7 +268,9 @@ function parseSingleRec(chunk) {
   const headM = text.match(/^(BUY|SELL|TRIM|HOLD)\s+(\d[\d,]*)?\s*(?:sh)?\s*([A-Z][A-Z0-9.\-]{0,15})/i);
   if (!headM) return null;
   const shares = headM[2] ? parseInt(headM[2].replace(/,/g, ""), 10) : null;
-  const ticker = headM[3].toUpperCase();
+  // Strip trailing dots — the regex's `.` allowance was capturing the
+  // sentence-ending period (e.g. "BUY 40 sh PLTR." → ticker "PLTR.")
+  const ticker = headM[3].toUpperCase().replace(/\.+$/, "");
 
   // Extract each labeled field's value up to the next period
   const fieldVal = (label) => {
@@ -1072,6 +1074,9 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
         </div>
         <div className="sa-stat"><div className="label">Risk profile</div><div className="value" style={{ textTransform: "capitalize" }}>{user.riskTolerance}</div></div>
       </div>
+      {/* Account balances — equity + cash per account, per currency */}
+      <AccountBalancesCard user={user} fx={fx} />
+
       {/* Per-ticker performance — multi-line chart, range tabs */}
       <TickerPerformanceCard
         tickers={agg.map(a => a.ticker).slice(0, 10)}
@@ -2071,6 +2076,94 @@ function PerformanceView({ sessionToken }) {
           </div>
         )}
         {!busy && snaps && snaps.length > 0 && <PortfolioChart snaps={snaps} />}
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// Account balances card — per-account equity + cash, in USD and CAD subs.
+// Mirrors how brokerages (RBC Direct etc.) show RRSP/TFSA balances split by
+// currency sub-account so Richard sees deployable buckets at a glance.
+// =============================================================================
+function AccountBalancesCard({ user, fx }) {
+  // Build per-account, per-currency rows
+  const rows = (user.accounts || []).map((acct) => {
+    let equityUsd = 0;
+    let equityCad = 0;
+    for (const p of user.positions || []) {
+      if (p.acct !== acct.id) continue;
+      const qty = p.qty || 0;
+      if (p.ccy === "USD") {
+        equityUsd += (p.priceUsd || 0) * qty;
+      } else {
+        equityCad += (p.priceCad || 0) * qty;
+      }
+    }
+    const cashUsd = acct.cashUsd || 0;
+    const cashCad = acct.cashCad || 0;
+    const totalCadEquiv = equityCad + cashCad + (equityUsd + cashUsd) * fx;
+    return { id: acct.id, name: acct.name, equityUsd, cashUsd, equityCad, cashCad, totalCadEquiv };
+  });
+
+  const totals = rows.reduce(
+    (acc, r) => ({
+      equityUsd: acc.equityUsd + r.equityUsd,
+      cashUsd: acc.cashUsd + r.cashUsd,
+      equityCad: acc.equityCad + r.equityCad,
+      cashCad: acc.cashCad + r.cashCad,
+      totalCadEquiv: acc.totalCadEquiv + r.totalCadEquiv,
+    }),
+    { equityUsd: 0, cashUsd: 0, equityCad: 0, cashCad: 0, totalCadEquiv: 0 }
+  );
+
+  const fmt = (n) => n === 0 ? "—" : "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 24, padding: 0, overflow: "hidden" }}>
+      <div style={{ padding: "18px 22px 12px" }}>
+        <h3 style={{ margin: 0 }}>Account balances</h3>
+        <div className="sa-muted" style={{ fontSize: 12, marginTop: 2 }}>
+          Equity + cash, split by currency sub-account. Trades and deployments must fit within one row.
+        </div>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: "var(--sa-panel-2)" }}>
+              <th style={{ ...recHeaderCellLeft, paddingTop: 8, paddingBottom: 8 }}>Account</th>
+              <th style={recHeaderCell}>Equity (CAD)</th>
+              <th style={recHeaderCell}>Cash (CAD)</th>
+              <th style={recHeaderCell}>Equity (USD)</th>
+              <th style={recHeaderCell}>Cash (USD)</th>
+              <th style={recHeaderCell}>Total (≈CAD)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr><td colSpan={6} style={{ ...recCellLeft, color: "var(--sa-muted)", padding: 28, textAlign: "center" }}>
+                No accounts configured. Add one on the Positions tab.
+              </td></tr>
+            ) : rows.map((r) => (
+              <tr key={r.id} style={{ borderTop: "1px solid var(--sa-border)" }}>
+                <td style={{ ...recCellLeft, fontWeight: 600 }}>{r.name}</td>
+                <td style={recCell}>{fmt(r.equityCad)}</td>
+                <td style={{ ...recCell, color: r.cashCad > 0 ? "var(--sa-green)" : "var(--sa-muted)" }}>{fmt(r.cashCad)}</td>
+                <td style={recCell}>{fmt(r.equityUsd)}</td>
+                <td style={{ ...recCell, color: r.cashUsd > 0 ? "var(--sa-green)" : "var(--sa-muted)" }}>{fmt(r.cashUsd)}</td>
+                <td style={{ ...recCell, fontWeight: 600 }}>{fmt(r.totalCadEquiv)}</td>
+              </tr>
+            ))}
+            <tr style={{ borderTop: "2px solid var(--sa-border)", background: "var(--sa-panel-2)" }}>
+              <td style={{ ...recCellLeft, fontWeight: 700 }}>TOTAL</td>
+              <td style={{ ...recCell, fontWeight: 700 }}>{fmt(totals.equityCad)}</td>
+              <td style={{ ...recCell, fontWeight: 700 }}>{fmt(totals.cashCad)}</td>
+              <td style={{ ...recCell, fontWeight: 700 }}>{fmt(totals.equityUsd)}</td>
+              <td style={{ ...recCell, fontWeight: 700 }}>{fmt(totals.cashUsd)}</td>
+              <td style={{ ...recCell, fontWeight: 700 }}>{fmt(totals.totalCadEquiv)}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   );

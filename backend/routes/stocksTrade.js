@@ -207,7 +207,9 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
       }
 
       if (!["BUY", "SELL"].includes(side)) return res.status(400).json({ error: `Bad side: ${side}` });
-      const ticker = String(raw?.ticker || "").toUpperCase().trim();
+      // Strip trailing periods that can leak in from AI-generated text
+      // ("Action: BUY 40 sh PLTR." → "PLTR.") before persisting.
+      const ticker = String(raw?.ticker || "").toUpperCase().trim().replace(/\.+$/, "");
       const shares = num(raw?.shares);
       const price = num(raw?.price);
       if (!/^[A-Z0-9.\-]{1,16}$/.test(ticker)) return res.status(400).json({ error: `Bad ticker: ${ticker}` });

@@ -357,7 +357,8 @@ export function parseRecsFromBriefing(text) {
   const re = /Action:\s*(BUY|SELL|TRIM|HOLD)\s*(\d[\d,]*)?\s*(?:sh)?\s*([A-Z][A-Z0-9.\-]{0,15})\b[^.]*?(?:Entry:\s*\$?([\d.]+))?[^.]*?(?:Target:\s*\$?([\d.]+))?[^.]*?(?:Stop:\s*\$?([\d.]+))?[^.]*?(?:Horizon:\s*([^.\n]+))?/gi;
   let m;
   while ((m = re.exec(text))) {
-    const [, action, sharesStr, ticker, entry, target, stop, horizon] = m;
+    const [, action, sharesStr, tickerRaw, entry, target, stop, horizon] = m;
+    const ticker = String(tickerRaw || "").toUpperCase().replace(/\.+$/, "");
     let horizonDays = 30;
     if (horizon) {
       const h = horizon.toLowerCase();
@@ -370,7 +371,7 @@ export function parseRecsFromBriefing(text) {
     if (entry) {
       recs.push({
         action: action.toUpperCase(),
-        ticker: ticker.toUpperCase(),
+        ticker,
         shares: sharesStr ? parseInt(sharesStr.replace(/,/g, ""), 10) : null,
         entryPrice: parseFloat(entry),
         targetPrice: target ? parseFloat(target) : null,

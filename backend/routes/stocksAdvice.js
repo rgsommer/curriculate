@@ -273,7 +273,10 @@ function parseRec(body) {
   if (!body || typeof body !== "string") return null;
   const m = body.match(/Action:\s*(BUY|SELL|TRIM|HOLD)\s*(\d[\d,]*)?\s*(?:sh)?\s*([A-Z][A-Z0-9.\-]{0,15})\b[^.]*?(?:Entry:\s*\$?([\d.]+))?[^.]*?(?:Target:\s*\$?([\d.]+))?[^.]*?(?:Stop:\s*\$?([\d.]+))?[^.]*?(?:Horizon:\s*([^.\n]+))?/i);
   if (!m) return null;
-  const [, action, sharesStr, ticker, entry, target, stop, horizon] = m;
+  const [, action, sharesStr, tickerRaw, entry, target, stop, horizon] = m;
+  // Strip trailing dot — the ticker pattern allows `.` so it greedily captures
+  // the sentence-ending period (e.g. "PLTR." instead of "PLTR").
+  const ticker = String(tickerRaw || "").toUpperCase().replace(/\.+$/, "");
   const shares = sharesStr ? parseInt(sharesStr.replace(/,/g, ""), 10) : null;
   // Derive horizon days
   let horizonDays = 30;
@@ -288,7 +291,7 @@ function parseRec(body) {
   return {
     action: action.toUpperCase(),
     shares,
-    ticker: ticker.toUpperCase(),
+    ticker,
     entryPrice: entry ? parseFloat(entry) : null,
     targetPrice: target ? parseFloat(target) : null,
     stopPrice: stop ? parseFloat(stop) : null,
