@@ -165,6 +165,20 @@ function sanitizePortfolioInput(body, email) {
         notes: String(p.notes || "").slice(0, 500),
       }));
   }
+  if (Array.isArray(body.plannedWithdrawals)) {
+    out.plannedWithdrawals = body.plannedWithdrawals
+      .filter((w) => w && typeof w.amount === "number" && w.amount > 0 && (w.currency === "USD" || w.currency === "CAD") && w.targetDate)
+      .slice(0, 50)
+      .map((w) => ({
+        id: String(w.id || ("w" + Date.now() + Math.random().toString(36).slice(2, 6))).slice(0, 64),
+        amount: Number(w.amount),
+        currency: w.currency,
+        targetDate: new Date(w.targetDate),
+        account: String(w.account || "").slice(0, 64),
+        notes: String(w.notes || "").slice(0, 300),
+        createdAt: w.createdAt ? new Date(w.createdAt) : new Date(),
+      }));
+  }
   out.lastSyncedAt = new Date();
   return out;
 }

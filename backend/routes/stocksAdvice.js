@@ -159,6 +159,17 @@ function buildPrompt(profile, summary, monitorAlerts = []) {
     .map(a => `  ${a.name}: $${(a.cashCad || 0).toFixed(0)} CAD · $${(a.cashUsd || 0).toFixed(0)} USD`)
     .join("\n") || "  (no accounts configured)";
 
+  // Planned withdrawals — must-have cash by date that constrains recs
+  const pending = (profile.plannedWithdrawals || [])
+    .map(w => {
+      const days = Math.max(0, Math.round((new Date(w.targetDate).getTime() - Date.now()) / 86400000));
+      const accountName = w.account ? (profile.accounts.find(a => a.id === w.account)?.name || w.account) : null;
+      return `  $${w.amount.toFixed(0)} ${w.currency} in ${days}d${accountName ? ` from ${accountName}` : ""}${w.notes ? ` · ${w.notes}` : ""}`;
+    });
+  const plannedWithdrawalsBlock = pending.length
+    ? `\nPLANNED WITHDRAWALS (cash that MUST be available by target date — recommendations must avoid locking it up):\n${pending.join("\n")}\n`
+    : "";
+
   const priceCurrencyBlock = `
 PRICE CURRENCY CONVENTION (strict — applies to every rec, alert, and discussion):
 - Every position has a native trading currency shown in the Holdings list (e.g., "TSLA (USD)" trades in USD, "ENB (CAD)" trades in CAD).
@@ -178,11 +189,19 @@ Real-world trading-cost frictions (factor these into every rec):
 
 Per-account cash inventory (CRITICAL — read this carefully):
 ${accountCashTable}
+${plannedWithdrawalsBlock}
 
 Sizing rules:
 - Reject trades where commissions exceed 1% of gross trade value (~$${(commission * 100).toFixed(0)} minimum). If a rec falls below that, upsize, batch in the same currency, or say "wait for more cash."
 - For USD↔CAD swaps, the round-trip FX drag is ~${(fxSpread * 2).toFixed(1)}% — name this drag in the rec and only recommend if expected upside exceeds it materially.
 - PREFER trades that don't require currency conversion.
+
+WITHDRAWAL-AWARE SIZING (if PLANNED WITHDRAWALS block above is non-empty):
+- For each planned withdrawal: the listed currency × amount MUST be available as CASH by the target date.
+- Subtract planned withdrawals from "deployable cash" before sizing any BUY rec. If a planned withdrawal is in 30 days for $5K USD and current USD cash is $1K, the AI has $0 deployable USD (not $1K).
+- If cash is short, recommend SPECIFIC TRIMS by date Y to raise the needed cash. Prefer trims of losers, concentration excesses, or names with thesis-already-played-out.
+- Do NOT recommend long-horizon BUYs (>30 days) using cash that's needed sooner.
+- Flag any planned withdrawal whose cash isn't on track in a "danger" advice card.
 
 ACCOUNT-SOURCE RULE (mandatory — no exceptions):
 - Every BUY recommendation MUST name a single source account (Non-Spousal / RRSP / TFSA).

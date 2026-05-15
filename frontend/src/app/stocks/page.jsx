@@ -631,11 +631,22 @@ export default function StocksAdvisorPage() {
 
   // Record a trade: post to /api/stocks-trade and refresh local profile.
   // If the trade originated from an Execute click on a recommendation,
-  // mark that rec as executed so the row renders green.
+  // mark that rec as executed so the row renders green. If it originated
+  // from a planned-withdrawal execution, remove that planned WD from the
+  // user's list (it's now a real journal entry).
   const recordTrade = async (trade) => {
     const result = await apiRecordTrade(auth.sessionToken, trade);
-    setProfile(result.portfolio);
-    if (tradePrefill) {
+    let nextProfile = result.portfolio;
+    if (tradePrefill?.plannedId) {
+      nextProfile = {
+        ...nextProfile,
+        plannedWithdrawals: (nextProfile.plannedWithdrawals || []).filter((w) => w.id !== tradePrefill.plannedId),
+      };
+      // Persist the removal too
+      apiPutPortfolio(auth.sessionToken, nextProfile).catch(() => null);
+    }
+    setProfile(nextProfile);
+    if (tradePrefill && !tradePrefill.plannedId) {
       const k = recKey(tradePrefill);
       setExecutedRecKeys(prev => {
         const next = new Set(prev);
@@ -779,6 +790,25 @@ export default function StocksAdvisorPage() {
               onChangeFx={(v) => { updateUser(() => ({ fxUsdCad: v })); showToast("FX updated"); }}
               onChangeCommission={(v) => { updateUser(() => ({ commissionPerTrade: v })); showToast("Commission updated"); }}
               onChangeFxSpread={(v) => { updateUser(() => ({ fxSpreadPct: v })); showToast("FX spread updated"); }}
+              onAddPlannedWithdrawal={(w) => {
+                const id = "w" + Date.now() + Math.random().toString(36).slice(2, 6);
+                updateUser((u) => ({
+                  plannedWithdrawals: [...(u.plannedWithdrawals || []), { ...w, id, createdAt: new Date().toISOString() }],
+                }));
+                showToast("Planned withdrawal saved");
+              }}
+              onRemovePlannedWithdrawal={(id) => {
+                updateUser((u) => ({
+                  plannedWithdrawals: (u.plannedWithdrawals || []).filter((w) => w.id !== id),
+                }));
+              }}
+              onExecutePlannedWithdrawal={(w) => {
+                // Open the Trade modal in cash WITHDRAW mode pre-filled.
+                // When the user confirms, the trade endpoint debits cash and
+                // we remove the planned WD entry.
+                setTradePrefill({ side: "WITHDRAW", currency: w.currency, amount: w.amount, plannedId: w.id, accountId: w.account });
+                setTradeModalOpen(true);
+              }}
               onReset={async () => {
                 if (!confirm("Wipe all your positions and settings on the server?")) return;
                 try {
@@ -1306,11 +1336,97 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
   );
 }
 
-function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onReset }) {
+function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+  // Local form state for adding a new planned withdrawal
+  const [wAmount, setWAmount] = useState("");
+  const [wCcy, setWCcy] = useState("CAD");
+  const [wDate, setWDate] = useState("");
+  const [wAccount, setWAccount] = useState(user.accounts?.[0]?.id || "");
+  const [wNotes, setWNotes] = useState("");
+
+  const planned = (user.plannedWithdrawals || []).slice().sort((a, b) => new Date(a.targetDate) - new Date(b.targetDate));
+
+  const handleAdd = () => {
+    const amt = parseFloat(wAmount);
+    if (!amt || amt <= 0) return alert("Enter an amount > 0");
+    if (!wDate) return alert("Pick a target date");
+    onAddPlannedWithdrawal({ amount: amt, currency: wCcy, targetDate: new Date(wDate + "T12:00:00").toISOString(), account: wAccount, notes: wNotes });
+    setWAmount(""); setWDate(""); setWNotes("");
+  };
+
   return (
     <div>
       <h2>Settings</h2>
       <div className="sa-breadcrumb">Account preferences</div>
+
+      <div className="sa-card" style={{ marginBottom: 14 }}>
+        <h3>Planned cash needs</h3>
+        <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+          Tell the advisor about upcoming withdrawals so recommendations preserve the cash. Stays planned until you Execute → records the WITHDRAW trade and clears the entry.
+        </div>
+
+        {planned.length > 0 && (
+          <div style={{ marginBottom: 14, border: "1px solid var(--sa-border)", borderRadius: 10, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: "var(--sa-panel-2)" }}>
+                  <th style={recHeaderCellLeft}>Amount</th>
+                  <th style={recHeaderCellLeft}>By</th>
+                  <th style={recHeaderCellLeft}>Account</th>
+                  <th style={recHeaderCellLeft}>Notes</th>
+                  <th style={recHeaderCell}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {planned.map((w) => {
+                  const daysOut = Math.round((new Date(w.targetDate).getTime() - Date.now()) / 86400000);
+                  const urgent = daysOut <= 7;
+                  const acctName = user.accounts.find(a => a.id === w.account)?.name || "—";
+                  return (
+                    <tr key={w.id} style={{ borderTop: "1px solid var(--sa-border)" }}>
+                      <td style={{ ...recCellLeft, fontWeight: 600 }}>
+                        ${w.amount.toLocaleString()} {w.currency}
+                      </td>
+                      <td style={{ ...recCellLeft, color: urgent ? "var(--sa-red)" : "var(--sa-text-2)" }}>
+                        {new Date(w.targetDate).toLocaleDateString()} <span style={{ fontSize: 11 }}>({daysOut < 0 ? `${-daysOut}d overdue` : `${daysOut}d`})</span>
+                      </td>
+                      <td style={{ ...recCellLeft, color: "var(--sa-muted)" }}>{acctName}</td>
+                      <td style={{ ...recCellLeft, color: "var(--sa-muted)", fontSize: 12, maxWidth: 220 }}>{w.notes || "—"}</td>
+                      <td style={{ ...recCell, whiteSpace: "nowrap" }}>
+                        <button className="sa-btn" style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => onExecutePlannedWithdrawal(w)}>Execute →</button>
+                        {" "}
+                        <button className="sa-btn ghost" style={{ padding: "3px 8px", fontSize: 11 }} onClick={() => { if (confirm("Remove this planned withdrawal?")) onRemovePlannedWithdrawal(w.id); }}>×</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div style={{ background: "var(--sa-panel-2)", padding: 14, borderRadius: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10, color: "var(--sa-text-2)" }}>Add a planned withdrawal</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 1fr 1fr", gap: 10 }}>
+            <div><label>Amount</label><input type="number" step="any" min="0" value={wAmount} onChange={(e) => setWAmount(e.target.value)} placeholder="5000" /></div>
+            <div><label>Ccy</label>
+              <select value={wCcy} onChange={(e) => setWCcy(e.target.value)}>
+                <option value="CAD">CAD</option><option value="USD">USD</option>
+              </select>
+            </div>
+            <div><label>Target date</label><input type="date" value={wDate} onChange={(e) => setWDate(e.target.value)} /></div>
+            <div><label>Account</label>
+              <select value={wAccount} onChange={(e) => setWAccount(e.target.value)}>
+                {user.accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, marginTop: 10 }}>
+            <div><label>Notes (optional)</label><input value={wNotes} onChange={(e) => setWNotes(e.target.value)} placeholder="Property tax, tuition, etc." maxLength={300} /></div>
+            <div style={{ display: "flex", alignItems: "flex-end" }}><button className="sa-btn" onClick={handleAdd}>+ Add</button></div>
+          </div>
+        </div>
+      </div>
       <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>Risk tolerance</h3>
         <div className="sa-risk-grid">
@@ -1389,11 +1505,31 @@ function PositionModal({ user, idx, onClose, onSave, onDelete }) {
         </div>
         <div className="sa-modal-row">
           <div><label>Name (optional)</label><input value={form.name || ""} onChange={(e) => update("name", e.target.value)} /></div>
-          <div><label>Currency</label>
-            <select value={form.ccy} onChange={(e) => update("ccy", e.target.value)}>
-              <option value="USD">USD</option><option value="CAD">CAD</option>
+          <div><label>Market (where stock trades)</label>
+            <select value={form.ccy} onChange={(e) => {
+              update("ccy", e.target.value);
+              // If subCcy hasn't been manually set, follow the market change
+              if (!form.subCcy) update("subCcy", e.target.value);
+            }}>
+              <option value="USD">USD (NYSE/NASDAQ)</option>
+              <option value="CAD">CAD (TSX)</option>
             </select>
           </div>
+        </div>
+        <div className="sa-modal-row">
+          <div>
+            <label>Held in sub-account</label>
+            <select value={form.subCcy || form.ccy} onChange={(e) => update("subCcy", e.target.value)}>
+              <option value="USD">USD sub-account</option>
+              <option value="CAD">CAD sub-account</option>
+            </select>
+            {form.subCcy && form.subCcy !== form.ccy && (
+              <div style={{ fontSize: 11, color: "var(--sa-amber)", marginTop: 6, padding: 8, background: "var(--sa-amber-soft)", borderRadius: 6, border: "1px solid #fde68a" }}>
+                ⚠ Cross-currency: {form.ccy} stock held in {form.subCcy} sub. There's FX friction when you bought and there will be again when you sell.
+              </div>
+            )}
+          </div>
+          <div></div>
         </div>
         <div className="sa-modal-row three">
           <div><label>Quantity</label><input type="number" step="any" value={form.qty} onChange={(e) => update("qty", parseFloat(e.target.value) || 0)} /></div>
@@ -1616,15 +1752,16 @@ function BriefingPreviewModal({ preview, recipient, onClose, onSend }) {
 // Trade modal — Buy / Sell / Swap
 // =============================================================================
 function TradeModal({ user, onClose, onSubmit, prefill }) {
-  // Decide initial mode + leg pre-population based on prefill (from an
-  // Advice rec's Execute button). BUY → buy mode; SELL/TRIM → sell mode.
+  // Decide initial mode + leg pre-population based on prefill.
+  // BUY → buy mode; SELL/TRIM → sell mode; WITHDRAW/DEPOSIT → cash mode.
   const initialMode = prefill
     ? (prefill.side === "BUY" ? "buy"
         : (prefill.side === "SELL" || prefill.side === "TRIM") ? "sell"
+        : (prefill.side === "WITHDRAW" || prefill.side === "DEPOSIT") ? "cash"
         : "swap")
     : "swap";
   const [mode, setMode] = useState(initialMode);
-  const [account, setAccount] = useState(user.accounts?.[0]?.id || "");
+  const [account, setAccount] = useState(prefill?.accountId || user.accounts?.[0]?.id || "");
   const [executedAt] = useState(() => new Date().toISOString().slice(0, 10));
 
   // Equity leg state (prefilled when a rec is being executed)
@@ -1641,10 +1778,12 @@ function TradeModal({ user, onClose, onSubmit, prefill }) {
   // (no FX). Flip to the other when buying USD stock from CAD cash etc.
   const [buySubCcy, setBuySubCcy] = useState(prefill && prefill.side === "BUY" ? (prefill.currency || "USD") : "CAD");
 
-  // Cash leg state
-  const [cashDirection, setCashDirection] = useState("DEPOSIT"); // DEPOSIT | WITHDRAW
-  const [cashAmount, setCashAmount] = useState("");
-  const [cashCcy, setCashCcy] = useState("CAD");
+  // Cash leg state — prefilled if this opens from an "Execute" on a planned WD
+  const [cashDirection, setCashDirection] = useState(
+    prefill?.side === "WITHDRAW" ? "WITHDRAW" : prefill?.side === "DEPOSIT" ? "DEPOSIT" : "DEPOSIT"
+  );
+  const [cashAmount, setCashAmount] = useState(prefill?.amount ? String(prefill.amount) : "");
+  const [cashCcy, setCashCcy] = useState(prefill?.currency || "CAD");
 
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);

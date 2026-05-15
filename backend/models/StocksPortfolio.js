@@ -61,6 +61,23 @@ const StocksPortfolioSchema = new mongoose.Schema(
     fxSpreadPct: { type: Number, default: 1.5 },
     accounts: { type: [AccountSchema], default: [] },
     positions: { type: [PositionSchema], default: [] },
+    // Planned withdrawals — "I need $X by date Y" so AI recs can prepare
+    // cash and avoid locking it up in long-horizon buys.
+    plannedWithdrawals: {
+      type: [
+        {
+          id: { type: String, required: true },
+          amount: { type: Number, required: true, min: 0 },
+          currency: { type: String, enum: ["USD", "CAD"], required: true },
+          targetDate: { type: Date, required: true },
+          account: { type: String, default: "" },
+          notes: { type: String, default: "", maxlength: 300 },
+          createdAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+      _id: false,
+    },
     lastSyncedAt: { type: Date, default: Date.now },
   },
   { timestamps: true }

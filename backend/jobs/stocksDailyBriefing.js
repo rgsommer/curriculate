@@ -270,6 +270,16 @@ function buildBriefingPrompt(profile, summary, monitorAlerts = []) {
     .map(a => `  ${a.name}: $${(a.cashCad || 0).toFixed(0)} CAD · $${(a.cashUsd || 0).toFixed(0)} USD`)
     .join("\n") || "  (no accounts configured)";
 
+  const pending = (profile.plannedWithdrawals || [])
+    .map(w => {
+      const days = Math.max(0, Math.round((new Date(w.targetDate).getTime() - Date.now()) / 86400000));
+      const accountName = w.account ? (profile.accounts.find(a => a.id === w.account)?.name || w.account) : null;
+      return `  $${w.amount.toFixed(0)} ${w.currency} in ${days}d${accountName ? ` from ${accountName}` : ""}${w.notes ? ` · ${w.notes}` : ""}`;
+    });
+  const plannedWithdrawalsBlock = pending.length
+    ? `\nPLANNED WITHDRAWALS (cash that MUST be available by target date):\n${pending.join("\n")}\nSubtract these from deployable cash. If short, recommend SPECIFIC TRIMS by date to raise the needed cash. Do not lock new BUYs past these dates.\n`
+    : "";
+
   const priceCurrencyBlock = `
 PRICE CURRENCY CONVENTION (strict):
 - Every position has a native trading currency shown in the Holdings list (e.g., "TSLA (USD)", "ENB (CAD)").
@@ -289,6 +299,7 @@ Trading-cost frictions (factor into every recommendation):
 
 Per-account cash inventory (CRITICAL):
 ${accountCashTable}
+${plannedWithdrawalsBlock}
 
 ACCOUNT-SOURCE RULE (mandatory):
 - Every BUY rec names ONE source account (Non-Spousal / RRSP / TFSA).
