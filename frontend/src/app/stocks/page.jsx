@@ -1178,6 +1178,8 @@ function OnboardingView({ onPick }) {
 function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEmailBriefing, onEditPosition, pendingOrders, onFillPendingOrder, onCancelPendingOrder }) {
   const [busyRefresh, setBusyRefresh] = useState(false);
   const [busyAi, setBusyAi] = useState(false);
+  // Values stat row starts collapsed — privacy + reduces visual noise on load
+  const [valuesCollapsed, setValuesCollapsed] = useState(true);
   const fx = user.fxUsdCad || 1.37;
   const positionsCad = totalCad(user.positions, fx);
   const cashCad = totalCashCad(user.accounts, fx);
@@ -1223,27 +1225,46 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
         </div>
       </div>
       <div className="sa-disclaimer">Research and education only. Not licensed investment advice.</div>
-      <div className="sa-stats">
-        <div className="sa-stat"><div className="label">Total value (CAD)</div><div className="value">{fmtMoney(total, "CAD")}</div><div className="delta muted" style={{ fontSize: 11, marginTop: 2 }}>{user.positions.length} positions · {fmtMoney(cashCad, "CAD")} cash</div></div>
-        <div className="sa-stat"><div className="label">Equities</div><div className="value">{fmtMoney(positionsCad, "CAD")}</div><div className="delta muted" style={{ fontSize: 11, marginTop: 2 }}>{total > 0 ? ((positionsCad / total) * 100).toFixed(1) : "0"}% of book</div></div>
-        <div className="sa-stat" style={{ borderColor: cashPct < 5 ? "#fde68a" : "var(--sa-border)" }}>
-          <div className="label">Cash on hand</div>
-          <div style={{ display: "flex", gap: 14, alignItems: "baseline", marginTop: 2 }}>
-            <div>
-              <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>${cashSplit.cad.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-              <div style={{ fontSize: 10, color: "var(--sa-muted)", letterSpacing: ".06em", textTransform: "uppercase" }}>CAD</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>${cashSplit.usd.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-              <div style={{ fontSize: 10, color: "var(--sa-muted)", letterSpacing: ".06em", textTransform: "uppercase" }}>USD</div>
-            </div>
-          </div>
-          <div className="delta" style={{ fontSize: 11, marginTop: 6, color: cashPct < 5 ? "var(--sa-amber)" : "var(--sa-muted)" }}>
-            {fmtMoney(cashCad, "CAD")} total · {cashPct.toFixed(1)}% of book{cashPct < 5 ? " · low" : ""}
-          </div>
+
+      {/* Values header — click to toggle the stat-card row */}
+      <div
+        onClick={() => setValuesCollapsed(c => !c)}
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", padding: "10px 14px", background: "var(--sa-panel)", border: "1px solid var(--sa-border)", borderRadius: 10, marginBottom: 14 }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 11, color: "var(--sa-muted)", transform: valuesCollapsed ? "none" : "rotate(90deg)", transition: "transform .15s", display: "inline-block" }}>▶</span>
+          <span style={{ fontWeight: 600, fontSize: 14 }}>Values</span>
+          {valuesCollapsed && (
+            <span className="sa-muted" style={{ fontSize: 12 }}>
+              · {user.positions.length} positions · risk: <span style={{ textTransform: "capitalize" }}>{user.riskTolerance}</span> · click to reveal
+            </span>
+          )}
         </div>
-        <div className="sa-stat"><div className="label">Risk profile</div><div className="value" style={{ textTransform: "capitalize" }}>{user.riskTolerance}</div></div>
       </div>
+
+      {!valuesCollapsed && (
+        <div className="sa-stats">
+          <div className="sa-stat"><div className="label">Total value (CAD)</div><div className="value">{fmtMoney(total, "CAD")}</div><div className="delta muted" style={{ fontSize: 11, marginTop: 2 }}>{user.positions.length} positions · {fmtMoney(cashCad, "CAD")} cash</div></div>
+          <div className="sa-stat"><div className="label">Equities</div><div className="value">{fmtMoney(positionsCad, "CAD")}</div><div className="delta muted" style={{ fontSize: 11, marginTop: 2 }}>{total > 0 ? ((positionsCad / total) * 100).toFixed(1) : "0"}% of book</div></div>
+          <div className="sa-stat" style={{ borderColor: cashPct < 5 ? "#fde68a" : "var(--sa-border)" }}>
+            <div className="label">Cash on hand</div>
+            <div style={{ display: "flex", gap: 14, alignItems: "baseline", marginTop: 2 }}>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>${cashSplit.cad.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                <div style={{ fontSize: 10, color: "var(--sa-muted)", letterSpacing: ".06em", textTransform: "uppercase" }}>CAD</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>${cashSplit.usd.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                <div style={{ fontSize: 10, color: "var(--sa-muted)", letterSpacing: ".06em", textTransform: "uppercase" }}>USD</div>
+              </div>
+            </div>
+            <div className="delta" style={{ fontSize: 11, marginTop: 6, color: cashPct < 5 ? "var(--sa-amber)" : "var(--sa-muted)" }}>
+              {fmtMoney(cashCad, "CAD")} total · {cashPct.toFixed(1)}% of book{cashPct < 5 ? " · low" : ""}
+            </div>
+          </div>
+          <div className="sa-stat"><div className="label">Risk profile</div><div className="value" style={{ textTransform: "capitalize" }}>{user.riskTolerance}</div></div>
+        </div>
+      )}
       {/* Pending orders — submitted at broker but not yet filled */}
       {pendingOrders && pendingOrders.length > 0 && (
         <PendingOrdersCard

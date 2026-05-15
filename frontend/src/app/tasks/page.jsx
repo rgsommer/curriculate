@@ -31,6 +31,17 @@ const CATEGORIES = [
   { id: "church", label: "Church", color: "#9333ea" },
 ];
 
+const RECURRENCES = [
+  { id: "none",    label: "Once" },
+  { id: "weekly",  label: "Weekly" },
+  { id: "monthly", label: "Monthly" },
+  { id: "yearly",  label: "Yearly" },
+];
+
+function recurrenceLabel(r) {
+  return (RECURRENCES.find((x) => x.id === r) || RECURRENCES[0]).label;
+}
+
 // Due-date urgency tiers — derived each render so colors update with time.
 function urgencyFor(task) {
   if (task.completedAt) return "done";
@@ -51,7 +62,9 @@ function urgencyFor(task) {
 }
 
 const URGENCY_STYLES = {
-  overdue: { bg: "#fef2f2", border: "#fecaca", text: "#b91c1c", label: "Overdue" },
+  // Overdue: louder red so it's impossible to miss — saturated red border,
+  // pink background, deep-red text. Title also turns red in TaskRow.
+  overdue: { bg: "#fee2e2", border: "#ef4444", text: "#991b1b", label: "Overdue", titleColor: "#b91c1c", strong: true },
   today:   { bg: "#fff7ed", border: "#fed7aa", text: "#c2410c", label: "Today" },
   soon:    { bg: "#fefce8", border: "#fde68a", text: "#a16207", label: "This week" },
   later:   { bg: "#f8fafc", border: "#e2e8f0", text: "#475569", label: "Later" },
@@ -277,6 +290,7 @@ function AddTaskForm({ onAdd }) {
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("family");
   const [dueAt, setDueAt] = useState("");
+  const [recurrence, setRecurrence] = useState("none");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -289,8 +303,10 @@ function AddTaskForm({ onAdd }) {
         title: title.trim(),
         category,
         dueAt: dueAt ? new Date(dueAt).toISOString() : null,
+        recurrence,
       });
       setTitle(""); setDueAt("");
+      // keep category + recurrence sticky for rapid entry of similar tasks
     } catch (e) {
       setErr(e?.message || "Couldn't add task.");
     } finally {
@@ -333,6 +349,18 @@ function AddTaskForm({ onAdd }) {
           onChange={(e) => setDueAt(e.target.value)}
           style={styles.dueInput} disabled={busy}
         />
+        <select
+          value={recurrence}
+          onChange={(e) => setRecurrence(e.target.value)}
+          style={styles.recurSelect}
+          disabled={busy}
+          aria-label="Repeat"
+          title="Repeat"
+        >
+          {RECURRENCES.map((r) => (
+            <option key={r.id} value={r.id}>{r.id === "none" ? "Once" : `↻ ${r.label}`}</option>
+          ))}
+        </select>
         <button type="submit" style={styles.addBtn} disabled={busy || !title.trim()}>
           {busy ? "Adding…" : "Add"}
         </button>
@@ -382,6 +410,8 @@ function TaskRow({ task, onEdit, onComplete, onUncomplete }) {
     else onComplete(task);
   }
 
+  const isOverdue = u === "overdue" && !completed;
+
   return (
     <div
       onClick={handleClick}
@@ -390,6 +420,8 @@ function TaskRow({ task, onEdit, onComplete, onUncomplete }) {
         ...styles.taskRow,
         background: palette.bg,
         borderColor: palette.border,
+        // Strong red border on overdue — make sure it actually shouts
+        borderWidth: palette.strong && !completed ? 1.5 : 1,
         opacity: completed ? 0.7 : 1,
       }}
       title={completed
@@ -400,11 +432,18 @@ function TaskRow({ task, onEdit, onComplete, onUncomplete }) {
         <span aria-hidden style={{ width: 8, height: 8, borderRadius: 4, background: cat.color, flex: "0 0 auto" }} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{
-            fontSize: 16, fontWeight: 500, color: "#0f172a",
+            fontSize: 16,
+            fontWeight: isOverdue ? 600 : 500,
+            color: isOverdue ? palette.titleColor : "#0f172a",
             textDecoration: completed ? "line-through" : "none",
             wordBreak: "break-word",
           }}>
             {task.title}
+            {task.recurrence && task.recurrence !== "none" && (
+              <span title={`Repeats ${task.recurrence}`} style={styles.repeatGlyph}>
+                ↻
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 12, color: palette.text, marginTop: 2 }}>
             {cat.label} · {fmtDue(task)}
@@ -424,6 +463,7 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
   const [title, setTitle] = useState(task.title);
   const [category, setCategory] = useState(task.category);
   const [dueAt, setDueAt] = useState(toLocalInputValue(task.dueAt));
+  const [recurrence, setRecurrence] = useState(task.recurrence || "none");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const completed = !!task.completedAt;
@@ -445,6 +485,7 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
         title: trimmed,
         category,
         dueAt: dueAt ? new Date(dueAt).toISOString() : null,
+        recurrence,
       });
       onClose();
     } catch (e) {
@@ -529,7 +570,7 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
         </div>
 
         <label style={styles.label}>Due</label>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
           <input
             type="datetime-local" value={dueAt}
             onChange={(e) => setDueAt(e.target.value)}
@@ -546,6 +587,31 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
             </button>
           )}
         </div>
+
+        <label style={styles.label}>Repeat</label>
+        <div style={{ ...styles.catPicker, marginBottom: 4 }}>
+          {RECURRENCES.map((r) => (
+            <button
+              type="button" key={r.id}
+              onClick={() => setRecurrence(r.id)}
+              style={{
+                ...styles.catPill,
+                ...(recurrence === r.id
+                  ? { background: "#0f172a", color: "#fff", borderColor: "#0f172a" }
+                  : { color: "#475569", borderColor: "#e5e7eb" }),
+              }}
+              aria-pressed={recurrence === r.id}
+              disabled={busy}
+            >
+              {r.id === "none" ? "Once" : `↻ ${r.label}`}
+            </button>
+          ))}
+        </div>
+        {recurrence !== "none" && (
+          <div style={{ ...styles.hint, marginTop: 0 }}>
+            When you complete this task, a new one will appear {recurrenceLabel(recurrence).toLowerCase().replace("ly", "")} later.
+          </div>
+        )}
 
         {err && <div style={styles.error}>{err}</div>}
 
@@ -612,6 +678,10 @@ function TasksApp({ token, me, onSignOut }) {
     try {
       const res = await apiCall(`/api/tasks-app/tasks/${task.id}`, { method: "PATCH", body: patch, token });
       setTasks((prev) => prev.map((t) => (t.id === task.id ? res.task : t)));
+      if (res.spawnedTask) {
+        // Recurring task just completed — splice in the next occurrence.
+        setTasks((prev) => [...prev, res.spawnedTask]);
+      }
     } catch (e) {
       refresh();
     }
@@ -626,6 +696,11 @@ function TasksApp({ token, me, onSignOut }) {
       method: "PATCH", body: patch, token,
     });
     setTasks((prev) => prev.map((t) => (t.id === task.id ? res.task : t)));
+    // If the save spawned a recurring follow-up (e.g. completed via modal),
+    // splice it in so the next instance shows up immediately.
+    if (res.spawnedTask) {
+      setTasks((prev) => [...prev, res.spawnedTask]);
+    }
   }
 
   async function removeFromModal(task) {
@@ -892,6 +967,16 @@ const styles = {
     padding: "8px 10px", fontSize: 13,
     borderRadius: 10, border: "1px solid #e2e8f0",
     background: "#fff", color: "#0f172a", outline: "none",
+  },
+  recurSelect: {
+    padding: "8px 10px", fontSize: 13,
+    borderRadius: 10, border: "1px solid #e2e8f0",
+    background: "#fff", color: "#0f172a", outline: "none",
+    cursor: "pointer",
+  },
+  repeatGlyph: {
+    marginLeft: 6,
+    fontSize: 13, color: "#94a3b8", fontWeight: 500,
   },
   addBtn: {
     padding: "8px 16px", fontSize: 14, fontWeight: 600,

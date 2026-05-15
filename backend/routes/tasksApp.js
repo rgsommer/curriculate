@@ -16,7 +16,7 @@ import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
 
 import User from "../models/User.js";
-import LifeTask, { LIFE_TASK_CATEGORIES } from "../models/LifeTask.js";
+import LifeTask, { LIFE_TASK_CATEGORIES, LIFE_TASK_RECURRENCES } from "../models/LifeTask.js";
 import EmailLoginPin from "../models/EmailLoginPin.js";
 import { authRequired } from "../middleware/authRequired.js";
 import { sendSystemEmail } from "../email/shareInviteEmailer.js";
@@ -220,6 +220,7 @@ function serializeTask(t) {
     category: t.category,
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
     completedAt: t.completedAt ? t.completedAt.toISOString() : null,
+    recurrence: t.recurrence || "none",
     createdAt: t.createdAt ? t.createdAt.toISOString() : null,
     updatedAt: t.updatedAt ? t.updatedAt.toISOString() : null,
   };
@@ -235,6 +236,43 @@ function parseDueAt(input) {
 function sanitizeCategory(input, fallback = "family") {
   const c = String(input || "").trim().toLowerCase();
   return LIFE_TASK_CATEGORIES.includes(c) ? c : fallback;
+}
+
+function sanitizeRecurrence(input, fallback = "none") {
+  const r = String(input || "").trim().toLowerCase();
+  return LIFE_TASK_RECURRENCES.includes(r) ? r : fallback;
+}
+
+// Advance a date by `recurrence`. Handles month-end rollover correctly:
+// Jan 31 + 1 month → Feb 28 (or Feb 29 in leap years), not Mar 3.
+// `from` is the anchor date; if null, "now" is used.
+function advanceDate(from, recurrence) {
+  const base = from ? new Date(from) : new Date();
+  const next = new Date(base.getTime());
+
+  if (recurrence === "weekly") {
+    next.setDate(next.getDate() + 7);
+    return next;
+  }
+  if (recurrence === "monthly") {
+    const day = next.getDate();
+    next.setDate(1);              // step off the cliff so setMonth doesn't roll
+    next.setMonth(next.getMonth() + 1);
+    const dim = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+    next.setDate(Math.min(day, dim));
+    return next;
+  }
+  if (recurrence === "yearly") {
+    const month = next.getMonth();
+    const day = next.getDate();
+    next.setDate(1);
+    next.setFullYear(next.getFullYear() + 1);
+    const dim = new Date(next.getFullYear(), month + 1, 0).getDate();
+    next.setMonth(month);
+    next.setDate(Math.min(day, dim));
+    return next;
+  }
+  return null;
 }
 
 /**
@@ -265,12 +303,14 @@ router.post("/tasks", authRequired, async (req, res) => {
 
     const category = sanitizeCategory(req.body?.category);
     const dueAt = parseDueAt(req.body?.dueAt);
+    const recurrence = sanitizeRecurrence(req.body?.recurrence);
 
     const task = await LifeTask.create({
       userId: req.userId,
       title,
       category,
       dueAt,
+      recurrence,
     });
 
     return res.json({ ok: true, task: serializeTask(task) });
@@ -291,6 +331,8 @@ router.patch("/tasks/:id", authRequired, async (req, res) => {
     const task = await LifeTask.findOne({ _id: req.params.id, userId: req.userId });
     if (!task) return res.status(404).json({ ok: false, error: "Task not found." });
 
+    const wasIncomplete = !task.completedAt;
+
     if ("title" in req.body) {
       const t = String(req.body.title || "").trim();
       if (!t) return res.status(400).json({ ok: false, error: "Title cannot be empty." });
@@ -302,12 +344,39 @@ router.patch("/tasks/:id", authRequired, async (req, res) => {
     if ("dueAt" in req.body) {
       task.dueAt = parseDueAt(req.body.dueAt);
     }
+    if ("recurrence" in req.body) {
+      task.recurrence = sanitizeRecurrence(req.body.recurrence, task.recurrence);
+    }
     if ("completed" in req.body) {
       task.completedAt = req.body.completed ? new Date() : null;
     }
 
     await task.save();
-    return res.json({ ok: true, task: serializeTask(task) });
+
+    // If we just transitioned a recurring task into a completed state, spawn
+    // the next occurrence. We anchor the new dueAt off the original dueAt
+    // (so a weekly task stays on its weekly slot even if completed late);
+    // if there was no dueAt, anchor off "now".
+    let spawnedTask = null;
+    const justCompleted = wasIncomplete && !!task.completedAt;
+    if (justCompleted && task.recurrence && task.recurrence !== "none") {
+      const nextDue = advanceDate(task.dueAt || new Date(), task.recurrence);
+      if (nextDue) {
+        spawnedTask = await LifeTask.create({
+          userId: task.userId,
+          title: task.title,
+          category: task.category,
+          dueAt: nextDue,
+          recurrence: task.recurrence,
+        });
+      }
+    }
+
+    return res.json({
+      ok: true,
+      task: serializeTask(task),
+      spawnedTask: spawnedTask ? serializeTask(spawnedTask) : null,
+    });
   } catch (err) {
     console.error("PATCH /api/tasks-app/tasks/:id failed:", err);
     return res.status(500).json({ ok: false, error: "Server error." });

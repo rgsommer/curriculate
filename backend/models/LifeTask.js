@@ -7,6 +7,7 @@ import mongoose from "mongoose";
 const { Schema } = mongoose;
 
 export const LIFE_TASK_CATEGORIES = ["work", "family", "church"];
+export const LIFE_TASK_RECURRENCES = ["none", "weekly", "monthly", "yearly"];
 
 const LifeTaskSchema = new Schema(
   {
@@ -38,6 +39,15 @@ const LifeTaskSchema = new Schema(
       type: Date,
       default: null,
       index: true,
+    },
+    // "weekly" / "monthly" / "yearly" / "none". On complete, a recurring
+    // task auto-spawns a fresh sibling with dueAt advanced by the interval.
+    // Each occurrence is its own document so the Completed tab keeps a
+    // history of every time the task was finished.
+    recurrence: {
+      type: String,
+      enum: LIFE_TASK_RECURRENCES,
+      default: "none",
     },
   },
   { timestamps: true }
