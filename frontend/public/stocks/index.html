@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stocks Advisor — Curriculate</title>
+<style>
+  :root{
+    --bg:#0b0f17;--panel:#121826;--panel-2:#1a2236;--border:#1f2940;
+    --text:#e6ecf5;--muted:#8a99b3;--accent:#5b8def;--accent-2:#7aa9ff;
+    --green:#22c55e;--red:#ef4444;--amber:#f59e0b;--purple:#a78bfa;
+    --radius:12px;--shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent-2);text-decoration:none}
+  button{font:inherit;color:inherit;cursor:pointer}
+  input,select,textarea{font:inherit;color:inherit;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;outline:none;width:100%}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+  label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-weight:600;transition:.15s}
+  .btn:hover{background:var(--accent-2)}
+  .btn.secondary{background:transparent;border:1px solid var(--border);color:var(--text)}
+  .btn.secondary:hover{background:var(--panel-2)}
+  .btn.danger{background:var(--red)}
+  .btn.ghost{background:transparent;color:var(--muted);padding:6px 10px}
+  .btn.ghost:hover{color:var(--text)}
+  .badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;letter-spacing:.02em}
+  .badge.green{background:rgba(34,197,94,.15);color:var(--green)}
+  .badge.red{background:rgba(239,68,68,.15);color:var(--red)}
+  .badge.amber{background:rgba(245,158,11,.15);color:var(--amber)}
+  .badge.purple{background:rgba(167,139,250,.15);color:var(--purple)}
+  .pos{color:var(--green)}.neg{color:var(--red)}.muted{color:var(--muted)}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+
+  /* Auth */
+  .auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .auth-card{width:100%;max-width:420px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:32px;box-shadow:var(--shadow)}
+  .auth-card h1{margin:0 0 4px;font-size:24px}
+  .auth-card .sub{color:var(--muted);margin-bottom:24px;font-size:13px}
+  .auth-row{margin-bottom:14px}
+  .pin-inputs{display:flex;gap:8px;justify-content:space-between}
+  .pin-inputs input{text-align:center;font-size:20px;font-weight:600;letter-spacing:.1em;width:48px;height:54px}
+  .auth-error{background:rgba(239,68,68,.1);color:var(--red);padding:10px;border-radius:8px;font-size:13px;margin-bottom:12px}
+  .auth-switch{text-align:center;margin-top:14px;font-size:13px;color:var(--muted)}
+  .auth-switch a{cursor:pointer}
+
+  /* App layout */
+  .app{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+  .side{background:var(--panel);border-right:1px solid var(--border);padding:24px 16px;display:flex;flex-direction:column;gap:6px}
+  .side .brand{font-weight:700;font-size:18px;letter-spacing:-.01em;margin-bottom:24px;padding:0 8px}
+  .side .brand span{color:var(--accent-2)}
+  .nav{display:flex;flex-direction:column;gap:2px;flex:1}
+  .nav button{display:flex;align-items:center;gap:10px;padding:9px 12px;background:transparent;border:none;border-radius:8px;color:var(--muted);text-align:left;font-weight:500;width:100%}
+  .nav button:hover{background:var(--panel-2);color:var(--text)}
+  .nav button.active{background:var(--panel-2);color:var(--text)}
+  .nav button .dot{width:6px;height:6px;border-radius:3px;background:var(--accent)}
+  .side .user{font-size:12px;color:var(--muted);padding:12px 8px;border-top:1px solid var(--border)}
+  .main{padding:28px 36px;overflow:auto}
+  .main h2{margin:0 0 4px;font-size:22px;letter-spacing:-.01em}
+  .main .breadcrumb{color:var(--muted);font-size:13px;margin-bottom:24px}
+
+  /* Dashboard */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px}
+  .stat{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+  .stat .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+  .stat .value{font-size:22px;font-weight:700;letter-spacing:-.01em}
+  .stat .delta{font-size:13px;margin-top:4px;font-weight:500}
+  .grid-2{display:grid;grid-template-columns:1.4fr 1fr;gap:18px}
+  @media (max-width: 980px){.grid-2{grid-template-columns:1fr}.app{grid-template-columns:1fr}.side{display:none}}
+
+  .alloc-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+  .alloc-row:last-child{border-bottom:none}
+  .alloc-row .tk{flex:0 0 90px;font-weight:600}
+  .alloc-row .bar{flex:1;height:6px;background:var(--panel-2);border-radius:3px;overflow:hidden}
+  .alloc-row .bar > div{height:100%;background:var(--accent);border-radius:3px}
+  .alloc-row .pct{flex:0 0 60px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  /* Positions table */
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  th,td{padding:10px 8px;text-align:right;border-bottom:1px solid var(--border)}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:500}
+  th:first-child,td:first-child{text-align:left}
+  tr:hover td{background:var(--panel-2)}
+  td.tk{font-weight:600}
+  td.tk .sub{display:block;font-size:11px;color:var(--muted);font-weight:400}
+
+  /* Advice */
+  .advice-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:14px;border-left:3px solid var(--accent)}
+  .advice-card.warn{border-left-color:var(--amber)}
+  .advice-card.danger{border-left-color:var(--red)}
+  .advice-card.good{border-left-color:var(--green)}
+  .advice-card h3{margin:0 0 8px;font-size:15px}
+  .advice-card p{margin:0 0 8px;color:var(--text);line-height:1.55}
+  .advice-card p:last-child{margin-bottom:0}
+  .advice-card .meta{font-size:12px;color:var(--muted)}
+
+  .disclaimer{font-size:11px;color:var(--muted);background:var(--panel-2);padding:10px 14px;border-radius:8px;margin-bottom:18px;line-height:1.5}
+
+  /* Risk picker */
+  .risk-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .risk-card{padding:14px;border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:.15s}
+  .risk-card:hover{border-color:var(--accent)}
+  .risk-card.sel{border-color:var(--accent);background:rgba(91,141,239,.08)}
+  .risk-card h4{margin:0 0 4px;font-size:14px}
+  .risk-card p{margin:0;font-size:12px;color:var(--muted);line-height:1.4}
+
+  /* Modal */
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px;z-index:100}
+  .modal{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:24px;width:100%;max-width:480px;box-shadow:var(--shadow)}
+  .modal h3{margin:0 0 16px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .row.three{grid-template-columns:1fr 1fr 1fr}
+
+  .empty{text-align:center;padding:40px 20px;color:var(--muted)}
+  .empty .btn{margin-top:14px}
+
+  .toast{position:fixed;bottom:24px;right:24px;background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--green);padding:12px 18px;border-radius:8px;box-shadow:var(--shadow);z-index:200;animation:in .25s}
+  @keyframes in{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+// =============================================================================
+// Storage layer  (localStorage; all data scoped per-email)
+// =============================================================================
+const KEY = "stocksAdvisor.v1";
+function loadAll(){ try { return JSON.parse(localStorage.getItem(KEY)) || {users:{},current:null}; } catch(e){ return {users:{},current:null}; } }
+function saveAll(s){ localStorage.setItem(KEY, JSON.stringify(s)); }
+function hashPin(pin){ // not cryptographically strong; deters casual snooping only
+  let h = 5381; for (const c of String(pin)) h = ((h<<5)+h) + c.charCodeAt(0);
+  return (h>>>0).toString(36);
+}
+let state = loadAll();
+function currentUser(){ return state.current ? state.users[state.current] : null; }
+function persist(){ saveAll(state); }
+
+// =============================================================================
+// Seed data: if Richard signs in with rgsommer@me.com, prefill his portfolio
+// =============================================================================
+const RICHARD_PORTFOLIO = {
+  riskTolerance: "aggressive",
+  currency: "CAD",
+  fxUsdCad: 1.372,
+  accounts: [
+    {id:"a1", name:"Non-Spousal (59659702)"},
+    {id:"a2", name:"RRSP (59659702)"},
+    {id:"a3", name:"TFSA (60367867)"},
+  ],
+  positions: [
+    {acct:"a1", ticker:"RUM",    name:"Rumble Inc Class A",                  qty:771,   priceCad:10.171,  priceUsd:7.413, ccy:"USD"},
+    {acct:"a1", ticker:"DJT",    name:"Trump Media & Tech",                  qty:3,     priceCad:11.9485, priceUsd:8.705, ccy:"USD"},
+    {acct:"a2", ticker:"BBAI",   name:"BigBear AI",                          qty:410,   priceCad:5.6959,  priceUsd:4.151, ccy:"USD"},
+    {acct:"a2", ticker:"ENB",    name:"Enbridge Inc",                        qty:18,    priceCad:75.58,                   ccy:"CAD"},
+    {acct:"a2", ticker:"SLV.V",  name:"Silver Dollar Resources",             qty:4555,  priceCad:0.33,                    ccy:"CAD"},
+    {acct:"a2", ticker:"DJT",    name:"Trump Media & Tech (CAD sub)",        qty:1267,  priceCad:11.9485, priceUsd:8.705, ccy:"USD"},
+    {acct:"a2", ticker:"DJTWW",  name:"Trump Media Warrants (CAD sub)",      qty:235,   priceCad:5.8198,  priceUsd:4.241, ccy:"USD"},
+    {acct:"a2", ticker:"SOFI",   name:"SoFi Technologies",                   qty:197,   priceUsd:15.6211, ccy:"USD"},
+    {acct:"a2", ticker:"SOUN",   name:"SoundHound AI",                       qty:593,   priceUsd:8.5087,  ccy:"USD"},
+    {acct:"a2", ticker:"TSLA",   name:"Tesla Inc",                           qty:34,    priceUsd:426.8401,ccy:"USD"},
+    {acct:"a2", ticker:"DJT",    name:"Trump Media & Tech (USD sub)",        qty:1300,  priceUsd:8.705,   ccy:"USD"},
+    {acct:"a2", ticker:"DJTWW",  name:"Trump Media Warrants (USD sub)",      qty:185,   priceUsd:4.24,    ccy:"USD"},
+    {acct:"a3", ticker:"DJT",    name:"Trump Media (TFSA CAD sub)",          qty:1,     priceCad:11.9416, priceUsd:8.703, ccy:"USD"},
+    {acct:"a3", ticker:"DJTWW",  name:"Trump Media Warrants (TFSA CAD)",     qty:1,     priceCad:5.7512,  priceUsd:4.19,  ccy:"USD"},
+    {acct:"a3", ticker:"DJT",    name:"Trump Media (TFSA USD sub)",          qty:904,   priceUsd:8.70,    ccy:"USD"},
+    {acct:"a3", ticker:"DJTWW",  name:"Trump Media Warrants (TFSA USD sub)", qty:61,    priceUsd:4.19,    ccy:"USD"},
+  ],
+};
+
+// =============================================================================
+// Formatting helpers
+// =============================================================================
+function fmtMoney(n, ccy="CAD"){
+  if (n==null || isNaN(n)) return "—";
+  const s = Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  return (n<0?"−":"") + "$" + s + " " + ccy;
+}
+function fmtPct(n){ if (n==null || isNaN(n)) return "—"; return (n>=0?"+":"") + n.toFixed(2) + "%"; }
+function colorOf(n){ if (n==null) return ""; return n>=0?"pos":"neg"; }
+
+// =============================================================================
+// Portfolio computations (current-snapshot only; we don't store historical TS)
+// =============================================================================
+function valueOfPosition(p, fx){
+  if (p.ccy === "USD") {
+    const cad = (p.priceCad ?? (p.priceUsd * fx)) * p.qty;
+    return { cad, usd: (p.priceUsd ?? p.priceCad/fx) * p.qty };
+  } else {
+    return { cad: p.priceCad * p.qty, usd: (p.priceCad / fx) * p.qty };
+  }
+}
+function aggregateByTicker(positions, fx){
+  const m = {};
+  positions.forEach(p => {
+    const v = valueOfPosition(p, fx);
+    if (!m[p.ticker]) m[p.ticker] = {ticker:p.ticker, name:p.name, qty:0, cad:0, usd:0};
+    m[p.ticker].qty += p.qty;
+    m[p.ticker].cad += v.cad;
+    m[p.ticker].usd += v.usd;
+  });
+  return Object.values(m).sort((a,b) => b.cad - a.cad);
+}
+function totalCad(positions, fx){
+  return positions.reduce((s,p) => s + valueOfPosition(p, fx).cad, 0);
+}
+
+// =============================================================================
+// Advice engine (rule-based; produces a list of cards)
+// =============================================================================
+function generateAdvice(profile){
+  const fx = profile.fxUsdCad || 1.37;
+  const total = totalCad(profile.positions, fx);
+  const agg = aggregateByTicker(profile.positions, fx);
+  const advice = [];
+
+  // 1. Concentration risk
+  agg.forEach(a => {
+    const pct = (a.cad/total)*100;
+    if (pct >= 30){
+      advice.push({sev:"danger", title:`Concentration risk: ${a.ticker} is ${pct.toFixed(1)}% of your book`,
+        body:`Even on an aggressive mandate, a single-ticker weight above ~25% turns the whole portfolio into a bet on one company. Consider trimming ${a.ticker} toward 20–25% over the next 5 sessions and redeploying into ballast (ENB, cash) or non-correlated growth (NVDA, PLTR).`,
+        meta:`Current value: ${fmtMoney(a.cad,"CAD")} · ${a.qty.toLocaleString()} shares`});
+    } else if (pct >= 20){
+      advice.push({sev:"warn", title:`Heavy exposure: ${a.ticker} is ${pct.toFixed(1)}% of your book`,
+        body:`Acceptable on an aggressive mandate but worth watching. Set a mental stop-loss on ${a.ticker} so you don't ride a thesis-break all the way down.`,
+        meta:`Current value: ${fmtMoney(a.cad,"CAD")}`});
+    }
+  });
+
+  // 2. Cluster risk (Trump-media cluster)
+  const cluster = agg.filter(a => ["DJT","DJTWW","RUM"].includes(a.ticker))
+                     .reduce((s,a) => s + a.cad, 0);
+  const clusterPct = (cluster/total)*100;
+  if (clusterPct >= 30){
+    advice.push({sev:"warn", title:`Thematic cluster: ${clusterPct.toFixed(0)}% in Trump-media / right-wing-internet cluster (DJT + DJTWW + RUM)`,
+      body:`These names move together on the same political-cycle catalysts. Treat the cluster as one bet for sizing purposes.`,
+      meta:`Cluster value: ${fmtMoney(cluster,"CAD")}`});
+  }
+
+  // 3. Sector diversification check
+  const tickers = agg.map(a=>a.ticker);
+  if (!tickers.some(t => ["VOO","VTI","XEQT","XIC","XIU","SPY","QQQ"].includes(t))){
+    advice.push({sev:"info", title:`No broad index exposure`,
+      body:`You're entirely in single-name picks. Even aggressive portfolios usually keep 10–25% in a broad index (XEQT for CAD, VOO/QQQ for USD) as the "if I'm wrong about everything else" cushion.`,
+      meta:`Suggested: 10–15% in XEQT.TO or VOO`});
+  }
+  if (!tickers.some(t => ["ENB","BCE","TD","RY","BNS","T","SU","CNQ"].includes(t)) && profile.riskTolerance!=="speculative"){
+    // already has ENB so this won't fire for Richard, but it's for general users
+  }
+
+  // 4. Cash check (no cash positions known)
+  const cashHints = tickers.filter(t => ["CASH","CASH.TO","HISA","SGOV","BIL"].includes(t));
+  if (cashHints.length === 0){
+    advice.push({sev:"info", title:`No dry powder`,
+      body:`Holding 5–10% in CASH.TO (HISA equivalent, ~4.5% yield) gives you the ability to add to winners on dips. With your concentration, the upside of having dry powder is high.`,
+      meta:`Tickers to consider: CASH.TO (HISA equivalent), SGOV (US T-bill ETF)`});
+  }
+
+  // 5. Risk-tolerance alignment hint
+  if (profile.riskTolerance === "conservative"){
+    advice.push({sev:"warn", title:`Risk profile mismatch?`,
+      body:`Your risk tolerance is Conservative but your positions look aggressive. Either change your profile in Settings or consider rebalancing toward bonds, dividend stocks, and broad index ETFs.`,
+      meta:""});
+  }
+
+  // Empty positions case
+  if (profile.positions.length === 0){
+    advice.unshift({sev:"info", title:`Add positions to get tailored advice`,
+      body:`Use the Positions tab to add your holdings. Once you have positions, this page will surface concentration, cluster, and diversification flags daily.`, meta:""});
+  }
+
+  // 6. Daily pre-loaded briefing (only if real-data freshness < 1 day old, simulated)
+  advice.push({sev:"good", title:`Daily briefing — ${new Date().toLocaleDateString(undefined,{year:"numeric",month:"long",day:"numeric"})}`,
+    body:`Your morning briefing will arrive at 8:30 AM ET each weekday. It covers overnight news on your top 5 holdings, today's expected catalysts, and one action recommendation. Intraday alerts run at 12:30 PM ET to flag material moves.`,
+    meta:`Pro tip: Aggressive ≠ All-in. Aggressive means accepting drawdowns to chase upside on a *diversified* growth book.`});
+
+  return advice;
+}
+
+// =============================================================================
+// Views
+// =============================================================================
+function el(html){ const d = document.createElement("div"); d.innerHTML = html.trim(); return d.firstElementChild; }
+function $(s, root=document){ return root.querySelector(s); }
+const root = document.getElementById("root");
+
+function render(){
+  root.innerHTML = "";
+  if (!state.current){ root.appendChild(renderAuth()); return; }
+  const user = currentUser();
+  if (!user.riskTolerance){ root.appendChild(renderOnboarding()); return; }
+  root.appendChild(renderApp());
+}
+
+// ---- Auth ------------------------------------------------------------------
+function renderAuth(){
+  const wrap = el(`
+  <div class="auth">
+    <div class="auth-card">
+      <h1>Stocks Advisor</h1>
+      <div class="sub">Sign in with your email and 4-digit PIN. New here? We'll create your account.</div>
+      <div id="authErr"></div>
+      <div class="auth-row">
+        <label>Email</label>
+        <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="auth-row">
+        <label>PIN (4 digits)</label>
+        <div class="pin-inputs">
+          <input id="p1" maxlength="1" inputmode="numeric" pattern="[0-9]*">
+          <input id="p2" maxlength="1" inputmode="numeric" pattern="[0-9]*">
+          <input id="p3" maxlength="1" inputmode="numeric" pattern="[0-9]*">
+          <input id="p4" maxlength="1" inputmode="numeric" pattern="[0-9]*">
+        </div>
+      </div>
+      <button class="btn" id="loginBtn" style="width:100%;justify-content:center;margin-top:8px">Continue</button>
+      <div class="auth-switch muted">
+        Your data is stored locally in this browser. No account is sent to a server.
+      </div>
+    </div>
+  </div>`);
+
+  // PIN auto-advance
+  const pins = ["p1","p2","p3","p4"].map(id => $("#"+id, wrap));
+  pins.forEach((inp,i) => {
+    inp.addEventListener("input", e => {
+      inp.value = inp.value.replace(/[^0-9]/g,"");
+      if (inp.value && i<3) pins[i+1].focus();
+    });
+    inp.addEventListener("keydown", e => {
+      if (e.key === "Backspace" && !inp.value && i>0) pins[i-1].focus();
+      if (e.key === "Enter") $("#loginBtn",wrap).click();
+    });
+  });
+
+  $("#loginBtn", wrap).addEventListener("click", () => {
+    const email = $("#email", wrap).value.trim().toLowerCase();
+    const pin = pins.map(p=>p.value).join("");
+    const errBox = $("#authErr", wrap);
+    errBox.innerHTML = "";
+    if (!email || !email.includes("@")){ errBox.innerHTML = `<div class="auth-error">Enter a valid email.</div>`; return; }
+    if (pin.length !== 4){ errBox.innerHTML = `<div class="auth-error">PIN must be 4 digits.</div>`; return; }
+
+    if (state.users[email]){
+      if (state.users[email].pinHash !== hashPin(pin)){
+        errBox.innerHTML = `<div class="auth-error">Incorrect PIN.</div>`;
+        return;
+      }
+    } else {
+      // create new user
+      state.users[email] = { email, pinHash:hashPin(pin), riskTolerance:null, positions:[], accounts:[], fxUsdCad:1.372, createdAt:Date.now() };
+      // seed Richard's portfolio if it's him
+      if (email === "rgsommer@me.com"){
+        state.users[email] = { ...state.users[email],
+          riskTolerance: RICHARD_PORTFOLIO.riskTolerance,
+          accounts: RICHARD_PORTFOLIO.accounts,
+          positions: RICHARD_PORTFOLIO.positions,
+          fxUsdCad: RICHARD_PORTFOLIO.fxUsdCad,
+        };
+      }
+    }
+    state.current = email;
+    persist();
+    render();
+  });
+  return wrap;
+}
+
+// ---- Onboarding (risk tolerance) -------------------------------------------
+function renderOnboarding(){
+  const wrap = el(`
+  <div class="auth">
+    <div class="auth-card" style="max-width:540px">
+      <h1>Welcome</h1>
+      <div class="sub">Pick your risk tolerance. You can change this anytime.</div>
+      <div class="risk-grid">
+        <div class="risk-card" data-v="conservative"><h4>Conservative</h4><p>Capital preservation first. Bonds, dividends, blue chips. Minimal volatility.</p></div>
+        <div class="risk-card" data-v="moderate"><h4>Moderate</h4><p>Balanced growth. Large-cap mix. Tolerate normal market swings.</p></div>
+        <div class="risk-card" data-v="aggressive"><h4>Aggressive</h4><p>Growth-focused. Heavy equities, growth, thematic. Comfortable with significant volatility.</p></div>
+        <div class="risk-card" data-v="speculative"><h4>Speculative</h4><p>Max growth. Small-caps, emerging tech, options-friendly. Can stomach large drawdowns.</p></div>
+      </div>
+      <button class="btn" id="okRisk" style="width:100%;justify-content:center;margin-top:18px" disabled>Continue</button>
+    </div>
+  </div>`);
+  let chosen = null;
+  wrap.querySelectorAll(".risk-card").forEach(c => {
+    c.addEventListener("click", () => {
+      wrap.querySelectorAll(".risk-card").forEach(x=>x.classList.remove("sel"));
+      c.classList.add("sel"); chosen = c.dataset.v; $("#okRisk",wrap).disabled = false;
+    });
+  });
+  $("#okRisk", wrap).addEventListener("click", () => {
+    currentUser().riskTolerance = chosen;
+    persist(); render();
+  });
+  return wrap;
+}
+
+// ---- Main app shell --------------------------------------------------------
+let currentTab = "dashboard";
+function renderApp(){
+  const u = currentUser();
+  const wrap = el(`
+  <div class="app">
+    <aside class="side">
+      <div class="brand">Stocks <span>Advisor</span></div>
+      <div class="nav" id="nav">
+        <button data-t="dashboard"><span class="dot"></span> Dashboard</button>
+        <button data-t="positions"><span class="dot"></span> Positions</button>
+        <button data-t="advice"><span class="dot"></span> Advice</button>
+        <button data-t="settings"><span class="dot"></span> Settings</button>
+      </div>
+      <div class="user">
+        ${u.email}<br>
+        <span class="badge ${u.riskTolerance==="aggressive"?"purple":u.riskTolerance==="speculative"?"red":u.riskTolerance==="moderate"?"amber":"green"}">${u.riskTolerance}</span>
+        <button class="btn ghost" style="display:block;margin-top:8px;padding:4px 0" id="logout">Sign out</button>
+      </div>
+    </aside>
+    <main class="main" id="mainPane"></main>
+  </div>`);
+  wrap.querySelectorAll(".nav button").forEach(b => {
+    if (b.dataset.t === currentTab) b.classList.add("active");
+    b.addEventListener("click", () => { currentTab = b.dataset.t; render(); });
+  });
+  $("#logout", wrap).addEventListener("click", () => { state.current = null; persist(); render(); });
+
+  const main = $("#mainPane", wrap);
+  if (currentTab === "dashboard") main.appendChild(renderDashboard());
+  else if (currentTab === "positions") main.appendChild(renderPositions());
+  else if (currentTab === "advice") main.appendChild(renderAdvice());
+  else if (currentTab === "settings") main.appendChild(renderSettings());
+  return wrap;
+}
+
+// ---- Dashboard -------------------------------------------------------------
+function renderDashboard(){
+  const u = currentUser();
+  const fx = u.fxUsdCad || 1.37;
+  const total = totalCad(u.positions, fx);
+  const agg = aggregateByTicker(u.positions, fx);
+  const top = agg.slice(0,8);
+  const today = new Date().toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+
+  const wrap = el(`
+    <div>
+      <h2>Dashboard</h2>
+      <div class="breadcrumb">${today}</div>
+      <div class="disclaimer">Research and education only. Not licensed investment advice. Prices stored locally; refresh prices on the Positions tab.</div>
+      <div class="stats">
+        <div class="stat"><div class="label">Total value (CAD)</div><div class="value">${fmtMoney(total,"CAD")}</div></div>
+        <div class="stat"><div class="label">Positions</div><div class="value">${u.positions.length}</div></div>
+        <div class="stat"><div class="label">Unique tickers</div><div class="value">${agg.length}</div></div>
+        <div class="stat"><div class="label">Risk profile</div><div class="value" style="text-transform:capitalize">${u.riskTolerance}</div></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3 style="margin:0 0 12px;font-size:14px">Allocation</h3>
+          ${top.length===0?'<div class="empty">No positions yet.<br><button class="btn" onclick="document.querySelectorAll(\'.nav button\')[1].click()">Add positions</button></div>': top.map(a=>{
+            const pct = (a.cad/total)*100;
+            return `<div class="alloc-row">
+              <div class="tk">${a.ticker}</div>
+              <div class="bar"><div style="width:${Math.min(100,pct).toFixed(1)}%"></div></div>
+              <div class="pct">${pct.toFixed(1)}%</div>
+            </div>`;
+          }).join("")}
+        </div>
+        <div class="card">
+          <h3 style="margin:0 0 12px;font-size:14px">Top concerns</h3>
+          ${(()=>{const a = generateAdvice(u).slice(0,3); return a.map(c=>`
+            <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+              <div style="font-weight:600;margin-bottom:4px;color:${c.sev==='danger'?'var(--red)':c.sev==='warn'?'var(--amber)':c.sev==='good'?'var(--green)':'var(--text)'}">${c.title}</div>
+              <div style="font-size:13px;color:var(--muted)">${c.body.slice(0,180)}${c.body.length>180?'…':''}</div>
+            </div>`).join("");})()}
+          <button class="btn secondary" style="margin-top:12px" onclick="document.querySelectorAll('.nav button')[2].click()">See all advice</button>
+        </div>
+      </div>
+    </div>`);
+  return wrap;
+}
+
+// ---- Positions -------------------------------------------------------------
+function renderPositions(){
+  const u = currentUser();
+  const fx = u.fxUsdCad || 1.37;
+  const total = totalCad(u.positions, fx);
+
+  const wrap = el(`
+    <div>
+      <h2>Positions</h2>
+      <div class="breadcrumb">${u.positions.length} positions across ${u.accounts.length||1} account${u.accounts.length===1?"":"s"}</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <button class="btn" id="addPos">+ Add position</button>
+        <button class="btn secondary" id="addAcct">+ Add account</button>
+        <button class="btn secondary" id="refresh" title="Try fetch latest prices from Yahoo Finance">↻ Refresh prices</button>
+      </div>
+      <div class="card" style="padding:0">
+        <table>
+          <thead><tr>
+            <th>Ticker</th><th>Account</th><th>Qty</th><th>Price</th><th>CCY</th><th>Value (CAD)</th><th>%</th><th></th>
+          </tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>`);
+
+  const tbody = $("#rows", wrap);
+  if (u.positions.length === 0){
+    tbody.innerHTML = `<tr><td colspan="8" class="empty" style="text-align:center;padding:40px">No positions yet. Click <b>Add position</b> to get started.</td></tr>`;
+  } else {
+    u.positions.forEach((p, i) => {
+      const v = valueOfPosition(p, fx);
+      const acct = u.accounts.find(a => a.id === p.acct);
+      const price = p.ccy === "USD" ? p.priceUsd : p.priceCad;
+      const tr = el(`<tr>
+        <td class="tk">${p.ticker}<span class="sub">${p.name||""}</span></td>
+        <td style="text-align:left;color:var(--muted)">${acct?acct.name:"—"}</td>
+        <td>${p.qty.toLocaleString()}</td>
+        <td>${price!=null?price.toFixed(4):"—"}</td>
+        <td>${p.ccy}</td>
+        <td>${fmtMoney(v.cad,"CAD")}</td>
+        <td>${total>0?((v.cad/total)*100).toFixed(1):"0.0"}%</td>
+        <td><button class="btn ghost" data-i="${i}">edit</button> <button class="btn ghost" data-del="${i}">delete</button></td>
+      </tr>`);
+      tr.querySelector("[data-i]").addEventListener("click", () => openPositionModal(i));
+      tr.querySelector("[data-del]").addEventListener("click", () => {
+        if (confirm(`Delete ${p.ticker} (${p.qty} sh)?`)){ u.positions.splice(i,1); persist(); render(); }
+      });
+      tbody.appendChild(tr);
+    });
+  }
+  $("#addPos", wrap).addEventListener("click", () => openPositionModal(null));
+  $("#addAcct", wrap).addEventListener("click", () => {
+    const name = prompt("Account name (e.g., RRSP, TFSA, Margin)?");
+    if (!name) return;
+    u.accounts.push({id:"acct"+Date.now(), name});
+    persist(); render();
+  });
+  $("#refresh", wrap).addEventListener("click", refreshPrices);
+  return wrap;
+}
+
+function openPositionModal(idx){
+  const u = currentUser();
+  const existing = idx!=null ? u.positions[idx] : { ticker:"", name:"", qty:0, ccy:"USD", priceUsd:0, priceCad:null, acct: u.accounts[0]?.id || "" };
+  // ensure at least one account
+  if (!u.accounts.length){ u.accounts.push({id:"a"+Date.now(), name:"Main"}); persist(); }
+  const m = el(`
+    <div class="modal-bg">
+      <div class="modal">
+        <h3>${idx==null?"Add position":"Edit position"}</h3>
+        <div class="row">
+          <div><label>Ticker</label><input id="ticker" value="${existing.ticker}" placeholder="AAPL"></div>
+          <div><label>Account</label><select id="acct">${u.accounts.map(a=>`<option value="${a.id}" ${a.id===existing.acct?"selected":""}>${a.name}</option>`).join("")}</select></div>
+        </div>
+        <div class="row">
+          <div><label>Name (optional)</label><input id="name" value="${existing.name||""}"></div>
+          <div><label>Currency</label><select id="ccy"><option value="USD" ${existing.ccy==="USD"?"selected":""}>USD</option><option value="CAD" ${existing.ccy==="CAD"?"selected":""}>CAD</option></select></div>
+        </div>
+        <div class="row three">
+          <div><label>Quantity</label><input id="qty" type="number" step="any" value="${existing.qty}"></div>
+          <div><label>Price (USD)</label><input id="pUsd" type="number" step="any" value="${existing.priceUsd??""}"></div>
+          <div><label>Price (CAD)</label><input id="pCad" type="number" step="any" value="${existing.priceCad??""}"></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+          ${idx!=null?'<button class="btn danger" id="del">Delete</button>':''}
+          <button class="btn secondary" id="cancel">Cancel</button>
+          <button class="btn" id="save">Save</button>
+        </div>
+      </div>
+    </div>`);
+  document.body.appendChild(m);
+  $("#cancel", m).onclick = () => m.remove();
+  if ($("#del", m)) $("#del", m).onclick = () => { u.positions.splice(idx,1); persist(); m.remove(); render(); };
+  $("#save", m).onclick = () => {
+    const p = {
+      ticker: $("#ticker",m).value.trim().toUpperCase(),
+      name:   $("#name",m).value.trim(),
+      acct:   $("#acct",m).value,
+      ccy:    $("#ccy",m).value,
+      qty:    parseFloat($("#qty",m).value) || 0,
+      priceUsd: parseFloat($("#pUsd",m).value) || null,
+      priceCad: parseFloat($("#pCad",m).value) || null,
+    };
+    if (!p.ticker || !p.qty){ alert("Ticker and quantity required."); return; }
+    if (idx==null) u.positions.push(p); else u.positions[idx] = p;
+    persist(); m.remove(); render();
+  };
+}
+
+async function refreshPrices(){
+  const u = currentUser();
+  const tickers = [...new Set(u.positions.map(p=>p.ticker))];
+  toast(`Trying to fetch ${tickers.length} tickers from Yahoo Finance…`);
+  let ok = 0, fail = 0;
+  for (const t of tickers){
+    try {
+      // Yahoo Finance v8 chart endpoint; CORS allows most setups
+      const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=1d`);
+      if (!res.ok) throw 0;
+      const j = await res.json();
+      const price = j?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      const ccy   = j?.chart?.result?.[0]?.meta?.currency;
+      if (price){
+        u.positions.forEach(p => {
+          if (p.ticker === t){
+            if (ccy === "USD") p.priceUsd = price;
+            else if (ccy === "CAD") p.priceCad = price;
+          }
+        });
+        ok++;
+      } else fail++;
+    } catch(e){ fail++; }
+  }
+  persist();
+  toast(`Fetched ${ok}/${tickers.length}. ${fail?`${fail} failed (likely CORS) — enter manually.`:""}`);
+  render();
+}
+
+// ---- Advice ----------------------------------------------------------------
+function renderAdvice(){
+  const u = currentUser();
+  const advice = generateAdvice(u);
+  const wrap = el(`
+    <div>
+      <h2>Advice</h2>
+      <div class="breadcrumb">Rule-based signals from your current portfolio</div>
+      <div class="disclaimer">⚠️ Research and education only. Not licensed investment advice. Decisions are yours.</div>
+      <div id="cards"></div>
+    </div>`);
+  const cards = $("#cards", wrap);
+  advice.forEach(c => {
+    cards.appendChild(el(`<div class="advice-card ${c.sev==='danger'?'danger':c.sev==='warn'?'warn':c.sev==='good'?'good':''}">
+      <h3>${c.title}</h3>
+      <p>${c.body}</p>
+      ${c.meta?`<div class="meta">${c.meta}</div>`:""}
+    </div>`));
+  });
+  return wrap;
+}
+
+// ---- Settings --------------------------------------------------------------
+function renderSettings(){
+  const u = currentUser();
+  const wrap = el(`
+    <div>
+      <h2>Settings</h2>
+      <div class="breadcrumb">Account preferences</div>
+      <div class="card" style="margin-bottom:14px">
+        <h3 style="margin:0 0 12px">Risk tolerance</h3>
+        <div class="risk-grid">
+          ${["conservative","moderate","aggressive","speculative"].map(v=>`
+            <div class="risk-card ${u.riskTolerance===v?'sel':''}" data-v="${v}">
+              <h4 style="text-transform:capitalize">${v}</h4>
+            </div>`).join("")}
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <h3 style="margin:0 0 12px">FX rate (USD → CAD)</h3>
+        <input id="fx" type="number" step="0.001" value="${u.fxUsdCad}" style="max-width:200px">
+        <div class="muted" style="font-size:12px;margin-top:6px">Used to compute CAD-equivalent of USD positions.</div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <h3 style="margin:0 0 12px">Notifications</h3>
+        <div class="muted">Daily morning briefing at 8:30 AM ET and intraday alerts at 12:30 PM ET will arrive via the configured channel. To enable email delivery, connect a mailbox in the desktop app.</div>
+      </div>
+      <div class="card" style="margin-bottom:14px;border-color:var(--red)">
+        <h3 style="margin:0 0 12px">Danger zone</h3>
+        <button class="btn danger" id="reset">Reset my data</button>
+      </div>
+    </div>`);
+  wrap.querySelectorAll(".risk-card").forEach(c => {
+    c.addEventListener("click", () => {
+      u.riskTolerance = c.dataset.v; persist(); toast("Risk tolerance updated"); render();
+    });
+  });
+  $("#fx", wrap).addEventListener("change", e => { u.fxUsdCad = parseFloat(e.target.value)||1.37; persist(); toast("FX updated"); });
+  $("#reset", wrap).addEventListener("click", () => {
+    if (confirm("Wipe all your positions and settings?")){
+      delete state.users[u.email]; state.current = null; persist(); render();
+    }
+  });
+  return wrap;
+}
+
+// ---- Toast utility ---------------------------------------------------------
+function toast(msg){
+  const t = el(`<div class="toast">${msg}</div>`);
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 3000);
+}
+
+// Initial render
+render();
+</script>
+</body>
+</html>
