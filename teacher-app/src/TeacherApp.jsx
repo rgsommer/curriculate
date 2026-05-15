@@ -22,6 +22,7 @@ import { DISALLOWED_ROOM_CODES } from "./disallowedRoomCodes.js";
 
 import { socket } from "./socket"; // adjust path if needed
 import SharedLaunch from "./pages/SharedLaunch.jsx";
+import LifeTasks from "./pages/LifeTasks.jsx";
 
 function generateRoomCode() {
   const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -95,12 +96,28 @@ function TeacherApp() {
 
   const isSharedRoute = routeLocation.pathname.startsWith("/shared/");
 
+  // The personal /tasks app has its own (passwordless) auth and should not
+  // be wrapped in the teacher EntryGate, sidebar, or auth flow.
+  const isTasksAppRoute =
+    routeLocation.pathname === "/tasks" ||
+    routeLocation.pathname.startsWith("/tasks/");
+
   const isAuthRoute =
     routeLocation.pathname === "/login" ||
     routeLocation.pathname === "/signup" ||
     routeLocation.pathname.startsWith("/reset-password");
 
   const isHostKioskRoute = routeLocation.pathname === "/host-kiosk";
+
+  // /tasks — personal task app, fully self-contained (its own auth)
+  if (isTasksAppRoute) {
+    return (
+      <Routes>
+        <Route path="/tasks" element={<LifeTasks />} />
+        <Route path="/tasks/*" element={<LifeTasks />} />
+      </Routes>
+    );
+  }
 
   // If we're on auth routes, render ONLY the auth page (no sidebar/header)
   if (isAuthRoute) {

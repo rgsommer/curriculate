@@ -102,6 +102,7 @@ import sessionsRouter from "./routes/sessions.js";
 import speechRouter from "./routes/speech.js";
 import teacherProfileRouter from "./routes/teacherProfileRoutes.js";
 import voiceRouter from "./routes/voice.js";
+import tasksAppRouter from "./routes/tasksApp.js";
 
 // 11) Extracted modules for room engine, game handlers, and routes
 import { createRoomEngine } from "./socket/roomEngine.js";
@@ -524,6 +525,9 @@ app.use("/api/grading", gradingFeedbackRouter);
 
 // Trading-card evaluator — public /cards page on curriculate.net
 app.use("/cards", cardsRouter);
+
+// Personal /tasks app on curriculate.net/tasks (passwordless email+PIN auth)
+app.use("/api/tasks-app", tasksAppRouter);
 
 // Recommend Curriculate to a teacher
 app.post("/api/recommend", async (req, res) => {
