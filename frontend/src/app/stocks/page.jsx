@@ -711,11 +711,16 @@ export default function StocksAdvisorPage() {
 
   // Record a trade: post to /api/stocks-trade and refresh local profile.
   // If the trade originated from an Execute click on a recommendation,
-  // mark that rec as executed so the row renders green. If it originated
+  // mark that rec as executed so the row renders green AND attach the
+  // rec's _id so the scorecard can link this trade back. If it originated
   // from a planned-withdrawal execution, remove that planned WD from the
   // user's list (it's now a real journal entry). If it originated from
   // filling a Pending Order, route through the fill endpoint instead.
   const recordTrade = async (trade) => {
+    // Attach the rec _id if we have it (only set by Execute clicks)
+    if (tradePrefill?.recId && /^[a-f0-9]{24}$/i.test(tradePrefill.recId)) {
+      trade.linkedAdviceRecId = tradePrefill.recId;
+    }
     // Pending-order fill path: convert the pending order to a real trade
     if (tradePrefill?._pendingOrderId) {
       const leg = trade.legs?.[0];
@@ -1420,6 +1425,9 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
       {shown.map((c, i) => {
         const parsed = parseRecsFromBody(c.body);
         const hasRecs = parsed.recs.length > 0;
+        // Propagate the card's recId down to each parsed rec so Execute
+        // clicks know which DB row they're executing.
+        if (c.recId) parsed.recs.forEach(r => { r.recId = c.recId; });
         return (
           <div key={i} className={`sa-advice-card ${c.sev === "danger" ? "danger" : c.sev === "warn" ? "warn" : c.sev === "good" ? "good" : ""}`}>
             <h3>{c.title}</h3>
@@ -2439,6 +2447,8 @@ function FullscreenShell({ children }) {
 function PerformanceView({ sessionToken }) {
   const [snaps, setSnaps] = useState(null);
   const [advisorPerf, setAdvisorPerf] = useState(null);
+  const [scorecard, setScorecard] = useState(null);
+  const [scorecardDays, setScorecardDays] = useState(30);
   const [busy, setBusy] = useState(true);
   const [err, setErr] = useState(null);
 
@@ -2447,19 +2457,24 @@ function PerformanceView({ sessionToken }) {
     (async () => {
       setBusy(true); setErr(null);
       try {
-        const [snapRes, perfRes] = await Promise.all([
+        const [snapRes, perfRes, scoreRes] = await Promise.all([
           fetch(`${BACKEND_URL}/api/stocks-portfolio/performance?days=365`, {
             headers: { Authorization: `Bearer ${sessionToken}` },
           }),
           fetch(`${BACKEND_URL}/api/stocks-advice/performance?days=30`, {
             headers: { Authorization: `Bearer ${sessionToken}` },
           }),
+          fetch(`${BACKEND_URL}/api/stocks-advice/scorecard?days=${scorecardDays}`, {
+            headers: { Authorization: `Bearer ${sessionToken}` },
+          }),
         ]);
         const snapJ = await snapRes.json();
         const perfJ = await perfRes.json();
+        const scoreJ = await scoreRes.json();
         if (!cancelled) {
           setSnaps(snapJ?.snapshots || []);
           setAdvisorPerf(perfJ);
+          setScorecard(scoreJ);
         }
       } catch (e) {
         if (!cancelled) setErr(e?.message || "Failed to load");
@@ -2468,12 +2483,19 @@ function PerformanceView({ sessionToken }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [sessionToken]);
+  }, [sessionToken, scorecardDays]);
 
   return (
     <div>
       <h2>Performance</h2>
       <div className="sa-breadcrumb">Portfolio value over time · advisor scorecard</div>
+
+      {/* ── ADVICE SCORECARD: what was taken, what worked, what didn't ── */}
+      <AdviceScorecardCard
+        scorecard={scorecard}
+        days={scorecardDays}
+        onChangeDays={setScorecardDays}
+      />
 
       {/* ── Advisor scorecard ── */}
       <div className="sa-card" style={{ marginBottom: 18 }}>
@@ -2616,6 +2638,7 @@ function PendingOrdersCard({ orders, accounts, onFill, onCancel }) {
 // =============================================================================
 function HoldingsBreakdownCard({ user, fx, onEditPosition }) {
   const [expandedTicker, setExpandedTicker] = useState(null);
+  const [collapsed, setCollapsed] = useState(true); // whole card starts collapsed
 
   // Group by ticker; track the actual position indices that compose each
   // ticker so we can show per-lot detail and route Edit clicks back to the
@@ -2663,14 +2686,28 @@ function HoldingsBreakdownCard({ user, fx, onEditPosition }) {
   const fmt$ = (n) => n === 0 ? "—" : "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
   const fmtQ = (n) => n === 0 ? "—" : n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
+  // Count of split tickers (held in both subs — surfaced even when collapsed)
+  const splitCount = rows.filter(r => r.qtyUsdSub > 0 && r.qtyCadSub > 0).length;
+
   return (
     <div className="sa-card" style={{ marginBottom: 24, padding: 0, overflow: "hidden" }}>
-      <div style={{ padding: "18px 22px 12px" }}>
-        <h3 style={{ margin: 0 }}>Holdings breakdown</h3>
-        <div className="sa-muted" style={{ fontSize: 12, marginTop: 2 }}>
-          One row per ticker, split by which currency sub-account holds the position. US stocks held in a CAD sub are flagged so AI recs can plan consolidation. Mirrors how CIBC Investor's Edge shows sub-account balances.
+      <div
+        style={{ padding: "18px 22px 12px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}
+        onClick={() => setCollapsed(c => !c)}
+      >
+        <div>
+          <h3 style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 11, color: "var(--sa-muted)", transform: collapsed ? "none" : "rotate(90deg)", transition: "transform .15s", display: "inline-block" }}>▶</span>
+            Holdings breakdown
+          </h3>
+          <div className="sa-muted" style={{ fontSize: 12, marginTop: 2 }}>
+            {collapsed
+              ? `${rows.length} tickers · ${fmt$(grandTotalCad)} CAD${splitCount > 0 ? ` · ${splitCount} split across subs` : ""} · click to expand`
+              : "One row per ticker, split by which currency sub-account holds the position. US stocks held in a CAD sub are flagged so AI recs can plan consolidation. Mirrors how CIBC Investor's Edge shows sub-account balances."}
+          </div>
         </div>
       </div>
+      {!collapsed && (
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontSize: 13 }}>
           <thead>
@@ -2781,6 +2818,7 @@ function HoldingsBreakdownCard({ user, fx, onEditPosition }) {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }
@@ -3151,6 +3189,162 @@ function TradesView({ sessionToken }) {
             </table>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// Advice Scorecard — the close-the-loop view. For each rec generated in the
+// window: did the user execute it? Was the call right? How much $ did it
+// produce (or save by being skipped)?
+// =============================================================================
+function AdviceScorecardCard({ scorecard, days, onChangeDays }) {
+  if (!scorecard) {
+    return (
+      <div className="sa-card" style={{ marginBottom: 18 }}>
+        <h3>Advice scorecard</h3>
+        <div className="sa-muted" style={{ padding: 20 }}>Loading…</div>
+      </div>
+    );
+  }
+  const { summary, items } = scorecard;
+  const fmt$ = (n) => (n >= 0 ? "+" : "−") + "$" + Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const fmtPct = (n) => n == null ? "—" : ((n >= 0 ? "+" : "") + n.toFixed(1) + "%");
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+        <div>
+          <h3 style={{ margin: 0 }}>Advice scorecard</h3>
+          <div className="sa-muted" style={{ fontSize: 12, marginTop: 2 }}>
+            Followed = you executed the rec. Skipped = no matching trade. Outcomes mark-to-market.
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
+          {[7, 30, 90, 365].map((d) => (
+            <button
+              key={d}
+              onClick={() => onChangeDays(d)}
+              style={{
+                padding: "5px 12px", fontSize: 12, fontWeight: 600,
+                border: "none", borderRadius: 6, cursor: "pointer",
+                background: days === d ? "var(--sa-accent)" : "transparent",
+                color: days === d ? "#fff" : "var(--sa-text-2)",
+              }}
+            >{d === 365 ? "1y" : `${d}d`}</button>
+          ))}
+        </div>
+      </div>
+
+      {summary.total === 0 ? (
+        <div className="sa-muted" style={{ padding: 24, textAlign: "center", fontSize: 13 }}>
+          No AI recommendations in the last {days} days. Click <b>🧠 Get fresh AI advice</b> on the Advice tab to start populating this.
+        </div>
+      ) : (
+        <>
+          {/* Top-line summary */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 14 }}>
+            <div style={{ background: "var(--sa-panel-2)", padding: 12, borderRadius: 10 }}>
+              <div className="sa-muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>Follow rate</div>
+              <div style={{ fontSize: 22, fontWeight: 700 }}>{summary.followRate.toFixed(0)}%</div>
+              <div className="sa-muted" style={{ fontSize: 11 }}>{summary.followed} of {summary.total} recs</div>
+            </div>
+            <div style={{ background: "var(--sa-green-soft)", padding: 12, borderRadius: 10, border: "1px solid #bbf7d0" }}>
+              <div style={{ fontSize: 11, color: "var(--sa-green)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>From followed</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: summary.netDollarsFromFollowed >= 0 ? "var(--sa-green)" : "var(--sa-red)" }}>
+                {summary.netDollarsFromFollowed === 0 ? "—" : fmt$(summary.netDollarsFromFollowed)}
+              </div>
+              <div className="sa-muted" style={{ fontSize: 11 }}>Avg: {fmtPct(summary.avgFollowedPnlPct)}</div>
+            </div>
+            <div style={{ background: "var(--sa-amber-soft)", padding: 12, borderRadius: 10, border: "1px solid #fde68a" }}>
+              <div style={{ fontSize: 11, color: "var(--sa-amber)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>Skipped would-be</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: summary.netDollarsFromSkipped >= 0 ? "var(--sa-green)" : "var(--sa-red)" }}>
+                {summary.netDollarsFromSkipped === 0 ? "—" : fmt$(summary.netDollarsFromSkipped)}
+              </div>
+              <div className="sa-muted" style={{ fontSize: 11 }}>Avg: {fmtPct(summary.avgSkippedPnlPct)}</div>
+            </div>
+            <div style={{ background: "var(--sa-panel-2)", padding: 12, borderRadius: 10 }}>
+              <div className="sa-muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>Verdict</div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginTop: 4 }}>
+                {(() => {
+                  const f = summary.netDollarsFromFollowed;
+                  const s = summary.netDollarsFromSkipped;
+                  if (f > 0 && s < 0) return "✅ Good calls + good skips";
+                  if (f > 0 && s > 0) return "🟢 Calls right, missed some";
+                  if (f < 0 && s > 0) return "⚠️ Skipped winners, took losers";
+                  if (f < 0 && s < 0) return "🟡 Whole cohort underwater";
+                  return "—";
+                })()}
+              </div>
+              <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>{summary.skipped} skipped · {summary.followed} taken</div>
+            </div>
+          </div>
+
+          {/* Per-rec table */}
+          <div style={{ border: "1px solid var(--sa-border)", borderRadius: 10, overflow: "hidden", overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: "var(--sa-panel-2)" }}>
+                  <th style={recHeaderCellLeft}>When</th>
+                  <th style={recHeaderCellLeft}>Rec</th>
+                  <th style={recHeaderCellLeft}>Status</th>
+                  <th style={recHeaderCell}>Entry → Now</th>
+                  <th style={recHeaderCell}>Hypo P&amp;L</th>
+                  <th style={recHeaderCell}>If followed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.slice(0, 50).map((it) => {
+                  const sideColor =
+                    it.action === "BUY" ? "var(--sa-green)" :
+                    it.action === "SELL" || it.action === "TRIM" ? "var(--sa-red)" : "var(--sa-amber)";
+                  const sideBg =
+                    it.action === "BUY" ? "var(--sa-green-soft)" :
+                    it.action === "SELL" || it.action === "TRIM" ? "var(--sa-red-soft)" : "var(--sa-amber-soft)";
+                  const statusLabel =
+                    it.status === "target-hit" ? "🎯 Target" :
+                    it.status === "stop-hit" ? "🛑 Stop" :
+                    it.status === "expired" ? "⏰ Expired" : "🟢 Open";
+                  const followLabel = it.followed
+                    ? <span style={{ color: "var(--sa-green)", fontWeight: 600 }}>✓ Followed</span>
+                    : <span style={{ color: "var(--sa-muted)" }}>— Skipped</span>;
+                  return (
+                    <tr key={it.recId} style={{ borderTop: "1px solid var(--sa-border)" }}>
+                      <td style={{ ...recCellLeft, color: "var(--sa-muted)" }}>{new Date(it.generatedAt).toLocaleDateString()}</td>
+                      <td style={recCellLeft}>
+                        <span style={{ padding: "1px 7px", borderRadius: 99, fontSize: 10, fontWeight: 700, background: sideBg, color: sideColor, marginRight: 6 }}>{it.action}</span>
+                        <b>{it.ticker}</b>
+                        {it.shares ? <span style={{ color: "var(--sa-muted)" }}> · {it.shares} sh</span> : null}
+                        {it.entryPrice ? <span style={{ color: "var(--sa-muted)" }}> · ${it.entryPrice.toFixed(2)}</span> : null}
+                        <div style={{ fontSize: 11, marginTop: 2 }}>{followLabel}</div>
+                      </td>
+                      <td style={{ ...recCellLeft, color: it.status === "target-hit" ? "var(--sa-green)" : it.status === "stop-hit" ? "var(--sa-red)" : "var(--sa-text-2)", fontWeight: 500 }}>
+                        {statusLabel}
+                      </td>
+                      <td style={recCell}>
+                        {it.entryPrice && it.currentPrice
+                          ? <>${it.entryPrice.toFixed(2)} → ${it.currentPrice.toFixed(2)}</>
+                          : "—"}
+                      </td>
+                      <td style={{ ...recCell, color: it.hypoPnlPct == null ? "var(--sa-muted)" : (it.hypoPnlPct >= 0 ? "var(--sa-green)" : "var(--sa-red)"), fontWeight: 600 }}>
+                        {fmtPct(it.hypoPnlPct)}
+                      </td>
+                      <td style={{ ...recCell, color: it.followed
+                        ? (it.actualPnlPct == null ? "var(--sa-muted)" : it.actualPnlPct >= 0 ? "var(--sa-green)" : "var(--sa-red)")
+                        : "var(--sa-muted)", fontWeight: 600 }}>
+                        {it.followed
+                          ? (it.actualPnlPct == null ? "—"
+                              : <>{fmtPct(it.actualPnlPct)} <div style={{ fontSize: 10, fontWeight: 400 }}>{it.actualDollars != null ? fmt$(it.actualDollars) : ""}</div></>)
+                          : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

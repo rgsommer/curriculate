@@ -208,7 +208,13 @@ function adjustAccountCash(account, leg) {
 // ── handlers ───────────────────────────────────────────────────────
 router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req, res) => {
   try {
-    const { account, legs, notes, executedAt, linkedAdviceRecId } = req.body || {};
+    const { account, legs, notes, executedAt } = req.body || {};
+    // Accept the source advice rec id from the caller — when a trade is
+    // executed via the Advice tab's Execute button, the rec _id is passed
+    // through so the scorecard can link followed-recs to actual trades.
+    const linkedAdviceRecId = (req.body?.linkedAdviceRecId && /^[a-f0-9]{24}$/i.test(String(req.body.linkedAdviceRecId)))
+      ? req.body.linkedAdviceRecId
+      : null;
     if (!account || !Array.isArray(legs) || legs.length < 1 || legs.length > 4) {
       return res.status(400).json({ error: "Provide account and 1-4 legs" });
     }

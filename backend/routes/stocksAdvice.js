@@ -19,6 +19,7 @@ import express from "express";
 import crypto from "crypto";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
+import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import {
   generateBriefing,
   emailBriefing,
@@ -274,7 +275,7 @@ Do NOT recommend more spending than the cash he has. Don't suggest fractional sh
   return `You are Richard's personal stock advisor. Today is ${today}.
 
 His risk tolerance: ${risk}.
-Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()}.
+Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()} ← FOR YOUR REFERENCE ONLY. DO NOT echo this aggregate dollar figure in the advice cards. Use percentages, % of book, and per-position values, but never the total portfolio dollar amount.
 
 Holdings:
 ${summary.text}
@@ -479,10 +480,14 @@ router.post("/", requireStocksAuth, async (req, res) => {
       if (card.meta) card.meta = stripCiteTags(card.meta);
     }
 
-    // Persist parsed recommendations so we can compute "if-followed" P&L later
+    // Persist parsed recommendations so we can compute "if-followed" P&L later.
+    // We attach each saved rec's _id back to the card so the FRONTEND can pass
+    // it when the user clicks Execute → the trade journal then carries the
+    // linkedAdviceRecId and the scorecard knows which recs were followed.
     const generatedAt = new Date();
     const recsToSave = [];
-    for (const card of parsed.advice) {
+    const recCardIndices = [];
+    parsed.advice.forEach((card, idx) => {
       const rec = parseRec(card.body);
       if (rec && rec.entryPrice && rec.action !== "HOLD") {
         recsToSave.push({
@@ -492,19 +497,28 @@ router.post("/", requireStocksAuth, async (req, res) => {
           ...rec,
           rationale: (card.title || "") + " — " + (card.body || "").slice(0, 400),
         });
+        recCardIndices.push(idx);
       }
-    }
+    });
+    let inserted = [];
     if (recsToSave.length) {
-      StocksAdviceRec.insertMany(recsToSave).catch((e) =>
-        console.warn("advice-rec save warning:", e?.message)
-      );
+      try {
+        inserted = await StocksAdviceRec.insertMany(recsToSave);
+      } catch (e) { console.warn("advice-rec save warning:", e?.message); }
     }
+    // Attach rec _id back onto its card so the frontend can use it on Execute
+    inserted.forEach((doc, i) => {
+      const cardIdx = recCardIndices[i];
+      if (parsed.advice[cardIdx]) {
+        parsed.advice[cardIdx].recId = doc._id.toString();
+      }
+    });
 
     res.json({
       generatedAt: generatedAt.toISOString(),
       advice: parsed.advice,
       sources: parsed.sources?.length ? parsed.sources : sources,
-      tracked: recsToSave.length,
+      tracked: inserted.length,
     });
   } catch (err) {
     console.error("stocks-advice error:", err);
@@ -673,6 +687,145 @@ router.post("/send-briefing", requireStocksAuth, async (req, res) => {
   } catch (err) {
     console.error("send-briefing error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// GET /api/stocks-advice/scorecard?days=30
+//
+// For each rec in the window:
+//   - Is there a trade journal entry with linkedAdviceRecId == rec._id?
+//     → if yes: "followed". Compute realized/unrealized P&L from cost.
+//     → if no:  "skipped". Compute hypothetical P&L (would-have-been).
+//   - What's the rec's current status? (open / target-hit / stop-hit)
+//
+// Aggregates: count of followed vs skipped, total $ P&L attributable to
+// advice taken, opportunity cost of advice skipped.
+// ─────────────────────────────────────────────────────────────────────
+router.get("/scorecard", requireStocksAuth, async (req, res) => {
+  try {
+    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 7), 365);
+    const since = new Date(Date.now() - days * 86400 * 1000);
+
+    const [recs, trades] = await Promise.all([
+      StocksAdviceRec.find({ email: req.stocksUser.email, generatedAt: { $gte: since } }).lean(),
+      StocksTradeJournal.find({ email: req.stocksUser.email, executedAt: { $gte: since } }).lean(),
+    ]);
+
+    if (recs.length === 0) {
+      return res.json({
+        days,
+        summary: { total: 0, followed: 0, skipped: 0, pending: 0,
+                   followedPnlPct: null, skippedPnlPct: null,
+                   netDollarsFromFollowed: 0, netDollarsFromSkipped: 0 },
+        items: [],
+      });
+    }
+
+    // Build a quick lookup: rec _id (string) → trade journal entry
+    const tradesByRecId = new Map();
+    for (const t of trades) {
+      if (t.linkedAdviceRecId) tradesByRecId.set(String(t.linkedAdviceRecId), t);
+    }
+
+    // Fetch current prices once per unique ticker
+    const tickers = [...new Set(recs.map(r => r.ticker).filter(Boolean))];
+    const priceMap = {};
+    await Promise.all(tickers.map(async t => { priceMap[t] = await fetchCurrentPrice(t); }));
+
+    const items = [];
+    let followedCount = 0, skippedCount = 0, pendingCount = 0;
+    let followedPnlAcc = 0, followedDollars = 0;
+    let skippedPnlAcc = 0, skippedDollars = 0;
+
+    for (const rec of recs) {
+      const linkedTrade = tradesByRecId.get(String(rec._id));
+      const currentPrice = priceMap[rec.ticker];
+      const followed = !!linkedTrade;
+
+      // Hypothetical P&L: how the rec WOULD have performed (entry → current)
+      // - BUY rec: gain if price went UP from entry
+      // - SELL/TRIM rec: gain if price went DOWN from entry (sell was right)
+      let hypoPnlPct = null, hypoDollars = null;
+      if (rec.entryPrice && currentPrice) {
+        const raw = (currentPrice - rec.entryPrice) / rec.entryPrice;
+        const dir = (rec.action === "BUY") ? 1 : (rec.action === "SELL" || rec.action === "TRIM") ? -1 : 0;
+        hypoPnlPct = dir * raw * 100;
+        if (rec.shares) {
+          hypoDollars = dir * (currentPrice - rec.entryPrice) * rec.shares;
+        }
+      }
+
+      // Actual P&L if followed: use the actual fill price from the trade
+      let actualPnlPct = null, actualDollars = null;
+      if (followed && currentPrice) {
+        const leg = (linkedTrade.legs || []).find(l => l.ticker === rec.ticker);
+        if (leg && leg.pricePerShare) {
+          const raw = (currentPrice - leg.pricePerShare) / leg.pricePerShare;
+          const dir = (leg.side === "BUY") ? 1 : -1;
+          actualPnlPct = dir * raw * 100;
+          actualDollars = dir * (currentPrice - leg.pricePerShare) * (leg.shares || 0);
+        }
+      }
+
+      // Categorize
+      if (followed) {
+        followedCount++;
+        if (actualPnlPct != null) {
+          followedPnlAcc += actualPnlPct;
+          followedDollars += actualDollars || 0;
+        }
+      } else {
+        // Skipped: outcome based on hypothetical
+        skippedCount++;
+        if (hypoPnlPct != null) {
+          skippedPnlAcc += hypoPnlPct;
+          skippedDollars += hypoDollars || 0;
+        }
+      }
+
+      items.push({
+        recId: String(rec._id),
+        generatedAt: rec.generatedAt,
+        ticker: rec.ticker,
+        action: rec.action,
+        shares: rec.shares,
+        entryPrice: rec.entryPrice,
+        targetPrice: rec.targetPrice,
+        stopPrice: rec.stopPrice,
+        currentPrice,
+        status: rec.status || "open",
+        followed,
+        hypoPnlPct,
+        hypoDollars,
+        actualPnlPct,
+        actualDollars,
+        tradeFillPrice: followed ? (linkedTrade.legs?.[0]?.pricePerShare || null) : null,
+        tradeShares: followed ? (linkedTrade.legs?.[0]?.shares || null) : null,
+        tradeExecutedAt: followed ? linkedTrade.executedAt : null,
+      });
+    }
+
+    items.sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
+
+    res.json({
+      days,
+      summary: {
+        total: recs.length,
+        followed: followedCount,
+        skipped: skippedCount,
+        pending: pendingCount,
+        followRate: recs.length > 0 ? (followedCount / recs.length) * 100 : 0,
+        avgFollowedPnlPct: followedCount > 0 ? followedPnlAcc / followedCount : null,
+        avgSkippedPnlPct: skippedCount > 0 ? skippedPnlAcc / skippedCount : null,
+        netDollarsFromFollowed: followedDollars,
+        netDollarsFromSkipped: skippedDollars,
+      },
+      items,
+    });
+  } catch (err) {
+    console.error("scorecard error:", err);
+    res.status(500).json({ error: `Internal: ${err?.message || err}` });
   }
 });
 

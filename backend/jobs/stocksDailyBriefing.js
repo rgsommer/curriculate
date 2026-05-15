@@ -345,7 +345,7 @@ ${summary.perAccountCash.length ? "Per account:\n" + summary.perAccountCash.join
 
 Today: ${today}
 Risk tolerance: ${profile.riskTolerance}
-Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()}
+Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()} ← FOR YOUR REFERENCE ONLY. DO NOT INCLUDE this aggregate dollar figure in the briefing output. Discuss percentages, % of book, and individual position values, but never echo the total portfolio dollar amount.
 
 Holdings:
 ${summary.table}
