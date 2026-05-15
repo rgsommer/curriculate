@@ -386,6 +386,7 @@ export default function StocksAdvisorPage() {
   const [modalIdx, setModalIdx] = useState(undefined);
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
   const [tradePrefill, setTradePrefill] = useState(null); // optional prefill for TradeModal
+  const [executedRecKeys, setExecutedRecKeys] = useState(new Set()); // recs the user has executed in this session
   const [briefingPreview, setBriefingPreview] = useState(null); // { html, sent, error, busy }
   const saveTimerRef = useRef(null);
   const savedTimerRef = useRef(null);
@@ -568,11 +569,25 @@ export default function StocksAdvisorPage() {
     }
   };
 
-  // Record a trade: post to /api/stocks-trade and refresh local profile
+  // Stable key for a recommendation — used to mark which AI recs have been
+  // executed (turns the row green in the advice table).
+  const recKey = (rec) => `${rec.side}_${rec.ticker}_${rec.shares || ""}_${rec.entryLow || ""}_${rec.currency || ""}`;
+
+  // Record a trade: post to /api/stocks-trade and refresh local profile.
+  // If the trade originated from an Execute click on a recommendation,
+  // mark that rec as executed so the row renders green.
   const recordTrade = async (trade) => {
     const result = await apiRecordTrade(auth.sessionToken, trade);
     setProfile(result.portfolio);
-    showToast(`Trade recorded — ${trade.legs.map(l => `${l.side} ${l.shares} ${l.ticker}`).join(", ")}`);
+    if (tradePrefill) {
+      const k = recKey(tradePrefill);
+      setExecutedRecKeys(prev => {
+        const next = new Set(prev);
+        next.add(k);
+        return next;
+      });
+    }
+    showToast(`Trade recorded — ${trade.legs.map(l => `${l.side || ""} ${l.shares || ""} ${l.ticker || ""}`.trim()).join(", ")}`);
     return result;
   };
 
@@ -692,6 +707,9 @@ export default function StocksAdvisorPage() {
                 setTradePrefill(rec);
                 setTradeModalOpen(true);
               }}
+              executedRecKeys={executedRecKeys}
+              recKey={recKey}
+              onClearExecuted={() => setExecutedRecKeys(new Set())}
             />
           )}
           {currentTab === "performance" && <PerformanceView sessionToken={auth.sessionToken} />}
@@ -1101,7 +1119,7 @@ function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPri
   );
 }
 
-function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchConsumed, onExecuteRec }) {
+function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchConsumed, onExecuteRec, executedRecKeys, recKey, onClearExecuted }) {
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiAdvice, setAiAdvice] = useState(null); // { advice, sources, generatedAt }
@@ -1128,6 +1146,9 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
       setAiAdvice(j);
+      // Fresh AI advice → clear stale "executed" marks (a new rec is not the
+      // same as the old one even if ticker/side/qty happen to match)
+      onClearExecuted?.();
     } catch (e) {
       setAiError(e?.message || "Failed");
     } finally {
@@ -1176,17 +1197,25 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
       )}
       {shown.map((c, i) => {
         const parsed = parseRecsFromBody(c.body);
+        const hasRecs = parsed.recs.length > 0;
         return (
           <div key={i} className={`sa-advice-card ${c.sev === "danger" ? "danger" : c.sev === "warn" ? "warn" : c.sev === "good" ? "good" : ""}`}>
             <h3>{c.title}</h3>
-            {parsed.intro && <p>{parsed.intro}</p>}
-            {parsed.recs.length > 0 ? (
-              <RecsTable recs={parsed.recs} onExecuteRec={onExecuteRec} />
+            {hasRecs ? (
+              <>
+                {parsed.intro && <p>{parsed.intro}</p>}
+                <RecsTable
+                  recs={parsed.recs}
+                  onExecuteRec={onExecuteRec}
+                  executedRecKeys={executedRecKeys}
+                  recKey={recKey}
+                />
+                {parsed.outro && <p style={{ marginTop: 10, fontStyle: "italic", color: "var(--sa-text-2)" }}>{parsed.outro}</p>}
+              </>
             ) : (
-              // No structured recs detected — show original body as prose
+              // No structured recs detected — render the full body once as prose.
               <p>{c.body}</p>
             )}
-            {parsed.outro && <p style={{ marginTop: 10, fontStyle: "italic", color: "var(--sa-text-2)" }}>{parsed.outro}</p>}
             {c.meta && <div className="meta">{c.meta}</div>}
           </div>
         );
@@ -1292,7 +1321,7 @@ function PositionModal({ user, idx, onClose, onSave, onDelete }) {
 // table inside an advice card body. Each row has an Execute button that
 // opens the trade modal pre-populated with that rec's details.
 // =============================================================================
-function RecsTable({ recs, onExecuteRec }) {
+function RecsTable({ recs, onExecuteRec, executedRecKeys, recKey }) {
   return (
     <div style={{
       border: "1px solid var(--sa-border)", borderRadius: 10,
@@ -1315,6 +1344,8 @@ function RecsTable({ recs, onExecuteRec }) {
         </thead>
         <tbody>
           {recs.map((r, i) => {
+            const isExecuted = executedRecKeys && recKey && executedRecKeys.has(recKey(r));
+
             const sideColor =
               r.side === "BUY" ? "var(--sa-green)"
               : r.side === "SELL" || r.side === "TRIM" ? "var(--sa-red)"
@@ -1323,8 +1354,12 @@ function RecsTable({ recs, onExecuteRec }) {
               r.side === "BUY" ? "var(--sa-green-soft)"
               : r.side === "SELL" || r.side === "TRIM" ? "var(--sa-red-soft)"
               : "var(--sa-amber-soft)";
+
+            const rowBg = isExecuted ? "var(--sa-green-soft)" : "transparent";
+            const rowBorder = isExecuted ? "1px solid #86efac" : (i > 0 ? "1px solid var(--sa-border)" : "none");
+
             return (
-              <tr key={i} style={{ borderTop: i > 0 ? "1px solid var(--sa-border)" : "none" }}>
+              <tr key={i} style={{ borderTop: rowBorder, background: rowBg, transition: "background .3s ease" }}>
                 <td style={recCellLeft}>
                   <span style={{
                     padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 700,
@@ -1339,14 +1374,22 @@ function RecsTable({ recs, onExecuteRec }) {
                 <td style={recCell}>{r.horizonText || "—"}</td>
                 <td style={recCell}>{r.usesText || "—"}</td>
                 <td style={recCell}>
-                  {onExecuteRec && r.side !== "HOLD" && (
+                  {isExecuted ? (
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                      padding: "5px 10px", borderRadius: 6, fontSize: 12, fontWeight: 600,
+                      background: "var(--sa-green)", color: "#fff",
+                    }}>
+                      ✓ Executed
+                    </span>
+                  ) : onExecuteRec && r.side !== "HOLD" ? (
                     <button
                       className="sa-btn"
                       style={{ padding: "5px 12px", fontSize: 12 }}
                       onClick={() => onExecuteRec(r)}
                       title="Open the Record Trade modal with this rec pre-filled"
                     >Execute →</button>
-                  )}
+                  ) : null}
                 </td>
               </tr>
             );
