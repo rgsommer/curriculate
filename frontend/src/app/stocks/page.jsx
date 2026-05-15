@@ -265,6 +265,7 @@ export default function StocksAdvisorPage() {
   const [toast, setToast] = useState(null);
   const [modalIdx, setModalIdx] = useState(undefined);
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
+  const [briefingPreview, setBriefingPreview] = useState(null); // { html, sent, error, busy }
   const saveTimerRef = useRef(null);
   const savedTimerRef = useRef(null);
   // Cross-tab AI advice request — when set, the Advice tab auto-triggers
@@ -408,6 +409,44 @@ export default function StocksAdvisorPage() {
   const user = profile;
   const updateUser = updateProfile;
 
+  // Generate the daily briefing on-demand. Two-step UI:
+  //   step 1: preview (POST without send=true) — fast, no email
+  //   step 2: confirm send (POST with send=true) — emails it
+  const previewBriefing = async () => {
+    setBriefingPreview({ busy: true });
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/send-briefing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.sessionToken}` },
+        body: JSON.stringify({ send: false }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setBriefingPreview({ html: j.html, markdown: j.markdown, subject: j.subject, sent: false });
+    } catch (e) {
+      setBriefingPreview({ error: e?.message || "Failed to generate briefing" });
+    }
+  };
+
+  const sendBriefing = async () => {
+    if (!briefingPreview || briefingPreview.busy) return;
+    setBriefingPreview({ ...briefingPreview, busy: true });
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/send-briefing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.sessionToken}` },
+        body: JSON.stringify({ send: true }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setBriefingPreview({ html: j.html, markdown: j.markdown, subject: j.subject, sent: j.sent, sendError: j.sendError });
+      if (j.sent) showToast(`Briefing emailed to ${auth.email}`);
+      else if (j.sendError) showToast(`Email failed: ${j.sendError}`);
+    } catch (e) {
+      setBriefingPreview({ ...briefingPreview, sendError: e?.message || "Send failed", busy: false });
+    }
+  };
+
   // Record a trade: post to /api/stocks-trade and refresh local profile
   const recordTrade = async (trade) => {
     const result = await apiRecordTrade(auth.sessionToken, trade);
@@ -502,6 +541,7 @@ export default function StocksAdvisorPage() {
                 setCurrentTab("advice");
               }}
               onRecordTrade={() => setTradeModalOpen(true)}
+              onEmailBriefing={previewBriefing}
             />
           )}
           {currentTab === "positions" && (
@@ -564,6 +604,14 @@ export default function StocksAdvisorPage() {
               updateUser((u) => ({ positions: u.positions.filter((_, i) => i !== modalIdx) }));
               setModalIdx(undefined);
             }}
+          />
+        )}
+        {briefingPreview && (
+          <BriefingPreviewModal
+            preview={briefingPreview}
+            recipient={auth.email}
+            onClose={() => setBriefingPreview(null)}
+            onSend={sendBriefing}
           />
         )}
         {tradeModalOpen && (
@@ -771,7 +819,7 @@ function OnboardingView({ onPick }) {
   );
 }
 
-function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade }) {
+function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEmailBriefing }) {
   const [busyRefresh, setBusyRefresh] = useState(false);
   const [busyAi, setBusyAi] = useState(false);
   const fx = user.fxUsdCad || 1.37;
@@ -803,8 +851,11 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade }) {
           <div className="sa-breadcrumb">{today}</div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="sa-btn secondary" onClick={onRecordTrade} title="Record a buy / sell / swap — updates positions atomically and logs to your trade journal">
+          <button className="sa-btn secondary" onClick={onRecordTrade} title="Record a buy / sell / swap / cash movement">
             + Record trade
+          </button>
+          <button className="sa-btn secondary" onClick={onEmailBriefing} title="Preview the daily briefing email — same content the morning cron sends">
+            📧 Email Briefing
           </button>
           <button className="sa-btn secondary" onClick={handleRefresh} disabled={busyRefresh || busyAi} title="Re-fetch live prices from Yahoo Finance via the backend proxy">
             {busyRefresh ? "Refreshing…" : "↻ Refresh prices"}
@@ -1077,6 +1128,83 @@ function PositionModal({ user, idx, onClose, onSave, onDelete }) {
             onSave(p);
           }}>Save</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// Briefing preview modal — shows what the daily email will look like
+// =============================================================================
+function BriefingPreviewModal({ preview, recipient, onClose, onSend }) {
+  const { busy, html, error, sent, sendError, subject } = preview;
+
+  return (
+    <div className="sa-modal-bg" onClick={onClose}>
+      <div
+        className="sa-modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 760 }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <h3 style={{ margin: 0 }}>Email Briefing — Preview</h3>
+          <button className="sa-btn ghost" onClick={onClose} disabled={busy} style={{ padding: "4px 10px" }}>✕</button>
+        </div>
+
+        {/* Loading */}
+        {busy && !html && (
+          <div style={{ padding: "40px 0", textAlign: "center" }}>
+            <div style={{ fontSize: 14, color: "var(--sa-text-2)", marginBottom: 8 }}>Generating briefing…</div>
+            <div style={{ fontSize: 12, color: "var(--sa-muted)" }}>Searching news on each of your holdings · 20-40s</div>
+          </div>
+        )}
+
+        {/* Error state */}
+        {error && (
+          <div className="sa-err">{error}</div>
+        )}
+
+        {/* Preview ready */}
+        {html && (
+          <>
+            <div style={{ fontSize: 13, color: "var(--sa-muted)", marginBottom: 12 }}>
+              <b style={{ color: "var(--sa-text)" }}>Subject:</b> {subject}<br/>
+              <b style={{ color: "var(--sa-text)" }}>To:</b> {recipient}
+            </div>
+
+            <div style={{
+              border: "1px solid var(--sa-border)", borderRadius: 12, overflow: "hidden",
+              background: "#fff", maxHeight: "55vh", overflowY: "auto",
+              marginBottom: 14,
+            }}>
+              {/* iframe sandboxes the inline styles from the email body */}
+              <iframe
+                title="Briefing preview"
+                srcDoc={html}
+                sandbox=""
+                style={{ width: "100%", height: "55vh", border: "none", display: "block" }}
+              />
+            </div>
+
+            {sent && (
+              <div style={{ background: "var(--sa-green-soft)", color: "var(--sa-green)", padding: "10px 14px", borderRadius: 10, fontSize: 13, marginBottom: 12, border: "1px solid #bbf7d0" }}>
+                ✓ Sent to {recipient}
+              </div>
+            )}
+            {sendError && (
+              <div className="sa-err" style={{ marginBottom: 12 }}>Email send failed: {sendError}</div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="sa-btn secondary" onClick={onClose} disabled={busy}>Close</button>
+              {!sent && (
+                <button className="sa-btn" onClick={onSend} disabled={busy}>
+                  {busy ? "Sending…" : `📧 Send to ${recipient}`}
+                </button>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

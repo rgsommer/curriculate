@@ -19,6 +19,12 @@ import express from "express";
 import crypto from "crypto";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
+import {
+  generateBriefing,
+  emailBriefing,
+  md2html,
+  parseRecsFromBriefing,
+} from "../jobs/stocksDailyBriefing.js";
 
 const router = express.Router();
 
@@ -396,6 +402,65 @@ router.get("/performance", requireStocksAuth, async (req, res) => {
   } catch (err) {
     console.error("stocks-advice performance error:", err);
     res.status(500).json({ error: `Internal: ${err?.message || err}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// POST /api/stocks-advice/send-briefing
+//
+// Generates the same briefing the daily cron would generate, optionally
+// emails it, and returns the rendered HTML + markdown for preview.
+//
+// Body: { send?: boolean, to?: string }
+//   send  — if true, also email it via Resend. Default false (preview only).
+//   to    — override recipient (defaults to the authenticated user's email).
+// ─────────────────────────────────────────────────────────────────────
+router.post("/send-briefing", requireStocksAuth, async (req, res) => {
+  try {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return res.status(503).json({ error: "ANTHROPIC_API_KEY not set on backend" });
+    }
+    const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
+    if (!profile || !profile.positions?.length) {
+      return res.status(400).json({ error: "No portfolio with positions found." });
+    }
+
+    const markdown = await generateBriefing(profile);
+    const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
+    const inner = md2html(markdown);
+    const html = `<!DOCTYPE html><html><body style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:680px;margin:24px auto;padding:24px;line-height:1.6;color:#0b1220;background:#fff">${inner}<hr style="border:none;border-top:1px solid #e4e8ef;margin:24px 0"><div style="font-size:11px;color:#7a8499">Research and education only. Not licensed investment advice.</div></body></html>`;
+
+    // Track recommendations on every generation (cron does this too)
+    const recs = parseRecsFromBriefing(markdown);
+    if (recs.length) {
+      StocksAdviceRec.insertMany(
+        recs.map((r) => ({
+          email: profile.email,
+          generatedAt: new Date(),
+          source: "ai",
+          ...r,
+          rationale: "On-demand briefing",
+        }))
+      ).catch((e) => console.warn("brief-recs save warning:", e?.message));
+    }
+
+    // Email it if requested
+    let sent = false;
+    let sendError = null;
+    if (req.body?.send) {
+      const to = (typeof req.body?.to === "string" && req.body.to.trim()) || profile.email;
+      try {
+        await emailBriefing({ to, subject, md: markdown });
+        sent = true;
+      } catch (e) {
+        sendError = e?.message || String(e);
+      }
+    }
+
+    res.json({ markdown, html, subject, sent, sendError, tracked: recs.length });
+  } catch (err) {
+    console.error("send-briefing error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
   }
 });
 

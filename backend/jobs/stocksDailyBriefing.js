@@ -24,7 +24,7 @@ import StocksAdviceRec from "../models/StocksAdviceRec.js";
 
 // Lightweight markdown → HTML for email bodies. Good enough for tables,
 // headings, bold, code, lists, links. (We don't import a heavier lib here.)
-function md2html(md) {
+export function md2html(md) {
   if (!md) return "";
   let h = md
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -64,7 +64,7 @@ function md2html(md) {
   return h;
 }
 
-function portfolioSummary(profile) {
+export function portfolioSummary(profile) {
   const fx = profile.fxUsdCad || 1.37;
   const agg = {};
   for (const p of profile.positions || []) {
@@ -116,7 +116,7 @@ Return ONLY the markdown briefing. No JSON, no wrapping prose.`;
 // Parse trade recommendations from the briefing text and save them for the
 // /performance scorecard. Same regex as routes/stocksAdvice.js — kept here
 // so this job stays self-contained.
-function parseRecsFromBriefing(text) {
+export function parseRecsFromBriefing(text) {
   const recs = [];
   const re = /Action:\s*(BUY|SELL|TRIM|HOLD)\s*(\d[\d,]*)?\s*(?:sh)?\s*([A-Z][A-Z0-9.\-]{0,15})\b[^.]*?(?:Entry:\s*\$?([\d.]+))?[^.]*?(?:Target:\s*\$?([\d.]+))?[^.]*?(?:Stop:\s*\$?([\d.]+))?[^.]*?(?:Horizon:\s*([^.\n]+))?/gi;
   let m;
@@ -146,7 +146,7 @@ function parseRecsFromBriefing(text) {
   return recs;
 }
 
-async function generateBriefing(profile) {
+export async function generateBriefing(profile) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
   const summary = portfolioSummary(profile);
   const prompt = buildBriefingPrompt(profile, summary);
@@ -180,7 +180,7 @@ async function generateBriefing(profile) {
   return md;
 }
 
-async function emailBriefing({ to, subject, md }) {
+export async function emailBriefing({ to, subject, md }) {
   if (!process.env.RESEND_API_KEY) throw new Error("RESEND_API_KEY not set");
   const inner = md2html(md);
   const html = `<!DOCTYPE html><html><body style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:680px;margin:24px auto;padding:24px;line-height:1.6;color:#0b1220;background:#fff">${inner}<hr style="border:none;border-top:1px solid #e4e8ef;margin:24px 0"><div style="font-size:11px;color:#7a8499">Research and education only. Not licensed investment advice.</div></body></html>`;
