@@ -3,42 +3,77 @@
 /**
  * Curriculate.net/stocks — Personal Stock Advisor
  *
- * Self-contained client-side app:
- *   • Email + 4-digit PIN signup/login (any user)
- *   • Risk tolerance picker
- *   • Multi-account portfolio CRUD
- *   • Rule-based advice engine
- *   • Yahoo Finance price-refresh attempt
- *
- * Data: localStorage today. To wire to MongoDB / shared auth, swap the
- *   loadAll/saveAll calls in the storage layer for fetches against
- *   /api/stocks/* (TODO — Phase 2).
+ * Auth: passwordless email-PIN (5-digit code via Resend → HMAC session token).
+ * Storage: MongoDB via the api.curriculate.net backend
+ *   GET  /api/stocks-portfolio     — load current user's portfolio
+ *   PUT  /api/stocks-portfolio     — upsert
+ *   DELETE /api/stocks-portfolio   — reset
+ * Only the {email, sessionToken} pair sits in localStorage so the user stays
+ * signed in across refreshes; the actual portfolio is server-side.
  */
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+
+const BACKEND_URL =
+  (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_BACKEND_URL) ||
+  "https://api.curriculate.net";
 
 // =============================================================================
-// Storage layer (localStorage; per-email scope)
+// Auth persistence (only stores { email, sessionToken } — never portfolio data)
 // =============================================================================
-const STORAGE_KEY = "stocksAdvisor.v1";
+const AUTH_KEY = "stocksAdvisor.auth.v1";
 
-function loadAll() {
-  if (typeof window === "undefined") return { users: {}, current: null };
+function loadAuth() {
+  if (typeof window === "undefined") return null;
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || { users: {}, current: null };
-  } catch {
-    return { users: {}, current: null };
-  }
+    const j = JSON.parse(localStorage.getItem(AUTH_KEY));
+    if (j && j.email && j.sessionToken) return j;
+  } catch {}
+  return null;
 }
-
-function saveAll(s) {
+function saveAuth(auth) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  if (auth) localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
+  else localStorage.removeItem(AUTH_KEY);
 }
 
-// Auth is server-side: PIN is emailed via /api/stocks/request-pin and
-// verified via /api/stocks/verify-pin. The server returns a 30-day
-// session token we keep in localStorage.
+// =============================================================================
+// API client
+// =============================================================================
+async function apiGetPortfolio(sessionToken) {
+  const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio`, {
+    headers: { Authorization: `Bearer ${sessionToken}` },
+  });
+  if (r.status === 401) throw new Error("UNAUTHORIZED");
+  if (!r.ok) throw new Error(`GET failed: ${r.status}`);
+  return r.json();
+}
+
+async function apiPutPortfolio(sessionToken, profile) {
+  const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+    body: JSON.stringify({
+      riskTolerance: profile.riskTolerance,
+      fxUsdCad: profile.fxUsdCad,
+      accounts: profile.accounts,
+      positions: profile.positions,
+    }),
+  });
+  if (r.status === 401) throw new Error("UNAUTHORIZED");
+  if (!r.ok) throw new Error(`PUT failed: ${r.status}`);
+  return r.json();
+}
+
+async function apiDeletePortfolio(sessionToken) {
+  const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${sessionToken}` },
+  });
+  if (r.status === 401) throw new Error("UNAUTHORIZED");
+  if (!r.ok) throw new Error(`DELETE failed: ${r.status}`);
+  return r.json();
+}
 
 // =============================================================================
 // Seed: Richard's portfolio (auto-loads on first sign-in for rgsommer@me.com)
@@ -199,93 +234,184 @@ function generateAdvice(profile) {
 // Component
 // =============================================================================
 export default function StocksAdvisorPage() {
-  const [state, setState] = useState({ users: {}, current: null });
+  // Auth: just { email, sessionToken } — kept in localStorage
+  const [auth, setAuth] = useState(null);
+  // Profile: { email, riskTolerance, fxUsdCad, accounts, positions } — server-backed
+  const [profile, setProfile] = useState(null);
   const [hydrated, setHydrated] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [syncStatus, setSyncStatus] = useState("idle"); // idle | saving | saved | error
   const [currentTab, setCurrentTab] = useState("dashboard");
   const [toast, setToast] = useState(null);
-  const [modalIdx, setModalIdx] = useState(undefined); // undefined = closed, null = new, number = edit
-
-  // Hydrate from localStorage on mount
-  useEffect(() => {
-    setState(loadAll());
-    setHydrated(true);
-  }, []);
-
-  const persist = (next) => {
-    setState(next);
-    saveAll(next);
-  };
-
-  const user = state.current ? state.users[state.current] : null;
+  const [modalIdx, setModalIdx] = useState(undefined);
+  const saveTimerRef = useRef(null);
+  const savedTimerRef = useRef(null);
 
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Avoid SSR flash — render nothing until localStorage hydrated
+  // ── Hydrate auth from localStorage ───────────────────────────────
+  useEffect(() => {
+    setAuth(loadAuth());
+    setHydrated(true);
+  }, []);
+
+  // ── Fetch profile when auth is established ───────────────────────
+  useEffect(() => {
+    if (!auth?.sessionToken) {
+      setProfile(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingProfile(true);
+    (async () => {
+      try {
+        let p = await apiGetPortfolio(auth.sessionToken);
+        // First-time sign-in seeding for the project author
+        if (
+          auth.email === "rgsommer@me.com" &&
+          (!p.positions || p.positions.length === 0) &&
+          !p.riskTolerance
+        ) {
+          p = {
+            ...p,
+            riskTolerance: RICHARD_PORTFOLIO.riskTolerance,
+            fxUsdCad: RICHARD_PORTFOLIO.fxUsdCad,
+            accounts: RICHARD_PORTFOLIO.accounts,
+            positions: RICHARD_PORTFOLIO.positions,
+          };
+          // Persist the seed back to the server immediately
+          await apiPutPortfolio(auth.sessionToken, p);
+        }
+        if (!cancelled) setProfile(p);
+      } catch (e) {
+        if (cancelled) return;
+        if (e?.message === "UNAUTHORIZED") {
+          // Session expired — bounce to auth
+          saveAuth(null);
+          setAuth(null);
+          showToast("Session expired — please sign in again");
+        } else {
+          showToast("Could not load portfolio: " + (e?.message || "network error"));
+        }
+      } finally {
+        if (!cancelled) setLoadingProfile(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [auth?.sessionToken, auth?.email]);
+
+  // ── Debounced server save on profile mutation ────────────────────
+  const updateProfile = (mut) => {
+    setProfile((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...mut(prev) };
+      // Schedule a save (debounced 600ms so rapid edits coalesce)
+      setSyncStatus("saving");
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      saveTimerRef.current = setTimeout(async () => {
+        try {
+          await apiPutPortfolio(auth.sessionToken, next);
+          setSyncStatus("saved");
+          savedTimerRef.current = setTimeout(() => setSyncStatus("idle"), 1500);
+        } catch (e) {
+          setSyncStatus("error");
+          if (e?.message === "UNAUTHORIZED") {
+            saveAuth(null);
+            setAuth(null);
+            showToast("Session expired — please sign in again");
+          } else {
+            showToast("Save failed: " + (e?.message || "network"));
+          }
+        }
+      }, 600);
+      return next;
+    });
+  };
+
+  // ── Render gates ─────────────────────────────────────────────────
   if (!hydrated) {
-    return <FullscreenShell><div style={{ padding: 40, color: "#8a99b3" }}>Loading…</div></FullscreenShell>;
+    return <FullscreenShell><div style={{ padding: 40, color: "#7a8499" }}>Loading…</div><StocksCSS /></FullscreenShell>;
   }
 
-  // === AUTH ===
-  if (!state.current) {
+  // AUTH
+  if (!auth) {
     return (
       <FullscreenShell>
         <AuthView
           onSuccess={(email, sessionToken) => {
-            const next = { ...state };
-            if (!next.users[email]) {
-              next.users[email] = {
-                email,
-                sessionToken,
-                riskTolerance: null,
-                positions: [],
-                accounts: [],
-                fxUsdCad: 1.372,
-                createdAt: Date.now(),
-              };
-              // Seed Richard's portfolio on first sign-in
-              if (email === "rgsommer@me.com") {
-                next.users[email] = {
-                  ...next.users[email],
-                  riskTolerance: RICHARD_PORTFOLIO.riskTolerance,
-                  accounts: RICHARD_PORTFOLIO.accounts,
-                  positions: RICHARD_PORTFOLIO.positions,
-                  fxUsdCad: RICHARD_PORTFOLIO.fxUsdCad,
-                };
-              }
-            } else {
-              next.users[email] = { ...next.users[email], sessionToken };
-            }
-            next.current = email;
-            persist(next);
+            const a = { email, sessionToken };
+            saveAuth(a);
+            setAuth(a);
           }}
         />
+        <StocksCSS />
       </FullscreenShell>
     );
   }
 
-  // === ONBOARDING ===
-  if (!user.riskTolerance) {
+  // Loading profile from server
+  if (loadingProfile || !profile) {
+    return (
+      <FullscreenShell>
+        <div className="sa-auth">
+          <div className="sa-auth-card">
+            <h1>Loading your portfolio…</h1>
+            <div className="sa-sub">Pulling latest from the server.</div>
+          </div>
+        </div>
+        <StocksCSS />
+      </FullscreenShell>
+    );
+  }
+
+  // ONBOARDING
+  if (!profile.riskTolerance) {
     return (
       <FullscreenShell>
         <OnboardingView
-          onPick={(v) => {
-            const next = { ...state };
-            next.users[next.current] = { ...next.users[next.current], riskTolerance: v };
-            persist(next);
-          }}
+          onPick={(v) => updateProfile(() => ({ riskTolerance: v }))}
         />
+        <StocksCSS />
       </FullscreenShell>
     );
   }
 
-  // === APP ===
-  const updateUser = (mut) => {
-    const next = { ...state };
-    next.users[next.current] = { ...next.users[next.current], ...mut(next.users[next.current]) };
-    persist(next);
+  // The subviews still take a `user` prop — pass `profile` as-is.
+  const user = profile;
+  const updateUser = updateProfile;
+
+  // Shared refresh-prices flow (used by Positions and Advice tabs)
+  const refreshPrices = async () => {
+    const tickers = [...new Set(user.positions.map((p) => p.ticker))];
+    if (tickers.length === 0) { showToast("No positions to refresh."); return { ok: 0, fail: 0 }; }
+    showToast(`Fetching ${tickers.length} tickers…`);
+    let ok = 0, fail = 0;
+    const updated = [...user.positions];
+    for (const t of tickers) {
+      try {
+        const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=1d`);
+        if (!r.ok) throw 0;
+        const j = await r.json();
+        const price = j?.chart?.result?.[0]?.meta?.regularMarketPrice;
+        const ccy = j?.chart?.result?.[0]?.meta?.currency;
+        if (price) {
+          updated.forEach((p, i) => {
+            if (p.ticker === t) {
+              if (ccy === "USD") updated[i] = { ...p, priceUsd: price };
+              else if (ccy === "CAD") updated[i] = { ...p, priceCad: price };
+            }
+          });
+          ok++;
+        } else fail++;
+      } catch { fail++; }
+    }
+    updateUser(() => ({ positions: updated }));
+    showToast(`Fetched ${ok}/${tickers.length}. ${fail ? `${fail} CORS-blocked — enter manually.` : ""}`);
+    return { ok, fail };
   };
 
   return (
@@ -318,10 +444,16 @@ export default function StocksAdvisorPage() {
                 : user.riskTolerance === "moderate" ? "amber"
                 : "green"
             }`}>{user.riskTolerance}</span>
+            <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 8, height: 14 }}>
+              {syncStatus === "saving" && "Saving…"}
+              {syncStatus === "saved" && "✓ Saved"}
+              {syncStatus === "error" && <span style={{ color: "var(--sa-red)" }}>⚠ Save failed</span>}
+              {syncStatus === "idle" && profile?.lastSyncedAt && `Synced ${new Date(profile.lastSyncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+            </div>
             <button
               className="sa-btn ghost"
               style={{ display: "block", marginTop: 8, padding: "4px 0" }}
-              onClick={() => persist({ ...state, current: null })}
+              onClick={() => { saveAuth(null); setAuth(null); setProfile(null); }}
             >Sign out</button>
           </div>
         </aside>
@@ -340,46 +472,24 @@ export default function StocksAdvisorPage() {
                 if (!name) return;
                 updateUser((u) => ({ accounts: [...u.accounts, { id: "acct" + Date.now(), name }] }));
               }}
-              onRefreshPrices={async () => {
-                const tickers = [...new Set(user.positions.map((p) => p.ticker))];
-                showToast(`Fetching ${tickers.length} tickers…`);
-                let ok = 0, fail = 0;
-                const updated = [...user.positions];
-                for (const t of tickers) {
-                  try {
-                    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=1d`);
-                    if (!r.ok) throw 0;
-                    const j = await r.json();
-                    const price = j?.chart?.result?.[0]?.meta?.regularMarketPrice;
-                    const ccy = j?.chart?.result?.[0]?.meta?.currency;
-                    if (price) {
-                      updated.forEach((p, i) => {
-                        if (p.ticker === t) {
-                          if (ccy === "USD") updated[i] = { ...p, priceUsd: price };
-                          else if (ccy === "CAD") updated[i] = { ...p, priceCad: price };
-                        }
-                      });
-                      ok++;
-                    } else fail++;
-                  } catch { fail++; }
-                }
-                updateUser(() => ({ positions: updated }));
-                showToast(`Fetched ${ok}/${tickers.length}. ${fail ? `${fail} failed (CORS) — manual entry.` : ""}`);
-              }}
+              onRefreshPrices={refreshPrices}
             />
           )}
-          {currentTab === "advice" && <AdviceView user={user} />}
+          {currentTab === "advice" && <AdviceView user={user} onRefresh={refreshPrices} />}
           {currentTab === "settings" && (
             <SettingsView
               user={user}
               onChangeRisk={(v) => { updateUser(() => ({ riskTolerance: v })); showToast("Risk tolerance updated"); }}
               onChangeFx={(v) => { updateUser(() => ({ fxUsdCad: v })); showToast("FX updated"); }}
-              onReset={() => {
-                if (confirm("Wipe all your positions and settings?")) {
-                  const next = { ...state };
-                  delete next.users[next.current];
-                  next.current = null;
-                  persist(next);
+              onReset={async () => {
+                if (!confirm("Wipe all your positions and settings on the server?")) return;
+                try {
+                  await apiDeletePortfolio(auth.sessionToken);
+                  saveAuth(null);
+                  setAuth(null);
+                  setProfile(null);
+                } catch (e) {
+                  showToast("Reset failed: " + (e?.message || "network"));
                 }
               }}
             />
@@ -691,12 +801,28 @@ function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPri
   );
 }
 
-function AdviceView({ user }) {
+function AdviceView({ user, onRefresh }) {
+  const [busy, setBusy] = useState(false);
+  // useMemo on `user` ensures advice recomputes immediately when prices update
   const advice = useMemo(() => generateAdvice(user), [user]);
+
+  const handleRefresh = async () => {
+    if (busy) return;
+    setBusy(true);
+    try { await onRefresh(); } finally { setBusy(false); }
+  };
+
   return (
     <div>
-      <h2>Advice</h2>
-      <div className="sa-breadcrumb">Rule-based signals from your current portfolio</div>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 4 }}>
+        <div>
+          <h2>Advice</h2>
+          <div className="sa-breadcrumb">Rule-based signals from your current portfolio</div>
+        </div>
+        <button className="sa-btn" onClick={handleRefresh} disabled={busy} title="Re-fetch prices from Yahoo Finance and re-run the advice engine">
+          {busy ? "Refreshing…" : "↻ Refresh prices + advice"}
+        </button>
+      </div>
       <div className="sa-disclaimer">⚠️ Research and education only. Not licensed investment advice. Decisions are yours.</div>
       {advice.map((c, i) => (
         <div key={i} className={`sa-advice-card ${c.sev === "danger" ? "danger" : c.sev === "warn" ? "warn" : c.sev === "good" ? "good" : ""}`}>
@@ -807,134 +933,328 @@ function FullscreenShell({ children }) {
 // Router config, so `<style jsx>` blocks are silently dropped at build.
 // =============================================================================
 const STOCKS_CSS = `
-      body.stocks-app-mode .site-header,
-      body.stocks-app-mode .site-footer { display: none !important; }
-      body.stocks-app-mode { background: #0b0f17; }
+/* ── Layout: hide site chrome, set app background ─────────────── */
+body.stocks-app-mode .site-header,
+body.stocks-app-mode .site-footer { display: none !important; }
+body.stocks-app-mode {
+  background:
+    radial-gradient(1100px 600px at 80% -10%, #eef2ff 0%, transparent 60%),
+    radial-gradient(900px 500px at -10% 80%, #ecfdf5 0%, transparent 55%),
+    #fafbff;
+  min-height: 100vh;
+}
 
-      .stocks-root {
-        --sa-bg:#0b0f17; --sa-panel:#121826; --sa-panel-2:#1a2236; --sa-border:#1f2940;
-        --sa-text:#e6ecf5; --sa-muted:#8a99b3; --sa-accent:#5b8def; --sa-accent-2:#7aa9ff;
-        --sa-green:#22c55e; --sa-red:#ef4444; --sa-amber:#f59e0b; --sa-purple:#a78bfa;
-        background: var(--sa-bg); color: var(--sa-text); min-height: 100vh;
-        font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
-        -webkit-font-smoothing: antialiased;
-      }
-      .stocks-root *, .stocks-root *::before, .stocks-root *::after { box-sizing: border-box; }
-      .stocks-root input, .stocks-root select, .stocks-root textarea {
-        font: inherit; color: inherit; background: var(--sa-panel-2);
-        border: 1px solid var(--sa-border); border-radius: 8px; padding: 9px 11px; outline: none; width: 100%;
-      }
-      .stocks-root input:focus, .stocks-root select:focus { border-color: var(--sa-accent); }
-      .stocks-root label { font-size: 12px; color: var(--sa-muted); display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
-      .stocks-root h2 { margin: 0 0 4px; font-size: 22px; letter-spacing: -.01em; color: var(--sa-text); }
-      .stocks-root h3 { color: var(--sa-text); margin: 0 0 12px; font-size: 14px; }
-      .sa-breadcrumb { color: var(--sa-muted); font-size: 13px; margin-bottom: 24px; }
+/* ── Root tokens (light, premium fintech) ─────────────────────── */
+.stocks-root {
+  --sa-bg: transparent;
+  --sa-panel: #ffffff;
+  --sa-panel-2: #f5f7fb;
+  --sa-panel-hover: #f0f3f9;
+  --sa-border: #e4e8ef;
+  --sa-border-strong: #cfd6e0;
+  --sa-text: #0b1220;
+  --sa-text-2: #475467;
+  --sa-muted: #7a8499;
+  --sa-accent: #0b1220;        /* primary buttons - rich black */
+  --sa-accent-2: #1d4ed8;      /* focus / link */
+  --sa-accent-soft: #eef2ff;
+  --sa-green: #059669;
+  --sa-green-soft: #ecfdf5;
+  --sa-red: #dc2626;
+  --sa-red-soft: #fef2f2;
+  --sa-amber: #b45309;
+  --sa-amber-soft: #fef3c7;
+  --sa-purple: #6d28d9;
+  --sa-purple-soft: #f5f3ff;
+  --sa-shadow-sm: 0 1px 2px rgba(11, 18, 32, 0.04);
+  --sa-shadow: 0 1px 3px rgba(11, 18, 32, 0.06), 0 8px 24px rgba(11, 18, 32, 0.04);
+  --sa-shadow-lg: 0 12px 40px rgba(11, 18, 32, 0.10), 0 2px 8px rgba(11, 18, 32, 0.06);
 
-      .sa-btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px;
-        background: var(--sa-accent); color: #fff; border: none; border-radius: 8px; font-weight: 600;
-        font: inherit; cursor: pointer; transition: .15s; }
-      .sa-btn:hover { background: var(--sa-accent-2); }
-      .sa-btn:disabled { opacity: .5; cursor: not-allowed; }
-      .sa-btn.secondary { background: transparent; border: 1px solid var(--sa-border); color: var(--sa-text); }
-      .sa-btn.secondary:hover { background: var(--sa-panel-2); }
-      .sa-btn.danger { background: var(--sa-red); }
-      .sa-btn.ghost { background: transparent; color: var(--sa-muted); padding: 6px 10px; }
-      .sa-btn.ghost:hover { color: var(--sa-text); }
+  color: var(--sa-text); min-height: 100vh;
+  font: 14px/1.55 var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  font-feature-settings: "cv02","cv03","cv04","cv11";
+}
+.stocks-root *, .stocks-root *::before, .stocks-root *::after { box-sizing: border-box; }
 
-      .sa-badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
-      .sa-badge.green { background: rgba(34,197,94,.15); color: var(--sa-green); }
-      .sa-badge.red { background: rgba(239,68,68,.15); color: var(--sa-red); }
-      .sa-badge.amber { background: rgba(245,158,11,.15); color: var(--sa-amber); }
-      .sa-badge.purple { background: rgba(167,139,250,.15); color: var(--sa-purple); }
-      .sa-muted { color: var(--sa-muted); }
+/* Form controls */
+.stocks-root input, .stocks-root select, .stocks-root textarea {
+  font: inherit; color: var(--sa-text); background: #fff;
+  border: 1.5px solid var(--sa-border); border-radius: 10px;
+  padding: 11px 13px; outline: none; width: 100%;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+.stocks-root input:hover, .stocks-root select:hover { border-color: var(--sa-border-strong); }
+.stocks-root input:focus, .stocks-root select:focus, .stocks-root textarea:focus {
+  border-color: var(--sa-accent-2); box-shadow: 0 0 0 4px rgba(29,78,216,.10);
+}
+.stocks-root label {
+  font-size: 11px; color: var(--sa-text-2); display: block; margin-bottom: 6px;
+  text-transform: uppercase; letter-spacing: .08em; font-weight: 600;
+}
+.stocks-root h1, .stocks-root h2, .stocks-root h3, .stocks-root h4 { color: var(--sa-text); }
+.stocks-root h2 { margin: 0 0 6px; font-size: 26px; letter-spacing: -.02em; font-weight: 700; }
+.stocks-root h3 { margin: 0 0 14px; font-size: 14px; font-weight: 600; letter-spacing: -.005em; }
+.sa-breadcrumb { color: var(--sa-muted); font-size: 13px; margin-bottom: 28px; }
 
-      .sa-card { background: var(--sa-panel); border: 1px solid var(--sa-border); border-radius: 12px; padding: 18px; }
+/* Buttons */
+.sa-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 11px 18px; background: var(--sa-accent); color: #fff;
+  border: none; border-radius: 10px; font: inherit; font-weight: 600; font-size: 14px;
+  cursor: pointer; transition: transform .12s ease, background .15s ease, box-shadow .15s ease;
+  box-shadow: var(--sa-shadow-sm);
+}
+.sa-btn:hover { background: #1a2438; transform: translateY(-1px); box-shadow: var(--sa-shadow); }
+.sa-btn:active { transform: translateY(0); }
+.sa-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+.sa-btn.secondary {
+  background: #fff; border: 1.5px solid var(--sa-border); color: var(--sa-text);
+}
+.sa-btn.secondary:hover { background: var(--sa-panel-2); border-color: var(--sa-border-strong); }
+.sa-btn.danger { background: var(--sa-red); }
+.sa-btn.danger:hover { background: #b91c1c; }
+.sa-btn.ghost {
+  background: transparent; color: var(--sa-muted); padding: 6px 10px;
+  font-weight: 500; box-shadow: none;
+}
+.sa-btn.ghost:hover { color: var(--sa-text); background: var(--sa-panel-2); transform: none; }
 
-      .sa-auth { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-      .sa-auth-card { width: 100%; max-width: 420px; background: var(--sa-panel); border: 1px solid var(--sa-border);
-        border-radius: 12px; padding: 32px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
-      .sa-auth-card h1 { margin: 0 0 4px; font-size: 24px; color: var(--sa-text); }
-      .sa-sub { color: var(--sa-muted); margin-bottom: 24px; font-size: 13px; }
-      .sa-row { margin-bottom: 14px; }
-      .sa-pin { display: flex; gap: 8px; justify-content: space-between; }
-      .sa-pin input { text-align: center; font-size: 20px; font-weight: 600; letter-spacing: .1em; width: 48px; height: 54px; }
-      .sa-err { background: rgba(239,68,68,.1); color: var(--sa-red); padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
-      .sa-switch { text-align: center; margin-top: 14px; font-size: 13px; color: var(--sa-muted); }
+/* Badges */
+.sa-badge {
+  display: inline-block; padding: 3px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; letter-spacing: .02em; text-transform: capitalize;
+}
+.sa-badge.green { background: var(--sa-green-soft); color: var(--sa-green); }
+.sa-badge.red { background: var(--sa-red-soft); color: var(--sa-red); }
+.sa-badge.amber { background: var(--sa-amber-soft); color: var(--sa-amber); }
+.sa-badge.purple { background: var(--sa-purple-soft); color: var(--sa-purple); }
+.sa-muted { color: var(--sa-muted); }
 
-      .sa-app { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
-      .sa-side { background: var(--sa-panel); border-right: 1px solid var(--sa-border); padding: 24px 16px;
-        display: flex; flex-direction: column; gap: 6px; }
-      .sa-brand { font-weight: 700; font-size: 18px; letter-spacing: -.01em; margin-bottom: 24px; padding: 0 8px; }
-      .sa-brand span { color: var(--sa-accent-2); }
-      .sa-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
-      .sa-nav button { display: flex; align-items: center; gap: 10px; padding: 9px 12px;
-        background: transparent; border: none; border-radius: 8px; color: var(--sa-muted);
-        text-align: left; font: inherit; font-weight: 500; cursor: pointer; width: 100%; }
-      .sa-nav button:hover { background: var(--sa-panel-2); color: var(--sa-text); }
-      .sa-nav button.active { background: var(--sa-panel-2); color: var(--sa-text); }
-      .sa-nav button .dot { width: 6px; height: 6px; border-radius: 3px; background: var(--sa-accent); }
-      .sa-user { font-size: 12px; color: var(--sa-muted); padding: 12px 8px; border-top: 1px solid var(--sa-border); }
-      .sa-main { padding: 28px 36px; overflow: auto; }
-      @media (max-width: 980px) { .sa-app { grid-template-columns: 1fr; } .sa-side { display: none; } }
+/* Cards */
+.sa-card {
+  background: var(--sa-panel); border: 1px solid var(--sa-border);
+  border-radius: 14px; padding: 22px; box-shadow: var(--sa-shadow-sm);
+}
 
-      .sa-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 24px; }
-      .sa-stat { background: var(--sa-panel); border: 1px solid var(--sa-border); border-radius: 12px; padding: 16px; }
-      .sa-stat .label { font-size: 11px; color: var(--sa-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
-      .sa-stat .value { font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+/* ── Auth views ────────────────────────────────────────────────── */
+.sa-auth {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.sa-auth-card {
+  width: 100%; max-width: 440px; background: var(--sa-panel);
+  border: 1px solid var(--sa-border); border-radius: 18px;
+  padding: 40px 36px; box-shadow: var(--sa-shadow-lg);
+}
+.sa-auth-card h1 {
+  margin: 0 0 6px; font-size: 28px; font-weight: 700; letter-spacing: -.02em;
+}
+.sa-sub { color: var(--sa-text-2); margin-bottom: 28px; font-size: 14px; line-height: 1.55; }
+.sa-row { margin-bottom: 18px; }
+.sa-pin {
+  display: flex; gap: 10px; justify-content: space-between;
+}
+.sa-pin input {
+  text-align: center; font-size: 24px; font-weight: 700;
+  font-feature-settings: "tnum"; letter-spacing: 0;
+  width: 60px; height: 64px; padding: 0; border-radius: 12px;
+}
+.sa-err {
+  background: var(--sa-red-soft); color: var(--sa-red);
+  padding: 12px 14px; border-radius: 10px; font-size: 13px; line-height: 1.45;
+  margin-bottom: 16px; border: 1px solid #fecaca;
+}
+.sa-switch {
+  text-align: center; margin-top: 18px; font-size: 13px; color: var(--sa-muted);
+}
 
-      .sa-grid-2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; }
-      @media (max-width: 980px) { .sa-grid-2 { grid-template-columns: 1fr; } }
+/* ── App shell ─────────────────────────────────────────────────── */
+.sa-app {
+  display: grid; grid-template-columns: 240px 1fr; min-height: 100vh;
+}
+.sa-side {
+  background: rgba(255,255,255,.7); backdrop-filter: blur(8px);
+  border-right: 1px solid var(--sa-border); padding: 28px 18px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.sa-brand {
+  font-weight: 800; font-size: 18px; letter-spacing: -.02em;
+  margin-bottom: 28px; padding: 0 8px; color: var(--sa-text);
+}
+.sa-brand span { color: var(--sa-accent-2); font-weight: 700; }
+.sa-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.sa-nav button {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  background: transparent; border: none; border-radius: 10px;
+  color: var(--sa-text-2); text-align: left; font: inherit; font-size: 14px;
+  font-weight: 500; cursor: pointer; width: 100%;
+  transition: background .15s, color .15s;
+}
+.sa-nav button:hover { background: var(--sa-panel-2); color: var(--sa-text); }
+.sa-nav button.active {
+  background: var(--sa-panel-2); color: var(--sa-text); font-weight: 600;
+}
+.sa-nav button .dot {
+  width: 6px; height: 6px; border-radius: 3px; background: var(--sa-border-strong);
+}
+.sa-nav button.active .dot { background: var(--sa-accent-2); }
+.sa-user {
+  font-size: 12px; color: var(--sa-muted); padding: 14px 8px;
+  border-top: 1px solid var(--sa-border); line-height: 1.6;
+}
+.sa-main { padding: 36px 44px; overflow: auto; }
+@media (max-width: 980px) {
+  .sa-app { grid-template-columns: 1fr; }
+  .sa-side { display: none; }
+  .sa-main { padding: 24px 18px; }
+}
 
-      .sa-alloc-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--sa-border); }
-      .sa-alloc-row:last-child { border-bottom: none; }
-      .sa-alloc-row .tk { flex: 0 0 90px; font-weight: 600; }
-      .sa-alloc-row .bar { flex: 1; height: 6px; background: var(--sa-panel-2); border-radius: 3px; overflow: hidden; }
-      .sa-alloc-row .bar > div { height: 100%; background: var(--sa-accent); border-radius: 3px; }
-      .sa-alloc-row .pct { flex: 0 0 60px; text-align: right; color: var(--sa-muted); font-variant-numeric: tabular-nums; }
+/* ── Dashboard ────────────────────────────────────────────────── */
+.sa-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px; margin-bottom: 28px;
+}
+.sa-stat {
+  background: var(--sa-panel); border: 1px solid var(--sa-border);
+  border-radius: 14px; padding: 18px 20px; box-shadow: var(--sa-shadow-sm);
+}
+.sa-stat .label {
+  font-size: 11px; color: var(--sa-muted);
+  text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; font-weight: 600;
+}
+.sa-stat .value {
+  font-size: 24px; font-weight: 700; letter-spacing: -.015em;
+  font-feature-settings: "tnum"; color: var(--sa-text);
+}
 
-      .sa-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-      .sa-table th, .sa-table td { padding: 10px 8px; text-align: right; border-bottom: 1px solid var(--sa-border); }
-      .sa-table th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--sa-muted); font-weight: 500; }
-      .sa-table th:first-child, .sa-table td:first-child { text-align: left; }
-      .sa-table tr:hover td { background: var(--sa-panel-2); }
-      .sa-table td.tk { font-weight: 600; }
-      .sa-table td.tk .sub { display: block; font-size: 11px; color: var(--sa-muted); font-weight: 400; }
+.sa-grid-2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; }
+@media (max-width: 980px) { .sa-grid-2 { grid-template-columns: 1fr; } }
 
-      .sa-advice-card { background: var(--sa-panel); border: 1px solid var(--sa-border); border-radius: 12px;
-        padding: 20px; margin-bottom: 14px; border-left: 3px solid var(--sa-accent); }
-      .sa-advice-card.warn { border-left-color: var(--sa-amber); }
-      .sa-advice-card.danger { border-left-color: var(--sa-red); }
-      .sa-advice-card.good { border-left-color: var(--sa-green); }
-      .sa-advice-card h3 { margin: 0 0 8px; font-size: 15px; }
-      .sa-advice-card p { margin: 0 0 8px; line-height: 1.55; }
-      .sa-advice-card .meta { font-size: 12px; color: var(--sa-muted); }
+/* Allocation rows */
+.sa-alloc-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--sa-border);
+}
+.sa-alloc-row:last-child { border-bottom: none; }
+.sa-alloc-row .tk { flex: 0 0 90px; font-weight: 600; font-size: 13px; }
+.sa-alloc-row .bar {
+  flex: 1; height: 8px; background: var(--sa-panel-2);
+  border-radius: 999px; overflow: hidden;
+}
+.sa-alloc-row .bar > div {
+  height: 100%; background: linear-gradient(90deg, var(--sa-accent-2), #60a5fa);
+  border-radius: 999px; transition: width .4s ease;
+}
+.sa-alloc-row .pct {
+  flex: 0 0 60px; text-align: right; color: var(--sa-text-2);
+  font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 500;
+}
 
-      .sa-disclaimer { font-size: 11px; color: var(--sa-muted); background: var(--sa-panel-2);
-        padding: 10px 14px; border-radius: 8px; margin-bottom: 18px; line-height: 1.5; }
+/* Tables */
+.sa-table {
+  width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums;
+}
+.sa-table th, .sa-table td {
+  padding: 14px 14px; text-align: right; border-bottom: 1px solid var(--sa-border);
+}
+.sa-table tr:last-child td { border-bottom: none; }
+.sa-table th {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--sa-muted); font-weight: 600; background: var(--sa-panel-2);
+}
+.sa-table th:first-child, .sa-table td:first-child {
+  text-align: left; padding-left: 22px;
+}
+.sa-table th:last-child, .sa-table td:last-child { padding-right: 22px; }
+.sa-table tr:hover td { background: rgba(245,247,251,.5); }
+.sa-table td.tk { font-weight: 600; color: var(--sa-text); }
+.sa-table td.tk .sub {
+  display: block; font-size: 11px; color: var(--sa-muted);
+  font-weight: 400; margin-top: 2px;
+}
 
-      .sa-risk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-      .sa-risk-card { padding: 14px; border: 1px solid var(--sa-border); border-radius: 10px; cursor: pointer; transition: .15s; }
-      .sa-risk-card:hover { border-color: var(--sa-accent); }
-      .sa-risk-card.sel { border-color: var(--sa-accent); background: rgba(91,141,239,.08); }
-      .sa-risk-card h4 { margin: 0 0 4px; font-size: 14px; color: var(--sa-text); }
-      .sa-risk-card p { margin: 0; font-size: 12px; color: var(--sa-muted); line-height: 1.4; }
+/* Advice */
+.sa-advice-card {
+  background: var(--sa-panel); border: 1px solid var(--sa-border);
+  border-radius: 14px; padding: 22px 24px; margin-bottom: 14px;
+  border-left: 4px solid var(--sa-accent-2); box-shadow: var(--sa-shadow-sm);
+}
+.sa-advice-card.warn { border-left-color: var(--sa-amber); background: linear-gradient(to right, #fffbeb 0%, #fff 8%); }
+.sa-advice-card.danger { border-left-color: var(--sa-red); background: linear-gradient(to right, #fef2f2 0%, #fff 8%); }
+.sa-advice-card.good { border-left-color: var(--sa-green); background: linear-gradient(to right, #ecfdf5 0%, #fff 8%); }
+.sa-advice-card h3 { margin: 0 0 8px; font-size: 16px; font-weight: 600; line-height: 1.4; }
+.sa-advice-card p { margin: 0 0 10px; line-height: 1.6; color: var(--sa-text-2); }
+.sa-advice-card .meta {
+  font-size: 12px; color: var(--sa-muted); margin-top: 8px;
+  padding-top: 8px; border-top: 1px dashed var(--sa-border);
+}
 
-      .sa-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex;
-        align-items: center; justify-content: center; padding: 24px; z-index: 100; }
-      .sa-modal { background: var(--sa-panel); border: 1px solid var(--sa-border); border-radius: 12px;
-        padding: 24px; width: 100%; max-width: 480px; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
-      .sa-modal h3 { margin: 0 0 16px; }
-      .sa-modal-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-      .sa-modal-row.three { grid-template-columns: 1fr 1fr 1fr; }
+.sa-disclaimer {
+  font-size: 11.5px; color: var(--sa-text-2); background: var(--sa-panel-2);
+  padding: 12px 16px; border-radius: 10px; margin-bottom: 20px;
+  line-height: 1.55; border: 1px solid var(--sa-border);
+}
 
-      .sa-empty { text-align: center; padding: 40px 20px; color: var(--sa-muted); }
-      .sa-empty .sa-btn { margin-top: 14px; }
+/* Risk-tolerance picker */
+.sa-risk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.sa-risk-card {
+  padding: 18px; border: 1.5px solid var(--sa-border); border-radius: 12px;
+  cursor: pointer; transition: all .15s ease; background: #fff;
+}
+.sa-risk-card:hover {
+  border-color: var(--sa-accent-2); transform: translateY(-1px);
+  box-shadow: var(--sa-shadow);
+}
+.sa-risk-card.sel {
+  border-color: var(--sa-accent-2); background: var(--sa-accent-soft);
+  box-shadow: 0 0 0 4px rgba(29,78,216,.08);
+}
+.sa-risk-card h4 {
+  margin: 0 0 4px; font-size: 14px; font-weight: 600; color: var(--sa-text);
+}
+.sa-risk-card p { margin: 0; font-size: 12.5px; color: var(--sa-text-2); line-height: 1.5; }
 
-      .sa-toast { position: fixed; bottom: 24px; right: 24px; background: var(--sa-panel);
-        border: 1px solid var(--sa-border); border-left: 3px solid var(--sa-green);
-        padding: 12px 18px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.4);
-        z-index: 200; animation: sa-in .25s; }
-      @keyframes sa-in { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+/* Modal */
+.sa-modal-bg {
+  position: fixed; inset: 0; background: rgba(11,18,32,.5);
+  backdrop-filter: blur(4px); display: flex; align-items: center;
+  justify-content: center; padding: 24px; z-index: 100;
+  animation: sa-fade .15s ease;
+}
+.sa-modal {
+  background: var(--sa-panel); border: 1px solid var(--sa-border);
+  border-radius: 18px; padding: 28px; width: 100%; max-width: 500px;
+  box-shadow: var(--sa-shadow-lg); animation: sa-pop .2s ease;
+}
+.sa-modal h3 { margin: 0 0 20px; font-size: 17px; font-weight: 600; }
+.sa-modal-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;
+}
+.sa-modal-row.three { grid-template-columns: 1fr 1fr 1fr; }
+
+.sa-empty {
+  text-align: center; padding: 48px 24px; color: var(--sa-muted);
+}
+.sa-empty .sa-btn { margin-top: 18px; }
+
+.sa-toast {
+  position: fixed; bottom: 28px; right: 28px; background: var(--sa-text);
+  color: #fff; border-radius: 10px; padding: 12px 18px;
+  font-size: 13.5px; font-weight: 500; box-shadow: var(--sa-shadow-lg);
+  z-index: 200; animation: sa-in .25s ease;
+  max-width: 360px;
+}
+
+@keyframes sa-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes sa-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sa-pop {
+  from { transform: translateY(8px) scale(.98); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
 `;
 
 function StocksCSS() {

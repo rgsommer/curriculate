@@ -119,6 +119,7 @@ import classRosterRouter from "./routes/classRoster.js";
 import studentScavengerProgressRouter from "./routes/studentScavengerProgress.js";
 import studentContactRouter from "./routes/studentContact.js";
 import studentProgressRouter from "./routes/studentProgress.js";
+import stocksPortfolioRouter from "./routes/stocksPortfolio.js";
 
 function renderEmailTemplate(str, vars) {
   let out = String(str || "");
@@ -506,6 +507,7 @@ app.use("/class-roster", classRosterRouter);
 app.use("/student-scavenger-progress", studentScavengerProgressRouter);
 app.use("/student-contact", studentContactRouter);
 app.use("/student-progress", studentProgressRouter);
+app.use("/api/stocks-portfolio", stocksPortfolioRouter);
 
 // Fieldday
 app.use("/fieldday/api", fielddayRouter);
