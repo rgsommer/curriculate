@@ -688,6 +688,7 @@ export default function StocksAdvisorPage() {
               ["positions", "Positions"],
               ["advice", "Advice"],
               ["performance", "Performance"],
+              ["trades", "Trades"],
               ["settings", "Settings"],
             ].map(([k, label]) => (
               <button
@@ -734,6 +735,7 @@ export default function StocksAdvisorPage() {
               }}
               onRecordTrade={() => setTradeModalOpen(true)}
               onEmailBriefing={previewBriefing}
+              onEditPosition={(idx) => setModalIdx(idx)}
             />
           )}
           {currentTab === "positions" && (
@@ -769,6 +771,7 @@ export default function StocksAdvisorPage() {
             />
           )}
           {currentTab === "performance" && <PerformanceView sessionToken={auth.sessionToken} />}
+          {currentTab === "trades" && <TradesView sessionToken={auth.sessionToken} />}
           {currentTab === "settings" && (
             <SettingsView
               user={user}
@@ -1022,7 +1025,7 @@ function OnboardingView({ onPick }) {
   );
 }
 
-function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEmailBriefing }) {
+function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEmailBriefing, onEditPosition }) {
   const [busyRefresh, setBusyRefresh] = useState(false);
   const [busyAi, setBusyAi] = useState(false);
   const fx = user.fxUsdCad || 1.37;
@@ -1092,7 +1095,7 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
         <div className="sa-stat"><div className="label">Risk profile</div><div className="value" style={{ textTransform: "capitalize" }}>{user.riskTolerance}</div></div>
       </div>
       {/* Holdings breakdown — one row per ticker, split by USD-sub vs CAD-sub */}
-      <HoldingsBreakdownCard user={user} fx={fx} />
+      <HoldingsBreakdownCard user={user} fx={fx} onEditPosition={onEditPosition} />
 
       {/* Per-ticker performance — multi-line chart, range tabs */}
       <TickerPerformanceCard
@@ -1634,6 +1637,9 @@ function TradeModal({ user, onClose, onSubmit, prefill }) {
   const [buyShares, setBuyShares] = useState(prefill && prefill.side === "BUY" && prefill.shares ? String(prefill.shares) : "");
   const [buyPrice, setBuyPrice] = useState(prefill && prefill.side === "BUY" && prefill.entryLow ? String(prefill.entryLow) : "");
   const [buyCcy, setBuyCcy] = useState(prefill && prefill.side === "BUY" ? (prefill.currency || "USD") : "CAD");
+  // Sub-account the BUY settles through. Defaults to ticker's market currency
+  // (no FX). Flip to the other when buying USD stock from CAD cash etc.
+  const [buySubCcy, setBuySubCcy] = useState(prefill && prefill.side === "BUY" ? (prefill.currency || "USD") : "CAD");
 
   // Cash leg state
   const [cashDirection, setCashDirection] = useState("DEPOSIT"); // DEPOSIT | WITHDRAW
@@ -1663,17 +1669,21 @@ function TradeModal({ user, onClose, onSubmit, prefill }) {
   // Tickers visible in the user's portfolio for BUY autocomplete suggestion
   const ownedTickers = [...new Set(user.positions.map(p => p.ticker))];
 
-  // Aggregate holdings in the currently-selected account, by (ticker, ccy).
-  // The SELL dropdown uses this so the user can only sell things they own,
-  // and we can show "X available" + last known price as a fill-price hint.
+  // SELL sub-account inherited from the chosen holding (where it lives)
+  const [sellSubCcy, setSellSubCcy] = useState("USD");
+
+  // Aggregate holdings by (ticker, market, sub) so each lot is selectable.
+  // A USD stock parked in the CAD sub is a separate dropdown option from the
+  // same stock in the USD sub.
   const accountHoldings = useMemo(() => {
     const m = new Map();
     for (const p of user.positions) {
       if (p.acct !== account) continue;
-      const key = `${p.ticker}|${p.ccy}`;
+      const sub = p.subCcy || p.ccy;
+      const key = `${p.ticker}|${p.ccy}|${sub}`;
       const last = p.ccy === "USD" ? p.priceUsd : p.priceCad;
       if (!m.has(key)) {
-        m.set(key, { ticker: p.ticker, ccy: p.ccy, qty: 0, lastPrice: last, name: p.name || "" });
+        m.set(key, { ticker: p.ticker, ccy: p.ccy, subCcy: sub, qty: 0, lastPrice: last, name: p.name || "" });
       }
       const h = m.get(key);
       h.qty += p.qty || 0;
@@ -1682,30 +1692,30 @@ function TradeModal({ user, onClose, onSubmit, prefill }) {
     return [...m.values()].sort((a, b) => (b.qty * (b.lastPrice || 0)) - (a.qty * (a.lastPrice || 0)));
   }, [user.positions, account]);
 
-  // When account changes (or when selecting an option), reset sell fields if
-  // current selection isn't valid in the new account.
+  // Reset sell fields when account changes if current selection isn't valid
   useEffect(() => {
     if ((mode === "sell" || mode === "swap") && sellTicker) {
-      const match = accountHoldings.find(h => h.ticker === sellTicker && h.ccy === sellCcy);
+      const match = accountHoldings.find(h => h.ticker === sellTicker && h.ccy === sellCcy && (h.subCcy || h.ccy) === sellSubCcy);
       if (!match) {
-        setSellTicker(""); setSellShares(""); setSellPrice(""); setSellCcy("USD");
+        setSellTicker(""); setSellShares(""); setSellPrice(""); setSellCcy("USD"); setSellSubCcy("USD");
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account]);
 
-  const selectedHolding = accountHoldings.find(h => h.ticker === sellTicker && h.ccy === sellCcy) || null;
+  const selectedHolding = accountHoldings.find(h => h.ticker === sellTicker && h.ccy === sellCcy && (h.subCcy || h.ccy) === sellSubCcy) || null;
   const selectSellHolding = (key) => {
     if (!key) {
-      setSellTicker(""); setSellShares(""); setSellPrice(""); setSellCcy("USD");
+      setSellTicker(""); setSellShares(""); setSellPrice(""); setSellCcy("USD"); setSellSubCcy("USD");
       return;
     }
-    const [ticker, ccy] = key.split("|");
-    const h = accountHoldings.find(x => x.ticker === ticker && x.ccy === ccy);
+    const [ticker, ccy, sub] = key.split("|");
+    const h = accountHoldings.find(x => x.ticker === ticker && x.ccy === ccy && x.subCcy === sub);
     if (!h) return;
     setSellTicker(h.ticker);
     setSellCcy(h.ccy);
-    setSellShares(String(h.qty));         // default to selling the whole position; user adjusts down
+    setSellSubCcy(h.subCcy);
+    setSellShares(String(h.qty));
     setSellPrice(h.lastPrice ? String(h.lastPrice) : "");
   };
 
@@ -1722,12 +1732,22 @@ function TradeModal({ user, onClose, onSubmit, prefill }) {
       if (mode === "buy" || mode === "swap") {
         const s = parseFloat(buyShares); const p = parseFloat(buyPrice);
         if (!buyTicker || !s || s <= 0 || !(p >= 0)) return setErr("BUY leg needs ticker, shares > 0, and a price.");
-        legs.push({ side: "BUY", ticker: buyTicker.trim().toUpperCase(), shares: s, price: p, currency: buyCcy });
+        legs.push({
+          side: "BUY",
+          ticker: buyTicker.trim().toUpperCase().replace(/\.+$/, ""),
+          shares: s, price: p, currency: buyCcy,
+          settleCcy: buySubCcy, // which cash bucket settles + which sub the position parks in
+        });
       }
       if (mode === "sell" || mode === "swap") {
         const s = parseFloat(sellShares); const p = parseFloat(sellPrice);
         if (!sellTicker || !s || s <= 0 || !(p >= 0)) return setErr("SELL leg needs ticker, shares > 0, and a price.");
-        legs.unshift({ side: "SELL", ticker: sellTicker.trim().toUpperCase(), shares: s, price: p, currency: sellCcy });
+        legs.unshift({
+          side: "SELL",
+          ticker: sellTicker.trim().toUpperCase().replace(/\.+$/, ""),
+          shares: s, price: p, currency: sellCcy,
+          settleCcy: sellSubCcy, // proceeds credit the same sub the position lives in
+        });
       }
     }
 
@@ -1790,13 +1810,16 @@ function TradeModal({ user, onClose, onSubmit, prefill }) {
                     No positions in this account.
                   </div>
                 ) : (
-                  <select value={sellTicker && sellCcy ? `${sellTicker}|${sellCcy}` : ""} onChange={(e) => selectSellHolding(e.target.value)}>
+                  <select value={sellTicker && sellCcy && sellSubCcy ? `${sellTicker}|${sellCcy}|${sellSubCcy}` : ""} onChange={(e) => selectSellHolding(e.target.value)}>
                     <option value="">— pick a holding —</option>
-                    {accountHoldings.map((h) => (
-                      <option key={`${h.ticker}|${h.ccy}`} value={`${h.ticker}|${h.ccy}`}>
-                        {h.ticker} ({h.ccy}) — {h.qty.toLocaleString()} sh{h.lastPrice ? ` · last $${h.lastPrice.toFixed(2)}` : ""}
-                      </option>
-                    ))}
+                    {accountHoldings.map((h) => {
+                      const subLabel = h.ccy === h.subCcy ? h.ccy : `${h.ccy} stock, ${h.subCcy} sub`;
+                      return (
+                        <option key={`${h.ticker}|${h.ccy}|${h.subCcy}`} value={`${h.ticker}|${h.ccy}|${h.subCcy}`}>
+                          {h.ticker} ({subLabel}) — {h.qty.toLocaleString()} sh{h.lastPrice ? ` · last $${h.lastPrice.toFixed(2)}` : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                 )}
               </div>
@@ -1847,15 +1870,33 @@ function TradeModal({ user, onClose, onSubmit, prefill }) {
                 <input value={buyTicker} onChange={(e) => setBuyTicker(e.target.value)} placeholder="ENB" list="owned-tickers" />
               </div>
               <div>
-                <label>Currency</label>
-                <select value={buyCcy} onChange={(e) => setBuyCcy(e.target.value)}>
-                  <option value="USD">USD</option><option value="CAD">CAD</option>
+                <label>Market (ticker currency)</label>
+                <select value={buyCcy} onChange={(e) => {
+                  setBuyCcy(e.target.value);
+                  setBuySubCcy(e.target.value); // default sub = market when user changes market
+                }}>
+                  <option value="USD">USD (NYSE/NASDAQ)</option>
+                  <option value="CAD">CAD (TSX)</option>
                 </select>
               </div>
             </div>
             <div className="sa-modal-row">
               <div><label>Shares</label><input type="number" step="any" value={buyShares} onChange={(e) => setBuyShares(e.target.value)} placeholder="40" /></div>
-              <div><label>Fill price</label><input type="number" step="any" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} placeholder="75.50" /></div>
+              <div><label>Fill price ({buyCcy})</label><input type="number" step="any" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} placeholder="75.50" /></div>
+            </div>
+            <div className="sa-modal-row" style={{ gridTemplateColumns: "1fr" }}>
+              <div>
+                <label>Settle from cash bucket</label>
+                <select value={buySubCcy} onChange={(e) => setBuySubCcy(e.target.value)}>
+                  <option value="USD">USD sub-account cash</option>
+                  <option value="CAD">CAD sub-account cash</option>
+                </select>
+                {buySubCcy !== buyCcy && (
+                  <div style={{ fontSize: 11, color: "var(--sa-amber)", marginTop: 6, padding: 8, background: "var(--sa-amber-soft)", borderRadius: 6, border: "1px solid #fde68a" }}>
+                    ⚠ Cross-currency: buying {buyCcy} stock with {buySubCcy} cash triggers FX conversion (~{(user.fxSpreadPct ?? 1.5).toFixed(2)}% spread). The position will be parked in the {buySubCcy} sub.
+                  </div>
+                )}
+              </div>
             </div>
             {buyCadVal > 0 && (
               <div style={{ fontSize: 12, color: "var(--sa-text-2)", marginTop: 4 }}>
@@ -2103,14 +2144,18 @@ function PerformanceView({ sessionToken }) {
 // the position is parked in (USD-sub vs CAD-sub). Shows total CAD equivalent.
 // Plus a CASH row at the bottom. Plus totals.
 // =============================================================================
-function HoldingsBreakdownCard({ user, fx }) {
-  // Group by ticker; for each ticker accumulate qty + value in USD-sub and
-  // CAD-sub. A position's "effective sub" = subCcy || ccy.
+function HoldingsBreakdownCard({ user, fx, onEditPosition }) {
+  const [expandedTicker, setExpandedTicker] = useState(null);
+
+  // Group by ticker; track the actual position indices that compose each
+  // ticker so we can show per-lot detail and route Edit clicks back to the
+  // correct row in user.positions.
   const byTicker = new Map();
-  for (const p of user.positions || []) {
+  (user.positions || []).forEach((p, posIdx) => {
     if (!byTicker.has(p.ticker)) {
       byTicker.set(p.ticker, {
         ticker: p.ticker, qtyUsdSub: 0, valueUsd: 0, qtyCadSub: 0, valueCad: 0,
+        lots: [], // [{ posIdx, p }]
       });
     }
     const row = byTicker.get(p.ticker);
@@ -2123,7 +2168,8 @@ function HoldingsBreakdownCard({ user, fx }) {
       row.qtyCadSub += qty;
       row.valueCad += (p.priceCad || 0) * qty;
     }
-  }
+    row.lots.push({ posIdx, p });
+  });
   const rows = [...byTicker.values()]
     .map(r => ({ ...r, totalCad: r.valueCad + r.valueUsd * fx }))
     .sort((a, b) => b.totalCad - a.totalCad);
@@ -2172,13 +2218,17 @@ function HoldingsBreakdownCard({ user, fx }) {
               <tr><td colSpan={6} style={{ ...recCellLeft, color: "var(--sa-muted)", padding: 28, textAlign: "center" }}>
                 No positions yet. Add some on the Positions tab.
               </td></tr>
-            ) : rows.map((r) => {
-              // Flag if this ticker is held in BOTH subs (often a candidate
-              // for consolidation to avoid FX friction on sale).
+            ) : rows.flatMap((r) => {
               const split = r.qtyUsdSub > 0 && r.qtyCadSub > 0;
-              return (
-                <tr key={r.ticker} style={{ borderTop: "1px solid var(--sa-border)" }}>
+              const isExpanded = expandedTicker === r.ticker;
+              const rowEls = [
+                <tr
+                  key={r.ticker}
+                  onClick={() => setExpandedTicker(isExpanded ? null : r.ticker)}
+                  style={{ borderTop: "1px solid var(--sa-border)", cursor: "pointer", background: isExpanded ? "rgba(91,141,239,.05)" : "transparent" }}
+                >
                   <td style={{ ...recCellLeft, fontWeight: 600 }}>
+                    <span style={{ display: "inline-block", width: 14, color: "var(--sa-muted)", fontSize: 10, transform: isExpanded ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▶</span>
                     {r.ticker}
                     {split && <span title="Held in both USD and CAD subs — consider consolidating to avoid FX friction" style={{ marginLeft: 6, padding: "1px 6px", fontSize: 10, fontWeight: 700, background: "var(--sa-amber-soft)", color: "var(--sa-amber)", borderRadius: 4 }}>SPLIT</span>}
                   </td>
@@ -2188,7 +2238,59 @@ function HoldingsBreakdownCard({ user, fx }) {
                   <td style={recCell}>{fmt$(r.valueCad)}</td>
                   <td style={{ ...recCell, fontWeight: 600 }}>{fmt$(r.totalCad)}</td>
                 </tr>
-              );
+              ];
+              if (isExpanded) {
+                rowEls.push(
+                  <tr key={r.ticker + "-detail"} style={{ background: "var(--sa-panel-2)" }}>
+                    <td colSpan={6} style={{ padding: "10px 22px" }}>
+                      <table style={{ width: "100%", fontSize: 12 }}>
+                        <thead>
+                          <tr style={{ color: "var(--sa-muted)" }}>
+                            <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 500 }}>Account</th>
+                            <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 500 }}>Market</th>
+                            <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 500 }}>Sub</th>
+                            <th style={{ textAlign: "right", padding: "4px 8px", fontWeight: 500 }}>Qty</th>
+                            <th style={{ textAlign: "right", padding: "4px 8px", fontWeight: 500 }}>Price</th>
+                            <th style={{ textAlign: "right", padding: "4px 8px", fontWeight: 500 }}>Cost basis</th>
+                            <th style={{ textAlign: "right", padding: "4px 8px", fontWeight: 500 }}>Value</th>
+                            <th style={{ padding: "4px 8px" }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {r.lots.map(({ posIdx, p }) => {
+                            const acctName = user.accounts.find(a => a.id === p.acct)?.name || "—";
+                            const price = p.ccy === "USD" ? p.priceUsd : p.priceCad;
+                            const cost = p.ccy === "USD" ? p.costBasisUsd : p.costBasisCad;
+                            const value = (price || 0) * (p.qty || 0);
+                            const sub = p.subCcy || p.ccy;
+                            return (
+                              <tr key={posIdx} style={{ borderTop: "1px solid var(--sa-border)" }}>
+                                <td style={{ padding: "6px 8px" }}>{acctName}</td>
+                                <td style={{ padding: "6px 8px" }}>{p.ccy}</td>
+                                <td style={{ padding: "6px 8px" }}>{sub}{p.ccy !== sub && <span style={{ color: "var(--sa-amber)", marginLeft: 4 }} title="Market ≠ sub: this lot has FX exposure">⚠</span>}</td>
+                                <td style={{ padding: "6px 8px", textAlign: "right" }}>{p.qty.toLocaleString()}</td>
+                                <td style={{ padding: "6px 8px", textAlign: "right" }}>{price ? `$${price.toFixed(2)}` : "—"}</td>
+                                <td style={{ padding: "6px 8px", textAlign: "right" }}>{cost != null ? `$${cost.toFixed(2)}` : <span className="sa-muted">—</span>}</td>
+                                <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600 }}>${value.toLocaleString(undefined, { maximumFractionDigits: 0 })} {p.ccy}</td>
+                                <td style={{ padding: "6px 8px", textAlign: "right" }}>
+                                  {onEditPosition && (
+                                    <button
+                                      className="sa-btn ghost"
+                                      style={{ padding: "3px 10px", fontSize: 11 }}
+                                      onClick={(e) => { e.stopPropagation(); onEditPosition(posIdx); }}
+                                    >Edit</button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                );
+              }
+              return rowEls;
             })}
             <tr style={{ borderTop: "1px dashed var(--sa-border)", background: "rgba(91,141,239,.04)" }}>
               <td style={{ ...recCellLeft, fontWeight: 500, color: "var(--sa-text-2)" }}>Cash</td>
@@ -2427,6 +2529,160 @@ function MultiLineChart({ series, range }) {
         </text>
       ))}
     </svg>
+  );
+}
+
+// =============================================================================
+// Trades view — the transaction journal. Every BUY / SELL / DEPOSIT /
+// WITHDRAW you've recorded, most recent first, with the trade legs spelled
+// out and net cash impact in CAD.
+// =============================================================================
+function TradesView({ sessionToken }) {
+  const [trades, setTrades] = useState(null);
+  const [busy, setBusy] = useState(true);
+  const [err, setErr] = useState(null);
+  const [days, setDays] = useState(90);
+
+  useEffect(() => {
+    let cancelled = false;
+    setBusy(true); setErr(null);
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-trade?days=${days}`, {
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        if (!cancelled) setTrades(j.trades || []);
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || "Failed to load");
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken, days]);
+
+  // Quick summary stats
+  let totalTrades = 0, totalDeposit = 0, totalWithdraw = 0, totalBuyValue = 0, totalSellValue = 0;
+  for (const t of trades || []) {
+    totalTrades++;
+    for (const leg of t.legs || []) {
+      const gross = Number(leg.grossValue) || 0;
+      const cad = leg.currency === "USD" ? gross * (t.fxUsdCadAtTrade || 1.37) : gross;
+      if (leg.side === "BUY") totalBuyValue += cad;
+      else if (leg.side === "SELL") totalSellValue += cad;
+      else if (leg.side === "DEPOSIT") totalDeposit += cad;
+      else if (leg.side === "WITHDRAW") totalWithdraw += cad;
+    }
+  }
+
+  const fmtMoney0 = (n) => "$" + Math.round(Math.abs(n)).toLocaleString();
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h2>Trades</h2>
+          <div className="sa-breadcrumb">Transaction journal · most recent first</div>
+        </div>
+        <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
+          {[30, 90, 365, 1825].map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              style={{
+                padding: "5px 12px", fontSize: 12, fontWeight: 600,
+                border: "none", borderRadius: 6, cursor: "pointer",
+                background: days === d ? "var(--sa-accent)" : "transparent",
+                color: days === d ? "#fff" : "var(--sa-text-2)",
+              }}
+            >{d === 1825 ? "5y" : d === 365 ? "1y" : d === 90 ? "90d" : "30d"}</button>
+          ))}
+        </div>
+      </div>
+
+      {!busy && trades && trades.length > 0 && (
+        <div className="sa-stats" style={{ marginBottom: 18 }}>
+          <div className="sa-stat"><div className="label">Trades</div><div className="value">{totalTrades}</div></div>
+          <div className="sa-stat"><div className="label">Bought (CAD)</div><div className="value">{fmtMoney0(totalBuyValue)}</div></div>
+          <div className="sa-stat"><div className="label">Sold (CAD)</div><div className="value">{fmtMoney0(totalSellValue)}</div></div>
+          <div className="sa-stat"><div className="label">Deposits − Withdrawals</div><div className="value" style={{ color: totalDeposit - totalWithdraw >= 0 ? "var(--sa-green)" : "var(--sa-red)" }}>{totalDeposit - totalWithdraw >= 0 ? "+" : "−"}{fmtMoney0(totalDeposit - totalWithdraw)}</div></div>
+        </div>
+      )}
+
+      {err && <div className="sa-err">{err}</div>}
+      {busy && <div className="sa-muted" style={{ padding: 24 }}>Loading…</div>}
+      {!busy && trades && trades.length === 0 && (
+        <div className="sa-card" style={{ padding: 32, textAlign: "center" }}>
+          <div className="sa-muted" style={{ marginBottom: 14 }}>
+            No trades recorded in the last {days} day{days === 1 ? "" : "s"}.
+          </div>
+          <div className="sa-muted" style={{ fontSize: 12 }}>
+            Every Buy / Sell / Swap / Cash movement you record from the Dashboard or Advice tab lands here.
+          </div>
+        </div>
+      )}
+
+      {!busy && trades && trades.length > 0 && (
+        <div className="sa-card" style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: "var(--sa-panel-2)" }}>
+                  <th style={recHeaderCellLeft}>Date</th>
+                  <th style={recHeaderCellLeft}>Account</th>
+                  <th style={recHeaderCellLeft}>Legs</th>
+                  <th style={recHeaderCell}>Net cash (CAD)</th>
+                  <th style={recHeaderCellLeft}>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trades.map((t, i) => (
+                  <tr key={t._id || i} style={{ borderTop: "1px solid var(--sa-border)" }}>
+                    <td style={recCellLeft}>{new Date(t.executedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</td>
+                    <td style={recCellLeft}><span className="sa-muted">{t.accountName || "—"}</span></td>
+                    <td style={recCellLeft}>
+                      {(t.legs || []).map((leg, li) => {
+                        const sideColor =
+                          leg.side === "BUY" ? "var(--sa-green)"
+                          : leg.side === "SELL" ? "var(--sa-red)"
+                          : leg.side === "DEPOSIT" ? "var(--sa-accent-2)"
+                          : leg.side === "WITHDRAW" ? "var(--sa-amber)"
+                          : "var(--sa-muted)";
+                        const sideBg =
+                          leg.side === "BUY" ? "var(--sa-green-soft)"
+                          : leg.side === "SELL" ? "var(--sa-red-soft)"
+                          : leg.side === "DEPOSIT" ? "var(--sa-accent-soft)"
+                          : leg.side === "WITHDRAW" ? "var(--sa-amber-soft)"
+                          : "var(--sa-panel-2)";
+                        const isCash = leg.side === "DEPOSIT" || leg.side === "WITHDRAW";
+                        return (
+                          <div key={li} style={{ display: "inline-flex", alignItems: "center", gap: 6, marginRight: 8, marginBottom: li < t.legs.length - 1 ? 4 : 0 }}>
+                            <span style={{ padding: "1px 7px", borderRadius: 99, fontSize: 10, fontWeight: 700, background: sideBg, color: sideColor }}>{leg.side}</span>
+                            {isCash ? (
+                              <span>${Number(leg.grossValue).toLocaleString(undefined, { maximumFractionDigits: 0 })} {leg.currency}</span>
+                            ) : (
+                              <span>{leg.shares?.toLocaleString()} {leg.ticker} @ ${Number(leg.pricePerShare).toFixed(2)} {leg.currency}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </td>
+                    <td style={{ ...recCell, color: t.netCashCad >= 0 ? "var(--sa-green)" : "var(--sa-red)", fontWeight: 600 }}>
+                      {t.netCashCad >= 0 ? "+" : "−"}${Math.abs(t.netCashCad || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </td>
+                    <td style={{ ...recCellLeft, color: "var(--sa-muted)", fontSize: 12, maxWidth: 220, whiteSpace: "normal" }}>
+                      {t.notes || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
