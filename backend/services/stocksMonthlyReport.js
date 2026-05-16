@@ -172,15 +172,23 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(),
     const infStart = inf.startDate
       ? new Date(inf.startDate)
       : agreementStart;
+    // Optional end date: cap accumulation at end (or asOf, whichever is sooner).
+    // After end date this inflow no longer contributes to per-year/YTD/cumulative
+    // totals, and is flagged "ended" in the report.
+    const infEnd = inf.endDate ? new Date(inf.endDate) : null;
+    const infActiveCap = infEnd ? Math.min(asOf.getTime(), infEnd.getTime()) : asOf.getTime();
+    const isActive = !infEnd || asOf < infEnd;
+
     const infYearsCumulative = infStart
-      ? Math.max(0, (asOf.getTime() - infStart.getTime()) / (365.25 * 86400 * 1000))
+      ? Math.max(0, (infActiveCap - infStart.getTime()) / (365.25 * 86400 * 1000))
       : 0;
-    // YTD = from MAX(year-start, inflow-start) up to asOf
+    // YTD = from MAX(year-start, inflow-start) up to MIN(asOf, inflow-end)
     const ytdAnchor = infStart ? Math.max(yearStart.getTime(), infStart.getTime()) : yearStart.getTime();
-    const infYearsYtd = Math.max(0, (asOf.getTime() - ytdAnchor) / (365.25 * 86400 * 1000));
+    const infYearsYtd = Math.max(0, (infActiveCap - ytdAnchor) / (365.25 * 86400 * 1000));
     const cumulative = annual * infYearsCumulative;
     const ytd = annual * infYearsYtd;
-    inflowsPerYearCad += annual;
+    // An inflow that has ended doesn't contribute to the *current* run-rate.
+    if (isActive) inflowsPerYearCad += annual;
     inflowsCad += cumulative;
     inflowsYtdCad += ytd;
     inflowItems.push({
@@ -188,7 +196,9 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(),
       amountCad: inf.amountCad,
       frequency: inf.frequency,
       startDate: infStart,
-      annual,
+      endDate: infEnd,
+      active: isActive,
+      annual: isActive ? annual : 0,
       cumulative,
       ytd,
     });
@@ -381,18 +391,24 @@ export function formatAccountReportMarkdown(report) {
       parts.push("");
       parts.push(`**Inflows from beneficiary (breakdown):**`);
       parts.push("");
-      parts.push(`| Source | From | Rate | Annual | YTD | Cumulative |`);
-      parts.push(`|---|---|---|---|---|---|`);
+      parts.push(`| Source | From | To | Rate | Annual | YTD | Cumulative |`);
+      parts.push(`|---|---|---|---|---|---|---|`);
+      const dateLabel = (d) => d
+        ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" })
+        : "—";
       for (const it of ba.inflowItems) {
         const rateLabel = it.frequency === "monthly"
           ? `${fmtMoney(it.amountCad)}/mo`
           : `${fmtMoney(it.amountCad)}/yr`;
-        const fromLabel = it.startDate
-          ? new Date(it.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" })
-          : "—";
-        parts.push(`| ${it.description} | ${fromLabel} | ${rateLabel} | ${fmtMoney(it.annual)} | ${fmtMoney(it.ytd)} | ${fmtMoney(it.cumulative)} |`);
+        const fromLabel = dateLabel(it.startDate);
+        const toLabel = it.endDate
+          ? (it.active ? dateLabel(it.endDate) : `${dateLabel(it.endDate)} ⏹ ended`)
+          : "ongoing";
+        const annualLabel = it.active ? fmtMoney(it.annual) : "—";
+        const descLabel = it.active ? it.description : `~~${it.description}~~`;
+        parts.push(`| ${descLabel} | ${fromLabel} | ${toLabel} | ${rateLabel} | ${annualLabel} | ${fmtMoney(it.ytd)} | ${fmtMoney(it.cumulative)} |`);
       }
-      parts.push(`| **Total** | — | — | **${fmtMoney(ba.inflowsPerYearCad)}** | **${fmtMoney(ba.inflowsYtdCad)}** | **${fmtMoney(ba.inflowsCad)}** |`);
+      parts.push(`| **Total (active)** | — | — | — | **${fmtMoney(ba.inflowsPerYearCad)}** | **${fmtMoney(ba.inflowsYtdCad)}** | **${fmtMoney(ba.inflowsCad)}** |`);
     } else {
       parts.push(`| Expected inflows from beneficiary (cumulative) | ${fmtMoney(ba.inflowsCad)} (${fmtMoney(ba.inflowsPerYearCad)}/yr) |`);
       parts.push(`| Inflows YTD | ${fmtMoney(ba.inflowsYtdCad)} |`);

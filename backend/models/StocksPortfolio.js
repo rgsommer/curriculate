@@ -34,6 +34,11 @@ const BeneficiaryInflowSchema = new mongoose.Schema(
     // (or after) the principal was placed (e.g. Tamara paid car insurance
     // for months before Richard formally placed $50K in the TFSA).
     startDate: { type: Date, default: null },
+    // Optional: when this inflow stopped accruing. After this date the
+    // inflow no longer adds to YTD or cumulative totals. Useful when an
+    // inflow ends mid-agreement (Tamara sells the car, changes plan,
+    // moves out, etc). Null = ongoing.
+    endDate: { type: Date, default: null },
   },
   { _id: false }
 );

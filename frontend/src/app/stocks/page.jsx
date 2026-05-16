@@ -1779,11 +1779,12 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
           amountCad: i.amountCad || 0,
           frequency: i.frequency || "monthly",
           startDate: i.startDate ? new Date(i.startDate).toISOString().slice(0, 10) : "",
+          endDate: i.endDate ? new Date(i.endDate).toISOString().slice(0, 10) : "",
         }))
       : []
   );
 
-  const addInflow = () => setInflows([...inflows, { description: "", amountCad: 0, frequency: "monthly", startDate: "" }]);
+  const addInflow = () => setInflows([...inflows, { description: "", amountCad: 0, frequency: "monthly", startDate: "", endDate: "" }]);
   const updateInflow = (i, patch) => setInflows(inflows.map((row, idx) => idx === i ? { ...row, ...patch } : row));
   const removeInflow = (i) => setInflows(inflows.filter((_, idx) => idx !== i));
 
@@ -1804,6 +1805,7 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
           amountCad: parseFloat(i.amountCad) || 0,
           frequency: i.frequency === "yearly" ? "yearly" : "monthly",
           startDate: i.startDate ? new Date(i.startDate + "T12:00:00").toISOString() : null,
+          endDate: i.endDate ? new Date(i.endDate + "T12:00:00").toISOString() : null,
         })),
       notes: notes.trim(),
       lockUntilDate: lockUntilDate ? new Date(lockUntilDate + "T12:00:00").toISOString() : null,
@@ -1929,22 +1931,26 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
               <div className="sa-muted" style={{ fontSize: 12, paddingBottom: 8 }}>No inflows yet.</div>
             )}
             {inflows.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 140px auto", gap: 8, marginBottom: 4, fontSize: 11, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>
-                <span>Description</span><span>Amount (CAD)</span><span>Frequency</span><span>From (optional)</span><span></span>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 130px 130px auto", gap: 8, marginBottom: 4, fontSize: 11, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>
+                <span>Description</span><span>Amount (CAD)</span><span>Frequency</span><span>From</span><span>To (if ended)</span><span></span>
               </div>
             )}
-            {inflows.map((i, idx) => (
-              <div key={idx} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 140px auto", gap: 8, marginBottom: 6 }}>
-                <input value={i.description} onChange={(e) => updateInflow(idx, { description: e.target.value })} placeholder="e.g. Car insurance" maxLength={100} />
-                <input type="number" min="0" step="any" value={i.amountCad} onChange={(e) => updateInflow(idx, { amountCad: e.target.value })} placeholder="CAD" />
-                <select value={i.frequency} onChange={(e) => updateInflow(idx, { frequency: e.target.value })}>
-                  <option value="monthly">per month</option>
-                  <option value="yearly">per year</option>
-                </select>
-                <input type="date" value={i.startDate || ""} onChange={(e) => updateInflow(idx, { startDate: e.target.value })} title="When this inflow began (optional — defaults to agreement start)" />
-                <button className="sa-btn ghost" onClick={() => removeInflow(idx)} style={{ fontSize: 12 }}>✕</button>
-              </div>
-            ))}
+            {inflows.map((i, idx) => {
+              const ended = i.endDate && new Date(i.endDate) < new Date();
+              return (
+                <div key={idx} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 130px 130px auto", gap: 8, marginBottom: 6, opacity: ended ? 0.6 : 1 }}>
+                  <input value={i.description} onChange={(e) => updateInflow(idx, { description: e.target.value })} placeholder="e.g. Car insurance" maxLength={100} />
+                  <input type="number" min="0" step="any" value={i.amountCad} onChange={(e) => updateInflow(idx, { amountCad: e.target.value })} placeholder="CAD" />
+                  <select value={i.frequency} onChange={(e) => updateInflow(idx, { frequency: e.target.value })}>
+                    <option value="monthly">per month</option>
+                    <option value="yearly">per year</option>
+                  </select>
+                  <input type="date" value={i.startDate || ""} onChange={(e) => updateInflow(idx, { startDate: e.target.value })} title="When this inflow began (optional — defaults to agreement start)" />
+                  <input type="date" value={i.endDate || ""} onChange={(e) => updateInflow(idx, { endDate: e.target.value })} title="When this inflow stopped (optional — leave blank if still ongoing)" />
+                  <button className="sa-btn ghost" onClick={() => removeInflow(idx)} style={{ fontSize: 12 }} title="Remove this inflow row entirely. To stop accrual on a past date but keep the historical record, set the To date instead.">✕</button>
+                </div>
+              );
+            })}
             {inflows.length > 0 && (
               <div className="sa-muted" style={{ fontSize: 12, marginTop: 6 }}>
                 Total expected inflow: ≈ <b>${annualInflows.toLocaleString()}</b>/year

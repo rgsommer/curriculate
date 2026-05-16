@@ -228,6 +228,7 @@ function sanitizePortfolioInput(body, email) {
             amountCad: Number(i.amountCad) || 0,
             frequency: i.frequency === "yearly" ? "yearly" : "monthly",
             startDate: i.startDate ? new Date(i.startDate) : null,
+            endDate: i.endDate ? new Date(i.endDate) : null,
           })),
         notes: String(ba.notes || "").slice(0, 1000),
         lockUntilDate: ba.lockUntilDate ? new Date(ba.lockUntilDate) : null,
