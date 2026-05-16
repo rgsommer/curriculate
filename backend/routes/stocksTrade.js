@@ -231,6 +231,10 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
         normLegs.push({
           side, ticker: null, shares: null, pricePerShare: null,
           currency, grossValue: amount,
+          // Per-leg account override — lets a single trade move cash between
+          // accounts (transfer = WITHDRAW leg in one account + DEPOSIT leg
+          // in another, possibly in different currencies).
+          account: typeof raw?.account === "string" ? raw.account : null,
         });
         continue;
       }
@@ -279,6 +283,25 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
       }
     } catch (e) {
       return res.status(400).json({ error: e.message });
+    }
+
+    // Per-leg account override (for transfers). We already applied cash
+    // adjustments to acctRow above using the default account; re-do them
+    // for any legs that specified their own account.
+    for (const leg of normLegs) {
+      if (leg.account && leg.account !== account) {
+        // Undo the adjustment we made to acctRow for this leg
+        const settleCcy = leg.settleCcy || leg.currency;
+        const cashKey = settleCcy === "USD" ? "cashUsd" : "cashCad";
+        const gross = Number(leg.grossValue) || 0;
+        const sign = leg.side === "SELL" || leg.side === "DEPOSIT" ? 1 : -1;
+        acctRow[cashKey] = (acctRow[cashKey] || 0) - sign * gross; // undo
+
+        // Apply to the leg's actual account
+        const targetAcct = portfolio.accounts.find(a => a.id === leg.account);
+        if (!targetAcct) return res.status(400).json({ error: `Unknown leg account: ${leg.account}` });
+        targetAcct[cashKey] = (targetAcct[cashKey] || 0) + sign * gross;
+      }
     }
 
     portfolio.positions = newPositions;
