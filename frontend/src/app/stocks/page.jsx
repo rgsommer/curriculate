@@ -1525,6 +1525,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
   const ruleAdvice = useMemo(() => generateAdvice(user), [user]);
 
   useEffect(() => {
+    if (!sessionToken) return;
     let cancelled = false;
     (async () => {
       try {
@@ -1534,8 +1535,28 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
         if (r.status === 404) return; // no snapshot yet — fine
         if (!r.ok) return;
         const j = await r.json();
-        if (!cancelled) setSnapshotAdvice(j);
-      } catch { /* swallow; rule-based fallback is still available */ }
+        // Defensive: ensure shape is { advice: [{title, body}], ... }.
+        // If the server returns something unexpected, fall back to null so
+        // the Advice tab uses the rule-based view instead of crashing.
+        if (!cancelled && j && Array.isArray(j.advice)) {
+          const safeAdvice = j.advice
+            .filter(c => c && typeof c.title === "string")
+            .map(c => ({
+              title: String(c.title),
+              body: typeof c.body === "string" ? c.body : "",
+            }));
+          setSnapshotAdvice({
+            generatedAt: j.generatedAt || null,
+            source: j.source || "cron",
+            advice: safeAdvice,
+            markdown: typeof j.markdown === "string" ? j.markdown : "",
+          });
+        }
+      } catch (e) {
+        // Swallow — rule-based fallback is still available and the user can
+        // still click Update Advice for a fresh run.
+        console.warn("[snapshot] load failed:", e?.message);
+      }
     })();
     return () => { cancelled = true; };
   }, [sessionToken]);
@@ -1636,7 +1657,15 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
               : aiAdvice
               ? `🧠 AI-generated · ${new Date(aiAdvice.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
               : showingSnapshot
-              ? `📬 From latest briefing email · ${new Date(snapshotAdvice.generatedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} (${snapshotAdvice.source}) — click Update Advice for a fresh run`
+              ? (() => {
+                  // Defensive: snapshotAdvice may exist with weird/missing dates
+                  const ts = snapshotAdvice?.generatedAt ? new Date(snapshotAdvice.generatedAt) : null;
+                  const tsLabel = (ts && !isNaN(ts.getTime()))
+                    ? ts.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                    : "recently";
+                  const src = snapshotAdvice?.source || "cron";
+                  return `📬 From latest briefing email · ${tsLabel} (${src}) — click Update Advice for a fresh run`;
+                })()
               : "Rule-based signals from your current portfolio"}
           </div>
         </div>
@@ -1764,7 +1793,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
         </div>
       )}
 
-      {showingAi && !showingConsensus && aiAdvice.sources?.length > 0 && (
+      {aiAdvice && !showingConsensus && aiAdvice.sources?.length > 0 && (
         <div className="sa-card" style={{ marginTop: 14 }}>
           <h3>Sources</h3>
           <ul style={{ paddingLeft: 18, margin: 0, color: "var(--sa-text-2)", fontSize: 13, lineHeight: 1.7 }}>
@@ -2607,7 +2636,7 @@ function BriefingPreviewModal({ preview, recipient, onClose, onSend, title, load
   const { busy, html, error, sent, sendError, subject, messageId, ccSends } = preview;
   const headerTitle = title || "Email Briefing — Preview";
   const loadLabel = loadingLabel || "Generating briefing…";
-  const loadDetail = loadingDetail || "Searching news on each of your holdings · 20-40s";
+  const loadDetail = loadingDetail || "Pulling news, fundamentals, technicals, macro context, and earnings signals across your holdings · 20-40s";
 
   return (
     <div className="sa-modal-bg" onClick={onClose}>
