@@ -1768,16 +1768,22 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
   const [sharePct, setSharePct] = useState(ba.profitSharePct ?? "");
   const [carry, setCarry] = useState(ba.carryLosses !== false);
   const [startDate, setStartDate] = useState(ba.startDate ? new Date(ba.startDate).toISOString().slice(0, 10) : "");
+  const [principalStartDate, setPrincipalStartDate] = useState(ba.principalStartDate ? new Date(ba.principalStartDate).toISOString().slice(0, 10) : "");
   const [notes, setNotes] = useState(ba.notes || "");
   const [lockUntilDate, setLockUntilDate] = useState(ba.lockUntilDate ? new Date(ba.lockUntilDate).toISOString().slice(0, 10) : "");
   const [penaltyPct, setPenaltyPct] = useState(ba.earlyPayoutPenaltyPct ?? "");
   const [inflows, setInflows] = useState(
     Array.isArray(ba.inflows) && ba.inflows.length > 0
-      ? ba.inflows.map((i) => ({ description: i.description || "", amountCad: i.amountCad || 0, frequency: i.frequency || "monthly" }))
+      ? ba.inflows.map((i) => ({
+          description: i.description || "",
+          amountCad: i.amountCad || 0,
+          frequency: i.frequency || "monthly",
+          startDate: i.startDate ? new Date(i.startDate).toISOString().slice(0, 10) : "",
+        }))
       : []
   );
 
-  const addInflow = () => setInflows([...inflows, { description: "", amountCad: 0, frequency: "monthly" }]);
+  const addInflow = () => setInflows([...inflows, { description: "", amountCad: 0, frequency: "monthly", startDate: "" }]);
   const updateInflow = (i, patch) => setInflows(inflows.map((row, idx) => idx === i ? { ...row, ...patch } : row));
   const removeInflow = (i) => setInflows(inflows.filter((_, idx) => idx !== i));
 
@@ -1790,12 +1796,14 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
       profitSharePct: parseFloat(sharePct) || 0,
       carryLosses: !!carry,
       startDate: startDate ? new Date(startDate + "T12:00:00").toISOString() : null,
+      principalStartDate: principalStartDate ? new Date(principalStartDate + "T12:00:00").toISOString() : null,
       inflows: inflows
         .filter((i) => i.description.trim() && parseFloat(i.amountCad) > 0)
         .map((i) => ({
           description: i.description.trim(),
           amountCad: parseFloat(i.amountCad) || 0,
           frequency: i.frequency === "yearly" ? "yearly" : "monthly",
+          startDate: i.startDate ? new Date(i.startDate + "T12:00:00").toISOString() : null,
         })),
       notes: notes.trim(),
       lockUntilDate: lockUntilDate ? new Date(lockUntilDate + "T12:00:00").toISOString() : null,
@@ -1865,6 +1873,12 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
             <div>
               <label>Agreement start date</label>
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>Default start for inflows (overridable per inflow below).</div>
+            </div>
+            <div>
+              <label>Principal placement date (optional)</label>
+              <input type="date" value={principalStartDate} onChange={(e) => setPrincipalStartDate(e.target.value)} />
+              <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>When the principal is/was actually placed. Interest accrues only from this date. Defaults to agreement start.</div>
             </div>
             <div>
               <label>Principal owed (CAD)</label>
@@ -1914,14 +1928,20 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
             {inflows.length === 0 && (
               <div className="sa-muted" style={{ fontSize: 12, paddingBottom: 8 }}>No inflows yet.</div>
             )}
+            {inflows.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 140px auto", gap: 8, marginBottom: 4, fontSize: 11, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>
+                <span>Description</span><span>Amount (CAD)</span><span>Frequency</span><span>From (optional)</span><span></span>
+              </div>
+            )}
             {inflows.map((i, idx) => (
-              <div key={idx} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: 8, marginBottom: 6 }}>
+              <div key={idx} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 140px auto", gap: 8, marginBottom: 6 }}>
                 <input value={i.description} onChange={(e) => updateInflow(idx, { description: e.target.value })} placeholder="e.g. Car insurance" maxLength={100} />
                 <input type="number" min="0" step="any" value={i.amountCad} onChange={(e) => updateInflow(idx, { amountCad: e.target.value })} placeholder="CAD" />
                 <select value={i.frequency} onChange={(e) => updateInflow(idx, { frequency: e.target.value })}>
                   <option value="monthly">per month</option>
                   <option value="yearly">per year</option>
                 </select>
+                <input type="date" value={i.startDate || ""} onChange={(e) => updateInflow(idx, { startDate: e.target.value })} title="When this inflow began (optional — defaults to agreement start)" />
                 <button className="sa-btn ghost" onClick={() => removeInflow(idx)} style={{ fontSize: 12 }}>✕</button>
               </div>
             ))}

@@ -29,6 +29,11 @@ const BeneficiaryInflowSchema = new mongoose.Schema(
     description: { type: String, required: true, maxlength: 100 },
     amountCad: { type: Number, required: true, min: 0 },
     frequency: { type: String, enum: ["monthly", "yearly"], default: "monthly" },
+    // Optional: when this specific inflow began accruing. Falls back to the
+    // agreement's startDate when null. Useful when inflows started before
+    // (or after) the principal was placed (e.g. Tamara paid car insurance
+    // for months before Richard formally placed $50K in the TFSA).
+    startDate: { type: Date, default: null },
   },
   { _id: false }
 );
@@ -41,7 +46,14 @@ const BeneficiaryAgreementSchema = new mongoose.Schema(
     interestRatePct: { type: Number, default: 0, min: 0, max: 100 },
     profitSharePct: { type: Number, default: 0, min: 0, max: 100 },
     carryLosses: { type: Boolean, default: true },
+    // startDate = agreement start (used as default for inflows + principal)
     startDate: { type: Date, default: null },
+    // principalStartDate = when the principal capital was actually placed
+    // (drives interest accrual + the "years since" age display). Falls back
+    // to startDate when null. Useful when inflows began before the principal
+    // was placed: e.g. Tamara's payments started Feb 1 but Richard didn't
+    // actually transfer the $50K into the TFSA until Jun 1.
+    principalStartDate: { type: Date, default: null },
     inflows: { type: [BeneficiaryInflowSchema], default: [] },
     notes: { type: String, default: "", maxlength: 1000 },
     // Early-payout penalty — compensates the user for tax penalties on

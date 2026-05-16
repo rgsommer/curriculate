@@ -219,6 +219,7 @@ function sanitizePortfolioInput(body, email) {
           ? ba.profitSharePct : 0,
         carryLosses: ba.carryLosses !== false, // default true
         startDate: ba.startDate ? new Date(ba.startDate) : null,
+        principalStartDate: ba.principalStartDate ? new Date(ba.principalStartDate) : null,
         inflows: inflowsRaw
           .filter((i) => i && typeof i.description === "string" && typeof i.amountCad === "number" && i.amountCad >= 0)
           .slice(0, 20)
@@ -226,6 +227,7 @@ function sanitizePortfolioInput(body, email) {
             description: String(i.description).slice(0, 100),
             amountCad: Number(i.amountCad) || 0,
             frequency: i.frequency === "yearly" ? "yearly" : "monthly",
+            startDate: i.startDate ? new Date(i.startDate) : null,
           })),
         notes: String(ba.notes || "").slice(0, 1000),
         lockUntilDate: ba.lockUntilDate ? new Date(ba.lockUntilDate) : null,

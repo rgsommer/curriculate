@@ -103,22 +103,35 @@ export function accountUnrealizedProfit(profile, accountId) {
 // ─────────────────────────────────────────────────────────────────────
 export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(), profitCad = null, profitCoverage = 1) {
   if (!ba || !ba.enabled) return null;
-  const principal = ba.principalCad || 0;
+  const principalAmt = ba.principalCad || 0;
   const ratePct = ba.interestRatePct || 0;
   const shareePct = ba.profitSharePct || 0;
-  const start = ba.startDate ? new Date(ba.startDate) : null;
-  const yearsSinceStart = start
-    ? Math.max(0, (asOf.getTime() - start.getTime()) / (365.25 * 86400 * 1000))
+  const agreementStart = ba.startDate ? new Date(ba.startDate) : null;
+  // Principal placement date — falls back to agreementStart when null. Before
+  // this date the principal hasn't been placed, so no interest accrues and
+  // no profit-share applies (principal = 0).
+  const principalStart = ba.principalStartDate
+    ? new Date(ba.principalStartDate)
+    : agreementStart;
+  const principalActive = !principalStart || asOf >= principalStart;
+  const principal = principalActive ? principalAmt : 0;
+  const yearsSincePrincipalStart = principalStart && principalActive
+    ? Math.max(0, (asOf.getTime() - principalStart.getTime()) / (365.25 * 86400 * 1000))
+    : 0;
+  const yearsSinceStart = agreementStart
+    ? Math.max(0, (asOf.getTime() - agreementStart.getTime()) / (365.25 * 86400 * 1000))
     : 0;
 
-  const interestOwed = principal * (ratePct / 100) * yearsSinceStart;
+  const interestOwed = principal * (ratePct / 100) * yearsSincePrincipalStart;
   // Use explicit profit (cost-basis math) when caller provides it; otherwise
   // fall back to the old value-minus-principal estimate.
   const profit = (typeof profitCad === "number" && Number.isFinite(profitCad))
     ? profitCad
     : (currentValueCad - principal);
   const profitBasis = (typeof profitCad === "number") ? "cost-basis" : "value-minus-principal";
-  const shareToBene = Math.max(0, profit) * (shareePct / 100);
+  // Profit-share applies only when principal is active (otherwise there's no
+  // capital at risk on the beneficiary's behalf to be sharing returns on).
+  const shareToBene = principalActive ? Math.max(0, profit) * (shareePct / 100) : 0;
   const grossPayoutIfNow = principal + interestOwed + shareToBene;
 
   // Early-payout penalty — applies only when asOf is BEFORE lockUntilDate.
@@ -140,11 +153,14 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(),
   const payoutIfNow = grossPayoutIfNow - penaltyAmount;
   const daysUntilUnlock = lockUntil ? Math.ceil((lockUntil.getTime() - asOf.getTime()) / 86400000) : null;
 
-  // Expected inflows from beneficiary since startDate (recurring template).
+  // Expected inflows from beneficiary — each inflow can have its own start
+  // date (falls back to agreement startDate). This lets recurring payments
+  // begin at different times: e.g. Tamara paid car insurance from Feb 1
+  // while principal placement was Jun 1.
+  //
   // Keep a per-item breakdown so the report can show each line — car
   // insurance, phone, room & board, etc — rather than a single opaque total.
   const yearStart = new Date(Date.UTC(asOf.getUTCFullYear(), 0, 1));
-  const yearsThisYear = Math.max(0, (asOf.getTime() - Math.max(yearStart.getTime(), start?.getTime() || 0)) / (365.25 * 86400 * 1000));
 
   let inflowsCad = 0;
   let inflowsPerYearCad = 0;
@@ -152,8 +168,18 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(),
   const inflowItems = [];
   for (const inf of ba.inflows || []) {
     const annual = inf.frequency === "yearly" ? inf.amountCad : inf.amountCad * 12;
-    const cumulative = annual * yearsSinceStart;
-    const ytd = annual * yearsThisYear;
+    // Per-inflow effective start date (defaults to agreement start)
+    const infStart = inf.startDate
+      ? new Date(inf.startDate)
+      : agreementStart;
+    const infYearsCumulative = infStart
+      ? Math.max(0, (asOf.getTime() - infStart.getTime()) / (365.25 * 86400 * 1000))
+      : 0;
+    // YTD = from MAX(year-start, inflow-start) up to asOf
+    const ytdAnchor = infStart ? Math.max(yearStart.getTime(), infStart.getTime()) : yearStart.getTime();
+    const infYearsYtd = Math.max(0, (asOf.getTime() - ytdAnchor) / (365.25 * 86400 * 1000));
+    const cumulative = annual * infYearsCumulative;
+    const ytd = annual * infYearsYtd;
     inflowsPerYearCad += annual;
     inflowsCad += cumulative;
     inflowsYtdCad += ytd;
@@ -161,13 +187,21 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(),
       description: inf.description || "(unlabeled)",
       amountCad: inf.amountCad,
       frequency: inf.frequency,
+      startDate: infStart,
       annual,
       cumulative,
       ytd,
     });
   }
   const netCarryCad = inflowsCad - interestOwed; // positive = beneficiary owes user net
-  const interestOwedYtdCad = principal * (ratePct / 100) * yearsThisYear;
+  // Interest YTD: from MAX(year-start, principalStart) up to asOf
+  const interestYtdAnchor = principalStart && principalActive
+    ? Math.max(yearStart.getTime(), principalStart.getTime())
+    : yearStart.getTime();
+  const interestYearsYtd = principalActive
+    ? Math.max(0, (asOf.getTime() - interestYtdAnchor) / (365.25 * 86400 * 1000))
+    : 0;
+  const interestOwedYtdCad = principal * (ratePct / 100) * interestYearsYtd;
 
   return {
     principal,
@@ -195,6 +229,11 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(),
     isEarly,
     lockUntilDate: lockUntil,
     daysUntilUnlock,
+    // Principal-start timing
+    principalActive,
+    principalStartDate: principalStart,
+    yearsSincePrincipalStart,
+    agreementStartDate: agreementStart,
   };
 }
 
@@ -303,6 +342,15 @@ export function formatAccountReportMarkdown(report) {
     parts.push(`| Item | Amount |`);
     parts.push(`|---|---|`);
     parts.push(`| Years since agreement start | ${ba.yearsSinceStart.toFixed(2)} |`);
+    if (ba.principalStartDate && (!ba.agreementStartDate || ba.principalStartDate.getTime() !== ba.agreementStartDate.getTime())) {
+      const psd = new Date(ba.principalStartDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+      if (ba.principalActive) {
+        parts.push(`| Principal placement date | ${psd} (interest accrues from here) |`);
+        parts.push(`| Years since principal placed | ${ba.yearsSincePrincipalStart.toFixed(2)} |`);
+      } else {
+        parts.push(`| Principal placement date | ${psd} (⏳ not placed yet — principal/interest = 0 until then) |`);
+      }
+    }
     parts.push(`| Interest owed (cumulative) | ${fmtMoney(ba.interestOwed)} |`);
     const profitLabel = ba.profitBasis === "cost-basis"
       ? "Unrealized P&L on open positions (cost basis)"
@@ -333,15 +381,18 @@ export function formatAccountReportMarkdown(report) {
       parts.push("");
       parts.push(`**Inflows from beneficiary (breakdown):**`);
       parts.push("");
-      parts.push(`| Source | Rate | Annual | YTD | Cumulative |`);
-      parts.push(`|---|---|---|---|---|`);
+      parts.push(`| Source | From | Rate | Annual | YTD | Cumulative |`);
+      parts.push(`|---|---|---|---|---|---|`);
       for (const it of ba.inflowItems) {
         const rateLabel = it.frequency === "monthly"
           ? `${fmtMoney(it.amountCad)}/mo`
           : `${fmtMoney(it.amountCad)}/yr`;
-        parts.push(`| ${it.description} | ${rateLabel} | ${fmtMoney(it.annual)} | ${fmtMoney(it.ytd)} | ${fmtMoney(it.cumulative)} |`);
+        const fromLabel = it.startDate
+          ? new Date(it.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" })
+          : "—";
+        parts.push(`| ${it.description} | ${fromLabel} | ${rateLabel} | ${fmtMoney(it.annual)} | ${fmtMoney(it.ytd)} | ${fmtMoney(it.cumulative)} |`);
       }
-      parts.push(`| **Total** | — | **${fmtMoney(ba.inflowsPerYearCad)}** | **${fmtMoney(ba.inflowsYtdCad)}** | **${fmtMoney(ba.inflowsCad)}** |`);
+      parts.push(`| **Total** | — | — | **${fmtMoney(ba.inflowsPerYearCad)}** | **${fmtMoney(ba.inflowsYtdCad)}** | **${fmtMoney(ba.inflowsCad)}** |`);
     } else {
       parts.push(`| Expected inflows from beneficiary (cumulative) | ${fmtMoney(ba.inflowsCad)} (${fmtMoney(ba.inflowsPerYearCad)}/yr) |`);
       parts.push(`| Inflows YTD | ${fmtMoney(ba.inflowsYtdCad)} |`);
