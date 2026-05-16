@@ -203,6 +203,30 @@ function sanitizePortfolioInput(body, email) {
     };
   }
   if (Array.isArray(body.accounts)) {
+    const sanitizeBeneficiaryAgreement = (ba) => {
+      if (!ba || typeof ba !== "object") return { enabled: false };
+      const inflowsRaw = Array.isArray(ba.inflows) ? ba.inflows : [];
+      return {
+        enabled: !!ba.enabled,
+        name: String(ba.name || "").slice(0, 80),
+        principalCad: typeof ba.principalCad === "number" && ba.principalCad >= 0 ? ba.principalCad : 0,
+        interestRatePct: typeof ba.interestRatePct === "number" && ba.interestRatePct >= 0 && ba.interestRatePct <= 100
+          ? ba.interestRatePct : 0,
+        profitSharePct: typeof ba.profitSharePct === "number" && ba.profitSharePct >= 0 && ba.profitSharePct <= 100
+          ? ba.profitSharePct : 0,
+        carryLosses: ba.carryLosses !== false, // default true
+        startDate: ba.startDate ? new Date(ba.startDate) : null,
+        inflows: inflowsRaw
+          .filter((i) => i && typeof i.description === "string" && typeof i.amountCad === "number" && i.amountCad >= 0)
+          .slice(0, 20)
+          .map((i) => ({
+            description: String(i.description).slice(0, 100),
+            amountCad: Number(i.amountCad) || 0,
+            frequency: i.frequency === "yearly" ? "yearly" : "monthly",
+          })),
+        notes: String(ba.notes || "").slice(0, 1000),
+      };
+    };
     out.accounts = body.accounts
       .filter((a) => a && typeof a.id === "string" && typeof a.name === "string")
       .slice(0, 50)
@@ -216,6 +240,9 @@ function sanitizePortfolioInput(body, email) {
         // Per-account risk override (nullable; falls back to global)
         riskTolerance: ["conservative", "moderate", "aggressive", "speculative"].includes(a.riskTolerance)
           ? a.riskTolerance : null,
+        // Per-account monthly report flag + optional beneficiary agreement
+        monthlyReportEnabled: !!a.monthlyReportEnabled,
+        beneficiaryAgreement: sanitizeBeneficiaryAgreement(a.beneficiaryAgreement),
       }));
   }
   if (Array.isArray(body.positions)) {

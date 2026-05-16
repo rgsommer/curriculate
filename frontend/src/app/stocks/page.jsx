@@ -953,6 +953,18 @@ export default function StocksAdvisorPage() {
                 }));
                 showToast("Account risk updated");
               }}
+              onChangeAccountMonthlyReport={(accountId, enabled) => {
+                updateUser((u) => ({
+                  accounts: u.accounts.map(a => a.id === accountId ? { ...a, monthlyReportEnabled: enabled } : a),
+                }));
+                showToast(enabled ? "Monthly report enabled" : "Monthly report disabled");
+              }}
+              onChangeBeneficiaryAgreement={(accountId, ba) => {
+                updateUser((u) => ({
+                  accounts: u.accounts.map(a => a.id === accountId ? { ...a, beneficiaryAgreement: ba } : a),
+                }));
+                showToast("Beneficiary agreement saved");
+              }}
               onAddPlannedWithdrawal={(w) => {
                 const id = "w" + Date.now() + Math.random().toString(36).slice(2, 6);
                 updateUser((u) => ({
@@ -1644,7 +1656,160 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
   );
 }
 
-function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+// One row in the "Monthly reports & beneficiary agreements" card. Handles
+// the monthly-report checkbox + the collapsible beneficiary-agreement editor.
+// Encapsulates its own draft state so saving one row doesn't blow away
+// in-progress edits on another row.
+function AccountReportRow({ account, onToggleMonthly, onSaveAgreement }) {
+  const ba = account.beneficiaryAgreement || {};
+  const [open, setOpen] = useState(!!ba.enabled);
+  const [enabled, setEnabled] = useState(!!ba.enabled);
+  const [name, setName] = useState(ba.name || "");
+  const [principal, setPrincipal] = useState(ba.principalCad || "");
+  const [ratePct, setRatePct] = useState(ba.interestRatePct ?? "");
+  const [sharePct, setSharePct] = useState(ba.profitSharePct ?? "");
+  const [carry, setCarry] = useState(ba.carryLosses !== false);
+  const [startDate, setStartDate] = useState(ba.startDate ? new Date(ba.startDate).toISOString().slice(0, 10) : "");
+  const [notes, setNotes] = useState(ba.notes || "");
+  const [inflows, setInflows] = useState(
+    Array.isArray(ba.inflows) && ba.inflows.length > 0
+      ? ba.inflows.map((i) => ({ description: i.description || "", amountCad: i.amountCad || 0, frequency: i.frequency || "monthly" }))
+      : []
+  );
+
+  const addInflow = () => setInflows([...inflows, { description: "", amountCad: 0, frequency: "monthly" }]);
+  const updateInflow = (i, patch) => setInflows(inflows.map((row, idx) => idx === i ? { ...row, ...patch } : row));
+  const removeInflow = (i) => setInflows(inflows.filter((_, idx) => idx !== i));
+
+  const save = () => {
+    onSaveAgreement({
+      enabled,
+      name: name.trim(),
+      principalCad: parseFloat(principal) || 0,
+      interestRatePct: parseFloat(ratePct) || 0,
+      profitSharePct: parseFloat(sharePct) || 0,
+      carryLosses: !!carry,
+      startDate: startDate ? new Date(startDate + "T12:00:00").toISOString() : null,
+      inflows: inflows
+        .filter((i) => i.description.trim() && parseFloat(i.amountCad) > 0)
+        .map((i) => ({
+          description: i.description.trim(),
+          amountCad: parseFloat(i.amountCad) || 0,
+          frequency: i.frequency === "yearly" ? "yearly" : "monthly",
+        })),
+      notes: notes.trim(),
+    });
+  };
+
+  // Live preview of expected total inflows/yr
+  const annualInflows = inflows.reduce((sum, i) => {
+    const amt = parseFloat(i.amountCad) || 0;
+    return sum + (i.frequency === "yearly" ? amt : amt * 12);
+  }, 0);
+
+  return (
+    <div style={{ border: "1px solid var(--sa-border)", borderRadius: 8, padding: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 10, alignItems: "center" }}>
+        <div style={{ fontWeight: 600, fontSize: 14 }}>{account.name}</div>
+        <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
+          <input
+            type="checkbox"
+            checked={!!account.monthlyReportEnabled}
+            onChange={(e) => onToggleMonthly(e.target.checked)}
+          />
+          Monthly report
+        </label>
+        <button className="sa-btn ghost" onClick={() => setOpen(!open)} style={{ fontSize: 12 }}>
+          {open ? "Hide" : "Edit"} beneficiary agreement {ba.enabled ? "✓" : ""}
+        </button>
+      </div>
+
+      {open && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed var(--sa-border)" }}>
+          <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, marginBottom: 10 }}>
+            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+            <span><b>Enable beneficiary agreement</b> — capital in this account is held for someone else under specific terms</span>
+          </label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label>Beneficiary name</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Tamara" maxLength={80} />
+            </div>
+            <div>
+              <label>Agreement start date</label>
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            </div>
+            <div>
+              <label>Principal owed (CAD)</label>
+              <input type="number" min="0" step="any" value={principal} onChange={(e) => setPrincipal(e.target.value)} placeholder="e.g. 50000" />
+            </div>
+            <div>
+              <label>Annual interest rate (%)</label>
+              <input type="number" min="0" max="100" step="any" value={ratePct} onChange={(e) => setRatePct(e.target.value)} placeholder="e.g. 3" />
+            </div>
+            <div>
+              <label>Profit share at payout (%)</label>
+              <input type="number" min="0" max="100" step="any" value={sharePct} onChange={(e) => setSharePct(e.target.value)} placeholder="e.g. 50" />
+            </div>
+            <div style={{ display: "flex", alignItems: "end", paddingBottom: 8 }}>
+              <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
+                <input type="checkbox" checked={carry} onChange={(e) => setCarry(e.target.checked)} />
+                I absorb losses (beneficiary protected on the principal)
+              </label>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>Inflows from beneficiary</div>
+              <button className="sa-btn ghost" onClick={addInflow} style={{ fontSize: 12 }}>+ Add inflow</button>
+            </div>
+            <div className="sa-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+              What the beneficiary pays you on a recurring basis (car insurance, room & board, phone, etc.). Used to compute net carry.
+            </div>
+            {inflows.length === 0 && (
+              <div className="sa-muted" style={{ fontSize: 12, paddingBottom: 8 }}>No inflows yet.</div>
+            )}
+            {inflows.map((i, idx) => (
+              <div key={idx} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: 8, marginBottom: 6 }}>
+                <input value={i.description} onChange={(e) => updateInflow(idx, { description: e.target.value })} placeholder="e.g. Car insurance" maxLength={100} />
+                <input type="number" min="0" step="any" value={i.amountCad} onChange={(e) => updateInflow(idx, { amountCad: e.target.value })} placeholder="CAD" />
+                <select value={i.frequency} onChange={(e) => updateInflow(idx, { frequency: e.target.value })}>
+                  <option value="monthly">per month</option>
+                  <option value="yearly">per year</option>
+                </select>
+                <button className="sa-btn ghost" onClick={() => removeInflow(idx)} style={{ fontSize: 12 }}>✕</button>
+              </div>
+            ))}
+            {inflows.length > 0 && (
+              <div className="sa-muted" style={{ fontSize: 12, marginTop: 6 }}>
+                Total expected inflow: ≈ <b>${annualInflows.toLocaleString()}</b>/year
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <label>Notes</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              maxLength={1000}
+              placeholder="Free-form context the AI should know about this agreement."
+              style={{ width: "100%", fontFamily: "inherit", fontSize: 13 }}
+            />
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+            <button className="sa-btn" onClick={save}>Save agreement</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeBeneficiaryAgreement, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
   // Contribution goals — each is { amount, period }. Legacy flat numbers are
@@ -1886,6 +2051,27 @@ function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onCh
           >Save contribution goals</button>
         </div>
       </div>
+
+      <div className="sa-card" style={{ marginBottom: 14 }}>
+        <h3>Monthly reports & beneficiary agreements</h3>
+        <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+          Tick "Monthly report" for any account you want featured in a dedicated block on the last-trading-day briefing AND in a separate end-of-month email after market close. If you hold capital for someone (e.g. on a loan + profit-share arrangement), open the beneficiary agreement panel to capture the terms — the monthly report will show their live payout amount.
+        </div>
+        <div style={{ display: "grid", gap: 10 }}>
+          {(user.accounts || []).map((a) => (
+            <AccountReportRow
+              key={a.id}
+              account={a}
+              onToggleMonthly={(v) => onChangeAccountMonthlyReport(a.id, v)}
+              onSaveAgreement={(ba) => onChangeBeneficiaryAgreement(a.id, ba)}
+            />
+          ))}
+          {(user.accounts || []).length === 0 && (
+            <div className="sa-muted" style={{ fontSize: 12 }}>No accounts yet. Add one from the Positions tab.</div>
+          )}
+        </div>
+      </div>
+
       <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>Trading costs at your broker</h3>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>

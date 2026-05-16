@@ -125,7 +125,7 @@ import stocksPricesRouter from "./routes/stocksPrices.js";
 import stocksAdviceRouter from "./routes/stocksAdvice.js";
 import stocksTradeRouter from "./routes/stocksTrade.js";
 import stocksPendingOrdersRouter from "./routes/stocksPendingOrders.js";
-import { scheduleDailyBriefing } from "./jobs/stocksDailyBriefing.js";
+import { scheduleDailyBriefing, scheduleMonthlyReport } from "./jobs/stocksDailyBriefing.js";
 
 function renderEmailTemplate(str, vars) {
   let out = String(str || "");
@@ -16045,4 +16045,5 @@ server.listen(PORT, () => {
   console.log("Curriculate backend running on port", PORT);
   scheduleWeeklyDigest();
   scheduleDailyBriefing();
+  scheduleMonthlyReport();
 })

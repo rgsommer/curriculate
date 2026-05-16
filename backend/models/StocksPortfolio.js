@@ -9,6 +9,45 @@
 
 import mongoose from "mongoose";
 
+// Beneficiary agreement — used when an account holds capital that is actually
+// owed to a third party (e.g. Richard's TFSA cash held for his daughter Tamara
+// on a 3%-interest agreement, with profit-share at payout and recurring
+// inflows from the beneficiary toward shared household expenses).
+//
+// Math at any point in time:
+//   I_owed   = principalCad × interestRatePct/100 × yearsSinceStart
+//   profit   = currentAccountValueCad − principalCad
+//   share    = max(0, profit) × profitSharePct/100      (only positive profit shared)
+//   payout   = principalCad + I_owed + share            (what beneficiary gets if cashed out today)
+//   inflows  = sum of recurring inflows since startDate (what beneficiary has paid the user)
+//   netCarry = inflows − I_owed                         (positive = beneficiary owes user net)
+//
+// If carryLosses=true and profit<0, the user absorbs the shortfall: beneficiary
+// still gets principal + interest.
+const BeneficiaryInflowSchema = new mongoose.Schema(
+  {
+    description: { type: String, required: true, maxlength: 100 },
+    amountCad: { type: Number, required: true, min: 0 },
+    frequency: { type: String, enum: ["monthly", "yearly"], default: "monthly" },
+  },
+  { _id: false }
+);
+
+const BeneficiaryAgreementSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: false },
+    name: { type: String, default: "", maxlength: 80 },
+    principalCad: { type: Number, default: 0, min: 0 },
+    interestRatePct: { type: Number, default: 0, min: 0, max: 100 },
+    profitSharePct: { type: Number, default: 0, min: 0, max: 100 },
+    carryLosses: { type: Boolean, default: true },
+    startDate: { type: Date, default: null },
+    inflows: { type: [BeneficiaryInflowSchema], default: [] },
+    notes: { type: String, default: "", maxlength: 1000 },
+  },
+  { _id: false }
+);
+
 const AccountSchema = new mongoose.Schema(
   {
     id: { type: String, required: true },
@@ -26,6 +65,13 @@ const AccountSchema = new mongoose.Schema(
       enum: ["conservative", "moderate", "aggressive", "speculative", null],
       default: null,
     },
+    // When true, this account gets a dedicated block in the daily briefing on
+    // the last market day of the month (period P&L, YTD, inception) AND a
+    // separate end-of-month email after market close that same day.
+    monthlyReportEnabled: { type: Boolean, default: false },
+    // Optional beneficiary agreement. See BeneficiaryAgreementSchema comments
+    // above for the payout math. Surfaced in monthly reports when enabled.
+    beneficiaryAgreement: { type: BeneficiaryAgreementSchema, default: () => ({}) },
   },
   { _id: false }
 );

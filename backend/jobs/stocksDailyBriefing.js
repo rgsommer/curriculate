@@ -28,6 +28,7 @@ import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecy
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
 import { computeLessons, formatLessonsBlock } from "../services/stocksLessonsLearned.js";
 import { getTranscriptsForTopHoldings, formatTranscriptsBlock } from "../services/stocksEarningsTranscripts.js";
+import { buildAllAccountReports, formatAllReportsMarkdown, isLastTradingDayOfMonth } from "../services/stocksMonthlyReport.js";
 
 // Shared current-price fetcher (server-side; no CORS) — used by the
 // open-recommendation monitor below.
@@ -670,9 +671,19 @@ export async function runDailyBriefing(opts = {}) {
 
   console.log(`[stocks-briefing] Generating for ${portfolios.length} user(s)`);
 
+  // On the last trading day of the month, prepend the per-account monthly
+  // report block to the briefing body (only for accounts with
+  // monthlyReportEnabled=true).
+  const includeMonthly = isLastTradingDayOfMonth(new Date());
+
   for (const p of portfolios) {
     try {
-      const md = await generateBriefing(p);
+      let md = await generateBriefing(p);
+      if (includeMonthly) {
+        const reports = await buildAllAccountReports(p).catch((e) => { console.warn("[monthly-report] warn:", e?.message); return []; });
+        const block = formatAllReportsMarkdown(reports);
+        if (block) md = `${block}\n\n---\n\n${md}`;
+      }
       const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
       await emailBriefing({ to: p.email, subject, md });
 
@@ -707,5 +718,56 @@ export function scheduleDailyBriefing() {
   return cron.schedule(expr, async () => {
     console.log(`[stocks-briefing] tick: ${new Date().toISOString()}`);
     try { await runDailyBriefing(); } catch (e) { console.error("[stocks-briefing] tick error:", e); }
+  }, { timezone: tz });
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Dedicated end-of-month report job. Runs after market close (5pm ET by
+// default) every weekday, but emits only on the last trading day of the
+// month. Produces a focused email containing JUST the per-account monthly
+// reports (no AI advice, no recs) for users with monthlyReportEnabled
+// accounts.
+// ─────────────────────────────────────────────────────────────────────
+export async function runMonthlyReportJob(opts = {}) {
+  const force = opts.force === true;
+  if (!force && !isLastTradingDayOfMonth(new Date())) {
+    console.log("[stocks-monthly-report] skip — not last trading day of month");
+    return;
+  }
+  const only = opts.onlyEmail ? opts.onlyEmail.toLowerCase() : null;
+  const query = only ? { email: only } : {};
+  // Only users with at least one account that has monthlyReportEnabled
+  const portfolios = await StocksPortfolio.find({
+    ...query,
+    "accounts.monthlyReportEnabled": true,
+  }).lean();
+
+  console.log(`[stocks-monthly-report] generating for ${portfolios.length} user(s)`);
+  for (const p of portfolios) {
+    try {
+      const reports = await buildAllAccountReports(p);
+      const block = formatAllReportsMarkdown(reports);
+      if (!block) continue;
+      const monthLabel = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
+      const md = `# 📊 Monthly account report — ${monthLabel}\n\n${block}\n\n---\n\nResearch and education only. Not licensed investment advice.`;
+      const subject = `Monthly account report — ${monthLabel}`;
+      await emailBriefing({ to: p.email, subject, md });
+      console.log(`[stocks-monthly-report] ✓ ${p.email}`);
+    } catch (err) {
+      console.error(`[stocks-monthly-report] ✗ ${p.email}:`, err?.message);
+    }
+  }
+}
+
+export function scheduleMonthlyReport() {
+  if (process.env.STOCKS_BRIEFING_ENABLED !== "1") return null;
+  // Default: 5:15 PM ET weekdays — 15 min after typical close to let
+  // intraday snapshots settle. The job no-ops unless it's actually the
+  // last trading day of the month.
+  const expr = process.env.STOCKS_MONTHLY_REPORT_CRON || "15 17 * * 1-5";
+  const tz = process.env.STOCKS_BRIEFING_TZ || "America/New_York";
+  console.log(`[stocks-monthly-report] scheduled: "${expr}" ${tz} (runs only on last trading day)`);
+  return cron.schedule(expr, async () => {
+    try { await runMonthlyReportJob(); } catch (e) { console.error("[stocks-monthly-report] tick error:", e); }
   }, { timezone: tz });
 }
