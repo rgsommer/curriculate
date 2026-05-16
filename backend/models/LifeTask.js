@@ -49,6 +49,18 @@ const LifeTaskSchema = new Schema(
       enum: LIFE_TASK_RECURRENCES,
       default: "none",
     },
+    // For monthly recurrence only: pin the day of the month.
+    //   null        = auto (use the day from dueAt — original behavior)
+    //   1..31       = land on that day each month (clamped to month length,
+    //                 e.g. 31 → Feb 28)
+    //   0           = last day of the month
+    // Ignored for other recurrences.
+    recurrenceDay: {
+      type: Number,
+      default: null,
+      min: 0,
+      max: 31,
+    },
   },
   { timestamps: true }
 );

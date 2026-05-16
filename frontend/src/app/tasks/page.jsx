@@ -42,6 +42,41 @@ function recurrenceLabel(r) {
   return (RECURRENCES.find((x) => x.id === r) || RECURRENCES[0]).label;
 }
 
+// Options for the monthly day-of-month picker.
+// Value "" = auto (use dueAt's day, server stores null).
+// "0"      = last day of the month.
+// "1".."31" = that day of the month.
+const DAY_OF_MONTH_OPTIONS = [
+  { value: "", label: "Same day as due date" },
+  ...Array.from({ length: 31 }, (_, i) => {
+    const n = i + 1;
+    const suffix =
+      n % 100 >= 11 && n % 100 <= 13 ? "th" :
+      n % 10 === 1 ? "st" :
+      n % 10 === 2 ? "nd" :
+      n % 10 === 3 ? "rd" : "th";
+    return { value: String(n), label: `${n}${suffix} of the month` };
+  }),
+  { value: "0", label: "Last day of the month" },
+];
+
+function dayOfMonthLabel(val) {
+  if (val == null || val === "") return null;
+  const found = DAY_OF_MONTH_OPTIONS.find((o) => o.value === String(val));
+  return found ? found.label : null;
+}
+
+// Converts the stored recurrenceDay value (number|null) ↔ <select> string.
+function recDayToSelect(v) {
+  if (v == null) return "";
+  return String(v);
+}
+function recDayFromSelect(v) {
+  if (v === "" || v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 // Due-date urgency tiers — derived each render so colors update with time.
 function urgencyFor(task) {
   if (task.completedAt) return "done";
@@ -318,6 +353,7 @@ function AddTaskForm({ onAdd }) {
   const [category, setCategory] = useState("family");
   const [dueAt, setDueAt] = useState("");
   const [recurrence, setRecurrence] = useState("none");
+  const [recDay, setRecDay] = useState(""); // "", "0", "1".."31"
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -331,9 +367,10 @@ function AddTaskForm({ onAdd }) {
         category,
         dueAt: dueAt ? new Date(dueAt).toISOString() : null,
         recurrence,
+        recurrenceDay: recurrence === "monthly" ? recDayFromSelect(recDay) : null,
       });
       setTitle(""); setDueAt("");
-      // keep category + recurrence sticky for rapid entry of similar tasks
+      // keep category + recurrence + recDay sticky for rapid entry of similar tasks
     } catch (e) {
       setErr(e?.message || "Couldn't add task.");
     } finally {
@@ -378,7 +415,11 @@ function AddTaskForm({ onAdd }) {
         />
         <select
           value={recurrence}
-          onChange={(e) => setRecurrence(e.target.value)}
+          onChange={(e) => {
+            const r = e.target.value;
+            setRecurrence(r);
+            if (r !== "monthly") setRecDay(""); // clear day-of-month pin when leaving monthly
+          }}
           style={styles.recurSelect}
           disabled={busy}
           aria-label="Repeat"
@@ -388,6 +429,20 @@ function AddTaskForm({ onAdd }) {
             <option key={r.id} value={r.id}>{r.id === "none" ? "Once" : `↻ ${r.label}`}</option>
           ))}
         </select>
+        {recurrence === "monthly" && (
+          <select
+            value={recDay}
+            onChange={(e) => setRecDay(e.target.value)}
+            style={styles.recurSelect}
+            disabled={busy}
+            aria-label="Day of month"
+            title="Day of month"
+          >
+            {DAY_OF_MONTH_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        )}
         <button type="submit" style={styles.addBtn} disabled={busy || !title.trim()}>
           {busy ? "Adding…" : "Add"}
         </button>
@@ -491,6 +546,7 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
   const [category, setCategory] = useState(task.category);
   const [dueAt, setDueAt] = useState(toLocalInputValue(task.dueAt));
   const [recurrence, setRecurrence] = useState(task.recurrence || "none");
+  const [recDay, setRecDay] = useState(recDayToSelect(task.recurrenceDay));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const completed = !!task.completedAt;
@@ -513,6 +569,7 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
         category,
         dueAt: dueAt ? new Date(dueAt).toISOString() : null,
         recurrence,
+        recurrenceDay: recurrence === "monthly" ? recDayFromSelect(recDay) : null,
       });
       onClose();
     } catch (e) {
@@ -620,7 +677,10 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
           {RECURRENCES.map((r) => (
             <button
               type="button" key={r.id}
-              onClick={() => setRecurrence(r.id)}
+              onClick={() => {
+                setRecurrence(r.id);
+                if (r.id !== "monthly") setRecDay("");
+              }}
               style={{
                 ...styles.catPill,
                 ...(recurrence === r.id
@@ -634,9 +694,26 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
             </button>
           ))}
         </div>
+        {recurrence === "monthly" && (
+          <div style={{ marginTop: 10 }}>
+            <label style={styles.label}>Day of month</label>
+            <select
+              value={recDay}
+              onChange={(e) => setRecDay(e.target.value)}
+              style={{ ...styles.recurSelect, width: "100%" }}
+              disabled={busy}
+            >
+              {DAY_OF_MONTH_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
         {recurrence !== "none" && (
-          <div style={{ ...styles.hint, marginTop: 0 }}>
-            When you complete this task, a new one will appear {recurrenceLabel(recurrence).toLowerCase().replace("ly", "")} later.
+          <div style={{ ...styles.hint, marginTop: 8 }}>
+            {recurrence === "monthly" && recDay !== ""
+              ? `When you complete this task, a new one will appear on the ${dayOfMonthLabel(recDay)?.toLowerCase() || "next month"}.`
+              : `When you complete this task, a new one will appear ${recurrenceLabel(recurrence).toLowerCase().replace("ly", "")} later.`}
           </div>
         )}
 

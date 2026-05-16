@@ -221,6 +221,7 @@ function serializeTask(t) {
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
     completedAt: t.completedAt ? t.completedAt.toISOString() : null,
     recurrence: t.recurrence || "none",
+    recurrenceDay: t.recurrenceDay == null ? null : t.recurrenceDay,
     createdAt: t.createdAt ? t.createdAt.toISOString() : null,
     updatedAt: t.updatedAt ? t.updatedAt.toISOString() : null,
   };
@@ -243,17 +244,28 @@ function sanitizeRecurrence(input, fallback = "none") {
   return LIFE_TASK_RECURRENCES.includes(r) ? r : fallback;
 }
 
+// Day-of-month sanitizer for monthly recurrences. Accepts null/undefined,
+// numeric strings, and numbers. Returns null (auto), or 0..31.
+function sanitizeRecurrenceDay(input) {
+  if (input == null || input === "") return null;
+  const n = Number(input);
+  if (!Number.isFinite(n)) return null;
+  const i = Math.trunc(n);
+  if (i < 0 || i > 31) return null;
+  return i;
+}
+
 // Like advanceDate but keeps stepping until the result is in the future,
 // so completing a long-overdue recurring task doesn't immediately spawn
 // another overdue one. Caps the loop to avoid runaway iteration on
 // pathological inputs (e.g. 200 years of weekly = 10400 iterations max).
-function advanceDateToFuture(from, recurrence) {
-  let next = advanceDate(from, recurrence);
+function advanceDateToFuture(from, recurrence, opts = {}) {
+  let next = advanceDate(from, recurrence, opts);
   if (!next) return null;
   const now = Date.now();
   let safety = 0;
   while (next.getTime() <= now && safety < 20000) {
-    const stepped = advanceDate(next, recurrence);
+    const stepped = advanceDate(next, recurrence, opts);
     if (!stepped) break;
     next = stepped;
     safety++;
@@ -264,7 +276,12 @@ function advanceDateToFuture(from, recurrence) {
 // Advance a date by `recurrence`. Handles month-end rollover correctly:
 // Jan 31 + 1 month → Feb 28 (or Feb 29 in leap years), not Mar 3.
 // `from` is the anchor date; if null, "now" is used.
-function advanceDate(from, recurrence) {
+//
+// `opts.monthlyDay` pins the day-of-month for "monthly" recurrence:
+//   null/undefined = use the day of `from` (original behavior)
+//   1..31          = land on that day (clamped to month length)
+//   0              = last day of the month
+function advanceDate(from, recurrence, opts = {}) {
   const base = from ? new Date(from) : new Date();
   const next = new Date(base.getTime());
 
@@ -273,11 +290,17 @@ function advanceDate(from, recurrence) {
     return next;
   }
   if (recurrence === "monthly") {
-    const day = next.getDate();
+    const pinned = opts.monthlyDay;
+    const wantedDay =
+      pinned == null
+        ? next.getDate()
+        : Number.isFinite(pinned)
+          ? Math.max(0, Math.min(31, Math.trunc(pinned)))
+          : next.getDate();
     next.setDate(1);              // step off the cliff so setMonth doesn't roll
     next.setMonth(next.getMonth() + 1);
     const dim = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
-    next.setDate(Math.min(day, dim));
+    next.setDate(wantedDay === 0 ? dim : Math.min(wantedDay, dim));
     return next;
   }
   if (recurrence === "yearly") {
@@ -322,6 +345,8 @@ router.post("/tasks", authRequired, async (req, res) => {
     const category = sanitizeCategory(req.body?.category);
     const dueAt = parseDueAt(req.body?.dueAt);
     const recurrence = sanitizeRecurrence(req.body?.recurrence);
+    const recurrenceDay =
+      recurrence === "monthly" ? sanitizeRecurrenceDay(req.body?.recurrenceDay) : null;
 
     const task = await LifeTask.create({
       userId: req.userId,
@@ -329,6 +354,7 @@ router.post("/tasks", authRequired, async (req, res) => {
       category,
       dueAt,
       recurrence,
+      recurrenceDay,
     });
 
     return res.json({ ok: true, task: serializeTask(task) });
@@ -365,6 +391,14 @@ router.patch("/tasks/:id", authRequired, async (req, res) => {
     if ("recurrence" in req.body) {
       task.recurrence = sanitizeRecurrence(req.body.recurrence, task.recurrence);
     }
+    if ("recurrenceDay" in req.body) {
+      task.recurrenceDay = sanitizeRecurrenceDay(req.body.recurrenceDay);
+    }
+    // If recurrence changes away from "monthly", drop the day pin so it
+    // doesn't linger as orphaned state.
+    if (task.recurrence !== "monthly") {
+      task.recurrenceDay = null;
+    }
     if ("completed" in req.body) {
       task.completedAt = req.body.completed ? new Date() : null;
     }
@@ -381,7 +415,11 @@ router.patch("/tasks/:id", authRequired, async (req, res) => {
     let spawnedTask = null;
     const justCompleted = wasIncomplete && !!task.completedAt;
     if (justCompleted && task.recurrence && task.recurrence !== "none") {
-      const nextDue = advanceDateToFuture(task.dueAt || new Date(), task.recurrence);
+      const nextDue = advanceDateToFuture(
+        task.dueAt || new Date(),
+        task.recurrence,
+        { monthlyDay: task.recurrenceDay }
+      );
       if (nextDue) {
         spawnedTask = await LifeTask.create({
           userId: task.userId,
@@ -389,6 +427,7 @@ router.patch("/tasks/:id", authRequired, async (req, res) => {
           category: task.category,
           dueAt: nextDue,
           recurrence: task.recurrence,
+          recurrenceDay: task.recurrenceDay,
         });
       }
     }
