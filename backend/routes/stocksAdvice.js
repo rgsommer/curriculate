@@ -27,6 +27,8 @@ import {
   parseRecsFromBriefing,
   monitorOpenRecs,
 } from "../jobs/stocksDailyBriefing.js";
+import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnicals.js";
+import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
 
 const router = express.Router();
 
@@ -148,7 +150,41 @@ Account-placement & tax notes (Canadian investor):
 - For every BUY rec, suggest the specific account (Non-Spousal / RRSP / TFSA) using these rules.
 `;
 
-function buildPrompt(profile, summary, monitorAlerts = []) {
+// Pre-compute quant signals (FMP fundamentals + local technicals) for the
+// top-N tickers in a portfolio. Run in parallel, tolerate per-ticker failure.
+export async function computeQuantSignals(profile, topN = 8) {
+  const fx = profile.fxUsdCad || 1.37;
+  const agg = aggregateByTicker(profile.positions || [], fx).slice(0, topN);
+  const tickerInfo = {};
+  for (const p of profile.positions || []) {
+    if (!tickerInfo[p.ticker]) tickerInfo[p.ticker] = { ccy: p.ccy };
+  }
+  const out = {};
+  await Promise.all(
+    agg.map(async (a) => {
+      const ccy = tickerInfo[a.ticker]?.ccy || "USD";
+      const [tech, fund] = await Promise.all([
+        getTechnicals(a.ticker).catch(() => ({ ok: false })),
+        getFundamentals(a.ticker, ccy).catch(() => ({ ok: false })),
+      ]);
+      out[a.ticker] = { tech, fund, ccy };
+    })
+  );
+  return out;
+}
+
+function formatQuantSignalsBlock(quantSignals) {
+  if (!quantSignals || Object.keys(quantSignals).length === 0) return "";
+  const lines = [];
+  for (const [ticker, sig] of Object.entries(quantSignals)) {
+    lines.push(`${ticker} (${sig.ccy}):`);
+    lines.push(`  Fundamentals: ${formatFundamentalsLine(sig.fund)}`);
+    lines.push(`  Technicals:   ${formatTechnicalsLine(sig.tech)}`);
+  }
+  return `\nQUANT SIGNALS PER HOLDING (pre-computed — use THESE numbers, don't guess from search results):\n${lines.join("\n")}\n`;
+}
+
+function buildPrompt(profile, summary, monitorAlerts = [], quantSignals = null) {
   const risk = profile.riskTolerance || "aggressive";
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
@@ -281,6 +317,7 @@ Holdings:
 ${summary.text}
 ${cashBlock}
 ${alertsBlock}
+${formatQuantSignalsBlock(quantSignals)}
 ${priceCurrencyBlock}
 ${orderTicketBlock}
 ${tradingCostsBlock}
@@ -405,9 +442,9 @@ function extractJson(text) {
 // Returns { advice, sources, textOut } where advice is the parsed JSON
 // array of cards and sources are the web_search citations.
 // ─────────────────────────────────────────────────────────────────────
-async function runOneAdvicePass({ profile, monitorAlerts }) {
+async function runOneAdvicePass({ profile, monitorAlerts, quantSignals }) {
   const summary = portfolioSummary(profile);
-  const prompt = buildPrompt(profile, summary, monitorAlerts);
+  const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals);
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -471,10 +508,14 @@ router.post("/", requireStocksAuth, async (req, res) => {
 
     const summary = portfolioSummary(profile);
 
-    // Monitor open recs for target/stop hits BEFORE generating advice
-    const { alerts: monitorAlerts } = await monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] }));
+    // Monitor open recs + compute quant signals (FMP + technicals) in parallel
+    const [monitorRes, quantSignals] = await Promise.all([
+      monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] })),
+      computeQuantSignals(profile).catch(() => ({})),
+    ]);
+    const monitorAlerts = monitorRes?.alerts || [];
 
-    const prompt = buildPrompt(profile, summary, monitorAlerts);
+    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals);
 
     // Anthropic Messages API call with web_search server-side tool
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -691,13 +732,17 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
       return res.status(400).json({ error: "No positions to advise on." });
     }
 
-    // Monitor open recs once — same alert input goes to all three runs
-    const { alerts: monitorAlerts } = await monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] }));
+    // Compute alerts + quant signals once, share across all three runs
+    const [monitorRes, quantSignals] = await Promise.all([
+      monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] })),
+      computeQuantSignals(profile).catch(() => ({})),
+    ]);
+    const monitorAlerts = monitorRes?.alerts || [];
 
     // Fan out 3 parallel generations
     const N = 3;
     const settled = await Promise.allSettled(
-      Array.from({ length: N }).map(() => runOneAdvicePass({ profile, monitorAlerts }))
+      Array.from({ length: N }).map(() => runOneAdvicePass({ profile, monitorAlerts, quantSignals }))
     );
     const runs = settled.map((s) => s.status === "fulfilled" ? s.value : { error: s.reason?.message || "Failed", advice: [], sources: [] });
     const successful = runs.filter(r => !r.error);

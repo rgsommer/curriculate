@@ -21,6 +21,8 @@
 import cron from "node-cron";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
+import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnicals.js";
+import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
 
 // Shared current-price fetcher (server-side; no CORS) — used by the
 // open-recommendation monitor below.
@@ -338,7 +340,40 @@ Account-placement & tax notes (Canadian investor):
 - Suggest the specific account (Non-Spousal / RRSP / TFSA) for any new BUY rec, especially Canadian-corp dividend payers vs US growth names.
 `;
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = []) {
+// Build a "QUANT SIGNALS" block for the briefing prompt — pre-computed
+// fundamentals (FMP) + technicals (local) for the top holdings, so the AI
+// has reliable numbers instead of guessing from search results.
+async function computeQuantSignals(profile, topN = 8) {
+  const tickerInfo = {};
+  for (const p of profile.positions || []) {
+    if (!tickerInfo[p.ticker]) tickerInfo[p.ticker] = { ccy: p.ccy };
+  }
+  const tickers = Object.keys(tickerInfo).slice(0, topN);
+  const out = {};
+  await Promise.all(
+    tickers.map(async (ticker) => {
+      const ccy = tickerInfo[ticker].ccy;
+      const [tech, fund] = await Promise.all([
+        getTechnicals(ticker).catch(() => ({ ok: false })),
+        getFundamentals(ticker, ccy).catch(() => ({ ok: false })),
+      ]);
+      out[ticker] = { tech, fund, ccy };
+    })
+  );
+  return out;
+}
+function formatQuantSignalsBlock(quantSignals) {
+  if (!quantSignals || Object.keys(quantSignals).length === 0) return "";
+  const lines = [];
+  for (const [ticker, sig] of Object.entries(quantSignals)) {
+    lines.push(`${ticker} (${sig.ccy}):`);
+    lines.push(`  Fundamentals: ${formatFundamentalsLine(sig.fund)}`);
+    lines.push(`  Technicals:   ${formatTechnicalsLine(sig.tech)}`);
+  }
+  return `\nQUANT SIGNALS PER HOLDING (pre-computed — use THESE numbers, don't guess):\n${lines.join("\n")}\n`;
+}
+
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -430,6 +465,7 @@ Holdings:
 ${summary.table}
 ${cashBlock}
 ${alertsBlock}
+${formatQuantSignalsBlock(quantSignals)}
 ${priceCurrencyBlock}
 ${orderTicketBlock}
 ${tradingCostsBlock}
@@ -495,13 +531,19 @@ export function parseRecsFromBriefing(text) {
 export async function generateBriefing(profile) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
   const summary = portfolioSummary(profile);
-  // Check every open rec for target/stop hits BEFORE generating the briefing
-  // so they can be surfaced at the top.
-  const { alerts: monitorAlerts } = await monitorOpenRecs(profile.email).catch((e) => {
-    console.warn("[monitorOpenRecs] warn:", e?.message);
-    return { alerts: [] };
-  });
-  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts);
+  // Run target/stop monitor + quant signal pre-compute in parallel
+  const [monitorRes, quantSignals] = await Promise.all([
+    monitorOpenRecs(profile.email).catch((e) => {
+      console.warn("[monitorOpenRecs] warn:", e?.message);
+      return { alerts: [] };
+    }),
+    computeQuantSignals(profile).catch((e) => {
+      console.warn("[computeQuantSignals] warn:", e?.message);
+      return {};
+    }),
+  ]);
+  const monitorAlerts = monitorRes?.alerts || [];
+  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals);
 
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
