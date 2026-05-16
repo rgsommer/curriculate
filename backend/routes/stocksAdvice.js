@@ -835,10 +835,27 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
     );
     const runs = settled.map((s) => s.status === "fulfilled" ? s.value : { error: s.reason?.message || "Failed", advice: [], sources: [] });
     const successful = runs.filter(r => !r.error);
-    if (successful.length < 2) {
+    if (successful.length === 0) {
       return res.status(502).json({
-        error: `Only ${successful.length} of ${N} generations succeeded — consensus needs at least 2.`,
+        error: `All ${N} generations failed. Try Update Advice again in a moment.`,
         runs,
+      });
+    }
+    // If only 1 of N succeeded there's no real "consensus" to compute — fall
+    // back to that single run's advice with a degraded flag so the client can
+    // surface a note. This is friendlier than a hard error: the user still
+    // sees usable advice instead of nothing.
+    if (successful.length < 2) {
+      const single = successful[0];
+      return res.json({
+        consensus: single.advice || [],
+        alternatives: [],
+        sources: single.sources || [],
+        runs: N,
+        runsSucceeded: 1,
+        degraded: true,
+        degradedReason: `Only 1 of ${N} generations succeeded — showing single-run advice instead of consensus.`,
+        generatedAt: new Date().toISOString(),
       });
     }
 

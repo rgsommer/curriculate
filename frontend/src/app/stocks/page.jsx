@@ -63,6 +63,7 @@ async function apiPutPortfolio(sessionToken, profile) {
       fxUsdCad: profile.fxUsdCad,
       commissionPerTrade: profile.commissionPerTrade,
       fxSpreadPct: profile.fxSpreadPct,
+      consensusMode: profile.consensusMode,
       goals: profile.goals,
       annualContributionGoals: profile.annualContributionGoals,
       accounts: profile.accounts,
@@ -1015,6 +1016,10 @@ export default function StocksAdvisorPage() {
                 }));
                 showToast("Beneficiary agreement saved");
               }}
+              onChangeConsensusMode={(v) => {
+                updateUser(() => ({ consensusMode: v }));
+                showToast(v ? "Consensus mode ON — Update Advice will run 3×" : "Consensus mode OFF — single-run advice");
+              }}
               onAddPlannedWithdrawal={(w) => {
                 const id = "w" + Date.now() + Math.random().toString(36).slice(2, 6);
                 updateUser((u) => ({
@@ -1600,11 +1605,22 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
           <button className="sa-btn secondary" onClick={handleRefresh} disabled={busy || aiBusy || consensusBusy} title="Re-fetch prices and re-run the rule engine">
             {busy ? "Refreshing…" : "↻ Refresh prices"}
           </button>
-          <button className="sa-btn secondary" onClick={handleConsensus} disabled={consensusBusy || aiBusy || busy} title="Run advice 3× in parallel and surface the recommendations that appear in ≥ 2 of 3 runs (high-conviction). Costs ~3× the single-run API spend.">
-            {consensusBusy ? "Running 3×…" : "🧠🧠🧠 Consensus mode"}
-          </button>
-          <button className="sa-btn" onClick={handleAi} disabled={aiBusy || busy || consensusBusy} title="Search the web for fresh news on each holding and run Claude over the portfolio">
-            {aiBusy ? "Thinking…" : "🧠 Update Advice"}
+          {/* Single Update Advice button — branches on user.consensusMode.
+              Toggle the setting in Settings → AI advice mode. Consensus runs
+              3× in parallel and surfaces ideas that appear in ≥2 of 3 runs;
+              if only 1 of 3 succeeds, server falls back to single-run output
+              with a "degraded" badge. */}
+          <button
+            className="sa-btn"
+            onClick={user.consensusMode ? handleConsensus : handleAi}
+            disabled={aiBusy || busy || consensusBusy}
+            title={user.consensusMode
+              ? "Consensus mode is ON. Runs advice 3× in parallel and surfaces only the recs that appear in ≥ 2 of 3 runs. Costs ~3× the single-run API spend. Toggle in Settings."
+              : "Search the web for fresh news on each holding and run Claude once over the portfolio. For higher conviction enable Consensus mode in Settings."}
+          >
+            {user.consensusMode
+              ? (consensusBusy ? "Running 3×…" : "🧠🧠🧠 Update Advice (Consensus)")
+              : (aiBusy ? "Thinking…" : "🧠 Update Advice")}
           </button>
         </div>
       </div>
@@ -1615,9 +1631,14 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
           <button className="sa-btn ghost" onClick={() => { setAiAdvice(null); setConsensusData(null); }}>Back to rule-based view</button>
         </div>
       )}
-      {showingConsensus && (
+      {showingConsensus && !consensusData.degraded && (
         <div style={{ marginBottom: 14, padding: "10px 14px", background: "var(--sa-accent-soft)", border: "1px solid #bfdbfe", borderRadius: 10, fontSize: 12, color: "var(--sa-text-2)" }}>
           🧠🧠🧠 <b>Consensus mode</b> — recommendations shown below appeared in <b>at least 2 of {consensusData.runsSucceeded} independent generations</b>. Each card shows the run count. Lower-conviction ideas (appeared in only 1 run) are listed separately below.
+        </div>
+      )}
+      {showingConsensus && consensusData.degraded && (
+        <div style={{ marginBottom: 14, padding: "10px 14px", background: "var(--sa-amber-soft)", border: "1px solid #fde68a", borderRadius: 10, fontSize: 12, color: "var(--sa-amber)" }}>
+          ⚠️ <b>Consensus degraded.</b> {consensusData.degradedReason || "Only 1 of 3 generations succeeded — showing single-run advice instead of consensus."} Click Update Advice again to retry.
         </div>
       )}
       {shown.map((c, i) => {
@@ -1875,7 +1896,7 @@ function AccountReportRow({ account, onToggleMonthly, onSaveAgreement }) {
   );
 }
 
-function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeBeneficiaryAgreement, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeBeneficiaryAgreement, onChangeConsensusMode, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
   // Contribution goals — each is { amount, period }. Legacy flat numbers are
@@ -2067,6 +2088,24 @@ function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onCh
             </div>
           </div>
         )}
+      </div>
+
+      <div className="sa-card" style={{ marginBottom: 14 }}>
+        <h3>AI advice mode</h3>
+        <label style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={!!user.consensusMode}
+            onChange={(e) => onChangeConsensusMode(e.target.checked)}
+            style={{ marginTop: 3 }}
+          />
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Consensus mode</div>
+            <div className="sa-muted" style={{ fontSize: 12, marginTop: 4 }}>
+              Run advice <b>3× in parallel</b> on every click of <b>Update Advice</b>, and surface only the ideas that appear in <b>at least 2 of 3</b> runs (high-conviction). Costs ~3× the single-run API spend and takes longer. If only 1 of 3 succeeds, you get that single run as a fallback with a "degraded" notice instead of an error.
+            </div>
+          </div>
+        </label>
       </div>
 
       <div className="sa-card" style={{ marginBottom: 14 }}>

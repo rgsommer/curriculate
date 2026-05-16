@@ -114,6 +114,10 @@ const StocksPortfolioSchema = new mongoose.Schema(
     //                       the broker's currency conversion (typically 1.5%).
     commissionPerTrade: { type: Number, default: 9.95 },
     fxSpreadPct: { type: Number, default: 1.5 },
+    // When true, "Update Advice" runs the consensus path (3 parallel
+    // generations, surface only what appeared in ≥2 runs). When false,
+    // single-run advice. Used to be a separate button; now a setting.
+    consensusMode: { type: Boolean, default: false },
     // Free-form long-term goals & constraints. Written by the user in their
     // own words ("retire in 2030", "$1K/mo from 2035", "RRSP cap $86K") and
     // injected at the TOP of every AI advice/briefing prompt so the model

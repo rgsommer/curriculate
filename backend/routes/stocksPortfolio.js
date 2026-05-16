@@ -177,6 +177,9 @@ function sanitizePortfolioInput(body, email) {
   if (typeof body.fxSpreadPct === "number" && body.fxSpreadPct >= 0 && body.fxSpreadPct < 10) {
     out.fxSpreadPct = body.fxSpreadPct;
   }
+  if (typeof body.consensusMode === "boolean") {
+    out.consensusMode = body.consensusMode;
+  }
   if (typeof body.goals === "string") {
     out.goals = body.goals.slice(0, 5000);
   }
