@@ -76,6 +76,11 @@ const AccountSchema = new mongoose.Schema(
     // the last market day of the month (period P&L, YTD, inception) AND a
     // separate end-of-month email after market close that same day.
     monthlyReportEnabled: { type: Boolean, default: false },
+    // Optional extra recipient (e.g. Tamara for the TFSA). When set, the
+    // monthly report for THIS account is also emailed to this address as a
+    // dedicated single-account report — they don't see other accounts.
+    // The owner always receives the full multi-account report regardless.
+    monthlyReportCcEmail: { type: String, default: "", maxlength: 200, trim: true, lowercase: true },
     // Optional beneficiary agreement. See BeneficiaryAgreementSchema comments
     // above for the payout math. Surfaced in monthly reports when enabled.
     beneficiaryAgreement: { type: BeneficiaryAgreementSchema, default: () => ({}) },

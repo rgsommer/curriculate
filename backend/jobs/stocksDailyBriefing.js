@@ -28,7 +28,7 @@ import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecy
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
 import { computeLessons, formatLessonsBlock } from "../services/stocksLessonsLearned.js";
 import { getTranscriptsForTopHoldings, formatTranscriptsBlock } from "../services/stocksEarningsTranscripts.js";
-import { buildAllAccountReports, formatAllReportsMarkdown, isLastTradingDayOfMonth } from "../services/stocksMonthlyReport.js";
+import { buildAllAccountReports, formatAllReportsMarkdown, formatAccountReportMarkdown, isLastTradingDayOfMonth } from "../services/stocksMonthlyReport.js";
 
 // Shared current-price fetcher (server-side; no CORS) — used by the
 // open-recommendation monitor below.
@@ -757,8 +757,30 @@ export async function runMonthlyReportJob(opts = {}) {
       const monthLabel = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
       const md = `# 📊 Monthly account report — ${monthLabel}\n\n${block}\n\n---\n\nResearch and education only. Not licensed investment advice.`;
       const subject = `Monthly account report — ${monthLabel}`;
-      await emailBriefing({ to: p.email, subject, md });
-      console.log(`[stocks-monthly-report] ✓ ${p.email}`);
+      const ownerResp = await emailBriefing({ to: p.email, subject, md });
+      console.log(`[stocks-monthly-report] ✓ owner ${p.email} id=${ownerResp?.id}`);
+
+      // Per-account cc emails — each external recipient sees ONLY their
+      // account's section, not the rest of the portfolio. Useful when an
+      // account is held for a beneficiary who is entitled to see their
+      // own performance but should not see other accounts.
+      const flagged = (p.accounts || []).filter(a => a.monthlyReportEnabled);
+      for (let i = 0; i < flagged.length; i++) {
+        const acct = flagged[i];
+        const cc = acct.monthlyReportCcEmail && acct.monthlyReportCcEmail.trim();
+        if (!cc) continue;
+        const accountReport = reports[i];
+        if (!accountReport) continue;
+        const singleBlock = formatAccountReportMarkdown(accountReport);
+        const ccSubject = `${acct.name} monthly report — ${monthLabel}`;
+        const ccMd = `# ${acct.name} — ${monthLabel}\n\n${singleBlock}\n\n---\n\nResearch and education only. Not licensed investment advice.`;
+        try {
+          const ccResp = await emailBriefing({ to: cc, subject: ccSubject, md: ccMd });
+          console.log(`[stocks-monthly-report] ✓ cc ${cc} (${acct.name}) id=${ccResp?.id}`);
+        } catch (e) {
+          console.error(`[stocks-monthly-report] ✗ cc ${cc} (${acct.name}):`, e?.message);
+        }
+      }
     } catch (err) {
       console.error(`[stocks-monthly-report] ✗ ${p.email}:`, err?.message);
     }

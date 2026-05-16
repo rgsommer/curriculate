@@ -27,7 +27,7 @@ import {
   parseRecsFromBriefing,
   monitorOpenRecs,
 } from "../jobs/stocksDailyBriefing.js";
-import { buildAllAccountReports, formatAllReportsMarkdown } from "../services/stocksMonthlyReport.js";
+import { buildAllAccountReports, formatAllReportsMarkdown, formatAccountReportMarkdown } from "../services/stocksMonthlyReport.js";
 import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnicals.js";
 import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
@@ -1079,6 +1079,7 @@ router.post("/send-monthly-report", requireStocksAuth, async (req, res) => {
     let sendError = null;
     let messageId = null;
     let toAddress = null;
+    const ccSends = []; // [{ accountName, email, sent, messageId, error }]
     if (req.body?.send) {
       toAddress = (typeof req.body?.to === "string" && req.body.to.trim()) || profile.email;
       try {
@@ -1090,9 +1091,31 @@ router.post("/send-monthly-report", requireStocksAuth, async (req, res) => {
         sendError = e?.message || String(e);
         console.error(`[monthly-report] send failed to ${toAddress}:`, sendError);
       }
+
+      // Per-account cc emails: each gets ONLY their account's section, not
+      // the full multi-account report. This protects privacy (Tamara sees
+      // the TFSA only, not Richard's RRSP or Non-Spousal numbers).
+      for (let i = 0; i < flagged.length; i++) {
+        const acct = flagged[i];
+        const cc = acct.monthlyReportCcEmail && acct.monthlyReportCcEmail.trim();
+        if (!cc) continue;
+        const accountReport = reports[i];
+        if (!accountReport) continue;
+        const singleBlock = formatAccountReportMarkdown(accountReport);
+        const ccSubject = `${acct.name} monthly report — ${monthLabel} (preview)`;
+        const ccMarkdown = `# ${acct.name} — ${monthLabel}\n\n_Single-account monthly report._\n\n${singleBlock}\n\n---\n\nResearch and education only. Not licensed investment advice.`;
+        try {
+          const ccResp = await emailBriefing({ to: cc, subject: ccSubject, md: ccMarkdown });
+          ccSends.push({ accountName: acct.name, email: cc, sent: true, messageId: ccResp?.id || null });
+          console.log(`[monthly-report] cc to ${cc} (account ${acct.name}) id=${ccResp?.id}`);
+        } catch (e) {
+          ccSends.push({ accountName: acct.name, email: cc, sent: false, error: e?.message || String(e) });
+          console.error(`[monthly-report] cc failed to ${cc} (account ${acct.name}):`, e?.message);
+        }
+      }
     }
 
-    res.json({ markdown, html, subject, sent, sendError, messageId, to: toAddress, accountsCovered: flagged.length });
+    res.json({ markdown, html, subject, sent, sendError, messageId, to: toAddress, ccSends, accountsCovered: flagged.length });
   } catch (err) {
     console.error("send-monthly-report error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });

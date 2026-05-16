@@ -248,6 +248,12 @@ function sanitizePortfolioInput(body, email) {
           ? a.riskTolerance : null,
         // Per-account monthly report flag + optional beneficiary agreement
         monthlyReportEnabled: !!a.monthlyReportEnabled,
+        // Basic email validation: must contain "@" and a dot after it.
+        // Empty string means "no extra recipient".
+        monthlyReportCcEmail: (typeof a.monthlyReportCcEmail === "string"
+          && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.monthlyReportCcEmail.trim()))
+          ? a.monthlyReportCcEmail.trim().toLowerCase()
+          : "",
         beneficiaryAgreement: sanitizeBeneficiaryAgreement(a.beneficiaryAgreement),
       }));
   }

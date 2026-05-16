@@ -734,8 +734,11 @@ export default function StocksAdvisorPage() {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
-      setMonthlyPreview({ html: j.html, markdown: j.markdown, subject: j.subject, accountsCovered: j.accountsCovered, sent: j.sent, sendError: j.sendError, messageId: j.messageId, to: j.to });
-      if (j.sent) showToast(`Monthly report queued at Resend (id: ${(j.messageId || "—").slice(0, 8)}…). Check spam if it doesn't arrive in 2 min.`);
+      setMonthlyPreview({ html: j.html, markdown: j.markdown, subject: j.subject, accountsCovered: j.accountsCovered, sent: j.sent, sendError: j.sendError, messageId: j.messageId, to: j.to, ccSends: j.ccSends });
+      const ccOk = (j.ccSends || []).filter(c => c.sent).length;
+      const ccTotal = (j.ccSends || []).length;
+      const ccPart = ccTotal > 0 ? ` + ${ccOk}/${ccTotal} cc` : "";
+      if (j.sent) showToast(`Monthly report queued (id: ${(j.messageId || "—").slice(0, 8)}…)${ccPart}. Check spam if it doesn't arrive in 2 min.`);
       else if (j.sendError) showToast(`Email failed: ${j.sendError}`);
     } catch (e) {
       setMonthlyPreview({ ...monthlyPreview, sendError: e?.message || "Send failed", busy: false });
@@ -1009,6 +1012,12 @@ export default function StocksAdvisorPage() {
                   accounts: u.accounts.map(a => a.id === accountId ? { ...a, monthlyReportEnabled: enabled } : a),
                 }));
                 showToast(enabled ? "Monthly report enabled" : "Monthly report disabled");
+              }}
+              onChangeAccountCcEmail={(accountId, email) => {
+                updateUser((u) => ({
+                  accounts: u.accounts.map(a => a.id === accountId ? { ...a, monthlyReportCcEmail: email } : a),
+                }));
+                showToast(email ? `Monthly report cc: ${email}` : "Cc cleared");
               }}
               onChangeBeneficiaryAgreement={(accountId, ba) => {
                 updateUser((u) => ({
@@ -1747,8 +1756,10 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
 // the monthly-report checkbox + the collapsible beneficiary-agreement editor.
 // Encapsulates its own draft state so saving one row doesn't blow away
 // in-progress edits on another row.
-function AccountReportRow({ account, onToggleMonthly, onSaveAgreement }) {
+function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgreement }) {
   const ba = account.beneficiaryAgreement || {};
+  const [ccEmail, setCcEmail] = useState(account.monthlyReportCcEmail || "");
+  const ccValid = ccEmail === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ccEmail.trim());
   const [open, setOpen] = useState(!!ba.enabled);
   const [enabled, setEnabled] = useState(!!ba.enabled);
   const [name, setName] = useState(ba.name || "");
@@ -1814,6 +1825,31 @@ function AccountReportRow({ account, onToggleMonthly, onSaveAgreement }) {
           {open ? "Hide" : "Edit"} beneficiary agreement {ba.enabled ? "✓" : ""}
         </button>
       </div>
+
+      {/* Optional extra recipient — only meaningful when monthly report is on.
+          Sent a dedicated single-account email so they don't see other accts. */}
+      {account.monthlyReportEnabled && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--sa-border)", display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 10, alignItems: "center" }}>
+          <span style={{ fontSize: 12, color: "var(--sa-muted)", whiteSpace: "nowrap" }}>Also email to (optional):</span>
+          <input
+            type="email"
+            value={ccEmail}
+            onChange={(e) => setCcEmail(e.target.value)}
+            onBlur={() => {
+              if (ccValid && ccEmail !== (account.monthlyReportCcEmail || "")) {
+                onChangeCcEmail(ccEmail.trim().toLowerCase());
+              }
+            }}
+            placeholder="e.g. tamara@example.com — leave blank for owner-only"
+            style={{ width: "100%", fontSize: 13, borderColor: ccValid ? undefined : "var(--sa-red)" }}
+          />
+          <span className="sa-muted" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
+            {!ccValid ? "✗ invalid email"
+              : account.monthlyReportCcEmail ? "✓ saved"
+              : "—"}
+          </span>
+        </div>
+      )}
 
       {open && (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed var(--sa-border)" }}>
@@ -1917,7 +1953,7 @@ function AccountReportRow({ account, onToggleMonthly, onSaveAgreement }) {
   );
 }
 
-function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeBeneficiaryAgreement, onChangeConsensusMode, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
   // Contribution goals — each is { amount, period }. Legacy flat numbers are
@@ -2189,6 +2225,7 @@ function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onCh
               key={a.id}
               account={a}
               onToggleMonthly={(v) => onChangeAccountMonthlyReport(a.id, v)}
+              onChangeCcEmail={(email) => onChangeAccountCcEmail(a.id, email)}
               onSaveAgreement={(ba) => onChangeBeneficiaryAgreement(a.id, ba)}
             />
           ))}
@@ -2436,7 +2473,7 @@ const recCellLeft = { ...recCell, textAlign: "left", paddingLeft: 14 };
 // Briefing preview modal — shows what the daily email will look like
 // =============================================================================
 function BriefingPreviewModal({ preview, recipient, onClose, onSend, title, loadingLabel, loadingDetail }) {
-  const { busy, html, error, sent, sendError, subject, messageId } = preview;
+  const { busy, html, error, sent, sendError, subject, messageId, ccSends } = preview;
   const headerTitle = title || "Email Briefing — Preview";
   const loadLabel = loadingLabel || "Generating briefing…";
   const loadDetail = loadingDetail || "Searching news on each of your holdings · 20-40s";
@@ -2496,8 +2533,20 @@ function BriefingPreviewModal({ preview, recipient, onClose, onSend, title, load
                     Resend message id: {messageId}
                   </div>
                 )}
+                {Array.isArray(ccSends) && ccSends.length > 0 && (
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(5,150,105,.2)" }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Per-account recipients (single-account reports):</div>
+                    {ccSends.map((cc, i) => (
+                      <div key={i} style={{ fontSize: 11, opacity: 0.9, marginTop: 2 }}>
+                        {cc.sent ? "✓" : "✗"} <b>{cc.accountName}</b> → {cc.email}
+                        {cc.messageId && <span style={{ fontFamily: "SF Mono, Menlo, Consolas, monospace", marginLeft: 6, opacity: 0.7 }}>({cc.messageId.slice(0, 12)}…)</span>}
+                        {cc.error && <span style={{ color: "var(--sa-red)", marginLeft: 6 }}>— {cc.error}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div style={{ fontSize: 11, marginTop: 6, opacity: 0.85 }}>
-                  Doesn't show up in your inbox in 2 min? Check spam/junk first. If still missing, look up this message id in the Resend dashboard — that's the ground truth on delivery.
+                  Doesn't show up in your inbox in 2 min? Check spam/junk first. If still missing, look up the message id in the Resend dashboard — that's the ground truth on delivery.
                 </div>
               </div>
             )}
