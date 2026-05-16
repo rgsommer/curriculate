@@ -67,20 +67,33 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date())
   const shareToBene = Math.max(0, profit) * (shareePct / 100);
   const payoutIfNow = principal + interestOwed + shareToBene;
 
-  // Expected inflows from beneficiary since startDate (recurring template)
-  let inflowsCad = 0;
-  let inflowsPerYearCad = 0;
-  for (const inf of ba.inflows || []) {
-    const annual = inf.frequency === "yearly" ? inf.amountCad : inf.amountCad * 12;
-    inflowsPerYearCad += annual;
-    inflowsCad += annual * yearsSinceStart;
-  }
-  const netCarryCad = inflowsCad - interestOwed; // positive = beneficiary owes user net
-
-  // YTD inflows for the report period bucket
+  // Expected inflows from beneficiary since startDate (recurring template).
+  // Keep a per-item breakdown so the report can show each line — car
+  // insurance, phone, room & board, etc — rather than a single opaque total.
   const yearStart = new Date(Date.UTC(asOf.getUTCFullYear(), 0, 1));
   const yearsThisYear = Math.max(0, (asOf.getTime() - Math.max(yearStart.getTime(), start?.getTime() || 0)) / (365.25 * 86400 * 1000));
-  const inflowsYtdCad = inflowsPerYearCad * yearsThisYear;
+
+  let inflowsCad = 0;
+  let inflowsPerYearCad = 0;
+  let inflowsYtdCad = 0;
+  const inflowItems = [];
+  for (const inf of ba.inflows || []) {
+    const annual = inf.frequency === "yearly" ? inf.amountCad : inf.amountCad * 12;
+    const cumulative = annual * yearsSinceStart;
+    const ytd = annual * yearsThisYear;
+    inflowsPerYearCad += annual;
+    inflowsCad += cumulative;
+    inflowsYtdCad += ytd;
+    inflowItems.push({
+      description: inf.description || "(unlabeled)",
+      amountCad: inf.amountCad,
+      frequency: inf.frequency,
+      annual,
+      cumulative,
+      ytd,
+    });
+  }
+  const netCarryCad = inflowsCad - interestOwed; // positive = beneficiary owes user net
   const interestOwedYtdCad = principal * (ratePct / 100) * yearsThisYear;
 
   return {
@@ -97,6 +110,7 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date())
     netCarryCad,
     inflowsYtdCad,
     interestOwedYtdCad,
+    inflowItems,
     carryLosses: ba.carryLosses !== false,
   };
 }
@@ -201,9 +215,26 @@ export function formatAccountReportMarkdown(report) {
     parts.push(`| Account profit / (loss) | ${fmtMoney(ba.profit)} |`);
     parts.push(`| Profit-share to beneficiary (${ba.profitSharePct}% of positive profit) | ${fmtMoney(ba.shareToBene)} |`);
     parts.push(`| **Payout if cashed out today** | **${fmtMoney(ba.payoutIfNow)}** |`);
-    parts.push(`| Expected inflows from beneficiary (cumulative) | ${fmtMoney(ba.inflowsCad)} (${fmtMoney(ba.inflowsPerYearCad)}/yr) |`);
-    parts.push(`| Inflows YTD | ${fmtMoney(ba.inflowsYtdCad)} |`);
     parts.push(`| Net carry (inflows − interest owed) | ${fmtMoney(ba.netCarryCad)} |`);
+
+    // Per-item inflows breakdown — far more useful than one rolled-up total.
+    if (ba.inflowItems && ba.inflowItems.length > 0) {
+      parts.push("");
+      parts.push(`**Inflows from beneficiary (breakdown):**`);
+      parts.push("");
+      parts.push(`| Source | Rate | Annual | YTD | Cumulative |`);
+      parts.push(`|---|---|---|---|---|`);
+      for (const it of ba.inflowItems) {
+        const rateLabel = it.frequency === "monthly"
+          ? `${fmtMoney(it.amountCad)}/mo`
+          : `${fmtMoney(it.amountCad)}/yr`;
+        parts.push(`| ${it.description} | ${rateLabel} | ${fmtMoney(it.annual)} | ${fmtMoney(it.ytd)} | ${fmtMoney(it.cumulative)} |`);
+      }
+      parts.push(`| **Total** | — | **${fmtMoney(ba.inflowsPerYearCad)}** | **${fmtMoney(ba.inflowsYtdCad)}** | **${fmtMoney(ba.inflowsCad)}** |`);
+    } else {
+      parts.push(`| Expected inflows from beneficiary (cumulative) | ${fmtMoney(ba.inflowsCad)} (${fmtMoney(ba.inflowsPerYearCad)}/yr) |`);
+      parts.push(`| Inflows YTD | ${fmtMoney(ba.inflowsYtdCad)} |`);
+    }
 
     if (ba.profit < 0 && ba.carryLosses) {
       parts.push("");
