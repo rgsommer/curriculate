@@ -62,6 +62,254 @@ function prettyWeekdayDate(localStr) {
   return d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
 }
 
+// ── Custom calendar picker ───────────────────────────────────────────
+//
+// Android's native datetime-local input renders as a small box and its
+// popup picker doesn't always show weekday column headers, so it's hard
+// to know which day-of-week you're picking until after you commit. This
+// inline calendar grid + separate time input fixes that across all
+// platforms: S M T W T F S headers are always visible while choosing.
+//
+// `value` is the same "YYYY-MM-DDThh:mm" local-string format that
+// <input type="datetime-local"> uses, so it's a drop-in replacement.
+
+const WEEKDAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"];
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+function parseLocalValue(v) {
+  if (!v) return null;
+  const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!m) {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+}
+
+function buildLocalValue(year, month, day, hour, minute) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${year}-${pad(month + 1)}-${pad(day)}T${pad(hour)}:${pad(minute)}`;
+}
+
+function CalendarPicker({ value, onChange, disabled }) {
+  const parsed = parseLocalValue(value);
+  const today = new Date();
+
+  // Default view = month of current selection, or current month.
+  const [viewYear, setViewYear] = useState(parsed ? parsed.getFullYear() : today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(parsed ? parsed.getMonth() : today.getMonth());
+
+  // Time state — defaults to 9:00 AM when nothing's picked yet.
+  const [hour, setHour] = useState(parsed ? parsed.getHours() : 9);
+  const [minute, setMinute] = useState(parsed ? parsed.getMinutes() : 0);
+
+  // Keep view in sync if the parent value changes externally (e.g. when
+  // opening the edit modal on a different task).
+  useEffect(() => {
+    if (parsed) {
+      setViewYear(parsed.getFullYear());
+      setViewMonth(parsed.getMonth());
+      setHour(parsed.getHours());
+      setMinute(parsed.getMinutes());
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  function commit(year, month, day, h, mi) {
+    onChange(buildLocalValue(year, month, day, h, mi));
+  }
+
+  function pickDay(day) {
+    if (disabled) return;
+    commit(viewYear, viewMonth, day, hour, minute);
+  }
+
+  function changeTime(newHour, newMinute) {
+    setHour(newHour);
+    setMinute(newMinute);
+    if (parsed) {
+      commit(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), newHour, newMinute);
+    }
+  }
+
+  function prevMonth() {
+    if (viewMonth === 0) { setViewYear(viewYear - 1); setViewMonth(11); }
+    else setViewMonth(viewMonth - 1);
+  }
+  function nextMonth() {
+    if (viewMonth === 11) { setViewYear(viewYear + 1); setViewMonth(0); }
+    else setViewMonth(viewMonth + 1);
+  }
+  function gotoToday() {
+    setViewYear(today.getFullYear());
+    setViewMonth(today.getMonth());
+  }
+
+  // Build the day grid: leading blanks to align the 1st under its weekday.
+  const firstDayWeekday = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < firstDayWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const selDay =
+    parsed && parsed.getFullYear() === viewYear && parsed.getMonth() === viewMonth
+      ? parsed.getDate() : null;
+  const isThisMonth =
+    today.getFullYear() === viewYear && today.getMonth() === viewMonth;
+  const todayDay = isThisMonth ? today.getDate() : null;
+
+  // 24-hour time string for the <input type="time">
+  const timeStr = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+
+  return (
+    <div style={calStyles.wrap}>
+      <div style={calStyles.headerRow}>
+        <button type="button" onClick={prevMonth} style={calStyles.navBtn} disabled={disabled} aria-label="Previous month">‹</button>
+        <div style={calStyles.headerLabel}>{MONTH_NAMES[viewMonth]} {viewYear}</div>
+        <button type="button" onClick={nextMonth} style={calStyles.navBtn} disabled={disabled} aria-label="Next month">›</button>
+      </div>
+
+      <div style={calStyles.weekdayRow}>
+        {WEEKDAY_INITIALS.map((w, i) => (
+          <div key={i} style={calStyles.weekdayCell}>{w}</div>
+        ))}
+      </div>
+
+      <div style={calStyles.grid}>
+        {cells.map((d, i) => {
+          if (d == null) return <div key={i} style={calStyles.emptyCell} />;
+          const isSel = d === selDay;
+          const isToday = d === todayDay;
+          return (
+            <button
+              key={i} type="button" onClick={() => pickDay(d)}
+              disabled={disabled}
+              style={{
+                ...calStyles.dayCell,
+                ...(isSel ? calStyles.dayCellSel : isToday ? calStyles.dayCellToday : {}),
+              }}
+              aria-label={`${MONTH_NAMES[viewMonth]} ${d}, ${viewYear}`}
+              aria-pressed={isSel}
+            >
+              {d}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={calStyles.footerRow}>
+        <button type="button" onClick={gotoToday} style={calStyles.todayBtn} disabled={disabled}>
+          Today
+        </button>
+        <div style={{ flex: 1 }} />
+        <label style={calStyles.timeLabel}>
+          Time
+          <input
+            type="time"
+            value={timeStr}
+            onChange={(e) => {
+              const v = e.target.value;
+              const m = v && v.match(/^(\d{2}):(\d{2})/);
+              if (m) changeTime(+m[1], +m[2]);
+            }}
+            style={calStyles.timeInput}
+            disabled={disabled}
+          />
+        </label>
+        {value && (
+          <button
+            type="button" onClick={() => onChange("")}
+            style={calStyles.clearBtn} disabled={disabled}
+            aria-label="Clear date"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const calStyles = {
+  wrap: {
+    background: "#fff",
+    border: "1px solid #e2e8f0",
+    borderRadius: 12,
+    padding: 10,
+    width: "100%",
+    boxSizing: "border-box",
+  },
+  headerRow: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  headerLabel: { fontSize: 14, fontWeight: 600, color: "#0f172a" },
+  navBtn: {
+    width: 32, height: 32,
+    borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff",
+    fontSize: 18, cursor: "pointer", color: "#475569",
+  },
+  weekdayRow: {
+    display: "grid", gridTemplateColumns: "repeat(7, 1fr)",
+    fontSize: 11, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase",
+    textAlign: "center", marginBottom: 4,
+  },
+  weekdayCell: { padding: "4px 0" },
+  grid: {
+    display: "grid", gridTemplateColumns: "repeat(7, 1fr)",
+    gap: 2,
+  },
+  emptyCell: { aspectRatio: "1 / 1" },
+  dayCell: {
+    aspectRatio: "1 / 1",
+    border: "1px solid transparent",
+    background: "transparent",
+    borderRadius: 8,
+    fontSize: 14, color: "#0f172a",
+    cursor: "pointer",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontVariantNumeric: "tabular-nums",
+  },
+  dayCellToday: {
+    color: "#0f172a", fontWeight: 600,
+    borderColor: "#cbd5e1",
+  },
+  dayCellSel: {
+    background: "#0f172a", color: "#fff", fontWeight: 600,
+    borderColor: "#0f172a",
+  },
+  footerRow: {
+    display: "flex", alignItems: "center", gap: 8,
+    marginTop: 10, paddingTop: 10,
+    borderTop: "1px solid #f1f5f9",
+    flexWrap: "wrap",
+  },
+  todayBtn: {
+    padding: "6px 10px", fontSize: 12, fontWeight: 500,
+    borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff",
+    color: "#475569", cursor: "pointer",
+  },
+  timeLabel: {
+    display: "flex", alignItems: "center", gap: 6,
+    fontSize: 12, color: "#475569",
+  },
+  timeInput: {
+    padding: "5px 8px", fontSize: 13,
+    borderRadius: 8, border: "1px solid #e2e8f0",
+    background: "#fff", color: "#0f172a", outline: "none",
+  },
+  clearBtn: {
+    padding: "6px 10px", fontSize: 12, fontWeight: 500,
+    borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff",
+    color: "#475569", cursor: "pointer",
+  },
+};
+
 function ordinalSuffix(n) {
   if (n % 100 >= 11 && n % 100 <= 13) return "th";
   if (n % 10 === 1) return "st";
@@ -529,12 +777,8 @@ function AddTaskForm({ onAdd }) {
             </button>
           ))}
         </div>
-        <div style={{ display: "flex", flexDirection: "column", flex: "1 1 180px", minWidth: 160 }}>
-          <input
-            type="datetime-local" value={dueAt}
-            onChange={(e) => setDueAt(e.target.value)}
-            style={styles.dueInput} disabled={busy}
-          />
+        <div style={{ display: "flex", flexDirection: "column", flex: "1 1 100%", minWidth: 0 }}>
+          <CalendarPicker value={dueAt} onChange={setDueAt} disabled={busy} />
           {dueLabel && (
             <div style={styles.weekdayHint}>{dueLabel}</div>
           )}
@@ -797,24 +1041,8 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
         </div>
 
         <label style={styles.label}>Due</label>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
-          <input
-            type="datetime-local" value={dueAt}
-            onChange={(e) => setDueAt(e.target.value)}
-            style={{ ...styles.dueInput, flex: 1 }}
-            disabled={busy}
-          />
-          {dueAt && (
-            <button
-              type="button" onClick={() => setDueAt("")}
-              style={styles.subtleBtn} disabled={busy}
-              title="Clear due date"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-        {dueLabel && <div style={{ ...styles.weekdayHint, marginBottom: 16 }}>{dueLabel}</div>}
+        <CalendarPicker value={dueAt} onChange={setDueAt} disabled={busy} />
+        {dueLabel && <div style={{ ...styles.weekdayHint, marginBottom: 16, marginTop: 8 }}>{dueLabel}</div>}
         {!dueLabel && <div style={{ marginBottom: 16 }} />}
 
         <label style={styles.label}>Repeat</label>
