@@ -27,6 +27,7 @@ import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContex
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
 import { computeLessons, formatLessonsBlock } from "../services/stocksLessonsLearned.js";
+import { getTranscriptsForTopHoldings, formatTranscriptsBlock } from "../services/stocksEarningsTranscripts.js";
 
 // Shared current-price fetcher (server-side; no CORS) — used by the
 // open-recommendation monitor below.
@@ -377,16 +378,33 @@ function formatQuantSignalsBlock(quantSignals) {
   return `\nQUANT SIGNALS PER HOLDING (pre-computed — use THESE numbers, don't guess):\n${lines.join("\n")}\n`;
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
   const fx = Number(profile.fxUsdCad || 1.37);
 
   // Per-account cash inventory — same hard-to-miss treatment as the advice endpoint
+  // Includes per-account risk override when set (lets a single portfolio run a
+  // speculative TFSA next to a moderate RRSP without changing the global risk).
   const accountCashTable = (profile.accounts || [])
-    .map(a => `  ${a.name}: $${(a.cashCad || 0).toFixed(0)} CAD · $${(a.cashUsd || 0).toFixed(0)} USD`)
+    .map(a => {
+      const risk = a.riskTolerance || `inherits global (${profile.riskTolerance})`;
+      return `  ${a.name}: $${(a.cashCad || 0).toFixed(0)} CAD · $${(a.cashUsd || 0).toFixed(0)} USD · risk: ${risk}`;
+    })
     .join("\n") || "  (no accounts configured)";
+
+  // Annual contribution goals — surfaced so the AI can recommend filling
+  // RRSP/RESP/TFSA contribution room when cash is available. Especially
+  // important in Jan/Feb for the RRSP Mar 1 deadline.
+  const cgoals = profile.annualContributionGoals || {};
+  const goalLines = [];
+  if (cgoals.rrsp > 0) goalLines.push(`  RRSP target: $${cgoals.rrsp.toLocaleString()}/year`);
+  if (cgoals.resp > 0) goalLines.push(`  RESP target: $${cgoals.resp.toLocaleString()}/year`);
+  if (cgoals.tfsa > 0) goalLines.push(`  TFSA target: $${cgoals.tfsa.toLocaleString()}/year`);
+  const contributionGoalsBlock = goalLines.length > 0
+    ? `\nANNUAL CONTRIBUTION GOALS (registered-account targets):\n${goalLines.join("\n")}\nUse these in cash-deployment recs: if uncontributed room remains in a tax-advantaged account, prefer deploying new cash there over Non-Spousal. In Jan-Feb, flag the RRSP Mar 1 deadline if RRSP target isn't met.\n`
+    : "";
 
   const pending = (profile.plannedWithdrawals || [])
     .map(w => {
@@ -438,7 +456,7 @@ Trading-cost frictions (factor into every recommendation):
 
 Per-account cash inventory (CRITICAL):
 ${accountCashTable}
-${plannedWithdrawalsBlock}
+${contributionGoalsBlock}${plannedWithdrawalsBlock}
 
 ACCOUNT-SOURCE RULE (mandatory):
 - Every BUY rec names ONE source account (Non-Spousal / RRSP / TFSA).
@@ -467,10 +485,14 @@ ${summary.perAccountCash.length ? "Per account:\n" + summary.perAccountCash.join
     ? `5. **💵 Cash deployment — your actual cash** — REQUIRED. He has $${summary.cashCad.toFixed(0)} CAD + $${summary.cashUsd.toFixed(0)} USD ready. Recommend specific BUYs sized to actually use that cash. Compute exact share counts from the cash budget at the Entry price you propose. Format each: "Action: BUY N sh TICKER. Entry: $X (current $Y). Target: $Z (timeframe). Stop: $W. Horizon: N months. Uses ~$A of $B available." Do not recommend buys that exceed available cash; do not propose fractional shares; tilt AWAY from current concentration (DJT/DJTWW/RUM)`
     : `5. **💵 Cash deployment** — He has $0 cash. Either (a) skip this section, or (b) recommend a specific TRIM that would FREE UP cash for a redeploy, with both legs spec'd in the rec format.`;
 
+  const goalsBlock = profile.goals && profile.goals.trim().length > 0
+    ? `\n🎯 USER GOALS & CONSTRAINTS (read FIRST — every rec must be coherent with these):\n${profile.goals.trim()}\n\nHow to factor goals into recs:\n- Recommendations conflicting with goals must be REJECTED or modified — don't silently override.\n- If a goal implies a withdrawal date, size positions and stops to make cash available by that date.\n- If a goal designates capital as long-term, don't redeploy it for short-horizon trades.\n- If a goal sets an account limit ("RRSP limit X"), prioritize filling that account when new cash is available.\n- Surface goal/opportunity tradeoffs explicitly; reference goals by name in rec rationale.\n`
+    : "";
+
   return `You are Richard's personal stock advisor at SENIOR-ANALYST level. Generate today's morning briefing for ${profile.email}.
 
 Today: ${today}
-Risk tolerance: ${profile.riskTolerance}
+Risk tolerance: ${profile.riskTolerance}${goalsBlock}
 
 SENIOR-ANALYST EXPECTATIONS:
 1. Read the MACRO REGIME block FIRST and frame the briefing through that lens (risk-on vs risk-off, rising vs falling rates, USD/CAD direction).
@@ -489,6 +511,7 @@ ${formatMacroBlock(macro)}
 ${formatFactorBlock(factors)}
 ${formatLifecycleBlock(lifecycle)}
 ${formatQuantSignalsBlock(quantSignals)}
+${formatTranscriptsBlock(transcripts)}
 ${priceCurrencyBlock}
 ${orderTicketBlock}
 ${multiDayBlock}
@@ -556,16 +579,17 @@ export async function generateBriefing(profile) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
   const summary = portfolioSummary(profile);
   // Run all upstream signals in parallel
-  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons] = await Promise.all([
+  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts] = await Promise.all([
     monitorOpenRecs(profile.email).catch((e) => { console.warn("[monitorOpenRecs] warn:", e?.message); return { alerts: [] }; }),
     computeQuantSignals(profile).catch((e) => { console.warn("[computeQuantSignals] warn:", e?.message); return {}; }),
     getMacroContext().catch((e) => { console.warn("[getMacroContext] warn:", e?.message); return null; }),
     computeLifecycle(profile).catch((e) => { console.warn("[computeLifecycle] warn:", e?.message); return null; }),
     computeFactorTilts(profile).catch((e) => { console.warn("[computeFactorTilts] warn:", e?.message); return null; }),
     computeLessons(profile.email).catch((e) => { console.warn("[computeLessons] warn:", e?.message); return null; }),
+    getTranscriptsForTopHoldings(profile).catch((e) => { console.warn("[getTranscriptsForTopHoldings] warn:", e?.message); return null; }),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
-  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons);
+  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts);
 
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",

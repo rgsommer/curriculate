@@ -33,6 +33,7 @@ import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContex
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
 import { computeLessons, formatLessonsBlock } from "../services/stocksLessonsLearned.js";
+import { getTranscriptsForTopHoldings, formatTranscriptsBlock } from "../services/stocksEarningsTranscripts.js";
 
 const router = express.Router();
 
@@ -188,17 +189,30 @@ function formatQuantSignalsBlock(quantSignals) {
   return `\nQUANT SIGNALS PER HOLDING (pre-computed — use THESE numbers, don't guess from search results):\n${lines.join("\n")}\n`;
 }
 
-function buildPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null) {
+function buildPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null) {
   const risk = profile.riskTolerance || "aggressive";
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
   const fx = Number(profile.fxUsdCad || 1.37);
 
-  // Per-account cash inventory — surfaced ONCE here in a hard-to-miss block
+  // Per-account cash inventory + per-account risk override
   const accountCashTable = (profile.accounts || [])
-    .map(a => `  ${a.name}: $${(a.cashCad || 0).toFixed(0)} CAD · $${(a.cashUsd || 0).toFixed(0)} USD`)
+    .map(a => {
+      const risk = a.riskTolerance || `inherits global (${profile.riskTolerance})`;
+      return `  ${a.name}: $${(a.cashCad || 0).toFixed(0)} CAD · $${(a.cashUsd || 0).toFixed(0)} USD · risk: ${risk}`;
+    })
     .join("\n") || "  (no accounts configured)";
+
+  // Annual contribution goals — RRSP/RESP/TFSA
+  const cgoals = profile.annualContributionGoals || {};
+  const goalLines = [];
+  if (cgoals.rrsp > 0) goalLines.push(`  RRSP target: $${cgoals.rrsp.toLocaleString()}/year`);
+  if (cgoals.resp > 0) goalLines.push(`  RESP target: $${cgoals.resp.toLocaleString()}/year`);
+  if (cgoals.tfsa > 0) goalLines.push(`  TFSA target: $${cgoals.tfsa.toLocaleString()}/year`);
+  const contributionGoalsBlock = goalLines.length > 0
+    ? `\nANNUAL CONTRIBUTION GOALS (registered-account targets):\n${goalLines.join("\n")}\nUse these in cash-deployment recs: each year's contribution toward these accounts should be PRIORITIZED for available cash, especially as deadlines approach (RRSP: Mar 1, TFSA: Jan 1 reset, RESP: Dec 31).\n`
+    : "";
 
   // Planned withdrawals — must-have cash by date that constrains recs
   const pending = (profile.plannedWithdrawals || [])
@@ -277,7 +291,9 @@ Real-world trading-cost frictions (factor these into every rec):
 
 Per-account cash inventory (CRITICAL — read this carefully):
 ${accountCashTable}
+${contributionGoalsBlock}
 ${plannedWithdrawalsBlock}
+Per-account risk tolerance: each account may override the global risk. When proposing a trade in a specific account, use THAT account's risk level. Aggressive recs are appropriate in the Non-Spousal but inappropriate in a conservative RRSP, even with the same user.
 
 Sizing rules:
 - Reject trades where commissions exceed 1% of gross trade value (~$${(commission * 100).toFixed(0)} minimum). If a rec falls below that, upsize, batch in the same currency, or say "wait for more cash."
@@ -333,9 +349,16 @@ Example format if he has $2,500 CAD and $500 USD:
 Do NOT recommend more spending than the cash he has. Don't suggest fractional shares. If the cash in a currency is too small for any reasonable buy (< $200 in that currency), say so and suggest pooling or FX-converting.`
     : `Richard has no cash available to deploy right now. Do NOT recommend new BUYs unless they can be funded by TRIMming an existing position you explicitly call out in the same card (e.g., "Trim DJT for $X CAD, redeploy to ENB"). Otherwise focus on hold/trim/watch-list calls.`;
 
+  // User's free-form goals — the single most important context block.
+  // Every recommendation must be coherent with these. Empty goals = no
+  // explicit life-plan constraints, default to standard senior-analyst rec.
+  const goalsBlock = profile.goals && profile.goals.trim().length > 0
+    ? `\n🎯 USER GOALS & CONSTRAINTS (read FIRST — every recommendation must be coherent with these):\n${profile.goals.trim()}\n\nHow to factor goals into recs:\n- Recommendations that conflict with stated goals must be REJECTED or significantly modified — do not silently override.\n- If a goal implies a withdrawal date (e.g. "retire 2030", "withdraw $1K/mo from 2035"), size positions and stops to ensure cash is available by that date.\n- If a goal designates capital as long-term ("the $90K cash is long-term"), do NOT recommend redeploying it for short-horizon trades.\n- If a goal sets an account limit ("RRSP limit $86K, maximize"), prioritize filling that account first when new cash is available.\n- If goals and short-term opportunity conflict, surface the tradeoff explicitly — don't quietly pick one.\n- Reference specific goals by name in your rec rationale ("This aligns with your stated 2030 retirement goal because…").\n`
+    : "";
+
   return `You are Richard's personal stock advisor — operating at senior-analyst level. Today is ${today}.
 
-His risk tolerance: ${risk}.
+His risk tolerance: ${risk}.${goalsBlock}
 
 SENIOR-ANALYST EXPECTATIONS (read carefully — what separates this from generic LLM advice):
 1. Always reason from the MACRO REGIME block down to the rec. A growth-pick recommendation that ignores high VIX + rising rates is junior work.
@@ -354,6 +377,7 @@ ${formatMacroBlock(macro)}
 ${formatFactorBlock(factors)}
 ${formatLifecycleBlock(lifecycle)}
 ${formatQuantSignalsBlock(quantSignals)}
+${formatTranscriptsBlock(transcripts)}
 ${priceCurrencyBlock}
 ${orderTicketBlock}
 ${multiDayBlock}
@@ -479,9 +503,9 @@ function extractJson(text) {
 // Returns { advice, sources, textOut } where advice is the parsed JSON
 // array of cards and sources are the web_search citations.
 // ─────────────────────────────────────────────────────────────────────
-async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons }) {
+async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts }) {
   const summary = portfolioSummary(profile);
-  const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons);
+  const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts);
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -546,17 +570,18 @@ router.post("/", requireStocksAuth, async (req, res) => {
     const summary = portfolioSummary(profile);
 
     // Compute all upstream signals in parallel
-    const [monitorRes, quantSignals, macro, lifecycle, factors, lessons] = await Promise.all([
+    const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts] = await Promise.all([
       monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] })),
       computeQuantSignals(profile).catch(() => ({})),
       getMacroContext().catch(() => null),
       computeLifecycle(profile).catch(() => null),
       computeFactorTilts(profile).catch(() => null),
       computeLessons(req.stocksUser.email).catch(() => null),
+      getTranscriptsForTopHoldings(profile).catch(() => null),
     ]);
     const monitorAlerts = monitorRes?.alerts || [];
 
-    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons);
+    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts);
 
     // Anthropic Messages API call with web_search server-side tool
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -774,20 +799,21 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
     }
 
     // Compute all upstream signals ONCE — shared across all three consensus runs
-    const [monitorRes, quantSignals, macro, lifecycle, factors, lessons] = await Promise.all([
+    const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts] = await Promise.all([
       monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] })),
       computeQuantSignals(profile).catch(() => ({})),
       getMacroContext().catch(() => null),
       computeLifecycle(profile).catch(() => null),
       computeFactorTilts(profile).catch(() => null),
       computeLessons(req.stocksUser.email).catch(() => null),
+      getTranscriptsForTopHoldings(profile).catch(() => null),
     ]);
     const monitorAlerts = monitorRes?.alerts || [];
 
     // Fan out 3 parallel generations
     const N = 3;
     const settled = await Promise.allSettled(
-      Array.from({ length: N }).map(() => runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons }))
+      Array.from({ length: N }).map(() => runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts }))
     );
     const runs = settled.map((s) => s.status === "fulfilled" ? s.value : { error: s.reason?.message || "Failed", advice: [], sources: [] });
     const successful = runs.filter(r => !r.error);

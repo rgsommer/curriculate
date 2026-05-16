@@ -945,6 +945,14 @@ export default function StocksAdvisorPage() {
               onChangeFx={(v) => { updateUser(() => ({ fxUsdCad: v })); showToast("FX updated"); }}
               onChangeCommission={(v) => { updateUser(() => ({ commissionPerTrade: v })); showToast("Commission updated"); }}
               onChangeFxSpread={(v) => { updateUser(() => ({ fxSpreadPct: v })); showToast("FX spread updated"); }}
+              onChangeGoals={(v) => { updateUser(() => ({ goals: v })); }}
+              onChangeContributionGoals={(g) => { updateUser(() => ({ annualContributionGoals: g })); showToast("Contribution goals updated"); }}
+              onChangeAccountRisk={(accountId, riskLevel) => {
+                updateUser((u) => ({
+                  accounts: u.accounts.map(a => a.id === accountId ? { ...a, riskTolerance: riskLevel } : a),
+                }));
+                showToast("Account risk updated");
+              }}
               onAddPlannedWithdrawal={(w) => {
                 const id = "w" + Date.now() + Math.random().toString(36).slice(2, 6);
                 updateUser((u) => ({
@@ -1636,7 +1644,13 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
   );
 }
 
-function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+  const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
+  const [goalsSavedAt, setGoalsSavedAt] = useState(null);
+  const cg = user.annualContributionGoals || { rrsp: 0, resp: 0, tfsa: 0 };
+  const [rrspGoal, setRrspGoal] = useState(cg.rrsp || "");
+  const [respGoal, setRespGoal] = useState(cg.resp || "");
+  const [tfsaGoal, setTfsaGoal] = useState(cg.tfsa || "");
   // Local form state for adding a new planned withdrawal
   const [wAmount, setWAmount] = useState("");
   const [wCcy, setWCcy] = useState("CAD");
@@ -1658,6 +1672,50 @@ function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onCh
     <div>
       <h2>Settings</h2>
       <div className="sa-breadcrumb">Account preferences</div>
+
+      {/* Goals — free-form text injected at the top of every AI prompt */}
+      <div className="sa-card" style={{ marginBottom: 14, borderColor: "#bfdbfe", background: "linear-gradient(135deg,#eff6ff,#fff)" }}>
+        <h3 style={{ margin: 0 }}>🎯 Long-term goals &amp; constraints</h3>
+        <div className="sa-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 12 }}>
+          Free-form. Whatever you write here gets injected at the TOP of every AI advice / briefing prompt. Recommendations will be checked against these goals before being issued. Be specific.
+        </div>
+        <textarea
+          value={goalsDraft}
+          onChange={(e) => setGoalsDraft(e.target.value)}
+          rows={9}
+          maxLength={5000}
+          placeholder={`Examples (use as many as apply):
+- The $90K cash bucket is long-term — do not redeploy for short-term trades.
+- I want to withdraw $1,000/month starting in 2035.
+- Planned withdrawal $5,000 on Jun 15 (for property tax).
+- My RRSP contribution limit is $86K — prioritize filling it.
+- Retirement target: 2030.
+- I'd rather underperform in calm markets than blow up in volatile ones.
+- Never recommend a position over 25% of portfolio after the rebalance.`}
+          style={{ width: "100%", fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif", fontSize: 13, lineHeight: 1.5, padding: 12 }}
+        />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, fontSize: 12 }}>
+          <span className="sa-muted">
+            {goalsDraft.length} / 5000 characters
+            {goalsSavedAt && <span style={{ marginLeft: 12, color: "var(--sa-green)" }}>✓ Saved at {goalsSavedAt}</span>}
+          </span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className="sa-btn secondary"
+              onClick={() => setGoalsDraft(user.goals || "")}
+              disabled={goalsDraft === (user.goals || "")}
+            >Revert</button>
+            <button
+              className="sa-btn"
+              onClick={() => {
+                onChangeGoals(goalsDraft);
+                setGoalsSavedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+              }}
+              disabled={goalsDraft === (user.goals || "")}
+            >Save goals</button>
+          </div>
+        </div>
+      </div>
 
       <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>Planned cash needs</h3>
@@ -1729,12 +1787,71 @@ function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onCh
       </div>
       <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>Risk tolerance</h3>
+        <div className="sa-muted" style={{ fontSize: 12, marginBottom: 10 }}>Global default — applies to any account that doesn't override below.</div>
         <div className="sa-risk-grid">
           {["conservative", "moderate", "aggressive", "speculative"].map((v) => (
             <div key={v} className={`sa-risk-card ${user.riskTolerance === v ? "sel" : ""}`} onClick={() => onChangeRisk(v)}>
               <h4 style={{ textTransform: "capitalize" }}>{v}</h4>
             </div>
           ))}
+        </div>
+
+        {/* Per-account risk overrides */}
+        {(user.accounts || []).length > 0 && (
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px dashed var(--sa-border)" }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Per-account risk override</div>
+            <div className="sa-muted" style={{ fontSize: 12, marginBottom: 10 }}>
+              Set a different risk level per account — e.g. aggressive Non-Spousal, conservative RRSP for retirement runway. Default = inherit global.
+            </div>
+            <div style={{ display: "grid", gap: 6 }}>
+              {user.accounts.map(a => (
+                <div key={a.id} style={{ display: "grid", gridTemplateColumns: "1fr 200px", gap: 10, alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--sa-border)" }}>
+                  <span style={{ fontWeight: 500, fontSize: 13 }}>{a.name}</span>
+                  <select
+                    value={a.riskTolerance || ""}
+                    onChange={(e) => onChangeAccountRisk(a.id, e.target.value || null)}
+                  >
+                    <option value="">— inherit global ({user.riskTolerance}) —</option>
+                    <option value="conservative">Conservative</option>
+                    <option value="moderate">Moderate</option>
+                    <option value="aggressive">Aggressive</option>
+                    <option value="speculative">Speculative</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="sa-card" style={{ marginBottom: 14 }}>
+        <h3>Annual contribution goals</h3>
+        <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+          Target dollar amounts to contribute to each registered account each year. Surfaces in briefings as deadlines approach (RRSP: Mar 1, TFSA: Jan 1 reset, RESP: Dec 31). AI prioritizes filling these when new cash arrives.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+          <div>
+            <label>RRSP (CAD/yr)</label>
+            <input type="number" min="0" step="any" value={rrspGoal} onChange={(e) => setRrspGoal(e.target.value)} placeholder="e.g. 32000" />
+          </div>
+          <div>
+            <label>RESP (CAD/yr)</label>
+            <input type="number" min="0" step="any" value={respGoal} onChange={(e) => setRespGoal(e.target.value)} placeholder="e.g. 2500" />
+          </div>
+          <div>
+            <label>TFSA (CAD/yr)</label>
+            <input type="number" min="0" step="any" value={tfsaGoal} onChange={(e) => setTfsaGoal(e.target.value)} placeholder="e.g. 7000" />
+          </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+          <button
+            className="sa-btn"
+            onClick={() => onChangeContributionGoals({
+              rrsp: parseFloat(rrspGoal) || 0,
+              resp: parseFloat(respGoal) || 0,
+              tfsa: parseFloat(tfsaGoal) || 0,
+            })}
+          >Save contribution goals</button>
         </div>
       </div>
       <div className="sa-card" style={{ marginBottom: 14 }}>
@@ -2085,6 +2202,13 @@ function TradeModal({ user, onClose, onSubmit, onSubmitPending, prefill }) {
   const [cashAmount, setCashAmount] = useState(prefill?.amount ? String(prefill.amount) : "");
   const [cashCcy, setCashCcy] = useState(prefill?.currency || "CAD");
 
+  // Transfer state — move cash from one account/currency to another
+  const [xferFromAcct, setXferFromAcct] = useState(user.accounts?.[0]?.id || "");
+  const [xferFromCcy, setXferFromCcy] = useState("CAD");
+  const [xferToAcct, setXferToAcct] = useState(user.accounts?.[1]?.id || user.accounts?.[0]?.id || "");
+  const [xferToCcy, setXferToCcy] = useState("CAD");
+  const [xferAmount, setXferAmount] = useState("");
+
   // Order-plan state — comes from the prefill if executing a rec.
   // Target = expected upside (limit-sell take-profit)
   // Stop   = downside invalidation (stop-limit-sell)
@@ -2111,6 +2235,7 @@ function TradeModal({ user, onClose, onSubmit, onSubmitPending, prefill }) {
   else if (mode === "sell") netCash = sellCadVal;
   else if (mode === "swap") netCash = sellCadVal - buyCadVal;
   else if (mode === "cash") netCash = cashDirection === "DEPOSIT" ? cashCadVal : -cashCadVal;
+  else if (mode === "transfer") netCash = 0; // moving cash, not adding/removing
 
   // Tickers visible in the user's portfolio for BUY autocomplete suggestion
   const ownedTickers = [...new Set(user.positions.map(p => p.ticker))];
@@ -2174,6 +2299,28 @@ function TradeModal({ user, onClose, onSubmit, onSubmitPending, prefill }) {
       const a = parseFloat(cashAmount);
       if (!a || a <= 0) return setErr("Amount must be > 0.");
       legs.push({ side: cashDirection, amount: a, currency: cashCcy });
+    } else if (mode === "transfer") {
+      const a = parseFloat(xferAmount);
+      if (!a || a <= 0) return setErr("Transfer amount must be > 0.");
+      if (!xferFromAcct || !xferToAcct) return setErr("Pick source and destination accounts.");
+      if (xferFromAcct === xferToAcct && xferFromCcy === xferToCcy) {
+        return setErr("Source and destination are the same — nothing to transfer.");
+      }
+      // If currencies differ, apply FX spread cost (broker takes the spread)
+      const isFxConv = xferFromCcy !== xferToCcy;
+      const sourceAmount = a;
+      const fxSpreadFraction = (user.fxSpreadPct ?? 1.5) / 100;
+      // Convert: from CAD → USD divides by fx; USD → CAD multiplies by fx
+      let destAmount = sourceAmount;
+      if (isFxConv) {
+        const rawRate = xferFromCcy === "CAD" ? (1 / fx) : fx;
+        // Broker keeps the spread → destination receives 1 - spread of converted amount
+        destAmount = sourceAmount * rawRate * (1 - fxSpreadFraction);
+      }
+      legs.push(
+        { side: "WITHDRAW", amount: sourceAmount, currency: xferFromCcy, account: xferFromAcct },
+        { side: "DEPOSIT",  amount: destAmount,   currency: xferToCcy,   account: xferToAcct }
+      );
     } else {
       if (mode === "buy" || mode === "swap") {
         const s = parseFloat(buyShares); const p = parseFloat(buyPrice);
@@ -2220,6 +2367,7 @@ function TradeModal({ user, onClose, onSubmit, onSubmitPending, prefill }) {
             ["sell", "Sell"],
             ["swap", "Swap"],
             ["cash", "Cash"],
+            ["transfer", "Transfer"],
           ].map(([v, label]) => (
             <button
               key={v}
@@ -2351,6 +2499,93 @@ function TradeModal({ user, onClose, onSubmit, onSubmitPending, prefill }) {
             )}
           </div>
         )}
+
+        {/* TRANSFER leg — move cash between accounts (and currencies) */}
+        {mode === "transfer" && (() => {
+          const fromAcct = user.accounts.find(a => a.id === xferFromAcct);
+          const toAcct = user.accounts.find(a => a.id === xferToAcct);
+          const fromBalance = fromAcct ? (xferFromCcy === "USD" ? (fromAcct.cashUsd || 0) : (fromAcct.cashCad || 0)) : 0;
+          const amtNum = parseFloat(xferAmount) || 0;
+          const isFx = xferFromCcy !== xferToCcy;
+          const fxSpread = (user.fxSpreadPct ?? 1.5) / 100;
+          const rawRate = xferFromCcy === "CAD" ? (1 / fx) : fx;
+          const destAmt = isFx ? amtNum * rawRate * (1 - fxSpread) : amtNum;
+          return (
+            <div style={{ background: "var(--sa-accent-soft)", border: "1px solid #bfdbfe", borderRadius: 10, padding: 14, marginBottom: 12 }}>
+              <div style={{ fontWeight: 600, fontSize: 12, color: "var(--sa-accent-2)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 10 }}>
+                Transfer cash
+              </div>
+              <div className="sa-modal-row">
+                <div>
+                  <label>From account</label>
+                  <select value={xferFromAcct} onChange={(e) => setXferFromAcct(e.target.value)}>
+                    {user.accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label>From currency</label>
+                  <select value={xferFromCcy} onChange={(e) => setXferFromCcy(e.target.value)}>
+                    <option value="CAD">CAD</option><option value="USD">USD</option>
+                  </select>
+                </div>
+              </div>
+              <div className="sa-modal-row">
+                <div>
+                  <label>To account</label>
+                  <select value={xferToAcct} onChange={(e) => setXferToAcct(e.target.value)}>
+                    {user.accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label>To currency</label>
+                  <select value={xferToCcy} onChange={(e) => setXferToCcy(e.target.value)}>
+                    <option value="CAD">CAD</option><option value="USD">USD</option>
+                  </select>
+                </div>
+              </div>
+              <div className="sa-modal-row" style={{ gridTemplateColumns: "1fr" }}>
+                <div>
+                  <label>Amount to send ({xferFromCcy})</label>
+                  <input type="number" step="any" min="0" value={xferAmount}
+                    onChange={(e) => setXferAmount(e.target.value)} placeholder="1000" />
+                  {fromAcct && (
+                    <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 4 }}>
+                      Available in {fromAcct.name} {xferFromCcy}: ${fromBalance.toFixed(2)} {xferFromCcy}
+                      {amtNum > fromBalance && <span style={{ color: "var(--sa-red)", marginLeft: 8 }}>⚠ exceeds balance</span>}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {isFx && amtNum > 0 && (
+                <div style={{ background: "#fff", border: "1px solid var(--sa-border)", borderRadius: 8, padding: 10, marginTop: 8, fontSize: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span className="sa-muted">FX rate: {xferFromCcy} → {xferToCcy}</span>
+                    <span style={{ fontVariantNumeric: "tabular-nums" }}>{rawRate.toFixed(4)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span className="sa-muted">Spread cost (~{(fxSpread * 100).toFixed(2)}%)</span>
+                    <span style={{ color: "var(--sa-amber)", fontVariantNumeric: "tabular-nums" }}>−${(amtNum * rawRate * fxSpread).toFixed(2)} {xferToCcy}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid var(--sa-border)", paddingTop: 6, marginTop: 6, fontWeight: 600 }}>
+                    <span>{toAcct?.name || "Destination"} receives</span>
+                    <span style={{ color: "var(--sa-green)", fontVariantNumeric: "tabular-nums" }}>+${destAmt.toFixed(2)} {xferToCcy}</span>
+                  </div>
+                </div>
+              )}
+              {!isFx && amtNum > 0 && (
+                <div style={{ background: "#fff", border: "1px solid var(--sa-border)", borderRadius: 8, padding: 10, marginTop: 8, fontSize: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
+                    <span>{toAcct?.name || "Destination"} receives</span>
+                    <span style={{ color: "var(--sa-green)", fontVariantNumeric: "tabular-nums" }}>+${amtNum.toFixed(2)} {xferToCcy}</span>
+                  </div>
+                  <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>
+                    Same currency — no FX cost.
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* CASH leg (deposit/withdraw) */}
         {mode === "cash" && (() => {
@@ -2613,6 +2848,8 @@ function FullscreenShell({ children }) {
 // =============================================================================
 function PerformanceView({ sessionToken }) {
   const [snaps, setSnaps] = useState(null);
+  const [perfAccounts, setPerfAccounts] = useState([]);
+  const [selectedAccountId, setSelectedAccountId] = useState("__total__");
   const [advisorPerf, setAdvisorPerf] = useState(null);
   const [scorecard, setScorecard] = useState(null);
   const [scorecardDays, setScorecardDays] = useState(30);
@@ -2625,7 +2862,7 @@ function PerformanceView({ sessionToken }) {
       setBusy(true); setErr(null);
       try {
         const [snapRes, perfRes, scoreRes] = await Promise.all([
-          fetch(`${BACKEND_URL}/api/stocks-portfolio/performance?days=365`, {
+          fetch(`${BACKEND_URL}/api/stocks-portfolio/performance?days=365&accountId=${encodeURIComponent(selectedAccountId)}`, {
             headers: { Authorization: `Bearer ${sessionToken}` },
           }),
           fetch(`${BACKEND_URL}/api/stocks-advice/performance?days=30`, {
@@ -2640,6 +2877,7 @@ function PerformanceView({ sessionToken }) {
         const scoreJ = await scoreRes.json();
         if (!cancelled) {
           setSnaps(snapJ?.snapshots || []);
+          setPerfAccounts(snapJ?.accounts || []);
           setAdvisorPerf(perfJ);
           setScorecard(scoreJ);
         }
@@ -2650,7 +2888,7 @@ function PerformanceView({ sessionToken }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [sessionToken, scorecardDays]);
+  }, [sessionToken, scorecardDays, selectedAccountId]);
 
   return (
     <div>
@@ -2724,9 +2962,27 @@ function PerformanceView({ sessionToken }) {
         </div>
       )}
 
-      {/* ── Portfolio value chart ── */}
+      {/* ── Portfolio value chart with per-account selector ── */}
       <div className="sa-card">
-        <h3>Portfolio total value (last 12 months)</h3>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+          <h3 style={{ margin: 0 }}>
+            {selectedAccountId === "__total__"
+              ? "Portfolio total value (last 12 months)"
+              : `${perfAccounts.find(a => a.id === selectedAccountId)?.name || "Account"} — last 12 months`}
+          </h3>
+          {perfAccounts.length > 0 && (
+            <select
+              value={selectedAccountId}
+              onChange={(e) => setSelectedAccountId(e.target.value)}
+              style={{ maxWidth: 240, fontSize: 13, padding: "6px 10px" }}
+            >
+              <option value="__total__">📊 All accounts (aggregate)</option>
+              {perfAccounts.map(a => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
         {busy && <div className="sa-muted">Loading…</div>}
         {!busy && (snaps == null || snaps.length === 0) && (
           <div className="sa-muted" style={{ fontSize: 13 }}>

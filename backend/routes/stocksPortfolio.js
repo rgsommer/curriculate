@@ -108,13 +108,58 @@ function totalCad(positions, fx) {
 
 async function writeDailySnapshot(doc) {
   const fx = doc.fxUsdCad || 1.37;
-  const total = totalCad(doc.positions, fx);
   const date = new Date().toISOString().slice(0, 10);
-  await StocksPortfolioSnapshot.findOneAndUpdate(
-    { email: doc.email, date },
-    { $set: { totalCad: total, fxUsdCad: fx, positionsCount: doc.positions?.length || 0 } },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  );
+  const accounts = doc.accounts || [];
+
+  // Per-account snapshots
+  const perAccount = accounts.map(a => {
+    let equitiesCad = 0;
+    for (const p of doc.positions || []) {
+      if (p.acct !== a.id || !p.qty) continue;
+      const price = p.ccy === "USD" ? p.priceUsd : p.priceCad;
+      if (!price) continue;
+      equitiesCad += p.ccy === "USD" ? price * p.qty * fx : price * p.qty;
+    }
+    const cashCad = a.cashCad || 0;
+    const cashUsd = a.cashUsd || 0;
+    const total = equitiesCad + cashCad + cashUsd * fx;
+    return {
+      email: doc.email, date, accountId: a.id,
+      equitiesCad, cashCad, cashUsd, totalCad: total,
+      fxUsdCad: fx, positionsCount: (doc.positions || []).filter(p => p.acct === a.id).length,
+    };
+  });
+
+  // Aggregate row
+  const aggTotal = perAccount.reduce((s, r) => s + r.totalCad, 0);
+  const aggEquities = perAccount.reduce((s, r) => s + r.equitiesCad, 0);
+  const aggCashCad = perAccount.reduce((s, r) => s + r.cashCad, 0);
+  const aggCashUsd = perAccount.reduce((s, r) => s + r.cashUsd, 0);
+
+  const upserts = [
+    ...perAccount.map(r =>
+      StocksPortfolioSnapshot.findOneAndUpdate(
+        { email: r.email, date: r.date, accountId: r.accountId },
+        { $set: r },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      )
+    ),
+    StocksPortfolioSnapshot.findOneAndUpdate(
+      { email: doc.email, date, accountId: "__total__" },
+      { $set: {
+          email: doc.email, date, accountId: "__total__",
+          totalCad: aggTotal,
+          equitiesCad: aggEquities,
+          cashCad: aggCashCad,
+          cashUsd: aggCashUsd,
+          fxUsdCad: fx,
+          positionsCount: (doc.positions || []).length,
+        }
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ),
+  ];
+  await Promise.all(upserts);
 }
 
 function sanitizePortfolioInput(body, email) {
@@ -132,6 +177,17 @@ function sanitizePortfolioInput(body, email) {
   if (typeof body.fxSpreadPct === "number" && body.fxSpreadPct >= 0 && body.fxSpreadPct < 10) {
     out.fxSpreadPct = body.fxSpreadPct;
   }
+  if (typeof body.goals === "string") {
+    out.goals = body.goals.slice(0, 5000);
+  }
+  if (body.annualContributionGoals && typeof body.annualContributionGoals === "object") {
+    const g = body.annualContributionGoals;
+    out.annualContributionGoals = {
+      rrsp: typeof g.rrsp === "number" && g.rrsp >= 0 ? g.rrsp : 0,
+      resp: typeof g.resp === "number" && g.resp >= 0 ? g.resp : 0,
+      tfsa: typeof g.tfsa === "number" && g.tfsa >= 0 ? g.tfsa : 0,
+    };
+  }
   if (Array.isArray(body.accounts)) {
     out.accounts = body.accounts
       .filter((a) => a && typeof a.id === "string" && typeof a.name === "string")
@@ -143,6 +199,9 @@ function sanitizePortfolioInput(body, email) {
         // wiping cash on the next non-cash profile save.
         cashUsd: typeof a.cashUsd === "number" && Number.isFinite(a.cashUsd) ? a.cashUsd : 0,
         cashCad: typeof a.cashCad === "number" && Number.isFinite(a.cashCad) ? a.cashCad : 0,
+        // Per-account risk override (nullable; falls back to global)
+        riskTolerance: ["conservative", "moderate", "aggressive", "speculative"].includes(a.riskTolerance)
+          ? a.riskTolerance : null,
       }));
   }
   if (Array.isArray(body.positions)) {
@@ -292,13 +351,22 @@ router.get("/performance", requireStocksAuth, async (req, res) => {
     const since = new Date();
     const days = Math.min(Math.max(parseInt(req.query.days, 10) || 365, 7), 1825);
     since.setDate(since.getDate() - days);
-    const snaps = await StocksPortfolioSnapshot.find({
+    const filter = {
       email: req.stocksUser.email,
       createdAt: { $gte: since },
-    })
+    };
+    // Optional account filter — accountId param scopes to one account.
+    if (req.query.accountId) filter.accountId = String(req.query.accountId);
+    const snaps = await StocksPortfolioSnapshot.find(filter)
       .sort({ date: 1 })
       .lean();
-    res.json({ snapshots: snaps });
+
+    // Also surface the per-account list so the frontend can build a selector
+    const accounts = await StocksPortfolio.findOne({ email: req.stocksUser.email }, { accounts: 1 }).lean();
+    res.json({
+      snapshots: snaps,
+      accounts: accounts?.accounts || [],
+    });
   } catch (err) {
     console.error("stocks-portfolio performance error:", err);
     res.status(500).json({ error: "Internal error" });

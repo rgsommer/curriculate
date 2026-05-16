@@ -18,6 +18,14 @@ const AccountSchema = new mongoose.Schema(
     // USD and CAD cash balances per account.
     cashUsd: { type: Number, default: 0 },
     cashCad: { type: Number, default: 0 },
+    // Optional per-account risk override. When null, the portfolio's global
+    // riskTolerance applies. Lets the user run an aggressive Non-Spousal
+    // alongside a moderate RRSP and a conservative TFSA, for example.
+    riskTolerance: {
+      type: String,
+      enum: ["conservative", "moderate", "aggressive", "speculative", null],
+      default: null,
+    },
   },
   { _id: false }
 );
@@ -60,6 +68,20 @@ const StocksPortfolioSchema = new mongoose.Schema(
     //                       the broker's currency conversion (typically 1.5%).
     commissionPerTrade: { type: Number, default: 9.95 },
     fxSpreadPct: { type: Number, default: 1.5 },
+    // Free-form long-term goals & constraints. Written by the user in their
+    // own words ("retire in 2030", "$1K/mo from 2035", "RRSP cap $86K") and
+    // injected at the TOP of every AI advice/briefing prompt so the model
+    // anchors all recs against the user's stated life-plan, not just the
+    // short-term portfolio state.
+    goals: { type: String, default: "", maxlength: 5000 },
+    // Annual contribution targets — set by the user. RRSP/RESP/TFSA. Surfaced
+    // in briefings (especially Jan/Feb for the RRSP Mar 1 deadline) and
+    // factored into cash-deployment recommendations.
+    annualContributionGoals: {
+      rrsp: { type: Number, default: 0 },
+      resp: { type: Number, default: 0 },
+      tfsa: { type: Number, default: 0 },
+    },
     accounts: { type: [AccountSchema], default: [] },
     positions: { type: [PositionSchema], default: [] },
     // Planned withdrawals — "I need $X by date Y" so AI recs can prepare
