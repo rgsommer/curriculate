@@ -50,14 +50,24 @@ async function apiGetPortfolio(sessionToken) {
 }
 
 async function apiPutPortfolio(sessionToken, profile) {
+  // NOTE: every persistable field MUST be listed here. The server sanitizer
+  // ignores fields it doesn't recognize, but it cannot recover fields the
+  // client never sent — and the doc-level $set will leave them untouched.
+  // (Bug history: goals + contribution goals silently dropped because the
+  // body picked only 4 fields.)
   const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
     body: JSON.stringify({
       riskTolerance: profile.riskTolerance,
       fxUsdCad: profile.fxUsdCad,
+      commissionPerTrade: profile.commissionPerTrade,
+      fxSpreadPct: profile.fxSpreadPct,
+      goals: profile.goals,
+      annualContributionGoals: profile.annualContributionGoals,
       accounts: profile.accounts,
       positions: profile.positions,
+      plannedWithdrawals: profile.plannedWithdrawals,
     }),
   });
   if (r.status === 401) throw new Error("UNAUTHORIZED");
