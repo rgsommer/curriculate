@@ -1508,6 +1508,93 @@ function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPri
   );
 }
 
+// Inline-bold renderer — converts **text** → <strong>text</strong> inside a
+// string while preserving non-bold spans as text. Used by the body-renderer.
+function renderInlineBold(s) {
+  if (!s) return null;
+  const parts = String(s).split(/(\*\*[^*]+\*\*)/);
+  return parts.map((p, i) => {
+    if (p.startsWith("**") && p.endsWith("**")) {
+      return <strong key={i}>{p.slice(2, -2)}</strong>;
+    }
+    return <span key={i}>{p}</span>;
+  });
+}
+
+// Color palette for the Call action badge.
+function actionPalette(action) {
+  if (!action) return null;
+  const a = action.toUpperCase().trim();
+  if (a.startsWith("BUY") || a.startsWith("ADD"))           return { bg: "var(--sa-green-soft)", fg: "var(--sa-green)" };
+  if (a.startsWith("SELL") || a.startsWith("EXIT"))         return { bg: "#fee2e2", fg: "#b91c1c" };
+  if (a.startsWith("TRIM"))                                 return { bg: "var(--sa-amber-soft)", fg: "var(--sa-amber)" };
+  if (a.startsWith("HOLD"))                                 return { bg: "var(--sa-accent-soft)", fg: "var(--sa-accent-2)" };
+  return { bg: "#f3f4f6", fg: "#374151" };
+}
+
+// Smart body renderer for advice/snapshot cards. Detects the "Signals per
+// holding" pattern (2+ "**TICKER**:" markers) and renders each ticker as
+// its own compact sub-card with a colored Call badge + bulletized prose.
+// Falls back to plain markdown-bold prose for other cards.
+function renderAdviceBody(body) {
+  if (!body) return null;
+  const text = String(body).trim();
+  if (!text) return null;
+
+  // Detect per-holding pattern
+  const tickerRe = /\*\*([A-Z][A-Z0-9.\-]{0,9})\*\*:/g;
+  const matches = [...text.matchAll(tickerRe)];
+  if (matches.length >= 2) {
+    const chunks = matches.map((m, i) => {
+      const start = m.index + m[0].length;
+      const end = i + 1 < matches.length ? matches[i + 1].index : text.length;
+      return { ticker: m[1], body: text.slice(start, end).trim() };
+    });
+    return (
+      <div style={{ display: "grid", gap: 10, marginTop: 4 }}>
+        {chunks.map((c, i) => {
+          const callMatch = c.body.match(/\*\*Call:\s*([^*]+)\*\*\.?/i);
+          const action = callMatch ? callMatch[1].trim() : null;
+          const pal = actionPalette(action);
+          const bodyClean = c.body.replace(/\*\*Call:[^*]+\*\*\.?\s*/i, "").trim();
+          // Split into sentences for readability — each "X. Y" becomes a bullet
+          const sentences = bodyClean
+            .split(/\s*\.\s+(?=[A-Z*\d])/)
+            .map(s => s.replace(/\.+$/, "").trim())
+            .filter(s => s.length > 3);
+          return (
+            <div key={i} style={{ padding: "10px 14px", background: "var(--sa-panel-2)", borderRadius: 8, borderLeft: pal ? `3px solid ${pal.fg}` : "3px solid var(--sa-border)" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+                <span style={{ fontWeight: 700, fontSize: 15, color: "var(--sa-text)" }}>{c.ticker}</span>
+                {pal && action && (
+                  <span style={{ background: pal.bg, color: pal.fg, padding: "2px 9px", borderRadius: 99, fontSize: 11, fontWeight: 700, letterSpacing: ".04em", whiteSpace: "nowrap" }}>
+                    {action}
+                  </span>
+                )}
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.55, color: "var(--sa-text-2)" }}>
+                {sentences.map((s, j) => (
+                  <li key={j} style={{ marginBottom: 3 }}>{renderInlineBold(s)}</li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Fallback: plain paragraphs with bold markdown processed.
+  const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 0);
+  return (
+    <div>
+      {paragraphs.map((p, i) => (
+        <p key={i} style={{ margin: "0 0 8px 0", lineHeight: 1.6 }}>{renderInlineBold(p)}</p>
+      ))}
+    </div>
+  );
+}
+
 function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchConsumed, onExecuteRec, executedRecKeys, recKey, onClearExecuted }) {
   // Per-ticker P/L (CAD) used to annotate each rec row with the position's
   // current performance. Recomputed when prices or basis change.
@@ -1727,7 +1814,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
             </h3>
             {hasRecs ? (
               <>
-                {parsed.intro && <p>{parsed.intro}</p>}
+                {parsed.intro && renderAdviceBody(parsed.intro)}
                 <RecsTable
                   recs={parsed.recs}
                   onExecuteRec={onExecuteRec}
@@ -1735,11 +1822,13 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
                   recKey={recKey}
                   pnlMap={pnlMap}
                 />
-                {parsed.outro && <p style={{ marginTop: 10, fontStyle: "italic", color: "var(--sa-text-2)" }}>{parsed.outro}</p>}
+                {parsed.outro && <p style={{ marginTop: 10, fontStyle: "italic", color: "var(--sa-text-2)" }}>{renderInlineBold(parsed.outro)}</p>}
               </>
             ) : (
-              // No structured recs detected — render the full body once as prose.
-              <p>{c.body}</p>
+              // No structured recs detected — render with the smart body
+              // renderer: per-ticker mini-cards when the briefing emitted
+              // "Signals per holding" content, otherwise prose with bold.
+              renderAdviceBody(c.body)
             )}
             {c.meta && <div className="meta">{c.meta}</div>}
           </div>
@@ -1766,12 +1855,12 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
                 </h3>
                 {hasRecs ? (
                   <>
-                    {parsed.intro && <p>{parsed.intro}</p>}
+                    {parsed.intro && renderAdviceBody(parsed.intro)}
                     <RecsTable recs={parsed.recs} onExecuteRec={onExecuteRec} executedRecKeys={executedRecKeys} recKey={recKey} pnlMap={pnlMap} />
-                    {parsed.outro && <p style={{ marginTop: 10, fontStyle: "italic", color: "var(--sa-text-2)" }}>{parsed.outro}</p>}
+                    {parsed.outro && <p style={{ marginTop: 10, fontStyle: "italic", color: "var(--sa-text-2)" }}>{renderInlineBold(parsed.outro)}</p>}
                   </>
                 ) : (
-                  <p>{c.body}</p>
+                  renderAdviceBody(c.body)
                 )}
                 {c.meta && <div className="meta">{c.meta}</div>}
               </div>
