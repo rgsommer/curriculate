@@ -42,6 +42,108 @@ function recurrenceLabel(r) {
   return (RECURRENCES.find((x) => x.id === r) || RECURRENCES[0]).label;
 }
 
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const ORDINAL_NAMES = { 1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 5: "5th", "-1": "Last" };
+
+// Returns the day-of-week (0..6, Sunday=0) for a "YYYY-MM-DDThh:mm" local
+// datetime string, or null if not parseable.
+function weekdayFromLocalInput(localStr) {
+  if (!localStr) return null;
+  const d = new Date(localStr);
+  if (isNaN(d.getTime())) return null;
+  return d.getDay();
+}
+
+// Pretty "Sunday, May 17" string for the picker hint.
+function prettyWeekdayDate(localStr) {
+  if (!localStr) return null;
+  const d = new Date(localStr);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+}
+
+function ordinalSuffix(n) {
+  if (n % 100 >= 11 && n % 100 <= 13) return "th";
+  if (n % 10 === 1) return "st";
+  if (n % 10 === 2) return "nd";
+  if (n % 10 === 3) return "rd";
+  return "th";
+}
+
+// Build the monthly-picker option set based on the picked due date.
+// When a dueAt is set, the user gets two kinds of choice:
+//   1) Repeat on that calendar day each month (e.g. "17th of the month")
+//   2) Repeat on the Nth weekday each month (1st / 2nd / 3rd / 4th / Last
+//      Sunday, etc — derived from the dueAt's weekday)
+// When no dueAt is set, fall back to the original 1st..31st + Last day list
+// so the picker still works.
+//
+// Each option has { value, label } where value encodes intent:
+//   "auto"                   → all recurrence pins null (next occurrence
+//                              uses dueAt's day naturally)
+//   "dom-N" with N in 0..31 → recurrenceDay=N (0 = last day of month)
+//   "wd-W-O" with W in 0..6 and O in 1..4 or -1 → weekday+ordinal mode
+function buildMonthlyOptions(dueAtLocal) {
+  const opts = [];
+  const d = dueAtLocal ? new Date(dueAtLocal) : null;
+  const haveDate = d && !isNaN(d.getTime());
+
+  if (haveDate) {
+    const dayNum = d.getDate();
+    const weekday = d.getDay();
+    const wdName = WEEKDAY_NAMES[weekday];
+    // Choice 1: explicit day number (semantically same as auto when it equals dueAt's day)
+    opts.push({ value: "auto", label: `Monthly on the ${dayNum}${ordinalSuffix(dayNum)}` });
+    // Choice 2: ordinal weekday — 1st through 4th, plus Last
+    [1, 2, 3, 4].forEach((ord) => {
+      opts.push({ value: `wd-${weekday}-${ord}`, label: `Monthly on the ${ORDINAL_NAMES[ord]} ${wdName}` });
+    });
+    opts.push({ value: `wd-${weekday}--1`, label: `Monthly on the last ${wdName}` });
+  } else {
+    // No dueAt: fall back to the 31-day list so the picker is still usable.
+    opts.push({ value: "auto", label: "Same day as due date" });
+    for (let n = 1; n <= 31; n++) {
+      opts.push({ value: `dom-${n}`, label: `${n}${ordinalSuffix(n)} of the month` });
+    }
+    opts.push({ value: "dom-0", label: "Last day of the month" });
+  }
+  return opts;
+}
+
+// Encode a task's current monthly settings as a picker value.
+function monthlySettingsToValue(t) {
+  if (t.recurrenceWeekday != null && t.recurrenceOrdinal != null) {
+    return `wd-${t.recurrenceWeekday}-${t.recurrenceOrdinal}`;
+  }
+  if (t.recurrenceDay != null) return `dom-${t.recurrenceDay}`;
+  return "auto";
+}
+
+// Decode a picker value into the three fields. Returns
+// { recurrenceDay, recurrenceWeekday, recurrenceOrdinal }.
+function monthlyValueToFields(value) {
+  if (!value || value === "auto") {
+    return { recurrenceDay: null, recurrenceWeekday: null, recurrenceOrdinal: null };
+  }
+  if (value.startsWith("dom-")) {
+    const n = Number(value.slice(4));
+    if (Number.isFinite(n)) {
+      return { recurrenceDay: n, recurrenceWeekday: null, recurrenceOrdinal: null };
+    }
+  }
+  if (value.startsWith("wd-")) {
+    const m = value.match(/^wd-(\d)-(-?\d+)$/);
+    if (m) {
+      return {
+        recurrenceDay: null,
+        recurrenceWeekday: Number(m[1]),
+        recurrenceOrdinal: Number(m[2]),
+      };
+    }
+  }
+  return { recurrenceDay: null, recurrenceWeekday: null, recurrenceOrdinal: null };
+}
+
 // Options for the monthly day-of-month picker.
 // Value "" = auto (use dueAt's day, server stores null).
 // "0"      = last day of the month.
@@ -353,24 +455,43 @@ function AddTaskForm({ onAdd }) {
   const [category, setCategory] = useState("family");
   const [dueAt, setDueAt] = useState("");
   const [recurrence, setRecurrence] = useState("none");
-  const [recDay, setRecDay] = useState(""); // "", "0", "1".."31"
+  // monthlyPick is the encoded picker value ("auto" | "dom-N" | "wd-W-O").
+  const [monthlyPick, setMonthlyPick] = useState("auto");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+
+  const dueWeekday = weekdayFromLocalInput(dueAt);
+  const monthlyOpts = useMemo(() => buildMonthlyOptions(dueAt), [dueAt]);
+  const dueLabel = prettyWeekdayDate(dueAt);
+
+  // If the user changes dueAt to a different weekday, and the current pick
+  // references the OLD weekday, reset to "auto" so the dropdown stays coherent.
+  useEffect(() => {
+    if (monthlyPick.startsWith("wd-")) {
+      const wantWd = Number(monthlyPick.split("-")[1]);
+      if (dueWeekday == null || wantWd !== dueWeekday) {
+        setMonthlyPick("auto");
+      }
+    }
+  }, [dueWeekday]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function submit(e) {
     e.preventDefault();
     if (!title.trim()) return;
     setErr(""); setBusy(true);
     try {
+      const monthlyFields = recurrence === "monthly"
+        ? monthlyValueToFields(monthlyPick)
+        : { recurrenceDay: null, recurrenceWeekday: null, recurrenceOrdinal: null };
       await onAdd({
         title: title.trim(),
         category,
         dueAt: dueAt ? new Date(dueAt).toISOString() : null,
         recurrence,
-        recurrenceDay: recurrence === "monthly" ? recDayFromSelect(recDay) : null,
+        ...monthlyFields,
       });
       setTitle(""); setDueAt("");
-      // keep category + recurrence + recDay sticky for rapid entry of similar tasks
+      // keep category + recurrence + monthlyPick sticky for rapid entry of similar tasks
     } catch (e) {
       setErr(e?.message || "Couldn't add task.");
     } finally {
@@ -408,17 +529,22 @@ function AddTaskForm({ onAdd }) {
             </button>
           ))}
         </div>
-        <input
-          type="datetime-local" value={dueAt}
-          onChange={(e) => setDueAt(e.target.value)}
-          style={styles.dueInput} disabled={busy}
-        />
+        <div style={{ display: "flex", flexDirection: "column", flex: "1 1 180px", minWidth: 160 }}>
+          <input
+            type="datetime-local" value={dueAt}
+            onChange={(e) => setDueAt(e.target.value)}
+            style={styles.dueInput} disabled={busy}
+          />
+          {dueLabel && (
+            <div style={styles.weekdayHint}>{dueLabel}</div>
+          )}
+        </div>
         <select
           value={recurrence}
           onChange={(e) => {
             const r = e.target.value;
             setRecurrence(r);
-            if (r !== "monthly") setRecDay(""); // clear day-of-month pin when leaving monthly
+            if (r !== "monthly") setMonthlyPick("auto");
           }}
           style={styles.recurSelect}
           disabled={busy}
@@ -431,14 +557,14 @@ function AddTaskForm({ onAdd }) {
         </select>
         {recurrence === "monthly" && (
           <select
-            value={recDay}
-            onChange={(e) => setRecDay(e.target.value)}
+            value={monthlyPick}
+            onChange={(e) => setMonthlyPick(e.target.value)}
             style={styles.recurSelect}
             disabled={busy}
-            aria-label="Day of month"
-            title="Day of month"
+            aria-label="Monthly pattern"
+            title="Monthly pattern"
           >
-            {DAY_OF_MONTH_OPTIONS.map((o) => (
+            {monthlyOpts.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
@@ -546,10 +672,24 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
   const [category, setCategory] = useState(task.category);
   const [dueAt, setDueAt] = useState(toLocalInputValue(task.dueAt));
   const [recurrence, setRecurrence] = useState(task.recurrence || "none");
-  const [recDay, setRecDay] = useState(recDayToSelect(task.recurrenceDay));
+  const [monthlyPick, setMonthlyPick] = useState(monthlySettingsToValue(task));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const completed = !!task.completedAt;
+
+  const dueWeekday = weekdayFromLocalInput(dueAt);
+  const monthlyOpts = useMemo(() => buildMonthlyOptions(dueAt), [dueAt]);
+  const dueLabel = prettyWeekdayDate(dueAt);
+
+  // Reset weekday-based pick if dueAt's weekday changes to mismatch the pick.
+  useEffect(() => {
+    if (monthlyPick.startsWith("wd-")) {
+      const wantWd = Number(monthlyPick.split("-")[1]);
+      if (dueWeekday == null || wantWd !== dueWeekday) {
+        setMonthlyPick("auto");
+      }
+    }
+  }, [dueWeekday]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close on ESC
   useEffect(() => {
@@ -564,12 +704,15 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
     if (!trimmed) { setErr("Title is required."); return; }
     setBusy(true); setErr("");
     try {
+      const monthlyFields = recurrence === "monthly"
+        ? monthlyValueToFields(monthlyPick)
+        : { recurrenceDay: null, recurrenceWeekday: null, recurrenceOrdinal: null };
       await onSave(task, {
         title: trimmed,
         category,
         dueAt: dueAt ? new Date(dueAt).toISOString() : null,
         recurrence,
-        recurrenceDay: recurrence === "monthly" ? recDayFromSelect(recDay) : null,
+        ...monthlyFields,
       });
       onClose();
     } catch (e) {
@@ -654,7 +797,7 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
         </div>
 
         <label style={styles.label}>Due</label>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
           <input
             type="datetime-local" value={dueAt}
             onChange={(e) => setDueAt(e.target.value)}
@@ -671,6 +814,8 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
             </button>
           )}
         </div>
+        {dueLabel && <div style={{ ...styles.weekdayHint, marginBottom: 16 }}>{dueLabel}</div>}
+        {!dueLabel && <div style={{ marginBottom: 16 }} />}
 
         <label style={styles.label}>Repeat</label>
         <div style={{ ...styles.catPicker, marginBottom: 4 }}>
@@ -696,14 +841,14 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
         </div>
         {recurrence === "monthly" && (
           <div style={{ marginTop: 10 }}>
-            <label style={styles.label}>Day of month</label>
+            <label style={styles.label}>Monthly pattern</label>
             <select
-              value={recDay}
-              onChange={(e) => setRecDay(e.target.value)}
+              value={monthlyPick}
+              onChange={(e) => setMonthlyPick(e.target.value)}
               style={{ ...styles.recurSelect, width: "100%" }}
               disabled={busy}
             >
-              {DAY_OF_MONTH_OPTIONS.map((o) => (
+              {monthlyOpts.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
@@ -711,9 +856,14 @@ function EditTaskModal({ task, onClose, onSave, onDelete, onComplete, onUncomple
         )}
         {recurrence !== "none" && (
           <div style={{ ...styles.hint, marginTop: 8 }}>
-            {recurrence === "monthly" && recDay !== ""
-              ? `When you complete this task, a new one will appear on the ${dayOfMonthLabel(recDay)?.toLowerCase() || "next month"}.`
-              : `When you complete this task, a new one will appear ${recurrenceLabel(recurrence).toLowerCase().replace("ly", "")} later.`}
+            {(() => {
+              if (recurrence !== "monthly" || monthlyPick === "auto") {
+                return `When you complete this task, a new one will appear ${recurrenceLabel(recurrence).toLowerCase().replace("ly", "")} later.`;
+              }
+              const opt = monthlyOpts.find((o) => o.value === monthlyPick);
+              if (opt) return `When you complete this task, a new one will appear on the ${opt.label.toLowerCase()}.`;
+              return null;
+            })()}
           </div>
         )}
 
@@ -1080,6 +1230,12 @@ const styles = {
     borderRadius: 10, border: "1px solid #e2e8f0",
     background: "#fff", color: "#0f172a", outline: "none",
     cursor: "pointer",
+  },
+  weekdayHint: {
+    marginTop: 4,
+    fontSize: 12,
+    color: "#64748b",
+    paddingLeft: 2,
   },
   repeatGlyph: {
     marginLeft: 6,

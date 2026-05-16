@@ -222,6 +222,8 @@ function serializeTask(t) {
     completedAt: t.completedAt ? t.completedAt.toISOString() : null,
     recurrence: t.recurrence || "none",
     recurrenceDay: t.recurrenceDay == null ? null : t.recurrenceDay,
+    recurrenceWeekday: t.recurrenceWeekday == null ? null : t.recurrenceWeekday,
+    recurrenceOrdinal: t.recurrenceOrdinal == null ? null : t.recurrenceOrdinal,
     createdAt: t.createdAt ? t.createdAt.toISOString() : null,
     updatedAt: t.updatedAt ? t.updatedAt.toISOString() : null,
   };
@@ -253,6 +255,44 @@ function sanitizeRecurrenceDay(input) {
   const i = Math.trunc(n);
   if (i < 0 || i > 31) return null;
   return i;
+}
+
+function sanitizeRecurrenceWeekday(input) {
+  if (input == null || input === "") return null;
+  const n = Number(input);
+  if (!Number.isFinite(n)) return null;
+  const i = Math.trunc(n);
+  if (i < 0 || i > 6) return null;
+  return i;
+}
+
+function sanitizeRecurrenceOrdinal(input) {
+  if (input == null || input === "") return null;
+  const n = Number(input);
+  if (!Number.isFinite(n)) return null;
+  const i = Math.trunc(n);
+  // Allow -1 (last), or 1..5
+  if (i !== -1 && (i < 1 || i > 5)) return null;
+  return i;
+}
+
+// Compute the Date for the Nth occurrence of `weekday` in (year, month).
+// `ordinal`: 1..5 = that occurrence, -1 = last occurrence.
+// Returns null if the Nth occurrence doesn't exist in that month.
+function nthWeekdayOfMonth(year, month, weekday, ordinal) {
+  if (ordinal === -1) {
+    const lastOfMonth = new Date(year, month + 1, 0);
+    let day = lastOfMonth.getDate();
+    while (new Date(year, month, day).getDay() !== weekday) day--;
+    return new Date(year, month, day);
+  }
+  const first = new Date(year, month, 1);
+  let offset = weekday - first.getDay();
+  if (offset < 0) offset += 7;
+  const day = 1 + offset + (ordinal - 1) * 7;
+  const dim = new Date(year, month + 1, 0).getDate();
+  if (day > dim) return null;
+  return new Date(year, month, day);
 }
 
 // Like advanceDate but keeps stepping until the result is in the future,
@@ -290,16 +330,37 @@ function advanceDate(from, recurrence, opts = {}) {
     return next;
   }
   if (recurrence === "monthly") {
+    // Step to next month first (so we land in M+1 either way).
+    next.setDate(1);
+    next.setMonth(next.getMonth() + 1);
+    const year = next.getFullYear();
+    const month = next.getMonth();
+    const dim = new Date(year, month + 1, 0).getDate();
+
+    // Weekday+ordinal mode takes precedence when both are set.
+    if (Number.isFinite(opts.monthlyWeekday) && Number.isFinite(opts.monthlyOrdinal)) {
+      const wd = Math.max(0, Math.min(6, Math.trunc(opts.monthlyWeekday)));
+      const ord = Math.trunc(opts.monthlyOrdinal);
+      let result = nthWeekdayOfMonth(year, month, wd, ord);
+      // 5th-weekday months don't always have a 5th occurrence — fall back to last.
+      if (!result && ord >= 1 && ord <= 5) {
+        result = nthWeekdayOfMonth(year, month, wd, -1);
+      }
+      if (result) {
+        // Preserve time-of-day from the original anchor.
+        result.setHours(base.getHours(), base.getMinutes(), base.getSeconds(), base.getMilliseconds());
+        return result;
+      }
+      // Fallthrough to day-of-month logic if something went wrong.
+    }
+
     const pinned = opts.monthlyDay;
     const wantedDay =
       pinned == null
-        ? next.getDate()
+        ? base.getDate()
         : Number.isFinite(pinned)
           ? Math.max(0, Math.min(31, Math.trunc(pinned)))
-          : next.getDate();
-    next.setDate(1);              // step off the cliff so setMonth doesn't roll
-    next.setMonth(next.getMonth() + 1);
-    const dim = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+          : base.getDate();
     next.setDate(wantedDay === 0 ? dim : Math.min(wantedDay, dim));
     return next;
   }
@@ -345,8 +406,14 @@ router.post("/tasks", authRequired, async (req, res) => {
     const category = sanitizeCategory(req.body?.category);
     const dueAt = parseDueAt(req.body?.dueAt);
     const recurrence = sanitizeRecurrence(req.body?.recurrence);
+    const isMonthly = recurrence === "monthly";
+    const recurrenceWeekday = isMonthly ? sanitizeRecurrenceWeekday(req.body?.recurrenceWeekday) : null;
+    const recurrenceOrdinal = isMonthly ? sanitizeRecurrenceOrdinal(req.body?.recurrenceOrdinal) : null;
+    // Weekday+ordinal wins; otherwise honour recurrenceDay (clear to avoid mixed state).
     const recurrenceDay =
-      recurrence === "monthly" ? sanitizeRecurrenceDay(req.body?.recurrenceDay) : null;
+      isMonthly && recurrenceWeekday == null && recurrenceOrdinal == null
+        ? sanitizeRecurrenceDay(req.body?.recurrenceDay)
+        : null;
 
     const task = await LifeTask.create({
       userId: req.userId,
@@ -355,6 +422,8 @@ router.post("/tasks", authRequired, async (req, res) => {
       dueAt,
       recurrence,
       recurrenceDay,
+      recurrenceWeekday,
+      recurrenceOrdinal,
     });
 
     return res.json({ ok: true, task: serializeTask(task) });
@@ -394,10 +463,23 @@ router.patch("/tasks/:id", authRequired, async (req, res) => {
     if ("recurrenceDay" in req.body) {
       task.recurrenceDay = sanitizeRecurrenceDay(req.body.recurrenceDay);
     }
-    // If recurrence changes away from "monthly", drop the day pin so it
-    // doesn't linger as orphaned state.
+    if ("recurrenceWeekday" in req.body) {
+      task.recurrenceWeekday = sanitizeRecurrenceWeekday(req.body.recurrenceWeekday);
+    }
+    if ("recurrenceOrdinal" in req.body) {
+      task.recurrenceOrdinal = sanitizeRecurrenceOrdinal(req.body.recurrenceOrdinal);
+    }
+    // If recurrence changes away from "monthly", drop all monthly pins so
+    // they don't linger as orphaned state.
     if (task.recurrence !== "monthly") {
       task.recurrenceDay = null;
+      task.recurrenceWeekday = null;
+      task.recurrenceOrdinal = null;
+    } else {
+      // Within monthly: weekday+ordinal mode is exclusive of day-of-month.
+      const hasWeekday =
+        task.recurrenceWeekday != null && task.recurrenceOrdinal != null;
+      if (hasWeekday) task.recurrenceDay = null;
     }
     if ("completed" in req.body) {
       task.completedAt = req.body.completed ? new Date() : null;
@@ -418,7 +500,11 @@ router.patch("/tasks/:id", authRequired, async (req, res) => {
       const nextDue = advanceDateToFuture(
         task.dueAt || new Date(),
         task.recurrence,
-        { monthlyDay: task.recurrenceDay }
+        {
+          monthlyDay: task.recurrenceDay,
+          monthlyWeekday: task.recurrenceWeekday,
+          monthlyOrdinal: task.recurrenceOrdinal,
+        }
       );
       if (nextDue) {
         spawnedTask = await LifeTask.create({
@@ -428,6 +514,8 @@ router.patch("/tasks/:id", authRequired, async (req, res) => {
           dueAt: nextDue,
           recurrence: task.recurrence,
           recurrenceDay: task.recurrenceDay,
+          recurrenceWeekday: task.recurrenceWeekday,
+          recurrenceOrdinal: task.recurrenceOrdinal,
         });
       }
     }

@@ -54,12 +54,34 @@ const LifeTaskSchema = new Schema(
     //   1..31       = land on that day each month (clamped to month length,
     //                 e.g. 31 → Feb 28)
     //   0           = last day of the month
-    // Ignored for other recurrences.
+    // Ignored for other recurrences. Mutually exclusive with the
+    // weekday+ordinal pair below: if those are set, this is treated as null.
     recurrenceDay: {
       type: Number,
       default: null,
       min: 0,
       max: 31,
+    },
+    // Alternative monthly pin: "Nth weekday of the month" (e.g. 3rd Sunday).
+    //   recurrenceWeekday: 0..6 (Sunday=0) or null
+    //   recurrenceOrdinal: 1..5 = that occurrence in the month
+    //                      -1   = last occurrence in the month
+    //                      null = not set
+    // Only honoured when recurrence === "monthly". If a chosen ordinal
+    // doesn't exist in a particular month (e.g. "5th Sunday" of a month
+    // with only 4 Sundays) the spawn falls back to that month's LAST
+    // occurrence of that weekday.
+    recurrenceWeekday: {
+      type: Number,
+      default: null,
+      min: 0,
+      max: 6,
+    },
+    recurrenceOrdinal: {
+      type: Number,
+      default: null,
+      min: -1,
+      max: 5,
     },
   },
   { timestamps: true }
