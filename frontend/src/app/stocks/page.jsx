@@ -1412,6 +1412,8 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
   // Per-ticker P/L (CAD) used to annotate each rec row with the position's
   // current performance. Recomputed when prices or basis change.
   const pnlMap = useMemo(() => pnlByTicker(user.positions, user.fxUsdCad || 1.37), [user.positions, user.fxUsdCad]);
+  const [consensusBusy, setConsensusBusy] = useState(false);
+  const [consensusData, setConsensusData] = useState(null); // { consensus, alternatives, sources }
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiAdvice, setAiAdvice] = useState(null); // { advice, sources, generatedAt }
@@ -1438,6 +1440,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
       setAiAdvice(j);
+      setConsensusData(null);
       // Fresh AI advice → clear stale "executed" marks (a new rec is not the
       // same as the old one even if ticker/side/qty happen to match)
       onClearExecuted?.();
@@ -1445,6 +1448,28 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
       setAiError(e?.message || "Failed");
     } finally {
       setAiBusy(false);
+    }
+  };
+
+  const handleConsensus = async () => {
+    if (consensusBusy || aiBusy) return;
+    setConsensusBusy(true); setAiError(null);
+    try {
+      await onRefresh();
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/consensus`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({}),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setConsensusData(j);
+      setAiAdvice(null);
+      onClearExecuted?.();
+    } catch (e) {
+      setAiError(e?.message || "Consensus failed");
+    } finally {
+      setConsensusBusy(false);
     }
   };
 
@@ -1457,8 +1482,20 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFetchAi]);
 
-  const shown = aiAdvice?.advice || ruleAdvice;
-  const showingAi = !!aiAdvice;
+  // Display mode priority: consensus > single AI run > rule-based fallback
+  let shown, showingAi, showingConsensus = false, alternatives = null;
+  if (consensusData) {
+    shown = consensusData.consensus;
+    alternatives = consensusData.alternatives || [];
+    showingAi = true;
+    showingConsensus = true;
+  } else if (aiAdvice) {
+    shown = aiAdvice.advice;
+    showingAi = true;
+  } else {
+    shown = ruleAdvice;
+    showingAi = false;
+  }
 
   return (
     <div>
@@ -1466,16 +1503,21 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
         <div>
           <h2>Advice</h2>
           <div className="sa-breadcrumb">
-            {showingAi
+            {showingConsensus
+              ? `🧠🧠🧠 Consensus across ${consensusData.runsSucceeded}/${consensusData.runs} runs · ${new Date(consensusData.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+              : showingAi
               ? `🧠 AI-generated · ${new Date(aiAdvice.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
               : "Rule-based signals from your current portfolio"}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="sa-btn secondary" onClick={handleRefresh} disabled={busy || aiBusy} title="Re-fetch prices and re-run the rule engine">
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="sa-btn secondary" onClick={handleRefresh} disabled={busy || aiBusy || consensusBusy} title="Re-fetch prices and re-run the rule engine">
             {busy ? "Refreshing…" : "↻ Refresh prices"}
           </button>
-          <button className="sa-btn" onClick={handleAi} disabled={aiBusy || busy} title="Search the web for fresh news on each holding and run Claude over the portfolio">
+          <button className="sa-btn secondary" onClick={handleConsensus} disabled={consensusBusy || aiBusy || busy} title="Run advice 3× in parallel and surface the recommendations that appear in ≥ 2 of 3 runs (high-conviction). Costs ~3× the single-run API spend.">
+            {consensusBusy ? "Running 3×…" : "🧠🧠🧠 Consensus mode"}
+          </button>
+          <button className="sa-btn" onClick={handleAi} disabled={aiBusy || busy || consensusBusy} title="Search the web for fresh news on each holding and run Claude over the portfolio">
             {aiBusy ? "Thinking…" : "🧠 Update Advice"}
           </button>
         </div>
@@ -1484,7 +1526,12 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
       {aiError && <div className="sa-err">{aiError}</div>}
       {showingAi && (
         <div style={{ marginBottom: 12, textAlign: "right" }}>
-          <button className="sa-btn ghost" onClick={() => setAiAdvice(null)}>Back to rule-based view</button>
+          <button className="sa-btn ghost" onClick={() => { setAiAdvice(null); setConsensusData(null); }}>Back to rule-based view</button>
+        </div>
+      )}
+      {showingConsensus && (
+        <div style={{ marginBottom: 14, padding: "10px 14px", background: "var(--sa-accent-soft)", border: "1px solid #bfdbfe", borderRadius: 10, fontSize: 12, color: "var(--sa-text-2)" }}>
+          🧠🧠🧠 <b>Consensus mode</b> — recommendations shown below appeared in <b>at least 2 of {consensusData.runsSucceeded} independent generations</b>. Each card shows the run count. Lower-conviction ideas (appeared in only 1 run) are listed separately below.
         </div>
       )}
       {shown.map((c, i) => {
@@ -1495,7 +1542,14 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
         if (c.recId) parsed.recs.forEach(r => { r.recId = c.recId; });
         return (
           <div key={i} className={`sa-advice-card ${c.sev === "danger" ? "danger" : c.sev === "warn" ? "warn" : c.sev === "good" ? "good" : ""}`}>
-            <h3>{c.title}</h3>
+            <h3 style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <span>{c.title}</span>
+              {showingConsensus && c.consensusCount && (
+                <span style={{ background: c.consensusCount === c.totalRuns ? "var(--sa-green-soft)" : "var(--sa-accent-soft)", color: c.consensusCount === c.totalRuns ? "var(--sa-green)" : "var(--sa-accent-2)", padding: "2px 8px", borderRadius: 99, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                  {c.consensusCount}/{c.totalRuns} runs
+                </span>
+              )}
+            </h3>
             {hasRecs ? (
               <>
                 {parsed.intro && <p>{parsed.intro}</p>}
@@ -1516,7 +1570,55 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
           </div>
         );
       })}
-      {showingAi && aiAdvice.sources?.length > 0 && (
+      {showingConsensus && alternatives && alternatives.length > 0 && (
+        <div style={{ marginTop: 22 }}>
+          <h3 style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--sa-text-2)", fontSize: 14, marginBottom: 10 }}>
+            <span style={{ background: "var(--sa-amber-soft)", color: "var(--sa-amber)", padding: "2px 8px", borderRadius: 99, fontSize: 11, fontWeight: 700 }}>1 of {consensusData.runsSucceeded}</span>
+            Lower-conviction alternatives
+          </h3>
+          <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+            These appeared in only one run — treat as "worth considering" ideas, not commitments.
+          </div>
+          {alternatives.map((c, i) => {
+            const parsed = parseRecsFromBody(c.body);
+            const hasRecs = parsed.recs.length > 0;
+            if (c.recId) parsed.recs.forEach(r => { r.recId = c.recId; });
+            return (
+              <div key={`alt-${i}`} className={`sa-advice-card ${c.sev === "danger" ? "danger" : c.sev === "warn" ? "warn" : c.sev === "good" ? "good" : ""}`} style={{ opacity: 0.85 }}>
+                <h3 style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                  <span>{c.title}</span>
+                  <span style={{ background: "var(--sa-amber-soft)", color: "var(--sa-amber)", padding: "2px 8px", borderRadius: 99, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>1/{c.totalRuns} runs</span>
+                </h3>
+                {hasRecs ? (
+                  <>
+                    {parsed.intro && <p>{parsed.intro}</p>}
+                    <RecsTable recs={parsed.recs} onExecuteRec={onExecuteRec} executedRecKeys={executedRecKeys} recKey={recKey} pnlMap={pnlMap} />
+                    {parsed.outro && <p style={{ marginTop: 10, fontStyle: "italic", color: "var(--sa-text-2)" }}>{parsed.outro}</p>}
+                  </>
+                ) : (
+                  <p>{c.body}</p>
+                )}
+                {c.meta && <div className="meta">{c.meta}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {showingConsensus && consensusData.sources?.length > 0 && (
+        <div className="sa-card" style={{ marginTop: 14 }}>
+          <h3>Sources (across all runs)</h3>
+          <ul style={{ paddingLeft: 18, margin: 0, color: "var(--sa-text-2)", fontSize: 13, lineHeight: 1.7 }}>
+            {consensusData.sources.slice(0, 20).map((s, i) => (
+              <li key={i}>
+                <a href={s.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--sa-accent-2)" }}>{s.title || s.url}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {showingAi && !showingConsensus && aiAdvice.sources?.length > 0 && (
         <div className="sa-card" style={{ marginTop: 14 }}>
           <h3>Sources</h3>
           <ul style={{ paddingLeft: 18, margin: 0, color: "var(--sa-text-2)", fontSize: 13, lineHeight: 1.7 }}>

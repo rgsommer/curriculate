@@ -400,6 +400,61 @@ function extractJson(text) {
 }
 
 // ── handler ────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────
+// Shared advice-generation worker. Reused by both /  and /consensus.
+// Returns { advice, sources, textOut } where advice is the parsed JSON
+// array of cards and sources are the web_search citations.
+// ─────────────────────────────────────────────────────────────────────
+async function runOneAdvicePass({ profile, monitorAlerts }) {
+  const summary = portfolioSummary(profile);
+  const prompt = buildPrompt(profile, summary, monitorAlerts);
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-5",
+      max_tokens: 4096,
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 12 }],
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  if (!r.ok) {
+    const errBody = await r.text().catch(() => "");
+    throw new Error(`Anthropic ${r.status}: ${errBody.slice(0, 200)}`);
+  }
+  const j = await r.json();
+  const textOut = stripCiteTags(
+    (j?.content || [])
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("\n")
+  );
+  const sources = [];
+  for (const b of j?.content || []) {
+    if (b.type === "text" && Array.isArray(b.citations)) {
+      for (const c of b.citations) {
+        if (c?.url && !sources.find((s) => s.url === c.url)) {
+          sources.push({ title: c.title || c.url, url: c.url });
+        }
+      }
+    }
+  }
+  const parsed = extractJson(textOut);
+  if (!parsed || !Array.isArray(parsed.advice)) {
+    throw new Error("AI returned unparseable response");
+  }
+  for (const card of parsed.advice) {
+    if (card.title) card.title = stripCiteTags(card.title);
+    if (card.body) card.body = stripCiteTags(card.body);
+    if (card.meta) card.meta = stripCiteTags(card.meta);
+  }
+  return { advice: parsed.advice, sources: parsed.sources?.length ? parsed.sources : sources };
+}
+
 router.post("/", requireStocksAuth, async (req, res) => {
   try {
     if (!process.env.ANTHROPIC_API_KEY) {
@@ -608,6 +663,148 @@ router.get("/performance", requireStocksAuth, async (req, res) => {
     });
   } catch (err) {
     console.error("stocks-advice performance error:", err);
+    res.status(500).json({ error: `Internal: ${err?.message || err}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// POST /api/stocks-advice/consensus
+//
+// Runs the advice generator 3× in parallel. Compares the actionable recs
+// across the three runs and bins each as:
+//   - "consensus" : same (ticker, action) appears in ≥ 2 of 3 runs
+//   - "alternative": appears in only 1 of 3 runs
+//
+// Returns: { runs: [run1, run2, run3], consensus: [cards], alternatives: [cards] }
+//
+// Cost note: 3× the per-call cost vs /api/stocks-advice (3× Claude calls,
+// 3× web_search budget). Worth it for high-stakes decisions where you want
+// to separate signal from sampling noise.
+// ─────────────────────────────────────────────────────────────────────
+router.post("/consensus", requireStocksAuth, async (req, res) => {
+  try {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return res.status(503).json({ error: "ANTHROPIC_API_KEY not set on backend" });
+    }
+    const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
+    if (!profile || !profile.positions?.length) {
+      return res.status(400).json({ error: "No positions to advise on." });
+    }
+
+    // Monitor open recs once — same alert input goes to all three runs
+    const { alerts: monitorAlerts } = await monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] }));
+
+    // Fan out 3 parallel generations
+    const N = 3;
+    const settled = await Promise.allSettled(
+      Array.from({ length: N }).map(() => runOneAdvicePass({ profile, monitorAlerts }))
+    );
+    const runs = settled.map((s) => s.status === "fulfilled" ? s.value : { error: s.reason?.message || "Failed", advice: [], sources: [] });
+    const successful = runs.filter(r => !r.error);
+    if (successful.length < 2) {
+      return res.status(502).json({
+        error: `Only ${successful.length} of ${N} generations succeeded — consensus needs at least 2.`,
+        runs,
+      });
+    }
+
+    // Match cards across runs by (ticker, action) on the parsed rec inside
+    // each card's body. Cards without an actionable Action: line are
+    // considered "narrative" and matched by title-similarity instead.
+    const fingerprint = (card) => {
+      const rec = parseRec(card.body || "");
+      if (rec) return `${rec.action}|${rec.ticker}`;
+      // Narrative card — use first 60 chars of normalized title
+      return "TITLE:" + (card.title || "").toLowerCase().replace(/[^a-z0-9 ]/g, "").trim().slice(0, 60);
+    };
+
+    // Tally occurrences across the successful runs
+    const tally = new Map(); // fingerprint → { count, cards: [card], runIndices: [i] }
+    successful.forEach((run, runIdx) => {
+      const seen = new Set();
+      for (const card of run.advice) {
+        const fp = fingerprint(card);
+        if (seen.has(fp)) continue; // de-dup within a run
+        seen.add(fp);
+        if (!tally.has(fp)) tally.set(fp, { count: 0, cards: [], runIndices: [] });
+        const entry = tally.get(fp);
+        entry.count++;
+        entry.cards.push(card);
+        entry.runIndices.push(runIdx);
+      }
+    });
+
+    const consensus = [];
+    const alternatives = [];
+    const minConsensus = Math.max(2, Math.ceil(successful.length / 2)); // ≥2 of 2 or ≥2 of 3
+    for (const [fp, entry] of tally.entries()) {
+      // Pick the longest body version as the canonical (most context)
+      const canonical = entry.cards.reduce((best, c) =>
+        (c.body || "").length > (best.body || "").length ? c : best, entry.cards[0]);
+      const item = {
+        ...canonical,
+        consensusCount: entry.count,
+        totalRuns: successful.length,
+        runIndices: entry.runIndices,
+      };
+      if (entry.count >= minConsensus) consensus.push(item);
+      else alternatives.push(item);
+    }
+
+    // Sort: consensus by severity (danger > warn > good > info), then count desc
+    const sevOrder = { danger: 0, warn: 1, good: 2, info: 3 };
+    consensus.sort((a, b) =>
+      (sevOrder[a.sev] ?? 9) - (sevOrder[b.sev] ?? 9) || b.consensusCount - a.consensusCount
+    );
+    alternatives.sort((a, b) => (sevOrder[a.sev] ?? 9) - (sevOrder[b.sev] ?? 9));
+
+    // Persist consensus recs only (so we don't triple-count for the scorecard)
+    const generatedAt = new Date();
+    const recsToSave = [];
+    const consensusIndexMap = [];
+    consensus.forEach((card, idx) => {
+      const rec = parseRec(card.body || "");
+      if (rec && rec.entryPrice && rec.action !== "HOLD") {
+        recsToSave.push({
+          email: req.stocksUser.email,
+          generatedAt,
+          source: "ai",
+          ...rec,
+          rationale: `[Consensus ${card.consensusCount}/${card.totalRuns}] ${card.title || ""} — ${(card.body || "").slice(0, 360)}`,
+        });
+        consensusIndexMap.push(idx);
+      }
+    });
+    let inserted = [];
+    if (recsToSave.length) {
+      try { inserted = await StocksAdviceRec.insertMany(recsToSave); } catch (e) {
+        console.warn("consensus rec save warning:", e?.message);
+      }
+    }
+    inserted.forEach((doc, i) => {
+      const consensusIdx = consensusIndexMap[i];
+      if (consensus[consensusIdx]) consensus[consensusIdx].recId = doc._id.toString();
+    });
+
+    // Merge sources from all runs, de-duped
+    const sourceSet = new Map();
+    for (const run of successful) {
+      for (const s of run.sources || []) {
+        if (!sourceSet.has(s.url)) sourceSet.set(s.url, s);
+      }
+    }
+
+    res.json({
+      generatedAt: generatedAt.toISOString(),
+      runs: runs.length,
+      runsSucceeded: successful.length,
+      consensus,
+      alternatives,
+      sources: [...sourceSet.values()],
+      tracked: inserted.length,
+    });
+  } catch (err) {
+    console.error("consensus error:", err);
     res.status(500).json({ error: `Internal: ${err?.message || err}` });
   }
 });
