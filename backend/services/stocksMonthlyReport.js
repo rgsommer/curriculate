@@ -337,7 +337,7 @@ export function formatAccountReportMarkdown(report) {
   if (beneficiary) {
     const ba = beneficiary;
     parts.push("");
-    parts.push(`**Beneficiary agreement** — principal ${fmtMoney(ba.principal)} @ ${ba.ratePct}%/yr · ${ba.profitSharePct}% profit-share · ${ba.carryLosses ? "you carry losses" : "no loss protection"}`);
+    parts.push(`**Beneficiary agreement** — principal ${fmtMoney(ba.principal)} @ ${ba.ratePct}%/yr · ${ba.profitSharePct}% profit-share · ${ba.carryLosses ? "account holder carries losses" : "no loss protection"}`);
     parts.push("");
     parts.push(`| Item | Amount |`);
     parts.push(`|---|---|`);
@@ -400,7 +400,7 @@ export function formatAccountReportMarkdown(report) {
 
     if (ba.profit < 0 && ba.carryLosses) {
       parts.push("");
-      parts.push(`> ⚠️ Account is in **loss** of ${fmtMoney(ba.profit)}. You absorb this; beneficiary still receives principal + interest (${fmtMoney(ba.principal + ba.interestOwed)}).`);
+      parts.push(`> ⚠️ Account is in **loss** of ${fmtMoney(ba.profit)}. The account holder absorbs this; beneficiary still receives principal + interest (${fmtMoney(ba.principal + ba.interestOwed)}).`);
     }
   }
 
