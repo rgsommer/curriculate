@@ -26,6 +26,7 @@ import { getFundamentals, formatFundamentalsLine } from "../services/stocksFunda
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
+import { computeLessons, formatLessonsBlock } from "../services/stocksLessonsLearned.js";
 
 // Shared current-price fetcher (server-side; no CORS) — used by the
 // open-recommendation monitor below.
@@ -376,7 +377,7 @@ function formatQuantSignalsBlock(quantSignals) {
   return `\nQUANT SIGNALS PER HOLDING (pre-computed — use THESE numbers, don't guess):\n${lines.join("\n")}\n`;
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -396,6 +397,14 @@ function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals 
   const plannedWithdrawalsBlock = pending.length
     ? `\nPLANNED WITHDRAWALS (cash that MUST be available by target date):\n${pending.join("\n")}\nSubtract these from deployable cash. If short, recommend SPECIFIC TRIMS by date to raise the needed cash. Do not lock new BUYs past these dates.\n`
     : "";
+
+  const multiDayBlock = `
+MULTI-DAY EXECUTION (for any BUY > ~$1,500 CAD):
+- Scale the entry over 3 layers: 40% at thesis-trigger, 30% at -1×ATR pullback, 30% at -2×ATR pullback.
+- Each layer gets its own order ticket. Layers 2 & 3 are GTC.
+- Cancel unfilled layers if ticker breaks the rec's Stop.
+- For < $1,500 CAD, single-shot entry is fine.
+`;
 
   const orderTicketBlock = `
 ORDER-TICKET GUIDANCE (gap-protection — every BUY/SELL rec must include):
@@ -475,12 +484,14 @@ Holdings:
 ${summary.table}
 ${cashBlock}
 ${alertsBlock}
+${formatLessonsBlock(lessons)}
 ${formatMacroBlock(macro)}
 ${formatFactorBlock(factors)}
 ${formatLifecycleBlock(lifecycle)}
 ${formatQuantSignalsBlock(quantSignals)}
 ${priceCurrencyBlock}
 ${orderTicketBlock}
+${multiDayBlock}
 ${tradingCostsBlock}
 ${CANADIAN_TAX_BLOCK}
 ${SIGNALS_CHECKLIST}
@@ -545,30 +556,16 @@ export async function generateBriefing(profile) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
   const summary = portfolioSummary(profile);
   // Run all upstream signals in parallel
-  const [monitorRes, quantSignals, macro, lifecycle, factors] = await Promise.all([
-    monitorOpenRecs(profile.email).catch((e) => {
-      console.warn("[monitorOpenRecs] warn:", e?.message);
-      return { alerts: [] };
-    }),
-    computeQuantSignals(profile).catch((e) => {
-      console.warn("[computeQuantSignals] warn:", e?.message);
-      return {};
-    }),
-    getMacroContext().catch((e) => {
-      console.warn("[getMacroContext] warn:", e?.message);
-      return null;
-    }),
-    computeLifecycle(profile).catch((e) => {
-      console.warn("[computeLifecycle] warn:", e?.message);
-      return null;
-    }),
-    computeFactorTilts(profile).catch((e) => {
-      console.warn("[computeFactorTilts] warn:", e?.message);
-      return null;
-    }),
+  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons] = await Promise.all([
+    monitorOpenRecs(profile.email).catch((e) => { console.warn("[monitorOpenRecs] warn:", e?.message); return { alerts: [] }; }),
+    computeQuantSignals(profile).catch((e) => { console.warn("[computeQuantSignals] warn:", e?.message); return {}; }),
+    getMacroContext().catch((e) => { console.warn("[getMacroContext] warn:", e?.message); return null; }),
+    computeLifecycle(profile).catch((e) => { console.warn("[computeLifecycle] warn:", e?.message); return null; }),
+    computeFactorTilts(profile).catch((e) => { console.warn("[computeFactorTilts] warn:", e?.message); return null; }),
+    computeLessons(profile.email).catch((e) => { console.warn("[computeLessons] warn:", e?.message); return null; }),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
-  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors);
+  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons);
 
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",

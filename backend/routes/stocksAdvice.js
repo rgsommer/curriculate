@@ -32,6 +32,7 @@ import { getFundamentals, formatFundamentalsLine } from "../services/stocksFunda
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
+import { computeLessons, formatLessonsBlock } from "../services/stocksLessonsLearned.js";
 
 const router = express.Router();
 
@@ -187,7 +188,7 @@ function formatQuantSignalsBlock(quantSignals) {
   return `\nQUANT SIGNALS PER HOLDING (pre-computed — use THESE numbers, don't guess from search results):\n${lines.join("\n")}\n`;
 }
 
-function buildPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null) {
+function buildPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null) {
   const risk = profile.riskTolerance || "aggressive";
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
@@ -209,6 +210,27 @@ function buildPrompt(profile, summary, monitorAlerts = [], quantSignals = null, 
   const plannedWithdrawalsBlock = pending.length
     ? `\nPLANNED WITHDRAWALS (cash that MUST be available by target date — recommendations must avoid locking it up):\n${pending.join("\n")}\n`
     : "";
+
+  const multiDayBlock = `
+MULTI-DAY EXECUTION PLANS (for any BUY > ~$1,500 CAD in size):
+
+- Don't ask Richard to commit the full size at one price. SCALE the entry over 2-3 layers, using ATR as the spacing.
+- Format: instead of one Order ticket, give THREE tickets:
+    Layer 1 (40% of total): LIMIT BUY at current ask or thesis-trigger price, Day order
+    Layer 2 (30% of total): GTC LIMIT BUY at price − 1×ATR (typical pullback target)
+    Layer 3 (30% of total): GTC LIMIT BUY at price − 2×ATR (deep-pullback opportunity)
+- Stop the program if the ticker breaks the thesis-invalidation level (the rec's Stop). Cancel any unfilled GTCs at that point.
+- Communicate this as a "deploy $X over N days, scaling in on weakness" plan, not three separate buys.
+- For smaller positions (< $1,500 CAD) — single-shot entry remains fine.
+
+Example for a $4,500 CAD ENB position with ATR $1.20:
+  Layer 1 (24 sh @ $76 CAD = $1,824, Day):  Entry at thesis-trigger.
+  Layer 2 (18 sh @ $74.80 CAD = $1,346, GTC): Pullback to -1 ATR.
+  Layer 3 (18 sh @ $73.60 CAD = $1,325, GTC): Deep pullback to -2 ATR.
+  Total budget: $4,495 CAD if all fill. Stop the program if ENB breaks $69 (rec's invalidation).
+
+Apply when the rec's total size is large enough to matter. Don't force scaling on small adds.
+`;
 
   const orderTicketBlock = `
 ORDER-TICKET GUIDANCE (gap-protection — every BUY/SELL rec must include this):
@@ -327,12 +349,14 @@ Holdings:
 ${summary.text}
 ${cashBlock}
 ${alertsBlock}
+${formatLessonsBlock(lessons)}
 ${formatMacroBlock(macro)}
 ${formatFactorBlock(factors)}
 ${formatLifecycleBlock(lifecycle)}
 ${formatQuantSignalsBlock(quantSignals)}
 ${priceCurrencyBlock}
 ${orderTicketBlock}
+${multiDayBlock}
 ${tradingCostsBlock}
 ${CANADIAN_TAX_BLOCK}
 ${SIGNALS_CHECKLIST}
@@ -455,9 +479,9 @@ function extractJson(text) {
 // Returns { advice, sources, textOut } where advice is the parsed JSON
 // array of cards and sources are the web_search citations.
 // ─────────────────────────────────────────────────────────────────────
-async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle, factors }) {
+async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons }) {
   const summary = portfolioSummary(profile);
-  const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors);
+  const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons);
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -522,16 +546,17 @@ router.post("/", requireStocksAuth, async (req, res) => {
     const summary = portfolioSummary(profile);
 
     // Compute all upstream signals in parallel
-    const [monitorRes, quantSignals, macro, lifecycle, factors] = await Promise.all([
+    const [monitorRes, quantSignals, macro, lifecycle, factors, lessons] = await Promise.all([
       monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] })),
       computeQuantSignals(profile).catch(() => ({})),
       getMacroContext().catch(() => null),
       computeLifecycle(profile).catch(() => null),
       computeFactorTilts(profile).catch(() => null),
+      computeLessons(req.stocksUser.email).catch(() => null),
     ]);
     const monitorAlerts = monitorRes?.alerts || [];
 
-    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors);
+    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons);
 
     // Anthropic Messages API call with web_search server-side tool
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -749,19 +774,20 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
     }
 
     // Compute all upstream signals ONCE — shared across all three consensus runs
-    const [monitorRes, quantSignals, macro, lifecycle, factors] = await Promise.all([
+    const [monitorRes, quantSignals, macro, lifecycle, factors, lessons] = await Promise.all([
       monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] })),
       computeQuantSignals(profile).catch(() => ({})),
       getMacroContext().catch(() => null),
       computeLifecycle(profile).catch(() => null),
       computeFactorTilts(profile).catch(() => null),
+      computeLessons(req.stocksUser.email).catch(() => null),
     ]);
     const monitorAlerts = monitorRes?.alerts || [];
 
     // Fan out 3 parallel generations
     const N = 3;
     const settled = await Promise.allSettled(
-      Array.from({ length: N }).map(() => runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle, factors }))
+      Array.from({ length: N }).map(() => runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons }))
     );
     const runs = settled.map((s) => s.status === "fulfilled" ? s.value : { error: s.reason?.message || "Failed", advice: [], sources: [] });
     const successful = runs.filter(r => !r.error);
