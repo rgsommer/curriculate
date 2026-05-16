@@ -31,6 +31,7 @@ import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnical
 import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
+import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
 
 const router = express.Router();
 
@@ -186,7 +187,7 @@ function formatQuantSignalsBlock(quantSignals) {
   return `\nQUANT SIGNALS PER HOLDING (pre-computed — use THESE numbers, don't guess from search results):\n${lines.join("\n")}\n`;
 }
 
-function buildPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null) {
+function buildPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null) {
   const risk = profile.riskTolerance || "aggressive";
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
@@ -327,6 +328,7 @@ ${summary.text}
 ${cashBlock}
 ${alertsBlock}
 ${formatMacroBlock(macro)}
+${formatFactorBlock(factors)}
 ${formatLifecycleBlock(lifecycle)}
 ${formatQuantSignalsBlock(quantSignals)}
 ${priceCurrencyBlock}
@@ -453,9 +455,9 @@ function extractJson(text) {
 // Returns { advice, sources, textOut } where advice is the parsed JSON
 // array of cards and sources are the web_search citations.
 // ─────────────────────────────────────────────────────────────────────
-async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle }) {
+async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle, factors }) {
   const summary = portfolioSummary(profile);
-  const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle);
+  const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors);
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -519,16 +521,17 @@ router.post("/", requireStocksAuth, async (req, res) => {
 
     const summary = portfolioSummary(profile);
 
-    // Compute all upstream signals in parallel: monitor + quant + macro + lifecycle
-    const [monitorRes, quantSignals, macro, lifecycle] = await Promise.all([
+    // Compute all upstream signals in parallel
+    const [monitorRes, quantSignals, macro, lifecycle, factors] = await Promise.all([
       monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] })),
       computeQuantSignals(profile).catch(() => ({})),
       getMacroContext().catch(() => null),
       computeLifecycle(profile).catch(() => null),
+      computeFactorTilts(profile).catch(() => null),
     ]);
     const monitorAlerts = monitorRes?.alerts || [];
 
-    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle);
+    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors);
 
     // Anthropic Messages API call with web_search server-side tool
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -746,18 +749,19 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
     }
 
     // Compute all upstream signals ONCE — shared across all three consensus runs
-    const [monitorRes, quantSignals, macro, lifecycle] = await Promise.all([
+    const [monitorRes, quantSignals, macro, lifecycle, factors] = await Promise.all([
       monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] })),
       computeQuantSignals(profile).catch(() => ({})),
       getMacroContext().catch(() => null),
       computeLifecycle(profile).catch(() => null),
+      computeFactorTilts(profile).catch(() => null),
     ]);
     const monitorAlerts = monitorRes?.alerts || [];
 
     // Fan out 3 parallel generations
     const N = 3;
     const settled = await Promise.allSettled(
-      Array.from({ length: N }).map(() => runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle }))
+      Array.from({ length: N }).map(() => runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle, factors }))
     );
     const runs = settled.map((s) => s.status === "fulfilled" ? s.value : { error: s.reason?.message || "Failed", advice: [], sources: [] });
     const successful = runs.filter(r => !r.error);

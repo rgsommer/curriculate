@@ -25,6 +25,7 @@ import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnical
 import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
+import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
 
 // Shared current-price fetcher (server-side; no CORS) — used by the
 // open-recommendation monitor below.
@@ -375,7 +376,7 @@ function formatQuantSignalsBlock(quantSignals) {
   return `\nQUANT SIGNALS PER HOLDING (pre-computed — use THESE numbers, don't guess):\n${lines.join("\n")}\n`;
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -475,6 +476,7 @@ ${summary.table}
 ${cashBlock}
 ${alertsBlock}
 ${formatMacroBlock(macro)}
+${formatFactorBlock(factors)}
 ${formatLifecycleBlock(lifecycle)}
 ${formatQuantSignalsBlock(quantSignals)}
 ${priceCurrencyBlock}
@@ -542,8 +544,8 @@ export function parseRecsFromBriefing(text) {
 export async function generateBriefing(profile) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
   const summary = portfolioSummary(profile);
-  // Run all upstream signals in parallel: monitor + quant + macro + lifecycle
-  const [monitorRes, quantSignals, macro, lifecycle] = await Promise.all([
+  // Run all upstream signals in parallel
+  const [monitorRes, quantSignals, macro, lifecycle, factors] = await Promise.all([
     monitorOpenRecs(profile.email).catch((e) => {
       console.warn("[monitorOpenRecs] warn:", e?.message);
       return { alerts: [] };
@@ -560,9 +562,13 @@ export async function generateBriefing(profile) {
       console.warn("[computeLifecycle] warn:", e?.message);
       return null;
     }),
+    computeFactorTilts(profile).catch((e) => {
+      console.warn("[computeFactorTilts] warn:", e?.message);
+      return null;
+    }),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
-  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle);
+  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors);
 
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
