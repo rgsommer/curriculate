@@ -228,6 +228,9 @@ function sanitizePortfolioInput(body, email) {
             frequency: i.frequency === "yearly" ? "yearly" : "monthly",
           })),
         notes: String(ba.notes || "").slice(0, 1000),
+        lockUntilDate: ba.lockUntilDate ? new Date(ba.lockUntilDate) : null,
+        earlyPayoutPenaltyPct: typeof ba.earlyPayoutPenaltyPct === "number" && ba.earlyPayoutPenaltyPct >= 0 && ba.earlyPayoutPenaltyPct <= 100
+          ? ba.earlyPayoutPenaltyPct : 0,
       };
     };
     out.accounts = body.accounts

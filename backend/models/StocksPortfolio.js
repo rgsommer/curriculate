@@ -44,6 +44,13 @@ const BeneficiaryAgreementSchema = new mongoose.Schema(
     startDate: { type: Date, default: null },
     inflows: { type: [BeneficiaryInflowSchema], default: [] },
     notes: { type: String, default: "", maxlength: 1000 },
+    // Early-payout penalty — compensates the user for tax penalties on
+    // early withdrawal (e.g. TFSA over-contribution / RRSP withholding).
+    // If beneficiary cashes out BEFORE lockUntilDate, a penalty equal to
+    // earlyPayoutPenaltyPct of the greater of (profit-share) or (principal)
+    // is deducted from the payout. After lockUntilDate the penalty drops to 0.
+    lockUntilDate: { type: Date, default: null },
+    earlyPayoutPenaltyPct: { type: Number, default: 0, min: 0, max: 100 },
   },
   { _id: false }
 );

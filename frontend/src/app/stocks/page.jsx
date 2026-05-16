@@ -1758,6 +1758,8 @@ function AccountReportRow({ account, onToggleMonthly, onSaveAgreement }) {
   const [carry, setCarry] = useState(ba.carryLosses !== false);
   const [startDate, setStartDate] = useState(ba.startDate ? new Date(ba.startDate).toISOString().slice(0, 10) : "");
   const [notes, setNotes] = useState(ba.notes || "");
+  const [lockUntilDate, setLockUntilDate] = useState(ba.lockUntilDate ? new Date(ba.lockUntilDate).toISOString().slice(0, 10) : "");
+  const [penaltyPct, setPenaltyPct] = useState(ba.earlyPayoutPenaltyPct ?? "");
   const [inflows, setInflows] = useState(
     Array.isArray(ba.inflows) && ba.inflows.length > 0
       ? ba.inflows.map((i) => ({ description: i.description || "", amountCad: i.amountCad || 0, frequency: i.frequency || "monthly" }))
@@ -1785,6 +1787,8 @@ function AccountReportRow({ account, onToggleMonthly, onSaveAgreement }) {
           frequency: i.frequency === "yearly" ? "yearly" : "monthly",
         })),
       notes: notes.trim(),
+      lockUntilDate: lockUntilDate ? new Date(lockUntilDate + "T12:00:00").toISOString() : null,
+      earlyPayoutPenaltyPct: parseFloat(penaltyPct) || 0,
     });
   };
 
@@ -1843,6 +1847,23 @@ function AccountReportRow({ account, onToggleMonthly, onSaveAgreement }) {
                 <input type="checkbox" checked={carry} onChange={(e) => setCarry(e.target.checked)} />
                 I absorb losses (beneficiary protected on the principal)
               </label>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed var(--sa-border)" }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Early-payout penalty</div>
+            <div className="sa-muted" style={{ fontSize: 12, marginBottom: 10 }}>
+              Compensates you for the tax hit on early withdrawal. If the beneficiary cashes out BEFORE the lock-until date, a penalty equal to the % below — applied to whichever is greater of (profit share) or (principal) — is deducted from their payout. After the lock date the penalty drops to 0.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <label>Lock until date</label>
+                <input type="date" value={lockUntilDate} onChange={(e) => setLockUntilDate(e.target.value)} />
+              </div>
+              <div>
+                <label>Penalty (%)</label>
+                <input type="number" min="0" max="100" step="any" value={penaltyPct} onChange={(e) => setPenaltyPct(e.target.value)} placeholder="e.g. 25" />
+              </div>
             </div>
           </div>
 

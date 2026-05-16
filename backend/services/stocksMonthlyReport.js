@@ -119,7 +119,26 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(),
     : (currentValueCad - principal);
   const profitBasis = (typeof profitCad === "number") ? "cost-basis" : "value-minus-principal";
   const shareToBene = Math.max(0, profit) * (shareePct / 100);
-  const payoutIfNow = principal + interestOwed + shareToBene;
+  const grossPayoutIfNow = principal + interestOwed + shareToBene;
+
+  // Early-payout penalty — applies only when asOf is BEFORE lockUntilDate.
+  // The penalty equals earlyPayoutPenaltyPct of the GREATER of (profit-share)
+  // or (principal). Rationale: compensates the user for the tax hit they
+  // would incur on early withdrawal of the account. Once past lockUntilDate
+  // the penalty drops to zero.
+  const lockUntil = ba.lockUntilDate ? new Date(ba.lockUntilDate) : null;
+  const penaltyPct = ba.earlyPayoutPenaltyPct || 0;
+  const isEarly = lockUntil && asOf < lockUntil && penaltyPct > 0;
+  const penaltyBaseProfitShare = shareToBene * (penaltyPct / 100);
+  const penaltyBasePrincipal = principal * (penaltyPct / 100);
+  const penaltyAmount = isEarly
+    ? Math.max(penaltyBaseProfitShare, penaltyBasePrincipal)
+    : 0;
+  const penaltyBasis = isEarly
+    ? (penaltyBasePrincipal >= penaltyBaseProfitShare ? "principal" : "profit-share")
+    : null;
+  const payoutIfNow = grossPayoutIfNow - penaltyAmount;
+  const daysUntilUnlock = lockUntil ? Math.ceil((lockUntil.getTime() - asOf.getTime()) / 86400000) : null;
 
   // Expected inflows from beneficiary since startDate (recurring template).
   // Keep a per-item breakdown so the report can show each line — car
@@ -168,6 +187,14 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(),
     carryLosses: ba.carryLosses !== false,
     profitBasis,
     profitCoverage,
+    // Early-payout penalty details (null when not applicable)
+    grossPayoutIfNow,
+    penaltyPct,
+    penaltyAmount,
+    penaltyBasis,
+    isEarly,
+    lockUntilDate: lockUntil,
+    daysUntilUnlock,
   };
 }
 
@@ -282,7 +309,16 @@ export function formatAccountReportMarkdown(report) {
       : "Account profit / (loss)";
     parts.push(`| ${profitLabel} | ${fmtMoney(ba.profit)} |`);
     parts.push(`| Profit-share to beneficiary (${ba.profitSharePct}% of positive profit) | ${fmtMoney(ba.shareToBene)} |`);
-    parts.push(`| **Payout if cashed out today** | **${fmtMoney(ba.payoutIfNow)}** |`);
+    if (ba.isEarly && ba.penaltyAmount > 0) {
+      const unlockStr = ba.lockUntilDate
+        ? new Date(ba.lockUntilDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+        : "the agreed date";
+      parts.push(`| ⚠️ Early-payout penalty (${ba.penaltyPct}% × ${ba.penaltyBasis}, locks until ${unlockStr}) | −${fmtMoney(ba.penaltyAmount)} |`);
+      parts.push(`| Gross payout before penalty | ${fmtMoney(ba.grossPayoutIfNow)} |`);
+      parts.push(`| **Net payout if cashed out today** | **${fmtMoney(ba.payoutIfNow)}** |`);
+    } else {
+      parts.push(`| **Payout if cashed out today** | **${fmtMoney(ba.payoutIfNow)}** |`);
+    }
     parts.push(`| Net carry (inflows − interest owed) | ${fmtMoney(ba.netCarryCad)} |`);
 
     // Coverage caveat when some positions are missing cost basis
