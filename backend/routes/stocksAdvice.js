@@ -1021,17 +1021,22 @@ router.post("/send-briefing", requireStocksAuth, async (req, res) => {
     // Email it if requested
     let sent = false;
     let sendError = null;
+    let messageId = null;
+    let toAddress = null;
     if (wantsSend) {
-      const to = (typeof req.body?.to === "string" && req.body.to.trim()) || profile.email;
+      toAddress = (typeof req.body?.to === "string" && req.body.to.trim()) || profile.email;
       try {
-        await emailBriefing({ to, subject, md: markdown });
+        const resp = await emailBriefing({ to: toAddress, subject, md: markdown });
         sent = true;
+        messageId = resp?.id || null;
+        console.log(`[daily-briefing] sent to ${toAddress} via Resend id=${messageId}`);
       } catch (e) {
         sendError = e?.message || String(e);
+        console.error(`[daily-briefing] send failed to ${toAddress}:`, sendError);
       }
     }
 
-    res.json({ markdown, html, subject, sent, sendError, tracked, reused: !!reuse });
+    res.json({ markdown, html, subject, sent, sendError, messageId, to: toAddress, tracked, reused: !!reuse });
   } catch (err) {
     console.error("send-briefing error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });
@@ -1072,17 +1077,22 @@ router.post("/send-monthly-report", requireStocksAuth, async (req, res) => {
 
     let sent = false;
     let sendError = null;
+    let messageId = null;
+    let toAddress = null;
     if (req.body?.send) {
-      const to = (typeof req.body?.to === "string" && req.body.to.trim()) || profile.email;
+      toAddress = (typeof req.body?.to === "string" && req.body.to.trim()) || profile.email;
       try {
-        await emailBriefing({ to, subject, md: markdown });
+        const resp = await emailBriefing({ to: toAddress, subject, md: markdown });
         sent = true;
+        messageId = resp?.id || null;
+        console.log(`[monthly-report] sent to ${toAddress} via Resend id=${messageId}`);
       } catch (e) {
         sendError = e?.message || String(e);
+        console.error(`[monthly-report] send failed to ${toAddress}:`, sendError);
       }
     }
 
-    res.json({ markdown, html, subject, sent, sendError, accountsCovered: flagged.length });
+    res.json({ markdown, html, subject, sent, sendError, messageId, to: toAddress, accountsCovered: flagged.length });
   } catch (err) {
     console.error("send-monthly-report error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });

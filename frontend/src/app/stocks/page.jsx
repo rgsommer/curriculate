@@ -734,8 +734,8 @@ export default function StocksAdvisorPage() {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
-      setMonthlyPreview({ html: j.html, markdown: j.markdown, subject: j.subject, accountsCovered: j.accountsCovered, sent: j.sent, sendError: j.sendError });
-      if (j.sent) showToast(`Monthly report emailed to ${auth.email}`);
+      setMonthlyPreview({ html: j.html, markdown: j.markdown, subject: j.subject, accountsCovered: j.accountsCovered, sent: j.sent, sendError: j.sendError, messageId: j.messageId, to: j.to });
+      if (j.sent) showToast(`Monthly report queued at Resend (id: ${(j.messageId || "—").slice(0, 8)}…). Check spam if it doesn't arrive in 2 min.`);
       else if (j.sendError) showToast(`Email failed: ${j.sendError}`);
     } catch (e) {
       setMonthlyPreview({ ...monthlyPreview, sendError: e?.message || "Send failed", busy: false });
@@ -2436,7 +2436,7 @@ const recCellLeft = { ...recCell, textAlign: "left", paddingLeft: 14 };
 // Briefing preview modal — shows what the daily email will look like
 // =============================================================================
 function BriefingPreviewModal({ preview, recipient, onClose, onSend, title, loadingLabel, loadingDetail }) {
-  const { busy, html, error, sent, sendError, subject } = preview;
+  const { busy, html, error, sent, sendError, subject, messageId } = preview;
   const headerTitle = title || "Email Briefing — Preview";
   const loadLabel = loadingLabel || "Generating briefing…";
   const loadDetail = loadingDetail || "Searching news on each of your holdings · 20-40s";
@@ -2490,7 +2490,15 @@ function BriefingPreviewModal({ preview, recipient, onClose, onSend, title, load
 
             {sent && (
               <div style={{ background: "var(--sa-green-soft)", color: "var(--sa-green)", padding: "10px 14px", borderRadius: 10, fontSize: 13, marginBottom: 12, border: "1px solid #bbf7d0" }}>
-                ✓ Sent to {recipient}
+                <div>✓ Queued at Resend → <b>{recipient}</b></div>
+                {messageId && (
+                  <div style={{ fontSize: 11, marginTop: 4, opacity: 0.85, fontFamily: "SF Mono, Menlo, Consolas, monospace" }}>
+                    Resend message id: {messageId}
+                  </div>
+                )}
+                <div style={{ fontSize: 11, marginTop: 6, opacity: 0.85 }}>
+                  Doesn't show up in your inbox in 2 min? Check spam/junk first. If still missing, look up this message id in the Resend dashboard — that's the ground truth on delivery.
+                </div>
               </div>
             )}
             {sendError && (

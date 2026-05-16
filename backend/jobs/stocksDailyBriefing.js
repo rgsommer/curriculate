@@ -654,10 +654,16 @@ export async function emailBriefing({ to, subject, md }) {
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ from, to: [to], subject, html }),
   });
+  const body = await r.text().catch(() => "");
   if (!r.ok) {
-    const e = await r.text().catch(() => "");
-    throw new Error(`Resend ${r.status}: ${e.slice(0, 200)}`);
+    throw new Error(`Resend ${r.status}: ${body.slice(0, 200)}`);
   }
+  // Return Resend's response so callers can log/surface the message ID
+  // (useful for diagnosing "I clicked Send but never got the email" issues —
+  // the user can look up the message in the Resend dashboard).
+  let parsed = null;
+  try { parsed = JSON.parse(body); } catch { /* keep raw */ }
+  return { id: parsed?.id || null, raw: body, from, to, subject };
 }
 
 export async function runDailyBriefing(opts = {}) {
