@@ -23,6 +23,8 @@ import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnicals.js";
 import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
+import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
+import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
 
 // Shared current-price fetcher (server-side; no CORS) — used by the
 // open-recommendation monitor below.
@@ -373,7 +375,7 @@ function formatQuantSignalsBlock(quantSignals) {
   return `\nQUANT SIGNALS PER HOLDING (pre-computed — use THESE numbers, don't guess):\n${lines.join("\n")}\n`;
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -455,16 +457,25 @@ ${summary.perAccountCash.length ? "Per account:\n" + summary.perAccountCash.join
     ? `5. **💵 Cash deployment — your actual cash** — REQUIRED. He has $${summary.cashCad.toFixed(0)} CAD + $${summary.cashUsd.toFixed(0)} USD ready. Recommend specific BUYs sized to actually use that cash. Compute exact share counts from the cash budget at the Entry price you propose. Format each: "Action: BUY N sh TICKER. Entry: $X (current $Y). Target: $Z (timeframe). Stop: $W. Horizon: N months. Uses ~$A of $B available." Do not recommend buys that exceed available cash; do not propose fractional shares; tilt AWAY from current concentration (DJT/DJTWW/RUM)`
     : `5. **💵 Cash deployment** — He has $0 cash. Either (a) skip this section, or (b) recommend a specific TRIM that would FREE UP cash for a redeploy, with both legs spec'd in the rec format.`;
 
-  return `You are a personal stock advisor. Generate today's morning briefing for ${profile.email}.
+  return `You are Richard's personal stock advisor at SENIOR-ANALYST level. Generate today's morning briefing for ${profile.email}.
 
 Today: ${today}
 Risk tolerance: ${profile.riskTolerance}
+
+SENIOR-ANALYST EXPECTATIONS:
+1. Read the MACRO REGIME block FIRST and frame the briefing through that lens (risk-on vs risk-off, rising vs falling rates, USD/CAD direction).
+2. Use ATR-based stops from the technicals block, not flat percentages.
+3. Reference per-position cost basis from the LIFECYCLE block when proposing sells (acknowledge tax impact / loss realization).
+4. Surface TAX-LOSS HARVEST candidates when present — these are free money in non-registered accounts.
+5. Cite SPECIFIC numbers (RSI 32, P/E 87, ATR $14, 2.5×ATR stop = $407) not vague descriptors.
 Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()} ← FOR YOUR REFERENCE ONLY. DO NOT INCLUDE this aggregate dollar figure in the briefing output. Discuss percentages, % of book, and individual position values, but never echo the total portfolio dollar amount.
 
 Holdings:
 ${summary.table}
 ${cashBlock}
 ${alertsBlock}
+${formatMacroBlock(macro)}
+${formatLifecycleBlock(lifecycle)}
 ${formatQuantSignalsBlock(quantSignals)}
 ${priceCurrencyBlock}
 ${orderTicketBlock}
@@ -531,8 +542,8 @@ export function parseRecsFromBriefing(text) {
 export async function generateBriefing(profile) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
   const summary = portfolioSummary(profile);
-  // Run target/stop monitor + quant signal pre-compute in parallel
-  const [monitorRes, quantSignals] = await Promise.all([
+  // Run all upstream signals in parallel: monitor + quant + macro + lifecycle
+  const [monitorRes, quantSignals, macro, lifecycle] = await Promise.all([
     monitorOpenRecs(profile.email).catch((e) => {
       console.warn("[monitorOpenRecs] warn:", e?.message);
       return { alerts: [] };
@@ -541,9 +552,17 @@ export async function generateBriefing(profile) {
       console.warn("[computeQuantSignals] warn:", e?.message);
       return {};
     }),
+    getMacroContext().catch((e) => {
+      console.warn("[getMacroContext] warn:", e?.message);
+      return null;
+    }),
+    computeLifecycle(profile).catch((e) => {
+      console.warn("[computeLifecycle] warn:", e?.message);
+      return null;
+    }),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
-  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals);
+  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle);
 
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",

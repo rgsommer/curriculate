@@ -29,6 +29,8 @@ import {
 } from "../jobs/stocksDailyBriefing.js";
 import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnicals.js";
 import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
+import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
+import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
 
 const router = express.Router();
 
@@ -184,7 +186,7 @@ function formatQuantSignalsBlock(quantSignals) {
   return `\nQUANT SIGNALS PER HOLDING (pre-computed — use THESE numbers, don't guess from search results):\n${lines.join("\n")}\n`;
 }
 
-function buildPrompt(profile, summary, monitorAlerts = [], quantSignals = null) {
+function buildPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null) {
   const risk = profile.riskTolerance || "aggressive";
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
@@ -308,15 +310,24 @@ Example format if he has $2,500 CAD and $500 USD:
 Do NOT recommend more spending than the cash he has. Don't suggest fractional shares. If the cash in a currency is too small for any reasonable buy (< $200 in that currency), say so and suggest pooling or FX-converting.`
     : `Richard has no cash available to deploy right now. Do NOT recommend new BUYs unless they can be funded by TRIMming an existing position you explicitly call out in the same card (e.g., "Trim DJT for $X CAD, redeploy to ENB"). Otherwise focus on hold/trim/watch-list calls.`;
 
-  return `You are Richard's personal stock advisor. Today is ${today}.
+  return `You are Richard's personal stock advisor — operating at senior-analyst level. Today is ${today}.
 
 His risk tolerance: ${risk}.
+
+SENIOR-ANALYST EXPECTATIONS (read carefully — what separates this from generic LLM advice):
+1. Always reason from the MACRO REGIME block down to the rec. A growth-pick recommendation that ignores high VIX + rising rates is junior work.
+2. Always anchor stops on ATR (the technicals block has a 2.5×ATR suggested stop per ticker). Flat percentage stops are wrong — they get tagged on noise in volatile names and leave too much room in calm names.
+3. Always reference per-position cost basis from the LIFECYCLE block. A SELL of a winner has a tax cost; a SELL of a loser unlocks tax savings. Acknowledge it.
+4. Surface TAX-LOSS HARVEST candidates when applicable — they're literally free money in non-registered accounts. If the LIFECYCLE block lists any TLH candidates, mention them.
+5. Cite SPECIFIC numbers from the pre-computed signal blocks, not vague descriptions. "RSI 32" not "looks oversold." "P/E 87" not "looks expensive." "2.5×ATR stop at $407" not "8% stop."
 Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()} ← FOR YOUR REFERENCE ONLY. DO NOT echo this aggregate dollar figure in the advice cards. Use percentages, % of book, and per-position values, but never the total portfolio dollar amount.
 
 Holdings:
 ${summary.text}
 ${cashBlock}
 ${alertsBlock}
+${formatMacroBlock(macro)}
+${formatLifecycleBlock(lifecycle)}
 ${formatQuantSignalsBlock(quantSignals)}
 ${priceCurrencyBlock}
 ${orderTicketBlock}
@@ -442,9 +453,9 @@ function extractJson(text) {
 // Returns { advice, sources, textOut } where advice is the parsed JSON
 // array of cards and sources are the web_search citations.
 // ─────────────────────────────────────────────────────────────────────
-async function runOneAdvicePass({ profile, monitorAlerts, quantSignals }) {
+async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle }) {
   const summary = portfolioSummary(profile);
-  const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals);
+  const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle);
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -508,14 +519,16 @@ router.post("/", requireStocksAuth, async (req, res) => {
 
     const summary = portfolioSummary(profile);
 
-    // Monitor open recs + compute quant signals (FMP + technicals) in parallel
-    const [monitorRes, quantSignals] = await Promise.all([
+    // Compute all upstream signals in parallel: monitor + quant + macro + lifecycle
+    const [monitorRes, quantSignals, macro, lifecycle] = await Promise.all([
       monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] })),
       computeQuantSignals(profile).catch(() => ({})),
+      getMacroContext().catch(() => null),
+      computeLifecycle(profile).catch(() => null),
     ]);
     const monitorAlerts = monitorRes?.alerts || [];
 
-    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals);
+    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle);
 
     // Anthropic Messages API call with web_search server-side tool
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -732,17 +745,19 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
       return res.status(400).json({ error: "No positions to advise on." });
     }
 
-    // Compute alerts + quant signals once, share across all three runs
-    const [monitorRes, quantSignals] = await Promise.all([
+    // Compute all upstream signals ONCE — shared across all three consensus runs
+    const [monitorRes, quantSignals, macro, lifecycle] = await Promise.all([
       monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] })),
       computeQuantSignals(profile).catch(() => ({})),
+      getMacroContext().catch(() => null),
+      computeLifecycle(profile).catch(() => null),
     ]);
     const monitorAlerts = monitorRes?.alerts || [];
 
     // Fan out 3 parallel generations
     const N = 3;
     const settled = await Promise.allSettled(
-      Array.from({ length: N }).map(() => runOneAdvicePass({ profile, monitorAlerts, quantSignals }))
+      Array.from({ length: N }).map(() => runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle }))
     );
     const runs = settled.map((s) => s.status === "fulfilled" ? s.value : { error: s.reason?.message || "Failed", advice: [], sources: [] });
     const successful = runs.filter(r => !r.error);

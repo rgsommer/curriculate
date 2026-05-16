@@ -12,7 +12,7 @@ const CACHE = new Map(); // ticker → { fetchedAt, data }
 const TTL_MS = 60 * 60 * 1000; // 1 hour
 const YAHOO_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/";
 
-async function fetchDailyCloses(ticker, days = 260) {
+async function fetchDailyOHLC(ticker, days = 260) {
   const url = `${YAHOO_BASE}${encodeURIComponent(ticker)}?range=1y&interval=1d`;
   const ctrl = new AbortController();
   const tid = setTimeout(() => ctrl.abort(), 8000);
@@ -25,11 +25,19 @@ async function fetchDailyCloses(ticker, days = 260) {
     const j = await r.json();
     const result = j?.chart?.result?.[0];
     const timestamps = result?.timestamp || [];
-    const closes = result?.indicators?.quote?.[0]?.close || [];
+    const q = result?.indicators?.quote?.[0] || {};
+    const closes = q.close || [];
+    const highs = q.high || [];
+    const lows = q.low || [];
     const points = [];
     for (let i = 0; i < timestamps.length; i++) {
       if (closes[i] != null && Number.isFinite(closes[i])) {
-        points.push({ t: timestamps[i], close: closes[i] });
+        points.push({
+          t: timestamps[i],
+          close: closes[i],
+          high: Number.isFinite(highs[i]) ? highs[i] : closes[i],
+          low: Number.isFinite(lows[i]) ? lows[i] : closes[i],
+        });
       }
     }
     return { points: points.slice(-days), currency: result?.meta?.currency || "USD" };
@@ -99,7 +107,7 @@ export async function getTechnicals(ticker) {
 
   let data;
   try {
-    const { points, currency } = await fetchDailyCloses(ticker, 260);
+    const { points, currency } = await fetchDailyOHLC(ticker, 260);
     if (points.length < 50) {
       data = { ok: false, reason: "insufficient history" };
     } else {
@@ -123,6 +131,28 @@ export async function getTechnicals(ticker) {
         vol = Math.sqrt(variance) * Math.sqrt(252) * 100; // annualised %
       }
 
+      // ATR(14) — average true range. The senior-analyst sizing tool.
+      // TR = max(high-low, |high-prevClose|, |low-prevClose|)
+      let atr14 = null;
+      if (points.length >= 15) {
+        const trs = [];
+        for (let i = 1; i < points.length; i++) {
+          const p = points[i], prev = points[i - 1];
+          const tr = Math.max(
+            p.high - p.low,
+            Math.abs(p.high - prev.close),
+            Math.abs(p.low - prev.close)
+          );
+          trs.push(tr);
+        }
+        // Wilder smoothing
+        let atr = trs.slice(0, 14).reduce((a, b) => a + b, 0) / 14;
+        for (let i = 14; i < trs.length; i++) {
+          atr = (atr * 13 + trs[i]) / 14;
+        }
+        atr14 = atr;
+      }
+
       data = {
         ok: true,
         currency,
@@ -131,8 +161,12 @@ export async function getTechnicals(ticker) {
         rsi14,
         recentCross: cross,
         annualizedVolPct: vol,
+        atr14,
+        atrPctOfPrice: atr14 != null && last ? (atr14 / last) * 100 : null,
         priceVsSma50: sma50 ? ((last - sma50) / sma50) * 100 : null,
         priceVsSma200: sma200 ? ((last - sma200) / sma200) * 100 : null,
+        // Suggested 2.5-ATR stop level (the senior-analyst default)
+        suggested25AtrStop: atr14 != null ? last - 2.5 * atr14 : null,
       };
     }
   } catch (e) {
@@ -162,5 +196,6 @@ export function formatTechnicalsLine(t) {
     parts.push(`${t.recentCross.type === "golden" ? "🌟 golden cross" : "💀 death cross"} ${t.recentCross.daysAgo}d ago`);
   }
   if (t.annualizedVolPct != null) parts.push(`vol ${t.annualizedVolPct.toFixed(0)}%`);
+  if (t.atr14 != null) parts.push(`ATR $${t.atr14.toFixed(2)} (${t.atrPctOfPrice.toFixed(1)}%) → 2.5×ATR stop $${t.suggested25AtrStop.toFixed(2)}`);
   return parts.join(" · ");
 }
