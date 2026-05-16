@@ -3387,6 +3387,7 @@ function PendingOrdersCard({ orders, accounts, onFill, onCancel }) {
 // =============================================================================
 function HoldingsBreakdownCard({ user, fx, onEditPosition }) {
   const [expandedTicker, setExpandedTicker] = useState(null);
+  const [cashExpanded, setCashExpanded] = useState(false); // per-account cash breakdown
   const [collapsed, setCollapsed] = useState(true); // whole card starts collapsed
 
   // Group by ticker; track the actual position indices that compose each
@@ -3548,14 +3549,63 @@ function HoldingsBreakdownCard({ user, fx, onEditPosition }) {
               }
               return rowEls;
             })}
-            <tr style={{ borderTop: "1px dashed var(--sa-border)", background: "rgba(91,141,239,.04)" }}>
-              <td style={{ ...recCellLeft, fontWeight: 500, color: "var(--sa-text-2)" }}>Cash</td>
+            <tr
+              onClick={() => setCashExpanded(v => !v)}
+              style={{ borderTop: "1px dashed var(--sa-border)", background: cashExpanded ? "rgba(91,141,239,.08)" : "rgba(91,141,239,.04)", cursor: "pointer" }}
+            >
+              <td style={{ ...recCellLeft, fontWeight: 500, color: "var(--sa-text-2)" }}>
+                <span style={{ display: "inline-block", width: 14, color: "var(--sa-muted)", fontSize: 10, transform: cashExpanded ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▶</span>
+                Cash
+                <span className="sa-muted" style={{ marginLeft: 6, fontSize: 11, fontWeight: 400 }}>· {(user.accounts || []).length} account{(user.accounts || []).length === 1 ? "" : "s"}</span>
+              </td>
               <td style={recCell}>—</td>
               <td style={{ ...recCell, color: cashUsd > 0 ? "var(--sa-green)" : "var(--sa-muted)" }}><span className="sa-amount">{fmt$(cashUsd)}</span></td>
               <td style={recCell}>—</td>
               <td style={{ ...recCell, color: cashCad > 0 ? "var(--sa-green)" : "var(--sa-muted)" }}><span className="sa-amount">{fmt$(cashCad)}</span></td>
               <td style={{ ...recCell, fontWeight: 600 }}><span className="sa-amount">{fmt$(cashTotalCad)}</span></td>
             </tr>
+            {cashExpanded && (
+              <tr style={{ background: "var(--sa-panel-2)" }}>
+                <td colSpan={6} style={{ padding: "10px 22px" }}>
+                  <table style={{ width: "100%", fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
+                    <thead>
+                      <tr style={{ color: "var(--sa-muted)" }}>
+                        <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 500 }}>Account</th>
+                        <th style={{ textAlign: "right", padding: "4px 8px", fontWeight: 500 }}>USD cash</th>
+                        <th style={{ textAlign: "right", padding: "4px 8px", fontWeight: 500 }}>CAD cash</th>
+                        <th style={{ textAlign: "right", padding: "4px 8px", fontWeight: 500 }}>Total (≈CAD)</th>
+                        <th style={{ textAlign: "right", padding: "4px 8px", fontWeight: 500 }}>% of cash</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(user.accounts || []).map((a) => {
+                        const u = a.cashUsd || 0;
+                        const c = a.cashCad || 0;
+                        const tot = c + u * fx;
+                        const pct = cashTotalCad > 0 ? (tot / cashTotalCad) * 100 : 0;
+                        const empty = u === 0 && c === 0;
+                        return (
+                          <tr key={a.id} style={{ borderTop: "1px solid var(--sa-border)", opacity: empty ? 0.55 : 1 }}>
+                            <td style={{ padding: "6px 8px", fontWeight: 500 }}>{a.name}</td>
+                            <td style={{ padding: "6px 8px", textAlign: "right", color: u > 0 ? "var(--sa-green)" : "var(--sa-muted)" }}><span className="sa-amount">{fmt$(u)}</span></td>
+                            <td style={{ padding: "6px 8px", textAlign: "right", color: c > 0 ? "var(--sa-green)" : "var(--sa-muted)" }}><span className="sa-amount">{fmt$(c)}</span></td>
+                            <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600 }}><span className="sa-amount">{fmt$(tot)}</span></td>
+                            <td style={{ padding: "6px 8px", textAlign: "right", color: "var(--sa-muted)" }}>{pct > 0 ? pct.toFixed(1) + "%" : "—"}</td>
+                          </tr>
+                        );
+                      })}
+                      <tr style={{ borderTop: "1px dashed var(--sa-border)" }}>
+                        <td style={{ padding: "6px 8px", fontWeight: 700 }}>All accounts</td>
+                        <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}><span className="sa-amount">{fmt$(cashUsd)}</span></td>
+                        <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}><span className="sa-amount">{fmt$(cashCad)}</span></td>
+                        <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}><span className="sa-amount">{fmt$(cashTotalCad)}</span></td>
+                        <td style={{ padding: "6px 8px", textAlign: "right", color: "var(--sa-muted)" }}>100%</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+            )}
             <tr style={{ borderTop: "2px solid var(--sa-border)", background: "var(--sa-panel-2)" }}>
               <td style={{ ...recCellLeft, fontWeight: 700 }}>TOTAL</td>
               <td style={recCell}>—</td>
