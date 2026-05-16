@@ -500,6 +500,7 @@ export default function StocksAdvisorPage() {
   const [tradePrefill, setTradePrefill] = useState(null); // optional prefill for TradeModal
   const [executedRecKeys, setExecutedRecKeys] = useState(new Set()); // recs the user has executed in this session
   const [briefingPreview, setBriefingPreview] = useState(null); // { html, sent, error, busy }
+  const [monthlyPreview, setMonthlyPreview] = useState(null);   // { html, markdown, subject, sent, error, busy }
   const [pendingOrders, setPendingOrders] = useState([]);
   // Privacy mode: masks all USER dollar amounts (totals, position values,
   // cash, P&L). Market prices and rec entry/target/stop levels stay visible.
@@ -702,6 +703,44 @@ export default function StocksAdvisorPage() {
     }
   };
 
+  // Monthly account report — preview-then-send, same UX as daily briefing.
+  // Fires the end-of-month report on demand regardless of calendar position
+  // (so the user can test-drive without waiting until the last trading day).
+  const previewMonthlyReport = async () => {
+    setMonthlyPreview({ busy: true });
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/send-monthly-report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.sessionToken}` },
+        body: JSON.stringify({ send: false }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setMonthlyPreview({ html: j.html, markdown: j.markdown, subject: j.subject, accountsCovered: j.accountsCovered, sent: false });
+    } catch (e) {
+      setMonthlyPreview({ error: e?.message || "Failed to build monthly report" });
+    }
+  };
+
+  const sendMonthlyReport = async () => {
+    if (!monthlyPreview || monthlyPreview.busy) return;
+    setMonthlyPreview({ ...monthlyPreview, busy: true });
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/send-monthly-report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.sessionToken}` },
+        body: JSON.stringify({ send: true }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setMonthlyPreview({ html: j.html, markdown: j.markdown, subject: j.subject, accountsCovered: j.accountsCovered, sent: j.sent, sendError: j.sendError });
+      if (j.sent) showToast(`Monthly report emailed to ${auth.email}`);
+      else if (j.sendError) showToast(`Email failed: ${j.sendError}`);
+    } catch (e) {
+      setMonthlyPreview({ ...monthlyPreview, sendError: e?.message || "Send failed", busy: false });
+    }
+  };
+
   const sendBriefing = async () => {
     if (!briefingPreview || briefingPreview.busy) return;
     setBriefingPreview({ ...briefingPreview, busy: true });
@@ -897,6 +936,7 @@ export default function StocksAdvisorPage() {
               }}
               onRecordTrade={() => setTradeModalOpen(true)}
               onEmailBriefing={previewBriefing}
+              onMonthlyReport={previewMonthlyReport}
               onEditPosition={(idx) => setModalIdx(idx)}
               pendingOrders={pendingOrders}
               onFillPendingOrder={async (order) => {
@@ -1031,6 +1071,17 @@ export default function StocksAdvisorPage() {
             recipient={auth.email}
             onClose={() => setBriefingPreview(null)}
             onSend={sendBriefing}
+          />
+        )}
+        {monthlyPreview && (
+          <BriefingPreviewModal
+            preview={monthlyPreview}
+            recipient={auth.email}
+            onClose={() => setMonthlyPreview(null)}
+            onSend={sendMonthlyReport}
+            title="Monthly Account Report — Preview"
+            loadingLabel="Building monthly report…"
+            loadingDetail="Computing per-account P&L and beneficiary payouts · 1-3s"
           />
         )}
         {tradeModalOpen && (
@@ -1249,7 +1300,7 @@ function OnboardingView({ onPick }) {
   );
 }
 
-function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEmailBriefing, onEditPosition, pendingOrders, onFillPendingOrder, onCancelPendingOrder }) {
+function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEmailBriefing, onMonthlyReport, onEditPosition, pendingOrders, onFillPendingOrder, onCancelPendingOrder }) {
   const [busyRefresh, setBusyRefresh] = useState(false);
   const [busyAi, setBusyAi] = useState(false);
   // Values stat row starts collapsed — privacy + reduces visual noise on load
@@ -1290,6 +1341,11 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
           <button className="sa-btn secondary" onClick={onEmailBriefing} title="Preview the daily briefing email — same content the morning cron sends">
             📧 Email Briefing
           </button>
+          {(user.accounts || []).some(a => a.monthlyReportEnabled) && (
+            <button className="sa-btn secondary" onClick={onMonthlyReport} title="Preview the end-of-month account report — covers every account flagged in Settings → Monthly reports">
+              📊 Monthly Report
+            </button>
+          )}
           <button className="sa-btn secondary" onClick={handleRefresh} disabled={busyRefresh || busyAi} title="Re-fetch live prices from Yahoo Finance via the backend proxy">
             {busyRefresh ? "Refreshing…" : "↻ Refresh prices"}
           </button>
@@ -2319,8 +2375,11 @@ const recCellLeft = { ...recCell, textAlign: "left", paddingLeft: 14 };
 // =============================================================================
 // Briefing preview modal — shows what the daily email will look like
 // =============================================================================
-function BriefingPreviewModal({ preview, recipient, onClose, onSend }) {
+function BriefingPreviewModal({ preview, recipient, onClose, onSend, title, loadingLabel, loadingDetail }) {
   const { busy, html, error, sent, sendError, subject } = preview;
+  const headerTitle = title || "Email Briefing — Preview";
+  const loadLabel = loadingLabel || "Generating briefing…";
+  const loadDetail = loadingDetail || "Searching news on each of your holdings · 20-40s";
 
   return (
     <div className="sa-modal-bg" onClick={onClose}>
@@ -2330,15 +2389,15 @@ function BriefingPreviewModal({ preview, recipient, onClose, onSend }) {
         style={{ maxWidth: 760 }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-          <h3 style={{ margin: 0 }}>Email Briefing — Preview</h3>
+          <h3 style={{ margin: 0 }}>{headerTitle}</h3>
           <button className="sa-btn ghost" onClick={onClose} disabled={busy} style={{ padding: "4px 10px" }}>✕</button>
         </div>
 
         {/* Loading */}
         {busy && !html && (
           <div style={{ padding: "40px 0", textAlign: "center" }}>
-            <div style={{ fontSize: 14, color: "var(--sa-text-2)", marginBottom: 8 }}>Generating briefing…</div>
-            <div style={{ fontSize: 12, color: "var(--sa-muted)" }}>Searching news on each of your holdings · 20-40s</div>
+            <div style={{ fontSize: 14, color: "var(--sa-text-2)", marginBottom: 8 }}>{loadLabel}</div>
+            <div style={{ fontSize: 12, color: "var(--sa-muted)" }}>{loadDetail}</div>
           </div>
         )}
 
