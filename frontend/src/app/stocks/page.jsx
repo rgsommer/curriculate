@@ -1766,12 +1766,19 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
   const [principal, setPrincipal] = useState(ba.principalCad || "");
   const [ratePct, setRatePct] = useState(ba.interestRatePct ?? "");
   const [sharePct, setSharePct] = useState(ba.profitSharePct ?? "");
+  const [shareEndPct, setShareEndPct] = useState(ba.profitShareEndPct ?? "");
+  const [shareRampYears, setShareRampYears] = useState(ba.profitShareRampYears ?? "");
   const [carry, setCarry] = useState(ba.carryLosses !== false);
   const [startDate, setStartDate] = useState(ba.startDate ? new Date(ba.startDate).toISOString().slice(0, 10) : "");
   const [principalStartDate, setPrincipalStartDate] = useState(ba.principalStartDate ? new Date(ba.principalStartDate).toISOString().slice(0, 10) : "");
   const [notes, setNotes] = useState(ba.notes || "");
   const [lockUntilDate, setLockUntilDate] = useState(ba.lockUntilDate ? new Date(ba.lockUntilDate).toISOString().slice(0, 10) : "");
   const [penaltyPct, setPenaltyPct] = useState(ba.earlyPayoutPenaltyPct ?? "");
+  const [noticeMonths, setNoticeMonths] = useState(ba.redemptionNoticeMonths ?? "");
+  const [installments, setInstallments] = useState(ba.payoutInstallments ?? "");
+  const [installmentFrequency, setInstallmentFrequency] = useState(ba.payoutInstallmentFrequency || "quarterly");
+  const [buyoutRight, setBuyoutRight] = useState(!!ba.accountHolderBuyoutRight);
+  const [cpiPct, setCpiPct] = useState(ba.cpiAdjustmentPct ?? "");
   const [inflows, setInflows] = useState(
     Array.isArray(ba.inflows) && ba.inflows.length > 0
       ? ba.inflows.map((i) => ({
@@ -1795,6 +1802,8 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
       principalCad: parseFloat(principal) || 0,
       interestRatePct: parseFloat(ratePct) || 0,
       profitSharePct: parseFloat(sharePct) || 0,
+      profitShareEndPct: shareEndPct === "" ? null : (parseFloat(shareEndPct) || 0),
+      profitShareRampYears: parseFloat(shareRampYears) || 0,
       carryLosses: !!carry,
       startDate: startDate ? new Date(startDate + "T12:00:00").toISOString() : null,
       principalStartDate: principalStartDate ? new Date(principalStartDate + "T12:00:00").toISOString() : null,
@@ -1810,6 +1819,11 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
       notes: notes.trim(),
       lockUntilDate: lockUntilDate ? new Date(lockUntilDate + "T12:00:00").toISOString() : null,
       earlyPayoutPenaltyPct: parseFloat(penaltyPct) || 0,
+      redemptionNoticeMonths: parseInt(noticeMonths) || 0,
+      payoutInstallments: parseInt(installments) || 1,
+      payoutInstallmentFrequency: installmentFrequency,
+      accountHolderBuyoutRight: !!buyoutRight,
+      cpiAdjustmentPct: parseFloat(cpiPct) || 0,
     });
   };
 
@@ -1891,8 +1905,9 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
               <input type="number" min="0" max="100" step="any" value={ratePct} onChange={(e) => setRatePct(e.target.value)} placeholder="e.g. 3" />
             </div>
             <div>
-              <label>Profit share at payout (%)</label>
-              <input type="number" min="0" max="100" step="any" value={sharePct} onChange={(e) => setSharePct(e.target.value)} placeholder="e.g. 50" />
+              <label>Profit share — starting (%)</label>
+              <input type="number" min="0" max="100" step="any" value={sharePct} onChange={(e) => setSharePct(e.target.value)} placeholder="e.g. 30" />
+              <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>Share of positive profit at agreement start. Ramps to End below over Ramp Years.</div>
             </div>
             <div style={{ display: "flex", alignItems: "end", paddingBottom: 8 }}>
               <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
@@ -1902,10 +1917,70 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
             </div>
           </div>
 
+          {/* Profit-share ramp — rewards patience instead of penalizing early withdrawal */}
+          <div style={{ marginTop: 10, padding: "10px 12px", background: "var(--sa-accent-soft)", border: "1px solid #bfdbfe", borderRadius: 8 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Profit-share ramp (incentive instead of penalty)</div>
+            <div className="sa-muted" style={{ fontSize: 11, marginBottom: 8 }}>
+              Set an end % and a ramp duration to make the profit-share grow over time. e.g., start 30% → end 50% over 5 years means: cash out year 1 → 34% share, year 5+ → full 50%. Leave End blank to keep a flat share (legacy behavior).
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <label>End share (%)</label>
+                <input type="number" min="0" max="100" step="any" value={shareEndPct} onChange={(e) => setShareEndPct(e.target.value)} placeholder="e.g. 50 (blank = no ramp)" />
+              </div>
+              <div>
+                <label>Ramp years</label>
+                <input type="number" min="0" max="50" step="0.5" value={shareRampYears} onChange={(e) => setShareRampYears(e.target.value)} placeholder="e.g. 5" />
+              </div>
+            </div>
+            {sharePct !== "" && shareEndPct !== "" && shareRampYears !== "" && parseFloat(shareRampYears) > 0 && (
+              <div className="sa-muted" style={{ fontSize: 11, marginTop: 8 }}>
+                Preview: {parseFloat(sharePct)}% at agreement start → linearly to {parseFloat(shareEndPct)}% after {parseFloat(shareRampYears)} years → capped thereafter.
+                {parseFloat(shareRampYears) > 0 && ` (Per-year step: +${((parseFloat(shareEndPct) - parseFloat(sharePct)) / parseFloat(shareRampYears)).toFixed(2)}%/yr)`}
+              </div>
+            )}
+          </div>
+
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed var(--sa-border)" }}>
-            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Early-payout penalty</div>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Structural protections (recommended)</div>
             <div className="sa-muted" style={{ fontSize: 12, marginBottom: 10 }}>
-              Compensates you for the tax hit on early withdrawal. If the beneficiary cashes out BEFORE the lock-until date, a penalty equal to the % below — applied to whichever is greater of (profit share) or (principal) — is deducted from their payout. After the lock date the penalty drops to 0.
+              These mechanisms handle the same risks as an early-payout penalty (forced liquidation, tax-bracket spikes, retirement-income disruption) but more fairly. Notice + installments + buyout right + CPI together usually make the binary penalty unnecessary.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
+              <div>
+                <label>Redemption notice (months)</label>
+                <input type="number" min="0" max="60" step="1" value={noticeMonths} onChange={(e) => setNoticeMonths(e.target.value)} placeholder="e.g. 12" />
+                <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>Advance written notice required before redemption.</div>
+              </div>
+              <div>
+                <label># of installments</label>
+                <input type="number" min="1" max="40" step="1" value={installments} onChange={(e) => setInstallments(e.target.value)} placeholder="e.g. 4" />
+                <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>1 = lump sum. 4 quarterly = year-long stretch.</div>
+              </div>
+              <div>
+                <label>Installment frequency</label>
+                <select value={installmentFrequency} onChange={(e) => setInstallmentFrequency(e.target.value)}>
+                  <option value="monthly">monthly</option>
+                  <option value="quarterly">quarterly</option>
+                  <option value="yearly">yearly</option>
+                </select>
+              </div>
+              <div>
+                <label>CPI adjustment (%/yr)</label>
+                <input type="number" min="0" max="20" step="0.1" value={cpiPct} onChange={(e) => setCpiPct(e.target.value)} placeholder="e.g. 2.5" />
+                <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>Compounds annually to preserve real principal value.</div>
+              </div>
+            </div>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, marginTop: 12 }}>
+              <input type="checkbox" checked={buyoutRight} onChange={(e) => setBuyoutRight(e.target.checked)} />
+              <span><b>Account-holder buyout right</b> — I may settle the agreement at any time at my convenience, with no penalty to the beneficiary</span>
+            </label>
+          </div>
+
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed var(--sa-border)" }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, color: "var(--sa-muted)" }}>Early-payout penalty <span style={{ fontSize: 11, fontWeight: 400 }}>(legacy — leave at 0 if using structural protections above)</span></div>
+            <div className="sa-muted" style={{ fontSize: 11, marginBottom: 10 }}>
+              Binary penalty: if cashed out before the lock-until date, deduct % of the greater of (profit share) or (principal). Recommended only if the structural protections aren't enough for your situation.
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
@@ -1914,7 +1989,7 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
               </div>
               <div>
                 <label>Penalty (%)</label>
-                <input type="number" min="0" max="100" step="any" value={penaltyPct} onChange={(e) => setPenaltyPct(e.target.value)} placeholder="e.g. 25" />
+                <input type="number" min="0" max="100" step="any" value={penaltyPct} onChange={(e) => setPenaltyPct(e.target.value)} placeholder="0 = disabled" />
               </div>
             </div>
           </div>

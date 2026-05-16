@@ -123,6 +123,28 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(),
     : 0;
 
   const interestOwed = principal * (ratePct / 100) * yearsSincePrincipalStart;
+
+  // CPI adjustment on principal — protects the beneficiary's real capital
+  // from inflation erosion over a long lock-up. Compounded annually.
+  const cpiPct = ba.cpiAdjustmentPct || 0;
+  const cpiUplift = (cpiPct > 0 && principalActive)
+    ? principal * (Math.pow(1 + cpiPct / 100, yearsSincePrincipalStart) - 1)
+    : 0;
+  const effectivePrincipal = principal + cpiUplift;
+
+  // Tiered profit share — rewards patience by ramping the share linearly
+  // from the start % to the end % over rampYears. When no end is set (or
+  // equals start), the share is flat at shareePct (legacy behavior).
+  const shareEndPct = (typeof ba.profitShareEndPct === "number" && ba.profitShareEndPct > 0)
+    ? ba.profitShareEndPct : null;
+  const shareRampYears = ba.profitShareRampYears || 0;
+  const shareIsRamped = shareEndPct != null && shareRampYears > 0 && shareEndPct !== shareePct;
+  let effectiveSharePct = shareePct;
+  if (shareIsRamped) {
+    const progress = Math.min(1, Math.max(0, yearsSincePrincipalStart / shareRampYears));
+    effectiveSharePct = shareePct + (shareEndPct - shareePct) * progress;
+  }
+
   // Use explicit profit (cost-basis math) when caller provides it; otherwise
   // fall back to the old value-minus-principal estimate.
   const profit = (typeof profitCad === "number" && Number.isFinite(profitCad))
@@ -131,8 +153,8 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(),
   const profitBasis = (typeof profitCad === "number") ? "cost-basis" : "value-minus-principal";
   // Profit-share applies only when principal is active (otherwise there's no
   // capital at risk on the beneficiary's behalf to be sharing returns on).
-  const shareToBene = principalActive ? Math.max(0, profit) * (shareePct / 100) : 0;
-  const grossPayoutIfNow = principal + interestOwed + shareToBene;
+  const shareToBene = principalActive ? Math.max(0, profit) * (effectiveSharePct / 100) : 0;
+  const grossPayoutIfNow = effectivePrincipal + interestOwed + shareToBene;
 
   // Early-payout penalty — applies only when asOf is BEFORE lockUntilDate.
   // The penalty equals earlyPayoutPenaltyPct of the GREATER of (profit-share)
@@ -244,6 +266,23 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(),
     principalStartDate: principalStart,
     yearsSincePrincipalStart,
     agreementStartDate: agreementStart,
+    // CPI uplift + installment schedule + structural protections
+    cpiPct,
+    cpiUplift,
+    effectivePrincipal,
+    // Tiered profit share details
+    profitShareStartPct: shareePct,
+    profitShareEndPct: shareEndPct,
+    profitShareRampYears: shareRampYears,
+    profitShareIsRamped: shareIsRamped,
+    effectiveSharePct,
+    redemptionNoticeMonths: ba.redemptionNoticeMonths || 0,
+    payoutInstallments: ba.payoutInstallments || 1,
+    payoutInstallmentFrequency: ba.payoutInstallmentFrequency || "quarterly",
+    accountHolderBuyoutRight: !!ba.accountHolderBuyoutRight,
+    perInstallment: ((ba.payoutInstallments || 1) > 1)
+      ? (grossPayoutIfNow - (isEarly && penaltyAmount > 0 ? penaltyAmount : 0)) / (ba.payoutInstallments || 1)
+      : null,
   };
 }
 
@@ -347,7 +386,14 @@ export function formatAccountReportMarkdown(report) {
   if (beneficiary) {
     const ba = beneficiary;
     parts.push("");
-    parts.push(`**Beneficiary agreement** — principal ${fmtMoney(ba.principal)} @ ${ba.ratePct}%/yr · ${ba.profitSharePct}% profit-share · ${ba.carryLosses ? "account holder carries losses" : "no loss protection"}`);
+    const shareHeader = ba.profitShareIsRamped
+      ? `profit-share ramps ${ba.profitShareStartPct}% → ${ba.profitShareEndPct}% over ${ba.profitShareRampYears}y (currently ${ba.effectiveSharePct.toFixed(1)}%)`
+      : `${ba.profitSharePct}% profit-share`;
+    parts.push(`**Beneficiary agreement** — principal ${fmtMoney(ba.principal)} @ ${ba.ratePct}%/yr · ${shareHeader} · ${ba.carryLosses ? "account holder carries losses" : "no loss protection"}`);
+    if (ba.redemptionNoticeMonths && ba.redemptionNoticeMonths > 0) {
+      parts.push(``);
+      parts.push(`> ⏱ **Beneficiary redemption notice:** ${ba.redemptionNoticeMonths} month${ba.redemptionNoticeMonths === 1 ? "" : "s"} of written notice required before any beneficiary-initiated payout. (Account-holder buyout right is unaffected.)`);
+    }
     parts.push("");
     parts.push(`| Item | Amount |`);
     parts.push(`|---|---|`);
@@ -362,11 +408,18 @@ export function formatAccountReportMarkdown(report) {
       }
     }
     parts.push(`| Interest owed (cumulative) | ${fmtMoney(ba.interestOwed)} |`);
+    if (ba.cpiPct > 0 && ba.cpiUplift > 0) {
+      parts.push(`| CPI uplift on principal (${ba.cpiPct}%/yr compounded) | ${fmtMoney(ba.cpiUplift)} |`);
+      parts.push(`| Effective (CPI-adjusted) principal | ${fmtMoney(ba.effectivePrincipal)} |`);
+    }
     const profitLabel = ba.profitBasis === "cost-basis"
       ? "Unrealized P&L on open positions (cost basis)"
       : "Account profit / (loss)";
     parts.push(`| ${profitLabel} | ${fmtMoney(ba.profit)} |`);
-    parts.push(`| Profit-share to beneficiary (${ba.profitSharePct}% of positive profit) | ${fmtMoney(ba.shareToBene)} |`);
+    const sharePctLabel = ba.profitShareIsRamped
+      ? `${ba.effectiveSharePct.toFixed(1)}% currently — ramping ${ba.profitShareStartPct}% → ${ba.profitShareEndPct}% over ${ba.profitShareRampYears}y`
+      : `${ba.profitSharePct}%`;
+    parts.push(`| Profit-share to beneficiary (${sharePctLabel} of positive profit) | ${fmtMoney(ba.shareToBene)} |`);
     if (ba.isEarly && ba.penaltyAmount > 0) {
       const unlockStr = ba.lockUntilDate
         ? new Date(ba.lockUntilDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
@@ -416,7 +469,29 @@ export function formatAccountReportMarkdown(report) {
 
     if (ba.profit < 0 && ba.carryLosses) {
       parts.push("");
-      parts.push(`> ⚠️ Account is in **loss** of ${fmtMoney(ba.profit)}. The account holder absorbs this; beneficiary still receives principal + interest (${fmtMoney(ba.principal + ba.interestOwed)}).`);
+      parts.push(`> ⚠️ Account is in **loss** of ${fmtMoney(ba.profit)}. The account holder absorbs this; beneficiary still receives principal + interest (${fmtMoney(ba.effectivePrincipal + ba.interestOwed)}).`);
+    }
+
+    // Structural protections summary — only render if any are configured
+    const protBits = [];
+    if (ba.redemptionNoticeMonths > 0) {
+      protBits.push(`**${ba.redemptionNoticeMonths}-month written notice** required before redemption`);
+    }
+    if (ba.payoutInstallments && ba.payoutInstallments > 1) {
+      const freqLabel = ba.payoutInstallmentFrequency === "monthly" ? "monthly"
+        : ba.payoutInstallmentFrequency === "yearly" ? "yearly" : "quarterly";
+      protBits.push(`payout in **${ba.payoutInstallments} ${freqLabel} installments** of ~${fmtMoney(ba.perInstallment)} each (smooths liquidation)`);
+    }
+    if (ba.accountHolderBuyoutRight) {
+      protBits.push(`**account-holder buyout right**: may settle the agreement at any time at their convenience with no penalty to beneficiary`);
+    }
+    if (ba.cpiPct > 0) {
+      protBits.push(`principal **CPI-indexed at ${ba.cpiPct}%/yr** to preserve real value`);
+    }
+    if (protBits.length > 0) {
+      parts.push("");
+      parts.push(`**Structural protections in place:**`);
+      for (const b of protBits) parts.push(`- ${b}`);
     }
   }
 

@@ -49,7 +49,14 @@ const BeneficiaryAgreementSchema = new mongoose.Schema(
     name: { type: String, default: "", maxlength: 80 },
     principalCad: { type: Number, default: 0, min: 0 },
     interestRatePct: { type: Number, default: 0, min: 0, max: 100 },
+    // Starting profit-share percentage. When profitShareEndPct is also set
+    // (and > start), this is the share applicable at principalStartDate; the
+    // effective share linearly ramps up to profitShareEndPct over
+    // profitShareRampYears, then caps at the end value. Designed to reward
+    // patience instead of punishing early withdrawal with a flat penalty.
     profitSharePct: { type: Number, default: 0, min: 0, max: 100 },
+    profitShareEndPct: { type: Number, default: null, min: 0, max: 100 },
+    profitShareRampYears: { type: Number, default: 0, min: 0, max: 50 },
     carryLosses: { type: Boolean, default: true },
     // startDate = agreement start (used as default for inflows + principal)
     startDate: { type: Date, default: null },
@@ -61,13 +68,30 @@ const BeneficiaryAgreementSchema = new mongoose.Schema(
     principalStartDate: { type: Date, default: null },
     inflows: { type: [BeneficiaryInflowSchema], default: [] },
     notes: { type: String, default: "", maxlength: 1000 },
-    // Early-payout penalty — compensates the user for tax penalties on
-    // early withdrawal (e.g. TFSA over-contribution / RRSP withholding).
-    // If beneficiary cashes out BEFORE lockUntilDate, a penalty equal to
-    // earlyPayoutPenaltyPct of the greater of (profit-share) or (principal)
-    // is deducted from the payout. After lockUntilDate the penalty drops to 0.
+    // Early-payout penalty — LEGACY mechanism (recommend leaving at 0).
+    // Kept for backward compatibility. Prefer the structural protections
+    // below (notice period + installments + buyout right + CPI) which
+    // address the same risks more fairly.
     lockUntilDate: { type: Date, default: null },
     earlyPayoutPenaltyPct: { type: Number, default: 0, min: 0, max: 100 },
+    // ── Smart-structure protections ─────────────────────────────────────
+    // Number of months of advance written notice the beneficiary must give
+    // before redeeming. Gives the account holder time to plan liquidations,
+    // schedule into low-income years, and avoid forced sales.
+    redemptionNoticeMonths: { type: Number, default: 0, min: 0, max: 60 },
+    // Pay out the redemption in N installments over time rather than as a
+    // single lump sum. Reduces market-timing risk and lets the account
+    // holder coordinate with their own retirement-draw schedule.
+    payoutInstallments: { type: Number, default: 1, min: 1, max: 40 },
+    payoutInstallmentFrequency: { type: String, enum: ["monthly", "quarterly", "yearly"], default: "quarterly" },
+    // Account-holder buyout right: lets the account holder retire the
+    // agreement at any time at their convenience by paying the then-current
+    // payout amount, with no penalty to the beneficiary.
+    accountHolderBuyoutRight: { type: Boolean, default: false },
+    // Optional CPI adjustment on the principal. The principal grows by this
+    // annual rate (compounded) so the beneficiary is protected against
+    // inflation eroding the real value of their capital over a long lock-up.
+    cpiAdjustmentPct: { type: Number, default: 0, min: 0, max: 20 },
   },
   { _id: false }
 );

@@ -217,6 +217,10 @@ function sanitizePortfolioInput(body, email) {
           ? ba.interestRatePct : 0,
         profitSharePct: typeof ba.profitSharePct === "number" && ba.profitSharePct >= 0 && ba.profitSharePct <= 100
           ? ba.profitSharePct : 0,
+        profitShareEndPct: typeof ba.profitShareEndPct === "number" && ba.profitShareEndPct >= 0 && ba.profitShareEndPct <= 100
+          ? ba.profitShareEndPct : null,
+        profitShareRampYears: typeof ba.profitShareRampYears === "number" && ba.profitShareRampYears >= 0 && ba.profitShareRampYears <= 50
+          ? ba.profitShareRampYears : 0,
         carryLosses: ba.carryLosses !== false, // default true
         startDate: ba.startDate ? new Date(ba.startDate) : null,
         principalStartDate: ba.principalStartDate ? new Date(ba.principalStartDate) : null,
@@ -234,6 +238,15 @@ function sanitizePortfolioInput(body, email) {
         lockUntilDate: ba.lockUntilDate ? new Date(ba.lockUntilDate) : null,
         earlyPayoutPenaltyPct: typeof ba.earlyPayoutPenaltyPct === "number" && ba.earlyPayoutPenaltyPct >= 0 && ba.earlyPayoutPenaltyPct <= 100
           ? ba.earlyPayoutPenaltyPct : 0,
+        redemptionNoticeMonths: typeof ba.redemptionNoticeMonths === "number" && ba.redemptionNoticeMonths >= 0 && ba.redemptionNoticeMonths <= 60
+          ? Math.round(ba.redemptionNoticeMonths) : 0,
+        payoutInstallments: typeof ba.payoutInstallments === "number" && ba.payoutInstallments >= 1 && ba.payoutInstallments <= 40
+          ? Math.round(ba.payoutInstallments) : 1,
+        payoutInstallmentFrequency: ["monthly", "quarterly", "yearly"].includes(ba.payoutInstallmentFrequency)
+          ? ba.payoutInstallmentFrequency : "quarterly",
+        accountHolderBuyoutRight: !!ba.accountHolderBuyoutRight,
+        cpiAdjustmentPct: typeof ba.cpiAdjustmentPct === "number" && ba.cpiAdjustmentPct >= 0 && ba.cpiAdjustmentPct <= 20
+          ? ba.cpiAdjustmentPct : 0,
       };
     };
     out.accounts = body.accounts
