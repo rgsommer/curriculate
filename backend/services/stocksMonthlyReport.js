@@ -49,10 +49,59 @@ export function accountValueCad(profile, accountId) {
   };
 }
 
+// Unrealized profit on positions actually held in the account, computed from
+// recorded cost basis (price - basis) × qty. This is the "real" investment
+// P&L — it does NOT include cash from additional contributions, deposits, or
+// withdrawals, which `currentValue − principal` would conflate.
+//
+// Returns { profitCad, coveragePct, positionsCount, positionsCovered }.
+// coveragePct flags how reliable the number is: 1.0 means every position has
+// cost basis recorded; lower numbers mean some positions are missing basis
+// and were excluded from the sum.
+export function accountUnrealizedProfit(profile, accountId) {
+  const fx = profile.fxUsdCad || 1.37;
+  let profitCad = 0;
+  let positionsCount = 0;
+  let positionsCovered = 0;
+  for (const p of profile.positions || []) {
+    if (p.acct !== accountId) continue;
+    positionsCount++;
+    const qty = p.qty || 0;
+    if (qty === 0) continue;
+    if (p.ccy === "USD") {
+      const price = p.priceUsd;
+      const basis = p.costBasisUsd;
+      if (price == null || basis == null) continue;
+      const pnlUsd = (price - basis) * qty;
+      profitCad += pnlUsd * fx;
+      positionsCovered++;
+    } else {
+      const price = p.priceCad;
+      const basis = p.costBasisCad;
+      if (price == null || basis == null) continue;
+      profitCad += (price - basis) * qty;
+      positionsCovered++;
+    }
+  }
+  const coveragePct = positionsCount > 0 ? positionsCovered / positionsCount : 1;
+  return { profitCad, coveragePct, positionsCount, positionsCovered };
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Beneficiary math — pure functions, easy to unit-test later
+//
+// `profitCad` is the actual investment P&L (realized + unrealized) and
+// should be computed via cost-basis math by the caller — NOT via
+// (currentValue − principal), which conflates investment profit with later
+// cash contributions/withdrawals. Pass the real number. If you omit it,
+// the legacy `currentValueCad − principal` fallback runs (kept for
+// backward-compat only).
+//
+// `profitCoverage` is the share (0..1) of positions whose cost basis was
+// available when computing profitCad — lets the report flag when the
+// number is partial.
 // ─────────────────────────────────────────────────────────────────────
-export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date()) {
+export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(), profitCad = null, profitCoverage = 1) {
   if (!ba || !ba.enabled) return null;
   const principal = ba.principalCad || 0;
   const ratePct = ba.interestRatePct || 0;
@@ -63,7 +112,12 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date())
     : 0;
 
   const interestOwed = principal * (ratePct / 100) * yearsSinceStart;
-  const profit = currentValueCad - principal;            // gross profit/loss on account
+  // Use explicit profit (cost-basis math) when caller provides it; otherwise
+  // fall back to the old value-minus-principal estimate.
+  const profit = (typeof profitCad === "number" && Number.isFinite(profitCad))
+    ? profitCad
+    : (currentValueCad - principal);
+  const profitBasis = (typeof profitCad === "number") ? "cost-basis" : "value-minus-principal";
   const shareToBene = Math.max(0, profit) * (shareePct / 100);
   const payoutIfNow = principal + interestOwed + shareToBene;
 
@@ -112,6 +166,8 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date())
     interestOwedYtdCad,
     inflowItems,
     carryLosses: ba.carryLosses !== false,
+    profitBasis,
+    profitCoverage,
   };
 }
 
@@ -153,7 +209,16 @@ export async function buildAccountReport(profile, accountId, asOf = new Date()) 
   const inceptionPnl = inceptionVal != null ? cur.totalCad - inceptionVal : null;
   const inceptionPct = inceptionVal && inceptionVal > 0 ? (inceptionPnl / inceptionVal) * 100 : null;
 
-  const beneficiary = computeBeneficiaryPayout(account.beneficiaryAgreement, cur.totalCad, asOf);
+  // Compute investment profit from cost basis (real P&L), not value-minus-
+  // principal (which would conflate later cash deposits with trading gains).
+  const unreal = accountUnrealizedProfit(profile, accountId);
+  const beneficiary = computeBeneficiaryPayout(
+    account.beneficiaryAgreement,
+    cur.totalCad,
+    asOf,
+    unreal.profitCad,
+    unreal.coveragePct,
+  );
 
   return {
     accountId,
@@ -212,10 +277,20 @@ export function formatAccountReportMarkdown(report) {
     parts.push(`|---|---|`);
     parts.push(`| Years since agreement start | ${ba.yearsSinceStart.toFixed(2)} |`);
     parts.push(`| Interest owed (cumulative) | ${fmtMoney(ba.interestOwed)} |`);
-    parts.push(`| Account profit / (loss) | ${fmtMoney(ba.profit)} |`);
+    const profitLabel = ba.profitBasis === "cost-basis"
+      ? "Unrealized P&L on open positions (cost basis)"
+      : "Account profit / (loss)";
+    parts.push(`| ${profitLabel} | ${fmtMoney(ba.profit)} |`);
     parts.push(`| Profit-share to beneficiary (${ba.profitSharePct}% of positive profit) | ${fmtMoney(ba.shareToBene)} |`);
     parts.push(`| **Payout if cashed out today** | **${fmtMoney(ba.payoutIfNow)}** |`);
     parts.push(`| Net carry (inflows − interest owed) | ${fmtMoney(ba.netCarryCad)} |`);
+
+    // Coverage caveat when some positions are missing cost basis
+    if (ba.profitBasis === "cost-basis" && ba.profitCoverage != null && ba.profitCoverage < 1) {
+      const covPct = (ba.profitCoverage * 100).toFixed(0);
+      parts.push("");
+      parts.push(`> ℹ️ Profit-share is based on **${covPct}% of positions** that have a recorded cost basis. Positions missing a basis are excluded from the P&L sum. Edit positions in the Holdings tab to add cost basis and get a complete number.`);
+    }
 
     // Per-item inflows breakdown — far more useful than one rolled-up total.
     if (ba.inflowItems && ba.inflowItems.length > 0) {
