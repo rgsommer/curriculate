@@ -204,14 +204,31 @@ function buildPrompt(profile, summary, monitorAlerts = [], quantSignals = null, 
     })
     .join("\n") || "  (no accounts configured)";
 
-  // Annual contribution goals — RRSP/RESP/TFSA
-  const cgoals = profile.annualContributionGoals || {};
-  const goalLines = [];
-  if (cgoals.rrsp > 0) goalLines.push(`  RRSP target: $${cgoals.rrsp.toLocaleString()}/year`);
-  if (cgoals.resp > 0) goalLines.push(`  RESP target: $${cgoals.resp.toLocaleString()}/year`);
-  if (cgoals.tfsa > 0) goalLines.push(`  TFSA target: $${cgoals.tfsa.toLocaleString()}/year`);
+  // Contribution goals — RRSP/RESP/TFSA. Each goal is { amount, period }.
+  // Legacy flat-number values are coerced into { amount, period: "yearly" }.
+  // We display the user's chosen cadence but always tell the AI the annual
+  // equivalent so deadline reasoning (Mar 1 RRSP) works without conversion.
+  const cgoalsRaw = profile.annualContributionGoals || {};
+  const normGoal = (v) => {
+    if (typeof v === "number") return { amount: v || 0, period: "yearly" };
+    if (v && typeof v === "object") return { amount: v.amount || 0, period: v.period || "yearly" };
+    return { amount: 0, period: "yearly" };
+  };
+  const formatGoalLine = (label, g) => {
+    if (!g.amount || g.amount <= 0) return null;
+    const annual = g.period === "monthly" ? g.amount * 12 : g.amount;
+    const cadence = g.period === "monthly"
+      ? `$${g.amount.toLocaleString()}/month (≈ $${annual.toLocaleString()}/year)`
+      : `$${annual.toLocaleString()}/year`;
+    return `  ${label} target: ${cadence}`;
+  };
+  const goalLines = [
+    formatGoalLine("RRSP", normGoal(cgoalsRaw.rrsp)),
+    formatGoalLine("RESP", normGoal(cgoalsRaw.resp)),
+    formatGoalLine("TFSA", normGoal(cgoalsRaw.tfsa)),
+  ].filter(Boolean);
   const contributionGoalsBlock = goalLines.length > 0
-    ? `\nANNUAL CONTRIBUTION GOALS (registered-account targets):\n${goalLines.join("\n")}\nUse these in cash-deployment recs: each year's contribution toward these accounts should be PRIORITIZED for available cash, especially as deadlines approach (RRSP: Mar 1, TFSA: Jan 1 reset, RESP: Dec 31).\n`
+    ? `\nCONTRIBUTION GOALS (registered-account targets):\n${goalLines.join("\n")}\nUse these in cash-deployment recs: contributions toward these accounts should be PRIORITIZED for available cash, especially as deadlines approach (RRSP: Mar 1, TFSA: Jan 1 reset, RESP: Dec 31). When the user has chosen a monthly cadence, suggest contributing at that pace as cash arrives rather than waiting for a year-end lump sum.\n`
     : "";
 
   // Planned withdrawals — must-have cash by date that constrains recs

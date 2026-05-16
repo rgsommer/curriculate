@@ -394,16 +394,32 @@ function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals 
     })
     .join("\n") || "  (no accounts configured)";
 
-  // Annual contribution goals — surfaced so the AI can recommend filling
-  // RRSP/RESP/TFSA contribution room when cash is available. Especially
-  // important in Jan/Feb for the RRSP Mar 1 deadline.
-  const cgoals = profile.annualContributionGoals || {};
-  const goalLines = [];
-  if (cgoals.rrsp > 0) goalLines.push(`  RRSP target: $${cgoals.rrsp.toLocaleString()}/year`);
-  if (cgoals.resp > 0) goalLines.push(`  RESP target: $${cgoals.resp.toLocaleString()}/year`);
-  if (cgoals.tfsa > 0) goalLines.push(`  TFSA target: $${cgoals.tfsa.toLocaleString()}/year`);
+  // Contribution goals — RRSP/RESP/TFSA. Each goal is { amount, period }.
+  // Surfaced so the AI can recommend filling registered-account room when
+  // cash is available — especially important in Jan/Feb for the RRSP Mar 1
+  // deadline. Legacy flat-number values are coerced to yearly. We display
+  // the user's chosen cadence and the annual equivalent.
+  const cgoalsRaw = profile.annualContributionGoals || {};
+  const normGoal = (v) => {
+    if (typeof v === "number") return { amount: v || 0, period: "yearly" };
+    if (v && typeof v === "object") return { amount: v.amount || 0, period: v.period || "yearly" };
+    return { amount: 0, period: "yearly" };
+  };
+  const formatGoalLine = (label, g) => {
+    if (!g.amount || g.amount <= 0) return null;
+    const annual = g.period === "monthly" ? g.amount * 12 : g.amount;
+    const cadence = g.period === "monthly"
+      ? `$${g.amount.toLocaleString()}/month (≈ $${annual.toLocaleString()}/year)`
+      : `$${annual.toLocaleString()}/year`;
+    return `  ${label} target: ${cadence}`;
+  };
+  const goalLines = [
+    formatGoalLine("RRSP", normGoal(cgoalsRaw.rrsp)),
+    formatGoalLine("RESP", normGoal(cgoalsRaw.resp)),
+    formatGoalLine("TFSA", normGoal(cgoalsRaw.tfsa)),
+  ].filter(Boolean);
   const contributionGoalsBlock = goalLines.length > 0
-    ? `\nANNUAL CONTRIBUTION GOALS (registered-account targets):\n${goalLines.join("\n")}\nUse these in cash-deployment recs: if uncontributed room remains in a tax-advantaged account, prefer deploying new cash there over Non-Spousal. In Jan-Feb, flag the RRSP Mar 1 deadline if RRSP target isn't met.\n`
+    ? `\nCONTRIBUTION GOALS (registered-account targets):\n${goalLines.join("\n")}\nUse these in cash-deployment recs: if uncontributed room remains in a tax-advantaged account, prefer deploying new cash there over Non-Spousal. When the user has chosen a monthly cadence, suggest contributing at that pace as cash arrives. In Jan-Feb, flag the RRSP Mar 1 deadline if the annual RRSP target isn't on track.\n`
     : "";
 
   const pending = (profile.plannedWithdrawals || [])

@@ -181,11 +181,25 @@ function sanitizePortfolioInput(body, email) {
     out.goals = body.goals.slice(0, 5000);
   }
   if (body.annualContributionGoals && typeof body.annualContributionGoals === "object") {
+    // Accept either shape:
+    //   Legacy: { rrsp: 32000, resp: 2500, tfsa: 7000 }            (number = yearly)
+    //   New:    { rrsp: { amount: 700, period: "monthly" }, ... }
     const g = body.annualContributionGoals;
+    const norm = (v) => {
+      if (typeof v === "number") {
+        return { amount: v >= 0 ? v : 0, period: "yearly" };
+      }
+      if (v && typeof v === "object") {
+        const a = typeof v.amount === "number" && v.amount >= 0 ? v.amount : 0;
+        const p = v.period === "monthly" ? "monthly" : "yearly";
+        return { amount: a, period: p };
+      }
+      return { amount: 0, period: "yearly" };
+    };
     out.annualContributionGoals = {
-      rrsp: typeof g.rrsp === "number" && g.rrsp >= 0 ? g.rrsp : 0,
-      resp: typeof g.resp === "number" && g.resp >= 0 ? g.resp : 0,
-      tfsa: typeof g.tfsa === "number" && g.tfsa >= 0 ? g.tfsa : 0,
+      rrsp: norm(g.rrsp),
+      resp: norm(g.resp),
+      tfsa: norm(g.tfsa),
     };
   }
   if (Array.isArray(body.accounts)) {

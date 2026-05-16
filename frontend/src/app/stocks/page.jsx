@@ -1647,10 +1647,24 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
 function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
-  const cg = user.annualContributionGoals || { rrsp: 0, resp: 0, tfsa: 0 };
-  const [rrspGoal, setRrspGoal] = useState(cg.rrsp || "");
-  const [respGoal, setRespGoal] = useState(cg.resp || "");
-  const [tfsaGoal, setTfsaGoal] = useState(cg.tfsa || "");
+  // Contribution goals — each is { amount, period }. Legacy flat numbers are
+  // coerced to { amount, period: "yearly" } so existing portfolios upgrade
+  // seamlessly without a one-shot migration step.
+  const cgRaw = user.annualContributionGoals || {};
+  const readGoal = (v) => {
+    if (typeof v === "number") return { amount: v || 0, period: "yearly" };
+    if (v && typeof v === "object") return { amount: v.amount || 0, period: v.period || "yearly" };
+    return { amount: 0, period: "yearly" };
+  };
+  const cgRrsp = readGoal(cgRaw.rrsp);
+  const cgResp = readGoal(cgRaw.resp);
+  const cgTfsa = readGoal(cgRaw.tfsa);
+  const [rrspGoal, setRrspGoal] = useState(cgRrsp.amount || "");
+  const [rrspPeriod, setRrspPeriod] = useState(cgRrsp.period);
+  const [respGoal, setRespGoal] = useState(cgResp.amount || "");
+  const [respPeriod, setRespPeriod] = useState(cgResp.period);
+  const [tfsaGoal, setTfsaGoal] = useState(cgTfsa.amount || "");
+  const [tfsaPeriod, setTfsaPeriod] = useState(cgTfsa.period);
   // Local form state for adding a new planned withdrawal
   const [wAmount, setWAmount] = useState("");
   const [wCcy, setWCcy] = useState("CAD");
@@ -1825,31 +1839,49 @@ function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onCh
       </div>
 
       <div className="sa-card" style={{ marginBottom: 14 }}>
-        <h3>Annual contribution goals</h3>
+        <h3>Contribution goals</h3>
         <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12 }}>
-          Target dollar amounts to contribute to each registered account each year. Surfaces in briefings as deadlines approach (RRSP: Mar 1, TFSA: Jan 1 reset, RESP: Dec 31). AI prioritizes filling these when new cash arrives.
+          Target dollar amounts to contribute to each registered account. Choose monthly (steady drip) or yearly (lump sum). Surfaces in briefings as deadlines approach (RRSP: Mar 1, TFSA: Jan 1 reset, RESP: Dec 31). AI prioritizes filling these when new cash arrives and matches your chosen cadence.
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-          <div>
-            <label>RRSP (CAD/yr)</label>
-            <input type="number" min="0" step="any" value={rrspGoal} onChange={(e) => setRrspGoal(e.target.value)} placeholder="e.g. 32000" />
-          </div>
-          <div>
-            <label>RESP (CAD/yr)</label>
-            <input type="number" min="0" step="any" value={respGoal} onChange={(e) => setRespGoal(e.target.value)} placeholder="e.g. 2500" />
-          </div>
-          <div>
-            <label>TFSA (CAD/yr)</label>
-            <input type="number" min="0" step="any" value={tfsaGoal} onChange={(e) => setTfsaGoal(e.target.value)} placeholder="e.g. 7000" />
-          </div>
+        <div style={{ display: "grid", gap: 10 }}>
+          {[
+            { key: "rrsp", label: "RRSP", amount: rrspGoal, setAmount: setRrspGoal, period: rrspPeriod, setPeriod: setRrspPeriod, placeholder: rrspPeriod === "monthly" ? "e.g. 2700" : "e.g. 32000" },
+            { key: "resp", label: "RESP", amount: respGoal, setAmount: setRespGoal, period: respPeriod, setPeriod: setRespPeriod, placeholder: respPeriod === "monthly" ? "e.g. 208" : "e.g. 2500" },
+            { key: "tfsa", label: "TFSA", amount: tfsaGoal, setAmount: setTfsaGoal, period: tfsaPeriod, setPeriod: setTfsaPeriod, placeholder: tfsaPeriod === "monthly" ? "e.g. 583" : "e.g. 7000" },
+          ].map((row) => {
+            const num = parseFloat(row.amount) || 0;
+            const annual = row.period === "monthly" ? num * 12 : num;
+            const hint = num > 0
+              ? (row.period === "monthly"
+                  ? `≈ $${annual.toLocaleString()}/year`
+                  : `≈ $${Math.round(annual / 12).toLocaleString()}/month`)
+              : null;
+            return (
+              <div key={row.key} style={{ display: "grid", gridTemplateColumns: "80px 1fr 130px 110px", gap: 10, alignItems: "end" }}>
+                <div style={{ fontWeight: 600, fontSize: 14, paddingBottom: 8 }}>{row.label}</div>
+                <div>
+                  <label>Amount (CAD)</label>
+                  <input type="number" min="0" step="any" value={row.amount} onChange={(e) => row.setAmount(e.target.value)} placeholder={row.placeholder} />
+                </div>
+                <div>
+                  <label>Frequency</label>
+                  <select value={row.period} onChange={(e) => row.setPeriod(e.target.value)}>
+                    <option value="yearly">per year</option>
+                    <option value="monthly">per month</option>
+                  </select>
+                </div>
+                <div className="sa-muted" style={{ fontSize: 11, paddingBottom: 10 }}>{hint || ""}</div>
+              </div>
+            );
+          })}
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
           <button
             className="sa-btn"
             onClick={() => onChangeContributionGoals({
-              rrsp: parseFloat(rrspGoal) || 0,
-              resp: parseFloat(respGoal) || 0,
-              tfsa: parseFloat(tfsaGoal) || 0,
+              rrsp: { amount: parseFloat(rrspGoal) || 0, period: rrspPeriod },
+              resp: { amount: parseFloat(respGoal) || 0, period: respPeriod },
+              tfsa: { amount: parseFloat(tfsaGoal) || 0, period: tfsaPeriod },
             })}
           >Save contribution goals</button>
         </div>

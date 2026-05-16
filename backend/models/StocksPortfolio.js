@@ -74,13 +74,26 @@ const StocksPortfolioSchema = new mongoose.Schema(
     // anchors all recs against the user's stated life-plan, not just the
     // short-term portfolio state.
     goals: { type: String, default: "", maxlength: 5000 },
-    // Annual contribution targets — set by the user. RRSP/RESP/TFSA. Surfaced
-    // in briefings (especially Jan/Feb for the RRSP Mar 1 deadline) and
-    // factored into cash-deployment recommendations.
+    // Contribution targets — set by the user. RRSP/RESP/TFSA. Each goal carries
+    // an amount + a period ("monthly" or "yearly") so the user can think in
+    // whichever cadence matches how they actually contribute. The AI normalizes
+    // both to annual under the hood for deadline reasoning (RRSP Mar 1, etc.).
+    // Field name kept as `annualContributionGoals` for storage compatibility,
+    // but the nested shape supports both periods. Legacy flat numbers are
+    // auto-coerced to { amount, period: "yearly" } by the PUT sanitizer.
     annualContributionGoals: {
-      rrsp: { type: Number, default: 0 },
-      resp: { type: Number, default: 0 },
-      tfsa: { type: Number, default: 0 },
+      rrsp: {
+        amount: { type: Number, default: 0 },
+        period: { type: String, enum: ["monthly", "yearly"], default: "yearly" },
+      },
+      resp: {
+        amount: { type: Number, default: 0 },
+        period: { type: String, enum: ["monthly", "yearly"], default: "yearly" },
+      },
+      tfsa: {
+        amount: { type: Number, default: 0 },
+        period: { type: String, enum: ["monthly", "yearly"], default: "yearly" },
+      },
     },
     accounts: { type: [AccountSchema], default: [] },
     positions: { type: [PositionSchema], default: [] },
