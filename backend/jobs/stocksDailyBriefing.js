@@ -21,6 +21,7 @@
 import cron from "node-cron";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
+import StocksAdviceSnapshot from "../models/StocksAdviceSnapshot.js";
 import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnicals.js";
 import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
@@ -558,6 +559,46 @@ CRITICAL OUTPUT FORMAT RULES:
 Return ONLY the markdown briefing. No JSON, no wrapping prose. First character of your response must be a # symbol.`;
 }
 
+// Convert briefing markdown into an array of {title, body} cards by
+// splitting on H2/H3 headings. Used to populate the in-app Advice tab from
+// the latest briefing without a separate Anthropic call.
+export function briefingToAdviceCards(md) {
+  if (!md || typeof md !== "string") return [];
+  const cards = [];
+  // Split on lines beginning with ## or ### (preserves the marker via lookahead)
+  const parts = md.split(/\n(?=##{1,2}\s)/);
+  for (const part of parts) {
+    const m = part.match(/^#{2,3}\s+(.+?)\n([\s\S]*)$/);
+    if (!m) continue;
+    const title = m[1].trim().replace(/^[\d.\s]+/, "");
+    const body = m[2].trim();
+    if (title.length > 0) cards.push({ title, body });
+  }
+  return cards;
+}
+
+// Persist (or upsert) the latest briefing's cards + raw markdown as the
+// per-user advice snapshot. Best-effort — never throws.
+export async function saveAdviceSnapshot({ email, markdown, source }) {
+  try {
+    const cards = briefingToAdviceCards(markdown);
+    await StocksAdviceSnapshot.findOneAndUpdate(
+      { email: email.toLowerCase() },
+      {
+        $set: {
+          generatedAt: new Date(),
+          source: source || "cron",
+          advice: cards,
+          markdown,
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+  } catch (e) {
+    console.warn("[advice-snapshot] save failed:", e?.message);
+  }
+}
+
 // Parse trade recommendations from the briefing text and save them for the
 // /performance scorecard. Same regex as routes/stocksAdvice.js — kept here
 // so this job stays self-contained.
@@ -692,6 +733,9 @@ export async function runDailyBriefing(opts = {}) {
       }
       const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
       await emailBriefing({ to: p.email, subject, md });
+      // Persist as the in-app advice snapshot so the Advice tab reflects
+      // the same content the user just got in email (no extra AI call).
+      await saveAdviceSnapshot({ email: p.email, markdown: md, source: "cron" });
 
       // Persist actionable recs for the scorecard
       const recs = parseRecsFromBriefing(md);

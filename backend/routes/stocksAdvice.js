@@ -26,7 +26,9 @@ import {
   md2html,
   parseRecsFromBriefing,
   monitorOpenRecs,
+  saveAdviceSnapshot,
 } from "../jobs/stocksDailyBriefing.js";
+import StocksAdviceSnapshot from "../models/StocksAdviceSnapshot.js";
 import { buildAllAccountReports, formatAllReportsMarkdown, formatAccountReportMarkdown } from "../services/stocksMonthlyReport.js";
 import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnicals.js";
 import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
@@ -996,6 +998,9 @@ router.post("/send-briefing", requireStocksAuth, async (req, res) => {
         return res.status(503).json({ error: "ANTHROPIC_API_KEY not set on backend" });
       }
       markdown = await generateBriefing(profile);
+      // Persist as the in-app advice snapshot so the Advice tab can render
+      // the same content as the email (no extra Anthropic call needed).
+      await saveAdviceSnapshot({ email: profile.email, markdown, source: "on-demand" });
 
       // Track recommendations only on fresh generations (so we don't re-insert
       // them when the client is just sending a previously-previewed briefing).
@@ -1118,6 +1123,33 @@ router.post("/send-monthly-report", requireStocksAuth, async (req, res) => {
     res.json({ markdown, html, subject, sent, sendError, messageId, to: toAddress, ccSends, accountsCovered: flagged.length });
   } catch (err) {
     console.error("send-monthly-report error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// GET /api/stocks-advice/snapshot
+//
+// Returns the latest briefing-derived advice cards for the authenticated
+// user. The Advice tab reads this on mount so the cards displayed match
+// what the user got in their last email briefing (cron or on-demand),
+// without a fresh Anthropic call. Returns 404 if no snapshot exists yet.
+// ─────────────────────────────────────────────────────────────────────
+router.get("/snapshot", requireStocksAuth, async (req, res) => {
+  try {
+    const snap = await StocksAdviceSnapshot
+      .findOne({ email: req.stocksUser.email })
+      .lean();
+    if (!snap) return res.status(404).json({ error: "no_snapshot" });
+    res.json({
+      generatedAt: snap.generatedAt,
+      source: snap.source,
+      advice: snap.advice || [],
+      sources: snap.sources || [],
+      markdown: snap.markdown || "",
+    });
+  } catch (err) {
+    console.error("snapshot GET error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });
   }
 });

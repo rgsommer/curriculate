@@ -1518,7 +1518,27 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
   const [aiBusy, setAiBusy] = useState(false);
   const [aiAdvice, setAiAdvice] = useState(null); // { advice, sources, generatedAt }
   const [aiError, setAiError] = useState(null);
+  // Briefing-derived snapshot — auto-loaded on Advice tab mount. Lets the
+  // app surface the same content as the latest email briefing (cron or
+  // on-demand) without spending a fresh Anthropic call.
+  const [snapshotAdvice, setSnapshotAdvice] = useState(null); // { generatedAt, source, advice, markdown }
   const ruleAdvice = useMemo(() => generateAdvice(user), [user]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-advice/snapshot`, {
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (r.status === 404) return; // no snapshot yet — fine
+        if (!r.ok) return;
+        const j = await r.json();
+        if (!cancelled) setSnapshotAdvice(j);
+      } catch { /* swallow; rule-based fallback is still available */ }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken]);
 
   const handleRefresh = async () => {
     if (busy) return;
@@ -1582,8 +1602,12 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFetchAi]);
 
-  // Display mode priority: consensus > single AI run > rule-based fallback
-  let shown, showingAi, showingConsensus = false, alternatives = null;
+  // Display mode priority:
+  //   1. fresh consensus (just ran 3×)
+  //   2. fresh single AI run (just clicked Update Advice)
+  //   3. briefing snapshot (auto-loaded — same content as latest email)
+  //   4. rule-based fallback (always available, no API call)
+  let shown, showingAi, showingConsensus = false, alternatives = null, showingSnapshot = false;
   if (consensusData) {
     shown = consensusData.consensus;
     alternatives = consensusData.alternatives || [];
@@ -1592,6 +1616,10 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
   } else if (aiAdvice) {
     shown = aiAdvice.advice;
     showingAi = true;
+  } else if (snapshotAdvice && snapshotAdvice.advice && snapshotAdvice.advice.length > 0) {
+    shown = snapshotAdvice.advice;
+    showingAi = true;
+    showingSnapshot = true;
   } else {
     shown = ruleAdvice;
     showingAi = false;
@@ -1605,8 +1633,10 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
           <div className="sa-breadcrumb">
             {showingConsensus
               ? `🧠🧠🧠 Consensus across ${consensusData.runsSucceeded}/${consensusData.runs} runs · ${new Date(consensusData.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-              : showingAi
+              : aiAdvice
               ? `🧠 AI-generated · ${new Date(aiAdvice.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+              : showingSnapshot
+              ? `📬 From latest briefing email · ${new Date(snapshotAdvice.generatedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} (${snapshotAdvice.source}) — click Update Advice for a fresh run`
               : "Rule-based signals from your current portfolio"}
           </div>
         </div>
