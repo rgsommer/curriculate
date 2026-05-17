@@ -6235,6 +6235,12 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
         navigationMode, // "linear" (default) | "mystery"
         mysteryTimerMinutes, // global timer for mystery mode
         classRosterId, // optional: bind this session to a specific class roster
+        // Per-session "no walking / no scanning" mode (LiveSession
+        // checkbox).  When true the loaded taskset is filtered to
+        // drop every task that requires students to leave their seat
+        // (musical-chairs, mad-dash, mad-dash-sequence,
+        // physical-multiple-choice, hidenseek, treasure-runner).
+        onScreenOnly,
       } = payload || {};
     const code = (roomCode || "").toUpperCase();
 
@@ -6346,7 +6352,39 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
         return;
       }
 
-      const tasks = Array.isArray(tasksetDoc.tasks) ? tasksetDoc.tasks : [];
+      let tasks = Array.isArray(tasksetDoc.tasks) ? tasksetDoc.tasks : [];
+
+      // ── On-screen-only filter ───────────────────────────────────
+      // Teacher checked "On-screen only (no scanning, no walking)" on
+      // the LiveSession launch panel.  Drop every task that requires
+      // students to leave their seat — those tasks fundamentally need
+      // physical movement around the room.  At-desk movement (e.g.
+      // body-break / motion-mission jumping in place) stays.  The
+      // flag is also stamped on the room so per-task downstream code
+      // (e.g. scanner UI) can suppress scan prompts.
+      const MOVEMENT_REQUIRED_TYPES = new Set([
+        "musical-chairs",
+        "mad-dash",
+        "mad-dash-sequence",
+        "physical-multiple-choice",
+        "hidenseek",
+        "treasure-runner",
+      ]);
+      if (onScreenOnly === true) {
+        const before = tasks.length;
+        tasks = tasks.filter(
+          (t) => !MOVEMENT_REQUIRED_TYPES.has(String(t?.taskType || "").toLowerCase())
+        );
+        if (tasks.length !== before) {
+          console.log(
+            `[onScreenOnly] room ${code}: dropped ${before - tasks.length} of ${before} ` +
+              `movement-required tasks from taskset ${tasksetId}.`
+          );
+        }
+        room.onScreenOnly = true;
+      } else {
+        room.onScreenOnly = false;
+      }
 
       // ── Auto-inject team selfie right after mood-checkin if teacher profile toggle is on ──
       // Tier gating: FREE gets selfie for first 2 sessions, then needs upgrade.

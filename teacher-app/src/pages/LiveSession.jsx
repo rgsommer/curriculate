@@ -336,6 +336,16 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
   const [navigationMode, setNavigationMode] = useState("linear"); // "linear" | "mystery"
   const [mysteryTimerMinutes, setMysteryTimerMinutes] = useState(30);
 
+  // Per-session "on-screen only" mode.  Drops every task that
+  // requires students to leave their seat (musical-chairs, mad-dash,
+  // mad-dash-sequence, physical-multiple-choice, hidenseek,
+  // treasure-runner).  Curriculate's design principle is that
+  // students get up and around the room — but the platform has
+  // plenty of substantive tasks that work just as well at the desk,
+  // so teachers can switch to a desks/iPads-only mode for a
+  // particular lesson without losing the rest of the catalogue.
+  const [onScreenOnly, setOnScreenOnly] = useState(false);
+
   // Plan tier — read once from /api/profile/me so we can hide PLUS-only UI
   // (class linking) and PRO-only UI from FREE-tier teachers without making
   // them hit a 403 from the server.
@@ -2947,6 +2957,9 @@ if (
         navigationMode,
         mysteryTimerMinutes: navigationMode === "mystery" ? mysteryTimerMinutes : undefined,
         classRosterId: selectedClassRosterId || undefined,
+        // Per-session "no walking / no scanning" mode — backend filters
+        // out movement-required tasks from the loaded taskset.
+        onScreenOnly,
         reportOwnerId,
         reportOwnerName,
         reportOwnerEmail,
@@ -4084,6 +4097,48 @@ if (
                         style={{ width: 48, padding: "2px 4px", borderRadius: 4, border: "1px solid #d8b4fe", textAlign: "center", fontSize: "0.78rem" }}
                       />
                       <span>min</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* On-screen-only mode (per-session).  Hides movement
+                  /scan-required tasks for this session so the class
+                  stays at their desks/iPads.  Curriculate's default
+                  is up-and-around scavenger-hunt mode; this is the
+                  opt-out for a particular lesson. */}
+              {activeTasksetMeta && !taskFlowActive && (
+                <div
+                  style={{
+                    marginBottom: 6,
+                    padding: "6px 8px",
+                    background: onScreenOnly ? "#ecfeff" : "transparent",
+                    borderRadius: 8,
+                    border: onScreenOnly ? "1px solid #67e8f9" : "1px solid transparent",
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: "0.82rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={onScreenOnly}
+                      onChange={(e) => setOnScreenOnly(e.target.checked)}
+                    />
+                    🖥️ On-screen only (no scanning, no walking)
+                  </label>
+                  {onScreenOnly && (
+                    <div style={{ marginTop: 4, fontSize: "0.72rem", color: "#0e7490", lineHeight: 1.4 }}>
+                      Skipping tasks that need students to leave their
+                      seat (Musical Chairs, Mad Dash, Mad Dash Sequence,
+                      Station Dash Quiz, Hide &amp; Seek, Treasure
+                      Runner).  Everything else runs as normal.
                     </div>
                   )}
                 </div>
