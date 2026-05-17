@@ -33,8 +33,8 @@ services:
         value: pngpay          # PNGPay's own database on that cluster
       - key: SESSION_SECRET
         generateValue: true    # Render generates a random string on first deploy
-      - key: RESEND_API_KEY
-        sync: false
+      - key: RESEND_PNGPAY_API_KEY    # PNGPay-specific Resend key (sibling
+        sync: false                    # to Curriculate's; set in dashboard)
       - key: EMAIL_FROM
         sync: false
       - key: BOOTSTRAP_SUPER_ADMIN_EMAIL

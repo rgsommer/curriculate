@@ -58,8 +58,9 @@ unaffected.
      PNGPay writes to a separate database (`MONGO_DB=pngpay`) on the same
      cluster, so it can't collide with curriculate's collections.
    - `MONGO_DB` — `pngpay` (already pre-filled by render.yaml).
-   - `RESEND_API_KEY` — from resend.com.
-   - `EMAIL_FROM` — `PNGPay <payroll@curriculate.net>`.
+   - `RESEND_PNGPAY_API_KEY` — from resend.com (kept separate from any
+     RESEND_API_KEY used by Curriculate so the keys can rotate independently).
+   - `EMAIL_FROM` — e.g. `PNGPay <payroll@curriculate.net>`.
    - `BOOTSTRAP_SUPER_ADMIN_EMAIL` — `rgsommer@me.com`.
    - `BOOTSTRAP_SUPER_ADMIN_PASSWORD` — pick a strong one; you'll change
      it on first login.
