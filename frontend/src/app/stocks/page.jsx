@@ -3600,6 +3600,8 @@ function DiscoverView({ sessionToken, user }) {
   const [candidates, setCandidates] = useState([]);
   const [starredOlder, setStarredOlder] = useState([]);
   const [scanDate, setScanDate] = useState(null);
+  const [scanMode, setScanMode] = useState(null); // "fmp-screened" | "ai-only"
+  const [upgradeMessage, setUpgradeMessage] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
@@ -3651,6 +3653,8 @@ function DiscoverView({ sessionToken, user }) {
       if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
       setCandidates(j.candidates || []);
       setScanDate(j.scanDate || new Date().toISOString());
+      setScanMode(j.mode || null);
+      setUpgradeMessage(j.upgradeRecommendation || null);
     } catch (e) {
       setError(e?.message || "Scan failed");
     } finally {
@@ -3745,6 +3749,16 @@ function DiscoverView({ sessionToken, user }) {
       </div>
 
       {error && <div className="sa-err" style={{ marginBottom: 14 }}>{error}</div>}
+      {scanMode === "ai-only" && (
+        <div className="sa-card" style={{ marginBottom: 14, padding: "12px 16px", background: "var(--sa-amber-soft)", borderColor: "var(--sa-amber)" }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>⚠ AI-only mode — FMP screener unavailable on your plan</div>
+          <div className="sa-muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+            Discovery fell back to AI-only mode because your FMP plan doesn't include the stock-screener endpoint. AI-only mode surfaces candidates via web search — useful but less rigorous than a real fundamentals-driven screen across 80+ tickers. <br/><br/>
+            <b>For your use case (Canadian portfolio with TSX names + small-cap discovery), FMP Premium ($49/mo annually = $588/yr) is the right tier.</b> Starter ($19/mo) is <b>US-only</b> and won't cover your Canadian holdings. Premium adds: full stock screener · 750 calls/min · 30y history · <b>UK + Canada coverage</b> · technical indicators · corporate calendars (for catalyst-aware discovery).<br/><br/>
+            Upgrade at <a href="https://financialmodelingprep.com/developer/docs/pricing" target="_blank" rel="noopener noreferrer" style={{ color: "var(--sa-accent-2)" }}>financialmodelingprep.com</a>. Keep the same FMP_API_KEY env var — the system will automatically switch back to the rigorous screened path on the next scan.
+          </div>
+        </div>
+      )}
       {busy && (
         <div className="sa-card" style={{ padding: 24, textAlign: "center", color: "var(--sa-muted)" }}>
           Running discovery scan… <br />

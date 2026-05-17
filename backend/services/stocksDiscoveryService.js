@@ -37,15 +37,29 @@ const SCREENER_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const FUNDAMENTALS_CACHE = new Map(); // ticker → { fetchedAt, data }
 const FUNDAMENTALS_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+// FMP-plan-insufficient signal. Thrown when an FMP endpoint returns 403
+// (plan doesn't include the endpoint — most commonly the stock-screener
+// which requires Starter tier or higher). Callers can catch this and
+// gracefully fall back to AI-only discovery.
+export class FMPPlanInsufficientError extends Error {
+  constructor(path, status) {
+    super(`FMP ${status} on ${path} — plan doesn't include this endpoint`);
+    this.name = "FMPPlanInsufficientError";
+    this.status = status;
+    this.path = path;
+  }
+}
+
 async function fmpGet(path) {
   const key = process.env.FMP_API_KEY;
-  if (!key) throw new Error("FMP_API_KEY not configured — required for discovery");
+  if (!key) throw new Error("FMP_API_KEY not configured");
   const sep = path.includes("?") ? "&" : "?";
   const url = `${FMP_BASE}${path}${sep}apikey=${key}`;
   const ctrl = new AbortController();
   const tid = setTimeout(() => ctrl.abort(), 15000);
   try {
     const r = await fetch(url, { signal: ctrl.signal });
+    if (r.status === 403) throw new FMPPlanInsufficientError(path, 403);
     if (!r.ok) throw new Error(`FMP ${r.status}`);
     return await r.json();
   } finally {
@@ -278,16 +292,170 @@ Output JSON schema (return EXACTLY this shape, nothing else):
   return parsed;
 }
 
-// ─── Public orchestrator ───────────────────────────────────────────────
-// Pulls universe, scores, picks top N, writes thesis for each, saves to DB.
-export async function runDiscoveryScan({ email, excludeTickers = [], sectors = null, topN = 8, opts = {} }) {
-  // 1. Pull a wide universe
-  const universe = await runUniverseScreen({ sectors, ...opts });
-  if (universe.length === 0) {
-    return { candidates: [], universeSize: 0, error: "Empty universe from FMP screener" };
+// ─── AI-only prospector (FMP-free fallback) ────────────────────────────
+// When FMP screener isn't available (free tier returns 403), ask the AI
+// directly to surface candidates given the user's holdings + preferences.
+// Less rigorous than a real screener (the AI surfaces well-known names
+// more often than obscure ones) but unlocks Discovery without paying for
+// FMP Starter.
+async function aiOnlyProspect({ email, excludeTickers, sectors, topN, marketCapMin, marketCapMax }) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY required");
+
+  const minM = marketCapMin ? `$${(marketCapMin / 1_000_000).toFixed(0)}M` : "$200M";
+  const maxM = marketCapMax ? `$${(marketCapMax / 1_000_000).toFixed(0)}M` : "$5B";
+  const sectorClause = Array.isArray(sectors) && sectors.length > 0
+    ? `Focus on sectors: ${sectors.join(", ")}.`
+    : "Sectors are open — bias toward technology, biotech, energy, defense, fintech where 10× setups historically cluster.";
+  const excludeClause = excludeTickers.length > 0
+    ? `EXCLUDE these tickers (already owned or recently dismissed): ${excludeTickers.join(", ")}.`
+    : "";
+
+  const prompt = `You are a sell-side equity research analyst. Find ${topN} potential multi-bagger small-cap stocks the user does NOT already own.
+
+Use the web_search tool to find current candidates. Criteria:
+- Market cap roughly between ${minM} and ${maxM}
+- Strong revenue growth (>20% YoY) OR a clear turnaround thesis
+- Upcoming catalyst in next 6 months OR underappreciated structural tailwind
+- Traded on US or Canadian exchanges; liquid enough to trade
+- NOT already a widely-covered mega-cap (avoid NVDA, AAPL, MSFT, GOOGL, AMZN, META, TSLA)
+${sectorClause}
+${excludeClause}
+
+For EACH candidate, provide:
+1. Ticker + company name + sector
+2. Current price (use web_search for fresh quote) and approximate market cap
+3. Bull case (2-3 sentences referencing specific numbers — revenue growth, margins, addressable market)
+4. Kill thesis (1-2 sentences — what specific outcome would prove the bull case wrong?)
+5. Price target (specific number) and horizon (months)
+6. Conviction: low | medium | high
+7. 2-3 catalysts to watch
+
+Output STRICT JSON — array of ${topN} objects matching this schema:
+{
+  "candidates": [
+    {
+      "ticker": "ABCD",
+      "name": "Company Name",
+      "sector": "Technology",
+      "industry": "Software",
+      "exchange": "NASDAQ",
+      "currentPrice": 12.34,
+      "marketCap": 800000000,
+      "thesis": {
+        "bullCase": "...",
+        "killThesis": "...",
+        "priceTarget": 30,
+        "horizonMonths": 24,
+        "conviction": "medium",
+        "catalysts": ["Q3 earnings Oct 28", "FDA decision Nov 15"]
+      },
+      "signals": {
+        "revenueGrowthPct": 45,
+        "grossMarginPct": 62
+      }
+    }
+  ]
+}
+
+Return ONLY that JSON object. No prose before or after.`;
+
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({
+      model: process.env.STOCKS_DISCOVERY_MODEL || "claude-sonnet-4-5",
+      max_tokens: 4000,
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 10 }],
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  if (!r.ok) {
+    const err = await r.text().catch(() => "");
+    throw new Error(`Anthropic ${r.status}: ${err.slice(0, 200)}`);
+  }
+  const j = await r.json();
+  const text = (j?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+  const sources = [];
+  for (const b of j?.content || []) {
+    if (b.type === "text" && Array.isArray(b.citations)) {
+      for (const c of b.citations) {
+        if (c?.url && !sources.find((s) => s.url === c.url)) {
+          sources.push({ title: c.title || c.url, url: c.url });
+        }
+      }
+    }
   }
 
-  // 2. Filter out names the user already holds OR has previously dismissed
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return { candidates: [], sources };
+  let parsed;
+  try { parsed = JSON.parse(m[0]); } catch { return { candidates: [], sources }; }
+  return { candidates: Array.isArray(parsed.candidates) ? parsed.candidates : [], sources };
+}
+
+// Persist AI-only candidates with the same shape as FMP-screened ones,
+// so the rest of the UI doesn't care which path produced them.
+async function saveAiOnlyCandidates({ email, candidates, sharedSources, excludeSet }) {
+  const scanDate = new Date();
+  const saved = [];
+  for (const c of candidates) {
+    const ticker = String(c.ticker || "").toUpperCase().replace(/\.+$/, "").trim();
+    if (!ticker) continue;
+    if (excludeSet.has(ticker)) continue;
+    try {
+      const doc = await StocksDiscoveryCandidate.findOneAndUpdate(
+        { email: email.toLowerCase(), ticker, scanDate },
+        {
+          $set: {
+            email: email.toLowerCase(),
+            ticker,
+            name: c.name || "",
+            sector: c.sector || "",
+            industry: c.industry || "",
+            exchange: c.exchange || "",
+            marketCap: typeof c.marketCap === "number" ? c.marketCap : null,
+            priceAtDiscovery: typeof c.currentPrice === "number" ? c.currentPrice : null,
+            currencyAtDiscovery: (c.exchange === "TSX" || c.exchange === "TSXV") ? "CAD" : "USD",
+            score: 0, // no composite score for AI-only path
+            signals: {
+              revenueGrowthPct: c?.signals?.revenueGrowthPct ?? null,
+              grossMarginPct: c?.signals?.grossMarginPct ?? null,
+              operatingMarginPct: c?.signals?.operatingMarginPct ?? null,
+              netDebtToEquity: c?.signals?.netDebtToEquity ?? null,
+            },
+            thesis: {
+              bullCase: c?.thesis?.bullCase || "",
+              killThesis: c?.thesis?.killThesis || "",
+              priceTarget: typeof c?.thesis?.priceTarget === "number" ? c.thesis.priceTarget : null,
+              horizonMonths: typeof c?.thesis?.horizonMonths === "number" ? c.thesis.horizonMonths : 12,
+              conviction: ["low", "medium", "high"].includes(c?.thesis?.conviction) ? c.thesis.conviction : "medium",
+              catalysts: Array.isArray(c?.thesis?.catalysts) ? c.thesis.catalysts.slice(0, 6) : [],
+              sources: sharedSources || [],
+            },
+            scanDate,
+            lastPriceCheckedAt: scanDate,
+            lastPrice: typeof c.currentPrice === "number" ? c.currentPrice : null,
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+      saved.push(doc.toObject());
+    } catch (e) {
+      console.warn("[discovery-ai-only] save failed:", e?.message);
+    }
+  }
+  return { candidates: saved, scanDate };
+}
+
+// ─── Public orchestrator ───────────────────────────────────────────────
+// Pulls universe, scores, picks top N, writes thesis for each, saves to DB.
+//
+// If FMP returns 403 (plan doesn't include screener), automatically falls
+// back to the AI-only path so the user gets candidates without paying for
+// FMP Starter. The response includes a `mode` field ("fmp-screened" or
+// "ai-only") plus an `upgradeRecommendation` string the UI can show.
+export async function runDiscoveryScan({ email, excludeTickers = [], sectors = null, topN = 8, opts = {} }) {
   const excl = new Set((excludeTickers || []).map((t) => String(t).toUpperCase()));
   // Pull recently-dismissed candidates so we don't keep re-surfacing them
   const recentlyDismissed = await StocksDiscoveryCandidate.find({
@@ -297,6 +465,41 @@ export async function runDiscoveryScan({ email, excludeTickers = [], sectors = n
   }).select("ticker").lean();
   recentlyDismissed.forEach((d) => excl.add(d.ticker));
 
+  // 1. Pull a wide universe — if FMP 403s, fall back to AI-only path.
+  let universe;
+  try {
+    universe = await runUniverseScreen({ sectors, ...opts });
+  } catch (e) {
+    if (e instanceof FMPPlanInsufficientError) {
+      console.log("[discovery] FMP screener 403 — falling back to AI-only prospector");
+      const aiResult = await aiOnlyProspect({
+        email, excludeTickers: Array.from(excl), sectors, topN,
+        marketCapMin: opts.marketCapMin, marketCapMax: opts.marketCapMax,
+      });
+      const saved = await saveAiOnlyCandidates({
+        email,
+        candidates: aiResult.candidates,
+        sharedSources: aiResult.sources,
+        excludeSet: excl,
+      });
+      return {
+        candidates: saved.candidates,
+        scanDate: saved.scanDate,
+        mode: "ai-only",
+        upgradeRecommendation: "Your FMP plan doesn't include the stock-screener endpoint (returned 403). Discovery fell back to AI-only mode, which finds well-known names via web search. For a more rigorous screen over 80+ small-caps with fundamentals filtering, upgrade to FMP Starter ($14/mo) at financialmodelingprep.com/developer/docs — the same FMP_API_KEY env var will start working with the full screener immediately.",
+      };
+    }
+    throw e;
+  }
+  if (universe.length === 0) {
+    return { candidates: [], universeSize: 0, mode: "fmp-screened", error: "Empty universe from FMP screener" };
+  }
+  if (universe.length === 0) {
+    return { candidates: [], universeSize: 0, mode: "fmp-screened", error: "Empty universe from FMP screener" };
+  }
+
+  // 2. Filter out names the user already holds OR has previously dismissed
+  // (excl Set was built at the top of this function)
   const filtered = universe.filter((u) => !excl.has(String(u.symbol || "").toUpperCase()));
 
   // 3. Fetch fundamentals for a pre-rank slice. To keep cost manageable,
@@ -389,5 +592,6 @@ export async function runDiscoveryScan({ email, excludeTickers = [], sectors = n
     universeSize: universe.length,
     scoredCount: withFundamentals.length,
     scanDate,
+    mode: "fmp-screened",
   };
 }
