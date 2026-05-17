@@ -1,0 +1,45 @@
+<%- include('../partials/header') %>
+<h1>New pay period — <%= company.name %></h1>
+<p class="hint">
+  Double-click an <strong>hours</strong> cell to fill the default for that employee.
+  Double-click again to zero it (employee did not work this period).
+  Double-click an <strong>employee name</strong> to mark them inactive (no longer employed).
+</p>
+<form method="post" action="<%= BASE_PATH %>/payroll/confirm" id="payroll-form">
+  <input type="hidden" name="company_id" value="<%= company.id %>">
+  <div class="period-head">
+    <label>Period start <input name="period_start" type="date" required></label>
+    <label>Period end   <input name="period_end"   type="date" required></label>
+    <label>Pay date     <input name="pay_date"     type="date" required></label>
+  </div>
+  <table class="data payroll-grid">
+    <thead><tr>
+      <th>Employee</th><th>Dept</th><th>Default</th>
+      <th>Hours</th><th>Cash advance</th><th>Note (shown on stub)</th>
+    </tr></thead>
+    <tbody>
+    <% employees.forEach((e, i) => {
+         const def = e.default_hours || company.default_hours; %>
+      <tr data-employee-id="<%= e.id %>">
+        <td class="emp-name" title="Double-click to mark inactive">
+          <%= e.last_name %>, <%= e.first_name %>
+          <input type="hidden" name="entries[<%= i %>][employee_id]" value="<%= e.id %>">
+        </td>
+        <td><%= e.dept_name || '' %></td>
+        <td class="num"><%= def %></td>
+        <td><input class="hours" type="number" step="0.25" min="0"
+                   name="entries[<%= i %>][hours]" value="0" data-default="<%= def %>"></td>
+        <td><input type="number" step="0.01" min="0"
+                   name="entries[<%= i %>][cash_advance]" value="0"></td>
+        <td><input type="text" maxlength="500" name="entries[<%= i %>][note]"></td>
+      </tr>
+    <% }) %>
+    </tbody>
+  </table>
+  <div class="form-actions">
+    <button type="submit" class="btn-primary">Confirm payroll &amp; send stubs</button>
+    <a href="<%= BASE_PATH %>/payroll">Cancel</a>
+  </div>
+</form>
+<script src="<%= BASE_PATH %>/static/js/payroll.js"></script>
+<%- include('../partials/footer') %>

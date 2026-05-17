@@ -1,0 +1,104 @@
+<%- include('../partials/header') %>
+<h1>Admin</h1>
+
+<section class="card">
+<h2>Companies</h2>
+<table class="data">
+<thead><tr><th>Name</th><th>Abbrev</th><th>Pay interval</th><th>Default hours</th><th>Active</th><th></th></tr></thead>
+<tbody>
+<% companies.forEach(c => { %>
+  <tr><td><%= c.name %></td><td><%= c.abbreviation || '' %></td>
+      <td><%= c.pay_interval %></td><td class="num"><%= c.default_hours %></td>
+      <td><%= c.is_active ? 'Yes' : 'No' %></td>
+      <td><a href="<%= BASE_PATH %>/admin/companies/<%= c.id %>">Open</a></td></tr>
+<% }) %>
+<% if (!companies.length) { %><tr><td colspan="6" class="empty">No companies yet.</td></tr><% } %>
+</tbody></table>
+<h3>Add company</h3>
+<form method="post" action="<%= BASE_PATH %>/admin/companies/new" class="inline-form">
+  <input name="name" placeholder="Name" required>
+  <input name="abbreviation" placeholder="Abbrev (e.g. AHL)">
+  <select name="pay_interval">
+    <option value="fortnightly">Fortnightly</option>
+    <option value="weekly">Weekly</option>
+    <option value="monthly">Monthly</option>
+  </select>
+  <input name="default_hours" type="number" step="0.5" placeholder="Default hours" value="80">
+  <button type="submit">Add</button>
+</form>
+</section>
+
+<section class="card">
+<h2>Users</h2>
+<table class="data">
+<thead><tr><th>Email</th><th>Role</th><th>Company</th><th>Active</th></tr></thead>
+<tbody>
+<% users.forEach(u => { %>
+  <tr><td><%= u.email %></td><td><%= u.role %></td><td><%= u.company_name || '' %></td><td><%= u.is_active ? 'Yes' : 'No' %></td></tr>
+<% }) %>
+</tbody></table>
+<h3>Add user</h3>
+<form method="post" action="<%= BASE_PATH %>/admin/users/new" class="inline-form">
+  <input name="email" placeholder="email" required>
+  <input name="password" placeholder="initial password" required>
+  <select name="role">
+    <% if (user.clearance_level >= 4) { %>
+      <option value="system_owner">system_owner — full access incl. service-fee %</option>
+    <% } %>
+    <option value="principal">principal — runs the bureau (level 3)</option>
+    <option value="bookkeeper">bookkeeper — back-office (level 2)</option>
+    <option value="site_payroll">site_payroll — per-company key person (level 1)</option>
+    <option value="employee">employee — view own stub only (level 0)</option>
+  </select>
+  <select name="company_id">
+    <option value="">(no company / super)</option>
+    <% companies.forEach(c => { %><option value="<%= c.id %>"><%= c.name %></option><% }) %>
+  </select>
+  <button type="submit">Add</button>
+</form>
+</section>
+
+<% if (user.clearance_level >= 4) { %>
+<section class="card">
+<h2>Service fees (taken from every payroll)</h2>
+<p class="hint">Each recipient gets <strong>their % of the total gross</strong> of every approved pay run, added as an extra row on the BSP batch. Typically: Theresia 3%, Richard 2%.</p>
+<table class="data">
+<thead><tr><th>Name</th><th>%</th><th>Bank account</th><th>Branch</th><th></th></tr></thead>
+<tbody>
+<% (typeof serviceFees !== 'undefined' ? serviceFees : []).forEach(f => { %>
+  <tr>
+    <td><%= f.name %></td>
+    <td class="num"><%= f.pct_of_gross %>%</td>
+    <td><%= f.account_name %> · <%= f.account_no %></td>
+    <td><%= f.branch_code || '' %></td>
+    <td>
+      <form method="post" action="<%= BASE_PATH %>/admin/service-fees/<%= f.id %>/delete" style="display:inline">
+        <button type="submit" onclick="return confirm('Remove this fee recipient?')">Remove</button>
+      </form>
+    </td>
+  </tr>
+<% }) %>
+<% if (typeof serviceFees === 'undefined' || !serviceFees.length) { %>
+  <tr><td colspan="5" class="empty">No service-fee recipients yet.</td></tr>
+<% } %>
+</tbody></table>
+<h3>Add fee recipient</h3>
+<form method="post" action="<%= BASE_PATH %>/admin/service-fees/new" class="inline-form">
+  <input name="name" placeholder="Name (e.g. Theresia)" required>
+  <input name="pct_of_gross" type="number" step="0.1" placeholder="% of gross" required>
+  <input name="account_name" placeholder="Account name">
+  <input name="account_no" placeholder="Account number">
+  <input name="bank_code" placeholder="Bank code" value="088" size="5">
+  <input name="branch_code" placeholder="Branch code" size="6">
+  <button type="submit">Add</button>
+</form>
+</section>
+<% } %>
+
+<section class="card">
+<h2>Bulk import employees</h2>
+<p>Paste the contents of the "PNGPay Bulk Employees" spreadsheet (CSV).</p>
+<a class="btn" href="<%= BASE_PATH %>/admin/import">Open importer</a>
+</section>
+
+<%- include('../partials/footer') %>

@@ -1,0 +1,36 @@
+# Fly.io deployment manifest for PNGPay.
+# Run `fly launch --no-deploy` once locally to set your app name + region,
+# then `fly volumes create pngpay_data --size 1` and `fly deploy`.
+
+app = "pngpay"               # change to your-app-name if "pngpay" is taken on Fly
+primary_region = "syd"        # Sydney — closest Fly region to PNG. Change if you prefer.
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  BASE_PATH    = "/pngpay"
+  PUBLIC_URL   = "https://www.curriculate.net/pngpay"
+  PORT         = "8080"
+  NODE_ENV     = "production"
+  DEFAULT_PAY_INTERVAL = "fortnightly"
+
+# Secrets (set with `fly secrets set NAME=value`):
+#   SESSION_SECRET, RESEND_API_KEY, EMAIL_FROM,
+#   BOOTSTRAP_SUPER_ADMIN_EMAIL, BOOTSTRAP_SUPER_ADMIN_PASSWORD
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines  = "stop"
+  auto_start_machines = true
+  min_machines_running = 0     # spins up on first request
+
+[[mounts]]
+  source = "pngpay_data"
+  destination = "/data"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "256mb"

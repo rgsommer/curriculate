@@ -1,0 +1,35 @@
+<%- include('../partials/header') %>
+<div class="page-head">
+  <h1>Employees</h1>
+  <a class="btn" href="<%= BASE_PATH %>/employees/new<%= companyId ? '?company='+companyId : '' %>">+ New employee</a>
+</div>
+<% if (user.role === 'super_admin') { %>
+<form method="get" class="filterbar">
+  <label>Company
+    <select name="company" onchange="this.form.submit()">
+      <option value="">(choose)</option>
+      <% companies.forEach(c => { %>
+        <option value="<%= c.id %>" <%= companyId===c.id?'selected':'' %>><%= c.name %></option>
+      <% }) %>
+    </select>
+  </label>
+</form>
+<% } %>
+<table class="data">
+  <thead><tr><th>Name</th><th>Dept</th><th>Job</th><th>Pay</th><th>Bank</th><th>Active</th><th></th></tr></thead>
+  <tbody>
+  <% employees.forEach(e => { %>
+    <tr>
+      <td><%= e.last_name %>, <%= e.first_name %><br><small><%= e.email || '' %></small></td>
+      <td><%= e.dept_name || '' %></td>
+      <td><%= e.job_name || '' %></td>
+      <td><% if (e.pay_type==='salary') { %>Salary <%= (e.annual_salary||0).toLocaleString() %><% } else { %>Hourly <%= e.hourly_rate %><% } %></td>
+      <td><%= e.bank_name || '' %><br><small><%= e.bank_account_no || '' %></small></td>
+      <td><%= e.is_active ? 'Yes' : 'No' %></td>
+      <td><a href="<%= BASE_PATH %>/employees/<%= e.id %>/edit">Edit</a></td>
+    </tr>
+  <% }) %>
+  <% if (!employees.length) { %><tr><td colspan="7" class="empty">No employees yet.</td></tr><% } %>
+  </tbody>
+</table>
+<%- include('../partials/footer') %>

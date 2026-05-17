@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title><%= title %> · PNGPay</title>
+<link rel="stylesheet" href="<%= BASE_PATH %>/static/css/style.css">
+</head><body class="login-body">
+<form class="login-card" method="post" action="<%= BASE_PATH %>/login">
+  <h1>PNGPay</h1>
+  <% if (error) { %><div class="flash flash-warn"><%= error %></div><% } %>
+  <label>Email<input name="email" type="email" autofocus required></label>
+  <label>Password<input name="password" type="password" required></label>
+  <button type="submit">Sign in</button>
+</form>
+</body></html>

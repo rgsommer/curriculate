@@ -1,0 +1,13 @@
+<%- include('partials/header') %>
+<h1>Dashboard</h1>
+<p>Welcome <strong><%= user.email %></strong>.</p>
+<div class="card-grid">
+  <a class="card" href="<%= BASE_PATH %>/payroll/new"><h3>Create new pay period</h3><p>Enter hours, notes, advances and send pay stubs.</p></a>
+  <a class="card" href="<%= BASE_PATH %>/employees"><h3>Employee data</h3><p>Add, modify, deactivate employees.</p></a>
+  <a class="card" href="<%= BASE_PATH %>/reports"><h3>Reports</h3><p>Weekly and monthly summaries.</p></a>
+  <a class="card" href="<%= BASE_PATH %>/taxrules"><h3>Tax &amp; deduction rules</h3><p>SWT brackets, Nasfund, custom deductions.</p></a>
+  <% if (user.role === 'super_admin') { %>
+    <a class="card" href="<%= BASE_PATH %>/admin"><h3>Admin</h3><p>Companies, users, imports.</p></a>
+  <% } %>
+</div>
+<%- include('partials/footer') %>

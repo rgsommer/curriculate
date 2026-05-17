@@ -1,0 +1,35 @@
+<%- include('../partials/header') %>
+<div class="page-head">
+  <h1>Payroll history</h1>
+  <a class="btn" href="<%= BASE_PATH %>/payroll/new<%= companyId ? '?company='+companyId : '' %>">+ New pay period</a>
+</div>
+<% if (user.role === 'super_admin') { %>
+<form method="get" class="filterbar">
+  <label>Company
+    <select name="company" onchange="this.form.submit()">
+      <option value="">(choose)</option>
+      <% companies.forEach(c => { %><option value="<%= c.id %>" <%= companyId===c.id?'selected':'' %>><%= c.name %></option><% }) %>
+    </select>
+  </label>
+</form>
+<% } %>
+<table class="data">
+  <thead><tr><th>Period</th><th>Pay date</th><th>Status</th><th># entries</th><th></th></tr></thead>
+  <tbody>
+  <% periods.forEach(p => { %>
+    <tr>
+      <td><%= p.period_start %> — <%= p.period_end %></td>
+      <td><%= p.pay_date %></td>
+      <td><%= p.status %></td>
+      <td><%= p.n_entries %></td>
+      <td>
+        <a href="<%= BASE_PATH %>/payroll/<%= p.id %>">View</a> ·
+        <a href="<%= BASE_PATH %>/payroll/<%= p.id %>/csv">CSV</a> ·
+        <a href="<%= BASE_PATH %>/payroll/<%= p.id %>/bsp">BSP batch</a>
+      </td>
+    </tr>
+  <% }) %>
+  <% if (!periods.length) { %><tr><td colspan="5" class="empty">No pay periods yet.</td></tr><% } %>
+  </tbody>
+</table>
+<%- include('../partials/footer') %>

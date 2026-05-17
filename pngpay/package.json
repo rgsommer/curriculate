@@ -1,0 +1,30 @@
+{
+  "name": "pngpay",
+  "version": "0.1.0",
+  "description": "Multi-tenant payroll system for PNG SMEs. Designed to be mounted at /pngpay on curriculate.net.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "migrate": "node scripts/migrate.js",
+    "seed": "node scripts/seed.js",
+    "smoke": "node scripts/smoke_test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "connect-mongo": "^6.0.0",
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.10",
+    "express": "^4.21.1",
+    "express-session": "^1.18.1",
+    "mongodb": "^7.2.0",
+    "pdfkit": "^0.18.0",
+    "resend": "^4.0.0"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^11.1.0"
+  }
+}

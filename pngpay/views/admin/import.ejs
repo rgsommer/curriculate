@@ -1,0 +1,24 @@
+<%- include('../partials/header') %>
+<h1>Bulk import employees</h1>
+<p>Paste your "PNGPay Bulk Employees" CSV. The importer matches columns by header
+name (case-insensitive): <code>fname, lname, account_name, bank_code, bank_account,
+position, department, company, anual_price, hour_price, hours, email, dependents, status</code>.</p>
+<p>The first row must contain the header names. Bank code <code>88</code> or <code>088</code> = BSP.
+Company codes that don't match existing companies will be created as "Company N" placeholders
+(rename later in the Companies list).</p>
+<form method="post" action="<%= BASE_PATH %>/admin/import" enctype="application/x-www-form-urlencoded">
+  <textarea name="csv" rows="14" style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px"
+            placeholder="id,emp_code,fname,lname,..."></textarea>
+  <div class="form-actions"><button class="btn-primary" type="submit">Import</button></div>
+</form>
+<% if (result) { %>
+<div class="flash flash-success">
+  Imported <strong><%= result.created %></strong> employees. Skipped <%= result.skipped %>.
+  <% if (result.errors && result.errors.length) { %>
+    <details><summary>Errors (<%= result.errors.length %>)</summary>
+      <ul><% result.errors.forEach(e => { %><li><%= e %></li><% }) %></ul>
+    </details>
+  <% } %>
+</div>
+<% } %>
+<%- include('../partials/footer') %>

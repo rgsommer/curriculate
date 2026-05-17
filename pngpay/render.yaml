@@ -1,0 +1,43 @@
+# Render "Blueprint" for PNGPay.
+# In Render: New → Blueprint → connect this repo. Render reads this file and
+# provisions everything below. Set the secrets in the dashboard when prompted.
+
+services:
+  - type: web
+    name: pngpay
+    runtime: node
+    plan: free                 # auto-sleeps after ~15 min idle on free tier
+    region: singapore          # closest to PNG; change if you prefer
+    rootDir: pngpay            # when PNGPay lives in a subfolder of the
+                               # Curriculate monorepo. Remove this line if
+                               # PNGPay is in its own dedicated repo.
+    buildCommand: npm ci
+    startCommand: node server.js
+    healthCheckPath: /pngpay/login
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: BASE_PATH
+        value: /pngpay
+      - key: PUBLIC_URL
+        value: https://www.curriculate.net/pngpay
+      - key: PORT
+        value: 10000           # Render injects $PORT; this is the fallback
+      - key: DEFAULT_PAY_INTERVAL
+        value: fortnightly
+      # --- secrets: set values in the Render dashboard, NOT in this file ---
+      - key: MONGO_URI
+        sync: false           # same Atlas cluster as Curriculate
+      - key: MONGO_DB
+        value: pngpay          # PNGPay's own database on that cluster
+      - key: SESSION_SECRET
+        generateValue: true    # Render generates a random string on first deploy
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: BOOTSTRAP_SUPER_ADMIN_EMAIL
+        sync: false
+      - key: BOOTSTRAP_SUPER_ADMIN_PASSWORD
+        sync: false

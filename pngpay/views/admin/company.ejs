@@ -1,0 +1,52 @@
+<%- include('../partials/header') %>
+<h1>Company information — <%= company.name %></h1>
+<form method="post" action="<%= BASE_PATH %>/admin/companies/<%= company.id %>" class="grid-form">
+  <fieldset><legend>Identity</legend>
+    <label>Name <input name="name" value="<%= company.name %>" required></label>
+    <label>Abbreviation <input name="abbreviation" value="<%= company.abbreviation || '' %>"></label>
+    <label>Currency <input name="currency" value="<%= company.currency || 'PGK' %>"></label>
+    <label>Active <input type="checkbox" name="is_active" <%= company.is_active?'checked':'' %>></label>
+    <label>Pay interval
+      <select name="pay_interval">
+        <% ['weekly','fortnightly','monthly'].forEach(p => { %>
+          <option value="<%= p %>" <%= company.pay_interval===p?'selected':'' %>><%= p %></option>
+        <% }) %>
+      </select>
+    </label>
+    <label>Default hours per period <input name="default_hours" type="number" step="0.5" value="<%= company.default_hours %>"></label>
+  </fieldset>
+
+  <fieldset><legend>Company bank (for BSP batch)</legend>
+    <label>Bank account name <input name="bank_account_name" value="<%= company.bank_account_name || '' %>"></label>
+    <label>Bank code <input name="bank_code" value="<%= company.bank_code || '088' %>" placeholder="088 = BSP"></label>
+    <label>Branch code <input name="branch_code" value="<%= company.branch_code || '' %>"></label>
+    <label>Account number <input name="bank_account_no" value="<%= company.bank_account_no || '' %>"></label>
+    <label>BSP client number <input name="bank_client_no" value="<%= company.bank_client_no || '' %>"></label>
+  </fieldset>
+
+  <fieldset><legend>Office &amp; payroll officer</legend>
+    <label>Office email <input name="office_email" type="email" value="<%= company.office_email || '' %>"></label>
+    <label>Payroll officer name <input name="payroll_officer_name" value="<%= company.payroll_officer_name || '' %>"></label>
+    <label>Payroll officer title <input name="payroll_officer_title" value="<%= company.payroll_officer_title || '' %>"></label>
+    <label>Manager email <input name="manager_email" type="email" value="<%= company.manager_email || '' %>"></label>
+    <label>Manager title <input name="manager_title" value="<%= company.manager_title || '' %>"></label>
+  </fieldset>
+
+  <fieldset><legend>Pay-stub email</legend>
+    <label><input type="checkbox" name="email_payslips" <%= company.email_payslips?'checked':'' %>> Email pay slips to employees</label>
+    <label><input type="checkbox" name="cc_office" <%= company.cc_office?'checked':'' %>> CC office on each pay slip</label>
+    <label>Default pay-slip message
+      <textarea name="payslip_message" rows="3"><%= company.payslip_message || '' %></textarea>
+    </label>
+  </fieldset>
+
+  <fieldset><legend>NASFund / NCSL</legend>
+    <label>NCSL employer number <input name="ncsl_employer_no" value="<%= company.ncsl_employer_no || '' %>"></label>
+    <label>NCSL date of registration <input name="ncsl_date_of_reg" value="<%= company.ncsl_date_of_reg || '' %>" placeholder="YYYY-MM-DD"></label>
+    <p class="hint">Employee/employer contribution rates are set in the Tax Rules tab so they version with the rest of payroll.</p>
+  </fieldset>
+
+  <div class="form-actions"><button class="btn-primary" type="submit">Save</button>
+    <a href="<%= BASE_PATH %>/admin">Cancel</a></div>
+</form>
+<%- include('../partials/footer') %>

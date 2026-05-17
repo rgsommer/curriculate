@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title><%= title %> · PNGPay</title>
+<link rel="stylesheet" href="<%= BASE_PATH %>/static/css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="<%= BASE_PATH %>/dashboard">PNGPay</a>
+  <% if (user) { %>
+  <nav>
+    <a href="<%= BASE_PATH %>/dashboard">Dashboard</a>
+    <a href="<%= BASE_PATH %>/employees">Employees</a>
+    <a href="<%= BASE_PATH %>/payroll">Payroll</a>
+    <a href="<%= BASE_PATH %>/reports">Reports</a>
+    <a href="<%= BASE_PATH %>/taxrules">Tax rules</a>
+    <% if (user.role === 'super_admin') { %><a href="<%= BASE_PATH %>/admin">Admin</a><% } %>
+  </nav>
+  <form class="logout" method="post" action="<%= BASE_PATH %>/logout">
+    <span><%= user.email %><% if (typeof company !== 'undefined' && company) { %> · <%= company.name %><% } %></span>
+    <button type="submit">Sign out</button>
+  </form>
+  <% } %>
+</header>
+<% if (flash) { %><div class="flash flash-<%= flash.type %>"><%= flash.text %></div><% } %>
+<main><%- body %></main>
+</body>
+</html>

@@ -1,0 +1,23 @@
+<%- include('../partials/header') %>
+<h1>Tax &amp; deduction rules</h1>
+<% if (user.role === 'super_admin') { %>
+<form method="get" class="filterbar">
+  <label>Company
+    <select name="company" onchange="this.form.submit()">
+      <option value="">(choose)</option>
+      <% companies.forEach(c => { %><option value="<%= c.id %>" <%= companyId===c.id?'selected':'' %>><%= c.name %></option><% }) %>
+    </select>
+  </label>
+</form>
+<% } %>
+<% if (companyId && current) { %>
+<form method="post" action="<%= BASE_PATH %>/taxrules/save">
+  <input type="hidden" name="company_id" value="<%= companyId %>">
+  <label>Effective from <input type="date" name="effective_from" value="<%= new Date().toISOString().slice(0,10) %>"></label>
+  <label>Notes (optional) <input type="text" name="notes"></label>
+  <p class="hint">Edit the JSON below. <code>swt_brackets</code> are the PNG Salary or Wages Tax bands (per pay period). <code>nasfund</code> is the superannuation rate. <code>custom_deductions</code> is a list — each item is <code>flat</code>, <code>percent</code> or <code>formula</code>. Saving creates a new version; old confirmed payrolls keep their original calculation.</p>
+  <textarea name="data" rows="32" style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px"><%= JSON.stringify(current.parsed, null, 2) %></textarea>
+  <div class="form-actions"><button class="btn-primary" type="submit">Save new version</button></div>
+</form>
+<% } else { %><p>Pick a company.</p><% } %>
+<%- include('../partials/footer') %>

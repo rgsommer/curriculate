@@ -1,0 +1,6 @@
+# Add to the bottom of curriculate.net's netlify.toml
+[[redirects]]
+  from = "/pngpay/*"
+  to   = "https://pngpay.fly.dev/pngpay/:splat"
+  status = 200            # 200 = rewrite (URL stays as curriculate.net), not 301/302
+  force  = true

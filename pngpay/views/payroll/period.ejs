@@ -1,0 +1,71 @@
+<%- include('../partials/header') %>
+<div class="page-head">
+  <h1>Pay period <%= period.period_start %> — <%= period.period_end %></h1>
+  <div>
+    <% if (period.status === 'pending_approval' && user.clearance_level >= 2) { %>
+      <form method="post" action="<%= BASE_PATH %>/payroll/<%= period.id %>/approve" style="display:inline">
+        <button type="submit" class="btn-primary" onclick="return confirm('Approve and send pay stubs?')">Approve &amp; send stubs</button>
+      </form>
+      <form method="post" action="<%= BASE_PATH %>/payroll/<%= period.id %>/reject" style="display:inline">
+        <button type="submit">Send back as draft</button>
+      </form>
+    <% } %>
+    <a class="btn" href="<%= BASE_PATH %>/payroll/<%= period.id %>/csv">Download CSV</a>
+    <a class="btn" href="<%= BASE_PATH %>/payroll/<%= period.id %>/bsp">Download BSP batch</a>
+  </div>
+</div>
+<p class="hint">Pay date <%= period.pay_date %> · <%= entries.length %> entries · status <strong><%= period.status %></strong>
+<% if (period.status === 'approved' && period.service_fees && period.service_fees.length) { %>
+  · Service fees: <%= period.service_fees.map(f => `${f.name} K${f.amount.toFixed(2)} (${f.pct}%)`).join(', ') %>
+<% } %></p>
+<% if (typeof files !== 'undefined' && files.length) { %>
+<section class="card">
+  <h2 style="margin-top:0">Files for this period</h2>
+  <table class="data">
+    <thead><tr><th>File</th><th>Kind</th><th>Size</th><th>Generated</th><th></th></tr></thead>
+    <tbody>
+    <% files.forEach(f => { %>
+      <tr>
+        <td><%= f.filename %></td>
+        <td><%= f.kind || '' %></td>
+        <td class="num"><%= (f.length/1024).toFixed(1) %> KB</td>
+        <td><%= new Date(f.uploadDate).toISOString().slice(0,16).replace('T',' ') %></td>
+        <td><a href="<%= BASE_PATH %>/payroll/files/<%= f.id %>">Download</a></td>
+      </tr>
+    <% }) %>
+    </tbody>
+  </table>
+</section>
+<% } %>
+
+<table class="data">
+  <thead><tr><th>Employee</th><th>Dept</th><th>Hours</th><th>Gross</th><th>Tax</th><th>Nasfund</th><th>Other</th><th>Net</th><th>Note</th></tr></thead>
+  <tbody>
+  <% let totals = {gross:0,tax:0,nasfund:0,other:0,net:0}; %>
+  <% entries.forEach(e => {
+       totals.gross += e.gross; totals.tax += e.tax; totals.nasfund += e.nasfund;
+       totals.other += e.other_deductions; totals.net += e.net; %>
+    <tr>
+      <td><%= e.last_name %>, <%= e.first_name %></td>
+      <td><%= e.dept_name || '' %></td>
+      <td class="num"><%= e.hours %></td>
+      <td class="num"><%= e.gross.toFixed(2) %></td>
+      <td class="num"><%= e.tax.toFixed(2) %></td>
+      <td class="num"><%= e.nasfund.toFixed(2) %></td>
+      <td class="num"><%= e.other_deductions.toFixed(2) %></td>
+      <td class="num"><strong><%= e.net.toFixed(2) %></strong></td>
+      <td><%= e.note || '' %></td>
+    </tr>
+  <% }) %>
+  </tbody>
+  <tfoot><tr>
+    <th colspan="3">Totals</th>
+    <th class="num"><%= totals.gross.toFixed(2) %></th>
+    <th class="num"><%= totals.tax.toFixed(2) %></th>
+    <th class="num"><%= totals.nasfund.toFixed(2) %></th>
+    <th class="num"><%= totals.other.toFixed(2) %></th>
+    <th class="num"><%= totals.net.toFixed(2) %></th>
+    <th></th>
+  </tr></tfoot>
+</table>
+<%- include('../partials/footer') %>

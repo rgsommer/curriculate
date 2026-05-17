@@ -1,0 +1,56 @@
+<%- include('../partials/header') %>
+<h1>Reports</h1>
+<form method="get" class="filterbar">
+  <% if (user.role === 'super_admin') { %>
+  <label>Company <select name="company" onchange="this.form.submit()">
+    <option value="">(choose)</option>
+    <% companies.forEach(c => { %><option value="<%= c.id %>" <%= companyId===c.id?'selected':'' %>><%= c.name %></option><% }) %>
+  </select></label>
+  <% } %>
+  <label>Period <select name="period" onchange="this.form.submit()">
+    <option value="weekly"  <%= period==='weekly'?'selected':'' %>>Weekly</option>
+    <option value="monthly" <%= period==='monthly'?'selected':'' %>>Monthly</option>
+  </select></label>
+</form>
+
+<h2><%= period === 'weekly' ? 'Weekly' : 'Monthly' %> summary</h2>
+<table class="data">
+  <thead><tr><th>Bucket</th><th>Employees</th><th>Gross</th><th>Tax</th><th>Nasfund</th><th>Other</th><th>Net</th></tr></thead>
+  <tbody>
+  <% summary.forEach(s => { %>
+    <tr><td><%= s.bucket %></td><td class="num"><%= s.n_emp %></td>
+        <td class="num"><%= (s.gross||0).toFixed(2) %></td>
+        <td class="num"><%= (s.tax||0).toFixed(2) %></td>
+        <td class="num"><%= (s.nasfund||0).toFixed(2) %></td>
+        <td class="num"><%= (s.other||0).toFixed(2) %></td>
+        <td class="num"><strong><%= (s.net||0).toFixed(2) %></strong></td></tr>
+  <% }) %>
+  <% if (!summary.length) { %><tr><td colspan="7" class="empty">No data.</td></tr><% } %>
+  </tbody>
+</table>
+
+<h2>By department (all-time)</h2>
+<table class="data">
+  <thead><tr><th>Department</th><th># entries</th><th>Gross</th><th>Net</th></tr></thead>
+  <tbody>
+  <% byDept.forEach(d => { %>
+    <tr><td><%= d.dept || '(none)' %></td><td class="num"><%= d.n %></td>
+        <td class="num"><%= (d.gross||0).toFixed(2) %></td>
+        <td class="num"><%= (d.net||0).toFixed(2) %></td></tr>
+  <% }) %>
+  </tbody>
+</table>
+
+<h2>Master-user payroll share</h2>
+<table class="data">
+  <thead><tr><th>Employee</th><th>%</th><th>Estimated cumulative share</th></tr></thead>
+  <tbody>
+  <% shares.forEach(s => { %>
+    <tr><td><%= s.last_name %>, <%= s.first_name %></td>
+        <td class="num"><%= s.payroll_share_pct %>%</td>
+        <td class="num"><%= (s.estimated_share_lifetime||0).toFixed(2) %></td></tr>
+  <% }) %>
+  <% if (!shares.length) { %><tr><td colspan="3" class="empty">No employees with payroll share.</td></tr><% } %>
+  </tbody>
+</table>
+<%- include('../partials/footer') %>

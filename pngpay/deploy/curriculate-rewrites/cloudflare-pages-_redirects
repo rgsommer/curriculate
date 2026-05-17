@@ -1,0 +1,3 @@
+# Cloudflare Pages: add this line to a file called `_redirects` at the
+# project root (alongside index.html). Status 200 = rewrite, not redirect.
+/pngpay/*  https://pngpay.fly.dev/pngpay/:splat  200
