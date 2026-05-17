@@ -35,7 +35,7 @@ services:
         generateValue: true    # Render generates a random string on first deploy
       - key: RESEND_PNGPAY_API_KEY    # PNGPay-specific Resend key (sibling
         sync: false                    # to Curriculate's; set in dashboard)
-      - key: EMAIL_FROM
+      - key: RESEND_PNGPAY_FROM_ADDRESS  # e.g. payroll@curriculate.net
         sync: false
       - key: BOOTSTRAP_SUPER_ADMIN_EMAIL
         sync: false
