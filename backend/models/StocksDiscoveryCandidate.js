@@ -1,0 +1,84 @@
+// backend/models/StocksDiscoveryCandidate.js
+//
+// One document per (email, ticker, scanDate) discovery candidate.
+//
+// Discovery candidates are stocks NOT in the user's current portfolio that
+// the AI thinks warrant a closer look as potential multi-bagger or
+// catalyst-driven setups. Each candidate captures:
+//   - Why it surfaced (fundamentals + composite score)
+//   - AI-written thesis (bull case, kill thesis, price target, horizon, conviction)
+//   - User actions (starred, dismissed, added to portfolio)
+//   - Price tracking for hit-rate scorecard (priceAtDiscovery → updated over time)
+//
+// The scorecard will later compare priceAtDiscovery to current price at
+// 30/90/180/365 days to surface how often discoveries actually hit their
+// targets — honest feedback on whether the discovery engine is earning its
+// keep vs. just picking lottery tickets.
+
+import mongoose from "mongoose";
+
+const ThesisSchema = new mongoose.Schema(
+  {
+    bullCase: { type: String, default: "" },
+    killThesis: { type: String, default: "" },
+    priceTarget: { type: Number, default: null },
+    horizonMonths: { type: Number, default: 12 },
+    conviction: { type: String, enum: ["low", "medium", "high"], default: "medium" },
+    catalysts: { type: [String], default: [] },
+    sources: { type: [{ title: String, url: String }], default: [], _id: false },
+  },
+  { _id: false }
+);
+
+const StocksDiscoveryCandidateSchema = new mongoose.Schema(
+  {
+    email: { type: String, required: true, lowercase: true, trim: true, index: true },
+    ticker: { type: String, required: true, uppercase: true, trim: true, index: true },
+    name: { type: String, default: "" },
+    sector: { type: String, default: "" },
+    industry: { type: String, default: "" },
+    exchange: { type: String, default: "" },
+    marketCap: { type: Number, default: null },
+    priceAtDiscovery: { type: Number, default: null },
+    currencyAtDiscovery: { type: String, default: "USD" },
+    // Composite score 0-100 — how strongly the candidate clears the
+    // multi-bagger screen criteria
+    score: { type: Number, default: 0 },
+    // Raw signals that fed the score, for transparency
+    signals: {
+      revenueGrowthPct: { type: Number, default: null },
+      grossMarginPct: { type: Number, default: null },
+      operatingMarginPct: { type: Number, default: null },
+      netDebtToEquity: { type: Number, default: null },
+      insiderBuying: { type: Boolean, default: false },
+      cashRunwayMonths: { type: Number, default: null },
+      shortFloatPct: { type: Number, default: null },
+    },
+    // AI-written investment thesis
+    thesis: { type: ThesisSchema, default: () => ({}) },
+    // User actions
+    starred: { type: Boolean, default: false },
+    dismissed: { type: Boolean, default: false },
+    addedToPortfolio: { type: Boolean, default: false },
+    // Tracking
+    scanDate: { type: Date, default: Date.now, index: true },
+    lastPriceCheckedAt: { type: Date, default: null },
+    lastPrice: { type: Number, default: null },
+    // Outcome buckets — populated by a separate scorer cron
+    outcome30d: { type: { pct: Number, dollars: Number, atPrice: Number }, default: null, _id: false },
+    outcome90d: { type: { pct: Number, dollars: Number, atPrice: Number }, default: null, _id: false },
+    outcome180d: { type: { pct: Number, dollars: Number, atPrice: Number }, default: null, _id: false },
+    outcome365d: { type: { pct: Number, dollars: Number, atPrice: Number }, default: null, _id: false },
+  },
+  { timestamps: true }
+);
+
+// One candidate per (email, ticker, scanDate) — re-scans on different days
+// create new rows so we can track timing of when the AI first surfaced a name.
+StocksDiscoveryCandidateSchema.index({ email: 1, ticker: 1, scanDate: 1 }, { unique: true });
+
+const StocksDiscoveryCandidate =
+  mongoose.models.StocksDiscoveryCandidate ||
+  mongoose.model("StocksDiscoveryCandidate", StocksDiscoveryCandidateSchema);
+
+export default StocksDiscoveryCandidate;

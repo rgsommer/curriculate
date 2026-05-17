@@ -883,6 +883,7 @@ export default function StocksAdvisorPage() {
               ["dashboard", "Dashboard"],
               ["positions", "Positions"],
               ["advice", "Advice"],
+              ["discover", "Discover"],
               ["performance", "Performance"],
               ["trades", "Trades"],
               ["settings", "Settings"],
@@ -990,6 +991,7 @@ export default function StocksAdvisorPage() {
               onClearExecuted={() => setExecutedRecKeys(new Set())}
             />
           )}
+          {currentTab === "discover" && <DiscoverView sessionToken={auth.sessionToken} user={user} />}
           {currentTab === "performance" && <PerformanceView sessionToken={auth.sessionToken} />}
           {currentTab === "trades" && <TradesView sessionToken={auth.sessionToken} />}
           {currentTab === "settings" && (
@@ -3586,6 +3588,259 @@ function FullscreenShell({ children }) {
     return () => document.body.classList.remove("stocks-app-mode");
   }, []);
   return <div className="stocks-root">{children}</div>;
+}
+
+// =============================================================================
+// Discover view — find high-potential candidate stocks NOT in your portfolio.
+// On-demand scan: pulls FMP screener universe (microcap–smallcap growth setups),
+// composite-scores each candidate, asks the AI to write a bull thesis + kill
+// thesis for the top 8, surfaces them as cards with conviction badges.
+// =============================================================================
+function DiscoverView({ sessionToken, user }) {
+  const [candidates, setCandidates] = useState([]);
+  const [starredOlder, setStarredOlder] = useState([]);
+  const [scanDate, setScanDate] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+  // Configurable scan parameters
+  const [topN, setTopN] = useState(8);
+  const [marketCapMin, setMarketCapMin] = useState(200);   // millions
+  const [marketCapMax, setMarketCapMax] = useState(5000);  // millions
+  const [sectorsCsv, setSectorsCsv] = useState("");
+
+  // Load existing candidates on mount
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-discover/candidates`, {
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (cancelled) return;
+        setCandidates(j.candidates || []);
+        setStarredOlder(j.starred || []);
+        setScanDate(j.scanDate || null);
+      } catch (e) { /* swallow */ }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken]);
+
+  const runScan = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const body = {
+        topN: Math.max(1, Math.min(15, parseInt(topN, 10) || 8)),
+        marketCapMin: (parseFloat(marketCapMin) || 200) * 1_000_000,
+        marketCapMax: (parseFloat(marketCapMax) || 5000) * 1_000_000,
+      };
+      if (sectorsCsv.trim()) {
+        body.sectors = sectorsCsv.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+      const r = await fetch(`${BACKEND_URL}/api/stocks-discover/scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setCandidates(j.candidates || []);
+      setScanDate(j.scanDate || new Date().toISOString());
+    } catch (e) {
+      setError(e?.message || "Scan failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleStar = async (id) => {
+    try {
+      await fetch(`${BACKEND_URL}/api/stocks-discover/candidates/${id}/star`, {
+        method: "POST", headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      setCandidates((cs) => cs.map((c) => c._id === id ? { ...c, starred: !c.starred } : c));
+    } catch {}
+  };
+  const dismiss = async (id) => {
+    if (!confirm("Hide this candidate from future scans?")) return;
+    try {
+      await fetch(`${BACKEND_URL}/api/stocks-discover/candidates/${id}/dismiss`, {
+        method: "POST", headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      setCandidates((cs) => cs.filter((c) => c._id !== id));
+    } catch {}
+  };
+
+  const convictionStyle = (c) => {
+    if (c === "high") return { bg: "var(--sa-green-soft)", fg: "var(--sa-green)" };
+    if (c === "medium") return { bg: "var(--sa-accent-soft)", fg: "var(--sa-accent-2)" };
+    return { bg: "#f3f4f6", fg: "#6b7280" };
+  };
+
+  return (
+    <div>
+      <h2>Discover</h2>
+      <div className="sa-breadcrumb">
+        Multi-bagger candidate scanner — AI-written thesis for each. Honest expectation: most leads underperform; a small number 5-10×.
+      </div>
+
+      <div className="sa-card" style={{ marginBottom: 14, padding: 14 }}>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Scan parameters</div>
+        <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 1fr 2fr auto", gap: 10, alignItems: "end" }}>
+          <div>
+            <label style={{ fontSize: 11, color: "var(--sa-muted)" }}>Top N</label>
+            <input type="number" min="1" max="15" value={topN} onChange={(e) => setTopN(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: "var(--sa-muted)" }}>Min mkt cap ($M)</label>
+            <input type="number" min="0" value={marketCapMin} onChange={(e) => setMarketCapMin(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: "var(--sa-muted)" }}>Max mkt cap ($M)</label>
+            <input type="number" min="0" value={marketCapMax} onChange={(e) => setMarketCapMax(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: "var(--sa-muted)" }}>Sectors (comma-separated, blank = all)</label>
+            <input type="text" value={sectorsCsv} onChange={(e) => setSectorsCsv(e.target.value)} placeholder="Technology, Healthcare, Energy" />
+          </div>
+          <button className="sa-btn" onClick={runScan} disabled={busy}>
+            {busy ? "Scanning…" : "🔍 Scan"}
+          </button>
+        </div>
+        <div className="sa-muted" style={{ fontSize: 11, marginTop: 8 }}>
+          A scan calls FMP ~80 times + Claude once per candidate (~$1 of AI spend per 10 candidates). Don't run more than weekly.
+        </div>
+      </div>
+
+      {error && <div className="sa-err" style={{ marginBottom: 14 }}>{error}</div>}
+      {busy && (
+        <div className="sa-card" style={{ padding: 24, textAlign: "center", color: "var(--sa-muted)" }}>
+          Running discovery scan… <br />
+          <div style={{ fontSize: 12, marginTop: 6 }}>FMP universe + per-ticker fundamentals + AI thesis writer × Top N · 60-120s</div>
+        </div>
+      )}
+
+      {!busy && candidates.length === 0 && (
+        <div className="sa-card" style={{ padding: 24, textAlign: "center", color: "var(--sa-muted)" }}>
+          No candidates yet. Click <b>🔍 Scan</b> to find some.
+        </div>
+      )}
+
+      {scanDate && candidates.length > 0 && (
+        <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+          📅 Last scan: {new Date(scanDate).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} — {candidates.length} candidate{candidates.length === 1 ? "" : "s"}
+        </div>
+      )}
+
+      {candidates.map((c) => {
+        const pal = convictionStyle(c.thesis?.conviction);
+        const expanded = expandedId === c._id;
+        const upsidePct = (c.thesis?.priceTarget && c.priceAtDiscovery)
+          ? ((c.thesis.priceTarget - c.priceAtDiscovery) / c.priceAtDiscovery) * 100
+          : null;
+        return (
+          <div key={c._id} className="sa-advice-card" style={{ marginBottom: 12, borderLeft: `4px solid ${pal.fg}` }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+              <div>
+                <span style={{ fontWeight: 700, fontSize: 17 }}>{c.ticker}</span>
+                <span style={{ marginLeft: 8, fontSize: 13, color: "var(--sa-muted)" }}>{c.name || ""}</span>
+                <span style={{ marginLeft: 8, fontSize: 11, color: "var(--sa-muted)" }}>· {c.sector || "—"} · ${(c.marketCap / 1_000_000).toFixed(0)}M cap</span>
+              </div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ background: pal.bg, color: pal.fg, padding: "2px 9px", borderRadius: 99, fontSize: 11, fontWeight: 700, letterSpacing: ".04em" }}>
+                  {c.thesis?.conviction?.toUpperCase() || "—"} conviction
+                </span>
+                <span className="sa-muted" style={{ fontSize: 11 }}>score {c.score}/100</span>
+              </div>
+            </div>
+
+            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--sa-text)" }}>
+              <b>Bull case:</b> {c.thesis?.bullCase || "—"}
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--sa-text-2)", marginTop: 6 }}>
+              <b style={{ color: "#b91c1c" }}>Kill thesis:</b> {c.thesis?.killThesis || "—"}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 13, color: "var(--sa-text-2)" }}>
+              Price now: <b><span className="sa-amount">${c.priceAtDiscovery?.toFixed(2)}</span></b>
+              {c.thesis?.priceTarget && (
+                <>
+                  {" "}· Target: <b><span className="sa-amount">${c.thesis.priceTarget.toFixed(2)}</span></b>
+                  {upsidePct != null && (
+                    <span style={{ marginLeft: 6, color: upsidePct > 0 ? "var(--sa-green)" : "var(--sa-amber)" }}>
+                      ({upsidePct > 0 ? "+" : ""}{upsidePct.toFixed(0)}%)
+                    </span>
+                  )}
+                </>
+              )}
+              {c.thesis?.horizonMonths && <> · Horizon: <b>{c.thesis.horizonMonths}mo</b></>}
+            </div>
+
+            {expanded && (
+              <div style={{ marginTop: 12, padding: 12, background: "var(--sa-panel-2)", borderRadius: 6 }}>
+                {c.thesis?.catalysts?.length > 0 && (
+                  <>
+                    <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6 }}>Catalysts to watch</div>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.5 }}>
+                      {c.thesis.catalysts.map((cat, i) => <li key={i}>{cat}</li>)}
+                    </ul>
+                  </>
+                )}
+                <div style={{ marginTop: 12, fontSize: 11, color: "var(--sa-muted)" }}>
+                  <b>Signals:</b> rev growth {c.signals?.revenueGrowthPct?.toFixed(1) ?? "—"}% · gross margin {c.signals?.grossMarginPct?.toFixed(1) ?? "—"}% · debt/equity {c.signals?.netDebtToEquity?.toFixed(2) ?? "—"}
+                </div>
+                {c.thesis?.sources?.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontWeight: 600, fontSize: 11, marginBottom: 4 }}>Sources</div>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11 }}>
+                      {c.thesis.sources.slice(0, 8).map((s, i) => (
+                        <li key={i}><a href={s.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--sa-accent-2)" }}>{s.title || s.url}</a></li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              <button className="sa-btn ghost" onClick={() => setExpandedId(expanded ? null : c._id)} style={{ fontSize: 12 }}>
+                {expanded ? "Hide details" : "More details"}
+              </button>
+              <button className="sa-btn ghost" onClick={() => toggleStar(c._id)} style={{ fontSize: 12 }}>
+                {c.starred ? "★ Starred" : "☆ Star"}
+              </button>
+              <button className="sa-btn ghost" onClick={() => dismiss(c._id)} style={{ fontSize: 12, color: "var(--sa-amber)" }}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+        );
+      })}
+
+      {starredOlder.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <h3 style={{ fontSize: 14, color: "var(--sa-text-2)", marginBottom: 8 }}>★ Starred from earlier scans</h3>
+          <div style={{ display: "grid", gap: 8 }}>
+            {starredOlder.map((c) => (
+              <div key={c._id} className="sa-card" style={{ padding: 10, display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+                <div>
+                  <b>{c.ticker}</b>
+                  <span style={{ marginLeft: 6, fontSize: 12, color: "var(--sa-muted)" }}>{c.name}</span>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--sa-muted)" }}>
+                  found {new Date(c.scanDate).toLocaleDateString()} · target <span className="sa-amount">${c.thesis?.priceTarget?.toFixed(2) ?? "—"}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // =============================================================================
