@@ -474,6 +474,15 @@ useEffect(() => {
   });
   const [loadedTasksetId, setLoadedTasksetId] = useState(null);
 
+  // When the active taskset is one that was generated with the at-desk-only
+  // toggle, flip the per-session "On-screen only" checkbox on by default.
+  // The teacher can still uncheck it for that one session if they want.
+  useEffect(() => {
+    if (activeTasksetMeta?.atDeskOnly === true) {
+      setOnScreenOnly(true);
+    }
+  }, [activeTasksetMeta?.atDeskOnly]);
+
   // When true, we have requested a taskset launch and are waiting for
   // "tasksetLoaded" before calling teacher:launchNextTask.
   const [launchAfterLoad, setLaunchAfterLoad] = useState(false);
@@ -2895,6 +2904,14 @@ if (
 
       const tasks = Array.isArray(data.tasks) ? data.tasks : [];
 
+      // ── At-desk-only taskset → default the per-session "On-screen only"
+      //   checkbox to true. The teacher built this set explicitly for
+      //   seats-only play; honor that intent at launch time.
+      if (data?.atDeskOnly === true && !onScreenOnly) {
+        setOnScreenOnly(true);
+      }
+      const effectiveOnScreenOnly = onScreenOnly || data?.atDeskOnly === true;
+
       // ── Fixed-station setup checklist ──
       // If this taskset has displays (physical objects at stations), show
       // a setup checklist so the teacher can confirm everything is in place.
@@ -2959,7 +2976,8 @@ if (
         classRosterId: selectedClassRosterId || undefined,
         // Per-session "no walking / no scanning" mode — backend filters
         // out movement-required tasks from the loaded taskset.
-        onScreenOnly,
+        // (Auto-defaulted to true when the taskset was built atDeskOnly.)
+        onScreenOnly: effectiveOnScreenOnly,
         reportOwnerId,
         reportOwnerName,
         reportOwnerEmail,
@@ -5796,6 +5814,9 @@ Precipitation — rain, snow, hail`}
                     tasksetId: data._id || activeTasksetMeta?._id,
                     selectedRooms,
                     classRosterId: selectedClassRosterId || undefined,
+                    // Per-session at-desk mode — honor the checkbox AND any
+                    // atDeskOnly flag persisted on the taskset itself.
+                    onScreenOnly: onScreenOnly || data?.atDeskOnly === true,
                     reportOwnerId,
                     reportOwnerName,
                     reportOwnerEmail,
@@ -6089,6 +6110,12 @@ Precipitation — rain, snow, hail`}
                           activeTasksetMeta?._id,
                         selectedRooms,
                         classRosterId: selectedClassRosterId || undefined,
+                        // Per-session at-desk mode — honor checkbox AND
+                        // any atDeskOnly flag persisted on the taskset.
+                        onScreenOnly:
+                          onScreenOnly ||
+                          data?.atDeskOnly === true ||
+                          tasksetDoc?.atDeskOnly === true,
                         reportOwnerId,
                         reportOwnerName,
                         reportOwnerEmail,

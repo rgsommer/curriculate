@@ -248,6 +248,7 @@ export default function AiTasksetGenerator() {
       topicDescription: "", // special considerations
       durationMinutes: 45,
       isFixedStation: false,
+      atDeskOnly: false,
     };
   });
 
@@ -593,6 +594,10 @@ export default function AiTasksetGenerator() {
 
         isFixedStationTaskset: form.isFixedStation || cleanedDisplays.length > 0,
         displays: cleanedDisplays.length ? cleanedDisplays : undefined,
+
+        // At-desk-only: filter generator pool to exclude movement-required task types
+        // and persist so LiveSession defaults the "On-screen only" checkbox to true.
+        atDeskOnly: !!form.atDeskOnly,
 
       };
 
@@ -1921,6 +1926,34 @@ export default function AiTasksetGenerator() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* AT-DESK ONLY */}
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 10,
+            border: "1px solid #e5e7eb",
+            background: "#f9fafb",
+          }}
+        >
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={form.atDeskOnly}
+              onChange={(e) => handleChange("atDeskOnly", e.target.checked)}
+              style={{ marginTop: 3 }}
+            />
+            <span style={{ fontSize: "0.9rem", fontWeight: 500 }}>
+              🖥️ Build for at-desk only (no up-and-around movement)
+              <div style={{ fontSize: "0.78rem", fontWeight: 400, color: "#6b7280", marginTop: 2 }}>
+                Excludes the 6 task types that fundamentally need students moving around the room
+                (Musical Chairs, Mad Dash, Mad Dash Sequence, Station Dash Quiz, Hide &amp; Seek, Treasure Runner).
+                Live sessions launched from this task set will default to “On-screen only”.
+              </div>
+            </span>
+          </label>
         </div>
 
         {/* FIXED-STATION / DISPLAYS */}

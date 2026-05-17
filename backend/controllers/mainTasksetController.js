@@ -1573,7 +1573,22 @@ export async function createAiTaskset(req, res) {
       durationMinutes: durationMinutesBody,
       isFixedStationTaskset,
       displays: rawDisplays,
+      atDeskOnly,
     } = req.body || {};
+
+    // At-desk-only mode: the 6 task types that fundamentally require students
+    // to get up and around the classroom. When `atDeskOnly === true`, these
+    // are stripped from both the eligible candidate list and any user-selected
+    // pool so they can't appear in the generated set.
+    const MOVEMENT_REQUIRED_TYPES = new Set([
+      "musical-chairs",
+      "mad-dash",
+      "mad-dash-sequence",
+      "physical-multiple-choice",
+      "hidenseek",
+      "treasure-runner",
+    ]);
+    const isAtDeskOnly = atDeskOnly === true;
 
     // ── Fixed station / display support ──
     // Teacher may assign physical objects/topics to colored stations.
@@ -1593,7 +1608,7 @@ export async function createAiTaskset(req, res) {
     // Accept either key the frontend might send for count.
     const explicitCount = count || numberOfTasks;
 
-    const eligible = getGenerationEligibleTypes(subject);
+    let eligible = getGenerationEligibleTypes(subject);
 
     // Accept either key the frontend might send for the type pool.
     // Teacher-selected types bypass the eligible filter (e.g. languageOnly
@@ -1603,17 +1618,34 @@ export async function createAiTaskset(req, res) {
       const m = TASK_TYPE_META?.[t];
       return m && m.implemented !== false && m.generatorEligible !== false;
     });
-    const userPool =
+    let userPool =
       Array.isArray(rawPool) && rawPool.length
         ? rawPool.map(normalizeSelectedType).filter(Boolean).filter((t) => allImplemented.includes(t))
         : null;
 
     // Resolve guaranteed types (must appear in pool regardless of limit setting).
     // These are teacher-chosen so they skip the languageOnly / subject filter.
-    const guaranteed =
+    let guaranteed =
       Array.isArray(guaranteedTaskTypes) && guaranteedTaskTypes.length
         ? guaranteedTaskTypes.map(normalizeSelectedType).filter(Boolean).filter((t) => allImplemented.includes(t))
         : [];
+
+    // 🔹 At-desk-only filter — strip movement-required task types from every
+    //   pool, BEFORE the candidate count / duration logic uses them. This
+    //   guarantees the generator literally cannot pick a movement task.
+    if (isAtDeskOnly) {
+      const beforeEligible = eligible.length;
+      const beforeUser = userPool ? userPool.length : null;
+      const beforeGuaranteed = guaranteed.length;
+      eligible = eligible.filter((t) => !MOVEMENT_REQUIRED_TYPES.has(t));
+      if (userPool) userPool = userPool.filter((t) => !MOVEMENT_REQUIRED_TYPES.has(t));
+      guaranteed = guaranteed.filter((t) => !MOVEMENT_REQUIRED_TYPES.has(t));
+      console.log(
+        `[AI] atDeskOnly=true → eligible ${beforeEligible}→${eligible.length}` +
+        (beforeUser != null ? `, userPool ${beforeUser}→${userPool.length}` : "") +
+        (beforeGuaranteed ? `, guaranteed ${beforeGuaranteed}→${guaranteed.length}` : "")
+      );
+    }
 
     // If no explicit count, derive from duration using per-type estimated minutes.
     // Average the estimatedMinutes across the candidate pool so heavier task mixes
@@ -2082,6 +2114,7 @@ export async function createAiTaskset(req, res) {
       durationMinutes: durationMinutes || undefined,
       tasks: finalized,
       ...(displays.length > 0 ? { displays } : {}),
+      ...(isAtDeskOnly ? { atDeskOnly: true } : {}),
       meta: {
         pool,
         regeneratedCount: errors.length,

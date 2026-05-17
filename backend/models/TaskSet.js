@@ -111,6 +111,13 @@ const TaskSetSchema = new Schema(
     // Displays bound to this TaskSet (for Anchored Display mode & museum mode)
     displays: [DisplaySchema],
 
+    // When true, this taskset was generated explicitly for an at-desk
+    // (no scanning, no walking) classroom — the generator excluded
+    // movement-required task types from the pool, and the LiveSession
+    // launch panel will default the per-session 'On-screen only'
+    // checkbox to true.  Keeps the design intent visible at run time.
+    atDeskOnly: { type: Boolean, default: false },
+
     tasks: [TaskSchema],
     isPublic: { type: Boolean, default: false },
 
