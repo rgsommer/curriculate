@@ -267,6 +267,15 @@ Output JSON schema (return EXACTLY this shape, nothing else):
       messages: [{ role: "user", content: prompt }],
     }),
   });
+  if (r.status === 429) {
+    // Surface rate-limit info so the caller can back off + retry
+    const errText = await r.text().catch(() => "");
+    const retryAfter = r.headers.get("retry-after");
+    const err = new Error(`Anthropic 429: ${errText.slice(0, 200)}`);
+    err.status = 429;
+    err.retryAfterSec = retryAfter ? parseInt(retryAfter, 10) : null;
+    throw err;
+  }
   if (!r.ok) {
     const err = await r.text().catch(() => "");
     throw new Error(`Anthropic ${r.status}: ${err.slice(0, 200)}`);
@@ -290,6 +299,46 @@ Output JSON schema (return EXACTLY this shape, nothing else):
   try { parsed = JSON.parse(m[0]); } catch { return null; }
   parsed.sources = sources;
   return parsed;
+}
+
+// Sequential thesis writer with retry-on-429. Anthropic's input-token
+// rate limit (default 30K/min) is the bottleneck — firing 8 thesis calls
+// in parallel can exceed it. Running 2 at a time with retry on 429 keeps
+// usage well under the limit while finishing in ~the same wall-clock
+// time as Promise.allSettled would have, minus the retry stalls.
+async function mapWithThrottle(items, mapper, { concurrency = 2, maxRetries = 2 } = {}) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const results = new Array(items.length).fill(null);
+  let nextIdx = 0;
+  async function worker() {
+    while (true) {
+      const i = nextIdx++;
+      if (i >= items.length) return;
+      let lastErr = null;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          results[i] = await mapper(items[i], i);
+          lastErr = null;
+          break;
+        } catch (e) {
+          lastErr = e;
+          if (e?.status === 429 || /rate_limit|429/i.test(e?.message || "")) {
+            const delaySec = e?.retryAfterSec || (attempt === 0 ? 35 : 65);
+            console.warn(`[discovery] 429 on item ${i}, sleeping ${delaySec}s (attempt ${attempt + 1}/${maxRetries + 1})`);
+            await sleep(delaySec * 1000);
+            continue;
+          }
+          // Non-rate-limit error: don't retry
+          break;
+        }
+      }
+      if (lastErr && results[i] === null) {
+        console.warn(`[discovery] item ${i} failed after retries:`, lastErr?.message);
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: concurrency }, worker));
+  return results;
 }
 
 // ─── AI-only prospector (FMP-free fallback) ────────────────────────────
@@ -527,65 +576,65 @@ export async function runDiscoveryScan({ email, excludeTickers = [], sectors = n
     return { candidates: [], universeSize: universe.length, scoredCount: withFundamentals.length, error: "No candidates cleared the minimum-score threshold" };
   }
 
-  // 5. AI thesis writer — parallel with a small concurrency cap
+  // 5. AI thesis writer — throttled to 2 in parallel with retry-on-429.
+  // Anthropic's input-token rate limit (default 30K/min) caps how many
+  // thesis calls can fire simultaneously; bursting 8 in parallel exceeds
+  // that. Throttling to 2 keeps per-minute usage at ~8K tokens which is
+  // safely under the ceiling.
   const scanDate = new Date();
-  const results = await Promise.allSettled(
-    topCandidates.map(async (c) => {
-      const thesisPayload = {
-        ticker: c.symbol,
-        name: c.companyName || c.name,
-        sector: c.sector,
-        industry: c.industry,
-        marketCap: c.marketCap,
-        price: c.price,
-        score: c._score,
-        fundamentals: c.fundamentals,
-      };
-      const thesis = await writeCandidateThesis(thesisPayload).catch(() => null);
-      if (!thesis) return null;
-      const doc = {
-        email: email.toLowerCase(),
-        ticker: String(c.symbol).toUpperCase(),
-        name: c.companyName || c.name || "",
-        sector: c.sector || "",
-        industry: c.industry || "",
-        exchange: c.exchangeShortName || "",
-        marketCap: c.marketCap,
-        priceAtDiscovery: c.price,
-        currencyAtDiscovery: (c.exchangeShortName === "TSX" || c.exchangeShortName === "TSXV") ? "CAD" : "USD",
-        score: c._score,
-        signals: {
-          revenueGrowthPct: c.fundamentals?.revenueGrowthPct ?? null,
-          grossMarginPct: c.fundamentals?.grossMarginPct ?? null,
-          operatingMarginPct: c.fundamentals?.operatingMarginPct ?? null,
-          netDebtToEquity: c.fundamentals?.netDebtToEquity ?? null,
-        },
-        thesis: {
-          bullCase: thesis.bullCase || "",
-          killThesis: thesis.killThesis || "",
-          priceTarget: typeof thesis.priceTarget === "number" ? thesis.priceTarget : null,
-          horizonMonths: typeof thesis.horizonMonths === "number" ? thesis.horizonMonths : 12,
-          conviction: ["low", "medium", "high"].includes(thesis.conviction) ? thesis.conviction : "medium",
-          catalysts: Array.isArray(thesis.catalysts) ? thesis.catalysts.slice(0, 6) : [],
-          sources: Array.isArray(thesis.sources) ? thesis.sources : [],
-        },
-        scanDate,
-        lastPriceCheckedAt: scanDate,
-        lastPrice: c.price,
-      };
-      // Upsert keyed on (email, ticker, scanDate) — usually a fresh insert
-      const saved = await StocksDiscoveryCandidate.findOneAndUpdate(
-        { email: doc.email, ticker: doc.ticker, scanDate: doc.scanDate },
-        { $set: doc },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
-      return saved.toObject();
-    })
-  );
+  const results = await mapWithThrottle(topCandidates, async (c) => {
+    const thesisPayload = {
+      ticker: c.symbol,
+      name: c.companyName || c.name,
+      sector: c.sector,
+      industry: c.industry,
+      marketCap: c.marketCap,
+      price: c.price,
+      score: c._score,
+      fundamentals: c.fundamentals,
+    };
+    const thesis = await writeCandidateThesis(thesisPayload);
+    if (!thesis) return null;
+    const doc = {
+      email: email.toLowerCase(),
+      ticker: String(c.symbol).toUpperCase(),
+      name: c.companyName || c.name || "",
+      sector: c.sector || "",
+      industry: c.industry || "",
+      exchange: c.exchangeShortName || "",
+      marketCap: c.marketCap,
+      priceAtDiscovery: c.price,
+      currencyAtDiscovery: (c.exchangeShortName === "TSX" || c.exchangeShortName === "TSXV") ? "CAD" : "USD",
+      score: c._score,
+      signals: {
+        revenueGrowthPct: c.fundamentals?.revenueGrowthPct ?? null,
+        grossMarginPct: c.fundamentals?.grossMarginPct ?? null,
+        operatingMarginPct: c.fundamentals?.operatingMarginPct ?? null,
+        netDebtToEquity: c.fundamentals?.netDebtToEquity ?? null,
+      },
+      thesis: {
+        bullCase: thesis.bullCase || "",
+        killThesis: thesis.killThesis || "",
+        priceTarget: typeof thesis.priceTarget === "number" ? thesis.priceTarget : null,
+        horizonMonths: typeof thesis.horizonMonths === "number" ? thesis.horizonMonths : 12,
+        conviction: ["low", "medium", "high"].includes(thesis.conviction) ? thesis.conviction : "medium",
+        catalysts: Array.isArray(thesis.catalysts) ? thesis.catalysts.slice(0, 6) : [],
+        sources: Array.isArray(thesis.sources) ? thesis.sources : [],
+      },
+      scanDate,
+      lastPriceCheckedAt: scanDate,
+      lastPrice: c.price,
+    };
+    // Upsert keyed on (email, ticker, scanDate) — usually a fresh insert
+    const saved = await StocksDiscoveryCandidate.findOneAndUpdate(
+      { email: doc.email, ticker: doc.ticker, scanDate: doc.scanDate },
+      { $set: doc },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    return saved.toObject();
+  }, { concurrency: 2, maxRetries: 2 });
 
-  const candidates = results
-    .map((r) => r.status === "fulfilled" ? r.value : null)
-    .filter(Boolean);
+  const candidates = results.filter(Boolean);
 
   return {
     candidates,
