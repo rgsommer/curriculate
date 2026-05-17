@@ -696,9 +696,28 @@ router.post("/", requireStocksAuth, async (req, res) => {
     const generatedAt = new Date();
     const recsToSave = [];
     const recCardIndices = [];
+    // Two-tier extraction:
+    //   1. parseRec() — finds the SINGLE primary rec at the top of a card
+    //      (the JSON-format path where each card is its own rec)
+    //   2. parseRecsFromBriefing() — finds ALL inline Action: lines in a
+    //      card body (the markdown-fallback path where a single "Signals
+    //      per holding" card contains 7+ ticker recommendations)
+    // Dedupe by (action,ticker,entryPrice) so a hit by both extractors
+    // doesn't double-count.
+    const dedupeKey = (r) => `${r.action}|${r.ticker}|${r.entryPrice ?? ""}`;
+    const seen = new Set();
     parsed.advice.forEach((card, idx) => {
-      const rec = parseRec(card.body);
-      if (rec && rec.entryPrice && rec.action !== "HOLD") {
+      const collected = [];
+      const primary = parseRec(card.body);
+      if (primary && primary.entryPrice && primary.action !== "HOLD") collected.push(primary);
+      const inline = parseRecsFromBriefing(card.body || "");
+      for (const r of inline) {
+        if (r && r.entryPrice && r.action !== "HOLD") collected.push(r);
+      }
+      for (const rec of collected) {
+        const k = dedupeKey(rec);
+        if (seen.has(k)) continue;
+        seen.add(k);
         recsToSave.push({
           email: req.stocksUser.email,
           generatedAt,
