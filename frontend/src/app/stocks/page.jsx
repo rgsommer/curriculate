@@ -1462,48 +1462,140 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
 
 function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPrices }) {
   const fx = user.fxUsdCad || 1.37;
-  const total = totalCad(user.positions, fx);
+  const bookTotal = totalCad(user.positions, fx) + (user.accounts || []).reduce(
+    (s, a) => s + (a.cashCad || 0) + (a.cashUsd || 0) * fx, 0
+  );
+
+  // Group positions by account, preserving the original index so edit/delete
+  // callbacks still route correctly to user.positions[i].
+  const positionsByAcct = new Map();
+  const unassigned = [];
+  (user.positions || []).forEach((p, idx) => {
+    const tagged = Object.assign({}, p, { _origIdx: idx });
+    const acct = (user.accounts || []).find((a) => a.id === p.acct);
+    if (acct) {
+      if (!positionsByAcct.has(p.acct)) positionsByAcct.set(p.acct, []);
+      positionsByAcct.get(p.acct).push(tagged);
+    } else {
+      unassigned.push(tagged);
+    }
+  });
+
+  // Per-account summaries, sorted by total value desc
+  const accountSummaries = (user.accounts || []).map((a) => {
+    const items = positionsByAcct.get(a.id) || [];
+    const equityCad = items.reduce((s, p) => s + valueOfPosition(p, fx).cad, 0);
+    const cashCadEquiv = (a.cashCad || 0) + (a.cashUsd || 0) * fx;
+    return { account: a, items, equityCad, cashCadEquiv, total: equityCad + cashCadEquiv };
+  }).sort((a, b) => b.total - a.total);
+
   return (
     <div>
       <h2>Positions</h2>
-      <div className="sa-breadcrumb">{user.positions.length} positions across {user.accounts.length || 1} account{user.accounts.length === 1 ? "" : "s"}</div>
+      <div className="sa-breadcrumb">
+        {user.positions.length} position{user.positions.length === 1 ? "" : "s"} across {accountSummaries.length} account{accountSummaries.length === 1 ? "" : "s"}
+        {unassigned.length > 0 && ` · ${unassigned.length} unassigned`}
+      </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
         <button className="sa-btn" onClick={() => onOpenModal(null)}>+ Add position</button>
         <button className="sa-btn secondary" onClick={onAddAccount}>+ Add account</button>
         <button className="sa-btn secondary" onClick={onRefreshPrices} title="Try fetch latest prices from Yahoo Finance">↻ Refresh prices</button>
       </div>
-      <div className="sa-card" style={{ padding: 0 }}>
-        <table className="sa-table">
-          <thead><tr>
-            <th>Ticker</th><th>Account</th><th>Qty</th><th>Price</th><th>CCY</th><th>Value (CAD)</th><th>%</th><th></th>
-          </tr></thead>
-          <tbody>
-            {user.positions.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: "center", padding: 40, color: "var(--sa-muted)" }}>No positions yet. Click <b>Add position</b> to get started.</td></tr>
-            ) : user.positions.map((p, i) => {
-              const v = valueOfPosition(p, fx);
-              const acct = user.accounts.find((a) => a.id === p.acct);
-              const price = p.ccy === "USD" ? p.priceUsd : p.priceCad;
-              return (
-                <tr key={i}>
-                  <td className="tk">{p.ticker}<span className="sub">{p.name || ""}</span></td>
-                  <td style={{ textAlign: "left", color: "var(--sa-muted)" }}>{acct ? acct.name : "—"}</td>
-                  <td>{p.qty.toLocaleString()}</td>
-                  <td>{price != null ? price.toFixed(4) : "—"}</td>
-                  <td>{p.ccy}</td>
-                  <td>{fmtMoney(v.cad, "CAD")}</td>
-                  <td>{total > 0 ? ((v.cad / total) * 100).toFixed(1) : "0.0"}%</td>
-                  <td>
-                    <button className="sa-btn ghost" onClick={() => onOpenModal(i)}>edit</button>
-                    {" "}
-                    <button className="sa-btn ghost" onClick={() => onDelete(i)}>delete</button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+
+      {user.positions.length === 0 && accountSummaries.length === 0 && (
+        <div className="sa-card" style={{ textAlign: "center", padding: 40, color: "var(--sa-muted)" }}>
+          No positions yet. Click <b>Add position</b> to get started.
+        </div>
+      )}
+
+      {accountSummaries.map(({ account, items, equityCad, cashCadEquiv, total: accTotal }) => (
+        <div key={account.id} className="sa-card" style={{ padding: 0, marginBottom: 14, overflow: "hidden" }}>
+          <div style={{ padding: "12px 16px", background: "var(--sa-panel-2)", borderBottom: "1px solid var(--sa-border)", display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>{account.name}</div>
+              <div className="sa-muted" style={{ fontSize: 11, marginTop: 2 }}>
+                {items.length} position{items.length === 1 ? "" : "s"} · cash <span className="sa-amount">{fmtMoney(account.cashCad || 0, "CAD")}</span> + <span className="sa-amount">{fmtMoney(account.cashUsd || 0, "USD")}</span>
+              </div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontWeight: 700, fontSize: 15 }}><span className="sa-amount">{fmtMoney(accTotal, "CAD")}</span></div>
+              <div className="sa-muted" style={{ fontSize: 11, marginTop: 2 }}>
+                equity <span className="sa-amount">{fmtMoney(equityCad, "CAD")}</span> · {bookTotal > 0 ? ((accTotal / bookTotal) * 100).toFixed(1) : "0"}% of book
+              </div>
+            </div>
+          </div>
+          {items.length === 0 ? (
+            <div style={{ padding: "16px 20px", color: "var(--sa-muted)", fontSize: 13, fontStyle: "italic" }}>
+              Cash only — no positions held in this account.
+            </div>
+          ) : (
+            <table className="sa-table" style={{ marginBottom: 0 }}>
+              <thead><tr>
+                <th>Ticker</th><th>Qty</th><th>Price</th><th>CCY</th><th>Value (CAD)</th><th>% acct</th><th>% book</th><th></th>
+              </tr></thead>
+              <tbody>
+                {items.map((p) => {
+                  const v = valueOfPosition(p, fx);
+                  const price = p.ccy === "USD" ? p.priceUsd : p.priceCad;
+                  return (
+                    <tr key={p._origIdx}>
+                      <td className="tk">{p.ticker}<span className="sub">{p.name || ""}</span></td>
+                      <td>{p.qty.toLocaleString()}</td>
+                      <td>{price != null ? price.toFixed(4) : "—"}</td>
+                      <td>{p.ccy}</td>
+                      <td><span className="sa-amount">{fmtMoney(v.cad, "CAD")}</span></td>
+                      <td>{equityCad > 0 ? ((v.cad / equityCad) * 100).toFixed(1) : "0.0"}%</td>
+                      <td>{bookTotal > 0 ? ((v.cad / bookTotal) * 100).toFixed(1) : "0.0"}%</td>
+                      <td>
+                        <button className="sa-btn ghost" onClick={() => onOpenModal(p._origIdx)}>edit</button>
+                        {" "}
+                        <button className="sa-btn ghost" onClick={() => onDelete(p._origIdx)}>delete</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ))}
+
+      {unassigned.length > 0 && (
+        <div className="sa-card" style={{ padding: 0, marginBottom: 14, overflow: "hidden", borderColor: "var(--sa-amber)" }}>
+          <div style={{ padding: "12px 16px", background: "var(--sa-amber-soft)", borderBottom: "1px solid var(--sa-amber)" }}>
+            <div style={{ fontWeight: 700, fontSize: 15, color: "var(--sa-amber)" }}>⚠ Unassigned positions</div>
+            <div className="sa-muted" style={{ fontSize: 11, marginTop: 2 }}>
+              These positions reference an account ID that doesn't match any current account. Click Edit on each row to reassign.
+            </div>
+          </div>
+          <table className="sa-table" style={{ marginBottom: 0 }}>
+            <thead><tr>
+              <th>Ticker</th><th>Acct ID</th><th>Qty</th><th>Price</th><th>CCY</th><th>Value (CAD)</th><th></th>
+            </tr></thead>
+            <tbody>
+              {unassigned.map((p) => {
+                const v = valueOfPosition(p, fx);
+                const price = p.ccy === "USD" ? p.priceUsd : p.priceCad;
+                return (
+                  <tr key={p._origIdx}>
+                    <td className="tk">{p.ticker}</td>
+                    <td className="sa-muted">{p.acct || "—"}</td>
+                    <td>{p.qty.toLocaleString()}</td>
+                    <td>{price != null ? price.toFixed(4) : "—"}</td>
+                    <td>{p.ccy}</td>
+                    <td><span className="sa-amount">{fmtMoney(v.cad, "CAD")}</span></td>
+                    <td>
+                      <button className="sa-btn ghost" onClick={() => onOpenModal(p._origIdx)}>edit</button>
+                      {" "}
+                      <button className="sa-btn ghost" onClick={() => onDelete(p._origIdx)}>delete</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
