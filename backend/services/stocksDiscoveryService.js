@@ -453,6 +453,19 @@ async function saveAiOnlyCandidates({ email, candidates, sharedSources, excludeS
     if (!ticker) continue;
     if (excludeSet.has(ticker)) continue;
     try {
+      // Score the candidate using whatever signals the AI surfaced. Less
+      // accurate than the FMP-driven path (which has full TTM ratios + cash)
+      // but gives the UI a real number instead of a misleading 0/100.
+      const aiFundamentals = {
+        revenueGrowthPct: c?.signals?.revenueGrowthPct ?? null,
+        grossMarginPct: c?.signals?.grossMarginPct ?? null,
+        operatingMarginPct: c?.signals?.operatingMarginPct ?? null,
+        operatingIncomeGrowthPct: c?.signals?.operatingIncomeGrowthPct ?? null,
+        netDebtToEquity: c?.signals?.netDebtToEquity ?? null,
+        cashAndShortTermInvestments: c?.signals?.cashAndShortTermInvestments ?? null,
+      };
+      const aiUniverseRow = { marketCap: c.marketCap, beta: c?.signals?.beta };
+      const aiScore = scoreCandidate(aiUniverseRow, aiFundamentals);
       const doc = await StocksDiscoveryCandidate.findOneAndUpdate(
         { email: email.toLowerCase(), ticker, scanDate },
         {
@@ -466,7 +479,7 @@ async function saveAiOnlyCandidates({ email, candidates, sharedSources, excludeS
             marketCap: typeof c.marketCap === "number" ? c.marketCap : null,
             priceAtDiscovery: typeof c.currentPrice === "number" ? c.currentPrice : null,
             currencyAtDiscovery: (c.exchange === "TSX" || c.exchange === "TSXV") ? "CAD" : "USD",
-            score: 0, // no composite score for AI-only path
+            score: aiScore,
             signals: {
               revenueGrowthPct: c?.signals?.revenueGrowthPct ?? null,
               grossMarginPct: c?.signals?.grossMarginPct ?? null,

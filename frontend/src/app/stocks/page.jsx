@@ -3796,7 +3796,7 @@ function DiscoverView({ sessionToken, user }) {
                 <span style={{ background: pal.bg, color: pal.fg, padding: "2px 9px", borderRadius: 99, fontSize: 11, fontWeight: 700, letterSpacing: ".04em" }}>
                   {c.thesis?.conviction?.toUpperCase() || "—"} conviction
                 </span>
-                <span className="sa-muted" style={{ fontSize: 11 }}>score {c.score}/100</span>
+                <span className="sa-muted" style={{ fontSize: 11 }}>{c.score > 0 ? `score ${c.score}/100` : "not scored"}</span>
               </div>
             </div>
 
@@ -5231,8 +5231,41 @@ body.stocks-app-mode {
 .sa-main { padding: 36px 44px; overflow: auto; }
 @media (max-width: 980px) {
   .sa-app { grid-template-columns: 1fr; }
-  .sa-side { display: none; }
-  .sa-main { padding: 24px 18px; }
+  /* On mobile, convert the side panel into a sticky horizontal nav bar
+     so the user always has tab navigation. Hide the brand and user-info
+     blocks to save space; sign-out is still reachable via Settings. */
+  .sa-side {
+    display: flex;
+    flex-direction: row;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    border-right: none;
+    border-bottom: 1px solid var(--sa-border);
+    background: rgba(255,255,255,.94);
+    backdrop-filter: blur(10px);
+    padding: 8px 10px;
+    gap: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sa-brand, .sa-user { display: none; }
+  .sa-nav {
+    flex-direction: row;
+    gap: 4px;
+    flex: 1;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+  .sa-nav button {
+    flex-shrink: 0;
+    padding: 8px 12px;
+    font-size: 13px;
+    border-radius: 8px;
+  }
+  .sa-nav button .dot { display: none; }
+  .sa-main { padding: 18px 12px; }
 }
 
 /* ── Dashboard ────────────────────────────────────────────────── */
