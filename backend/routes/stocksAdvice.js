@@ -30,6 +30,7 @@ import {
 } from "../jobs/stocksDailyBriefing.js";
 import StocksAdviceSnapshot from "../models/StocksAdviceSnapshot.js";
 import { buildAllAccountReports, formatAllReportsMarkdown, formatAccountReportMarkdown } from "../services/stocksMonthlyReport.js";
+import { briefingToAdviceCards } from "../jobs/stocksDailyBriefing.js";
 import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnicals.js";
 import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
@@ -562,15 +563,29 @@ async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, l
     }
   }
   const parsed = extractJson(textOut);
-  if (!parsed || !Array.isArray(parsed.advice)) {
-    throw new Error("AI returned unparseable response");
+  if (parsed && Array.isArray(parsed.advice)) {
+    for (const card of parsed.advice) {
+      if (card.title) card.title = stripCiteTags(card.title);
+      if (card.body) card.body = stripCiteTags(card.body);
+      if (card.meta) card.meta = stripCiteTags(card.meta);
+    }
+    return { advice: parsed.advice, sources: parsed.sources?.length ? parsed.sources : sources };
   }
-  for (const card of parsed.advice) {
-    if (card.title) card.title = stripCiteTags(card.title);
-    if (card.body) card.body = stripCiteTags(card.body);
-    if (card.meta) card.meta = stripCiteTags(card.meta);
+  // Fallback: the model returned prose/markdown instead of strict JSON.
+  // Parse it as a briefing using the H2/H3 splitter so we still get usable
+  // cards (and the scorecard parser still extracts Action: recs from card
+  // bodies). Without this fallback, a single non-JSON response zeroes out
+  // the entire run including rec-tracking — bad for the scorecard.
+  const cards = briefingToAdviceCards(textOut);
+  if (cards.length > 0) {
+    return { advice: cards, sources };
   }
-  return { advice: parsed.advice, sources: parsed.sources?.length ? parsed.sources : sources };
+  // Last resort: treat the entire response as one card so the user at
+  // least sees the AI's thinking instead of a red error.
+  return {
+    advice: [{ title: "AI advice", body: textOut.slice(0, 8000) }],
+    sources,
+  };
 }
 
 router.post("/", requireStocksAuth, async (req, res) => {
