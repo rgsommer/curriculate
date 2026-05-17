@@ -661,12 +661,24 @@ router.post("/", requireStocksAuth, async (req, res) => {
       }
     }
 
-    const parsed = extractJson(textOut);
+    let parsed = extractJson(textOut);
     if (!parsed || !Array.isArray(parsed.advice)) {
-      return res.status(502).json({
-        error: "AI returned unparseable response",
-        raw: textOut.slice(0, 800),
-      });
+      // Fallback: AI returned prose/markdown instead of strict JSON. Parse
+      // it as a briefing using the H2/H3 splitter so we still get usable
+      // cards and the scorecard parser still extracts Action: recs from
+      // card bodies. Same approach as runOneAdvicePass.
+      const cards = briefingToAdviceCards(textOut);
+      if (cards.length > 0) {
+        parsed = { advice: cards, sources };
+      } else if (textOut && textOut.trim().length > 0) {
+        // Last resort — single card containing the whole response so the
+        // user at least sees the AI's output instead of a red error.
+        parsed = { advice: [{ title: "AI advice", body: textOut.slice(0, 8000) }], sources };
+      } else {
+        return res.status(502).json({
+          error: "AI returned empty response",
+        });
+      }
     }
 
     // Defense-in-depth: also strip cite tags from each card's text fields

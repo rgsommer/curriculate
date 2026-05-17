@@ -178,6 +178,120 @@ router.post("/candidates/:id/dismiss", requireStocksAuth, async (req, res) => {
   }
 });
 
+// GET /api/stocks-discover/scorecard
+//
+// Aggregate hit-rate stats for past discovery candidates. For each
+// candidate older than 7 days, computes the % return from priceAtDiscovery
+// to current Yahoo price, and compares against SPY for the same window.
+// Output:
+//   { total, scored, avgReturnPct, medianReturnPct, hitRatePct (>0 returns),
+//     vsBenchmarkPct (alpha vs SPY), winners[], losers[] }
+router.get("/scorecard", requireStocksAuth, async (req, res) => {
+  try {
+    const since = new Date(Date.now() - 365 * 86400 * 1000);
+    const candidates = await StocksDiscoveryCandidate.find({
+      email: req.stocksUser.email,
+      scanDate: { $gte: since, $lte: new Date(Date.now() - 7 * 86400 * 1000) }, // at least 7 days old
+      dismissed: { $ne: true },
+    }).lean();
+
+    if (candidates.length === 0) {
+      return res.json({ total: 0, scored: 0, avgReturnPct: null, hitRatePct: null, items: [] });
+    }
+
+    // Pull current price for each ticker + SPY in parallel
+    const uniqueTickers = [...new Set(candidates.map((c) => c.ticker))];
+    const priceMap = {};
+    await Promise.all(uniqueTickers.map(async (t) => { priceMap[t] = await fetchCurrentPrice(t); }));
+    const spyNow = await fetchCurrentPrice("SPY");
+
+    // For SPY benchmark over each window, fetch one-shot historical data
+    // for SPY going back 1 year, then look up the closest historical close
+    // to each candidate's scanDate.
+    let spyHistory = [];
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=1y`;
+      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Curriculate)" } });
+      if (r.ok) {
+        const j = await r.json();
+        const ts = j?.chart?.result?.[0]?.timestamp || [];
+        const cl = j?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+        spyHistory = ts.map((t, i) => ({ t: new Date(t * 1000), p: cl[i] })).filter((x) => x.p);
+      }
+    } catch { /* swallow */ }
+    const spyAtDate = (date) => {
+      if (!spyHistory.length) return null;
+      const target = date.getTime();
+      let closest = spyHistory[0];
+      let bestDiff = Math.abs(closest.t.getTime() - target);
+      for (const h of spyHistory) {
+        const d = Math.abs(h.t.getTime() - target);
+        if (d < bestDiff) { bestDiff = d; closest = h; }
+      }
+      return closest.p;
+    };
+
+    const items = [];
+    for (const c of candidates) {
+      const px = priceMap[c.ticker];
+      if (px == null || !c.priceAtDiscovery) continue;
+      const returnPct = ((px - c.priceAtDiscovery) / c.priceAtDiscovery) * 100;
+      const spyStart = spyAtDate(new Date(c.scanDate));
+      const spyReturnPct = (spyNow && spyStart)
+        ? ((spyNow - spyStart) / spyStart) * 100
+        : null;
+      const alphaPct = spyReturnPct != null ? returnPct - spyReturnPct : null;
+      items.push({
+        _id: c._id,
+        ticker: c.ticker,
+        scanDate: c.scanDate,
+        daysOld: Math.round((Date.now() - new Date(c.scanDate).getTime()) / 86400000),
+        priceAtDiscovery: c.priceAtDiscovery,
+        currentPrice: px,
+        returnPct,
+        spyReturnPct,
+        alphaPct,
+        priceTarget: c.thesis?.priceTarget || null,
+        conviction: c.thesis?.conviction || null,
+        starred: c.starred,
+      });
+    }
+
+    if (items.length === 0) {
+      return res.json({ total: candidates.length, scored: 0, avgReturnPct: null, hitRatePct: null, items: [] });
+    }
+
+    items.sort((a, b) => b.returnPct - a.returnPct);
+    const returns = items.map((i) => i.returnPct).sort((a, b) => a - b);
+    const median = returns.length % 2 === 0
+      ? (returns[returns.length / 2 - 1] + returns[returns.length / 2]) / 2
+      : returns[Math.floor(returns.length / 2)];
+    const avg = returns.reduce((s, r) => s + r, 0) / returns.length;
+    const hits = items.filter((i) => i.returnPct > 0).length;
+    const beatBenchmark = items.filter((i) => i.alphaPct != null && i.alphaPct > 0).length;
+    const benchmarked = items.filter((i) => i.alphaPct != null).length;
+    const avgAlpha = benchmarked > 0
+      ? items.filter((i) => i.alphaPct != null).reduce((s, i) => s + i.alphaPct, 0) / benchmarked
+      : null;
+
+    res.json({
+      total: candidates.length,
+      scored: items.length,
+      avgReturnPct: avg,
+      medianReturnPct: median,
+      hitRatePct: (hits / items.length) * 100,
+      benchmarkBeatRatePct: benchmarked > 0 ? (beatBenchmark / benchmarked) * 100 : null,
+      avgAlphaVsSpyPct: avgAlpha,
+      bestPick: items[0],
+      worstPick: items[items.length - 1],
+      items,
+    });
+  } catch (err) {
+    console.error("stocks-discover /scorecard error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
 // POST /api/stocks-discover/candidates/:id/refresh-price — pull current
 // price and record it. Used by the (future) hit-rate scorecard.
 router.post("/candidates/:id/refresh-price", requireStocksAuth, async (req, res) => {

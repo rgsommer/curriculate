@@ -3690,7 +3690,34 @@ function DiscoverView({ sessionToken, user }) {
       </div>
 
       <div className="sa-card" style={{ marginBottom: 14, padding: 14 }}>
-        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Scan parameters</div>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Presets — one click to scan a theme</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+          {[
+            { id: "growth",   label: "🚀 Small-cap growth",    min: 200,  max: 5000,  sectors: "" },
+            { id: "micro",    label: "🌱 Microcap moonshots",  min: 50,   max: 500,   sectors: "" },
+            { id: "biotech",  label: "🧬 Biotech catalysts",   min: 100,  max: 3000,  sectors: "Healthcare" },
+            { id: "ai",       label: "🤖 AI infrastructure",   min: 500,  max: 20000, sectors: "Technology" },
+            { id: "energy",   label: "⚡ Energy transition",   min: 300,  max: 8000,  sectors: "Energy,Utilities,Industrials" },
+            { id: "defense",  label: "🛡 Defense / aerospace", min: 200,  max: 5000,  sectors: "Industrials" },
+            { id: "consumer", label: "🛒 Consumer turnarounds",min: 100,  max: 3000,  sectors: "Consumer Cyclical,Consumer Defensive" },
+            { id: "fintech",  label: "💳 Fintech disruption",  min: 200,  max: 6000,  sectors: "Financial Services,Technology" },
+            { id: "canadian", label: "🍁 Canadian smallcap",   min: 100,  max: 3000,  sectors: "Basic Materials,Energy" },
+          ].map((p) => (
+            <button
+              key={p.id}
+              className="sa-btn ghost"
+              onClick={() => {
+                setMarketCapMin(p.min);
+                setMarketCapMax(p.max);
+                setSectorsCsv(p.sectors);
+              }}
+              style={{ fontSize: 12, padding: "5px 11px" }}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, paddingTop: 4, borderTop: "1px dashed var(--sa-border)" }}>Scan parameters</div>
         <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 1fr 2fr auto", gap: 10, alignItems: "end" }}>
           <div>
             <label style={{ fontSize: 11, color: "var(--sa-muted)" }}>Top N</label>
@@ -3853,8 +3880,27 @@ function PerformanceView({ sessionToken }) {
   const [advisorPerf, setAdvisorPerf] = useState(null);
   const [scorecard, setScorecard] = useState(null);
   const [scorecardDays, setScorecardDays] = useState(30);
+  const [discoveryScorecard, setDiscoveryScorecard] = useState(null);
   const [busy, setBusy] = useState(true);
   const [err, setErr] = useState(null);
+
+  // Pull Discovery scorecard once on mount (decoupled from advice scorecard
+  // since it has its own data shape and time-window logic).
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-discover/scorecard`, {
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (!cancelled) setDiscoveryScorecard(j);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3901,6 +3947,9 @@ function PerformanceView({ sessionToken }) {
         days={scorecardDays}
         onChangeDays={setScorecardDays}
       />
+
+      {/* ── DISCOVERY SCORECARD: did the Discover engine actually find winners? ── */}
+      <DiscoveryScorecardCard data={discoveryScorecard} />
 
       {/* ── Advisor scorecard ── */}
       <div className="sa-card" style={{ marginBottom: 18 }}>
@@ -4673,6 +4722,82 @@ function TradesView({ sessionToken }) {
 // window: did the user execute it? Was the call right? How much $ did it
 // produce (or save by being skipped)?
 // =============================================================================
+// =============================================================================
+// Discovery scorecard — did the Discover engine actually find winners?
+// Compares each past candidate's % return from priceAtDiscovery to current
+// Yahoo price, against SPY's return over the same window. Honest feedback.
+// =============================================================================
+function DiscoveryScorecardCard({ data }) {
+  if (!data) {
+    return (
+      <div className="sa-card" style={{ marginBottom: 18 }}>
+        <h3>Discovery scorecard</h3>
+        <div className="sa-muted" style={{ padding: 20 }}>Loading…</div>
+      </div>
+    );
+  }
+  const fmtPct = (n) => n == null ? "—" : ((n >= 0 ? "+" : "") + n.toFixed(1) + "%");
+  const colorPct = (n) => n == null ? "var(--sa-muted)" : (n >= 0 ? "var(--sa-green)" : "var(--sa-red)");
+
+  if (data.scored === 0) {
+    return (
+      <div className="sa-card" style={{ marginBottom: 18 }}>
+        <h3>Discovery scorecard</h3>
+        <div className="sa-muted" style={{ fontSize: 12, marginTop: 4 }}>Did the Discover engine actually find winners? Returns measured from priceAtDiscovery to today vs SPY for the same window.</div>
+        <div className="sa-muted" style={{ padding: 20, textAlign: "center" }}>
+          {data.total === 0
+            ? "No discovery candidates yet. Click 🔍 Scan on the Discover tab."
+            : `${data.total} candidate${data.total === 1 ? "" : "s"} on file but none old enough (>7 days) or scoreable.`}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <h3 style={{ margin: 0 }}>Discovery scorecard</h3>
+      <div className="sa-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 14 }}>
+        Each past Discover candidate's % return from priceAtDiscovery to today, vs SPY over the same window. Honest performance check — most leads underperform; the question is whether the winners pay for the losers.
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
+        <div className="sa-stat"><div className="label">Candidates scored</div><div className="value">{data.scored}</div><div className="delta muted">of {data.total} tracked</div></div>
+        <div className="sa-stat"><div className="label">Avg return</div><div className="value" style={{ color: colorPct(data.avgReturnPct) }}><span className="sa-amount">{fmtPct(data.avgReturnPct)}</span></div><div className="delta muted">median <span className="sa-amount">{fmtPct(data.medianReturnPct)}</span></div></div>
+        <div className="sa-stat"><div className="label">Hit rate (>0%)</div><div className="value">{data.hitRatePct != null ? data.hitRatePct.toFixed(0) + "%" : "—"}</div><div className="delta muted">winners</div></div>
+        <div className="sa-stat"><div className="label">vs SPY (alpha)</div><div className="value" style={{ color: colorPct(data.avgAlphaVsSpyPct) }}><span className="sa-amount">{fmtPct(data.avgAlphaVsSpyPct)}</span></div><div className="delta muted">avg per candidate</div></div>
+        <div className="sa-stat"><div className="label">Beat SPY</div><div className="value">{data.benchmarkBeatRatePct != null ? data.benchmarkBeatRatePct.toFixed(0) + "%" : "—"}</div><div className="delta muted">of scored</div></div>
+      </div>
+
+      <table className="sa-table" style={{ marginBottom: 0 }}>
+        <thead><tr>
+          <th>Ticker</th>
+          <th>Found</th>
+          <th>At</th>
+          <th>Now</th>
+          <th>Return</th>
+          <th>SPY return</th>
+          <th>Alpha</th>
+          <th>Conv</th>
+        </tr></thead>
+        <tbody>
+          {data.items.map((i) => (
+            <tr key={i._id}>
+              <td className="tk">{i.starred && "★ "}{i.ticker}</td>
+              <td className="sa-muted">{new Date(i.scanDate).toLocaleDateString([], { month: "short", day: "numeric" })} ({i.daysOld}d)</td>
+              <td><span className="sa-amount">${i.priceAtDiscovery?.toFixed(2)}</span></td>
+              <td><span className="sa-amount">${i.currentPrice?.toFixed(2)}</span></td>
+              <td style={{ color: colorPct(i.returnPct), fontWeight: 600 }}><span className="sa-amount">{fmtPct(i.returnPct)}</span></td>
+              <td style={{ color: colorPct(i.spyReturnPct) }}><span className="sa-amount">{fmtPct(i.spyReturnPct)}</span></td>
+              <td style={{ color: colorPct(i.alphaPct), fontWeight: 600 }}><span className="sa-amount">{fmtPct(i.alphaPct)}</span></td>
+              <td className="sa-muted" style={{ fontSize: 11 }}>{i.conviction || "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function AdviceScorecardCard({ scorecard, days, onChangeDays }) {
   if (!scorecard) {
     return (

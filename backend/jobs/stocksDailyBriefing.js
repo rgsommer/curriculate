@@ -30,6 +30,31 @@ import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorA
 import { computeLessons, formatLessonsBlock } from "../services/stocksLessonsLearned.js";
 import { getTranscriptsForTopHoldings, formatTranscriptsBlock } from "../services/stocksEarningsTranscripts.js";
 import { buildAllAccountReports, formatAllReportsMarkdown, formatAccountReportMarkdown, isLastTradingDayOfMonth } from "../services/stocksMonthlyReport.js";
+import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
+
+// Pull the user's starred discovery candidates and format them as a
+// "WATCH LIST" block for the AI advice/briefing prompts. The AI is told
+// to comment on each starred name alongside portfolio holdings — closes
+// the loop from Discover → Advice so flagged ideas get tracked over time.
+export async function buildStarredWatchListBlock(email) {
+  try {
+    const starred = await StocksDiscoveryCandidate
+      .find({ email: email.toLowerCase(), starred: true, dismissed: { $ne: true } })
+      .sort({ scanDate: -1 })
+      .limit(10)
+      .lean();
+    if (starred.length === 0) return "";
+    const lines = starred.map((c) => {
+      const tgt = c.thesis?.priceTarget ? ` target $${c.thesis.priceTarget.toFixed(2)}` : "";
+      const conv = c.thesis?.conviction ? ` (${c.thesis.conviction} conviction)` : "";
+      const summary = (c.thesis?.bullCase || "").slice(0, 120);
+      return `  - ${c.ticker}${conv}${tgt} — ${summary}`;
+    });
+    return `\nUSER-STARRED WATCH LIST (Discover candidates the user has flagged — comment on each in your briefing/advice alongside portfolio holdings; flag any that have hit their target or invalidated their thesis):\n${lines.join("\n")}\n`;
+  } catch (e) {
+    return "";
+  }
+}
 
 // Shared current-price fetcher (server-side; no CORS) — used by the
 // open-recommendation monitor below.
@@ -380,7 +405,7 @@ function formatQuantSignalsBlock(quantSignals) {
   return `\nQUANT SIGNALS PER HOLDING (pre-computed — use THESE numbers, don't guess):\n${lines.join("\n")}\n`;
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "") {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -474,7 +499,7 @@ Trading-cost frictions (factor into every recommendation):
 
 Per-account cash inventory (CRITICAL):
 ${accountCashTable}
-${contributionGoalsBlock}${plannedWithdrawalsBlock}
+${contributionGoalsBlock}${plannedWithdrawalsBlock}${watchListBlock}
 
 ACCOUNT-SOURCE RULE (mandatory):
 - Every BUY rec names ONE source account (Non-Spousal / RRSP / TFSA).
@@ -637,7 +662,7 @@ export async function generateBriefing(profile) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
   const summary = portfolioSummary(profile);
   // Run all upstream signals in parallel
-  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts] = await Promise.all([
+  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock] = await Promise.all([
     monitorOpenRecs(profile.email).catch((e) => { console.warn("[monitorOpenRecs] warn:", e?.message); return { alerts: [] }; }),
     computeQuantSignals(profile).catch((e) => { console.warn("[computeQuantSignals] warn:", e?.message); return {}; }),
     getMacroContext().catch((e) => { console.warn("[getMacroContext] warn:", e?.message); return null; }),
@@ -645,9 +670,10 @@ export async function generateBriefing(profile) {
     computeFactorTilts(profile).catch((e) => { console.warn("[computeFactorTilts] warn:", e?.message); return null; }),
     computeLessons(profile.email).catch((e) => { console.warn("[computeLessons] warn:", e?.message); return null; }),
     getTranscriptsForTopHoldings(profile).catch((e) => { console.warn("[getTranscriptsForTopHoldings] warn:", e?.message); return null; }),
+    buildStarredWatchListBlock(profile.email).catch(() => ""),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
-  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts);
+  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock);
 
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -841,5 +867,88 @@ export function scheduleMonthlyReport() {
   console.log(`[stocks-monthly-report] scheduled: "${expr}" ${tz} (runs only on last trading day)`);
   return cron.schedule(expr, async () => {
     try { await runMonthlyReportJob(); } catch (e) { console.error("[stocks-monthly-report] tick error:", e); }
+  }, { timezone: tz });
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Weekly Discovery scan job. For each user with a portfolio, run the
+// FMP screener + AI thesis writer pipeline and email the top candidates.
+// Default schedule: Sundays 7 PM ET (markets closed; user has time to
+// digest before Monday open).
+// ─────────────────────────────────────────────────────────────────────
+export async function runWeeklyDiscoveryJob(opts = {}) {
+  const only = opts.onlyEmail ? opts.onlyEmail.toLowerCase() : null;
+  const query = only ? { email: only } : {};
+
+  // Lazy imports — these models / services are only needed inside this job
+  const { default: StocksPortfolio } = await import("../models/StocksPortfolio.js");
+  const { runDiscoveryScan } = await import("../services/stocksDiscoveryService.js");
+
+  const portfolios = await StocksPortfolio.find({
+    ...query,
+    "positions.0": { $exists: true },
+  }).lean();
+
+  console.log(`[stocks-weekly-discovery] running for ${portfolios.length} user(s)`);
+
+  for (const p of portfolios) {
+    try {
+      const result = await runDiscoveryScan({
+        email: p.email,
+        excludeTickers: (p.positions || []).map((pos) => pos.ticker),
+        topN: 6,
+      });
+      const candidates = result?.candidates || [];
+      if (candidates.length === 0) {
+        console.log(`[stocks-weekly-discovery] ${p.email} — no candidates`);
+        continue;
+      }
+      // Build the email
+      const monthLabel = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+      const lines = [];
+      lines.push(`# 🔍 Weekly Discovery — ${monthLabel}`);
+      lines.push("");
+      lines.push(`Top ${candidates.length} candidate${candidates.length === 1 ? "" : "s"} from this week's universe scan. **Open the Discover tab on curriculate.net/stocks** to star, dismiss, or expand the full thesis on any of these. Most leads underperform; a small number 5-10× — the kill thesis is the most important line on each.`);
+      lines.push("");
+      for (const c of candidates) {
+        const upside = (c.thesis?.priceTarget && c.priceAtDiscovery)
+          ? ` · target $${c.thesis.priceTarget.toFixed(2)} (${(((c.thesis.priceTarget - c.priceAtDiscovery) / c.priceAtDiscovery) * 100).toFixed(0)}% upside)`
+          : "";
+        lines.push(`### ${c.ticker} — ${c.name || ""}`);
+        lines.push(`**${(c.thesis?.conviction || "medium").toUpperCase()} conviction** · score ${c.score}/100 · ${c.sector || "—"} · $${(c.marketCap / 1_000_000).toFixed(0)}M cap · price $${c.priceAtDiscovery?.toFixed(2)}${upside}`);
+        lines.push("");
+        lines.push(`**Bull case:** ${c.thesis?.bullCase || "—"}`);
+        lines.push("");
+        lines.push(`**Kill thesis:** ${c.thesis?.killThesis || "—"}`);
+        if (c.thesis?.catalysts?.length > 0) {
+          lines.push("");
+          lines.push(`**Catalysts:**`);
+          for (const cat of c.thesis.catalysts) lines.push(`- ${cat}`);
+        }
+        lines.push("");
+        lines.push("---");
+        lines.push("");
+      }
+      lines.push("Research and education only. Not licensed investment advice.");
+      const md = lines.join("\n");
+      const subject = `🔍 Weekly Discovery — ${candidates.length} candidates (${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })})`;
+      await emailBriefing({ to: p.email, subject, md });
+      console.log(`[stocks-weekly-discovery] ✓ ${p.email} — ${candidates.length} candidates`);
+    } catch (err) {
+      console.error(`[stocks-weekly-discovery] ✗ ${p.email}:`, err?.message);
+    }
+  }
+}
+
+export function scheduleWeeklyDiscovery() {
+  if (process.env.STOCKS_BRIEFING_ENABLED !== "1") return null;
+  // Default: Sundays 7 PM ET. Markets closed; user has all of Sunday
+  // evening + Monday morning to digest before any trading decisions.
+  const expr = process.env.STOCKS_WEEKLY_DISCOVERY_CRON || "0 19 * * 0";
+  const tz = process.env.STOCKS_BRIEFING_TZ || "America/New_York";
+  console.log(`[stocks-weekly-discovery] scheduled: "${expr}" ${tz}`);
+  return cron.schedule(expr, async () => {
+    console.log(`[stocks-weekly-discovery] tick: ${new Date().toISOString()}`);
+    try { await runWeeklyDiscoveryJob(); } catch (e) { console.error("[stocks-weekly-discovery] tick error:", e); }
   }, { timezone: tz });
 }
