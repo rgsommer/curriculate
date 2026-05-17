@@ -184,6 +184,17 @@ export default function FeaturesPage() {
                   "Works with all task types and game modes",
                 ]}
               />
+              <FeatureCard
+                title="🖥️ On-Screen-Only Mode (per session)"
+                body="For days when up-and-around won't fit — small rooms, mixed-mobility classes, indoor recess, a substitute teacher, an exam-review afternoon — flip the 'On-screen only' checkbox before launch. Curriculate becomes a rich at-desk learning platform. The 6 tasks that need physical movement around the room are skipped automatically; everything else runs unchanged."
+                bullets={[
+                  "Per-session checkbox in the launch panel — never the default",
+                  "Skips Musical Chairs, Mad Dash, Mad Dash Sequence, Station Dash Quiz, Hide & Seek, Treasure Runner",
+                  "Keeps all 50+ cognitive, creative, and discussion-based tasks",
+                  "At-desk movement breaks (Body Break, Motion Mission) still play",
+                  "Zero printer setup required — no QR posters needed",
+                ]}
+              />
             </div>
           </div>
 

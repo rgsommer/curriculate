@@ -22,6 +22,10 @@ const faqs = [
     a: "This is a fair concern—and one Curriculate was designed around intentionally. Curriculate is driven by technology, but the student experience is more about movement and tasks that are prompted by the device, not on the device. Students are not individually glued to screens. Instead, devices coordinate tasks, timers, prompts, and submissions while the learning happens through movement, discussion, collaboration, creation, and physical interaction. Students write on paper, observe physical displays, explore challenges around the room, discuss with teammates, and create real evidence of learning. The screen is a launchpad, not the destination.",
   },
   {
+    q: "What if my classroom can't do up-and-around movement today (small space, mixed mobility, sub, exam review, indoor recess)?",
+    a: "Flip the 'On-screen only' checkbox in the LiveSession launch panel for that session. Curriculate stays as a rich at-desk learning platform — students stay in their seats and the 6 tasks that fundamentally need physical movement around the room (Musical Chairs, Mad Dash, Mad Dash Sequence, Station Dash Quiz, Hide & Seek, Treasure Runner) are automatically skipped. Every other task type — quizzes, debates, drawing, mime, narration, mind-maps, role play, mood check-ins, even at-desk movement breaks like Body Break and Motion Mission — runs unchanged. No QR posters to print, no classroom setup. Use it for substitute days, lab-only periods, exam review, or simply the days when the up-and-around mode won't fit. The default is still the canonical scavenger-hunt experience; this is the one-click opt-out for a particular lesson.",
+  },
+  {
     q: "So what are students actually doing during a task?",
     a: "Depending on the task, students may be hunting for the next challenge around the room, building or arranging physical models, discussing answers as a team, writing on paper, acting out scenarios, drawing, debating, or searching for evidence. The device is often checked briefly for instructions or submission, then set aside.",
   },
