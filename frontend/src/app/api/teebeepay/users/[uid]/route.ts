@@ -31,6 +31,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ uid: s
     if (!v) return NextResponse.json({ error: "Last name cannot be blank." }, { status: 400 });
     $set.last_name = v;
   }
+  if ("title" in b) {
+    $set.title = String(b.title || "").trim().slice(0, 80);
+  }
   if ("email" in b) {
     const v = String(b.email || "").trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
@@ -53,7 +56,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ uid: s
     // Users can always edit their own first/last name regardless of clearance comparison.
     // For other fields, target's clearance must not exceed caller's.
     const selfEdit = target._id.toString() === u.uid;
-    const onlyNameChanges = Object.keys($set).every((k) => ["first_name", "last_name", "updated_at"].includes(k));
+    const onlyNameChanges = Object.keys($set).every((k) => ["first_name", "last_name", "title", "updated_at"].includes(k));
     if (!selfEdit && !onlyNameChanges && clearanceOf(target.role) > u.clearance) {
       return NextResponse.json({ error: "Cannot modify a user above your clearance." }, { status: 403 });
     }
@@ -65,7 +68,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ uid: s
     }
 
     // Build change map for audit
-    const compareFields = ["first_name", "last_name", "email", "role", "is_active"];
+    const compareFields = ["first_name", "last_name", "title", "email", "role", "is_active"];
     for (const k of compareFields) {
       if (k in $set && $set[k] !== (target[k] ?? (k === "is_active" ? 1 : ""))) {
         changes[k] = { from: target[k] ?? null, to: $set[k] };

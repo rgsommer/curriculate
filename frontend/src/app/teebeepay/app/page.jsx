@@ -1670,9 +1670,50 @@ function CompanySettingsPanel({ companyId, onSaved }) {
 function SignaturePanel({ company, onUpload, onRemove, onAfter }) {
   const [name, setName] = useState(company.ap_signature_name || "");
   const [title, setTitle] = useState(company.ap_signature_title || "");
+  const [users, setUsers] = useState(null);
+  const [pick, setPick] = useState(""); // user id, "" = none, "__other__" = free text
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const fileRef = React.useRef(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const j = await api("/api/teebeepay/users");
+        const eligible = (j.users || [])
+          .filter((u) => u.clearance >= 2 && u.is_active !== false)
+          .sort((a, b) => (b.clearance - a.clearance) || a.email.localeCompare(b.email));
+        setUsers(eligible);
+        // If the stored AP name matches a known user, pre-select them.
+        const cur = (company.ap_signature_name || "").trim().toLowerCase();
+        if (cur) {
+          const match = eligible.find((u) => {
+            const full = `${u.first_name || ""} ${u.last_name || ""}`.trim().toLowerCase();
+            return full === cur || u.email.toLowerCase() === cur;
+          });
+          if (match) setPick(match.id);
+          else if (cur) setPick("__other__");
+        }
+      } catch { setUsers([]); }
+    })();
+  }, [company.ap_signature_name]);
+
+  function userLabel(u) {
+    const full = `${u.first_name || ""} ${u.last_name || ""}`.trim();
+    const titlePart = u.title ? ` · ${u.title}` : "";
+    return full ? `${full}${titlePart} (${u.email})` : `${u.email}${titlePart}`;
+  }
+
+  function onPickUser(uid) {
+    setPick(uid);
+    if (!uid) { setName(""); setTitle(""); return; }
+    if (uid === "__other__") return; // leave name/title as-is; user edits below
+    const u = (users || []).find((x) => x.id === uid);
+    if (!u) return;
+    const full = `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.email;
+    setName(full);
+    if (u.title) setTitle(u.title);
+  }
 
   async function pickAndUpload() {
     if (!fileRef.current?.files?.[0]) {
@@ -1686,12 +1727,31 @@ function SignaturePanel({ company, onUpload, onRemove, onAfter }) {
     finally { setSubmitting(false); }
   }
 
+  const showFreeText = pick === "__other__" || pick === "";
+
   return (
     <div>
-      <Row>
-        <Field label="AP name"><input style={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Theresia Bob" /></Field>
-        <Field label="AP title"><input style={input} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Principal" /></Field>
-      </Row>
+      <Field label="AP name">
+        {users == null ? (
+          <input style={{ ...input, color: C.muted }} value="Loading users…" readOnly />
+        ) : (
+          <select style={input} value={pick} onChange={(e) => onPickUser(e.target.value)}>
+            <option value="">— choose a user —</option>
+            {users.map((u) => <option key={u.id} value={u.id}>{userLabel(u)}</option>)}
+            <option value="__other__">Other (type a name)…</option>
+          </select>
+        )}
+        {showFreeText && (
+          <input style={{ ...input, marginTop: 8 }} value={name}
+            onChange={(e) => setName(e.target.value)} placeholder="e.g. Theresia Bob" />
+        )}
+      </Field>
+      <Field label="AP title">
+        <input style={input} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Principal" />
+        <p style={{ fontSize: 12, color: C.muted, margin: "4px 0 0" }}>
+          Pre-filled from the user's profile when you pick one above — edit freely if needed.
+        </p>
+      </Field>
       {company.ap_signature_image && (
         <div style={{ marginBottom: 14, padding: 14, background: "#fafbfc", borderRadius: 8, border: "1px solid #e5e7eb" }}>
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>Current signature on file:</div>
@@ -2016,6 +2076,7 @@ function EditUserDialog({ user, companies, me, onClose, onSaved }) {
   const [f, setF] = useState({
     first_name: user.first_name || "",
     last_name:  user.last_name  || "",
+    title:      user.title      || "",
     email:      user.email      || "",
     role:       user.role,
     company_id: user.company_id || "",
@@ -2036,6 +2097,7 @@ function EditUserDialog({ user, companies, me, onClose, onSaved }) {
       const body = {
         first_name: f.first_name.trim(),
         last_name:  f.last_name.trim(),
+        title:      f.title.trim(),
         email:      f.email.trim().toLowerCase(),
       };
       if (canChangeAccess) {
@@ -2067,6 +2129,10 @@ function EditUserDialog({ user, companies, me, onClose, onSaved }) {
       </Row>
       <Field label="Email *">
         <input style={input} type="email" value={f.email} onChange={(e) => set("email", e.target.value)} />
+      </Field>
+      <Field label="Title (appears on NASFund signatures, pay-stub footers)">
+        <input style={input} value={f.title} onChange={(e) => set("title", e.target.value)}
+          placeholder="e.g. Principal, Bookkeeper" />
       </Field>
       <Field label="Role">
         <select
@@ -2125,7 +2191,7 @@ function RoleBadge({ role }) {
 
 function InviteUserDialog({ companies, me, onClose, onSaved }) {
   const [f, setF] = useState({
-    first_name: "", last_name: "", email: "",
+    first_name: "", last_name: "", title: "", email: "",
     role: me.clearance >= 4 ? "principal" : "bookkeeper",
     company_id: "",
   });
@@ -2159,6 +2225,10 @@ function InviteUserDialog({ companies, me, onClose, onSaved }) {
       <Field label="Email *">
         <input style={input} type="email" value={f.email} onChange={(e) => set("email", e.target.value)}
           placeholder="name@company.com" />
+      </Field>
+      <Field label="Title (appears on NASFund signatures, pay-stub footers)">
+        <input style={input} value={f.title} onChange={(e) => set("title", e.target.value)}
+          placeholder="e.g. Principal, Bookkeeper, Site Manager" />
       </Field>
       <Field label="Role">
         <select style={input} value={f.role} onChange={(e) => set("role", e.target.value)}>

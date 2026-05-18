@@ -22,6 +22,7 @@ export async function GET(req: Request) {
         email: r.email,
         first_name: r.first_name || "",
         last_name: r.last_name || "",
+        title: r.title || "",
         role: r.role,
         clearance: clearanceOf(r.role),
         company_id: r.company_id ? r.company_id.toString() : null,
@@ -46,6 +47,7 @@ export async function POST(req: Request) {
   const role  = String(b.role  || "employee");
   const first_name = String(b.first_name || "").trim();
   const last_name  = String(b.last_name  || "").trim();
+  const title      = String(b.title      || "").trim().slice(0, 80);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json({ error: "Valid email is required." }, { status: 400 });
   }
@@ -69,6 +71,7 @@ export async function POST(req: Request) {
     const doc: any = {
       email, role,
       first_name, last_name,
+      title,
       company_id: b.company_id ? new ObjectId(b.company_id) : null,
       is_active: 1,
       created_at: new Date(),
