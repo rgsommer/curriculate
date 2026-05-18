@@ -294,7 +294,22 @@ function computeDiff(profile, parsedFiles, accountMap = {}) {
     }
     for (const p of f.positions) {
       const key = `${normalizeTicker(p.ticker)}|${p.ccyHeld}`;
-      b.positions.set(key, (b.positions.get(key) || 0) + p.qty);
+      const cur = b.positions.get(key);
+      if (cur) {
+        cur.qty += p.qty;
+      } else {
+        // Keep the CIBC ticker (without our normalization) plus enough
+        // metadata for the frontend to construct a valid new position
+        // if the user clicks Rectify on a "missing" row.
+        b.positions.set(key, {
+          qty: p.qty,
+          ticker: p.ticker,
+          market: p.market,            // "US" or "CDN" → maps to ccy
+          description: p.description,
+          price: p.price,
+          ccyHeld: p.ccyHeld,
+        });
+      }
     }
   }
 
@@ -343,7 +358,8 @@ function computeDiff(profile, parsedFiles, accountMap = {}) {
     for (const key of allKeys) {
       const [ticker, sub] = key.split("|");
       const appQty = app.positions.get(key) || 0;
-      const csvQty = csv.positions.get(key) || 0;
+      const csvEntry = csv.positions.get(key);
+      const csvQty = csvEntry?.qty || 0;
       if (Math.abs(appQty - csvQty) < 0.0001) continue;
       let kind;
       if (appQty === 0) kind = "missing_in_app";
@@ -352,11 +368,16 @@ function computeDiff(profile, parsedFiles, accountMap = {}) {
       issues.push({
         type: "position",
         kind,
-        ticker,
+        ticker,                       // normalized for matching
         subCurrency: sub,
         appQty,
         csvQty,
         delta: csvQty - appQty,
+        // CIBC-side context for rectify (null when extra_in_app)
+        csvTicker: csvEntry?.ticker || null,
+        csvMarket: csvEntry?.market || null,      // "US" → ccy=USD; "CDN" → ccy=CAD
+        csvPrice: csvEntry?.price || null,
+        csvDescription: csvEntry?.description || null,
       });
     }
 

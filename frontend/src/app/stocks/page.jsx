@@ -1040,6 +1040,105 @@ export default function StocksAdvisorPage() {
                   accounts: u.accounts.map((a) => a.id === accountId ? { ...a, brokerAccountId } : a),
                 }));
               }}
+              onRectify={(acct, issue) => {
+                // acct.appAccountId is the matched app account id (set by
+                // backend when resolveAppId succeeds). Fall back to acctId.
+                const appAcctId = acct.appAccountId || acct.acctId;
+                // Local mirror of the backend's normalizeTicker — strips
+                // .CN/.TO/.V/.NE so positions match across naming styles.
+                const norm = (t) => String(t || "").toUpperCase().trim().replace(/\.(?:CN|TO|V|NE)$/i, "");
+
+                if (issue.type === "cash") {
+                  updateUser((u) => ({
+                    accounts: u.accounts.map((a) => {
+                      if (a.id !== appAcctId) return a;
+                      const next = { ...a };
+                      if (issue.currency === "CAD") next.cashCad = issue.csvValue;
+                      else next.cashUsd = issue.csvValue;
+                      return next;
+                    }),
+                  }));
+                  showToast(`Rectified ${issue.currency} cash in ${acct.accountName} to ${issue.csvValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
+                  return true;
+                }
+
+                if (issue.type === "position") {
+                  const targetTicker = (issue.csvTicker || issue.ticker).toUpperCase();
+                  const normTarget = norm(targetTicker);
+                  const subCcy = issue.subCurrency;
+                  // Infer trading currency from CIBC market (US → USD, CDN → CAD).
+                  // Falls back to subCcy when csvMarket isn't available.
+                  const ccy = issue.csvMarket === "CDN" ? "CAD"
+                    : issue.csvMarket === "US" ? "USD"
+                    : subCcy;
+
+                  if (issue.kind === "extra_in_app") {
+                    // Remove every app position matching (acct, normTicker, subCcy)
+                    updateUser((u) => ({
+                      positions: u.positions.filter((p) => !(
+                        p.acct === appAcctId
+                        && norm(p.ticker) === normTarget
+                        && (p.subCcy || p.ccy) === subCcy
+                      )),
+                    }));
+                    showToast(`Removed ${targetTicker} from ${acct.accountName} (${subCcy} sub)`);
+                    return true;
+                  }
+
+                  if (issue.kind === "missing_in_app") {
+                    // Build a new position with qty=csvQty. Use the CIBC
+                    // current price as both market price and a cost-basis
+                    // best guess (user can edit later).
+                    const newPos = {
+                      acct: appAcctId,
+                      ticker: targetTicker,
+                      name: issue.csvDescription || "",
+                      qty: issue.csvQty,
+                      ccy,
+                      subCcy,
+                      priceUsd: ccy === "USD" ? issue.csvPrice : null,
+                      priceCad: ccy === "CAD" ? issue.csvPrice : null,
+                      costBasisUsd: ccy === "USD" ? issue.csvPrice : null,
+                      costBasisCad: ccy === "CAD" ? issue.csvPrice : null,
+                      notes: "Added via reconciliation",
+                    };
+                    updateUser((u) => ({ positions: [...u.positions, newPos] }));
+                    showToast(`Added ${issue.csvQty} sh ${targetTicker} to ${acct.accountName} (cost basis estimated at current price)`);
+                    return true;
+                  }
+
+                  if (issue.kind === "qty_mismatch") {
+                    // Find matching lots and set their qty to match CIBC.
+                    // If one lot, set it directly. If multiple, scale
+                    // proportionally so the sum equals csvQty.
+                    updateUser((u) => {
+                      const matchIdxs = [];
+                      u.positions.forEach((p, idx) => {
+                        if (p.acct === appAcctId
+                          && norm(p.ticker) === normTarget
+                          && (p.subCcy || p.ccy) === subCcy) {
+                          matchIdxs.push(idx);
+                        }
+                      });
+                      const currentTotal = matchIdxs.reduce((s, i) => s + (u.positions[i].qty || 0), 0);
+                      const newTotal = issue.csvQty;
+                      const nextPositions = [...u.positions];
+                      if (matchIdxs.length === 1) {
+                        nextPositions[matchIdxs[0]] = { ...nextPositions[matchIdxs[0]], qty: newTotal };
+                      } else if (matchIdxs.length > 1 && currentTotal > 0) {
+                        const scale = newTotal / currentTotal;
+                        for (const i of matchIdxs) {
+                          nextPositions[i] = { ...nextPositions[i], qty: (nextPositions[i].qty || 0) * scale };
+                        }
+                      }
+                      return { positions: nextPositions };
+                    });
+                    showToast(`Set ${targetTicker} in ${acct.accountName} (${subCcy}) to ${issue.csvQty} sh`);
+                    return true;
+                  }
+                }
+                return false;
+              }}
               onAddPlannedWithdrawal={(w) => {
                 const id = "w" + Date.now() + Math.random().toString(36).slice(2, 6);
                 updateUser((u) => ({
@@ -2306,7 +2405,7 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
   );
 }
 
-function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onSaveBrokerAccountId, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onSaveBrokerAccountId, onRectify, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
   // Contribution goals — each is { amount, period }. Legacy flat numbers are
@@ -2632,6 +2731,7 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
         sessionToken={sessionToken}
         accounts={user.accounts || []}
         onSaveBrokerAccountId={onSaveBrokerAccountId}
+        onRectify={onRectify}
       />
 
       <div className="sa-card" style={{ marginBottom: 14, borderColor: "var(--sa-red)" }}>
@@ -2649,7 +2749,13 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
 // auto-apply (the user is the source of truth on intent; the app is the
 // source of truth on history).
 // =============================================================================
-function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId }) {
+// Mirror of backend normalizeTicker — strips Canadian exchange suffixes
+// so SLV.CN matches SLV when locating positions to rectify.
+function normalizeTickerClient(t) {
+  return String(t || "").toUpperCase().trim().replace(/\.(?:CN|TO|V|NE)$/i, "");
+}
+
+function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId, onRectify }) {
   const [files, setFiles] = useState([]); // [{ filename, content }]
   const [busy, setBusy] = useState(false);
   const [diff, setDiff] = useState(null);
@@ -2665,6 +2771,22 @@ function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId }) {
     }
     return m;
   });
+  // Track resolved (rectified) discrepancies so the row visually clears
+  // without re-running reconcile. Keyed by `${appAcctId}|${type}|${ticker||currency}|${subCcy||""}`.
+  const [resolvedKeys, setResolvedKeys] = useState(new Set());
+  const issueKey = (appAcctId, issue) => issue.type === "cash"
+    ? `${appAcctId}|cash|${issue.currency}`
+    : `${appAcctId}|pos|${issue.ticker}|${issue.subCurrency}`;
+  const handleRectify = (acct, issue) => {
+    if (!onRectify) return;
+    const result = onRectify(acct, issue);
+    if (result === false) return; // rejected
+    setResolvedKeys((prev) => {
+      const next = new Set(prev);
+      next.add(issueKey(acct.appAccountId || acct.acctId, issue));
+      return next;
+    });
+  };
   // Keep accountMap in sync if accounts prop updates (after save)
   useEffect(() => {
     setAccountMap((prev) => {
@@ -2704,7 +2826,7 @@ function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId }) {
     setFiles(next);
   };
   const removeFile = (i) => setFiles(files.filter((_, idx) => idx !== i));
-  const reset = () => { setFiles([]); setDiff(null); setErr(null); setAccountMap({}); };
+  const reset = () => { setFiles([]); setDiff(null); setErr(null); setAccountMap({}); setResolvedKeys(new Set()); };
 
   const runReconcile = async () => {
     if (busy || files.length === 0) return;
@@ -2899,13 +3021,32 @@ function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId }) {
                       <th style={{ padding: "4px 6px", fontWeight: 500, textAlign: "right" }}>App</th>
                       <th style={{ padding: "4px 6px", fontWeight: 500, textAlign: "right" }}>CIBC</th>
                       <th style={{ padding: "4px 6px", fontWeight: 500, textAlign: "right" }}>Delta</th>
+                      <th style={{ padding: "4px 6px", fontWeight: 500, textAlign: "right" }}></th>
                     </tr>
                   </thead>
                   <tbody>
                     {a.issues.map((issue, j) => {
+                      const k = issueKey(a.appAccountId || a.acctId, issue);
+                      const isResolved = resolvedKeys.has(k);
+                      const rowStyle = {
+                        borderTop: "1px solid #fecaca",
+                        opacity: isResolved ? 0.45 : 1,
+                        textDecoration: isResolved ? "line-through" : "none",
+                      };
+                      const rectifyBtn = !isResolved && (
+                        <button
+                          className="sa-btn"
+                          onClick={() => handleRectify(a, issue)}
+                          style={{ fontSize: 11, padding: "3px 10px" }}
+                          title="Update the app to match CIBC for this row"
+                        >Rectify</button>
+                      );
+                      const resolvedBadge = isResolved && (
+                        <span style={{ fontSize: 11, color: "var(--sa-green)" }}>✓ rectified</span>
+                      );
                       if (issue.type === "cash") {
                         return (
-                          <tr key={j} style={{ borderTop: "1px solid #fecaca" }}>
+                          <tr key={j} style={rowStyle}>
                             <td style={{ padding: "4px 6px" }}>Cash</td>
                             <td style={{ padding: "4px 6px" }}>{issue.currency}</td>
                             <td style={{ padding: "4px 6px", textAlign: "right" }}><span className="sa-amount">{fmt$(issue.appValue)}</span></td>
@@ -2913,29 +3054,46 @@ function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId }) {
                             <td style={{ padding: "4px 6px", textAlign: "right", color: issue.delta < 0 ? "#b91c1c" : "var(--sa-green)" }}>
                               <span className="sa-amount">{issue.delta > 0 ? "+" : ""}{fmt$(issue.delta)}</span>
                             </td>
+                            <td style={{ padding: "4px 6px", textAlign: "right" }}>{rectifyBtn}{resolvedBadge}</td>
                           </tr>
                         );
                       }
                       return (
-                        <tr key={j} style={{ borderTop: "1px solid #fecaca" }}>
+                        <tr key={j} style={rowStyle}>
                           <td style={{ padding: "4px 6px" }}>
                             {issue.kind === "missing_in_app" && "Missing"}
                             {issue.kind === "extra_in_app" && "Extra"}
                             {issue.kind === "qty_mismatch" && "Qty"}
                           </td>
                           <td style={{ padding: "4px 6px" }}>
-                            <b>{issue.ticker}</b> <span className="sa-muted">({issue.subCurrency} sub)</span>
+                            <b>{issue.csvTicker || issue.ticker}</b> <span className="sa-muted">({issue.subCurrency} sub)</span>
                           </td>
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>{issue.appQty.toLocaleString()}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>{issue.csvQty.toLocaleString()}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right", color: issue.delta < 0 ? "#b91c1c" : "var(--sa-green)" }}>
                             {issue.delta > 0 ? "+" : ""}{issue.delta.toLocaleString()}
                           </td>
+                          <td style={{ padding: "4px 6px", textAlign: "right" }}>{rectifyBtn}{resolvedBadge}</td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
+                {a.issues.length > 0 && a.issues.filter((iss) => !resolvedKeys.has(issueKey(a.appAccountId || a.acctId, iss))).length > 1 && (
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                    <button
+                      className="sa-btn secondary"
+                      style={{ fontSize: 11 }}
+                      onClick={() => {
+                        for (const iss of a.issues) {
+                          if (!resolvedKeys.has(issueKey(a.appAccountId || a.acctId, iss))) {
+                            handleRectify(a, iss);
+                          }
+                        }
+                      }}
+                    >Rectify all in {a.accountName}</button>
+                  </div>
+                )}
               </div>
             );
           })}
