@@ -710,6 +710,21 @@ function EmployeeTable({ employees, selected, onToggleSel, onEdit, canEdit, onOp
 
 function EmployeeDialog({ companyId, employee, onClose, onSaved }) {
   const isEdit = !!employee;
+  // Seed bank_accounts: prefer the array; else build single-row from legacy fields.
+  const seedBankAccounts = (() => {
+    if (employee?.bank_accounts && employee.bank_accounts.length) return employee.bank_accounts;
+    if (employee?.bank_account_no || employee?.bank_account_name) {
+      return [{
+        bank_code: employee.bank_code || "088",
+        branch_code: employee.branch_code || "",
+        account_no: employee.bank_account_no || "",
+        account_name: employee.bank_account_name || "",
+        percentage: 100,
+      }];
+    }
+    return [{ bank_code: "088", branch_code: "", account_no: "", account_name: "", percentage: 100 }];
+  })();
+
   const [f, setF] = useState({
     first_name: employee?.first_name || "",
     last_name: employee?.last_name || "",
@@ -723,6 +738,8 @@ function EmployeeDialog({ companyId, employee, onClose, onSaved }) {
     dependents: employee?.dependents ?? 0,
     residency_status: employee?.residency_status || "resident",
     declaration_lodged: employee?.declaration_lodged !== false,
+    bank_accounts: seedBankAccounts,
+    // legacy single-bank mirrors (kept in sync with bank_accounts[0])
     bank_account_no: employee?.bank_account_no || "",
     bank_account_name: employee?.bank_account_name || "",
     branch_code: employee?.branch_code || "",
@@ -735,18 +752,62 @@ function EmployeeDialog({ companyId, employee, onClose, onSaved }) {
     nas_extra_pct: employee?.nas_extra_pct ?? 0,
     is_active: employee?.is_active !== false,
   });
+
+  // Helpers for the bank_accounts array.
+  function setAccount(idx, key, value) {
+    setF((x) => {
+      const ba = [...x.bank_accounts];
+      ba[idx] = { ...ba[idx], [key]: value };
+      // Keep legacy single-bank mirrors in sync with the first row.
+      const first = ba[0] || {};
+      return {
+        ...x, bank_accounts: ba,
+        bank_account_no: first.account_no || "",
+        bank_account_name: first.account_name || "",
+        branch_code: first.branch_code || "",
+        bank_code: first.bank_code || "088",
+      };
+    });
+  }
+  function addAccount() {
+    setF((x) => {
+      // Auto-rebalance: split the new account out of whatever's currently 100% on row 1, etc.
+      const newRow = { bank_code: "088", branch_code: "", account_no: "", account_name: "", percentage: 0 };
+      return { ...x, bank_accounts: [...x.bank_accounts, newRow] };
+    });
+  }
+  function removeAccount(idx) {
+    setF((x) => {
+      const ba = x.bank_accounts.filter((_, i) => i !== idx);
+      // If only one left, force it to 100%.
+      if (ba.length === 1) ba[0] = { ...ba[0], percentage: 100 };
+      return { ...x, bank_accounts: ba.length ? ba : [{ bank_code: "088", branch_code: "", account_no: "", account_name: "", percentage: 100 }] };
+    });
+  }
+  const pctTotal = f.bank_accounts.reduce((s, a) => s + (Number(a.percentage) || 0), 0);
+  const pctOk = Math.abs(pctTotal - 100) < 0.5;
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   async function save() {
     setError(""); setSubmitting(true);
+    if (f.bank_accounts.length > 1 && !pctOk) {
+      setSubmitting(false);
+      setError(`Bank account percentages must sum to 100. Currently ${pctTotal.toFixed(1)}.`);
+      return;
+    }
     try {
+      const payload = {
+        ...f,
+        // Strip empty accounts before sending; backend stores bank_accounts array.
+        bank_accounts: f.bank_accounts.filter((a) => a.account_no || a.account_name),
+      };
       if (isEdit) {
         await api(`/api/teebeepay/companies/${companyId}/employees/${employee.id}`,
-          { method: "PATCH", body: JSON.stringify(f) });
+          { method: "PATCH", body: JSON.stringify(payload) });
       } else {
         await api(`/api/teebeepay/companies/${companyId}/employees`,
-          { method: "POST", body: JSON.stringify(f) });
+          { method: "POST", body: JSON.stringify(payload) });
       }
       onSaved();
     }
@@ -783,13 +844,48 @@ function EmployeeDialog({ companyId, employee, onClose, onSaved }) {
           <Field label="Dependants"><input style={input} type="number" min="0" value={f.dependents} onChange={(e) => set("dependents", e.target.value)} /></Field>
         </Row>
       </FieldGroup>
-      <FieldGroup label="Banking">
-        <Row>
-          <Field label="Bank code"><input style={input} value={f.bank_code} onChange={(e) => set("bank_code", e.target.value)} /></Field>
-          <Field label="Branch"><input style={input} value={f.branch_code} onChange={(e) => set("branch_code", e.target.value)} /></Field>
-        </Row>
-        <Field label="Account number"><input style={input} value={f.bank_account_no} onChange={(e) => set("bank_account_no", e.target.value)} /></Field>
-        <Field label="Account name"><input style={input} value={f.bank_account_name} onChange={(e) => set("bank_account_name", e.target.value)} /></Field>
+      <FieldGroup label={`Banking (${f.bank_accounts.length} account${f.bank_accounts.length === 1 ? "" : "s"})`}>
+        <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>
+          Split this employee's net pay across multiple accounts by percentage. Total must equal 100%.
+        </p>
+        {f.bank_accounts.map((a, i) => (
+          <div key={i} style={{
+            border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, marginBottom: 10,
+            background: i === 0 ? "#fff" : "#fafbfc",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <strong style={{ fontSize: 12, color: C.muted, textTransform: "uppercase", letterSpacing: 0.06 }}>
+                Account {i + 1}
+              </strong>
+              {f.bank_accounts.length > 1 && (
+                <button type="button" onClick={() => removeAccount(i)}
+                  style={{ ...btnGhostSmall, color: "#991b1b", padding: "2px 8px" }}>
+                  <Trash2 size={11} /> Remove
+                </button>
+              )}
+            </div>
+            <Row>
+              <Field label="Bank code"><input style={input} value={a.bank_code || ""} onChange={(e) => setAccount(i, "bank_code", e.target.value)} placeholder="088" /></Field>
+              <Field label="Branch"><input style={input} value={a.branch_code || ""} onChange={(e) => setAccount(i, "branch_code", e.target.value)} /></Field>
+              <Field label="% of net pay">
+                <input style={{ ...input, ...(pctOk ? {} : { borderColor: "#fca5a5" }) }} type="number" min="0" max="100" step="0.1"
+                  value={a.percentage ?? 0} onChange={(e) => setAccount(i, "percentage", Number(e.target.value))} />
+              </Field>
+            </Row>
+            <Row>
+              <Field label="Account number"><input style={input} value={a.account_no || ""} onChange={(e) => setAccount(i, "account_no", e.target.value)} /></Field>
+              <Field label="Account name"><input style={input} value={a.account_name || ""} onChange={(e) => setAccount(i, "account_name", e.target.value)} /></Field>
+            </Row>
+          </div>
+        ))}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <button type="button" onClick={addAccount} style={btnGhostLg}>
+            <Plus size={14} style={{ marginRight: 6 }} /> Add another account
+          </button>
+          <div style={{ fontSize: 13, color: pctOk ? "#166534" : "#991b1b", fontWeight: 600 }}>
+            Total: {pctTotal.toFixed(1)}% {pctOk ? "✓" : "(must equal 100%)"}
+          </div>
+        </div>
       </FieldGroup>
       <FieldGroup label="Tax & NASFund settings">
         <Row>
@@ -2510,6 +2606,221 @@ function InfoRow({ k, v }) {
     <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid #f3f4f6", fontSize: 13 }}>
       <span style={{ color: C.muted }}>{k}</span>
       <span style={{ color: C.ink, fontWeight: 500 }}>{v}</span>
+    </div>
+  );
+}
+
+/* ─────────── Audit log page ─────────── */
+
+function AuditLogPage({ me, onBack }) {
+  const [entries, setEntries] = useState(null);
+  const [error, setError] = useState("");
+  const [filter, setFilter] = useState({ action: "", company: "" });
+  const [companies, setCompanies] = useState([]);
+
+  const load = useCallback(async () => {
+    setError("");
+    const qs = new URLSearchParams();
+    if (filter.action) qs.set("action", filter.action);
+    if (filter.company) qs.set("company", filter.company);
+    qs.set("limit", "300");
+    try {
+      const j = await api(`/api/teebeepay/audit-log?${qs.toString()}`);
+      setEntries(j.entries || []);
+    } catch (e) { setError(e.message); }
+  }, [filter]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    (async () => {
+      try { setCompanies((await api("/api/teebeepay/companies")).companies || []); } catch {}
+    })();
+  }, []);
+
+  return (
+    <div style={{ maxWidth: 1180, margin: "0 auto", padding: "28px 24px" }}>
+      <button onClick={onBack} style={btnBack}><ArrowLeft size={14} /> Dashboard</button>
+      <h1 style={{ margin: "0 0 8px", fontSize: 26, fontWeight: 800 }}>Audit log</h1>
+      <p style={{ color: C.muted, fontSize: 14, margin: "0 0 22px" }}>
+        Every payroll approval, rejection, pay-stub re-send, employee edit, and user invite — recorded for the bureau's records.
+      </p>
+
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
+        <select style={{ ...input, width: "auto" }} value={filter.action}
+          onChange={(e) => setFilter((x) => ({ ...x, action: e.target.value }))}>
+          <option value="">All actions</option>
+          <option value="payroll.submit">payroll.submit</option>
+          <option value="payroll.approve">payroll.approve</option>
+          <option value="payroll.reject">payroll.reject</option>
+          <option value="stub.resend">stub.resend</option>
+          <option value="user.invite">user.invite</option>
+          <option value="nasfund.reminder_sent">nasfund.reminder_sent</option>
+        </select>
+        {me?.clearance >= 3 && (
+          <select style={{ ...input, width: "auto" }} value={filter.company}
+            onChange={(e) => setFilter((x) => ({ ...x, company: e.target.value }))}>
+            <option value="">All companies</option>
+            {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        )}
+      </div>
+
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+
+      {entries == null ? <Loader2 className="tbp-spin" size={20} color={C.red} /> : (
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+          <table style={tableStyle}>
+            <thead><tr>
+              <th style={th}>When</th>
+              <th style={th}>Actor</th>
+              <th style={th}>Action</th>
+              <th style={th}>Company</th>
+              <th style={th}>Details</th>
+            </tr></thead>
+            <tbody>
+              {entries.length === 0 ? (
+                <tr><td colSpan={5} style={{ ...td, color: C.muted, textAlign: "center", padding: 30 }}>
+                  No log entries match these filters.
+                </td></tr>
+              ) : entries.map((e) => (
+                <tr key={e.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <td style={{ ...td, color: C.muted, fontSize: 12, fontFamily: "ui-monospace, Menlo, monospace" }}>
+                    {new Date(e.ts).toISOString().replace("T", " ").slice(0, 16)}
+                  </td>
+                  <td style={td}>
+                    <div style={{ fontWeight: 500 }}>{e.actor_email || "system"}</div>
+                    {e.actor_kind !== "user" && (
+                      <div style={{ fontSize: 11, color: C.muted }}>{e.actor_kind}</div>
+                    )}
+                  </td>
+                  <td style={td}><ActionBadge action={e.action} /></td>
+                  <td style={{ ...td, color: C.muted }}>{e.company_name || "—"}</td>
+                  <td style={{ ...td, color: C.inkSoft, fontSize: 13 }}>
+                    {summariseDetails(e.action, e.details)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActionBadge({ action }) {
+  const presets = {
+    "payroll.submit":         { bg: "#dbeafe", fg: "#1e40af" },
+    "payroll.approve":        { bg: "#dcfce7", fg: "#166534" },
+    "payroll.reject":         { bg: "#fee2e2", fg: "#991b1b" },
+    "stub.resend":            { bg: "#fef3c7", fg: "#9c6c00" },
+    "user.invite":            { bg: "#ede9fe", fg: "#5b21b6" },
+    "nasfund.reminder_sent":  { bg: "#fffaf0", fg: "#9c2410" },
+  };
+  const p = presets[action] || { bg: "#f1f5f9", fg: C.muted };
+  return (
+    <span style={{
+      display: "inline-block", padding: "2px 10px", borderRadius: 999,
+      background: p.bg, color: p.fg, fontSize: 11, fontWeight: 600,
+      fontFamily: "ui-monospace, Menlo, Consolas, monospace",
+    }}>{action}</span>
+  );
+}
+
+function summariseDetails(action, d) {
+  if (!d) return "";
+  if (action === "payroll.submit")
+    return `${d.entries} entries · ${d.period_start} → ${d.period_end}${d.approver_emailed ? ` · approver: ${d.approver_emailed}` : ""}`;
+  if (action === "payroll.approve")
+    return `${d.entries} entries · K${(d.totalGross || 0).toFixed(2)} gross · ${d.stubsSent || 0} stubs sent${d.via === "email_magic_link" ? " (via email link)" : ""}`;
+  if (action === "payroll.reject")
+    return d.reason || "(no reason given)";
+  if (action === "stub.resend")
+    return `→ ${d.to || "?"}`;
+  if (action === "user.invite")
+    return `invited ${d.invited_email} as ${d.role}${d.name ? ` (${d.name})` : ""}`;
+  if (action === "nasfund.reminder_sent")
+    return `→ ${d.to} · ${d.daysOut} days before ${d.deadline}`;
+  try { return JSON.stringify(d).slice(0, 120); } catch { return ""; }
+}
+
+/* ─────────── Employee self-serve portal ─────────── */
+
+function MyStubsPortal({ me }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    (async () => {
+      try { setData(await api("/api/teebeepay/my-stubs")); }
+      catch (e) { setError(e.message); }
+    })();
+  }, []);
+
+  const displayName = me.first_name ? `${me.first_name}` : "there";
+
+  if (error) return (
+    <div style={{ maxWidth: 880, margin: "0 auto", padding: "40px 24px" }}>
+      <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>
+    </div>
+  );
+  if (!data) return <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered>;
+
+  const lifetime = data.stubs.reduce((a, s) => ({
+    gross: a.gross + (Number(s.gross) || 0),
+    tax: a.tax + (Number(s.tax) || 0),
+    nasfund: a.nasfund + (Number(s.nasfund) || 0),
+    net: a.net + (Number(s.net) || 0),
+  }), { gross: 0, tax: 0, nasfund: 0, net: 0 });
+
+  return (
+    <div style={{ maxWidth: 880, margin: "0 auto", padding: "40px 24px" }}>
+      <h1 style={{ margin: "0 0 8px", fontSize: 28, fontWeight: 800 }}>Hi {displayName}.</h1>
+      <p style={{ color: C.muted, fontSize: 15, margin: "0 0 26px" }}>
+        {data.stubs.length === 0
+          ? "No pay stubs are linked to your email yet. If you think this is wrong, contact your payroll office."
+          : `You have ${data.stubs.length} pay stub${data.stubs.length === 1 ? "" : "s"} on file across ${data.employees.length} employer${data.employees.length === 1 ? "" : "s"}.`}
+      </p>
+
+      {data.stubs.length > 0 && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 26 }}>
+            <StatCard label="Lifetime gross"   value={`K${lifetime.gross.toFixed(2)}`} />
+            <StatCard label="Lifetime tax"     value={`K${lifetime.tax.toFixed(2)}`} />
+            <StatCard label="Lifetime Nasfund" value={`K${lifetime.nasfund.toFixed(2)}`} />
+            <StatCard label="Lifetime net"     value={`K${lifetime.net.toFixed(2)}`} highlight />
+          </div>
+
+          <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+            <table style={tableStyle}>
+              <thead><tr>
+                <th style={th}>Pay date</th>
+                <th style={th}>Employer</th>
+                <th style={{ ...th, textAlign: "right" }}>Gross</th>
+                <th style={{ ...th, textAlign: "right" }}>Tax</th>
+                <th style={{ ...th, textAlign: "right" }}>Net</th>
+                <th style={th}>Status</th>
+              </tr></thead>
+              <tbody>
+                {data.stubs.map((s) => (
+                  <tr key={s.entry_id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                    <td style={td}>{s.pay_date || s.period_end || "—"}</td>
+                    <td style={{ ...td, color: C.muted, fontSize: 13 }}>{s.company.name}</td>
+                    <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      {s.gross != null ? s.gross.toFixed(2) : "—"}
+                    </td>
+                    <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      {s.tax != null ? s.tax.toFixed(2) : "—"}
+                    </td>
+                    <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>
+                      {s.net != null ? s.net.toFixed(2) : "—"}
+                    </td>
+                    <td style={td}><StatusBadge status={s.status} historical={s.imported} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }
