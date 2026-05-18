@@ -2645,6 +2645,9 @@ function ReconcileCard({ sessionToken, accounts }) {
   const [busy, setBusy] = useState(false);
   const [diff, setDiff] = useState(null);
   const [err, setErr] = useState(null);
+  // accountMap: { [cibcAcctId]: appAccountId } — manual overrides for
+  // when the user's app account ids differ from the CIBC account numbers.
+  const [accountMap, setAccountMap] = useState({});
 
   const onDrop = async (e) => {
     e.preventDefault();
@@ -2672,7 +2675,7 @@ function ReconcileCard({ sessionToken, accounts }) {
     setFiles(next);
   };
   const removeFile = (i) => setFiles(files.filter((_, idx) => idx !== i));
-  const reset = () => { setFiles([]); setDiff(null); setErr(null); };
+  const reset = () => { setFiles([]); setDiff(null); setErr(null); setAccountMap({}); };
 
   const runReconcile = async () => {
     if (busy || files.length === 0) return;
@@ -2681,7 +2684,7 @@ function ReconcileCard({ sessionToken, accounts }) {
       const r = await fetch(`${BACKEND_URL}/api/stocks-reconcile`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
-        body: JSON.stringify({ files }),
+        body: JSON.stringify({ files, accountMap }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
@@ -2749,6 +2752,66 @@ function ReconcileCard({ sessionToken, accounts }) {
 
       {diff && diff.accounts && (
         <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--sa-border)" }}>
+          {(() => {
+            // Build the unique set of CIBC account ids that came through
+            // parsing, so we can show a mapping row for each.
+            const cibcAcctsSeen = [];
+            const seen = new Set();
+            for (const pf of diff.parsedFiles || []) {
+              if (!pf?.accountId || seen.has(pf.accountId)) continue;
+              seen.add(pf.accountId);
+              cibcAcctsSeen.push({ id: pf.accountId, name: pf.accountName });
+            }
+            const anyUnmatched = (diff.accounts || []).some((a) => a.unmatched);
+            if (cibcAcctsSeen.length === 0) return null;
+            return (
+              <div style={{ background: "var(--sa-panel-2)", padding: 12, borderRadius: 8, marginBottom: 14 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
+                  Map CIBC accounts → app accounts
+                </div>
+                <div className="sa-muted" style={{ fontSize: 12, marginBottom: 10 }}>
+                  {anyUnmatched
+                    ? "Your app account ids don't match the CIBC numbers. Pick the matching app account for each CIBC account below, then click Reconcile again."
+                    : "Auto-matched by id. Override any of these if you've named your app accounts differently."}
+                </div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {cibcAcctsSeen.map((cibc) => (
+                    <div key={cibc.id} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 10, alignItems: "center", fontSize: 12 }}>
+                      <div>
+                        <b>{cibc.name}</b>
+                        <span className="sa-muted" style={{ marginLeft: 6 }}>(CIBC id {cibc.id})</span>
+                      </div>
+                      <select
+                        value={accountMap[cibc.id] || ""}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setAccountMap((prev) => {
+                            const next = { ...prev };
+                            if (v) next[cibc.id] = v;
+                            else delete next[cibc.id];
+                            return next;
+                          });
+                        }}
+                      >
+                        <option value="">— pick app account —</option>
+                        {accounts.map((a) => (
+                          <option key={a.id} value={a.id}>{a.name} (id {a.id})</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+                {anyUnmatched && (
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                    <button className="sa-btn" onClick={runReconcile} disabled={busy}>
+                      {busy ? "Reconciling…" : "Reconcile with mapping"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Results ({diff.parsedFiles.length} files parsed, {diff.accounts.length} accounts checked)</div>
 
           {diff.accounts.length === 0 && (

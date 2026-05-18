@@ -215,9 +215,12 @@ export function parseCibcCsv(csv) {
 // For each parsed file, find the matching app account (by id), then
 // compare positions and cash. Aggregate across multiple files for the
 // same app account (one file per sub-currency).
-function computeDiff(profile, parsedFiles) {
+// accountMap is an optional { [cibcAcctId]: appAccountId } that lets the
+// user override the default same-id auto-match (their app accounts may
+// have different IDs than the CIBC numbers).
+function computeDiff(profile, parsedFiles, accountMap = {}) {
   // Build app-side snapshot grouped by account
-  const appByAcct = new Map(); // acctId → { cashCad, cashUsd, positions: Map<ticker|subCcy, qty> }
+  const appByAcct = new Map(); // appAccountId → { account, cash, positions }
   for (const a of profile.accounts || []) {
     appByAcct.set(a.id, {
       account: a,
@@ -233,6 +236,13 @@ function computeDiff(profile, parsedFiles) {
     const key = `${p.ticker}|${sub}`;
     bucket.positions.set(key, (bucket.positions.get(key) || 0) + (p.qty || 0));
   }
+  // Resolver: given a CIBC account id, return the matching app account id.
+  // Manual map wins; otherwise fall back to identity (same id in both).
+  const resolveAppId = (cibcAcctId) => {
+    if (accountMap[cibcAcctId]) return accountMap[cibcAcctId];
+    if (appByAcct.has(cibcAcctId)) return cibcAcctId;
+    return null;
+  };
 
   // Group parsed files by account id. Combined-format files supply both
   // CAD + USD cash in cashByCurrency; single-sub files supply just one,
@@ -273,14 +283,15 @@ function computeDiff(profile, parsedFiles) {
 
   // Compute per-account diff
   const accounts = [];
-  for (const [acctId, csv] of csvByAcct.entries()) {
-    const app = appByAcct.get(acctId);
+  for (const [cibcAcctId, csv] of csvByAcct.entries()) {
+    const appId = resolveAppId(cibcAcctId);
+    const app = appId ? appByAcct.get(appId) : null;
     if (!app) {
       accounts.push({
-        acctId,
+        acctId: cibcAcctId,
         accountName: [...csv.names].join(" / "),
         unmatched: true,
-        message: `CIBC account ${acctId} doesn't match any app account. Add an account with id "${acctId}" in Settings (or fix the existing one), then re-upload.`,
+        message: `CIBC account ${cibcAcctId} ("${[...csv.names].join("/")}") isn't mapped to any app account. Use the mapping section above to pick which app account this CIBC account corresponds to, then click Reconcile again.`,
         csvFiles: csv.files.length,
       });
       continue;
@@ -333,7 +344,8 @@ function computeDiff(profile, parsedFiles) {
     }
 
     accounts.push({
-      acctId,
+      acctId: cibcAcctId,
+      appAccountId: appId,
       accountName: app.account.name,
       app: { cashCad: app.cashCad, cashUsd: app.cashUsd, positionsCount: app.positions.size },
       csv: { cashCad: csv.cashCad, cashUsd: csv.cashUsd, positionsCount: csv.positions.size, files: csv.files.length },
@@ -342,15 +354,22 @@ function computeDiff(profile, parsedFiles) {
     });
   }
 
-  // Also flag app accounts that weren't in any uploaded CSV
-  for (const [acctId, app] of appByAcct.entries()) {
-    if (csvByAcct.has(acctId)) continue;
+  // Flag app accounts NOT covered by any uploaded CIBC file. Compute the
+  // set of "covered" app account ids using the resolver so the mapping
+  // overrides count, then surface the uncovered ones.
+  const coveredAppIds = new Set();
+  for (const cibcAcctId of csvByAcct.keys()) {
+    const appId = resolveAppId(cibcAcctId);
+    if (appId) coveredAppIds.add(appId);
+  }
+  for (const [appId, app] of appByAcct.entries()) {
+    if (coveredAppIds.has(appId)) continue;
     if (app.positions.size > 0 || (app.cashCad || 0) > 0 || (app.cashUsd || 0) > 0) {
       accounts.push({
-        acctId,
+        acctId: appId,
         accountName: app.account.name,
         appOnly: true,
-        message: `No CIBC file uploaded for "${app.account.name}" (id ${acctId}). Skipping — re-upload with this account's CSV if you want it reconciled.`,
+        message: `No CIBC file uploaded (or mapped) for "${app.account.name}" (id ${appId}). Skipping — re-upload with this account's CSV if you want it reconciled.`,
         app: { cashCad: app.cashCad, cashUsd: app.cashUsd, positionsCount: app.positions.size },
       });
     }
@@ -378,7 +397,14 @@ router.post("/", requireStocksAuth, async (req, res) => {
     const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
     if (!profile) return res.status(404).json({ error: "No portfolio found" });
 
-    const diff = computeDiff(profile, parsed);
+    // Optional manual mapping from CIBC account id → app account id.
+    // Lets the user reconcile when their app accounts use different ids
+    // than the CIBC numbers.
+    const accountMap = (req.body?.accountMap && typeof req.body.accountMap === "object")
+      ? req.body.accountMap
+      : {};
+
+    const diff = computeDiff(profile, parsed, accountMap);
     res.json({
       asOf: new Date().toISOString(),
       parsedFiles: parsed.map((p) => ({
