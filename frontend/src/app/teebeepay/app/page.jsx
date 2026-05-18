@@ -15,6 +15,7 @@ import {
   BarChart3, Percent, Upload, Image as ImageIcon, ClipboardList, Activity,
   ShieldCheck, NotebookPen, AlertTriangle, Layers, Network,
   GraduationCap, HelpCircle, ChevronRight, ChevronLeft,
+  FileSpreadsheet,
 } from "lucide-react";
 
 const C = {
