@@ -508,14 +508,61 @@ function stripCiteTags(s) {
 // Extract first balanced JSON object from a string
 function extractJson(text) {
   if (!text) return null;
-  // strip code fences if present
+
+  // Try 1: strip code fences and parse the inner block
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenced) { try { return JSON.parse(fenced[1]); } catch {} }
-  // find first { and last }
+  if (fenced) {
+    try { return JSON.parse(fenced[1]); } catch {}
+  }
+
+  // Try 2: parse from first { to last }
   const first = text.indexOf("{");
   const last = text.lastIndexOf("}");
-  if (first === -1 || last === -1 || last <= first) return null;
-  try { return JSON.parse(text.slice(first, last + 1)); } catch { return null; }
+  if (first !== -1 && last !== -1 && last > first) {
+    try { return JSON.parse(text.slice(first, last + 1)); } catch {}
+  }
+
+  // Try 3: malformed wrapper but individually-valid card objects. Walk the
+  // text balancing braces (string-aware so quotes inside don't confuse the
+  // counter) and try JSON.parse on each top-level {...} block inside an
+  // "advice": [ ... ] array. This handles AI responses where the outer
+  // JSON is broken (truncation, stray prose, unescaped char in one body)
+  // but most individual cards still parse cleanly.
+  const adviceIdx = text.indexOf('"advice"');
+  const bracketIdx = adviceIdx !== -1 ? text.indexOf("[", adviceIdx) : -1;
+  const scanFrom = bracketIdx !== -1 ? bracketIdx + 1 : (first !== -1 ? first : 0);
+  const cards = [];
+  let depth = 0, cardStart = -1, inString = false, escape = false;
+  for (let i = scanFrom; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (inString) {
+      if (ch === "\\") { escape = true; continue; }
+      if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") {
+      if (depth === 0) cardStart = i;
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0 && cardStart !== -1) {
+        const blk = text.slice(cardStart, i + 1);
+        try {
+          const obj = JSON.parse(blk);
+          // Only collect objects that look like an advice card
+          if (obj && (obj.title || obj.body)) cards.push(obj);
+        } catch {}
+        cardStart = -1;
+      }
+    } else if (ch === "]" && depth === 0 && bracketIdx !== -1) {
+      break;
+    }
+  }
+  if (cards.length > 0) return { advice: cards };
+
+  return null;
 }
 
 // ── handler ────────────────────────────────────────────────────────
