@@ -3899,8 +3899,27 @@ function PerformanceView({ sessionToken }) {
   const [scorecard, setScorecard] = useState(null);
   const [scorecardDays, setScorecardDays] = useState(30);
   const [discoveryScorecard, setDiscoveryScorecard] = useState(null);
+  const [dataStatus, setDataStatus] = useState(null);
   const [busy, setBusy] = useState(true);
   const [err, setErr] = useState(null);
+
+  // Data-status panel — counts of every persisted record type, so "why is
+  // this empty?" can be answered with hard numbers instead of guessing.
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-advice/data-status`, {
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (!cancelled) setDataStatus(j);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken]);
 
   // Pull Discovery scorecard once on mount (decoupled from advice scorecard
   // since it has its own data shape and time-window logic).
@@ -3958,6 +3977,10 @@ function PerformanceView({ sessionToken }) {
     <div>
       <h2>Performance</h2>
       <div className="sa-breadcrumb">Portfolio value over time · advisor scorecard</div>
+
+      {/* ── DATA STATUS: how much is actually in the database, with
+          actionable hints when sections below come back empty. */}
+      <DataStatusPanel data={dataStatus} />
 
       {/* ── ADVICE SCORECARD: what was taken, what worked, what didn't ── */}
       <AdviceScorecardCard
@@ -4895,6 +4918,90 @@ function TradesView({ sessionToken }) {
 // Compares each past candidate's % return from priceAtDiscovery to current
 // Yahoo price, against SPY's return over the same window. Honest feedback.
 // =============================================================================
+// =============================================================================
+// Data status panel — answers "why is this empty?" with hard counts from
+// the database. Each row shows what's in the DB and, if empty, the
+// concrete next-step that would populate it.
+// =============================================================================
+function DataStatusPanel({ data }) {
+  if (!data) return null;
+  const fmtDate = (d) => d ? new Date(d).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+  const rows = [
+    {
+      label: "AI advice recs",
+      count: data.adviceRecs?.total ?? 0,
+      detail: data.adviceRecs?.total
+        ? `${data.adviceRecs.last7d} in last 7d · ${data.adviceRecs.last30d} in 30d · ${data.adviceRecs.last90d} in 90d`
+        : null,
+      hint: !data.adviceRecs?.total
+        ? "Click 🧠 Update Advice on the Advice tab OR 📧 Email Briefing → Send. Each successful run should insert one row per actionable BUY/SELL/TRIM."
+        : data.adviceRecs.last7d === 0
+        ? `${data.adviceRecs.total} recs exist but none in the last 7 days. Switch the scorecard window to 30d/90d, or run Update Advice now.`
+        : null,
+    },
+    {
+      label: "Portfolio snapshots",
+      count: data.snapshots?.total ?? 0,
+      detail: data.snapshots?.total
+        ? `oldest ${fmtDate(data.snapshots.oldest)} → newest ${fmtDate(data.snapshots.newest)}`
+        : null,
+      hint: !data.snapshots?.total
+        ? "Snapshots write on every portfolio PUT. Save any change in Settings or add a trade — one snapshot fires per save. After a few saves the 12-month chart starts plotting."
+        : null,
+    },
+    {
+      label: "Discovery candidates",
+      count: data.discoveryCandidates?.total ?? 0,
+      detail: data.discoveryCandidates?.total
+        ? `oldest ${fmtDate(data.discoveryCandidates.oldest)} · ${data.discoveryCandidates.oldEnoughForScoring} old enough (>7d) for scoring`
+        : null,
+      hint: !data.discoveryCandidates?.total
+        ? "Click 🔍 Scan on the Discover tab. With FMP Premium active, each scan saves 8 candidates."
+        : data.discoveryCandidates.oldEnoughForScoring === 0
+        ? "Have candidates but none older than 7 days yet — the scorecard needs aged data. Check back in a week."
+        : null,
+    },
+    {
+      label: "Trade journal entries",
+      count: data.trades?.total ?? 0,
+      detail: data.trades?.total ? `newest ${fmtDate(data.trades.newest)}` : null,
+      hint: !data.trades?.total
+        ? "Record a trade on the Dashboard or Trades tab. Trades feed the 'Followed vs Skipped' scorecard split."
+        : null,
+    },
+    {
+      label: "Latest briefing snapshot",
+      count: data.latestBriefingSnapshot ? 1 : 0,
+      detail: data.latestBriefingSnapshot ? fmtDate(data.latestBriefingSnapshot) : null,
+      hint: !data.latestBriefingSnapshot
+        ? "Tomorrow's 7:30 AM cron will create one; or click 📧 Email Briefing → Preview now to generate on demand."
+        : null,
+    },
+  ];
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <h3 style={{ margin: 0 }}>Data status</h3>
+      <div className="sa-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 12 }}>
+        Hard counts of what's actually in the database for your account. If a section below shows "empty," this panel tells you why and what to do.
+      </div>
+      <div style={{ display: "grid", gap: 8 }}>
+        {rows.map((r) => (
+          <div key={r.label} style={{ display: "grid", gridTemplateColumns: "auto 80px 1fr", gap: 12, alignItems: "baseline", padding: "8px 12px", background: r.count === 0 ? "var(--sa-amber-soft)" : "var(--sa-panel-2)", borderRadius: 6, fontSize: 13 }}>
+            <span style={{ fontWeight: 600 }}>{r.label}</span>
+            <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", color: r.count === 0 ? "var(--sa-amber)" : "var(--sa-text)" }}>{r.count}</span>
+            <span style={{ fontSize: 12, color: "var(--sa-muted)", lineHeight: 1.5 }}>
+              {r.detail}
+              {r.detail && r.hint && <br />}
+              {r.hint && <span style={{ color: "var(--sa-amber)" }}>💡 {r.hint}</span>}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function DiscoveryScorecardCard({ data }) {
   if (!data) {
     return (

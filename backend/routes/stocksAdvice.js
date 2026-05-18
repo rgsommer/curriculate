@@ -1238,6 +1238,62 @@ router.get("/recs-for-tickers", requireStocksAuth, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────
+// GET /api/stocks-advice/data-status
+//
+// Counts of every persisted record type for the authenticated user, with
+// oldest/newest timestamps. Used by the Performance tab to surface
+// honest "why is this empty?" diagnostics when the user expects data.
+// ─────────────────────────────────────────────────────────────────────
+router.get("/data-status", requireStocksAuth, async (req, res) => {
+  try {
+    const { default: StocksPortfolioSnapshot } = await import("../models/StocksPortfolioSnapshot.js");
+    const { default: StocksTradeJournal2 } = await import("../models/StocksTradeJournal.js");
+    const { default: StocksDiscoveryCandidate } = await import("../models/StocksDiscoveryCandidate.js");
+    const email = req.stocksUser.email;
+    const now = new Date();
+    const day = 86400 * 1000;
+    const since7 = new Date(now - 7 * day);
+    const since30 = new Date(now - 30 * day);
+    const since90 = new Date(now - 90 * day);
+
+    const [
+      recsTotal, recs7, recs30, recs90,
+      snapsTotal, snapsOldest, snapsNewest,
+      candsTotal, candsOldest, candsNewest, candsOldEnough,
+      tradesTotal, tradesNewest,
+      hasSnapshot,
+    ] = await Promise.all([
+      StocksAdviceRec.countDocuments({ email }),
+      StocksAdviceRec.countDocuments({ email, generatedAt: { $gte: since7 } }),
+      StocksAdviceRec.countDocuments({ email, generatedAt: { $gte: since30 } }),
+      StocksAdviceRec.countDocuments({ email, generatedAt: { $gte: since90 } }),
+      StocksPortfolioSnapshot.countDocuments({ email, accountId: "__total__" }),
+      StocksPortfolioSnapshot.findOne({ email, accountId: "__total__" }).sort({ date: 1 }).select("date").lean(),
+      StocksPortfolioSnapshot.findOne({ email, accountId: "__total__" }).sort({ date: -1 }).select("date").lean(),
+      StocksDiscoveryCandidate.countDocuments({ email }),
+      StocksDiscoveryCandidate.findOne({ email }).sort({ scanDate: 1 }).select("scanDate").lean(),
+      StocksDiscoveryCandidate.findOne({ email }).sort({ scanDate: -1 }).select("scanDate").lean(),
+      StocksDiscoveryCandidate.countDocuments({ email, scanDate: { $lte: new Date(now - 7 * day) } }),
+      StocksTradeJournal2.countDocuments({ email }),
+      StocksTradeJournal2.findOne({ email }).sort({ executedAt: -1 }).select("executedAt").lean(),
+      StocksAdviceSnapshot.findOne({ email }).select("generatedAt").lean(),
+    ]);
+
+    res.json({
+      adviceRecs: { total: recsTotal, last7d: recs7, last30d: recs30, last90d: recs90 },
+      snapshots: { total: snapsTotal, oldest: snapsOldest?.date || null, newest: snapsNewest?.date || null },
+      discoveryCandidates: { total: candsTotal, oldEnoughForScoring: candsOldEnough,
+        oldest: candsOldest?.scanDate || null, newest: candsNewest?.scanDate || null },
+      trades: { total: tradesTotal, newest: tradesNewest?.executedAt || null },
+      latestBriefingSnapshot: hasSnapshot?.generatedAt || null,
+    });
+  } catch (err) {
+    console.error("data-status error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
 router.get("/snapshot", requireStocksAuth, async (req, res) => {
   try {
     const snap = await StocksAdviceSnapshot
