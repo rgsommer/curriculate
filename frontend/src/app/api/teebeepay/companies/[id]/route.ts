@@ -36,6 +36,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     "hours_due_time",   // "HH:MM" | ""
     // Leave types — array of { code, name, paid, max_days_per_year? }
     "leave_types",
+    // Late-attendance alert config (Principal-edited)
+    "late_threshold_count",       // integer | "" for disabled
+    "late_window_days",           // integer (default 30)
+    "late_alert_recipients",      // array of "principal" | "supervisor" | "bookkeeper"
   ];
   for (const k of fields) {
     if (k in b) $set[k] = typeof b[k] === "string" ? b[k].trim() : b[k];

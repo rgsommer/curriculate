@@ -834,6 +834,8 @@ function FeatureGrid() {
     { icon: <Mail size={22} />, t: "Manager notes on stubs", d: "Short note per employee — \"hours reduced this fortnight because…\" — appears on their pay-stub PDF." },
     { icon: <Smartphone size={22} />, t: "Mobile-friendly", d: "Web-based, works on phone and tablet. Run a payroll from a remote site if you need to." },
     { icon: <GraduationCap size={22} />, t: "Auto-train new users", d: "Every new supervisor and bookkeeper gets a personalised 5-step guided tour the first time they open their workflow page — \"You supervise these 3 divisions, here's how to enter hours…\". A persistent \"Steps for today\" checklist tracks exactly what's outstanding so nobody guesses what to do next. No training calls, no PDFs." },
+    { icon: <AlertTriangle size={22} />, t: "Attendance & late-arrival alerts", d: "Tag any day as Late or Absent (unauthorised) on the supervisor's timesheet. When an employee crosses a threshold you set per company — say 3 incidents in 30 days — TeebeePay emails whoever you choose (principal, supervisor, bookkeeper). Pay-period notes, daily reason field, and a full submission history sit alongside so disputes can be settled with the actual record." },
+    { icon: <History size={22} />, t: "Bulletproof audit trail", d: "Every supervisor submission, pay-period approval, employee edit, and pay adjustment is journaled — actor, timestamp, before/after values. Pay adjustments require a written reason and are visible on each employee's profile. Late changes to already-paid periods are flagged but never auto back-applied, so bureau audits have a clean paper trail." },
   ];
   return (
     <section id="features" style={{ padding: "80px 24px", background: COLORS.cream }}>

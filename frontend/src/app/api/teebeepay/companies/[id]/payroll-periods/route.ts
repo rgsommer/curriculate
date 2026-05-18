@@ -108,11 +108,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         consumed.push(emp._id);
       }
       // Clear consumed pending_hours / pending_timesheet so the next period starts fresh.
+      // Stamp `last_consumed_period_id` + `last_consumed_period_end` so resubmissions
+      // can be detected as post-consumption (and warned about).
       if (consumed.length) {
         await dbi.collection("employees").updateMany(
           { _id: { $in: consumed } },
-          { $unset: { pending_hours: "", pending_cash_advance: "", pending_note: "",
-                       pending_hours_by: "", pending_hours_at: "", pending_timesheet: "" } });
+          {
+            $set: {
+              last_consumed_period_id: periodId,
+              last_consumed_period_end: b.period_end,
+              last_consumed_at: new Date(),
+            },
+            $unset: { pending_hours: "", pending_cash_advance: "", pending_note: "",
+                       pending_hours_by: "", pending_hours_at: "", pending_timesheet: "" },
+          });
       }
     }
 

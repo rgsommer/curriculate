@@ -1841,6 +1841,8 @@ function CompanySettingsPanel({ companyId, onSaved }) {
 
       <LeaveTypesEditor co={co} onChange={(arr) => set("leave_types", arr)} />
 
+      <LateAttendanceConfig co={co} setField={set} />
+
       <Field label="Default pay-slip message">
         <textarea style={{ ...input, minHeight: 70 }} value={co.payslip_message || ""}
           onChange={(e) => set("payslip_message", e.target.value)} />
@@ -2049,6 +2051,55 @@ function LeaveTypesEditor({ co, onChange }) {
           Restore PNG defaults
         </button>
       </div>
+    </FieldGroup>
+  );
+}
+
+/* ─────────── Late-attendance config (Principal-only) ─────────── */
+
+function LateAttendanceConfig({ co, setField }) {
+  const recips = Array.isArray(co.late_alert_recipients) ? co.late_alert_recipients : ["supervisor"];
+  function toggleRecip(kind) {
+    const next = recips.includes(kind) ? recips.filter((r) => r !== kind) : [...recips, kind];
+    setField("late_alert_recipients", next);
+  }
+  return (
+    <FieldGroup label="Late-attendance alerts (Principal-set)">
+      <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>
+        When an employee accumulates this many <strong>Late</strong> or <strong>Absent (unauthorised)</strong> incidents in a
+        rolling window, TeebeePay emails the recipients you tick below. Leave the threshold blank to disable. Repeats are
+        suppressed within a window so you don't get spammed.
+      </p>
+      <Row>
+        <Field label="Threshold (incidents)">
+          <input style={input} type="number" min="0" placeholder="e.g. 3"
+            value={co.late_threshold_count ?? ""}
+            onChange={(e) => setField("late_threshold_count", e.target.value === "" ? "" : Number(e.target.value))} />
+        </Field>
+        <Field label="Window (days)">
+          <input style={input} type="number" min="1"
+            value={co.late_window_days ?? 30}
+            onChange={(e) => setField("late_window_days", e.target.value === "" ? "" : Number(e.target.value))} />
+        </Field>
+      </Row>
+      <Field label="Notify">
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 4 }}>
+          {[
+            { k: "principal",  label: "Principal & system owner" },
+            { k: "supervisor", label: "Division supervisor" },
+            { k: "bookkeeper", label: "Bookkeeper" },
+          ].map((r) => (
+            <label key={r.k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
+              <input type="checkbox" checked={recips.includes(r.k)} onChange={() => toggleRecip(r.k)} />
+              {r.label}
+            </label>
+          ))}
+        </div>
+      </Field>
+      <p style={{ fontSize: 11, color: C.muted, margin: "8px 0 0" }}>
+        Incidents are recorded when a supervisor saves a day with leave type <strong>Late</strong> or
+        <strong> Absent (unauthorised)</strong>. Other leave types (sick, bereavement, etc.) do not count toward this threshold.
+      </p>
     </FieldGroup>
   );
 }
@@ -4191,6 +4242,27 @@ function MyTeamPage({ me, onBack }) {
 
       <StepsForToday teams={teams} draft={draft} />
 
+      {(() => {
+        const post = (teams || []).flatMap((t) => t.employees.filter((e) => e.post_consumption));
+        if (!post.length) return null;
+        return (
+          <div style={{
+            background: "#fee2e2", border: "1px solid #fecaca", borderRadius: 10,
+            padding: "12px 16px", marginBottom: 18, color: "#7f1d1d", display: "flex", gap: 10,
+          }}>
+            <AlertTriangle size={18} style={{ marginTop: 2, flexShrink: 0 }} />
+            <div>
+              <strong>{post.length} employee{post.length === 1 ? "'s" : "s'"} hours are for a period already paid.</strong> Changes you save here
+              will queue for the <em>next</em> fortnight, not back-apply to the prior one. If a correction is needed for the
+              paid period, tell the bookkeeper — they can apply an adjustment in the next pay run.
+              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>
+                Affected: {post.map((e) => `${e.first_name} ${e.last_name}`).join(", ")}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {teams.map((t) => (
         <div key={t.division_id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, marginBottom: 18, overflow: "hidden" }}>
           <div style={{ padding: "14px 18px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -4248,6 +4320,15 @@ function PeriodTeamGrid({ team, draft, setRowField, dblToggleHours }) {
                 {e.pending_hours_at && (
                   <div style={{ fontSize: 11, color: C.muted }}>
                     last saved {new Date(e.pending_hours_at).toLocaleString()}
+                    {Array.isArray(e.submission_history) && e.submission_history.length > 1 && (
+                      <> · <strong>{e.submission_history.length}</strong> saves this fortnight</>
+                    )}
+                  </div>
+                )}
+                {e.post_consumption && (
+                  <div style={{ fontSize: 11, color: "#b91c1c", marginTop: 2 }}>
+                    <AlertTriangle size={11} style={{ verticalAlign: "-1px", marginRight: 3 }} />
+                    Period already paid — changes queue for next fortnight
                   </div>
                 )}
               </td>

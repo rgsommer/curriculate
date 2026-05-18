@@ -16,6 +16,7 @@ const DEFAULT_LEAVE_TYPES = [
   { code: "COMPASSIONATE", name: "Compassionate leave",  paid: true,  max_days_per_year: 3 },
   { code: "MATERNITY",    name: "Maternity leave",       paid: false, max_days_per_year: null },
   { code: "UNPAID",       name: "Unpaid leave",          paid: false, max_days_per_year: null },
+  { code: "LATE",          name: "Late",                  paid: true,  max_days_per_year: null },
   { code: "ABSENT_UNAUTH", name: "Absent (unauthorised)", paid: false, max_days_per_year: null },
 ];
 
@@ -106,21 +107,38 @@ export async function GET(req: Request) {
           default_hours: d.default_hours ?? 80,
           timesheet_mode: !!d.timesheet_mode,
           period_start: win.start, period_end: win.end, period_days: win.days,
-          employees: (byDivision[d._id.toString()] || []).map((e: any) => ({
-            id: e._id.toString(),
-            first_name: e.first_name, last_name: e.last_name,
-            email: e.email || null,
-            pay_type: e.pay_type || "hourly",
-            hourly_rate: e.hourly_rate || null,
-            annual_salary: e.annual_salary || null,
-            default_hours: e.default_hours || d.default_hours || 80,
-            pending_hours: e.pending_hours ?? null,
-            pending_cash_advance: e.pending_cash_advance ?? null,
-            pending_note: e.pending_note || "",
-            pending_hours_at: e.pending_hours_at || null,
-            // pending_timesheet: { [dateISO]: { hours?, clock_in?, clock_out? } }
-            pending_timesheet: e.pending_timesheet || null,
-          })),
+          employees: (byDivision[d._id.toString()] || []).map((e: any) => {
+            // Post-consumption resubmission flag — true when this employee's most
+            // recent pay period covers the current submission window. The supervisor's
+            // next save is for a *future* period; the UI surfaces a red banner so
+            // they know the prior period was already paid and changes don't
+            // back-apply.
+            const post_consumption = !!(e.last_consumed_period_end
+              && String(e.last_consumed_period_end) >= win.end);
+            return {
+              id: e._id.toString(),
+              first_name: e.first_name, last_name: e.last_name,
+              email: e.email || null,
+              pay_type: e.pay_type || "hourly",
+              hourly_rate: e.hourly_rate || null,
+              annual_salary: e.annual_salary || null,
+              default_hours: e.default_hours || d.default_hours || 80,
+              pending_hours: e.pending_hours ?? null,
+              pending_cash_advance: e.pending_cash_advance ?? null,
+              pending_note: e.pending_note || "",
+              pending_hours_at: e.pending_hours_at || null,
+              pending_timesheet: e.pending_timesheet || null,
+              last_consumed_period_end: e.last_consumed_period_end || null,
+              last_consumed_at: e.last_consumed_at || null,
+              post_consumption,
+              submission_history: Array.isArray(e.submission_history)
+                ? e.submission_history.slice(-5).map((s: any) => ({
+                    ts: s.ts, by_email: s.by_email,
+                    total_hours: s.total_hours, post_consumption: !!s.post_consumption,
+                  }))
+                : [],
+            };
+          }),
         };
       }),
     });
