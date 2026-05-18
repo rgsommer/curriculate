@@ -35,6 +35,7 @@ import {
   QrCode,
   ScanLine,
   Timer,
+  GraduationCap,
 } from "lucide-react";
 
 const COLORS = {
@@ -832,6 +833,7 @@ function FeatureGrid() {
     { icon: <Network size={22} />, t: "QuickBooks IIF", d: "General-journal IIF export per period drops straight into your existing books." },
     { icon: <Mail size={22} />, t: "Manager notes on stubs", d: "Short note per employee — \"hours reduced this fortnight because…\" — appears on their pay-stub PDF." },
     { icon: <Smartphone size={22} />, t: "Mobile-friendly", d: "Web-based, works on phone and tablet. Run a payroll from a remote site if you need to." },
+    { icon: <GraduationCap size={22} />, t: "Auto-train new users", d: "Every new supervisor and bookkeeper gets a personalised 5-step guided tour the first time they open their workflow page — \"You supervise these 3 divisions, here's how to enter hours…\". A persistent \"Steps for today\" checklist tracks exactly what's outstanding so nobody guesses what to do next. No training calls, no PDFs." },
   ];
   return (
     <section id="features" style={{ padding: "80px 24px", background: COLORS.cream }}>

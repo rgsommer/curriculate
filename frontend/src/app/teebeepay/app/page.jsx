@@ -359,6 +359,8 @@ function Dashboard({ me, onPick }) {
          `${companies.length} ${companies.length === 1 ? "company" : "companies"} on your roster.`}
       </p>
 
+      {me?.clearance >= 2 && <ManagerStepsForToday onOpenCompany={onPick} />}
+
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
 
       {companies == null ? <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered> : (
@@ -1120,6 +1122,17 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
   const [period, setPeriod] = useState({
     period_start: "", period_end: "", pay_date: new Date().toISOString().slice(0, 10),
   });
+  const [tutorOpen, setTutorOpen] = useState(false);
+  const tutorKey = `teebeepay.tutor.new_period.${me?.uid || "anon"}`;
+  useEffect(() => {
+    if (employees == null || !company) return;
+    try {
+      if (!localStorage.getItem(tutorKey)) {
+        setTutorOpen(true);
+        localStorage.setItem(tutorKey, new Date().toISOString());
+      }
+    } catch { /* localStorage blocked */ }
+  }, [employees, company, tutorKey]);
   const [grid, setGrid] = useState({}); // employee_id -> { hours, cash_advance, note }
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -1229,9 +1242,19 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
   return (
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: "28px 24px" }}>
       <button onClick={onBack} style={btnBack}><ArrowLeft size={14} /> Back to {company.name}</button>
-      <h1 style={{ margin: "0 0 8px", fontSize: 26, fontWeight: 800 }}>
-        {cloneFromPeriodId ? "Clone pay period" : "New pay period"} — {company.name}
-      </h1>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+        <h1 style={{ margin: "0 0 8px", fontSize: 26, fontWeight: 800 }}>
+          {cloneFromPeriodId ? "Clone pay period" : "New pay period"} — {company.name}
+        </h1>
+        <button onClick={() => setTutorOpen(true)} style={{ ...btnGhostSmall, color: C.redDeep }} title="Show the quick tutorial">
+          <GraduationCap size={14} style={{ marginRight: 6 }} /> Show tour
+        </button>
+      </div>
+      {tutorOpen && (
+        <Tutor eyebrow="Bookkeeper tour"
+          steps={buildBookkeeperTutorSteps(me, company, employees, supervisedEmployees)}
+          onClose={() => setTutorOpen(false)} />
+      )}
       <p style={{ color: C.muted, fontSize: 14, margin: "0 0 20px" }}>
         Double-click an <strong>hours</strong> cell to toggle between the default and zero. Notes appear on the employee's pay stub.
       </p>
@@ -3301,103 +3324,10 @@ function DivisionDialog({ companyId, division, employees, onClose, onSaved }) {
   );
 }
 
-/* ─────────── Supervisor tutor (auto-trains new supervisors) ─────────── */
+/* ─────────── Generic tutor modal (reusable across roles) ─────────── */
 
-function SupervisorTutor({ me, teams, onClose }) {
+function Tutor({ eyebrow = "Quick tour", steps, onClose }) {
   const [step, setStep] = useState(0);
-  const totalEmployees = (teams || []).reduce((s, t) => s + (t.employees?.length || 0), 0);
-  const divisionNames = (teams || []).map((t) => t.division_name);
-  const companyNames = Array.from(new Set((teams || []).map((t) => t.company_name)));
-  const firstName = (me?.first_name || "").trim() || me?.email || "there";
-
-  const steps = [
-    {
-      icon: <GraduationCap size={26} color={C.gold} />,
-      title: `Welcome, ${firstName} — let's get you running`,
-      body: (
-        <>
-          <p style={{ marginTop: 0 }}>
-            You've been set up as a supervisor on TeebeePay. That means you're the one who enters this team's
-            hours each pay period — instead of the bookkeeper guessing or chasing you for them.
-          </p>
-          <p style={{ background: "#fff7e0", padding: 12, borderRadius: 8, border: "1px solid #fde68a", margin: "12px 0 0", fontSize: 13 }}>
-            <strong>You supervise:</strong> {divisionNames.join(", ")}
-            {" · "}<strong>{totalEmployees}</strong> employee{totalEmployees === 1 ? "" : "s"}
-            {" · across "}<strong>{companyNames.length}</strong> compan{companyNames.length === 1 ? "y" : "ies"}.
-          </p>
-        </>
-      ),
-    },
-    {
-      icon: <NotebookPen size={26} color={C.gold} />,
-      title: "Each row is one of your team members",
-      body: (
-        <>
-          <p style={{ marginTop: 0 }}>
-            For every employee, you enter three things this fortnight:
-          </p>
-          <ul style={{ margin: "0 0 8px 18px", padding: 0, fontSize: 14, lineHeight: 1.7 }}>
-            <li><strong>Hours</strong> — what they actually worked. Pre-filled with the division default (e.g. 80 for fortnightly).</li>
-            <li><strong>Cash advance</strong> (optional) — money already given to them; deducted from net pay.</li>
-            <li><strong>Note</strong> (optional) — a short explanation. Appears on their pay-stub email.</li>
-          </ul>
-          <p style={{ background: "#f3f4f6", padding: 12, borderRadius: 8, margin: "10px 0 0", fontSize: 13 }}>
-            <strong>Tip — the double-click shortcut.</strong> Double-click an <em>Hours</em> cell to toggle between the
-            division default and zero. Use it for "didn't show up this fortnight" — fastest way to mark absences.
-          </p>
-        </>
-      ),
-    },
-    {
-      icon: <CheckCircle2 size={26} color={C.gold} />,
-      title: "Save whenever you like",
-      body: (
-        <>
-          <p style={{ marginTop: 0 }}>
-            Hit <strong>Save hours</strong> at the bottom whenever you want. You can keep editing later — the new values
-            replace the old ones. Nothing is "submitted" yet; the bookkeeper picks these numbers up when they cut the next
-            pay run, then they become real entries.
-          </p>
-          <p style={{ marginTop: 12 }}>
-            Each row shows the time of your last save underneath the employee's name, so you can see at a glance
-            what's been entered.
-          </p>
-        </>
-      ),
-    },
-    {
-      icon: <AlertTriangle size={26} color={C.gold} />,
-      title: "There's a deadline",
-      body: (
-        <>
-          <p style={{ marginTop: 0 }}>
-            Each company sets a day and time by which supervisor hours need to be in. You'll get an email reminder
-            the morning of that day if you haven't saved yet.
-          </p>
-          <p style={{ background: "#fee2e2", border: "1px solid #fecaca", padding: 12, borderRadius: 8, margin: "12px 0 0", fontSize: 13, color: "#7f1d1d" }}>
-            <strong>Late submissions hold up the pay run.</strong> If a deadline is missed, the bookkeeper has to chase you
-            and that delays everybody's pay. Save early — you can always edit again before the deadline.
-          </p>
-        </>
-      ),
-    },
-    {
-      icon: <HelpCircle size={26} color={C.gold} />,
-      title: "You're set",
-      body: (
-        <>
-          <p style={{ marginTop: 0 }}>
-            Click <strong>Got it</strong> to start entering hours. You can re-open this tour any time via the
-            <strong> Show tour </strong> button next to the page title.
-          </p>
-          <p style={{ marginTop: 12 }}>
-            Need help with something specific? Reply to any TeebeePay email and a real person picks it up.
-          </p>
-        </>
-      ),
-    },
-  ];
-
   const cur = steps[step];
   const isLast = step === steps.length - 1;
 
@@ -3419,7 +3349,7 @@ function SupervisorTutor({ me, teams, onClose }) {
             }}>{cur.icon}</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 11, color: C.goldDeep, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.06 }}>
-                Quick tour · step {step + 1} of {steps.length}
+                {eyebrow} · step {step + 1} of {steps.length}
               </div>
               <h3 style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 800, color: C.ink }}>{cur.title}</h3>
             </div>
@@ -3464,6 +3394,414 @@ function SupervisorTutor({ me, teams, onClose }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* Supervisor tutor — content (personalised by team data) */
+function buildSupervisorTutorSteps(me, teams) {
+  const totalEmployees = (teams || []).reduce((s, t) => s + (t.employees?.length || 0), 0);
+  const divisionNames = (teams || []).map((t) => t.division_name);
+  const companyNames = Array.from(new Set((teams || []).map((t) => t.company_name)));
+  const firstName = (me?.first_name || "").trim() || me?.email || "there";
+  return [
+    {
+      icon: <GraduationCap size={26} color={C.gold} />,
+      title: `Welcome, ${firstName} — let's get you running`,
+      body: (
+        <>
+          <p style={{ marginTop: 0 }}>
+            You've been set up as a supervisor on TeebeePay. That means you're the one who enters this team's
+            hours each pay period — instead of the bookkeeper guessing or chasing you for them.
+          </p>
+          <p style={{ background: "#fff7e0", padding: 12, borderRadius: 8, border: "1px solid #fde68a", margin: "12px 0 0", fontSize: 13 }}>
+            <strong>You supervise:</strong> {divisionNames.join(", ")}
+            {" · "}<strong>{totalEmployees}</strong> employee{totalEmployees === 1 ? "" : "s"}
+            {" · across "}<strong>{companyNames.length}</strong> compan{companyNames.length === 1 ? "y" : "ies"}.
+          </p>
+        </>
+      ),
+    },
+    {
+      icon: <NotebookPen size={26} color={C.gold} />,
+      title: "Each row is one of your team members",
+      body: (
+        <>
+          <p style={{ marginTop: 0 }}>For every employee, you enter three things this fortnight:</p>
+          <ul style={{ margin: "0 0 8px 18px", padding: 0, fontSize: 14, lineHeight: 1.7 }}>
+            <li><strong>Hours</strong> — what they actually worked. Pre-filled with the division default.</li>
+            <li><strong>Cash advance</strong> (optional) — money already given; deducted from net pay.</li>
+            <li><strong>Note</strong> (optional) — short explanation. Appears on their pay-stub email.</li>
+          </ul>
+          <p style={{ background: "#f3f4f6", padding: 12, borderRadius: 8, margin: "10px 0 0", fontSize: 13 }}>
+            <strong>Tip — the double-click shortcut.</strong> Double-click an <em>Hours</em> cell to toggle between
+            the division default and zero. Fastest way to mark absences.
+          </p>
+        </>
+      ),
+    },
+    {
+      icon: <CheckCircle2 size={26} color={C.gold} />,
+      title: "Save whenever you like",
+      body: (
+        <>
+          <p style={{ marginTop: 0 }}>
+            Hit <strong>Save hours</strong> at the bottom whenever you want. You can keep editing later. Nothing is
+            "submitted" yet — the bookkeeper picks these numbers up when they cut the next pay run.
+          </p>
+          <p style={{ marginTop: 12 }}>Each row shows the time of your last save under the employee's name.</p>
+        </>
+      ),
+    },
+    {
+      icon: <AlertTriangle size={26} color={C.gold} />,
+      title: "There's a deadline",
+      body: (
+        <>
+          <p style={{ marginTop: 0 }}>
+            Each company sets a day and time by which supervisor hours must be in. You'll get an email reminder
+            the morning of that day if you haven't saved yet.
+          </p>
+          <p style={{ background: "#fee2e2", border: "1px solid #fecaca", padding: 12, borderRadius: 8, margin: "12px 0 0", fontSize: 13, color: "#7f1d1d" }}>
+            <strong>Late submissions hold up the pay run.</strong> Save early — you can always edit again later.
+          </p>
+        </>
+      ),
+    },
+    {
+      icon: <HelpCircle size={26} color={C.gold} />,
+      title: "You're set",
+      body: (
+        <>
+          <p style={{ marginTop: 0 }}>
+            Click <strong>Got it</strong> to start. You can re-open this tour any time via the
+            <strong> Show tour </strong> button at the top of the page. The
+            <strong> Steps for today </strong>panel always shows what's outstanding.
+          </p>
+        </>
+      ),
+    },
+  ];
+}
+
+/* Bookkeeper tutor — content (NewPeriod page) */
+function buildBookkeeperTutorSteps(me, company, employees, supervisedEmployees) {
+  const firstName = (me?.first_name || "").trim() || me?.email || "there";
+  const cName = company?.name || "this company";
+  const sCount = (supervisedEmployees || []).length;
+  return [
+    {
+      icon: <GraduationCap size={26} color={C.gold} />,
+      title: `Welcome, ${firstName} — let's cut your first pay run`,
+      body: (
+        <>
+          <p style={{ marginTop: 0 }}>
+            You're about to create a new pay period for <strong>{cName}</strong>. Each row below is an active
+            employee. Set the period dates at the top, fill in hours, click <strong>Submit</strong>.
+          </p>
+          <p style={{ background: "#fff7e0", padding: 12, borderRadius: 8, border: "1px solid #fde68a", margin: "12px 0 0", fontSize: 13 }}>
+            TeebeePay calculates the rest — SWT, Nasfund, allowances, deductions, net pay — and emails the approver
+            for sign-off before any pay-stub goes out.
+          </p>
+        </>
+      ),
+    },
+    {
+      icon: <NotebookPen size={26} color={C.gold} />,
+      title: "Enter hours fast",
+      body: (
+        <>
+          <p style={{ marginTop: 0 }}>Three columns per row:</p>
+          <ul style={{ margin: "0 0 8px 18px", padding: 0, fontSize: 14, lineHeight: 1.7 }}>
+            <li><strong>Hours</strong> — what they worked. Defaults to the employee's standard hours.</li>
+            <li><strong>Cash advance</strong> — money already given out, deducted from net.</li>
+            <li><strong>Note</strong> — short explanation, appears on their pay-stub email.</li>
+          </ul>
+          <p style={{ background: "#f3f4f6", padding: 12, borderRadius: 8, margin: "10px 0 0", fontSize: 13 }}>
+            <strong>Tip — the double-click shortcut.</strong> Double-click an Hours cell to toggle between the
+            employee's default and zero. Fastest way through a long roster.
+          </p>
+        </>
+      ),
+    },
+    {
+      icon: <Network size={26} color={C.gold} />,
+      title: sCount > 0
+        ? `${sCount} supervisor-managed employee${sCount === 1 ? "" : "s"} are handled elsewhere`
+        : "Supervisor-managed employees are handled elsewhere",
+      body: (
+        <>
+          <p style={{ marginTop: 0 }}>
+            Employees in divisions where the supervisor enters hours are <strong>hidden</strong> from this grid —
+            you'll see them in the yellow notice above.
+          </p>
+          <p style={{ marginTop: 10 }}>
+            Their hours come in from the supervisor's <strong>My team's hours</strong> page automatically.
+            The <strong>Supervisor submissions</strong> panel on the Pay periods tab tells you who's in and who's not.
+            When you submit this period, TeebeePay pulls their saved hours into the entries.
+          </p>
+        </>
+      ),
+    },
+    {
+      icon: <AlertTriangle size={26} color={C.gold} />,
+      title: "Watch for anomaly banners",
+      body: (
+        <>
+          <p style={{ marginTop: 0 }}>
+            As you type, TeebeePay compares your running totals to the median of the last six pay periods.
+            If gross pay or headcount drifts more than 25%, a yellow banner appears at the top.
+          </p>
+          <p style={{ background: "#fef3c7", padding: 12, borderRadius: 8, margin: "10px 0 0", fontSize: 13, color: "#7c2d12" }}>
+            It's just a flag — sometimes the difference is real. But it catches the "I typed 800 instead of 80"
+            kind of mistake before it lands in everyone's pay stubs.
+          </p>
+        </>
+      ),
+    },
+    {
+      icon: <Mail size={26} color={C.gold} />,
+      title: "Submit and the approver gets emailed",
+      body: (
+        <>
+          <p style={{ marginTop: 0 }}>
+            When you submit, the period moves to <strong>Pending approval</strong> and the company's manager email
+            receives a one-click magic link to review the totals. No login required for them.
+          </p>
+          <p style={{ marginTop: 10 }}>
+            After they approve, you can email pay-stubs, download the BSP batch, NASFund return, QuickBooks IIF,
+            or the whole period as a ZIP.
+          </p>
+        </>
+      ),
+    },
+    {
+      icon: <HelpCircle size={26} color={C.gold} />,
+      title: "You're set",
+      body: (
+        <p style={{ margin: 0 }}>
+          Click <strong>Got it</strong> to begin. Reach out by replying to any TeebeePay email if you get stuck.
+        </p>
+      ),
+    },
+  ];
+}
+
+/* ─────────── Steps for today (running checklist for supervisors) ─────────── */
+
+function StepsForToday({ teams, draft }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const all = (teams || []).flatMap((t) => t.employees.map((e) => ({ ...e, _team: t })));
+  if (!all.length) return null;
+  const total = all.length;
+  const saved = all.filter((e) => !!e.pending_hours_at).length;
+  // "Touched this session" — employees whose draft differs from current pending values
+  const touched = all.filter((e) => {
+    const d = draft[e.id] || {};
+    return Number(d.hours) !== Number(e.pending_hours || 0)
+        || Number(d.cash_advance) !== Number(e.pending_cash_advance || 0)
+        || (d.note || "") !== (e.pending_note || "");
+  }).length;
+  const pct = Math.round((saved / total) * 100);
+  const state = saved === 0 ? "not_started" : saved === total ? "complete" : "partial";
+
+  const palette = {
+    not_started: { bg: "#fee2e2", bd: "#fecaca", ink: "#7f1d1d", accent: "#b91c1c" },
+    partial:     { bg: "#fef3c7", bd: "#fde68a", ink: "#78350f", accent: "#ca8a04" },
+    complete:    { bg: "#dcfce7", bd: "#bbf7d0", ink: "#14532d", accent: "#16a34a" },
+  }[state];
+
+  const items = [
+    { done: total > 0, text: `Review the ${total}-row grid — one row per team member` },
+    { done: false,     text: `Update hours where they differ from the division default (double-click to toggle ↔ 0)` },
+    { done: false,     text: `Note any cash advances or context (visible on their pay-stub email)` },
+    { done: saved > 0 || touched > 0, text: `Click "Save hours" — you can keep editing after` },
+    { done: saved === total && total > 0, text: `Once every row is saved you're done — the bookkeeper takes over` },
+  ];
+
+  return (
+    <div style={{
+      background: palette.bg, border: `1px solid ${palette.bd}`, borderRadius: 10,
+      padding: collapsed ? "10px 14px" : "14px 16px", marginBottom: 18, color: palette.ink,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <ClipboardList size={18} />
+          <strong style={{ fontSize: 14 }}>
+            Steps for today — {state === "complete" ? "all done! " : `${saved} of ${total} saved (${pct}%)`}
+          </strong>
+        </div>
+        <button onClick={() => setCollapsed((x) => !x)} style={{
+          background: "none", border: "none", cursor: "pointer", color: palette.ink, fontSize: 12, fontWeight: 600,
+        }}>
+          {collapsed ? "Show" : "Hide"}
+        </button>
+      </div>
+
+      {!collapsed && (
+        <>
+          {/* Progress bar */}
+          <div style={{ marginTop: 10, height: 6, background: "rgba(0,0,0,0.07)", borderRadius: 999, overflow: "hidden" }}>
+            <div style={{ width: `${pct}%`, height: "100%", background: palette.accent, transition: "width 200ms" }} />
+          </div>
+
+          {/* Checklist */}
+          <ol style={{ margin: "12px 0 0", padding: 0, listStyle: "none", fontSize: 13 }}>
+            {items.map((it, i) => (
+              <li key={i} style={{
+                display: "flex", alignItems: "flex-start", gap: 8, padding: "4px 0",
+                opacity: it.done ? 0.7 : 1,
+              }}>
+                <span style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  width: 18, height: 18, borderRadius: 999, flexShrink: 0,
+                  background: it.done ? palette.accent : "transparent",
+                  color: it.done ? "#fff" : palette.ink,
+                  border: it.done ? "none" : `1.5px solid ${palette.accent}`,
+                  fontSize: 11, fontWeight: 700, marginTop: 1,
+                }}>{it.done ? "✓" : i + 1}</span>
+                <span style={{ textDecoration: it.done ? "line-through" : "none" }}>{it.text}</span>
+              </li>
+            ))}
+          </ol>
+
+          {touched > 0 && saved < total && (
+            <p style={{ margin: "10px 0 0", fontSize: 12, fontWeight: 600 }}>
+              {touched} row{touched === 1 ? "" : "s"} edited but not yet saved — click <strong>Save hours</strong> below.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ─────────── Manager Steps for today (Dashboard widget) ─────────── */
+
+function ManagerStepsForToday({ onOpenCompany }) {
+  const [d, setD] = useState(null);
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    (async () => {
+      try { setD(await api("/api/teebeepay/manager/today-tasks")); }
+      catch { setD({}); /* fail open — widget just stays empty */ }
+    })();
+  }, []);
+  if (!d) return null;
+  const pending = d.pending_approval || [];
+  const noStubs = d.approved_no_stubs || [];
+  const supPending = d.supervisor_pending_divisions || 0;
+  const nasfundSoon = !!d.nasfund_deadline;
+
+  // Build steps with current state
+  const items = [
+    {
+      done: supPending === 0,
+      attention: supPending > 0,
+      title: supPending === 0
+        ? "Supervisor submissions — all in"
+        : `Chase ${supPending} supervisor submission${supPending === 1 ? "" : "s"}`,
+      detail: supPending > 0
+        ? <>Companies with pending supervisors: {Object.entries(d.supervisor_pending_by_company || {}).map(([n, v]) => `${n} (${v})`).join(", ")}</>
+        : <>Every active division supervisor has submitted hours within the last 6 days.</>,
+    },
+    {
+      done: pending.length === 0,
+      attention: pending.length > 0,
+      title: pending.length === 0
+        ? "No pay periods awaiting approval"
+        : `Review ${pending.length} period${pending.length === 1 ? "" : "s"} awaiting approval`,
+      detail: pending.length > 0 ? (
+        <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12 }}>
+          {pending.slice(0, 4).map((p) => (
+            <li key={p.id}>
+              <button onClick={() => onOpenCompany && onOpenCompany(p.company_id)}
+                style={{ background: "none", border: "none", color: C.redDeep, textDecoration: "underline", cursor: "pointer", padding: 0, font: "inherit" }}>
+                {p.company_name}
+              </button>
+              {" · "}pay date {p.pay_date}
+            </li>
+          ))}
+          {pending.length > 4 && <li>… and {pending.length - 4} more</li>}
+        </ul>
+      ) : null,
+    },
+    {
+      done: noStubs.length === 0,
+      attention: noStubs.length > 0,
+      title: noStubs.length === 0
+        ? "All approved periods have had pay-stubs emailed"
+        : `Send pay-stubs for ${noStubs.length} approved period${noStubs.length === 1 ? "" : "s"}`,
+      detail: noStubs.length > 0 ? (
+        <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12 }}>
+          {noStubs.slice(0, 4).map((p) => (
+            <li key={p.id}>
+              <button onClick={() => onOpenCompany && onOpenCompany(p.company_id)}
+                style={{ background: "none", border: "none", color: C.redDeep, textDecoration: "underline", cursor: "pointer", padding: 0, font: "inherit" }}>
+                {p.company_name}
+              </button>
+              {" · "}pay date {p.pay_date}
+            </li>
+          ))}
+        </ul>
+      ) : null,
+    },
+    {
+      done: !nasfundSoon,
+      attention: nasfundSoon,
+      title: nasfundSoon
+        ? `NASFund deadline this week — ${d.nasfund_deadline}`
+        : "No NASFund deadline this week",
+      detail: nasfundSoon
+        ? <>Monthly NCSL contribution returns are due. Download each company's NASFund XLSX from its latest pay period and file with the fund.</>
+        : null,
+    },
+  ];
+
+  const attentionCount = items.filter((i) => i.attention).length;
+  const allClear = attentionCount === 0;
+  const palette = allClear
+    ? { bg: "#dcfce7", bd: "#bbf7d0", ink: "#14532d", accent: "#16a34a" }
+    : { bg: "#fef3c7", bd: "#fde68a", ink: "#78350f", accent: "#ca8a04" };
+
+  return (
+    <div style={{
+      background: palette.bg, border: `1px solid ${palette.bd}`, borderRadius: 10,
+      padding: collapsed ? "10px 14px" : "14px 16px", marginBottom: 18, color: palette.ink,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <ClipboardList size={18} />
+          <strong style={{ fontSize: 14 }}>
+            Steps for today — {allClear ? "all clear" : `${attentionCount} ${attentionCount === 1 ? "thing needs" : "things need"} attention`}
+          </strong>
+        </div>
+        <button onClick={() => setCollapsed((x) => !x)} style={{
+          background: "none", border: "none", cursor: "pointer", color: palette.ink, fontSize: 12, fontWeight: 600,
+        }}>{collapsed ? "Show" : "Hide"}</button>
+      </div>
+
+      {!collapsed && (
+        <ol style={{ margin: "12px 0 0", padding: 0, listStyle: "none", fontSize: 13 }}>
+          {items.map((it, i) => (
+            <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "6px 0",
+                                  opacity: it.done && !it.attention ? 0.7 : 1 }}>
+              <span style={{
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                width: 20, height: 20, borderRadius: 999, flexShrink: 0,
+                background: it.done ? palette.accent : "transparent",
+                color: it.done ? "#fff" : palette.ink,
+                border: it.done ? "none" : `1.5px solid ${palette.accent}`,
+                fontSize: 11, fontWeight: 700, marginTop: 1,
+              }}>{it.done ? "✓" : i + 1}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600 }}>{it.title}</div>
+                {it.detail && <div style={{ marginTop: 2, color: palette.ink, opacity: 0.85 }}>{it.detail}</div>}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }
@@ -3573,9 +3911,15 @@ function MyTeamPage({ me, onBack }) {
         up automatically when the bookkeeper cuts the next pay run. Double-click an hours cell to toggle between the
         division default and zero (e.g. didn't work this fortnight).
       </p>
-      {tutorOpen && <SupervisorTutor me={me} teams={teams} onClose={() => setTutorOpen(false)} />}
+      {tutorOpen && (
+        <Tutor eyebrow="Supervisor tour"
+          steps={buildSupervisorTutorSteps(me, teams)}
+          onClose={() => setTutorOpen(false)} />
+      )}
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
       {info && <FlashBox type="info" icon={<CheckCircle2 size={16} />}>{info}</FlashBox>}
+
+      <StepsForToday teams={teams} draft={draft} />
 
       {teams.map((t) => (
         <div key={t.division_id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, marginBottom: 18, overflow: "hidden" }}>
