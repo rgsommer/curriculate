@@ -599,6 +599,7 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod, onOpe
       {showEmpDialog && (
         <EmployeeDialog companyId={companyId} employee={showEmpDialog.id ? showEmpDialog : null}
           allEmployees={employees || []}
+          me={me}
           onClose={() => setShowEmpDialog(null)}
           onSaved={() => { setShowEmpDialog(null); refresh(); }} />
       )}
@@ -774,15 +775,27 @@ function EmployeeTable({ employees, selected, onToggleSel, onEdit, canEdit, onOp
   );
 }
 
-function EmployeeDialog({ companyId, employee, allEmployees, onClose, onSaved }) {
+function EmployeeDialog({ companyId, employee, allEmployees, me, onClose, onSaved }) {
   const isEdit = !!employee;
   const [divisions, setDivisions] = useState([]);
+  const [showAdjustPay, setShowAdjustPay] = useState(false);
+  const [payHistory, setPayHistory] = useState([]);
   useEffect(() => {
     (async () => {
       try { setDivisions((await api(`/api/teebeepay/companies/${companyId}/divisions`)).divisions || []); }
       catch { setDivisions([]); }
     })();
   }, [companyId]);
+  // Load pay history for existing employees (so the "View pay history" link has data)
+  useEffect(() => {
+    if (!isEdit) { setPayHistory([]); return; }
+    (async () => {
+      try {
+        const j = await api(`/api/teebeepay/companies/${companyId}/employees/${employee.id}`);
+        setPayHistory(Array.isArray(j.employee?.pay_history) ? j.employee.pay_history : []);
+      } catch { setPayHistory([]); }
+    })();
+  }, [companyId, isEdit, employee?.id]);
   // Seed bank_accounts: prefer the array; else build single-row from legacy fields.
   const seedBankAccounts = (() => {
     if (employee?.bank_accounts && employee.bank_accounts.length) return employee.bank_accounts;
@@ -912,6 +925,50 @@ function EmployeeDialog({ companyId, employee, allEmployees, onClose, onSaved })
               onChange={(e) => set(f.pay_type === "salary" ? "annual_salary" : "hourly_rate", e.target.value)} />
           </Field>
         </Row>
+        {isEdit && (me?.clearance >= 3) && (
+          <div style={{ marginTop: 6, padding: 12, background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+              <div style={{ fontSize: 12, color: C.muted }}>
+                <strong style={{ color: C.ink }}>Adjust pay (Principal-only).</strong> Increase or decrease by % or fixed PGK,
+                with a reason. Journaled to the audit log + the employee's pay history.
+              </div>
+              <button type="button" onClick={() => setShowAdjustPay(true)} style={btnGhostLg}>
+                <Percent size={14} style={{ marginRight: 6 }} /> Adjust pay
+              </button>
+            </div>
+            {payHistory.length > 0 && (
+              <details style={{ marginTop: 10, fontSize: 12 }}>
+                <summary style={{ cursor: "pointer", color: C.inkSoft, fontWeight: 600 }}>
+                  Pay history ({payHistory.length} change{payHistory.length === 1 ? "" : "s"})
+                </summary>
+                <table style={{ width: "100%", marginTop: 8, fontSize: 12, borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ color: C.muted, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.06 }}>
+                      <th style={{ textAlign: "left", padding: "4px 6px" }}>Date</th>
+                      <th style={{ textAlign: "left", padding: "4px 6px" }}>Field</th>
+                      <th style={{ textAlign: "right", padding: "4px 6px" }}>From</th>
+                      <th style={{ textAlign: "right", padding: "4px 6px" }}>To</th>
+                      <th style={{ textAlign: "left", padding: "4px 6px" }}>By</th>
+                      <th style={{ textAlign: "left", padding: "4px 6px" }}>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...payHistory].reverse().map((h, i) => (
+                      <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "4px 6px", whiteSpace: "nowrap" }}>{h.effective_date || (h.ts && new Date(h.ts).toISOString().slice(0, 10))}</td>
+                        <td style={{ padding: "4px 6px", color: C.muted }}>{h.pay_field === "hourly_rate" ? "Hourly" : "Annual"}</td>
+                        <td style={{ padding: "4px 6px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(h.old_value || 0).toFixed(2)}</td>
+                        <td style={{ padding: "4px 6px", textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{Number(h.new_value || 0).toFixed(2)}</td>
+                        <td style={{ padding: "4px 6px", color: C.muted }}>{h.by_email}</td>
+                        <td style={{ padding: "4px 6px", color: C.inkSoft }}>{h.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            )}
+          </div>
+        )}
         <Row>
           <Field label="Default hours per period"><input style={input} type="number" step="0.5" value={f.default_hours} onChange={(e) => set("default_hours", e.target.value)} /></Field>
           <Field label="FTE %"><input style={input} type="number" step="1" value={f.fte_pct} onChange={(e) => set("fte_pct", e.target.value)} /></Field>
@@ -1034,6 +1091,11 @@ function EmployeeDialog({ companyId, employee, allEmployees, onClose, onSaved })
                       : isEdit ? "Save changes" : "Save employee"}
         </button>
       </div>
+      {showAdjustPay && (
+        <AdjustPayDialog companyId={companyId} employee={employee}
+          onClose={() => setShowAdjustPay(false)}
+          onSaved={() => { setShowAdjustPay(false); onSaved(); }} />
+      )}
     </Modal>
   );
 }
@@ -1775,8 +1837,9 @@ function CompanySettingsPanel({ companyId, onSaved }) {
               onChange={(e) => set("hours_due_time", e.target.value)} />
           </Field>
         </Row>
-        </Row>
       </FieldGroup>
+
+      <LeaveTypesEditor co={co} onChange={(arr) => set("leave_types", arr)} />
 
       <Field label="Default pay-slip message">
         <textarea style={{ ...input, minHeight: 70 }} value={co.payslip_message || ""}
@@ -1903,6 +1966,185 @@ function SignaturePanel({ company, onUpload, onRemove, onAfter }) {
                     : <><Upload size={14} style={{ marginRight: 6 }} /> Upload signature</>}
       </button>
     </div>
+  );
+}
+
+/* ─────────── Leave types editor (Principal-level) ─────────── */
+
+const DEFAULT_LEAVE_TYPES = [
+  { code: "ANNUAL",       name: "Annual leave",         paid: true,  max_days_per_year: 14 },
+  { code: "SICK",         name: "Sick leave",           paid: true,  max_days_per_year: 6 },
+  { code: "BEREAVEMENT",  name: "Bereavement leave",    paid: true,  max_days_per_year: 3 },
+  { code: "COMPASSIONATE", name: "Compassionate leave", paid: true,  max_days_per_year: 3 },
+  { code: "MATERNITY",    name: "Maternity leave",      paid: false, max_days_per_year: null },
+  { code: "UNPAID",       name: "Unpaid leave",         paid: false, max_days_per_year: null },
+  { code: "ABSENT_UNAUTH", name: "Absent (unauthorised)", paid: false, max_days_per_year: null },
+];
+
+function LeaveTypesEditor({ co, onChange }) {
+  const rows = Array.isArray(co.leave_types) && co.leave_types.length ? co.leave_types : DEFAULT_LEAVE_TYPES;
+  function setRow(i, key, v) {
+    const next = rows.map((r, idx) => idx === i ? { ...r, [key]: v } : r);
+    onChange(next);
+  }
+  function add() {
+    onChange([...rows, { code: "", name: "", paid: false, max_days_per_year: null }]);
+  }
+  function remove(i) {
+    onChange(rows.filter((_, idx) => idx !== i));
+  }
+  function reset() {
+    onChange(DEFAULT_LEAVE_TYPES);
+  }
+  return (
+    <FieldGroup label="Leave types (paid / unpaid categories shown on the timesheet)">
+      <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>
+        Supervisors pick one of these per day on the timesheet when an employee isn't at work normally — bereavement, sick,
+        unpaid, etc. <strong>Paid</strong> types contribute the day's standard hours; <strong>unpaid</strong> contribute 0.
+        Defaults reflect the PNG Employment Act minimums.
+      </p>
+      <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+        <thead>
+          <tr style={{ color: C.muted, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.06 }}>
+            <th style={{ textAlign: "left", padding: "6px 8px" }}>Code</th>
+            <th style={{ textAlign: "left", padding: "6px 8px" }}>Name</th>
+            <th style={{ textAlign: "center", padding: "6px 8px" }}>Paid</th>
+            <th style={{ textAlign: "right", padding: "6px 8px" }}>Max days / yr</th>
+            <th style={{ width: 60 }}></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
+              <td style={{ padding: "4px 8px" }}>
+                <input style={{ ...input, padding: "5px 8px", fontSize: 12, fontFamily: "ui-monospace, monospace" }}
+                  value={r.code || ""} onChange={(e) => setRow(i, "code", e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ""))} />
+              </td>
+              <td style={{ padding: "4px 8px" }}>
+                <input style={{ ...input, padding: "5px 8px", fontSize: 13 }}
+                  value={r.name || ""} onChange={(e) => setRow(i, "name", e.target.value)} />
+              </td>
+              <td style={{ padding: "4px 8px", textAlign: "center" }}>
+                <input type="checkbox" checked={!!r.paid} onChange={(e) => setRow(i, "paid", e.target.checked)} />
+              </td>
+              <td style={{ padding: "4px 8px", textAlign: "right" }}>
+                <input style={{ ...input, padding: "5px 8px", fontSize: 13, textAlign: "right", width: 80 }} type="number" min="0"
+                  value={r.max_days_per_year ?? ""}
+                  onChange={(e) => setRow(i, "max_days_per_year", e.target.value === "" ? null : Number(e.target.value))} />
+              </td>
+              <td style={{ padding: "4px 8px", textAlign: "right" }}>
+                <button onClick={() => remove(i)} style={{ ...btnGhostSmall, color: "#991b1b", padding: "3px 6px" }}>
+                  <Trash2 size={11} />
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <button onClick={add} type="button" style={btnGhostLg}>
+          <Plus size={14} style={{ marginRight: 6 }} /> Add leave type
+        </button>
+        <button onClick={reset} type="button" style={btnGhostLg}>
+          Restore PNG defaults
+        </button>
+      </div>
+    </FieldGroup>
+  );
+}
+
+/* ─────────── Adjust pay dialog (Principal-only) ─────────── */
+
+function AdjustPayDialog({ companyId, employee, onClose, onSaved }) {
+  const isHourly = employee.pay_type === "hourly";
+  const curVal = Number(isHourly ? employee.hourly_rate : employee.annual_salary) || 0;
+  const fieldLabel = isHourly ? "hourly rate" : "annual salary";
+  const [f, setF] = useState({
+    kind: "percent",
+    direction: "increase",
+    value: "",
+    reason: "",
+    effective_date: new Date().toISOString().slice(0, 10),
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+
+  const v = Number(f.value) || 0;
+  const delta = f.kind === "percent" ? curVal * (v / 100) : v;
+  const signed = f.direction === "increase" ? delta : -delta;
+  const projected = Math.max(0, Math.round((curVal + signed) * 100) / 100);
+
+  async function save() {
+    setError("");
+    if (!f.reason.trim()) { setError("Reason is required for the audit log."); return; }
+    if (v <= 0) { setError("Enter a positive amount."); return; }
+    setSubmitting(true);
+    try {
+      await api(`/api/teebeepay/companies/${companyId}/employees/${employee.id}/adjust-pay`, {
+        method: "POST",
+        body: JSON.stringify({
+          kind: f.kind, direction: f.direction, value: v,
+          reason: f.reason.trim(), effective_date: f.effective_date,
+        }),
+      });
+      onSaved();
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+
+  return (
+    <Modal title={`Adjust pay — ${employee.first_name} ${employee.last_name}`} onClose={onClose}>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <p style={{ fontSize: 13, color: C.muted, margin: "0 0 14px" }}>
+        Current {fieldLabel}: <strong style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>
+        PGK {curVal.toFixed(2)}</strong>. This change is journaled to the audit log and to the employee's pay history.
+      </p>
+      <Row>
+        <Field label="Direction">
+          <select style={input} value={f.direction} onChange={(e) => set("direction", e.target.value)}>
+            <option value="increase">Increase</option>
+            <option value="decrease">Decrease</option>
+          </select>
+        </Field>
+        <Field label="Kind">
+          <select style={input} value={f.kind} onChange={(e) => set("kind", e.target.value)}>
+            <option value="percent">By percentage</option>
+            <option value="fixed">By fixed amount (PGK)</option>
+          </select>
+        </Field>
+        <Field label={f.kind === "percent" ? "% value" : "PGK value"}>
+          <input style={input} type="number" step="0.01" min="0" value={f.value}
+            onChange={(e) => set("value", e.target.value)}
+            placeholder={f.kind === "percent" ? "e.g. 5" : "e.g. 50.00"} autoFocus />
+        </Field>
+      </Row>
+      <Field label="Effective date">
+        <input style={input} type="date" value={f.effective_date}
+          onChange={(e) => set("effective_date", e.target.value)} />
+      </Field>
+      <Field label="Reason (recorded in audit log)">
+        <textarea style={{ ...input, minHeight: 60 }} value={f.reason}
+          onChange={(e) => set("reason", e.target.value)}
+          placeholder="e.g. Annual review increase, promotion to Senior Driver, CPI adjustment FY26…" />
+      </Field>
+      <div style={{
+        background: signed >= 0 ? "#dcfce7" : "#fee2e2",
+        border: `1px solid ${signed >= 0 ? "#bbf7d0" : "#fecaca"}`,
+        borderRadius: 8, padding: "10px 14px", marginTop: 12, fontSize: 13,
+        color: signed >= 0 ? "#14532d" : "#7f1d1d", fontVariantNumeric: "tabular-nums",
+      }}>
+        <strong>Projected new {fieldLabel}:</strong> PGK {projected.toFixed(2)} <span style={{ opacity: 0.7 }}>
+        ({signed >= 0 ? "+" : ""}{(signed).toFixed(2)} from PGK {curVal.toFixed(2)})</span>
+      </div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
+        <button onClick={onClose} style={btnGhostLg}>Cancel</button>
+        <button onClick={save} disabled={submitting || !v || !f.reason.trim()} style={btnPrimaryInline}>
+          {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Applying…</>
+                      : "Apply adjustment"}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -4203,6 +4445,19 @@ function TimesheetTeamGrid({ team, draft, setDraft }) {
                                 onChange={(ev) => setCell(e.id, dateStr, "hours", ev.target.value)}
                                 style={{ ...input, padding: "4px 6px", fontSize: 12, flex: 1, textAlign: "right" }} />
                             </div>
+                            <select value={day.leave_type || ""}
+                              onChange={(ev) => setCell(e.id, dateStr, "leave_type", ev.target.value || null)}
+                              style={{ ...input, padding: "4px 6px", fontSize: 12, marginBottom: 6 }}>
+                              <option value="">— at work —</option>
+                              {(team.leave_types || []).map((lt) => (
+                                <option key={lt.code} value={lt.code}>
+                                  {lt.name}{lt.paid ? " · paid" : " · unpaid"}
+                                </option>
+                              ))}
+                            </select>
+                            <input style={{ ...input, padding: "4px 6px", fontSize: 12, marginBottom: 6 }}
+                              value={day.note || ""} placeholder="Day note (late, family event…)"
+                              onChange={(ev) => setCell(e.id, dateStr, "note", ev.target.value)} />
                             <div style={{ display: "flex", gap: 4 }}>
                               <button type="button" onClick={() => tapClock(e.id, dateStr)}
                                 style={{ ...btnGhostSmall, padding: "4px 6px", fontSize: 11, flex: 1 }}>

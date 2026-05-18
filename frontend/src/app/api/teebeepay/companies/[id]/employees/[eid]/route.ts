@@ -25,7 +25,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const e: any = await dbi.collection("employees").findOne({ _id: new ObjectId(eid), company_id: new ObjectId(id) });
     if (!e) return NextResponse.json({ error: "Not found" }, { status: 404 });
     if ((e.clearance_level || 0) >= u.clearance) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    return NextResponse.json({ employee: { ...e, id: e._id.toString(), _id: undefined } });
+    return NextResponse.json({
+      employee: {
+        ...e, id: e._id.toString(), _id: undefined,
+        pay_history: Array.isArray(e.pay_history) ? e.pay_history : [],
+      },
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
   }

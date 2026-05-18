@@ -34,6 +34,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // Hours-due schedule (when supervisors must have submitted their team's hours by)
     "hours_due_day",    // 0..6 (Sun=0) | "" for none
     "hours_due_time",   // "HH:MM" | ""
+    // Leave types — array of { code, name, paid, max_days_per_year? }
+    "leave_types",
   ];
   for (const k of fields) {
     if (k in b) $set[k] = typeof b[k] === "string" ? b[k].trim() : b[k];

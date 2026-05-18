@@ -7,6 +7,18 @@
 import { NextResponse } from "next/server";
 import { readAuth, db, ObjectId } from "../../_auth";
 
+// Defaults if a company hasn't customised them yet. Matches PNG Employment Act
+// minimums plus the obvious unpaid categories.
+const DEFAULT_LEAVE_TYPES = [
+  { code: "ANNUAL",       name: "Annual leave",          paid: true,  max_days_per_year: 14 },
+  { code: "SICK",         name: "Sick leave",            paid: true,  max_days_per_year: 6 },
+  { code: "BEREAVEMENT",  name: "Bereavement leave",     paid: true,  max_days_per_year: 3 },
+  { code: "COMPASSIONATE", name: "Compassionate leave",  paid: true,  max_days_per_year: 3 },
+  { code: "MATERNITY",    name: "Maternity leave",       paid: false, max_days_per_year: null },
+  { code: "UNPAID",       name: "Unpaid leave",          paid: false, max_days_per_year: null },
+  { code: "ABSENT_UNAUTH", name: "Absent (unauthorised)", paid: false, max_days_per_year: null },
+];
+
 export async function GET(req: Request) {
   const u = readAuth(req);
   if (!u) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -88,6 +100,7 @@ export async function GET(req: Request) {
           company_id: d.company_id.toString(),
           company_name: company.name || "",
           company_currency: company.currency || "PGK",
+          leave_types: Array.isArray(company.leave_types) ? company.leave_types : DEFAULT_LEAVE_TYPES,
           division_id: d._id.toString(),
           division_name: d.name,
           default_hours: d.default_hours ?? 80,

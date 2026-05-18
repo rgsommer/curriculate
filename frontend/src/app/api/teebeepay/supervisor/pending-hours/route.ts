@@ -84,6 +84,7 @@ export async function POST(req: Request) {
             clock_in: v.clock_in ? String(v.clock_in).slice(0, 5) : null,
             clock_out: v.clock_out ? String(v.clock_out).slice(0, 5) : null,
             note: v.note ? String(v.note).slice(0, 200) : "",
+            leave_type: v.leave_type ? String(v.leave_type).slice(0, 32) : null,
           };
         }
         $set.pending_timesheet = clean;
