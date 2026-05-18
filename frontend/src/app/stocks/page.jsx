@@ -4777,7 +4777,7 @@ function DiscoveryScorecardCard({ data }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
         <div className="sa-stat"><div className="label">Candidates scored</div><div className="value">{data.scored}</div><div className="delta muted">of {data.total} tracked</div></div>
         <div className="sa-stat"><div className="label">Avg return</div><div className="value" style={{ color: colorPct(data.avgReturnPct) }}><span className="sa-amount">{fmtPct(data.avgReturnPct)}</span></div><div className="delta muted">median <span className="sa-amount">{fmtPct(data.medianReturnPct)}</span></div></div>
-        <div className="sa-stat"><div className="label">Hit rate (>0%)</div><div className="value">{data.hitRatePct != null ? data.hitRatePct.toFixed(0) + "%" : "—"}</div><div className="delta muted">winners</div></div>
+        <div className="sa-stat"><div className="label">Hit rate (&gt;0%)</div><div className="value">{data.hitRatePct != null ? data.hitRatePct.toFixed(0) + "%" : "—"}</div><div className="delta muted">winners</div></div>
         <div className="sa-stat"><div className="label">vs SPY (alpha)</div><div className="value" style={{ color: colorPct(data.avgAlphaVsSpyPct) }}><span className="sa-amount">{fmtPct(data.avgAlphaVsSpyPct)}</span></div><div className="delta muted">avg per candidate</div></div>
         <div className="sa-stat"><div className="label">Beat SPY</div><div className="value">{data.benchmarkBeatRatePct != null ? data.benchmarkBeatRatePct.toFixed(0) + "%" : "—"}</div><div className="delta muted">of scored</div></div>
       </div>
