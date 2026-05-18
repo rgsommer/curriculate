@@ -50,7 +50,30 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     });
     const periodId = periodRes.insertedId;
 
+    // De-dupe: the caller may also send entries for supervisor-managed employees
+    // (e.g. higher-clearance bookkeepers who can see everyone). We treat
+    // caller-provided values as canonical and only use pending_hours for
+    // employees not in the body.
+    const submittedEmpIds = new Set<string>(
+      entries.filter((e: any) => e.employee_id).map((e: any) => String(e.employee_id))
+    );
+
     let inserted = 0;
+    const insertEntry = async (emp: any, hours: number, cash_advance: number, note: string,
+                                source: "site_payroll" | "supervisor_pending") => {
+      const calc = calculate(emp, { hours, cash_advance }, rules, company);
+      await dbi.collection("payroll_entries").insertOne({
+        pay_period_id: periodId,
+        employee_id: emp._id,
+        hours, cash_advance, note,
+        gross: calc.gross, tax: calc.tax, nasfund: calc.nasfund,
+        other_deductions: calc.other_deductions, net: calc.net,
+        calc_breakdown: calc.breakdown,
+        source,
+      });
+      inserted++;
+    };
+
     for (const e of entries) {
       if (!e.employee_id) continue;
       const emp: any = await dbi.collection("employees").findOne({ _id: new ObjectId(e.employee_id) });
@@ -59,17 +82,38 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const hours = parseFloat(e.hours || "0") || 0;
       const cash_advance = parseFloat(e.cash_advance || "0") || 0;
       const note = (e.note || "").slice(0, 1000);
-      const calc = calculate(emp, { hours, cash_advance }, rules, company);
+      await insertEntry(emp, hours, cash_advance, note, "site_payroll");
+    }
 
-      await dbi.collection("payroll_entries").insertOne({
-        pay_period_id: periodId,
-        employee_id: emp._id,
-        hours, cash_advance, note,
-        gross: calc.gross, tax: calc.tax, nasfund: calc.nasfund,
-        other_deductions: calc.other_deductions, net: calc.net,
-        calc_breakdown: calc.breakdown,
-      });
-      inserted++;
+    // Pull in supervisor-managed employees' pending_hours.
+    const divisions: any[] = await dbi.collection("divisions").find({
+      company_id: cid, supervisor_submits_hours: true,
+    }).toArray();
+    if (divisions.length) {
+      const divIds = divisions.map((d: any) => d._id);
+      const supervised: any[] = await dbi.collection("employees").find({
+        company_id: cid,
+        division_id: { $in: divIds },
+        $or: [{ is_active: 1 }, { is_active: { $exists: false } }],
+      }).toArray();
+      const consumed: any[] = [];
+      for (const emp of supervised) {
+        if (submittedEmpIds.has(emp._id.toString())) continue;
+        const hours = emp.pending_hours != null
+          ? Number(emp.pending_hours) || 0
+          : Number(emp.default_hours || 80);
+        const cash_advance = Number(emp.pending_cash_advance || 0) || 0;
+        const note = String(emp.pending_note || "").slice(0, 1000);
+        await insertEntry(emp, hours, cash_advance, note, "supervisor_pending");
+        consumed.push(emp._id);
+      }
+      // Clear consumed pending_hours so the next period starts fresh.
+      if (consumed.length) {
+        await dbi.collection("employees").updateMany(
+          { _id: { $in: consumed } },
+          { $unset: { pending_hours: "", pending_cash_advance: "", pending_note: "",
+                       pending_hours_by: "", pending_hours_at: "" } });
+      }
     }
 
     // Email the company's approver with a magic approval link if we have one.

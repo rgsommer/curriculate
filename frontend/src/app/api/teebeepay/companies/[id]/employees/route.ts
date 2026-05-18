@@ -17,31 +17,60 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       company_id: cid,
       $or: [{ clearance_level: { $lt: u.clearance } }, { clearance_level: { $exists: false } }],
     }).sort({ is_active: -1, last_name: 1, first_name: 1 }).toArray();
+
+    // Decorate with division info so the UI can render dropdowns + filter
+    // supervisor-managed employees out of the site-payroll grid.
+    const divisions: any[] = await dbi.collection("divisions").find({ company_id: cid }).toArray();
+    const divMap = Object.fromEntries(divisions.map((d: any) => [d._id.toString(), d]));
+
+    // Resolve supervisor employee → email so the frontend can decide whether
+    // the current viewer supervises this row.
+    const supIds = divisions.filter((d) => d.supervisor_employee_id).map((d) => d.supervisor_employee_id);
+    const supervisors: any[] = supIds.length
+      ? await dbi.collection("employees").find({ _id: { $in: supIds } }).toArray()
+      : [];
+    const supEmail: Record<string, string> = {};
+    for (const s of supervisors) supEmail[s._id.toString()] = (s.email || "").toLowerCase();
+
     return NextResponse.json({
-      employees: rows.map((e: any) => ({
-        id: e._id.toString(),
-        first_name: e.first_name, last_name: e.last_name,
-        email: e.email || null,
-        dob: e.dob || null,
-        pay_type: e.pay_type || "hourly",
-        annual_salary: e.annual_salary || null,
-        hourly_rate: e.hourly_rate || null,
-        default_hours: e.default_hours || null,
-        dependents: e.dependents || 0,
-        is_active: e.is_active !== 0,
-        bank_account_no: e.bank_account_no || null,
-        bank_account_name: e.bank_account_name || null,
-        branch_code: e.branch_code || null,
-        bank_accounts: e.bank_accounts || null,
-        housing_allowance: e.housing_allowance || 0,
-        meals_allowance: e.meals_allowance || 0,
-        school_fees_allowance: e.school_fees_allowance || 0,
-        salary_sacrifice: e.salary_sacrifice || 0,
-        ncsl_voluntary: e.ncsl_voluntary || 0,
-        division: e.division || "",
-        supervisor_id: e.supervisor_id ? e.supervisor_id.toString() : null,
-        supervisor_submits_hours: !!e.supervisor_submits_hours,
-      })),
+      employees: rows.map((e: any) => {
+        const did = e.division_id ? e.division_id.toString() : null;
+        const div = did ? divMap[did] : null;
+        return {
+          id: e._id.toString(),
+          first_name: e.first_name, last_name: e.last_name,
+          email: e.email || null,
+          dob: e.dob || null,
+          pay_type: e.pay_type || "hourly",
+          annual_salary: e.annual_salary || null,
+          hourly_rate: e.hourly_rate || null,
+          default_hours: e.default_hours || null,
+          dependents: e.dependents || 0,
+          is_active: e.is_active !== 0,
+          bank_account_no: e.bank_account_no || null,
+          bank_account_name: e.bank_account_name || null,
+          branch_code: e.branch_code || null,
+          bank_accounts: e.bank_accounts || null,
+          housing_allowance: e.housing_allowance || 0,
+          meals_allowance: e.meals_allowance || 0,
+          school_fees_allowance: e.school_fees_allowance || 0,
+          salary_sacrifice: e.salary_sacrifice || 0,
+          ncsl_voluntary: e.ncsl_voluntary || 0,
+          // Division flow
+          division_id: did,
+          division_name: div?.name || null,
+          division_default_hours: div?.default_hours ?? null,
+          division_supervisor_email: div?.supervisor_employee_id
+            ? (supEmail[div.supervisor_employee_id.toString()] || null) : null,
+          division_supervisor_submits_hours: !!(div?.supervisor_submits_hours),
+          // Pending hours queued by a supervisor for the next pay period
+          pending_hours: e.pending_hours ?? null,
+          pending_cash_advance: e.pending_cash_advance ?? null,
+          pending_note: e.pending_note || null,
+          pending_hours_by: e.pending_hours_by || null,
+          pending_hours_at: e.pending_hours_at || null,
+        };
+      }),
     });
   } catch (e: any) {
     console.error("[teebeepay/employees GET] error:", e);
@@ -99,9 +128,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       clearance_level: Math.min(Number(b.clearance_level || 0), u.clearance - 1),
       is_active: 1,
       created_at: new Date(),
-      division: b.division ? String(b.division).trim().slice(0, 80) : null,
-      supervisor_id: b.supervisor_id ? new ObjectId(String(b.supervisor_id)) : null,
-      supervisor_submits_hours: !!b.supervisor_submits_hours,
+      division_id: b.division_id ? new ObjectId(String(b.division_id)) : null,
     };
     const r = await dbi.collection("employees").insertOne(doc);
     return NextResponse.json({ ok: true, id: r.insertedId.toString() });

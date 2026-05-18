@@ -31,6 +31,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     "name", "abbreviation", "pay_interval", "default_hours", "currency",
     "bank_code", "branch_code", "bank_account_no", "bank_account_name", "bank_client_no",
     "office_email", "manager_email", "payslip_message", "ncsl_employer_no",
+    // Hours-due schedule (when supervisors must have submitted their team's hours by)
+    "hours_due_day",    // 0..6 (Sun=0) | "" for none
+    "hours_due_time",   // "HH:MM" | ""
   ];
   for (const k of fields) {
     if (k in b) $set[k] = typeof b[k] === "string" ? b[k].trim() : b[k];

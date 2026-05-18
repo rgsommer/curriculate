@@ -13,7 +13,6 @@ const SETTABLE = [
   "gas_allowance", "phone_allowance", "airfares_allowance", "extra_allowance",
   "salary_sacrifice", "ncsl_voluntary", "nas_extra_pct",
   "savings_deduction", "christmas_bonus", "loan_repayment", "education_deduction",
-  "division",
 ];
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string; eid: string }> }) {
@@ -56,11 +55,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
   }
   if ("is_active" in b) $set.is_active = b.is_active ? 1 : 0;
-  if ("supervisor_id" in b) {
-    $set.supervisor_id = b.supervisor_id ? new ObjectId(String(b.supervisor_id)) : null;
-  }
-  if ("supervisor_submits_hours" in b) {
-    $set.supervisor_submits_hours = !!b.supervisor_submits_hours;
+  if ("division_id" in b) {
+    $set.division_id = b.division_id ? new ObjectId(String(b.division_id)) : null;
   }
   try {
     const dbi = await db();

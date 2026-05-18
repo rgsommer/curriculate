@@ -13,7 +13,7 @@ import {
   Building2, Users, FileText, CheckCircle2, AlertCircle, Mail,
   Plus, X, Edit2, Send, Download, Settings, UserPlus, Trash2,
   BarChart3, Percent, Upload, Image as ImageIcon, ClipboardList, Activity,
-  ShieldCheck, NotebookPen, AlertTriangle,
+  ShieldCheck, NotebookPen, AlertTriangle, Layers, Network,
 } from "lucide-react";
 
 const C = {
@@ -41,7 +41,7 @@ async function api(path, opts = {}) {
 }
 
 export default function TeebeePayApp() {
-  const [view, setView] = useState("loading"); // loading | login | dashboard | company | new_period | period | users | service_fees | employee
+  const [view, setView] = useState("loading"); // loading | login | dashboard | company | new_period | period | users | service_fees | employee | my_team
   const [me, _setMe] = useState(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
   const [selectedPeriodId, setSelectedPeriodId] = useState(null);
@@ -83,6 +83,7 @@ export default function TeebeePayApp() {
         onUsers={() => setView("users")}
         onServiceFees={() => setView("service_fees")}
         onAuditLog={() => setView("audit_log")}
+        onMyTeam={() => setView("my_team")}
         onHome={() => setView(me?.clearance === 0 ? "my_stubs" : "dashboard")}
         onProfile={() => setShowProfile(true)} />}
       {showProfile && me && (
@@ -112,6 +113,7 @@ export default function TeebeePayApp() {
       {view === "employee" && <EmployeeProfile me={me} employeeId={selectedEmployeeId}
         onBack={() => setView("company")} onOpenPeriod={goPeriod} />}
       {view === "audit_log" && <AuditLogPage me={me} onBack={() => setView("dashboard")} />}
+      {view === "my_team" && <MyTeamPage me={me} onBack={() => setView("dashboard")} />}
       {view === "my_stubs" && <MyStubsPortal me={me} />}
       <style>{`
         @keyframes tbp-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
@@ -125,10 +127,22 @@ export default function TeebeePayApp() {
 
 /* ─────────── Header / shared bits ─────────── */
 
-function AppHeader({ me, onSignOut, onUsers, onServiceFees, onHome, onProfile, onAuditLog }) {
+function AppHeader({ me, onSignOut, onUsers, onServiceFees, onHome, onProfile, onAuditLog, onMyTeam }) {
   const displayName = me?.first_name || me?.last_name
     ? `${me.first_name || ""} ${me.last_name || ""}`.trim()
     : me?.email || "";
+  // Show the "My team" button if the user supervises at least one division
+  // that submits hours. Cheap probe — /supervisor/team returns [] for non-supervisors.
+  const [hasTeam, setHasTeam] = useState(false);
+  useEffect(() => {
+    if (!me) { setHasTeam(false); return; }
+    (async () => {
+      try {
+        const j = await api("/api/teebeepay/supervisor/team");
+        setHasTeam(Array.isArray(j.teams) && j.teams.length > 0);
+      } catch { setHasTeam(false); }
+    })();
+  }, [me?.uid]);
   return (
     <header style={{
       background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "12px 24px",
@@ -139,6 +153,11 @@ function AppHeader({ me, onSignOut, onUsers, onServiceFees, onHome, onProfile, o
         <strong style={{ fontSize: 17 }}>TeebeePay</strong>
       </button>
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+        {hasTeam && (
+          <button onClick={onMyTeam} style={{ ...btnGhostSmall, background: "#fef3c7", borderColor: "#fde68a", color: "#9c6c00" }} title="Enter your team's hours">
+            <Network size={14} /> My team
+          </button>
+        )}
         {me?.clearance >= 4 && (
           <button onClick={onServiceFees} style={btnGhostSmall} title="Service fees">
             <Percent size={14} /> Fees
@@ -502,6 +521,11 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod, onOpe
           <Users size={15} style={{ marginRight: 6 }} /> Employees {employees != null && `(${employees.length})`}
         </Tab>
         {me?.clearance >= 2 && (
+          <Tab active={tab === "divisions"} onClick={() => setTab("divisions")}>
+            <Layers size={15} style={{ marginRight: 6 }} /> Divisions
+          </Tab>
+        )}
+        {me?.clearance >= 2 && (
           <Tab active={tab === "reports"} onClick={() => setTab("reports")}>
             <BarChart3 size={15} style={{ marginRight: 6 }} /> Reports
           </Tab>
@@ -521,8 +545,11 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod, onOpe
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
 
       {tab === "periods" && (
-        periods == null ? <Loader2 className="tbp-spin" size={20} color={C.red} />
-                        : <PeriodTable periods={periods} onOpen={onOpenPeriod} />
+        <>
+          <SupervisorSubmissions companyId={companyId} />
+          {periods == null ? <Loader2 className="tbp-spin" size={20} color={C.red} />
+                           : <PeriodTable periods={periods} onOpen={onOpenPeriod} />}
+        </>
       )}
 
       {tab === "employees" && (
@@ -548,6 +575,10 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod, onOpe
                                  onEdit={(e) => setShowEmpDialog(e)} canEdit={me?.clearance >= 2}
                                  onOpen={(e) => onOpenEmployee && onOpenEmployee(e.id)} />}
         </>
+      )}
+
+      {tab === "divisions" && (
+        <DivisionsPanel companyId={companyId} employees={employees || []} canEdit={me?.clearance >= 2} />
       )}
 
       {tab === "tax_rules" && (
@@ -742,6 +773,13 @@ function EmployeeTable({ employees, selected, onToggleSel, onEdit, canEdit, onOp
 
 function EmployeeDialog({ companyId, employee, allEmployees, onClose, onSaved }) {
   const isEdit = !!employee;
+  const [divisions, setDivisions] = useState([]);
+  useEffect(() => {
+    (async () => {
+      try { setDivisions((await api(`/api/teebeepay/companies/${companyId}/divisions`)).divisions || []); }
+      catch { setDivisions([]); }
+    })();
+  }, [companyId]);
   // Seed bank_accounts: prefer the array; else build single-row from legacy fields.
   const seedBankAccounts = (() => {
     if (employee?.bank_accounts && employee.bank_accounts.length) return employee.bank_accounts;
@@ -783,9 +821,7 @@ function EmployeeDialog({ companyId, employee, allEmployees, onClose, onSaved })
     ncsl_voluntary: employee?.ncsl_voluntary ?? 0,
     nas_extra_pct: employee?.nas_extra_pct ?? 0,
     is_active: employee?.is_active !== false,
-    division: employee?.division || "",
-    supervisor_id: employee?.supervisor_id || "",
-    supervisor_submits_hours: !!employee?.supervisor_submits_hours,
+    division_id: employee?.division_id || "",
   });
 
   // Helpers for the bank_accounts array.
@@ -880,48 +916,34 @@ function EmployeeDialog({ companyId, employee, allEmployees, onClose, onSaved })
         </Row>
       </FieldGroup>
       <FieldGroup label="Organisation">
-        <Row>
-          <Field label="Division">
-            <input style={input} value={f.division}
-              onChange={(e) => set("division", e.target.value)}
-              placeholder="e.g. HQ, Field, Lae Branch" />
-          </Field>
-          <Field label="Direct supervisor">
-            <select style={input} value={f.supervisor_id}
-              onChange={(e) => {
-                const v = e.target.value;
-                setF((x) => ({
-                  ...x, supervisor_id: v,
-                  supervisor_submits_hours: v ? x.supervisor_submits_hours : false,
-                }));
-              }}>
-              <option value="">— none —</option>
-              {(allEmployees || [])
-                .filter((x) => !employee || x.id !== employee.id)
-                .filter((x) => x.is_active !== false)
-                .sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`))
-                .map((x) => (
-                  <option key={x.id} value={x.id}>{x.first_name} {x.last_name}</option>
-                ))}
-            </select>
-          </Field>
-        </Row>
-        <label style={{
-          display: "flex", alignItems: "flex-start", gap: 8, marginTop: 8,
-          fontSize: 13, color: f.supervisor_id ? C.ink : C.muted, cursor: f.supervisor_id ? "pointer" : "not-allowed",
-        }}>
-          <input type="checkbox" checked={!!f.supervisor_submits_hours} disabled={!f.supervisor_id}
-            onChange={(e) => set("supervisor_submits_hours", e.target.checked)}
-            style={{ marginTop: 3 }} />
-          <span>
-            <strong>Supervisor enters this person's hours each pay period.</strong>
-            <br />
-            <span style={{ fontSize: 12, color: C.muted }}>
-              When unchecked, the company's site-payroll user enters this person's hours (default behaviour).
-              Useful for hourly wage earners working under a field foreman or shift leader.
-            </span>
-          </span>
-        </label>
+        <Field label="Division">
+          <select style={input} value={f.division_id}
+            onChange={(e) => set("division_id", e.target.value)}>
+            <option value="">— no division —</option>
+            {divisions.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+                {d.supervisor_name ? ` · supervisor ${d.supervisor_name}` : ""}
+                {d.supervisor_submits_hours ? " · supervisor enters hours" : ""}
+              </option>
+            ))}
+          </select>
+          {(() => {
+            const d = divisions.find((x) => x.id === f.division_id);
+            if (!d) return null;
+            return (
+              <p style={{ fontSize: 12, color: C.muted, margin: "6px 0 0" }}>
+                Default hours per period: <strong>{d.default_hours ?? 80}</strong>
+                {d.supervisor_submits_hours
+                  ? <> · hours entered by <strong>{d.supervisor_name || d.supervisor_email || "the supervisor"}</strong> each pay period</>
+                  : <> · hours entered by the company's site-payroll user</>}
+              </p>
+            );
+          })()}
+          <p style={{ fontSize: 12, color: C.muted, margin: "6px 0 0" }}>
+            Manage divisions on this company's <strong>Divisions</strong> tab.
+          </p>
+        </Field>
       </FieldGroup>
       <FieldGroup label={`Banking (${f.bank_accounts.length} account${f.bank_accounts.length === 1 ? "" : "s"})`}>
         <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>
@@ -1092,6 +1114,7 @@ function TaxRulesPanel({ companyId, canEdit }) {
 
 function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
   const [employees, setEmployees] = useState(null);
+  const [supervisedEmployees, setSupervisedEmployees] = useState([]);
   const [company, setCompany] = useState(null);
   const [period, setPeriod] = useState({
     period_start: "", period_end: "", pay_date: new Date().toISOString().slice(0, 10),
@@ -1107,8 +1130,14 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
       try {
         const j = await api(`/api/teebeepay/companies/${companyId}/employees`);
         const c = (await api("/api/teebeepay/companies")).companies.find((x) => x.id === companyId);
-        const active = j.employees.filter((e) => e.is_active);
+        // Active + exclude supervisor-managed employees (those are handled by
+        // their supervisor's "My team's hours" view; the period POST pulls
+        // their pending_hours in automatically).
+        const all = j.employees.filter((e) => e.is_active);
+        const active = all.filter((e) => !e.division_supervisor_submits_hours);
+        const supervised = all.filter((e) => e.division_supervisor_submits_hours);
         setEmployees(active);
+        setSupervisedEmployees(supervised);
         setCompany(c);
         // Load baseline for anomaly detection (best-effort; ignore errors)
         try { setBaseline(await api(`/api/teebeepay/companies/${companyId}/period-baseline`)); }
@@ -1216,6 +1245,7 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
 
       {info && <FlashBox type="info" icon={<CheckCircle2 size={16} />}>{info}</FlashBox>}
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <SupervisedNotice items={supervisedEmployees} />
       <AnomalyBanner employees={employees} grid={grid} company={company} baseline={baseline} />
 
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
@@ -1693,6 +1723,34 @@ function CompanySettingsPanel({ companyId, onSaved }) {
         <Row>
           <Field label="NCSL employer number"><input style={input} value={co.ncsl_employer_no || ""} onChange={(e) => set("ncsl_employer_no", e.target.value)} /></Field>
           <Field label="NCSL date of registration"><input style={input} type="date" value={co.ncsl_date_of_reg || ""} onChange={(e) => set("ncsl_date_of_reg", e.target.value)} /></Field>
+        </Row>
+      </FieldGroup>
+
+      <FieldGroup label="Supervisor hours deadline">
+        <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>
+          When you set a day-of-week and time, TeebeePay emails every division supervisor that hasn't yet submitted
+          their team's hours — a reminder lands in their inbox on the morning of that day. Managers see a status panel
+          on the Pay periods tab showing who's in and who isn't.
+        </p>
+        <Row>
+          <Field label="Day of week (hours due by)">
+            <select style={input} value={co.hours_due_day === 0 || co.hours_due_day ? String(co.hours_due_day) : ""}
+              onChange={(e) => set("hours_due_day", e.target.value === "" ? "" : Number(e.target.value))}>
+              <option value="">— no scheduled deadline —</option>
+              <option value="1">Monday</option>
+              <option value="2">Tuesday</option>
+              <option value="3">Wednesday</option>
+              <option value="4">Thursday</option>
+              <option value="5">Friday</option>
+              <option value="6">Saturday</option>
+              <option value="0">Sunday</option>
+            </select>
+          </Field>
+          <Field label="Time (PG)">
+            <input style={input} type="time" value={co.hours_due_time || ""}
+              onChange={(e) => set("hours_due_time", e.target.value)} />
+          </Field>
+        </Row>
         </Row>
       </FieldGroup>
 
@@ -2943,6 +3001,455 @@ function MyStubsPortal({ me }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/* ─────────── Supervised-employees notice (NewPeriod grid) ─────────── */
+
+function SupervisedNotice({ items }) {
+  if (!items || !items.length) return null;
+  // Group by division for clarity
+  const byDiv = {};
+  for (const e of items) {
+    const k = e.division_name || "(unnamed division)";
+    (byDiv[k] = byDiv[k] || []).push(e);
+  }
+  return (
+    <div style={{
+      background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8,
+      padding: "10px 14px", marginBottom: 14, fontSize: 13, color: "#92400e",
+      display: "flex", alignItems: "flex-start", gap: 10,
+    }}>
+      <Network size={16} style={{ marginTop: 2, flexShrink: 0 }} />
+      <div>
+        <strong>{items.length} supervisor-managed {items.length === 1 ? "employee" : "employees"} not shown.</strong> Their hours
+        are entered by their division supervisor and pulled in when this period is submitted.
+        <div style={{ marginTop: 6, color: "#78350f", fontSize: 12 }}>
+          {Object.entries(byDiv).map(([div, list]) => (
+            <span key={div} style={{ display: "inline-block", marginRight: 14 }}>
+              <strong>{div}:</strong> {list.length}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────── Supervisor submissions status (Periods tab) ─────────── */
+
+function SupervisorSubmissions({ companyId }) {
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const [dj, ej] = await Promise.all([
+          api(`/api/teebeepay/companies/${companyId}/divisions`),
+          api(`/api/teebeepay/companies/${companyId}/employees`),
+        ]);
+        const divs = (dj.divisions || []).filter((d) => d.supervisor_submits_hours);
+        if (!divs.length) { setRows([]); return; }
+        const emps = ej.employees || [];
+        const out = divs.map((d) => {
+          const team = emps.filter((e) => e.division_id === d.id && e.is_active);
+          const withHours = team.filter((e) => e.pending_hours_at);
+          const latest = withHours.reduce((max, e) =>
+            (!max || new Date(e.pending_hours_at) > new Date(max)) ? e.pending_hours_at : max, null);
+          return {
+            id: d.id, name: d.name,
+            supervisor_name: d.supervisor_name, supervisor_email: d.supervisor_email,
+            team_size: team.length,
+            submitted_count: withHours.length,
+            latest_at: latest,
+          };
+        });
+        setRows(out);
+      } catch { setRows([]); }
+    })();
+  }, [companyId]);
+
+  if (rows == null) return null;
+  if (!rows.length) return null;
+  const totalTeam = rows.reduce((s, r) => s + r.team_size, 0);
+  const totalSubmitted = rows.reduce((s, r) => s + r.submitted_count, 0);
+  return (
+    <div style={{
+      background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10,
+      padding: 16, marginBottom: 18,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <strong style={{ fontSize: 14 }}>
+          <Network size={14} style={{ marginRight: 6, verticalAlign: "-2px" }} />
+          Supervisor submissions ({totalSubmitted} / {totalTeam} employees)
+        </strong>
+      </div>
+      <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+        <thead>
+          <tr style={{ color: C.muted, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.06 }}>
+            <th style={{ textAlign: "left", padding: "6px 8px" }}>Division</th>
+            <th style={{ textAlign: "left", padding: "6px 8px" }}>Supervisor</th>
+            <th style={{ textAlign: "right", padding: "6px 8px" }}>Hours in</th>
+            <th style={{ textAlign: "left", padding: "6px 8px" }}>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const pct = r.team_size ? r.submitted_count / r.team_size : 0;
+            const status = r.submitted_count === 0
+              ? { color: "#991b1b", bg: "#fee2e2", label: "Not submitted" }
+              : r.submitted_count < r.team_size
+                ? { color: "#9c6c00", bg: "#fef3c7", label: "Partial" }
+                : { color: "#166534", bg: "#dcfce7", label: "All in" };
+            return (
+              <tr key={r.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                <td style={{ padding: "8px", fontWeight: 600 }}>{r.name}</td>
+                <td style={{ padding: "8px", color: C.muted }}>{r.supervisor_name || <em>(none)</em>}</td>
+                <td style={{ padding: "8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                  {r.submitted_count}/{r.team_size}
+                  <span style={{ marginLeft: 8, color: C.muted, fontSize: 12 }}>({Math.round(pct * 100)}%)</span>
+                </td>
+                <td style={{ padding: "8px" }}>
+                  <Badge color={status.color} bg={status.bg}>{status.label}</Badge>
+                  {r.latest_at && (
+                    <span style={{ marginLeft: 8, fontSize: 11, color: C.muted }}>
+                      last save {new Date(r.latest_at).toLocaleString()}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ─────────── Divisions admin panel (company tab) ─────────── */
+
+function DivisionsPanel({ companyId, employees, canEdit }) {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState("");
+  const [editing, setEditing] = useState(null); // null | {} (new) | row object
+  const refresh = useCallback(async () => {
+    setError("");
+    try { setRows((await api(`/api/teebeepay/companies/${companyId}/divisions`)).divisions || []); }
+    catch (e) { setError(e.message); }
+  }, [companyId]);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  async function remove(d) {
+    if (!confirm(`Delete the "${d.name}" division? This cannot be undone.`)) return;
+    try {
+      await api(`/api/teebeepay/companies/${companyId}/divisions/${d.id}`, { method: "DELETE" });
+      refresh();
+    } catch (e) { setError(e.message); }
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <p style={{ margin: 0, fontSize: 14, color: C.muted, maxWidth: 720 }}>
+          Group this company's employees into divisions. A division can have its own supervisor — if you tick "supervisor
+          enters hours", that supervisor's "My team" view feeds the hours into each fortnight automatically.
+        </p>
+        {canEdit && (
+          <button onClick={() => setEditing({})} style={btnPrimaryInline}>
+            <Plus size={16} /> Add division
+          </button>
+        )}
+      </div>
+
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+
+      {rows == null ? <Loader2 className="tbp-spin" size={20} color={C.red} /> :
+       !rows.length ? <Empty>No divisions yet. Add the first one with the button above.</Empty> : (
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+          <table style={tableStyle}>
+            <thead><tr>
+              <th style={th}>Name</th>
+              <th style={th}>Supervisor</th>
+              <th style={{ ...th, textAlign: "right" }}>Default hours</th>
+              <th style={th}>Supervisor enters hours</th>
+              <th style={{ ...th, textAlign: "right" }}># employees</th>
+              <th style={{ ...th, width: 120 }}></th>
+            </tr></thead>
+            <tbody>
+              {rows.map((d) => (
+                <tr key={d.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <td style={td}><strong>{d.name}</strong></td>
+                  <td style={{ ...td, color: C.muted }}>{d.supervisor_name || <em>(none)</em>}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{d.default_hours ?? "—"}</td>
+                  <td style={td}>
+                    {d.supervisor_submits_hours
+                      ? <Badge color="#9c6c00" bg="#fef3c7">Yes — supervisor</Badge>
+                      : <Badge color={C.muted} bg="#f1f5f9">No — site payroll</Badge>}
+                  </td>
+                  <td style={{ ...td, textAlign: "right", color: C.muted }}>{d.employee_count}</td>
+                  <td style={{ ...td, textAlign: "right" }}>
+                    {canEdit && <button onClick={() => setEditing(d)} style={{ ...btnGhostSmall, marginRight: 6 }}>Edit</button>}
+                    {canEdit && <button onClick={() => remove(d)} style={{ ...btnGhostSmall, color: "#991b1b" }}><Trash2 size={12} /></button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {editing && (
+        <DivisionDialog companyId={companyId} division={editing.id ? editing : null}
+          employees={employees}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); refresh(); }} />
+      )}
+    </div>
+  );
+}
+
+function DivisionDialog({ companyId, division, employees, onClose, onSaved }) {
+  const isEdit = !!division;
+  const [f, setF] = useState({
+    name: division?.name || "",
+    supervisor_employee_id: division?.supervisor_employee_id || "",
+    supervisor_submits_hours: !!division?.supervisor_submits_hours,
+    default_hours: division?.default_hours ?? 80,
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+
+  async function save() {
+    setError(""); setSubmitting(true);
+    try {
+      const body = {
+        name: f.name.trim(),
+        supervisor_employee_id: f.supervisor_employee_id || null,
+        supervisor_submits_hours: !!f.supervisor_submits_hours,
+        default_hours: f.default_hours === "" || f.default_hours == null ? null : Number(f.default_hours),
+      };
+      if (isEdit) {
+        await api(`/api/teebeepay/companies/${companyId}/divisions/${division.id}`,
+          { method: "PATCH", body: JSON.stringify(body) });
+      } else {
+        await api(`/api/teebeepay/companies/${companyId}/divisions`,
+          { method: "POST", body: JSON.stringify(body) });
+      }
+      onSaved();
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+
+  return (
+    <Modal title={isEdit ? `Edit division — ${division.name}` : "Add division"} onClose={onClose}>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <Field label="Name *">
+        <input style={input} value={f.name} onChange={(e) => set("name", e.target.value)}
+          placeholder="e.g. Field, HQ, Maintenance, Lae Branch" autoFocus />
+      </Field>
+      <Row>
+        <Field label="Supervisor">
+          <select style={input} value={f.supervisor_employee_id}
+            onChange={(e) => {
+              const v = e.target.value;
+              setF((x) => ({ ...x, supervisor_employee_id: v,
+                supervisor_submits_hours: v ? x.supervisor_submits_hours : false }));
+            }}>
+            <option value="">— none —</option>
+            {(employees || [])
+              .filter((x) => x.is_active !== false)
+              .sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`))
+              .map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.first_name} {x.last_name}{x.email ? ` (${x.email})` : ""}
+                </option>
+              ))}
+          </select>
+        </Field>
+        <Field label="Default hours per period">
+          <input style={input} type="number" step="0.5" value={f.default_hours}
+            onChange={(e) => set("default_hours", e.target.value)} placeholder="80" />
+        </Field>
+      </Row>
+      <label style={{
+        display: "flex", alignItems: "flex-start", gap: 8, marginTop: 8,
+        fontSize: 13, color: f.supervisor_employee_id ? C.ink : C.muted,
+        cursor: f.supervisor_employee_id ? "pointer" : "not-allowed",
+      }}>
+        <input type="checkbox" checked={!!f.supervisor_submits_hours} disabled={!f.supervisor_employee_id}
+          onChange={(e) => set("supervisor_submits_hours", e.target.checked)}
+          style={{ marginTop: 3 }} />
+        <span>
+          <strong>Supervisor enters this division's hours each pay period.</strong>
+          <br />
+          <span style={{ fontSize: 12, color: C.muted }}>
+            When ticked, the supervisor (above) sees a "My team" page where they enter hours for this division;
+            those hours flow into the next pay period automatically. When unticked, the company's site-payroll user enters them.
+          </span>
+        </span>
+      </label>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
+        <button onClick={onClose} style={btnGhostLg}>Cancel</button>
+        <button onClick={save} disabled={!f.name.trim() || submitting} style={btnPrimaryInline}>
+          {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</>
+                      : (isEdit ? "Save changes" : "Add division")}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ─────────── My team's hours (supervisor view) ─────────── */
+
+function MyTeamPage({ me, onBack }) {
+  const [teams, setTeams] = useState(null);
+  const [draft, setDraft] = useState({}); // emp_id -> { hours, cash_advance, note }
+  const [info, setInfo] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setError(""); setInfo("");
+    try {
+      const j = await api("/api/teebeepay/supervisor/team");
+      setTeams(j.teams || []);
+      // Seed draft from any existing pending hours
+      const seed = {};
+      for (const t of (j.teams || [])) {
+        for (const e of t.employees) {
+          seed[e.id] = {
+            hours: e.pending_hours != null ? e.pending_hours : (e.default_hours || t.default_hours || 80),
+            cash_advance: e.pending_cash_advance || 0,
+            note: e.pending_note || "",
+          };
+        }
+      }
+      setDraft(seed);
+    } catch (e) { setError(e.message); }
+  }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  function set(eid, k, v) {
+    setDraft((d) => ({ ...d, [eid]: { ...(d[eid] || { hours: 0, cash_advance: 0, note: "" }), [k]: v } }));
+  }
+  function dblToggleHours(emp, def) {
+    const cur = Number(draft[emp.id]?.hours) || 0;
+    set(emp.id, "hours", cur === def ? 0 : def);
+  }
+
+  async function save() {
+    setError(""); setInfo(""); setSubmitting(true);
+    try {
+      const entries = [];
+      for (const t of teams || []) {
+        for (const e of t.employees) {
+          const d = draft[e.id] || {};
+          entries.push({
+            employee_id: e.id,
+            hours: Number(d.hours) || 0,
+            cash_advance: Number(d.cash_advance) || 0,
+            note: d.note || "",
+          });
+        }
+      }
+      const j = await api("/api/teebeepay/supervisor/pending-hours", {
+        method: "POST", body: JSON.stringify({ entries }),
+      });
+      setInfo(`Saved hours for ${j.saved} employee${j.saved === 1 ? "" : "s"}. The site-payroll team will see these when they cut the next pay period.`);
+      refresh();
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+
+  if (teams == null) return <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered>;
+  if (!teams.length) {
+    return (
+      <div style={{ maxWidth: 760, margin: "0 auto", padding: "40px 24px" }}>
+        <button onClick={onBack} style={btnBack}><ArrowLeft size={14} /> Dashboard</button>
+        <h1 style={{ margin: "0 0 8px", fontSize: 24, fontWeight: 800 }}>My team's hours</h1>
+        <p style={{ color: C.muted, fontSize: 14 }}>
+          You aren't currently set up as a supervisor on any division that submits hours. Ask the bookkeeper to assign you
+          on the company's <strong>Divisions</strong> tab.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px" }}>
+      <button onClick={onBack} style={btnBack}><ArrowLeft size={14} /> Dashboard</button>
+      <h1 style={{ margin: "0 0 8px", fontSize: 26, fontWeight: 800 }}>My team's hours</h1>
+      <p style={{ color: C.muted, fontSize: 14, margin: "0 0 18px" }}>
+        Enter the hours each of your team members worked this pay period. Save whenever you like — the values are picked
+        up automatically when the bookkeeper cuts the next pay run. Double-click an hours cell to toggle between the
+        division default and zero (e.g. didn't work this fortnight).
+      </p>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      {info && <FlashBox type="info" icon={<CheckCircle2 size={16} />}>{info}</FlashBox>}
+
+      {teams.map((t) => (
+        <div key={t.division_id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, marginBottom: 18, overflow: "hidden" }}>
+          <div style={{ padding: "14px 18px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <strong style={{ fontSize: 15 }}>{t.company_name} · {t.division_name}</strong>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                {t.employees.length} employees · default hours per period: <strong>{t.default_hours}</strong>
+              </div>
+            </div>
+          </div>
+          <table className="tbp-grid" style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={th}>Employee</th>
+                <th style={{ ...th, width: 80, textAlign: "right" }}>Default</th>
+                <th style={{ ...th, width: 110 }}>Hours</th>
+                <th style={{ ...th, width: 110 }}>Cash advance</th>
+                <th style={th}>Note (shows on stub)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {t.employees.map((e) => {
+                const def = e.default_hours || t.default_hours || 80;
+                const d = draft[e.id] || {};
+                return (
+                  <tr key={e.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                    <td style={td}>
+                      <strong>{e.first_name} {e.last_name}</strong>
+                      {e.pending_hours_at && (
+                        <div style={{ fontSize: 11, color: C.muted }}>
+                          last saved {new Date(e.pending_hours_at).toLocaleString()}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ ...td, textAlign: "right", color: C.muted }}>{def}</td>
+                    <td style={td}>
+                      <input style={{ ...input, padding: "6px 8px", textAlign: "right" }} type="number" step="0.5"
+                        value={d.hours ?? ""} onChange={(ev) => set(e.id, "hours", ev.target.value)}
+                        onDoubleClick={() => dblToggleHours(e, def)} />
+                    </td>
+                    <td style={td}>
+                      <input style={{ ...input, padding: "6px 8px", textAlign: "right" }} type="number" step="0.01"
+                        value={d.cash_advance ?? ""} onChange={(ev) => set(e.id, "cash_advance", ev.target.value)} />
+                    </td>
+                    <td style={td}>
+                      <input style={{ ...input, padding: "6px 8px" }} value={d.note || ""}
+                        onChange={(ev) => set(e.id, "note", ev.target.value)} placeholder="(optional)" />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ))}
+
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+        <button onClick={save} disabled={submitting} style={btnPrimaryInline}>
+          {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</>
+                      : <>Save hours</>}
+        </button>
+      </div>
     </div>
   );
 }

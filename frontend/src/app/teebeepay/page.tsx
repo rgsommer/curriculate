@@ -32,6 +32,9 @@ import {
   Layers,
   Network,
   Smartphone,
+  QrCode,
+  ScanLine,
+  Timer,
 } from "lucide-react";
 
 const COLORS = {
@@ -71,6 +74,7 @@ export default function TeebeePayLanding() {
       <HowItWorks />
       <Comparison />
       <FeatureGrid />
+      <Roadmap />
       <Testimonials />
       <PricingTeaser />
       <InterestForm />
@@ -814,7 +818,7 @@ function FeatureGrid() {
     { icon: <UploadCloud size={22} />, t: "BSP batch file", d: "12-column, meta-header CSV in the exact shape BSP Batch Manager expects. No reformatting." },
     { icon: <FileSpreadsheet size={22} />, t: "NASFund / NCSL", d: "Monthly contribution returns formatted to fund spec, with AP name, title and signature image embedded." },
     { icon: <Building2 size={22} />, t: "Multi-company", d: "Run payroll for several entities side-by-side. Strict isolation between client books and users." },
-    { icon: <Layers size={22} />, t: "Divisions & supervisors", d: "Group employees into divisions with their own supervisor and default hours. Field foremen enter their team's hours; bookkeeper does the rest." },
+    { icon: <Layers size={22} />, t: "Divisions, supervisors & hours-in tracking", d: "Group employees by division (HQ, Field, Lae Branch). Each division has a supervisor who enters their own team's hours via a dedicated \"My team\" page; bookkeepers see a live status panel showing who's in, who's pending, and when each submission landed. Set a deadline per company and TeebeePay reminds laggards by email." },
     { icon: <Users size={22} />, t: "Five-role hierarchy", d: "Owner, principal, bookkeeper, site key person, employee. Each sees only what they should." },
     { icon: <ShieldCheck size={22} />, t: "PNG compliance built in", d: "SWT brackets, dependent rebates, non-resident and no-declaration tables — all current with the 2026 IRC rules." },
     { icon: <Banknote size={22} />, t: "Multi-bank splits", d: "Split each employee's net pay across multiple accounts by percentage. Remainder reconciliation handled for you." },
@@ -849,6 +853,61 @@ function FeatureGrid() {
               </div>
               <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 6px" }}>{f.t}</h3>
               <p style={{ color: COLORS.inkSoft, fontSize: 14, lineHeight: 1.5, margin: 0 }}>{f.d}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────── */
+
+function Roadmap() {
+  const items = [
+    {
+      icon: <ScanLine size={22} />,
+      t: "Supervisor daily timesheet",
+      d: "A foreman opens \"My team\" on their phone each morning and taps each employee to start their shift, then taps again at knock-off. Late starts, early finishes, and absences captured to the minute — no end-of-fortnight memory game. The daily timesheet rolls up into the fortnight's hours automatically when the pay run is cut. No employee-phone dependency: only the supervisor needs the app.",
+    },
+    {
+      icon: <QrCode size={22} />,
+      t: "QR-code self-attendance",
+      d: "A rotating-QR signboard at each worksite (refreshes hourly). Employees scan from the TeebeePay app to clock in and again to clock out. Auto-clock-out at the regular end-of-shift; a later scan overrides that as the real time. No clock-in = marked absent and the supervisor is notified — so disputes get caught the same day. Hours flow straight into the pay run, no foreman memory required.",
+    },
+  ];
+  return (
+    <section id="roadmap" style={{ padding: "60px 24px", background: "#fff" }}>
+      <div style={{ maxWidth: 1180, margin: "0 auto" }}>
+        <SectionEyebrow>Roadmap</SectionEyebrow>
+        <h2 style={{ ...h2, marginBottom: 6 }}>Coming next</h2>
+        <p style={{ color: COLORS.muted, fontSize: 15, margin: "0 0 32px", maxWidth: 720 }}>
+          Ideas we're actively scoping. Tell us which would matter most for your business — we prioritise by what
+          customers actually need.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 18 }}>
+          {items.map((it, i) => (
+            <div key={i} style={{
+              position: "relative",
+              background: "linear-gradient(135deg, #fffaf0 0%, #fff7e0 100%)",
+              border: "1px dashed #e9c46a", borderRadius: 12, padding: 22,
+            }}>
+              <span style={{
+                position: "absolute", top: 14, right: 14,
+                background: "#0f172a", color: "#f4b400",
+                padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, letterSpacing: 0.04,
+              }}>
+                COMING SOON
+              </span>
+              <div style={{
+                width: 40, height: 40, borderRadius: 10, background: "#fff",
+                color: COLORS.goldDeep, display: "flex", alignItems: "center", justifyContent: "center",
+                marginBottom: 12, border: "1px solid #e9c46a",
+              }}>
+                {it.icon}
+              </div>
+              <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 6px", paddingRight: 90 }}>{it.t}</h3>
+              <p style={{ color: COLORS.inkSoft, fontSize: 14, lineHeight: 1.5, margin: 0 }}>{it.d}</p>
             </div>
           ))}
         </div>
