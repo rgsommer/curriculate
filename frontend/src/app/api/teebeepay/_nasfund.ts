@@ -108,9 +108,11 @@ export async function buildNasfundXlsx(company: any, periodLabel: string, rows: 
         extension: ext,
       });
       const targetRow = apRow.number;
+      // exceljs's Anchor type expects extra nativeCol/nativeRow fields it never
+      // actually uses; cast through `any` so this compiles in strict TS.
       ws.addImage(imageId, {
-        tl: { col: 6, row: targetRow - 1 },
-        br: { col: 9, row: targetRow + 4 },
+        tl: { col: 6, row: targetRow - 1 } as any,
+        br: { col: 9, row: targetRow + 4 } as any,
       });
     } catch (e) {
       console.warn("[nasfund] signature embed failed:", e);

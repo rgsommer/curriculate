@@ -1,6 +1,6 @@
 // POST { code } — require a current TOTP code to disable 2FA on your own account.
 import { NextResponse } from "next/server";
-import { authenticator } from "otplib";
+import { authenticator } from "../../_totp";
 import { readAuth, db, ObjectId } from "../../../_auth";
 import { logAudit } from "../../../_audit";
 

@@ -2,7 +2,7 @@
 //
 // POST { email, pin, token } → returns { authToken } if valid (8h lifetime).
 import { NextResponse } from "next/server";
-import { authenticator } from "otplib";
+import { authenticator } from "../_totp";
 import {
   clientIp, rateOk, pinHash, signToken, verifyToken, getSecret,
 } from "../../_auth";

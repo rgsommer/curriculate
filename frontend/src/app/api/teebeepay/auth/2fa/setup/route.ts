@@ -2,7 +2,7 @@
 // User scans the QR with Google Authenticator / Authy / 1Password, then
 // POSTs to /verify-setup with a 6-digit code to confirm and enable.
 import { NextResponse } from "next/server";
-import { authenticator } from "otplib";
+import { authenticator } from "../../_totp";
 import QRCode from "qrcode";
 import { readAuth, db, ObjectId } from "../../../_auth";
 

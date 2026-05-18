@@ -1,7 +1,7 @@
 // POST { code } — validate the 6-digit code against the pending secret;
 // on success, move pending → confirmed and flag the user as 2FA-enabled.
 import { NextResponse } from "next/server";
-import { authenticator } from "otplib";
+import { authenticator } from "../../_totp";
 import { readAuth, db, ObjectId } from "../../../_auth";
 import { logAudit } from "../../../_audit";
 
