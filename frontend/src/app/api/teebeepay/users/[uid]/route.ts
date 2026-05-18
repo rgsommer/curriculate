@@ -41,7 +41,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ uid: s
 
   try {
     const dbi = await db();
-    const target: any = await dbi.collection("users").findOne({ _id: new ObjectId(uid) });
+    // Robust lookup: handle legacy string `_id`s, JWT drift, and self-edit
+    // fallback by email (the auth token's email is authoritative for self).
+    const candidates: any[] = [];
+    try { candidates.push({ _id: new ObjectId(uid) }); } catch {}
+    candidates.push({ _id: uid as any });
+    if (uid === u.uid && u.email) candidates.push({ email: u.email });
+    const target: any = await dbi.collection("users").findOne({ $or: candidates });
     if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     // Users can always edit their own first/last name regardless of clearance comparison.
@@ -71,7 +77,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ uid: s
       if (before !== after) changes.company_id = { from: before, to: after };
     }
 
-    await dbi.collection("users").updateOne({ _id: new ObjectId(uid) }, { $set });
+    await dbi.collection("users").updateOne({ _id: target._id }, { $set });
 
     if (Object.keys(changes).length) {
       await logAudit({

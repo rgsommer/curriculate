@@ -9,10 +9,16 @@ export async function GET(req: Request) {
   if (!u) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const dbi = await db();
-    const row: any = await dbi.collection("users").findOne({ _id: new ObjectId(u.uid) });
+    // Robust lookup: some legacy records use a plain-string `_id`, and the JWT
+    // uid may have drifted from the persisted record. Email is the ground truth.
+    const candidates: any[] = [];
+    try { candidates.push({ _id: new ObjectId(u.uid) }); } catch {}
+    candidates.push({ _id: u.uid as any });
+    if (u.email) candidates.push({ email: u.email });
+    const row: any = await dbi.collection("users").findOne({ $or: candidates });
     return NextResponse.json({
       user: {
-        uid: u.uid,
+        uid: row ? row._id.toString() : u.uid,
         email: u.email,
         role: u.role,
         clearance: u.clearance,
