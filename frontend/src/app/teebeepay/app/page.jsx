@@ -1,11 +1,9 @@
 // frontend/src/app/teebeepay/app/page.jsx
 //
-// TeebeePay logged-in app. Single page that switches between:
-//   - Login (email → PIN → dashboard)
-//   - Dashboard (company list)
-//   - Company detail (pay period history + employee list tabs)
-//
-// Auth: localStorage'd authToken issued by /api/teebeepay/auth/verify-pin.
+// TeebeePay logged-in app — single page that switches between login,
+// dashboard (companies list + add), company detail (periods/employees
+// tabs, with create-employee + new-pay-period actions), and a payroll
+// entry grid for entering hours + approving.
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
@@ -13,6 +11,7 @@ import Link from "next/link";
 import {
   ArrowLeft, ArrowRight, Loader2, KeyRound, LogOut,
   Building2, Users, FileText, CheckCircle2, AlertCircle, Mail,
+  Plus, X, Edit2, Send,
 } from "lucide-react";
 
 const C = {
@@ -25,8 +24,7 @@ const TOKEN_KEY = "teebeepay.authToken";
 const ME_KEY    = "teebeepay.me";
 
 function getToken() { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } }
-function setToken(t)  { try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch {} }
-function getMe() { try { return JSON.parse(localStorage.getItem(ME_KEY) || "null"); } catch { return null; } }
+function setToken(t) { try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch {} }
 function setMe(m) { try { if (m) localStorage.setItem(ME_KEY, JSON.stringify(m)); else localStorage.removeItem(ME_KEY); } catch {} }
 
 async function api(path, opts = {}) {
@@ -41,25 +39,26 @@ async function api(path, opts = {}) {
 }
 
 export default function TeebeePayApp() {
-  const [view, setView] = useState("loading"); // loading | login | dashboard | company
+  const [view, setView] = useState("loading"); // loading | login | dashboard | company | new_period | period
   const [me, _setMe] = useState(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
+  const [selectedPeriodId, setSelectedPeriodId] = useState(null);
 
-  // Bootstrap: check stored token by calling /me.
   useEffect(() => {
     (async () => {
       if (!getToken()) { setView("login"); return; }
       try {
         const { user } = await api("/api/teebeepay/me");
-        setMe(user); _setMe(user);
+        _setMe(user); setMe(user);
         setView("dashboard");
-      } catch {
-        setView("login");
-      }
+      } catch { setView("login"); }
     })();
   }, []);
 
   function signOut() { setToken(null); setMe(null); _setMe(null); setView("login"); }
+  function goCompany(id) { setSelectedCompanyId(id); setView("company"); }
+  function goNewPeriod(id) { setSelectedCompanyId(id); setView("new_period"); }
+  function goPeriod(pid) { setSelectedPeriodId(pid); setView("period"); }
 
   return (
     <div style={{
@@ -67,21 +66,26 @@ export default function TeebeePayApp() {
       fontFamily: "system-ui, -apple-system, 'Segoe UI', Inter, Roboto, sans-serif",
     }}>
       {view !== "login" && <AppHeader me={me} onSignOut={signOut} />}
-      {view === "loading" && <Centered><Loader2 className="tbp-spin" size={28} color={C.red} /></Centered>}
-      {view === "login" && <LoginCard onSignedIn={(u) => { _setMe(u); setMe(u); setView("dashboard"); }} />}
-      {view === "dashboard" && <Dashboard me={me} onPick={(id) => { setSelectedCompanyId(id); setView("company"); }} />}
-      {view === "company" && (
-        <CompanyDetail
-          me={me} companyId={selectedCompanyId}
-          onBack={() => { setSelectedCompanyId(null); setView("dashboard"); }}
-        />
-      )}
-      <style>{`@keyframes tbp-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } } .tbp-spin { animation: tbp-spin 0.9s linear infinite; }`}</style>
+      {view === "loading"   && <Centered><Loader2 className="tbp-spin" size={28} color={C.red} /></Centered>}
+      {view === "login"     && <LoginCard onSignedIn={(u) => { _setMe(u); setMe(u); setView("dashboard"); }} />}
+      {view === "dashboard" && <Dashboard me={me} onPick={goCompany} />}
+      {view === "company"   && <CompanyDetail me={me} companyId={selectedCompanyId}
+        onBack={() => setView("dashboard")} onNewPeriod={() => goNewPeriod(selectedCompanyId)} onOpenPeriod={goPeriod} />}
+      {view === "new_period" && <NewPeriod me={me} companyId={selectedCompanyId}
+        onBack={() => setView("company")} onSaved={(pid) => goPeriod(pid)} />}
+      {view === "period" && <PeriodDetail me={me} periodId={selectedPeriodId}
+        onBack={() => setView("company")} />}
+      <style>{`
+        @keyframes tbp-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+        .tbp-spin { animation: tbp-spin 0.9s linear infinite; }
+        .tbp-grid input { padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; width: 100%; background: #fff; color: ${C.ink}; }
+        .tbp-grid input:focus { outline: none; border-color: ${C.red}; }
+      `}</style>
     </div>
   );
 }
 
-/* ─────────── Header ─────────── */
+/* ─────────── Header / shared bits ─────────── */
 
 function AppHeader({ me, onSignOut }) {
   return (
@@ -90,31 +94,24 @@ function AppHeader({ me, onSignOut }) {
       display: "flex", alignItems: "center", gap: 16,
     }}>
       <Link href="/teebeepay" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", color: C.ink }}>
-        <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
-          <rect width="32" height="32" rx="8" fill={C.red} />
-          <path d="M9 9h14M11 9v14M21 9v6c0 2-1.5 3-3.5 3H11"
-            stroke={C.gold} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-        </svg>
+        <Logo size={30} />
         <strong style={{ fontSize: 17 }}>TeebeePay</strong>
       </Link>
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
-        {me && (
-          <span style={{ fontSize: 13, color: C.muted }}>
-            {me.email} · <strong style={{ color: C.inkSoft }}>{me.role}</strong>
-          </span>
-        )}
-        <button onClick={onSignOut} style={{
-          display: "inline-flex", alignItems: "center", gap: 6,
-          padding: "8px 14px", borderRadius: 8, border: "1px solid #e5e7eb",
-          background: "#fff", color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: "pointer",
-        }}>
-          <LogOut size={14} /> Sign out
-        </button>
+        {me && <span style={{ fontSize: 13, color: C.muted }}>{me.email} · <strong style={{ color: C.inkSoft }}>{me.role}</strong></span>}
+        <button onClick={onSignOut} style={btnGhostSmall}><LogOut size={14} /> Sign out</button>
       </div>
     </header>
   );
 }
-
+function Logo({ size = 30 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+      <rect width="32" height="32" rx="8" fill={C.red} />
+      <path d="M9 9h14M11 9v14M21 9v6c0 2-1.5 3-3.5 3H11" stroke={C.gold} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
+  );
+}
 function Centered({ children }) {
   return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>{children}</div>;
 }
@@ -122,7 +119,7 @@ function Centered({ children }) {
 /* ─────────── Login ─────────── */
 
 function LoginCard({ onSignedIn }) {
-  const [step, setStep] = useState("email");  // email | pin
+  const [step, setStep] = useState("email");
   const [email, setEmail] = useState("");
   const [pin, setPin] = useState("");
   const [pinToken, setPinToken] = useState("");
@@ -136,86 +133,64 @@ function LoginCard({ onSignedIn }) {
       const j = await api("/api/teebeepay/auth/request-pin", {
         method: "POST", body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
-      setPinToken(j.token);
-      setStep("pin");
+      setPinToken(j.token); setStep("pin");
       setInfo("We've emailed you a 6-digit code. Enter it below.");
     } catch (e) { setError(e.message); }
     finally { setSubmitting(false); }
   }
-
   async function verifyPin() {
     setError(""); setSubmitting(true);
     try {
       const j = await api("/api/teebeepay/auth/verify-pin", {
-        method: "POST",
-        body: JSON.stringify({ email: email.trim().toLowerCase(), pin: pin.trim(), token: pinToken }),
+        method: "POST", body: JSON.stringify({ email: email.trim().toLowerCase(), pin: pin.trim(), token: pinToken }),
       });
-      setToken(j.authToken); setMe(j.user);
-      onSignedIn(j.user);
+      setToken(j.authToken); setMe(j.user); onSignedIn(j.user);
     } catch (e) { setError(e.message); }
     finally { setSubmitting(false); }
   }
 
   return (
     <div style={{
-      minHeight: "100vh",
-      background: `linear-gradient(135deg, ${C.red} 0%, ${C.redDeep} 100%)`,
+      minHeight: "100vh", background: `linear-gradient(135deg, ${C.red} 0%, ${C.redDeep} 100%)`,
       display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
     }}>
       <div style={{ background: "#fff", borderRadius: 16, padding: 36, width: "100%", maxWidth: 420,
         boxShadow: "0 30px 60px rgba(0,0,0,.25)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 26 }}>
-          <svg width="40" height="40" viewBox="0 0 32 32" fill="none">
-            <rect width="32" height="32" rx="8" fill={C.red} />
-            <path d="M9 9h14M11 9v14M21 9v6c0 2-1.5 3-3.5 3H11"
-              stroke={C.gold} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-          </svg>
+          <Logo size={40} />
           <div>
             <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>TeebeePay</h1>
             <div style={{ fontSize: 13, color: C.muted }}>Sign in to your account</div>
           </div>
         </div>
-
         {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
         {info && step === "pin" && <FlashBox type="info" icon={<Mail size={16} />}>{info}</FlashBox>}
-
-        {step === "email" && (
+        {step === "email" ? (
           <>
             <Label>Email address</Label>
-            <input
-              type="email" placeholder="you@company.com" value={email}
+            <input type="email" placeholder="you@company.com" value={email}
               onChange={(e) => setEmail(e.target.value)} autoFocus
-              onKeyDown={(e) => e.key === "Enter" && email && requestPin()}
-              style={input}
-            />
+              onKeyDown={(e) => e.key === "Enter" && email && requestPin()} style={input} />
             <button onClick={requestPin} disabled={!email || submitting} style={btnPrimary}>
-              {submitting
-                ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 8 }} /> Sending code…</>
-                : <>Send sign-in code <ArrowRight size={16} style={{ marginLeft: 6 }} /></>}
+              {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 8 }} /> Sending…</>
+                          : <>Send sign-in code <ArrowRight size={16} style={{ marginLeft: 6 }} /></>}
             </button>
             <p style={{ marginTop: 18, fontSize: 12, color: C.muted, textAlign: "center" }}>
               We'll email you a 6-digit code. No password needed.
             </p>
           </>
-        )}
-
-        {step === "pin" && (
+        ) : (
           <>
             <Label>6-digit code</Label>
-            <input
-              type="text" inputMode="numeric" maxLength={6} placeholder="••••••"
+            <input type="text" inputMode="numeric" maxLength={6} placeholder="••••••"
               value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-              onKeyDown={(e) => e.key === "Enter" && pin.length === 6 && verifyPin()}
-              autoFocus
-              style={{ ...input, letterSpacing: 6, fontSize: 22, textAlign: "center", fontWeight: 700 }}
-            />
+              onKeyDown={(e) => e.key === "Enter" && pin.length === 6 && verifyPin()} autoFocus
+              style={{ ...input, letterSpacing: 6, fontSize: 22, textAlign: "center", fontWeight: 700 }} />
             <button onClick={verifyPin} disabled={pin.length !== 6 || submitting} style={btnPrimary}>
-              {submitting
-                ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 8 }} /> Signing in…</>
-                : <>Sign in <KeyRound size={16} style={{ marginLeft: 6 }} /></>}
+              {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 8 }} /> Signing in…</>
+                          : <>Sign in <KeyRound size={16} style={{ marginLeft: 6 }} /></>}
             </button>
-            <button onClick={() => { setStep("email"); setPin(""); setError(""); setInfo(""); }}
-              style={btnGhost}>← Use a different email</button>
+            <button onClick={() => { setStep("email"); setPin(""); setError(""); setInfo(""); }} style={btnGhost}>← Use a different email</button>
           </>
         )}
       </div>
@@ -223,78 +198,50 @@ function LoginCard({ onSignedIn }) {
   );
 }
 
-function Label({ children }) {
-  return <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.inkSoft, marginBottom: 6 }}>{children}</label>;
-}
-const input = {
-  display: "block", width: "100%", padding: "12px 14px", borderRadius: 10,
-  border: "1px solid #d1d5db", fontSize: 15, outline: "none", marginBottom: 14, background: "#fff",
-};
-const btnPrimary = {
-  display: "inline-flex", alignItems: "center", justifyContent: "center", width: "100%",
-  padding: "12px 18px", borderRadius: 10, border: "none", cursor: "pointer",
-  background: C.red, color: "#fff", fontWeight: 700, fontSize: 15,
-};
-const btnGhost = {
-  display: "block", width: "100%", marginTop: 12,
-  padding: "10px 18px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff",
-  color: C.inkSoft, fontWeight: 500, fontSize: 13, cursor: "pointer",
-};
-
-function FlashBox({ type, icon, children }) {
-  const color = type === "error" ? "#991b1b" : "#1e40af";
-  const bg = type === "error" ? "#fee2e2" : "#dbeafe";
-  return (
-    <div style={{ background: bg, color, padding: "10px 14px", borderRadius: 8,
-      fontSize: 13, marginBottom: 14, display: "flex", gap: 8, alignItems: "flex-start" }}>
-      <span style={{ flexShrink: 0, marginTop: 1 }}>{icon}</span>
-      <span>{children}</span>
-    </div>
-  );
-}
-
-/* ─────────── Dashboard ─────────── */
+/* ─────────── Dashboard with Add Company ─────────── */
 
 function Dashboard({ me, onPick }) {
   const [companies, setCompanies] = useState(null);
   const [error, setError] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
 
   const refresh = useCallback(async () => {
     setError("");
-    try {
-      const j = await api("/api/teebeepay/companies");
-      setCompanies(j.companies || []);
-    } catch (e) { setError(e.message); }
+    try { const j = await api("/api/teebeepay/companies"); setCompanies(j.companies || []); }
+    catch (e) { setError(e.message); }
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px" }}>
-      <h1 style={{ margin: "0 0 8px", fontSize: 28, fontWeight: 800 }}>Welcome back.</h1>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>Welcome back.</h1>
+        {me?.clearance >= 3 && (
+          <button onClick={() => setShowAdd(true)} style={btnPrimaryInline}>
+            <Plus size={16} /> Add company
+          </button>
+        )}
+      </div>
       <p style={{ color: C.muted, fontSize: 15, margin: "0 0 28px" }}>
-        {companies == null ? "Loading your client companies…" :
-         companies.length === 0 ? "No companies set up yet." :
+        {companies == null ? "Loading client companies…" :
+         companies.length === 0 ? "No companies yet — add your first one to get started." :
          `${companies.length} ${companies.length === 1 ? "company" : "companies"} on your roster.`}
       </p>
 
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
 
-      {companies == null ? (
-        <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered>
-      ) : (
+      {companies == null ? <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered> : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
           {companies.map((c) => (
             <button key={c.id} onClick={() => onPick(c.id)} style={companyCard}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-                <div style={{ width: 42, height: 42, borderRadius: 10, background: "#fff7e0",
-                  color: C.goldDeep, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: 42, height: 42, borderRadius: 10, background: "#fff7e0", color: C.goldDeep,
+                  display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Building2 size={20} />
                 </div>
                 <div style={{ textAlign: "left" }}>
                   <div style={{ fontSize: 16, fontWeight: 700 }}>{c.name}</div>
-                  <div style={{ fontSize: 12, color: C.muted }}>
-                    {c.abbreviation && `${c.abbreviation} · `}{c.pay_interval}
-                  </div>
+                  <div style={{ fontSize: 12, color: C.muted }}>{c.abbreviation && `${c.abbreviation} · `}{c.pay_interval}</div>
                 </div>
               </div>
               <div style={{ display: "flex", gap: 16, fontSize: 13, color: C.muted }}>
@@ -305,49 +252,115 @@ function Dashboard({ me, onPick }) {
           ))}
         </div>
       )}
+
+      {showAdd && <CompanyDialog onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); refresh(); }} />}
     </div>
   );
 }
-const companyCard = {
-  background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12,
-  padding: 20, textAlign: "left", cursor: "pointer", display: "block", width: "100%",
-};
 
-/* ─────────── Company detail ─────────── */
+function CompanyDialog({ onClose, onSaved }) {
+  const [f, setF] = useState({ name: "", abbreviation: "", pay_interval: "fortnightly", default_hours: 80,
+    bank_code: "088", branch_code: "", bank_account_no: "", bank_account_name: "", bank_client_no: "",
+    office_email: "", manager_email: "", ncsl_employer_no: "", payslip_message: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
 
-function CompanyDetail({ me, companyId, onBack }) {
+  async function save() {
+    setError(""); setSubmitting(true);
+    try { await api("/api/teebeepay/companies", { method: "POST", body: JSON.stringify(f) }); onSaved(); }
+    catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+
+  return (
+    <Modal title="Add company" onClose={onClose}>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <Field label="Company name *">
+        <input style={input} value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Sample Trading Ltd" autoFocus />
+      </Field>
+      <Field label="Abbreviation (used in file names)">
+        <input style={input} value={f.abbreviation} onChange={(e) => set("abbreviation", e.target.value)} placeholder="e.g. STL" />
+      </Field>
+      <Row>
+        <Field label="Pay interval">
+          <select style={input} value={f.pay_interval} onChange={(e) => set("pay_interval", e.target.value)}>
+            <option value="fortnightly">Fortnightly</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </Field>
+        <Field label="Default hours / period">
+          <input style={input} type="number" step="0.5" value={f.default_hours} onChange={(e) => set("default_hours", e.target.value)} />
+        </Field>
+      </Row>
+      <FieldGroup label="Bank (BSP defaults shown)">
+        <Row>
+          <Field label="Bank code"><input style={input} value={f.bank_code} onChange={(e) => set("bank_code", e.target.value)} /></Field>
+          <Field label="Branch"><input style={input} value={f.branch_code} onChange={(e) => set("branch_code", e.target.value)} placeholder="e.g. 314" /></Field>
+        </Row>
+        <Field label="Account number"><input style={input} value={f.bank_account_no} onChange={(e) => set("bank_account_no", e.target.value)} /></Field>
+        <Field label="Account name"><input style={input} value={f.bank_account_name} onChange={(e) => set("bank_account_name", e.target.value)} /></Field>
+        <Field label="BSP client number"><input style={input} value={f.bank_client_no} onChange={(e) => set("bank_client_no", e.target.value)} placeholder="e.g. 1267866" /></Field>
+      </FieldGroup>
+      <FieldGroup label="Office & NASFund">
+        <Field label="Office email"><input style={input} type="email" value={f.office_email} onChange={(e) => set("office_email", e.target.value)} /></Field>
+        <Field label="Manager email"><input style={input} type="email" value={f.manager_email} onChange={(e) => set("manager_email", e.target.value)} /></Field>
+        <Field label="NCSL employer number"><input style={input} value={f.ncsl_employer_no} onChange={(e) => set("ncsl_employer_no", e.target.value)} placeholder="e.g. 018768" /></Field>
+      </FieldGroup>
+      <Field label="Default pay-slip message">
+        <textarea style={{ ...input, minHeight: 70 }} value={f.payslip_message}
+          onChange={(e) => set("payslip_message", e.target.value)}
+          placeholder="Attached is your pay slip for the current pay period…" />
+      </Field>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
+        <button onClick={onClose} style={btnGhostLg}>Cancel</button>
+        <button onClick={save} disabled={!f.name || submitting} style={btnPrimaryInline}>
+          {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Creating…</> : "Create company"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ─────────── Company detail (periods + employees, with add) ─────────── */
+
+function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod }) {
   const [tab, setTab] = useState("periods");
   const [periods, setPeriods] = useState(null);
   const [employees, setEmployees] = useState(null);
-  const [error, setError] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [error, setError] = useState("");
+  const [showAddEmp, setShowAddEmp] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const { companies } = await api("/api/teebeepay/companies");
-        const co = companies.find((c) => c.id === companyId);
-        if (co) setCompanyName(co.name);
-        const [pj, ej] = await Promise.all([
-          api(`/api/teebeepay/companies/${companyId}/periods`),
-          api(`/api/teebeepay/companies/${companyId}/employees`),
-        ]);
-        setPeriods(pj.periods || []);
-        setEmployees(ej.employees || []);
-      } catch (e) { setError(e.message); }
-    })();
+  const refresh = useCallback(async () => {
+    setError("");
+    try {
+      const { companies } = await api("/api/teebeepay/companies");
+      const co = companies.find((c) => c.id === companyId);
+      if (co) setCompanyName(co.name);
+      const [pj, ej] = await Promise.all([
+        api(`/api/teebeepay/companies/${companyId}/periods`),
+        api(`/api/teebeepay/companies/${companyId}/employees`),
+      ]);
+      setPeriods(pj.periods || []); setEmployees(ej.employees || []);
+    } catch (e) { setError(e.message); }
   }, [companyId]);
+  useEffect(() => { refresh(); }, [refresh]);
 
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: "28px 24px" }}>
-      <button onClick={onBack} style={{
-        display: "inline-flex", alignItems: "center", gap: 6,
-        background: "none", border: "none", color: C.muted, fontSize: 13,
-        fontWeight: 500, padding: 0, marginBottom: 14, cursor: "pointer",
-      }}>
-        <ArrowLeft size={14} /> All companies
-      </button>
-      <h1 style={{ margin: "0 0 18px", fontSize: 26, fontWeight: 800 }}>{companyName || "Company"}</h1>
+      <button onClick={onBack} style={btnBack}><ArrowLeft size={14} /> All companies</button>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 0 18px" }}>
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>{companyName || "Company"}</h1>
+        <div style={{ display: "flex", gap: 8 }}>
+          {me?.clearance >= 1 && (
+            <button onClick={onNewPeriod} style={btnPrimaryInline}>
+              <Plus size={16} /> New pay period
+            </button>
+          )}
+        </div>
+      </div>
 
       <div style={{ display: "flex", gap: 4, borderBottom: "1px solid #e5e7eb", marginBottom: 24 }}>
         <Tab active={tab === "periods"} onClick={() => setTab("periods")}>
@@ -361,42 +374,42 @@ function CompanyDetail({ me, companyId, onBack }) {
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
 
       {tab === "periods" && (
-        periods == null
-          ? <Loader2 className="tbp-spin" size={20} color={C.red} />
-          : <PeriodTable periods={periods} />
+        periods == null ? <Loader2 className="tbp-spin" size={20} color={C.red} />
+                        : <PeriodTable periods={periods} onOpen={onOpenPeriod} />
       )}
 
       {tab === "employees" && (
-        employees == null
-          ? <Loader2 className="tbp-spin" size={20} color={C.red} />
-          : <EmployeeTable employees={employees} />
+        <>
+          {me?.clearance >= 2 && (
+            <div style={{ marginBottom: 14 }}>
+              <button onClick={() => setShowAddEmp(true)} style={btnPrimaryInline}>
+                <Plus size={16} /> Add employee
+              </button>
+            </div>
+          )}
+          {employees == null ? <Loader2 className="tbp-spin" size={20} color={C.red} />
+                             : <EmployeeTable employees={employees} />}
+        </>
+      )}
+
+      {showAddEmp && (
+        <EmployeeDialog companyId={companyId} onClose={() => setShowAddEmp(false)}
+          onSaved={() => { setShowAddEmp(false); refresh(); }} />
       )}
     </div>
   );
 }
 
-function Tab({ active, onClick, children }) {
-  return (
-    <button onClick={onClick} style={{
-      padding: "12px 16px", border: "none", background: "none", cursor: "pointer",
-      fontSize: 14, fontWeight: 600, color: active ? C.red : C.muted,
-      borderBottom: active ? `2px solid ${C.red}` : "2px solid transparent",
-      display: "inline-flex", alignItems: "center", marginBottom: -1,
-    }}>{children}</button>
-  );
-}
-
-function PeriodTable({ periods }) {
-  if (!periods.length) return <Empty>No pay periods yet.</Empty>;
+function PeriodTable({ periods, onOpen }) {
+  if (!periods.length) return <Empty>No pay periods yet. Click "New pay period" to start.</Empty>;
   return (
     <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
       <table style={tableStyle}>
         <thead><tr>
-          <th style={th}>Pay date</th>
-          <th style={th}>Period</th>
-          <th style={th}>Status</th>
+          <th style={th}>Pay date</th><th style={th}>Period</th><th style={th}>Status</th>
           <th style={{ ...th, textAlign: "right" }}># entries</th>
-          <th style={{ ...th, textAlign: "right" }}>Total net (K)</th>
+          <th style={{ ...th, textAlign: "right" }}>Net (K)</th>
+          <th style={{ ...th, textAlign: "right" }}></th>
         </tr></thead>
         <tbody>
           {periods.map((p) => (
@@ -408,6 +421,9 @@ function PeriodTable({ periods }) {
               <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                 {p.total_net_imported != null ? p.total_net_imported.toLocaleString() : "—"}
               </td>
+              <td style={{ ...td, textAlign: "right" }}>
+                <button onClick={() => onOpen(p.id)} style={btnGhostSmall}>Open <ArrowRight size={12} /></button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -416,38 +432,21 @@ function PeriodTable({ periods }) {
   );
 }
 
-function StatusBadge({ status, historical }) {
-  if (historical) return <Badge color="#1e40af" bg="#dbeafe">Historical</Badge>;
-  if (status === "approved") return <Badge color="#166534" bg="#dcfce7">Approved</Badge>;
-  if (status === "pending_approval") return <Badge color="#9c6c00" bg="#fef3c7">Pending</Badge>;
-  return <Badge color={C.muted} bg="#f1f5f9">{status || "draft"}</Badge>;
-}
-function Badge({ color, bg, children }) {
-  return <span style={{ background: bg, color, padding: "2px 10px", borderRadius: 999, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.04 }}>{children}</span>;
-}
-
 function EmployeeTable({ employees }) {
-  if (!employees.length) return <Empty>No employees in your clearance range.</Empty>;
+  if (!employees.length) return <Empty>No employees yet.</Empty>;
   return (
     <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
       <table style={tableStyle}>
         <thead><tr>
-          <th style={th}>Name</th>
-          <th style={th}>Email</th>
-          <th style={th}>Pay</th>
-          <th style={th}>Bank account</th>
-          <th style={th}>Active</th>
+          <th style={th}>Name</th><th style={th}>Email</th><th style={th}>Pay</th>
+          <th style={th}>Bank account</th><th style={th}>Active</th>
         </tr></thead>
         <tbody>
           {employees.map((e) => (
             <tr key={e.id} style={{ borderTop: "1px solid #f1f5f9" }}>
               <td style={td}>{e.last_name}, {e.first_name}</td>
               <td style={{ ...td, color: C.muted }}>{e.email || "—"}</td>
-              <td style={td}>
-                {e.pay_type === "salary"
-                  ? `Salary K${(e.annual_salary || 0).toLocaleString()}`
-                  : `Hourly K${(e.hourly_rate || 0).toFixed(2)}`}
-              </td>
+              <td style={td}>{e.pay_type === "salary" ? `Salary K${(e.annual_salary || 0).toLocaleString()}` : `Hourly K${(e.hourly_rate || 0).toFixed(2)}`}</td>
               <td style={{ ...td, color: C.muted, fontSize: 13 }}>
                 {e.bank_account_name || "—"} {e.bank_account_no ? `· ${e.bank_account_no}` : ""}
               </td>
@@ -460,10 +459,444 @@ function EmployeeTable({ employees }) {
   );
 }
 
-const tableStyle = { width: "100%", borderCollapse: "collapse", fontSize: 14, background: "#fff" };
-const th = { padding: "12px 14px", fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.06, textAlign: "left", background: "#fafbfc" };
-const td = { padding: "12px 14px" };
+function EmployeeDialog({ companyId, onClose, onSaved }) {
+  const [f, setF] = useState({
+    first_name: "", last_name: "", email: "", dob: "",
+    pay_type: "hourly", hourly_rate: "", annual_salary: "",
+    default_hours: 80, fte_pct: 100, dependents: 0,
+    residency_status: "resident", declaration_lodged: true,
+    bank_account_no: "", bank_account_name: "", branch_code: "", bank_code: "088",
+    housing_allowance: 0, meals_allowance: 0, school_fees_allowance: 0,
+    salary_sacrifice: 0, ncsl_voluntary: 0, nas_extra_pct: 0,
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  async function save() {
+    setError(""); setSubmitting(true);
+    try { await api(`/api/teebeepay/companies/${companyId}/employees`, { method: "POST", body: JSON.stringify(f) }); onSaved(); }
+    catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+  return (
+    <Modal title="Add employee" onClose={onClose} wide>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <Row>
+        <Field label="First name *"><input style={input} value={f.first_name} onChange={(e) => set("first_name", e.target.value)} autoFocus /></Field>
+        <Field label="Last name *"><input style={input} value={f.last_name} onChange={(e) => set("last_name", e.target.value)} /></Field>
+      </Row>
+      <Row>
+        <Field label="Email (for pay stubs)"><input style={input} type="email" value={f.email} onChange={(e) => set("email", e.target.value)} /></Field>
+        <Field label="Date of birth (for NASFund)"><input style={input} type="date" value={f.dob} onChange={(e) => set("dob", e.target.value)} /></Field>
+      </Row>
+      <FieldGroup label="Compensation">
+        <Row>
+          <Field label="Pay type">
+            <select style={input} value={f.pay_type} onChange={(e) => set("pay_type", e.target.value)}>
+              <option value="hourly">Hourly</option><option value="salary">Salary</option>
+            </select>
+          </Field>
+          <Field label={f.pay_type === "salary" ? "Annual salary (PGK)" : "Hourly rate (PGK)"}>
+            <input style={input} type="number" step="0.01"
+              value={f.pay_type === "salary" ? f.annual_salary : f.hourly_rate}
+              onChange={(e) => set(f.pay_type === "salary" ? "annual_salary" : "hourly_rate", e.target.value)} />
+          </Field>
+        </Row>
+        <Row>
+          <Field label="Default hours per period"><input style={input} type="number" step="0.5" value={f.default_hours} onChange={(e) => set("default_hours", e.target.value)} /></Field>
+          <Field label="FTE %"><input style={input} type="number" step="1" value={f.fte_pct} onChange={(e) => set("fte_pct", e.target.value)} /></Field>
+          <Field label="Dependants"><input style={input} type="number" min="0" value={f.dependents} onChange={(e) => set("dependents", e.target.value)} /></Field>
+        </Row>
+      </FieldGroup>
+      <FieldGroup label="Banking">
+        <Row>
+          <Field label="Bank code"><input style={input} value={f.bank_code} onChange={(e) => set("bank_code", e.target.value)} /></Field>
+          <Field label="Branch"><input style={input} value={f.branch_code} onChange={(e) => set("branch_code", e.target.value)} /></Field>
+        </Row>
+        <Field label="Account number"><input style={input} value={f.bank_account_no} onChange={(e) => set("bank_account_no", e.target.value)} /></Field>
+        <Field label="Account name"><input style={input} value={f.bank_account_name} onChange={(e) => set("bank_account_name", e.target.value)} /></Field>
+      </FieldGroup>
+      <FieldGroup label="Tax & NASFund settings">
+        <Row>
+          <Field label="Residency status">
+            <select style={input} value={f.residency_status} onChange={(e) => set("residency_status", e.target.value)}>
+              <option value="resident">Resident</option><option value="non_resident">Non-resident</option>
+            </select>
+          </Field>
+          <Field label="Declaration lodged?">
+            <select style={input} value={f.declaration_lodged ? "yes" : "no"} onChange={(e) => set("declaration_lodged", e.target.value === "yes")}>
+              <option value="yes">Yes (Table A)</option><option value="no">No (Table B)</option>
+            </select>
+          </Field>
+        </Row>
+      </FieldGroup>
+      <FieldGroup label="Standing allowances (per period, taxable)">
+        <Row>
+          <Field label="Housing"><input style={input} type="number" step="0.01" value={f.housing_allowance} onChange={(e) => set("housing_allowance", e.target.value)} /></Field>
+          <Field label="Meals"><input style={input} type="number" step="0.01" value={f.meals_allowance} onChange={(e) => set("meals_allowance", e.target.value)} /></Field>
+          <Field label="School fees"><input style={input} type="number" step="0.01" value={f.school_fees_allowance} onChange={(e) => set("school_fees_allowance", e.target.value)} /></Field>
+        </Row>
+      </FieldGroup>
+      <FieldGroup label="Standing deductions (per period)">
+        <Row>
+          <Field label="Salary sacrifice (pre-tax)"><input style={input} type="number" step="0.01" value={f.salary_sacrifice} onChange={(e) => set("salary_sacrifice", e.target.value)} /></Field>
+          <Field label="NCSL voluntary (pre-tax)"><input style={input} type="number" step="0.01" value={f.ncsl_voluntary} onChange={(e) => set("ncsl_voluntary", e.target.value)} /></Field>
+          <Field label="NAS extra %"><input style={input} type="number" step="0.1" value={f.nas_extra_pct} onChange={(e) => set("nas_extra_pct", e.target.value)} /></Field>
+        </Row>
+      </FieldGroup>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
+        <button onClick={onClose} style={btnGhostLg}>Cancel</button>
+        <button onClick={save} disabled={!f.first_name || !f.last_name || submitting} style={btnPrimaryInline}>
+          {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</> : "Save employee"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
 
+/* ─────────── New pay period (entry grid) ─────────── */
+
+function NewPeriod({ me, companyId, onBack, onSaved }) {
+  const [employees, setEmployees] = useState(null);
+  const [company, setCompany] = useState(null);
+  const [period, setPeriod] = useState({
+    period_start: "", period_end: "", pay_date: new Date().toISOString().slice(0, 10),
+  });
+  const [grid, setGrid] = useState({}); // employee_id -> { hours, cash_advance, note }
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const j = await api(`/api/teebeepay/companies/${companyId}/employees`);
+        const c = (await api("/api/teebeepay/companies")).companies.find((x) => x.id === companyId);
+        setEmployees(j.employees.filter((e) => e.is_active));
+        setCompany(c);
+        const today = new Date();
+        const end = new Date(today); end.setDate(end.getDate() - 1);
+        const start = new Date(end); start.setDate(start.getDate() - 13);
+        const pay = new Date(today);
+        setPeriod((p) => ({ ...p, period_start: start.toISOString().slice(0, 10),
+          period_end: end.toISOString().slice(0, 10), pay_date: pay.toISOString().slice(0, 10) }));
+      } catch (e) { setError(e.message); }
+    })();
+  }, [companyId]);
+
+  function set(eid, k, v) {
+    setGrid((g) => ({ ...g, [eid]: { ...(g[eid] || { hours: 0, cash_advance: 0, note: "" }), [k]: v } }));
+  }
+
+  function defaultHours(e) {
+    return e.default_hours || company?.default_hours || 80;
+  }
+
+  function dblToggleHours(e) {
+    const cur = Number(grid[e.id]?.hours) || 0;
+    const def = defaultHours(e);
+    set(e.id, "hours", cur === def ? 0 : def);
+  }
+
+  async function submit() {
+    setError(""); setSubmitting(true);
+    try {
+      const entries = (employees || []).map((e) => ({
+        employee_id: e.id,
+        hours: grid[e.id]?.hours || 0,
+        cash_advance: grid[e.id]?.cash_advance || 0,
+        note: grid[e.id]?.note || "",
+      }));
+      const j = await api(`/api/teebeepay/companies/${companyId}/payroll-periods`, {
+        method: "POST", body: JSON.stringify({ ...period, entries }),
+      });
+      onSaved(j.id);
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+
+  if (!employees || !company) return <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered>;
+
+  return (
+    <div style={{ maxWidth: 1280, margin: "0 auto", padding: "28px 24px" }}>
+      <button onClick={onBack} style={btnBack}><ArrowLeft size={14} /> Back to {company.name}</button>
+      <h1 style={{ margin: "0 0 8px", fontSize: 26, fontWeight: 800 }}>New pay period — {company.name}</h1>
+      <p style={{ color: C.muted, fontSize: 14, margin: "0 0 20px" }}>
+        Double-click an <strong>hours</strong> cell to toggle between the default and zero. Notes appear on the employee's pay stub.
+      </p>
+
+      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 18, marginBottom: 18 }}>
+        <Row>
+          <Field label="Period start"><input style={input} type="date" value={period.period_start} onChange={(e) => setPeriod({ ...period, period_start: e.target.value })} /></Field>
+          <Field label="Period end"><input style={input} type="date" value={period.period_end} onChange={(e) => setPeriod({ ...period, period_end: e.target.value })} /></Field>
+          <Field label="Pay date"><input style={input} type="date" value={period.pay_date} onChange={(e) => setPeriod({ ...period, pay_date: e.target.value })} /></Field>
+        </Row>
+      </div>
+
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+
+      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+        <table className="tbp-grid" style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={th}>Employee</th>
+              <th style={{ ...th, width: 80, textAlign: "right" }}>Default</th>
+              <th style={{ ...th, width: 110 }}>Hours</th>
+              <th style={{ ...th, width: 110 }}>Cash advance</th>
+              <th style={th}>Note (shown on stub)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {employees.map((e) => {
+              const g = grid[e.id] || {};
+              const def = defaultHours(e);
+              return (
+                <tr key={e.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <td style={td}>{e.last_name}, {e.first_name}</td>
+                  <td style={{ ...td, textAlign: "right", color: C.muted }}>{def}</td>
+                  <td style={td}>
+                    <input type="number" step="0.25" min="0" value={g.hours ?? 0}
+                      onDoubleClick={() => dblToggleHours(e)}
+                      onChange={(ev) => set(e.id, "hours", ev.target.value)} />
+                  </td>
+                  <td style={td}>
+                    <input type="number" step="0.01" value={g.cash_advance ?? 0}
+                      onChange={(ev) => set(e.id, "cash_advance", ev.target.value)} />
+                  </td>
+                  <td style={td}><input type="text" value={g.note ?? ""}
+                    onChange={(ev) => set(e.id, "note", ev.target.value)} placeholder="Optional" /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+        <button onClick={onBack} style={btnGhostLg}>Cancel</button>
+        <button onClick={submit} disabled={submitting} style={btnPrimaryInline}>
+          {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</>
+                      : <>Submit for approval <ArrowRight size={16} style={{ marginLeft: 6 }} /></>}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────── Period detail + Approve ─────────── */
+
+function PeriodDetail({ me, periodId, onBack }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [approving, setApproving] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const refresh = useCallback(async () => {
+    setError("");
+    try { setData(await api(`/api/teebeepay/payroll-periods/${periodId}`)); }
+    catch (e) { setError(e.message); }
+  }, [periodId]);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  async function approve() {
+    if (!confirm("Approve this pay period and email pay stubs to employees?")) return;
+    setApproving(true);
+    try { setResult(await api(`/api/teebeepay/payroll-periods/${periodId}/approve`, { method: "POST" })); await refresh(); }
+    catch (e) { setError(e.message); }
+    finally { setApproving(false); }
+  }
+
+  if (!data) return <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered>;
+  const { period, entries } = data;
+  const totals = entries.reduce((a, e) => ({ gross: a.gross + e.gross, tax: a.tax + e.tax, nasfund: a.nasfund + e.nasfund, other: a.other + e.other_deductions, net: a.net + e.net }), { gross: 0, tax: 0, nasfund: 0, other: 0, net: 0 });
+
+  return (
+    <div style={{ maxWidth: 1280, margin: "0 auto", padding: "28px 24px" }}>
+      <button onClick={onBack} style={btnBack}><ArrowLeft size={14} /> Back to company</button>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>Pay period {period.period_start} → {period.period_end}</h1>
+        <StatusBadge status={period.status} historical={!!period.imported_from} />
+      </div>
+      <p style={{ color: C.muted, fontSize: 14, margin: "0 0 18px" }}>
+        Pay date {period.pay_date} · {entries.length} entries
+      </p>
+
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      {result && (
+        <FlashBox type="info" icon={<CheckCircle2 size={16} />}>
+          Approved. Total gross K{result.totalGross?.toLocaleString()}. Pay stubs emailed: {result.stubsSent}{result.stubsFailed ? `, failed: ${result.stubsFailed}` : ""}.
+        </FlashBox>
+      )}
+
+      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+        <table style={tableStyle}>
+          <thead><tr>
+            <th style={th}>Employee</th>
+            <th style={{ ...th, textAlign: "right" }}>Hours</th>
+            <th style={{ ...th, textAlign: "right" }}>Gross</th>
+            <th style={{ ...th, textAlign: "right" }}>Tax</th>
+            <th style={{ ...th, textAlign: "right" }}>Nasfund</th>
+            <th style={{ ...th, textAlign: "right" }}>Other</th>
+            <th style={{ ...th, textAlign: "right" }}>Net</th>
+            <th style={th}>Note</th>
+          </tr></thead>
+          <tbody>
+            {entries.map((e) => (
+              <tr key={e.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                <td style={td}>{e.employee_name}</td>
+                <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{e.hours ?? "—"}</td>
+                <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{e.gross != null ? e.gross.toFixed(2) : "—"}</td>
+                <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{e.tax != null ? e.tax.toFixed(2) : "—"}</td>
+                <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{e.nasfund != null ? e.nasfund.toFixed(2) : "—"}</td>
+                <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{e.other_deductions != null ? e.other_deductions.toFixed(2) : "—"}</td>
+                <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{e.net != null ? e.net.toFixed(2) : "—"}</td>
+                <td style={{ ...td, color: C.muted, fontSize: 13 }}>{e.note || ""}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ background: "#fafbfc", fontWeight: 700 }}>
+              <td style={td}>Totals</td>
+              <td></td>
+              <td style={{ ...td, textAlign: "right" }}>{totals.gross.toFixed(2)}</td>
+              <td style={{ ...td, textAlign: "right" }}>{totals.tax.toFixed(2)}</td>
+              <td style={{ ...td, textAlign: "right" }}>{totals.nasfund.toFixed(2)}</td>
+              <td style={{ ...td, textAlign: "right" }}>{totals.other.toFixed(2)}</td>
+              <td style={{ ...td, textAlign: "right" }}>{totals.net.toFixed(2)}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {period.status === "pending_approval" && me?.clearance >= 2 && (
+        <div style={{ marginTop: 18, display: "flex", justifyContent: "flex-end" }}>
+          <button onClick={approve} disabled={approving} style={btnPrimaryInline}>
+            {approving ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Approving…</>
+                       : <><Send size={16} style={{ marginRight: 6 }} /> Approve &amp; email pay stubs</>}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─────────── Reusable bits ─────────── */
+
+function StatusBadge({ status, historical }) {
+  if (historical) return <Badge color="#1e40af" bg="#dbeafe">Historical</Badge>;
+  if (status === "approved") return <Badge color="#166534" bg="#dcfce7">Approved</Badge>;
+  if (status === "pending_approval") return <Badge color="#9c6c00" bg="#fef3c7">Pending</Badge>;
+  return <Badge color={C.muted} bg="#f1f5f9">{status || "draft"}</Badge>;
+}
+function Badge({ color, bg, children }) {
+  return <span style={{ background: bg, color, padding: "2px 10px", borderRadius: 999, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.04 }}>{children}</span>;
+}
+function Tab({ active, onClick, children }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: "12px 16px", border: "none", background: "none", cursor: "pointer",
+      fontSize: 14, fontWeight: 600, color: active ? C.red : C.muted,
+      borderBottom: active ? `2px solid ${C.red}` : "2px solid transparent",
+      display: "inline-flex", alignItems: "center", marginBottom: -1,
+    }}>{children}</button>
+  );
+}
 function Empty({ children }) {
   return <div style={{ padding: 30, textAlign: "center", color: C.muted, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10 }}>{children}</div>;
 }
+function Modal({ title, wide, onClose, children }) {
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(15,23,42,.5)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: "#fff", borderRadius: 14, padding: 28, width: "100%",
+        maxWidth: wide ? 720 : 480, maxHeight: "90vh", overflow: "auto",
+        boxShadow: "0 30px 60px rgba(0,0,0,.3)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>{title}</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4 }}>
+            <X size={20} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+function Field({ label, children }) {
+  return (
+    <label style={{ display: "block", marginBottom: 12 }}>
+      <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: C.inkSoft, marginBottom: 5 }}>{label}</span>
+      {children}
+    </label>
+  );
+}
+function FieldGroup({ label, children }) {
+  return (
+    <div style={{ marginBottom: 18, padding: 14, background: "#fafbfc", borderRadius: 8, border: "1px solid #f0f1f4" }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.06, marginBottom: 8 }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+function Row({ children }) {
+  return <div style={{ display: "grid", gridTemplateColumns: `repeat(${React.Children.count(children)}, 1fr)`, gap: 12 }}>{children}</div>;
+}
+function Label({ children }) {
+  return <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.inkSoft, marginBottom: 6 }}>{children}</label>;
+}
+function FlashBox({ type, icon, children }) {
+  const color = type === "error" ? "#991b1b" : "#1e40af";
+  const bg = type === "error" ? "#fee2e2" : "#dbeafe";
+  return (
+    <div style={{ background: bg, color, padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 14, display: "flex", gap: 8, alignItems: "flex-start" }}>
+      <span style={{ flexShrink: 0, marginTop: 1 }}>{icon}</span><span>{children}</span>
+    </div>
+  );
+}
+
+/* ─────────── Styles ─────────── */
+
+const input = {
+  display: "block", width: "100%", padding: "10px 12px", borderRadius: 8,
+  border: "1px solid #d1d5db", fontSize: 14, outline: "none", background: "#fff", color: C.ink,
+};
+const btnPrimary = {
+  display: "inline-flex", alignItems: "center", justifyContent: "center", width: "100%",
+  padding: "12px 18px", borderRadius: 10, border: "none", cursor: "pointer",
+  background: C.red, color: "#fff", fontWeight: 700, fontSize: 15,
+};
+const btnPrimaryInline = {
+  display: "inline-flex", alignItems: "center", gap: 6,
+  padding: "9px 16px", borderRadius: 8, border: "none", cursor: "pointer",
+  background: C.red, color: "#fff", fontWeight: 600, fontSize: 14,
+};
+const btnGhost = {
+  display: "block", width: "100%", marginTop: 12,
+  padding: "10px 18px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff",
+  color: C.inkSoft, fontWeight: 500, fontSize: 13, cursor: "pointer",
+};
+const btnGhostLg = {
+  padding: "9px 16px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff",
+  color: C.inkSoft, fontWeight: 600, fontSize: 14, cursor: "pointer",
+};
+const btnGhostSmall = {
+  display: "inline-flex", alignItems: "center", gap: 6,
+  padding: "6px 12px", borderRadius: 6, border: "1px solid #e5e7eb", background: "#fff",
+  color: C.inkSoft, fontWeight: 500, fontSize: 13, cursor: "pointer",
+};
+const btnBack = {
+  display: "inline-flex", alignItems: "center", gap: 6,
+  background: "none", border: "none", color: C.muted, fontSize: 13, fontWeight: 500,
+  padding: 0, marginBottom: 14, cursor: "pointer",
+};
+const companyCard = {
+  background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12,
+  padding: 20, textAlign: "left", cursor: "pointer", display: "block", width: "100%",
+};
+const tableStyle = { width: "100%", borderCollapse: "collapse", fontSize: 14, background: "#fff" };
+const th = { padding: "12px 14px", fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.06, textAlign: "left", background: "#fafbfc" };
+const td = { padding: "10px 14px" };
