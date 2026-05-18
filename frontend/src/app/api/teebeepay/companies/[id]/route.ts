@@ -40,6 +40,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     "late_threshold_count",       // integer | "" for disabled
     "late_window_days",           // integer (default 30)
     "late_alert_recipients",      // array of "principal" | "supervisor" | "bookkeeper"
+    // Billing — service tier + per-employee rate
+    "service_level",              // "basic" | "full"
+    "flat_rate_per_employee",     // number (PGK per period); >0 enables the new fee model
   ];
   for (const k of fields) {
     if (k in b) $set[k] = typeof b[k] === "string" ? b[k].trim() : b[k];

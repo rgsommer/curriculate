@@ -11,12 +11,15 @@ export async function GET(req: Request) {
   try {
     const dbi = await db();
     const rows: any[] = await dbi.collection("service_fees")
-      .find({}).sort({ pct_of_gross: -1, name: 1 }).toArray();
+      .find({}).sort({ name: 1 }).toArray();
     return NextResponse.json({
       fees: rows.map((r: any) => ({
         id: r._id.toString(),
         name: r.name,
-        pct_of_gross: r.pct_of_gross,
+        // `weight` is the new canonical field; legacy data stored `pct_of_gross`.
+        // Read both; the UI displays weight, but old companies on the gross-%
+        // model still get the same per-period dollar amount.
+        weight: Number(r.weight ?? r.pct_of_gross) || 0,
         bank_code: r.bank_code || "088",
         branch_code: r.branch_code || null,
         account_no: r.account_no || null,
@@ -36,14 +39,15 @@ export async function POST(req: Request) {
   if (!u) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (u.clearance < 4) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const b = await req.json().catch(() => ({} as any));
-  if (!b.name || b.pct_of_gross == null) {
-    return NextResponse.json({ error: "Name and percent are required." }, { status: 400 });
+  const weight = b.weight != null ? parseFloat(b.weight) : (b.pct_of_gross != null ? parseFloat(b.pct_of_gross) : null);
+  if (!b.name || weight == null || Number.isNaN(weight)) {
+    return NextResponse.json({ error: "Name and weight are required." }, { status: 400 });
   }
   try {
     const dbi = await db();
     const r = await dbi.collection("service_fees").insertOne({
       name: String(b.name).trim(),
-      pct_of_gross: parseFloat(b.pct_of_gross) || 0,
+      weight: weight,
       bank_code: String(b.bank_code || "088").trim(),
       branch_code: String(b.branch_code || "").trim() || null,
       account_no: String(b.account_no || "").trim() || null,

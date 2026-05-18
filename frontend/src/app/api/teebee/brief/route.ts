@@ -198,18 +198,19 @@ export async function GET(req: Request) {
     p2.drawText("· " + n, { x: 64, y: nY - 34 - i * 12, size: 9, font: reg, color: INK });
   });
 
-  // Pricing band
-  const pY = 180;
-  p2.drawRectangle({ x: 48, y: pY - 60, width: W2 - 96, height: 60, color: GOLD });
-  p2.drawText("Pricing", { x: 64, y: pY - 24, size: 14, font: bold, color: NAVY });
-  drawWrapped(p2, reg, 10, NAVY_DEEP,
-    "From PGK 9 per employee per fortnight (Standard tier). All-inclusive: pay stubs, BSP " +
-    "batch, NASFund/NCSL, IRC SWT, audit log. First fortnight is free so you can see actual " +
-    "output before deciding.",
-    64, pY - 44, W2 - 128, 12);
+  // Pricing band — two tiers + time-savings (single dense paragraph for layout fit)
+  const pY = 190;
+  p2.drawRectangle({ x: 48, y: pY - 80, width: W2 - 96, height: 80, color: GOLD });
+  p2.drawText("Pricing — two tiers · save weeks every year", { x: 64, y: pY - 22, size: 13, font: bold, color: NAVY });
+  drawWrapped(p2, reg, 9.5, NAVY_DEEP,
+    "Self-service from PGK 9 / employee / fortnight — TeebeePay generates everything; you file with BSP and IRC. " +
+    "Managed bureau from PGK 14 / employee / fortnight — a CPA reviews and files BSP batches, NASFund returns, " +
+    "IRC SWT remittances, and year-end Form S for you. A 30-employee manual payroll runs 8–12 hours per fortnight " +
+    "(~250–300 hours/year); Self-service drops that to 1–2 hours, Managed to 15–30 minutes. ~6–7 weeks of FTE time back every year.",
+    64, pY - 40, W2 - 128, 11);
 
-  // CTA
-  p2.drawText("Next step", { x: 48, y: pY - 90, size: 13, font: bold, color: INK });
+  // CTA — moved below the now-taller pricing band
+  p2.drawText("Next step", { x: 48, y: pY - 100, size: 13, font: bold, color: INK });
   drawWrapped(p2, reg, 10.5, SOFT,
     "Send us a CSV of your current employee list and we'll show you the actual TeebeePay " +
     "output for one fortnight — pay stubs, BSP batch, NASFund return — at no charge. Email " +

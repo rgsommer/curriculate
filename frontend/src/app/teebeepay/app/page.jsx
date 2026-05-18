@@ -2031,6 +2031,8 @@ function CompanySettingsPanel({ companyId, onSaved }) {
 
       <LateAttendanceConfig co={co} setField={set} />
 
+      <BillingConfig co={co} setField={set} />
+
       <Field label="Default pay-slip message">
         <textarea style={{ ...input, minHeight: 70 }} value={co.payslip_message || ""}
           onChange={(e) => set("payslip_message", e.target.value)} />
@@ -2292,6 +2294,68 @@ function LateAttendanceConfig({ co, setField }) {
   );
 }
 
+/* ─────────── Billing config (service tier + per-employee rate) ─────────── */
+
+function BillingConfig({ co, setField }) {
+  const [defaults, setDefaults] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try { setDefaults((await api("/api/teebeepay/pricing-defaults")).pricing); }
+      catch { setDefaults({ basic_rate_per_employee: 9, full_rate_per_employee: 14 }); }
+    })();
+  }, []);
+  const tier = co.service_level === "full" ? "full" : "basic";
+  const inherited = defaults
+    ? (tier === "full" ? defaults.full_rate_per_employee : defaults.basic_rate_per_employee)
+    : (tier === "full" ? 14 : 9);
+  const override = Number(co.flat_rate_per_employee || 0);
+  const effective = override > 0 ? override : inherited;
+  const empCount = co.active_employees ?? co.employees ?? null;
+  const projected = empCount != null ? effective * empCount : null;
+  return (
+    <FieldGroup label="Billing — service tier & rate">
+      <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>
+        TeebeePay offers two tiers. <strong>Self-service</strong> gives the client all outputs to file themselves;
+        <strong> Managed bureau</strong> adds Theresia's personal review and filing of BSP, NASFund, IRC SWT,
+        and Form S. The per-employee rate comes from the bureau-wide pricing defaults (set on the Service fees page)
+        unless you override it below.
+      </p>
+      <Row>
+        <Field label="Service tier">
+          <select style={input} value={co.service_level || "basic"}
+            onChange={(e) => setField("service_level", e.target.value)}>
+            <option value="basic">Basic — self-service payroll</option>
+            <option value="full">Full — managed bureau</option>
+          </select>
+        </Field>
+        <Field label={`Per-employee rate override (${co.currency || "PGK"} / period)`}>
+          <input style={input} type="number" step="0.01" min="0"
+            value={co.flat_rate_per_employee ?? ""}
+            placeholder={`(blank = inherit ${inherited})`}
+            onChange={(e) => setField("flat_rate_per_employee", e.target.value === "" ? 0 : Number(e.target.value))} />
+          <p style={{ fontSize: 11, color: C.muted, margin: "4px 0 0" }}>
+            {override > 0
+              ? <>Overriding the bureau default for this company.</>
+              : <>Inheriting bureau default: <strong>{co.currency || "PGK"} {Number(inherited).toFixed(2)}</strong> per employee per period.</>}
+          </p>
+        </Field>
+      </Row>
+      {projected != null && projected > 0 && (
+        <div style={{
+          background: "#fffaf0", border: "1px solid #fde68a", borderRadius: 8,
+          padding: "10px 14px", marginTop: 10, fontSize: 13, color: C.ink,
+        }}>
+          <strong>Projected fee per pay period:</strong>{" "}
+          {co.currency || "PGK"} {Number(projected).toFixed(2)}
+          <span style={{ marginLeft: 8, color: C.muted }}>
+            ({empCount} active employees × {co.currency || "PGK"} {Number(effective).toFixed(2)})
+          </span>
+        </div>
+      )}
+    </FieldGroup>
+  );
+}
+
 /* ─────────── Adjust pay dialog (Principal-only) ─────────── */
 
 function AdjustPayDialog({ companyId, employee, onClose, onSaved }) {
@@ -2387,6 +2451,83 @@ function AdjustPayDialog({ companyId, employee, onClose, onSaved }) {
   );
 }
 
+/* ─────────── Pricing defaults editor (Principal+) ─────────── */
+
+function PricingDefaultsEditor() {
+  const [p, setP] = useState(null);
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  useEffect(() => {
+    (async () => {
+      try { setP((await api("/api/teebeepay/pricing-defaults")).pricing); }
+      catch (e) { setError(e.message); }
+    })();
+  }, []);
+  if (!p) return null;
+  const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
+  async function save() {
+    setSubmitting(true); setError(""); setInfo("");
+    try {
+      await api("/api/teebeepay/pricing-defaults", { method: "PATCH", body: JSON.stringify(p) });
+      setInfo("Saved. New companies inherit these unless they have a per-company override.");
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+  return (
+    <div style={{
+      background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10,
+      padding: 18, marginBottom: 22,
+    }}>
+      <strong style={{ fontSize: 14 }}>Bureau-wide pricing defaults</strong>
+      <p style={{ fontSize: 12, color: C.muted, margin: "6px 0 14px" }}>
+        These rates are inherited by every company unless overridden on that company's Settings → Billing.
+        Setup fees are charged once when a new client onboards.
+      </p>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      {info && <FlashBox type="info" icon={<CheckCircle2 size={16} />}>{info}</FlashBox>}
+      <Row>
+        <Field label="Self-service rate (per employee, per period)">
+          <input style={input} type="number" step="0.01" min="0" value={p.basic_rate_per_employee ?? 9}
+            onChange={(e) => set("basic_rate_per_employee", Number(e.target.value))} />
+        </Field>
+        <Field label="Managed-bureau rate (per employee, per period)">
+          <input style={input} type="number" step="0.01" min="0" value={p.full_rate_per_employee ?? 14}
+            onChange={(e) => set("full_rate_per_employee", Number(e.target.value))} />
+        </Field>
+      </Row>
+      <Row>
+        <Field label="Setup fee — small (≤20 employees)">
+          <input style={input} type="number" step="0.01" min="0" value={p.setup_fee_small ?? 500}
+            onChange={(e) => set("setup_fee_small", Number(e.target.value))} />
+        </Field>
+        <Field label="Setup fee — medium (21–50)">
+          <input style={input} type="number" step="0.01" min="0" value={p.setup_fee_medium ?? 1000}
+            onChange={(e) => set("setup_fee_medium", Number(e.target.value))} />
+        </Field>
+        <Field label="Setup fee — large (>50)">
+          <input style={input} type="number" step="0.01" min="0" value={p.setup_fee_large ?? 2000}
+            onChange={(e) => set("setup_fee_large", Number(e.target.value))} />
+        </Field>
+      </Row>
+      <Field label="Bank upload instructions (appended to every Principal approval email)">
+        <textarea style={{ ...input, minHeight: 110, fontSize: 13, lineHeight: 1.5 }}
+          placeholder={"e.g. 1. Log in to BSP Internet Business Banking → File Upload\n2. Select the CSV from the period page\n3. Confirm totals match the breakdown above\n4. Approve in BSP …"}
+          value={p.bank_upload_instructions ?? ""}
+          onChange={(e) => set("bank_upload_instructions", e.target.value)} />
+        <p style={{ fontSize: 11, color: C.muted, margin: "4px 0 0" }}>
+          Plain text. Line breaks preserved. Shown verbatim in the post-approval email Principals receive.
+        </p>
+      </Field>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+        <button onClick={save} disabled={submitting} style={btnPrimaryInline}>
+          {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</> : "Save pricing defaults"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ─────────── Service fees page (owner only) ─────────── */
 
 function ServiceFeesPage({ me, onBack }) {
@@ -2429,10 +2570,20 @@ function ServiceFeesPage({ me, onBack }) {
         </button>
       </div>
       <p style={{ color: C.muted, fontSize: 14, margin: "0 0 22px" }}>
-        Each recipient gets <strong>their % of total gross</strong> from every approved pay run, automatically appended to the BSP batch file. Typical: Theresia 3%, Richard 2%.
+        <strong>Weight</strong> drives how each pay run's fees are split between recipients. Two models:
+        <span style={{ display: "block", marginTop: 6 }}>
+          <strong>Flat-rate (preferred)</strong> — set <em>flat rate per employee</em> on each company's Settings tab.
+          Total fee = active employees × rate. Recipients split that pot by their weights (e.g. Theresia 3, Richard 2 → 60% / 40%).
+        </span>
+        <span style={{ display: "block", marginTop: 4 }}>
+          <strong>Legacy % of gross</strong> — if a company's flat rate is unset, the weight is treated as a percentage of
+          that period's gross payroll (Theresia 3% of gross, Richard 2% of gross). Same numbers; different base.
+        </span>
       </p>
 
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+
+      <PricingDefaultsEditor />
 
       {fees == null ? <Loader2 className="tbp-spin" size={20} color={C.red} /> :
        !fees.length ? <Empty>No service fee recipients yet.</Empty> :
@@ -2441,7 +2592,7 @@ function ServiceFeesPage({ me, onBack }) {
           <table style={tableStyle}>
             <thead><tr>
               <th style={th}>Name</th>
-              <th style={{ ...th, textAlign: "right" }}>% of gross</th>
+              <th style={{ ...th, textAlign: "right" }}>Weight</th>
               <th style={th}>Bank account</th>
               <th style={th}>Branch</th>
               <th style={th}>Active</th>
@@ -2451,7 +2602,7 @@ function ServiceFeesPage({ me, onBack }) {
               {fees.map((f) => (
                 <tr key={f.id} style={{ borderTop: "1px solid #f1f5f9" }}>
                   <td style={td}><strong>{f.name}</strong></td>
-                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{f.pct_of_gross}%</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{f.weight}</td>
                   <td style={{ ...td, color: C.muted, fontSize: 13 }}>
                     {f.account_name || "—"}{f.account_no ? ` · ${f.account_no}` : ""}
                   </td>
@@ -2482,7 +2633,7 @@ function ServiceFeesPage({ me, onBack }) {
 }
 
 function ServiceFeeDialog({ onClose, onSaved }) {
-  const [f, setF] = useState({ name: "", pct_of_gross: "", bank_code: "088",
+  const [f, setF] = useState({ name: "", weight: "", bank_code: "088",
     branch_code: "", account_no: "", account_name: "", notes: "" });
   const [users, setUsers] = useState(null);
   const [pick, setPick] = useState(""); // selected user id, "" for none, "__other__" for free text
@@ -2553,7 +2704,13 @@ function ServiceFeeDialog({ onClose, onSaved }) {
               onChange={(e) => set("name", e.target.value)} placeholder="Recipient name" />
           )}
         </Field>
-        <Field label="% of gross *"><input style={input} type="number" step="0.1" value={f.pct_of_gross} onChange={(e) => set("pct_of_gross", e.target.value)} placeholder="e.g. 3" /></Field>
+        <Field label="Weight *">
+          <input style={input} type="number" step="0.1" value={f.weight}
+            onChange={(e) => set("weight", e.target.value)} placeholder="e.g. 3" />
+          <p style={{ fontSize: 11, color: C.muted, margin: "4px 0 0" }}>
+            Used as a ratio with other recipients' weights (flat-rate model) or as % of gross (legacy model) — see top of page.
+          </p>
+        </Field>
       </Row>
       <Row>
         <Field label="Bank code"><input style={input} value={f.bank_code} onChange={(e) => set("bank_code", e.target.value)} /></Field>
@@ -2564,7 +2721,7 @@ function ServiceFeeDialog({ onClose, onSaved }) {
       <Field label="Notes (internal)"><input style={input} value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
         <button onClick={onClose} style={btnGhostLg}>Cancel</button>
-        <button onClick={save} disabled={!f.name || !f.pct_of_gross || submitting} style={btnPrimaryInline}>
+        <button onClick={save} disabled={!f.name || !f.weight || submitting} style={btnPrimaryInline}>
           {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</> : "Save"}
         </button>
       </div>

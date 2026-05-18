@@ -836,6 +836,8 @@ function FeatureGrid() {
     { icon: <GraduationCap size={22} />, t: "Auto-train new users", d: "Every new supervisor and bookkeeper gets a personalised 5-step guided tour the first time they open their workflow page — \"You supervise these 3 divisions, here's how to enter hours…\". A persistent \"Steps for today\" checklist tracks exactly what's outstanding so nobody guesses what to do next. No training calls, no PDFs." },
     { icon: <AlertTriangle size={22} />, t: "Attendance & late-arrival alerts", d: "Tag any day as Late or Absent (unauthorised) on the supervisor's timesheet. When an employee crosses a threshold you set per company — say 3 incidents in 30 days — TeebeePay emails whoever you choose (principal, supervisor, bookkeeper). Pay-period notes, daily reason field, and a full submission history sit alongside so disputes can be settled with the actual record." },
     { icon: <History size={22} />, t: "Bulletproof audit trail", d: "Every supervisor submission, pay-period approval, employee edit, and pay adjustment is journaled — actor, timestamp, before/after values. Pay adjustments require a written reason and are visible on each employee's profile. Late changes to already-paid periods are flagged but never auto back-applied, so bureau audits have a clean paper trail." },
+    { icon: <MailCheck size={22} />, t: "Bank-funding summary the moment payroll is approved", d: "As soon as the AP approves a pay run, the Principal gets an email with totals, the exact PGK figure to transfer into the payroll account, configurable BSP upload instructions, and a PDF attachment listing every employee with hours, pay rate, gross, tax, deductions, and net. No more recomputing or chasing down the right number." },
+    { icon: <Percent size={22} />, t: "Two tiers, your call", d: "Self-service from PGK 9 / employee / fortnight: TeebeePay generates everything; you file it. Managed bureau from PGK 14 / employee / fortnight: a CPA reviews and files your BSP batches, NASFund returns, IRC SWT remittances, and year-end Form S. Same product, two levels of professional involvement." },
   ];
   return (
     <section id="features" style={{ padding: "80px 24px", background: COLORS.cream }}>
@@ -1148,19 +1150,105 @@ const btnGhost: React.CSSProperties = {
 function PricingTeaser() {
   return (
     <section id="pricing" style={{ padding: "80px 24px", background: "#fff" }}>
-      <div style={{ maxWidth: 980, margin: "0 auto", textAlign: "center" }}>
+      <div style={{ maxWidth: 1080, margin: "0 auto", textAlign: "center" }}>
         <SectionEyebrow>Pricing</SectionEyebrow>
-        <h2 style={{ ...h2, textAlign: "center" }}>Simple, per-employee, no surprises.</h2>
-        <p style={{ ...lead, textAlign: "center", margin: "0 auto 40px", maxWidth: 640 }}>
-          One flat fee per fortnight. Includes everything: stubs, BSP batch, NASFund returns, IRC summary, change log, history.
+        <h2 style={{ ...h2, textAlign: "center" }}>Two tiers. Pick the level of involvement you want.</h2>
+        <p style={{ ...lead, textAlign: "center", margin: "0 auto 28px", maxWidth: 720 }}>
+          Both tiers run on the same TeebeePay system. The difference is who handles the compliance filings —
+          you, or a CPA-certified bureau on your behalf.
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 18 }}>
-          <PriceCard tier="Small" pricePer="K 12" desc="per employee, per fortnight" features={["Up to 15 employees", "All compliance files", "Email pay stubs"]} />
-          <PriceCard featured tier="Standard" pricePer="K 9" desc="per employee, per fortnight" features={["Up to 50 employees", "All compliance files", "Multi-bank splits", "Approval workflow"]} />
-          <PriceCard tier="Bureau" pricePer="Custom" desc="for payroll service providers" features={["Multi-company isolation", "Bookkeeper logins", "Service-fee disbursements", "White-glove onboarding"]} />
+
+        {/* Time-savings comparison */}
+        <div style={{
+          background: COLORS.cream, border: `1px solid #fde68a`, borderRadius: 14,
+          padding: "20px 24px", marginBottom: 36, textAlign: "left", maxWidth: 920, margin: "0 auto 36px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, color: COLORS.goldDeep, fontWeight: 700, fontSize: 11, letterSpacing: 0.05, textTransform: "uppercase" }}>
+            <Clock3 size={14} /> Time saved · 30-employee fortnightly company
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, fontSize: 14 }}>
+            <div style={{ padding: 14, background: "#fff", borderRadius: 10, border: "1px solid #f1f5f9" }}>
+              <div style={{ fontSize: 11, color: COLORS.muted, fontWeight: 700, letterSpacing: 0.04, textTransform: "uppercase", marginBottom: 6 }}>Manual / spreadsheets</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: COLORS.ink, lineHeight: 1 }}>8–12 hours</div>
+              <div style={{ fontSize: 13, color: COLORS.muted, marginTop: 4 }}>per fortnight</div>
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #f1f5f9", fontSize: 13, color: COLORS.inkSoft }}>
+                ≈ <strong>250–300 hours/year</strong>
+              </div>
+            </div>
+            <div style={{ padding: 14, background: "#fff", borderRadius: 10, border: `1px solid #e9c46a` }}>
+              <div style={{ fontSize: 11, color: COLORS.goldDeep, fontWeight: 700, letterSpacing: 0.04, textTransform: "uppercase", marginBottom: 6 }}>TeebeePay Self-service</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: COLORS.ink, lineHeight: 1 }}>1–2 hours</div>
+              <div style={{ fontSize: 13, color: COLORS.muted, marginTop: 4 }}>per fortnight</div>
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #f1f5f9", fontSize: 13, color: COLORS.inkSoft }}>
+                ≈ <strong>25–50 hours/year</strong> · saves <strong>~6 weeks</strong> of FTE
+              </div>
+            </div>
+            <div style={{ padding: 14, background: "#fff", borderRadius: 10, border: `2px solid ${COLORS.red}` }}>
+              <div style={{ fontSize: 11, color: COLORS.red, fontWeight: 700, letterSpacing: 0.04, textTransform: "uppercase", marginBottom: 6 }}>TeebeePay Managed</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: COLORS.ink, lineHeight: 1 }}>15–30 min</div>
+              <div style={{ fontSize: 13, color: COLORS.muted, marginTop: 4 }}>per fortnight</div>
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #f1f5f9", fontSize: 13, color: COLORS.inkSoft }}>
+                ≈ <strong>10–20 hours/year</strong> · saves <strong>~7 weeks</strong> of FTE; CPA handles filings
+              </div>
+            </div>
+          </div>
+          <p style={{ fontSize: 11, color: COLORS.muted, margin: "14px 0 0", lineHeight: 1.5 }}>
+            Estimates based on typical PNG SME payroll workflows: hours collection, SWT &amp; NASFund computation, BSP batch
+            building, pay-stub distribution, approval back-and-forth, and monthly NASFund / annual Form S filing. Year-end
+            Form S work (a 2–4 hour exercise per company) is included only in the Managed tier.
+          </p>
         </div>
-        <p style={{ color: COLORS.muted, fontSize: 13, marginTop: 24 }}>
-          Final pricing confirmed during onboarding. First fortnight is on us — bring a CSV of your employees and we'll show you the output before you commit.
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 22, textAlign: "left" }}>
+          <PriceCard
+            tier="Self-service"
+            pricePer="K 9"
+            desc="per employee · per fortnight"
+            features={[
+              "Pay-stub emails per employee",
+              "BSP Batch Manager CSV",
+              "NASFund / NCSL return XLSX",
+              "QuickBooks IIF export",
+              "Year-end employer pack (Form S data)",
+              "Audit log + 2FA + supervisor flow",
+              "You file with banks and IRC",
+            ]}
+          />
+          <PriceCard
+            featured
+            tier="Managed bureau"
+            pricePer="K 14"
+            desc="per employee · per fortnight"
+            features={[
+              "Everything in Self-service, plus:",
+              "CPA reviews & files BSP batch each period",
+              "CPA files NASFund monthly returns",
+              "CPA files IRC SWT remittances",
+              "Year-end Form S prepared and filed",
+              "PNG Employment Act compliance advice",
+              "WhatsApp / phone support included",
+              "Quarterly QuickBooks reconciliation",
+            ]}
+          />
+          <PriceCard
+            tier="Setup"
+            pricePer="K 500+"
+            desc="one-time · per company"
+            features={[
+              "Up to 20 employees: K 500",
+              "Up to 50 employees: K 1,000",
+              "Over 50 employees: K 2,000",
+              "Data import from your spreadsheets",
+              "Division & supervisor configuration",
+              "Tax-rules verification",
+              "AP signature setup",
+              "First-fortnight handholding",
+            ]}
+          />
+        </div>
+        <p style={{ color: COLORS.muted, fontSize: 13, marginTop: 28, maxWidth: 760, margin: "28px auto 0" }}>
+          First fortnight is on us either tier — bring a CSV of your employees and we'll show you actual output before you commit.
+          Multi-company bureaus (5+ entities) get custom pricing — get in touch.
         </p>
       </div>
     </section>

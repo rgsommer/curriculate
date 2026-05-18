@@ -110,17 +110,22 @@ export async function POST(req: Request) {
   // Approve and dispatch pay stubs (same logic as the normal approve route)
   const totalGross = entries.reduce((s, e) => s + (Number(e.gross) || 0), 0);
   const fees: any[] = await dbi.collection("service_fees").find({ is_active: 1 }).toArray();
-  const serviceFees = fees.map((f) => ({
-    name: f.name, pct: f.pct_of_gross,
-    amount: r2(totalGross * (Number(f.pct_of_gross) || 0) / 100),
-    account_no: f.account_no, account_name: f.account_name, branch_code: f.branch_code,
-  }));
+  const company: any = await dbi.collection("companies").findOne({ _id: period.company_id });
+  const { computeServiceFees, effectiveRate } = await import("../_fees");
+  const rate = await effectiveRate(dbi, company);
+  const serviceFees = computeServiceFees(company, totalGross, entries.length, fees, rate);
 
   await dbi.collection("pay_periods").updateOne({ _id: period._id }, {
     $set: { status: "approved", approved_via: "email_magic_link",
             approved_by_email: payload.email, approved_at: new Date(),
             total_gross: r2(totalGross), service_fees: serviceFees },
   });
+
+  // Principal summary email (bank-funding total + upload instructions).
+  try {
+    const { sendApprovalSummary } = await import("../_post_approval");
+    await sendApprovalSummary(dbi, { company, period, entries, serviceFees, approver: payload.email });
+  } catch (e) { console.warn("[approve-via-email] summary email failed:", e); }
 
   // Dispatch stubs
   const emps: any[] = await dbi.collection("employees").find({ _id: { $in: entries.map((e) => e.employee_id) } }).toArray();

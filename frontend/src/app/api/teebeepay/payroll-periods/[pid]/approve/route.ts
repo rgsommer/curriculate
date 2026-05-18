@@ -58,16 +58,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ pid: st
 
     const totalGross = entries.reduce((s, e) => s + (Number(e.gross) || 0), 0);
     const feesRaw: any[] = await dbi.collection("service_fees").find({ is_active: 1 }).toArray();
-    const serviceFees = feesRaw.map((f) => ({
-      name: f.name, pct: f.pct_of_gross,
-      amount: r2(totalGross * (Number(f.pct_of_gross) || 0) / 100),
-      account_no: f.account_no, account_name: f.account_name, branch_code: f.branch_code,
-    }));
+    const activeEmployees = entries.length;
+    const { computeServiceFees, effectiveRate } = await import("../../../_fees");
+    const rate = await effectiveRate(dbi, company);
+    const serviceFees = computeServiceFees(company, totalGross, activeEmployees, feesRaw, rate);
 
     await dbi.collection("pay_periods").updateOne({ _id: period._id }, {
       $set: { status: "approved", approved_by: u.uid, approved_at: new Date(),
         total_gross: r2(totalGross), service_fees: serviceFees },
     });
+
+    // Send the post-approval Principal summary (bank-funding total + upload instructions).
+    try {
+      const { sendApprovalSummary } = await import("../../../_post_approval");
+      await sendApprovalSummary(dbi, { company, period, entries, serviceFees, approver: u.email });
+    } catch (e) { console.warn("[approve] summary email failed:", e); }
 
     let sent = 0, failed = 0;
     if (process.env.RESEND_PNGPAY_API_KEY || process.env.RESEND_API_KEY) {
