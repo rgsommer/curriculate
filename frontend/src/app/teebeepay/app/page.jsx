@@ -40,10 +40,12 @@ async function api(path, opts = {}) {
 }
 
 export default function TeebeePayApp() {
-  const [view, setView] = useState("loading"); // loading | login | dashboard | company | new_period | period | users | service_fees
+  const [view, setView] = useState("loading"); // loading | login | dashboard | company | new_period | period | users | service_fees | employee
   const [me, _setMe] = useState(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
   const [selectedPeriodId, setSelectedPeriodId] = useState(null);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
+  const [showProfile, setShowProfile] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -60,6 +62,7 @@ export default function TeebeePayApp() {
   function goCompany(id) { setSelectedCompanyId(id); setView("company"); }
   function goNewPeriod(id) { setSelectedCompanyId(id); setView("new_period"); }
   function goPeriod(pid) { setSelectedPeriodId(pid); setView("period"); }
+  function goEmployee(eid) { setSelectedEmployeeId(eid); setView("employee"); }
 
   return (
     <div style={{
@@ -69,18 +72,32 @@ export default function TeebeePayApp() {
       {view !== "login" && <AppHeader me={me} onSignOut={signOut}
         onUsers={() => setView("users")}
         onServiceFees={() => setView("service_fees")}
-        onHome={() => setView("dashboard")} />}
+        onHome={() => setView("dashboard")}
+        onProfile={() => setShowProfile(true)} />}
+      {showProfile && me && (
+        <ProfileDialog me={me} onClose={() => setShowProfile(false)}
+          onSaved={(u) => { _setMe({ ...me, ...u }); setMe({ ...me, ...u }); setShowProfile(false); }} />
+      )}
+      {/* First-sign-in name prompt — auto-show if name is blank. */}
+      {me && !me.first_name && !showProfile && view !== "login" && (
+        <ProfileDialog me={me} required
+          onClose={() => { /* required — stays open */ }}
+          onSaved={(u) => { _setMe({ ...me, ...u }); setMe({ ...me, ...u }); }} />
+      )}
       {view === "loading"   && <Centered><Loader2 className="tbp-spin" size={28} color={C.red} /></Centered>}
       {view === "login"     && <LoginCard onSignedIn={(u) => { _setMe(u); setMe(u); setView("dashboard"); }} />}
       {view === "dashboard" && <Dashboard me={me} onPick={goCompany} />}
       {view === "company"   && <CompanyDetail me={me} companyId={selectedCompanyId}
-        onBack={() => setView("dashboard")} onNewPeriod={() => goNewPeriod(selectedCompanyId)} onOpenPeriod={goPeriod} />}
+        onBack={() => setView("dashboard")} onNewPeriod={() => goNewPeriod(selectedCompanyId)}
+        onOpenPeriod={goPeriod} onOpenEmployee={goEmployee} />}
       {view === "new_period" && <NewPeriod me={me} companyId={selectedCompanyId}
         onBack={() => setView("company")} onSaved={(pid) => goPeriod(pid)} />}
       {view === "period" && <PeriodDetail me={me} periodId={selectedPeriodId}
         onBack={() => setView("company")} />}
       {view === "users" && <UsersPage me={me} onBack={() => setView("dashboard")} />}
       {view === "service_fees" && <ServiceFeesPage me={me} onBack={() => setView("dashboard")} />}
+      {view === "employee" && <EmployeeProfile me={me} employeeId={selectedEmployeeId}
+        onBack={() => setView("company")} onOpenPeriod={goPeriod} />}
       <style>{`
         @keyframes tbp-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
         .tbp-spin { animation: tbp-spin 0.9s linear infinite; }
@@ -93,7 +110,10 @@ export default function TeebeePayApp() {
 
 /* ─────────── Header / shared bits ─────────── */
 
-function AppHeader({ me, onSignOut, onUsers, onServiceFees, onHome }) {
+function AppHeader({ me, onSignOut, onUsers, onServiceFees, onHome, onProfile }) {
+  const displayName = me?.first_name || me?.last_name
+    ? `${me.first_name || ""} ${me.last_name || ""}`.trim()
+    : me?.email || "";
   return (
     <header style={{
       background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "12px 24px",
@@ -114,11 +134,34 @@ function AppHeader({ me, onSignOut, onUsers, onServiceFees, onHome }) {
             <Users size={14} /> Users
           </button>
         )}
-        {me && <span style={{ fontSize: 13, color: C.muted }}>{me.email} · <strong style={{ color: C.inkSoft }}>{me.role}</strong></span>}
+        {me && (
+          <button onClick={onProfile} style={{
+            display: "flex", alignItems: "center", gap: 8, padding: "6px 10px",
+            background: "none", border: "1px solid transparent", borderRadius: 6, cursor: "pointer",
+            color: C.inkSoft, fontSize: 13,
+          }} title="Edit your profile">
+            <div style={{
+              width: 26, height: 26, borderRadius: 999, background: C.cream,
+              color: C.redDeep, display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 11, fontWeight: 700,
+            }}>{initials(me)}</div>
+            <span style={{ textAlign: "left", lineHeight: 1.15 }}>
+              <strong style={{ fontSize: 13, color: C.ink, display: "block" }}>{displayName}</strong>
+              <small style={{ fontSize: 11, color: C.muted }}>{me.role}</small>
+            </span>
+          </button>
+        )}
         <button onClick={onSignOut} style={btnGhostSmall}><LogOut size={14} /> Sign out</button>
       </div>
     </header>
   );
+}
+
+function initials(me) {
+  const f = (me.first_name || "").trim().charAt(0).toUpperCase();
+  const l = (me.last_name || "").trim().charAt(0).toUpperCase();
+  if (f || l) return (f + l) || f || l;
+  return (me.email || "?").charAt(0).toUpperCase();
 }
 function Logo({ size = 30 }) {
   return (
@@ -228,10 +271,12 @@ function Dashboard({ me, onPick }) {
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
 
+  const greeting = me?.first_name ? `Welcome back, ${me.first_name}.` : "Welcome back.";
+
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>Welcome back.</h1>
+        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>{greeting}</h1>
         {me?.clearance >= 3 && (
           <button onClick={() => setShowAdd(true)} style={btnPrimaryInline}>
             <Plus size={16} /> Add company
@@ -341,13 +386,14 @@ function CompanyDialog({ onClose, onSaved }) {
 
 /* ─────────── Company detail (periods + employees, with add) ─────────── */
 
-function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod }) {
+function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod, onOpenEmployee }) {
   const [tab, setTab] = useState("periods");
   const [periods, setPeriods] = useState(null);
   const [employees, setEmployees] = useState(null);
   const [companyName, setCompanyName] = useState("");
   const [error, setError] = useState("");
   const [showEmpDialog, setShowEmpDialog] = useState(null); // null | {} | employee_id
+  const [showImport, setShowImport] = useState(false);
   const [selectedEmps, setSelectedEmps] = useState(new Set());
 
   const refresh = useCallback(async () => {
@@ -432,9 +478,12 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod }) {
       {tab === "employees" && (
         <>
           {me?.clearance >= 2 && (
-            <div style={{ marginBottom: 14, display: "flex", gap: 10, alignItems: "center" }}>
+            <div style={{ marginBottom: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <button onClick={() => setShowEmpDialog({})} style={btnPrimaryInline}>
                 <Plus size={16} /> Add employee
+              </button>
+              <button onClick={() => setShowImport(true)} style={btnGhostLg}>
+                <Upload size={14} style={{ marginRight: 6 }} /> Import from CSV
               </button>
               {selectedEmps.size > 0 && (
                 <button onClick={bulkDeactivate} style={{ ...btnGhostLg, color: "#991b1b", borderColor: "#fecaca" }}>
@@ -446,7 +495,8 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod }) {
           {employees == null ? <Loader2 className="tbp-spin" size={20} color={C.red} />
                              : <EmployeeTable employees={employees}
                                  selected={selectedEmps} onToggleSel={toggleSel}
-                                 onEdit={(e) => setShowEmpDialog(e)} canEdit={me?.clearance >= 2} />}
+                                 onEdit={(e) => setShowEmpDialog(e)} canEdit={me?.clearance >= 2}
+                                 onOpen={(e) => onOpenEmployee && onOpenEmployee(e.id)} />}
         </>
       )}
 
@@ -467,7 +517,92 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod }) {
           onClose={() => setShowEmpDialog(null)}
           onSaved={() => { setShowEmpDialog(null); refresh(); }} />
       )}
+      {showImport && (
+        <ImportEmployeesDialog companyId={companyId}
+          onClose={() => setShowImport(false)}
+          onSaved={() => { setShowImport(false); refresh(); }} />
+      )}
     </div>
+  );
+}
+
+/* ─────────── CSV Import dialog ─────────── */
+
+function ImportEmployeesDialog({ companyId, onClose, onSaved }) {
+  const [csv, setCsv] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState(null);
+
+  async function readFile(ev) {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    setCsv(text);
+  }
+
+  async function submit() {
+    setError(""); setResult(null); setSubmitting(true);
+    try {
+      const j = await api(`/api/teebeepay/companies/${companyId}/employees/import`, {
+        method: "POST", body: JSON.stringify({ csv }),
+      });
+      setResult(j);
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+
+  return (
+    <Modal title="Import employees from CSV" onClose={onClose} wide>
+      <p style={{ fontSize: 13, color: C.muted, margin: "0 0 14px" }}>
+        Paste the contents of your "PNGPay Bulk Employees" spreadsheet (or any CSV with matching
+        headers). Required headers: <code>fname</code>, <code>lname</code>. Recognised:
+        {" "}<code>account_name</code>, <code>bank_code</code>, <code>branch_code</code>,
+        {" "}<code>bank_account</code>, <code>position</code>, <code>department</code>,
+        {" "}<code>dob</code>, <code>datestarted</code>, <code>anual_price</code>,
+        {" "}<code>hour_price</code>, <code>hours</code>, <code>fte</code>, <code>email</code>,
+        {" "}<code>phone</code>, <code>dependents</code>, <code>nas</code>, <code>meals</code>,
+        {" "}<code>school_fees</code>, <code>leave_fares</code>, <code>allowance_*</code>,
+        {" "}<code>vol_salary</code>, <code>vol_ncsl</code>, <code>residency_status</code>,
+        {" "}<code>declaration</code>, <code>status</code>, <code>notes</code>.
+        {" "}Duplicates (matching first + last name) are skipped.
+      </p>
+      <Field label="Pick a .csv file">
+        <input type="file" accept=".csv,text/csv" onChange={readFile} style={{ fontSize: 13 }} />
+      </Field>
+      <Field label="…or paste CSV directly">
+        <textarea
+          rows={12} value={csv} onChange={(e) => setCsv(e.target.value)}
+          placeholder="fname,lname,account_name,bank_code,branch_code,bank_account,position,department,…"
+          style={{ ...input, minHeight: 200, fontFamily: "ui-monospace, Menlo, Consolas, monospace", fontSize: 12 }}
+        />
+      </Field>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      {result && (
+        <FlashBox type="info" icon={<CheckCircle2 size={16} />}>
+          <strong>{result.created}</strong> created · <strong>{result.skipped}</strong> skipped (duplicates / missing names)
+          {result.errors && result.errors.length > 0 && (
+            <details style={{ marginTop: 8 }}>
+              <summary>{result.errors.length} error(s)</summary>
+              <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12 }}>
+                {result.errors.slice(0, 20).map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+            </details>
+          )}
+        </FlashBox>
+      )}
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18 }}>
+        <button onClick={onClose} style={btnGhostLg}>{result ? "Close" : "Cancel"}</button>
+        {result ? (
+          <button onClick={onSaved} style={btnPrimaryInline}>Refresh list</button>
+        ) : (
+          <button onClick={submit} disabled={!csv.trim() || submitting} style={btnPrimaryInline}>
+            {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Importing…</>
+                        : "Import"}
+          </button>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -503,7 +638,7 @@ function PeriodTable({ periods, onOpen }) {
   );
 }
 
-function EmployeeTable({ employees, selected, onToggleSel, onEdit, canEdit }) {
+function EmployeeTable({ employees, selected, onToggleSel, onEdit, canEdit, onOpen }) {
   if (!employees.length) return <Empty>No employees yet.</Empty>;
   return (
     <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
@@ -512,7 +647,7 @@ function EmployeeTable({ employees, selected, onToggleSel, onEdit, canEdit }) {
           {canEdit && <th style={{ ...th, width: 40 }}></th>}
           <th style={th}>Name</th><th style={th}>Email</th><th style={th}>Pay</th>
           <th style={th}>Bank account</th><th style={th}>Active</th>
-          {canEdit && <th style={{ ...th, width: 60 }}></th>}
+          <th style={{ ...th, width: 120 }}></th>
         </tr></thead>
         <tbody>
           {employees.map((e) => (
@@ -524,20 +659,28 @@ function EmployeeTable({ employees, selected, onToggleSel, onEdit, canEdit }) {
                     onChange={() => onToggleSel(e.id)} disabled={!e.is_active} />
                 </td>
               )}
-              <td style={td}>{e.last_name}, {e.first_name}</td>
+              <td style={td}>
+                <button onClick={() => onOpen && onOpen(e)} style={{
+                  background: "none", border: "none", padding: 0, cursor: "pointer",
+                  color: C.ink, fontSize: "inherit", textAlign: "left", fontFamily: "inherit",
+                }}>{e.last_name}, {e.first_name}</button>
+              </td>
               <td style={{ ...td, color: C.muted }}>{e.email || "—"}</td>
               <td style={td}>{e.pay_type === "salary" ? `Salary K${(e.annual_salary || 0).toLocaleString()}` : `Hourly K${(e.hourly_rate || 0).toFixed(2)}`}</td>
               <td style={{ ...td, color: C.muted, fontSize: 13 }}>
                 {e.bank_account_name || "—"} {e.bank_account_no ? `· ${e.bank_account_no}` : ""}
               </td>
               <td style={td}><CheckCircle2 size={16} color={e.is_active ? "#16a34a" : "#94a3b8"} /></td>
-              {canEdit && (
-                <td style={td}>
+              <td style={{ ...td, display: "flex", gap: 6 }}>
+                <button onClick={() => onOpen && onOpen(e)} style={btnGhostSmall} title="Open profile">
+                  View
+                </button>
+                {canEdit && (
                   <button onClick={() => onEdit(e)} style={btnGhostSmall} title="Edit">
                     <Edit2 size={13} />
                   </button>
-                </td>
-              )}
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -886,6 +1029,8 @@ function PeriodDetail({ me, periodId, onBack }) {
   const [error, setError] = useState("");
   const [approving, setApproving] = useState(false);
   const [result, setResult] = useState(null);
+  const [resending, setResending] = useState(null); // entry id while sending
+  const [resendOk, setResendOk] = useState(null);   // entry id of last success
 
   const refresh = useCallback(async () => {
     setError("");
@@ -900,6 +1045,16 @@ function PeriodDetail({ me, periodId, onBack }) {
     try { setResult(await api(`/api/teebeepay/payroll-periods/${periodId}/approve`, { method: "POST" })); await refresh(); }
     catch (e) { setError(e.message); }
     finally { setApproving(false); }
+  }
+
+  async function resend(entryId) {
+    setResending(entryId); setError(""); setResendOk(null);
+    try {
+      await api(`/api/teebeepay/payroll-periods/${periodId}/entries/${entryId}/resend`, { method: "POST" });
+      setResendOk(entryId);
+      setTimeout(() => setResendOk(null), 3000);
+    } catch (e) { setError(e.message); }
+    finally { setResending(null); }
   }
 
   if (!data) return <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered>;
@@ -970,6 +1125,7 @@ function PeriodDetail({ me, periodId, onBack }) {
             <th style={{ ...th, textAlign: "right" }}>Other</th>
             <th style={{ ...th, textAlign: "right" }}>Net</th>
             <th style={th}>Note</th>
+            {period.status === "approved" && <th style={{ ...th, width: 100 }}></th>}
           </tr></thead>
           <tbody>
             {entries.map((e) => (
@@ -982,6 +1138,17 @@ function PeriodDetail({ me, periodId, onBack }) {
                 <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{e.other_deductions != null ? e.other_deductions.toFixed(2) : "—"}</td>
                 <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{e.net != null ? e.net.toFixed(2) : "—"}</td>
                 <td style={{ ...td, color: C.muted, fontSize: 13 }}>{e.note || ""}</td>
+                {period.status === "approved" && (
+                  <td style={td}>
+                    {e.employee_email ? (
+                      <button onClick={() => resend(e.id)} disabled={resending === e.id} style={btnGhostSmall} title={`Re-send to ${e.employee_email}`}>
+                        {resending === e.id ? <Loader2 className="tbp-spin" size={12} /> :
+                          resendOk === e.id   ? <><CheckCircle2 size={12} color="#16a34a" /> Sent</> :
+                                                <><Send size={12} /> Re-send</>}
+                      </button>
+                    ) : <span style={{ fontSize: 11, color: C.muted }}>no email</span>}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -1466,7 +1633,7 @@ function UsersPage({ me, onBack }) {
         <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
           <table style={tableStyle}>
             <thead><tr>
-              <th style={th}>Email</th>
+              <th style={th}>Name &amp; email</th>
               <th style={th}>Role</th>
               <th style={th}>Company</th>
               <th style={th}>Last sign-in</th>
@@ -1474,24 +1641,35 @@ function UsersPage({ me, onBack }) {
               <th style={{ ...th, width: 80 }}></th>
             </tr></thead>
             <tbody>
-              {users.map((u) => (
-                <tr key={u.id} style={{ borderTop: "1px solid #f1f5f9" }}>
-                  <td style={td}>{u.email}{u.email === me.email && <span style={{ marginLeft: 6, color: C.muted, fontSize: 12 }}>(you)</span>}</td>
-                  <td style={td}><RoleBadge role={u.role} /></td>
-                  <td style={{ ...td, color: C.muted }}>{u.company_name || "—"}</td>
-                  <td style={{ ...td, color: C.muted, fontSize: 13 }}>
-                    {u.last_sign_in_at ? new Date(u.last_sign_in_at).toISOString().slice(0, 10) : "never"}
-                  </td>
-                  <td style={td}><CheckCircle2 size={16} color={u.is_active ? "#16a34a" : "#94a3b8"} /></td>
-                  <td style={td}>
-                    {u.email !== me.email && me.clearance >= 3 && u.clearance < me.clearance && (
-                      <button onClick={() => toggleActive(u)} style={btnGhostSmall}>
-                        {u.is_active ? "Deactivate" : "Reactivate"}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {users.map((u) => {
+                const fullName = (u.first_name || u.last_name)
+                  ? `${u.first_name || ""} ${u.last_name || ""}`.trim()
+                  : null;
+                return (
+                  <tr key={u.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                    <td style={td}>
+                      <div style={{ fontWeight: 600, color: C.ink }}>
+                        {fullName || <span style={{ color: C.muted, fontStyle: "italic" }}>(no name set)</span>}
+                        {u.email === me.email && <span style={{ marginLeft: 6, color: C.muted, fontSize: 12, fontWeight: 400 }}>(you)</span>}
+                      </div>
+                      <div style={{ fontSize: 12, color: C.muted }}>{u.email}</div>
+                    </td>
+                    <td style={td}><RoleBadge role={u.role} /></td>
+                    <td style={{ ...td, color: C.muted }}>{u.company_name || "—"}</td>
+                    <td style={{ ...td, color: C.muted, fontSize: 13 }}>
+                      {u.last_sign_in_at ? new Date(u.last_sign_in_at).toISOString().slice(0, 10) : "never"}
+                    </td>
+                    <td style={td}><CheckCircle2 size={16} color={u.is_active ? "#16a34a" : "#94a3b8"} /></td>
+                    <td style={td}>
+                      {u.email !== me.email && me.clearance >= 3 && u.clearance < me.clearance && (
+                        <button onClick={() => toggleActive(u)} style={btnGhostSmall}>
+                          {u.is_active ? "Deactivate" : "Reactivate"}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1520,7 +1698,7 @@ function RoleBadge({ role }) {
 
 function InviteUserDialog({ companies, me, onClose, onSaved }) {
   const [f, setF] = useState({
-    email: "",
+    first_name: "", last_name: "", email: "",
     role: me.clearance >= 4 ? "principal" : "bookkeeper",
     company_id: "",
   });
@@ -1535,15 +1713,25 @@ function InviteUserDialog({ companies, me, onClose, onSaved }) {
     } catch (e) { setError(e.message); }
     finally { setSubmitting(false); }
   }
+  const canSubmit = f.first_name.trim() && f.last_name.trim() && f.email.trim();
   return (
     <Modal title="Invite user" onClose={onClose}>
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
       <p style={{ fontSize: 13, color: C.muted, margin: "0 0 14px" }}>
-        They'll be able to sign in immediately at <code>/teebeepay/app</code> by email. No password is set.
+        They'll be able to sign in immediately at <code>/teebeepay/app</code> with their email. No password is set —
+        we email them a 6-digit code each time.
       </p>
+      <Row>
+        <Field label="First name *">
+          <input style={input} value={f.first_name} onChange={(e) => set("first_name", e.target.value)} autoFocus />
+        </Field>
+        <Field label="Last name *">
+          <input style={input} value={f.last_name} onChange={(e) => set("last_name", e.target.value)} />
+        </Field>
+      </Row>
       <Field label="Email *">
         <input style={input} type="email" value={f.email} onChange={(e) => set("email", e.target.value)}
-          placeholder="name@company.com" autoFocus />
+          placeholder="name@company.com" />
       </Field>
       <Field label="Role">
         <select style={input} value={f.role} onChange={(e) => set("role", e.target.value)}>
@@ -1561,12 +1749,633 @@ function InviteUserDialog({ companies, me, onClose, onSaved }) {
       </Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
         <button onClick={onClose} style={btnGhostLg}>Cancel</button>
-        <button onClick={save} disabled={!f.email || submitting} style={btnPrimaryInline}>
+        <button onClick={save} disabled={!canSubmit || submitting} style={btnPrimaryInline}>
           {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</>
                       : "Invite"}
         </button>
       </div>
     </Modal>
+  );
+}
+
+/* ─────────── My-profile dialog (edit own first/last name) ─────────── */
+
+function ProfileDialog({ me, required, onClose, onSaved }) {
+  const [f, setF] = useState({
+    first_name: me.first_name || "",
+    last_name: me.last_name || "",
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  async function save() {
+    setError(""); setSubmitting(true);
+    try {
+      await api(`/api/teebeepay/users/${me.uid}`, {
+        method: "PATCH", body: JSON.stringify(f),
+      });
+      onSaved({ first_name: f.first_name.trim(), last_name: f.last_name.trim() });
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+  const canSubmit = f.first_name.trim() && f.last_name.trim();
+  return (
+    <Modal title={required ? "Welcome — set your name" : "Your profile"} onClose={required ? () => {} : onClose}>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      {required && (
+        <p style={{ fontSize: 13, color: C.muted, margin: "0 0 14px" }}>
+          Quick one-time step so TeebeePay can greet you properly and put your name on audit logs.
+        </p>
+      )}
+      <Row>
+        <Field label="First name *">
+          <input style={input} value={f.first_name} onChange={(e) => set("first_name", e.target.value)} autoFocus />
+        </Field>
+        <Field label="Last name *">
+          <input style={input} value={f.last_name} onChange={(e) => set("last_name", e.target.value)} />
+        </Field>
+      </Row>
+      <Field label="Email"><input style={{ ...input, background: "#fafbfc", color: C.muted }} value={me.email} readOnly /></Field>
+      <Field label="Role"><input style={{ ...input, background: "#fafbfc", color: C.muted }} value={me.role} readOnly /></Field>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
+        {!required && <button onClick={onClose} style={btnGhostLg}>Cancel</button>}
+        <button onClick={save} disabled={!canSubmit || submitting} style={btnPrimaryInline}>
+          {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</>
+                      : "Save"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ─────────── Company Settings panel (edit + logo + signature) ─────────── */
+
+function CompanySettingsPanel({ companyId, onSaved }) {
+  const [c, setC] = useState(null);
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setError("");
+    try {
+      const j = await api(`/api/teebeepay/companies/${companyId}`);
+      setC(j.company);
+    } catch (e) { setError(e.message); }
+  }, [companyId]);
+  useEffect(() => { load(); }, [load]);
+
+  function set(k, v) { setC((x) => ({ ...x, [k]: v })); }
+
+  async function save() {
+    setSaving(true); setError(""); setInfo("");
+    try {
+      await api(`/api/teebeepay/companies/${companyId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: c.name, abbreviation: c.abbreviation, pay_interval: c.pay_interval,
+          default_hours: c.default_hours, currency: c.currency,
+          bank_code: c.bank_code, branch_code: c.branch_code,
+          bank_account_no: c.bank_account_no, bank_account_name: c.bank_account_name,
+          bank_client_no: c.bank_client_no,
+          office_email: c.office_email, manager_email: c.manager_email,
+          payslip_message: c.payslip_message,
+          ncsl_employer_no: c.ncsl_employer_no, ncsl_date_of_reg: c.ncsl_date_of_reg,
+          is_active: c.is_active !== false,
+        }),
+      });
+      setInfo("Saved.");
+      if (onSaved) onSaved();
+      load();
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function uploadImage(kind, file, extra) {
+    const r = new FileReader();
+    return new Promise((resolve, reject) => {
+      r.onload = async () => {
+        try {
+          await api(`/api/teebeepay/companies/${companyId}/${kind}`, {
+            method: "POST", body: JSON.stringify({ image: r.result, ...(extra || {}) }),
+          });
+          await load(); resolve();
+        } catch (e) { reject(e); }
+      };
+      r.onerror = () => reject(new Error("Failed to read file"));
+      r.readAsDataURL(file);
+    });
+  }
+
+  async function removeImage(kind) {
+    if (!confirm(`Remove ${kind}?`)) return;
+    try { await api(`/api/teebeepay/companies/${companyId}/${kind}`, { method: "DELETE" }); await load(); }
+    catch (e) { setError(e.message); }
+  }
+
+  if (!c) return <Loader2 className="tbp-spin" size={20} color={C.red} />;
+  return (
+    <div>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      {info && <FlashBox type="info" icon={<CheckCircle2 size={16} />}>{info}</FlashBox>}
+
+      <FieldGroup label="Identity">
+        <Row>
+          <Field label="Company name"><input style={input} value={c.name || ""} onChange={(e) => set("name", e.target.value)} /></Field>
+          <Field label="Abbreviation"><input style={input} value={c.abbreviation || ""} onChange={(e) => set("abbreviation", e.target.value)} /></Field>
+        </Row>
+        <Row>
+          <Field label="Pay interval">
+            <select style={input} value={c.pay_interval || "fortnightly"} onChange={(e) => set("pay_interval", e.target.value)}>
+              <option value="fortnightly">Fortnightly</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </Field>
+          <Field label="Default hours / period"><input style={input} type="number" step="0.5" value={c.default_hours || 80} onChange={(e) => set("default_hours", e.target.value)} /></Field>
+          <Field label="Currency"><input style={input} value={c.currency || "PGK"} onChange={(e) => set("currency", e.target.value)} /></Field>
+        </Row>
+      </FieldGroup>
+
+      <FieldGroup label="Company bank account (source of payroll funds)">
+        <Row>
+          <Field label="Bank code"><input style={input} value={c.bank_code || "088"} onChange={(e) => set("bank_code", e.target.value)} /></Field>
+          <Field label="Branch"><input style={input} value={c.branch_code || ""} onChange={(e) => set("branch_code", e.target.value)} /></Field>
+        </Row>
+        <Field label="Account number"><input style={input} value={c.bank_account_no || ""} onChange={(e) => set("bank_account_no", e.target.value)} /></Field>
+        <Field label="Account name"><input style={input} value={c.bank_account_name || ""} onChange={(e) => set("bank_account_name", e.target.value)} /></Field>
+        <Field label="BSP client number"><input style={input} value={c.bank_client_no || ""} onChange={(e) => set("bank_client_no", e.target.value)} /></Field>
+      </FieldGroup>
+
+      <FieldGroup label="Office, manager, NASFund">
+        <Row>
+          <Field label="Office email"><input style={input} type="email" value={c.office_email || ""} onChange={(e) => set("office_email", e.target.value)} /></Field>
+          <Field label="Manager email"><input style={input} type="email" value={c.manager_email || ""} onChange={(e) => set("manager_email", e.target.value)} /></Field>
+        </Row>
+        <Row>
+          <Field label="NCSL employer number"><input style={input} value={c.ncsl_employer_no || ""} onChange={(e) => set("ncsl_employer_no", e.target.value)} /></Field>
+          <Field label="NCSL date of registration"><input style={input} type="date" value={c.ncsl_date_of_reg || ""} onChange={(e) => set("ncsl_date_of_reg", e.target.value)} /></Field>
+        </Row>
+        <Field label="Default pay-slip message"><textarea style={{ ...input, minHeight: 70 }} value={c.payslip_message || ""} onChange={(e) => set("payslip_message", e.target.value)} /></Field>
+      </FieldGroup>
+
+      <FieldGroup label="Company logo (appears on pay-stub emails)">
+        {c.logo_image ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <img src={`data:${c.logo_mime || "image/png"};base64,${c.logo_image}`}
+              alt="logo" style={{ maxHeight: 60, maxWidth: 200, border: "1px solid #e5e7eb", borderRadius: 6, padding: 6, background: "#fff" }} />
+            <button onClick={() => removeImage("logo")} style={{ ...btnGhostLg, color: "#991b1b", borderColor: "#fecaca" }}>
+              <Trash2 size={14} style={{ marginRight: 6 }} /> Remove
+            </button>
+          </div>
+        ) : (
+          <input type="file" accept="image/png,image/jpeg,image/svg+xml"
+            onChange={async (ev) => {
+              const f = ev.target.files?.[0];
+              if (!f) return;
+              try { await uploadImage("logo", f); } catch (e) { setError(e.message); }
+            }}
+            style={{ fontSize: 13 }} />
+        )}
+        <p style={{ fontSize: 12, color: C.muted, margin: "8px 0 0" }}>PNG, JPEG or SVG · max 300 KB</p>
+      </FieldGroup>
+
+      <FieldGroup label="Authorised Person signature (embedded in NASFund returns)">
+        <Row>
+          <Field label="AP name">
+            <input style={input} value={c.ap_signature_name || ""} onChange={(e) => set("ap_signature_name", e.target.value)} placeholder="e.g. Theresia Bob" />
+          </Field>
+          <Field label="AP title">
+            <input style={input} value={c.ap_signature_title || ""} onChange={(e) => set("ap_signature_title", e.target.value)} placeholder="e.g. Principal" />
+          </Field>
+        </Row>
+        {c.ap_signature_image ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 6 }}>
+            <img src={`data:${c.ap_signature_mime || "image/png"};base64,${c.ap_signature_image}`}
+              alt="signature" style={{ maxHeight: 70, maxWidth: 220, border: "1px solid #e5e7eb", borderRadius: 6, padding: 6, background: "#fff" }} />
+            <button onClick={() => removeImage("signature")} style={{ ...btnGhostLg, color: "#991b1b", borderColor: "#fecaca" }}>
+              <Trash2 size={14} style={{ marginRight: 6 }} /> Remove
+            </button>
+          </div>
+        ) : (
+          <input type="file" accept="image/png,image/jpeg"
+            onChange={async (ev) => {
+              const f = ev.target.files?.[0];
+              if (!f) return;
+              try { await uploadImage("signature", f, { name: c.ap_signature_name || "", title: c.ap_signature_title || "" }); }
+              catch (e) { setError(e.message); }
+            }}
+            style={{ fontSize: 13 }} />
+        )}
+        <p style={{ fontSize: 12, color: C.muted, margin: "8px 0 0" }}>PNG or JPEG · max 500 KB · embedded in NASFund XLSX downloads</p>
+      </FieldGroup>
+
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <button onClick={save} disabled={saving} style={btnPrimaryInline}>
+          {saving ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</> : "Save changes"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────── Service Fees admin ─────────── */
+
+function ServiceFeesPage({ me, onBack }) {
+  const [fees, setFees] = useState(null);
+  const [error, setError] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+
+  const load = useCallback(async () => {
+    setError("");
+    try { setFees((await api("/api/teebeepay/service-fees")).fees || []); }
+    catch (e) { setError(e.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function toggle(f) {
+    try { await api(`/api/teebeepay/service-fees/${f.id}`, { method: "PATCH", body: JSON.stringify({ is_active: !f.is_active }) }); load(); }
+    catch (e) { setError(e.message); }
+  }
+  async function remove(f) {
+    if (!confirm(`Remove the ${f.name} service-fee recipient?`)) return;
+    try { await api(`/api/teebeepay/service-fees/${f.id}`, { method: "DELETE" }); load(); }
+    catch (e) { setError(e.message); }
+  }
+
+  return (
+    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 24px" }}>
+      <button onClick={onBack} style={btnBack}><ArrowLeft size={14} /> Dashboard</button>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>Service fees</h1>
+        <button onClick={() => setShowAdd(true)} style={btnPrimaryInline}><Plus size={16} /> Add recipient</button>
+      </div>
+      <p style={{ color: C.muted, fontSize: 14, margin: "0 0 22px" }}>
+        Each active recipient gets their % of the <strong>total gross</strong> on every approved payroll —
+        across every client company. The amount is added to the BSP batch alongside employee net pay.
+      </p>
+
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+
+      {fees == null ? <Loader2 className="tbp-spin" size={20} color={C.red} /> : (
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+          <table style={tableStyle}>
+            <thead><tr>
+              <th style={th}>Recipient</th>
+              <th style={{ ...th, textAlign: "right" }}>%</th>
+              <th style={th}>Account</th>
+              <th style={th}>Active</th>
+              <th style={{ ...th, width: 140 }}></th>
+            </tr></thead>
+            <tbody>
+              {fees.length === 0 ? (
+                <tr><td colSpan={5} style={{ ...td, color: C.muted, textAlign: "center", padding: 30 }}>
+                  No service-fee recipients yet. Add one with the button above.
+                </td></tr>
+              ) : fees.map((f) => (
+                <tr key={f.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <td style={td}>{f.name}</td>
+                  <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{f.pct_of_gross}%</td>
+                  <td style={{ ...td, color: C.muted, fontSize: 13 }}>
+                    {f.account_name || "—"} {f.account_no ? `· ${f.account_no}` : ""}
+                    {f.branch_code ? ` · branch ${f.branch_code}` : ""}
+                  </td>
+                  <td style={td}><CheckCircle2 size={16} color={f.is_active ? "#16a34a" : "#94a3b8"} /></td>
+                  <td style={{ ...td, display: "flex", gap: 6 }}>
+                    <button onClick={() => toggle(f)} style={btnGhostSmall}>{f.is_active ? "Pause" : "Resume"}</button>
+                    <button onClick={() => remove(f)} style={{ ...btnGhostSmall, color: "#991b1b" }}><Trash2 size={12} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showAdd && <ServiceFeeDialog onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />}
+    </div>
+  );
+}
+
+function ServiceFeeDialog({ onClose, onSaved }) {
+  const [f, setF] = useState({ name: "", pct_of_gross: "", account_name: "", account_no: "", branch_code: "", bank_code: "088", notes: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  async function save() {
+    setError(""); setSubmitting(true);
+    try { await api("/api/teebeepay/service-fees", { method: "POST", body: JSON.stringify(f) }); onSaved(); }
+    catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+  return (
+    <Modal title="Add service-fee recipient" onClose={onClose}>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <Row>
+        <Field label="Name *"><input style={input} value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Theresia" autoFocus /></Field>
+        <Field label="% of total gross *"><input style={input} type="number" step="0.1" value={f.pct_of_gross} onChange={(e) => set("pct_of_gross", e.target.value)} placeholder="3.0" /></Field>
+      </Row>
+      <Field label="Account name"><input style={input} value={f.account_name} onChange={(e) => set("account_name", e.target.value)} /></Field>
+      <Row>
+        <Field label="Bank"><input style={input} value={f.bank_code} onChange={(e) => set("bank_code", e.target.value)} /></Field>
+        <Field label="Branch"><input style={input} value={f.branch_code} onChange={(e) => set("branch_code", e.target.value)} /></Field>
+        <Field label="Account #"><input style={input} value={f.account_no} onChange={(e) => set("account_no", e.target.value)} /></Field>
+      </Row>
+      <Field label="Notes (private)"><input style={input} value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18 }}>
+        <button onClick={onClose} style={btnGhostLg}>Cancel</button>
+        <button onClick={save} disabled={!f.name || !f.pct_of_gross || submitting} style={btnPrimaryInline}>
+          {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</> : "Add recipient"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ─────────── Reports panel ─────────── */
+
+function ReportsPanel({ companyId }) {
+  const [period, setPeriod] = useState("monthly");
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setError(""); setData(null);
+    try { setData(await api(`/api/teebeepay/companies/${companyId}/reports?period=${period}`)); }
+    catch (e) { setError(e.message); }
+  }, [companyId, period]);
+  useEffect(() => { load(); }, [load]);
+
+  if (error) return <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>;
+  if (!data) return <Loader2 className="tbp-spin" size={20} color={C.red} />;
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 18 }}>
+        <span style={{ fontSize: 13, color: C.muted, fontWeight: 600 }}>Bucket:</span>
+        <button onClick={() => setPeriod("monthly")} style={period === "monthly" ? btnPrimaryInline : btnGhostLg}>Monthly</button>
+        <button onClick={() => setPeriod("weekly")} style={period === "weekly" ? btnPrimaryInline : btnGhostLg}>Weekly</button>
+        <span style={{ marginLeft: "auto", fontSize: 13, color: C.muted }}>
+          Lifetime gross K{data.totalGross.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+        </span>
+      </div>
+
+      <h2 style={{ fontSize: 16, fontWeight: 700, margin: "16px 0 10px" }}>By {period === "weekly" ? "week" : "month"}</h2>
+      {!data.summary.length ? <Empty>No data yet.</Empty> : (
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", marginBottom: 26 }}>
+          <table style={tableStyle}>
+            <thead><tr>
+              <th style={th}>Bucket</th>
+              <th style={{ ...th, textAlign: "right" }}>Employees</th>
+              <th style={{ ...th, textAlign: "right" }}>Gross</th>
+              <th style={{ ...th, textAlign: "right" }}>Tax</th>
+              <th style={{ ...th, textAlign: "right" }}>Nasfund</th>
+              <th style={{ ...th, textAlign: "right" }}>Other</th>
+              <th style={{ ...th, textAlign: "right" }}>Net</th>
+            </tr></thead>
+            <tbody>
+              {data.summary.map((b) => (
+                <tr key={b.bucket} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <td style={td}>{b.bucket}</td>
+                  <td style={{ ...td, textAlign: "right" }}>{b.n_emp}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{(b.gross || 0).toFixed(2)}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{(b.tax || 0).toFixed(2)}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{(b.nasfund || 0).toFixed(2)}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{(b.other || 0).toFixed(2)}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{(b.net || 0).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <h2 style={{ fontSize: 16, fontWeight: 700, margin: "16px 0 10px" }}>By department (all-time)</h2>
+      {!data.byDept.length ? <Empty>No data.</Empty> : (
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", marginBottom: 26 }}>
+          <table style={tableStyle}>
+            <thead><tr>
+              <th style={th}>Department</th>
+              <th style={{ ...th, textAlign: "right" }}>Entries</th>
+              <th style={{ ...th, textAlign: "right" }}>Gross</th>
+              <th style={{ ...th, textAlign: "right" }}>Net</th>
+            </tr></thead>
+            <tbody>
+              {data.byDept.map((d) => (
+                <tr key={d.dept || "_"} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <td style={td}>{d.dept || <span style={{ color: C.muted }}>(none)</span>}</td>
+                  <td style={{ ...td, textAlign: "right" }}>{d.n}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{(d.gross || 0).toFixed(2)}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{(d.net || 0).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <h2 style={{ fontSize: 16, fontWeight: 700, margin: "16px 0 10px" }}>Top 25 employees by lifetime gross</h2>
+      {!data.byEmployee.length ? <Empty>No data.</Empty> : (
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", marginBottom: 26 }}>
+          <table style={tableStyle}>
+            <thead><tr>
+              <th style={th}>Employee</th>
+              <th style={{ ...th, textAlign: "right" }}>Periods</th>
+              <th style={{ ...th, textAlign: "right" }}>Gross</th>
+              <th style={{ ...th, textAlign: "right" }}>Net</th>
+            </tr></thead>
+            <tbody>
+              {data.byEmployee.map((e) => (
+                <tr key={e.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <td style={td}>{e.name}</td>
+                  <td style={{ ...td, textAlign: "right" }}>{e.n}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{(e.gross || 0).toFixed(2)}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{(e.net || 0).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {data.shares.length > 0 && (
+        <>
+          <h2 style={{ fontSize: 16, fontWeight: 700, margin: "16px 0 10px" }}>Payroll-share earners</h2>
+          <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+            <table style={tableStyle}>
+              <thead><tr>
+                <th style={th}>Name</th><th style={{ ...th, textAlign: "right" }}>%</th>
+                <th style={{ ...th, textAlign: "right" }}>Estimated lifetime</th>
+              </tr></thead>
+              <tbody>
+                {data.shares.map((s, i) => (
+                  <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
+                    <td style={td}>{s.name}</td>
+                    <td style={{ ...td, textAlign: "right" }}>{s.pct}%</td>
+                    <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{s.lifetime.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ─────────── Employee profile ─────────── */
+
+function EmployeeProfile({ me, employeeId, onBack, onOpenPeriod }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    (async () => {
+      try { setData(await api(`/api/teebeepay/employees/${employeeId}`)); }
+      catch (e) { setError(e.message); }
+    })();
+  }, [employeeId]);
+
+  if (error) return (
+    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 24px" }}>
+      <button onClick={onBack} style={btnBack}><ArrowLeft size={14} /> Back</button>
+      <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>
+    </div>
+  );
+  if (!data) return <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered>;
+  const { employee, history, lifetime } = data;
+
+  return (
+    <div style={{ maxWidth: 1180, margin: "0 auto", padding: "28px 24px" }}>
+      <button onClick={onBack} style={btnBack}><ArrowLeft size={14} /> Back to {employee.company_name}</button>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>
+            {employee.first_name} {employee.last_name}
+            {!employee.is_active && (
+              <span style={{ marginLeft: 12, fontSize: 13, color: C.muted, fontWeight: 500 }}>(inactive)</span>
+            )}
+          </h1>
+          <p style={{ color: C.muted, fontSize: 14, margin: "6px 0 0" }}>
+            {[employee.job_function, employee.department, employee.email].filter(Boolean).join(" · ") || "—"}
+          </p>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 26 }}>
+        <StatCard label="Pay periods" value={history.length} />
+        <StatCard label="Lifetime gross"   value={`K${lifetime.gross.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
+        <StatCard label="Lifetime tax"     value={`K${lifetime.tax.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
+        <StatCard label="Lifetime Nasfund" value={`K${lifetime.nasfund.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
+        <StatCard label="Lifetime net"     value={`K${lifetime.net.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} highlight />
+      </div>
+
+      {/* Details */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 26 }}>
+        <InfoCard title="Personal">
+          <InfoRow k="Date of birth"   v={employee.dob || "—"} />
+          <InfoRow k="Start date"      v={employee.start_date || "—"} />
+          {employee.end_date && <InfoRow k="End date" v={employee.end_date} />}
+          <InfoRow k="Email"           v={employee.email || "—"} />
+          <InfoRow k="Phone"           v={employee.phone || "—"} />
+          <InfoRow k="Dependants"      v={employee.dependents ?? 0} />
+        </InfoCard>
+        <InfoCard title="Compensation & tax">
+          <InfoRow k="Pay type"        v={employee.pay_type} />
+          <InfoRow k={employee.pay_type === "salary" ? "Annual salary" : "Hourly rate"}
+            v={employee.pay_type === "salary" ? `K${(employee.annual_salary || 0).toLocaleString()}` : `K${(employee.hourly_rate || 0).toFixed(2)}`} />
+          <InfoRow k="Default hours"   v={employee.default_hours ?? "—"} />
+          <InfoRow k="FTE %"           v={employee.fte_pct ?? 100} />
+          <InfoRow k="Residency"       v={employee.residency_status || "resident"} />
+          <InfoRow k="Declaration"     v={employee.declaration_lodged === false ? "Not lodged" : "Lodged"} />
+        </InfoCard>
+        <InfoCard title="Banking">
+          <InfoRow k="Bank"            v={employee.bank_code || "088"} />
+          <InfoRow k="Branch"          v={employee.branch_code || "—"} />
+          <InfoRow k="Account #"       v={employee.bank_account_no || "—"} />
+          <InfoRow k="Account name"    v={employee.bank_account_name || "—"} />
+          {employee.bank_accounts && employee.bank_accounts.length > 1 && (
+            <InfoRow k="Splits across" v={`${employee.bank_accounts.length} accounts`} />
+          )}
+        </InfoCard>
+        <InfoCard title="Notes">
+          <p style={{ margin: 0, fontSize: 13, color: C.inkSoft, whiteSpace: "pre-wrap" }}>
+            {employee.notes || <span style={{ color: C.muted }}>No notes recorded.</span>}
+          </p>
+        </InfoCard>
+      </div>
+
+      {/* History */}
+      <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 12px" }}>Payroll history</h2>
+      {!history.length ? <Empty>No pay periods yet for this employee.</Empty> : (
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+          <table style={tableStyle}>
+            <thead><tr>
+              <th style={th}>Pay date</th><th style={th}>Period</th>
+              <th style={{ ...th, textAlign: "right" }}>Hours</th>
+              <th style={{ ...th, textAlign: "right" }}>Gross</th>
+              <th style={{ ...th, textAlign: "right" }}>Tax</th>
+              <th style={{ ...th, textAlign: "right" }}>Nasfund</th>
+              <th style={{ ...th, textAlign: "right" }}>Net</th>
+              <th style={th}>Status</th>
+            </tr></thead>
+            <tbody>
+              {history.map((h) => (
+                <tr key={h.entry_id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <td style={td}>
+                    <button onClick={() => onOpenPeriod(h.pay_period_id)} style={{
+                      background: "none", border: "none", padding: 0, cursor: "pointer",
+                      color: C.red, fontWeight: 600, textDecoration: "underline",
+                    }}>{h.pay_date}</button>
+                  </td>
+                  <td style={{ ...td, color: C.muted, fontSize: 13 }}>
+                    {h.period_start} — {h.period_end}
+                  </td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{h.hours ?? "—"}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{h.gross != null ? h.gross.toFixed(2) : "—"}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{h.tax != null ? h.tax.toFixed(2) : "—"}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{h.nasfund != null ? h.nasfund.toFixed(2) : "—"}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>
+                    {h.net != null ? h.net.toFixed(2) : "—"}
+                  </td>
+                  <td style={td}><StatusBadge status={h.status} historical={h.imported} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ label, value, highlight }) {
+  return (
+    <div style={{
+      background: highlight ? "#fff7e0" : "#fff",
+      border: highlight ? "1px solid #f4b400" : "1px solid #e5e7eb",
+      borderRadius: 12, padding: 18,
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.08, marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: C.ink, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+    </div>
+  );
+}
+function InfoCard({ title, children }) {
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 18 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.08, marginBottom: 10 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+function InfoRow({ k, v }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid #f3f4f6", fontSize: 13 }}>
+      <span style={{ color: C.muted }}>{k}</span>
+      <span style={{ color: C.ink, fontWeight: 500 }}>{v}</span>
+    </div>
   );
 }
 

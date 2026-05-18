@@ -11,7 +11,11 @@ function stubHtml(co: any, period: any, emp: any, e: any) {
   const ccy = co.currency || "PGK";
   const lines = e.calc_breakdown?.allowance_lines || [];
   const postTax = e.calc_breakdown?.post_tax_deductions || [];
+  const logoTag = co.logo_image
+    ? `<img src="data:${co.logo_mime || "image/png"};base64,${co.logo_image}" alt="${escape(co.name)}" style="max-height:54px;display:block;margin-bottom:12px">`
+    : "";
   return `<!doctype html><html><body style="font:14px/1.5 -apple-system,Segoe UI,Arial">
+    ${logoTag}
     <h2 style="margin:0">${escape(co.name)} — pay stub</h2>
     <p style="color:#555;margin:0 0 16px">Period ${period.period_start} to ${period.period_end} (paid ${period.pay_date})</p>
     <p><strong>${escape(emp.first_name)} ${escape(emp.last_name)}</strong></p>

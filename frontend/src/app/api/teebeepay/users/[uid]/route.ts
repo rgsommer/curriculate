@@ -19,12 +19,26 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ uid: s
   }
   if ("is_active" in b) $set.is_active = b.is_active ? 1 : 0;
   if ("company_id" in b) $set.company_id = b.company_id ? new ObjectId(b.company_id) : null;
+  if ("first_name" in b) {
+    const v = String(b.first_name || "").trim();
+    if (!v) return NextResponse.json({ error: "First name cannot be blank." }, { status: 400 });
+    $set.first_name = v;
+  }
+  if ("last_name" in b) {
+    const v = String(b.last_name || "").trim();
+    if (!v) return NextResponse.json({ error: "Last name cannot be blank." }, { status: 400 });
+    $set.last_name = v;
+  }
 
   try {
     const dbi = await db();
     const target = await dbi.collection("users").findOne({ _id: new ObjectId(uid) });
     if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    if (clearanceOf(target.role) > u.clearance) {
+    // Users can always edit their own first/last name regardless of clearance comparison.
+    // For other fields, target's clearance must not exceed caller's.
+    const selfEdit = target._id.toString() === u.uid;
+    const onlyNameChanges = Object.keys($set).every((k) => ["first_name", "last_name", "updated_at"].includes(k));
+    if (!selfEdit && !onlyNameChanges && clearanceOf(target.role) > u.clearance) {
       return NextResponse.json({ error: "Cannot modify a user above your clearance." }, { status: 403 });
     }
     await dbi.collection("users").updateOne({ _id: new ObjectId(uid) }, { $set });

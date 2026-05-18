@@ -52,6 +52,18 @@ export async function POST(req: Request) {
       exp: Date.now() + 8 * 60 * 60 * 1000,  // 8 hours
     }, secret);
 
+    // Look up the user's name for the response (and record the sign-in).
+    let first_name = "", last_name = "";
+    try {
+      const { db, ObjectId } = await import("../../_auth");
+      const dbi = await db();
+      const row: any = await dbi.collection("users").findOne({ _id: new ObjectId(payload.uid) });
+      first_name = row?.first_name || "";
+      last_name  = row?.last_name  || "";
+      await dbi.collection("users").updateOne({ _id: new ObjectId(payload.uid) },
+        { $set: { last_sign_in_at: new Date() } });
+    } catch { /* non-fatal */ }
+
     return NextResponse.json({
       ok: true,
       authToken,
@@ -59,6 +71,7 @@ export async function POST(req: Request) {
         uid: payload.uid, email: payload.email,
         role: payload.role, clearance: payload.clearance,
         company_id: payload.company_id,
+        first_name, last_name,
       },
     });
   } catch (e) {
