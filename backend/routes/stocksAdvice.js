@@ -1181,6 +1181,63 @@ router.post("/send-monthly-report", requireStocksAuth, async (req, res) => {
 // what the user got in their last email briefing (cron or on-demand),
 // without a fresh Anthropic call. Returns 404 if no snapshot exists yet.
 // ─────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────
+// GET /api/stocks-advice/recs-for-tickers?tickers=PLTR,TSLA,RUM&hours=48
+//
+// Returns the most recent OPEN-ish rec per (ticker, action) for the
+// authenticated user, generated within the past `hours` window (default 48).
+// Used by the per-ticker performance chart to overlay target/stop bands
+// and mark a ticker green when its target was hit during the day.
+//
+// Response: { recs: [{ ticker, action, targetPrice, stopPrice, entryPrice,
+//   status, hitAt, hitPrice, generatedAt }] }
+// ─────────────────────────────────────────────────────────────────────
+router.get("/recs-for-tickers", requireStocksAuth, async (req, res) => {
+  try {
+    const tickersRaw = String(req.query.tickers || "").trim();
+    if (!tickersRaw) return res.json({ recs: [] });
+    const tickers = tickersRaw.split(",").map((t) => t.trim().toUpperCase()).filter(Boolean).slice(0, 30);
+    const hours = Math.min(Math.max(parseInt(req.query.hours, 10) || 48, 1), 24 * 14);
+    const since = new Date(Date.now() - hours * 3600 * 1000);
+
+    const recs = await StocksAdviceRec.find({
+      email: req.stocksUser.email,
+      ticker: { $in: tickers },
+      generatedAt: { $gte: since },
+      action: { $in: ["BUY", "SELL", "TRIM"] },
+    })
+      .sort({ generatedAt: -1 })
+      .lean();
+
+    // Dedupe — keep only the most recent rec per (ticker, action) so the
+    // chart only renders one band per ticker. The .sort above + Set check
+    // is enough.
+    const seen = new Set();
+    const trimmed = [];
+    for (const r of recs) {
+      const k = `${r.ticker}|${r.action}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      trimmed.push({
+        ticker: r.ticker,
+        action: r.action,
+        targetPrice: r.targetPrice,
+        stopPrice: r.stopPrice,
+        entryPrice: r.entryPrice,
+        entryCurrency: r.entryCurrency,
+        status: r.status,
+        hitAt: r.hitAt,
+        hitPrice: r.hitPrice,
+        generatedAt: r.generatedAt,
+      });
+    }
+    res.json({ recs: trimmed });
+  } catch (err) {
+    console.error("recs-for-tickers error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
 router.get("/snapshot", requireStocksAuth, async (req, res) => {
   try {
     const snap = await StocksAdviceSnapshot

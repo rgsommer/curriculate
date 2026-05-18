@@ -934,6 +934,7 @@ export default function StocksAdvisorPage() {
           {currentTab === "dashboard" && (
             <DashboardView
               user={user}
+              sessionToken={auth.sessionToken}
               onTab={setCurrentTab}
               onRefresh={refreshPrices}
               onAiAdvice={() => {
@@ -1318,7 +1319,7 @@ function OnboardingView({ onPick }) {
   );
 }
 
-function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEmailBriefing, onMonthlyReport, onEditPosition, pendingOrders, onFillPendingOrder, onCancelPendingOrder }) {
+function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEmailBriefing, onMonthlyReport, onEditPosition, pendingOrders, onFillPendingOrder, onCancelPendingOrder, sessionToken }) {
   const [busyRefresh, setBusyRefresh] = useState(false);
   const [busyAi, setBusyAi] = useState(false);
   // Values stat row starts collapsed — privacy + reduces visual noise on load
@@ -1431,6 +1432,7 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
         tickers={agg.map(a => a.ticker).slice(0, 10)}
         holdings={agg.slice(0, 10)}
         fx={fx}
+        sessionToken={sessionToken}
       />
 
       <div className="sa-grid-2">
@@ -4369,13 +4371,36 @@ const TICKER_COLORS = [
   "#ec4899", "#84cc16", "#f97316", "#6366f1", "#14b8a6", "#a855f7",
 ];
 
-function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37 }) {
+function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37, sessionToken = null }) {
   const [range, setRange] = useState("1d");
   const [mode, setMode] = useState("pct"); // "pct" = % change | "price" = native $ price
   const [busy, setBusy] = useState(false);
   const [data, setData] = useState({}); // { ticker: { points, currency } }
   const [failed, setFailed] = useState([]);
   const [err, setErr] = useState(null);
+  // Map of ticker → { action, targetPrice, stopPrice, status, hitAt, hitPrice }
+  // for any open BUY/SELL/TRIM rec issued in the past 48 hours. Used to
+  // (a) highlight legend entries green when target was hit during the day,
+  // (b) draw horizontal target/stop bands on the price-mode chart.
+  const [recsByTicker, setRecsByTicker] = useState({});
+
+  useEffect(() => {
+    if (!sessionToken || !tickers || tickers.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = `${BACKEND_URL}/api/stocks-advice/recs-for-tickers?tickers=${encodeURIComponent(tickers.join(","))}&hours=48`;
+        const r = await fetch(url, { headers: { Authorization: `Bearer ${sessionToken}` } });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (cancelled) return;
+        const map = {};
+        for (const rec of j.recs || []) map[rec.ticker] = rec;
+        setRecsByTicker(map);
+      } catch { /* swallow */ }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken, tickers.join(",")]);
 
   useEffect(() => {
     if (!tickers || tickers.length === 0) return;
@@ -4494,9 +4519,13 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37 }) {
         <>
           <MultiLineChart series={labels.map((t, i) => ({ ticker: t, points: data[t].points, color: colorFor(tickers.indexOf(t)), currency: data[t].currency }))} range={range} mode={mode} />
           {/* Legend — shows final % AND current price for each ticker.
-              The toggle above switches what the chart plots; the legend
-              keeps both numbers visible regardless of mode so a glance
-              gives you both pieces of info. */}
+              When a recent rec's target was hit during the day, the entry
+              gets a green 🎯 badge + green background. Stop hits get a 🛑
+              + amber background. Hit detection runs twice:
+                (a) server-side via rec.status (monitorOpenRecs caught it)
+                (b) client-side via chart's intraday max/min vs target/stop
+              Either is sufficient — protects against the monitor not
+              running mid-day. */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 14, fontSize: 12 }}>
             {labels.map((t) => {
               const pts = data[t].points;
@@ -4505,10 +4534,57 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37 }) {
               const lastPrice = last.price;
               const ccy = data[t].currency || "USD";
               const color = colorFor(tickers.indexOf(t));
+              const rec = recsByTicker[t];
+              // Compute target/stop hit. Direction-aware:
+              //   BUY: target hit if any point.price >= targetPrice
+              //   SELL/TRIM: target hit if any point.price <= targetPrice
+              let targetHit = false;
+              let stopHit = false;
+              if (rec) {
+                if (rec.status === "target-hit") targetHit = true;
+                if (rec.status === "stop-hit") stopHit = true;
+                if (!targetHit && !stopHit && pts.length > 0) {
+                  const high = Math.max(...pts.map((p) => p.price));
+                  const low = Math.min(...pts.map((p) => p.price));
+                  if (rec.action === "BUY") {
+                    if (rec.targetPrice != null && high >= rec.targetPrice) targetHit = true;
+                    if (rec.stopPrice != null && low <= rec.stopPrice) stopHit = true;
+                  } else if (rec.action === "SELL" || rec.action === "TRIM") {
+                    if (rec.targetPrice != null && low <= rec.targetPrice) targetHit = true;
+                    if (rec.stopPrice != null && high >= rec.stopPrice) stopHit = true;
+                  }
+                }
+              }
+              const highlightBg = targetHit
+                ? "var(--sa-green-soft)"
+                : stopHit
+                ? "#fee2e2"
+                : "transparent";
+              const highlightBorder = targetHit
+                ? "1px solid #bbf7d0"
+                : stopHit
+                ? "1px solid #fecaca"
+                : "1px solid transparent";
               return (
-                <div key={t} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div
+                  key={t}
+                  title={
+                    targetHit
+                      ? `🎯 Target hit — ${rec.action} rec from ${new Date(rec.generatedAt).toLocaleDateString()} target $${rec.targetPrice}`
+                      : stopHit
+                      ? `🛑 Stop hit — ${rec.action} rec from ${new Date(rec.generatedAt).toLocaleDateString()} stop $${rec.stopPrice}`
+                      : undefined
+                  }
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "3px 8px", borderRadius: 6,
+                    background: highlightBg, border: highlightBorder,
+                  }}
+                >
                   <span style={{ width: 10, height: 10, borderRadius: 2, background: color, display: "inline-block" }} />
                   <span style={{ fontWeight: 600 }}>{t}</span>
+                  {targetHit && <span style={{ fontSize: 11 }}>🎯</span>}
+                  {stopHit && <span style={{ fontSize: 11 }}>🛑</span>}
                   <span className="sa-amount" style={{ color: "var(--sa-text)", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
                     ${lastPrice?.toFixed(2)} {ccy}
                   </span>
