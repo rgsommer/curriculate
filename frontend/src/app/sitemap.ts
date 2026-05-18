@@ -49,7 +49,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
     // ── Tee Bee Accountants & TeebeePay (separate product surfaces) ──
     { url: `${baseUrl}/teebee`,                                          lastModified: now, changeFrequency: "weekly",  priority: 0.9 },
-    { url: `${baseUrl}/teebeepay`,                                       lastModified: now, changeFrequency: "weekly",  priority: 0.9 },
+    { url: `${baseUrl}/teebeepay`,                                       lastModified: now, changeFrequency: "daily",   priority: 1.0 },
     { url: `${baseUrl}/teebee/blog`,                                     lastModified: now, changeFrequency: "weekly",  priority: 0.7 },
     { url: `${baseUrl}/teebee/blog/png-swt-fortnightly-tables-2026`,     lastModified: now, changeFrequency: "yearly",  priority: 0.6 },
     { url: `${baseUrl}/teebee/blog/nasfund-deadlines-2026`,              lastModified: now, changeFrequency: "yearly",  priority: 0.6 },

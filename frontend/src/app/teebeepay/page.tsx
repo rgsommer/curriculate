@@ -23,6 +23,15 @@ import {
   Play,
   Quote,
   X as XIcon,
+  NotebookPen,
+  AlertTriangle,
+  History,
+  MailCheck,
+  Archive,
+  UserCircle2,
+  Layers,
+  Network,
+  Smartphone,
 } from "lucide-react";
 
 const COLORS = {
@@ -392,7 +401,7 @@ function SeoStructuredData() {
     url: "https://www.curriculate.net/teebeepay",
     logo: "https://www.curriculate.net/teebeepay/og.png",
     description:
-      "TeebeePay is a multi-tenant payroll service for Papua New Guinea SMEs: fortnightly pay stubs, BSP bank batch files, NASFund / NCSL returns, and IRC SWT compliance — all in one web app.",
+      "TeebeePay is a multi-tenant payroll service for Papua New Guinea SMEs and bureaus: fortnightly pay stubs, BSP bank batch files, NASFund / NCSL returns, IRC SWT compliance, QuickBooks IIF, multi-bank splits, audit log, two-factor auth, anomaly alerts, divisions and supervisor flow, approve-via-email — all in one web app.",
     contactPoint: [{
       "@type": "ContactPoint",
       contactType: "sales",
@@ -409,7 +418,27 @@ function SeoStructuredData() {
     applicationSubCategory: "Payroll",
     operatingSystem: "Web",
     description:
-      "Web-based payroll for Papua New Guinea: fortnightly pay stubs, BSP batch upload, NASFund/NCSL returns, IRC Salary or Wages Tax compliance, multi-bank account splits, two-stage approval workflow.",
+      "Web-based payroll for Papua New Guinea: fortnightly pay stubs, BSP batch upload, NASFund/NCSL returns, IRC Salary or Wages Tax compliance, multi-bank account splits, divisions and supervisor flow, approve-via-email, audit log, two-factor authentication, anomaly alerts, employee self-serve portal, QuickBooks IIF export.",
+    featureList: [
+      "Branded pay-stub PDF emails per employee",
+      "BSP Batch Manager 12-column CSV export",
+      "NASFund / NCSL monthly contribution returns with AP signature embedded",
+      "IRC Salary or Wages Tax (SWT) compliance — current 2026 brackets",
+      "QuickBooks IIF general-journal export",
+      "Multi-company / bureau mode with strict tenant isolation",
+      "Five-role hierarchy: owner, principal, bookkeeper, site key person, employee",
+      "Divisions with assigned supervisors and per-division default hours",
+      "Supervisor self-entry of team hours; site-payroll handles the rest",
+      "Per-period notes for bookkeepers",
+      "Anomaly alerts when totals deviate from the 6-period median",
+      "Approve via email magic-link (no log-in needed for remote AP)",
+      "Period archive ZIP: BSP + NASFund + IIF + pay-slip PDFs in one download",
+      "Audit log of every approval, edit, invite and re-send",
+      "Two-factor authentication (TOTP) on top of email-PIN",
+      "Employee self-serve portal for historical pay stubs",
+      "Multi-bank-account splits per employee with percentage rules",
+      "Daily NASFund deadline reminder email",
+    ],
     offers: [
       { "@type": "Offer", name: "Small",    price: "12", priceCurrency: "PGK", description: "Per employee per fortnight, up to 15 employees" },
       { "@type": "Offer", name: "Standard", price: "9",  priceCurrency: "PGK", description: "Per employee per fortnight, up to 50 employees" },
@@ -781,14 +810,24 @@ function HowItWorks() {
 
 function FeatureGrid() {
   const features = [
-    { icon: <Receipt size={22} />, t: "Pay-stub emails", d: "Branded PDF for every employee with manager note, allowances, deductions, and net pay." },
-    { icon: <UploadCloud size={22} />, t: "BSP batch file", d: "12-column, meta-header CSV in the exact shape BSP Batch Manager expects." },
-    { icon: <FileSpreadsheet size={22} />, t: "NASFund / NCSL", d: "Monthly contribution returns formatted to fund spec, with AP signature embedded." },
-    { icon: <Building2 size={22} />, t: "Multi-company", d: "Run payroll for several entities side-by-side. Strict isolation between client books." },
-    { icon: <Users size={22} />, t: "Roles done right", d: "Owner / principal / bookkeeper / site key person / employee. Each sees what they should." },
-    { icon: <ShieldCheck size={22} />, t: "Compliance first", d: "PNG SWT brackets stay current. Dependent rebates, non-resident tables, declaration toggles." },
-    { icon: <Banknote size={22} />, t: "Multi-bank splits", d: "Each employee's pay can split across up to 10 bank accounts by percentage." },
-    { icon: <Mail size={22} />, t: "Manager notes on stubs", d: "Short notes per employee (e.g. why hours are reduced) flow into their pay stub email." },
+    { icon: <Receipt size={22} />, t: "Pay-stub emails", d: "Branded PDF for every employee — manager note, allowances, deductions, net pay. One click after approval." },
+    { icon: <UploadCloud size={22} />, t: "BSP batch file", d: "12-column, meta-header CSV in the exact shape BSP Batch Manager expects. No reformatting." },
+    { icon: <FileSpreadsheet size={22} />, t: "NASFund / NCSL", d: "Monthly contribution returns formatted to fund spec, with AP name, title and signature image embedded." },
+    { icon: <Building2 size={22} />, t: "Multi-company", d: "Run payroll for several entities side-by-side. Strict isolation between client books and users." },
+    { icon: <Layers size={22} />, t: "Divisions & supervisors", d: "Group employees into divisions with their own supervisor and default hours. Field foremen enter their team's hours; bookkeeper does the rest." },
+    { icon: <Users size={22} />, t: "Five-role hierarchy", d: "Owner, principal, bookkeeper, site key person, employee. Each sees only what they should." },
+    { icon: <ShieldCheck size={22} />, t: "PNG compliance built in", d: "SWT brackets, dependent rebates, non-resident and no-declaration tables — all current with the 2026 IRC rules." },
+    { icon: <Banknote size={22} />, t: "Multi-bank splits", d: "Split each employee's net pay across multiple accounts by percentage. Remainder reconciliation handled for you." },
+    { icon: <MailCheck size={22} />, t: "Approve via email", d: "Magic-link approval so a remote AP can sign off a pay run from their phone without logging in." },
+    { icon: <KeyRound size={22} />, t: "Two-factor auth", d: "TOTP (Google Authenticator / 1Password / Authy) on top of the email-PIN sign-in. Strongly recommended for owners." },
+    { icon: <NotebookPen size={22} />, t: "Per-period notes", d: "A notepad on every pay period for the bookkeeper. \"Manager away, hours estimated\" — captured with author + timestamp." },
+    { icon: <AlertTriangle size={22} />, t: "Anomaly alerts", d: "Banner warns when a period's gross or headcount deviates from the 6-period median. Catch data-entry mistakes before they hit the bank." },
+    { icon: <Archive size={22} />, t: "Period archive ZIP", d: "One click downloads BSP batch + NASFund return + IIF + all pay-slip PDFs as a single ZIP. Hand-off in seconds." },
+    { icon: <History size={22} />, t: "Audit log", d: "Every approval, rejection, edit, invite and re-send recorded with actor, timestamp, and before/after values. Bureau-grade evidence." },
+    { icon: <UserCircle2 size={22} />, t: "Employee self-serve", d: "Each employee can sign in by email-PIN and download their own historical pay stubs. Zero \"resend please\" emails to your team." },
+    { icon: <Network size={22} />, t: "QuickBooks IIF", d: "General-journal IIF export per period drops straight into your existing books." },
+    { icon: <Mail size={22} />, t: "Manager notes on stubs", d: "Short note per employee — \"hours reduced this fortnight because…\" — appears on their pay-stub PDF." },
+    { icon: <Smartphone size={22} />, t: "Mobile-friendly", d: "Web-based, works on phone and tablet. Run a payroll from a remote site if you need to." },
   ];
   return (
     <section id="features" style={{ padding: "80px 24px", background: COLORS.cream }}>

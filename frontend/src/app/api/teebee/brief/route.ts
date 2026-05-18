@@ -127,7 +127,13 @@ export async function GET(req: Request) {
   p2.drawRectangle({ x: stubX, y: stubY, width: stubW, height: stubH, color: WHITE,
     borderColor: rgb(0.92, 0.92, 0.92), borderWidth: 1 });
   p2.drawText(co, { x: stubX + 16, y: stubY + stubH - 22, size: 12, font: bold, color: INK });
-  p2.drawText("Pay period 5 May 2026 to 18 May 2026 · pay date 18 May 2026",
+  // Show a sample period anchored to a recent fortnight (uses today's date so the brief
+  // reads as freshly prepared whenever it's generated).
+  const today = new Date();
+  const dEnd = new Date(today); dEnd.setDate(dEnd.getDate() - (dEnd.getDay() === 0 ? 7 : dEnd.getDay()));
+  const dStart = new Date(dEnd); dStart.setDate(dStart.getDate() - 13);
+  const dFmt = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  p2.drawText(`Pay period ${dFmt(dStart)} to ${dFmt(dEnd)} · pay date ${dFmt(dEnd)}`,
     { x: stubX + 16, y: stubY + stubH - 38, size: 9, font: reg, color: MUTED });
   p2.drawText("Employee A · Admin", { x: stubX + 16, y: stubY + stubH - 56, size: 11, font: bold, color: INK });
 
@@ -165,19 +171,35 @@ export async function GET(req: Request) {
     ["BSP batch CSV",     "Bank-spec 12-column file. Upload directly to BSP Batch Manager."],
     ["NASFund return",    "Monthly NCSL contribution file, AP-signed and ready to file."],
     ["IRC SWT summary",   "Salary or Wages Tax remittance breakdown for the period."],
-    ["Approver email",    "Pre-approval summary to your office for sign-off before stubs go out."],
+    ["Approve-via-email", "Magic link so a remote AP can sign off from their phone — no log-in."],
     ["Employee stubs",    "Branded PDF stubs emailed automatically once payroll is approved."],
     ["QuickBooks IIF",    "General journal export for your existing QB books."],
+    ["Period archive",    "One ZIP with BSP + NASFund + IIF + every pay-slip PDF. Hand-off ready."],
+    ["Audit log",         "Every approval / edit / re-send recorded with actor and timestamp."],
   ];
   outputs.forEach((o, i) => {
-    const y = H2 - 405 - i * 24;
+    const y = H2 - 405 - i * 20;
     p2.drawText("·", { x: 54, y, size: 12, font: bold, color: GOLD });
     p2.drawText(o[0], { x: 66, y, size: 10.5, font: bold, color: INK });
     p2.drawText(o[1], { x: 200, y, size: 10, font: reg, color: SOFT });
   });
 
+  // "What's new" strip — three short callouts so the brief stays fresh meeting after meeting
+  const nY = H2 - 405 - outputs.length * 20 - 18;
+  p2.drawRectangle({ x: 48, y: nY - 56, width: W2 - 96, height: 56, color: GOLD_SOFT,
+    borderColor: rgb(0.86, 0.78, 0.50), borderWidth: 0.6 });
+  p2.drawText("New this quarter", { x: 64, y: nY - 18, size: 10.5, font: bold, color: NAVY_DEEP });
+  const news = [
+    "Divisions with supervisors enter their team's hours",
+    "Anomaly alerts catch fortnight-on-fortnight outliers",
+    "TOTP two-factor auth + full audit log for compliance",
+  ];
+  news.forEach((n, i) => {
+    p2.drawText("· " + n, { x: 64, y: nY - 34 - i * 12, size: 9, font: reg, color: INK });
+  });
+
   // Pricing band
-  const pY = 220;
+  const pY = 180;
   p2.drawRectangle({ x: 48, y: pY - 60, width: W2 - 96, height: 60, color: GOLD });
   p2.drawText("Pricing", { x: 64, y: pY - 24, size: 14, font: bold, color: NAVY });
   drawWrapped(p2, reg, 10, NAVY_DEEP,
