@@ -107,12 +107,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         await insertEntry(emp, hours, cash_advance, note, "supervisor_pending");
         consumed.push(emp._id);
       }
-      // Clear consumed pending_hours so the next period starts fresh.
+      // Clear consumed pending_hours / pending_timesheet so the next period starts fresh.
       if (consumed.length) {
         await dbi.collection("employees").updateMany(
           { _id: { $in: consumed } },
           { $unset: { pending_hours: "", pending_cash_advance: "", pending_note: "",
-                       pending_hours_by: "", pending_hours_at: "" } });
+                       pending_hours_by: "", pending_hours_at: "", pending_timesheet: "" } });
       }
     }
 

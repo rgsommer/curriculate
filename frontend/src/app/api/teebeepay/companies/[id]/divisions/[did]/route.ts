@@ -24,6 +24,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if ("default_hours" in b) {
     $set.default_hours = b.default_hours != null && b.default_hours !== "" ? Number(b.default_hours) : null;
   }
+  if ("timesheet_mode" in b) $set.timesheet_mode = !!b.timesheet_mode;
   if ("is_active" in b) $set.is_active = b.is_active ? 1 : 0;
   try {
     const dbi = await db();

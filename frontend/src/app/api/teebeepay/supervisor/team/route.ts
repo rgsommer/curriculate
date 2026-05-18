@@ -46,9 +46,44 @@ export async function GET(req: Request) {
       (byDivision[k] = byDivision[k] || []).push(e);
     }
 
+    // For each company, derive the next pay-period window from the most recent
+    // pay_period. Fallback: today-13 → today.
+    const lastPeriods = await dbi.collection("pay_periods").aggregate([
+      { $match: { company_id: { $in: companyIds } } },
+      { $sort: { period_end: -1 } },
+      { $group: { _id: "$company_id", period_end: { $first: "$period_end" } } },
+    ]).toArray();
+    const lastEnd: Record<string, string> = {};
+    for (const r of lastPeriods) lastEnd[r._id.toString()] = r.period_end;
+
+    function nextWindow(companyId: string): { start: string; end: string; days: string[] } {
+      const last = lastEnd[companyId];
+      let start: Date, end: Date;
+      if (last) {
+        // start = last period_end + 1 day
+        start = new Date(last + "T00:00:00Z");
+        start.setUTCDate(start.getUTCDate() + 1);
+        end = new Date(start);
+        end.setUTCDate(end.getUTCDate() + 13);
+      } else {
+        end = new Date();
+        end.setUTCHours(0, 0, 0, 0);
+        start = new Date(end);
+        start.setUTCDate(start.getUTCDate() - 13);
+      }
+      const days: string[] = [];
+      const cur = new Date(start);
+      while (cur <= end) {
+        days.push(cur.toISOString().slice(0, 10));
+        cur.setUTCDate(cur.getUTCDate() + 1);
+      }
+      return { start: days[0], end: days[days.length - 1], days };
+    }
+
     return NextResponse.json({
       teams: divisions.map((d: any) => {
         const company = cMap[d.company_id.toString()] || {};
+        const win = nextWindow(d.company_id.toString());
         return {
           company_id: d.company_id.toString(),
           company_name: company.name || "",
@@ -56,6 +91,8 @@ export async function GET(req: Request) {
           division_id: d._id.toString(),
           division_name: d.name,
           default_hours: d.default_hours ?? 80,
+          timesheet_mode: !!d.timesheet_mode,
+          period_start: win.start, period_end: win.end, period_days: win.days,
           employees: (byDivision[d._id.toString()] || []).map((e: any) => ({
             id: e._id.toString(),
             first_name: e.first_name, last_name: e.last_name,
@@ -68,6 +105,8 @@ export async function GET(req: Request) {
             pending_cash_advance: e.pending_cash_advance ?? null,
             pending_note: e.pending_note || "",
             pending_hours_at: e.pending_hours_at || null,
+            // pending_timesheet: { [dateISO]: { hours?, clock_in?, clock_out? } }
+            pending_timesheet: e.pending_timesheet || null,
           })),
         };
       }),

@@ -31,6 +31,31 @@ export async function POST(req: Request) {
     if (!divisions.length) return NextResponse.json({ error: "You don't supervise any divisions." }, { status: 403 });
     const allowedDivIds = new Set(divisions.map((d) => d._id.toString()));
 
+    function hoursFromClock(inStr: string, outStr: string): number {
+      // HH:MM minus HH:MM, never negative. Same-day only (no overnight handling yet).
+      const m = (s: string) => {
+        const [h, mm] = String(s || "").split(":").map(Number);
+        return (h * 60) + (mm || 0);
+      };
+      if (!inStr || !outStr) return 0;
+      const diff = (m(outStr) - m(inStr)) / 60;
+      return diff > 0 ? Math.round(diff * 100) / 100 : 0;
+    }
+    function totalFromTimesheet(ts: any): number {
+      if (!ts || typeof ts !== "object") return 0;
+      let sum = 0;
+      for (const k of Object.keys(ts)) {
+        const day = ts[k];
+        if (!day) continue;
+        if (day.hours != null && day.hours !== "") {
+          sum += Number(day.hours) || 0;
+        } else if (day.clock_in && day.clock_out) {
+          sum += hoursFromClock(day.clock_in, day.clock_out);
+        }
+      }
+      return Math.round(sum * 100) / 100;
+    }
+
     let saved = 0, skipped = 0;
     for (const r of rows) {
       if (!r.employee_id) { skipped++; continue; }
@@ -38,18 +63,38 @@ export async function POST(req: Request) {
       if (!emp || !emp.division_id) { skipped++; continue; }
       if (!allowedDivIds.has(emp.division_id.toString())) { skipped++; continue; }
 
-      const hours = Math.max(0, Number(r.hours) || 0);
       const cash_advance = Math.max(0, Number(r.cash_advance) || 0);
       const note = String(r.note || "").slice(0, 1000);
-      await dbi.collection("employees").updateOne({ _id: emp._id }, {
-        $set: {
-          pending_hours: hours,
-          pending_cash_advance: cash_advance,
-          pending_note: note,
-          pending_hours_by: u.email,
-          pending_hours_at: new Date(),
-        },
-      });
+      const $set: any = {
+        pending_cash_advance: cash_advance,
+        pending_note: note,
+        pending_hours_by: u.email,
+        pending_hours_at: new Date(),
+      };
+
+      if (r.timesheet && typeof r.timesheet === "object") {
+        // Timesheet mode: persist daily map and derive total hours from it.
+        // Sanitise: only keep keys that look like ISO dates (YYYY-MM-DD).
+        const clean: Record<string, any> = {};
+        for (const k of Object.keys(r.timesheet)) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) continue;
+          const v = r.timesheet[k] || {};
+          clean[k] = {
+            hours: v.hours != null && v.hours !== "" ? Number(v.hours) : null,
+            clock_in: v.clock_in ? String(v.clock_in).slice(0, 5) : null,
+            clock_out: v.clock_out ? String(v.clock_out).slice(0, 5) : null,
+            note: v.note ? String(v.note).slice(0, 200) : "",
+          };
+        }
+        $set.pending_timesheet = clean;
+        $set.pending_hours = totalFromTimesheet(clean);
+      } else {
+        // Period mode: a single hours total.
+        $set.pending_hours = Math.max(0, Number(r.hours) || 0);
+        $set.pending_timesheet = null;
+      }
+
+      await dbi.collection("employees").updateOne({ _id: emp._id }, { $set });
       saved++;
     }
 

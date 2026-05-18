@@ -3239,6 +3239,7 @@ function DivisionDialog({ companyId, division, employees, onClose, onSaved }) {
     supervisor_employee_id: division?.supervisor_employee_id || "",
     supervisor_submits_hours: !!division?.supervisor_submits_hours,
     default_hours: division?.default_hours ?? 80,
+    timesheet_mode: !!division?.timesheet_mode,
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -3252,6 +3253,7 @@ function DivisionDialog({ companyId, division, employees, onClose, onSaved }) {
         supervisor_employee_id: f.supervisor_employee_id || null,
         supervisor_submits_hours: !!f.supervisor_submits_hours,
         default_hours: f.default_hours === "" || f.default_hours == null ? null : Number(f.default_hours),
+        timesheet_mode: !!f.timesheet_mode,
       };
       if (isEdit) {
         await api(`/api/teebeepay/companies/${companyId}/divisions/${division.id}`,
@@ -3310,6 +3312,25 @@ function DivisionDialog({ companyId, division, employees, onClose, onSaved }) {
           <span style={{ fontSize: 12, color: C.muted }}>
             When ticked, the supervisor (above) sees a "My team" page where they enter hours for this division;
             those hours flow into the next pay period automatically. When unticked, the company's site-payroll user enters them.
+          </span>
+        </span>
+      </label>
+      <label style={{
+        display: "flex", alignItems: "flex-start", gap: 8, marginTop: 12,
+        fontSize: 13, color: f.supervisor_submits_hours ? C.ink : C.muted,
+        cursor: f.supervisor_submits_hours ? "pointer" : "not-allowed",
+      }}>
+        <input type="checkbox" checked={!!f.timesheet_mode} disabled={!f.supervisor_submits_hours}
+          onChange={(e) => set("timesheet_mode", e.target.checked)}
+          style={{ marginTop: 3 }} />
+        <span>
+          <strong>Timesheet mode — track hours per day instead of one fortnight total.</strong>
+          <br />
+          <span style={{ fontSize: 12, color: C.muted }}>
+            When ticked, each employee row in the supervisor's <em>My team</em> view expands to a 14-day grid.
+            For each day the supervisor can either type the hours, or tap <strong>Clock in</strong> /
+            <strong> Clock out</strong> to record the time directly. Hours are summed for the fortnight.
+            Off by default — use it for hourly wage earners; leave off for salaried employees.
           </span>
         </span>
       </label>
@@ -3824,14 +3845,16 @@ function MyTeamPage({ me, onBack }) {
     try {
       const j = await api("/api/teebeepay/supervisor/team");
       setTeams(j.teams || []);
-      // Seed draft from any existing pending hours
+      // Seed draft from any existing pending hours / timesheet
       const seed = {};
       for (const t of (j.teams || [])) {
         for (const e of t.employees) {
+          const baseHours = e.pending_hours != null ? e.pending_hours : (e.default_hours || t.default_hours || 80);
           seed[e.id] = {
-            hours: e.pending_hours != null ? e.pending_hours : (e.default_hours || t.default_hours || 80),
+            hours: baseHours,
             cash_advance: e.pending_cash_advance || 0,
             note: e.pending_note || "",
+            timesheet: e.pending_timesheet || {},
           };
         }
       }
@@ -3855,12 +3878,17 @@ function MyTeamPage({ me, onBack }) {
       for (const t of teams || []) {
         for (const e of t.employees) {
           const d = draft[e.id] || {};
-          entries.push({
+          const row = {
             employee_id: e.id,
-            hours: Number(d.hours) || 0,
             cash_advance: Number(d.cash_advance) || 0,
             note: d.note || "",
-          });
+          };
+          if (t.timesheet_mode) {
+            row.timesheet = d.timesheet || {};
+          } else {
+            row.hours = Number(d.hours) || 0;
+          }
+          entries.push(row);
         }
       }
       const j = await api("/api/teebeepay/supervisor/pending-hours", {
@@ -3928,52 +3956,18 @@ function MyTeamPage({ me, onBack }) {
               <strong style={{ fontSize: 15 }}>{t.company_name} · {t.division_name}</strong>
               <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
                 {t.employees.length} employees · default hours per period: <strong>{t.default_hours}</strong>
+                {t.timesheet_mode && (
+                  <> · <Badge color="#9c6c00" bg="#fef3c7">Timesheet mode</Badge>
+                  <span style={{ marginLeft: 6 }}>fortnight {t.period_start} → {t.period_end}</span></>
+                )}
               </div>
             </div>
           </div>
-          <table className="tbp-grid" style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={th}>Employee</th>
-                <th style={{ ...th, width: 80, textAlign: "right" }}>Default</th>
-                <th style={{ ...th, width: 110 }}>Hours</th>
-                <th style={{ ...th, width: 110 }}>Cash advance</th>
-                <th style={th}>Note (shows on stub)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {t.employees.map((e) => {
-                const def = e.default_hours || t.default_hours || 80;
-                const d = draft[e.id] || {};
-                return (
-                  <tr key={e.id} style={{ borderTop: "1px solid #f1f5f9" }}>
-                    <td style={td}>
-                      <strong>{e.first_name} {e.last_name}</strong>
-                      {e.pending_hours_at && (
-                        <div style={{ fontSize: 11, color: C.muted }}>
-                          last saved {new Date(e.pending_hours_at).toLocaleString()}
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ ...td, textAlign: "right", color: C.muted }}>{def}</td>
-                    <td style={td}>
-                      <input style={{ ...input, padding: "6px 8px", textAlign: "right" }} type="number" step="0.5"
-                        value={d.hours ?? ""} onChange={(ev) => set(e.id, "hours", ev.target.value)}
-                        onDoubleClick={() => dblToggleHours(e, def)} />
-                    </td>
-                    <td style={td}>
-                      <input style={{ ...input, padding: "6px 8px", textAlign: "right" }} type="number" step="0.01"
-                        value={d.cash_advance ?? ""} onChange={(ev) => set(e.id, "cash_advance", ev.target.value)} />
-                    </td>
-                    <td style={td}>
-                      <input style={{ ...input, padding: "6px 8px" }} value={d.note || ""}
-                        onChange={(ev) => set(e.id, "note", ev.target.value)} placeholder="(optional)" />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          {t.timesheet_mode ? (
+            <TimesheetTeamGrid team={t} draft={draft} setDraft={setDraft} />
+          ) : (
+            <PeriodTeamGrid team={t} draft={draft} setRowField={set} dblToggleHours={dblToggleHours} />
+          )}
         </div>
       ))}
 
@@ -3984,6 +3978,253 @@ function MyTeamPage({ me, onBack }) {
         </button>
       </div>
     </div>
+  );
+}
+
+/* ─────────── My team — Period-mode grid (one row per employee) ─────────── */
+
+function PeriodTeamGrid({ team, draft, setRowField, dblToggleHours }) {
+  return (
+    <table className="tbp-grid" style={tableStyle}>
+      <thead>
+        <tr>
+          <th style={th}>Employee</th>
+          <th style={{ ...th, width: 80, textAlign: "right" }}>Default</th>
+          <th style={{ ...th, width: 110 }}>Hours</th>
+          <th style={{ ...th, width: 110 }}>Cash advance</th>
+          <th style={th}>Note (shows on stub)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {team.employees.map((e) => {
+          const def = e.default_hours || team.default_hours || 80;
+          const d = draft[e.id] || {};
+          return (
+            <tr key={e.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+              <td style={td}>
+                <strong>{e.first_name} {e.last_name}</strong>
+                {e.pending_hours_at && (
+                  <div style={{ fontSize: 11, color: C.muted }}>
+                    last saved {new Date(e.pending_hours_at).toLocaleString()}
+                  </div>
+                )}
+              </td>
+              <td style={{ ...td, textAlign: "right", color: C.muted }}>{def}</td>
+              <td style={td}>
+                <input style={{ ...input, padding: "6px 8px", textAlign: "right" }} type="number" step="0.5"
+                  value={d.hours ?? ""} onChange={(ev) => setRowField(e.id, "hours", ev.target.value)}
+                  onDoubleClick={() => dblToggleHours(e, def)} />
+              </td>
+              <td style={td}>
+                <input style={{ ...input, padding: "6px 8px", textAlign: "right" }} type="number" step="0.01"
+                  value={d.cash_advance ?? ""} onChange={(ev) => setRowField(e.id, "cash_advance", ev.target.value)} />
+              </td>
+              <td style={td}>
+                <input style={{ ...input, padding: "6px 8px" }} value={d.note || ""}
+                  onChange={(ev) => setRowField(e.id, "note", ev.target.value)} placeholder="(optional)" />
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+/* ─────────── My team — Timesheet-mode grid (expandable per-day) ─────────── */
+
+function timesheetTotal(ts) {
+  if (!ts) return 0;
+  function clockToMin(s) {
+    if (!s) return null;
+    const [h, m] = String(s).split(":").map(Number);
+    if (Number.isNaN(h) || Number.isNaN(m)) return null;
+    return h * 60 + m;
+  }
+  let sum = 0;
+  for (const k of Object.keys(ts)) {
+    const d = ts[k] || {};
+    if (d.hours != null && d.hours !== "") {
+      sum += Number(d.hours) || 0;
+    } else if (d.clock_in && d.clock_out) {
+      const a = clockToMin(d.clock_in), b = clockToMin(d.clock_out);
+      if (a != null && b != null && b > a) sum += (b - a) / 60;
+    }
+  }
+  return Math.round(sum * 100) / 100;
+}
+
+function TimesheetTeamGrid({ team, draft, setDraft }) {
+  const [expanded, setExpanded] = useState(new Set());
+  function toggle(eid) {
+    setExpanded((s) => {
+      const n = new Set(s);
+      n.has(eid) ? n.delete(eid) : n.add(eid);
+      return n;
+    });
+  }
+  function nowHHMM() {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+  function setCell(eid, date, key, val) {
+    setDraft((dr) => {
+      const row = { ...(dr[eid] || { timesheet: {} }) };
+      const ts = { ...(row.timesheet || {}) };
+      const day = { ...(ts[date] || {}) };
+      day[key] = val;
+      ts[date] = day;
+      row.timesheet = ts;
+      return { ...dr, [eid]: row };
+    });
+  }
+  function tapClock(eid, date) {
+    setDraft((dr) => {
+      const row = { ...(dr[eid] || { timesheet: {} }) };
+      const ts = { ...(row.timesheet || {}) };
+      const day = { ...(ts[date] || {}) };
+      const t = nowHHMM();
+      // If no clock_in or both filled, start a new clock_in (overwriting any complete pair).
+      if (!day.clock_in || (day.clock_in && day.clock_out)) {
+        day.clock_in = t; day.clock_out = null;
+      } else {
+        day.clock_out = t;
+      }
+      ts[date] = day;
+      row.timesheet = ts;
+      return { ...dr, [eid]: row };
+    });
+  }
+  function clearDay(eid, date) {
+    setDraft((dr) => {
+      const row = { ...(dr[eid] || { timesheet: {} }) };
+      const ts = { ...(row.timesheet || {}) };
+      delete ts[date];
+      row.timesheet = ts;
+      return { ...dr, [eid]: row };
+    });
+  }
+  function todayISO() { return new Date().toISOString().slice(0, 10); }
+  const today = todayISO();
+
+  return (
+    <table className="tbp-grid" style={tableStyle}>
+      <thead>
+        <tr>
+          <th style={{ ...th, width: 38 }}></th>
+          <th style={th}>Employee</th>
+          <th style={{ ...th, width: 100, textAlign: "right" }}>Hours total</th>
+          <th style={{ ...th, width: 110 }}>Cash advance</th>
+          <th style={th}>Note (shows on stub)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {team.employees.map((e) => {
+          const d = draft[e.id] || {};
+          const ts = d.timesheet || {};
+          const total = timesheetTotal(ts);
+          const isOpen = expanded.has(e.id);
+          return (
+            <React.Fragment key={e.id}>
+              <tr style={{ borderTop: "1px solid #f1f5f9", cursor: "pointer", background: isOpen ? "#fafbfc" : "transparent" }}
+                  onClick={() => toggle(e.id)}>
+                <td style={{ ...td, textAlign: "center", color: C.muted, userSelect: "none" }}>
+                  {isOpen ? "▾" : "▸"}
+                </td>
+                <td style={td}>
+                  <strong>{e.first_name} {e.last_name}</strong>
+                  {e.pending_hours_at && (
+                    <div style={{ fontSize: 11, color: C.muted }}>
+                      last saved {new Date(e.pending_hours_at).toLocaleString()}
+                    </div>
+                  )}
+                </td>
+                <td style={{ ...td, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                  {total.toFixed(2)} h
+                </td>
+                <td style={td} onClick={(ev) => ev.stopPropagation()}>
+                  <input style={{ ...input, padding: "6px 8px", textAlign: "right" }} type="number" step="0.01"
+                    value={d.cash_advance ?? ""}
+                    onChange={(ev) => setDraft((dr) => ({ ...dr, [e.id]: { ...(dr[e.id] || { timesheet: {} }), cash_advance: ev.target.value } }))} />
+                </td>
+                <td style={td} onClick={(ev) => ev.stopPropagation()}>
+                  <input style={{ ...input, padding: "6px 8px" }} value={d.note || ""}
+                    onChange={(ev) => setDraft((dr) => ({ ...dr, [e.id]: { ...(dr[e.id] || { timesheet: {} }), note: ev.target.value } }))}
+                    placeholder="(optional)" />
+                </td>
+              </tr>
+              {isOpen && (
+                <tr style={{ background: "#fafbfc", borderTop: "1px solid #f1f5f9" }}>
+                  <td colSpan={5} style={{ padding: "0 0 14px 0" }}>
+                    <div style={{ padding: "10px 16px", fontSize: 12, color: C.muted }}>
+                      For each day: tap <strong>Clock in</strong> to record now, then <strong>Clock out</strong> to close
+                      the shift. Or just type the hours. <strong>Clear</strong> wipes the day.
+                    </div>
+                    <div style={{
+                      display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+                      gap: 8, padding: "0 16px",
+                    }}>
+                      {(team.period_days || []).map((dateStr) => {
+                        const day = ts[dateStr] || {};
+                        const isToday = dateStr === today;
+                        const dateObj = new Date(dateStr + "T00:00:00Z");
+                        const dow = dateObj.toLocaleDateString("en-GB", { weekday: "short", timeZone: "UTC" });
+                        const dd = dateObj.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+                        const dayHours = day.hours != null && day.hours !== ""
+                          ? Number(day.hours)
+                          : (day.clock_in && day.clock_out
+                            ? timesheetTotal({ k: { clock_in: day.clock_in, clock_out: day.clock_out } })
+                            : 0);
+                        return (
+                          <div key={dateStr} style={{
+                            border: `1px solid ${isToday ? "#fde68a" : "#e5e7eb"}`,
+                            borderRadius: 8, padding: 10,
+                            background: isToday ? "#fffbeb" : "#fff",
+                          }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: isToday ? "#9c6c00" : C.ink }}>
+                                {dow} {dd}{isToday ? " · today" : ""}
+                              </span>
+                              <span style={{ fontSize: 11, color: C.muted, fontVariantNumeric: "tabular-nums" }}>
+                                {dayHours ? `${dayHours.toFixed(2)} h` : "—"}
+                              </span>
+                            </div>
+                            <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+                              <input type="time" value={day.clock_in || ""}
+                                onChange={(ev) => setCell(e.id, dateStr, "clock_in", ev.target.value)}
+                                style={{ ...input, padding: "4px 6px", fontSize: 12, flex: 1 }} />
+                              <input type="time" value={day.clock_out || ""}
+                                onChange={(ev) => setCell(e.id, dateStr, "clock_out", ev.target.value)}
+                                style={{ ...input, padding: "4px 6px", fontSize: 12, flex: 1 }} />
+                            </div>
+                            <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+                              <input type="number" step="0.25" value={day.hours ?? ""}
+                                placeholder="or hours"
+                                onChange={(ev) => setCell(e.id, dateStr, "hours", ev.target.value)}
+                                style={{ ...input, padding: "4px 6px", fontSize: 12, flex: 1, textAlign: "right" }} />
+                            </div>
+                            <div style={{ display: "flex", gap: 4 }}>
+                              <button type="button" onClick={() => tapClock(e.id, dateStr)}
+                                style={{ ...btnGhostSmall, padding: "4px 6px", fontSize: 11, flex: 1 }}>
+                                {!day.clock_in || (day.clock_in && day.clock_out) ? "Clock in" : "Clock out"}
+                              </button>
+                              <button type="button" onClick={() => clearDay(e.id, dateStr)}
+                                style={{ ...btnGhostSmall, padding: "4px 6px", fontSize: 11, color: "#991b1b" }}>
+                                Clear
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </React.Fragment>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
