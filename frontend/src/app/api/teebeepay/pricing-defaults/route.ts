@@ -37,6 +37,9 @@ export const DEFAULTS = {
   setup_fee_large: 2000,   // > 50 employees
   currency: "PGK",
   bank_upload_instructions: DEFAULT_BANK_UPLOAD_INSTRUCTIONS,
+  // Post-approval summary email — enabled by default. System owner can flip
+  // this off bureau-wide if Principals don't want the email.
+  post_approval_email_enabled: true,
 };
 
 export async function GET(req: Request) {
@@ -59,12 +62,13 @@ export async function PATCH(req: Request) {
   const $set: any = { updated_at: new Date(), updated_by: u.email };
   const fields = ["basic_rate_per_employee", "full_rate_per_employee",
                   "setup_fee_small", "setup_fee_medium", "setup_fee_large", "currency",
-                  "bank_upload_instructions"];
+                  "bank_upload_instructions", "post_approval_email_enabled"];
   for (const k of fields) {
     if (k in b) {
       const v = b[k];
       if (k === "currency") $set[k] = String(v || "PGK").toUpperCase().slice(0, 8);
       else if (k === "bank_upload_instructions") $set[k] = String(v || "").slice(0, 8000);
+      else if (k === "post_approval_email_enabled") $set[k] = !!v;
       else $set[k] = v === "" ? 0 : Number(v) || 0;
     }
   }

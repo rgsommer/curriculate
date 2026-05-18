@@ -13,19 +13,23 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://www.curriculate.net"),
   title: {
     template: "%s · TeebeePay",
-    default: "TeebeePay — Payroll for Papua New Guinea SMEs | BSP batch, NASFund, IRC SWT",
+    default: "TeebeePay — Papua New Guinea Payroll, Two Tiers | BSP, NASFund, IRC SWT, Form S",
   },
   description:
-    "Fortnightly payroll for Papua New Guinea SMEs. Enter hours; we deliver pay-stub emails, BSP Batch Manager CSVs, NASFund / NCSL returns, IRC SWT compliance, QuickBooks IIF — plus 2FA, audit log, anomaly alerts and approve-via-email. From PGK 9 per employee per fortnight.",
+    "Fortnightly payroll for Papua New Guinea SMEs. Two tiers: Self-service from PGK 9 / employee, or Managed Bureau from PGK 14 / employee where a CPA files BSP, NASFund, IRC SWT and Form S for you. Save ~6 weeks of FTE time per year vs manual processing. Pay-stub emails, supervisor timesheet flow, 2FA, audit log, post-approval bank-funding email with PDF attachment.",
   keywords: [
     "PNG payroll software", "Papua New Guinea payroll", "payroll PNG",
     "BSP batch manager", "BSP batch CSV", "BSP payroll upload",
     "NASFund return", "NASFund employer contribution", "NCSL contribution",
     "IRC SWT", "salary wages tax PNG", "PNG IRC compliance",
+    "IRC Form S", "PNG Form S annual reconciliation",
+    "managed payroll bureau PNG", "outsourced payroll PNG",
     "Tee Bee Accountants", "TeebeePay",
     "Port Moresby payroll", "Lae payroll", "PNG bureau payroll",
     "multi-company payroll", "fortnightly payroll", "small business payroll PNG",
     "QuickBooks IIF PNG", "pay-stub PNG", "PNG accountants payroll",
+    "supervisor timesheet PNG", "tap clock-in clock-out PNG",
+    "CPA payroll filing PNG", "PNG Employment Act leave compliance",
   ],
   authors: [{ name: "Tee Bee Accountants Ltd", url: "https://www.curriculate.net/teebee" }],
   creator: "Tee Bee Accountants Ltd",
@@ -38,17 +42,17 @@ export const metadata: Metadata = {
     siteName: "TeebeePay",
     type: "website",
     url: "https://www.curriculate.net/teebeepay",
-    title: "TeebeePay — Payroll done for you in Papua New Guinea",
+    title: "TeebeePay — Papua New Guinea Payroll, Two Tiers",
     description:
-      "Hours in, pay stubs out — plus BSP batch CSV, NASFund return, IRC SWT compliance, QuickBooks IIF, audit log and 2FA. From PGK 9 per employee per fortnight.",
+      "Self-service from PGK 9 / employee / fortnight or CPA-managed bureau from PGK 14. Save ~6 weeks of FTE time per year. BSP, NASFund, IRC SWT, Form S — all handled.",
     locale: "en_PG",
     // OG image is generated dynamically by teebeepay/opengraph-image.tsx
   },
   twitter: {
     card: "summary_large_image",
-    title: "TeebeePay — Payroll for Papua New Guinea SMEs",
+    title: "TeebeePay — PNG payroll, two tiers, weeks of time saved",
     description:
-      "Fortnightly PNG payroll: pay-stub emails, BSP batch CSV, NASFund return, IRC SWT — bureau-grade, web-based, compliance baked in.",
+      "Self-service from K9/employee or CPA-managed from K14. BSP, NASFund, IRC SWT, Form S. Save ~6 weeks of FTE/year vs manual.",
     // twitter:image also auto-derived from opengraph-image.tsx
   },
   robots: {

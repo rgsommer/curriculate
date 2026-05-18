@@ -2510,6 +2510,21 @@ function PricingDefaultsEditor() {
             onChange={(e) => set("setup_fee_large", Number(e.target.value))} />
         </Field>
       </Row>
+      <Field label="Post-approval summary email">
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", padding: "6px 0" }}>
+          <input type="checkbox" checked={p.post_approval_email_enabled !== false}
+            onChange={(e) => set("post_approval_email_enabled", e.target.checked)} />
+          <span>
+            <strong>Send an email to every Principal when a pay period is approved.</strong>
+            <br />
+            <span style={{ fontSize: 12, color: C.muted }}>
+              Includes totals, the bank-funding amount to transfer, the upload instructions below, and a PDF
+              attachment listing every employee with their hours, rate, gross, tax, deductions, and net.
+              Recipients: users with role = principal (active). System owners are excluded by design.
+            </span>
+          </span>
+        </label>
+      </Field>
       <Field label="Bank upload instructions (appended to every Principal approval email)">
         <textarea style={{ ...input, minHeight: 110, fontSize: 13, lineHeight: 1.5 }}
           placeholder={"e.g. 1. Log in to BSP Internet Business Banking → File Upload\n2. Select the CSV from the period page\n3. Confirm totals match the breakdown above\n4. Approve in BSP …"}

@@ -31,11 +31,15 @@ export async function sendApprovalSummary(dbi: any, opts: {
     return { sent: 0, recipients: [] };
   }
 
-  // Recipients — every Principal + system_owner across the whole bureau,
-  // active only. Bookkeepers don't get it by default (they're typically the
-  // ones doing the upload, not the ones approving the bank transfer).
+  // Recipients — Principals only. System owners can toggle the whole feature
+  // off (post_approval_email_enabled=false on pricing_defaults) if they don't
+  // want to be on the list themselves and don't want anyone else getting it.
+  const sysSettings: any = await dbi.collection("system_settings").findOne({ _id: "pricing_defaults" as any });
+  if (sysSettings?.post_approval_email_enabled === false) {
+    return { sent: 0, recipients: [] };
+  }
   const users: any[] = await dbi.collection("users").find({
-    role: { $in: ["principal", "system_owner"] },
+    role: "principal",
     $or: [{ is_active: 1 }, { is_active: { $exists: false } }],
   }).toArray();
   const recipients = Array.from(new Set(users.map((u: any) => String(u.email || "").toLowerCase()).filter(Boolean)));
