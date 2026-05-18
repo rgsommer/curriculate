@@ -1,26 +1,27 @@
 // frontend/src/app/api/teebee/brief/route.ts
 //
-// Generates a personalised 2-page Tee Bee Accountants + TeebeePay brief
-// as a PDF, with the prospect's company name and headcount pre-filled.
+// Personalised 2-page TBA brief PDF, drawn with pdf-lib (pure JS, no native
+// fonts on disk — survives Vercel's serverless bundling without extras).
 //
 // Usage:
 //   GET /api/teebee/brief?co=Acme%20Ltd&employees=22&service=Payroll
-//   → application/pdf attachment
 //
-// Each meeting Theresia walks into, she opens this URL, hits download,
-// and brings a printed copy. Or attaches the link to a cold email.
+// Open the URL → PDF renders inline. Useful for meetings: theresia.com→Print.
 import { NextResponse } from "next/server";
-import PDFDocument from "pdfkit";
+import { PDFDocument, rgb, StandardFonts, PageSizes } from "pdf-lib";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-const NAVY      = "#0f2c52";
-const NAVY_DEEP = "#081d3a";
-const GOLD      = "#c9a227";
-const INK       = "#0a1a2e";
-const SOFT      = "#475569";
-const MUTED     = "#64748b";
-const CREAM     = "#fbfaf6";
+const NAVY      = rgb(0.058, 0.172, 0.321);   // #0f2c52
+const NAVY_DEEP = rgb(0.031, 0.113, 0.227);
+const GOLD      = rgb(0.788, 0.635, 0.152);   // #c9a227
+const INK       = rgb(0.039, 0.101, 0.180);
+const SOFT      = rgb(0.278, 0.337, 0.412);
+const MUTED     = rgb(0.392, 0.455, 0.545);
+const CREAM     = rgb(0.984, 0.980, 0.965);
+const WHITE     = rgb(1, 1, 1);
+const GOLD_SOFT = rgb(0.996, 0.965, 0.863);
 
 function safe(s: string | null | undefined, fallback = ""): string {
   return (s == null ? fallback : String(s)).slice(0, 120);
@@ -32,38 +33,43 @@ export async function GET(req: Request) {
   const employees = safe(u.searchParams.get("employees"), "—");
   const service   = safe(u.searchParams.get("service"), "Payroll & compliance");
 
-  const buffers: Buffer[] = [];
-  const doc = new PDFDocument({ size: "A4", margin: 48, bufferPages: true });
-  doc.on("data", (b: Buffer) => buffers.push(b));
-  const done = new Promise<Buffer>((resolve, reject) => {
-    doc.on("end",   () => resolve(Buffer.concat(buffers)));
-    doc.on("error", reject);
+  const pdf = await PDFDocument.create();
+  const reg  = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+
+  /* ───── PAGE 1 — Who we are ───── */
+  const p1 = pdf.addPage(PageSizes.A4);   // 595.28 × 841.89
+  const W = p1.getWidth(), H = p1.getHeight();
+
+  // Header band
+  p1.drawRectangle({ x: 0, y: H - 100, width: W, height: 100, color: NAVY });
+  p1.drawText("Tee Bee Accountants Ltd", {
+    x: 48, y: H - 60, size: 26, font: bold, color: GOLD,
+  });
+  p1.drawText("CPA-certified · Registered Tax Agents · Port Moresby · 10+ years", {
+    x: 48, y: H - 84, size: 10.5, font: reg, color: rgb(0.6, 0.7, 0.83),
   });
 
-  /* ============ Page 1 — Who we are ============ */
-  // Header band
-  doc.rect(0, 0, doc.page.width, 100).fill(NAVY);
-  doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(26)
-     .text("Tee Bee Accountants Ltd", 48, 36, { width: doc.page.width - 96 });
-  doc.fillColor("#9bb1d4").fontSize(11).font("Helvetica")
-     .text("CPA-certified · Registered Tax Agents · Port Moresby · 10+ years", 48, 70);
+  // Personalisation line
+  p1.drawText(`Prepared for: ${co}`, { x: 48, y: H - 130, size: 13, font: bold, color: INK });
+  p1.drawText(
+    `Headcount: ${employees}   ·   Primary interest: ${service}   ·   ${new Date().toISOString().slice(0, 10)}`,
+    { x: 48, y: H - 148, size: 9.5, font: reg, color: MUTED },
+  );
 
-  // Personalised line
-  doc.fillColor(INK).font("Helvetica-Bold").fontSize(14)
-     .text(`Prepared for: ${co}`, 48, 120);
-  doc.fillColor(MUTED).font("Helvetica").fontSize(10)
-     .text(`Headcount: ${employees}   ·   Primary interest: ${service}   ·   ${new Date().toISOString().slice(0, 10)}`,
-           48, 140);
+  // Value prop
+  p1.drawText("What we do, in 30 seconds.", {
+    x: 48, y: H - 195, size: 20, font: bold, color: INK,
+  });
+  drawWrapped(p1, reg, 11, SOFT,
+    "Tee Bee Accountants Ltd (TBA) is a full-service accounting and audit firm in Papua " +
+    "New Guinea. We work with SMEs, landowner companies, and project SPVs across audit and " +
+    "assurance, taxation, accounting, business advisory, statutory compliance, and financial " +
+    "consulting. We are registered with the PNG Accountants Registration Board and the IRC. " +
+    "Our work is IFRS-compliant.",
+    48, H - 215, W - 96, 14);
 
-  // Big value proposition
-  doc.moveDown(2);
-  doc.fillColor(INK).font("Helvetica-Bold").fontSize(20)
-     .text("What we do, in 30 seconds.", 48, 180, { width: doc.page.width - 96 });
-  doc.font("Helvetica").fontSize(11.5).fillColor(SOFT)
-     .text("Tee Bee Accountants Ltd (TBA) is a full-service accounting and audit firm in Papua New Guinea. We work with SMEs, landowner companies, and project SPVs across audit and assurance, taxation, accounting, business advisory, statutory compliance, and financial consulting. We are registered with the PNG Accountants Registration Board and the IRC. Our work is IFRS-compliant.",
-           { width: doc.page.width - 96, align: "left", lineGap: 2 });
-
-  // Services panel
+  // Services grid (2 cols × 3 rows)
   const services = [
     ["01", "Audit & Assurance",     "Independent audits for companies of all sizes — IFRS compliant."],
     ["02", "Taxation Services",     "Strategic tax planning and full IRC compliance."],
@@ -72,114 +78,129 @@ export async function GET(req: Request) {
     ["05", "Statutory Compliance",  "Company secretarial, IPA annual returns, regulatory upkeep."],
     ["06", "Financial Consulting",  "Feasibility studies, due diligence, investment advisory."],
   ];
-
-  const colWidth = (doc.page.width - 48 * 2 - 16) / 2;
-  let y = 290;
+  const colWidth = (W - 48 * 2 - 16) / 2;
+  const startY = H - 310;
   services.forEach((s, i) => {
-    const col  = i % 2;
-    const row  = Math.floor(i / 2);
-    const x    = 48 + col * (colWidth + 16);
-    const ry   = y + row * 92;
-    doc.roundedRect(x, ry, colWidth, 78, 8).fillAndStroke(CREAM, "#eaeaea");
-    doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(11).text(s[0], x + 14, ry + 12);
-    doc.fillColor(INK).font("Helvetica-Bold").fontSize(12).text(s[1], x + 36, ry + 11, { width: colWidth - 50 });
-    doc.fillColor(SOFT).font("Helvetica").fontSize(9.5).text(s[2], x + 36, ry + 30, { width: colWidth - 50, lineGap: 1.5 });
+    const col = i % 2, row = Math.floor(i / 2);
+    const x = 48 + col * (colWidth + 16);
+    const y = startY - row * 92;
+    p1.drawRectangle({ x, y: y - 78, width: colWidth, height: 78, color: CREAM,
+      borderColor: rgb(0.92, 0.92, 0.92), borderWidth: 1 });
+    p1.drawText(s[0], { x: x + 14, y: y - 18, size: 11, font: bold, color: GOLD });
+    p1.drawText(s[1], { x: x + 36, y: y - 18, size: 12, font: bold, color: INK });
+    drawWrapped(p1, reg, 9.5, SOFT, s[2], x + 36, y - 36, colWidth - 50, 12);
   });
 
   // Why us strip
-  const stripY = y + 3 * 92 + 8;
-  doc.roundedRect(48, stripY, doc.page.width - 96, 78, 10).fillAndStroke(NAVY, NAVY);
-  doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(11).text("Why TBA", 64, stripY + 12);
-  doc.fillColor("#fff").font("Helvetica").fontSize(10).text(
-    "CPA-certified team · IFRS-compliant reporting · Registered tax agents with the PNG IRC · Deep local expertise · 500+ clients served over 10+ years · Dedicated client relationships.",
-    64, stripY + 30, { width: doc.page.width - 128, lineGap: 1.8 });
+  const stripY = startY - 3 * 92 - 14;
+  p1.drawRectangle({ x: 48, y: stripY - 78, width: W - 96, height: 78, color: NAVY });
+  p1.drawText("Why TBA", { x: 64, y: stripY - 22, size: 11, font: bold, color: GOLD });
+  drawWrapped(p1, reg, 10, WHITE,
+    "CPA-certified team · IFRS-compliant reporting · Registered tax agents with the PNG " +
+    "IRC · Deep local expertise · 500+ clients served over 10+ years · Dedicated client relationships.",
+    64, stripY - 40, W - 128, 13);
 
-  // Page 1 footer
-  doc.fillColor(MUTED).font("Helvetica").fontSize(9)
-     .text("Tee Bee Accountants Ltd · Port Moresby, NCD, Papua New Guinea · info@teebeeaccountants.com.pg · +675 300 0000",
-           48, doc.page.height - 60, { width: doc.page.width - 96, align: "center" });
+  // Footer
+  p1.drawText("Tee Bee Accountants Ltd · Port Moresby, NCD, PNG · info@teebeeaccountants.com.pg · +675 300 0000",
+    { x: 0, y: 30, size: 9, font: reg, color: MUTED, maxWidth: W,
+      lineHeight: 12 });
+  centerText(p1, reg, 9, MUTED,
+    "Tee Bee Accountants Ltd · Port Moresby, NCD, PNG · info@teebeeaccountants.com.pg · +675 300 0000",
+    30, W);
 
-  /* ============ Page 2 — TeebeePay sample output ============ */
-  doc.addPage();
+  /* ───── PAGE 2 — TeebeePay output ───── */
+  const p2 = pdf.addPage(PageSizes.A4);
+  const W2 = p2.getWidth(), H2 = p2.getHeight();
+  p2.drawRectangle({ x: 0, y: H2 - 100, width: W2, height: 100, color: NAVY });
+  p2.drawText("TeebeePay — your fortnight, end to end", {
+    x: 48, y: H2 - 60, size: 22, font: bold, color: GOLD,
+  });
+  p2.drawText(`What a TeebeePay fortnightly run delivers for ${co}`, {
+    x: 48, y: H2 - 84, size: 10.5, font: reg, color: rgb(0.6, 0.7, 0.83),
+  });
 
-  doc.rect(0, 0, doc.page.width, 100).fill(NAVY);
-  doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(26)
-     .text("TeebeePay — your fortnight, end to end", 48, 36, { width: doc.page.width - 96 });
-  doc.fillColor("#9bb1d4").font("Helvetica").fontSize(11)
-     .text(`What a TeebeePay fortnightly run delivers for ${co}`, 48, 70);
+  // Pay-stub mockup
+  p2.drawText("Pay stub (sample, per employee)", {
+    x: 48, y: H2 - 130, size: 13, font: bold, color: INK,
+  });
+  const stubX = 48, stubY = H2 - 350, stubW = W2 - 96, stubH = 200;
+  p2.drawRectangle({ x: stubX, y: stubY, width: stubW, height: stubH, color: WHITE,
+    borderColor: rgb(0.92, 0.92, 0.92), borderWidth: 1 });
+  p2.drawText(co, { x: stubX + 16, y: stubY + stubH - 22, size: 12, font: bold, color: INK });
+  p2.drawText("Pay period 5 May 2026 to 18 May 2026 · pay date 18 May 2026",
+    { x: stubX + 16, y: stubY + stubH - 38, size: 9, font: reg, color: MUTED });
+  p2.drawText("Employee A · Admin", { x: stubX + 16, y: stubY + stubH - 56, size: 11, font: bold, color: INK });
 
-  // Mini pay-stub mockup
-  doc.fillColor(INK).font("Helvetica-Bold").fontSize(13)
-     .text("Pay stub (sample, per employee)", 48, 124);
-  doc.roundedRect(48, 144, doc.page.width - 96, 200, 10).fillAndStroke("#fff", "#eaeaea");
-
-  doc.fillColor(INK).font("Helvetica-Bold").fontSize(12).text(co, 64, 160);
-  doc.fillColor(MUTED).font("Helvetica").fontSize(9).text("Pay period 5 May 2026 to 18 May 2026 · pay date 18 May 2026", 64, 178);
-  doc.fillColor(INK).font("Helvetica-Bold").fontSize(11).text("Employee A · Admin", 64, 198);
-
-  const stubRows = [
-    ["Hours worked",     "80.00"],
-    ["Base salary",      "PGK 1,200.00"],
-    ["Housing allowance","PGK   200.00"],
-    ["GROSS",            "PGK 1,400.00"],
-    ["Salary & wages tax","-PGK  189.00"],
-    ["Nasfund (6%)",     "-PGK   84.00"],
-    ["NET PAY",          "PGK 1,127.00"],
+  const stub = [
+    ["Hours worked",      "80.00",        false],
+    ["Base salary",       "PGK 1,200.00", false],
+    ["Housing allowance", "PGK   200.00", false],
+    ["GROSS",             "PGK 1,400.00", true],
+    ["Salary & wages tax", "- PGK 189.00", false],
+    ["Nasfund (6%)",      "- PGK  84.00", false],
+    ["NET PAY",           "PGK 1,127.00", true],
   ];
-  let sy = 222;
-  stubRows.forEach(([l, v]) => {
-    const isTotal = l === "GROSS" || l === "NET PAY";
-    doc.font(isTotal ? "Helvetica-Bold" : "Helvetica").fontSize(10).fillColor(isTotal ? INK : SOFT);
-    doc.text(l, 64, sy, { width: 240 });
-    doc.text(v, 300, sy, { width: 220, align: "right" });
-    sy += 14;
+  let yRow = stubY + stubH - 76;
+  stub.forEach(([l, v, isTotal]) => {
+    const f = isTotal ? bold : reg;
+    const c = isTotal ? INK : SOFT;
+    p2.drawText(String(l), { x: stubX + 16, y: yRow, size: 10, font: f, color: c });
+    p2.drawText(String(v), { x: stubX + stubW - 16 - reg.widthOfTextAtSize(String(v), 10),
+      y: yRow, size: 10, font: f, color: c });
+    yRow -= 14;
     if (isTotal) {
-      doc.strokeColor("#eaeaea").lineWidth(0.5).moveTo(64, sy).lineTo(doc.page.width - 64, sy).stroke();
-      sy += 4;
+      p2.drawLine({
+        start: { x: stubX + 16, y: yRow + 6 }, end: { x: stubX + stubW - 16, y: yRow + 6 },
+        thickness: 0.5, color: rgb(0.92, 0.92, 0.92),
+      });
+      yRow -= 4;
     }
   });
 
-  // BSP batch + NASFund + IRC strip
-  doc.fillColor(INK).font("Helvetica-Bold").fontSize(13).text("Plus, every fortnight, you also receive:", 48, 370);
+  // "Plus you also receive" list
+  p2.drawText("Plus, every fortnight, you also receive:", {
+    x: 48, y: H2 - 380, size: 13, font: bold, color: INK,
+  });
   const outputs = [
-    ["BSP batch CSV",   "Bank-spec 12-column file. Upload directly to BSP Batch Manager."],
-    ["NASFund return",  "Monthly NCSL contribution file, AP-signed and ready to file."],
-    ["IRC SWT summary", "Salary or Wages Tax remittance breakdown for the period."],
-    ["Approver email",  "Pre-approval summary to your office for sign-off before stubs go out."],
-    ["Employee stubs",  "Branded PDF stubs emailed automatically once payroll is approved."],
-    ["QuickBooks IIF",  "General journal export for your existing QB books."],
+    ["BSP batch CSV",     "Bank-spec 12-column file. Upload directly to BSP Batch Manager."],
+    ["NASFund return",    "Monthly NCSL contribution file, AP-signed and ready to file."],
+    ["IRC SWT summary",   "Salary or Wages Tax remittance breakdown for the period."],
+    ["Approver email",    "Pre-approval summary to your office for sign-off before stubs go out."],
+    ["Employee stubs",    "Branded PDF stubs emailed automatically once payroll is approved."],
+    ["QuickBooks IIF",    "General journal export for your existing QB books."],
   ];
   outputs.forEach((o, i) => {
-    const yy = 398 + i * 26;
-    doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(11).text("·", 56, yy);
-    doc.fillColor(INK).font("Helvetica-Bold").fontSize(10.5).text(o[0], 68, yy, { width: 130 });
-    doc.fillColor(SOFT).font("Helvetica").fontSize(10).text(o[1], 200, yy, { width: doc.page.width - 250 });
+    const y = H2 - 405 - i * 24;
+    p2.drawText("·", { x: 54, y, size: 12, font: bold, color: GOLD });
+    p2.drawText(o[0], { x: 66, y, size: 10.5, font: bold, color: INK });
+    p2.drawText(o[1], { x: 200, y, size: 10, font: reg, color: SOFT });
   });
 
   // Pricing band
-  const pBand = 560;
-  doc.roundedRect(48, pBand, doc.page.width - 96, 60, 10).fillAndStroke(GOLD, GOLD);
-  doc.fillColor(NAVY).font("Helvetica-Bold").fontSize(14).text("Pricing", 64, pBand + 14);
-  doc.font("Helvetica").fontSize(10.5).fillColor(NAVY_DEEP).text(
-    "From PGK 9 per employee per fortnight (Standard tier). All-inclusive: pay stubs, BSP batch, NASFund/NCSL, IRC SWT, audit log. First fortnight is free so you can see actual output before deciding.",
-    64, pBand + 34, { width: doc.page.width - 128, lineGap: 1.5 });
+  const pY = 220;
+  p2.drawRectangle({ x: 48, y: pY - 60, width: W2 - 96, height: 60, color: GOLD });
+  p2.drawText("Pricing", { x: 64, y: pY - 24, size: 14, font: bold, color: NAVY });
+  drawWrapped(p2, reg, 10, NAVY_DEEP,
+    "From PGK 9 per employee per fortnight (Standard tier). All-inclusive: pay stubs, BSP " +
+    "batch, NASFund/NCSL, IRC SWT, audit log. First fortnight is free so you can see actual " +
+    "output before deciding.",
+    64, pY - 44, W2 - 128, 12);
 
   // CTA
-  const ctaY = pBand + 80;
-  doc.fillColor(INK).font("Helvetica-Bold").fontSize(13).text("Next step", 48, ctaY);
-  doc.fillColor(SOFT).font("Helvetica").fontSize(10.5).text(
-    "Send us a CSV of your current employee list and we'll show you the actual TeebeePay output for one fortnight — pay stubs, BSP batch, NASFund return — at no charge. Email info@teebeeaccountants.com.pg or call +675 300 0000.",
-    48, ctaY + 18, { width: doc.page.width - 96, lineGap: 1.8 });
+  p2.drawText("Next step", { x: 48, y: pY - 90, size: 13, font: bold, color: INK });
+  drawWrapped(p2, reg, 10.5, SOFT,
+    "Send us a CSV of your current employee list and we'll show you the actual TeebeePay " +
+    "output for one fortnight — pay stubs, BSP batch, NASFund return — at no charge. Email " +
+    "info@teebeeaccountants.com.pg or call +675 300 0000.",
+    48, pY - 110, W2 - 96, 14);
 
-  // Footer
-  doc.fillColor(MUTED).font("Helvetica").fontSize(9)
-     .text("Tee Bee Accountants Ltd · TeebeePay · www.teebeeaccountants.com.pg",
-           48, doc.page.height - 50, { width: doc.page.width - 96, align: "center" });
+  centerText(p2, reg, 9, MUTED,
+    "Tee Bee Accountants Ltd · TeebeePay · www.teebeeaccountants.com.pg",
+    30, W2);
 
-  doc.end();
-  const pdf = await done;
+  const bytes = await pdf.save();
   const filename = `TBA-brief-${co.replace(/[^A-Za-z0-9_-]+/g, "_") || "client"}.pdf`;
-  return new NextResponse(new Uint8Array(pdf), {
+  return new NextResponse(new Uint8Array(bytes), {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
@@ -187,4 +208,31 @@ export async function GET(req: Request) {
       "Cache-Control": "private, max-age=0, must-revalidate",
     },
   });
+}
+
+/* ── small text helpers (pdf-lib has no built-in word wrap) ───────── */
+
+function drawWrapped(page: any, font: any, size: number, color: any,
+                     text: string, x: number, y: number, maxWidth: number, lineHeight: number) {
+  const words = text.split(/\s+/);
+  let line = "";
+  let cursorY = y;
+  for (const w of words) {
+    const trial = line ? line + " " + w : w;
+    const width = font.widthOfTextAtSize(trial, size);
+    if (width > maxWidth && line) {
+      page.drawText(line, { x, y: cursorY, size, font, color });
+      cursorY -= lineHeight;
+      line = w;
+    } else {
+      line = trial;
+    }
+  }
+  if (line) page.drawText(line, { x, y: cursorY, size, font, color });
+}
+
+function centerText(page: any, font: any, size: number, color: any,
+                    text: string, y: number, pageWidth: number) {
+  const w = font.widthOfTextAtSize(text, size);
+  page.drawText(text, { x: (pageWidth - w) / 2, y, size, font, color });
 }
