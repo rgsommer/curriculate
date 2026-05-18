@@ -1830,7 +1830,30 @@ function actionPalette(action) {
 // holding" pattern (2+ "**TICKER**:" markers) and renders each ticker as
 // its own compact sub-card with a colored Call badge + bulletized prose.
 // Falls back to plain markdown-bold prose for other cards.
-function renderAdviceBody(body) {
+// Split a **Call:** value into a compact badge label + a longer detail
+// string. AI sometimes stuffs an entire sentence in there; we want the
+// badge to fit on one line, so extract just the action verb + immediate
+// price modifier and push the rest into the body bullets.
+function splitCallText(full) {
+  if (!full) return { label: null, detail: null };
+  const trimmed = full.trim();
+  // Try to capture: VERB (optional shares/qty) (optional price modifier)
+  // e.g. "HOLD at $134", "TRIM 20%", "EXIT or TRIM to < 5% of book",
+  //      "BUY 100 sh at $135", "SELL below $13", "ADD"
+  const m = trimmed.match(/^((?:BUY|SELL|TRIM|HOLD|EXIT|ADD)(?:\s+or\s+(?:BUY|SELL|TRIM|HOLD|EXIT|ADD))?(?:\s+\d+(?:\s*%|\s*sh)?)?(?:\s+(?:at|near|to|below|above|by)\s+(?:<\s*|>\s*)?[\$\d.,]+\s*[A-Za-z%]*(?:\s+of\s+[a-z]+)?)?)\s*[.,]?\s*(.*)$/i);
+  if (m) {
+    return { label: m[1].trim(), detail: m[2] ? m[2].trim() : null };
+  }
+  // Fallback: take everything before the first comma/period as the label
+  const splitIdx = trimmed.search(/[,.](?=\s|$)/);
+  if (splitIdx > 0 && splitIdx < 40) {
+    return { label: trimmed.slice(0, splitIdx).trim(), detail: trimmed.slice(splitIdx + 1).trim() || null };
+  }
+  // Last resort — truncate label, keep full text as detail
+  return { label: trimmed.length > 40 ? trimmed.slice(0, 38) + "…" : trimmed, detail: trimmed.length > 40 ? trimmed : null };
+}
+
+function renderAdviceBody(body, priceLookup = null) {
   if (!body) return null;
   const text = String(body).trim();
   if (!text) return null;
@@ -1845,29 +1868,37 @@ function renderAdviceBody(body) {
       return { ticker: m[1], body: text.slice(start, end).trim() };
     });
     return (
-      <div style={{ display: "grid", gap: 10, marginTop: 4 }}>
+      <div style={{ display: "grid", gap: 10, marginTop: 4, minWidth: 0 }}>
         {chunks.map((c, i) => {
           const callMatch = c.body.match(/\*\*Call:\s*([^*]+)\*\*\.?/i);
-          const action = callMatch ? callMatch[1].trim() : null;
-          const pal = actionPalette(action);
+          const { label: actionLabel, detail: actionDetail } = splitCallText(callMatch ? callMatch[1] : null);
+          const pal = actionPalette(actionLabel);
           const bodyClean = c.body.replace(/\*\*Call:[^*]+\*\*\.?\s*/i, "").trim();
-          // Split into sentences for readability — each "X. Y" becomes a bullet
+          // Bullet list of sentences — prepend the action detail if any
           const sentences = bodyClean
             .split(/\s*\.\s+(?=[A-Z*\d])/)
             .map(s => s.replace(/\.+$/, "").trim())
             .filter(s => s.length > 3);
+          const allSentences = actionDetail ? [actionDetail, ...sentences] : sentences;
+          // Current price lookup for ticker
+          const px = priceLookup ? priceLookup(c.ticker) : null;
           return (
-            <div key={i} style={{ padding: "10px 14px", background: "var(--sa-panel-2)", borderRadius: 8, borderLeft: pal ? `3px solid ${pal.fg}` : "3px solid var(--sa-border)" }}>
+            <div key={i} style={{ padding: "10px 14px", background: "var(--sa-panel-2)", borderRadius: 8, borderLeft: pal ? `3px solid ${pal.fg}` : "3px solid var(--sa-border)", minWidth: 0, overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
                 <span style={{ fontWeight: 700, fontSize: 15, color: "var(--sa-text)" }}>{c.ticker}</span>
-                {pal && action && (
-                  <span style={{ background: pal.bg, color: pal.fg, padding: "2px 9px", borderRadius: 99, fontSize: 11, fontWeight: 700, letterSpacing: ".04em", whiteSpace: "nowrap" }}>
-                    {action}
+                {px && (
+                  <span className="sa-amount" style={{ fontSize: 12, color: "var(--sa-text-2)", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
+                    ${px.price?.toFixed(2)} {px.currency || ""}
+                  </span>
+                )}
+                {pal && actionLabel && (
+                  <span style={{ background: pal.bg, color: pal.fg, padding: "2px 9px", borderRadius: 99, fontSize: 11, fontWeight: 700, letterSpacing: ".04em" }}>
+                    {actionLabel}
                   </span>
                 )}
               </div>
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.55, color: "var(--sa-text-2)" }}>
-                {sentences.map((s, j) => (
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.55, color: "var(--sa-text-2)", wordBreak: "break-word", overflowWrap: "anywhere" }}>
+                {allSentences.map((s, j) => (
                   <li key={j} style={{ marginBottom: 3 }}>{renderInlineBold(s)}</li>
                 ))}
               </ul>
@@ -1881,9 +1912,9 @@ function renderAdviceBody(body) {
   // Fallback: plain paragraphs with bold markdown processed.
   const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 0);
   return (
-    <div>
+    <div style={{ minWidth: 0 }}>
       {paragraphs.map((p, i) => (
-        <p key={i} style={{ margin: "0 0 8px 0", lineHeight: 1.6 }}>{renderInlineBold(p)}</p>
+        <p key={i} style={{ margin: "0 0 8px 0", lineHeight: 1.6, wordBreak: "break-word", overflowWrap: "anywhere" }}>{renderInlineBold(p)}</p>
       ))}
     </div>
   );
@@ -1893,6 +1924,18 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
   // Per-ticker P/L (CAD) used to annotate each rec row with the position's
   // current performance. Recomputed when prices or basis change.
   const pnlMap = useMemo(() => pnlByTicker(user.positions, user.fxUsdCad || 1.37), [user.positions, user.fxUsdCad]);
+  // Build a ticker → { price, currency } lookup from the user's positions
+  // so per-ticker advice cards can display the current price next to the
+  // ticker symbol. Uses the native trading currency of each position.
+  const priceLookup = useMemo(() => {
+    const m = {};
+    for (const p of user.positions || []) {
+      if (m[p.ticker]) continue;
+      if (p.ccy === "USD" && p.priceUsd != null) m[p.ticker] = { price: p.priceUsd, currency: "USD" };
+      else if (p.ccy === "CAD" && p.priceCad != null) m[p.ticker] = { price: p.priceCad, currency: "CAD" };
+    }
+    return (ticker) => m[ticker] || null;
+  }, [user.positions]);
   const [consensusBusy, setConsensusBusy] = useState(false);
   const [consensusData, setConsensusData] = useState(null); // { consensus, alternatives, sources }
   const [busy, setBusy] = useState(false);
@@ -2108,7 +2151,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
             </h3>
             {hasRecs ? (
               <>
-                {parsed.intro && renderAdviceBody(parsed.intro)}
+                {parsed.intro && renderAdviceBody(parsed.intro, priceLookup)}
                 <RecsTable
                   recs={parsed.recs}
                   onExecuteRec={onExecuteRec}
@@ -2122,7 +2165,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
               // No structured recs detected — render with the smart body
               // renderer: per-ticker mini-cards when the briefing emitted
               // "Signals per holding" content, otherwise prose with bold.
-              renderAdviceBody(c.body)
+              renderAdviceBody(c.body, priceLookup)
             )}
             {c.meta && <div className="meta">{c.meta}</div>}
           </div>
@@ -2149,12 +2192,12 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
                 </h3>
                 {hasRecs ? (
                   <>
-                    {parsed.intro && renderAdviceBody(parsed.intro)}
+                    {parsed.intro && renderAdviceBody(parsed.intro, priceLookup)}
                     <RecsTable recs={parsed.recs} onExecuteRec={onExecuteRec} executedRecKeys={executedRecKeys} recKey={recKey} pnlMap={pnlMap} />
                     {parsed.outro && <p style={{ marginTop: 10, fontStyle: "italic", color: "var(--sa-text-2)" }}>{renderInlineBold(parsed.outro)}</p>}
                   </>
                 ) : (
-                  renderAdviceBody(c.body)
+                  renderAdviceBody(c.body, priceLookup)
                 )}
                 {c.meta && <div className="meta">{c.meta}</div>}
               </div>
@@ -6192,6 +6235,13 @@ body.stocks-app-mode {
   background: var(--sa-panel); border: 1px solid var(--sa-border);
   border-radius: 14px; padding: 22px 24px; margin-bottom: 14px;
   border-left: 4px solid var(--sa-accent-2); box-shadow: var(--sa-shadow-sm);
+  /* Contain long content (AI sometimes emits a single-line URL or a very
+     long Call: badge) so it can't push the card past its parent's width. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 .sa-advice-card.warn { border-left-color: var(--sa-amber); background: linear-gradient(to right, #fffbeb 0%, #fff 8%); }
 .sa-advice-card.danger { border-left-color: var(--sa-red); background: linear-gradient(to right, #fef2f2 0%, #fff 8%); }
