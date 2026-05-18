@@ -36,6 +36,7 @@ import {
   ScanLine,
   Timer,
   GraduationCap,
+  Percent,
 } from "lucide-react";
 
 const COLORS = {
