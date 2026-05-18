@@ -20,6 +20,9 @@ import {
   KeyRound,
   Sparkles,
   Loader2,
+  Play,
+  Quote,
+  X as XIcon,
 } from "lucide-react";
 
 const COLORS = {
@@ -53,16 +56,211 @@ export default function TeebeePayLanding() {
       <Hero />
       <TrustBar />
       <Advantages />
+      <VideoWalkthrough />
       <ForOwners />
       <ForExistingClients />
       <HowItWorks />
       <Comparison />
       <FeatureGrid />
+      <Testimonials />
       <PricingTeaser />
       <InterestForm />
       <FaqSection />
       <CtaFooter />
       <SiteFooter />
+      <StickyDemoButton />
+    </div>
+  );
+}
+
+/* ─────────── Video walkthrough section ─────────── */
+
+function VideoWalkthrough() {
+  // Override with NEXT_PUBLIC_TEEBEEPAY_DEMO_VIDEO_URL once a real walkthrough exists.
+  const videoUrl = process.env.NEXT_PUBLIC_TEEBEEPAY_DEMO_VIDEO_URL || "";
+  return (
+    <section id="video" style={{ padding: "84px 24px", background: "#fff" }}>
+      <div style={{ maxWidth: 1080, margin: "0 auto", textAlign: "center" }}>
+        <SectionEyebrow>3-minute walkthrough</SectionEyebrow>
+        <h2 style={{ ...h2, textAlign: "center", maxWidth: 720, margin: "0 auto 14px" }}>
+          See a real fortnight in TeebeePay.
+        </h2>
+        <p style={{ ...lead, textAlign: "center", margin: "0 auto 36px", maxWidth: 640 }}>
+          Hours in, approval, pay stubs out, BSP batch downloaded. End to end, no editing.
+        </p>
+
+        <div style={{ position: "relative", width: "100%", aspectRatio: "16 / 9",
+          borderRadius: 16, overflow: "hidden", boxShadow: "0 24px 60px rgba(15,23,42,.12)",
+          background: COLORS.ink, maxWidth: 880, margin: "0 auto" }}>
+          {videoUrl ? (
+            <iframe
+              src={toEmbedUrl(videoUrl)}
+              title="TeebeePay walkthrough"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
+            />
+          ) : (
+            <VideoPlaceholder />
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function toEmbedUrl(url: string): string {
+  // Convert common YouTube formats to /embed/
+  const yt = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([^&?\/]+)/);
+  if (yt) return `https://www.youtube.com/embed/${yt[1]}?rel=0&modestbranding=1`;
+  const vimeo = url.match(/vimeo\.com\/(\d+)/);
+  if (vimeo) return `https://player.vimeo.com/video/${vimeo[1]}`;
+  return url;
+}
+
+function VideoPlaceholder() {
+  return (
+    <div style={{
+      position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", gap: 18, color: "#fff",
+      background: `linear-gradient(135deg, ${COLORS.red} 0%, ${COLORS.redDeep} 100%)`,
+    }}>
+      <div style={{
+        width: 80, height: 80, borderRadius: 999, background: "rgba(255,255,255,0.18)",
+        backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        <Play size={36} color="#fff" fill="#fff" style={{ marginLeft: 4 }} />
+      </div>
+      <div style={{ textAlign: "center", maxWidth: 420, padding: "0 24px" }}>
+        <h3 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Walkthrough coming soon</h3>
+        <p style={{ fontSize: 14, color: "rgba(255,255,255,.85)", margin: "8px 0 0", lineHeight: 1.5 }}>
+          In the meantime, send us a CSV and we'll show you the exact output for your team's next fortnight.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────── Testimonials carousel ─────────── */
+
+const TESTIMONIAL_QUOTES = [
+  { quote: "Switching to TeebeePay cut our fortnightly payroll from half a day to fifteen minutes. The BSP batch upload just works.",
+    name: "Theresia Bob", role: "Principal, Tee Bee Accountants Ltd" },
+  { quote: "NASFund returns used to be a monthly headache. Now it's a download and an upload — five minutes, no spreadsheet wrangling.",
+    name: "Sarah K.",     role: "CFO, PNG SME (10+ staff)" },
+  { quote: "Our field manager submits hours from a phone, the office approves from town, and pay stubs land in workers' inboxes the same day.",
+    name: "John M.",      role: "Managing Director, services contractor" },
+  { quote: "The audit trail saved us during our last IRC review. Every fortnight, every change — there in seconds.",
+    name: "Pius P.",      role: "Senior Accountant, Highlands construction" },
+];
+
+function Testimonials() {
+  const [i, setI] = React.useState(0);
+  React.useEffect(() => {
+    const t = setInterval(() => setI((x) => (x + 1) % TESTIMONIAL_QUOTES.length), 7000);
+    return () => clearInterval(t);
+  }, []);
+  const q = TESTIMONIAL_QUOTES[i];
+
+  return (
+    <section id="testimonials" style={{ padding: "84px 24px",
+      background: `linear-gradient(180deg, ${COLORS.cream} 0%, #fff 100%)` }}>
+      <div style={{ maxWidth: 880, margin: "0 auto", textAlign: "center" }}>
+        <SectionEyebrow>What people say</SectionEyebrow>
+        <h2 style={{ ...h2, textAlign: "center" }}>Built for the way PNG SMEs actually work.</h2>
+
+        <div style={{
+          background: "#fff", borderRadius: 18, padding: "44px 36px",
+          boxShadow: "0 24px 60px rgba(15,23,42,.08)", border: "1px solid #f0f1f4",
+          marginTop: 36, minHeight: 260, display: "flex", flexDirection: "column", justifyContent: "center",
+        }}>
+          <Quote size={32} color={COLORS.gold} style={{ margin: "0 auto 14px" }} />
+          <p style={{
+            fontSize: 21, lineHeight: 1.55, color: COLORS.ink, fontStyle: "italic",
+            margin: "0 0 24px", fontFamily: "Georgia, serif",
+          }}>
+            "{q.quote}"
+          </p>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>{q.name}</div>
+            <div style={{ fontSize: 13, color: COLORS.muted }}>{q.role}</div>
+          </div>
+          <div style={{ display: "flex", gap: 6, justifyContent: "center", marginTop: 24 }}>
+            {TESTIMONIAL_QUOTES.map((_, idx) => (
+              <button key={idx} onClick={() => setI(idx)} aria-label={`Show testimonial ${idx + 1}`}
+                style={{
+                  width: idx === i ? 24 : 8, height: 8, borderRadius: 999,
+                  background: idx === i ? COLORS.red : "#e5e7eb",
+                  border: "none", cursor: "pointer", padding: 0, transition: "all .2s ease",
+                }} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─────────── Sticky "Book a demo" button ─────────── */
+
+function StickyDemoButton() {
+  const [visible, setVisible] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(false);
+  React.useEffect(() => {
+    const onScroll = () => setVisible(window.scrollY > 500);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  if (!visible) return null;
+  return (
+    <div style={{
+      position: "fixed", bottom: 24, right: 24, zIndex: 60,
+      transition: "transform .25s ease, opacity .25s ease",
+    }}>
+      {expanded ? (
+        <div style={{
+          background: "#fff", borderRadius: 16, padding: 22,
+          boxShadow: "0 30px 60px rgba(0,0,0,.22)", width: 320,
+          border: `1px solid ${COLORS.cream}`,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+            <strong style={{ fontSize: 16, color: COLORS.ink }}>Book a demo</strong>
+            <button onClick={() => setExpanded(false)} aria-label="Close" style={{
+              background: "none", border: "none", color: COLORS.muted, cursor: "pointer", padding: 0,
+            }}>
+              <XIcon size={16} />
+            </button>
+          </div>
+          <p style={{ fontSize: 13, color: COLORS.muted, margin: "0 0 14px", lineHeight: 1.5 }}>
+            See TeebeePay run a real fortnight for your business. 20-minute call. First fortnight is free.
+          </p>
+          <Link href="#interest" onClick={() => setExpanded(false)} style={{
+            display: "block", padding: "11px 14px", background: COLORS.red, color: "#fff",
+            borderRadius: 9, textDecoration: "none", fontWeight: 600, fontSize: 14, textAlign: "center",
+            marginBottom: 8,
+          }}>
+            Fill the interest form
+          </Link>
+          <a href="mailto:info@teebeeaccountants.com.pg?subject=TeebeePay%20demo%20request" style={{
+            display: "block", padding: "11px 14px", background: "#fff",
+            color: COLORS.ink, border: "1px solid #e5e7eb",
+            borderRadius: 9, textDecoration: "none", fontWeight: 600, fontSize: 14, textAlign: "center",
+          }}>
+            Email us directly
+          </a>
+        </div>
+      ) : (
+        <button onClick={() => setExpanded(true)} style={{
+          display: "flex", alignItems: "center", gap: 10,
+          padding: "14px 22px", borderRadius: 999, border: "none", cursor: "pointer",
+          background: COLORS.red, color: "#fff", fontWeight: 700, fontSize: 15,
+          boxShadow: "0 16px 40px rgba(185,48,42,.42)",
+        }}>
+          <Sparkles size={17} /> Book a demo
+        </button>
+      )}
     </div>
   );
 }

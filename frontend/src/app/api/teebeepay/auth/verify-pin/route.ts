@@ -2,9 +2,12 @@
 //
 // POST { email, pin, token } → returns { authToken } if valid (8h lifetime).
 import { NextResponse } from "next/server";
+import { authenticator } from "otplib";
 import {
   clientIp, rateOk, pinHash, signToken, verifyToken, getSecret,
 } from "../../_auth";
+
+authenticator.options = { window: 1 };
 
 interface PinTokenPayload {
   email: string;
@@ -41,6 +44,24 @@ export async function POST(req: Request) {
     const submitted = pinHash(pin, email, secret);
     if (submitted !== payload.ph) {
       return NextResponse.json({ error: "Incorrect PIN." }, { status: 401 });
+    }
+
+    // 2FA gate: if the user has TOTP enabled, require a valid totp code.
+    try {
+      const { db: dbFn, ObjectId } = await import("../../_auth");
+      const dbi = await dbFn();
+      const userRow: any = await dbi.collection("users").findOne({ _id: new ObjectId(payload.uid) });
+      if (userRow?.totp_enabled && userRow?.totp_secret) {
+        const totp = String(body.totp || "").replace(/\s/g, "");
+        if (!totp) {
+          return NextResponse.json({ error: "2fa_required", message: "Enter your authenticator code." }, { status: 401 });
+        }
+        if (!authenticator.check(totp, userRow.totp_secret)) {
+          return NextResponse.json({ error: "Authenticator code didn't match." }, { status: 401 });
+        }
+      }
+    } catch (e) {
+      console.warn("[verify-pin] 2fa check failed open:", e);
     }
 
     const authToken = signToken({

@@ -13,6 +13,7 @@ import {
   Building2, Users, FileText, CheckCircle2, AlertCircle, Mail,
   Plus, X, Edit2, Send, Download, Settings, UserPlus, Trash2,
   BarChart3, Percent, Upload, Image as ImageIcon, ClipboardList, Activity,
+  ShieldCheck, NotebookPen, AlertTriangle,
 } from "lucide-react";
 
 const C = {
@@ -197,9 +198,10 @@ function Centered({ children }) {
 /* ─────────── Login ─────────── */
 
 function LoginCard({ onSignedIn }) {
-  const [step, setStep] = useState("email");
+  const [step, setStep] = useState("email");   // email | pin | totp
   const [email, setEmail] = useState("");
   const [pin, setPin] = useState("");
+  const [totp, setTotp] = useState("");
   const [pinToken, setPinToken] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -219,9 +221,20 @@ function LoginCard({ onSignedIn }) {
   async function verifyPin() {
     setError(""); setSubmitting(true);
     try {
-      const j = await api("/api/teebeepay/auth/verify-pin", {
-        method: "POST", body: JSON.stringify({ email: email.trim().toLowerCase(), pin: pin.trim(), token: pinToken }),
+      const res = await fetch("/api/teebeepay/auth/verify-pin", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(), pin: pin.trim(),
+          token: pinToken, totp: totp.trim() || undefined,
+        }),
       });
+      const j = await res.json();
+      if (res.status === 401 && j.error === "2fa_required") {
+        setError(""); setInfo("Enter the 6-digit code from your authenticator app.");
+        setStep("totp");
+        return;
+      }
+      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
       setToken(j.authToken); setMe(j.user); onSignedIn(j.user);
     } catch (e) { setError(e.message); }
     finally { setSubmitting(false); }
@@ -243,7 +256,7 @@ function LoginCard({ onSignedIn }) {
         </div>
         {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
         {info && step === "pin" && <FlashBox type="info" icon={<Mail size={16} />}>{info}</FlashBox>}
-        {step === "email" ? (
+        {step === "email" && (
           <>
             <Label>Email address</Label>
             <input type="email" placeholder="you@company.com" value={email}
@@ -257,7 +270,8 @@ function LoginCard({ onSignedIn }) {
               We'll email you a 6-digit code. No password needed.
             </p>
           </>
-        ) : (
+        )}
+        {step === "pin" && (
           <>
             <Label>6-digit code</Label>
             <input type="text" inputMode="numeric" maxLength={6} placeholder="••••••"
@@ -269,6 +283,23 @@ function LoginCard({ onSignedIn }) {
                           : <>Sign in <KeyRound size={16} style={{ marginLeft: 6 }} /></>}
             </button>
             <button onClick={() => { setStep("email"); setPin(""); setError(""); setInfo(""); }} style={btnGhost}>← Use a different email</button>
+          </>
+        )}
+        {step === "totp" && (
+          <>
+            <Label>Authenticator code</Label>
+            <p style={{ fontSize: 13, color: C.muted, marginTop: -2, marginBottom: 10 }}>
+              Open your authenticator app (Google Authenticator, Authy, 1Password…) and enter the 6-digit code for TeebeePay.
+            </p>
+            <input type="text" inputMode="numeric" maxLength={6} placeholder="••••••"
+              value={totp} onChange={(e) => setTotp(e.target.value.replace(/\D/g, ""))}
+              onKeyDown={(e) => e.key === "Enter" && totp.length === 6 && verifyPin()} autoFocus
+              style={{ ...input, letterSpacing: 6, fontSize: 22, textAlign: "center", fontWeight: 700 }} />
+            <button onClick={verifyPin} disabled={totp.length !== 6 || submitting} style={btnPrimary}>
+              {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 8 }} /> Verifying…</>
+                          : <>Verify &amp; sign in <ArrowRight size={16} style={{ marginLeft: 6 }} /></>}
+            </button>
+            <button onClick={() => { setStep("pin"); setTotp(""); setError(""); setInfo(""); }} style={btnGhost}>← Back</button>
           </>
         )}
       </div>
@@ -1021,6 +1052,7 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [baseline, setBaseline] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -1030,6 +1062,9 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
         const active = j.employees.filter((e) => e.is_active);
         setEmployees(active);
         setCompany(c);
+        // Load baseline for anomaly detection (best-effort; ignore errors)
+        try { setBaseline(await api(`/api/teebeepay/companies/${companyId}/period-baseline`)); }
+        catch {}
 
         if (cloneFromPeriodId) {
           // Clone mode: pre-fill grid + period dates from the source period.
@@ -1133,6 +1168,7 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
 
       {info && <FlashBox type="info" icon={<CheckCircle2 size={16} />}>{info}</FlashBox>}
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <AnomalyBanner employees={employees} grid={grid} company={company} baseline={baseline} />
 
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
         <table className="tbp-grid" style={tableStyle}>
@@ -1177,6 +1213,58 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
           {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</>
                       : <>Submit for approval <ArrowRight size={16} style={{ marginLeft: 6 }} /></>}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────── Anomaly banner ─────────── */
+
+function AnomalyBanner({ employees, grid, company, baseline }) {
+  if (!baseline?.baseline || baseline.baseline.n_samples === 0) return null;
+
+  // Estimate this run's headcount + gross from the grid (gross = hours × rate).
+  let headcount = 0, estGross = 0;
+  for (const e of (employees || [])) {
+    const h = Number(grid[e.id]?.hours) || 0;
+    if (h <= 0) continue;
+    headcount++;
+    if (e.pay_type === "salary") {
+      // periods per year — fortnightly default; use company.pay_interval
+      const ppy = company?.pay_interval === "weekly" ? 52 : company?.pay_interval === "monthly" ? 12 : 26;
+      estGross += (Number(e.annual_salary) || 0) / ppy;
+    } else {
+      estGross += h * (Number(e.hourly_rate) || 0);
+    }
+  }
+
+  const bGross = baseline.baseline.gross_median || 0;
+  const bHead  = baseline.baseline.headcount_median || 0;
+  const issues = [];
+  if (bGross > 0) {
+    const pct = (estGross - bGross) / bGross;
+    if (Math.abs(pct) >= 0.25 && estGross > 0) {
+      issues.push(`Estimated gross K${estGross.toFixed(0)} is ${pct > 0 ? "+" : ""}${(pct * 100).toFixed(0)}% vs the median of the last ${baseline.baseline.n_samples} periods (K${bGross.toFixed(0)})`);
+    }
+  }
+  if (bHead > 0 && headcount > 0) {
+    const diff = headcount - bHead;
+    if (Math.abs(diff) >= Math.max(2, bHead * 0.25)) {
+      issues.push(`${headcount} active employees this run vs ${bHead} typical — ${diff > 0 ? "+" : ""}${diff}`);
+    }
+  }
+
+  if (!issues.length) return null;
+  return (
+    <div style={{
+      background: "#fffbe6", border: "1px solid #fde68a", color: "#9c6c00",
+      borderRadius: 10, padding: "12px 14px", marginBottom: 14,
+      display: "flex", gap: 10, alignItems: "flex-start",
+    }}>
+      <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+      <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+        <strong>Worth a second look.</strong> {issues.join(" · ")}.
+        {" "}This is informational only — the run still saves. If everything's right, ignore.
       </div>
     </div>
   );
@@ -1251,6 +1339,11 @@ function PeriodDetail({ me, periodId, onBack, onClone }) {
       <p style={{ color: C.muted, fontSize: 14, margin: "0 0 12px" }}>
         Pay date {period.pay_date} · {entries.length} entries
       </p>
+
+      {me?.clearance >= 2 && (
+        <PeriodNotes periodId={periodId} initialNotes={period.period_notes || ""}
+          author={period.period_notes_by || null} updatedAt={period.period_notes_at || null} />
+      )}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
         <button onClick={() => authedDownload(downloadHref("archive"),
@@ -1936,6 +2029,38 @@ function ProfileDialog({ me, required, onClose, onSaved }) {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [tfa, setTfa] = useState(null); // null | { secret, qr, otpauth, code, ... } during setup
+  const [tfaCode, setTfaCode] = useState("");
+  const [tfaErr, setTfaErr] = useState("");
+  const [disableCode, setDisableCode] = useState("");
+
+  async function startTfa() {
+    setTfaErr("");
+    try {
+      const j = await api("/api/teebeepay/auth/2fa/setup", { method: "POST" });
+      setTfa(j); setTfaCode("");
+    } catch (e) { setTfaErr(e.message); }
+  }
+  async function confirmTfa() {
+    setTfaErr("");
+    try {
+      await api("/api/teebeepay/auth/2fa/verify-setup", { method: "POST", body: JSON.stringify({ code: tfaCode }) });
+      setTfa(null); setTfaCode("");
+      // refresh /me
+      const j = await api("/api/teebeepay/me");
+      onSaved({ totp_enabled: !!j.user.totp_enabled });
+    } catch (e) { setTfaErr(e.message); }
+  }
+  async function disableTfa() {
+    setTfaErr("");
+    if (!disableCode) { setTfaErr("Enter a current authenticator code to confirm."); return; }
+    try {
+      await api("/api/teebeepay/auth/2fa/disable", { method: "POST", body: JSON.stringify({ code: disableCode }) });
+      setDisableCode("");
+      const j = await api("/api/teebeepay/me");
+      onSaved({ totp_enabled: !!j.user.totp_enabled });
+    } catch (e) { setTfaErr(e.message); }
+  }
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   async function save() {
     setError(""); setSubmitting(true);
@@ -1966,6 +2091,76 @@ function ProfileDialog({ me, required, onClose, onSaved }) {
       </Row>
       <Field label="Email"><input style={{ ...input, background: "#fafbfc", color: C.muted }} value={me.email} readOnly /></Field>
       <Field label="Role"><input style={{ ...input, background: "#fafbfc", color: C.muted }} value={me.role} readOnly /></Field>
+
+      {!required && (
+        <FieldGroup label="Two-factor authentication (TOTP)">
+          {me.totp_enabled ? (
+            <>
+              <p style={{ fontSize: 13, color: "#166534", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 6 }}>
+                <CheckCircle2 size={14} /> Active. Sign-in requires your authenticator code.
+              </p>
+              <Row>
+                <Field label="Authenticator code">
+                  <input style={input} value={disableCode}
+                    onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="••••••" inputMode="numeric" maxLength={6} />
+                </Field>
+                <Field label=" ">
+                  <button onClick={disableTfa} type="button" style={{ ...btnGhostLg, color: "#991b1b", borderColor: "#fecaca" }}>
+                    Disable 2FA
+                  </button>
+                </Field>
+              </Row>
+              {tfaErr && <FlashBox type="error" icon={<AlertCircle size={16} />}>{tfaErr}</FlashBox>}
+            </>
+          ) : tfa ? (
+            <>
+              <p style={{ fontSize: 13, color: C.inkSoft, margin: "0 0 10px" }}>
+                Scan this with Google Authenticator, Authy, 1Password, or any TOTP app — then enter the 6-digit code it shows.
+              </p>
+              <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 12 }}>
+                <img src={tfa.qr} alt="QR code" style={{ width: 160, height: 160, border: "1px solid #e5e7eb", borderRadius: 8 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.06, marginBottom: 6 }}>
+                    Or enter manually
+                  </div>
+                  <div style={{ fontFamily: "ui-monospace, Menlo, Consolas, monospace", fontSize: 13,
+                    background: "#f3f4f6", padding: "8px 10px", borderRadius: 6, wordBreak: "break-all" }}>
+                    {tfa.secret}
+                  </div>
+                </div>
+              </div>
+              <Row>
+                <Field label="Code from app *">
+                  <input style={input} inputMode="numeric" maxLength={6} value={tfaCode}
+                    onChange={(e) => setTfaCode(e.target.value.replace(/\D/g, ""))}
+                    placeholder="••••••" />
+                </Field>
+                <Field label=" ">
+                  <button onClick={confirmTfa} type="button" disabled={tfaCode.length !== 6} style={btnPrimaryInline}>
+                    Enable 2FA
+                  </button>
+                </Field>
+              </Row>
+              <button onClick={() => setTfa(null)} type="button" style={{ ...btnGhostLg, marginTop: 4 }}>
+                Cancel enrolment
+              </button>
+              {tfaErr && <FlashBox type="error" icon={<AlertCircle size={16} />}>{tfaErr}</FlashBox>}
+            </>
+          ) : (
+            <>
+              <p style={{ fontSize: 13, color: C.muted, margin: "0 0 10px" }}>
+                Adds a one-time code on every sign-in (alongside email-PIN). Strongly recommended for the system owner.
+              </p>
+              <button onClick={startTfa} type="button" style={btnPrimaryInline}>
+                <ShieldCheck size={14} style={{ marginRight: 6 }} /> Set up 2FA
+              </button>
+              {tfaErr && <FlashBox type="error" icon={<AlertCircle size={16} />}>{tfaErr}</FlashBox>}
+            </>
+          )}
+        </FieldGroup>
+      )}
+
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
         {!required && <button onClick={onClose} style={btnGhostLg}>Cancel</button>}
         <button onClick={save} disabled={!canSubmit || submitting} style={btnPrimaryInline}>
@@ -2606,6 +2801,66 @@ function InfoRow({ k, v }) {
     <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid #f3f4f6", fontSize: 13 }}>
       <span style={{ color: C.muted }}>{k}</span>
       <span style={{ color: C.ink, fontWeight: 500 }}>{v}</span>
+    </div>
+  );
+}
+
+/* ─────────── Per-period notes ─────────── */
+
+function PeriodNotes({ periodId, initialNotes, author, updatedAt }) {
+  const [notes, setNotes] = useState(initialNotes || "");
+  const [open, setOpen] = useState(!!initialNotes);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(updatedAt || null);
+  const [savedBy, setSavedBy] = useState(author || null);
+  const [error, setError] = useState("");
+
+  async function save() {
+    setSaving(true); setError("");
+    try {
+      await api(`/api/teebeepay/payroll-periods/${periodId}`, {
+        method: "PATCH", body: JSON.stringify({ period_notes: notes }),
+      });
+      setSavedAt(new Date());
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  }
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} style={{
+        ...btnGhostLg, marginBottom: 14,
+      }}>
+        <NotebookPen size={14} style={{ marginRight: 6 }} /> Add a note for this period
+      </button>
+    );
+  }
+
+  return (
+    <div style={{
+      background: "#fffbe6", border: "1px solid #fde68a", borderRadius: 10,
+      padding: 16, marginBottom: 18,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <strong style={{ fontSize: 13, color: "#9c6c00", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <NotebookPen size={14} /> Period notes (visible to bookkeeper+)
+        </strong>
+        {savedAt && savedBy && (
+          <span style={{ fontSize: 11, color: C.muted }}>
+            saved by {savedBy} · {new Date(savedAt).toISOString().slice(0, 16).replace("T", " ")}
+          </span>
+        )}
+      </div>
+      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4}
+        placeholder="e.g. Mark was sick all fortnight; advance to Jerry to be repaid next period; office closed Friday."
+        style={{ ...input, background: "#fff", minHeight: 70 }} />
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+        <button onClick={() => setOpen(false)} style={btnGhostLg}>Close</button>
+        <button onClick={save} disabled={saving} style={btnPrimaryInline}>
+          {saving ? <><Loader2 className="tbp-spin" size={14} style={{ marginRight: 6 }} /> Saving…</> : "Save note"}
+        </button>
+      </div>
     </div>
   );
 }

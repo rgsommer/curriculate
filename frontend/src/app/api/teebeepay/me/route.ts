@@ -19,6 +19,7 @@ export async function GET(req: Request) {
         company_id: u.company_id,
         first_name: row?.first_name || "",
         last_name: row?.last_name || "",
+        totp_enabled: !!row?.totp_enabled,
       },
     });
   } catch (e: any) {

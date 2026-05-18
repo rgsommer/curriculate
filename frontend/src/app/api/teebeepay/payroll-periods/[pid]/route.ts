@@ -1,6 +1,7 @@
-// GET pay period + entries.
+// GET pay period + entries.  PATCH supports editing period_notes.
 import { NextResponse } from "next/server";
 import { readAuth, db, ObjectId } from "../../_auth";
+import { logAudit } from "../../_audit";
 
 export async function GET(req: Request, { params }: { params: Promise<{ pid: string }> }) {
   const u = readAuth(req);
@@ -32,6 +33,37 @@ export async function GET(req: Request, { params }: { params: Promise<{ pid: str
         };
       }),
     });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
+  }
+}
+
+// PATCH — currently supports period_notes only. Bookkeeper+ on their own
+// company; principal/system-owner across companies.
+export async function PATCH(req: Request, { params }: { params: Promise<{ pid: string }> }) {
+  const u = readAuth(req);
+  if (!u) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (u.clearance < 2) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const { pid } = await params;
+  const b = await req.json().catch(() => ({} as any));
+  try {
+    const dbi = await db();
+    const p: any = await dbi.collection("pay_periods").findOne({ _id: new ObjectId(pid) });
+    if (!p) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (u.clearance < 3 && u.company_id !== p.company_id.toString()) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const $set: any = { updated_at: new Date() };
+    if ("period_notes" in b) {
+      $set.period_notes = String(b.period_notes || "").slice(0, 4000);
+      $set.period_notes_by = u.email;
+      $set.period_notes_at = new Date();
+    }
+    if (Object.keys($set).length <= 1) {
+      return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
+    }
+    await dbi.collection("pay_periods").updateOne({ _id: p._id }, { $set });
+    return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
   }
