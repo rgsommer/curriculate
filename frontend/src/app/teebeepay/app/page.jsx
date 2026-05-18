@@ -1813,9 +1813,48 @@ function ServiceFeesPage({ me, onBack }) {
 function ServiceFeeDialog({ onClose, onSaved }) {
   const [f, setF] = useState({ name: "", pct_of_gross: "", bank_code: "088",
     branch_code: "", account_no: "", account_name: "", notes: "" });
+  const [users, setUsers] = useState(null);
+  const [pick, setPick] = useState(""); // selected user id, "" for none, "__other__" for free text
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+
+  // Pull users that could plausibly be recipients (principal/system_owner/bookkeeper).
+  useEffect(() => {
+    (async () => {
+      try {
+        const j = await api("/api/teebeepay/users");
+        const eligible = (j.users || [])
+          .filter((u) => u.clearance >= 2 && u.is_active !== false)
+          .sort((a, b) => (b.clearance - a.clearance) || a.email.localeCompare(b.email));
+        setUsers(eligible);
+      } catch { setUsers([]); }
+    })();
+  }, []);
+
+  function userLabel(u) {
+    const full = `${u.first_name || ""} ${u.last_name || ""}`.trim();
+    return full ? `${full} (${u.email})` : u.email;
+  }
+
+  function onPickUser(uid) {
+    setPick(uid);
+    if (!uid || uid === "__other__") {
+      // clear name when going back to "Choose…" / "Other"
+      if (!uid) set("name", "");
+      return;
+    }
+    const u = (users || []).find((x) => x.id === uid);
+    if (!u) return;
+    const full = `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.email;
+    setF((x) => ({
+      ...x,
+      name: full,
+      // Pre-fill account_name only if it hasn't been edited yet
+      account_name: x.account_name || full,
+    }));
+  }
+
   async function save() {
     setError(""); setSubmitting(true);
     try { await api("/api/teebeepay/service-fees", { method: "POST", body: JSON.stringify(f) }); onSaved(); }
@@ -1826,7 +1865,23 @@ function ServiceFeeDialog({ onClose, onSaved }) {
     <Modal title="Add service-fee recipient" onClose={onClose}>
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
       <Row>
-        <Field label="Name *"><input style={input} value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Theresia Bob" autoFocus /></Field>
+        <Field label="Recipient *">
+          {users == null ? (
+            <input style={{ ...input, color: C.muted }} value="Loading users…" readOnly />
+          ) : (
+            <select style={input} value={pick} onChange={(e) => onPickUser(e.target.value)} autoFocus>
+              <option value="">— choose a user —</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>{userLabel(u)}</option>
+              ))}
+              <option value="__other__">Other (type a name)…</option>
+            </select>
+          )}
+          {pick === "__other__" && (
+            <input style={{ ...input, marginTop: 8 }} value={f.name}
+              onChange={(e) => set("name", e.target.value)} placeholder="Recipient name" />
+          )}
+        </Field>
         <Field label="% of gross *"><input style={input} type="number" step="0.1" value={f.pct_of_gross} onChange={(e) => set("pct_of_gross", e.target.value)} placeholder="e.g. 3" /></Field>
       </Row>
       <Row>
