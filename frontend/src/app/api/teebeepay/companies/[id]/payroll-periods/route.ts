@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { readAuth, db, ObjectId, makeApprovalToken } from "../../../_auth";
 import { calculate } from "../../../_payroll";
+import { logAudit } from "../../../_audit";
 
 const FROM = process.env.RESEND_PNGPAY_FROM_ADDRESS || process.env.RESEND_FROM_ADDRESS || "TeebeePay <noreply@curriculate.net>";
 const PUBLIC_URL = (process.env.PUBLIC_URL || "https://www.curriculate.net").replace(/\/+$/, "");
@@ -114,6 +115,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         } catch (e) { console.warn("[payroll-periods] approver email failed:", e); }
       }
     } catch (e) { console.warn("[payroll-periods] approver email step failed:", e); }
+
+    await logAudit({
+      actor_email: u.email, actor_kind: "user",
+      action: "payroll.submit",
+      resource_type: "pay_period", resource_id: periodId.toString(),
+      company_id: id,
+      details: { entries: inserted, period_start: b.period_start, period_end: b.period_end,
+                 approver_emailed: approverEmailedTo },
+    });
 
     return NextResponse.json({ ok: true, id: periodId.toString(), entries: inserted, approverEmailedTo });
   } catch (e: any) {

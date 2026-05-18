@@ -12,7 +12,7 @@ import {
   ArrowLeft, ArrowRight, Loader2, KeyRound, LogOut,
   Building2, Users, FileText, CheckCircle2, AlertCircle, Mail,
   Plus, X, Edit2, Send, Download, Settings, UserPlus, Trash2,
-  BarChart3, Percent, Upload, Image as ImageIcon,
+  BarChart3, Percent, Upload, Image as ImageIcon, ClipboardList, Activity,
 } from "lucide-react";
 
 const C = {
@@ -59,6 +59,13 @@ export default function TeebeePayApp() {
     })();
   }, []);
 
+  // Direct employees (clearance 0) to their self-serve portal once signed in.
+  useEffect(() => {
+    if (me && me.clearance === 0 && (view === "dashboard" || view === "loading")) {
+      setView("my_stubs");
+    }
+  }, [me, view]);
+
   function signOut() { setToken(null); setMe(null); _setMe(null); setView("login"); }
   function goCompany(id) { setSelectedCompanyId(id); setView("company"); }
   function goNewPeriod(id) { setClonePeriodId(null); setSelectedCompanyId(id); setView("new_period"); }
@@ -74,7 +81,8 @@ export default function TeebeePayApp() {
       {view !== "login" && <AppHeader me={me} onSignOut={signOut}
         onUsers={() => setView("users")}
         onServiceFees={() => setView("service_fees")}
-        onHome={() => setView("dashboard")}
+        onAuditLog={() => setView("audit_log")}
+        onHome={() => setView(me?.clearance === 0 ? "my_stubs" : "dashboard")}
         onProfile={() => setShowProfile(true)} />}
       {showProfile && me && (
         <ProfileDialog me={me} onClose={() => setShowProfile(false)}
@@ -102,6 +110,8 @@ export default function TeebeePayApp() {
       {view === "service_fees" && <ServiceFeesPage me={me} onBack={() => setView("dashboard")} />}
       {view === "employee" && <EmployeeProfile me={me} employeeId={selectedEmployeeId}
         onBack={() => setView("company")} onOpenPeriod={goPeriod} />}
+      {view === "audit_log" && <AuditLogPage me={me} onBack={() => setView("dashboard")} />}
+      {view === "my_stubs" && <MyStubsPortal me={me} />}
       <style>{`
         @keyframes tbp-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
         .tbp-spin { animation: tbp-spin 0.9s linear infinite; }
@@ -114,7 +124,7 @@ export default function TeebeePayApp() {
 
 /* ─────────── Header / shared bits ─────────── */
 
-function AppHeader({ me, onSignOut, onUsers, onServiceFees, onHome, onProfile }) {
+function AppHeader({ me, onSignOut, onUsers, onServiceFees, onHome, onProfile, onAuditLog }) {
   const displayName = me?.first_name || me?.last_name
     ? `${me.first_name || ""} ${me.last_name || ""}`.trim()
     : me?.email || "";
@@ -131,6 +141,11 @@ function AppHeader({ me, onSignOut, onUsers, onServiceFees, onHome, onProfile })
         {me?.clearance >= 4 && (
           <button onClick={onServiceFees} style={btnGhostSmall} title="Service fees">
             <Percent size={14} /> Fees
+          </button>
+        )}
+        {me?.clearance >= 2 && (
+          <button onClick={onAuditLog} style={btnGhostSmall} title="Audit log">
+            <Activity size={14} /> Log
           </button>
         )}
         {me?.clearance >= 3 && (

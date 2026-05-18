@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { db, ObjectId, readApprovalToken, ROLE_CLEARANCE } from "../_auth";
+import { logAudit } from "../_audit";
 
 const FROM = process.env.RESEND_PNGPAY_FROM_ADDRESS || process.env.RESEND_FROM_ADDRESS || "TeebeePay <noreply@curriculate.net>";
 const resend = new Resend(process.env.RESEND_PNGPAY_API_KEY || process.env.RESEND_API_KEY || "");
@@ -92,6 +93,13 @@ export async function POST(req: Request) {
       $set: { status: "draft", rejected_at: new Date(), rejected_by: payload.email,
               rejection_reason: String(body.reason || "").slice(0, 1000) || null },
     });
+    await logAudit({
+      actor_email: payload.email, actor_kind: "approval_link",
+      action: "payroll.reject",
+      resource_type: "pay_period", resource_id: period._id.toString(),
+      company_id: period.company_id.toString(),
+      details: { reason: String(body.reason || "").slice(0, 200) || null, via: "email_magic_link" },
+    });
     return NextResponse.json({ ok: true, status: "draft" });
   }
 
@@ -132,6 +140,14 @@ export async function POST(req: Request) {
       } catch { failed++; }
     }
   }
+
+  await logAudit({
+    actor_email: payload.email, actor_kind: "approval_link",
+    action: "payroll.approve",
+    resource_type: "pay_period", resource_id: period._id.toString(),
+    company_id: period.company_id.toString(),
+    details: { entries: entries.length, totalGross: r2(totalGross), stubsSent: sent, stubsFailed: failed, via: "email_magic_link" },
+  });
 
   return NextResponse.json({
     ok: true, status: "approved", totalGross: r2(totalGross),

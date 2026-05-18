@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { readAuth, db, ObjectId } from "../../../_auth";
+import { logAudit } from "../../../_audit";
 
 const FROM = process.env.RESEND_PNGPAY_FROM_ADDRESS || process.env.RESEND_FROM_ADDRESS || "TeebeePay <noreply@curriculate.net>";
 const resend = new Resend(process.env.RESEND_PNGPAY_API_KEY || process.env.RESEND_API_KEY || "");
@@ -86,6 +87,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ pid: st
         }
       }
     }
+
+    await logAudit({
+      actor_email: u.email, actor_kind: "user",
+      action: "payroll.approve",
+      resource_type: "pay_period", resource_id: period._id.toString(),
+      company_id: period.company_id.toString(),
+      details: { entries: entries.length, totalGross: r2(totalGross), stubsSent: sent, stubsFailed: failed, via: "app" },
+    });
 
     return NextResponse.json({ ok: true, totalGross: r2(totalGross), stubsSent: sent, stubsFailed: failed, serviceFees });
   } catch (e: any) {

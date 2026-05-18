@@ -3,6 +3,7 @@
 // POST → invite a new user (email + role); subsequent sign-in via email-PIN.
 import { NextResponse } from "next/server";
 import { readAuth, db, ObjectId, ROLE_CLEARANCE, clearanceOf } from "../_auth";
+import { logAudit } from "../_audit";
 
 export async function GET(req: Request) {
   const u = readAuth(req);
@@ -74,6 +75,13 @@ export async function POST(req: Request) {
       created_by: u.email,
     };
     const r = await dbi.collection("users").insertOne(doc);
+    await logAudit({
+      actor_email: u.email, actor_kind: "user",
+      action: "user.invite",
+      resource_type: "user", resource_id: r.insertedId.toString(),
+      company_id: b.company_id || null,
+      details: { invited_email: email, role, name: `${first_name} ${last_name}`.trim() },
+    });
     return NextResponse.json({ ok: true, id: r.insertedId.toString() });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });

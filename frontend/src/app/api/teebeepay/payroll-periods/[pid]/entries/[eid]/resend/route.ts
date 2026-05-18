@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { readAuth, db, ObjectId } from "../../../../../_auth";
+import { logAudit } from "../../../../../_audit";
 
 const FROM = process.env.RESEND_PNGPAY_FROM_ADDRESS || process.env.RESEND_FROM_ADDRESS || "TeebeePay <noreply@curriculate.net>";
 const resend = new Resend(process.env.RESEND_PNGPAY_API_KEY || process.env.RESEND_API_KEY || "");
@@ -72,6 +73,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ pid: st
     await dbi.collection("payroll_entries").updateOne({ _id: entry._id }, {
       $set: { last_resent_at: new Date(), last_resent_by: u.email },
       $inc: { resend_count: 1 },
+    });
+    await logAudit({
+      actor_email: u.email, actor_kind: "user",
+      action: "stub.resend",
+      resource_type: "payroll_entry", resource_id: entry._id.toString(),
+      company_id: period.company_id.toString(),
+      details: { to: emp.email, period_id: period._id.toString() },
     });
     return NextResponse.json({ ok: true });
   } catch (e: any) {
