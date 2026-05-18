@@ -880,20 +880,22 @@ export default function StocksAdvisorPage() {
           <div className="sa-brand">Stocks <span>Advisor</span></div>
           <nav className="sa-nav">
             {[
-              ["dashboard", "Dashboard"],
-              ["positions", "Positions"],
-              ["advice", "Advice"],
-              ["discover", "Discover"],
-              ["performance", "Performance"],
-              ["trades", "Trades"],
-              ["settings", "Settings"],
-            ].map(([k, label]) => (
+              ["dashboard", "Dashboard", "Dash"],
+              ["positions", "Positions", "Pos"],
+              ["advice", "Advice", "Advice"],
+              ["discover", "Discover", "Find"],
+              ["performance", "Performance", "Perf"],
+              ["trades", "Trades", "Trades"],
+              ["settings", "Settings", "⚙"],
+            ].map(([k, label, shortLabel]) => (
               <button
                 key={k}
                 className={currentTab === k ? "active" : ""}
                 onClick={() => setCurrentTab(k)}
               >
-                <span className="dot" /> {label}
+                <span className="dot" />
+                <span className="full-label">{label}</span>
+                <span className="short-label">{shortLabel}</span>
               </button>
             ))}
           </nav>
@@ -4369,6 +4371,7 @@ const TICKER_COLORS = [
 
 function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37 }) {
   const [range, setRange] = useState("1d");
+  const [mode, setMode] = useState("pct"); // "pct" = % change | "price" = native $ price
   const [busy, setBusy] = useState(false);
   const [data, setData] = useState({}); // { ticker: { points, currency } }
   const [failed, setFailed] = useState([]);
@@ -4448,21 +4451,40 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37 }) {
             );
           })()}
         </div>
-        <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
-          {[
-            ["1d", "1D"], ["3d", "3D"], ["7d", "7D"], ["30d", "30D"], ["1y", "1Y"], ["2y", "2Y"],
-          ].map(([v, label]) => (
-            <button
-              key={v}
-              onClick={() => setRange(v)}
-              style={{
-                padding: "5px 12px", fontSize: 12, fontWeight: 600,
-                border: "none", borderRadius: 6, cursor: "pointer",
-                background: range === v ? "var(--sa-accent)" : "transparent",
-                color: range === v ? "#fff" : "var(--sa-text-2)",
-              }}
-            >{label}</button>
-          ))}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+          <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
+            {[
+              ["1d", "1D"], ["3d", "3D"], ["7d", "7D"], ["30d", "30D"], ["1y", "1Y"], ["2y", "2Y"],
+            ].map(([v, label]) => (
+              <button
+                key={v}
+                onClick={() => setRange(v)}
+                style={{
+                  padding: "5px 12px", fontSize: 12, fontWeight: 600,
+                  border: "none", borderRadius: 6, cursor: "pointer",
+                  background: range === v ? "var(--sa-accent)" : "transparent",
+                  color: range === v ? "#fff" : "var(--sa-text-2)",
+                }}
+              >{label}</button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
+            {[
+              ["pct", "% change"], ["price", "$ price"],
+            ].map(([v, label]) => (
+              <button
+                key={v}
+                onClick={() => setMode(v)}
+                style={{
+                  padding: "5px 12px", fontSize: 11, fontWeight: 600,
+                  border: "none", borderRadius: 6, cursor: "pointer",
+                  background: mode === v ? "var(--sa-accent-2)" : "transparent",
+                  color: mode === v ? "#fff" : "var(--sa-text-2)",
+                }}
+                title={v === "pct" ? "Show % change relative to start of period (each line normalized)" : "Show actual price in native currency (each line on its own scale)"}
+              >{label}</button>
+            ))}
+          </div>
         </div>
       </div>
       {err && <div className="sa-err">{err}</div>}
@@ -4470,17 +4492,26 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37 }) {
       {!busy && !labels.length && !err && <div className="sa-muted" style={{ padding: 20, textAlign: "center" }}>No data returned.</div>}
       {labels.length > 0 && (
         <>
-          <MultiLineChart series={labels.map((t, i) => ({ ticker: t, points: data[t].points, color: colorFor(tickers.indexOf(t)) }))} range={range} />
-          {/* Legend with final % */}
+          <MultiLineChart series={labels.map((t, i) => ({ ticker: t, points: data[t].points, color: colorFor(tickers.indexOf(t)), currency: data[t].currency }))} range={range} mode={mode} />
+          {/* Legend — shows final % AND current price for each ticker.
+              The toggle above switches what the chart plots; the legend
+              keeps both numbers visible regardless of mode so a glance
+              gives you both pieces of info. */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 14, fontSize: 12 }}>
             {labels.map((t) => {
               const pts = data[t].points;
-              const finalPct = pts[pts.length - 1].pct;
+              const last = pts[pts.length - 1];
+              const finalPct = last.pct;
+              const lastPrice = last.price;
+              const ccy = data[t].currency || "USD";
               const color = colorFor(tickers.indexOf(t));
               return (
                 <div key={t} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ width: 10, height: 10, borderRadius: 2, background: color, display: "inline-block" }} />
                   <span style={{ fontWeight: 600 }}>{t}</span>
+                  <span className="sa-amount" style={{ color: "var(--sa-text)", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
+                    ${lastPrice?.toFixed(2)} {ccy}
+                  </span>
                   <span style={{ color: finalPct >= 0 ? "var(--sa-green)" : "var(--sa-red)", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
                     {finalPct >= 0 ? "+" : ""}{finalPct.toFixed(2)}%
                   </span>
@@ -4499,32 +4530,66 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37 }) {
   );
 }
 
-function MultiLineChart({ series, range }) {
-  const W = 720, H = 280, PADL = 44, PADR = 14, PADT = 14, PADB = 30;
-  // Pool all points to find min/max pct and time bounds
-  let minPct = Infinity, maxPct = -Infinity;
+function MultiLineChart({ series, range, mode = "pct" }) {
+  const W = 720, H = 280, PADL = 56, PADR = 14, PADT = 14, PADB = 30;
+
+  // In % mode all lines share one normalized Y axis (% change from start).
+  // In price mode each line has its own scale (TSLA at $400 and RUM at $5
+  // would otherwise be invisible on the same axis) — we normalize each
+  // line independently into the 0-1 Y range and label the axis with %
+  // change as the shared reference, plus per-line price labels at the
+  // right edge of the chart.
+  const valueKey = mode === "price" ? "price" : "pct";
+
+  // Time bounds — always pooled across all series
   let minT = Infinity, maxT = -Infinity;
   for (const s of series) {
     for (const p of s.points) {
-      if (p.pct < minPct) minPct = p.pct;
-      if (p.pct > maxPct) maxPct = p.pct;
       if (p.t < minT) minT = p.t;
       if (p.t > maxT) maxT = p.t;
     }
   }
-  if (!isFinite(minPct)) { minPct = -1; maxPct = 1; }
-  // Padding for nice axes
-  const padPct = (maxPct - minPct) * 0.08 || 1;
-  minPct -= padPct; maxPct += padPct;
-  // Ensure 0% line is visible
-  if (minPct > 0) minPct = -0.5;
-  if (maxPct < 0) maxPct = 0.5;
-  const pctRange = maxPct - minPct;
   const tRange = (maxT - minT) || 1;
-
   const xOf = (t) => PADL + ((t - minT) / tRange) * (W - PADL - PADR);
-  const yOf = (pct) => PADT + (1 - (pct - minPct) / pctRange) * (H - PADT - PADB);
-  const yOfZero = yOf(0);
+
+  // Per-series y normalization. For pct mode we use a global min/max so
+  // the gridlines mean something. For price mode each series is on its
+  // own 0-1 axis (with a 8% padding) since prices can't be combined.
+  let globalMin = Infinity, globalMax = -Infinity;
+  for (const s of series) {
+    for (const p of s.points) {
+      const v = p[valueKey];
+      if (v < globalMin) globalMin = v;
+      if (v > globalMax) globalMax = v;
+    }
+  }
+  if (!isFinite(globalMin)) { globalMin = -1; globalMax = 1; }
+
+  const seriesScale = (s) => {
+    if (mode === "pct") {
+      // Shared axis: ensure 0 is visible, add 8% padding
+      let lo = globalMin, hi = globalMax;
+      const pad = (hi - lo) * 0.08 || 1;
+      lo -= pad; hi += pad;
+      if (lo > 0) lo = -0.5;
+      if (hi < 0) hi = 0.5;
+      return { lo, hi };
+    }
+    // Per-line scale in price mode
+    let lo = Infinity, hi = -Infinity;
+    for (const p of s.points) { if (p.price < lo) lo = p.price; if (p.price > hi) hi = p.price; }
+    if (!isFinite(lo)) { lo = 0; hi = 1; }
+    const pad = (hi - lo) * 0.08 || (hi * 0.05) || 1;
+    return { lo: lo - pad, hi: hi + pad };
+  };
+
+  // Shared range (for axis gridlines + zero line) — only meaningful in pct mode
+  const sharedScale = seriesScale({ points: series.flatMap((s) => s.points) });
+  const yOfShared = (v) => PADT + (1 - (v - sharedScale.lo) / (sharedScale.hi - sharedScale.lo)) * (H - PADT - PADB);
+  const yOfSeries = (s, v) => {
+    const { lo, hi } = seriesScale(s);
+    return PADT + (1 - (v - lo) / (hi - lo || 1)) * (H - PADT - PADB);
+  };
 
   // X-axis tick labels — based on range
   const fmtTick = (t) => {
@@ -4537,32 +4602,45 @@ function MultiLineChart({ series, range }) {
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
-      {/* Y gridlines */}
+      {/* Y gridlines (always labeled in % for cross-series comparability) */}
       {[0, 0.25, 0.5, 0.75, 1].map((t) => {
         const y = PADT + t * (H - PADT - PADB);
-        const pct = maxPct - t * pctRange;
+        const pct = sharedScale.hi - t * (sharedScale.hi - sharedScale.lo);
         return (
           <g key={t}>
             <line x1={PADL} x2={W - PADR} y1={y} y2={y} stroke="#e4e8ef" strokeWidth="1" />
-            <text x={PADL - 8} y={y + 4} fontSize="10" fill="#7a8499" textAnchor="end">
-              {pct >= 0 ? "+" : ""}{pct.toFixed(pctRange < 4 ? 2 : 1)}%
-            </text>
+            {mode === "pct" && (
+              <text x={PADL - 8} y={y + 4} fontSize="10" fill="#7a8499" textAnchor="end">
+                {pct >= 0 ? "+" : ""}{pct.toFixed((sharedScale.hi - sharedScale.lo) < 4 ? 2 : 1)}%
+              </text>
+            )}
           </g>
         );
       })}
-      {/* Zero line — emphasized */}
-      <line x1={PADL} x2={W - PADR} y1={yOfZero} y2={yOfZero} stroke="#94a3b8" strokeWidth="1.2" strokeDasharray="3,3" />
+      {mode === "pct" && (
+        <line x1={PADL} x2={W - PADR} y1={yOfShared(0)} y2={yOfShared(0)} stroke="#94a3b8" strokeWidth="1.2" strokeDasharray="3,3" />
+      )}
+      {mode === "price" && (
+        <text x={PADL - 8} y={PADT + 6} fontSize="9" fill="#7a8499" textAnchor="end">price ($)</text>
+      )}
 
       {/* Lines */}
       {series.map((s) => {
         if (s.points.length < 2) return null;
-        const d = s.points.map((p, i) => (i === 0 ? "M" : "L") + xOf(p.t).toFixed(1) + "," + yOf(p.pct).toFixed(1)).join(" ");
+        const yFn = mode === "pct" ? (v) => yOfShared(v) : (v) => yOfSeries(s, v);
+        const d = s.points.map((p, i) => (i === 0 ? "M" : "L") + xOf(p.t).toFixed(1) + "," + yFn(p[valueKey]).toFixed(1)).join(" ");
         const last = s.points[s.points.length - 1];
+        const lastY = yFn(last[valueKey]);
         return (
           <g key={s.ticker}>
             <path d={d} fill="none" stroke={s.color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
-            {/* Final dot */}
-            <circle cx={xOf(last.t)} cy={yOf(last.pct)} r="3" fill={s.color} />
+            <circle cx={xOf(last.t)} cy={lastY} r="3" fill={s.color} />
+            {/* In price mode, render per-line price label at the right edge */}
+            {mode === "price" && (
+              <text x={xOf(last.t) + 6} y={lastY + 3} fontSize="9" fill={s.color} fontWeight="600">
+                ${last.price.toFixed(last.price > 100 ? 0 : 2)}
+              </text>
+            )}
           </g>
         );
       })}
@@ -5224,6 +5302,10 @@ body.stocks-app-mode {
   width: 6px; height: 6px; border-radius: 3px; background: var(--sa-border-strong);
 }
 .sa-nav button.active .dot { background: var(--sa-accent-2); }
+/* Desktop shows the full label; short label is hidden. CSS swap below
+   flips this on mobile so all 7 tabs fit on a 360px viewport. */
+.sa-nav button .short-label { display: none; }
+.sa-nav button .full-label { display: inline; }
 .sa-user {
   font-size: 12px; color: var(--sa-muted); padding: 14px 8px;
   border-top: 1px solid var(--sa-border); line-height: 1.6;
@@ -5252,19 +5334,28 @@ body.stocks-app-mode {
   .sa-brand, .sa-user { display: none; }
   .sa-nav {
     flex-direction: row;
-    gap: 4px;
+    gap: 2px;
     flex: 1;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    /* No horizontal scroll — buttons distribute via flex:1 so all 7
+       tabs fit the viewport using short labels. */
+    overflow-x: hidden;
     white-space: nowrap;
+    justify-content: space-between;
   }
   .sa-nav button {
-    flex-shrink: 0;
-    padding: 8px 12px;
-    font-size: 13px;
-    border-radius: 8px;
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 6px 4px;
+    font-size: 11px;
+    border-radius: 6px;
+    text-align: center;
+    justify-content: center;
+    gap: 0;
   }
   .sa-nav button .dot { display: none; }
+  .sa-nav button .full-label { display: none; }
+  .sa-nav button .short-label { display: inline; }
+  .sa-side { padding: 6px 8px; }
   .sa-main { padding: 18px 12px; }
 }
 
