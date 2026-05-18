@@ -1630,6 +1630,7 @@ function PeriodDetail({ me, periodId, onBack, onClone }) {
 function ReportsPanel({ companyId }) {
   const [period, setPeriod] = useState("monthly");
   const [data, setData] = useState(null);
+  const [leaveData, setLeaveData] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -1640,27 +1641,40 @@ function ReportsPanel({ companyId }) {
     })();
   }, [companyId, period]);
 
+  useEffect(() => {
+    (async () => {
+      try { setLeaveData(await api(`/api/teebeepay/companies/${companyId}/leave-balances`)); }
+      catch { setLeaveData(null); }
+    })();
+  }, [companyId]);
+
   if (error) return <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>;
   if (!data) return <Loader2 className="tbp-spin" size={20} color={C.red} />;
 
   function fmt(n) { return Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
-  async function download(format) {
+  async function fileDownload(path, fallbackName) {
     try {
-      const r = await fetch(`/api/teebeepay/companies/${companyId}/reports?period=${period}&format=${format}`, {
-        headers: { Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY) },
-      });
+      const r = await fetch(path, { headers: { Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY) } });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = (r.headers.get("content-disposition") || "")
-        .match(/filename="([^"]+)"/)?.[1] || `report.${format}`;
+        .match(/filename="([^"]+)"/)?.[1] || fallbackName;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) { setError(e.message); }
   }
+  const download = (format) => fileDownload(
+    `/api/teebeepay/companies/${companyId}/reports?period=${period}&format=${format}`,
+    `report.${format}`,
+  );
+  const downloadYearEnd = (format) => fileDownload(
+    `/api/teebeepay/companies/${companyId}/year-end?year=${new Date().getUTCFullYear()}&format=${format}`,
+    `year-end.${format}`,
+  );
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
@@ -1733,6 +1747,108 @@ function ReportsPanel({ companyId }) {
             { k: "lifetime", label: "Cumulative share", num: true, bold: true },
           ]} empty="No share payouts configured." fmt={fmt} />
       )}
+
+      {leaveData && <LeaveBalancesTable data={leaveData} />}
+
+      {/* Year-end employer summary pack */}
+      <div style={{
+        background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 18,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <strong style={{ fontSize: 14 }}>Year-end employer summary ({new Date().getUTCFullYear()})</strong>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 4, maxWidth: 640 }}>
+              Per-employee annual totals — gross, allowances, SWT, Nasfund employee &amp; employer, other deductions, net.
+              XLSX is the master sheet for your records. PDF is a one-page-per-employee payment summary.
+              This is the working data behind <strong>IRC Form S</strong>; once the official template is finalised we'll
+              slot the same numbers into the IRC layout.
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => downloadYearEnd("xlsx")} style={btnGhostLg}>
+              <FileSpreadsheet size={14} style={{ marginRight: 6 }} /> XLSX
+            </button>
+            <button onClick={() => downloadYearEnd("pdf")} style={btnGhostLg}>
+              <Download size={14} style={{ marginRight: 6 }} /> PDF (1 page/employee)
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LeaveBalancesTable({ data }) {
+  const codes = data.leave_types || [];
+  const rows = data.rows || [];
+  if (!rows.length) {
+    return (
+      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 18 }}>
+        <strong style={{ fontSize: 14 }}>Leave balances — {data.year}</strong>
+        <p style={{ fontSize: 13, color: C.muted, margin: "8px 0 0" }}>
+          No leave taken yet in {data.year}. Leave entries are captured when a supervisor in
+          timesheet mode tags a day with a leave type (Annual, Sick, Bereavement, etc.). After the
+          bookkeeper cuts that pay period, the day is recorded permanently here.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ padding: "12px 16px", borderBottom: "1px solid #f1f5f9", fontWeight: 700, fontSize: 14 }}>
+        Leave balances — {data.year}
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ ...tableStyle, fontSize: 12 }}>
+          <thead>
+            <tr>
+              <th style={th}>Employee</th>
+              {codes.map((lt) => (
+                <th key={lt.code} style={{ ...th, textAlign: "right" }}>
+                  {lt.name}
+                  {lt.max_days_per_year != null && (
+                    <span style={{ color: C.muted, fontWeight: 400, marginLeft: 4 }}>/{lt.max_days_per_year}</span>
+                  )}
+                </th>
+              ))}
+              <th style={{ ...th, textAlign: "right" }}>Paid total</th>
+              <th style={{ ...th, textAlign: "right" }}>Unpaid total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                <td style={td}>
+                  <strong>{r.name}</strong>
+                  {!r.active && <span style={{ marginLeft: 6, fontSize: 11, color: C.muted }}>(inactive)</span>}
+                </td>
+                {codes.map((lt) => {
+                  const used = r.usage?.[lt.code] || 0;
+                  const cap = lt.max_days_per_year;
+                  const over = cap != null && used > cap;
+                  return (
+                    <td key={lt.code} style={{ ...td, textAlign: "right",
+                                                color: over ? "#b91c1c" : (used > 0 ? C.ink : C.muted),
+                                                fontWeight: over ? 700 : 400,
+                                                fontVariantNumeric: "tabular-nums" }}>
+                      {used || "—"}
+                    </td>
+                  );
+                })}
+                <td style={{ ...td, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                  {r.total_paid_days || "—"}
+                </td>
+                <td style={{ ...td, textAlign: "right", color: C.muted, fontVariantNumeric: "tabular-nums" }}>
+                  {r.total_unpaid_days || "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ padding: "10px 16px", borderTop: "1px solid #f1f5f9", fontSize: 11, color: C.muted }}>
+        Days over the annual cap are shown in red. Caps are configured on <strong>Settings → Leave types</strong>.
+      </div>
     </div>
   );
 }

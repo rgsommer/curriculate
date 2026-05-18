@@ -106,6 +106,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const note = String(emp.pending_note || "").slice(0, 1000);
         await insertEntry(emp, hours, cash_advance, note, "supervisor_pending");
         consumed.push(emp._id);
+
+        // Persist leave records (one per day with a leave_type) — so the
+        // leave-balance report has lifetime history to aggregate.
+        const ts = emp.pending_timesheet;
+        if (ts && typeof ts === "object") {
+          for (const dateStr of Object.keys(ts)) {
+            const day = ts[dateStr];
+            if (!day?.leave_type) continue;
+            await dbi.collection("leave_records").updateOne(
+              { employee_id: emp._id, date: dateStr, leave_type: day.leave_type },
+              { $set: {
+                  employee_id: emp._id, company_id: cid,
+                  date: dateStr, leave_type: day.leave_type,
+                  hours: day.hours != null ? Number(day.hours) : null,
+                  note: day.note || null,
+                  pay_period_id: periodId,
+                  recorded_at: new Date(),
+                } },
+              { upsert: true });
+          }
+        }
       }
       // Clear consumed pending_hours / pending_timesheet so the next period starts fresh.
       // Stamp `last_consumed_period_id` + `last_consumed_period_end` so resubmissions
