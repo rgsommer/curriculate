@@ -46,10 +46,34 @@ export async function GET(req: Request) {
     const query = u.clearance >= 3 ? {} : (u.company_id ? { _id: new ObjectId(u.company_id) } : { _id: null });
     const rows = await dbi.collection("companies").find(query).sort({ name: 1 }).toArray();
     const out = await Promise.all(rows.map(async (c: any) => {
-      const [periods, employees] = await Promise.all([
+      const [periods, employees, latestPeriod] = await Promise.all([
         dbi.collection("pay_periods").countDocuments({ company_id: c._id }),
         dbi.collection("employees").countDocuments({ company_id: c._id, is_active: { $ne: 0 } }),
+        dbi.collection("pay_periods").find({ company_id: c._id })
+          .sort({ pay_date: -1, period_end: -1, _id: -1 }).limit(1).next(),
       ]);
+
+      // Derive a single "what needs doing" status for the company card badge:
+      //   pending_approval        — period submitted, AP hasn't approved yet
+      //   approved_pending_upload — period approved, BSP batch / stubs not yet sent
+      //   up_to_date              — nothing outstanding
+      let status: "pending_approval" | "approved_pending_upload" | "up_to_date" = "up_to_date";
+      let latest: any = null;
+      if (latestPeriod) {
+        latest = {
+          id: latestPeriod._id.toString(),
+          period_start: latestPeriod.period_start,
+          period_end: latestPeriod.period_end,
+          pay_date: latestPeriod.pay_date,
+          status: latestPeriod.status,
+        };
+        if (latestPeriod.status === "pending_approval") {
+          status = "pending_approval";
+        } else if (latestPeriod.status === "approved" && !latestPeriod.stubs_emailed_at) {
+          status = "approved_pending_upload";
+        }
+      }
+
       return {
         id: c._id.toString(),
         name: c.name, abbreviation: c.abbreviation || "",
@@ -66,6 +90,7 @@ export async function GET(req: Request) {
         manager_email: c.manager_email || "",
         payslip_message: c.payslip_message || "",
         periods, employees,
+        status, latest_period: latest,
       };
     }));
     return NextResponse.json({ companies: out });

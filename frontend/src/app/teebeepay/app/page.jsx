@@ -365,24 +365,44 @@ function Dashboard({ me, onPick }) {
 
       {companies == null ? <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered> : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
-          {companies.map((c) => (
-            <button key={c.id} onClick={() => onPick(c.id)} style={companyCard}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-                <div style={{ width: 42, height: 42, borderRadius: 10, background: "#fff7e0", color: C.goldDeep,
-                  display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Building2 size={20} />
+          {companies.map((c) => {
+            const badge = c.status === "pending_approval"
+              ? { bg: "#fef3c7", bd: "#fde68a", color: "#9c6c00", label: "Awaiting approval" }
+              : c.status === "approved_pending_upload"
+                ? { bg: "#dbeafe", bd: "#bfdbfe", color: "#1d4ed8", label: "Ready to upload" }
+                : null;
+            return (
+              <button key={c.id} onClick={() => onPick(c.id)} style={{ ...companyCard, position: "relative" }}>
+                {badge && (
+                  <span style={{
+                    position: "absolute", top: 12, right: 12,
+                    background: badge.bg, border: `1px solid ${badge.bd}`,
+                    color: badge.color, padding: "3px 8px", borderRadius: 999,
+                    fontSize: 10.5, fontWeight: 700, letterSpacing: 0.04, textTransform: "uppercase",
+                  }}>{badge.label}</span>
+                )}
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                  <div style={{ width: 42, height: 42, borderRadius: 10, background: "#fff7e0", color: C.goldDeep,
+                    display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Building2 size={20} />
+                  </div>
+                  <div style={{ textAlign: "left" }}>
+                    <div style={{ fontSize: 16, fontWeight: 700 }}>{c.name}</div>
+                    <div style={{ fontSize: 12, color: C.muted }}>{c.abbreviation && `${c.abbreviation} · `}{c.pay_interval}</div>
+                  </div>
                 </div>
-                <div style={{ textAlign: "left" }}>
-                  <div style={{ fontSize: 16, fontWeight: 700 }}>{c.name}</div>
-                  <div style={{ fontSize: 12, color: C.muted }}>{c.abbreviation && `${c.abbreviation} · `}{c.pay_interval}</div>
+                <div style={{ display: "flex", gap: 16, fontSize: 13, color: C.muted }}>
+                  <span><strong style={{ color: C.ink }}>{c.periods}</strong> pay periods</span>
+                  <span><strong style={{ color: C.ink }}>{c.employees}</strong> active employees</span>
                 </div>
-              </div>
-              <div style={{ display: "flex", gap: 16, fontSize: 13, color: C.muted }}>
-                <span><strong style={{ color: C.ink }}>{c.periods}</strong> pay periods</span>
-                <span><strong style={{ color: C.ink }}>{c.employees}</strong> active employees</span>
-              </div>
-            </button>
-          ))}
+                {c.latest_period && badge && (
+                  <div style={{ marginTop: 10, fontSize: 11, color: C.muted, textAlign: "left" }}>
+                    Period {c.latest_period.period_start} → {c.latest_period.period_end} · pay date {c.latest_period.pay_date}
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
 
