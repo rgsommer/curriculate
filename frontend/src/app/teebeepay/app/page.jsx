@@ -12,6 +12,7 @@ import {
   ArrowLeft, ArrowRight, Loader2, KeyRound, LogOut,
   Building2, Users, FileText, CheckCircle2, AlertCircle, Mail,
   Plus, X, Edit2, Send, Download, Settings, UserPlus, Trash2,
+  BarChart3, Percent, Upload, Image as ImageIcon,
 } from "lucide-react";
 
 const C = {
@@ -39,7 +40,7 @@ async function api(path, opts = {}) {
 }
 
 export default function TeebeePayApp() {
-  const [view, setView] = useState("loading"); // loading | login | dashboard | company | new_period | period | users
+  const [view, setView] = useState("loading"); // loading | login | dashboard | company | new_period | period | users | service_fees
   const [me, _setMe] = useState(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
   const [selectedPeriodId, setSelectedPeriodId] = useState(null);
@@ -65,7 +66,10 @@ export default function TeebeePayApp() {
       minHeight: "100vh", background: "#f6f7f9", color: C.ink,
       fontFamily: "system-ui, -apple-system, 'Segoe UI', Inter, Roboto, sans-serif",
     }}>
-      {view !== "login" && <AppHeader me={me} onSignOut={signOut} onUsers={() => setView("users")} onHome={() => setView("dashboard")} />}
+      {view !== "login" && <AppHeader me={me} onSignOut={signOut}
+        onUsers={() => setView("users")}
+        onServiceFees={() => setView("service_fees")}
+        onHome={() => setView("dashboard")} />}
       {view === "loading"   && <Centered><Loader2 className="tbp-spin" size={28} color={C.red} /></Centered>}
       {view === "login"     && <LoginCard onSignedIn={(u) => { _setMe(u); setMe(u); setView("dashboard"); }} />}
       {view === "dashboard" && <Dashboard me={me} onPick={goCompany} />}
@@ -76,6 +80,7 @@ export default function TeebeePayApp() {
       {view === "period" && <PeriodDetail me={me} periodId={selectedPeriodId}
         onBack={() => setView("company")} />}
       {view === "users" && <UsersPage me={me} onBack={() => setView("dashboard")} />}
+      {view === "service_fees" && <ServiceFeesPage me={me} onBack={() => setView("dashboard")} />}
       <style>{`
         @keyframes tbp-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
         .tbp-spin { animation: tbp-spin 0.9s linear infinite; }
@@ -88,7 +93,7 @@ export default function TeebeePayApp() {
 
 /* ─────────── Header / shared bits ─────────── */
 
-function AppHeader({ me, onSignOut, onUsers, onHome }) {
+function AppHeader({ me, onSignOut, onUsers, onServiceFees, onHome }) {
   return (
     <header style={{
       background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "12px 24px",
@@ -98,7 +103,12 @@ function AppHeader({ me, onSignOut, onUsers, onHome }) {
         <Logo size={30} />
         <strong style={{ fontSize: 17 }}>TeebeePay</strong>
       </button>
-      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+        {me?.clearance >= 4 && (
+          <button onClick={onServiceFees} style={btnGhostSmall} title="Service fees">
+            <Percent size={14} /> Fees
+          </button>
+        )}
         {me?.clearance >= 3 && (
           <button onClick={onUsers} style={btnGhostSmall}>
             <Users size={14} /> Users
@@ -396,8 +406,18 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod }) {
           <Users size={15} style={{ marginRight: 6 }} /> Employees {employees != null && `(${employees.length})`}
         </Tab>
         {me?.clearance >= 2 && (
+          <Tab active={tab === "reports"} onClick={() => setTab("reports")}>
+            <BarChart3 size={15} style={{ marginRight: 6 }} /> Reports
+          </Tab>
+        )}
+        {me?.clearance >= 2 && (
           <Tab active={tab === "tax_rules"} onClick={() => setTab("tax_rules")}>
             <Settings size={15} style={{ marginRight: 6 }} /> Tax rules
+          </Tab>
+        )}
+        {me?.clearance >= 3 && (
+          <Tab active={tab === "settings"} onClick={() => setTab("settings")}>
+            <Edit2 size={15} style={{ marginRight: 6 }} /> Settings
           </Tab>
         )}
       </div>
@@ -432,6 +452,14 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod }) {
 
       {tab === "tax_rules" && (
         <TaxRulesPanel companyId={companyId} canEdit={me?.clearance >= 3} />
+      )}
+
+      {tab === "reports" && (
+        <ReportsPanel companyId={companyId} />
+      )}
+
+      {tab === "settings" && (
+        <CompanySettingsPanel companyId={companyId} onSaved={refresh} />
       )}
 
       {showEmpDialog && (
@@ -981,6 +1009,411 @@ function PeriodDetail({ me, periodId, onBack }) {
         </div>
       )}
     </div>
+  );
+}
+
+/* ─────────── Reports panel ─────────── */
+
+function ReportsPanel({ companyId }) {
+  const [period, setPeriod] = useState("monthly");
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      setError(""); setData(null);
+      try { setData(await api(`/api/teebeepay/companies/${companyId}/reports?period=${period}`)); }
+      catch (e) { setError(e.message); }
+    })();
+  }, [companyId, period]);
+
+  if (error) return <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>;
+  if (!data) return <Loader2 className="tbp-spin" size={20} color={C.red} />;
+
+  function fmt(n) { return Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+  return (
+    <div style={{ display: "grid", gap: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <strong style={{ fontSize: 14 }}>Bucket:</strong>
+        <select value={period} onChange={(e) => setPeriod(e.target.value)} style={{ ...input, maxWidth: 200 }}>
+          <option value="monthly">Monthly</option>
+          <option value="weekly">Weekly</option>
+        </select>
+        <span style={{ marginLeft: "auto", fontSize: 13, color: C.muted }}>
+          Lifetime gross: <strong style={{ color: C.ink }}>K {fmt(data.totalGross)}</strong>
+        </span>
+      </div>
+
+      <ReportTable title={`${period === "weekly" ? "Weekly" : "Monthly"} summary`}
+        rows={data.summary} cols={[
+          { k: "bucket", label: period === "weekly" ? "Week" : "Month" },
+          { k: "n_emp", label: "Employees", num: true },
+          { k: "gross", label: "Gross", num: true },
+          { k: "tax", label: "Tax", num: true },
+          { k: "nasfund", label: "Nasfund", num: true },
+          { k: "other", label: "Other", num: true },
+          { k: "net", label: "Net", num: true, bold: true },
+        ]} empty="No payroll history yet." fmt={fmt} />
+
+      <ReportTable title="By department (all-time)"
+        rows={data.byDept} cols={[
+          { k: "dept", label: "Department" },
+          { k: "n", label: "# entries", num: true },
+          { k: "gross", label: "Gross", num: true },
+          { k: "net", label: "Net", num: true, bold: true },
+        ]} empty="No departments yet." fmt={fmt} />
+
+      <ReportTable title="Top 25 employees by gross"
+        rows={data.byEmployee} cols={[
+          { k: "name", label: "Employee" },
+          { k: "n", label: "# periods", num: true },
+          { k: "gross", label: "Gross", num: true },
+          { k: "net", label: "Net", num: true, bold: true },
+        ]} empty="No employee data yet." fmt={fmt} />
+
+      {data.shares?.length > 0 && (
+        <ReportTable title="Master-user payroll shares"
+          rows={data.shares} cols={[
+            { k: "name", label: "Employee" },
+            { k: "pct", label: "%", num: true },
+            { k: "lifetime", label: "Cumulative share", num: true, bold: true },
+          ]} empty="No share payouts configured." fmt={fmt} />
+      )}
+    </div>
+  );
+}
+
+function ReportTable({ title, rows, cols, empty, fmt }) {
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ padding: "12px 16px", borderBottom: "1px solid #f1f5f9", fontWeight: 700, fontSize: 14 }}>
+        {title}
+      </div>
+      {!rows.length ? <Empty>{empty}</Empty> : (
+        <table style={tableStyle}>
+          <thead><tr>
+            {cols.map((c) => (
+              <th key={c.k} style={{ ...th, textAlign: c.num ? "right" : "left" }}>{c.label}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
+                {cols.map((c) => (
+                  <td key={c.k} style={{
+                    ...td, textAlign: c.num ? "right" : "left",
+                    fontVariantNumeric: c.num ? "tabular-nums" : undefined,
+                    fontWeight: c.bold ? 700 : undefined,
+                  }}>
+                    {c.num ? fmt(r[c.k]) : (r[c.k] != null ? r[c.k] : "—")}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/* ─────────── Company settings panel ─────────── */
+
+function CompanySettingsPanel({ companyId, onSaved }) {
+  const [co, setCo] = useState(null);
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setError("");
+    try { setCo((await api(`/api/teebeepay/companies/${companyId}`)).company); }
+    catch (e) { setError(e.message); }
+  }, [companyId]);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const set = (k, v) => setCo((x) => ({ ...x, [k]: v }));
+
+  async function save() {
+    setError(""); setInfo(""); setSubmitting(true);
+    try {
+      await api(`/api/teebeepay/companies/${companyId}`, { method: "PATCH",
+        body: JSON.stringify(co) });
+      setInfo("Saved.");
+      if (onSaved) onSaved();
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+
+  async function uploadSignature(file, name, title) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = async () => {
+        try {
+          await api(`/api/teebeepay/companies/${companyId}/signature`, {
+            method: "POST",
+            body: JSON.stringify({ image: r.result, name, title }),
+          });
+          resolve();
+        } catch (e) { reject(e); }
+      };
+      r.onerror = () => reject(new Error("Could not read file"));
+      r.readAsDataURL(file);
+    });
+  }
+  async function removeSignature() {
+    if (!confirm("Remove the AP signature image?")) return;
+    try {
+      await fetch(`/api/teebeepay/companies/${companyId}/signature`, {
+        method: "DELETE",
+        headers: { Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY) },
+      });
+      refresh();
+    } catch (e) { setError(e.message); }
+  }
+
+  if (!co) return <Loader2 className="tbp-spin" size={20} color={C.red} />;
+
+  return (
+    <div>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      {info && <FlashBox type="info" icon={<CheckCircle2 size={16} />}>{info}</FlashBox>}
+
+      <FieldGroup label="Identity">
+        <Row>
+          <Field label="Company name"><input style={input} value={co.name || ""} onChange={(e) => set("name", e.target.value)} /></Field>
+          <Field label="Abbreviation"><input style={input} value={co.abbreviation || ""} onChange={(e) => set("abbreviation", e.target.value)} /></Field>
+        </Row>
+        <Row>
+          <Field label="Pay interval">
+            <select style={input} value={co.pay_interval || "fortnightly"} onChange={(e) => set("pay_interval", e.target.value)}>
+              <option value="fortnightly">Fortnightly</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </Field>
+          <Field label="Default hours / period"><input style={input} type="number" step="0.5" value={co.default_hours || 80} onChange={(e) => set("default_hours", e.target.value)} /></Field>
+          <Field label="Currency"><input style={input} value={co.currency || "PGK"} onChange={(e) => set("currency", e.target.value)} /></Field>
+        </Row>
+      </FieldGroup>
+
+      <FieldGroup label="Bank">
+        <Row>
+          <Field label="Bank code"><input style={input} value={co.bank_code || "088"} onChange={(e) => set("bank_code", e.target.value)} /></Field>
+          <Field label="Branch"><input style={input} value={co.branch_code || ""} onChange={(e) => set("branch_code", e.target.value)} /></Field>
+        </Row>
+        <Field label="Account number"><input style={input} value={co.bank_account_no || ""} onChange={(e) => set("bank_account_no", e.target.value)} /></Field>
+        <Field label="Account name"><input style={input} value={co.bank_account_name || ""} onChange={(e) => set("bank_account_name", e.target.value)} /></Field>
+        <Field label="BSP client number"><input style={input} value={co.bank_client_no || ""} onChange={(e) => set("bank_client_no", e.target.value)} /></Field>
+      </FieldGroup>
+
+      <FieldGroup label="Office & NASFund">
+        <Row>
+          <Field label="Office email"><input style={input} type="email" value={co.office_email || ""} onChange={(e) => set("office_email", e.target.value)} /></Field>
+          <Field label="Manager email"><input style={input} type="email" value={co.manager_email || ""} onChange={(e) => set("manager_email", e.target.value)} /></Field>
+        </Row>
+        <Row>
+          <Field label="NCSL employer number"><input style={input} value={co.ncsl_employer_no || ""} onChange={(e) => set("ncsl_employer_no", e.target.value)} /></Field>
+          <Field label="NCSL date of registration"><input style={input} type="date" value={co.ncsl_date_of_reg || ""} onChange={(e) => set("ncsl_date_of_reg", e.target.value)} /></Field>
+        </Row>
+      </FieldGroup>
+
+      <Field label="Default pay-slip message">
+        <textarea style={{ ...input, minHeight: 70 }} value={co.payslip_message || ""}
+          onChange={(e) => set("payslip_message", e.target.value)} />
+      </Field>
+
+      <FieldGroup label="Authorised Person (AP) signature — embedded in NASFund returns">
+        <SignaturePanel company={co} onUpload={uploadSignature} onRemove={removeSignature} onAfter={refresh} />
+      </FieldGroup>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
+        <button onClick={save} disabled={submitting} style={btnPrimaryInline}>
+          {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</>
+                      : "Save changes"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SignaturePanel({ company, onUpload, onRemove, onAfter }) {
+  const [name, setName] = useState(company.ap_signature_name || "");
+  const [title, setTitle] = useState(company.ap_signature_title || "");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const fileRef = React.useRef(null);
+
+  async function pickAndUpload() {
+    if (!fileRef.current?.files?.[0]) {
+      setError("Pick an image file first."); return;
+    }
+    setError(""); setSubmitting(true);
+    try {
+      await onUpload(fileRef.current.files[0], name, title);
+      if (onAfter) onAfter();
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+
+  return (
+    <div>
+      <Row>
+        <Field label="AP name"><input style={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Theresia Bob" /></Field>
+        <Field label="AP title"><input style={input} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Principal" /></Field>
+      </Row>
+      {company.ap_signature_image && (
+        <div style={{ marginBottom: 14, padding: 14, background: "#fafbfc", borderRadius: 8, border: "1px solid #e5e7eb" }}>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>Current signature on file:</div>
+          <img alt="AP signature"
+            src={`data:${company.ap_signature_mime};base64,${company.ap_signature_image}`}
+            style={{ maxHeight: 80, maxWidth: 280, display: "block", marginBottom: 10 }} />
+          <button onClick={onRemove} style={{ ...btnGhostLg, color: "#991b1b", borderColor: "#fecaca" }}>
+            <Trash2 size={13} style={{ marginRight: 6 }} /> Remove
+          </button>
+        </div>
+      )}
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <Field label={company.ap_signature_image ? "Replace signature image (PNG or JPEG, max 500 KB)" : "Upload signature image (PNG or JPEG, max 500 KB)"}>
+        <input ref={fileRef} type="file" accept="image/png,image/jpeg"
+          style={{ ...input, padding: 8 }} />
+      </Field>
+      <button onClick={pickAndUpload} disabled={submitting} style={btnGhostLg}>
+        {submitting ? <><Loader2 className="tbp-spin" size={14} style={{ marginRight: 6 }} /> Uploading…</>
+                    : <><Upload size={14} style={{ marginRight: 6 }} /> Upload signature</>}
+      </button>
+    </div>
+  );
+}
+
+/* ─────────── Service fees page (owner only) ─────────── */
+
+function ServiceFeesPage({ me, onBack }) {
+  const [fees, setFees] = useState(null);
+  const [error, setError] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setError("");
+    try { setFees((await api("/api/teebeepay/service-fees")).fees); }
+    catch (e) { setError(e.message); }
+  }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  async function toggle(f) {
+    try {
+      await api(`/api/teebeepay/service-fees/${f.id}`, { method: "PATCH",
+        body: JSON.stringify({ is_active: !f.is_active }) });
+      refresh();
+    } catch (e) { setError(e.message); }
+  }
+  async function remove(f) {
+    if (!confirm(`Remove ${f.name} from service-fee disbursements?`)) return;
+    try {
+      await fetch(`/api/teebeepay/service-fees/${f.id}`, {
+        method: "DELETE",
+        headers: { Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY) },
+      });
+      refresh();
+    } catch (e) { setError(e.message); }
+  }
+
+  return (
+    <div style={{ maxWidth: 1000, margin: "0 auto", padding: "28px 24px" }}>
+      <button onClick={onBack} style={btnBack}><ArrowLeft size={14} /> Dashboard</button>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>Service fees</h1>
+        <button onClick={() => setShowAdd(true)} style={btnPrimaryInline}>
+          <Plus size={16} /> Add fee recipient
+        </button>
+      </div>
+      <p style={{ color: C.muted, fontSize: 14, margin: "0 0 22px" }}>
+        Each recipient gets <strong>their % of total gross</strong> from every approved pay run, automatically appended to the BSP batch file. Typical: Theresia 3%, Richard 2%.
+      </p>
+
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+
+      {fees == null ? <Loader2 className="tbp-spin" size={20} color={C.red} /> :
+       !fees.length ? <Empty>No service fee recipients yet.</Empty> :
+       (
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+          <table style={tableStyle}>
+            <thead><tr>
+              <th style={th}>Name</th>
+              <th style={{ ...th, textAlign: "right" }}>% of gross</th>
+              <th style={th}>Bank account</th>
+              <th style={th}>Branch</th>
+              <th style={th}>Active</th>
+              <th style={{ ...th, width: 130 }}></th>
+            </tr></thead>
+            <tbody>
+              {fees.map((f) => (
+                <tr key={f.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <td style={td}><strong>{f.name}</strong></td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{f.pct_of_gross}%</td>
+                  <td style={{ ...td, color: C.muted, fontSize: 13 }}>
+                    {f.account_name || "—"}{f.account_no ? ` · ${f.account_no}` : ""}
+                  </td>
+                  <td style={{ ...td, color: C.muted }}>{f.branch_code || "—"}</td>
+                  <td style={td}><CheckCircle2 size={16} color={f.is_active ? "#16a34a" : "#94a3b8"} /></td>
+                  <td style={td}>
+                    <button onClick={() => toggle(f)} style={{ ...btnGhostSmall, marginRight: 6 }}>
+                      {f.is_active ? "Pause" : "Resume"}
+                    </button>
+                    <button onClick={() => remove(f)} style={{ ...btnGhostSmall, color: "#991b1b" }}>
+                      <Trash2 size={12} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+       )
+      }
+
+      {showAdd && (
+        <ServiceFeeDialog onClose={() => setShowAdd(false)}
+          onSaved={() => { setShowAdd(false); refresh(); }} />
+      )}
+    </div>
+  );
+}
+
+function ServiceFeeDialog({ onClose, onSaved }) {
+  const [f, setF] = useState({ name: "", pct_of_gross: "", bank_code: "088",
+    branch_code: "", account_no: "", account_name: "", notes: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  async function save() {
+    setError(""); setSubmitting(true);
+    try { await api("/api/teebeepay/service-fees", { method: "POST", body: JSON.stringify(f) }); onSaved(); }
+    catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+  return (
+    <Modal title="Add service-fee recipient" onClose={onClose}>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <Row>
+        <Field label="Name *"><input style={input} value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Theresia Bob" autoFocus /></Field>
+        <Field label="% of gross *"><input style={input} type="number" step="0.1" value={f.pct_of_gross} onChange={(e) => set("pct_of_gross", e.target.value)} placeholder="e.g. 3" /></Field>
+      </Row>
+      <Row>
+        <Field label="Bank code"><input style={input} value={f.bank_code} onChange={(e) => set("bank_code", e.target.value)} /></Field>
+        <Field label="Branch"><input style={input} value={f.branch_code} onChange={(e) => set("branch_code", e.target.value)} /></Field>
+      </Row>
+      <Field label="Account number *"><input style={input} value={f.account_no} onChange={(e) => set("account_no", e.target.value)} /></Field>
+      <Field label="Account name"><input style={input} value={f.account_name} onChange={(e) => set("account_name", e.target.value)} /></Field>
+      <Field label="Notes (internal)"><input style={input} value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
+        <button onClick={onClose} style={btnGhostLg}>Cancel</button>
+        <button onClick={save} disabled={!f.name || !f.pct_of_gross || submitting} style={btnPrimaryInline}>
+          {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</> : "Save"}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
