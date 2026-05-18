@@ -63,10 +63,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       effective_date,
     };
 
-    await dbi.collection("employees").updateOne({ _id: emp._id }, ({
-      $set: { [fieldKey]: newVal, updated_at: new Date() },
-      $push: { pay_history: adjustment },
-    } as any));
+    // Cast both the collection and the update document to `any` so the
+    // MongoDB driver's strict UpdateFilter generic (which infers the
+    // document shape from collection<T>) doesn't reject the dynamic
+    // pay_history push or the dynamic fieldKey set. Vercel's TS strict
+    // mode otherwise narrows the field types to `never`.
+    await (dbi.collection("employees") as any).updateOne(
+      { _id: emp._id },
+      ({
+        $set: { [fieldKey]: newVal, updated_at: new Date() },
+        $push: { pay_history: adjustment as any },
+      } as any)
+    );
 
     await logAudit({
       actor_email: u.email, actor_kind: "user",
