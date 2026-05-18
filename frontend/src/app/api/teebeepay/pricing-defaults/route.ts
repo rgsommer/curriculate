@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 import { readAuth, db } from "../_auth";
 
-export const DEFAULT_BANK_UPLOAD_INSTRUCTIONS = [
+const DEFAULT_BANK_UPLOAD_INSTRUCTIONS = [
   "1. Open the period detail page in TeebeePay and click \"Download BSP batch CSV\".",
   "",
   "2. Confirm the totals match the breakdown above — particularly the BANK FUNDING REQUIRED line.",
@@ -29,7 +29,7 @@ export const DEFAULT_BANK_UPLOAD_INSTRUCTIONS = [
   "8. Retain the BSP confirmation reference for the audit log; paste it into the period notes field.",
 ].join("\n");
 
-export const DEFAULTS = {
+const DEFAULTS = {
   basic_rate_per_employee: 9,
   full_rate_per_employee: 14,
   setup_fee_small: 500,    // <= 20 employees
