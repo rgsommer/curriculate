@@ -63,10 +63,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       effective_date,
     };
 
-    await dbi.collection("employees").updateOne({ _id: emp._id }, {
+    await dbi.collection("employees").updateOne({ _id: emp._id }, ({
       $set: { [fieldKey]: newVal, updated_at: new Date() },
-      $push: { pay_history: adjustment as any },
-    });
+      $push: { pay_history: adjustment },
+    } as any));
 
     await logAudit({
       actor_email: u.email, actor_kind: "user",
