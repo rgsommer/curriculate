@@ -40,7 +40,7 @@ export async function GET(req: Request) {
     const rows: any[] = await dbi.collection("audit_log")
       .find(q).sort({ ts: -1 }).limit(limit).toArray();
     // Decorate with company name when possible
-    const cids = [...new Set(rows.filter(r => r.company_id).map((r) => r.company_id.toString()))];
+    const cids = Array.from(new Set(rows.filter(r => r.company_id).map((r) => r.company_id.toString())));
     const companies = cids.length
       ? await dbi.collection("companies").find({ _id: { $in: cids.map((s: any) => new ObjectId(s)) } }).toArray()
       : [];

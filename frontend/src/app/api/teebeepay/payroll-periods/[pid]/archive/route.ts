@@ -35,8 +35,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ pid: str
     const empMap = Object.fromEntries(emps.map((e) => [e._id.toString(), e]));
 
     // Decorate employees with department/job names for the PDF
-    const deptIds = [...new Set(emps.filter((e) => e.department_id).map((e) => e.department_id.toString()))];
-    const jobIds  = [...new Set(emps.filter((e) => e.job_function_id).map((e) => e.job_function_id.toString()))];
+    const deptIds = Array.from(new Set(emps.filter((e) => e.department_id).map((e) => e.department_id.toString())));
+    const jobIds  = Array.from(new Set(emps.filter((e) => e.job_function_id).map((e) => e.job_function_id.toString())));
     const depts = deptIds.length ? await dbi.collection("departments").find({ _id: { $in: deptIds.map((s: any) => new ObjectId(s)) } }).toArray() : [];
     const jobs  = jobIds.length  ? await dbi.collection("job_functions").find({ _id: { $in: jobIds.map((s: any) => new ObjectId(s)) } }).toArray() : [];
     const dMap = Object.fromEntries(depts.map((d: any) => [d._id.toString(), d.name]));
