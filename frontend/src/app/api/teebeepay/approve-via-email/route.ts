@@ -107,10 +107,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, already: true });
   }
 
-  // Approve and dispatch pay stubs (same logic as the normal approve route)
+  // Approve and dispatch pay stubs (same logic as the normal approve route).
+  // `company` is already destructured from loadPeriodForToken() above.
   const totalGross = entries.reduce((s, e) => s + (Number(e.gross) || 0), 0);
   const fees: any[] = await dbi.collection("service_fees").find({ is_active: 1 }).toArray();
-  const company: any = await dbi.collection("companies").findOne({ _id: period.company_id });
   const { computeServiceFees, effectiveRate } = await import("../_fees");
   const rate = await effectiveRate(dbi, company);
   const serviceFees = computeServiceFees(company, totalGross, entries.length, fees, rate);
