@@ -123,3 +123,24 @@ export function readAuth(req: Request): AuthedUser | null {
   if (!p || !p.uid || !p.email) return null;
   return p;
 }
+
+// Magic approval token: signed payload that lets a remote AP approve a
+// specific pay period from an emailed link without logging in.
+export interface ApprovalToken {
+  kind: "approve_period";
+  pid: string;          // pay_period_id
+  email: string;        // AP's email
+  exp: number;
+}
+export function makeApprovalToken(pid: string, email: string): string {
+  return signToken({
+    kind: "approve_period",
+    pid, email: email.toLowerCase(),
+    exp: Date.now() + 7 * 24 * 60 * 60 * 1000,   // 7 days
+  });
+}
+export function readApprovalToken(token: string): ApprovalToken | null {
+  const p = verifyToken<ApprovalToken>(token);
+  if (!p || p.kind !== "approve_period" || !p.pid) return null;
+  return p;
+}

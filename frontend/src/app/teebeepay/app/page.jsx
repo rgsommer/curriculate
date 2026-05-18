@@ -45,6 +45,7 @@ export default function TeebeePayApp() {
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
   const [selectedPeriodId, setSelectedPeriodId] = useState(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
+  const [clonePeriodId, setClonePeriodId] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
 
   useEffect(() => {
@@ -60,7 +61,8 @@ export default function TeebeePayApp() {
 
   function signOut() { setToken(null); setMe(null); _setMe(null); setView("login"); }
   function goCompany(id) { setSelectedCompanyId(id); setView("company"); }
-  function goNewPeriod(id) { setSelectedCompanyId(id); setView("new_period"); }
+  function goNewPeriod(id) { setClonePeriodId(null); setSelectedCompanyId(id); setView("new_period"); }
+  function goClonePeriod(id, fromPid) { setClonePeriodId(fromPid); setSelectedCompanyId(id); setView("new_period"); }
   function goPeriod(pid) { setSelectedPeriodId(pid); setView("period"); }
   function goEmployee(eid) { setSelectedEmployeeId(eid); setView("employee"); }
 
@@ -91,9 +93,11 @@ export default function TeebeePayApp() {
         onBack={() => setView("dashboard")} onNewPeriod={() => goNewPeriod(selectedCompanyId)}
         onOpenPeriod={goPeriod} onOpenEmployee={goEmployee} />}
       {view === "new_period" && <NewPeriod me={me} companyId={selectedCompanyId}
+        cloneFromPeriodId={clonePeriodId}
         onBack={() => setView("company")} onSaved={(pid) => goPeriod(pid)} />}
       {view === "period" && <PeriodDetail me={me} periodId={selectedPeriodId}
-        onBack={() => setView("company")} />}
+        onBack={() => setView("company")}
+        onClone={() => goClonePeriod(selectedCompanyId, selectedPeriodId)} />}
       {view === "users" && <UsersPage me={me} onBack={() => setView("dashboard")} />}
       {view === "service_fees" && <ServiceFeesPage me={me} onBack={() => setView("dashboard")} />}
       {view === "employee" && <EmployeeProfile me={me} employeeId={selectedEmployeeId}
@@ -896,7 +900,7 @@ function TaxRulesPanel({ companyId, canEdit }) {
 
 /* ─────────── New pay period (entry grid) ─────────── */
 
-function NewPeriod({ me, companyId, onBack, onSaved }) {
+function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
   const [employees, setEmployees] = useState(null);
   const [company, setCompany] = useState(null);
   const [period, setPeriod] = useState({
@@ -905,23 +909,65 @@ function NewPeriod({ me, companyId, onBack, onSaved }) {
   const [grid, setGrid] = useState({}); // employee_id -> { hours, cash_advance, note }
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
 
   useEffect(() => {
     (async () => {
       try {
         const j = await api(`/api/teebeepay/companies/${companyId}/employees`);
         const c = (await api("/api/teebeepay/companies")).companies.find((x) => x.id === companyId);
-        setEmployees(j.employees.filter((e) => e.is_active));
+        const active = j.employees.filter((e) => e.is_active);
+        setEmployees(active);
         setCompany(c);
-        const today = new Date();
-        const end = new Date(today); end.setDate(end.getDate() - 1);
-        const start = new Date(end); start.setDate(start.getDate() - 13);
-        const pay = new Date(today);
-        setPeriod((p) => ({ ...p, period_start: start.toISOString().slice(0, 10),
-          period_end: end.toISOString().slice(0, 10), pay_date: pay.toISOString().slice(0, 10) }));
+
+        if (cloneFromPeriodId) {
+          // Clone mode: pre-fill grid + period dates from the source period.
+          const src = await api(`/api/teebeepay/payroll-periods/${cloneFromPeriodId}`);
+          const srcEnd = src.period.period_end;
+          const nextStart = nextDay(srcEnd);
+          const nextEnd   = addDays(nextStart, 13);
+          const nextPay   = addDays(nextEnd, 0);
+          setPeriod({ period_start: nextStart, period_end: nextEnd, pay_date: nextPay });
+
+          // Build a {employee_id -> {hours, cash_advance, note}} from the
+          // source period. Only carry across to currently-active employees.
+          const activeIds = new Set(active.map((e) => e.id));
+          const initial = {};
+          let cloned = 0;
+          for (const e of src.entries) {
+            if (!activeIds.has(e.employee_id)) continue;
+            initial[e.employee_id] = {
+              hours: e.hours ?? 0,
+              cash_advance: 0,          // advances reset — they're per-period
+              note: "",                 // notes reset — usually period-specific
+            };
+            cloned++;
+          }
+          setGrid(initial);
+          setInfo(`Cloned ${cloned} employee${cloned === 1 ? "" : "s"} from ${src.period.period_start} → ${src.period.period_end}. Hours pre-filled; cash advances and notes reset.`);
+        } else {
+          const today = new Date();
+          const end = new Date(today); end.setDate(end.getDate() - 1);
+          const start = new Date(end); start.setDate(start.getDate() - 13);
+          const pay = new Date(today);
+          setPeriod({
+            period_start: start.toISOString().slice(0, 10),
+            period_end:   end.toISOString().slice(0, 10),
+            pay_date:     pay.toISOString().slice(0, 10),
+          });
+        }
       } catch (e) { setError(e.message); }
     })();
-  }, [companyId]);
+  }, [companyId, cloneFromPeriodId]);
+
+  function nextDay(iso) {
+    const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }
+  function addDays(iso, n) {
+    const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
 
   function set(eid, k, v) {
     setGrid((g) => ({ ...g, [eid]: { ...(g[eid] || { hours: 0, cash_advance: 0, note: "" }), [k]: v } }));
@@ -959,7 +1005,9 @@ function NewPeriod({ me, companyId, onBack, onSaved }) {
   return (
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: "28px 24px" }}>
       <button onClick={onBack} style={btnBack}><ArrowLeft size={14} /> Back to {company.name}</button>
-      <h1 style={{ margin: "0 0 8px", fontSize: 26, fontWeight: 800 }}>New pay period — {company.name}</h1>
+      <h1 style={{ margin: "0 0 8px", fontSize: 26, fontWeight: 800 }}>
+        {cloneFromPeriodId ? "Clone pay period" : "New pay period"} — {company.name}
+      </h1>
       <p style={{ color: C.muted, fontSize: 14, margin: "0 0 20px" }}>
         Double-click an <strong>hours</strong> cell to toggle between the default and zero. Notes appear on the employee's pay stub.
       </p>
@@ -972,6 +1020,7 @@ function NewPeriod({ me, companyId, onBack, onSaved }) {
         </Row>
       </div>
 
+      {info && <FlashBox type="info" icon={<CheckCircle2 size={16} />}>{info}</FlashBox>}
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
 
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
@@ -1024,7 +1073,7 @@ function NewPeriod({ me, companyId, onBack, onSaved }) {
 
 /* ─────────── Period detail + Approve ─────────── */
 
-function PeriodDetail({ me, periodId, onBack }) {
+function PeriodDetail({ me, periodId, onBack, onClone }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [approving, setApproving] = useState(false);
@@ -1093,18 +1142,27 @@ function PeriodDetail({ me, periodId, onBack }) {
       </p>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
+        <button onClick={() => authedDownload(downloadHref("archive"),
+          `TeebeePay-${(period.pay_date || "").replace(/-/g, "")}.zip`)} style={btnPrimaryInline}>
+          <Download size={14} /> Download archive (ZIP)
+        </button>
         <button onClick={() => authedDownload(downloadHref("bsp"),
           `BSPPayroll-${(period.pay_date || "").replace(/-/g, "")}.csv`)} style={btnGhostLg}>
           <Download size={14} style={{ marginRight: 6 }} /> BSP batch CSV
         </button>
         <button onClick={() => authedDownload(downloadHref("nasfund"),
           `NASFund-${(period.period_end || "").replace(/-/g, "")}.xlsx`)} style={btnGhostLg}>
-          <Download size={14} style={{ marginRight: 6 }} /> NASFund return XLSX
+          <Download size={14} style={{ marginRight: 6 }} /> NASFund XLSX
         </button>
         <button onClick={() => authedDownload(downloadHref("iif"),
           `Payroll-${(period.pay_date || "").replace(/-/g, "")}_QB_IIF.iif`)} style={btnGhostLg}>
           <Download size={14} style={{ marginRight: 6 }} /> QuickBooks IIF
         </button>
+        {onClone && (
+          <button onClick={onClone} style={btnGhostLg}>
+            <Plus size={14} style={{ marginRight: 6 }} /> Use as template for new period
+          </button>
+        )}
       </div>
 
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
@@ -2229,12 +2287,43 @@ function ReportsPanel({ companyId }) {
 function EmployeeProfile({ me, employeeId, onBack, onOpenPeriod }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [selected, setSelected] = useState(new Set());
+  const [sending, setSending] = useState(false);
   useEffect(() => {
     (async () => {
       try { setData(await api(`/api/teebeepay/employees/${employeeId}`)); }
       catch (e) { setError(e.message); }
     })();
   }, [employeeId]);
+
+  function toggleSel(entryId) {
+    setSelected((s) => {
+      const ns = new Set(s);
+      if (ns.has(entryId)) ns.delete(entryId); else ns.add(entryId);
+      return ns;
+    });
+  }
+  function selectAll(history) {
+    setSelected(new Set(history.filter(h => !h.imported).map(h => h.entry_id)));
+  }
+  async function emailSelected() {
+    if (!selected.size || !data?.employee.email) return;
+    if (!confirm(`Email ${selected.size} pay stub(s) to ${data.employee.email}?`)) return;
+    setSending(true); setError(""); setInfo("");
+    let sent = 0, failed = 0;
+    for (const entryId of selected) {
+      const h = data.history.find(x => x.entry_id === entryId);
+      if (!h) continue;
+      try {
+        await api(`/api/teebeepay/payroll-periods/${h.pay_period_id}/entries/${entryId}/resend`, { method: "POST" });
+        sent++;
+      } catch { failed++; }
+    }
+    setSending(false);
+    setSelected(new Set());
+    setInfo(`Sent ${sent} stub${sent === 1 ? "" : "s"}${failed ? `. ${failed} failed.` : "."}`);
+  }
 
   if (error) return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 24px" }}>
@@ -2307,11 +2396,34 @@ function EmployeeProfile({ me, employeeId, onBack, onOpenPeriod }) {
       </div>
 
       {/* History */}
-      <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 12px" }}>Payroll history</h2>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Payroll history</h2>
+        {employee.email && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {selected.size > 0 ? (
+              <>
+                <span style={{ fontSize: 13, color: C.muted }}>{selected.size} selected</span>
+                <button onClick={() => setSelected(new Set())} style={btnGhostSmall}>Clear</button>
+                <button onClick={emailSelected} disabled={sending} style={btnPrimaryInline}>
+                  {sending ? <><Loader2 className="tbp-spin" size={14} style={{ marginRight: 6 }} /> Sending…</>
+                           : <><Send size={14} /> Email {selected.size} stub{selected.size === 1 ? "" : "s"} to {employee.email}</>}
+                </button>
+              </>
+            ) : (
+              <button onClick={() => selectAll(history)} style={btnGhostSmall}
+                disabled={!history.some(h => !h.imported)}>
+                Select all approved
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      {info && <FlashBox type="info" icon={<CheckCircle2 size={16} />}>{info}</FlashBox>}
       {!history.length ? <Empty>No pay periods yet for this employee.</Empty> : (
         <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
           <table style={tableStyle}>
             <thead><tr>
+              {employee.email && <th style={{ ...th, width: 36 }}></th>}
               <th style={th}>Pay date</th><th style={th}>Period</th>
               <th style={{ ...th, textAlign: "right" }}>Hours</th>
               <th style={{ ...th, textAlign: "right" }}>Gross</th>
@@ -2322,7 +2434,15 @@ function EmployeeProfile({ me, employeeId, onBack, onOpenPeriod }) {
             </tr></thead>
             <tbody>
               {history.map((h) => (
-                <tr key={h.entry_id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                <tr key={h.entry_id} style={{ borderTop: "1px solid #f1f5f9",
+                  background: selected.has(h.entry_id) ? "#fff7e0" : undefined }}>
+                  {employee.email && (
+                    <td style={{ ...td, width: 36 }}>
+                      <input type="checkbox" checked={selected.has(h.entry_id)}
+                        onChange={() => toggleSel(h.entry_id)}
+                        disabled={h.imported} title={h.imported ? "Historical entries don't have email-able stubs" : ""} />
+                    </td>
+                  )}
                   <td style={td}>
                     <button onClick={() => onOpenPeriod(h.pay_period_id)} style={{
                       background: "none", border: "none", padding: 0, cursor: "pointer",
