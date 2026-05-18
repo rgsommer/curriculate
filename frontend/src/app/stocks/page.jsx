@@ -886,6 +886,7 @@ export default function StocksAdvisorPage() {
               ["discover", "Discover", "Find"],
               ["performance", "Performance", "Perf"],
               ["trades", "Trades", "Trades"],
+              ["reconcile", "Reconcile", "↻"],
               ["settings", "Settings", "⚙"],
             ].map(([k, label, shortLabel]) => (
               <button
@@ -997,6 +998,96 @@ export default function StocksAdvisorPage() {
           {currentTab === "discover" && <DiscoverView sessionToken={auth.sessionToken} user={user} />}
           {currentTab === "performance" && <PerformanceView sessionToken={auth.sessionToken} />}
           {currentTab === "trades" && <TradesView sessionToken={auth.sessionToken} />}
+          {currentTab === "reconcile" && (
+            <ReconcileView
+              sessionToken={auth.sessionToken}
+              user={user}
+              onSaveBrokerAccountId={(accountId, brokerAccountId) => {
+                updateUser((u) => ({
+                  accounts: u.accounts.map((a) => a.id === accountId ? { ...a, brokerAccountId } : a),
+                }));
+              }}
+              onRectify={(acct, issue) => {
+                const appAcctId = acct.appAccountId || acct.acctId;
+                const norm = (t) => String(t || "").toUpperCase().trim().replace(/\.(?:CN|TO|V|NE)$/i, "");
+                if (issue.type === "cash") {
+                  updateUser((u) => ({
+                    accounts: u.accounts.map((a) => {
+                      if (a.id !== appAcctId) return a;
+                      const next = { ...a };
+                      if (issue.currency === "CAD") next.cashCad = issue.csvValue;
+                      else next.cashUsd = issue.csvValue;
+                      return next;
+                    }),
+                  }));
+                  showToast(`Rectified ${issue.currency} cash in ${acct.accountName} to ${issue.csvValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
+                  return true;
+                }
+                if (issue.type === "position") {
+                  const targetTicker = (issue.csvTicker || issue.ticker).toUpperCase();
+                  const normTarget = norm(targetTicker);
+                  const subCcy = issue.subCurrency;
+                  const ccy = issue.csvMarket === "CDN" ? "CAD" : issue.csvMarket === "US" ? "USD" : subCcy;
+                  if (issue.kind === "extra_in_app") {
+                    updateUser((u) => ({
+                      positions: u.positions.filter((p) => !(
+                        p.acct === appAcctId
+                        && norm(p.ticker) === normTarget
+                        && (p.subCcy || p.ccy) === subCcy
+                      )),
+                    }));
+                    showToast(`Removed ${targetTicker} from ${acct.accountName} (${subCcy} sub)`);
+                    return true;
+                  }
+                  if (issue.kind === "missing_in_app") {
+                    const newPos = {
+                      acct: appAcctId,
+                      ticker: targetTicker,
+                      name: issue.csvDescription || "",
+                      qty: issue.csvQty,
+                      ccy,
+                      subCcy,
+                      priceUsd: ccy === "USD" ? issue.csvPrice : null,
+                      priceCad: ccy === "CAD" ? issue.csvPrice : null,
+                      costBasisUsd: ccy === "USD" ? issue.csvPrice : null,
+                      costBasisCad: ccy === "CAD" ? issue.csvPrice : null,
+                      notes: "Added via reconciliation",
+                    };
+                    updateUser((u) => ({ positions: [...u.positions, newPos] }));
+                    showToast(`Added ${issue.csvQty} sh ${targetTicker} to ${acct.accountName} (cost basis estimated at current price)`);
+                    return true;
+                  }
+                  if (issue.kind === "qty_mismatch") {
+                    updateUser((u) => {
+                      const matchIdxs = [];
+                      u.positions.forEach((p, idx) => {
+                        if (p.acct === appAcctId
+                          && norm(p.ticker) === normTarget
+                          && (p.subCcy || p.ccy) === subCcy) {
+                          matchIdxs.push(idx);
+                        }
+                      });
+                      const currentTotal = matchIdxs.reduce((s, i) => s + (u.positions[i].qty || 0), 0);
+                      const newTotal = issue.csvQty;
+                      const nextPositions = [...u.positions];
+                      if (matchIdxs.length === 1) {
+                        nextPositions[matchIdxs[0]] = { ...nextPositions[matchIdxs[0]], qty: newTotal };
+                      } else if (matchIdxs.length > 1 && currentTotal > 0) {
+                        const scale = newTotal / currentTotal;
+                        for (const i of matchIdxs) {
+                          nextPositions[i] = { ...nextPositions[i], qty: (nextPositions[i].qty || 0) * scale };
+                        }
+                      }
+                      return { positions: nextPositions };
+                    });
+                    showToast(`Set ${targetTicker} in ${acct.accountName} (${subCcy}) to ${issue.csvQty} sh`);
+                    return true;
+                  }
+                }
+                return false;
+              }}
+            />
+          )}
           {currentTab === "settings" && (
             <SettingsView
               user={user}
@@ -2405,7 +2496,7 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
   );
 }
 
-function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onSaveBrokerAccountId, onRectify, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
   // Contribution goals — each is { amount, period }. Legacy flat numbers are
@@ -2727,12 +2818,6 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
         <div className="sa-muted">Daily briefing arrives at 7:30 AM ET each weekday via email; intraday alerts at 12:30 PM ET (only on material moves). Backed by the Curriculate Resend integration.</div>
       </div>
 
-      <ReconcileCard
-        sessionToken={sessionToken}
-        accounts={user.accounts || []}
-        onSaveBrokerAccountId={onSaveBrokerAccountId}
-        onRectify={onRectify}
-      />
 
       <div className="sa-card" style={{ marginBottom: 14, borderColor: "var(--sa-red)" }}>
         <h3>Danger zone</h3>
@@ -2753,6 +2838,28 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
 // so SLV.CN matches SLV when locating positions to rectify.
 function normalizeTickerClient(t) {
   return String(t || "").toUpperCase().trim().replace(/\.(?:CN|TO|V|NE)$/i, "");
+}
+
+// =============================================================================
+// Reconcile view — standalone tab wrapping ReconcileCard. Lifts the
+// reconciliation feature out of Settings (which was getting long) so it
+// has equal weight with Holdings / Advice / Performance etc.
+// =============================================================================
+function ReconcileView({ sessionToken, user, onSaveBrokerAccountId, onRectify }) {
+  return (
+    <div>
+      <h2>Reconcile</h2>
+      <div className="sa-breadcrumb">
+        Compare app holdings against your CIBC Investor's Edge export · flag and rectify discrepancies
+      </div>
+      <ReconcileCard
+        sessionToken={sessionToken}
+        accounts={user.accounts || []}
+        onSaveBrokerAccountId={onSaveBrokerAccountId}
+        onRectify={onRectify}
+      />
+    </div>
+  );
 }
 
 function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId, onRectify }) {
