@@ -96,34 +96,82 @@ function num(s) {
   return parseFloat(s.replace(/,/g, "")) || 0;
 }
 
+// Parses CIBC Investor's Edge AccountHoldings CSV. Handles BOTH formats:
+//
+//   1. Single-sub format (6 files for 3 accounts × 2 currencies)
+//      Header: "59659702 Non-Spousal - RRSP CAD"
+//      Cash:   "Today's Cash Balance","7.05"
+//
+//   2. Combined Holdings format (3 files, one per account — recommended)
+//      Header: "59659702 Non-Spousal - Combined Holdings"
+//      Cash:   sub-table beneath "Cash account","Cash amount","Converted amount (in CAD)"
+//              rows like:  "RRSP CAD","3,402.71",""
+//                          "RRSP USD","4,493.05","6,180.19"
+//
+// Either way, output normalizes to:
+//   { accountId, accountName, format, cashByCurrency: { CAD, USD }, positions, asOfDate }
+//
+// Positions always carry their sub-currency via "Currency held in" — same
+// in both formats — so a US stock held in a CAD sub gets ccyHeld="CAD".
 export function parseCibcCsv(csv) {
-  // Strip UTF-8 BOM if present (CIBC's export starts with ﻿)
   const clean = String(csv || "").replace(/^﻿/, "");
   const lines = clean.split(/\r?\n/);
   const rows = lines.map(parseCsvRow);
   if (rows.length === 0) return { error: "Empty file" };
 
-  // Header line: "60367867 TFSA - TFSA USD"
   const headerCell = (rows[0] && rows[0][0] || "").replace(/^﻿/, "");
-  const m = headerCell.match(/^(\d{6,12})\s+(.+?)\s+(CAD|USD)\s*$/);
-  if (!m) {
-    return { error: `Unrecognized header: "${headerCell}". Expected "ACCT_ID Account-Name CAD|USD"` };
-  }
-  const accountId = m[1];
-  const accountName = m[2].trim();
-  const subCurrency = m[3];
 
-  let cashBalance = 0;
-  let marketValue = 0;
-  let totalValue = 0;
+  // Try Combined Holdings format first
+  let m = headerCell.match(/^(\d{6,12})\s+(.+?)\s+-\s+Combined Holdings\s*$/);
+  let format = null;
+  let accountId = null;
+  let accountName = null;
+  let singleSubCurrency = null;
+  if (m) {
+    format = "combined";
+    accountId = m[1];
+    accountName = m[2].trim();
+  } else {
+    // Fall back to single-sub format
+    m = headerCell.match(/^(\d{6,12})\s+(.+?)\s+(CAD|USD)\s*$/);
+    if (!m) {
+      return { error: `Unrecognized header: "${headerCell}". Expected "ACCT_ID Account-Name CAD|USD" (single-sub) or "ACCT_ID Account-Name - Combined Holdings"` };
+    }
+    format = "single-sub";
+    accountId = m[1];
+    accountName = m[2].trim();
+    singleSubCurrency = m[3];
+  }
+
   let asOfDate = null;
   if (rows[2] && rows[2][0]) asOfDate = rows[2][0].trim();
 
-  for (const r of rows) {
-    const k = String(r[0] || "").trim();
-    if (k === "Today's Cash Balance") cashBalance = num(r[1]);
-    else if (k === "Today's Market Value of Securities") marketValue = num(r[1]);
-    else if (k === "Today's Total Value") totalValue = num(r[1]);
+  const cashByCurrency = { CAD: 0, USD: 0 };
+
+  if (format === "combined") {
+    // Cash is in a sub-table beneath "Cash account"
+    // Find the header row, then walk subsequent rows of "<acct> <CCY>","amount","conv"
+    let inCashTable = false;
+    for (const r of rows) {
+      const first = String(r[0] || "").trim();
+      if (first === "Cash account") { inCashTable = true; continue; }
+      if (!inCashTable) continue;
+      if (!first || !r[1]) break;
+      // first looks like "RRSP CAD" or "TFSA USD" — pick out the currency
+      const tokens = first.split(/\s+/);
+      const ccy = tokens[tokens.length - 1];
+      if (ccy === "CAD") cashByCurrency.CAD = num(r[1]);
+      else if (ccy === "USD") cashByCurrency.USD = num(r[1]);
+    }
+  } else {
+    // Single-sub format
+    for (const r of rows) {
+      const k = String(r[0] || "").trim();
+      if (k === "Today's Cash Balance") {
+        cashByCurrency[singleSubCurrency] = num(r[1]);
+        break;
+      }
+    }
   }
 
   // Positions: find "Asset type" header row, then collect until blank symbol
@@ -142,7 +190,7 @@ export function parseCibcCsv(csv) {
     positions.push({
       ticker: String(symbol).toUpperCase().trim().replace(/\.+$/, ""),
       ccyHeld: ccyHeld === "USD" ? "USD" : "CAD",
-      market: String(market || "").toUpperCase(), // US or CDN
+      market: String(market || "").toUpperCase(),
       description: String(description || "").trim(),
       qty: num(qtyStr),
       price: num(priceStr),
@@ -152,12 +200,13 @@ export function parseCibcCsv(csv) {
   return {
     accountId,
     accountName,
-    subCurrency,
-    cashBalance,
-    marketValue,
-    totalValue,
-    asOfDate,
+    format,
+    subCurrency: singleSubCurrency, // null for combined, "CAD"/"USD" for single-sub
+    cashByCurrency,
     positions,
+    asOfDate,
+    // Back-compat: callers that look at cashBalance for single-sub still work
+    cashBalance: singleSubCurrency ? cashByCurrency[singleSubCurrency] : (cashByCurrency.CAD + cashByCurrency.USD),
   };
 }
 
@@ -185,20 +234,38 @@ function computeDiff(profile, parsedFiles) {
     bucket.positions.set(key, (bucket.positions.get(key) || 0) + (p.qty || 0));
   }
 
-  // Group parsed files by account id
-  const csvByAcct = new Map(); // acctId → { cashCad, cashUsd, positions: Map, files: [...] }
+  // Group parsed files by account id. Combined-format files supply both
+  // CAD + USD cash in cashByCurrency; single-sub files supply just one,
+  // so re-uploading both halves of a single-sub account is required for a
+  // complete diff. (The UI prefers Combined.)
+  const csvByAcct = new Map();
   for (const f of parsedFiles) {
     if (f.error) continue;
     if (!csvByAcct.has(f.accountId)) {
-      csvByAcct.set(f.accountId, { cashCad: 0, cashUsd: 0, positions: new Map(), files: [], names: new Set() });
+      csvByAcct.set(f.accountId, {
+        cashCad: 0, cashUsd: 0,
+        cashCadSeen: false, cashUsdSeen: false,
+        positions: new Map(), files: [], names: new Set(),
+      });
     }
     const b = csvByAcct.get(f.accountId);
     b.names.add(f.accountName);
     b.files.push(f);
-    if (f.subCurrency === "CAD") b.cashCad += f.cashBalance;
-    else b.cashUsd += f.cashBalance;
+    // Always source cash from cashByCurrency (works for both formats)
+    const cbc = f.cashByCurrency || {};
+    if (f.format === "combined") {
+      // Combined supplies both currencies authoritatively
+      b.cashCad = cbc.CAD || 0;
+      b.cashUsd = cbc.USD || 0;
+      b.cashCadSeen = true;
+      b.cashUsdSeen = true;
+    } else {
+      // Single-sub: only one currency populated; accumulate (if user
+      // uploads both halves, both will fill in)
+      if (f.subCurrency === "CAD") { b.cashCad += cbc.CAD || 0; b.cashCadSeen = true; }
+      if (f.subCurrency === "USD") { b.cashUsd += cbc.USD || 0; b.cashUsdSeen = true; }
+    }
     for (const p of f.positions) {
-      // CIBC's "Currency held in" tells us which sub-account holds the position
       const key = `${p.ticker}|${p.ccyHeld}`;
       b.positions.set(key, (b.positions.get(key) || 0) + p.qty);
     }
@@ -220,8 +287,11 @@ function computeDiff(profile, parsedFiles) {
     }
 
     const issues = [];
-    // Cash diff (use ~$1 tolerance to avoid rounding noise)
-    if (Math.abs((app.cashCad || 0) - csv.cashCad) > 1) {
+    // Cash diff (only report when the currency was actually present in the
+    // upload — for single-sub format the user may have only uploaded the
+    // CAD half, in which case we don't know what CIBC says about USD).
+    // $1 tolerance absorbs CIBC's rounding.
+    if (csv.cashCadSeen && Math.abs((app.cashCad || 0) - csv.cashCad) > 1) {
       issues.push({
         type: "cash",
         currency: "CAD",
@@ -230,7 +300,7 @@ function computeDiff(profile, parsedFiles) {
         delta: csv.cashCad - app.cashCad,
       });
     }
-    if (Math.abs((app.cashUsd || 0) - csv.cashUsd) > 1) {
+    if (csv.cashUsdSeen && Math.abs((app.cashUsd || 0) - csv.cashUsd) > 1) {
       issues.push({
         type: "cash",
         currency: "USD",

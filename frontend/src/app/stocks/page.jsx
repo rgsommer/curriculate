@@ -2699,7 +2699,7 @@ function ReconcileCard({ sessionToken, accounts }) {
     <div className="sa-card" style={{ marginBottom: 14 }}>
       <h3>Reconcile holdings with broker</h3>
       <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12 }}>
-        Drag in the AccountHoldings CSV files you downloaded from CIBC Investor's Edge (one per account × currency sub). The app will flag any discrepancies in quantity or cash balance. Read-only — no auto-correct; fix discrepancies manually in Holdings.
+        Drag in the AccountHoldings CSV files you downloaded from CIBC Investor's Edge. <b>Combined Holdings</b> exports (one file per account, contains both currencies) are recommended — 3 files cover everything. The older single-sub format (6 files for 3 accounts × 2 currencies) also works. The app flags discrepancies in quantity and cash balance — read-only, no auto-correct.
       </div>
 
       <div
@@ -2720,7 +2720,7 @@ function ReconcileCard({ sessionToken, accounts }) {
           <input type="file" accept=".csv" multiple onChange={onPickFiles} style={{ display: "none" }} />
         </label>
         <div className="sa-muted" style={{ fontSize: 11, marginTop: 8 }}>
-          Tip: in CIBC Investor's Edge, go to Accounts → Holdings → click the CSV download icon for EACH account × currency sub. You'll get 6 files for 3 accounts (3 CAD subs + 3 USD subs).
+          Tip: in CIBC Investor's Edge, go to Accounts → Holdings → click "Combined Holdings" view → CSV download. Repeat for each account (Non-Spousal, Spousal, TFSA). You'll get 3 files that cover everything.
         </div>
       </div>
 
