@@ -55,7 +55,7 @@ export async function POST(req: Request) {
     const allowedDivIds = new Set(divisions.map((d) => d._id.toString()));
     const divisionById = Object.fromEntries(divisions.map((d) => [d._id.toString(), d]));
 
-    function hoursFromClock(inStr: string, outStr: string): number {
+    const hoursFromClock = (inStr: string, outStr: string): number => {
       const m = (s: string) => {
         const [h, mm] = String(s || "").split(":").map(Number);
         return (h * 60) + (mm || 0);
@@ -63,8 +63,8 @@ export async function POST(req: Request) {
       if (!inStr || !outStr) return 0;
       const diff = (m(outStr) - m(inStr)) / 60;
       return diff > 0 ? Math.round(diff * 100) / 100 : 0;
-    }
-    function totalFromTimesheet(ts: any): number {
+    };
+    const totalFromTimesheet = (ts: any): number => {
       if (!ts || typeof ts !== "object") return 0;
       let sum = 0;
       for (const k of Object.keys(ts)) {
@@ -77,7 +77,7 @@ export async function POST(req: Request) {
         }
       }
       return Math.round(sum * 100) / 100;
-    }
+    };
 
     let saved = 0, skipped = 0, postConsumptionFlagged = 0;
     let alertsSent = 0;

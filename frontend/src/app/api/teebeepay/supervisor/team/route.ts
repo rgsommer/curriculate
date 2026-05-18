@@ -69,7 +69,7 @@ export async function GET(req: Request) {
     const lastEnd: Record<string, string> = {};
     for (const r of lastPeriods) lastEnd[r._id.toString()] = r.period_end;
 
-    function nextWindow(companyId: string): { start: string; end: string; days: string[] } {
+    const nextWindow = (companyId: string): { start: string; end: string; days: string[] } => {
       const last = lastEnd[companyId];
       let start: Date, end: Date;
       if (last) {
@@ -91,7 +91,7 @@ export async function GET(req: Request) {
         cur.setUTCDate(cur.getUTCDate() + 1);
       }
       return { start: days[0], end: days[days.length - 1], days };
-    }
+    };
 
     return NextResponse.json({
       teams: divisions.map((d: any) => {
