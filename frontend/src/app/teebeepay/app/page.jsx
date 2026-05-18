@@ -1645,9 +1645,26 @@ function ReportsPanel({ companyId }) {
 
   function fmt(n) { return Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
+  async function download(format) {
+    try {
+      const r = await fetch(`/api/teebeepay/companies/${companyId}/reports?period=${period}&format=${format}`, {
+        headers: { Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY) },
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = (r.headers.get("content-disposition") || "")
+        .match(/filename="([^"]+)"/)?.[1] || `report.${format}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { setError(e.message); }
+  }
+
   return (
     <div style={{ display: "grid", gap: 18 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <strong style={{ fontSize: 14 }}>Bucket:</strong>
         <select value={period} onChange={(e) => setPeriod(e.target.value)} style={{ ...input, maxWidth: 200 }}>
           <option value="monthly">Monthly</option>
@@ -1656,6 +1673,29 @@ function ReportsPanel({ companyId }) {
         <span style={{ marginLeft: "auto", fontSize: 13, color: C.muted }}>
           Lifetime gross: <strong style={{ color: C.ink }}>K {fmt(data.totalGross)}</strong>
         </span>
+        <button onClick={() => download("xlsx")} style={btnGhostLg}>
+          <FileSpreadsheet size={14} style={{ marginRight: 6 }} /> Download XLSX
+        </button>
+        <button onClick={() => download("pdf")} style={btnGhostLg}>
+          <Download size={14} style={{ marginRight: 6 }} /> Download PDF
+        </button>
+      </div>
+
+      {/* Year-to-date tile row */}
+      <div style={{
+        background: "#fffaf0", border: "1px solid #fde68a", borderRadius: 10, padding: "14px 18px",
+      }}>
+        <div style={{ fontSize: 11, color: C.goldDeep, fontWeight: 700, textTransform: "uppercase",
+                       letterSpacing: 0.06, marginBottom: 8 }}>
+          Year to date — {data.currentYear}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 16 }}>
+          <YtdStat label="Gross"   value={`K ${fmt(data.ytd?.gross)}`} />
+          <YtdStat label="Tax"     value={`K ${fmt(data.ytd?.tax)}`} />
+          <YtdStat label="Nasfund" value={`K ${fmt(data.ytd?.nasfund)}`} />
+          <YtdStat label="Net"     value={`K ${fmt(data.ytd?.net)}`} highlight />
+          <YtdStat label={period === "weekly" ? "Weeks" : "Months"} value={String(data.ytd?.periods || 0)} />
+        </div>
       </div>
 
       <ReportTable title={`${period === "weekly" ? "Weekly" : "Monthly"} summary`}
@@ -1693,6 +1733,18 @@ function ReportsPanel({ companyId }) {
             { k: "lifetime", label: "Cumulative share", num: true, bold: true },
           ]} empty="No share payouts configured." fmt={fmt} />
       )}
+    </div>
+  );
+}
+
+function YtdStat({ label, value, highlight }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: 0.04 }}>{label}</div>
+      <div style={{ fontSize: highlight ? 22 : 18, fontWeight: highlight ? 800 : 700,
+                     color: highlight ? C.redDeep : C.ink, fontVariantNumeric: "tabular-nums" }}>
+        {value}
+      </div>
     </div>
   );
 }
