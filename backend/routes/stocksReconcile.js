@@ -215,6 +215,13 @@ export function parseCibcCsv(csv) {
 // For each parsed file, find the matching app account (by id), then
 // compare positions and cash. Aggregate across multiple files for the
 // same app account (one file per sub-currency).
+// Canadian exchange suffixes added by some systems but stripped by CIBC.
+// "SLV.CN" in the app is the same ticker as "SLV" with market="CDN" in
+// the CIBC export. Normalize both sides before comparing so they match.
+function normalizeTicker(t) {
+  return String(t || "").toUpperCase().trim().replace(/\.(?:CN|TO|V|NE)$/i, "");
+}
+
 // accountMap is an optional { [cibcAcctId]: appAccountId } that lets the
 // user override the default same-id auto-match (their app accounts may
 // have different IDs than the CIBC numbers).
@@ -233,13 +240,23 @@ function computeDiff(profile, parsedFiles, accountMap = {}) {
     const bucket = appByAcct.get(p.acct);
     if (!bucket) continue;
     const sub = p.subCcy || p.ccy;
-    const key = `${p.ticker}|${sub}`;
+    const key = `${normalizeTicker(p.ticker)}|${sub}`;
     bucket.positions.set(key, (bucket.positions.get(key) || 0) + (p.qty || 0));
   }
-  // Resolver: given a CIBC account id, return the matching app account id.
-  // Manual map wins; otherwise fall back to identity (same id in both).
+  // Index app accounts by their stored brokerAccountId (the persistent
+  // mapping saved from prior reconciles) so we can auto-resolve without
+  // requiring the user to remap every time.
+  const byBrokerId = new Map();
+  for (const a of profile.accounts || []) {
+    if (a.brokerAccountId) byBrokerId.set(a.brokerAccountId, a.id);
+  }
+  // Resolver priority:
+  //   1. Manual override from this request's accountMap
+  //   2. Persistent broker-id stored on an app account
+  //   3. Identity (CIBC id == app id)
   const resolveAppId = (cibcAcctId) => {
     if (accountMap[cibcAcctId]) return accountMap[cibcAcctId];
+    if (byBrokerId.has(cibcAcctId)) return byBrokerId.get(cibcAcctId);
     if (appByAcct.has(cibcAcctId)) return cibcAcctId;
     return null;
   };
@@ -276,7 +293,7 @@ function computeDiff(profile, parsedFiles, accountMap = {}) {
       if (f.subCurrency === "USD") { b.cashUsd += cbc.USD || 0; b.cashUsdSeen = true; }
     }
     for (const p of f.positions) {
-      const key = `${p.ticker}|${p.ccyHeld}`;
+      const key = `${normalizeTicker(p.ticker)}|${p.ccyHeld}`;
       b.positions.set(key, (b.positions.get(key) || 0) + p.qty);
     }
   }

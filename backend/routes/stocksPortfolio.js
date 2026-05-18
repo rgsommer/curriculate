@@ -264,6 +264,9 @@ function sanitizePortfolioInput(body, email) {
           ? a.riskTolerance : null,
         // Per-account monthly report flag + optional beneficiary agreement
         monthlyReportEnabled: !!a.monthlyReportEnabled,
+        brokerAccountId: typeof a.brokerAccountId === "string"
+          ? a.brokerAccountId.trim().slice(0, 32)
+          : "",
         // Basic email validation: must contain "@" and a dot after it.
         // Empty string means "no extra recipient".
         monthlyReportCcEmail: (typeof a.monthlyReportCcEmail === "string"

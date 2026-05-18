@@ -1035,6 +1035,11 @@ export default function StocksAdvisorPage() {
                 updateUser(() => ({ consensusMode: v }));
                 showToast(v ? "Consensus mode ON — Update Advice will run 3×" : "Consensus mode OFF — single-run advice");
               }}
+              onSaveBrokerAccountId={(accountId, brokerAccountId) => {
+                updateUser((u) => ({
+                  accounts: u.accounts.map((a) => a.id === accountId ? { ...a, brokerAccountId } : a),
+                }));
+              }}
               onAddPlannedWithdrawal={(w) => {
                 const id = "w" + Date.now() + Math.random().toString(36).slice(2, 6);
                 updateUser((u) => ({
@@ -2301,7 +2306,7 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
   );
 }
 
-function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onSaveBrokerAccountId, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
   // Contribution goals — each is { amount, period }. Legacy flat numbers are
@@ -2623,7 +2628,11 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
         <div className="sa-muted">Daily briefing arrives at 7:30 AM ET each weekday via email; intraday alerts at 12:30 PM ET (only on material moves). Backed by the Curriculate Resend integration.</div>
       </div>
 
-      <ReconcileCard sessionToken={sessionToken} accounts={user.accounts || []} />
+      <ReconcileCard
+        sessionToken={sessionToken}
+        accounts={user.accounts || []}
+        onSaveBrokerAccountId={onSaveBrokerAccountId}
+      />
 
       <div className="sa-card" style={{ marginBottom: 14, borderColor: "var(--sa-red)" }}>
         <h3>Danger zone</h3>
@@ -2640,14 +2649,34 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
 // auto-apply (the user is the source of truth on intent; the app is the
 // source of truth on history).
 // =============================================================================
-function ReconcileCard({ sessionToken, accounts }) {
+function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId }) {
   const [files, setFiles] = useState([]); // [{ filename, content }]
   const [busy, setBusy] = useState(false);
   const [diff, setDiff] = useState(null);
   const [err, setErr] = useState(null);
   // accountMap: { [cibcAcctId]: appAccountId } — manual overrides for
   // when the user's app account ids differ from the CIBC account numbers.
-  const [accountMap, setAccountMap] = useState({});
+  // Initialized from any brokerAccountId fields already saved on accounts,
+  // so a one-time mapping persists across sessions.
+  const [accountMap, setAccountMap] = useState(() => {
+    const m = {};
+    for (const a of accounts || []) {
+      if (a.brokerAccountId) m[a.brokerAccountId] = a.id;
+    }
+    return m;
+  });
+  // Keep accountMap in sync if accounts prop updates (after save)
+  useEffect(() => {
+    setAccountMap((prev) => {
+      const next = { ...prev };
+      for (const a of accounts || []) {
+        if (a.brokerAccountId && !next[a.brokerAccountId]) {
+          next[a.brokerAccountId] = a.id;
+        }
+      }
+      return next;
+    });
+  }, [accounts]);
 
   const onDrop = async (e) => {
     e.preventDefault();
@@ -2689,6 +2718,16 @@ function ReconcileCard({ sessionToken, accounts }) {
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
       setDiff(j);
+      // Persist any newly-confirmed mappings so future reconciles
+      // auto-match without the user remapping.
+      if (onSaveBrokerAccountId && Object.keys(accountMap).length > 0) {
+        for (const [cibcId, appId] of Object.entries(accountMap)) {
+          const acct = (accounts || []).find((a) => a.id === appId);
+          if (acct && acct.brokerAccountId !== cibcId) {
+            onSaveBrokerAccountId(appId, cibcId);
+          }
+        }
+      }
     } catch (e) {
       setErr(e?.message || "Reconciliation failed");
     } finally {
@@ -2771,8 +2810,8 @@ function ReconcileCard({ sessionToken, accounts }) {
                 </div>
                 <div className="sa-muted" style={{ fontSize: 12, marginBottom: 10 }}>
                   {anyUnmatched
-                    ? "Your app account ids don't match the CIBC numbers. Pick the matching app account for each CIBC account below, then click Reconcile again."
-                    : "Auto-matched by id. Override any of these if you've named your app accounts differently."}
+                    ? "Your app account ids don't match the CIBC numbers. Pick the matching app account for each CIBC account below, then click Reconcile again. Mappings are saved so future uploads auto-match."
+                    : "Auto-matched (from saved mappings). Override any if you've reorganized accounts."}
                 </div>
                 <div style={{ display: "grid", gap: 6 }}>
                   {cibcAcctsSeen.map((cibc) => (

@@ -117,6 +117,10 @@ const AccountSchema = new mongoose.Schema(
     // the last market day of the month (period P&L, YTD, inception) AND a
     // separate end-of-month email after market close that same day.
     monthlyReportEnabled: { type: Boolean, default: false },
+    // Persistent mapping from the broker's account number to this app
+    // account. Set once via the Reconcile UI; future reconciles auto-match.
+    // E.g. CIBC Investor's Edge id "59659702" → app account "rrsp".
+    brokerAccountId: { type: String, default: "", maxlength: 32, trim: true },
     // Optional extra recipient (e.g. Tamara for the TFSA). When set, the
     // monthly report for THIS account is also emailed to this address as a
     // dedicated single-account report — they don't see other accounts.
