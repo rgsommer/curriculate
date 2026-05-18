@@ -126,6 +126,7 @@ import stocksAdviceRouter from "./routes/stocksAdvice.js";
 import stocksTradeRouter from "./routes/stocksTrade.js";
 import stocksPendingOrdersRouter from "./routes/stocksPendingOrders.js";
 import stocksDiscoverRouter from "./routes/stocksDiscover.js";
+import stocksReconcileRouter from "./routes/stocksReconcile.js";
 import { scheduleDailyBriefing, scheduleMonthlyReport, scheduleWeeklyDiscovery } from "./jobs/stocksDailyBriefing.js";
 
 function renderEmailTemplate(str, vars) {
@@ -520,6 +521,7 @@ app.use("/api/stocks-advice", stocksAdviceRouter);
 app.use("/api/stocks-trade", stocksTradeRouter);
 app.use("/api/stocks-pending-orders", stocksPendingOrdersRouter);
 app.use("/api/stocks-discover", stocksDiscoverRouter);
+app.use("/api/stocks-reconcile", stocksReconcileRouter);
 
 // Fieldday
 app.use("/fieldday/api", fielddayRouter);

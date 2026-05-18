@@ -1000,6 +1000,7 @@ export default function StocksAdvisorPage() {
           {currentTab === "settings" && (
             <SettingsView
               user={user}
+              sessionToken={auth.sessionToken}
               onChangeRisk={(v) => { updateUser(() => ({ riskTolerance: v })); showToast("Risk tolerance updated"); }}
               onChangeFx={(v) => { updateUser(() => ({ fxUsdCad: v })); showToast("FX updated"); }}
               onChangeCommission={(v) => { updateUser(() => ({ commissionPerTrade: v })); showToast("Commission updated"); }}
@@ -2300,7 +2301,7 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
   );
 }
 
-function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
   // Contribution goals — each is { amount, period }. Legacy flat numbers are
@@ -2621,10 +2622,223 @@ function SettingsView({ user, onChangeRisk, onChangeFx, onChangeCommission, onCh
         <h3>Notifications</h3>
         <div className="sa-muted">Daily briefing arrives at 7:30 AM ET each weekday via email; intraday alerts at 12:30 PM ET (only on material moves). Backed by the Curriculate Resend integration.</div>
       </div>
+
+      <ReconcileCard sessionToken={sessionToken} accounts={user.accounts || []} />
+
       <div className="sa-card" style={{ marginBottom: 14, borderColor: "var(--sa-red)" }}>
         <h3>Danger zone</h3>
         <button className="sa-btn danger" onClick={onReset}>Reset my data</button>
       </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// Reconcile card — upload CIBC AccountHoldings CSV files, diff against the
+// app's stored positions and cash balances. Read-only: flags discrepancies
+// for the user to manually fix in Holdings or via Record Trade. No
+// auto-apply (the user is the source of truth on intent; the app is the
+// source of truth on history).
+// =============================================================================
+function ReconcileCard({ sessionToken, accounts }) {
+  const [files, setFiles] = useState([]); // [{ filename, content }]
+  const [busy, setBusy] = useState(false);
+  const [diff, setDiff] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const onDrop = async (e) => {
+    e.preventDefault();
+    const dropped = [...(e.dataTransfer?.files || [])];
+    await loadFiles(dropped);
+  };
+  const onPickFiles = async (e) => {
+    const picked = [...(e.target.files || [])];
+    await loadFiles(picked);
+    e.target.value = ""; // allow re-picking the same files
+  };
+  const loadFiles = async (fileList) => {
+    if (!fileList.length) return;
+    setErr(null);
+    const next = [...files];
+    for (const f of fileList) {
+      if (!/\.csv$/i.test(f.name)) continue;
+      try {
+        const content = await f.text();
+        next.push({ filename: f.name, content });
+      } catch (e) {
+        setErr(`Failed to read ${f.name}: ${e?.message || ""}`);
+      }
+    }
+    setFiles(next);
+  };
+  const removeFile = (i) => setFiles(files.filter((_, idx) => idx !== i));
+  const reset = () => { setFiles([]); setDiff(null); setErr(null); };
+
+  const runReconcile = async () => {
+    if (busy || files.length === 0) return;
+    setBusy(true); setErr(null); setDiff(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-reconcile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ files }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setDiff(j);
+    } catch (e) {
+      setErr(e?.message || "Reconciliation failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const fmt$ = (n) => n == null ? "—" : (n < 0 ? "−" : "") + "$" + Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 14 }}>
+      <h3>Reconcile holdings with broker</h3>
+      <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+        Drag in the AccountHoldings CSV files you downloaded from CIBC Investor's Edge (one per account × currency sub). The app will flag any discrepancies in quantity or cash balance. Read-only — no auto-correct; fix discrepancies manually in Holdings.
+      </div>
+
+      <div
+        onDrop={onDrop}
+        onDragOver={(e) => e.preventDefault()}
+        style={{
+          border: "2px dashed var(--sa-border)",
+          borderRadius: 8,
+          padding: 24,
+          textAlign: "center",
+          background: "var(--sa-panel-2)",
+          marginBottom: 12,
+        }}
+      >
+        <div style={{ fontSize: 14, marginBottom: 6 }}>📁 Drag CSV files here, or</div>
+        <label className="sa-btn secondary" style={{ display: "inline-block", cursor: "pointer", fontSize: 13 }}>
+          Browse for files
+          <input type="file" accept=".csv" multiple onChange={onPickFiles} style={{ display: "none" }} />
+        </label>
+        <div className="sa-muted" style={{ fontSize: 11, marginTop: 8 }}>
+          Tip: in CIBC Investor's Edge, go to Accounts → Holdings → click the CSV download icon for EACH account × currency sub. You'll get 6 files for 3 accounts (3 CAD subs + 3 USD subs).
+        </div>
+      </div>
+
+      {files.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Files staged ({files.length}):</div>
+          <div style={{ display: "grid", gap: 4 }}>
+            {files.map((f, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 8px", background: "var(--sa-panel-2)", borderRadius: 6, fontSize: 12 }}>
+                <span>{f.filename}</span>
+                <button className="sa-btn ghost" onClick={() => removeFile(i)} style={{ fontSize: 11, padding: "2px 8px" }}>✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginBottom: 12 }}>
+        {(files.length > 0 || diff) && <button className="sa-btn ghost" onClick={reset} disabled={busy}>Clear</button>}
+        <button className="sa-btn" onClick={runReconcile} disabled={busy || files.length === 0}>
+          {busy ? "Reconciling…" : `🔍 Reconcile ${files.length} file${files.length === 1 ? "" : "s"}`}
+        </button>
+      </div>
+
+      {err && <div className="sa-err">{err}</div>}
+
+      {diff && diff.accounts && (
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--sa-border)" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Results ({diff.parsedFiles.length} files parsed, {diff.accounts.length} accounts checked)</div>
+
+          {diff.accounts.length === 0 && (
+            <div className="sa-muted" style={{ fontSize: 13 }}>No accounts to compare.</div>
+          )}
+
+          {diff.accounts.map((a, i) => {
+            if (a.unmatched) {
+              return (
+                <div key={i} className="sa-card" style={{ background: "var(--sa-amber-soft)", borderColor: "var(--sa-amber)", marginBottom: 8, padding: 12 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: "var(--sa-amber)" }}>⚠ Unmatched: {a.accountName} (id {a.acctId})</div>
+                  <div className="sa-muted" style={{ fontSize: 12, marginTop: 4 }}>{a.message}</div>
+                </div>
+              );
+            }
+            if (a.appOnly) {
+              return (
+                <div key={i} className="sa-card" style={{ background: "var(--sa-panel-2)", marginBottom: 8, padding: 12 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{a.accountName} — not in upload</div>
+                  <div className="sa-muted" style={{ fontSize: 12, marginTop: 4 }}>{a.message}</div>
+                </div>
+              );
+            }
+            if (a.clean) {
+              return (
+                <div key={i} className="sa-card" style={{ background: "var(--sa-green-soft)", borderColor: "#bbf7d0", marginBottom: 8, padding: 12 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: "var(--sa-green)" }}>✓ {a.accountName} — matches CIBC exactly</div>
+                  <div className="sa-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                    Cash: {fmt$(a.app.cashCad)} CAD + {fmt$(a.app.cashUsd)} USD · Positions: {a.app.positionsCount}
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div key={i} className="sa-card" style={{ background: "#fef2f2", borderColor: "#fecaca", marginBottom: 8, padding: 12 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, color: "#b91c1c" }}>⚠ {a.accountName} — {a.issues.length} discrepanc{a.issues.length === 1 ? "y" : "ies"}</div>
+                <div className="sa-muted" style={{ fontSize: 11, marginTop: 4, marginBottom: 10 }}>
+                  App says: {fmt$(a.app.cashCad)} CAD · {fmt$(a.app.cashUsd)} USD · {a.app.positionsCount} positions{" → "}
+                  CIBC says: {fmt$(a.csv.cashCad)} CAD · {fmt$(a.csv.cashUsd)} USD · {a.csv.positionsCount} positions
+                </div>
+                <table style={{ width: "100%", fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
+                  <thead>
+                    <tr style={{ color: "var(--sa-muted)", textAlign: "left" }}>
+                      <th style={{ padding: "4px 6px", fontWeight: 500 }}>Type</th>
+                      <th style={{ padding: "4px 6px", fontWeight: 500 }}>Item</th>
+                      <th style={{ padding: "4px 6px", fontWeight: 500, textAlign: "right" }}>App</th>
+                      <th style={{ padding: "4px 6px", fontWeight: 500, textAlign: "right" }}>CIBC</th>
+                      <th style={{ padding: "4px 6px", fontWeight: 500, textAlign: "right" }}>Delta</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {a.issues.map((issue, j) => {
+                      if (issue.type === "cash") {
+                        return (
+                          <tr key={j} style={{ borderTop: "1px solid #fecaca" }}>
+                            <td style={{ padding: "4px 6px" }}>Cash</td>
+                            <td style={{ padding: "4px 6px" }}>{issue.currency}</td>
+                            <td style={{ padding: "4px 6px", textAlign: "right" }}><span className="sa-amount">{fmt$(issue.appValue)}</span></td>
+                            <td style={{ padding: "4px 6px", textAlign: "right" }}><span className="sa-amount">{fmt$(issue.csvValue)}</span></td>
+                            <td style={{ padding: "4px 6px", textAlign: "right", color: issue.delta < 0 ? "#b91c1c" : "var(--sa-green)" }}>
+                              <span className="sa-amount">{issue.delta > 0 ? "+" : ""}{fmt$(issue.delta)}</span>
+                            </td>
+                          </tr>
+                        );
+                      }
+                      return (
+                        <tr key={j} style={{ borderTop: "1px solid #fecaca" }}>
+                          <td style={{ padding: "4px 6px" }}>
+                            {issue.kind === "missing_in_app" && "Missing"}
+                            {issue.kind === "extra_in_app" && "Extra"}
+                            {issue.kind === "qty_mismatch" && "Qty"}
+                          </td>
+                          <td style={{ padding: "4px 6px" }}>
+                            <b>{issue.ticker}</b> <span className="sa-muted">({issue.subCurrency} sub)</span>
+                          </td>
+                          <td style={{ padding: "4px 6px", textAlign: "right" }}>{issue.appQty.toLocaleString()}</td>
+                          <td style={{ padding: "4px 6px", textAlign: "right" }}>{issue.csvQty.toLocaleString()}</td>
+                          <td style={{ padding: "4px 6px", textAlign: "right", color: issue.delta < 0 ? "#b91c1c" : "var(--sa-green)" }}>
+                            {issue.delta > 0 ? "+" : ""}{issue.delta.toLocaleString()}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
