@@ -1853,6 +1853,7 @@ function UsersPage({ me, onBack }) {
   const [companies, setCompanies] = useState([]);
   const [error, setError] = useState("");
   const [showInvite, setShowInvite] = useState(false);
+  const [editing, setEditing] = useState(null);
 
   const refresh = useCallback(async () => {
     setError("");
@@ -1923,10 +1924,15 @@ function UsersPage({ me, onBack }) {
                     </td>
                     <td style={td}><CheckCircle2 size={16} color={u.is_active ? "#16a34a" : "#94a3b8"} /></td>
                     <td style={td}>
-                      {u.email !== me.email && me.clearance >= 3 && u.clearance < me.clearance && (
-                        <button onClick={() => toggleActive(u)} style={btnGhostSmall}>
-                          {u.is_active ? "Deactivate" : "Reactivate"}
-                        </button>
+                      {me.clearance >= 3 && (u.email === me.email || u.clearance < me.clearance) && (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button onClick={() => setEditing(u)} style={btnGhostSmall}>Edit</button>
+                          {u.email !== me.email && u.clearance < me.clearance && (
+                            <button onClick={() => toggleActive(u)} style={btnGhostSmall}>
+                              {u.is_active ? "Deactivate" : "Reactivate"}
+                            </button>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -1942,7 +1948,111 @@ function UsersPage({ me, onBack }) {
           onClose={() => setShowInvite(false)}
           onSaved={() => { setShowInvite(false); refresh(); }} />
       )}
+      {editing && (
+        <EditUserDialog user={editing} companies={companies} me={me}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); refresh(); }} />
+      )}
     </div>
+  );
+}
+
+function EditUserDialog({ user, companies, me, onClose, onSaved }) {
+  const [f, setF] = useState({
+    first_name: user.first_name || "",
+    last_name:  user.last_name  || "",
+    email:      user.email      || "",
+    role:       user.role,
+    company_id: user.company_id || "",
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+
+  const isSelf = user.email === me.email;
+  // Only system_owner can change roles freely. Anyone clearance>=3 can edit users
+  // strictly below their own clearance; nobody can promote at-or-above their own level
+  // (server enforces this too).
+  const canChangeAccess = !isSelf && me.clearance >= 3 && user.clearance < me.clearance;
+
+  async function save() {
+    setError(""); setSubmitting(true);
+    try {
+      const body = {
+        first_name: f.first_name.trim(),
+        last_name:  f.last_name.trim(),
+        email:      f.email.trim().toLowerCase(),
+      };
+      if (canChangeAccess) {
+        body.role = f.role;
+        body.company_id = f.company_id || null;
+      }
+      await api(`/api/teebeepay/users/${user.id}`, { method: "PATCH", body: JSON.stringify(body) });
+      onSaved();
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+  const canSubmit = f.first_name.trim() && f.last_name.trim() && f.email.trim();
+
+  return (
+    <Modal title="Edit user" onClose={onClose}>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <p style={{ fontSize: 13, color: C.muted, margin: "0 0 14px" }}>
+        {isSelf
+          ? "Editing your own profile. Email changes apply to your next sign-in."
+          : `Editing ${user.email}.`}
+      </p>
+      <Row>
+        <Field label="First name *">
+          <input style={input} value={f.first_name} onChange={(e) => set("first_name", e.target.value)} autoFocus />
+        </Field>
+        <Field label="Last name *">
+          <input style={input} value={f.last_name} onChange={(e) => set("last_name", e.target.value)} />
+        </Field>
+      </Row>
+      <Field label="Email *">
+        <input style={input} type="email" value={f.email} onChange={(e) => set("email", e.target.value)} />
+      </Field>
+      <Field label="Role">
+        <select
+          style={{ ...input, opacity: canChangeAccess ? 1 : 0.6 }}
+          value={f.role}
+          disabled={!canChangeAccess}
+          onChange={(e) => set("role", e.target.value)}
+        >
+          {me.clearance >= 4 && <option value="system_owner">system_owner (level 4)</option>}
+          {me.clearance >= 4 && <option value="principal">principal — runs the bureau (level 3)</option>}
+          <option value="bookkeeper">bookkeeper — back-office (level 2)</option>
+          <option value="site_payroll">site_payroll — per-company key person (level 1)</option>
+          <option value="employee">employee — view own stubs only (level 0)</option>
+        </select>
+      </Field>
+      <Field label="Assign to a single company (leave blank for system-wide access)">
+        <select
+          style={{ ...input, opacity: canChangeAccess ? 1 : 0.6 }}
+          value={f.company_id}
+          disabled={!canChangeAccess}
+          onChange={(e) => set("company_id", e.target.value)}
+        >
+          <option value="">— all companies (principal/bookkeeper) —</option>
+          {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </Field>
+      {!canChangeAccess && (
+        <p style={{ fontSize: 12, color: C.muted, margin: "6px 0 0" }}>
+          {isSelf
+            ? "You can't change your own role or company assignment."
+            : "Role/company changes require higher clearance than this user."}
+        </p>
+      )}
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
+        <button onClick={onClose} style={btnGhostLg}>Cancel</button>
+        <button onClick={save} disabled={!canSubmit || submitting} style={btnPrimaryInline}>
+          {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</>
+                      : "Save changes"}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
