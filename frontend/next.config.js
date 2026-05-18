@@ -1,12 +1,9 @@
 /** @type {import('next').NextConfig} */
 //
-// PNGPay note: /pngpay/* proxies to the PNGPay service on Render
-// (multi-tenant payroll bureau — see pngpay/ in this repo). The hostname
-// below must match the Render service name. After the first Render deploy,
-// if Render assigned a different subdomain (e.g. pngpay-abc1.onrender.com),
-// update PNGPAY_ORIGIN here or set the env var in Vercel.
-const PNGPAY_ORIGIN = process.env.PNGPAY_ORIGIN || "https://pngpay.onrender.com";
-
+// Note: TeebeePay (payroll product) and Tee Bee Accountants (firm site)
+// live as native Next.js pages under /teebeepay and /teebee — no external
+// service to proxy to. The earlier /pngpay → Render rewrite was removed.
+// /pngpay still works as a friendly URL via the redirect below.
 const nextConfig = {
   async rewrites() {
     return [
@@ -15,9 +12,13 @@ const nextConfig = {
         source: "/grading/capture/:path*",
         destination: "https://api.curriculate.net/grading/capture/:path*",
       },
-      // PNGPay (Render Web Service)
-      { source: "/pngpay",         destination: `${PNGPAY_ORIGIN}/pngpay` },
-      { source: "/pngpay/:path*",  destination: `${PNGPAY_ORIGIN}/pngpay/:path*` },
+    ];
+  },
+  async redirects() {
+    return [
+      // Old internal name kept as a permanent redirect to the public brand.
+      { source: "/pngpay",        destination: "/teebeepay",        permanent: true },
+      { source: "/pngpay/:path*", destination: "/teebeepay/:path*", permanent: true },
     ];
   },
 };

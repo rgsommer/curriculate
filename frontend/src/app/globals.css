@@ -29,3 +29,14 @@ body.capacitor-native {
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+/* ── TeeboPay standalone shell ──
+   TeeboPay (/teebopay/*) is its own product brand. Hide Curriculate's
+   site header and footer so visitors see only the TeeboPay identity. */
+body.teebopay-host .site-header,
+body.teebopay-host .site-footer {
+  display: none !important;
+}
+body.teebopay-host .min-h-\[70vh\] {
+  min-height: 100vh;
+}
