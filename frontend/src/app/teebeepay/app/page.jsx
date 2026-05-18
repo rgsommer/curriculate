@@ -14,6 +14,7 @@ import {
   Plus, X, Edit2, Send, Download, Settings, UserPlus, Trash2,
   BarChart3, Percent, Upload, Image as ImageIcon, ClipboardList, Activity,
   ShieldCheck, NotebookPen, AlertTriangle, Layers, Network,
+  GraduationCap, HelpCircle, ChevronRight, ChevronLeft,
 } from "lucide-react";
 
 const C = {
@@ -3300,6 +3301,173 @@ function DivisionDialog({ companyId, division, employees, onClose, onSaved }) {
   );
 }
 
+/* ─────────── Supervisor tutor (auto-trains new supervisors) ─────────── */
+
+function SupervisorTutor({ me, teams, onClose }) {
+  const [step, setStep] = useState(0);
+  const totalEmployees = (teams || []).reduce((s, t) => s + (t.employees?.length || 0), 0);
+  const divisionNames = (teams || []).map((t) => t.division_name);
+  const companyNames = Array.from(new Set((teams || []).map((t) => t.company_name)));
+  const firstName = (me?.first_name || "").trim() || me?.email || "there";
+
+  const steps = [
+    {
+      icon: <GraduationCap size={26} color={C.gold} />,
+      title: `Welcome, ${firstName} — let's get you running`,
+      body: (
+        <>
+          <p style={{ marginTop: 0 }}>
+            You've been set up as a supervisor on TeebeePay. That means you're the one who enters this team's
+            hours each pay period — instead of the bookkeeper guessing or chasing you for them.
+          </p>
+          <p style={{ background: "#fff7e0", padding: 12, borderRadius: 8, border: "1px solid #fde68a", margin: "12px 0 0", fontSize: 13 }}>
+            <strong>You supervise:</strong> {divisionNames.join(", ")}
+            {" · "}<strong>{totalEmployees}</strong> employee{totalEmployees === 1 ? "" : "s"}
+            {" · across "}<strong>{companyNames.length}</strong> compan{companyNames.length === 1 ? "y" : "ies"}.
+          </p>
+        </>
+      ),
+    },
+    {
+      icon: <NotebookPen size={26} color={C.gold} />,
+      title: "Each row is one of your team members",
+      body: (
+        <>
+          <p style={{ marginTop: 0 }}>
+            For every employee, you enter three things this fortnight:
+          </p>
+          <ul style={{ margin: "0 0 8px 18px", padding: 0, fontSize: 14, lineHeight: 1.7 }}>
+            <li><strong>Hours</strong> — what they actually worked. Pre-filled with the division default (e.g. 80 for fortnightly).</li>
+            <li><strong>Cash advance</strong> (optional) — money already given to them; deducted from net pay.</li>
+            <li><strong>Note</strong> (optional) — a short explanation. Appears on their pay-stub email.</li>
+          </ul>
+          <p style={{ background: "#f3f4f6", padding: 12, borderRadius: 8, margin: "10px 0 0", fontSize: 13 }}>
+            <strong>Tip — the double-click shortcut.</strong> Double-click an <em>Hours</em> cell to toggle between the
+            division default and zero. Use it for "didn't show up this fortnight" — fastest way to mark absences.
+          </p>
+        </>
+      ),
+    },
+    {
+      icon: <CheckCircle2 size={26} color={C.gold} />,
+      title: "Save whenever you like",
+      body: (
+        <>
+          <p style={{ marginTop: 0 }}>
+            Hit <strong>Save hours</strong> at the bottom whenever you want. You can keep editing later — the new values
+            replace the old ones. Nothing is "submitted" yet; the bookkeeper picks these numbers up when they cut the next
+            pay run, then they become real entries.
+          </p>
+          <p style={{ marginTop: 12 }}>
+            Each row shows the time of your last save underneath the employee's name, so you can see at a glance
+            what's been entered.
+          </p>
+        </>
+      ),
+    },
+    {
+      icon: <AlertTriangle size={26} color={C.gold} />,
+      title: "There's a deadline",
+      body: (
+        <>
+          <p style={{ marginTop: 0 }}>
+            Each company sets a day and time by which supervisor hours need to be in. You'll get an email reminder
+            the morning of that day if you haven't saved yet.
+          </p>
+          <p style={{ background: "#fee2e2", border: "1px solid #fecaca", padding: 12, borderRadius: 8, margin: "12px 0 0", fontSize: 13, color: "#7f1d1d" }}>
+            <strong>Late submissions hold up the pay run.</strong> If a deadline is missed, the bookkeeper has to chase you
+            and that delays everybody's pay. Save early — you can always edit again before the deadline.
+          </p>
+        </>
+      ),
+    },
+    {
+      icon: <HelpCircle size={26} color={C.gold} />,
+      title: "You're set",
+      body: (
+        <>
+          <p style={{ marginTop: 0 }}>
+            Click <strong>Got it</strong> to start entering hours. You can re-open this tour any time via the
+            <strong> Show tour </strong> button next to the page title.
+          </p>
+          <p style={{ marginTop: 12 }}>
+            Need help with something specific? Reply to any TeebeePay email and a real person picks it up.
+          </p>
+        </>
+      ),
+    },
+  ];
+
+  const cur = steps[step];
+  const isLast = step === steps.length - 1;
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 1000,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: "#fff", borderRadius: 14, maxWidth: 560, width: "100%",
+        boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "hidden",
+      }}>
+        {/* Header strip with gold accent */}
+        <div style={{ background: "linear-gradient(135deg, #fffaf0 0%, #fff7e0 100%)", padding: "18px 22px", borderBottom: "1px solid #fde68a" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{
+              width: 44, height: 44, borderRadius: 10, background: "#fff",
+              border: "1px solid #fde68a", display: "flex", alignItems: "center", justifyContent: "center",
+            }}>{cur.icon}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: C.goldDeep, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.06 }}>
+                Quick tour · step {step + 1} of {steps.length}
+              </div>
+              <h3 style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 800, color: C.ink }}>{cur.title}</h3>
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4 }}>
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "20px 22px", fontSize: 14, lineHeight: 1.55, color: C.inkSoft }}>
+          {cur.body}
+        </div>
+
+        {/* Step dots + nav */}
+        <div style={{ padding: "14px 22px", borderTop: "1px solid #f1f5f9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", gap: 6 }}>
+            {steps.map((_, i) => (
+              <button key={i} onClick={() => setStep(i)} aria-label={`Go to step ${i + 1}`}
+                style={{
+                  width: 8, height: 8, borderRadius: 999,
+                  background: i === step ? C.red : "#e5e7eb",
+                  border: "none", padding: 0, cursor: "pointer",
+                }} />
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {step > 0 && (
+              <button onClick={() => setStep(step - 1)} style={btnGhostLg}>
+                <ChevronLeft size={14} style={{ marginRight: 4 }} /> Back
+              </button>
+            )}
+            {isLast ? (
+              <button onClick={onClose} style={btnPrimaryInline}>
+                <CheckCircle2 size={14} style={{ marginRight: 6 }} /> Got it
+              </button>
+            ) : (
+              <button onClick={() => setStep(step + 1)} style={btnPrimaryInline}>
+                Next <ChevronRight size={14} style={{ marginLeft: 4 }} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─────────── My team's hours (supervisor view) ─────────── */
 
 function MyTeamPage({ me, onBack }) {
@@ -3308,6 +3476,10 @@ function MyTeamPage({ me, onBack }) {
   const [info, setInfo] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [tutorOpen, setTutorOpen] = useState(false);
+  // Auto-open the tutor the first time this user lands on the page.
+  // Per-user key so different supervisors each get their own onboarding.
+  const tutorKey = `teebeepay.tutor.my_team.${me?.uid || "anon"}`;
 
   const refresh = useCallback(async () => {
     setError(""); setInfo("");
@@ -3362,6 +3534,17 @@ function MyTeamPage({ me, onBack }) {
     finally { setSubmitting(false); }
   }
 
+  // Auto-launch tutorial on first successful team-load for this user.
+  useEffect(() => {
+    if (teams == null || !teams.length) return;
+    try {
+      if (!localStorage.getItem(tutorKey)) {
+        setTutorOpen(true);
+        localStorage.setItem(tutorKey, new Date().toISOString());
+      }
+    } catch { /* localStorage blocked — silently skip */ }
+  }, [teams, tutorKey]);
+
   if (teams == null) return <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered>;
   if (!teams.length) {
     return (
@@ -3379,12 +3562,18 @@ function MyTeamPage({ me, onBack }) {
   return (
     <div style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px" }}>
       <button onClick={onBack} style={btnBack}><ArrowLeft size={14} /> Dashboard</button>
-      <h1 style={{ margin: "0 0 8px", fontSize: 26, fontWeight: 800 }}>My team's hours</h1>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>My team's hours</h1>
+        <button onClick={() => setTutorOpen(true)} style={{ ...btnGhostSmall, color: C.redDeep }} title="Show the quick tutorial">
+          <GraduationCap size={14} style={{ marginRight: 6 }} /> Show tour
+        </button>
+      </div>
       <p style={{ color: C.muted, fontSize: 14, margin: "0 0 18px" }}>
         Enter the hours each of your team members worked this pay period. Save whenever you like — the values are picked
         up automatically when the bookkeeper cuts the next pay run. Double-click an hours cell to toggle between the
         division default and zero (e.g. didn't work this fortnight).
       </p>
+      {tutorOpen && <SupervisorTutor me={me} teams={teams} onClose={() => setTutorOpen(false)} />}
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
       {info && <FlashBox type="info" icon={<CheckCircle2 size={16} />}>{info}</FlashBox>}
 
