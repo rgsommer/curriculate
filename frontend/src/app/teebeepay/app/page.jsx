@@ -564,6 +564,7 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod, onOpe
 
       {showEmpDialog && (
         <EmployeeDialog companyId={companyId} employee={showEmpDialog.id ? showEmpDialog : null}
+          allEmployees={employees || []}
           onClose={() => setShowEmpDialog(null)}
           onSaved={() => { setShowEmpDialog(null); refresh(); }} />
       )}
@@ -739,7 +740,7 @@ function EmployeeTable({ employees, selected, onToggleSel, onEdit, canEdit, onOp
   );
 }
 
-function EmployeeDialog({ companyId, employee, onClose, onSaved }) {
+function EmployeeDialog({ companyId, employee, allEmployees, onClose, onSaved }) {
   const isEdit = !!employee;
   // Seed bank_accounts: prefer the array; else build single-row from legacy fields.
   const seedBankAccounts = (() => {
@@ -782,6 +783,9 @@ function EmployeeDialog({ companyId, employee, onClose, onSaved }) {
     ncsl_voluntary: employee?.ncsl_voluntary ?? 0,
     nas_extra_pct: employee?.nas_extra_pct ?? 0,
     is_active: employee?.is_active !== false,
+    division: employee?.division || "",
+    supervisor_id: employee?.supervisor_id || "",
+    supervisor_submits_hours: !!employee?.supervisor_submits_hours,
   });
 
   // Helpers for the bank_accounts array.
@@ -874,6 +878,50 @@ function EmployeeDialog({ companyId, employee, onClose, onSaved }) {
           <Field label="FTE %"><input style={input} type="number" step="1" value={f.fte_pct} onChange={(e) => set("fte_pct", e.target.value)} /></Field>
           <Field label="Dependants"><input style={input} type="number" min="0" value={f.dependents} onChange={(e) => set("dependents", e.target.value)} /></Field>
         </Row>
+      </FieldGroup>
+      <FieldGroup label="Organisation">
+        <Row>
+          <Field label="Division">
+            <input style={input} value={f.division}
+              onChange={(e) => set("division", e.target.value)}
+              placeholder="e.g. HQ, Field, Lae Branch" />
+          </Field>
+          <Field label="Direct supervisor">
+            <select style={input} value={f.supervisor_id}
+              onChange={(e) => {
+                const v = e.target.value;
+                setF((x) => ({
+                  ...x, supervisor_id: v,
+                  supervisor_submits_hours: v ? x.supervisor_submits_hours : false,
+                }));
+              }}>
+              <option value="">— none —</option>
+              {(allEmployees || [])
+                .filter((x) => !employee || x.id !== employee.id)
+                .filter((x) => x.is_active !== false)
+                .sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`))
+                .map((x) => (
+                  <option key={x.id} value={x.id}>{x.first_name} {x.last_name}</option>
+                ))}
+            </select>
+          </Field>
+        </Row>
+        <label style={{
+          display: "flex", alignItems: "flex-start", gap: 8, marginTop: 8,
+          fontSize: 13, color: f.supervisor_id ? C.ink : C.muted, cursor: f.supervisor_id ? "pointer" : "not-allowed",
+        }}>
+          <input type="checkbox" checked={!!f.supervisor_submits_hours} disabled={!f.supervisor_id}
+            onChange={(e) => set("supervisor_submits_hours", e.target.checked)}
+            style={{ marginTop: 3 }} />
+          <span>
+            <strong>Supervisor enters this person's hours each pay period.</strong>
+            <br />
+            <span style={{ fontSize: 12, color: C.muted }}>
+              When unchecked, the company's site-payroll user enters this person's hours (default behaviour).
+              Useful for hourly wage earners working under a field foreman or shift leader.
+            </span>
+          </span>
+        </label>
       </FieldGroup>
       <FieldGroup label={`Banking (${f.bank_accounts.length} account${f.bank_accounts.length === 1 ? "" : "s"})`}>
         <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>

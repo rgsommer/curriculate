@@ -38,6 +38,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         school_fees_allowance: e.school_fees_allowance || 0,
         salary_sacrifice: e.salary_sacrifice || 0,
         ncsl_voluntary: e.ncsl_voluntary || 0,
+        division: e.division || "",
+        supervisor_id: e.supervisor_id ? e.supervisor_id.toString() : null,
+        supervisor_submits_hours: !!e.supervisor_submits_hours,
       })),
     });
   } catch (e: any) {
@@ -96,6 +99,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       clearance_level: Math.min(Number(b.clearance_level || 0), u.clearance - 1),
       is_active: 1,
       created_at: new Date(),
+      division: b.division ? String(b.division).trim().slice(0, 80) : null,
+      supervisor_id: b.supervisor_id ? new ObjectId(String(b.supervisor_id)) : null,
+      supervisor_submits_hours: !!b.supervisor_submits_hours,
     };
     const r = await dbi.collection("employees").insertOne(doc);
     return NextResponse.json({ ok: true, id: r.insertedId.toString() });
