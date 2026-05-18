@@ -11,7 +11,7 @@ import Link from "next/link";
 import {
   ArrowLeft, ArrowRight, Loader2, KeyRound, LogOut,
   Building2, Users, FileText, CheckCircle2, AlertCircle, Mail,
-  Plus, X, Edit2, Send,
+  Plus, X, Edit2, Send, Download, Settings, UserPlus, Trash2,
 } from "lucide-react";
 
 const C = {
@@ -39,7 +39,7 @@ async function api(path, opts = {}) {
 }
 
 export default function TeebeePayApp() {
-  const [view, setView] = useState("loading"); // loading | login | dashboard | company | new_period | period
+  const [view, setView] = useState("loading"); // loading | login | dashboard | company | new_period | period | users
   const [me, _setMe] = useState(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
   const [selectedPeriodId, setSelectedPeriodId] = useState(null);
@@ -65,7 +65,7 @@ export default function TeebeePayApp() {
       minHeight: "100vh", background: "#f6f7f9", color: C.ink,
       fontFamily: "system-ui, -apple-system, 'Segoe UI', Inter, Roboto, sans-serif",
     }}>
-      {view !== "login" && <AppHeader me={me} onSignOut={signOut} />}
+      {view !== "login" && <AppHeader me={me} onSignOut={signOut} onUsers={() => setView("users")} onHome={() => setView("dashboard")} />}
       {view === "loading"   && <Centered><Loader2 className="tbp-spin" size={28} color={C.red} /></Centered>}
       {view === "login"     && <LoginCard onSignedIn={(u) => { _setMe(u); setMe(u); setView("dashboard"); }} />}
       {view === "dashboard" && <Dashboard me={me} onPick={goCompany} />}
@@ -75,6 +75,7 @@ export default function TeebeePayApp() {
         onBack={() => setView("company")} onSaved={(pid) => goPeriod(pid)} />}
       {view === "period" && <PeriodDetail me={me} periodId={selectedPeriodId}
         onBack={() => setView("company")} />}
+      {view === "users" && <UsersPage me={me} onBack={() => setView("dashboard")} />}
       <style>{`
         @keyframes tbp-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
         .tbp-spin { animation: tbp-spin 0.9s linear infinite; }
@@ -87,17 +88,22 @@ export default function TeebeePayApp() {
 
 /* ─────────── Header / shared bits ─────────── */
 
-function AppHeader({ me, onSignOut }) {
+function AppHeader({ me, onSignOut, onUsers, onHome }) {
   return (
     <header style={{
       background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "12px 24px",
       display: "flex", alignItems: "center", gap: 16,
     }}>
-      <Link href="/teebeepay" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", color: C.ink }}>
+      <button onClick={onHome} style={{ display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", cursor: "pointer", color: C.ink }}>
         <Logo size={30} />
         <strong style={{ fontSize: 17 }}>TeebeePay</strong>
-      </Link>
+      </button>
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
+        {me?.clearance >= 3 && (
+          <button onClick={onUsers} style={btnGhostSmall}>
+            <Users size={14} /> Users
+          </button>
+        )}
         {me && <span style={{ fontSize: 13, color: C.muted }}>{me.email} · <strong style={{ color: C.inkSoft }}>{me.role}</strong></span>}
         <button onClick={onSignOut} style={btnGhostSmall}><LogOut size={14} /> Sign out</button>
       </div>
@@ -331,10 +337,12 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod }) {
   const [employees, setEmployees] = useState(null);
   const [companyName, setCompanyName] = useState("");
   const [error, setError] = useState("");
-  const [showAddEmp, setShowAddEmp] = useState(false);
+  const [showEmpDialog, setShowEmpDialog] = useState(null); // null | {} | employee_id
+  const [selectedEmps, setSelectedEmps] = useState(new Set());
 
   const refresh = useCallback(async () => {
     setError("");
+    setSelectedEmps(new Set());
     try {
       const { companies } = await api("/api/teebeepay/companies");
       const co = companies.find((c) => c.id === companyId);
@@ -347,6 +355,24 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod }) {
     } catch (e) { setError(e.message); }
   }, [companyId]);
   useEffect(() => { refresh(); }, [refresh]);
+
+  function toggleSel(id) {
+    setSelectedEmps((s) => {
+      const ns = new Set(s);
+      if (ns.has(id)) ns.delete(id); else ns.add(id);
+      return ns;
+    });
+  }
+  async function bulkDeactivate() {
+    if (!selectedEmps.size) return;
+    if (!confirm(`Mark ${selectedEmps.size} employee(s) as inactive? They won't appear on future pay periods.`)) return;
+    try {
+      await api(`/api/teebeepay/companies/${companyId}/employees/bulk-deactivate`, {
+        method: "POST", body: JSON.stringify({ employee_ids: [...selectedEmps] }),
+      });
+      refresh();
+    } catch (e) { setError(e.message); }
+  }
 
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: "28px 24px" }}>
@@ -369,6 +395,11 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod }) {
         <Tab active={tab === "employees"} onClick={() => setTab("employees")}>
           <Users size={15} style={{ marginRight: 6 }} /> Employees {employees != null && `(${employees.length})`}
         </Tab>
+        {me?.clearance >= 2 && (
+          <Tab active={tab === "tax_rules"} onClick={() => setTab("tax_rules")}>
+            <Settings size={15} style={{ marginRight: 6 }} /> Tax rules
+          </Tab>
+        )}
       </div>
 
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
@@ -381,20 +412,32 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod }) {
       {tab === "employees" && (
         <>
           {me?.clearance >= 2 && (
-            <div style={{ marginBottom: 14 }}>
-              <button onClick={() => setShowAddEmp(true)} style={btnPrimaryInline}>
+            <div style={{ marginBottom: 14, display: "flex", gap: 10, alignItems: "center" }}>
+              <button onClick={() => setShowEmpDialog({})} style={btnPrimaryInline}>
                 <Plus size={16} /> Add employee
               </button>
+              {selectedEmps.size > 0 && (
+                <button onClick={bulkDeactivate} style={{ ...btnGhostLg, color: "#991b1b", borderColor: "#fecaca" }}>
+                  <Trash2 size={14} style={{ marginRight: 6 }} /> Deactivate {selectedEmps.size} selected
+                </button>
+              )}
             </div>
           )}
           {employees == null ? <Loader2 className="tbp-spin" size={20} color={C.red} />
-                             : <EmployeeTable employees={employees} />}
+                             : <EmployeeTable employees={employees}
+                                 selected={selectedEmps} onToggleSel={toggleSel}
+                                 onEdit={(e) => setShowEmpDialog(e)} canEdit={me?.clearance >= 2} />}
         </>
       )}
 
-      {showAddEmp && (
-        <EmployeeDialog companyId={companyId} onClose={() => setShowAddEmp(false)}
-          onSaved={() => { setShowAddEmp(false); refresh(); }} />
+      {tab === "tax_rules" && (
+        <TaxRulesPanel companyId={companyId} canEdit={me?.clearance >= 3} />
+      )}
+
+      {showEmpDialog && (
+        <EmployeeDialog companyId={companyId} employee={showEmpDialog.id ? showEmpDialog : null}
+          onClose={() => setShowEmpDialog(null)}
+          onSaved={() => { setShowEmpDialog(null); refresh(); }} />
       )}
     </div>
   );
@@ -432,18 +475,27 @@ function PeriodTable({ periods, onOpen }) {
   );
 }
 
-function EmployeeTable({ employees }) {
+function EmployeeTable({ employees, selected, onToggleSel, onEdit, canEdit }) {
   if (!employees.length) return <Empty>No employees yet.</Empty>;
   return (
     <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
       <table style={tableStyle}>
         <thead><tr>
+          {canEdit && <th style={{ ...th, width: 40 }}></th>}
           <th style={th}>Name</th><th style={th}>Email</th><th style={th}>Pay</th>
           <th style={th}>Bank account</th><th style={th}>Active</th>
+          {canEdit && <th style={{ ...th, width: 60 }}></th>}
         </tr></thead>
         <tbody>
           {employees.map((e) => (
-            <tr key={e.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+            <tr key={e.id} style={{ borderTop: "1px solid #f1f5f9",
+              background: selected?.has(e.id) ? "#fff7e0" : undefined }}>
+              {canEdit && (
+                <td style={{ ...td, width: 40 }}>
+                  <input type="checkbox" checked={selected?.has(e.id) || false}
+                    onChange={() => onToggleSel(e.id)} disabled={!e.is_active} />
+                </td>
+              )}
               <td style={td}>{e.last_name}, {e.first_name}</td>
               <td style={{ ...td, color: C.muted }}>{e.email || "—"}</td>
               <td style={td}>{e.pay_type === "salary" ? `Salary K${(e.annual_salary || 0).toLocaleString()}` : `Hourly K${(e.hourly_rate || 0).toFixed(2)}`}</td>
@@ -451,6 +503,13 @@ function EmployeeTable({ employees }) {
                 {e.bank_account_name || "—"} {e.bank_account_no ? `· ${e.bank_account_no}` : ""}
               </td>
               <td style={td}><CheckCircle2 size={16} color={e.is_active ? "#16a34a" : "#94a3b8"} /></td>
+              {canEdit && (
+                <td style={td}>
+                  <button onClick={() => onEdit(e)} style={btnGhostSmall} title="Edit">
+                    <Edit2 size={13} />
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -459,27 +518,53 @@ function EmployeeTable({ employees }) {
   );
 }
 
-function EmployeeDialog({ companyId, onClose, onSaved }) {
+function EmployeeDialog({ companyId, employee, onClose, onSaved }) {
+  const isEdit = !!employee;
   const [f, setF] = useState({
-    first_name: "", last_name: "", email: "", dob: "",
-    pay_type: "hourly", hourly_rate: "", annual_salary: "",
-    default_hours: 80, fte_pct: 100, dependents: 0,
-    residency_status: "resident", declaration_lodged: true,
-    bank_account_no: "", bank_account_name: "", branch_code: "", bank_code: "088",
-    housing_allowance: 0, meals_allowance: 0, school_fees_allowance: 0,
-    salary_sacrifice: 0, ncsl_voluntary: 0, nas_extra_pct: 0,
+    first_name: employee?.first_name || "",
+    last_name: employee?.last_name || "",
+    email: employee?.email || "",
+    dob: employee?.dob || "",
+    pay_type: employee?.pay_type || "hourly",
+    hourly_rate: employee?.hourly_rate ?? "",
+    annual_salary: employee?.annual_salary ?? "",
+    default_hours: employee?.default_hours ?? 80,
+    fte_pct: employee?.fte_pct ?? 100,
+    dependents: employee?.dependents ?? 0,
+    residency_status: employee?.residency_status || "resident",
+    declaration_lodged: employee?.declaration_lodged !== false,
+    bank_account_no: employee?.bank_account_no || "",
+    bank_account_name: employee?.bank_account_name || "",
+    branch_code: employee?.branch_code || "",
+    bank_code: employee?.bank_code || "088",
+    housing_allowance: employee?.housing_allowance ?? 0,
+    meals_allowance: employee?.meals_allowance ?? 0,
+    school_fees_allowance: employee?.school_fees_allowance ?? 0,
+    salary_sacrifice: employee?.salary_sacrifice ?? 0,
+    ncsl_voluntary: employee?.ncsl_voluntary ?? 0,
+    nas_extra_pct: employee?.nas_extra_pct ?? 0,
+    is_active: employee?.is_active !== false,
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   async function save() {
     setError(""); setSubmitting(true);
-    try { await api(`/api/teebeepay/companies/${companyId}/employees`, { method: "POST", body: JSON.stringify(f) }); onSaved(); }
+    try {
+      if (isEdit) {
+        await api(`/api/teebeepay/companies/${companyId}/employees/${employee.id}`,
+          { method: "PATCH", body: JSON.stringify(f) });
+      } else {
+        await api(`/api/teebeepay/companies/${companyId}/employees`,
+          { method: "POST", body: JSON.stringify(f) });
+      }
+      onSaved();
+    }
     catch (e) { setError(e.message); }
     finally { setSubmitting(false); }
   }
   return (
-    <Modal title="Add employee" onClose={onClose} wide>
+    <Modal title={isEdit ? `Edit ${employee.first_name} ${employee.last_name}` : "Add employee"} onClose={onClose} wide>
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
       <Row>
         <Field label="First name *"><input style={input} value={f.first_name} onChange={(e) => set("first_name", e.target.value)} autoFocus /></Field>
@@ -544,13 +629,97 @@ function EmployeeDialog({ companyId, onClose, onSaved }) {
           <Field label="NAS extra %"><input style={input} type="number" step="0.1" value={f.nas_extra_pct} onChange={(e) => set("nas_extra_pct", e.target.value)} /></Field>
         </Row>
       </FieldGroup>
+      {isEdit && (
+        <Field label="Active employee?">
+          <select style={input} value={f.is_active ? "1" : "0"} onChange={(e) => set("is_active", e.target.value === "1")}>
+            <option value="1">Active — appears on new pay periods</option>
+            <option value="0">Inactive — excluded from new pay periods</option>
+          </select>
+        </Field>
+      )}
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
         <button onClick={onClose} style={btnGhostLg}>Cancel</button>
         <button onClick={save} disabled={!f.first_name || !f.last_name || submitting} style={btnPrimaryInline}>
-          {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</> : "Save employee"}
+          {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</>
+                      : isEdit ? "Save changes" : "Save employee"}
         </button>
       </div>
     </Modal>
+  );
+}
+
+/* ─────────── Tax rules panel ─────────── */
+
+function TaxRulesPanel({ companyId, canEdit }) {
+  const [data, setData] = useState(null);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setError(""); setInfo("");
+    try {
+      const j = await api(`/api/teebeepay/companies/${companyId}/tax-rules`);
+      setData(j);
+      if (j.active?.data) setDraft(JSON.stringify(j.active.data, null, 2));
+    } catch (e) { setError(e.message); }
+  }, [companyId]);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  async function save() {
+    setError(""); setInfo(""); setSubmitting(true);
+    try {
+      let parsed;
+      try { parsed = JSON.parse(draft); }
+      catch (e) { setError("Invalid JSON: " + e.message); setSubmitting(false); return; }
+      await api(`/api/teebeepay/companies/${companyId}/tax-rules`, {
+        method: "POST", body: JSON.stringify({ data: parsed }),
+      });
+      setInfo("Saved as new version. Future pay periods will use this; historical periods keep their original calculations.");
+      refresh();
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+
+  if (!data) return <Loader2 className="tbp-spin" size={20} color={C.red} />;
+  return (
+    <div>
+      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 18, marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <strong style={{ fontSize: 14 }}>
+            Active version: <span style={{ color: C.muted }}>{data.active?.effective_from || "—"}</span>
+          </strong>
+          <span style={{ fontSize: 12, color: C.muted }}>{data.versions.length} historical version(s)</span>
+        </div>
+        <p style={{ fontSize: 13, color: C.muted, margin: 0 }}>
+          PNG IRC publishes Salary or Wages Tax tables once per budget. Edit when those change.
+          Past pay periods keep the rules that were active when they ran.
+        </p>
+      </div>
+
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      {info && <FlashBox type="info" icon={<CheckCircle2 size={16} />}>{info}</FlashBox>}
+
+      <textarea
+        value={draft} onChange={(e) => setDraft(e.target.value)}
+        readOnly={!canEdit}
+        rows={28}
+        style={{
+          width: "100%", padding: 14, borderRadius: 10, border: "1px solid #d1d5db",
+          background: "#fafbfc", fontFamily: "ui-monospace, Menlo, Consolas, monospace",
+          fontSize: 12, lineHeight: 1.5, color: C.ink, outline: "none",
+        }}
+      />
+      {canEdit && (
+        <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
+          <button onClick={save} disabled={submitting} style={btnPrimaryInline}>
+            {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</>
+                        : "Save as new version"}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -707,7 +876,27 @@ function PeriodDetail({ me, periodId, onBack }) {
 
   if (!data) return <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered>;
   const { period, entries } = data;
-  const totals = entries.reduce((a, e) => ({ gross: a.gross + e.gross, tax: a.tax + e.tax, nasfund: a.nasfund + e.nasfund, other: a.other + e.other_deductions, net: a.net + e.net }), { gross: 0, tax: 0, nasfund: 0, other: 0, net: 0 });
+  const totals = entries.reduce((a, e) => ({
+    gross: a.gross + (e.gross || 0),
+    tax: a.tax + (e.tax || 0),
+    nasfund: a.nasfund + (e.nasfund || 0),
+    other: a.other + (e.other_deductions || 0),
+    net: a.net + (e.net || 0),
+  }), { gross: 0, tax: 0, nasfund: 0, other: 0, net: 0 });
+
+  function downloadHref(kind) {
+    return `/api/teebeepay/payroll-periods/${periodId}/${kind}`;
+  }
+  async function authedDownload(href, filename) {
+    const tok = localStorage.getItem(TOKEN_KEY);
+    const res = await fetch(href, { headers: { Authorization: "Bearer " + tok } });
+    if (!res.ok) { setError(`Download failed (${res.status})`); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename || "download"; document.body.appendChild(a); a.click();
+    a.remove(); URL.revokeObjectURL(url);
+  }
 
   return (
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: "28px 24px" }}>
@@ -716,9 +905,24 @@ function PeriodDetail({ me, periodId, onBack }) {
         <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>Pay period {period.period_start} → {period.period_end}</h1>
         <StatusBadge status={period.status} historical={!!period.imported_from} />
       </div>
-      <p style={{ color: C.muted, fontSize: 14, margin: "0 0 18px" }}>
+      <p style={{ color: C.muted, fontSize: 14, margin: "0 0 12px" }}>
         Pay date {period.pay_date} · {entries.length} entries
       </p>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
+        <button onClick={() => authedDownload(downloadHref("bsp"),
+          `BSPPayroll-${(period.pay_date || "").replace(/-/g, "")}.csv`)} style={btnGhostLg}>
+          <Download size={14} style={{ marginRight: 6 }} /> BSP batch CSV
+        </button>
+        <button onClick={() => authedDownload(downloadHref("nasfund"),
+          `NASFund-${(period.period_end || "").replace(/-/g, "")}.xlsx`)} style={btnGhostLg}>
+          <Download size={14} style={{ marginRight: 6 }} /> NASFund return XLSX
+        </button>
+        <button onClick={() => authedDownload(downloadHref("iif"),
+          `Payroll-${(period.pay_date || "").replace(/-/g, "")}_QB_IIF.iif`)} style={btnGhostLg}>
+          <Download size={14} style={{ marginRight: 6 }} /> QuickBooks IIF
+        </button>
+      </div>
 
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
       {result && (
@@ -777,6 +981,159 @@ function PeriodDetail({ me, periodId, onBack }) {
         </div>
       )}
     </div>
+  );
+}
+
+/* ─────────── Users page ─────────── */
+
+function UsersPage({ me, onBack }) {
+  const [users, setUsers] = useState(null);
+  const [companies, setCompanies] = useState([]);
+  const [error, setError] = useState("");
+  const [showInvite, setShowInvite] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setError("");
+    try {
+      const [uj, cj] = await Promise.all([
+        api("/api/teebeepay/users"),
+        api("/api/teebeepay/companies"),
+      ]);
+      setUsers(uj.users || []); setCompanies(cj.companies || []);
+    } catch (e) { setError(e.message); }
+  }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  async function toggleActive(u) {
+    try {
+      await api(`/api/teebeepay/users/${u.id}`, { method: "PATCH",
+        body: JSON.stringify({ is_active: !u.is_active }) });
+      refresh();
+    } catch (e) { setError(e.message); }
+  }
+
+  return (
+    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 24px" }}>
+      <button onClick={onBack} style={btnBack}><ArrowLeft size={14} /> Dashboard</button>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>Users</h1>
+        {me?.clearance >= 3 && (
+          <button onClick={() => setShowInvite(true)} style={btnPrimaryInline}>
+            <UserPlus size={16} /> Invite user
+          </button>
+        )}
+      </div>
+      <p style={{ color: C.muted, fontSize: 14, margin: "0 0 22px" }}>
+        Each user signs in via email-PIN. Set their role to determine what they can see and do.
+      </p>
+
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+
+      {users == null ? <Loader2 className="tbp-spin" size={20} color={C.red} /> : (
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+          <table style={tableStyle}>
+            <thead><tr>
+              <th style={th}>Email</th>
+              <th style={th}>Role</th>
+              <th style={th}>Company</th>
+              <th style={th}>Last sign-in</th>
+              <th style={th}>Active</th>
+              <th style={{ ...th, width: 80 }}></th>
+            </tr></thead>
+            <tbody>
+              {users.map((u) => (
+                <tr key={u.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <td style={td}>{u.email}{u.email === me.email && <span style={{ marginLeft: 6, color: C.muted, fontSize: 12 }}>(you)</span>}</td>
+                  <td style={td}><RoleBadge role={u.role} /></td>
+                  <td style={{ ...td, color: C.muted }}>{u.company_name || "—"}</td>
+                  <td style={{ ...td, color: C.muted, fontSize: 13 }}>
+                    {u.last_sign_in_at ? new Date(u.last_sign_in_at).toISOString().slice(0, 10) : "never"}
+                  </td>
+                  <td style={td}><CheckCircle2 size={16} color={u.is_active ? "#16a34a" : "#94a3b8"} /></td>
+                  <td style={td}>
+                    {u.email !== me.email && me.clearance >= 3 && u.clearance < me.clearance && (
+                      <button onClick={() => toggleActive(u)} style={btnGhostSmall}>
+                        {u.is_active ? "Deactivate" : "Reactivate"}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showInvite && (
+        <InviteUserDialog companies={companies} me={me}
+          onClose={() => setShowInvite(false)}
+          onSaved={() => { setShowInvite(false); refresh(); }} />
+      )}
+    </div>
+  );
+}
+
+function RoleBadge({ role }) {
+  const levels = {
+    system_owner: { color: "#581c87", bg: "#f3e8ff", label: "owner" },
+    principal:    { color: "#9c2410", bg: "#fed7aa", label: "principal" },
+    bookkeeper:   { color: "#9c6c00", bg: "#fef3c7", label: "bookkeeper" },
+    site_payroll: { color: "#1e40af", bg: "#dbeafe", label: "site_payroll" },
+    employee:     { color: "#475569", bg: "#f1f5f9", label: "employee" },
+  };
+  const it = levels[role] || { color: C.muted, bg: "#f1f5f9", label: role };
+  return <Badge color={it.color} bg={it.bg}>{it.label}</Badge>;
+}
+
+function InviteUserDialog({ companies, me, onClose, onSaved }) {
+  const [f, setF] = useState({
+    email: "",
+    role: me.clearance >= 4 ? "principal" : "bookkeeper",
+    company_id: "",
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  async function save() {
+    setError(""); setSubmitting(true);
+    try {
+      await api("/api/teebeepay/users", { method: "POST", body: JSON.stringify(f) });
+      onSaved();
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+  return (
+    <Modal title="Invite user" onClose={onClose}>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <p style={{ fontSize: 13, color: C.muted, margin: "0 0 14px" }}>
+        They'll be able to sign in immediately at <code>/teebeepay/app</code> by email. No password is set.
+      </p>
+      <Field label="Email *">
+        <input style={input} type="email" value={f.email} onChange={(e) => set("email", e.target.value)}
+          placeholder="name@company.com" autoFocus />
+      </Field>
+      <Field label="Role">
+        <select style={input} value={f.role} onChange={(e) => set("role", e.target.value)}>
+          {me.clearance >= 4 && <option value="principal">principal — runs the bureau (level 3)</option>}
+          <option value="bookkeeper">bookkeeper — back-office (level 2)</option>
+          <option value="site_payroll">site_payroll — per-company key person (level 1)</option>
+          <option value="employee">employee — view own stubs only (level 0)</option>
+        </select>
+      </Field>
+      <Field label="Assign to a single company (leave blank for system-wide access)">
+        <select style={input} value={f.company_id} onChange={(e) => set("company_id", e.target.value)}>
+          <option value="">— all companies (principal/bookkeeper) —</option>
+          {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </Field>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
+        <button onClick={onClose} style={btnGhostLg}>Cancel</button>
+        <button onClick={save} disabled={!f.email || submitting} style={btnPrimaryInline}>
+          {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</>
+                      : "Invite"}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
