@@ -7,7 +7,10 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { MongoClient } from "mongodb";
 
-const NOTIFY_TO = "rgsommer@me.com";
+// TeebeePay leads go to Theresia at Tee Bee Accountants;
+// Richard is BCC'd (silent copy — recipient doesn't see him on the email).
+const NOTIFY_TO = "info@teebeeaccountants.com.pg";
+const NOTIFY_BCC = "rgsommer@me.com";
 const FROM_ADDRESS =
   process.env.RESEND_PNGPAY_FROM_ADDRESS ||
   process.env.RESEND_FROM_ADDRESS ||
@@ -128,6 +131,7 @@ export async function POST(req: Request) {
         await resend.emails.send({
           from: FROM_ADDRESS,
           to: NOTIFY_TO,
+          bcc: NOTIFY_BCC,
           replyTo: doc.email,
           subject: `TeebeePay lead: ${doc.company} (${doc.employees || "?"} emp)`,
           html: summary,

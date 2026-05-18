@@ -7,7 +7,7 @@ import { Resend } from "resend";
 import { MongoClient } from "mongodb";
 
 const NOTIFY_TO = "info@teebeeaccountants.com.pg";
-const NOTIFY_CC = "rgsommer@me.com";
+const NOTIFY_BCC = "rgsommer@me.com";  // silent copy — recipient doesn't see Richard on the email
 const FROM_ADDRESS =
   process.env.RESEND_PNGPAY_FROM_ADDRESS ||
   process.env.RESEND_FROM_ADDRESS ||
@@ -97,7 +97,7 @@ export async function POST(req: Request) {
         await resend.emails.send({
           from: FROM_ADDRESS,
           to: NOTIFY_TO,
-          cc: NOTIFY_CC,
+          bcc: NOTIFY_BCC,
           replyTo: doc.email,
           subject: `TBA inquiry: ${doc.service || "General"} — ${doc.name}`,
           html: summary,

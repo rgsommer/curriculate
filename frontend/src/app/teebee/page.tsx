@@ -196,6 +196,12 @@ function Hero() {
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
             <a href="#contact" style={btnPrimary}>Get consultation <ArrowRight size={17} style={{ marginLeft: 6 }} /></a>
             <a href="#services" style={btnSecondary}>Our services</a>
+            <a href="/api/teebee/brief" target="_blank" rel="noopener" style={{
+              ...btnSecondary, color: C.navy, borderColor: C.navy,
+              display: "inline-flex", alignItems: "center", gap: 8,
+            }}>
+              <FileText size={16} /> 2-page brief (PDF)
+            </a>
           </div>
         </div>
         <HeroVisual />
