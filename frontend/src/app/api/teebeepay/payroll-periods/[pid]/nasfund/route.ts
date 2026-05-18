@@ -26,7 +26,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ pid: str
       nasfund_employer: e.calc_breakdown?.nasfund_employer ?? (e.gross || 0) * 0.084,
     }));
     const periodLabel = `${(p.period_start || "").replaceAll("-", "")}-${(p.period_end || "").replaceAll("-", "")}`;
-    const buf = buildNasfundXlsx(co, periodLabel, rows);
+    const buf = await buildNasfundXlsx(co, periodLabel, rows);
     const abbr = (co.abbreviation || co.name || "company").replace(/\W+/g, "_");
     const filename = `NASFund-${abbr}-${(p.period_end || p.pay_date || "").replace(/-/g, "")}.xlsx`;
     return new NextResponse(new Uint8Array(buf), {
