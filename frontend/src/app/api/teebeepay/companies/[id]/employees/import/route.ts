@@ -99,23 +99,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     // helpers: dept + job auto-create
     const deptCache = new Map<string, any>();
-    async function ensureDept(name: string) {
+    const ensureDept = async (name: string) => {
       if (!name) return null;
       if (deptCache.has(name)) return deptCache.get(name);
       const existing = await dbi.collection("departments").findOne({ company_id: cid, name });
       if (existing) { deptCache.set(name, existing._id); return existing._id; }
       const r = await dbi.collection("departments").insertOne({ company_id: cid, name, created_at: new Date() });
       deptCache.set(name, r.insertedId); return r.insertedId;
-    }
+    };
     const jobCache = new Map<string, any>();
-    async function ensureJob(name: string) {
+    const ensureJob = async (name: string) => {
       if (!name) return null;
       if (jobCache.has(name)) return jobCache.get(name);
       const existing = await dbi.collection("job_functions").findOne({ company_id: cid, name });
       if (existing) { jobCache.set(name, existing._id); return existing._id; }
       const r = await dbi.collection("job_functions").insertOne({ company_id: cid, name, created_at: new Date() });
       jobCache.set(name, r.insertedId); return r.insertedId;
-    }
+    };
 
     let created = 0, skipped = 0;
     const errors: string[] = [];
