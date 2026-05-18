@@ -363,7 +363,7 @@ function HeroVisual() {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
           <Logo />
-          <strong style={{ fontSize: 15 }}>Angore Holdings Limited</strong>
+          <strong style={{ fontSize: 15 }}>Sample Trading Ltd</strong>
           <span style={{ marginLeft: "auto", fontSize: 12, color: COLORS.muted }}>Pay date 18 / May / 2026</span>
         </div>
         <h3 style={{ margin: "6px 0 14px", fontSize: 16 }}>New pay period</h3>
@@ -375,11 +375,11 @@ function HeroVisual() {
           </thead>
           <tbody>
             {[
-              { n: "Bob, Theresia", d: "Admin",    h: 80 },
-              { n: "Akipe, Pumai",  d: "Ops",      h: 80 },
-              { n: "Boas, Mark",    d: "Drivers",  h: 80 },
-              { n: "Ogi, Elsie",    d: "Admin",    h: 80 },
-              { n: "Kati, Ben",     d: "Security", h: 0 },
+              { n: "Employee A", d: "Admin",    h: 80 },
+              { n: "Employee B", d: "Ops",      h: 80 },
+              { n: "Employee C", d: "Drivers",  h: 80 },
+              { n: "Employee D", d: "Admin",    h: 80 },
+              { n: "Employee E", d: "Security", h: 0 },
             ].map((r, i) => (
               <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
                 <td style={cell}>{r.n}</td>
@@ -502,11 +502,11 @@ function ForExistingClients() {
 
 function PeriodHistoryVisual() {
   const rows = [
-    { d: "26 Mar 21", c: "AHL",    n: 19, k: 12_481 },
-    { d: "12 Mar 21", c: "AHL",    n: 18, k: 12_220 },
-    { d: "26 Feb 21", c: "AHL",    n: 19, k: 13_001 },
-    { d: "12 Feb 21", c: "AHL",    n: 21, k: 13_660 },
-    { d: "29 Jan 21", c: "AHL",    n: 18, k: 12_077 },
+    { d: "16 May 26", c: "Sample",  n: 19, k: 12_481 },
+    { d: "2 May 26",  c: "Sample",  n: 18, k: 12_220 },
+    { d: "18 Apr 26", c: "Sample",  n: 19, k: 13_001 },
+    { d: "4 Apr 26",  c: "Sample",  n: 21, k: 13_660 },
+    { d: "21 Mar 26", c: "Sample",  n: 18, k: 12_077 },
   ];
   return (
     <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: 22, boxShadow: "0 10px 30px rgba(15,23,42,.06)" }}>
@@ -710,7 +710,7 @@ function InterestForm() {
                   <h3 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 700 }}>About you</h3>
                   <p style={{ color: COLORS.muted, fontSize: 13, marginTop: 0 }}>Just so we know who we're talking to.</p>
                   <FormField label="Your name *">
-                    <input style={input} value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Theresia Bob" />
+                    <input style={input} value={form.name} onChange={e => set("name", e.target.value)} placeholder="Your full name" />
                   </FormField>
                   <FormField label="Work email *">
                     <input style={input} type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="you@company.com" />
