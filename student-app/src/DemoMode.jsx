@@ -524,6 +524,7 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
       animation: "feedbackFadeIn 0.2s ease-out",
     }}>
       <div style={{
+        position: "relative",
         width: "100%", maxWidth: 380,
         padding: "16px 16px 14px",
         borderRadius: 20,
@@ -532,6 +533,40 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
         color: "#f8fafc",
         boxShadow: "0 -4px 24px rgba(0,0,0,0.3)",
       }}>
+        {/* Always-available dismiss in the top-right.  Without this the
+            rate phase was an inescapable modal — testers who didn't
+            want to rate would refresh the page, losing the whole
+            session's feedback queue.  Calls handleSkip → onSkip →
+            handleFeedback(null) which advances to the next task. */}
+        <button
+          type="button"
+          onClick={handleSkip}
+          aria-label="Close feedback"
+          title="Close — you can skip rating this one"
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 8,
+            width: 28,
+            height: 28,
+            borderRadius: 999,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(255,255,255,0.06)",
+            color: "#94a3b8",
+            fontSize: 14,
+            fontWeight: 800,
+            lineHeight: 1,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 0,
+            zIndex: 1,
+          }}
+        >
+          ×
+        </button>
+
         {phase === "rate" && (
           <>
             <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: "#e2e8f0", marginBottom: 2 }}>
@@ -542,6 +577,27 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
             </div>
             <EmojiRow label="Was it fun?" items={EMOJI_FUN} selected={fun} onSelect={setFun} />
             <EmojiRow label="Was it clear?" items={EMOJI_CLARITY} selected={clarity} onSelect={setClarity} />
+            {/* Explicit dismiss in the rate phase.  Many testers don't want
+                to rate every single task and were getting stuck on this
+                modal — give them a clear out so the next task loads. */}
+            <button
+              type="button"
+              onClick={handleSkip}
+              style={{
+                display: "block",
+                margin: "8px auto 0",
+                padding: "6px 14px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.1)",
+                background: "transparent",
+                color: "#94a3b8",
+                fontWeight: 700,
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              Maybe later — skip this rating
+            </button>
           </>
         )}
 
