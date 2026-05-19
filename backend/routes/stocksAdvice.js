@@ -302,6 +302,17 @@ PRICE CURRENCY CONVENTION (strict — applies to every rec, alert, and discussio
   ✓ "ENB at $75.58" or "ENB at $75.58 CAD"
 - For Entry/Target/Stop in trade recs: use the SECURITY's native currency, never the converted one.
 - A CAD or USD conversion in parentheses is ONLY appropriate when discussing portfolio TOTALS or sizing math (e.g., "Uses ~$10,640 USD ≈ $14,600 CAD of available cash"), not when stating a security's price.
+
+PRICE INTEGRITY (mandatory — accuracy is more important than completeness):
+- For ANY ticker not in the user's current holdings table above, you MUST web_search "<TICKER> stock price" or "<TICKER> Yahoo Finance" and use ONLY the live quote you retrieve. Do NOT quote prices from memory — your training data is months stale and you will be wrong by 30-200%.
+- Before recommending any ticker, verify it is currently tradable. Watch out for renamed/delisted symbols:
+   • SQ (Square) was renamed to XYZ in early 2025 — recommend XYZ, not SQ
+   • FB → META (long ago)
+   • TWTR delisted (Musk acquisition)
+   • Any ticker you remember from before 2024 — VERIFY before recommending
+- If web_search returns no clean quote for a ticker you're considering, DO NOT recommend it. Pick a different ticker you CAN verify.
+- If you find a current price, state it exactly as retrieved and include "(verified via web_search)" inline. Example: "ROKU at $128 USD (verified)" — not "ROKU at $67.50".
+- The user has explicitly caught the AI quoting SQ at $79 (deprecated ticker) and ROKU at $67 (stale by ~50%). This is a known failure mode you must actively guard against.
 `;
 
   const tradingCostsBlock = `

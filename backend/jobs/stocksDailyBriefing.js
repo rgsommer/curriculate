@@ -488,6 +488,16 @@ PRICE CURRENCY CONVENTION (strict):
   ✓ "ENB at $75.58 CAD" · ✗ "ENB at $55.10 USD"
 - Entry/Target/Stop in trade recs MUST be in the security's native currency.
 - CAD/USD conversions in parentheses are OK only for portfolio totals or cash-sizing math, not for stock prices.
+
+PRICE INTEGRITY (mandatory — accuracy over completeness):
+- For ANY ticker not in the user's current holdings table, web_search "<TICKER> stock price" and use ONLY the retrieved live quote. NEVER quote a price from memory — training data is stale, you will be wrong by 30-200%.
+- Verify ticker is currently tradable before recommending. Beware renamed/delisted symbols:
+   • SQ (Square) was renamed XYZ in early 2025 — recommend XYZ not SQ
+   • FB → META, TWTR → delisted
+   • Any sub-mega-cap ticker from your training — VERIFY first
+- If web_search can't confirm a live quote for a ticker, do NOT recommend it. Pick a different name.
+- State retrieved prices with "(verified)" inline. Example: "ROKU at $128 USD (verified)" — not "$67.50".
+- Known prior failures the user has caught: SQ at $79 (deprecated ticker), ROKU at $67 (stale ~50%), META at $525 (stale, actual ~$608). Don't repeat.
 `;
 
   const tradingCostsBlock = `
