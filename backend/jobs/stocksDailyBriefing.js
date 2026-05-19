@@ -475,9 +475,12 @@ ORDER-TICKET GUIDANCE (gap-protection — every BUY/SELL rec must include):
 - After every BUY fill, recommend a GTC STOP-LIMIT SELL to enter at the rec's stop level (stop = stop price, limit = stop − 1-2% as gap protection).
 - Note duration: "Day" cancels EOD; "GTC" persists.
 
-Required addition per rec body:
+Required addition per rec body (EVERY BUY/SELL/TRIM rec, no exceptions):
   Order ticket: LIMIT BUY/SELL <N> <TICKER> @ $<limit> <CCY> <max/min>, Day/GTC.
   After fill: GTC STOP-LIMIT SELL <N> <TICKER>, stop $<stop> / limit $<stop-1%> <CCY>.
+  Account: <Non-Spousal | RRSP | TFSA | RESP | FHSA> · uses $<X> of $<Y> <CCY> available · leaves $<Z>.
+
+The "Account:" line is MANDATORY. If you omit it the rec is invalid. The account named MUST be one that holds enough cash in the trade's currency to cover the size you proposed — verify against the per-account cash inventory below before writing the rec.
 `;
 
   const priceCurrencyBlock = `
@@ -533,10 +536,37 @@ ${summary.perAccountCash.length ? "Per account:\n" + summary.perAccountCash.join
 `
     : `\nAvailable cash: $0 (no cash to deploy).\n`;
 
+  // List of accounts with free cash > $50 in EITHER currency — used to drive
+  // the per-account cash-deployment section. The AI must produce a separate
+  // sub-section for EACH funded account (e.g. Non-Spousal, RRSP, TFSA) so
+  // Richard sees what to do with the money sitting in each one, rather than
+  // a single "you have $X total" plan that ignores where the cash actually lives.
+  const fundedAccounts = (profile.accounts || []).filter(a =>
+    (a.cashCad || 0) > 50 || (a.cashUsd || 0) > 50
+  );
+  const fundedAccountLines = fundedAccounts.length
+    ? fundedAccounts.map(a => `   - **${a.name}**: $${(a.cashCad || 0).toFixed(0)} CAD · $${(a.cashUsd || 0).toFixed(0)} USD${a.riskTolerance ? ` (risk: ${a.riskTolerance})` : ""}`).join("\n")
+    : "   (no account has > $50 free cash in either currency)";
+
   // Section 5 changes based on whether cash is on hand
   const cashSection = hasCash
-    ? `5. **💵 Cash deployment — your actual cash** — REQUIRED. He has $${summary.cashCad.toFixed(0)} CAD + $${summary.cashUsd.toFixed(0)} USD ready. Recommend specific BUYs sized to actually use that cash. Compute exact share counts from the cash budget at the Entry price you propose. Format each: "Action: BUY N sh TICKER. Entry: $X (current $Y). Target: $Z (timeframe). Stop: $W. Horizon: N months. Uses ~$A of $B available." Do not recommend buys that exceed available cash; do not propose fractional shares; tilt AWAY from current concentration (DJT/DJTWW/RUM)`
-    : `5. **💵 Cash deployment** — He has $0 cash. Either (a) skip this section, or (b) recommend a specific TRIM that would FREE UP cash for a redeploy, with both legs spec'd in the rec format.`;
+    ? `5. **💵 Cash deployment — PER ACCOUNT** — REQUIRED. Generate a SEPARATE sub-section for EVERY account below that has free cash. Do NOT merge them. Each account's recs must fit that account's own cash bucket — no cross-account pooling.
+
+   Accounts with cash to deploy:
+${fundedAccountLines}
+
+   For EACH funded account, write a clearly-titled block like:
+     **TFSA — $2,300 CAD · $0 USD**
+     - Action: BUY 30 sh ENB. Entry: $74.80 CAD (current $75.58 verified). Target: $84 CAD (12mo). Stop: $69. Horizon: 12 months.
+       Account: TFSA · uses $2,244 of $2,300 CAD available · leaves $56 CAD.
+       Rationale (tax-fit): Canadian dividend payer + growth — TFSA shelters dividend + cap gain. Better than RRSP for dividend tax credit considerations.
+
+   Rules per account:
+   - Pick recs whose tax treatment ACTUALLY MATCHES that account (US growth → TFSA; US-listed dividend payer → RRSP for treaty exemption; Canadian dividend payer → Non-Spousal for the dividend tax credit; speculation → Non-Spousal so losses are claimable).
+   - No fractional shares; do not exceed that account's cash.
+   - If an account has very small cash (<$200 in either currency), either say "wait for more cash" or suggest depositing more — don't force a tiny trade that's all commission.
+   - Tilt AWAY from current concentration (DJT/DJTWW/RUM) regardless of which account you're deploying to.`
+    : `5. **💵 Cash deployment** — He has $0 cash across all accounts. Either (a) skip this section, or (b) for ONE specific account, recommend a TRIM that would FREE UP cash for redeployment in THAT same account, with both legs spec'd in the rec format and the Account tag.`;
 
   const goalsBlock = profile.goals && profile.goals.trim().length > 0
     ? `\n🎯 USER GOALS & CONSTRAINTS (read FIRST — every rec must be coherent with these):\n${profile.goals.trim()}\n\nHow to factor goals into recs:\n- Recommendations conflicting with goals must be REJECTED or modified — don't silently override.\n- If a goal implies a withdrawal date, size positions and stops to make cash available by that date.\n- If a goal designates capital as long-term, don't redeploy it for short-horizon trades.\n- If a goal sets an account limit ("RRSP limit X"), prioritize filling that account when new cash is available.\n- Surface goal/opportunity tradeoffs explicitly; reference goals by name in rec rationale.\n`

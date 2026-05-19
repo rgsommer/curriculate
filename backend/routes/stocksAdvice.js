@@ -287,10 +287,12 @@ Example format inside the rec body:
   Action: BUY 40 sh ENB. Entry: $75-$76 CAD. Target: $84 CAD (12mo). Stop: $69 CAD. Horizon: 12 months.
   Order ticket: LIMIT BUY 40 ENB @ $76.00 CAD max, Day order. (Caps price; protects vs gap-up.)
   After fill: GTC STOP-LIMIT SELL 40 ENB, stop $69.00 / limit $68.00 CAD. (Auto-protects downside.)
-  Source: RRSP CAD sub · uses $3,040 of $4,500 CAD available.
+  Account: RRSP · uses $3,040 of $4,500 CAD available · leaves $1,460 CAD.
   Cost note: commission ~$6.95 per order = ~$13.90 total (entry + stop). FX impact: none.
 
-For "swap" recs (sell one, buy another), the SELL leg also needs a LIMIT SELL ticket so a gap-down doesn't dump shares cheap.
+**The "Account:" line is MANDATORY on every BUY/SELL/TRIM rec.** Account name must be one of the user's actual accounts (Non-Spousal / RRSP / TFSA / RESP / FHSA). The cash math on that line must reconcile against the per-account inventory in the prompt — do not propose a rec whose size exceeds the named account's bucket in the trade's currency. If you can't find an account with enough cash for the rec you want to make, downsize it to fit the best-tax-fit account, or recommend depositing first.
+
+For "swap" recs (sell one, buy another) the SELL leg also needs a LIMIT SELL ticket and the SELL leg's Account tag (the account where the position lives today).
 `;
 
   const priceCurrencyBlock = `
@@ -369,17 +371,37 @@ ${summary.perAccountCash.length ? "Per account:\n" + summary.perAccountCash.join
 `
     : `\nAvailable cash on hand: $0 (no cash to deploy).\n`;
 
+  // Per-account cash deployment — generate ONE card per funded account, not
+  // one global "cash deployment" card. Cash sitting in TFSA, RRSP, and
+  // Non-Spousal can't be combined, and the tax-optimal stock differs per
+  // account type, so the recs MUST be partitioned by account.
+  const fundedAccounts = (profile.accounts || []).filter(a =>
+    (a.cashCad || 0) > 50 || (a.cashUsd || 0) > 50
+  );
+  const fundedAccountLines = fundedAccounts.length
+    ? fundedAccounts.map(a => `  - **${a.name}**: $${(a.cashCad || 0).toFixed(0)} CAD · $${(a.cashUsd || 0).toFixed(0)} USD${a.riskTolerance ? ` (risk: ${a.riskTolerance})` : ""}`).join("\n")
+    : "  (no account has > $50 free cash in either currency)";
+
   const cashInstructions = hasCash
-    ? `Richard has CASH READY TO DEPLOY (see above). You MUST include a "Cash deployment — using existing cash" card with concrete BUY recs sized to actually use that cash. Compute share counts from the cash budget at the proposed Entry price.
+    ? `Richard has CASH READY TO DEPLOY. **You MUST produce a SEPARATE "Cash deployment — <ACCOUNT NAME>" card for EACH account below with > $50 free cash.** Do NOT pool cash across accounts; do NOT emit a single global "cash deployment" card.
 
-Example format if he has $2,500 CAD and $500 USD:
-  Action: BUY 30 sh ENB. Entry: $74.80 CAD (current $75.58). Target: $84 CAD (12mo). Stop: $69. Horizon: 12 months.
-    Uses ~$2,244 CAD of $2,500 CAD available.
-  Action: BUY 3 sh NVDA. Entry: $130 USD (on a pullback; current $134). Target: $200 USD (12mo). Stop: $108. Horizon: 12 months.
-    Uses ~$390 USD of $500 USD available.
+Accounts with cash to deploy:
+${fundedAccountLines}
 
-Do NOT recommend more spending than the cash he has. Don't suggest fractional shares. If the cash in a currency is too small for any reasonable buy (< $200 in that currency), say so and suggest pooling or FX-converting.`
-    : `Richard has no cash available to deploy right now. Do NOT recommend new BUYs unless they can be funded by TRIMming an existing position you explicitly call out in the same card (e.g., "Trim DJT for $X CAD, redeploy to ENB"). Otherwise focus on hold/trim/watch-list calls.`;
+For EACH funded account:
+- Generate one advice card titled like "Cash deployment — TFSA ($2,300 CAD)".
+- Recommend specific BUYs sized to fit THAT account's bucket only, in the matching currency.
+- Pick tickers whose tax treatment fits the account: US growth → TFSA; US-listed dividend payer → RRSP (treaty exemption); Canadian dividend payer → Non-Spousal (DTC); speculation → Non-Spousal (losses claimable); registered if any account has uncontributed room.
+- Each rec carries an "Account:" tag (mandatory — see ACCOUNT-SOURCE RULE below).
+- Don't propose fractional shares. Don't exceed that account's bucket.
+
+Example card body for a TFSA with $2,300 CAD:
+  Action: BUY 30 sh ENB. Entry: $74.80 CAD (current $75.58 verified). Target: $84 CAD (12mo). Stop: $69. Horizon: 12 months.
+    Account: TFSA · uses $2,244 of $2,300 CAD available · leaves $56.
+    Tax-fit: Canadian dividend payer — TFSA shelters both the dividend stream and any cap gain.
+
+If an account has < $200 in BOTH currencies, write a brief card saying "wait for more cash" or "deposit first" — don't force a sub-scale trade.`
+    : `Richard has no cash available across any account. Do NOT recommend new BUYs unless they can be funded by TRIMming an existing position you explicitly call out in the same card (e.g., "Trim DJT in Non-Spousal for $X CAD, redeploy to ENB in Non-Spousal"). The trim and redeploy MUST be in the same account. Otherwise focus on hold/trim/watch-list calls.`;
 
   // User's free-form goals — the single most important context block.
   // Every recommendation must be coherent with these. Empty goals = no
@@ -609,6 +631,76 @@ function extractTickerQuotes(text) {
     out.push({ ticker, quotedPrice: price, currency: m[3] || null });
   }
   return out;
+}
+
+// Given a markdown blob + the verified-price warnings produced by
+// validateTextPrices(), ask Claude to rewrite the briefing using the
+// correct prices — so the user sees a clean, internally-consistent
+// briefing instead of a scary "we caught the AI lying" banner.
+//
+// We don't want to expose "the AI got it wrong" to the user. We just
+// want the output to be right. Cost: one extra Claude call per briefing
+// only when warnings exist (most briefings won't trigger this).
+async function correctBriefingWithVerifiedPrices(markdown, warnings) {
+  if (!process.env.ANTHROPIC_API_KEY) return markdown;
+  if (!warnings || warnings.length === 0) return markdown;
+
+  // Build the verified-price ground-truth block
+  const priceLines = warnings
+    .filter(w => w.kind === "stale_price")
+    .map(w => `- ${w.ticker}: $${w.currentPrice.toFixed(2)} (you previously wrote $${w.quotedPrice.toFixed(2)} — that was wrong)`);
+  const missingLines = warnings
+    .filter(w => w.kind === "not_found")
+    .map(w => `- ${w.ticker}: ticker not found on live data feeds — likely renamed/delisted. REMOVE from briefing.`);
+  if (priceLines.length === 0 && missingLines.length === 0) return markdown;
+
+  const correction = [
+    "You wrote a draft daily briefing below, but I verified the prices against the live FMP feed and found discrepancies.",
+    "",
+    "**VERIFIED LIVE PRICES (use these as ground truth, overriding anything else):**",
+    ...priceLines,
+    ...missingLines,
+    "",
+    "**Your task:** Rewrite the briefing using the correct prices above.",
+    "- Keep the same structure, sections, and rationale tone.",
+    "- Update every $price mention, entry, target, stop, and any % calculations that depended on the wrong number.",
+    "- If a recommendation only made sense at the OLD price (e.g. 'buy at $85, target $95' but the stock is actually $150), re-evaluate the call — it might now be a HOLD or even a TRIM. Use your judgement.",
+    "- Do NOT add any banner, disclaimer, or note about prices being corrected. The output should read as if it were written correctly the first time.",
+    "- Return only the corrected briefing markdown. No preamble.",
+    "",
+    "---",
+    "PREVIOUS DRAFT:",
+    "---",
+    markdown,
+  ].join("\n");
+
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-5",
+        max_tokens: 4096,
+        messages: [{ role: "user", content: correction }],
+      }),
+    });
+    if (!r.ok) return markdown;
+    const j = await r.json();
+    const raw = (j?.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
+    if (!raw || raw.trim().length < 200) return markdown;
+    // Strip any preamble before the first heading
+    let cleaned = raw.trim();
+    const firstHeading = cleaned.search(/^#{1,6}\s/m);
+    if (firstHeading > 0) cleaned = cleaned.slice(firstHeading);
+    return cleaned;
+  } catch (e) {
+    console.warn("correctBriefingWithVerifiedPrices warn:", e?.message);
+    return markdown;
+  }
 }
 
 // Run price-integrity validation on a single text blob (e.g., briefing
@@ -1348,17 +1440,23 @@ router.post("/send-briefing", requireStocksAuth, async (req, res) => {
     }
 
     // Validate every $price the briefing mentions against the FMP live feed.
-    // If anything is off by >10% we prepend a red warning block to BOTH the
-    // markdown (preview/email) and surface the warnings array in the JSON
-    // so the UI can highlight them too.
+    // If anything is off by >10%, silently rewrite the briefing with the
+    // verified prices — the user should receive a clean, correct briefing,
+    // not an error report about what the AI got wrong.
     let priceWarnings = [];
     try { priceWarnings = await validateTextPrices(markdown); }
     catch (e) { console.warn("briefing validateTextPrices warn:", e?.message); }
 
     if (priceWarnings.length) {
-      const lines = priceWarnings.map(w => `- ⚠ ${w.message}`).join("\n");
-      const banner = `> **⚠ Price-integrity check flagged ${priceWarnings.length} quote${priceWarnings.length === 1 ? "" : "s"} below — re-verify before trading.**\n>\n${lines.split("\n").map(l => `> ${l}`).join("\n")}\n\n---\n\n`;
-      markdown = banner + markdown;
+      console.log(`[send-briefing] price-correction pass: ${priceWarnings.length} discrepancies — rewriting`);
+      const corrected = await correctBriefingWithVerifiedPrices(markdown, priceWarnings);
+      if (corrected && corrected !== markdown) {
+        markdown = corrected;
+        // Re-persist the corrected snapshot so the Advice tab matches the email
+        if (!reuse) {
+          await saveAdviceSnapshot({ email: profile.email, markdown, source: "on-demand" }).catch(() => {});
+        }
+      }
     }
 
     const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;

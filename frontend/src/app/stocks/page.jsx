@@ -839,6 +839,11 @@ export default function StocksAdvisorPage() {
         return next;
       });
     }
+    // If this trade was opened via Rectify, tell the Reconcile card the
+    // discrepancy has been resolved (cross-through the row in the UI).
+    if (typeof tradePrefill?._onTradeRecordedForRectify === "function") {
+      try { tradePrefill._onTradeRecordedForRectify(); } catch (e) { /* noop */ }
+    }
     showToast(`Trade recorded — ${trade.legs.map(l => `${l.side || ""} ${l.shares || ""} ${l.ticker || ""}`.trim()).join(", ")}`);
     return result;
   };
@@ -1007,7 +1012,7 @@ export default function StocksAdvisorPage() {
                   accounts: u.accounts.map((a) => a.id === accountId ? { ...a, brokerAccountId } : a),
                 }));
               }}
-              onRectify={(acct, issue) => {
+              onRectify={(acct, issue, markResolved) => {
                 const appAcctId = acct.appAccountId || acct.acctId;
                 const norm = (t) => String(t || "").toUpperCase().trim().replace(/\.(?:CN|TO|V|NE)$/i, "");
                 if (issue.type === "cash") {
@@ -1024,6 +1029,17 @@ export default function StocksAdvisorPage() {
                   return true;
                 }
                 if (issue.type === "position") {
+                  // Position discrepancy → open TradeModal so the user can
+                  // type the actual fill price and record it as a journal
+                  // entry (rather than silently rewriting the portfolio).
+                  const prefill = rectifyIssueToTradePrefill(acct, issue);
+                  if (prefill) {
+                    prefill._onTradeRecordedForRectify = markResolved;
+                    setTradePrefill(prefill);
+                    setTradeModalOpen(true);
+                    return "deferred";
+                  }
+                  // Fallback to silent update if the issue isn't trade-shaped
                   const targetTicker = (issue.csvTicker || issue.ticker).toUpperCase();
                   const normTarget = norm(targetTicker);
                   const subCcy = issue.subCurrency;
@@ -1131,7 +1147,7 @@ export default function StocksAdvisorPage() {
                   accounts: u.accounts.map((a) => a.id === accountId ? { ...a, brokerAccountId } : a),
                 }));
               }}
-              onRectify={(acct, issue) => {
+              onRectify={(acct, issue, markResolved) => {
                 // acct.appAccountId is the matched app account id (set by
                 // backend when resolveAppId succeeds). Fall back to acctId.
                 const appAcctId = acct.appAccountId || acct.acctId;
@@ -1154,6 +1170,16 @@ export default function StocksAdvisorPage() {
                 }
 
                 if (issue.type === "position") {
+                  // Position discrepancy → open TradeModal so the user can
+                  // type the actual fill price and record as a journal entry.
+                  const prefill = rectifyIssueToTradePrefill(acct, issue);
+                  if (prefill) {
+                    prefill._onTradeRecordedForRectify = markResolved;
+                    setTradePrefill(prefill);
+                    setTradeModalOpen(true);
+                    return "deferred";
+                  }
+                  // Fallback (no prefill could be built) — silent update
                   const targetTicker = (issue.csvTicker || issue.ticker).toUpperCase();
                   const normTarget = norm(targetTicker);
                   const subCcy = issue.subCurrency;
@@ -1853,37 +1879,13 @@ function splitCallText(full) {
   return { label: trimmed.length > 40 ? trimmed.slice(0, 38) + "…" : trimmed, detail: trimmed.length > 40 ? trimmed : null };
 }
 
-// Red banner rendered above any card whose body contains $price quotes the
-// backend has flagged as stale or non-existent vs the live FMP feed.
-// `warnings` shape per item: { ticker, quotedPrice, currentPrice?, driftPct?, kind, message }
-function PriceWarningsBanner({ warnings }) {
-  if (!warnings || !warnings.length) return null;
-  return (
-    <div
-      style={{
-        marginBottom: 10,
-        padding: "10px 12px",
-        background: "#fef2f2",
-        border: "1px solid #fecaca",
-        borderLeft: "4px solid var(--sa-red)",
-        borderRadius: 8,
-        fontSize: 12,
-        color: "#7f1d1d",
-        lineHeight: 1.5,
-      }}
-    >
-      <div style={{ fontWeight: 700, marginBottom: 4 }}>
-        ⚠ Price-integrity check — re-verify before trading
-      </div>
-      <ul style={{ margin: 0, paddingLeft: 18 }}>
-        {warnings.map((w, i) => (
-          <li key={i} style={{ marginBottom: 2 }}>
-            {w.message}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
+// PriceWarningsBanner is intentionally hidden in the UI per user request —
+// they want to receive perfect briefings, not error reports. The backend
+// silently rewrites the briefing with verified prices when discrepancies
+// are detected; for the card path we still attach the warnings array
+// internally so we can log/regenerate, but we don't render anything.
+function PriceWarningsBanner() {
+  return null;
 }
 
 function renderAdviceBody(body, priceLookup = null) {
@@ -2918,6 +2920,61 @@ function normalizeTickerClient(t) {
   return String(t || "").toUpperCase().trim().replace(/\.(?:CN|TO|V|NE)$/i, "");
 }
 
+// Map a reconciliation discrepancy to a TradeModal prefill. Used when the
+// user clicks Rectify on a position-level issue — instead of silently
+// overwriting the portfolio, we open the trade modal so they can enter
+// the actual fill price and record it as a proper journal entry. Returns
+// null when the issue isn't trade-shaped (e.g. cash-only) or when there's
+// not enough info to build a sensible prefill.
+function rectifyIssueToTradePrefill(acct, issue) {
+  if (!issue || issue.type !== "position") return null;
+  const ticker = String(issue.csvTicker || issue.ticker || "").toUpperCase().replace(/\.+$/, "");
+  if (!ticker) return null;
+  const appAccountId = acct.appAccountId || acct.acctId;
+  // The CIBC sub the position lives in (CAD/USD) — drives the trade currency
+  // and the sub it settles through.
+  const ccy = issue.subCurrency || (issue.csvMarket === "US" ? "USD" : "CAD");
+  // Suggested entry price = CIBC's listed price when present; otherwise blank
+  // so the user must type it.
+  const suggestedPrice = Number.isFinite(issue.csvPrice) && issue.csvPrice > 0
+    ? Number(issue.csvPrice)
+    : null;
+
+  // Three trade-shaped kinds:
+  //   extra_in_app   — app has it, CIBC doesn't → SELL appQty
+  //   missing_in_app — CIBC has it, app doesn't → BUY csvQty
+  //   qty_mismatch   — both have it; sign of delta picks BUY or SELL
+  if (issue.kind === "extra_in_app") {
+    return {
+      side: "SELL", ticker, shares: issue.appQty, currency: ccy,
+      accountId: appAccountId, entryLow: suggestedPrice,
+      _rectifyIssueLabel: `Reconcile: SELL ${issue.appQty} ${ticker} (CIBC shows 0)`,
+    };
+  }
+  if (issue.kind === "missing_in_app") {
+    return {
+      side: "BUY", ticker, shares: issue.csvQty, currency: ccy,
+      accountId: appAccountId, entryLow: suggestedPrice,
+      _rectifyIssueLabel: `Reconcile: BUY ${issue.csvQty} ${ticker} (missing from app)`,
+    };
+  }
+  if (issue.kind === "qty_mismatch") {
+    const delta = (issue.csvQty || 0) - (issue.appQty || 0);
+    if (delta === 0) return null;
+    const isBuy = delta > 0;
+    return {
+      side: isBuy ? "BUY" : "SELL",
+      ticker,
+      shares: Math.abs(delta),
+      currency: ccy,
+      accountId: appAccountId,
+      entryLow: suggestedPrice,
+      _rectifyIssueLabel: `Reconcile: ${isBuy ? "BUY" : "SELL"} ${Math.abs(delta)} ${ticker} (app ${issue.appQty} → CIBC ${issue.csvQty})`,
+    };
+  }
+  return null;
+}
+
 // =============================================================================
 // Reconcile view — standalone tab wrapping ReconcileCard. Lifts the
 // reconciliation feature out of Settings (which was getting long) so it
@@ -2964,13 +3021,20 @@ function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId, onRectif
     : `${appAcctId}|pos|${issue.ticker}|${issue.subCurrency}`;
   const handleRectify = (acct, issue) => {
     if (!onRectify) return;
-    const result = onRectify(acct, issue);
+    const issueK = issueKey(acct.appAccountId || acct.acctId, issue);
+    const markResolved = () => {
+      setResolvedKeys((prev) => {
+        const next = new Set(prev);
+        next.add(issueK);
+        return next;
+      });
+    };
+    // 3rd arg lets parent defer resolution (e.g. when it opens a trade
+    // modal — only mark resolved after the trade actually records).
+    const result = onRectify(acct, issue, markResolved);
     if (result === false) return; // rejected
-    setResolvedKeys((prev) => {
-      const next = new Set(prev);
-      next.add(issueKey(acct.appAccountId || acct.acctId, issue));
-      return next;
-    });
+    if (result === true) markResolved(); // legacy sync path (cash etc.)
+    // Any other return value = deferred — parent will call markResolved.
   };
   // Keep accountMap in sync if accounts prop updates (after save)
   useEffect(() => {
@@ -3218,13 +3282,16 @@ function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId, onRectif
                         opacity: isResolved ? 0.45 : 1,
                         textDecoration: isResolved ? "line-through" : "none",
                       };
+                      const isPosIssue = issue.type === "position";
                       const rectifyBtn = !isResolved && (
                         <button
                           className="sa-btn"
                           onClick={() => handleRectify(a, issue)}
                           style={{ fontSize: 11, padding: "3px 10px" }}
-                          title="Update the app to match CIBC for this row"
-                        >Rectify</button>
+                          title={isPosIssue
+                            ? "Opens trade modal — enter your actual fill price and record as a journal trade"
+                            : "Update the app to match CIBC for this row"}
+                        >{isPosIssue ? "Rectify as trade" : "Rectify"}</button>
                       );
                       const resolvedBadge = isResolved && (
                         <span style={{ fontSize: 11, color: "var(--sa-green)" }}>✓ rectified</span>
@@ -3264,21 +3331,32 @@ function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId, onRectif
                     })}
                   </tbody>
                 </table>
-                {a.issues.length > 0 && a.issues.filter((iss) => !resolvedKeys.has(issueKey(a.appAccountId || a.acctId, iss))).length > 1 && (
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-                    <button
-                      className="sa-btn secondary"
-                      style={{ fontSize: 11 }}
-                      onClick={() => {
-                        for (const iss of a.issues) {
-                          if (!resolvedKeys.has(issueKey(a.appAccountId || a.acctId, iss))) {
-                            handleRectify(a, iss);
-                          }
-                        }
-                      }}
-                    >Rectify all in {a.accountName}</button>
-                  </div>
-                )}
+                {(() => {
+                  const unresolved = a.issues.filter((iss) => !resolvedKeys.has(issueKey(a.appAccountId || a.acctId, iss)));
+                  const cashOnly = unresolved.filter((iss) => iss.type === "cash");
+                  const positions = unresolved.filter((iss) => iss.type === "position");
+                  if (unresolved.length <= 1) return null;
+                  return (
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8, gap: 8, flexWrap: "wrap" }}>
+                      {positions.length > 0 && (
+                        <div className="sa-muted" style={{ fontSize: 11, alignSelf: "center" }}>
+                          {positions.length} position discrepanc{positions.length === 1 ? "y" : "ies"} — Rectify individually to set fill price
+                        </div>
+                      )}
+                      {cashOnly.length > 0 && (
+                        <button
+                          className="sa-btn secondary"
+                          style={{ fontSize: 11 }}
+                          onClick={() => {
+                            for (const iss of cashOnly) {
+                              handleRectify(a, iss);
+                            }
+                          }}
+                        >Rectify {cashOnly.length} cash row{cashOnly.length === 1 ? "" : "s"} in {a.accountName}</button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
@@ -3650,8 +3728,14 @@ function TradeModal({ user, onClose, onSubmit, onSubmitPending, prefill }) {
   // Tickers visible in the user's portfolio for BUY autocomplete suggestion
   const ownedTickers = [...new Set(user.positions.map(p => p.ticker))];
 
-  // SELL sub-account inherited from the chosen holding (where it lives)
-  const [sellSubCcy, setSellSubCcy] = useState("USD");
+  // SELL sub-account inherited from the chosen holding (where it lives).
+  // When opened via Rectify-as-Trade, we know the sub already (the
+  // discrepancy carries it) so we pre-populate to spare the user a click.
+  const [sellSubCcy, setSellSubCcy] = useState(
+    prefill && (prefill.side === "SELL" || prefill.side === "TRIM") && prefill.currency
+      ? prefill.currency
+      : "USD"
+  );
 
   // Aggregate holdings by (ticker, market, sub) so each lot is selectable.
   // A USD stock parked in the CAD sub is a separate dropdown option from the
