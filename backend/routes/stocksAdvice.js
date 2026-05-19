@@ -517,6 +517,196 @@ function stripCiteTags(s) {
 }
 
 // Extract first balanced JSON object from a string
+// ── Post-validation: catch AI hallucinated/stale prices ─────────────
+//
+// The AI claims "(verified)" but doesn't actually web_search reliably.
+// User has caught: SQ deprecated, ROKU $67→actual $128, META $525→$608,
+// VZ $42→$47, TD.TO $85→$150, XLU $74→$44, FTS.TO $62→$77. After every
+// AI response we extract every (TICKER, quoted-price) pair from the
+// cards, fetch the current price from FMP (the paid premium feed; Yahoo
+// is a fallback only if FMP doesn't have the symbol), and attach a
+// warning to each card with mismatches >10% so the UI can red-banner
+// the rec before the user trades on it.
+
+const NON_TICKER_TOKENS = new Set([
+  // Currency/units
+  "USD","CAD","EUR","GBP","ETF","CRA","SEC","IRS","FED","BOC","ECB","BOJ","BOE",
+  // Common abbreviations
+  "RSI","ATR","SMA","EMA","EPS","EBITDA","DCF","GTC","ATM","API","EOD","FDA","ESG",
+  "MTD","YTD","YOY","QOQ","CAGR","TAM","SAM","SOM","ROE","ROI","ROIC","WACC",
+  "CEO","CFO","COO","CTO","COB","COO","HQ","IPO","SPAC",
+  // Account types
+  "TFSA","RRSP","RRIF","RESP","FHSA","OAS","CPP","RPP",
+  // Action verbs
+  "BUY","SELL","HOLD","TRIM","EXIT","ADD","STOP","LIMIT","MARKET","DAY",
+  "TAX","LOSS","HARVEST","SWAP","SOURCE","ORDER","COST",
+  // Months
+  "JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC",
+  // Quarters
+  "Q1","Q2","Q3","Q4","H1","H2","FY",
+  // Misc generic
+  "US","CDN","UK","EU","AI","ML","NEW","OLD","TBD","TBA","MAX","MIN","AVG",
+  "LOW","HIGH","BID","ASK","NEAR","ABOVE","BELOW",
+  "WTI","BRENT","VIX",
+]);
+
+// Fetch current quote — prefer FMP (Premium tier user pays for), fall back
+// to Yahoo only if FMP is unconfigured or returns nothing. FMP gives us
+// real-time / 15-min-delayed quotes on the Premium plan; Yahoo is the
+// fallback for the rare ticker FMP doesn't cover.
+async function fetchFmpQuote(ticker) {
+  const key = process.env.FMP_API_KEY || "";
+  if (!key) return null;
+  try {
+    const url = `https://financialmodelingprep.com/api/v3/quote/${encodeURIComponent(ticker)}?apikey=${key}`;
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(tid);
+    if (!r.ok) return null;
+    const j = await r.json();
+    const row = Array.isArray(j) ? j[0] : null;
+    return Number.isFinite(row?.price) ? row.price : null;
+  } catch { return null; }
+}
+
+async function fetchYahooQuote(ticker) {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": "Mozilla/5.0 (Curriculate)" } });
+    clearTimeout(tid);
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j?.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
+  } catch { return null; }
+}
+
+// Resolve a ticker's current price for validation. Try FMP first (paid).
+// Canadian tickers on FMP use the .TO suffix — if the AI quoted a bare
+// symbol that's actually Canadian we'd miss it, but in practice the AI
+// uses .TO for Canadian recs since the portfolio table does.
+async function fetchValidationPrice(ticker) {
+  const fmp = await fetchFmpQuote(ticker);
+  if (Number.isFinite(fmp) && fmp > 0) return fmp;
+  return await fetchYahooQuote(ticker);
+}
+
+// Pull (ticker, quoted-price) pairs from card text. The price token must
+// follow within ~40 chars of the ticker, with $ anchor before the digits.
+function extractTickerQuotes(text) {
+  const out = [];
+  // Pattern: TICKER (bridge up to 35 chars, no newline) $price (optional USD/CAD)
+  const pat = /\b([A-Z]{2,5}(?:\.[A-Z]{1,3})?)\b[^.\n]{0,35}?\$\s*([\d,]+(?:\.\d+)?)\s*(USD|CAD)?/g;
+  let m;
+  while ((m = pat.exec(text)) !== null) {
+    const ticker = m[1];
+    if (NON_TICKER_TOKENS.has(ticker)) continue;
+    if (/^\d/.test(ticker)) continue;
+    const price = parseFloat(m[2].replace(/,/g, ""));
+    if (!Number.isFinite(price) || price <= 0 || price > 100000) continue;
+    out.push({ ticker, quotedPrice: price, currency: m[3] || null });
+  }
+  return out;
+}
+
+// Run price-integrity validation on a single text blob (e.g., briefing
+// markdown). Returns an array of warnings — same shape as the per-card
+// warnings but flat, since briefings aren't card-structured.
+async function validateTextPrices(text) {
+  if (!text || typeof text !== "string") return [];
+  const quotes = extractTickerQuotes(text);
+  if (quotes.length === 0) return [];
+  // Dedupe by ticker+price (the AI often repeats the same quote in
+  // multiple sections — don't spam the warning list).
+  const seen = new Set();
+  const unique = quotes.filter(q => {
+    const k = `${q.ticker}|${q.quotedPrice}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const tickerSet = new Set(unique.map(q => q.ticker));
+  const priceMap = {};
+  await Promise.all([...tickerSet].map(async t => {
+    priceMap[t] = await fetchValidationPrice(t);
+  }));
+  const warnings = [];
+  for (const q of unique) {
+    const current = priceMap[q.ticker];
+    if (current == null) {
+      warnings.push({
+        ticker: q.ticker, quotedPrice: q.quotedPrice, kind: "not_found",
+        message: `${q.ticker} not found on FMP or Yahoo — possibly renamed, delisted, or a typo`,
+      });
+    } else {
+      const drift = Math.abs(current - q.quotedPrice) / current;
+      if (drift > 0.10) {
+        warnings.push({
+          ticker: q.ticker, quotedPrice: q.quotedPrice, currentPrice: current,
+          driftPct: drift * 100, kind: "stale_price",
+          message: `${q.ticker}: AI quoted $${q.quotedPrice.toFixed(2)}, live ~$${current.toFixed(2)} (off by ${(drift * 100).toFixed(0)}%)`,
+        });
+      }
+    }
+  }
+  return warnings;
+}
+
+// Validate every quoted price against FMP (Yahoo fallback). Returns { [cardIdx]: warnings[] }.
+async function validateAdvicePrices(cards) {
+  if (!Array.isArray(cards) || cards.length === 0) return {};
+  // Extract all (ticker, quotedPrice) per card, dedupe
+  const allQuotes = [];
+  cards.forEach((c, i) => {
+    const text = (c.title || "") + "\n" + (c.body || "") + "\n" + (c.meta || "");
+    for (const q of extractTickerQuotes(text)) {
+      allQuotes.push({ cardIdx: i, ...q });
+    }
+  });
+  const seen = new Set();
+  const unique = allQuotes.filter(q => {
+    const k = `${q.cardIdx}|${q.ticker}|${q.quotedPrice}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  if (unique.length === 0) return {};
+  // Fetch current prices for unique tickers in parallel (FMP first, then Yahoo)
+  const tickerSet = new Set(unique.map(q => q.ticker));
+  const priceMap = {};
+  await Promise.all([...tickerSet].map(async t => {
+    priceMap[t] = await fetchValidationPrice(t);
+  }));
+  // Build warnings per card
+  const out = {};
+  for (const q of unique) {
+    const current = priceMap[q.ticker];
+    let warning = null;
+    if (current == null) {
+      warning = {
+        ticker: q.ticker, quotedPrice: q.quotedPrice, kind: "not_found",
+        message: `${q.ticker} not found on FMP or Yahoo — possibly renamed, delisted, or a typo`,
+      };
+    } else {
+      const drift = Math.abs(current - q.quotedPrice) / current;
+      if (drift > 0.10) {
+        warning = {
+          ticker: q.ticker, quotedPrice: q.quotedPrice, currentPrice: current,
+          driftPct: drift * 100, kind: "stale_price",
+          message: `${q.ticker}: AI quoted $${q.quotedPrice.toFixed(2)}, live ~$${current.toFixed(2)} (off by ${(drift * 100).toFixed(0)}%)`,
+        };
+      }
+    }
+    if (warning) {
+      if (!out[q.cardIdx]) out[q.cardIdx] = [];
+      out[q.cardIdx].push(warning);
+    }
+  }
+  return out;
+}
+
 function extractJson(text) {
   if (!text) return null;
 
@@ -800,6 +990,17 @@ router.post("/", requireStocksAuth, async (req, res) => {
       }
     });
 
+    // Post-validate every quoted price against Yahoo. Attaches a
+    // priceWarnings array to each affected card so the UI can render a
+    // red banner before the user acts on stale or hallucinated quotes.
+    try {
+      const warnings = await validateAdvicePrices(parsed.advice);
+      for (const [idx, list] of Object.entries(warnings)) {
+        const i = parseInt(idx, 10);
+        if (parsed.advice[i]) parsed.advice[i].priceWarnings = list;
+      }
+    } catch (e) { console.warn("validateAdvicePrices warn:", e?.message); }
+
     res.json({
       generatedAt: generatedAt.toISOString(),
       advice: parsed.advice,
@@ -953,8 +1154,16 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
     // sees usable advice instead of nothing.
     if (successful.length < 2) {
       const single = successful[0];
+      const singleCards = single.advice || [];
+      try {
+        const warnings = await validateAdvicePrices(singleCards);
+        for (const [idx, list] of Object.entries(warnings)) {
+          const i = parseInt(idx, 10);
+          if (singleCards[i]) singleCards[i].priceWarnings = list;
+        }
+      } catch (e) { console.warn("degraded validateAdvicePrices warn:", e?.message); }
       return res.json({
-        consensus: single.advice || [],
+        consensus: singleCards,
         alternatives: [],
         sources: single.sources || [],
         runs: N,
@@ -1043,6 +1252,21 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
       if (consensus[consensusIdx]) consensus[consensusIdx].recId = doc._id.toString();
     });
 
+    // Post-validate quoted prices on BOTH consensus + alternatives so the
+    // UI red-banner kicks in whichever bucket a stale rec lands in.
+    try {
+      const cWarn = await validateAdvicePrices(consensus);
+      for (const [idx, list] of Object.entries(cWarn)) {
+        const i = parseInt(idx, 10);
+        if (consensus[i]) consensus[i].priceWarnings = list;
+      }
+      const aWarn = await validateAdvicePrices(alternatives);
+      for (const [idx, list] of Object.entries(aWarn)) {
+        const i = parseInt(idx, 10);
+        if (alternatives[i]) alternatives[i].priceWarnings = list;
+      }
+    } catch (e) { console.warn("consensus validateAdvicePrices warn:", e?.message); }
+
     // Merge sources from all runs, de-duped
     const sourceSet = new Map();
     for (const run of successful) {
@@ -1123,6 +1347,20 @@ router.post("/send-briefing", requireStocksAuth, async (req, res) => {
       }
     }
 
+    // Validate every $price the briefing mentions against the FMP live feed.
+    // If anything is off by >10% we prepend a red warning block to BOTH the
+    // markdown (preview/email) and surface the warnings array in the JSON
+    // so the UI can highlight them too.
+    let priceWarnings = [];
+    try { priceWarnings = await validateTextPrices(markdown); }
+    catch (e) { console.warn("briefing validateTextPrices warn:", e?.message); }
+
+    if (priceWarnings.length) {
+      const lines = priceWarnings.map(w => `- ⚠ ${w.message}`).join("\n");
+      const banner = `> **⚠ Price-integrity check flagged ${priceWarnings.length} quote${priceWarnings.length === 1 ? "" : "s"} below — re-verify before trading.**\n>\n${lines.split("\n").map(l => `> ${l}`).join("\n")}\n\n---\n\n`;
+      markdown = banner + markdown;
+    }
+
     const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
     const inner = md2html(markdown);
     const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,system-ui,Roboto,Helvetica,Arial,sans-serif;max-width:720px;margin:0 auto;padding:32px 28px;line-height:1.65;color:#1f2937;background:#fafbff;-webkit-font-smoothing:antialiased">${inner}<hr style="border:none;border-top:1px solid #e4e8ef;margin:32px 0 12px"><div style="font-size:11px;color:#9ca3af;line-height:1.5">Research and education only. Not licensed investment advice. Generated by Stocks Advisor at curriculate.net/stocks.</div></body></html>`;
@@ -1145,7 +1383,7 @@ router.post("/send-briefing", requireStocksAuth, async (req, res) => {
       }
     }
 
-    res.json({ markdown, html, subject, sent, sendError, messageId, to: toAddress, tracked, reused: !!reuse });
+    res.json({ markdown, html, subject, sent, sendError, messageId, to: toAddress, tracked, reused: !!reuse, priceWarnings });
   } catch (err) {
     console.error("send-briefing error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });

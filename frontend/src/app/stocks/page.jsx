@@ -1853,6 +1853,39 @@ function splitCallText(full) {
   return { label: trimmed.length > 40 ? trimmed.slice(0, 38) + "…" : trimmed, detail: trimmed.length > 40 ? trimmed : null };
 }
 
+// Red banner rendered above any card whose body contains $price quotes the
+// backend has flagged as stale or non-existent vs the live FMP feed.
+// `warnings` shape per item: { ticker, quotedPrice, currentPrice?, driftPct?, kind, message }
+function PriceWarningsBanner({ warnings }) {
+  if (!warnings || !warnings.length) return null;
+  return (
+    <div
+      style={{
+        marginBottom: 10,
+        padding: "10px 12px",
+        background: "#fef2f2",
+        border: "1px solid #fecaca",
+        borderLeft: "4px solid var(--sa-red)",
+        borderRadius: 8,
+        fontSize: 12,
+        color: "#7f1d1d",
+        lineHeight: 1.5,
+      }}
+    >
+      <div style={{ fontWeight: 700, marginBottom: 4 }}>
+        ⚠ Price-integrity check — re-verify before trading
+      </div>
+      <ul style={{ margin: 0, paddingLeft: 18 }}>
+        {warnings.map((w, i) => (
+          <li key={i} style={{ marginBottom: 2 }}>
+            {w.message}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function renderAdviceBody(body, priceLookup = null) {
   if (!body) return null;
   const text = String(body).trim();
@@ -2149,6 +2182,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
                 </span>
               )}
             </h3>
+            <PriceWarningsBanner warnings={c.priceWarnings} />
             {hasRecs ? (
               <>
                 {parsed.intro && renderAdviceBody(parsed.intro, priceLookup)}
@@ -2190,6 +2224,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
                   <span>{c.title}</span>
                   <span style={{ background: "var(--sa-amber-soft)", color: "var(--sa-amber)", padding: "2px 8px", borderRadius: 99, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>1/{c.totalRuns} runs</span>
                 </h3>
+                <PriceWarningsBanner warnings={c.priceWarnings} />
                 {hasRecs ? (
                   <>
                     {parsed.intro && renderAdviceBody(parsed.intro, priceLookup)}
