@@ -1012,7 +1012,7 @@ export default function StocksAdvisorPage() {
                   accounts: u.accounts.map((a) => a.id === accountId ? { ...a, brokerAccountId } : a),
                 }));
               }}
-              onRectify={(acct, issue, markResolved) => {
+              onRectify={(acct, issue, markResolved, opts) => {
                 const appAcctId = acct.appAccountId || acct.acctId;
                 const norm = (t) => String(t || "").toUpperCase().trim().replace(/\.(?:CN|TO|V|NE)$/i, "");
                 if (issue.type === "cash") {
@@ -1029,10 +1029,15 @@ export default function StocksAdvisorPage() {
                   return true;
                 }
                 if (issue.type === "position") {
+                  // When opts.silent is set, skip the TradeModal and just
+                  // apply the portfolio mutation. Used for "Delete (no
+                  // trade)" on extras that were already booked in another
+                  // account so we don't double-record the sell.
+                  const silent = !!opts?.silent;
                   // Position discrepancy → open TradeModal so the user can
                   // type the actual fill price and record it as a journal
                   // entry (rather than silently rewriting the portfolio).
-                  const prefill = rectifyIssueToTradePrefill(acct, issue);
+                  const prefill = !silent ? rectifyIssueToTradePrefill(acct, issue) : null;
                   if (prefill) {
                     prefill._onTradeRecordedForRectify = markResolved;
                     setTradePrefill(prefill);
@@ -1147,7 +1152,7 @@ export default function StocksAdvisorPage() {
                   accounts: u.accounts.map((a) => a.id === accountId ? { ...a, brokerAccountId } : a),
                 }));
               }}
-              onRectify={(acct, issue, markResolved) => {
+              onRectify={(acct, issue, markResolved, opts) => {
                 // acct.appAccountId is the matched app account id (set by
                 // backend when resolveAppId succeeds). Fall back to acctId.
                 const appAcctId = acct.appAccountId || acct.acctId;
@@ -1170,9 +1175,12 @@ export default function StocksAdvisorPage() {
                 }
 
                 if (issue.type === "position") {
+                  // opts.silent = "Delete (no trade)" path: skip TradeModal
+                  // and just apply the silent portfolio mutation below.
+                  const silent = !!opts?.silent;
                   // Position discrepancy → open TradeModal so the user can
                   // type the actual fill price and record as a journal entry.
-                  const prefill = rectifyIssueToTradePrefill(acct, issue);
+                  const prefill = !silent ? rectifyIssueToTradePrefill(acct, issue) : null;
                   if (prefill) {
                     prefill._onTradeRecordedForRectify = markResolved;
                     setTradePrefill(prefill);
@@ -3019,7 +3027,7 @@ function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId, onRectif
   const issueKey = (appAcctId, issue) => issue.type === "cash"
     ? `${appAcctId}|cash|${issue.currency}`
     : `${appAcctId}|pos|${issue.ticker}|${issue.subCurrency}`;
-  const handleRectify = (acct, issue) => {
+  const handleRectify = (acct, issue, opts = {}) => {
     if (!onRectify) return;
     const issueK = issueKey(acct.appAccountId || acct.acctId, issue);
     const markResolved = () => {
@@ -3031,7 +3039,9 @@ function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId, onRectif
     };
     // 3rd arg lets parent defer resolution (e.g. when it opens a trade
     // modal — only mark resolved after the trade actually records).
-    const result = onRectify(acct, issue, markResolved);
+    // 4th arg (options) lets the caller request silent-update mode for
+    // extras that were already booked in another account (no trade needed).
+    const result = onRectify(acct, issue, markResolved, opts);
     if (result === false) return; // rejected
     if (result === true) markResolved(); // legacy sync path (cash etc.)
     // Any other return value = deferred — parent will call markResolved.
@@ -3080,6 +3090,10 @@ function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId, onRectif
   const runReconcile = async () => {
     if (busy || files.length === 0) return;
     setBusy(true); setErr(null); setDiff(null);
+    // Reset cross-through marks on recheck — the new diff is computed
+    // against the updated portfolio, so any rows still flagged are NEW
+    // discrepancies (or persistent ones), not previously-resolved ones.
+    setResolvedKeys(new Set());
     try {
       const r = await fetch(`${BACKEND_URL}/api/stocks-reconcile`, {
         method: "POST",
@@ -3222,7 +3236,25 @@ function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId, onRectif
             );
           })()}
 
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Results ({diff.parsedFiles.length} files parsed, {diff.accounts.length} accounts checked)</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>
+              Results ({diff.parsedFiles.length} files parsed, {diff.accounts.length} accounts checked)
+              {resolvedKeys.size > 0 && (
+                <span className="sa-muted" style={{ fontWeight: 400, marginLeft: 8 }}>
+                  · {resolvedKeys.size} rectified
+                </span>
+              )}
+            </div>
+            <button
+              className="sa-btn secondary"
+              onClick={runReconcile}
+              disabled={busy || files.length === 0}
+              style={{ fontSize: 12 }}
+              title="Re-run reconciliation against your latest portfolio state — useful after rectifying discrepancies."
+            >
+              {busy ? "Rechecking…" : "🔄 Recheck"}
+            </button>
+          </div>
 
           {diff.accounts.length === 0 && (
             <div className="sa-muted" style={{ fontSize: 13 }}>No accounts to compare.</div>
@@ -3283,15 +3315,30 @@ function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId, onRectif
                         textDecoration: isResolved ? "line-through" : "none",
                       };
                       const isPosIssue = issue.type === "position";
+                      const isExtra = isPosIssue && issue.kind === "extra_in_app";
                       const rectifyBtn = !isResolved && (
-                        <button
-                          className="sa-btn"
-                          onClick={() => handleRectify(a, issue)}
-                          style={{ fontSize: 11, padding: "3px 10px" }}
-                          title={isPosIssue
-                            ? "Opens trade modal — enter your actual fill price and record as a journal trade"
-                            : "Update the app to match CIBC for this row"}
-                        >{isPosIssue ? "Rectify as trade" : "Rectify"}</button>
+                        <div style={{ display: "inline-flex", gap: 4 }}>
+                          <button
+                            className="sa-btn"
+                            onClick={() => handleRectify(a, issue)}
+                            style={{ fontSize: 11, padding: "3px 10px" }}
+                            title={isPosIssue
+                              ? "Opens trade modal — enter your actual fill price and record as a journal trade"
+                              : "Update the app to match CIBC for this row"}
+                          >{isPosIssue ? "Rectify as trade" : "Rectify"}</button>
+                          {isExtra && (
+                            <button
+                              className="sa-btn ghost"
+                              onClick={() => {
+                                if (confirm(`Delete ${issue.appQty} sh ${issue.csvTicker || issue.ticker} from ${a.accountName} without recording a trade?\n\nUse this only if the trade was already recorded in a different account.`)) {
+                                  handleRectify(a, issue, { silent: true });
+                                }
+                              }}
+                              style={{ fontSize: 11, padding: "3px 10px" }}
+                              title="Just delete this position from the app — no SELL recorded. Use when the trade was already booked in another account."
+                            >Delete</button>
+                          )}
+                        </div>
                       );
                       const resolvedBadge = isResolved && (
                         <span style={{ fontSize: 11, color: "var(--sa-green)" }}>✓ rectified</span>
