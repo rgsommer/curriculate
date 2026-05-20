@@ -555,6 +555,8 @@ ${summary.perAccountCash.length ? "Per account:\n" + summary.perAccountCash.join
    Accounts with cash to deploy:
 ${fundedAccountLines}
 
+   **DO-NOT-DUPLICATE RULE (critical):** Section 4 ("Today's one action") already proposed ONE trade. In Section 5, if the Section-4 trade lives in one of these accounts, acknowledge it on ONE line — "Section-4 ENB BUY ($2,274 of $7,766 used) — see above for full ticket" — and then propose DIFFERENT names for the remaining cash. Do NOT restate the same ticker with the same entry/target/stop as a new "Action 2" just to consume more cash. If you genuinely want a layered scale-in for the same ticker, use the MULTI-DAY EXECUTION format (one rec with Layer 1/2/3 at staggered prices), not two separate rec blocks at the same price.
+
    For EACH funded account, write a clearly-titled block like:
      **TFSA — $2,300 CAD · $0 USD**
      - Action: BUY 30 sh ENB. Entry: $74.80 CAD (current $75.58 verified). Target: $84 CAD (12mo). Stop: $69. Horizon: 12 months.
@@ -563,6 +565,7 @@ ${fundedAccountLines}
 
    Rules per account:
    - Pick recs whose tax treatment ACTUALLY MATCHES that account (US growth → TFSA; US-listed dividend payer → RRSP for treaty exemption; Canadian dividend payer → Non-Spousal for the dividend tax credit; speculation → Non-Spousal so losses are claimable).
+   - Pick DIFFERENT names from Section 4 when possible — diversification, not concentration.
    - No fractional shares; do not exceed that account's cash.
    - If an account has very small cash (<$200 in either currency), either say "wait for more cash" or suggest depositing more — don't force a tiny trade that's all commission.
    - Tilt AWAY from current concentration (DJT/DJTWW/RUM) regardless of which account you're deploying to.`
@@ -609,7 +612,7 @@ Write a markdown briefing with these sections:
 1. **Overnight & pre-market** — ES/NQ futures, VIX, USD/CAD, oil, Fed/BoC actions
 2. **Signals per holding** — for EACH top-7 ticker, a 2-3 line block citing specific signals you found via web_search (news + earnings + corporate actions + analyst moves + insider activity + technical setup + applicable macro). Format: "**TICKER**: news=... · earnings=... · analyst=... · insider=... · technicals=... · call: [HOLD/TRIM/ADD/EXIT at $X]"
 3. **Performance snapshot** — week/month/3M moves on top names
-4. **Today's one action** — single trade, all four levels (Entry/Target/Stop/Horizon), plus the specific account (Non-Spousal / RRSP / TFSA) per the Canadian tax notes above.
+4. **Today's one action** — single trade, all four levels (Entry/Target/Stop/Horizon), plus the specific account (Non-Spousal / RRSP / TFSA) per the Canadian tax notes above. This is the SINGLE highest-conviction trade for today. Section 5 must NOT repeat this trade — see rule below.
 ${cashSection}
 6. **Watch list** — 2-3 levels to monitor today (specific price triggers)
 7. **Aggressive new ideas** — 1-2 unowned names with price targets. For each, suggest the optimal account based on Canadian tax treatment (e.g., "US growth name → TFSA"; "Canadian dividend payer → Non-Spousal for the dividend tax credit").

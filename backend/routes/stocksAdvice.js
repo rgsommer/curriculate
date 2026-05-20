@@ -605,11 +605,28 @@ async function fetchYahooQuote(ticker) {
   } catch { return null; }
 }
 
-// Resolve a ticker's current price for validation. Try FMP first (paid).
-// Canadian tickers on FMP use the .TO suffix — if the AI quoted a bare
-// symbol that's actually Canadian we'd miss it, but in practice the AI
-// uses .TO for Canadian recs since the portfolio table does.
-async function fetchValidationPrice(ticker) {
+// Resolve a ticker's current price for validation. Canadian listings on
+// FMP/Yahoo use the .TO (TSX) / .V (TSXV) / .NE (NEO) / .CN suffixes —
+// if the AI writes a bare "ENB" but tagged the price in CAD, we need
+// to query "ENB.TO" or Yahoo will return the (much cheaper) US ADR
+// and the validator will either miss the mismatch or "correct" the
+// CAD price down to the USD ADR value.
+//
+//   currencyHint  — "CAD" or "USD" or null. When CAD we try `.TO` first.
+async function fetchValidationPrice(ticker, currencyHint = null) {
+  const isCanadianHint = currencyHint === "CAD" && !/\.(TO|V|NE|CN)$/i.test(ticker);
+  if (isCanadianHint) {
+    // Try Canadian variants in order of how commonly the AI uses bare
+    // symbols for them (.TO covers the vast majority of holdings).
+    for (const suffix of [".TO", ".V", ".NE", ".CN"]) {
+      const variant = `${ticker}${suffix}`;
+      const p = await fetchFmpQuote(variant);
+      if (Number.isFinite(p) && p > 0) return p;
+      const py = await fetchYahooQuote(variant);
+      if (Number.isFinite(py) && py > 0) return py;
+    }
+    // Fall through to bare-symbol lookup if no Canadian variant resolved
+  }
   const fmp = await fetchFmpQuote(ticker);
   if (Number.isFinite(fmp) && fmp > 0) return fmp;
   return await fetchYahooQuote(ticker);
@@ -703,30 +720,54 @@ async function correctBriefingWithVerifiedPrices(markdown, warnings) {
   }
 }
 
+// Build a (ticker → preferred currency) hint map from the user's
+// positions, so when the AI writes a bare "ENB" we know the user holds
+// the Canadian listing and validate against ENB.TO rather than the US
+// ADR. ccy on each position is the native trading currency.
+function buildTickerCurrencyHints(positions) {
+  const hints = {};
+  for (const p of positions || []) {
+    if (!p?.ticker) continue;
+    const t = String(p.ticker).toUpperCase().replace(/\.+$/, "");
+    if (!hints[t]) hints[t] = p.ccy || null;
+  }
+  return hints;
+}
+
 // Run price-integrity validation on a single text blob (e.g., briefing
 // markdown). Returns an array of warnings — same shape as the per-card
 // warnings but flat, since briefings aren't card-structured.
-async function validateTextPrices(text) {
+//
+//   tickerCcyHints — optional map of (TICKER → "CAD"|"USD") used when
+//   the AI writes a bare ticker. The quote's inline "CAD"/"USD" suffix
+//   takes priority; this map is the fallback.
+async function validateTextPrices(text, tickerCcyHints = {}) {
   if (!text || typeof text !== "string") return [];
   const quotes = extractTickerQuotes(text);
   if (quotes.length === 0) return [];
-  // Dedupe by ticker+price (the AI often repeats the same quote in
-  // multiple sections — don't spam the warning list).
+  // Dedupe by (ticker, currency, price) — same ticker quoted in
+  // different currencies must be validated separately.
   const seen = new Set();
   const unique = quotes.filter(q => {
-    const k = `${q.ticker}|${q.quotedPrice}`;
+    const ccy = q.currency || tickerCcyHints[q.ticker] || null;
+    const k = `${q.ticker}|${ccy || ""}|${q.quotedPrice}`;
     if (seen.has(k)) return false;
     seen.add(k);
+    q.resolvedCurrency = ccy;
     return true;
   });
-  const tickerSet = new Set(unique.map(q => q.ticker));
+  // Fetch a price per (ticker, resolvedCurrency) pair — same TICKER in
+  // CAD vs USD hits a different listing (.TO vs bare).
   const priceMap = {};
-  await Promise.all([...tickerSet].map(async t => {
-    priceMap[t] = await fetchValidationPrice(t);
+  await Promise.all(unique.map(async q => {
+    const key = `${q.ticker}|${q.resolvedCurrency || ""}`;
+    if (priceMap[key] !== undefined) return;
+    priceMap[key] = await fetchValidationPrice(q.ticker, q.resolvedCurrency);
   }));
   const warnings = [];
   for (const q of unique) {
-    const current = priceMap[q.ticker];
+    const key = `${q.ticker}|${q.resolvedCurrency || ""}`;
+    const current = priceMap[key];
     if (current == null) {
       warnings.push({
         ticker: q.ticker, quotedPrice: q.quotedPrice, kind: "not_found",
@@ -738,7 +779,8 @@ async function validateTextPrices(text) {
         warnings.push({
           ticker: q.ticker, quotedPrice: q.quotedPrice, currentPrice: current,
           driftPct: drift * 100, kind: "stale_price",
-          message: `${q.ticker}: AI quoted $${q.quotedPrice.toFixed(2)}, live ~$${current.toFixed(2)} (off by ${(drift * 100).toFixed(0)}%)`,
+          currency: q.resolvedCurrency || null,
+          message: `${q.ticker}: AI quoted $${q.quotedPrice.toFixed(2)}${q.resolvedCurrency ? " " + q.resolvedCurrency : ""}, live ~$${current.toFixed(2)} (off by ${(drift * 100).toFixed(0)}%)`,
         });
       }
     }
@@ -747,7 +789,7 @@ async function validateTextPrices(text) {
 }
 
 // Validate every quoted price against FMP (Yahoo fallback). Returns { [cardIdx]: warnings[] }.
-async function validateAdvicePrices(cards) {
+async function validateAdvicePrices(cards, tickerCcyHints = {}) {
   if (!Array.isArray(cards) || cards.length === 0) return {};
   // Extract all (ticker, quotedPrice) per card, dedupe
   const allQuotes = [];
@@ -759,22 +801,27 @@ async function validateAdvicePrices(cards) {
   });
   const seen = new Set();
   const unique = allQuotes.filter(q => {
-    const k = `${q.cardIdx}|${q.ticker}|${q.quotedPrice}`;
+    const ccy = q.currency || tickerCcyHints[q.ticker] || null;
+    const k = `${q.cardIdx}|${q.ticker}|${ccy || ""}|${q.quotedPrice}`;
     if (seen.has(k)) return false;
     seen.add(k);
+    q.resolvedCurrency = ccy;
     return true;
   });
   if (unique.length === 0) return {};
-  // Fetch current prices for unique tickers in parallel (FMP first, then Yahoo)
-  const tickerSet = new Set(unique.map(q => q.ticker));
+  // Fetch current prices keyed by (ticker, resolvedCurrency). Same ticker
+  // in CAD vs USD hits different listings (.TO vs bare).
   const priceMap = {};
-  await Promise.all([...tickerSet].map(async t => {
-    priceMap[t] = await fetchValidationPrice(t);
+  await Promise.all(unique.map(async q => {
+    const key = `${q.ticker}|${q.resolvedCurrency || ""}`;
+    if (priceMap[key] !== undefined) return;
+    priceMap[key] = await fetchValidationPrice(q.ticker, q.resolvedCurrency);
   }));
   // Build warnings per card
   const out = {};
   for (const q of unique) {
-    const current = priceMap[q.ticker];
+    const key = `${q.ticker}|${q.resolvedCurrency || ""}`;
+    const current = priceMap[key];
     let warning = null;
     if (current == null) {
       warning = {
@@ -787,7 +834,8 @@ async function validateAdvicePrices(cards) {
         warning = {
           ticker: q.ticker, quotedPrice: q.quotedPrice, currentPrice: current,
           driftPct: drift * 100, kind: "stale_price",
-          message: `${q.ticker}: AI quoted $${q.quotedPrice.toFixed(2)}, live ~$${current.toFixed(2)} (off by ${(drift * 100).toFixed(0)}%)`,
+          currency: q.resolvedCurrency || null,
+          message: `${q.ticker}: AI quoted $${q.quotedPrice.toFixed(2)}${q.resolvedCurrency ? " " + q.resolvedCurrency : ""}, live ~$${current.toFixed(2)} (off by ${(drift * 100).toFixed(0)}%)`,
         };
       }
     }
@@ -1086,7 +1134,8 @@ router.post("/", requireStocksAuth, async (req, res) => {
     // priceWarnings array to each affected card so the UI can render a
     // red banner before the user acts on stale or hallucinated quotes.
     try {
-      const warnings = await validateAdvicePrices(parsed.advice);
+      const ccyHints = buildTickerCurrencyHints(profile.positions);
+      const warnings = await validateAdvicePrices(parsed.advice, ccyHints);
       for (const [idx, list] of Object.entries(warnings)) {
         const i = parseInt(idx, 10);
         if (parsed.advice[i]) parsed.advice[i].priceWarnings = list;
@@ -1248,7 +1297,8 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
       const single = successful[0];
       const singleCards = single.advice || [];
       try {
-        const warnings = await validateAdvicePrices(singleCards);
+        const ccyHints = buildTickerCurrencyHints(profile.positions);
+        const warnings = await validateAdvicePrices(singleCards, ccyHints);
         for (const [idx, list] of Object.entries(warnings)) {
           const i = parseInt(idx, 10);
           if (singleCards[i]) singleCards[i].priceWarnings = list;
@@ -1347,12 +1397,13 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
     // Post-validate quoted prices on BOTH consensus + alternatives so the
     // UI red-banner kicks in whichever bucket a stale rec lands in.
     try {
-      const cWarn = await validateAdvicePrices(consensus);
+      const ccyHints = buildTickerCurrencyHints(profile.positions);
+      const cWarn = await validateAdvicePrices(consensus, ccyHints);
       for (const [idx, list] of Object.entries(cWarn)) {
         const i = parseInt(idx, 10);
         if (consensus[i]) consensus[i].priceWarnings = list;
       }
-      const aWarn = await validateAdvicePrices(alternatives);
+      const aWarn = await validateAdvicePrices(alternatives, ccyHints);
       for (const [idx, list] of Object.entries(aWarn)) {
         const i = parseInt(idx, 10);
         if (alternatives[i]) alternatives[i].priceWarnings = list;
@@ -1444,8 +1495,10 @@ router.post("/send-briefing", requireStocksAuth, async (req, res) => {
     // verified prices — the user should receive a clean, correct briefing,
     // not an error report about what the AI got wrong.
     let priceWarnings = [];
-    try { priceWarnings = await validateTextPrices(markdown); }
-    catch (e) { console.warn("briefing validateTextPrices warn:", e?.message); }
+    try {
+      const ccyHints = buildTickerCurrencyHints(profile.positions);
+      priceWarnings = await validateTextPrices(markdown, ccyHints);
+    } catch (e) { console.warn("briefing validateTextPrices warn:", e?.message); }
 
     if (priceWarnings.length) {
       console.log(`[send-briefing] price-correction pass: ${priceWarnings.length} discrepancies — rewriting`);
