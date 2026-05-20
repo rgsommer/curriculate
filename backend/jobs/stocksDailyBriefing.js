@@ -475,6 +475,12 @@ ORDER-TICKET GUIDANCE (gap-protection — every BUY/SELL rec must include):
 - After every BUY fill, recommend a GTC STOP-LIMIT SELL to enter at the rec's stop level (stop = stop price, limit = stop − 1-2% as gap protection).
 - Note duration: "Day" cancels EOD; "GTC" persists.
 
+REC HEADER FORMAT — every Action line must start with: "Action: <VERB> <N> sh <TICKER>". The token after the verb MUST be a real ticker symbol (DJT, ENB, NVDA, etc.). NEVER write "Action: SELL ENTIRE", "Action: HOLD CURRENT", "Action: HOLD BOTH", "Action: SELL ALL", "Action: HOLD BUT raise stop", or any English word in the ticker slot. If you mean "sell the entire position" write "Action: SELL 1267 sh DJT" with the actual share count.
+
+QUANTITY MUST MATCH THE HOLDINGS TABLE. If the user holds 1267 sh of DJT in RRSP and you want to exit fully, write "SELL 1267 sh DJT". Do not pick a partial number like 900 unless you explicitly intend a partial trim AND state that clearly. Within ONE briefing, all references to a position's size must use the same number — don't say "1,267-share RRSP position" in the narrative and then "Sell 900 shares" in the order ticket.
+
+FIELD FORMATTING — every named field (Entry, Target, Stop, Horizon, Account, Order ticket, After fill, Cost note, Rationale, Uses) must END WITH A PERIOD on its own logical line. Do not chain fields with commas or semicolons. Parenthetical notes are allowed inside a field's value (e.g. "Stop: $69 CAD (2.5×ATR pullback)."), but the field ends at the closing paren + period. Bad: "Stop: $69 CAD (2.5×ATR, GTC). Horizon..." — the comma inside parens confuses parsers. Good: "Stop: $69 CAD (2.5×ATR). Horizon: 12 months. Order ticket: GTC STOP-LIMIT...".
+
 Required addition per rec body (EVERY BUY/SELL/TRIM rec, no exceptions):
   Order ticket: LIMIT BUY/SELL <N> <TICKER> @ $<limit> <CCY> <max/min>, Day/GTC.
   After fill: GTC STOP-LIMIT SELL <N> <TICKER>, stop $<stop> / limit $<stop-1%> <CCY>.
@@ -550,10 +556,12 @@ ${summary.perAccountCash.length ? "Per account:\n" + summary.perAccountCash.join
 
   // Section 5 changes based on whether cash is on hand
   const cashSection = hasCash
-    ? `5. **💵 Cash deployment — PER ACCOUNT** — REQUIRED. Generate a SEPARATE sub-section for EVERY account below that has free cash. Do NOT merge them. Each account's recs must fit that account's own cash bucket — no cross-account pooling.
+    ? `5. **💵 Cash deployment — PER ACCOUNT** — REQUIRED. Generate EXACTLY ONE sub-section per account below that has free cash. Do NOT emit two separate "Cash deployment — RRSP" blocks (one for ENB, one for RY) — combine them into a SINGLE RRSP block with multiple recs inside it. Each account's recs must fit that account's own cash bucket — no cross-account pooling.
 
-   Accounts with cash to deploy:
+   Accounts with cash to deploy (EMIT ONE BLOCK FOR EACH, no more, no fewer):
 ${fundedAccountLines}
+
+   **ONE-CARD-PER-ACCOUNT RULE:** If you want to recommend multiple trades for the same account (e.g. RRSP gets ENB + XLU), list both inside the SAME "Cash deployment — RRSP" block as separate Action lines. Do not split into "Cash deployment — RRSP: ENB" and "Cash deployment — RRSP: XLU" as two cards.
 
    **DO-NOT-DUPLICATE RULE (critical):** Section 4 ("Today's one action") already proposed ONE trade. In Section 5, if the Section-4 trade lives in one of these accounts, acknowledge it on ONE line — "Section-4 ENB BUY ($2,274 of $7,766 used) — see above for full ticket" — and then propose DIFFERENT names for the remaining cash. Do NOT restate the same ticker with the same entry/target/stop as a new "Action 2" just to consume more cash. If you genuinely want a layered scale-in for the same ticker, use the MULTI-DAY EXECUTION format (one rec with Layer 1/2/3 at staggered prices), not two separate rec blocks at the same price.
 
@@ -586,6 +594,7 @@ SENIOR-ANALYST EXPECTATIONS:
 3. Reference per-position cost basis from the LIFECYCLE block when proposing sells (acknowledge tax impact / loss realization).
 4. Surface TAX-LOSS HARVEST candidates when present — these are free money in non-registered accounts.
 5. Cite SPECIFIC numbers (RSI 32, P/E 87, ATR $14, 2.5×ATR stop = $407) not vague descriptors.
+6. **DO NOT RESTATE P/L PERCENTAGES OR DOLLAR GAINS/LOSSES IN PROSE.** The Holdings table and the rec rows already show the user's actual P/L computed from their real cost basis. If you write "BBAI down -7.7%" in your card body and the app's data shows BBAI is actually +333%, you will mislead the user into selling a winner. Refer to the LIFECYCLE block's cost-basis numbers when reasoning about tax impact, but do NOT narrate "down X%" or "up Y%" or "unrealized loss of $Z" in prose unless the number you write matches the Holdings table EXACTLY. If unsure, just say "current position" without restating P/L.
 Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()} ← FOR YOUR REFERENCE ONLY. DO NOT INCLUDE this aggregate dollar figure in the briefing output. Discuss percentages, % of book, and individual position values, but never echo the total portfolio dollar amount.
 
 Holdings:
@@ -670,13 +679,39 @@ export async function saveAdviceSnapshot({ email, markdown, source }) {
 // Parse trade recommendations from the briefing text and save them for the
 // /performance scorecard. Same regex as routes/stocksAdvice.js — kept here
 // so this job stays self-contained.
+// Same stop-word rejection list as parseRec in stocksAdvice.js — kept
+// inline so this file is self-contained.
+const BRIEFING_REC_STOP_WORDS = new Set([
+  "ALL","ANY","BOTH","BUT","CURRENT","ENTIRE","EVERY","NONE",
+  "POSITION","POSITIONS","LOT","LOTS","REMAINING","RESERVE",
+  "STOP","TARGET","ENTRY","ACTION","HORIZON","SOURCE",
+  "USING","USES","INTO","FROM","BUY","SELL","HOLD","TRIM",
+  "NEW","OLD","MORE","LESS","EITHER","NEITHER",
+  "THE","AT","ON","TO","OF","FOR","WITH",
+  "USD","CAD","EUR","GBP","RRSP","TFSA","RESP","FHSA",
+  "MARKET","LIMIT","GTC","DAY","OCO",
+]);
+
 export function parseRecsFromBriefing(text) {
   const recs = [];
   const re = /Action:\s*(BUY|SELL|TRIM|HOLD)\s*(\d[\d,]*)?\s*(?:sh)?\s*([A-Z][A-Z0-9.\-]{0,15})\b[^.]*?(?:Entry:\s*\$?([\d.]+))?[^.]*?(?:Target:\s*\$?([\d.]+))?[^.]*?(?:Stop:\s*\$?([\d.]+))?[^.]*?(?:Horizon:\s*([^.\n]+))?/gi;
   let m;
   while ((m = re.exec(text))) {
     const [, action, sharesStr, tickerRaw, entry, target, stop, horizon] = m;
-    const ticker = String(tickerRaw || "").toUpperCase().replace(/\.+$/, "");
+    let ticker = String(tickerRaw || "").toUpperCase().replace(/\.+$/, "");
+    // Reject English stop-words; try to find a real ticker in the same chunk.
+    if (BRIEFING_REC_STOP_WORDS.has(ticker)) {
+      // Look ahead in the next ~200 chars for a proper ticker
+      const chunk = text.slice(m.index, m.index + 200);
+      const scan = /\b([A-Z]{2,5}(?:\.[A-Z]{1,3})?)\b/g;
+      let s, real = null;
+      while ((s = scan.exec(chunk)) !== null) {
+        const cand = s[1].toUpperCase().replace(/\.+$/, "");
+        if (!BRIEFING_REC_STOP_WORDS.has(cand)) { real = cand; break; }
+      }
+      if (!real) continue; // drop this rec
+      ticker = real;
+    }
     let horizonDays = 30;
     if (horizon) {
       const h = horizon.toLowerCase();

@@ -293,6 +293,12 @@ Example format inside the rec body:
 **The "Account:" line is MANDATORY on every BUY/SELL/TRIM rec.** Account name must be one of the user's actual accounts (Non-Spousal / RRSP / TFSA / RESP / FHSA). The cash math on that line must reconcile against the per-account inventory in the prompt — do not propose a rec whose size exceeds the named account's bucket in the trade's currency. If you can't find an account with enough cash for the rec you want to make, downsize it to fit the best-tax-fit account, or recommend depositing first.
 
 For "swap" recs (sell one, buy another) the SELL leg also needs a LIMIT SELL ticket and the SELL leg's Account tag (the account where the position lives today).
+
+REC HEADER FORMAT — every Action line must start with: "Action: <VERB> <N> sh <TICKER>". The token after the verb MUST be a real ticker symbol (DJT, ENB, NVDA, etc.). NEVER write "Action: SELL ENTIRE", "Action: HOLD CURRENT", "Action: HOLD BOTH", "Action: SELL ALL", "Action: HOLD BUT raise stop", or any English word in the ticker slot. If you mean "sell the entire position" write "Action: SELL 1267 sh DJT" with the actual share count from the Holdings table.
+
+QUANTITY MUST MATCH HOLDINGS. Within ONE advice run, all references to a position's size must use the same number — don't write "1,267-share RRSP position" in one card and "Sell 900 shares" in the order ticket of another card. Pull the qty from the user's Holdings table above.
+
+FIELD FORMATTING — every named field (Entry, Target, Stop, Horizon, Account, Order ticket, After fill, Cost note, Rationale, Uses) ends with a period on its own logical line. Parenthetical notes inside a field's value are fine ("Stop: $69 CAD (2.5×ATR)."), but the field always closes with ").  ". Do not let one field's parenthetical bleed into the next field's label.
 `;
 
   const priceCurrencyBlock = `
@@ -383,7 +389,7 @@ ${summary.perAccountCash.length ? "Per account:\n" + summary.perAccountCash.join
     : "  (no account has > $50 free cash in either currency)";
 
   const cashInstructions = hasCash
-    ? `Richard has CASH READY TO DEPLOY. **You MUST produce a SEPARATE "Cash deployment — <ACCOUNT NAME>" card for EACH account below with > $50 free cash.** Do NOT pool cash across accounts; do NOT emit a single global "cash deployment" card.
+    ? `Richard has CASH READY TO DEPLOY. **You MUST produce EXACTLY ONE "Cash deployment — <ACCOUNT NAME>" card per account below with > $50 free cash — no more, no fewer.** If you want to recommend multiple trades for the same account, list them as separate Action lines INSIDE that one card. Do NOT emit two separate "Cash deployment — RRSP" cards (one per ticker idea). Do NOT pool cash across accounts; do NOT emit a single global "cash deployment" card.
 
 Accounts with cash to deploy:
 ${fundedAccountLines}
@@ -420,6 +426,7 @@ SENIOR-ANALYST EXPECTATIONS (read carefully — what separates this from generic
 3. Always reference per-position cost basis from the LIFECYCLE block. A SELL of a winner has a tax cost; a SELL of a loser unlocks tax savings. Acknowledge it.
 4. Surface TAX-LOSS HARVEST candidates when applicable — they're literally free money in non-registered accounts. If the LIFECYCLE block lists any TLH candidates, mention them.
 5. Cite SPECIFIC numbers from the pre-computed signal blocks, not vague descriptions. "RSI 32" not "looks oversold." "P/E 87" not "looks expensive." "2.5×ATR stop at $407" not "8% stop."
+6. **DO NOT RESTATE THE USER'S UNREALIZED P/L IN PROSE.** The frontend's rec table and Holdings panel already show the user's actual P/L computed from their real cost basis. If you write "BBAI down -7.7%" in your card body but the app data shows BBAI is actually +333%, you will mislead the user into selling a winner. Refer to the LIFECYCLE block's cost-basis numbers when reasoning about tax impact, but do NOT narrate "down X%" / "up Y%" / "unrealized loss of $Z" in card bodies unless the number EXACTLY matches the cost basis in the LIFECYCLE block. If unsure, just say "current position" without restating P/L.
 Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()} ← FOR YOUR REFERENCE ONLY. DO NOT echo this aggregate dollar figure in the advice cards. Use percentages, % of book, and per-position values, but never the total portfolio dollar amount.
 
 Holdings:
@@ -468,6 +475,21 @@ No prose outside the JSON.`;
 // Looks for:
 //   Action: BUY 40 sh ENB. Entry: $75. Target: $84. Stop: $69. Horizon: 12 months
 // Returns null if no actionable rec is present in the body.
+// English stop-words the AI sometimes writes after the action verb that
+// would otherwise be matched as tickers — "SELL ENTIRE", "HOLD CURRENT",
+// "HOLD BOTH", "SELL ALL", "HOLD BUT". Must reject so the parser falls
+// through to finding the real ticker later in the chunk (or drops).
+const REC_STOP_WORD_TICKERS = new Set([
+  "ALL","ANY","BOTH","BUT","CURRENT","ENTIRE","EVERY","NONE",
+  "POSITION","POSITIONS","LOT","LOTS","REMAINING","RESERVE",
+  "STOP","TARGET","ENTRY","ACTION","HORIZON","SOURCE",
+  "USING","USES","INTO","FROM","BUY","SELL","HOLD","TRIM",
+  "NEW","OLD","MORE","LESS","EITHER","NEITHER",
+  "THE","AT","ON","TO","OF","FOR","WITH",
+  "USD","CAD","EUR","GBP","RRSP","TFSA","RESP","FHSA",
+  "MARKET","LIMIT","GTC","DAY","OCO",
+]);
+
 function parseRec(body) {
   if (!body || typeof body !== "string") return null;
   const m = body.match(/Action:\s*(BUY|SELL|TRIM|HOLD)\s*(\d[\d,]*)?\s*(?:sh)?\s*([A-Z][A-Z0-9.\-]{0,15})\b[^.]*?(?:Entry:\s*\$?([\d.]+))?[^.]*?(?:Target:\s*\$?([\d.]+))?[^.]*?(?:Stop:\s*\$?([\d.]+))?[^.]*?(?:Horizon:\s*([^.\n]+))?/i);
@@ -475,7 +497,19 @@ function parseRec(body) {
   const [, action, sharesStr, tickerRaw, entry, target, stop, horizon] = m;
   // Strip trailing dot — the ticker pattern allows `.` so it greedily captures
   // the sentence-ending period (e.g. "PLTR." instead of "PLTR").
-  const ticker = String(tickerRaw || "").toUpperCase().replace(/\.+$/, "");
+  let ticker = String(tickerRaw || "").toUpperCase().replace(/\.+$/, "");
+  if (REC_STOP_WORD_TICKERS.has(ticker)) {
+    // Look deeper in the body for a real ticker — first uppercase 2-5 letter
+    // token that isn't a stop-word.
+    const scan = /\b([A-Z]{2,5}(?:\.[A-Z]{1,3})?)\b/g;
+    let s, real = null;
+    while ((s = scan.exec(body)) !== null) {
+      const cand = s[1].toUpperCase().replace(/\.+$/, "");
+      if (!REC_STOP_WORD_TICKERS.has(cand)) { real = cand; break; }
+    }
+    if (!real) return null; // no recoverable ticker — drop the rec
+    ticker = real;
+  }
   const shares = sharesStr ? parseInt(sharesStr.replace(/,/g, ""), 10) : null;
   // Derive horizon days
   let horizonDays = 30;
@@ -658,31 +692,52 @@ function extractTickerQuotes(text) {
 // We don't want to expose "the AI got it wrong" to the user. We just
 // want the output to be right. Cost: one extra Claude call per briefing
 // only when warnings exist (most briefings won't trigger this).
-async function correctBriefingWithVerifiedPrices(markdown, warnings) {
+async function correctBriefingWithVerifiedPrices(markdown, warnings, sizingWarnings = []) {
   if (!process.env.ANTHROPIC_API_KEY) return markdown;
-  if (!warnings || warnings.length === 0) return markdown;
+  const hasPriceWarnings = warnings && warnings.length > 0;
+  const hasSizingWarnings = sizingWarnings && sizingWarnings.length > 0;
+  if (!hasPriceWarnings && !hasSizingWarnings) return markdown;
 
   // Build the verified-price ground-truth block
-  const priceLines = warnings
+  const priceLines = (warnings || [])
     .filter(w => w.kind === "stale_price")
     .map(w => `- ${w.ticker}: $${w.currentPrice.toFixed(2)} (you previously wrote $${w.quotedPrice.toFixed(2)} — that was wrong)`);
-  const missingLines = warnings
+  const missingLines = (warnings || [])
     .filter(w => w.kind === "not_found")
     .map(w => `- ${w.ticker}: ticker not found on live data feeds — likely renamed/delisted. REMOVE from briefing.`);
-  if (priceLines.length === 0 && missingLines.length === 0) return markdown;
+  const oversizedLines = (sizingWarnings || [])
+    .filter(w => w.kind === "oversized")
+    .map(w => `- ${w.account}: rec uses $${w.used.toFixed(0)} ${w.currency} but only $${w.actualAvail.toFixed(0)} ${w.currency} is available. DOWNSIZE share count to fit (or recommend depositing before buying).`);
+  const wrongAvailLines = (sizingWarnings || [])
+    .filter(w => w.kind === "wrong_available")
+    .map(w => `- ${w.account}: you wrote "$${w.stated.toFixed(0)} ${w.currency} available", actual is $${w.actual.toFixed(0)} ${w.currency}.`);
+
+  if (priceLines.length === 0 && missingLines.length === 0 && oversizedLines.length === 0 && wrongAvailLines.length === 0) return markdown;
+
+  const correctionSections = [];
+  if (priceLines.length > 0 || missingLines.length > 0) {
+    correctionSections.push("**VERIFIED LIVE PRICES (use these as ground truth, overriding anything else):**");
+    correctionSections.push(...priceLines);
+    correctionSections.push(...missingLines);
+  }
+  if (oversizedLines.length > 0 || wrongAvailLines.length > 0) {
+    correctionSections.push("");
+    correctionSections.push("**ACCOUNT-CASH FIXES (recs must fit each account's actual cash bucket):**");
+    correctionSections.push(...oversizedLines);
+    correctionSections.push(...wrongAvailLines);
+  }
 
   const correction = [
-    "You wrote a draft daily briefing below, but I verified the prices against the live FMP feed and found discrepancies.",
+    "You wrote a draft daily briefing below, but I verified it against live data and found discrepancies.",
     "",
-    "**VERIFIED LIVE PRICES (use these as ground truth, overriding anything else):**",
-    ...priceLines,
-    ...missingLines,
+    ...correctionSections,
     "",
-    "**Your task:** Rewrite the briefing using the correct prices above.",
+    "**Your task:** Rewrite the briefing using the correct values above.",
     "- Keep the same structure, sections, and rationale tone.",
-    "- Update every $price mention, entry, target, stop, and any % calculations that depended on the wrong number.",
+    "- Update every $price mention, entry, target, stop, share count, and any % calculations that depended on the wrong number.",
+    "- For oversized recs: reduce the share count so the trade fits the account's actual cash bucket. Do NOT recommend trades that exceed available cash.",
     "- If a recommendation only made sense at the OLD price (e.g. 'buy at $85, target $95' but the stock is actually $150), re-evaluate the call — it might now be a HOLD or even a TRIM. Use your judgement.",
-    "- Do NOT add any banner, disclaimer, or note about prices being corrected. The output should read as if it were written correctly the first time.",
+    "- Do NOT add any banner, disclaimer, or note about being corrected. The output should read as if it were written correctly the first time.",
     "- Return only the corrected briefing markdown. No preamble.",
     "",
     "---",
@@ -732,6 +787,56 @@ function buildTickerCurrencyHints(positions) {
     if (!hints[t]) hints[t] = p.ccy || null;
   }
   return hints;
+}
+
+// Find every "Account: <name> · uses $<X> of $<Y> <CCY>" line and check
+// (a) X ≤ Y (the AI's own math) and (b) Y matches the user's actual
+// account cash. Surfaces sizing violations so the corrective pass can
+// downsize the rec before it reaches the user.
+//
+// Accepts profile so we can resolve account names to actual cash buckets.
+function validateRecSizing(text, profile) {
+  if (!text || !profile?.accounts?.length) return [];
+  const accounts = profile.accounts;
+  // Build (lowercased name → { cashCad, cashUsd }) for lookup
+  const acctMap = {};
+  for (const a of accounts) {
+    const key = String(a.name || "").toLowerCase().replace(/[\s-]+/g, "");
+    acctMap[key] = { name: a.name, cashCad: a.cashCad || 0, cashUsd: a.cashUsd || 0 };
+  }
+  // Pattern: "Account: <name> · uses $<X> of $<Y> [CAD|USD]"
+  // Use non-greedy match for the account name up to the first separator.
+  const re = /Account:\s*([A-Za-z][A-Za-z0-9\s\-]*?)\s*[·•|]\s*uses\s*~?\$?([\d,.]+)\s*(?:of\s*~?\$?([\d,.]+))?\s*(USD|CAD)?/gi;
+  const warnings = [];
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const acctName = m[1].trim();
+    const used = parseFloat(m[2].replace(/,/g, ""));
+    const stated = m[3] ? parseFloat(m[3].replace(/,/g, "")) : null;
+    const ccy = (m[4] || "CAD").toUpperCase();
+    if (!Number.isFinite(used)) continue;
+    const key = acctName.toLowerCase().replace(/[\s-]+/g, "");
+    const acct = acctMap[key];
+    if (!acct) continue; // unknown account — skip rather than false-positive
+    const actualAvail = ccy === "USD" ? acct.cashUsd : acct.cashCad;
+    // (a) AI's stated availability doesn't match real
+    if (stated != null && Math.abs(stated - actualAvail) > 1) {
+      warnings.push({
+        kind: "wrong_available",
+        account: acct.name, currency: ccy, stated, actual: actualAvail,
+        message: `${acct.name}: AI quoted $${stated.toFixed(0)} ${ccy} available, actual is $${actualAvail.toFixed(0)} ${ccy}`,
+      });
+    }
+    // (b) Used exceeds actual cash
+    if (used > actualAvail + 1) {
+      warnings.push({
+        kind: "oversized",
+        account: acct.name, currency: ccy, used, actualAvail,
+        message: `${acct.name}: rec uses $${used.toFixed(0)} ${ccy} but only $${actualAvail.toFixed(0)} ${ccy} is available — DOWNSIZE the rec to fit`,
+      });
+    }
+  }
+  return warnings;
 }
 
 // Run price-integrity validation on a single text blob (e.g., briefing
@@ -1319,11 +1424,21 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
     // Match cards across runs by (ticker, action) on the parsed rec inside
     // each card's body. Cards without an actionable Action: line are
     // considered "narrative" and matched by title-similarity instead.
+    // Cash-deployment cards are matched by their target ACCOUNT (extracted
+    // from the title), not by an Action+Ticker that varies per run — so
+    // "Cash deployment — RRSP: add ENB" and "Cash deployment — RRSP: add
+    // RY" from different runs collapse into one RRSP slot, picking the
+    // canonical (longest) body, instead of producing two parallel RRSP
+    // cards that confuse the user.
+    const CASH_CARD_RE = /cash\s+deployment.*?(non[\s-]?spousal|spousal|rrsp|tfsa|resp|fhsa)/i;
     const fingerprint = (card) => {
+      const title = card.title || "";
+      const cashAcctM = title.match(CASH_CARD_RE);
+      if (cashAcctM) return `CASH:${cashAcctM[1].toUpperCase().replace(/\s|-/g, "")}`;
       const rec = parseRec(card.body || "");
       if (rec) return `${rec.action}|${rec.ticker}`;
       // Narrative card — use first 60 chars of normalized title
-      return "TITLE:" + (card.title || "").toLowerCase().replace(/[^a-z0-9 ]/g, "").trim().slice(0, 60);
+      return "TITLE:" + title.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim().slice(0, 60);
     };
 
     // Tally occurrences across the successful runs
@@ -1495,14 +1610,18 @@ router.post("/send-briefing", requireStocksAuth, async (req, res) => {
     // verified prices — the user should receive a clean, correct briefing,
     // not an error report about what the AI got wrong.
     let priceWarnings = [];
+    let sizingWarnings = [];
     try {
       const ccyHints = buildTickerCurrencyHints(profile.positions);
       priceWarnings = await validateTextPrices(markdown, ccyHints);
     } catch (e) { console.warn("briefing validateTextPrices warn:", e?.message); }
+    try {
+      sizingWarnings = validateRecSizing(markdown, profile);
+    } catch (e) { console.warn("briefing validateRecSizing warn:", e?.message); }
 
-    if (priceWarnings.length) {
-      console.log(`[send-briefing] price-correction pass: ${priceWarnings.length} discrepancies — rewriting`);
-      const corrected = await correctBriefingWithVerifiedPrices(markdown, priceWarnings);
+    if (priceWarnings.length || sizingWarnings.length) {
+      console.log(`[send-briefing] correction pass: ${priceWarnings.length} price + ${sizingWarnings.length} sizing — rewriting`);
+      const corrected = await correctBriefingWithVerifiedPrices(markdown, priceWarnings, sizingWarnings);
       if (corrected && corrected !== markdown) {
         markdown = corrected;
         // Re-persist the corrected snapshot so the Advice tab matches the email

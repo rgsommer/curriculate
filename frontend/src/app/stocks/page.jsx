@@ -292,7 +292,21 @@ function totalCashByCurrency(accounts) {
 //    Stop: $115. Horizon: 9 months. Uses ~$10,640 USD."
 // Output: { intro, recs: [{...}], outro }
 // =============================================================================
-function parseRecsFromBody(body) {
+// Extract the first plausible ticker from a card title like "PLTR — hold core"
+// or "DJT concentration now 25.6%". Used as a fallback when the rec body
+// has "Action: HOLD CURRENT" with no proper ticker after the verb.
+function extractTickerFromTitle(title) {
+  if (!title || typeof title !== "string") return null;
+  const re = /\b([A-Z]{2,5}(?:\.[A-Z]{1,3})?)\b/g;
+  let m;
+  while ((m = re.exec(title)) !== null) {
+    const t = m[1].toUpperCase();
+    if (!REC_STOP_WORD_TICKERS.has(t)) return t;
+  }
+  return null;
+}
+
+function parseRecsFromBody(body, cardTitle = null) {
   if (!body || typeof body !== "string") return { intro: "", recs: [], outro: "" };
   // Find every "Action:" marker and the span of text that belongs to each rec
   // (from this Action: up to the next Action: or end of body).
@@ -302,6 +316,7 @@ function parseRecsFromBody(body) {
   while ((m = actionRe.exec(body)) !== null) indices.push(m.index);
   if (indices.length === 0) return { intro: body, recs: [], outro: "" };
 
+  const fallbackTicker = extractTickerFromTitle(cardTitle);
   const intro = body.slice(0, indices[0]).trim();
   const recs = [];
   let outro = "";
@@ -309,7 +324,7 @@ function parseRecsFromBody(body) {
     const start = indices[i];
     const end = i + 1 < indices.length ? indices[i + 1] : body.length;
     const chunk = body.slice(start, end);
-    const parsed = parseSingleRec(chunk);
+    const parsed = parseSingleRec(chunk, fallbackTicker);
     if (parsed) recs.push(parsed);
   }
   // If the last rec ends before body end, anything after the last "." inside
@@ -334,7 +349,23 @@ function parseRecsFromBody(body) {
   return { intro, recs, outro };
 }
 
-function parseSingleRec(chunk) {
+// English stop-words the AI sometimes writes after the action verb that
+// would otherwise be matched as tickers — "SELL ENTIRE position", "HOLD
+// CURRENT lot", "HOLD BOTH lots", "SELL ALL warrants", "HOLD BUT raise
+// stop". These have to be rejected so the rec parser falls through to
+// finding the real ticker later in the chunk (or drops the rec).
+const REC_STOP_WORD_TICKERS = new Set([
+  "ALL", "ANY", "BOTH", "BUT", "CURRENT", "ENTIRE", "EVERY", "NONE",
+  "POSITION", "POSITIONS", "LOT", "LOTS", "REMAINING", "RESERVE",
+  "STOP", "TARGET", "ENTRY", "ACTION", "HORIZON", "SOURCE",
+  "USING", "USES", "INTO", "FROM", "BUY", "SELL", "HOLD", "TRIM",
+  "NEW", "OLD", "MORE", "LESS", "BOTH", "EITHER", "NEITHER",
+  "THE", "A", "AN", "AT", "ON", "TO", "OF", "FOR", "IN", "WITH",
+  "USD", "CAD", "EUR", "GBP", "RRSP", "TFSA", "RESP", "FHSA",
+  "MARKET", "LIMIT", "GTC", "DAY", "OCO",
+]);
+
+function parseSingleRec(chunk, fallbackTicker = null) {
   // Strip the leading "Action:"
   const text = chunk.replace(/^\s*Action:\s*/i, "");
   // Side
@@ -347,13 +378,41 @@ function parseSingleRec(chunk) {
   const shares = headM[2] ? parseInt(headM[2].replace(/,/g, ""), 10) : null;
   // Strip trailing dots — the regex's `.` allowance was capturing the
   // sentence-ending period (e.g. "BUY 40 sh PLTR." → ticker "PLTR.")
-  const ticker = headM[3].toUpperCase().replace(/\.+$/, "");
+  let ticker = headM[3].toUpperCase().replace(/\.+$/, "");
+  // Reject English stop-words and look deeper in the chunk for a real
+  // ticker. The AI sometimes writes "Action: HOLD CURRENT position. Target:
+  // $84 CAD." — we want the real ticker, not the word CURRENT.
+  if (REC_STOP_WORD_TICKERS.has(ticker)) {
+    // Search the rest of the chunk for a proper ticker pattern. Prefer the
+    // first uppercase 2-5 letter token that isn't a stop-word.
+    const tickerScan = /\b([A-Z]{2,5}(?:\.[A-Z]{1,3})?)\b/g;
+    let realTicker = null;
+    let scanM;
+    while ((scanM = tickerScan.exec(text)) !== null) {
+      const candidate = scanM[1].toUpperCase().replace(/\.+$/, "");
+      if (!REC_STOP_WORD_TICKERS.has(candidate)) { realTicker = candidate; break; }
+    }
+    if (realTicker) {
+      ticker = realTicker;
+    } else if (fallbackTicker) {
+      ticker = fallbackTicker.toUpperCase().replace(/\.+$/, "");
+    } else {
+      // No ticker recoverable — drop this rec so it doesn't render as
+      // a junk row (the narrative below the Action line still shows).
+      return null;
+    }
+  }
 
-  // Extract each labeled field's value up to the next period
+  // Extract each labeled field's value up to the next period/newline.
+  // Stop at the FIRST period that isn't inside parens, so "Stop: $69 CAD
+  // (2.5×ATR)" reads the full string and "Stop: $69. Horizon: 12mo" stops
+  // at $69. Without paren-awareness we got fragments like "$69 CAD (2".
   const fieldVal = (label) => {
-    const re = new RegExp(`${label}:\\s*([^.\\n]+?)(?:\\.|$)`, "i");
+    const re = new RegExp(`${label}:\\s*([^\\n]+?)(?=\\s*(?:Entry|Target|Stop|Horizon|Order ticket|After fill|Account|Source|Cost note|Uses|Tax-fit|Rationale):|\\.\\s|\\.$|\\n|$)`, "i");
     const m = text.match(re);
-    return m ? m[1].trim() : null;
+    if (!m) return null;
+    // Trim trailing period
+    return m[1].trim().replace(/\.$/, "");
   };
   const entryRaw = fieldVal("Entry");
   const targetRaw = fieldVal("Target");
@@ -2177,7 +2236,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
         </div>
       )}
       {shown.map((c, i) => {
-        const parsed = parseRecsFromBody(c.body);
+        const parsed = parseRecsFromBody(c.body, c.title);
         const hasRecs = parsed.recs.length > 0;
         // Propagate the card's recId down to each parsed rec so Execute
         // clicks know which DB row they're executing.
@@ -2225,7 +2284,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
             These appeared in only one run — treat as "worth considering" ideas, not commitments.
           </div>
           {alternatives.map((c, i) => {
-            const parsed = parseRecsFromBody(c.body);
+            const parsed = parseRecsFromBody(c.body, c.title);
             const hasRecs = parsed.recs.length > 0;
             if (c.recId) parsed.recs.forEach(r => { r.recId = c.recId; });
             return (
