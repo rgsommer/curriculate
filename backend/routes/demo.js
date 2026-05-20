@@ -261,9 +261,28 @@ router.post("/results", resultsLimiter, async (req, res) => {
       if (r.skipped) return { ...r, points: 0 };
       const base = getTaskPoints(r.taskType);
       const frontendPts = typeof r.points === "number" ? r.points : 0;
+
+      // Anti-grinding gate (server-side mirror of the client-side rule):
+      //   A task only earns points when the student completed the review
+      //   popup (rated, commented, or filled in the skip-dialog reason).
+      //   The client sets points=0 when the popup was dismissed via X /
+      //   "Maybe later" — so a 0 with no feedback means "no credit".
+      // Previously the server treated frontendPts<=0 as "client didn't
+      // compute, fall back to base", which undid the gate.
+      const fb = r.feedback || null;
+      const hasReview =
+        !!fb &&
+        ((Number(fb.fun) || 0) > 0 ||
+          (Number(fb.clarity) || 0) > 0 ||
+          (typeof fb.confusing === "string" && fb.confusing.trim().length > 0) ||
+          (typeof fb.suggestion === "string" && fb.suggestion.trim().length > 0));
+
       let pts;
       if (frontendPts <= 0) {
-        pts = base;
+        // No client-side award.  Only re-grant base if the student did
+        // leave a review (legacy clients that don't compute points
+        // client-side still earn their base).  Otherwise zero.
+        pts = hasReview ? base : 0;
       } else if (frontendPts <= MAX_PTS_PER_TASK) {
         pts = frontendPts; // legitimate (most cases)
       } else {

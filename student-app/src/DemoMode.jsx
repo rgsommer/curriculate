@@ -570,7 +570,7 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
         {phase === "rate" && (
           <>
             <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: "#e2e8f0", marginBottom: 2 }}>
-              Quick rate! <span style={{ color: "#22c55e" }}>+1 pt</span>
+              Rate this task to earn your points
             </div>
             <div style={{ textAlign: "center", fontSize: 11, color: "#64748b", marginBottom: 10 }}>
               {taskTitle || taskType}
@@ -579,7 +579,9 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
             <EmojiRow label="Was it clear?" items={EMOJI_CLARITY} selected={clarity} onSelect={setClarity} />
             {/* Explicit dismiss in the rate phase.  Many testers don't want
                 to rate every single task and were getting stuck on this
-                modal — give them a clear out so the next task loads. */}
+                modal — give them a clear out so the next task loads.
+                We make the cost explicit: skipping the review means no
+                points for the task, by design (anti-grinding). */}
             <button
               type="button"
               onClick={handleSkip}
@@ -596,7 +598,7 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
                 cursor: "pointer",
               }}
             >
-              Maybe later — skip this rating
+              Maybe later — skip rating (no points)
             </button>
           </>
         )}
@@ -1230,19 +1232,35 @@ function DemoPlayer({
           ? Math.min(20, Number(answer.paperBonus) | 0)
           : 0;
       const totalPts = pts + paperBonus;
+
+      // ── Anti-grinding gate ──────────────────────────────────────────
+      // Earlier behaviour awarded the task's adaptive points the moment
+      // the student tapped Submit, then offered a small bonus for a
+      // rating.  Conference visitors quickly figured out they could
+      // grind 30 completions, dismiss every rating popup, and walk
+      // away with a top-leaderboard score and ZERO usable feedback
+      // (8 testers / 100+ completions / 0 ratings in the May 2026
+      // export was the smoking gun).
+      //
+      // The new rule: a task's points are only committed once the
+      // student actually completes the review.  We stash the pending
+      // award on the entry, defer setTotalPoints / streak / points
+      // pop, and let handleFeedback() commit (or drop) the award
+      // based on whether the rating popup was completed or dismissed.
       const entry = {
         taskType: task?.taskType,
         title: task?.title,
         answer: typeof answer === "object" ? JSON.stringify(answer) : String(answer ?? ""),
         skipped: false,
-        points: totalPts,
+        points: 0,                       // not yet awarded — gated on review
+        pendingPoints: totalPts,         // committed by handleFeedback if reviewed
         ...(paperBonus > 0 ? { paperBonus } : {}),
         completedAt: new Date().toISOString(),
       };
-      setTotalPoints((p) => p + totalPts);
-      setStreak((s) => s + 1);
 
-      // Track this type as completed
+      // Track this type as completed (independent of points — we still
+      // want to know which task types the user tried, for diversity
+      // logic and for completion counts in the export).
       setCompletedTypes((prev) => new Set([...prev, task?.taskType]));
 
       // Treat milestone: after 3rd completed task (conference mode only)
@@ -1252,14 +1270,12 @@ function DemoPlayer({
         setShowTreat(true);
       }
 
-      // Trigger points pop
-      popKeyRef.current += 1;
-      setLastEarned({ pts, key: popKeyRef.current });
-
-      // Pause timer and show feedback popup
+      // Pause timer and show feedback popup straight away — no points
+      // pop yet, the pop fires inside handleFeedback when (and only
+      // when) the student actually rates the task.
       clearInterval(timerRef.current);
       setPendingEntry(entry);
-      setTimeout(() => setShowFeedback(true), 800); // brief delay for points pop
+      setShowFeedback(true);
     },
     [task, taskIdx, total, results, onFinish, user.taskPoints, completedTypes]
   );
@@ -1267,16 +1283,36 @@ function DemoPlayer({
   // Handle feedback submission or skip
   const handleFeedback = useCallback(
     (feedback) => {
-      // Award feedback bonus points
+      // Pending task-points stashed by handleSubmit, awaiting review.
+      const pendingPts = Number(pendingEntry?.pendingPoints) || 0;
       const fbBonus = feedback?.feedbackBonus || 0;
-      const entry = { ...pendingEntry, feedback: feedback || null };
-      if (fbBonus > 0) {
-        entry.points = (entry.points || 0) + fbBonus;
-        setTotalPoints((p) => p + fbBonus);
-        // Show a quick bonus pop
-        popKeyRef.current += 1;
-        setLastEarned({ pts: fbBonus, key: popKeyRef.current, label: "feedback" });
+
+      // Strip the pendingPoints field from the persisted entry — it was
+      // a transient hand-off, not data we want in the results log.
+      const { pendingPoints: _drop, ...basePending } = pendingEntry || {};
+      const entry = { ...basePending, feedback: feedback || null };
+
+      if (feedback) {
+        // Student completed the review → commit the task's adaptive
+        // points AND any rating/comment bonus, advance the streak, and
+        // pop the combined total.  This is the only path that adds to
+        // the leaderboard total.
+        const granted = pendingPts + fbBonus;
+        entry.points = granted;
+        if (granted > 0) {
+          setTotalPoints((p) => p + granted);
+          popKeyRef.current += 1;
+          setLastEarned({ pts: granted, key: popKeyRef.current });
+        }
+        setStreak((s) => s + 1);
+      } else {
+        // Student dismissed the popup (X or 'Maybe later') → no points
+        // for this task, no streak, no pop.  We still record the entry
+        // so completion counts and task-type diversity are tracked.
+        entry.points = 0;
+        setStreak(0);
       }
+
       const newResults = [...results, entry];
       setResults(newResults);
       setShowFeedback(false);
