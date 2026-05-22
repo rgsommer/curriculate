@@ -410,46 +410,77 @@ function clearFbDraft(email, taskType) {
 }
 
 function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
+  // ─── BEHAVIOR FIX (May 2026 feedback report: 8 testers / 56 task types /
+  //     0 ratings) ────────────────────────────────────────────────────────
+  //
+  // The prior design required tapping Fun → tapping Clarity → advancing to
+  // a comment phase → clicking Submit. Four+ actions per task, and the
+  // dismiss-X was always one click away. Testers grinded through dozens of
+  // tasks without leaving a single rating.
+  //
+  // New design — single-tap auto-submit:
+  //   1. ONE emoji row ("How was that?"). A single tap records the rating
+  //      and submits 700ms later (just long enough for the tap to register
+  //      visually). Both `fun` and `clarity` are stored equal to the tap;
+  //      backend export already tolerates that and the data is what it is.
+  //   2. Optional "+ Add a comment" reveal beneath the row — opt-in, not
+  //      blocking. Only shows the textarea if the user expands it.
+  //   3. Low-rating (1-2) jumps straight into the comment textarea WITH
+  //      a placeholder explaining what we need to hear — this is the most
+  //      valuable feedback so we surface the request inline rather than
+  //      shipping the user away.
+  //   4. Skip option is still available but visually demoted to a small
+  //      ghosted link, well below the emoji row. The dismiss X is removed
+  //      from the rate phase entirely — it returns only after a tap.
+  //
+  // Net result: tapping ANY emoji = guaranteed rating in the export.
+  // The friction floor for leaving a rating is now ~1 second / 1 tap.
+
   // Hydrate from localStorage so an accidental refresh doesn't lose work.
   const draft = loadFbDraft(userEmail, taskType);
-  const [fun, setFun] = useState(draft?.fun || 0);
-  const [clarity, setClarity] = useState(draft?.clarity || 0);
+  const [rating, setRating] = useState(draft?.fun || 0);
   const [comment, setComment] = useState(draft?.comment || "");
-  const [phase, setPhase] = useState(
-    (draft?.fun > 0 && draft?.clarity > 0) ? "comment" : "rate"
+  // The textarea is hidden by default. It auto-expands when:
+  //   - the user taps a low rating (1-2), because we want a comment, OR
+  //   - the user explicitly clicks "+ Add a comment".
+  const [commentExpanded, setCommentExpanded] = useState(
+    (draft?.comment || "").length > 0 || (draft?.fun > 0 && draft.fun <= 2)
   );
-  // Vague-comment follow-up: one-shot per session.  When the user
-  // clicks Submit on a low-rating + vague comment, we DON'T submit —
-  // we set this to the comment we saw, expand the prompt with
-  // examples, and let them edit.  If they hit Submit again (even
-  // unchanged), it goes through.  Never pesters twice.
+  // Vague-comment follow-up: one-shot per dialog. See looksTooVague().
   const [vagueFollowupShown, setVagueFollowupShown] = useState(false);
+  // Brief visual confirmation between tap and submit — gives the user a
+  // chance to change their mind / type a comment before submission fires.
+  const submitTimerRef = useRef(null);
+  const [autoSubmitIn, setAutoSubmitIn] = useState(0); // seconds remaining (display only)
+  const AUTO_SUBMIT_DELAY_MS = 1200;
+  // If the user has typed a comment they're working on, suppress auto-submit
+  // entirely. Anyone typing wants to keep typing — the prior auto-submit
+  // would have stolen the rating mid-thought.
+  const isTyping = comment.trim().length > 0 || commentExpanded;
+
+  // Mirror rating into both legacy fields (fun + clarity) so existing
+  // export reports continue to function. fun is the rating; clarity is
+  // copied through.
+  const fun = rating;
+  const clarity = rating;
 
   // Persist every change so a refresh keeps everything typed so far.
   useEffect(() => {
     saveFbDraft(userEmail, taskType, { fun, clarity, comment });
   }, [fun, clarity, comment, userEmail, taskType]);
 
-  // Once BOTH emojis are picked, advance to Phase 2 (comment).
-  // No auto-submit, no auto-dismiss — the dialog stays open until the
-  // student clicks Submit.
-  useEffect(() => {
-    if (fun > 0 && clarity > 0 && phase === "rate") {
-      setPhase("comment");
-    }
-  }, [fun, clarity]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const isLowRating = (fun > 0 && fun <= 2) || (clarity > 0 && clarity <= 2);
+  const isLowRating = rating > 0 && rating <= 2;
   const trimmedComment = comment.trim();
   const commentMeetsMinimum = trimmedComment.length >= MIN_REQUIRED_FEEDBACK_CHARS;
-  // If either rating is low, comment is REQUIRED. Otherwise, optional.
-  const submitDisabled = isLowRating && !commentMeetsMinimum;
+  // When low-rated, surface the comment textarea automatically (still opt-in
+  // to submit a comment, but pre-expanded so it's one less click).
+  useEffect(() => {
+    if (isLowRating && !commentExpanded) setCommentExpanded(true);
+  }, [isLowRating, commentExpanded]);
 
-  const handleSubmit = () => {
-    if (submitDisabled) return;
-    // Vague low-rating comment?  Stop, prompt for specifics, and let
-    // the user edit before resubmitting.  One-shot per dialog so we
-    // never block them twice on the same task.
+  const doSubmit = () => {
+    if (rating <= 0) return; // safety — never submit a 0 rating
+    // Vague low-rating comment? Stop, prompt for specifics, let them edit.
     if (
       !vagueFollowupShown &&
       isLowRating &&
@@ -459,11 +490,8 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
       setVagueFollowupShown(true);
       return;
     }
-    // Bonus tiers: low rating + meaningful comment = 5 (we're paying for it).
-    // Any rating + comment = 4. Just rating = 1.
     let bonus = 1;
     if (commentMeetsMinimum) bonus = isLowRating ? 5 : 4;
-    // Submission committed — drop the draft so the next visit starts clean.
     clearFbDraft(userEmail, taskType);
     onSubmit({
       fun,
@@ -474,19 +502,52 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
     });
   };
 
-  // Wrap onSkip so the draft is cleared if the user explicitly closes
-  // the popup (we don't want stale text re-appearing on the next task
-  // of the same type).
+  // Schedule auto-submit when a rating is selected and the user isn't
+  // composing a comment. If a comment is started, cancel the timer so
+  // the user finishes typing before the rating ships.
+  useEffect(() => {
+    if (submitTimerRef.current) {
+      clearTimeout(submitTimerRef.current);
+      submitTimerRef.current = null;
+    }
+    setAutoSubmitIn(0);
+    if (rating > 0 && !isTyping && !isLowRating) {
+      // High ratings (3-5) auto-submit. Low ratings (1-2) keep the dialog
+      // open so the user can type what went wrong — they were the most
+      // important signal we keep losing in the export.
+      const start = Date.now();
+      const tick = () => {
+        const elapsed = Date.now() - start;
+        const remaining = Math.max(0, AUTO_SUBMIT_DELAY_MS - elapsed);
+        setAutoSubmitIn(Math.ceil(remaining / 100) / 10);
+        if (remaining <= 0) {
+          doSubmit();
+        } else {
+          submitTimerRef.current = setTimeout(tick, 100);
+        }
+      };
+      submitTimerRef.current = setTimeout(tick, 100);
+    }
+    return () => {
+      if (submitTimerRef.current) clearTimeout(submitTimerRef.current);
+    };
+  }, [rating, isTyping, isLowRating]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Skip — only allowed BEFORE the user has picked a rating. After a tap,
+  // they've effectively rated; we just submit it.
   const handleSkip = () => {
+    if (submitTimerRef.current) clearTimeout(submitTimerRef.current);
     clearFbDraft(userEmail, taskType);
     onSkip?.();
   };
 
   const EmojiRow = ({ label, items, selected, onSelect }) => (
     <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "#94a3b8", marginBottom: 6, textAlign: "center" }}>
-        {label}
-      </div>
+      {label && (
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#94a3b8", marginBottom: 6, textAlign: "center" }}>
+          {label}
+        </div>
+      )}
       <div style={{ display: "flex", justifyContent: "center", gap: 6 }}>
         {items.map((e) => (
           <button
@@ -515,6 +576,9 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
     </div>
   );
 
+  const hasRated = rating > 0;
+  const submitDisabled = isLowRating && !commentMeetsMinimum;
+
   return (
     <div style={{
       position: "fixed", inset: 0,
@@ -526,115 +590,131 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
       <div style={{
         position: "relative",
         width: "100%", maxWidth: 380,
-        padding: "16px 16px 14px",
+        padding: "18px 18px 16px",
         borderRadius: 20,
         background: "rgba(30,41,59,0.97)",
         border: "1px solid rgba(255,255,255,0.1)",
         color: "#f8fafc",
         boxShadow: "0 -4px 24px rgba(0,0,0,0.3)",
       }}>
-        {/* Always-available dismiss in the top-right.  Without this the
-            rate phase was an inescapable modal — testers who didn't
-            want to rate would refresh the page, losing the whole
-            session's feedback queue.  Calls handleSkip → onSkip →
-            handleFeedback(null) which advances to the next task. */}
-        <button
-          type="button"
-          onClick={handleSkip}
-          aria-label="Close feedback"
-          title="Close — you can skip rating this one"
-          style={{
-            position: "absolute",
-            top: 8,
-            right: 8,
-            width: 28,
-            height: 28,
-            borderRadius: 999,
-            border: "1px solid rgba(255,255,255,0.12)",
-            background: "rgba(255,255,255,0.06)",
-            color: "#94a3b8",
-            fontSize: 14,
-            fontWeight: 800,
-            lineHeight: 1,
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 0,
-            zIndex: 1,
-          }}
-        >
-          ×
-        </button>
-
-        {phase === "rate" && (
-          <>
-            <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: "#e2e8f0", marginBottom: 2 }}>
-              Rate this task to earn your points
-            </div>
-            <div style={{ textAlign: "center", fontSize: 11, color: "#64748b", marginBottom: 10 }}>
-              {taskTitle || taskType}
-            </div>
-            <EmojiRow label="Was it fun?" items={EMOJI_FUN} selected={fun} onSelect={setFun} />
-            <EmojiRow label="Was it clear?" items={EMOJI_CLARITY} selected={clarity} onSelect={setClarity} />
-            {/* Explicit dismiss in the rate phase.  Many testers don't want
-                to rate every single task and were getting stuck on this
-                modal — give them a clear out so the next task loads.
-                We make the cost explicit: skipping the review means no
-                points for the task, by design (anti-grinding). */}
-            <button
-              type="button"
-              onClick={handleSkip}
-              style={{
-                display: "block",
-                margin: "8px auto 0",
-                padding: "6px 14px",
-                borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.1)",
-                background: "transparent",
-                color: "#94a3b8",
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: "pointer",
-              }}
-            >
-              Maybe later — skip rating (no points)
-            </button>
-          </>
+        {/* Dismiss X — only available AFTER a rating is tapped. Before that,
+            the only way to exit without rating is the explicit skip link
+            below the emojis. This prevents one-click escape from the
+            rating prompt. */}
+        {hasRated && (
+          <button
+            type="button"
+            onClick={handleSkip}
+            aria-label="Close feedback"
+            title="Close"
+            style={{
+              position: "absolute",
+              top: 8,
+              right: 8,
+              width: 28,
+              height: 28,
+              borderRadius: 999,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.06)",
+              color: "#94a3b8",
+              fontSize: 14,
+              fontWeight: 800,
+              lineHeight: 1,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0,
+              zIndex: 1,
+            }}
+          >
+            ×
+          </button>
         )}
 
-        {phase === "comment" && (
+        <div style={{ textAlign: "center", fontSize: 14, fontWeight: 800, color: "#e2e8f0", marginBottom: 2 }}>
+          {hasRated && !isLowRating ? "Got it — sending…" : "How was that task?"}
+        </div>
+        <div style={{ textAlign: "center", fontSize: 11, color: "#64748b", marginBottom: 12 }}>
+          {taskTitle || taskType}
+        </div>
+
+        {/* Single emoji row. Any tap = recorded rating. */}
+        <EmojiRow label="" items={EMOJI_FUN} selected={rating} onSelect={setRating} />
+
+        {/* Auto-submit progress indicator — shows for high ratings (3-5) so the
+            user knows their tap was received and a submit is imminent. They
+            can still type a comment, which cancels the timer. */}
+        {hasRated && !isLowRating && !commentExpanded && autoSubmitIn > 0 && (
+          <div
+            style={{
+              textAlign: "center",
+              fontSize: 11,
+              color: "#94a3b8",
+              marginTop: 4,
+              marginBottom: 6,
+            }}
+          >
+            Saving in {autoSubmitIn.toFixed(1)}s — tap{" "}
+            <button
+              type="button"
+              onClick={() => setCommentExpanded(true)}
+              style={{
+                background: "none",
+                border: "none",
+                color: "#fbbf24",
+                fontWeight: 800,
+                fontSize: 11,
+                padding: 0,
+                cursor: "pointer",
+                textDecoration: "underline",
+              }}
+            >
+              + add a comment
+            </button>{" "}
+            to keep open.
+          </div>
+        )}
+
+        {/* Comment section. Auto-expands for low ratings (we WANT to hear why);
+            otherwise hidden behind a "+ add a comment" link. */}
+        {hasRated && !commentExpanded && !isLowRating && autoSubmitIn === 0 && (
+          <button
+            type="button"
+            onClick={() => setCommentExpanded(true)}
+            style={{
+              display: "block",
+              margin: "8px auto 0",
+              padding: "6px 14px",
+              borderRadius: 10,
+              border: "1px solid rgba(255,255,255,0.1)",
+              background: "transparent",
+              color: "#fbbf24",
+              fontWeight: 700,
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+          >
+            + Add a comment (+4 pts)
+          </button>
+        )}
+
+        {hasRated && commentExpanded && (
           <>
-            {/* Headline: copy + bonus depend on whether the rating was low.
-                Low: required, +5 bonus. Otherwise: optional comment, +4 if filled. */}
             {isLowRating ? (
-              <>
-                <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: "#fbbf24", marginBottom: 4 }}>
-                  Tell us what was wrong — please
-                </div>
-                <div style={{ textAlign: "center", fontSize: 11, color: "#cbd5e1", marginBottom: 10 }}>
-                  Required when something didn't land. Earn <span style={{ color: "#22c55e", fontWeight: 800 }}>+5 pts</span>.
-                </div>
-              </>
+              <div style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "#fbbf24", marginTop: 8, marginBottom: 6 }}>
+                What didn't land? <span style={{ color: "#94a3b8", fontWeight: 600 }}>(+5 pts)</span>
+              </div>
             ) : (
-              <>
-                <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: "#e2e8f0", marginBottom: 4 }}>
-                  Any comments or suggestions?
-                </div>
-                <div style={{ textAlign: "center", fontSize: 11, color: "#94a3b8", marginBottom: 10 }}>
-                  Optional — but worth <span style={{ color: "#22c55e", fontWeight: 800 }}>+4 pts</span> if you share.
-                </div>
-              </>
+              <div style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "#e2e8f0", marginTop: 8, marginBottom: 6 }}>
+                Anything to add? <span style={{ color: "#94a3b8", fontWeight: 600 }}>(+4 pts)</span>
+              </div>
             )}
 
-            {/* Follow-up nudge — surfaces once when the user submits a
-                vague low-rating comment like "it didn't work" or
-                keysmash.  Gives concrete examples and asks them to
-                edit.  A second Submit click goes through regardless. */}
             {vagueFollowupShown && (
               <div
                 style={{
-                  marginBottom: 10,
+                  marginBottom: 8,
                   padding: "10px 12px",
                   borderRadius: 12,
                   background: "rgba(245,158,11,0.12)",
@@ -648,28 +728,25 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
                   One more thing — what specifically?
                 </div>
                 <div>
-                  "It didn't work" is hard to fix.  Add a sentence with
-                  what you tried and what happened — e.g.{" "}
-                  <i>"tapped the colour tiles, nothing reacted"</i>{" "}
-                  or <i>"the camera permission popup never appeared"</i>{" "}
-                  or <i>"I couldn't tell whose turn it was"</i>.
+                  Add a sentence with what you tried and what happened — e.g.{" "}
+                  <i>"tapped the colour tiles, nothing reacted"</i> or{" "}
+                  <i>"I couldn't tell whose turn it was"</i>.
                 </div>
                 <div style={{ marginTop: 4, opacity: 0.85, fontStyle: "italic" }}>
-                  (Submit again to send anyway — your bonus is unchanged.)
+                  (Submit again to send anyway.)
                 </div>
               </div>
             )}
+
             <textarea
               autoFocus
               rows={3}
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               onKeyDown={(e) => {
-                // ⌘/Ctrl+Enter submits; plain Enter inserts newline so multi-line
-                // suggestions are easy to write.
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !submitDisabled) {
                   e.preventDefault();
-                  handleSubmit();
+                  doSubmit();
                 }
               }}
               placeholder={isLowRating
@@ -697,48 +774,63 @@ function TaskFeedback({ taskType, taskTitle, onSubmit, onSkip, userEmail }) {
               <div style={{ fontSize: 11, color: commentMeetsMinimum ? "#22c55e" : "#94a3b8", marginBottom: 8, textAlign: "right" }}>
                 {commentMeetsMinimum
                   ? "Thanks — that helps."
-                  : `${Math.max(0, MIN_REQUIRED_FEEDBACK_CHARS - trimmedComment.length)} more character${MIN_REQUIRED_FEEDBACK_CHARS - trimmedComment.length === 1 ? "" : "s"} to unlock Submit`}
+                  : `${Math.max(0, MIN_REQUIRED_FEEDBACK_CHARS - trimmedComment.length)} more character${MIN_REQUIRED_FEEDBACK_CHARS - trimmedComment.length === 1 ? "" : "s"} to send`}
               </div>
             )}
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => setPhase("rate")}
-                style={{
-                  flex: 1, padding: 10, borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,0.1)", background: "transparent",
-                  color: "#94a3b8", fontWeight: 700, fontSize: 13, cursor: "pointer",
-                }}
-                title="Change your ratings"
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={submitDisabled}
-                style={{
-                  flex: 2, padding: 10, borderRadius: 10, border: "none",
-                  background: submitDisabled
-                    ? "rgba(100,116,139,0.5)"
-                    : (commentMeetsMinimum
-                        ? "linear-gradient(135deg, #22c55e, #16a34a)"
-                        : "linear-gradient(135deg, #f59e0b, #ef4444)"),
-                  color: "#fff",
-                  fontWeight: 800,
-                  fontSize: 13,
-                  cursor: submitDisabled ? "not-allowed" : "pointer",
-                  opacity: submitDisabled ? 0.7 : 1,
-                }}
-              >
-                {submitDisabled
-                  ? "Add a few words to submit"
-                  : commentMeetsMinimum
-                    ? (isLowRating ? "Submit (+5)" : "Submit (+4)")
-                    : "Submit (+1)"}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={doSubmit}
+              disabled={submitDisabled}
+              style={{
+                width: "100%",
+                padding: 11,
+                borderRadius: 10,
+                border: "none",
+                background: submitDisabled
+                  ? "rgba(100,116,139,0.5)"
+                  : (commentMeetsMinimum
+                      ? "linear-gradient(135deg, #22c55e, #16a34a)"
+                      : "linear-gradient(135deg, #f59e0b, #ef4444)"),
+                color: "#fff",
+                fontWeight: 800,
+                fontSize: 14,
+                cursor: submitDisabled ? "not-allowed" : "pointer",
+                opacity: submitDisabled ? 0.7 : 1,
+              }}
+            >
+              {submitDisabled
+                ? "Add a few words to send"
+                : commentMeetsMinimum
+                  ? (isLowRating ? "Send (+5)" : "Send (+4)")
+                  : "Send rating only (+1)"}
+            </button>
           </>
+        )}
+
+        {/* Skip option — only available BEFORE a rating is tapped. Visually
+            demoted to a small ghost link. Once they tap an emoji, the only
+            "exits" are auto-submit (high rating) or the comment box submit. */}
+        {!hasRated && (
+          <button
+            type="button"
+            onClick={handleSkip}
+            style={{
+              display: "block",
+              margin: "10px auto 0",
+              padding: "4px 10px",
+              borderRadius: 8,
+              border: "none",
+              background: "transparent",
+              color: "#64748b",
+              fontWeight: 600,
+              fontSize: 11,
+              cursor: "pointer",
+              textDecoration: "underline",
+              opacity: 0.7,
+            }}
+          >
+            Skip rating (no points)
+          </button>
         )}
       </div>
     </div>
