@@ -204,6 +204,24 @@ const StocksPortfolioSchema = new mongoose.Schema(
     },
     accounts: { type: [AccountSchema], default: [] },
     positions: { type: [PositionSchema], default: [] },
+    // Up to 4 daily times to email the briefing, each "HH:MM" 24-hour in
+    // briefingTz. Empty array = disabled (the cron skips this user). The
+    // cron tick scans this list every minute and fires when current
+    // local time matches one of the entries.
+    briefingTimes: {
+      type: [String],
+      default: ["07:30"],
+      validate: {
+        validator: (arr) => Array.isArray(arr) && arr.length <= 4
+          && arr.every(s => typeof s === "string" && /^([01]?\d|2[0-3]):[0-5]\d$/.test(s)),
+        message: "briefingTimes must be 0-4 entries in HH:MM 24h format",
+      },
+    },
+    briefingTz: { type: String, default: "America/New_York" },
+    // Idempotency: last time we sent each scheduled brief, keyed by
+    // "YYYY-MM-DD|HH:MM" so the tick doesn't double-send when a tick
+    // overlaps two ticks (e.g. process restart, clock skew).
+    lastBriefingSentKey: { type: String, default: "" },
     // Planned withdrawals — "I need $X by date Y" so AI recs can prepare
     // cash and avoid locking it up in long-horizon buys.
     plannedWithdrawals: {

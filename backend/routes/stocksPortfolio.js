@@ -180,6 +180,21 @@ function sanitizePortfolioInput(body, email) {
   if (typeof body.consensusMode === "boolean") {
     out.consensusMode = body.consensusMode;
   }
+  if (Array.isArray(body.briefingTimes)) {
+    // Accept 0-4 entries in HH:MM 24-hour format; silently drop invalid ones.
+    const valid = body.briefingTimes
+      .filter(t => typeof t === "string" && /^([01]?\d|2[0-3]):[0-5]\d$/.test(t))
+      .map(t => {
+        // Normalize "7:30" → "07:30"
+        const [h, m] = t.split(":");
+        return `${h.padStart(2, "0")}:${m}`;
+      });
+    // Dedupe + sort + cap at 4
+    out.briefingTimes = [...new Set(valid)].sort().slice(0, 4);
+  }
+  if (typeof body.briefingTz === "string" && body.briefingTz.length > 0 && body.briefingTz.length < 64) {
+    out.briefingTz = body.briefingTz;
+  }
   if (typeof body.goals === "string") {
     out.goals = body.goals.slice(0, 5000);
   }

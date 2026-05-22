@@ -248,8 +248,26 @@ function prettifyBriefing(html) {
         out.push(`<div style="margin-top:8px;font-size:11.5px;color:#6b7280"><b style="color:#374151">Source:</b> ${line.replace(/^Source:\s*/i, "")}</div>`);
         continue;
       }
-      if (/^Cost note:/i.test(line)) {
-        out.push(`<div style="margin-top:2px;font-size:11.5px;color:#6b7280"><b style="color:#374151">Cost:</b> ${line.replace(/^Cost note:\s*/i, "")}</div>`);
+      if (/^Account:/i.test(line)) {
+        // Account: RRSP · uses $X of $Y CCY available · leaves $Z
+        // Render the account name as a colored pill, the rest as muted detail.
+        const rest = line.replace(/^Account:\s*/i, "");
+        const acctMatch = rest.match(/^([A-Za-z][A-Za-z0-9\s\-]{0,30})/);
+        const acctName = acctMatch ? acctMatch[1].trim() : "";
+        const detail = acctName ? rest.slice(acctMatch[1].length).replace(/^[\s·•|-]+/, "") : rest;
+        out.push(`<div style="margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:11.5px;color:#6b7280">${acctName ? `<span style="display:inline-block;background:#eef2ff;color:#3730a3;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600">${acctName}</span>` : ""}<span>${detail}</span></div>`);
+        continue;
+      }
+      if (/^Cost note:/i.test(line) || /^Cost:/i.test(line)) {
+        out.push(`<div style="margin-top:2px;font-size:11.5px;color:#6b7280"><b style="color:#374151">Cost:</b> ${line.replace(/^(Cost note|Cost):\s*/i, "")}</div>`);
+        continue;
+      }
+      if (/^Rationale[^:]*:/i.test(line)) {
+        out.push(`<div style="margin-top:8px;padding:8px 12px;background:rgba(255,255,255,0.6);border-left:3px solid ${palette.badge};border-radius:4px;font-size:12px;color:#374151;font-style:italic">${line.replace(/^Rationale[^:]*:\s*/i, "")}</div>`);
+        continue;
+      }
+      if (/^Tax-fit:/i.test(line)) {
+        out.push(`<div style="margin-top:4px;font-size:11.5px;color:#6b7280"><b style="color:#374151">Tax fit:</b> ${line.replace(/^Tax-fit:\s*/i, "")}</div>`);
         continue;
       }
       // Fall-through: plain prose inside the card
@@ -262,6 +280,33 @@ function prettifyBriefing(html) {
   // Highlight the open-rec alerts at the top (🎯 target, 🛑 stop)
   html = html.replace(/<li[^>]*>(🎯[^<]*)<\/li>/g, `<li style="margin:8px 0;padding:8px 12px;background:#ecfdf5;border-left:3px solid #059669;border-radius:6px;list-style:none">$1</li>`);
   html = html.replace(/<li[^>]*>(🛑[^<]*)<\/li>/g, `<li style="margin:8px 0;padding:8px 12px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:6px;list-style:none">$1</li>`);
+
+  // Color-code h2 section headers by emoji / keyword so the eye finds
+  // open alerts vs cash deployment vs new ideas without reading.
+  html = html.replace(/<h2 ([^>]*?)>([\s\S]*?)<\/h2>/g, (m, attrs, inner) => {
+    const txt = inner.replace(/<[^>]+>/g, "");
+    let accent = "#1d4ed8"; // default blue
+    let bg = "linear-gradient(90deg,#eef2ff 0%,#fafbff 100%)";
+    if (/🚨|alert/i.test(txt)) { accent = "#dc2626"; bg = "linear-gradient(90deg,#fef2f2 0%,#fff 100%)"; }
+    else if (/💵|cash deployment/i.test(txt)) { accent = "#059669"; bg = "linear-gradient(90deg,#ecfdf5 0%,#fff 100%)"; }
+    else if (/today.?s.{0,5}action/i.test(txt)) { accent = "#7c3aed"; bg = "linear-gradient(90deg,#f5f3ff 0%,#fff 100%)"; }
+    else if (/signals/i.test(txt)) { accent = "#0891b2"; bg = "linear-gradient(90deg,#ecfeff 0%,#fff 100%)"; }
+    else if (/performance|snapshot/i.test(txt)) { accent = "#0284c7"; bg = "linear-gradient(90deg,#f0f9ff 0%,#fff 100%)"; }
+    else if (/watch/i.test(txt)) { accent = "#ea580c"; bg = "linear-gradient(90deg,#fff7ed 0%,#fff 100%)"; }
+    else if (/aggressive|new ideas/i.test(txt)) { accent = "#9333ea"; bg = "linear-gradient(90deg,#faf5ff 0%,#fff 100%)"; }
+    else if (/overnight|pre-?market/i.test(txt)) { accent = "#4f46e5"; bg = "linear-gradient(90deg,#eef2ff 0%,#fff 100%)"; }
+    return `<h2 style='margin:32px 0 14px;font-size:18px;font-weight:700;color:#0b1220;letter-spacing:-.01em;padding:12px 16px;background:${bg};border-left:5px solid ${accent};border-radius:6px 6px 0 0'>${inner}</h2>`;
+  });
+
+  // Recognize per-account sub-headers ("**TFSA — $2,300 CAD · $0 USD**" emitted
+  // by the cash-deployment block) and render with an account chip.
+  html = html.replace(/<p ([^>]*)>(\s*<strong>([A-Za-z][A-Za-z0-9\s\-]{1,30}?)\s*[—–-]\s*([^<]+)<\/strong>\s*)<\/p>/g,
+    (m, attrs, full, acct, detail) => {
+      return `<div style="margin:16px 0 8px;padding:10px 14px;background:#eef2ff;border-radius:8px;display:flex;flex-wrap:wrap;gap:10px;align-items:baseline">
+        <span style="background:#4f46e5;color:#fff;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;letter-spacing:.04em">${acct.trim().toUpperCase()}</span>
+        <span style="font-size:14px;color:#3730a3;font-weight:600">${detail.trim()}</span>
+      </div>`;
+    });
 
   return html;
 }
@@ -761,27 +806,56 @@ export async function generateBriefing(profile) {
   const monitorAlerts = monitorRes?.alerts || [];
   const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock);
 
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": process.env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-5",
-      max_tokens: 4096,
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 12 }],
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
-  if (!r.ok) {
-    const e = await r.text().catch(() => "");
-    throw new Error(`Anthropic ${r.status}: ${e.slice(0, 200)}`);
-  }
-  const j = await r.json();
-  const raw = (j?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+  // Anthropic call with retry-on-truncation. When the response stops
+  // because we hit max_tokens (rather than because the model finished),
+  // ask Claude to continue from where it left off and stitch.
+  const callClaude = async (messages, tokens) => {
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-5",
+        max_tokens: tokens,
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 12 }],
+        messages,
+      }),
+    });
+    if (!resp.ok) {
+      const e = await resp.text().catch(() => "");
+      throw new Error(`Anthropic ${resp.status}: ${e.slice(0, 200)}`);
+    }
+    return resp.json();
+  };
+
+  // First call — generous max_tokens so the per-account cash deployment
+  // sections don't truncate the way they did at 4096.
+  let j = await callClaude([{ role: "user", content: prompt }], 8192);
+  let raw = (j?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
   if (!raw) throw new Error("Empty briefing");
+
+  // If the response was cut off because of max_tokens, ask for a
+  // continuation and append. Anthropic's `stop_reason` tells us this
+  // directly. We feed the partial response back as an assistant turn so
+  // the model continues exactly where it stopped (no re-summarization).
+  let attempts = 0;
+  while (j?.stop_reason === "max_tokens" && attempts < 2) {
+    attempts++;
+    console.warn(`[stocks-briefing] truncated — requesting continuation (attempt ${attempts})`);
+    const continuation = await callClaude([
+      { role: "user", content: prompt },
+      { role: "assistant", content: raw },
+      { role: "user", content: "Continue exactly where you stopped. Do not repeat what you've already written. Do not add a preamble. Just resume the next character." },
+    ], 4096);
+    const more = (continuation?.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
+    if (!more) break;
+    raw = raw + more;
+    j = continuation;
+  }
+
   // Strip Claude web_search citation markers AND any chatty preamble before
   // the first markdown heading (e.g. "I'll search the web for...", "Let me
   // pull the latest news...", "Now let me write your briefing.").
@@ -800,7 +874,32 @@ export async function generateBriefing(profile) {
 export async function emailBriefing({ to, subject, md }) {
   if (!process.env.RESEND_API_KEY) throw new Error("RESEND_API_KEY not set");
   const inner = md2html(md);
-  const html = `<!DOCTYPE html><html><body style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:680px;margin:24px auto;padding:24px;line-height:1.6;color:#0b1220;background:#fff">${inner}<hr style="border:none;border-top:1px solid #e4e8ef;margin:24px 0"><div style="font-size:11px;color:#7a8499">Research and education only. Not licensed investment advice.</div></body></html>`;
+  // Strip the first H1 from the rendered inner if present — we replace it
+  // with a branded hero header below so we don't get a double title.
+  const innerNoH1 = inner.replace(/^<h1[^>]*>[\s\S]*?<\/h1>\s*/i, "");
+  const dateStr = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#f4f6fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,system-ui,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased">
+  <div style="max-width:720px;margin:0 auto;padding:24px 16px">
+    <div style="background:#fff;border-radius:14px;box-shadow:0 2px 12px rgba(15,23,42,0.06);overflow:hidden">
+      <!-- Hero -->
+      <div style="background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 50%,#ec4899 100%);padding:28px 32px;color:#fff">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.14em;opacity:0.82;font-weight:600">📈 Stocks Advisor</div>
+        <div style="font-size:24px;font-weight:700;margin-top:8px;letter-spacing:-.01em">Daily briefing</div>
+        <div style="font-size:13px;opacity:0.88;margin-top:4px">${dateStr}</div>
+      </div>
+      <!-- Body -->
+      <div style="padding:24px 32px 8px;color:#0b1220;line-height:1.65">
+        ${innerNoH1}
+      </div>
+      <!-- Footer -->
+      <div style="padding:16px 32px 28px;border-top:1px solid #eef0f5;background:#fafbfd">
+        <div style="font-size:11px;color:#7a8499;line-height:1.5">
+          Research and education only. Not licensed investment advice. Generated by Stocks Advisor at <a href="https://curriculate.net/stocks" style="color:#4f46e5;text-decoration:none">curriculate.net/stocks</a>.
+        </div>
+      </div>
+    </div>
+  </div>
+</body></html>`;
   const from = process.env.STOCKS_BRIEFING_FROM || "Stocks Advisor <noreply@curriculate.net>";
   const r = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -869,18 +968,109 @@ export async function runDailyBriefing(opts = {}) {
   }
 }
 
+// Format Date → "HH:MM" in given IANA timezone (24-hour).
+function timeOfDayInTz(date, tz) {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hour12: false, hour: "2-digit", minute: "2-digit",
+  });
+  // "07:30" or "07:30" (intl can return "07:30" or with leading zero variations)
+  const parts = fmt.formatToParts(date);
+  const hh = parts.find(p => p.type === "hour")?.value ?? "00";
+  const mm = parts.find(p => p.type === "minute")?.value ?? "00";
+  return `${hh.padStart(2, "0")}:${mm.padStart(2, "0")}`;
+}
+
+// Format Date → "YYYY-MM-DD" in given IANA timezone.
+function dateInTz(date, tz) {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+  });
+  // en-CA gives "YYYY-MM-DD" natively
+  return fmt.format(date);
+}
+
+// Find every user whose configured briefingTimes contains the current
+// minute (in their own timezone) and hasn't been sent for that
+// (date, time) tuple yet. Used by the per-minute scheduler tick.
+async function findUsersDueForBriefing(now) {
+  // Only users with at least one configured time + non-empty positions
+  const portfolios = await StocksPortfolio.find({
+    "briefingTimes.0": { $exists: true },
+    "positions.0": { $exists: true },
+  }).lean();
+
+  const due = [];
+  for (const p of portfolios) {
+    const tz = p.briefingTz || "America/New_York";
+    const hhmm = timeOfDayInTz(now, tz);
+    if (!Array.isArray(p.briefingTimes) || !p.briefingTimes.includes(hhmm)) continue;
+    const ymd = dateInTz(now, tz);
+    const key = `${ymd}|${hhmm}`;
+    if (p.lastBriefingSentKey === key) continue; // already sent this slot
+    due.push({ portfolio: p, sendKey: key });
+  }
+  return due;
+}
+
+// Send the briefing for a single user, then stamp lastBriefingSentKey so
+// the same slot doesn't fire again within the same minute window.
+async function sendBriefingForUser(p, sendKey) {
+  try {
+    const includeMonthly = isLastTradingDayOfMonth(new Date());
+    let md = await generateBriefing(p);
+    if (includeMonthly) {
+      const reports = await buildAllAccountReports(p).catch((e) => { console.warn("[monthly-report] warn:", e?.message); return []; });
+      const block = formatAllReportsMarkdown(reports);
+      if (block) md = `${block}\n\n---\n\n${md}`;
+    }
+    const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
+    await emailBriefing({ to: p.email, subject, md });
+    await saveAdviceSnapshot({ email: p.email, markdown: md, source: "cron" });
+
+    const recs = parseRecsFromBriefing(md);
+    if (recs.length) {
+      await StocksAdviceRec.insertMany(
+        recs.map((r) => ({
+          email: p.email,
+          generatedAt: new Date(),
+          source: "ai",
+          ...r,
+          rationale: "Daily briefing — server-side cron",
+        }))
+      );
+    }
+
+    // Stamp idempotency key
+    await StocksPortfolio.updateOne(
+      { email: p.email },
+      { $set: { lastBriefingSentKey: sendKey } }
+    );
+
+    console.log(`[stocks-briefing] ✓ ${p.email} @ ${sendKey} — ${recs.length} recs tracked`);
+  } catch (err) {
+    console.error(`[stocks-briefing] ✗ ${p.email}:`, err?.message);
+  }
+}
+
 export function scheduleDailyBriefing() {
   if (process.env.STOCKS_BRIEFING_ENABLED !== "1") {
     console.log("[stocks-briefing] disabled (set STOCKS_BRIEFING_ENABLED=1 to turn on)");
     return null;
   }
-  const expr = process.env.STOCKS_BRIEFING_CRON || "30 7 * * 1-5";
-  const tz = process.env.STOCKS_BRIEFING_TZ || "America/New_York";
-  console.log(`[stocks-briefing] scheduled: "${expr}" ${tz}`);
-  return cron.schedule(expr, async () => {
-    console.log(`[stocks-briefing] tick: ${new Date().toISOString()}`);
-    try { await runDailyBriefing(); } catch (e) { console.error("[stocks-briefing] tick error:", e); }
-  }, { timezone: tz });
+  // Per-minute tick — each user has their own list of up-to-4 send times
+  // stored on their portfolio (briefingTimes + briefingTz). Tick checks
+  // every user against the current minute in their own timezone.
+  console.log(`[stocks-briefing] scheduled: per-user (every minute scan)`);
+  return cron.schedule("* * * * *", async () => {
+    try {
+      const due = await findUsersDueForBriefing(new Date());
+      if (due.length === 0) return;
+      console.log(`[stocks-briefing] tick: ${due.length} user(s) due`);
+      for (const { portfolio, sendKey } of due) {
+        await sendBriefingForUser(portfolio, sendKey);
+      }
+    } catch (e) { console.error("[stocks-briefing] tick error:", e); }
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────

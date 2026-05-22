@@ -1210,7 +1210,7 @@ async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, l
     },
     body: JSON.stringify({
       model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-5",
-      max_tokens: 4096,
+      max_tokens: 8192, // bumped from 4096 — per-account cards push past 4k now
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 12 }],
       messages: [{ role: "user", content: prompt }],
     }),
@@ -1302,7 +1302,7 @@ router.post("/", requireStocksAuth, async (req, res) => {
       },
       body: JSON.stringify({
         model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-5",
-        max_tokens: 4096,
+        max_tokens: 8192, // bumped — per-account cards push past 4k now
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 12 }],
         messages: [{ role: "user", content: prompt }],
       }),
@@ -1448,27 +1448,52 @@ router.post("/", requireStocksAuth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// GET /api/stocks-advice/performance?days=30
+// GET /api/stocks-advice/performance
 //
-// Computes "if you had followed every recommendation from the last N days,
-// what would your hypothetical P&L be?" — averaged across all recs.
-// Returns rollups for 7d / 14d / 30d (or whatever the caller passes).
+// Returns rollups across multiple time windows (7d / 30d / 90d / 365d).
+// Each window has TWO numbers per the user's repeated request:
+//   - followed: realized P/L from recs the user actually executed
+//                (matched via StocksTradeJournal.linkedAdviceRecId)
+//   - skipped:  hypothetical P/L from recs the user did NOT execute
+// Plus the legacy `avgPnlPct` (all-recs average) for the old tile.
 // ─────────────────────────────────────────────────────────────────────
 router.get("/performance", requireStocksAuth, async (req, res) => {
   try {
-    const windows = [7, 14, 30];
+    const windows = [7, 30, 90, 365];
+    const maxWindow = Math.max(...windows);
     const now = Date.now();
 
     const recs = await StocksAdviceRec.find({
       email: req.stocksUser.email,
-      generatedAt: { $gte: new Date(now - 31 * 86400 * 1000) },
+      generatedAt: { $gte: new Date(now - (maxWindow + 1) * 86400 * 1000) },
     }).lean();
 
     if (recs.length === 0) {
       return res.json({
-        windows: windows.map((d) => ({ days: d, recCount: 0, avgPnlPct: null, hitRate: null })),
+        windows: windows.map((d) => ({
+          days: d, recCount: 0, avgPnlPct: null, hitRate: null,
+          followed: { count: 0, avgPnlPct: null, hitRate: null },
+          skipped: { count: 0, avgPnlPct: null, hitRate: null },
+        })),
         recent: [],
       });
+    }
+
+    // Build the set of recIds that were actually executed (i.e., a trade
+    // exists with linkedAdviceRecId pointing at this rec).
+    const recIds = recs.map(r => r._id);
+    const executedTrades = await StocksTradeJournal.find({
+      email: req.stocksUser.email,
+      linkedAdviceRecId: { $in: recIds },
+    }, { linkedAdviceRecId: 1, legs: 1, executedAt: 1 }).lean();
+
+    // Build map: recId → trade (latest if multiple)
+    const tradeByRec = {};
+    for (const t of executedTrades) {
+      const key = String(t.linkedAdviceRecId);
+      if (!tradeByRec[key] || new Date(t.executedAt) > new Date(tradeByRec[key].executedAt)) {
+        tradeByRec[key] = t;
+      }
     }
 
     // Fetch current prices (deduped) for scoring
@@ -1480,10 +1505,34 @@ router.get("/performance", requireStocksAuth, async (req, res) => {
       })
     );
 
+    // Score each rec twice:
+    //   pnlAtAiEntry — using the AI's quoted entry price (hypothetical)
+    //   pnlAtFill    — using the actual fill price from the linked trade
+    //                  if executed; else null
     const scored = recs.map((r) => {
       const cur = priceMap[r.ticker];
-      const pnl = scorePnl(r, cur);
-      return { ...r, currentPrice: cur, pnlPct: pnl };
+      const hypoPnl = scorePnl(r, cur);
+      const trade = tradeByRec[String(r._id)];
+      let realizedPnl = null;
+      if (trade) {
+        // Use the equity leg's fill price as the "real entry"
+        const leg = trade.legs.find(l => l.ticker && (l.side === "BUY" || l.side === "SELL"));
+        if (leg && Number.isFinite(leg.pricePerShare) && leg.pricePerShare > 0 && Number.isFinite(cur) && cur > 0) {
+          // For BUY-style recs: gain when current > fill
+          // For SELL-style recs: gain when current < fill (we sold before drop)
+          const isBuy = r.action === "BUY" || r.action === "ADD";
+          realizedPnl = isBuy
+            ? (cur - leg.pricePerShare) / leg.pricePerShare
+            : (leg.pricePerShare - cur) / leg.pricePerShare;
+        }
+      }
+      return {
+        ...r,
+        currentPrice: cur,
+        pnlPct: hypoPnl,
+        wasExecuted: !!trade,
+        realizedPnlPct: realizedPnl,
+      };
     });
 
     // Persist score back to the rec for future reference
@@ -1498,15 +1547,31 @@ router.get("/performance", requireStocksAuth, async (req, res) => {
 
     const rollups = windows.map((d) => {
       const cutoff = now - d * 86400 * 1000;
-      const window = scored.filter((s) => new Date(s.generatedAt).getTime() >= cutoff && s.pnlPct != null);
-      if (window.length === 0) return { days: d, recCount: 0, avgPnlPct: null, hitRate: null };
-      const avg = window.reduce((acc, s) => acc + s.pnlPct, 0) / window.length;
-      const hits = window.filter((s) => s.pnlPct > 0).length;
+      const window = scored.filter((s) => new Date(s.generatedAt).getTime() >= cutoff);
+      const allScored = window.filter(s => s.pnlPct != null);
+      const followed = window.filter(s => s.wasExecuted && s.realizedPnlPct != null);
+      const skipped = window.filter(s => !s.wasExecuted && s.pnlPct != null);
+
+      const avgOf = (arr, field) => arr.length === 0 ? null : (arr.reduce((a, s) => a + s[field], 0) / arr.length) * 100;
+      const hitRateOf = (arr, field) => arr.length === 0 ? null : (arr.filter(s => s[field] > 0).length / arr.length) * 100;
+
       return {
         days: d,
         recCount: window.length,
-        avgPnlPct: avg * 100, // already a fraction; convert to percent
-        hitRate: (hits / window.length) * 100,
+        // Legacy fields — all recs, hypothetical from AI entry
+        avgPnlPct: avgOf(allScored, "pnlPct"),
+        hitRate: hitRateOf(allScored, "pnlPct"),
+        // New: followed (real) vs skipped (hypothetical) split
+        followed: {
+          count: followed.length,
+          avgPnlPct: avgOf(followed, "realizedPnlPct"),
+          hitRate: hitRateOf(followed, "realizedPnlPct"),
+        },
+        skipped: {
+          count: skipped.length,
+          avgPnlPct: avgOf(skipped, "pnlPct"),
+          hitRate: hitRateOf(skipped, "pnlPct"),
+        },
       };
     });
 
@@ -1525,6 +1590,8 @@ router.get("/performance", requireStocksAuth, async (req, res) => {
           horizonDays: s.horizonDays,
           generatedAt: s.generatedAt,
           pnlPct: s.pnlPct != null ? s.pnlPct * 100 : null,
+          wasExecuted: s.wasExecuted,
+          realizedPnlPct: s.realizedPnlPct != null ? s.realizedPnlPct * 100 : null,
         })),
     });
   } catch (err) {
@@ -1838,7 +1905,23 @@ router.post("/send-briefing", requireStocksAuth, async (req, res) => {
 
     const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
     const inner = md2html(markdown);
-    const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,system-ui,Roboto,Helvetica,Arial,sans-serif;max-width:720px;margin:0 auto;padding:32px 28px;line-height:1.65;color:#1f2937;background:#fafbff;-webkit-font-smoothing:antialiased">${inner}<hr style="border:none;border-top:1px solid #e4e8ef;margin:32px 0 12px"><div style="font-size:11px;color:#9ca3af;line-height:1.5">Research and education only. Not licensed investment advice. Generated by Stocks Advisor at curriculate.net/stocks.</div></body></html>`;
+    const innerNoH1 = inner.replace(/^<h1[^>]*>[\s\S]*?<\/h1>\s*/i, "");
+    const dateStr = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#f4f6fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,system-ui,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased">
+  <div style="max-width:720px;margin:0 auto;padding:24px 16px">
+    <div style="background:#fff;border-radius:14px;box-shadow:0 2px 12px rgba(15,23,42,0.06);overflow:hidden">
+      <div style="background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 50%,#ec4899 100%);padding:28px 32px;color:#fff">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.14em;opacity:0.82;font-weight:600">📈 Stocks Advisor</div>
+        <div style="font-size:24px;font-weight:700;margin-top:8px;letter-spacing:-.01em">Daily briefing</div>
+        <div style="font-size:13px;opacity:0.88;margin-top:4px">${dateStr}</div>
+      </div>
+      <div style="padding:24px 32px 8px;color:#0b1220;line-height:1.65">${innerNoH1}</div>
+      <div style="padding:16px 32px 28px;border-top:1px solid #eef0f5;background:#fafbfd">
+        <div style="font-size:11px;color:#7a8499;line-height:1.5">Research and education only. Not licensed investment advice. Generated by Stocks Advisor at <a href="https://curriculate.net/stocks" style="color:#4f46e5;text-decoration:none">curriculate.net/stocks</a>.</div>
+      </div>
+    </div>
+  </div>
+</body></html>`;
 
     // Email it if requested
     let sent = false;

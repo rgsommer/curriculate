@@ -64,6 +64,8 @@ async function apiPutPortfolio(sessionToken, profile) {
       commissionPerTrade: profile.commissionPerTrade,
       fxSpreadPct: profile.fxSpreadPct,
       consensusMode: profile.consensusMode,
+      briefingTimes: profile.briefingTimes,
+      briefingTz: profile.briefingTz,
       goals: profile.goals,
       annualContributionGoals: profile.annualContributionGoals,
       accounts: profile.accounts,
@@ -1282,6 +1284,14 @@ export default function StocksAdvisorPage() {
               onChangeConsensusMode={(v) => {
                 updateUser(() => ({ consensusMode: v }));
                 showToast(v ? "Consensus mode ON — Update Advice will run 3×" : "Consensus mode OFF — single-run advice");
+              }}
+              onChangeBriefingTimes={(times) => {
+                updateUser(() => ({ briefingTimes: times }));
+                showToast(times.length === 0 ? "Briefings disabled" : `Briefing scheduled at ${times.join(", ")}`);
+              }}
+              onChangeBriefingTz={(tz) => {
+                updateUser(() => ({ briefingTz: tz }));
+                showToast(`Briefing timezone: ${tz}`);
               }}
               onSaveBrokerAccountId={(accountId, brokerAccountId) => {
                 updateUser((u) => ({
@@ -2722,7 +2732,91 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
   );
 }
 
-function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+// Settings card for daily briefing send schedule. Up to 4 HH:MM times in
+// the user's chosen timezone. Empty list = briefings disabled for this user.
+function BriefingScheduleCard({ times = [], tz = "America/New_York", onChangeTimes, onChangeTz }) {
+  const [draft, setDraft] = useState("");
+  const safeTimes = Array.isArray(times) ? times : [];
+
+  const addTime = () => {
+    const t = String(draft || "").trim();
+    if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(t)) return;
+    const [h, m] = t.split(":");
+    const norm = `${h.padStart(2, "0")}:${m}`;
+    if (safeTimes.includes(norm)) { setDraft(""); return; }
+    if (safeTimes.length >= 4) return;
+    const next = [...safeTimes, norm].sort();
+    onChangeTimes && onChangeTimes(next);
+    setDraft("");
+  };
+
+  const removeTime = (t) => {
+    onChangeTimes && onChangeTimes(safeTimes.filter(x => x !== t));
+  };
+
+  // Common timezones — keep this short; user can paste a custom IANA name.
+  const tzOptions = [
+    "America/New_York", "America/Toronto", "America/Vancouver",
+    "America/Chicago", "America/Denver", "America/Los_Angeles",
+    "Europe/London", "Europe/Paris", "Asia/Tokyo", "Australia/Sydney",
+  ];
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 14 }}>
+      <h3>Email briefing schedule</h3>
+      <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+        Set up to <b>4</b> times per day to receive the briefing by email. Times are in your selected timezone. Leave empty to disable scheduled briefings (you can still use <b>Send briefing now</b> manually).
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+        <div>
+          <label>Timezone</label>
+          <select value={tz} onChange={(e) => onChangeTz && onChangeTz(e.target.value)}>
+            {tzOptions.includes(tz) ? null : <option value={tz}>{tz}</option>}
+            {tzOptions.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label>Add a time (24h, e.g. 07:30)</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="time"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              disabled={safeTimes.length >= 4}
+              style={{ flex: 1 }}
+            />
+            <button
+              className="sa-btn secondary"
+              onClick={addTime}
+              disabled={safeTimes.length >= 4 || !/^([01]?\d|2[0-3]):[0-5]\d$/.test(draft || "")}
+              style={{ fontSize: 12 }}
+            >Add</button>
+          </div>
+        </div>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {safeTimes.length === 0 ? (
+          <div className="sa-muted" style={{ fontSize: 12 }}>No times scheduled — briefings disabled.</div>
+        ) : safeTimes.map(t => (
+          <div key={t} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", background: "var(--sa-panel-2)", borderRadius: 20, fontSize: 13 }}>
+            <span style={{ fontWeight: 600 }}>{t}</span>
+            <button
+              className="sa-btn ghost"
+              onClick={() => removeTime(t)}
+              style={{ fontSize: 11, padding: "0 6px" }}
+              title="Remove this time"
+            >✕</button>
+          </div>
+        ))}
+      </div>
+      {safeTimes.length >= 4 && (
+        <div className="sa-muted" style={{ fontSize: 11, marginTop: 8 }}>Maximum 4 times reached. Remove one to add another.</div>
+      )}
+    </div>
+  );
+}
+
+function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onChangeBriefingTimes, onChangeBriefingTz, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
   // Contribution goals — each is { amount, period }. Legacy flat numbers are
@@ -2933,6 +3027,13 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
           </div>
         </label>
       </div>
+
+      <BriefingScheduleCard
+        times={user.briefingTimes || []}
+        tz={user.briefingTz || "America/New_York"}
+        onChangeTimes={onChangeBriefingTimes}
+        onChangeTz={onChangeBriefingTz}
+      />
 
       <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>Contribution goals</h3>
