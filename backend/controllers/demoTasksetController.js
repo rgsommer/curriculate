@@ -38,6 +38,170 @@ function cloneJson(x) {
 // These are NOT placeholders; they are canonical examples designed to exercise the
 // frontend with reliable, valid data.
 const STATIC_DEMO_TASKS = {
+  // ── New types: LLM-flaky because of tight constraints (real URLs, exact
+  //    fact distributions, mode-specific schemas). Pin canonical demos so
+  //    the demoset always builds.
+
+  [TASK_TYPES.LEGENDS]: {
+    taskType: TASK_TYPES.LEGENDS,
+    title: "Legendary Scientist",
+    prompt:
+      "Look at the portrait and the 10 facts below. Sort them: 2 answer WHAT she did, 2 answer WHERE she did it, 2 answer WHY, 1 answers WHEN, and 3 are decoys that don't fit. Then guess who she is.",
+    points: 10,
+    config: {
+      figure: {
+        name: "Marie Curie",
+        era: "Late 1800s – early 1900s",
+        portraitUrl:
+          "https://upload.wikimedia.org/wikipedia/commons/c/c8/Marie_Curie_c1920.jpg",
+        summary:
+          "Pioneering physicist and chemist; the only person to win Nobel Prizes in two sciences.",
+      },
+      facts: [
+        { id: "f1", text: "Discovered the elements polonium and radium.", category: "what" },
+        { id: "f2", text: "Conducted groundbreaking research on radioactivity.", category: "what" },
+        { id: "f3", text: "Worked in a small shed-laboratory in Paris, France.", category: "where" },
+        { id: "f4", text: "Studied at the Sorbonne in the Latin Quarter.", category: "where" },
+        { id: "f5", text: "Wanted to understand the strange rays emitted by uranium.", category: "why" },
+        { id: "f6", text: "Believed scientific knowledge belonged to humanity, not patents.", category: "why" },
+        { id: "f7", text: "Lived and worked across the late 19th and early 20th centuries.", category: "when" },
+        { id: "f8", text: "Painted realistic portraits of European aristocrats.", category: "decoy" },
+        { id: "f9", text: "Designed the dome of a famous Italian cathedral.", category: "decoy" },
+        { id: "f10", text: "Composed symphonies performed across Vienna concert halls.", category: "decoy" },
+      ],
+    },
+  },
+
+  [TASK_TYPES.WHAT_AM_I]: {
+    taskType: TASK_TYPES.WHAT_AM_I,
+    title: "What Am I? — Photosynthesis",
+    prompt:
+      "Listen to the clues. After each one, you can guess. You score more points by guessing earlier with fewer clues.",
+    points: 10,
+    answer: "Photosynthesis",
+    acceptableAnswers: ["photosynthesis", "photo synthesis", "plant food-making"],
+    config: {
+      answer: "Photosynthesis",
+      acceptableAnswers: ["photosynthesis", "photo synthesis", "plant food-making"],
+      clues: [
+        { id: "c1", text: "I happen during the daytime, mostly." },
+        { id: "c2", text: "I need sunlight, water, and a gas from the air." },
+        { id: "c3", text: "I happen inside green parts of living things." },
+        { id: "c4", text: "I take carbon dioxide in and give oxygen out." },
+        { id: "c5", text: "I help plants make their own food." },
+      ],
+      scoringCurve: [50, 40, 30, 20, 10, 0],
+    },
+  },
+
+  [TASK_TYPES.CAREERS]: {
+    taskType: TASK_TYPES.CAREERS,
+    title: "Careers — Best Fit",
+    prompt:
+      "Read the career profile. Pick the strengths and interests that fit this career best, and explain why.",
+    points: 10,
+    config: {
+      mode: "best-fit",
+      career: {
+        name: "Environmental Engineer",
+        description:
+          "Environmental engineers use science and math to solve problems involving the environment, such as designing systems to clean drinking water, reducing pollution, or restoring ecosystems.",
+      },
+      traits: [
+        { id: "t1", text: "Curious about how natural systems work", fit: true },
+        { id: "t2", text: "Enjoys solving open-ended problems", fit: true },
+        { id: "t3", text: "Comfortable with math and science", fit: true },
+        { id: "t4", text: "Prefers always working alone, never in teams", fit: false },
+        { id: "t5", text: "Likes a job that's the same every single day", fit: false },
+        { id: "t6", text: "Cares about long-term community impact", fit: true },
+      ],
+    },
+  },
+
+  [TASK_TYPES.QUEST]: {
+    taskType: TASK_TYPES.QUEST,
+    title: "The Lost Library Quest",
+    prompt:
+      "Your team has stumbled on the ruins of an ancient library. Complete the mission objectives to recover the lost scrolls.",
+    points: 10,
+    config: {
+      title: "The Lost Library Quest",
+      scenario:
+        "An ancient library has been buried for centuries. Inside, three scrolls hold the wisdom of a lost civilization. To recover them, your team must navigate the ruins, decode inscriptions, and outsmart traps.",
+      objectives: [
+        { id: "o1", description: "Decode the entrance inscription." },
+        { id: "o2", description: "Recover the first scroll from the reading hall." },
+        { id: "o3", description: "Escape with all three scrolls before the chamber seals." },
+      ],
+      resources: [
+        {
+          id: "torch",
+          label: "Torch",
+          coinCost: 5,
+          acquisitionOptions: [
+            { kind: "purchase", coinCost: 5 },
+            { kind: "earn", coinCost: 0, description: "Answer 3 questions correctly." },
+          ],
+        },
+        {
+          id: "scroll-key",
+          label: "Scroll Key",
+          coinCost: 10,
+          acquisitionOptions: [
+            { kind: "purchase", coinCost: 10 },
+          ],
+        },
+      ],
+    },
+  },
+
+  [TASK_TYPES.HOLE_IN_ONE]: {
+    taskType: TASK_TYPES.HOLE_IN_ONE,
+    title: "Hole in One — Demo Course",
+    prompt:
+      "Earn rails and bumpers by answering questions. Then place them on the board and tilt the device to roll the ball into the hole.",
+    points: 10,
+    config: {
+      board: {
+        width: 10,
+        height: 14,
+        startPosition: { x: 5, y: 2 },
+        holePosition: { x: 5, y: 12 },
+        obstacles: [
+          { x: 4, y: 7 },
+          { x: 5, y: 7 },
+          { x: 6, y: 7 },
+        ],
+      },
+      questionBank: [
+        { id: "q1", prompt: "What is 7 × 8?", correctAnswer: "56", reward: "rail" },
+        { id: "q2", prompt: "What is 9 × 6?", correctAnswer: "54", reward: "rail" },
+        { id: "q3", prompt: "What is 12 × 4?", correctAnswer: "48", reward: "rail" },
+        { id: "q4", prompt: "What is 15 + 27?", correctAnswer: "42", reward: "bumper" },
+        { id: "q5", prompt: "What is 100 − 37?", correctAnswer: "63", reward: "bumper" },
+        { id: "q6", prompt: "What is 9 squared?", correctAnswer: "81", reward: "rail" },
+        { id: "q7", prompt: "What is half of 144?", correctAnswer: "72", reward: "rail" },
+        { id: "q8", prompt: "What is 25 + 25 + 25?", correctAnswer: "75", reward: "ball" },
+      ],
+      physics: { gravity: 1.0, friction: 0.92 },
+    },
+  },
+
+  [TASK_TYPES.CURRENT_EVENTS]: {
+    taskType: TASK_TYPES.CURRENT_EVENTS,
+    title: "Current Events — Climate & Communities",
+    prompt:
+      "We'll connect this week's news to your lesson. Read the story, then discuss the questions with your team.",
+    points: 10,
+    topicLabel: "Climate change and local communities",
+    config: {
+      lessonTopic: "Climate change and local communities",
+      // Intentionally NO `resolved` block — the runtime resolver fills it.
+      gradeLevel: 7,
+      worldview: "neutral",
+    },
+  },
+
   [TASK_TYPES.SORT]: {
     taskType: TASK_TYPES.SORT,
     title: "Sorting Animals by Habitat",
@@ -938,13 +1102,26 @@ export async function streamDemoTaskset(req, res) {
       let attemptTask = null;
       let lastErr = null;
 
+      // Per-type wall-clock budget. With MAX_ATTEMPTS up to 5 and LLM calls
+      // that can each take 30-60s, a single stuck type could stall the entire
+      // demoset run. Break out after PER_TYPE_BUDGET_MS regardless of retries.
+      const PER_TYPE_BUDGET_MS = 90 * 1000;
+      const typeStartedAt = Date.now();
+      const remainingBudget = () => PER_TYPE_BUDGET_MS - (Date.now() - typeStartedAt);
+
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (remainingBudget() <= 0) {
+          lastErr = new Error(`Per-type budget of ${PER_TYPE_BUDGET_MS}ms exhausted after ${attempt - 1} attempt(s)`);
+          break;
+        }
         let promptCapture = null;
 
         try {
           sseWrite(res, "attempt", { taskType, attempt, maxAttempts, phase: "prompting" });
 
-          attemptTask = await regenerateSingleTask({
+          // Race the LLM call against the remaining wall-clock budget so a
+          // hung Anthropic/OpenAI request can't lock the whole loop forever.
+          const llmPromise = regenerateSingleTask({
             allowedType: taskType,
             mustHave,
             subject: "General",
@@ -960,6 +1137,16 @@ export async function streamDemoTaskset(req, res) {
               promptCapture = p; // includes system + user
             },
           });
+          const callBudgetMs = Math.min(60 * 1000, remainingBudget());
+          attemptTask = await Promise.race([
+            llmPromise,
+            new Promise((_, reject) =>
+              setTimeout(
+                () => reject(new Error(`LLM call exceeded ${callBudgetMs}ms wall-clock budget`)),
+                callBudgetMs,
+              ),
+            ),
+          ]);
 
           // Normalize demo quirks
           if (taskType === TASK_TYPES.FAKE_OUT) attemptTask = normalizeFakeOutDemoTask(attemptTask);
