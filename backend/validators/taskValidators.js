@@ -4,6 +4,7 @@
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { normalizeTaskType } from "../../shared/taskTypes.js";
 import { assessTaskPlayability } from "../../shared/taskPlayability.js";
+import { selfCheckAnswer as _whatAmI_selfCheckAnswer } from "../services/whatAmIMatcher.js";
 
 /** Reject obvious placeholder / template-missing content. */
 const _PLACEHOLDER_RE =
@@ -2389,6 +2390,99 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
+    case TASK_TYPES.QUEST: {
+      // Quest-task normalization — canonical shape lives entirely in config.
+      // Tasksets containing a quest task should also have questModeEnabled=true on the parent,
+      // but that's a TaskSet-level concern handled by the generator; we only validate the task here.
+      const cfg = isObject(task.config) ? { ...task.config } : {};
+
+      cfg.title    = asNonEmptyString(cfg.title, asNonEmptyString(task.title, ""));
+      cfg.scenario = asNonEmptyString(cfg.scenario, "");
+
+      cfg.objectives = Array.isArray(cfg.objectives) ? cfg.objectives : [];
+      cfg.resources  = Array.isArray(cfg.resources)  ? cfg.resources  : [];
+      if (!isObject(cfg.premiumResources)) cfg.premiumResources = {};
+      cfg.ranks = Array.isArray(cfg.ranks) ? cfg.ranks : [
+        { id: "completed", label: "Mission Completed", min: 0 },
+        { id: "prepared",  label: "Well Prepared",     min: 1 },
+        { id: "master",    label: "Master Mission",    min: 2 },
+      ];
+
+      task.config = cfg;
+
+      // Quest tasks default to a higher max-points pool since they aggregate objectives
+      if (typeof task.points !== "number") task.points = 30;
+      break;
+    }
+
+    case TASK_TYPES.WHAT_AM_I: {
+      // Canonical shape lives in task.config. Sanitizer has already promoted
+      // top-level answer/clues/etc into config; here we tighten up defaults
+      // and ensure the runtime contract is satisfied.
+      const cfg = isObject(task.config) ? { ...task.config } : {};
+
+      // answer
+      cfg.answer = asNonEmptyString(cfg.answer, "");
+
+      // acceptableAnswers — always lowercase array, dedupe
+      let accepted = Array.isArray(cfg.acceptableAnswers) ? cfg.acceptableAnswers : [];
+      accepted = accepted
+        .map((s) => (typeof s === "string" ? s.trim().toLowerCase() : ""))
+        .filter(Boolean);
+      // Ensure the canonical answer itself appears in the matcher list (lowercased)
+      if (cfg.answer) {
+        const canon = cfg.answer.trim().toLowerCase();
+        if (canon && !accepted.includes(canon)) accepted.unshift(canon);
+      }
+      cfg.acceptableAnswers = Array.from(new Set(accepted));
+
+      // clues — re-index levels, drop empties
+      let clues = Array.isArray(cfg.clues) ? cfg.clues : [];
+      clues = clues
+        .map((c) => (c && typeof c === "object" ? c : null))
+        .filter(Boolean)
+        .map((c, i) => ({
+          level: i + 1,
+          text: asNonEmptyString(c.text || c.clue, ""),
+        }))
+        .filter((c) => c.text);
+      cfg.clues = clues;
+
+      // difficulty enum
+      const allowedDiff = ["easy", "medium", "hard", "expert"];
+      cfg.difficulty = allowedDiff.includes(cfg.difficulty) ? cfg.difficulty : "medium";
+
+      // mode enum
+      const allowedMode = ["solo", "intra-team", "inter-team"];
+      cfg.mode = allowedMode.includes(cfg.mode) ? cfg.mode : "intra-team";
+
+      // Default scoring (perClueCurve = clues.length + 1 entries; first entry is "0 clues revealed")
+      if (!isObject(cfg.scoring)) cfg.scoring = {};
+      const need = cfg.clues.length + 1;
+      let curve = Array.isArray(cfg.scoring.perClueCurve)
+        ? cfg.scoring.perClueCurve.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n >= 0)
+        : [];
+      if (curve.length !== need) {
+        // Build default curve: 10, 8, 6, 4, 2, 1, 1...
+        const base = [10, 8, 6, 4, 2];
+        while (base.length < need) base.push(Math.max(1, base[base.length - 1] - 1));
+        curve = base.slice(0, need);
+      }
+      cfg.scoring.perClueCurve = curve;
+
+      // Ensure top-level fields don't shadow config (sanitizer should have stripped already, but be defensive)
+      delete task.answer;
+      delete task.clues;
+      delete task.acceptableAnswers;
+      delete task.difficulty;
+      delete task.mode;
+
+      task.config = cfg;
+      // Default top-level points to the max of the curve so legacy point-readers behave
+      if (typeof task.points !== "number") task.points = Math.max(...curve, 0);
+      break;
+    }
+
     default:
       break;
   }
@@ -3114,6 +3208,238 @@ export function validateTaskByType(taskType, task) {
       }
       if (!task.targetAge || typeof task.targetAge !== "string" || !task.targetAge.trim()) {
         errors.push("teach-back requires a non-empty targetAge string");
+      }
+      break;
+    }
+
+    case TASK_TYPES.LEGENDS: {
+      const cfg = isObject(task.config) ? task.config : {};
+      if (!isObject(cfg.figure) || typeof cfg.figure.name !== "string" || !cfg.figure.name.trim()) {
+        errors.push("legends requires config.figure.name");
+      }
+      if (!isObject(cfg.figure) || typeof cfg.figure.portraitUrl !== "string" || !cfg.figure.portraitUrl.trim()) {
+        errors.push("legends requires config.figure.portraitUrl");
+      } else if (!/^https?:\/\//.test(cfg.figure.portraitUrl)) {
+        errors.push("legends config.figure.portraitUrl must be an http(s) URL");
+      }
+      if (!Array.isArray(cfg.facts) || cfg.facts.length !== 10) {
+        errors.push(`legends requires EXACTLY 10 facts (got ${Array.isArray(cfg.facts) ? cfg.facts.length : "none"})`);
+      } else {
+        const counts = { what: 0, where: 0, why: 0, when: 0, decoy: 0 };
+        for (const f of cfg.facts) {
+          if (!f?.text || typeof f.text !== "string" || !f.text.trim()) {
+            errors.push("every legends fact must have non-empty text");
+            break;
+          }
+          if (!["what", "where", "why", "when", "decoy"].includes(f.category)) {
+            errors.push(`legends fact category "${f.category}" invalid; must be what/where/why/when/decoy`);
+            break;
+          }
+          counts[f.category] += 1;
+          // The figure's name must NOT appear in any fact — sorting would be trivial
+          if (cfg.figure?.name && f.text.toLowerCase().includes(cfg.figure.name.toLowerCase())) {
+            errors.push(`legends fact mentions the figure's name verbatim — players would solve it instantly`);
+            break;
+          }
+        }
+        // Required distribution: 2/2/2/1/3
+        if (counts.what !== 2)  errors.push(`legends needs exactly 2 'what' facts (got ${counts.what})`);
+        if (counts.where !== 2) errors.push(`legends needs exactly 2 'where' facts (got ${counts.where})`);
+        if (counts.why !== 2)   errors.push(`legends needs exactly 2 'why' facts (got ${counts.why})`);
+        if (counts.when !== 1)  errors.push(`legends needs exactly 1 'when' fact (got ${counts.when})`);
+        if (counts.decoy !== 3) errors.push(`legends needs exactly 3 'decoy' facts (got ${counts.decoy})`);
+      }
+      break;
+    }
+
+    case TASK_TYPES.CURRENT_EVENTS: {
+      // The persisted task is a SHELL — the only required input is lessonTopic
+      // (everything else has a default). The `resolved` block is filled at runtime
+      // by the resolver, not by the AI generator.
+      const cfg = isObject(task.config) ? task.config : {};
+      if (typeof cfg.lessonTopic !== "string" || !cfg.lessonTopic.trim()) {
+        // Fall back to taskset-level topic if available (validator is called pre-create)
+        const taskTopic = typeof task.topicLabel === "string" ? task.topicLabel : "";
+        if (!taskTopic) {
+          errors.push("current-events requires config.lessonTopic (or task.topicLabel) so the resolver knows what to search for");
+        }
+      }
+      // Resolver must NOT see a pre-cooked `resolved` block (the AI sometimes hallucinates one)
+      if (cfg.resolved && typeof cfg.resolved === "object") {
+        errors.push("current-events config.resolved must not be set at creation time — it's filled at runtime");
+      }
+      break;
+    }
+
+    case TASK_TYPES.HOLE_IN_ONE: {
+      const cfg = isObject(task.config) ? task.config : {};
+      if (!isObject(cfg.board)) {
+        errors.push("hole-in-one requires config.board");
+        break;
+      }
+      const w = Number(cfg.board.width);
+      const h = Number(cfg.board.height);
+      if (!(w >= 6 && w <= 30)) errors.push(`hole-in-one config.board.width must be 6-30 (got ${w})`);
+      if (!(h >= 6 && h <= 30)) errors.push(`hole-in-one config.board.height must be 6-30 (got ${h})`);
+      if (!isObject(cfg.board.startPosition) || !isObject(cfg.board.holePosition)) {
+        errors.push("hole-in-one requires board.startPosition AND board.holePosition");
+      }
+      // Solvability heuristic: start ≠ hole, and not directly blocked by a board-spanning wall
+      if (cfg.board.startPosition && cfg.board.holePosition) {
+        const sx = Number(cfg.board.startPosition.x), sy = Number(cfg.board.startPosition.y);
+        const hx = Number(cfg.board.holePosition.x), hy = Number(cfg.board.holePosition.y);
+        if (sx === hx && sy === hy) errors.push("hole-in-one start and hole cannot be the same cell");
+      }
+      if (Array.isArray(cfg.questionBank) && cfg.questionBank.length > 0) {
+        cfg.questionBank.forEach((q, i) => {
+          if (!q?.prompt) errors.push(`hole-in-one questionBank[${i}] missing prompt`);
+        });
+      }
+      break;
+    }
+
+    case TASK_TYPES.CAREERS: {
+      const cfg = isObject(task.config) ? task.config : {};
+      const allowedModes = ["best-fit", "pathway-builder", "aptitude-match", "salary-vs-lifestyle", "who-should-be-hired", "career-myths"];
+      if (!allowedModes.includes(cfg.mode)) {
+        errors.push(`careers config.mode must be one of ${allowedModes.join("/")}`);
+      }
+      // Per-mode shape requirements
+      if (cfg.mode === "best-fit" && (!cfg.career || typeof cfg.career !== "object")) {
+        errors.push("careers best-fit requires config.career (object with name + description)");
+      }
+      if (cfg.mode === "pathway-builder" && (!Array.isArray(cfg.pathways) || cfg.pathways.length < 2)) {
+        errors.push("careers pathway-builder requires at least 2 pathways");
+      }
+      if (cfg.mode === "who-should-be-hired" && (!Array.isArray(cfg.candidates) || cfg.candidates.length < 2)) {
+        errors.push("careers who-should-be-hired requires at least 2 candidates");
+      }
+      if (cfg.mode === "salary-vs-lifestyle" && (!cfg.optionA || !cfg.optionB)) {
+        errors.push("careers salary-vs-lifestyle requires both optionA and optionB");
+      }
+      if (cfg.mode === "career-myths" && (!Array.isArray(cfg.questions) || cfg.questions.length === 0)) {
+        errors.push("careers career-myths requires at least one question");
+      }
+      if (cfg.mode === "aptitude-match" && (!Array.isArray(cfg.prompts) || cfg.prompts.length === 0)) {
+        errors.push("careers aptitude-match requires at least one prompt");
+      }
+      // Anti-prestige-bias hint (soft) — flag absolute/elite framing in scenarios
+      const prestigeRe = /\b(elite|prestigious|low.class|menial|just a |real career|real job)\b/i;
+      const scan = (s) => typeof s === "string" && prestigeRe.test(s);
+      if (scan(task.title) || scan(task.prompt) || scan(cfg?.career?.description)) {
+        task._validationWarning = "careers task contains prestige-bias language; review for neutrality.";
+      }
+      break;
+    }
+
+    case TASK_TYPES.QUEST: {
+      const cfg = isObject(task.config) ? task.config : {};
+      if (typeof cfg.title !== "string" || !cfg.title.trim()) {
+        errors.push("quest requires config.title (mission title)");
+      }
+      if (typeof cfg.scenario !== "string" || !cfg.scenario.trim()) {
+        errors.push("quest requires config.scenario (narrative setup)");
+      }
+      if (!Array.isArray(cfg.objectives) || cfg.objectives.length === 0) {
+        errors.push("quest requires at least one objective");
+      } else {
+        cfg.objectives.forEach((o, i) => {
+          if (typeof o?.description !== "string" || !o.description.trim()) {
+            errors.push(`quest objective[${i}] missing description`);
+          }
+        });
+      }
+      if (!Array.isArray(cfg.resources) || cfg.resources.length === 0) {
+        errors.push("quest requires at least one resource");
+      } else {
+        cfg.resources.forEach((r, i) => {
+          if (typeof r?.id !== "string" || !r.id.trim()) {
+            errors.push(`quest resource[${i}] missing id`);
+            return;
+          }
+          if (!Array.isArray(r.acquisitionOptions) || r.acquisitionOptions.length === 0) {
+            errors.push(`quest resource[${i}] (${r.id}) must define at least one acquisitionOption`);
+          }
+        });
+      }
+      break;
+    }
+
+    case TASK_TYPES.WHAT_AM_I: {
+      const cfg = isObject(task.config) ? task.config : {};
+
+      if (typeof cfg.answer !== "string" || !cfg.answer.trim()) {
+        errors.push("what-am-i requires config.answer (non-empty string)");
+      }
+      if (!Array.isArray(cfg.acceptableAnswers) || cfg.acceptableAnswers.length < 2) {
+        errors.push("what-am-i requires config.acceptableAnswers (array of 2+ strings)");
+      }
+      if (!Array.isArray(cfg.clues) || cfg.clues.length < 3 || cfg.clues.length > 6) {
+        errors.push(`what-am-i requires config.clues to have 3-6 entries (got ${Array.isArray(cfg.clues) ? cfg.clues.length : "none"})`);
+      } else {
+        // Each clue must be { level, text } with non-empty text
+        cfg.clues.forEach((c, i) => {
+          if (!c || typeof c !== "object") {
+            errors.push(`what-am-i clue[${i}] must be an object`);
+            return;
+          }
+          if (typeof c.text !== "string" || !c.text.trim()) {
+            errors.push(`what-am-i clue[${i}].text must be a non-empty string`);
+          }
+          if (!Number.isFinite(Number(c.level))) {
+            errors.push(`what-am-i clue[${i}].level must be a number`);
+          }
+        });
+
+        // CRITICAL: no clue may contain the answer string (case-insensitive)
+        const ans = (cfg.answer || "").trim().toLowerCase();
+        if (ans) {
+          const ansTokens = ans.split(/\s+/).filter((t) => t.length >= 4); // skip short common words
+          cfg.clues.forEach((c, i) => {
+            const text = String(c?.text || "").toLowerCase();
+            if (text.includes(ans)) {
+              errors.push(`what-am-i clue[${i}] contains the answer verbatim; clues must require inference`);
+              return;
+            }
+            // Soft check: if a clue contains EVERY token of a multi-word answer, flag it
+            if (ansTokens.length >= 2 && ansTokens.every((tok) => text.includes(tok))) {
+              errors.push(`what-am-i clue[${i}] contains every token of the answer; rewrite to be more oblique`);
+            }
+          });
+        }
+      }
+
+      const allowedDiff = ["easy", "medium", "hard", "expert"];
+      if (!allowedDiff.includes(cfg.difficulty)) {
+        errors.push(`what-am-i config.difficulty must be one of ${allowedDiff.join("/")}`);
+      }
+      const allowedMode = ["solo", "intra-team", "inter-team"];
+      if (cfg.mode && !allowedMode.includes(cfg.mode)) {
+        errors.push(`what-am-i config.mode must be one of ${allowedMode.join("/")}`);
+      }
+
+      // Self-check: the canonical answer must round-trip through the matcher.
+      // (Catches edge cases where the answer field is missing or non-string.)
+      if (typeof cfg.answer === "string" && cfg.answer.trim() && Array.isArray(cfg.acceptableAnswers) && cfg.acceptableAnswers.length > 0) {
+        if (!_whatAmI_selfCheckAnswer(cfg)) {
+          errors.push("what-am-i config.answer does not match itself via the matcher (likely empty or malformed)");
+        }
+      }
+
+      // Sentence-shaped answer guardrail. A "What Am I?" answer should be a noun
+      // phrase, not a sentence. Reject answers > 8 words OR containing sentence-
+      // ending punctuation in the middle. Catches AI hallucinations like
+      // "It is photosynthesis, the process plants use to make food."
+      if (typeof cfg.answer === "string") {
+        const wordCount = cfg.answer.trim().split(/\s+/).length;
+        if (wordCount > 8) {
+          errors.push(`what-am-i config.answer is too long (${wordCount} words) — answers must be a concept name (≤ 8 words), not a sentence`);
+        }
+        // Strip a trailing period when checking for INTERNAL sentence-ending punctuation.
+        const middle = cfg.answer.trim().replace(/[.!?]+$/, "");
+        if (/[.!?]\s+\w/.test(middle)) {
+          errors.push("what-am-i config.answer reads like a full sentence; answers must be a concept name");
+        }
       }
       break;
     }

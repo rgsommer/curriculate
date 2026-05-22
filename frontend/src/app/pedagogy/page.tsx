@@ -94,7 +94,7 @@ const bloomsData: BloomLevel[] = [
     description: "Retrieving relevant knowledge from long-term memory",
     icon: <Brain className="w-5 h-5" />,
     primary: 9,
-    secondary: 7,
+    secondary: 8,
     tasks: [
       "Multiple Choice",
       "True/False",
@@ -114,6 +114,7 @@ const bloomsData: BloomLevel[] = [
       "Mystery Clues",
       "Physical Mystery",
       "Brain Blitz",
+      "Legends",
     ],
   },
   {
@@ -149,7 +150,7 @@ const bloomsData: BloomLevel[] = [
     color: "#eab308",
     description: "Carrying out or using a procedure in a given situation",
     icon: <Wrench className="w-5 h-5" />,
-    primary: 13,
+    primary: 15,
     secondary: 10,
     tasks: [
       "Sort",
@@ -165,6 +166,8 @@ const bloomsData: BloomLevel[] = [
       "Word Weaver",
       "Mystery Clues",
       "Hide & Seek",
+      "Quest",
+      "Hole in One",
     ],
     secondaryTasks: [
       "Physical MC",
@@ -186,8 +189,8 @@ const bloomsData: BloomLevel[] = [
     color: "#22c55e",
     description: "Breaking material into parts and detecting relationships",
     icon: <Search className="w-5 h-5" />,
-    primary: 10,
-    secondary: 12,
+    primary: 13,
+    secondary: 14,
     tasks: [
       "Mind Mapper",
       "Brain Blitz",
@@ -199,6 +202,9 @@ const bloomsData: BloomLevel[] = [
       "Historical Doc",
       "Fake Out",
       "Guess Who",
+      "What Am I?",
+      "Current Events",
+      "Legends",
     ],
     secondaryTasks: [
       "Sort",
@@ -213,6 +219,8 @@ const bloomsData: BloomLevel[] = [
       "Peer Editing",
       "Interview",
       "Brainstorm Battle",
+      "Careers",
+      "Hole in One",
     ],
   },
   {
@@ -222,8 +230,8 @@ const bloomsData: BloomLevel[] = [
     color: "#3b82f6",
     description: "Making judgments based on criteria and standards",
     icon: <Scale className="w-5 h-5" />,
-    primary: 9,
-    secondary: 13,
+    primary: 10,
+    secondary: 16,
     tasks: [
       "Open Text",
       "Live Debate",
@@ -234,6 +242,7 @@ const bloomsData: BloomLevel[] = [
       "Peer Editing",
       "Interview",
       "Photo Journal",
+      "Careers",
     ],
     secondaryTasks: [
       "Tower Builder",
@@ -249,6 +258,9 @@ const bloomsData: BloomLevel[] = [
       "Open Text",
       "Photo Journal",
       "Teach-Back",
+      "What Am I?",
+      "Quest",
+      "Current Events",
     ],
   },
   {
@@ -287,7 +299,7 @@ const bloomsData: BloomLevel[] = [
   },
 ];
 
-const TOTAL_COGNITIVE = 61; // total primary classifications across all levels
+const TOTAL_COGNITIVE = 67; // total primary classifications across all levels
 
 /* ─── Other frameworks ─── */
 

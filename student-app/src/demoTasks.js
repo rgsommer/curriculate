@@ -358,6 +358,223 @@ const DEMO_TASKS = [
     },
   },
 
+  // 18b. What Am I? — deduction game with progressive clue reveal + decaying point ceiling.
+  // Demo uses a pool so repeat practice surfaces a different concept. The component
+  // picks one entry per session via `_taskIndex % pool.length` (same pattern as RiddleTask).
+  // The non-pool fields (answer/clues/etc) serve as a hard fallback if the pool is ever empty.
+  {
+    taskType: "what-am-i",
+    title: "What Am I? — Deduction Challenge",
+    prompt: "Guess what I am — earlier guesses earn more points.",
+    config: {
+      // Pool — rotated per practice session
+      pool: [
+        {
+          answer: "Photosynthesis",
+          acceptableAnswers: ["photosynthesis", "photo synthesis"],
+          clues: [
+            { level: 1, text: "I turn one form of energy into another that living things can use." },
+            { level: 2, text: "I only happen where chlorophyll lives." },
+            { level: 3, text: "I need sunlight, water, and a gas you exhale." },
+            { level: 4, text: "Plants use me to make their own food." },
+          ],
+        },
+        {
+          answer: "The Nile",
+          acceptableAnswers: ["nile", "river nile", "the nile river"],
+          clues: [
+            { level: 1, text: "Without me, an ancient civilization would not have grown crops in a desert." },
+            { level: 2, text: "I am the lifeline of the world's longest political subdivision named after sand." },
+            { level: 3, text: "I flow northward through 11 modern nations." },
+            { level: 4, text: "Cleopatra's people built their kingdom on my banks." },
+          ],
+        },
+        {
+          answer: "Gravity",
+          acceptableAnswers: ["gravity", "gravitational force", "gravitational attraction"],
+          clues: [
+            { level: 1, text: "I am the reason planets stay in their orbits and your feet stay on the ground." },
+            { level: 2, text: "I shape the very curvature of space-time near massive objects." },
+            { level: 3, text: "I was famously theorized after a falling fruit." },
+            { level: 4, text: "Without me there would be no tides." },
+          ],
+        },
+        {
+          answer: "Mitochondria",
+          acceptableAnswers: ["mitochondria", "mitochondrion"],
+          clues: [
+            { level: 1, text: "I am inside almost every one of your trillions of body parts." },
+            { level: 2, text: "I convert what you eat into a chemical your cells can spend like cash." },
+            { level: 3, text: "Biology textbooks famously call me the powerhouse of something tiny." },
+            { level: 4, text: "I have my own ring of DNA, passed from your mother." },
+          ],
+        },
+        {
+          answer: "The Magna Carta",
+          acceptableAnswers: ["magna carta", "the magna carta", "great charter"],
+          clues: [
+            { level: 1, text: "Without me, the idea that even kings answer to written law might never have taken hold." },
+            { level: 2, text: "I was signed in a meadow in England in 1215." },
+            { level: 3, text: "Rebellious barons forced King John to seal me." },
+            { level: 4, text: "My name is Latin for the 'Great Charter'." },
+          ],
+        },
+        {
+          answer: "A Solar Eclipse",
+          acceptableAnswers: ["solar eclipse", "a solar eclipse", "eclipse of the sun"],
+          clues: [
+            { level: 1, text: "I briefly turn day into twilight, and ancient peoples often feared me as an omen." },
+            { level: 2, text: "I happen when one celestial body steps directly between another and you." },
+            { level: 3, text: "I can be partial, annular, or total — and the total kind reveals a glowing corona." },
+            { level: 4, text: "I only happen during a new moon." },
+          ],
+        },
+      ],
+      // Hard-fallback fields used if pool is empty
+      answer: "Photosynthesis",
+      acceptableAnswers: ["photosynthesis", "photo synthesis"],
+      clues: [
+        { level: 1, text: "I turn one form of energy into another that living things can use." },
+        { level: 2, text: "I only happen where chlorophyll lives." },
+        { level: 3, text: "I need sunlight, water, and a gas you exhale." },
+        { level: 4, text: "Plants use me to make their own food." },
+      ],
+      difficulty: "medium",
+      mode: "solo",
+      scoring: { perClueCurve: [10, 8, 6, 4, 2] },
+      penalties: { wrongAnswer: "lockout", lockoutMs: 8000 },
+    },
+  },
+
+  // 18c. Quest — mini expedition with one objective + one resource shop.
+  // Practice mode bypasses the room-scoped coin economy, so the QuestTask
+  // renderer reads coins from its local state (granted by the demo runner)
+  // and Buy buttons just decrement the local counter.
+  {
+    taskType: "quest",
+    title: "Quest: The Sea Voyage",
+    prompt: "Outfit a small ship before winter sets in.",
+    config: {
+      title: "Launch the Sea Voyage",
+      scenario: "Your team must prepare a fishing vessel before the storms arrive. Without rope and water, the voyage fails.",
+      objectives: [
+        { id: "launch", description: "Launch with adequate supplies.", requiredResources: { rope: 2, water: 1 } },
+      ],
+      resources: [
+        { id: "rope", name: "Rope", acquisitionOptions: [{ type: "coins", amount: 5 }], prerequisites: [] },
+        { id: "water", name: "Fresh water cask", acquisitionOptions: [{ type: "coins", amount: 8 }], prerequisites: [] },
+      ],
+      premiumResources: {
+        reinforcedRope: { bonusPoints: 5, replaces: "rope" },
+      },
+      ranks: [
+        { id: "completed", label: "Voyage Completed", min: 0 },
+        { id: "prepared", label: "Well Prepared", min: 1 },
+        { id: "master", label: "Master Voyage", min: 2 },
+      ],
+    },
+  },
+
+  // 18d. Careers — best-fit mode with a small, anti-stereotype career card.
+  {
+    taskType: "careers",
+    title: "Best Fit: Marine Biologist",
+    prompt: "Read the role. Discuss as a team. Who would thrive — and why?",
+    config: {
+      mode: "best-fit",
+      career: {
+        name: "Marine Biologist",
+        description: "Studies ocean life — from microscopic plankton to whale migrations. Long hours, real fieldwork, careful data, public science writing.",
+        traits: ["curiosity", "patience with data", "comfort in or near water", "communication", "stamina for long days outdoors"],
+      },
+      teammates: ["Maya", "Aiko", "Liam"],
+    },
+  },
+
+  // 18e. Current Events — practice mode uses the evergreen library entry tagged "general".
+  // The runtime resolver only fires in live sessions; in demo we ship a pre-resolved block.
+  {
+    taskType: "current-events",
+    title: "Current Events: This Week's Connection",
+    prompt: "Connect today's lesson to a real story this week.",
+    config: {
+      lessonTopic: "Today's lesson",
+      subject: "general",
+      gradeLevel: 7,
+      worldviewProfile: "general",
+      // Pre-baked evergreen — bypasses the live resolver for practice
+      resolved: {
+        title: "Curiosity Beyond the Textbook",
+        currentEventHeadline: "Scientists keep finding surprises in places we thought we knew.",
+        eventSummary: "Ordinary scientists keep revising what we thought we knew — new species in well-studied forests, fresh insights from old experiments. The pattern: curiosity + careful observation + willingness to revisit assumptions.",
+        connectionToLesson: "Today's lesson is one more chance to ask what assumption you haven't questioned yet.",
+        studentTask: "In pairs, name ONE 'common knowledge' fact from today. List one reason it might still be incomplete.",
+        discussionQuestions: [
+          "What's the difference between 'something we don't know' and 'something we got wrong'?",
+          "Whose curiosity counted in this lesson — and whose was ignored?",
+          "If today's lesson turned out to be partly mistaken, how would we find out?",
+        ],
+        extensionActivity: "Write a 3-sentence note to a scientist or thinker who would have loved today's lesson.",
+        teacherNotes: "Demo / practice mode uses the evergreen library directly.",
+        estimatedMinutes: 12,
+        sourceName: "Curriculate evergreen library",
+        fallbackTier: "evergreen-demo",
+      },
+    },
+  },
+
+  // 18g. Legends — 5W deduction. Marie Curie's 10 facts (2/2/2/1 + 3 decoys).
+  // Portrait sourced from Wikimedia Commons (public domain photograph c.1920).
+  {
+    taskType: "legends",
+    title: "Legends — A Pioneer of Radioactivity",
+    prompt: "Sort the 10 facts below to identify this legendary figure.",
+    config: {
+      figure: {
+        name: "Marie Curie",
+        portraitUrl: "https://upload.wikimedia.org/wikipedia/commons/c/c8/Marie_Curie_c1920.jpg",
+        era: "Late 1800s – early 1900s",
+        summary: "Pioneering physicist and chemist who discovered radium and polonium; first person to win Nobel Prizes in two different sciences (Physics 1903, Chemistry 1911).",
+      },
+      facts: [
+        { id: "f1",  text: "Was the first woman to win a Nobel Prize.", category: "what" },
+        { id: "f2",  text: "Discovered two new elements: radium and polonium.", category: "what" },
+        { id: "f3",  text: "Worked in a converted shed at the Sorbonne in Paris.", category: "where" },
+        { id: "f4",  text: "Was born in Warsaw, then part of the Russian Empire.", category: "where" },
+        { id: "f5",  text: "Believed scientific knowledge belonged to all humanity, not patent-holders.", category: "why" },
+        { id: "f6",  text: "Wanted to relieve battlefield suffering by deploying mobile X-ray units in WWI.", category: "why" },
+        { id: "f7",  text: "Lived from 1867 to 1934.", category: "when" },
+        { id: "f8",  text: "Famously declined Lord Rutherford's invitation to a Cambridge banquet.", category: "decoy" },
+        { id: "f9",  text: "Is sometimes confused with another scientist who studied bacteria.", category: "decoy" },
+        { id: "f10", text: "Was rumored to have visited the Eiffel Tower 20 times in a single summer.", category: "decoy" },
+      ],
+    },
+  },
+
+  // 18f. Hole in One — minimal solvable board with two pre-placed obstacles.
+  // No question bank (skips Earn phase). No team members → skips TilterPicker → goes straight to Tilt.
+  {
+    taskType: "hole-in-one",
+    title: "Hole in One — Practice Course",
+    prompt: "Tilt the device (or use WASD / on-screen joystick) to roll the ball into the hole.",
+    config: {
+      board: {
+        width: 10,
+        height: 14,
+        gridSize: 26,
+        startPosition: { x: 1, y: 1 },
+        holePosition: { x: 8, y: 12, radius: 0.8 },
+        obstacles: [
+          { type: "wall", x: 3, y: 4, w: 4, h: 0.5 },
+          { type: "wall", x: 1, y: 9, w: 5, h: 0.5 },
+        ],
+      },
+      physics: { gravity: 0.35, friction: 0.95, bounciness: 0.6, ballRadius: 0.45 },
+      scoring: { playPoints: 1, successPoints: 10 },
+      controls: { tiltEnabled: true, fallbackControls: true, sensitivity: 1, smoothing: 0.85 },
+    },
+  },
+
   // 19. Tower Builder (uses config.statements with text + category)
   {
     taskType: "tower-builder",

@@ -3132,6 +3132,168 @@ if (
     setStatus("Brainstorm Battle reset.");
   };
 
+  // --- What Am I? teacher controls ---
+  // Used by the floating panel below the main UI when the active task is "what-am-i".
+  const [whatAmIFrozen, setWhatAmIFrozen] = React.useState(false);
+  const handleWhatAmITeacherReveal = () => {
+    if (!roomCode || !socket) return;
+    const code = roomCode.toUpperCase();
+    const idx =
+      typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0
+        ? roomState.taskIndex
+        : 0;
+    socket.emit("whatAmI:teacherReveal", { roomCode: code, taskIndex: idx }, (resp) => {
+      if (resp && resp.ok) {
+        setStatus(`What Am I?: revealed clue ${resp.newLevel} (ceiling now ${resp.pointCeiling} pts).`);
+      } else if (resp?.atMax) {
+        setStatus("What Am I?: all clues already revealed.");
+      } else if (resp?.error) {
+        setStatus(`What Am I?: ${resp.error}`);
+      }
+    });
+  };
+  const handleWhatAmIToggleFreeze = () => {
+    if (!roomCode || !socket) return;
+    const code = roomCode.toUpperCase();
+    const idx =
+      typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0
+        ? roomState.taskIndex
+        : 0;
+    const next = !whatAmIFrozen;
+    socket.emit("whatAmI:teacherFreeze", { roomCode: code, taskIndex: idx, frozen: next }, (resp) => {
+      if (resp && resp.ok) {
+        setWhatAmIFrozen(!!resp.frozen);
+        setStatus(`What Am I? ${resp.frozen ? "frozen" : "unfrozen"}.`);
+      } else if (resp?.error) {
+        setStatus(`What Am I?: ${resp.error}`);
+      }
+    });
+  };
+  // Reset the freeze indicator when we switch tasks
+  React.useEffect(() => {
+    setWhatAmIFrozen(false);
+  }, [roomState.taskIndex]);
+
+  // --- Whodunnit teacher controls ---
+  const [mysteryActive, setMysteryActive] = React.useState(false);
+  const [mysterySuspect, setMysterySuspect] = React.useState(null);
+  const [mysteryClueText, setMysteryClueText] = React.useState("");
+  const handleMysteryEnable = () => {
+    if (!roomCode || !socket) return;
+    socket.emit(
+      "mystery:enable",
+      { roomCode: roomCode.toUpperCase(), themeRole: "spy", difficulty: "medium" },
+      (resp) => {
+        if (resp?.ok) {
+          setMysteryActive(true);
+          setStatus("Whodunnit enabled — a hidden role has been secretly assigned.");
+        } else if (resp?.error) {
+          setStatus(`Whodunnit: ${resp.error}`);
+        }
+      },
+    );
+  };
+  const handleMysteryReleaseClue = () => {
+    if (!roomCode || !socket || !mysteryClueText.trim()) return;
+    socket.emit(
+      "mystery:teacherReleaseClue",
+      { roomCode: roomCode.toUpperCase(), text: mysteryClueText.trim(), type: "movement" },
+      (resp) => {
+        if (resp?.ok) {
+          setStatus("Whodunnit clue released to all teams.");
+          setMysteryClueText("");
+        } else if (resp?.error) {
+          setStatus(`Whodunnit: ${resp.error}`);
+        }
+      },
+    );
+  };
+  // Listen for the suspect identity (teacher-only display) — the server broadcasts
+  // the identity on enable; the teacher panel uses it but doesn't expose it back to students.
+  React.useEffect(() => {
+    if (!socket) return;
+    const onYouAreSuspect = (msg) => { if (msg?.suspectName) setMysterySuspect(msg.suspectName); };
+    const onGameEnded = () => { setMysteryActive(false); setMysterySuspect(null); };
+    socket.on("mystery:youAreSuspect", onYouAreSuspect);
+    socket.on("mystery:gameEnded", onGameEnded);
+    return () => {
+      socket.off("mystery:youAreSuspect", onYouAreSuspect);
+      socket.off("mystery:gameEnded", onGameEnded);
+    };
+  }, [socket]);
+
+  // --- Escape Room teacher controls ---
+  const isEscapeRoomActive = !!(roomState?.escapeRoomEnabled || activeTasksetMeta?.escapeRoomConfig);
+  const handleEscapeGrantKey = (keyId) => {
+    if (!roomCode || !socket || !keyId) return;
+    socket.emit(
+      "escape:teacherGrant",
+      { roomCode: roomCode.toUpperCase(), keyId },
+      (resp) => {
+        if (resp?.ok) setStatus(`Escape: granted key '${keyId}' to all teams.`);
+        else if (resp?.error) setStatus(`Escape: ${resp.error}`);
+      },
+    );
+  };
+  const escapeRoomKeys = React.useMemo(() => {
+    const keys = Array.isArray(activeTasksetMeta?.escapeRoomConfig?.keys) ? activeTasksetMeta.escapeRoomConfig.keys : [];
+    return keys.map((k) => ({ id: k.id, name: k.name || k.id }));
+  }, [activeTasksetMeta]);
+
+  // Compute whether the current active task is what-am-i (for the floating panel)
+  const activeWhatAmITask = React.useMemo(() => {
+    const idx =
+      typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0
+        ? roomState.taskIndex
+        : -1;
+    if (idx < 0) return null;
+    const t = Array.isArray(activeTasksetMeta?.tasks) ? activeTasksetMeta.tasks[idx] : null;
+    return t && t.taskType === "what-am-i" ? t : null;
+  }, [roomState.taskIndex, activeTasksetMeta]);
+
+  // --- Quest Mode teacher controls ---
+  const isQuestModeActive = !!(roomState?.questModeEnabled || activeTasksetMeta?.questModeEnabled);
+  const handleQuestGrantAll = () => {
+    if (!roomCode || !socket) return;
+    socket.emit(
+      "quest:teacherGrant",
+      { roomCode: roomCode.toUpperCase(), amount: 10 },
+      (resp) => {
+        if (resp?.ok) {
+          setStatus(`Quest: granted 10 coins to ${resp.results?.length || 0} team(s).`);
+        } else if (resp?.error) {
+          setStatus(`Quest grant error: ${resp.error}`);
+        }
+      },
+    );
+  };
+  // Find the first bonus / hidden task in the active taskset (if any) for force-unlock
+  const questUnlockTargets = React.useMemo(() => {
+    const tasks = Array.isArray(activeTasksetMeta?.tasks) ? activeTasksetMeta.tasks : [];
+    const bonus = tasks.find((t) => t?.isBonus);
+    const hidden = tasks.find((t) => t?.isHidden);
+    return {
+      bonusId: bonus ? String(bonus.taskId || bonus._id || `idx-${tasks.indexOf(bonus)}`) : null,
+      hiddenId: hidden ? String(hidden.taskId || hidden._id || `idx-${tasks.indexOf(hidden)}`) : null,
+    };
+  }, [activeTasksetMeta]);
+  const handleQuestUnlock = (kind) => {
+    if (!roomCode || !socket) return;
+    const taskId = kind === "bonus" ? questUnlockTargets.bonusId : questUnlockTargets.hiddenId;
+    if (!taskId) {
+      setStatus(`Quest: no ${kind} task found in this taskset.`);
+      return;
+    }
+    socket.emit(
+      "quest:teacherUnlock",
+      { roomCode: roomCode.toUpperCase(), taskId, kind },
+      (resp) => {
+        if (resp?.ok) setStatus(`Quest: unlocked ${kind} task for all teams.`);
+        else if (resp?.error) setStatus(`Quest unlock error: ${resp.error}`);
+      },
+    );
+  };
+
   // ----------------------------------------------------
   // Derived helpers + button state
   // ----------------------------------------------------
@@ -6499,6 +6661,271 @@ Thomas | Soldier | loyal, brave, disciplined`}
                 {isGenerating ? "Generating…" : "Generate Task"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Whodunnit teacher console — fixed-position bottom-left so it doesn't collide with Quest console */}
+      <div
+        style={{
+          position: "fixed",
+          left: 16,
+          bottom: 16,
+          zIndex: 99,
+          background: "#1f2937",
+          color: "#f1f5f9",
+          border: "1px solid #475569",
+          borderRadius: 12,
+          padding: "10px 12px",
+          boxShadow: "0 10px 24px rgba(0,0,0,0.25)",
+          minWidth: 230,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+        }}
+      >
+        <div style={{ fontSize: "0.7rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: "#c4b5fd" }}>
+          🕵 Whodunnit
+        </div>
+        {!mysteryActive ? (
+          <button
+            type="button"
+            onClick={handleMysteryEnable}
+            style={{ padding: "6px 12px", fontSize: "0.8rem", fontWeight: 600, borderRadius: 8, border: "none", background: "#7c3aed", color: "#fff", cursor: "pointer" }}
+          >
+            Enable Whodunnit
+          </button>
+        ) : (
+          <>
+            {mysterySuspect ? (
+              <div style={{ fontSize: "0.75rem", color: "#fde68a", fontWeight: 600 }}>
+                Suspect (teacher-only): {mysterySuspect}
+              </div>
+            ) : (
+              <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>Suspect assigned. Identity stays private to you.</div>
+            )}
+            <input
+              type="text"
+              value={mysteryClueText}
+              onChange={(e) => setMysteryClueText(e.target.value)}
+              placeholder="Release a clue…"
+              style={{ padding: "6px 10px", fontSize: "0.8rem", borderRadius: 6, border: "1px solid #475569", background: "#0f172a", color: "#f1f5f9" }}
+            />
+            <button
+              type="button"
+              onClick={handleMysteryReleaseClue}
+              disabled={!mysteryClueText.trim()}
+              style={{ padding: "5px 10px", fontSize: "0.78rem", fontWeight: 600, borderRadius: 6, border: "none", background: mysteryClueText.trim() ? "#7c3aed" : "rgba(75,85,99,0.5)", color: "#fff", cursor: mysteryClueText.trim() ? "pointer" : "not-allowed" }}
+            >
+              Release clue
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Escape Room teacher console — only when active taskset is escape-enabled */}
+      {isEscapeRoomActive && (
+        <div
+          style={{
+            position: "fixed",
+            left: 16,
+            bottom: 200,
+            zIndex: 99,
+            background: "#1f2937",
+            color: "#f1f5f9",
+            border: "1px solid #fbbf24",
+            borderRadius: 12,
+            padding: "10px 12px",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.25)",
+            minWidth: 230,
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
+          <div style={{ fontSize: "0.7rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: "#fde68a" }}>
+            🔐 Escape Room
+          </div>
+          <div style={{ fontSize: "0.72rem", color: "#cbd5e1" }}>
+            Grant a key to all teams (mercy intervention):
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {escapeRoomKeys.length === 0 ? (
+              <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>No keys defined in this taskset.</div>
+            ) : (
+              escapeRoomKeys.slice(0, 6).map((k) => (
+                <button
+                  key={k.id}
+                  type="button"
+                  onClick={() => handleEscapeGrantKey(k.id)}
+                  style={{ padding: "4px 10px", fontSize: "0.75rem", fontWeight: 600, borderRadius: 6, border: "1px solid #fbbf24", background: "transparent", color: "#fde68a", cursor: "pointer" }}
+                >
+                  +{k.name}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Quest Mode teacher console — only when active taskset is quest-enabled */}
+      {isQuestModeActive && (
+        <div
+          style={{
+            position: "fixed",
+            right: 16,
+            bottom: 200,
+            zIndex: 99,
+            background: "#1f2937",
+            color: "#f1f5f9",
+            border: "1px solid #7c3aed",
+            borderRadius: 12,
+            padding: "12px 14px",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.25)",
+            minWidth: 240,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          <div
+            style={{
+              fontSize: "0.7rem",
+              fontWeight: 800,
+              textTransform: "uppercase",
+              letterSpacing: 1.5,
+              color: "#c4b5fd",
+            }}
+          >
+            🪙 Quest Mode controls
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={handleQuestGrantAll}
+              style={{
+                padding: "6px 12px",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                borderRadius: 8,
+                border: "none",
+                background: "#fbbf24",
+                color: "#1f2937",
+                cursor: "pointer",
+              }}
+            >
+              +10 coins (all teams)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleQuestUnlock("bonus")}
+              disabled={!questUnlockTargets.bonusId}
+              style={{
+                padding: "6px 12px",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                borderRadius: 8,
+                border: "1px solid #7c3aed",
+                background: questUnlockTargets.bonusId ? "transparent" : "rgba(75,85,99,0.4)",
+                color: "#c4b5fd",
+                cursor: questUnlockTargets.bonusId ? "pointer" : "not-allowed",
+              }}
+            >
+              Unlock bonus
+            </button>
+            <button
+              type="button"
+              onClick={() => handleQuestUnlock("hidden")}
+              disabled={!questUnlockTargets.hiddenId}
+              style={{
+                padding: "6px 12px",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                borderRadius: 8,
+                border: "1px solid #fbbf24",
+                background: questUnlockTargets.hiddenId ? "transparent" : "rgba(75,85,99,0.4)",
+                color: "#fde68a",
+                cursor: questUnlockTargets.hiddenId ? "pointer" : "not-allowed",
+              }}
+            >
+              Reveal hidden
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* What Am I? teacher control panel — only when active task is what-am-i */}
+      {activeWhatAmITask && (
+        <div
+          style={{
+            position: "fixed",
+            right: 16,
+            bottom: 16,
+            zIndex: 100,
+            background: "#1f2937",
+            color: "#f1f5f9",
+            border: "1px solid #374151",
+            borderRadius: 12,
+            padding: "12px 14px",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.25)",
+            minWidth: 240,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          <div
+            style={{
+              fontSize: "0.7rem",
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: 1.5,
+              color: "#a78bfa",
+            }}
+          >
+            What Am I? controls
+          </div>
+          <div style={{ fontSize: "0.85rem", color: "#cbd5e1" }}>
+            {activeWhatAmITask.title || "Deduction Challenge"}
+            {activeWhatAmITask?.config?.mode ? (
+              <span style={{ opacity: 0.7, marginLeft: 6, fontSize: "0.75rem" }}>
+                · {activeWhatAmITask.config.mode}
+              </span>
+            ) : null}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={handleWhatAmITeacherReveal}
+              style={{
+                padding: "6px 12px",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                borderRadius: 8,
+                border: "none",
+                background: "#7c3aed",
+                color: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              Reveal next clue (all teams)
+            </button>
+            <button
+              type="button"
+              onClick={handleWhatAmIToggleFreeze}
+              style={{
+                padding: "6px 12px",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                borderRadius: 8,
+                border: "1px solid #6b7280",
+                background: whatAmIFrozen ? "#fbbf24" : "transparent",
+                color: whatAmIFrozen ? "#1f2937" : "#f1f5f9",
+                cursor: "pointer",
+              }}
+            >
+              {whatAmIFrozen ? "Unfreeze" : "Freeze submissions"}
+            </button>
           </div>
         </div>
       )}

@@ -73,6 +73,23 @@ const TaskSchema = new Schema(
     // Should match one of TaskSet.displays[].key if used
     displayKey: { type: String },
 
+    // 🔹 Quest Mode bonus/hidden/coin metadata.
+    //   These fields are inert unless the taskset has `questModeEnabled: true`
+    //   (set by the generator). They are used by:
+    //     - backend/services/questEconomy.js (coinReward / resourceReward)
+    //     - backend/services/questUnlocks.js (isBonus, isHidden, unlockConditions)
+    //     - student-app QuestHud + TaskRunner (gating render)
+    //   When questModeEnabled is false, requiredForCompletion defaults to true and
+    //   every other field stays falsy — non-quest tasksets are entirely unaffected.
+    isBonus:                { type: Boolean, default: false },
+    isHidden:               { type: Boolean, default: false },
+    requiredForCompletion:  { type: Boolean, default: true },
+    unlockConditions:       { type: Schema.Types.Mixed, default: null },
+    coinReward:             { type: Number, default: null },           // null → fall back to base task points
+    resourceReward:         { type: Schema.Types.Mixed, default: null }, // e.g. { rope: 2 }
+    qualityThreshold:       { type: Number, default: null },
+    questEffects:           { type: Schema.Types.Mixed, default: null },
+
     // EXTRA fields for AI-generated structure (optional)
     order: Number,                      // task sequence within a set
     timeMinutes: Number,                // estimated time per task
@@ -117,6 +134,40 @@ const TaskSetSchema = new Schema(
     // launch panel will default the per-session 'On-screen only'
     // checkbox to true.  Keeps the design intent visible at run time.
     atDeskOnly: { type: Boolean, default: false },
+
+    // Quest Mode overlay. Activated when the taskset contains at least one
+    // `quest` task; the generator sets this explicitly so the LiveSession layer
+    // can switch on the QuestHud / coin economy without inspecting every task.
+    //
+    // `questConfig` is optional taskset-wide config (theme, default resource
+    // tiers, premium-resource definitions, etc). Per-quest config still lives
+    // on each individual quest-task's `config` field.
+    //
+    // See QUEST_MODE_PLAN.md §3 for the full data model.
+    questModeEnabled: { type: Boolean, default: false },
+    questConfig:      { type: Schema.Types.Mixed, default: null },
+
+    // Escape Room overlay. Activated when escapeRoomConfig != null.
+    // Carries locks, keys, fragments, narrativeBeats — see ESCAPE_ROOM_PLAN.md §4a.
+    // The lock-evaluation engine reads + mutates per-team state stored in the
+    // separate EscapeRoomTeamState model (added in a follow-up commit).
+    escapeRoomConfig: { type: Schema.Types.Mixed, default: null },
+
+    // Whodunnit overlay. Activated when mysteryEnabled === true.
+    // Per-session runtime state lives on a separate MysterySession document
+    // (added in a follow-up commit); this field carries config defaults only.
+    //
+    // See WHODUNNIT_PLAN.md §3a for the full data model.
+    mysteryEnabled:   { type: Boolean, default: false },
+    mysteryConfig:    { type: Schema.Types.Mixed, default: null },
+
+    // Duel system — auto-triggered head-to-head when two teams are neck-and-neck.
+    // Activated when duelsEnabled === true on a taskset. Duels are NOT teacher-
+    // triggered; the server fires them automatically when score parity and a
+    // cooldown both hold. See backend/services/duel.js.
+    duelsEnabled:           { type: Boolean, default: false },
+    duelTieThresholdPts:    { type: Number,  default: 10 },        // top-2 gap to qualify
+    duelCooldownMs:         { type: Number,  default: 4 * 60 * 1000 },
 
     tasks: [TaskSchema],
     isPublic: { type: Boolean, default: false },

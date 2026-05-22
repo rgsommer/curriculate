@@ -61,6 +61,12 @@ import TowerBuilderTask from "./types/TowerBuilderTask";
 import ArtViewTask from "./types/ArtViewTask";
 import HistoricalDocTask from "./types/HistoricalDocTask";
 import RiddleTask from "./types/RiddleTask";
+import WhatAmITask from "./types/WhatAmITask";
+import QuestTask from "./types/QuestTask";
+import CurrentEventsTask from "./types/CurrentEventsTask";
+import CareersTask from "./types/CareersTask";
+import HoleInOneTask from "./types/HoleInOneTask";
+import LegendsTask from "./types/LegendsTask";
 import TriviaTask from "./types/TriviaTask";
 import SpinnerTask from "./types/SpinnerTask";
 import TeamSelfieTask from "./types/TeamSelfieTask";
@@ -3232,6 +3238,86 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
     case "riddle": {
       content = (
         <RiddleTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.WHAT_AM_I:
+    case "what-am-i": {
+      content = (
+        <WhatAmITask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+          roomCode={roomCode}
+          teamId={derivedTeamId}
+          taskIndex={taskIndex}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.QUEST:
+    case "quest": {
+      content = (
+        <QuestTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+          roomCode={roomCode}
+          teamId={derivedTeamId}
+          taskIndex={taskIndex}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.CURRENT_EVENTS:
+    case "current-events": {
+      content = (
+        <CurrentEventsTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.CAREERS:
+    case "careers": {
+      content = (
+        <CareersTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.HOLE_IN_ONE:
+    case "hole-in-one": {
+      content = (
+        <HoleInOneTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.LEGENDS:
+    case "legends": {
+      content = (
+        <LegendsTask
           task={tp}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled}

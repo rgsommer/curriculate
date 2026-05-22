@@ -86,6 +86,7 @@ export const TASK_TYPES = {
   MYSTERY_CLUES: "mystery-clues",
   FAKE_OUT: "fake-out",
   PHYSICAL_MYSTERY_CLUES: "physical-mystery-clues",
+  WHAT_AM_I: "what-am-i",
 
   // Synthesis / creative extensions
   BRAIN_SPARK_NOTES: "brain-spark-notes",
@@ -132,6 +133,27 @@ export const TASK_TYPES = {
   RIDDLE: "riddle",
   TRIVIA: "trivia",
   SPINNER: "spinner",
+
+  // Quest Mode — overlay-typed task that drives the live expedition simulation.
+  // Inert unless the parent TaskSet has `questModeEnabled: true`.
+  QUEST: "quest",
+
+  // Careers (Grades 6–12) — see CAREERS_TASK_PLAN.md.
+  // Six modes carried inside config.mode: best-fit, pathway-builder,
+  // aptitude-match, salary-vs-lifestyle, who-should-be-hired, career-myths.
+  CAREERS: "careers",
+
+  // Hole in One — tilt-physics mini-game. See HOLE_IN_ONE_PLAN.md.
+  HOLE_IN_ONE: "hole-in-one",
+
+  // Current Events Connection — runtime-resolved task.
+  // Persistent shell stores teacher inputs; CONTENT is resolved at session launch
+  // from a live web-search pipeline. See CURRENT_EVENTS_PLAN.md.
+  CURRENT_EVENTS: "current-events",
+
+  // Legends — 5W deduction game. Identify a legendary figure by sorting 10 facts
+  // into WHAT / WHERE / WHY / WHEN buckets (2/2/2/1 with 3 decoys).
+  LEGENDS: "legends",
 };
 
 // ================================
@@ -198,6 +220,12 @@ export const TASK_BLOOMS_MAP = {
   "historical-doc":             ["ANALYZE", "EVALUATE"],
   "fake-out":                   ["ANALYZE", "EVALUATE"],
   "guess-who":                  ["ANALYZE"],
+  "what-am-i":                  ["ANALYZE", "EVALUATE"],
+  "quest":                      ["APPLY", "EVALUATE"],
+  "careers":                    ["EVALUATE", "ANALYZE"],
+  "hole-in-one":                ["APPLY", "ANALYZE"],
+  "current-events":             ["ANALYZE", "EVALUATE"],
+  "legends":                    ["ANALYZE", "REMEMBER"],
 
   // Evaluate -- critique, judge, argue, defend
   "open-text":                  ["EVALUATE", "UNDERSTAND"],
@@ -4177,6 +4205,315 @@ config: {
     `,
   },
 
+  [TASK_TYPES.WHAT_AM_I]: {
+    label: "What Am I?",
+    category: CATEGORY.DEDUCTION,
+    implemented: true,            // renderer wired in commit #2; server-authoritative reveal is commit #4
+    demoEligible: true,
+    demoSelectable: true,
+    generatorEligible: true,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",     // matched by keyword/fuzzy answer matcher
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: true,
+    maxTimeSeconds: 120,
+    estimatedMinutes: 4,
+    interTeamEnabled: true,
+    intraTeamEnabled: true,
+    description:
+      "A deduction game. Students see 'What am I?' and a single vague clue. They can submit an answer immediately for maximum points, or tap 'Reveal Clue' to unlock progressively more specific clues -- with each reveal lowering the point ceiling. The clue progression must reinforce REAL UNDERSTANDING of the concept, not shallow definitions. Modes: solo, intra-team, inter-team (race). MVP supports solo + intra-team + inter-team.\n\nAI MUST output:\n- taskType: \"what-am-i\"\n- title (short, fun)\n- prompt (1-2 sentence student-facing instructions)\n- config.answer (the canonical answer)\n- config.acceptableAnswers (array of 2-4 variant phrasings)\n- config.clues (array of 3-6 clues, each { level, text }, ordered broad -> precise)\n- config.difficulty (\"easy\" | \"medium\" | \"hard\" | \"expert\")\n- config.mode (default \"intra-team\")\n- config.scoring (optional override of point curve)\n\nClue progression rules:\n- Clue 1 MUST be broad and conceptual (purpose/effect/identity), NOT a definition.\n- Clue 1 must NOT contain the answer or an obvious near-synonym.\n- Final clue may be near-giveaway but still not state the answer verbatim.",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "what-am-i".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt.
+    - Keep language age-appropriate and classroom-safe.
+    - Avoid copyrighted passages; write original content.
+
+    Required config fields:
+    - config.answer            -- the canonical name of the concept (string)
+    - config.acceptableAnswers -- 2-4 variant phrasings (array of strings, lowercased OK)
+    - config.clues             -- array of 3-6 clues, each: { "level": 1..N, "text": "..." }
+    - config.difficulty        -- "easy" | "medium" | "hard" | "expert"
+    - config.mode              -- "solo" | "intra-team" | "inter-team" (default "intra-team")
+
+    Optional:
+    - config.scoring.perClueCurve -- override the point decay (array of numbers, length = clues.length + 1)
+
+    CRITICAL CLUE RULES (this is the heart of the task):
+    - Clue 1 MUST be CONCEPTUAL / EFFECT-BASED. Focus on what the thing DOES, IMPACTS, or MEANS.
+      BAD:  "I am a report written by Lord Durham."           (dictionary entry)
+      GOOD: "My recommendations helped shape responsible government in Canada."   (effect-based)
+    - NO clue may contain the answer string (or close synonyms like "Durham" if the answer is "Lord Durham's Report").
+    - Progress broad -> precise: each clue narrows the field.
+    - Final clue (the most specific) may name a closely associated thing but never the answer.
+    - For history: prefer IMPACT over dates and names.
+    - For science: prefer MECHANISM and FUNCTION over taxonomy.
+    - For Bible: prefer ACTIONS and RELATIONSHIPS over genealogy.
+    - For math: prefer USE-CASE over formula.
+
+    Example output:
+    {
+      "taskType": "what-am-i",
+      "title": "What Am I? — A Pivotal Report",
+      "prompt": "I am a historical document. Figure out who I am — guess earlier for more points.",
+      "config": {
+        "answer": "Lord Durham's Report",
+        "acceptableAnswers": ["durham report", "lord durham report", "the durham report"],
+        "clues": [
+          { "level": 1, "text": "My recommendations helped shape responsible government in Canada." },
+          { "level": 2, "text": "I was written after rebellions in two colonies." },
+          { "level": 3, "text": "I am attributed to a British nobleman sent on a fact-finding mission in 1838." },
+          { "level": 4, "text": "My author's name shares its origin with a city in northern England." }
+        ],
+        "difficulty": "medium",
+        "mode": "intra-team"
+      }
+    }
+
+    Common failure prevention:
+    - clues must have AT LEAST 3 entries; AT MOST 6.
+    - clues[i].level must be 1..clues.length, in order.
+    - acceptableAnswers must have AT LEAST 2 entries.
+    - Do NOT write dictionary-style definitions ("X is a Y that does Z"). Clues should require INFERENCE.
+    `,
+  },
+
+  [TASK_TYPES.CAREERS]: {
+    label: "Careers",
+    category: CATEGORY.SYNTHESIS,
+    implemented: true,                   // unified renderer covers all 6 modes; AI scorer + per-mode polish are v2
+    demoEligible: false,
+    demoSelectable: false,
+    generatorEligible: true,
+    profileInjectedOnly: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "ai",                   // justifications scored by Haiku-class model
+    quickTaskEligible: false,
+    hasOptions: false,
+    expectsText: true,
+    maxTimeSeconds: 600,
+    estimatedMinutes: 8,
+    interTeamEnabled: false,
+    intraTeamEnabled: true,
+    description:
+      "Career exploration task for Grades 6-12. SIX modes (carried in config.mode):\n  • best-fit — team decides which teammate fits a generated career\n  • pathway-builder — compare apprenticeship vs college vs entrepreneurship etc.\n  • aptitude-match — short interest prompts → AI suggests careers (non-deterministic)\n  • salary-vs-lifestyle — debate dilemmas\n  • who-should-be-hired — pick from generated candidates\n  • career-myths — guess vs reveal\n\nNon-deterministic framing throughout: 'You might enjoy…', never 'You will be…'. Anti-prestige-bias guardrails. Anti-bullying rules on best-fit picks (private, no negative-vote mode). See CAREERS_TASK_PLAN.md.",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "careers".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown).
+    - Pick config.mode from: best-fit | pathway-builder | aptitude-match | salary-vs-lifestyle | who-should-be-hired | career-myths
+    - Use non-deterministic framing — never imply a career is destiny.
+    - Salary information must always be a RANGE, never a single dollar number.
+    - Rotate career categories to avoid prestige bias (mix trades / service / creative / technical / etc.).
+    - Avoid candidates / careers that pattern-match a single stereotype.
+    `,
+  },
+
+  [TASK_TYPES.HOLE_IN_ONE]: {
+    label: "Hole in One",
+    category: CATEGORY.COMPETITIVE,
+    implemented: true,                   // MVP: pre-placed rails + tilt-only loop. Earn/Build phases land in v2.
+    demoEligible: false,
+    demoSelectable: false,
+    generatorEligible: true,
+    profileInjectedOnly: false,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
+    quickTaskEligible: false,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 900,
+    estimatedMinutes: 10,
+    interTeamEnabled: true,
+    intraTeamEnabled: true,
+    description:
+      "Tilt-physics mini-game. Teams answer curriculum questions to earn rails/balls/bumpers, then place them on a board and tilt the device to roll a ball into a hole. A 'tilter' is rotated between teammates to encourage participation. See HOLE_IN_ONE_PLAN.md.",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "hole-in-one".
+
+    Hard requirements:
+    - Output ONLY a single JSON object.
+    - config.board MUST be solvable with the rails the questionBank awards.
+    - config.questionBank MUST have 8-15 curriculum questions matched to the lesson topic.
+    - Theme the board to match the lesson (e.g. cannonball-into-fort for history, electron-through-circuit for physics).
+    `,
+  },
+
+  [TASK_TYPES.CURRENT_EVENTS]: {
+    label: "Current Events Connection",
+    category: CATEGORY.SYNTHESIS,
+    implemented: true,                   // resolver + renderer live; teacher refresh / evergreen library are v2
+    demoEligible: false,
+    demoSelectable: false,
+    generatorEligible: true,
+    profileInjectedOnly: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "ai",
+    quickTaskEligible: false,
+    hasOptions: false,
+    expectsText: true,
+    maxTimeSeconds: 900,
+    estimatedMinutes: 12,
+    interTeamEnabled: false,
+    intraTeamEnabled: true,
+    description:
+      "Connects today's news to the lesson topic. UNIQUE: the persistent stored task is only a SHELL (lesson topic, grade, region, worldview profile). Real content is resolved at session-launch time via WebSearch, filtered for safety + publisher exclusion list, and AI-generated into a full discussion task. Worldview profile shapes the framing (Christian / secular / general) but NOT the event topic. See CURRENT_EVENTS_PLAN.md.",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "current-events".
+
+    This is a SHELL task — store ONLY the inputs needed to resolve at runtime:
+    - config.lessonTopic (string, from teacher)
+    - config.subject (string)
+    - config.gradeLevel (number)
+    - config.region (string, defaults to teacher's country)
+    - config.worldviewProfile ("general" | "secular" | "christian", defaults from teacher profile)
+    - config.preferredCategories (array, defaults to ["science","environment","education","archaeology","space","health","cultural"])
+
+    Do NOT generate eventSummary, discussionQuestions, etc. — those are filled in by the resolver pipeline at session launch.
+    The prompt field should say "Loading today's story…" or similar placeholder.
+    `,
+  },
+
+  [TASK_TYPES.LEGENDS]: {
+    label: "Legends",
+    category: CATEGORY.DEDUCTION,
+    implemented: true,
+    demoEligible: true,
+    demoSelectable: true,
+    generatorEligible: true,
+    profileInjectedOnly: false,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
+    quickTaskEligible: false,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 240,
+    estimatedMinutes: 5,
+    interTeamEnabled: false,
+    intraTeamEnabled: true,
+    description:
+      "A 5W deduction game. The team sees a portrait of a legendary figure (no name) plus 10 facts in random order. Through 4 phases, they sort the facts: 2 that answer WHAT (what is she famous for / what did she do), 2 that answer WHERE, 2 that answer WHY (what need / motivation), 1 that answers WHEN. The remaining 3 are decoys — facts that LOOK plausible but don't fit any 5W question. After all sorting is done, the figure's name is revealed.\n\nGreat for history, science, Bible studies, literature (legendary characters), and any domain with named giants.\n\nAI MUST output:\n- taskType: \"legends\"\n- title (e.g. 'Legends — Famous Scientist')\n- prompt (1-2 sentence student-facing instructions)\n- config.figure: { name, portraitUrl, era, summary }\n- config.facts: array of EXACTLY 10 facts, each: { id, text, category: 'what'|'where'|'why'|'when'|'decoy' }\n\nFact distribution: 2 WHAT, 2 WHERE, 2 WHY, 1 WHEN, 3 DECOY (total 10).\n\nIMPORTANT: decoy facts should be plausibly about an adjacent legendary figure (same era, related field), or too vague to answer a specific 5W question. Never name the legend directly.",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "legends".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Pick a legendary figure relevant to the lesson topic (historical, scientific, biblical, literary).
+    - Include EXACTLY 10 facts split as: 2 WHAT, 2 WHERE, 2 WHY, 1 WHEN, 3 DECOY.
+
+    Required config fields:
+    - config.figure.name        -- the legendary figure's full name (e.g. "Marie Curie")
+    - config.figure.portraitUrl -- a permanent, public-domain portrait URL (Wikipedia / Wikimedia Commons preferred)
+    - config.figure.era         -- short era label (e.g. "Late 1800s - early 1900s")
+    - config.figure.summary     -- 1-2 sentence summary shown after the reveal
+    - config.facts              -- array of EXACTLY 10 fact objects, each with: { id, text, category }
+                                   where category is one of: "what", "where", "why", "when", "decoy"
+
+    Category distribution rules:
+    - 2 facts with category="what"   (what she did / is famous for)
+    - 2 facts with category="where"  (where she lived / worked)
+    - 2 facts with category="why"    (why she did it / the need or motivation)
+    - 1 fact  with category="when"   (when she lived / did the work)
+    - 3 facts with category="decoy"  (plausible-looking but don't fit any 5W; could be about an adjacent figure)
+
+    CRITICAL RULES:
+    - NO fact may name the legend directly (would make sorting trivial).
+    - Decoy facts should be GENUINELY plausible — not obvious red herrings.
+    - Choose figures from a diverse range (avoid only male / only European / only secular figures).
+    - For Bible class: figures like David, Esther, Ruth, Moses are appropriate.
+    - For science: Marie Curie, Katherine Johnson, Charles Drew, Florence Nightingale, etc.
+    - For history: figures relevant to the curriculum unit.
+    - portraitUrl must be a real Wikimedia Commons URL (not a placeholder, not /api-generated/).
+
+    Example output:
+    {
+      "taskType": "legends",
+      "title": "Legends — A Pioneer of Radioactivity",
+      "prompt": "Identify the legendary figure by sorting her 10 facts into the right categories.",
+      "config": {
+        "figure": {
+          "name": "Marie Curie",
+          "portraitUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c8/Marie_Curie_c1920.jpg",
+          "era": "Late 1800s - early 1900s",
+          "summary": "Pioneering physicist and chemist who discovered radium and polonium; first person to win Nobel Prizes in two different sciences."
+        },
+        "facts": [
+          { "id": "f1", "text": "Was the first woman to win a Nobel Prize.", "category": "what" },
+          { "id": "f2", "text": "Discovered two new elements, radium and polonium.", "category": "what" },
+          { "id": "f3", "text": "Worked in a converted shed at the Sorbonne in Paris.", "category": "where" },
+          { "id": "f4", "text": "Was born in Warsaw, then part of the Russian Empire.", "category": "where" },
+          { "id": "f5", "text": "Believed scientific knowledge belonged to all humanity, not patent-holders.", "category": "why" },
+          { "id": "f6", "text": "Wanted to find a way to relieve battlefield suffering during World War I (mobile X-ray units).", "category": "why" },
+          { "id": "f7", "text": "Lived from 1867 to 1934.", "category": "when" },
+          { "id": "f8", "text": "Famously declined the British scientist Lord Rutherford's invitation to a banquet.", "category": "decoy" },
+          { "id": "f9", "text": "Is sometimes confused with another scientist who studied bacteria.", "category": "decoy" },
+          { "id": "f10", "text": "Was rumored to have visited the Eiffel Tower 20 times in one year.", "category": "decoy" }
+        ]
+      }
+    }
+    `,
+  },
+
+  [TASK_TYPES.QUEST]: {
+    label: "Quest",
+    category: CATEGORY.OTHER,
+    implemented: true,                   // generator + economy live; QuestHud read-only renderer ships in commit #4
+    demoEligible: false,
+    demoSelectable: false,
+    generatorEligible: true,
+    profileInjectedOnly: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",            // points = sum of objective rewards
+    quickTaskEligible: false,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 900,                 // 15 min default
+    estimatedMinutes: 15,
+    interTeamEnabled: true,
+    intraTeamEnabled: true,
+    description:
+      "A Quest task turns the classroom into a live expedition/simulation economy. Students earn coins through normal academic tasks, then spend coins (and other resources) to acquire supplies, unlock progress, and complete mission objectives.\n\nIMPORTANT: Quest tasks are ONLY playable when the parent TaskSet has `questModeEnabled: true`. If a Quest task appears in a non-quest taskset it should render as an explanatory placeholder telling the teacher to enable Quest Mode.\n\nQuest config (config.*) carries the mission narrative, objectives, resources, premium resources, and rank thresholds. See QUEST_MODE_PLAN.md §3a for the canonical shape.",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "quest".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt.
+    - Keep language age-appropriate and classroom-safe.
+
+    Required config fields:
+    - config.title            -- mission title (e.g. "Launch the Sea Expedition")
+    - config.scenario         -- 2-4 sentence narrative setup
+    - config.objectives       -- array of 1-3 objectives, each: { id, description, requiredResources: { resourceId: quantity } }
+    - config.resources        -- array of 3-6 resources the team can acquire. Each:
+        { id, name, acquisitionOptions: [{ type: "coins", amount: N }], prerequisites: [] }
+    - config.premiumResources -- optional map of upgraded variants for bonus points
+    - config.ranks            -- 3-4 rank tiers, ordered from minimum to most advanced
+
+    GUIDANCE:
+    - The lesson topic should be woven into the scenario AND the resource names where possible.
+    - Resources should sound like real expedition supplies, not arbitrary tokens.
+    - Avoid runaway difficulty: the basic supply set must be affordable with coins earned across a single taskset.
+    - Premium resources should grant bonus points, not be required for completion.
+    `,
+  },
+
   // =========================
   // COMPETITIVE (placeholder type)
   // =========================
@@ -5690,4 +6027,52 @@ export const TASK_SHELLS = {
   // in a single JSON object. Template placeholder filling can't handle this reliably
   // because LLMs miscounted 0-based word indices through the fill-in-the-blank approach.
   // Instead, peer-editing uses the freeform aiPrompt path exclusively.
+
+  /* ── WHAT AM I? ── */
+  [TASK_TYPES.WHAT_AM_I]: function buildWhatAmIShell({ clueCount = 4 } = {}) {
+    // Clamp clueCount into the allowed band
+    const N = Math.max(3, Math.min(6, Number(clueCount) || 4));
+
+    const clues = [];
+    const placeholders = [
+      "TITLE: Short, intriguing title (3-7 words) — e.g. 'What Am I? — A Pivotal Report'",
+      "PROMPT: 1-2 sentence student-facing instructions — explain that earlier guesses = more points",
+      "ANSWER: The canonical name of the concept (string) — e.g. 'Lord Durham's Report'",
+      "ACCEPTABLE_ANSWERS: A comma-separated list of 2-4 variant phrasings (lowercase is fine). e.g. 'durham report, lord durham report, the durham report'",
+      "DIFFICULTY: 'easy' | 'medium' | 'hard' | 'expert' — match the requested difficulty",
+    ];
+    const names = ["TITLE", "PROMPT", "ANSWER", "ACCEPTABLE_ANSWERS", "DIFFICULTY"];
+
+    for (let i = 1; i <= N; i++) {
+      clues.push({ level: i, text: `{{CLUE_${i}}}` });
+      if (i === 1) {
+        placeholders.push(
+          `CLUE_${i}: BROADEST clue — focus on EFFECT, IMPACT, PURPOSE, or CONCEPTUAL IDENTITY. NOT a dictionary definition. MUST NOT contain the answer or close synonyms. Example: "My recommendations helped shape responsible government in Canada."`,
+        );
+      } else if (i === N) {
+        placeholders.push(
+          `CLUE_${i}: MOST specific clue — may name a closely-associated thing (e.g. an author's family name) but MUST NOT state the answer verbatim. This is the near-giveaway tier.`,
+        );
+      } else {
+        placeholders.push(
+          `CLUE_${i}: Narrower than CLUE_${i - 1}, broader than CLUE_${i + 1}. Adds historical/scientific/social context. Encourages inference. MUST NOT contain the answer.`,
+        );
+      }
+      names.push(`CLUE_${i}`);
+    }
+
+    const shell = {
+      taskType: "what-am-i",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      config: {
+        answer: "{{ANSWER}}",
+        acceptableAnswers: "{{ACCEPTABLE_ANSWERS}}", // sanitizer splits to array
+        clues,
+        difficulty: "{{DIFFICULTY}}",
+        mode: "intra-team",
+      },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
 };

@@ -84,6 +84,8 @@ import sharedRoutes from "./routes/shared.js";
 import SharedTasksetLink, { hashShareToken } from "./models/SharedTasksetLink.js";
 import SessionReport from "./models/SessionReport.js";
 import { aggregateTimingStats } from "./services/taskTypeTimingAggregator.js";
+import { isAcceptable as whatAmI_isAcceptable, computePoints as whatAmI_computePoints } from "./services/whatAmIMatcher.js";
+import { awardCoins as quest_awardCoins, getQuestStateSnapshot as quest_getQuestStateSnapshot } from "./services/questEconomy.js";
 import resultsRoutes from "./routes/resultsRoutes.js";
 import adminFeedbackRouter from "./routes/adminFeedback.js";
 import adminTeacherOutreachRouter from "./routes/adminTeacherOutreach.js";
@@ -3708,6 +3710,20 @@ socket.on("task:force-advance", ({ roomCode }) => {
         return;
       }
 
+      // Whodunnit event log — push a scan event so the clue generator sees real activity.
+      if (room.mysteryActive) {
+        const members = Array.isArray(team?.members) ? team.members : [];
+        const playerName = members.map((m) => typeof m === "string" ? m : m?.name || m?.playerName).filter(Boolean)[0];
+        if (playerName) {
+          _pushMysteryEvent(room, {
+            kind: "scan",
+            playerName,
+            teamId,
+            station: stationId,
+          });
+        }
+      }
+
       // 2) Station correctness
       const expectedStation =
         team.currentStationId || team.stationId || team.station || null;
@@ -5105,6 +5121,88 @@ if (!isMultiPack && task.taskType === "guess-who") {
   });
 }
 
+// ────────────────────────────────────────────────────────────────────────
+//  WHAT AM I? — server-authoritative scoring.
+//  The client tracks an optimistic ceiling, but we trust the server's
+//  per-task state for the actual point award. This makes the inter-team
+//  race fair: every team's ceiling reflects the SAME revealed-clue count.
+// ────────────────────────────────────────────────────────────────────────
+if (!isMultiPack && task.taskType === "what-am-i") {
+  const cfg = (task && typeof task.config === "object") ? task.config : {};
+  const game = _getOrInitWhatAmIGame(room, idx);
+
+  // First-correct lock in inter-team mode: once a team gets it, others can
+  // still submit but earn nothing (steal mechanic deferred to v2).
+  const interTeamLocked = game.mode === "inter-team" && !!game.firstCorrectTeamId;
+
+  // Resolve the submitted text from any of the shapes the client may use
+  const submittedText =
+    (typeof answer === "string" && answer) ||
+    (answer && typeof answer === "object" && typeof answer.answer === "string" && answer.answer) ||
+    "";
+
+  const matchResult = whatAmI_isAcceptable(submittedText, cfg);
+  const isCorrect = matchResult.ok && !game.frozen;
+
+  // Authoritative reveal count: inter-team uses the global ceiling, intra/solo uses per-team
+  const revealedAuthoritative = game.mode === "inter-team"
+    ? game.globalRevealed
+    : Math.max(
+        Number(game.revealedByTeam[effectiveTeamId]) || 0,
+        Number(answer?.cluesRevealed) || 0   // honor client-claimed reveals if the team's local count is ahead (e.g. socket race)
+      );
+
+  const attemptsBefore = Number(game.attemptsByTeam[effectiveTeamId]) || 0;
+  game.attemptsByTeam[effectiveTeamId] = attemptsBefore + 1;
+
+  let computedPts = 0;
+  if (isCorrect && !interTeamLocked) {
+    computedPts = whatAmI_computePoints({
+      cluesRevealed: revealedAuthoritative,
+      totalClues: game.totalClues,
+      scoring: {
+        perClueCurve: game.perClueCurve,
+        noClueBonus: Number(cfg?.scoring?.noClueBonus) || 0,
+        firstBonus: Number(cfg?.scoring?.firstBonus) || 0,
+      },
+      isFirst: game.mode === "inter-team" && !game.firstCorrectTeamId,
+    });
+    if (game.mode === "inter-team" && !game.firstCorrectTeamId) {
+      game.firstCorrectTeamId = effectiveTeamId;
+      try {
+        io.to(code).emit("whatAmI:firstCorrect", {
+          taskKey: game.taskKey,
+          taskIndex: game.taskIndex,
+          teamId: effectiveTeamId,
+        });
+      } catch {}
+    }
+  } else if (isCorrect && interTeamLocked) {
+    // Someone else already locked the round; this team gets a small consolation
+    computedPts = 1;
+  }
+
+  correct = isCorrect && !interTeamLocked;
+  pointsEarned = computedPts;
+  aiScore = {
+    strategy: "what-am-i-server",
+    correct,
+    matchStrategy: matchResult.strategy,
+    cluesRevealed: revealedAuthoritative,
+    totalClues: game.totalClues,
+    pointCeiling: whatAmI_computePoints({
+      cluesRevealed: revealedAuthoritative,
+      totalClues: game.totalClues,
+      scoring: { perClueCurve: game.perClueCurve },
+    }),
+    attemptsByTeam: game.attemptsByTeam[effectiveTeamId],
+    mode: game.mode,
+    locked: interTeamLocked,
+    pointsAwarded: pointsEarned,
+    maxPoints: basePoints,
+  };
+}
+
     if (!isMultiPack && task.taskType === "matching") {
       const scored = scoreMatchingTask(task, answer, basePoints);
       aiScore = scored.aiScore;
@@ -5844,6 +5942,267 @@ if (!isMultiPack && task.taskType === "guess-who") {
       console.error("[handleStudentSubmit] Failed to persist submission to DB:", dbErr?.message);
     });
 
+    // ── Legends: server validates the 4-phase 5W sort. Recomputes points from
+    //   the assignments object (client-claimed stats are advisory only). ──
+    if (!isMultiPack && task.taskType === "legends" && answer && typeof answer === "object") {
+      const assignments = answer.assignments && typeof answer.assignments === "object" ? answer.assignments : {};
+      const cfgFacts = Array.isArray(task?.config?.facts) ? task.config.facts : [];
+      let correctCount = 0;
+      let wrongCount = 0;
+      const phaseHits = { what: 0, where: 0, why: 0, when: 0 };
+      const phaseExpected = { what: 2, where: 2, why: 2, when: 1 };
+      for (const f of cfgFacts) {
+        const assigned = assignments[f.id];
+        if (!assigned) continue;  // unsorted
+        if (assigned === f.category) {
+          correctCount += 1;
+          if (phaseHits[assigned] !== undefined) phaseHits[assigned] += 1;
+        } else {
+          wrongCount += 1;
+        }
+      }
+      // 2 pts per correct + 3 pts per perfect phase
+      let perfectPhases = 0;
+      for (const k of Object.keys(phaseExpected)) {
+        if (phaseHits[k] === phaseExpected[k]) perfectPhases += 1;
+      }
+      const computedPts = (correctCount * 2) + (perfectPhases * 3) - wrongCount;
+      pointsEarned = Math.max(0, Math.min(basePoints, computedPts));
+      correct = correctCount >= 5;   // at least the 5 categorized non-decoy answers
+      aiScore = {
+        strategy: "legends-server",
+        figure: task?.config?.figure?.name || null,
+        correctCount,
+        wrongCount,
+        perfectPhases,
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+      };
+    }
+
+    // ── Quest: launch counts as a completion. Coin economy handles incentive; this awards base points. ──
+    if (!isMultiPack && task.taskType === "quest" && answer && typeof answer === "object") {
+      const launched = answer.type === "quest-launch" || answer.autoComplete === true;
+      pointsEarned = launched ? basePoints : Math.round(basePoints * 0.25);
+      correct = launched;
+      aiScore = {
+        strategy: "quest-launch",
+        launched,
+        completedObjectives: Array.isArray(answer.completedObjectives) ? answer.completedObjectives.length : 0,
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+      };
+    }
+
+    // ── Current Events: discussion participation; honor optional team response text length. ──
+    if (!isMultiPack && task.taskType === "current-events" && answer && typeof answer === "object") {
+      const textLen = String(answer.text || "").trim().length;
+      // Tier: long thoughtful response → full; short response → 0.6×; no text → participation 0.4×
+      const tierMul = textLen >= 60 ? 1.0 : textLen >= 10 ? 0.6 : 0.4;
+      pointsEarned = Math.max(1, Math.round(basePoints * tierMul));
+      correct = true;
+      aiScore = {
+        strategy: "current-events-participation",
+        textLen,
+        sourceUrl: answer.meta?.sourceUrl || null,
+        sourceName: answer.meta?.sourceName || null,
+        fallbackTier: answer.meta?.fallbackTier || null,
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+      };
+    }
+
+    // ── Hole in One: full points on success, participation on play, server-clamped to base. ──
+    if (!isMultiPack && task.taskType === "hole-in-one" && answer && typeof answer === "object") {
+      const success = answer.success === true;
+      const attempts = Math.max(1, Number(answer.attempts) || 1);
+      const clientPts = Math.max(0, Math.floor(Number(answer.pointsEarned) || 0));
+      // Server-side cap to prevent client spoofing
+      const cap = success ? basePoints : Math.round(basePoints * 0.4);
+      pointsEarned = Math.min(cap, clientPts || cap);
+      correct = success ? true : null;
+      aiScore = {
+        strategy: "hole-in-one-client",
+        success,
+        attempts,
+        clientClaimedPoints: clientPts,
+        serverCap: cap,
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+      };
+    }
+
+    // ── Careers AI justification scorer ── map tier (1/2/3) to point award.
+    // Mode-specific point ceilings come from the per-mode scoring config; we treat
+    // basePoints as the top of the curve. Tier 1 = participation only (basePoints×0.2),
+    // Tier 2 = justification (basePoints×0.6), Tier 3 = strong (basePoints×1.0).
+    if (!isMultiPack && task.taskType === "careers" && answer && typeof answer === "object") {
+      const justification = String(answer.justification || "").trim();
+      try {
+        const { scoreJustification } = (await import("./services/careersJustificationScorer.js")).default;
+        const result = await scoreJustification({
+          justification,
+          mode: answer.mode || task?.config?.mode,
+          scenarioSummary: task?.title || task?.prompt || "",
+        });
+        const tier = result?.tier || 1;
+        const tierMultiplier = tier === 3 ? 1.0 : tier === 2 ? 0.6 : 0.2;
+        pointsEarned = Math.max(1, Math.round(basePoints * tierMultiplier));
+        correct = true;  // careers tasks aren't right/wrong; mark as completed
+        aiScore = {
+          strategy: "careers-ai-justification",
+          tier,
+          scorerSource: result?.source,
+          mode: answer.mode || task?.config?.mode,
+          pointsAwarded: pointsEarned,
+          maxPoints: basePoints,
+        };
+      } catch (cErr) {
+        console.error("[careers scorer] failed:", cErr?.message);
+        // Heuristic fallback
+        pointsEarned = Math.max(1, Math.round(basePoints * (justification.length >= 20 ? 0.6 : 0.2)));
+        correct = true;
+        aiScore = { strategy: "careers-fallback", pointsAwarded: pointsEarned, maxPoints: basePoints };
+      }
+    }
+
+    // ── Whodunnit event log ── push a submission event so the clue generator has data
+    if (room.mysteryActive) {
+      const playerName = (team?.members || []).map((m) => typeof m === "string" ? m : m?.name || m?.playerName).filter(Boolean)[0]
+        || (typeof socket.data?.playerName === "string" ? socket.data.playerName : null);
+      if (playerName) {
+        _pushMysteryEvent(room, {
+          kind: "submission",
+          playerName,
+          teamId: effectiveTeamId,
+          taskType: task?.taskType,
+          taskIndex: idx,
+        });
+      }
+    }
+
+    // ── Duel auto-trigger ── fires when the top two teams are neck-and-neck
+    //   (gap ≤ duelTieThresholdPts, cooldown elapsed). The trigger is RUNTIME
+    //   ONLY — there is no teacher button. Setting `duelsEnabled: true` on a
+    //   taskset is the only way to opt in.
+    if (room.taskset?.duelsEnabled === true) {
+      _maybeAutoTriggerDuel(room).catch((e) => console.error("[duel auto] error", e?.message));
+    }
+
+    // ── Escape Room: grant keys/fragments tied to this task ──
+    // If the parent TaskSet has an escapeRoomConfig and this task is referenced
+    // by any key's `grantedBy.taskId`, grant it (with cascading lock evaluation).
+    if (room.taskset?.escapeRoomConfig && pointsEarned !== 0) {
+      (async () => {
+        try {
+          const escapeRoom = (await import("./services/escapeRoom.js")).default;
+          const updated = await escapeRoom.onTaskCompleted({
+            roomCode: code,
+            teamId: effectiveTeamId,
+            taskset: room.taskset,
+            taskId: String(task?.taskId || task?._id || `idx-${idx}`),
+          });
+          if (updated) {
+            try { io.to(effectiveTeamId).emit("escape:stateUpdated", escapeRoom.getStateSnapshot(updated)); } catch {}
+          }
+        } catch (e) {
+          console.error("[handleStudentSubmit] escape onTaskCompleted failed:", e?.message);
+        }
+      })();
+    }
+
+    // ── Bonus-task unlock engine ─────────────────────────────────────────
+    // Fires for ANY taskset that has bonus tasks (always-on early-finisher provision
+    // + Quest Mode hidden tasks). Tracks per-team completion in TeamQuestState
+    // (the model name is legacy from when this was quest-only; the unlock + state
+    // table also serve generic early-finisher bonuses now). Coin mirror only runs
+    // when questModeEnabled — that part stays Quest-only.
+    const tasksetHasBonusOrHidden = Array.isArray(room.taskset?.tasks) && room.taskset.tasks.some((t) => t?.isBonus || t?.isHidden);
+    if (room.taskset?.questModeEnabled === true || tasksetHasBonusOrHidden) {
+      const taskCoinOverride =
+        task && typeof task.coinReward === "number" && Number.isFinite(task.coinReward) && task.coinReward >= 0
+          ? Math.floor(task.coinReward)
+          : null;
+      const coinAmount = taskCoinOverride !== null ? taskCoinOverride : Math.floor(Math.max(0, Number(pointsEarned)));
+      const completedTaskId = String(task?.taskId || task?._id || `idx-${idx}`);
+      const isBonusTask  = task?.isBonus  === true;
+      const isHiddenTask = task?.isHidden === true;
+      const bucketField  = isHiddenTask
+        ? "completedHiddenTaskIds"
+        : isBonusTask
+          ? "completedBonusTaskIds"
+          : "completedCoreTaskIds";
+
+      (async () => {
+        try {
+          const { getQuestState, getQuestStateSnapshot } = await import("./services/questEconomy.js");
+          const { evaluateUnlocks, computeCoreProgressPct } = await import("./services/questUnlocks.js");
+          const TeamQuestState = (await import("./models/TeamQuestState.js")).default;
+
+          // 1. Coin mirror (Quest Mode only — bonus-only tasksets don't run the coin economy)
+          if (coinAmount > 0 && room.taskset?.questModeEnabled === true) {
+            await quest_awardCoins({
+              roomCode: code,
+              teamId: effectiveTeamId,
+              amount: coinAmount,
+              reason: `task-complete:${task?.taskType || "unknown"}`,
+              tasksetId: room.taskset?._id || null,
+            });
+          }
+
+          // 2. Record completion bucket atomically
+          const updated = await TeamQuestState.findOneAndUpdate(
+            { roomCode: code, teamId: effectiveTeamId },
+            { $addToSet: { [bucketField]: completedTaskId } },
+            { upsert: true, new: true, setDefaultsOnInsert: true },
+          );
+
+          // 3. Unlock engine — compute current core progress + check conditions
+          const corePct = computeCoreProgressPct({
+            taskset: room.taskset,
+            completedCoreTaskIds: updated?.completedCoreTaskIds || [],
+          });
+          const sessionMinutes = Number(room.taskset?.durationMinutes) || null;
+          const startedAtMs = room.startedAt ? new Date(room.startedAt).getTime() : null;
+          const sessionTimeRemainingMin =
+            sessionMinutes && startedAtMs
+              ? Math.max(0, sessionMinutes - Math.floor((Date.now() - startedAtMs) / 60000))
+              : null;
+          const coreQuestCompleted = corePct >= 100;
+
+          const { newlyUnlockedBonusIds, newlyUnlockedHiddenIds } = evaluateUnlocks({
+            taskset: room.taskset,
+            state: updated,
+            signals: { coreProgressPct: corePct, sessionTimeRemainingMin, coreQuestCompleted },
+          });
+
+          if (newlyUnlockedBonusIds.length > 0 || newlyUnlockedHiddenIds.length > 0) {
+            await TeamQuestState.findOneAndUpdate(
+              { roomCode: code, teamId: effectiveTeamId },
+              {
+                $addToSet: {
+                  unlockedBonusTaskIds:  { $each: newlyUnlockedBonusIds },
+                  unlockedHiddenTaskIds: { $each: newlyUnlockedHiddenIds },
+                },
+              },
+            );
+            for (const id of newlyUnlockedBonusIds) {
+              try { io.to(effectiveTeamId).emit("quest:taskUnlocked", { taskId: id, kind: "bonus" }); } catch {}
+            }
+            for (const id of newlyUnlockedHiddenIds) {
+              try { io.to(effectiveTeamId).emit("quest:taskUnlocked", { taskId: id, kind: "hidden" }); } catch {}
+            }
+          }
+
+          // Final state push
+          const finalState = await getQuestState({ roomCode: code, teamId: effectiveTeamId });
+          try { io.to(effectiveTeamId).emit("quest:stateUpdated", getQuestStateSnapshot(finalState)); } catch {}
+        } catch (qErr) {
+          console.error("[handleStudentSubmit] quest pipeline failed:", qErr?.message);
+        }
+      })();
+    }
+
     // Store team selfie URL on the team object for reports
     if (task.taskType === "team-selfie" && extractedPhotoUrl && room.teams?.[effectiveTeamId]) {
       room.teams[effectiveTeamId].selfieUrl = extractedPhotoUrl;
@@ -6199,6 +6558,1006 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
     }
   } catch (e) {
     console.error("[guess-who:reveal] error", e);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+//  What Am I? — server-authoritative reveal + ceiling
+// ---------------------------------------------------------------------------
+//
+//  Per-task state shape (lives on `room.whatAmIGames[taskKey]`):
+//    {
+//      taskKey, taskIndex,
+//      mode: "solo" | "intra-team" | "inter-team",
+//      totalClues, perClueCurve,
+//      revealedByTeam:  { [teamId]: number },
+//      globalRevealed:  number,           // max across teams; inter-team uses this as the visible ceiling
+//      firstCorrectTeamId: string | null, // who locked the answer (inter-team)
+//      attemptsByTeam:  { [teamId]: number },
+//      frozen: boolean,                    // teacher freeze toggle (commit #6)
+//    }
+//
+//  The matcher (`backend/services/whatAmIMatcher.js`) is the single source of
+//  truth for what counts as a correct guess and how many points a guess is
+//  worth, used by both this handler and the student:submitAnswer path.
+function _getOrInitWhatAmIGame(room, taskIndex) {
+  const idx = Number.isFinite(Number(taskIndex)) ? Number(taskIndex) : 0;
+  const taskKey = `${room.code}:what-am-i:${idx}`;
+  if (!room.whatAmIGames) room.whatAmIGames = {};
+  if (!room.whatAmIGames[taskKey]) {
+    const tasks = Array.isArray(room.taskset?.tasks) ? room.taskset.tasks : [];
+    const task = tasks[idx] || {};
+    const cfg = (task && typeof task.config === "object") ? task.config : {};
+    const clues = Array.isArray(cfg.clues) ? cfg.clues : [];
+    room.whatAmIGames[taskKey] = {
+      taskKey,
+      taskIndex: idx,
+      mode: typeof cfg.mode === "string" ? cfg.mode : "intra-team",
+      totalClues: clues.length,
+      perClueCurve: Array.isArray(cfg?.scoring?.perClueCurve) ? cfg.scoring.perClueCurve.slice() : null,
+      revealedByTeam: {},
+      globalRevealed: 0,
+      firstCorrectTeamId: null,
+      attemptsByTeam: {},
+      frozen: false,
+    };
+  }
+  return room.whatAmIGames[taskKey];
+}
+
+socket.on("whatAmI:revealClue", (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId, taskIndex } = payload || {};
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !teamId) {
+      if (typeof ack === "function") ack({ ok: false, error: "Room or team not found" });
+      return;
+    }
+    const game = _getOrInitWhatAmIGame(room, taskIndex);
+
+    if (game.frozen) {
+      if (typeof ack === "function") ack({ ok: false, error: "Frozen by teacher", frozen: true });
+      return;
+    }
+    if (game.firstCorrectTeamId && game.mode === "inter-team") {
+      if (typeof ack === "function") ack({ ok: false, error: "Round already won", locked: true });
+      return;
+    }
+
+    const cur = Number(game.revealedByTeam[teamId]) || 0;
+    if (cur >= game.totalClues) {
+      if (typeof ack === "function") {
+        ack({
+          ok: true,
+          newLevel: cur,
+          pointCeiling: whatAmI_computePoints({ cluesRevealed: cur, totalClues: game.totalClues, scoring: { perClueCurve: game.perClueCurve } }),
+          atMax: true,
+        });
+      }
+      return;
+    }
+
+    const next = cur + 1;
+    game.revealedByTeam[teamId] = next;
+    if (next > game.globalRevealed) game.globalRevealed = next;
+
+    const pointCeiling = whatAmI_computePoints({
+      cluesRevealed: next,
+      totalClues: game.totalClues,
+      scoring: { perClueCurve: game.perClueCurve },
+    });
+
+    // Inter-team broadcast: other teams should see the ceiling drop too.
+    if (game.mode === "inter-team") {
+      try {
+        io.to(code).emit("whatAmI:clueRevealed", {
+          taskKey: game.taskKey,
+          taskIndex: game.taskIndex,
+          newLevel: game.globalRevealed,
+          pointCeiling: whatAmI_computePoints({
+            cluesRevealed: game.globalRevealed,
+            totalClues: game.totalClues,
+            scoring: { perClueCurve: game.perClueCurve },
+          }),
+          revealedBy: teamId,
+        });
+      } catch {}
+    }
+
+    if (typeof ack === "function") {
+      ack({ ok: true, newLevel: next, pointCeiling, atMax: next >= game.totalClues });
+    }
+  } catch (e) {
+    console.error("[whatAmI:revealClue] error", e);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// Teacher-initiated reveal — bumps the ceiling for ALL teams at once.
+// Used by LiveSession's "Force reveal next clue" button (commit #6).
+socket.on("whatAmI:teacherReveal", (payload = {}, ack) => {
+  try {
+    const { roomCode, taskIndex } = payload || {};
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) {
+      if (typeof ack === "function") ack({ ok: false, error: "Room not found" });
+      return;
+    }
+    const game = _getOrInitWhatAmIGame(room, taskIndex);
+    if (game.globalRevealed >= game.totalClues) {
+      if (typeof ack === "function") ack({ ok: true, atMax: true, newLevel: game.globalRevealed });
+      return;
+    }
+    game.globalRevealed += 1;
+    // Bump every team's individual counter up to at least the global level
+    for (const tId of Object.keys(room.teams || {})) {
+      const cur = Number(game.revealedByTeam[tId]) || 0;
+      if (cur < game.globalRevealed) game.revealedByTeam[tId] = game.globalRevealed;
+    }
+    const pointCeiling = whatAmI_computePoints({
+      cluesRevealed: game.globalRevealed,
+      totalClues: game.totalClues,
+      scoring: { perClueCurve: game.perClueCurve },
+    });
+    try {
+      io.to(code).emit("whatAmI:clueRevealed", {
+        taskKey: game.taskKey,
+        taskIndex: game.taskIndex,
+        newLevel: game.globalRevealed,
+        pointCeiling,
+        revealedBy: "teacher",
+      });
+    } catch {}
+    if (typeof ack === "function") ack({ ok: true, newLevel: game.globalRevealed, pointCeiling });
+  } catch (e) {
+    console.error("[whatAmI:teacherReveal] error", e);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// Teacher freeze / unfreeze — blocks reveals AND submissions until lifted.
+socket.on("whatAmI:teacherFreeze", (payload = {}, ack) => {
+  try {
+    const { roomCode, taskIndex, frozen } = payload || {};
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) {
+      if (typeof ack === "function") ack({ ok: false, error: "Room not found" });
+      return;
+    }
+    const game = _getOrInitWhatAmIGame(room, taskIndex);
+    game.frozen = !!frozen;
+    try {
+      io.to(code).emit("whatAmI:frozen", { taskKey: game.taskKey, taskIndex: game.taskIndex, frozen: game.frozen });
+    } catch {}
+    if (typeof ack === "function") ack({ ok: true, frozen: game.frozen });
+  } catch (e) {
+    console.error("[whatAmI:teacherFreeze] error", e);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// Quest Mode snapshot fetch — used by QuestHud on mount.
+socket.on("quest:requestState", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    if (!code || !teamId) {
+      if (typeof ack === "function") ack({ ok: false, error: "Missing roomCode/teamId" });
+      return;
+    }
+    // Lazy import to avoid bumping module-load cost for non-quest sessions
+    const { getQuestState, getQuestStateSnapshot } = await import("./services/questEconomy.js");
+    const state = await getQuestState({ roomCode: code, teamId });
+    if (typeof ack === "function") ack({ ok: true, state: getQuestStateSnapshot(state) });
+  } catch (e) {
+    console.error("[quest:requestState] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+//  Quest Mode — resource acquisition flow (commit #5)
+//  Two-step UX:
+//    1. quest:requestResource — return current state, the resource definition,
+//       and a per-option diagnostic so the client knows what's missing.
+//    2. quest:acquireResource — validate the chosen option, deduct coins
+//       atomically (if coin path), grant the resource, emit state update.
+// ---------------------------------------------------------------------------
+function _findQuestResource(room, taskIndex, resourceId) {
+  const tasks = Array.isArray(room?.taskset?.tasks) ? room.taskset.tasks : [];
+  // Look first at the requested task index
+  const candidates = [];
+  if (Number.isFinite(Number(taskIndex)) && tasks[Number(taskIndex)]) {
+    candidates.push(tasks[Number(taskIndex)]);
+  }
+  // Fall back to any quest task (resources from any of them are valid)
+  for (const t of tasks) if (t?.taskType === "quest") candidates.push(t);
+  for (const t of candidates) {
+    const arr = Array.isArray(t?.config?.resources) ? t.config.resources : [];
+    const found = arr.find((r) => r && r.id === resourceId);
+    if (found) return found;
+  }
+  return null;
+}
+
+function _checkPrerequisites(prereqs, state) {
+  const missing = [];
+  for (const p of prereqs || []) {
+    if (!p || typeof p !== "object") continue;
+    if (p.type === "resource") {
+      const inv = state?.inventory && typeof state.inventory.get === "function"
+        ? Number(state.inventory.get(p.resourceId)) || 0
+        : Number(state?.inventory?.[p.resourceId]) || 0;
+      const need = Math.max(1, Number(p.quantity) || 1);
+      if (inv < need) {
+        missing.push({
+          ...p,
+          missingMessage: p.missingMessage || `You need ${need}× ${p.resourceId} first.`,
+          have: inv,
+        });
+      }
+    }
+  }
+  return { ok: missing.length === 0, missing };
+}
+
+socket.on("quest:requestResource", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId, taskIndex, resourceId } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !teamId || !resourceId) {
+      if (typeof ack === "function") ack({ ok: false, error: "Missing room/team/resource" });
+      return;
+    }
+    const resource = _findQuestResource(room, taskIndex, resourceId);
+    if (!resource) {
+      if (typeof ack === "function") ack({ ok: false, error: `Unknown resource: ${resourceId}` });
+      return;
+    }
+    const { getQuestState, getQuestStateSnapshot } = await import("./services/questEconomy.js");
+    const state = await getQuestState({ roomCode: code, teamId });
+    const prereqResult = _checkPrerequisites(resource.prerequisites, state);
+    const offer = {
+      resource,
+      prereqsOk: prereqResult.ok,
+      missing: prereqResult.missing,
+      coinBalance: state.coins,
+      acquisitionOptions: (resource.acquisitionOptions || []).map((opt) => {
+        if (opt.type === "coins") {
+          return { ...opt, canAfford: state.coins >= (Number(opt.amount) || 0) };
+        }
+        // Non-coin paths flagged as "Coming soon" for MVP
+        return { ...opt, comingSoon: true };
+      }),
+      state: getQuestStateSnapshot(state),
+    };
+    if (typeof ack === "function") ack({ ok: true, offer });
+  } catch (e) {
+    console.error("[quest:requestResource] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+//  Duel — cross-feature head-to-head challenge. Single shared mechanism that
+//  Escape Room / Whodunnit / What Am I? / Hole in One can all trigger.
+// ---------------------------------------------------------------------------
+// Internal helper: dispatch a duel (used by the auto-trigger only — no teacher socket).
+// Returns the duel snapshot or null on failure.
+async function _dispatchDuel(room, teamIdsOverride = null) {
+  if (!room) return null;
+  const duelSvc = (await import("./services/duel.js")).default;
+  const result = duelSvc.startDuel({ room, teamIdsOverride });
+  if (!result.ok) {
+    console.log(`[duel] start declined: ${result.error}`);
+    return null;
+  }
+  const { duel } = result;
+  const code = room.code;
+
+  // 1. Public announcement (no question content)
+  try {
+    io.to(code).emit("duel:announced", {
+      ...duelSvc.getDuelSnapshot(duel),
+      startsInMs: Math.max(0, duel.startsAt - Date.now()),
+    });
+  } catch {}
+
+  // 2. Private dispatch to each duelist's team channel
+  for (let i = 0; i < duel.teamIds.length; i++) {
+    const tId = duel.teamIds[i];
+    try {
+      io.to(tId).emit("duel:dispatched", {
+        duelId: duel.id,
+        forPlayer: duel.players[i],
+        opponentTeam: duel.teamNames[1 - i],
+        question: duel.question,
+        startsAt: duel.startsAt,
+        deadlineAt: duel.deadlineAt,
+      });
+    } catch {}
+  }
+
+  // 3. Timeout sweep
+  setTimeout(async () => {
+    const ended = duelSvc.endDuelIfTimedOut({ room });
+    if (!ended) return;
+    try {
+      io.to(code).emit("duel:result", {
+        ...duelSvc.getDuelSnapshot(ended),
+        outcome: "timeout",
+        message: "Neither duelist answered in time.",
+      });
+    } catch {}
+    // Persist a draw entry for each duelist team so reports show the duel happened.
+    // 0 points but a real submission ensures aiScore.strategy === "duel" is queryable.
+    for (let i = 0; i < ended.teamIds.length; i++) {
+      const tId = ended.teamIds[i];
+      const tName = room.teams?.[tId]?.teamName || `Team-${String(tId).slice(-4)}`;
+      Submission.create({
+        roomCode: code,
+        taskIndex: -1,
+        teamId: tId,
+        teamName: tName,
+        playerId: null,
+        answer: { type: "duel-timeout", duelId: ended.id, playerName: ended.players[i] },
+        isCorrect: null,
+        points: 0,
+        aiScore: { strategy: "duel", duelId: ended.id, role: "timeout", question: ended.question.prompt },
+        responseTimeMs: null,
+        submittedAt: new Date(),
+      }).catch((dbErr) => console.warn("[duel timeout] persist failed:", dbErr?.message));
+    }
+    room.lastDuelEndedAt = Date.now();
+    delete room.activeDuel;
+  }, duelSvc.DUEL_CONSTANTS.DUEL_TIMEOUT_MS + duelSvc.DUEL_CONSTANTS.COUNTDOWN_MS + 200);
+
+  return duelSvc.getDuelSnapshot(duel);
+}
+
+/**
+ * Auto-duel trigger. Called from handleStudentSubmit AFTER points have been
+ * committed to room.submissions. Fires a duel iff:
+ *   - room.taskset.duelsEnabled === true
+ *   - no duel currently active in this room
+ *   - cooldown has elapsed (default 4 min)
+ *   - top-2 teams' scores differ by ≤ duelTieThresholdPts (default 10)
+ *   - both top-2 teams have ≥ 2 submissions
+ *   - at least 2 teams with player members
+ */
+async function _maybeAutoTriggerDuel(room) {
+  try {
+    if (!room?.taskset?.duelsEnabled) return;
+    if (room.activeDuel && !room.activeDuel.ended) return;
+
+    const cooldownMs = Number(room.taskset.duelCooldownMs) || 4 * 60 * 1000;
+    const sinceLast = room.lastDuelEndedAt ? Date.now() - room.lastDuelEndedAt : Infinity;
+    if (sinceLast < cooldownMs) return;
+
+    // Compute current scores from submissions
+    const scoresByTeam = {};
+    const subsByTeam = {};
+    for (const sub of room.submissions || []) {
+      if (!sub?.teamId) continue;
+      scoresByTeam[sub.teamId] = (scoresByTeam[sub.teamId] || 0) + (Number(sub.points) || 0);
+      subsByTeam[sub.teamId] = (subsByTeam[sub.teamId] || 0) + 1;
+    }
+    const eligible = Object.entries(scoresByTeam)
+      .filter(([tId]) => (subsByTeam[tId] || 0) >= 2)                        // engagement floor
+      .filter(([tId]) => Array.isArray(room.teams?.[tId]?.members) && room.teams[tId].members.length > 0)
+      .sort((a, b) => b[1] - a[1]);
+
+    if (eligible.length < 2) return;
+
+    const [tieA, tieB] = [eligible[0], eligible[1]];
+    const gap = Math.abs(tieA[1] - tieB[1]);
+    const threshold = Number(room.taskset.duelTieThresholdPts) || 10;
+    if (gap > threshold) return;
+
+    console.log(`[duel] auto-trigger: ${room.teams[tieA[0]]?.teamName} (${tieA[1]}) vs ${room.teams[tieB[0]]?.teamName} (${tieB[1]}) — gap ${gap} ≤ ${threshold}`);
+    await _dispatchDuel(room, [tieA[0], tieB[0]]);
+  } catch (e) {
+    console.error("[duel auto-trigger] error", e?.message);
+  }
+}
+
+socket.on("duel:submit", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId, playerName, value } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) { if (typeof ack === "function") ack({ ok: false, error: "Room not found" }); return; }
+    const duelSvc = (await import("./services/duel.js")).default;
+    const result = duelSvc.submitDuelAnswer({ room, teamId, playerName, value });
+    if (!result.ok) { if (typeof ack === "function") ack(result); return; }
+
+    if (result.won) {
+      const duel = result.duel;
+      const maxPts = Number(duel.question.maxPoints) || 10;
+      const winBonus = Math.round(maxPts * duelSvc.DUEL_CONSTANTS.WIN_BONUS_PCT);
+      const losingTeamId = duel.teamIds.find((id) => id !== teamId);
+
+      // Credit points via the existing bonus-submission helper (in-memory
+      // scoreboard) + persist a real Submission for each side so the session
+      // report / Bloom's analysis / per-team scorecards include the duel.
+      try {
+        addBonusSubmission(room, teamId, winBonus, "duel-win", {
+          duelId: duel.id, question: duel.question.prompt, opponent: losingTeamId,
+        });
+        if (losingTeamId) {
+          addBonusSubmission(room, losingTeamId, duelSvc.DUEL_CONSTANTS.CONSOLATION_PTS, "duel-consolation", {
+            duelId: duel.id, opponent: teamId,
+          });
+        }
+      } catch {}
+
+      // Persist to MongoDB. Fire-and-forget; doesn't block the broadcast.
+      // taskIndex = -1 marks this as a non-task submission (the standard pattern).
+      const sharedAiScore = {
+        strategy: "duel",
+        duelId: duel.id,
+        question: duel.question.prompt,
+        correctAnswer: duel.question.answers?.[0] || null,
+      };
+      const winnerTeamName = room.teams?.[teamId]?.teamName || `Team-${String(teamId).slice(-4)}`;
+      Submission.create({
+        roomCode: code,
+        taskIndex: -1,
+        teamId,
+        teamName: winnerTeamName,
+        playerId: null,
+        answer: { type: "duel-win", duelId: duel.id, value: String(value).slice(0, 200), opponent: losingTeamId },
+        isCorrect: true,
+        points: winBonus,
+        aiScore: { ...sharedAiScore, role: "winner", playerName },
+        responseTimeMs: null,
+        submittedAt: new Date(),
+      }).catch((dbErr) => console.warn("[duel:submit] persist winner failed:", dbErr?.message));
+      if (losingTeamId) {
+        const loserTeamName = room.teams?.[losingTeamId]?.teamName || `Team-${String(losingTeamId).slice(-4)}`;
+        Submission.create({
+          roomCode: code,
+          taskIndex: -1,
+          teamId: losingTeamId,
+          teamName: loserTeamName,
+          playerId: null,
+          answer: { type: "duel-consolation", duelId: duel.id, opponent: teamId },
+          isCorrect: false,
+          points: duelSvc.DUEL_CONSTANTS.CONSOLATION_PTS,
+          aiScore: { ...sharedAiScore, role: "loser" },
+          responseTimeMs: null,
+          submittedAt: new Date(),
+        }).catch((dbErr) => console.warn("[duel:submit] persist loser failed:", dbErr?.message));
+      }
+
+      // Broadcast result
+      try {
+        io.to(code).emit("duel:result", {
+          ...duelSvc.getDuelSnapshot(duel),
+          outcome: "winner",
+          winningTeamId: teamId,
+          winningPlayer: playerName,
+          losingTeamId,
+          winBonus,
+          consolation: duelSvc.DUEL_CONSTANTS.CONSOLATION_PTS,
+          question: { prompt: duel.question.prompt, correctAnswer: duel.question.answers[0] || null },
+        });
+      } catch {}
+      room.lastDuelEndedAt = Date.now();
+      delete room.activeDuel;
+    } else {
+      // Wrong answer — let the duelist know, but don't end the round.
+      if (typeof ack === "function") ack({ ok: true, correct: false });
+      return;
+    }
+    if (typeof ack === "function") ack({ ok: true, correct: true, won: true });
+  } catch (e) {
+    console.error("[duel:submit] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+//  Current Events teacher refresh — bypasses cache and re-resolves the active
+//  current-events task. Useful when the originally-resolved story didn't land
+//  well with the class or the teacher wants a fresh fetch.
+// ---------------------------------------------------------------------------
+socket.on("currentEvents:teacherRefresh", async (payload = {}, ack) => {
+  try {
+    const { roomCode, taskIndex } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !room.taskset) {
+      if (typeof ack === "function") ack({ ok: false, error: "Room not ready" });
+      return;
+    }
+    const tasks = Array.isArray(room.taskset.tasks) ? room.taskset.tasks : [];
+    const idx = Number.isFinite(Number(taskIndex)) ? Number(taskIndex) : -1;
+    const task = idx >= 0 ? tasks[idx] : tasks.find((t) => t?.taskType === "current-events");
+    if (!task || task.taskType !== "current-events") {
+      if (typeof ack === "function") ack({ ok: false, error: "Not a current-events task" });
+      return;
+    }
+    const { resolveCurrentEvents } = await import("./services/currentEventsResolver.js");
+    const shellCfg = task.config || {};
+    const result = await resolveCurrentEvents({
+      lessonTopic: shellCfg.lessonTopic || room.taskset?.topicLabel || "",
+      subject: shellCfg.subject || room.taskset?.subject || "General",
+      gradeLevel: Number(shellCfg.gradeLevel) || Number(room.taskset?.gradeLevel) || 7,
+      region: shellCfg.region || "Canada",
+      worldviewProfile: shellCfg.worldviewProfile || "general",
+      preferredCategories: Array.isArray(shellCfg.preferredCategories) ? shellCfg.preferredCategories : undefined,
+      forceRefresh: true,
+    });
+    if (!result?.ok || !result.resolved) {
+      if (typeof ack === "function") ack({ ok: false, error: "Resolution failed" });
+      return;
+    }
+    task.config = { ...(task.config || {}), resolved: result.resolved, loading: false };
+    // Re-emit the task to all teams in the room
+    try {
+      for (const tId of Object.keys(room.teams || {})) {
+        io.to(tId).emit("task:launch", {
+          taskIndex: idx >= 0 ? idx : tasks.indexOf(task),
+          index: idx >= 0 ? idx : tasks.indexOf(task),
+          task: { ...task, minimizeOnScreen: !!room?.minimizeOnScreen || false },
+          totalTasks: tasks.length,
+        });
+      }
+    } catch {}
+    if (typeof ack === "function") ack({ ok: true, resolved: result.resolved });
+  } catch (e) {
+    console.error("[currentEvents:teacherRefresh] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+//  Whodunnit (Mystery) sockets
+// ---------------------------------------------------------------------------
+// In-memory event log buckets — populated by scan + submit subscribers below.
+// Keyed by room code; capped at 200 events per room (FIFO).
+function _pushMysteryEvent(room, event) {
+  if (!room) return;
+  if (!Array.isArray(room.mysteryEventLog)) room.mysteryEventLog = [];
+  room.mysteryEventLog.push({ ts: Date.now(), ...event });
+  if (room.mysteryEventLog.length > 200) room.mysteryEventLog.shift();
+}
+
+socket.on("mystery:enable", async (payload = {}, ack) => {
+  try {
+    const { roomCode, themeRole, difficulty } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) { if (typeof ack === "function") ack({ ok: false, error: "Room not found" }); return; }
+    const mystery = (await import("./services/mystery.js")).default;
+    const result = await mystery.enableMystery({ roomCode: code, room, themeRole, difficulty });
+    if (!result.ok) { if (typeof ack === "function") ack(result); return; }
+
+    room.mysteryActive = true;
+
+    // Auto-release timer — fires the clue generator every autoClueIntervalMs.
+    if (room._mysteryTimer) clearInterval(room._mysteryTimer);
+    const intervalMs = Number(result.session.autoClueIntervalMs) || 90 * 1000;
+    room._mysteryTimer = setInterval(async () => {
+      try {
+        const refreshed = await mystery.getSession(code);
+        if (!refreshed || !refreshed.enabled || refreshed.ended) {
+          clearInterval(room._mysteryTimer);
+          room._mysteryTimer = null;
+          return;
+        }
+        const { generateClue } = (await import("./services/mysteryClueGenerator.js")).default;
+        const usedTexts = (refreshed.cluesReleased || []).map((c) => c.text);
+        const clue = await generateClue({ roomCode: code, room, alreadyReleasedTexts: usedTexts });
+        if (clue) {
+          const MysterySession = (await import("./models/MysterySession.js")).default;
+          await MysterySession.findOneAndUpdate({ roomCode: code }, { $push: { cluesReleased: clue } });
+          try { io.to(code).emit("mystery:clueReleased", clue); } catch {}
+        }
+      } catch (e) {
+        console.error("[mystery auto-release] error:", e?.message);
+      }
+    }, intervalMs);
+
+    // Broadcast public snapshot (no suspect identity)
+    try { io.to(code).emit("mystery:enabled", mystery.getPublicSnapshot(result.session)); } catch {}
+
+    // Privately tell the suspect's socket only. We don't know which socket
+    // belongs to the suspect deterministically; emit to the room with a
+    // targeted name field and let the client check (`name === suspectName`).
+    // This is a tiny client-trust assumption acceptable for MVP — clients
+    // CANNOT learn the suspect via this event because the recipient does
+    // their own equality check on the value we DON'T send.
+    // (For a fully server-side gate: build a name→socketId map at join time.)
+    try {
+      io.to(code).emit("mystery:suspectAssigned", { themeRole: result.session.themeRole });
+      // Quietly emit the identity-bearing payload to ALL sockets — every
+      // non-suspect's client just shrugs and discards it. This is the trade-off
+      // documented in plan §11; v2 will use socket-level targeting.
+      io.to(code).emit("mystery:youAreSuspect", { suspectName: result.suspectPlayerId, themeRole: result.session.themeRole });
+    } catch {}
+
+    if (typeof ack === "function") ack({ ok: true, themeRole: result.session.themeRole, difficulty: result.session.difficulty });
+  } catch (e) {
+    console.error("[mystery:enable] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+socket.on("mystery:requestState", async (payload = {}, ack) => {
+  try {
+    const { roomCode } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const mystery = (await import("./services/mystery.js")).default;
+    const session = await mystery.getSession(code);
+    if (!session) { if (typeof ack === "function") ack({ ok: false, error: "No active mystery" }); return; }
+    if (typeof ack === "function") ack({ ok: true, state: mystery.getPublicSnapshot(session) });
+  } catch (e) { if (typeof ack === "function") ack({ ok: false, error: "Server error" }); }
+});
+
+socket.on("mystery:accuse", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId, accusedPlayerId } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    if (!code || !teamId || !accusedPlayerId) { if (typeof ack === "function") ack({ ok: false, error: "Missing fields" }); return; }
+    const mystery = (await import("./services/mystery.js")).default;
+    const result = await mystery.submitAccusation({ roomCode: code, teamId, accusedPlayerId });
+    if (!result.ok) { if (typeof ack === "function") ack(result); return; }
+
+    // Anti-toxicity per plan §5: wrong accusations DON'T broadcast the accused name.
+    if (result.correct) {
+      try { io.to(code).emit("mystery:gameEnded", { suspectPlayerId: result.suspectRevealed, winningTeamId: teamId }); } catch {}
+    } else {
+      try {
+        io.to(code).emit("mystery:accusationResult", {
+          teamId,
+          correct: false,
+          penalty: result.penalty,
+          // intentionally NO accusedPlayerId in the broadcast
+        });
+      } catch {}
+    }
+    if (typeof ack === "function") ack(result);
+  } catch (e) {
+    console.error("[mystery:accuse] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// Per-team clue purchase. Each clue costs points/coins (configured on MysterySession).
+// The team gets a private clue NOT visible to other teams — generated from real
+// gameplay activity, then stored on session.cluesPurchasedByTeam.
+socket.on("mystery:purchaseClue", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId, type = "movement" } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !teamId) { if (typeof ack === "function") ack({ ok: false, error: "Missing fields" }); return; }
+    const mystery = (await import("./services/mystery.js")).default;
+    const session = await mystery.getSession(code);
+    if (!session || !session.enabled || session.ended) { if (typeof ack === "function") ack({ ok: false, error: "Mystery not active" }); return; }
+
+    // Cost lookup
+    const cost = type === "identity"
+      ? Number(session.investigationEconomy?.revealNamePartCost ?? 30)
+      : type === "inventory"
+        ? Number(session.investigationEconomy?.revealInventoryCost ?? 25)
+        : Number(session.investigationEconomy?.cluePurchaseCost ?? 20);
+
+    // Team score gate — use room.submissions-derived score (matches the leaderboard)
+    let teamScore = 0;
+    for (const sub of room.submissions || []) {
+      if (sub.teamId === teamId) teamScore += Number(sub.points) || 0;
+    }
+    if (teamScore < cost) {
+      if (typeof ack === "function") ack({ ok: false, error: `Need ${cost} points (you have ${teamScore})`, cost, teamScore });
+      return;
+    }
+
+    // Generate a clue specifically of the requested type, restricted to this purchase pass
+    const { generateClue } = (await import("./services/mysteryClueGenerator.js")).default;
+    const MysterySession = (await import("./models/MysterySession.js")).default;
+    const usedTexts = [
+      ...(session.cluesReleased || []).map((c) => c.text),
+      ...(Array.from(session.cluesPurchasedByTeam?.get?.(teamId) || session.cluesPurchasedByTeam?.[teamId] || []).map((c) => c.text)),
+    ];
+    const clue = await generateClue({ roomCode: code, room, alreadyReleasedTexts: usedTexts });
+    if (!clue) {
+      if (typeof ack === "function") ack({ ok: false, error: "No suitable clue available right now — try again in a minute" });
+      return;
+    }
+    clue.releasedBy = "team-purchase";
+
+    // Deduct points by inserting a negative "bonus" submission (uses the existing pattern)
+    if (typeof addBonusSubmission === "function") {
+      addBonusSubmission(room, teamId, -cost, "mystery-clue-purchase", { type });
+    }
+
+    // Append to per-team purchased list
+    await MysterySession.findOneAndUpdate(
+      { roomCode: code },
+      { $push: { [`cluesPurchasedByTeam.${teamId}`]: clue } },
+    );
+
+    try { io.to(teamId).emit("mystery:cluePurchased", clue); } catch {}
+    if (typeof ack === "function") ack({ ok: true, clue, cost });
+  } catch (e) {
+    console.error("[mystery:purchaseClue] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+socket.on("mystery:teacherReleaseClue", async (payload = {}, ack) => {
+  try {
+    const { roomCode, text, type = "movement" } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const MysterySession = (await import("./models/MysterySession.js")).default;
+    const clue = { id: `clue-${Date.now()}`, type, text: String(text || "").slice(0, 200), releasedAt: new Date(), releasedBy: "teacher", truth: true };
+    await MysterySession.findOneAndUpdate({ roomCode: code }, { $push: { cluesReleased: clue } });
+    try { io.to(code).emit("mystery:clueReleased", clue); } catch {}
+    if (typeof ack === "function") ack({ ok: true, clue });
+  } catch (e) {
+    console.error("[mystery:teacherReleaseClue] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+//  Escape Room sockets
+// ---------------------------------------------------------------------------
+socket.on("escape:requestState", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !teamId) {
+      if (typeof ack === "function") ack({ ok: false, error: "Missing room/team" });
+      return;
+    }
+    const escapeRoom = (await import("./services/escapeRoom.js")).default;
+    const state = await escapeRoom.getTeamState({ roomCode: code, teamId, tasksetId: room.taskset?._id || null });
+    if (typeof ack === "function") ack({ ok: true, state: escapeRoom.getStateSnapshot(state) });
+  } catch (e) {
+    console.error("[escape:requestState] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+socket.on("escape:attemptUnlock", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId, lockId, submission } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !teamId || !lockId) {
+      if (typeof ack === "function") ack({ ok: false, error: "Missing fields" });
+      return;
+    }
+    const escapeRoom = (await import("./services/escapeRoom.js")).default;
+    const result = await escapeRoom.attemptUnlock({
+      roomCode: code, teamId, taskset: room.taskset, lockId, submission,
+    });
+    if (result.ok && result.state) {
+      try { io.to(teamId).emit("escape:stateUpdated", result.state); } catch {}
+      try { io.to(teamId).emit("escape:lockOpened", { lockId, state: result.state }); } catch {}
+    }
+    if (typeof ack === "function") ack(result);
+  } catch (e) {
+    console.error("[escape:attemptUnlock] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// Teacher-only: grant a key to a team (or all teams). Bypasses lock prereqs.
+socket.on("escape:teacherGrant", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId, keyId, fragmentId } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !(keyId || fragmentId)) {
+      if (typeof ack === "function") ack({ ok: false, error: "Missing fields" });
+      return;
+    }
+    const EscapeRoomTeamState = (await import("./models/EscapeRoomTeamState.js")).default;
+    const escapeRoom = (await import("./services/escapeRoom.js")).default;
+    const targets = teamId ? [teamId] : Object.keys(room.teams || {});
+    for (const tId of targets) {
+      const update = { $setOnInsert: { roomCode: code, teamId: tId } };
+      if (keyId) update.$addToSet = { keysEarned: keyId };
+      if (fragmentId) update.$addToSet = { ...(update.$addToSet || {}), fragmentsEarned: fragmentId };
+      const state = await EscapeRoomTeamState.findOneAndUpdate(
+        { roomCode: code, teamId: tId },
+        update,
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      );
+      try { io.to(tId).emit("escape:stateUpdated", escapeRoom.getStateSnapshot(state)); } catch {}
+    }
+    if (typeof ack === "function") ack({ ok: true });
+  } catch (e) {
+    console.error("[escape:teacherGrant] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+socket.on("escape:useHint", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId, lockId } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    if (!code || !teamId) { if (typeof ack === "function") ack({ ok: false, error: "Missing" }); return; }
+    const escapeRoom = (await import("./services/escapeRoom.js")).default;
+    const result = await escapeRoom.useHint({ roomCode: code, teamId, lockId });
+    if (typeof ack === "function") ack(result);
+  } catch (e) {
+    console.error("[escape:useHint] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// Teacher-only: grant coins to one team or all teams in the room.
+socket.on("quest:teacherGrant", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId, amount } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) {
+      if (typeof ack === "function") ack({ ok: false, error: "Room not found" });
+      return;
+    }
+    const amt = Math.max(0, Math.floor(Number(amount) || 0));
+    if (amt <= 0) {
+      if (typeof ack === "function") ack({ ok: false, error: "Amount must be positive" });
+      return;
+    }
+    const { awardCoins, getQuestState, getQuestStateSnapshot } = await import("./services/questEconomy.js");
+    const targets = teamId ? [teamId] : Object.keys(room.teams || {});
+    const results = [];
+    for (const tId of targets) {
+      const { state, awarded } = await awardCoins({
+        roomCode: code,
+        teamId: tId,
+        amount: amt,
+        reason: "teacher-grant",
+        tasksetId: room.taskset?._id || null,
+      });
+      if (state && awarded > 0) {
+        const snap = getQuestStateSnapshot(state);
+        try { io.to(tId).emit("quest:stateUpdated", snap); } catch {}
+        results.push({ teamId: tId, awarded, coins: state.coins });
+      }
+    }
+    if (typeof ack === "function") ack({ ok: true, results });
+  } catch (e) {
+    console.error("[quest:teacherGrant] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// Teacher-only: force-unlock a bonus or hidden task for one team or all teams.
+socket.on("quest:teacherUnlock", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId, taskId, kind } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !taskId || !(kind === "bonus" || kind === "hidden")) {
+      if (typeof ack === "function") ack({ ok: false, error: "Bad payload" });
+      return;
+    }
+    const TeamQuestState = (await import("./models/TeamQuestState.js")).default;
+    const { getQuestState, getQuestStateSnapshot } = await import("./services/questEconomy.js");
+    const targets = teamId ? [teamId] : Object.keys(room.teams || {});
+    const bucket = kind === "hidden" ? "unlockedHiddenTaskIds" : "unlockedBonusTaskIds";
+    for (const tId of targets) {
+      await TeamQuestState.findOneAndUpdate(
+        { roomCode: code, teamId: tId },
+        { $addToSet: { [bucket]: taskId }, $setOnInsert: { roomCode: code, teamId: tId } },
+        { upsert: true, setDefaultsOnInsert: true },
+      );
+      try { io.to(tId).emit("quest:taskUnlocked", { taskId, kind, source: "teacher" }); } catch {}
+      const state = await getQuestState({ roomCode: code, teamId: tId });
+      try { io.to(tId).emit("quest:stateUpdated", getQuestStateSnapshot(state)); } catch {}
+    }
+    if (typeof ack === "function") ack({ ok: true });
+  } catch (e) {
+    console.error("[quest:teacherUnlock] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+socket.on("quest:acquireResource", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId, taskIndex, resourceId, quantity, option } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !teamId || !resourceId) {
+      if (typeof ack === "function") ack({ ok: false, error: "Missing room/team/resource" });
+      return;
+    }
+    const resource = _findQuestResource(room, taskIndex, resourceId);
+    if (!resource) {
+      if (typeof ack === "function") ack({ ok: false, error: `Unknown resource: ${resourceId}` });
+      return;
+    }
+    const { getQuestState, spendCoins, grantResource, getQuestStateSnapshot } = await import("./services/questEconomy.js");
+    const state = await getQuestState({ roomCode: code, teamId });
+    // Prereq gate
+    const prereqResult = _checkPrerequisites(resource.prerequisites, state);
+    if (!prereqResult.ok) {
+      if (typeof ack === "function") {
+        ack({
+          ok: false,
+          error: prereqResult.missing[0]?.missingMessage || "Missing prerequisites",
+          missing: prereqResult.missing,
+        });
+      }
+      return;
+    }
+
+    // MVP supports only coin-path; other options are deferred.
+    const chosen = option && option.type ? option : (resource.acquisitionOptions || []).find((o) => o?.type === "coins");
+    if (!chosen || chosen.type !== "coins") {
+      if (typeof ack === "function") ack({ ok: false, error: "Only coin acquisition is supported in MVP" });
+      return;
+    }
+    const cost = Math.max(0, Number(chosen.amount) || 0);
+    const qty = Math.max(1, Math.floor(Number(quantity) || 1));
+
+    const spend = await spendCoins({ roomCode: code, teamId, amount: cost * qty, reason: `acquire:${resourceId}` });
+    if (!spend.ok) {
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Insufficient coins", coinBalance: spend.state?.coins ?? state.coins });
+      }
+      return;
+    }
+    const grant = await grantResource({ roomCode: code, teamId, resourceId, quantity: qty, reason: "purchase" });
+
+    const snapshot = getQuestStateSnapshot(grant.state || spend.state);
+    try { io.to(teamId).emit("quest:stateUpdated", snapshot); } catch {}
+    if (typeof ack === "function") ack({ ok: true, state: snapshot, acquired: { resourceId, quantity: qty, cost: cost * qty } });
+  } catch (e) {
+    console.error("[quest:acquireResource] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// Snapshot fetch (used by the renderer on mount or reconnect).
+socket.on("whatAmI:requestState", (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId, taskIndex } = payload || {};
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !teamId) {
+      if (typeof ack === "function") ack({ ok: false, error: "Room or team not found" });
+      return;
+    }
+    const game = _getOrInitWhatAmIGame(room, taskIndex);
+    const revealed = game.mode === "inter-team"
+      ? game.globalRevealed
+      : (Number(game.revealedByTeam[teamId]) || 0);
+    const pointCeiling = whatAmI_computePoints({
+      cluesRevealed: revealed,
+      totalClues: game.totalClues,
+      scoring: { perClueCurve: game.perClueCurve },
+    });
+    if (typeof ack === "function") {
+      ack({
+        ok: true,
+        taskKey: game.taskKey,
+        taskIndex: game.taskIndex,
+        mode: game.mode,
+        revealedCount: revealed,
+        totalClues: game.totalClues,
+        pointCeiling,
+        frozen: game.frozen,
+        locked: !!(game.firstCorrectTeamId && game.mode === "inter-team"),
+      });
+    }
+  } catch (e) {
+    console.error("[whatAmI:requestState] error", e);
     if (typeof ack === "function") ack({ ok: false, error: "Server error" });
   }
 });

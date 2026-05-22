@@ -1,0 +1,172 @@
+[
+  {
+    "subjects": ["science", "biology", "chemistry", "physics", "earth science", "general"],
+    "gradeBand": "any",
+    "title": "Curiosity Beyond the Textbook",
+    "currentEventHeadline": "Scientists keep finding surprises in places we thought we knew.",
+    "eventSummary": "From new species discovered in well-studied forests to fresh insights from old experiments, ordinary scientists keep revising what we thought we knew. The pattern: curiosity + careful observation + willingness to revisit assumptions.",
+    "connectionToLesson": "Today's lesson is one more chance to ask: what's the assumption I haven't questioned yet?",
+    "studentTask": "In pairs, name one 'common knowledge' fact from this lesson. Then list ONE reason it might still be incomplete, and ONE way you could check.",
+    "discussionQuestions": [
+      "What's the difference between 'something we don't know' and 'something we got wrong'?",
+      "Whose curiosity counted in this lesson — and whose was ignored?",
+      "If today's lesson turned out to be partly mistaken, how would we find out?"
+    ],
+    "extensionActivity": "Write a 3-sentence note to a scientist (alive or historical) who would have loved this lesson.",
+    "teacherNotes": "Evergreen prompt. Source: Curriculate evergreen library.",
+    "estimatedMinutes": 12
+  },
+  {
+    "subjects": ["history", "social studies", "civics", "geography"],
+    "gradeBand": "any",
+    "title": "Then & Now",
+    "currentEventHeadline": "Decisions in the past still shape our headlines this week.",
+    "eventSummary": "Every modern news story has roots — sometimes decades, sometimes centuries deep. Historians call this 'path dependency': the choices people made before us narrow the choices we have now.",
+    "connectionToLesson": "Whatever you studied today probably echoes in a current debate. Your job is to find the echo.",
+    "studentTask": "In pairs, name ONE event or person from today's lesson. Then describe how one of their choices STILL shapes a real debate today — give an example.",
+    "discussionQuestions": [
+      "Whose choices in today's lesson had consequences far beyond what they intended?",
+      "Are we bound by past decisions, or can we always start over? What's the evidence?",
+      "If today's lesson had gone differently, what current debate might not exist?"
+    ],
+    "extensionActivity": "Find one headline from this week. Trace it back at least 100 years.",
+    "teacherNotes": "Evergreen prompt for history/social studies. Source: Curriculate evergreen library.",
+    "estimatedMinutes": 12
+  },
+  {
+    "subjects": ["math", "mathematics", "algebra", "geometry", "statistics"],
+    "gradeBand": "any",
+    "title": "Where Math Hides",
+    "currentEventHeadline": "Math is doing invisible work behind every modern technology.",
+    "eventSummary": "GPS, search engines, vaccines, even the playlist on your phone — they all rest on math most people never see. The breakthroughs that look 'tech' are usually math first.",
+    "connectionToLesson": "Today's concepts are part of that invisible foundation. The question isn't 'when will I use this' — it's 'where is this ALREADY working without me noticing?'",
+    "studentTask": "List ONE place today's math concept might be working invisibly RIGHT NOW (in this room, this building, your pocket).",
+    "discussionQuestions": [
+      "What's something you used today that wouldn't exist without math you don't fully understand?",
+      "Is invisible math a kind of trust? What are we trusting?",
+      "Are there parts of life math doesn't (or shouldn't) touch?"
+    ],
+    "extensionActivity": "Pick one app on your phone. Hypothesize what math the developers must understand.",
+    "teacherNotes": "Evergreen prompt for math. Source: Curriculate evergreen library.",
+    "estimatedMinutes": 10
+  },
+  {
+    "subjects": ["english", "language arts", "literature", "writing"],
+    "gradeBand": "any",
+    "title": "Why This Story Lasted",
+    "currentEventHeadline": "The stories that survive carry something the moment couldn't kill.",
+    "eventSummary": "Most stories disappear. The ones that last across decades or centuries usually share something — a question that stays urgent, a character who stays surprising, language that still lands. Researchers call these 'sticky narratives'.",
+    "connectionToLesson": "Today's reading lasted long enough for you to study it. Why? What did it carry that other stories from its time didn't?",
+    "studentTask": "Pick ONE moment from today's reading. Argue (in 2-3 sentences) why a reader 50 years from now might still care about that moment.",
+    "discussionQuestions": [
+      "What makes a story 'survive'? Quality, luck, who's in power, or something else?",
+      "Whose stories are most likely to disappear? Why?",
+      "If you could only save ONE story from today's lesson for the future, which? Why?"
+    ],
+    "extensionActivity": "Rewrite the opening sentence of today's reading as if it were a headline today. What changes? What doesn't?",
+    "teacherNotes": "Evergreen prompt for ELA. Source: Curriculate evergreen library.",
+    "estimatedMinutes": 12
+  },
+  {
+    "subjects": ["religion", "bible", "ministry", "theology"],
+    "gradeBand": "any",
+    "title": "Old Words, Today's Streets",
+    "currentEventHeadline": "Ancient wisdom keeps showing up in modern moral debates.",
+    "eventSummary": "When journalists, judges, and ordinary people argue about what's right today, they often borrow language from texts that are thousands of years old. Sometimes faithfully — sometimes by accident.",
+    "connectionToLesson": "Today's lesson is one such piece of borrowed language. Where is it showing up in this week's headlines?",
+    "studentTask": "In pairs, name ONE current event you've heard about this week. Connect it (specifically) to today's lesson — even if the headline doesn't mention it.",
+    "discussionQuestions": [
+      "When today's lesson talks about justice / mercy / wisdom, is it saying the same thing modern news does?",
+      "Where does today's lesson surprise you compared to how the same idea gets used now?",
+      "If everyone read today's text, would this week's news be different? Why or why not?"
+    ],
+    "extensionActivity": "Find one phrase from today's lesson that you've heard people use OUTSIDE of class. What did they mean by it?",
+    "teacherNotes": "Evergreen prompt for religion/Bible/ministry classes. Source: Curriculate evergreen library.",
+    "estimatedMinutes": 12
+  },
+  {
+    "subjects": ["computer science", "technology", "coding", "engineering"],
+    "gradeBand": "any",
+    "title": "The Code Underneath",
+    "currentEventHeadline": "Every screen you tap is the tip of an iceberg of code someone wrote.",
+    "eventSummary": "What looks like 'just an app' is usually tens of millions of lines of code, built by thousands of people over decades. Each line is a decision someone made — and those decisions are now invisible defaults shaping your life.",
+    "connectionToLesson": "Today's concept is one of those underlying decisions. Most people will never see it. You will.",
+    "studentTask": "Pick ONE feature on a phone or laptop. Name a decision the engineers must have made — and what could go wrong if they got it wrong.",
+    "discussionQuestions": [
+      "What's the difference between 'how something works' and 'how it was designed to work'?",
+      "Who's accountable when the invisible default is wrong?",
+      "Could you re-design today's concept differently? What would change?"
+    ],
+    "extensionActivity": "Read one app's privacy policy or terms of service. Highlight one decision the engineers made for you.",
+    "teacherNotes": "Evergreen prompt for CS/tech. Source: Curriculate evergreen library.",
+    "estimatedMinutes": 10
+  },
+  {
+    "subjects": ["art", "music", "drama", "creative"],
+    "gradeBand": "any",
+    "title": "Why Art Lasts",
+    "currentEventHeadline": "Art that lasts usually said something that mattered when nobody else would say it.",
+    "eventSummary": "The artists, musicians, and writers we still talk about often pushed something into the open before it was safe — a question, an emotion, a perspective. Some were celebrated then; some weren't. The work outlived the moment either way.",
+    "connectionToLesson": "Today's work is one of those that lasted. Why?",
+    "studentTask": "Pick ONE moment from today's lesson. Argue (in 2 sentences) what made it brave or unusual when it was made.",
+    "discussionQuestions": [
+      "What art do you think people will still care about in 100 years? Why?",
+      "Is comfortable art ever great art? When?",
+      "Who decides what art lasts? Should we trust them?"
+    ],
+    "extensionActivity": "Find one piece of art (music / image / writing) made THIS year that takes a risk. What is the risk?",
+    "teacherNotes": "Evergreen prompt for arts. Source: Curriculate evergreen library.",
+    "estimatedMinutes": 12
+  },
+  {
+    "subjects": ["health", "physical education", "wellness"],
+    "gradeBand": "any",
+    "title": "What We Know That We Didn't",
+    "currentEventHeadline": "Health advice we follow today would have sounded radical 30 years ago.",
+    "eventSummary": "Sleep matters more than we thought. Sitting all day is worse than we thought. Exercise helps the brain, not just the body. These shifts didn't happen because new bodies appeared — they happened because researchers asked sharper questions.",
+    "connectionToLesson": "Today's lesson is one of those sharper questions. What does it ask you to update?",
+    "studentTask": "Name ONE thing in today's lesson that contradicts what you (or someone you know) used to believe. What evidence would change your mind further?",
+    "discussionQuestions": [
+      "What health 'common sense' from 30 years ago is now considered wrong?",
+      "Why do health beliefs change so slowly even when the evidence shifts?",
+      "Who do you trust for health information? Should you?"
+    ],
+    "extensionActivity": "Find one piece of health advice your parents grew up with. Look up whether researchers still agree.",
+    "teacherNotes": "Evergreen prompt for health/PE. Source: Curriculate evergreen library.",
+    "estimatedMinutes": 10
+  },
+  {
+    "subjects": ["business", "economics", "finance"],
+    "gradeBand": "any",
+    "title": "Why Markets Move",
+    "currentEventHeadline": "Markets react to news, but they really move on what people THINK others will think.",
+    "eventSummary": "Stock prices, currency values, even housing prices — they don't just respond to facts. They respond to predictions about predictions. Economist John Maynard Keynes called this a 'beauty contest': don't pick what you think is best, pick what you think others will pick.",
+    "connectionToLesson": "Today's concept is one piece of how that game gets played.",
+    "studentTask": "Name ONE recent news event you've heard about. Describe how it might be moving prices — even before anything 'actually' changes.",
+    "discussionQuestions": [
+      "If markets move on belief, are they a measure of reality or of mood?",
+      "When does the beauty-contest dynamic help us? When does it hurt us?",
+      "Should anyone be steering this? Who would you trust to?"
+    ],
+    "extensionActivity": "Pick one product you buy. Hypothesize what would have to happen in the news for its price to double next month.",
+    "teacherNotes": "Evergreen prompt for business/economics. Source: Curriculate evergreen library.",
+    "estimatedMinutes": 12
+  },
+  {
+    "subjects": ["general"],
+    "gradeBand": "3-5",
+    "title": "What's New This Week?",
+    "currentEventHeadline": "Cool things keep being discovered, even by people just like you.",
+    "eventSummary": "Real scientists, real explorers, and real ordinary people keep finding new things every single week. Most discoveries don't make the front page — but they're real.",
+    "connectionToLesson": "Today you learned something new. So did somebody else, somewhere — maybe a kid your age.",
+    "studentTask": "Tell a partner ONE thing you learned today. Then ask them what THEY think someone else might be learning right now.",
+    "discussionQuestions": [
+      "What's the most interesting thing you learned this week — in or out of school?",
+      "Where do new discoveries come from?",
+      "What would you like to discover one day?"
+    ],
+    "extensionActivity": "Draw a picture of something you'd like someone to discover.",
+    "teacherNotes": "Evergreen prompt for younger grades. Source: Curriculate evergreen library.",
+    "estimatedMinutes": 8
+  }
+]

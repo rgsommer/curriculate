@@ -2,6 +2,10 @@
 import React, { useEffect, useState, useRef } from "react";
 import { io } from "socket.io-client";
 import TaskRunner from "./components/tasks/TaskRunner.jsx";
+import QuestHud from "./components/quest/QuestHud.jsx";
+import EscapeRoomHud from "./components/escape/EscapeRoomHud.jsx";
+import MysteryHud from "./components/mystery/MysteryHud.jsx";
+import DuelOverlay from "./components/duel/DuelOverlay.jsx";
 import QrScanner from "./components/QrScanner.jsx";
 import NoiseSensor from "./components/NoiseSensor.jsx";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
@@ -6250,6 +6254,54 @@ function StudentApp() {
           </button>
         </div>
       }>
+      {/* Quest Mode HUD — read-only coin balance + inventory. Only rendered when
+          the active room's taskset has questModeEnabled (mirrored from server). */}
+      {roomState?.questModeEnabled ? (
+        <QuestHud
+          socket={socket}
+          roomCode={roomCode}
+          teamId={teamId}
+          enabled
+        />
+      ) : null}
+
+      {/* Escape Room HUD — keys / fragments / lock progress. */}
+      {roomState?.escapeRoomEnabled ? (
+        <EscapeRoomHud
+          socket={socket}
+          roomCode={roomCode}
+          teamId={teamId}
+          enabled
+          tasksetConfig={roomState?.escapeRoomConfig || null}
+        />
+      ) : null}
+
+      {/* Duel overlay — full-screen when a duel is in progress, dismisses itself.
+          Always mounted (cheap when idle); shows itself on duel:announced. */}
+      <DuelOverlay
+        socket={socket}
+        roomCode={roomCode}
+        teamId={teamId}
+        // We don't have a single canonical player-name var in StudentApp.
+        // The component does case-insensitive equality against the broadcast.
+        // For MVP we let any team-member device claim the duel slot if its
+        // team is in the duel (the team coordinates verbally who actually plays).
+        myPlayerName={null}
+      />
+
+      {/* Whodunnit HUD — clue board + accusation. */}
+      {roomState?.mysteryEnabled ? (
+        <MysteryHud
+          socket={socket}
+          roomCode={roomCode}
+          teamId={teamId}
+          teamMembers={(roomState?.teams?.[teamId]?.members || []).map((m) => typeof m === "string" ? m : m?.name || m?.playerName).filter(Boolean)}
+          // MVP: we don't have a single canonical "my name" var on StudentApp; the HUD
+          // does an opportunistic equality check against the broadcast suspect name.
+          myPlayerName={null}
+        />
+      ) : null}
+
       <TaskRunner
         key={
           currentTask?.id ??

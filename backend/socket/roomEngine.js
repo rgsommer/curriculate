@@ -708,6 +708,45 @@ export function createRoomEngine(io) {
       tasksetName: (room.taskset?.name || room.taskset?.title || "").replace(/^taskset:\s*/i, "").trim(),
       startedAt: room.startedAt || null,
       isActive: !!room.isActive,
+      // Quest Mode flag — mirrors TaskSet.questModeEnabled so the student
+      // app can decide whether to mount the QuestHud.
+      questModeEnabled: !!room.taskset?.questModeEnabled,
+      // Escape Room flag + minimal config (the renderer wants to know how many locks exist).
+      // Full escapeRoomConfig (keys/fragments/lock answers) is INTENTIONALLY not exposed
+      // here — clients only need the lock count for progress display.
+      escapeRoomEnabled: !!room.taskset?.escapeRoomConfig,
+      escapeRoomConfig: room.taskset?.escapeRoomConfig
+        ? {
+            totalLocks: Array.isArray(room.taskset.escapeRoomConfig.locks) ? room.taskset.escapeRoomConfig.locks.length : 0,
+            // Strip secret answers / fragment revealValues — those go through the per-team state.
+            // Locks: expose title/narrativeText/hint/type but NOT synthesisAnswer.
+            locks: (room.taskset.escapeRoomConfig.locks || []).map((l) => ({
+              id: l.id,
+              title: l.title,
+              narrativeText: l.narrativeText,
+              hint: l.hint,
+              type: l.type,
+              requires: l.requires,
+              unlocks: { roomCompleted: !!l.unlocks?.roomCompleted },
+            })),
+            // Fragments: expose id/type/position/gridPos/assetUrl/narrativeText.
+            // revealValue is INCLUDED for client display only when the team has earned it
+            // (escape:requestState returns earned IDs; the client cross-references).
+            fragments: (room.taskset.escapeRoomConfig.fragments || []).map((f) => ({
+              id: f.id,
+              type: f.type,
+              position: f.position,
+              gridPos: f.gridPos,
+              assetUrl: f.assetUrl,
+              narrativeText: f.narrativeText,
+              // revealValue is broadcast — clients show it only if state.fragmentsEarned includes the id
+              revealValue: f.revealValue,
+            })),
+          }
+        : null,
+      // Whodunnit overlay — surfaced when the room has an enabled MysterySession.
+      // We expose ONLY a boolean here; full state goes through mystery:requestState.
+      mysteryEnabled: !!(room.taskset?.mysteryEnabled || room.mysteryActive),
       selectedRooms: Array.isArray(room.selectedRooms) ? room.selectedRooms : [],
       locationOptions: Array.isArray(room.locationOptions) ? room.locationOptions : [],
       moodCheckins: room.moodCheckins && typeof room.moodCheckins === "object" ? room.moodCheckins : {},
@@ -863,6 +902,57 @@ export function createRoomEngine(io) {
 
     const task = tasks[index];
     if (!task) return;
+
+    // ── Current Events: lazily resolve at launch time ──
+    // The persisted task is only a SHELL (lessonTopic / subject / grade / region / worldview).
+    // Real content is fetched from a live web search + AI generation pipeline. We:
+    //   1. Send a placeholder "Loading…" task to the team immediately.
+    //   2. Kick off the resolver asynchronously.
+    //   3. When the resolver returns, mutate task.config.resolved and re-call sendTaskToTeam.
+    if (task.taskType === "current-events" && !task?.config?.resolved) {
+      // Send a quick placeholder so the student device doesn't sit idle
+      io.to(teamId).emit("task:launch", {
+        taskIndex: index,
+        index,
+        task: {
+          ...task,
+          title: task.title || "Today's Story",
+          prompt: "Loading today's connection to the lesson…",
+          config: { ...(task.config || {}), loading: true },
+        },
+        timeLimitSeconds: null,
+        totalTasks: tasks.length,
+      });
+
+      const shellCfg = task.config || {};
+      const resolverPromise = import("../services/currentEventsResolver.js").then(({ resolveCurrentEvents }) =>
+        resolveCurrentEvents({
+          lessonTopic: shellCfg.lessonTopic || room.taskset?.topicLabel || "",
+          subject: shellCfg.subject || room.taskset?.subject || "General",
+          gradeLevel: Number(shellCfg.gradeLevel) || Number(room.taskset?.gradeLevel) || 7,
+          region: shellCfg.region || "Canada",
+          worldviewProfile: shellCfg.worldviewProfile || "general",
+          preferredCategories: Array.isArray(shellCfg.preferredCategories) ? shellCfg.preferredCategories : undefined,
+        }),
+      );
+
+      resolverPromise
+        .then((result) => {
+          if (!result?.ok || !result.resolved) return;
+          // Mutate the in-memory task so subsequent calls (and roomState payloads) include the resolved content
+          task.config = { ...(task.config || {}), resolved: result.resolved, loading: false };
+          // Recurse — second pass takes the normal code path since resolved is now set
+          try { sendTaskToTeam(room, teamId, index); } catch (e) { console.warn("[currentEvents] re-emit failed:", e?.message); }
+        })
+        .catch((err) => {
+          console.error("[currentEvents] resolver failed:", err?.message);
+          // Send a final fallback so the team isn't stuck
+          task.config = { ...(task.config || {}), resolved: { eventSummary: "Today's story couldn't be fetched. Discuss any recent news the class has heard related to today's topic.", discussionQuestions: ["What's one news story you've heard this week?", "Could it connect to today's lesson?"], teacherNotes: "Resolver failure fallback.", estimatedMinutes: 8 }, loading: false };
+          try { sendTaskToTeam(room, teamId, index); } catch {}
+        });
+
+      return; // exit; the recursion will emit the real task
+    }
 
     // If this is a Diff Detective task, initialise / reset race state
     // the first time any team is sent this particular index.

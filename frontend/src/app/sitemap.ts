@@ -8,6 +8,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     // ── Top-level marketing pages ──
     { url: baseUrl, lastModified: now, changeFrequency: "weekly", priority: 1.0 },
     { url: `${baseUrl}/features`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${baseUrl}/sample-sessions`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },
     { url: `${baseUrl}/how-it-works`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },
     { url: `${baseUrl}/pricing`, lastModified: now, changeFrequency: "monthly", priority: 0.9 },
     { url: `${baseUrl}/freetrial`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },

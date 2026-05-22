@@ -452,6 +452,113 @@ export default function FeaturesPage() {
 
           <div className="mt-12">
             <SectionHeader
+              eyebrow="New: AI Game Modes"
+              title="Seven new ways for curriculum to come alive"
+              desc="In addition to the 23 core task types, Curriculate now ships seven new game modes that turn a classroom into a live simulation. Each one is a different way for academic understanding to drive progress — earn coins, escape rooms, deduce the spy, race the tilt board, debate careers, deduce concepts, or connect today's lesson to this week's news."
+              mascot="/images/mascot/promo/2.png"
+            />
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <FeatureCard
+                title="🧠 What Am I?"
+                body="A deduction game. Students see a vague clue and decide: guess now for max points, or reveal another clue and accept a lower ceiling. The earlier they commit, the more they earn — but with less information."
+                bullets={[
+                  "Inter-team mode: server-locked global clue ceiling — fair race across all teams",
+                  "Server-validated answer matcher (exact / substring / fuzzy)",
+                  "AI generator guards against dictionary-style clues; the answer must NEVER appear in a clue",
+                  "Teacher controls: force-reveal a clue, freeze submissions, skip task",
+                  "Demo pool of 6 concepts (Photosynthesis, the Nile, Gravity, Mitochondria, Magna Carta, Solar Eclipse)",
+                ]}
+              />
+              <FeatureCard
+                title="🪙 Quest Mode"
+                body="An expedition simulation. Teams earn coins from normal academic work, then spend them on resources (rope, water, a key, a chart) to complete a mission. Bonus + hidden tasks unlock when teams meet conditions — never idle, never bored."
+                bullets={[
+                  "Auto-generates 2 bonus + 1 hidden task per taskset (early finishers get more)",
+                  "Coin balance lives on TeamQuestState; persistent across reconnects",
+                  "Resource prerequisites (need a barrel before you can carry water)",
+                  "Server-validated atomic spend (cannot overdraw)",
+                  "Teacher console: grant coins, force-unlock bonus / hidden tasks",
+                ]}
+              />
+              <FeatureCard
+                title="🔐 Escape Room"
+                body="Knowledge unlocks progress. Tasks award keys; keys open locks; locks reveal puzzle fragments; the final lock requires synthesis of everything earned. Curriculum terms are woven into every lock hint — pure escape doesn't work, only understanding does."
+                bullets={[
+                  "AI generator binds the config to teacher-supplied curriculum terms (≥ 80% coverage required)",
+                  "Cascading lock evaluation — open one lock, its keys cascade",
+                  "Three final-puzzle types: PIN entry, image-tile assembly, cipher-wheel alignment",
+                  "Anti-brute-force: synthesis answer never leaves the server",
+                  "Teacher mercy controls: grant any key directly when a team is stuck",
+                ]}
+              />
+              <FeatureCard
+                title="🕵 Whodunnit"
+                body="At the start of a session, one player is secretly assigned a hidden role (spy / saboteur / infiltrator). As real gameplay happens — scans, submissions, movements — the engine surfaces TRUE clues about who they are. Teams investigate and accuse."
+                bullets={[
+                  "Real-gameplay clue generator (movement / identity / timing types)",
+                  "Ambiguity-band guard: every clue intentionally fits 2+ students",
+                  "Anti-toxicity: wrong accusations NEVER publicly name the accused",
+                  "Per-team private clue purchases — buy investigation depth with points",
+                  "Cooldown + max-accusation caps prevent spam-accuse",
+                ]}
+              />
+              <FeatureCard
+                title="📰 Current Events Connection"
+                body="The only Curriculate task that's resolved LIVE at session launch — not at creation. A web search fetches a real news story from the past 7 days that connects to today's lesson, then AI generates discussion questions in your teacher worldview profile."
+                bullets={[
+                  "Live web search via Anthropic's tool — no curated feeds to maintain",
+                  "Publisher exclusion list — configurable per teacher",
+                  "Worldview profile: general, secular, or Christian framing (event itself stays neutral)",
+                  "12-hour cache (Mongo-backed) + 10-entry evergreen fallback",
+                  "Never skips: world → country → stale-cache → evergreen library",
+                ]}
+              />
+              <FeatureCard
+                title="🎯 Hole in One"
+                body="A physics-tilt mini-game. Students answer curriculum questions to earn coins → buy rails → place them on the board → tilt the device to roll a ball into the hole. Knowledge literally builds the path."
+                bullets={[
+                  "DeviceOrientation API with iOS permission gate + keyboard / joystick fallback",
+                  "Three phases: Earn (questions → coins) → Build (drag-place rails) → Tilt (physics)",
+                  "Rotating tilter system encourages every teammate to take a turn",
+                  "Server-clamped scoring prevents client-side cheating",
+                  "Theme-aware AI board generation",
+                ]}
+              />
+              <FeatureCard
+                title="🧭 Careers"
+                body="Six discussion-driven modes for Grades 6-12: Best Fit, Pathway Builder, Aptitude Match, Salary vs Lifestyle, Who Should Be Hired, Career Myths. Anti-prestige-bias guardrails throughout — trades and ministry count just as much as STEM."
+                bullets={[
+                  "Six modes in a single unified renderer",
+                  "AI justification scorer (1 / 2 / 3 tiers) maps to participation / justification / strong-justification points",
+                  "Anti-toxicity: Best Fit picks are private; 'worst fit' is never a prompt",
+                  "Salary always shown as ranges, never single numbers",
+                  "Category rotation (no STEM bias) baked into the AI prompt",
+                ]}
+              />
+              <FeatureCard
+                title="⚔️ Auto-Duels"
+                body="When two teams are neck-and-neck (top-two score gap ≤ 10), the server automatically picks one player from each team for a head-to-head challenge. Question pulled from the active taskset; first correct answer wins a 1.5× bonus."
+                bullets={[
+                  "Triggered automatically — no teacher button. The score gap IS the criterion.",
+                  "3-2-1 countdown + full-screen overlay for both duelists and spectators",
+                  "30-second timeout + draw fallback",
+                  "Loser team gets a 2-point consolation — no public shaming",
+                  "Cooldown (4 min default) prevents back-to-back interruptions",
+                ]}
+              />
+            </div>
+            <div className="mt-6">
+              <Link
+                href="/sample-sessions"
+                className="inline-flex items-center gap-2 rounded-full bg-violet-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-violet-700"
+              >
+                See 5 sample sessions across subjects &amp; grades →
+              </Link>
+            </div>
+          </div>
+
+          <div className="mt-12">
+            <SectionHeader
               eyebrow="Pulse Grading"
               title="AI grading at curriculate.net/grading"
               desc="A companion product, sharing the same identity layer and class-linking infrastructure. Snap a photo, paste text, upload a batch PDF, record a speech, or upload a video — Pulse Grading gives every student rubric-matched feedback and a personal results page in seconds."
@@ -573,6 +680,70 @@ export default function FeaturesPage() {
                   "Full classroom capacity",
                 ]}
               />
+            </div>
+          </div>
+
+          <div className="mt-12">
+            <SectionHeader
+              eyebrow="Replayability"
+              title="40 weeks. 40 unique sessions."
+              desc="If you ran Curriculate with your class once a week for a full school year, the odds that any two weeks would feel the same are effectively zero. Here's the math."
+              mascot="/images/mascot/recommend/1.png"
+            />
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="text-3xl">🎲</div>
+                <h3 className="mt-3 text-lg font-bold text-slate-900">67 cognitive task types</h3>
+                <p className="mt-2 text-sm text-slate-600">
+                  A typical 12-task session is drawn from 67 cognitive task types across all six Bloom&apos;s levels.
+                  Just choosing which task types appear (without ordering) yields more than 10<sup>13</sup>{" "}
+                  unordered combinations.
+                </p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="text-3xl">🧠</div>
+                <h3 className="mt-3 text-lg font-bold text-slate-900">AI-generated content, every time</h3>
+                <p className="mt-2 text-sm text-slate-600">
+                  Each task&apos;s questions, distractors, clues, suspect lists, fact pools, riddles, and rubrics are
+                  freshly generated. Even the same topic at the same grade produces different items, options, and
+                  framings on every run.
+                </p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="text-3xl">📰</div>
+                <h3 className="mt-3 text-lg font-bold text-slate-900">Runtime resolution</h3>
+                <p className="mt-2 text-sm text-slate-600">
+                  Current Events pulls live news at launch. Whodunnit picks a different suspect per team. Legends
+                  rotates figures. Hole-in-One randomizes the rail order. Quest hides bonus tasks behind different
+                  unlock conditions. The board state changes mid-session.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-lg font-bold text-slate-900">The math, briefly</h3>
+                <p className="mt-2 text-sm text-slate-600">
+                  Pick 12 task types out of 67: C(67, 12) ≈ 4.8 × 10<sup>13</sup>. Multiply by the AI content
+                  variation per task — different items, different rubrics, different decoys — and the effective
+                  sample space dwarfs the number of seconds in a teacher&apos;s career.
+                </p>
+                <p className="mt-2 text-sm text-slate-600">
+                  The probability of two sessions over 40 weeks looking even superficially identical is essentially
+                  zero. The number of distinct learning experiences a single classroom can produce is, for
+                  practical purposes, unbounded.
+                </p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-6 shadow-sm">
+                <h3 className="text-lg font-bold text-slate-900">What this means in practice</h3>
+                <ul className="mt-2 grid gap-2 text-sm text-slate-700">
+                  <li>• Run the same unit twice — students never see the same questions.</li>
+                  <li>• Teach the same topic across periods — each section gets fresh content.</li>
+                  <li>• Use the platform every week — novelty stays high, engagement compounds.</li>
+                  <li>• Re-teach a concept the next year — the experience is genuinely new.</li>
+                </ul>
+              </div>
             </div>
           </div>
 

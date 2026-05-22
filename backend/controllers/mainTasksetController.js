@@ -1574,6 +1574,11 @@ export async function createAiTaskset(req, res) {
       isFixedStationTaskset,
       displays: rawDisplays,
       atDeskOnly,
+      questMode,         // Quest Mode overlay flag — see QUEST_MODE_PLAN.md
+      escapeRoomMode,    // Escape Room overlay flag — see ESCAPE_ROOM_PLAN.md
+      escapeRoomTheme,   // optional theme override (spy-mission / archaeology / ...)
+      narrativeTerms,    // CSV string OR array — used by the escape room generator's curriculum-term gate
+      duelsEnabled,      // Auto-duel trigger flag — see backend/services/duel.js
     } = req.body || {};
 
     // At-desk-only mode: the 6 task types that fundamentally require students
@@ -1589,6 +1594,8 @@ export async function createAiTaskset(req, res) {
       "treasure-runner",
     ]);
     const isAtDeskOnly = atDeskOnly === true;
+    const isQuestMode = questMode === true;
+    const isEscapeRoomMode = escapeRoomMode === true;
 
     // ── Fixed station / display support ──
     // Teacher may assign physical objects/topics to colored stations.
@@ -1666,6 +1673,25 @@ export async function createAiTaskset(req, res) {
     if (userPool && userPool.length > safeCount) {
       console.log(`[AI] Expanding safeCount from ${safeCount} to ${userPool.length} to fit all selected task types`);
       safeCount = userPool.length;
+    }
+
+    // 🔹 Early-finisher bonus tasks — ALWAYS add 2 extra tasks beyond the
+    //   teacher's time-derived count. These are tagged isBonus + requiredForCompletion:false
+    //   below, so teams that finish core early get them automatically while slower
+    //   teams never need to see them. The teacher's intended time budget is honored
+    //   for the core; the bonus tasks are pure overflow.
+    const EARLY_FINISHER_BONUS_COUNT = 2;
+    const QUEST_HIDDEN_COUNT = 1;     // quest mode adds 1 hidden ON TOP of the always-on +2 bonus
+    {
+      const beforeCount = safeCount;
+      safeCount += EARLY_FINISHER_BONUS_COUNT;
+      console.log(`[AI] +${EARLY_FINISHER_BONUS_COUNT} early-finisher bonus tasks → safeCount ${beforeCount}→${safeCount}`);
+    }
+    if (isQuestMode) {
+      const beforeCount = safeCount;
+      safeCount += QUEST_HIDDEN_COUNT;
+      if (!guaranteed.includes("quest")) guaranteed.unshift("quest");
+      console.log(`[AI] questMode=true → +${QUEST_HIDDEN_COUNT} hidden task, safeCount ${beforeCount}→${safeCount}, 'quest' forced into guaranteed`);
     }
 
     // ✅ Load teacher profile early — needed for both diversity minimums and worldview lens.
@@ -2103,6 +2129,70 @@ export async function createAiTaskset(req, res) {
     // Use the user-entered title first, fall back to topic/subject — never prefix with "Taskset:"
     const displayName = String(tasksetName || topicTitle || title || topicLabel || subject || "Task Set").trim();
 
+    // ── Tag trailing tasks as bonus / hidden ──
+    // Every taskset gets +2 bonus tasks (early-finisher provision). They sit at
+    // the end of the sequence and are marked requiredForCompletion:false +
+    // unlockConditions:{ coreProgressPct: 100 } so they only surface to teams
+    // that complete the core. Quest tasksets get an additional hidden task.
+    if (Array.isArray(finalized) && finalized.length >= EARLY_FINISHER_BONUS_COUNT) {
+      const totalBonusSlots = EARLY_FINISHER_BONUS_COUNT + (isQuestMode ? QUEST_HIDDEN_COUNT : 0);
+      const n = finalized.length;
+      // Bonus tasks (the always-on 2)
+      const bonusStart = n - totalBonusSlots;
+      const bonusEnd   = n - (isQuestMode ? QUEST_HIDDEN_COUNT : 0) - 1;
+      for (let i = bonusStart; i <= bonusEnd; i++) {
+        if (finalized[i] && typeof finalized[i] === "object") {
+          finalized[i].isBonus = true;
+          finalized[i].requiredForCompletion = false;
+          finalized[i].unlockConditions = { coreProgressPct: 100 };  // unlock when core is fully done
+        }
+      }
+      // Hidden task (quest mode only)
+      if (isQuestMode && finalized[n - 1] && typeof finalized[n - 1] === "object") {
+        finalized[n - 1].isHidden = true;
+        finalized[n - 1].requiredForCompletion = false;
+        finalized[n - 1].unlockConditions = { coreQuestCompleted: true, minRemainingMinutes: 8 };
+      }
+      console.log(`[AI] tagged early-finisher tasks: indices ${bonusStart}..${bonusEnd} as isBonus${isQuestMode ? `, ${n - 1} as isHidden` : ""}`);
+    }
+
+    // ── Escape Room: generate the lock/key/fragment config from curriculum terms ──
+    // Wires keys[].grantedBy.taskId to actual task IDs in `finalized` so the
+    // runtime engine grants keys as tasks complete.
+    let escapeRoomConfig = null;
+    if (isEscapeRoomMode) {
+      try {
+        const { generateEscapeRoomConfig } = await import("./escapeRoomGenerator.js");
+        const termsArr = Array.isArray(narrativeTerms)
+          ? narrativeTerms
+          : String(narrativeTerms || aiWordBank || topicLabel || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+        const genResult = await generateEscapeRoomConfig({
+          gradeLevel, subject, lessonTopic: topicLabel,
+          narrativeTerms: termsArr,
+          theme: escapeRoomTheme,
+          difficulty,
+        });
+        if (genResult.ok) {
+          escapeRoomConfig = genResult.config;
+        } else {
+          console.warn("[AI] escape room generator fell back to skeleton:", genResult.error);
+          escapeRoomConfig = genResult.skeleton;
+        }
+        // Distribute keys[].grantedBy.taskId across the first N core tasks
+        const eligibleTaskIds = finalized
+          .filter((t) => !t.isBonus && !t.isHidden)
+          .map((t) => t.taskId || t._id || `idx-${finalized.indexOf(t)}`);
+        for (let i = 0; i < (escapeRoomConfig?.keys || []).length; i++) {
+          const k = escapeRoomConfig.keys[i];
+          if (k.grantedBy && k.grantedBy.taskId == null && eligibleTaskIds[i]) {
+            k.grantedBy.taskId = eligibleTaskIds[i];
+          }
+        }
+      } catch (e) {
+        console.error("[AI] escape room generation failed:", e?.message);
+      }
+    }
+
     const doc = await TaskSet.create({
       name: displayName,
       title: displayName,
@@ -2115,6 +2205,9 @@ export async function createAiTaskset(req, res) {
       tasks: finalized,
       ...(displays.length > 0 ? { displays } : {}),
       ...(isAtDeskOnly ? { atDeskOnly: true } : {}),
+      ...(isQuestMode ? { questModeEnabled: true } : {}),
+      ...(escapeRoomConfig ? { escapeRoomConfig } : {}),
+      ...(duelsEnabled === true ? { duelsEnabled: true } : {}),
       meta: {
         pool,
         regeneratedCount: errors.length,

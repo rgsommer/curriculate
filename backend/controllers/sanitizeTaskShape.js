@@ -802,6 +802,266 @@ export function sanitizeTaskShapeByType(type, task) {
     }
   }
 
+  // ── WHAT_AM_I: promote top-level deduction fields into config ──
+  // AI sometimes emits answer/clues/etc at the top level. Canonical home: task.config.
+  if (type === TASK_TYPES.WHAT_AM_I) {
+    const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+    const cfg = _isObj(t.config) ? { ...t.config } : {};
+
+    // Promote answer
+    if (!cfg.answer && typeof t.answer === "string") {
+      cfg.answer = t.answer;
+      delete t.answer;
+    }
+
+    // Promote acceptableAnswers — accept array OR comma-separated string OR alt keys
+    let accepted = cfg.acceptableAnswers ?? t.acceptableAnswers ?? cfg.alternateAnswers ?? t.alternateAnswers ?? null;
+    if (typeof accepted === "string") {
+      accepted = accepted.split(/[,;|]/).map((s) => s.trim()).filter(Boolean);
+    }
+    if (Array.isArray(accepted)) {
+      cfg.acceptableAnswers = accepted
+        .map((x) => (typeof x === "string" ? x.trim().toLowerCase() : ""))
+        .filter(Boolean);
+    }
+    delete t.acceptableAnswers;
+    if ("alternateAnswers" in cfg) delete cfg.alternateAnswers;
+
+    // Promote clues. Accept array of {level,text} OR array of strings OR top-level array.
+    let clues = cfg.clues ?? t.clues ?? null;
+    if (Array.isArray(clues)) {
+      clues = clues
+        .map((c, i) => {
+          if (typeof c === "string") return { level: i + 1, text: c.trim() };
+          if (c && typeof c === "object") {
+            const text = typeof c.text === "string" ? c.text.trim() : typeof c.clue === "string" ? c.clue.trim() : "";
+            const level = Number.isFinite(Number(c.level)) ? Number(c.level) : i + 1;
+            return text ? { level, text } : null;
+          }
+          return null;
+        })
+        .filter(Boolean)
+        // Re-index levels in monotonic order in case AI emitted out-of-order or duplicate levels
+        .map((c, i) => ({ level: i + 1, text: c.text }));
+      cfg.clues = clues;
+    }
+    delete t.clues;
+
+    // Promote difficulty + mode + scoring
+    if (!cfg.difficulty && typeof t.difficulty === "string") cfg.difficulty = t.difficulty;
+    delete t.difficulty;
+    if (!cfg.mode && typeof t.mode === "string") cfg.mode = t.mode;
+    delete t.mode;
+
+    // Normalize difficulty enum
+    if (typeof cfg.difficulty === "string") {
+      const d = cfg.difficulty.trim().toLowerCase();
+      cfg.difficulty = ["easy", "medium", "hard", "expert"].includes(d) ? d : "medium";
+    } else {
+      cfg.difficulty = "medium";
+    }
+
+    // Normalize mode enum
+    if (typeof cfg.mode === "string") {
+      const m = cfg.mode.trim().toLowerCase().replace(/\s+/g, "-");
+      cfg.mode = ["solo", "intra-team", "inter-team"].includes(m) ? m : "intra-team";
+    } else {
+      cfg.mode = "intra-team";
+    }
+
+    // Strip any leaked scoring shape coercion
+    if (cfg.scoring && typeof cfg.scoring === "object" && !Array.isArray(cfg.scoring)) {
+      // Validate perClueCurve if present
+      const curve = cfg.scoring.perClueCurve;
+      if (Array.isArray(curve)) {
+        cfg.scoring.perClueCurve = curve.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n >= 0);
+        if (cfg.scoring.perClueCurve.length === 0) delete cfg.scoring.perClueCurve;
+      }
+    }
+
+    t.config = cfg;
+  }
+
+  // ── CAREERS: promote top-level mode/career/candidates/etc into config ──
+  if (type === TASK_TYPES.CAREERS) {
+    const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+    const cfg = _isObj(t.config) ? { ...t.config } : {};
+    for (const k of ["mode", "career", "teammates", "pathways", "candidates", "optionA", "optionB", "questions", "prompts", "role", "targetCareer", "title"]) {
+      if (cfg[k] === undefined && t[k] !== undefined) {
+        cfg[k] = t[k];
+        delete t[k];
+      }
+    }
+    // Normalize mode enum (case-insensitive, dashes/underscores allowed)
+    if (typeof cfg.mode === "string") {
+      const m = cfg.mode.trim().toLowerCase().replace(/[_\s]+/g, "-");
+      const allowed = ["best-fit", "pathway-builder", "aptitude-match", "salary-vs-lifestyle", "who-should-be-hired", "career-myths"];
+      cfg.mode = allowed.includes(m) ? m : "best-fit";
+    } else {
+      cfg.mode = "best-fit";
+    }
+    // Ensure career-myths questions[].id are present (renderer uses them as React keys)
+    if (cfg.mode === "career-myths" && Array.isArray(cfg.questions)) {
+      cfg.questions = cfg.questions.map((q, i) => ({ id: q?.id || `q-${i}`, ...q }));
+    }
+    if (cfg.mode === "aptitude-match" && Array.isArray(cfg.prompts)) {
+      cfg.prompts = cfg.prompts.map((p, i) => ({ id: p?.id || `p-${i}`, ...p }));
+    }
+    t.config = cfg;
+  }
+
+  // ── CURRENT_EVENTS: ensure the shell carries only the resolver inputs ──
+  if (type === TASK_TYPES.CURRENT_EVENTS) {
+    const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+    const cfg = _isObj(t.config) ? { ...t.config } : {};
+    for (const k of ["lessonTopic", "subject", "gradeLevel", "region", "worldviewProfile", "preferredCategories"]) {
+      if (cfg[k] === undefined && t[k] !== undefined) {
+        cfg[k] = t[k];
+        delete t[k];
+      }
+    }
+    // Normalize worldview enum
+    if (typeof cfg.worldviewProfile === "string") {
+      const w = cfg.worldviewProfile.trim().toLowerCase();
+      const allowed = ["general", "secular", "christian", "jewish", "muslim", "multifaith"];
+      cfg.worldviewProfile = allowed.includes(w) ? w : "general";
+    }
+    // preferredCategories: accept string or array
+    if (typeof cfg.preferredCategories === "string") {
+      cfg.preferredCategories = cfg.preferredCategories.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+    }
+    // The `resolved` block is filled in at runtime by the resolver — strip any stale value from AI output
+    if ("resolved" in cfg) delete cfg.resolved;
+    if ("loading" in cfg) delete cfg.loading;
+    // Set a default placeholder prompt so the runner shows "Loading…" before resolution
+    if (!t.prompt || t.prompt.trim().length < 4) t.prompt = "Loading today's connection to the lesson…";
+    t.config = cfg;
+  }
+
+  // ── HOLE_IN_ONE: promote board / physics / questionBank / economy into config ──
+  if (type === TASK_TYPES.HOLE_IN_ONE) {
+    const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+    const cfg = _isObj(t.config) ? { ...t.config } : {};
+    for (const k of ["board", "physics", "questionBank", "economy", "tilter", "scoring", "controls", "teamMembers", "resources"]) {
+      if (cfg[k] === undefined && t[k] !== undefined) {
+        cfg[k] = t[k];
+        delete t[k];
+      }
+    }
+    // Coerce board defaults — missing critical fields would crash the renderer
+    if (!_isObj(cfg.board)) cfg.board = {};
+    if (!Number.isFinite(Number(cfg.board.width)))     cfg.board.width = 12;
+    if (!Number.isFinite(Number(cfg.board.height)))    cfg.board.height = 18;
+    if (!Number.isFinite(Number(cfg.board.gridSize)))  cfg.board.gridSize = 24;
+    if (!_isObj(cfg.board.startPosition)) cfg.board.startPosition = { x: 1, y: 1 };
+    if (!_isObj(cfg.board.holePosition))  cfg.board.holePosition  = { x: cfg.board.width - 2, y: cfg.board.height - 2, radius: 0.8 };
+    if (!Array.isArray(cfg.board.obstacles)) cfg.board.obstacles = [];
+    // questionBank items need ids
+    if (Array.isArray(cfg.questionBank)) {
+      cfg.questionBank = cfg.questionBank
+        .filter((q) => q && typeof q === "object" && q.prompt)
+        .map((q, i) => ({ id: q.id || `q-${i + 1}`, ...q }));
+    }
+    t.config = cfg;
+  }
+
+  // ── LEGENDS: promote figure + facts; normalize category enum; assign ids ──
+  if (type === TASK_TYPES.LEGENDS) {
+    const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+    const cfg = _isObj(t.config) ? { ...t.config } : {};
+    for (const k of ["figure", "facts"]) {
+      if (cfg[k] === undefined && t[k] !== undefined) {
+        cfg[k] = t[k];
+        delete t[k];
+      }
+    }
+    // figure: trim strings + accept portraitUrl variants
+    if (_isObj(cfg.figure)) {
+      const f = { ...cfg.figure };
+      if (typeof f.name === "string") f.name = f.name.trim();
+      if (typeof f.era === "string") f.era = f.era.trim();
+      if (typeof f.summary === "string") f.summary = f.summary.trim();
+      // portraitUrl variants
+      if (!f.portraitUrl && typeof f.imageUrl === "string") f.portraitUrl = f.imageUrl;
+      if (!f.portraitUrl && typeof f.image === "string") f.portraitUrl = f.image;
+      cfg.figure = f;
+    }
+    // facts: normalize category enum, assign ids, drop empties
+    if (Array.isArray(cfg.facts)) {
+      const allowed = ["what", "where", "why", "when", "decoy"];
+      cfg.facts = cfg.facts
+        .map((f, i) => {
+          if (!f || typeof f !== "object") return null;
+          const text = typeof f.text === "string" ? f.text.trim() : "";
+          if (!text) return null;
+          const cat = String(f.category || "").trim().toLowerCase();
+          return {
+            id: typeof f.id === "string" && f.id.trim() ? f.id : `f-${i + 1}`,
+            text,
+            category: allowed.includes(cat) ? cat : "decoy",
+          };
+        })
+        .filter(Boolean);
+    }
+    t.config = cfg;
+  }
+
+  // ── QUEST: promote top-level mission fields into config ──
+  if (type === TASK_TYPES.QUEST) {
+    const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+    const cfg = _isObj(t.config) ? { ...t.config } : {};
+
+    for (const k of ["title", "scenario", "objectives", "resources", "premiumResources", "ranks"]) {
+      if (cfg[k] === undefined && t[k] !== undefined) {
+        cfg[k] = t[k];
+        delete t[k];
+      }
+    }
+
+    // Coerce objectives shape
+    if (Array.isArray(cfg.objectives)) {
+      cfg.objectives = cfg.objectives
+        .map((o, i) => {
+          if (!o || typeof o !== "object") return null;
+          return {
+            id: typeof o.id === "string" && o.id.trim() ? o.id : `obj-${i + 1}`,
+            description: typeof o.description === "string" ? o.description.trim() : "",
+            requiredResources:
+              o.requiredResources && typeof o.requiredResources === "object" && !Array.isArray(o.requiredResources)
+                ? o.requiredResources
+                : {},
+          };
+        })
+        .filter((o) => o && o.description);
+    }
+
+    // Coerce resources shape
+    if (Array.isArray(cfg.resources)) {
+      cfg.resources = cfg.resources
+        .map((r, i) => {
+          if (!r || typeof r !== "object") return null;
+          const id = typeof r.id === "string" && r.id.trim() ? r.id : `res-${i + 1}`;
+          const name = typeof r.name === "string" ? r.name : id;
+          const acq = Array.isArray(r.acquisitionOptions)
+            ? r.acquisitionOptions.filter((o) => o && typeof o === "object" && o.type)
+            : [];
+          // Always offer at least a coin acquisition path
+          if (acq.length === 0 || !acq.some((o) => o.type === "coins")) {
+            acq.push({ type: "coins", amount: Number(r.coinCost) > 0 ? Number(r.coinCost) : 10 });
+          }
+          return {
+            id,
+            name,
+            acquisitionOptions: acq,
+            prerequisites: Array.isArray(r.prerequisites) ? r.prerequisites : [],
+          };
+        })
+        .filter(Boolean);
+    }
+
+    t.config = cfg;
+  }
+
   return t;
 }
 
