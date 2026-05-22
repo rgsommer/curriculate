@@ -6665,12 +6665,19 @@ Thomas | Soldier | loyal, brave, disciplined`}
         </div>
       )}
 
-      {/* Whodunnit teacher console — fixed-position bottom-left so it doesn't collide with Quest console */}
+      {/* Whodunnit teacher console — only renders when the taskset opts in
+          (mysteryEnabled flag) OR the teacher has already enabled mystery
+          mode this session. Position is bottom-right so it doesn't collide
+          with the left-edge sidebar. Stacks above the What Am I?/Quest
+          consoles when those are also visible. */}
+      {(roomState?.taskset?.mysteryEnabled === true ||
+        roomState?.taskset?.mysteryConfig != null ||
+        mysteryActive) && (
       <div
         style={{
           position: "fixed",
-          left: 16,
-          bottom: 16,
+          right: 16,
+          bottom: 180,
           zIndex: 99,
           background: "#1f2937",
           color: "#f1f5f9",
@@ -6722,6 +6729,7 @@ Thomas | Soldier | loyal, brave, disciplined`}
           </>
         )}
       </div>
+      )}
 
       {/* Escape Room teacher console — only when active taskset is escape-enabled */}
       {isEscapeRoomActive && (
