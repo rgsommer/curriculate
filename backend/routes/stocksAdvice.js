@@ -311,6 +311,19 @@ PRICE CURRENCY CONVENTION (strict — applies to every rec, alert, and discussio
 - For Entry/Target/Stop in trade recs: use the SECURITY's native currency, never the converted one.
 - A CAD or USD conversion in parentheses is ONLY appropriate when discussing portfolio TOTALS or sizing math (e.g., "Uses ~$10,640 USD ≈ $14,600 CAD of available cash"), not when stating a security's price.
 
+CANONICAL TICKER RULE (read carefully):
+- ALWAYS use the actual exchange ticker symbol — never the brand-name acronym. The most dangerous common errors:
+  • Royal Bank of Canada = "RY" (NYSE) or "RY.TO" (TSX). It is NEVER "RBC" — RBC is the ticker for RBC Bearings, an unrelated US roller-bearings manufacturer. If you write "RBC" the user will think you mean Royal Bank but the validator will pull the wrong price.
+  • TD Bank = "TD" (NYSE) or "TD.TO" (TSX). Trades at ~$80 USD on NYSE vs ~$154 CAD on TSX — these are the same company at different listings. When recommending a CAD trade, write "TD.TO" or write "TD ... $X CAD" so the currency disambiguates.
+  • Bank of Montreal = "BMO" / "BMO.TO" (correct already).
+  • Scotia = "BNS" / "BNS.TO" (not "Scotia" or "BNS Bank").
+  • CIBC = "CM" / "CM.TO" (not "CIBC").
+  • National Bank of Canada = "NA" / "NA.TO".
+  • Manulife = "MFC", Sun Life = "SLF", Enbridge = "ENB", Fortis = "FTS", TC Energy = "TRP".
+  • Block (formerly Square) = "XYZ" — not "SQ" (renamed in 2025).
+  • Meta = "META" — not "FB" (renamed long ago).
+- When in doubt, web_search "<company name> stock ticker" first and use what comes back. Do NOT guess from the company name.
+
 PRICE INTEGRITY (mandatory — accuracy is more important than completeness):
 - For ANY ticker not in the user's current holdings table above, you MUST web_search "<TICKER> stock price" or "<TICKER> Yahoo Finance" and use ONLY the live quote you retrieve. Do NOT quote prices from memory — your training data is months stale and you will be wrong by 30-200%.
 - Before recommending any ticker, verify it is currently tradable. Watch out for renamed/delisted symbols:
@@ -639,15 +652,60 @@ async function fetchYahooQuote(ticker) {
   } catch { return null; }
 }
 
-// Resolve a ticker's current price for validation. Canadian listings on
-// FMP/Yahoo use the .TO (TSX) / .V (TSXV) / .NE (NEO) / .CN suffixes —
-// if the AI writes a bare "ENB" but tagged the price in CAD, we need
-// to query "ENB.TO" or Yahoo will return the (much cheaper) US ADR
-// and the validator will either miss the mismatch or "correct" the
-// CAD price down to the USD ADR value.
+// Common-name → canonical-ticker aliases. The AI sometimes uses the
+// brand-name acronym ("RBC" for Royal Bank, "BMO" for Bank of Montreal)
+// instead of the exchange ticker (RY, BMO is actually correct, etc.).
+// Worse: some of these acronyms ARE real tickers for OTHER companies
+// (RBC = RBC Bearings, a US roller-bearings maker), so an innocent
+// query returns a plausible-looking but completely wrong price and
+// the validator gives a false-negative. This map remaps the alias to
+// the canonical ticker BEFORE we query.
+//
+// CAD currency hint will then append .TO when needed (so "RBC ... $565
+// CAD" → "RY" → "RY.TO" → real Royal Bank price).
+const TICKER_ALIASES = {
+  // Canadian banks — common-name confusions
+  "RBC": "RY",          // Royal Bank — NOT RBC Bearings
+  "ROYAL": "RY",
+  "TDB": "TD",          // TD Bank
+  "BNS": "BNS",         // Scotia (already canonical)
+  "SCOTIA": "BNS",
+  "BMO": "BMO",         // Bank of Montreal (already canonical)
+  "CIBC": "CM",         // Canadian Imperial Bank
+  "NATIONAL": "NA",     // National Bank
+  // Canadian energy / utilities
+  "ENBRIDGE": "ENB",
+  "FORTIS": "FTS",
+  "TCENERGY": "TRP",
+  // Canadian insurers
+  "MANULIFE": "MFC",
+  "SUNLIFE": "SLF",
+  // US confusions worth catching
+  "GOOGLE": "GOOGL",
+  "ALPHABET": "GOOGL",
+  "FACEBOOK": "META",   // FB ticker was retired
+  "FB": "META",
+  "SQUARE": "XYZ",      // Block renamed in 2025
+  "SQ": "XYZ",
+  "TWITTER": null,      // Delisted (Musk acquired) — null = "do not query"
+  "TWTR": null,
+};
+
+// Resolve a ticker's current price for validation. Canonical alias
+// resolution + Canadian-listing suffix handling all happen here.
 //
 //   currencyHint  — "CAD" or "USD" or null. When CAD we try `.TO` first.
 async function fetchValidationPrice(ticker, currencyHint = null) {
+  // Normalize: strip trailing dots, uppercase
+  const raw = String(ticker || "").toUpperCase().replace(/\.+$/, "");
+  // Alias resolution
+  if (raw in TICKER_ALIASES) {
+    const canonical = TICKER_ALIASES[raw];
+    if (canonical === null) return null; // known-delisted / known-bad
+    ticker = canonical;
+  } else {
+    ticker = raw;
+  }
   const isCanadianHint = currencyHint === "CAD" && !/\.(TO|V|NE|CN)$/i.test(ticker);
   if (isCanadianHint) {
     // Try Canadian variants in order of how commonly the AI uses bare
@@ -839,6 +897,125 @@ function validateRecSizing(text, profile) {
   return warnings;
 }
 
+// Card-level corrective rewrite — JSON-cards version of
+// correctBriefingWithVerifiedPrices. Mutates a card body in place when
+// the AI's claimed prices or sizing are wrong. We do per-card rewrite
+// (rather than one big rewrite call) so unaffected cards stay byte-for-
+// byte identical and the consensus dedupe / recId linkage isn't disturbed.
+//
+// Returns the (possibly-mutated) cards array — same shape as input.
+async function correctAdviceCards(cards, perCardPriceWarnings, allSizingWarnings) {
+  if (!process.env.ANTHROPIC_API_KEY) return cards;
+  if (!Array.isArray(cards) || cards.length === 0) return cards;
+  // Only cards that have either price or sizing problems need a rewrite.
+  const sizingByCard = {};
+  if (Array.isArray(allSizingWarnings)) {
+    for (const w of allSizingWarnings) {
+      const txt = (w.message || "").toLowerCase();
+      cards.forEach((c, i) => {
+        const cardText = ((c.title || "") + " " + (c.body || "")).toLowerCase();
+        // Crude attribution: a sizing warning that mentions the account
+        // name and the card mentions that account name → attach.
+        if (w.account && cardText.includes(w.account.toLowerCase())) {
+          if (!sizingByCard[i]) sizingByCard[i] = [];
+          sizingByCard[i].push(w);
+        }
+      });
+    }
+  }
+  const affected = new Set([
+    ...Object.keys(perCardPriceWarnings || {}).map(k => parseInt(k, 10)),
+    ...Object.keys(sizingByCard).map(k => parseInt(k, 10)),
+  ]);
+  if (affected.size === 0) return cards;
+
+  // Rewrite each affected card individually
+  await Promise.all([...affected].map(async (idx) => {
+    const card = cards[idx];
+    if (!card) return;
+    const priceW = perCardPriceWarnings?.[idx] || [];
+    const sizingW = sizingByCard[idx] || [];
+
+    const priceLines = priceW
+      .filter(w => w.kind === "stale_price")
+      .map(w => `- ${w.ticker}: $${w.currentPrice.toFixed(2)}${w.currency ? " " + w.currency : ""} (you previously wrote $${w.quotedPrice.toFixed(2)} — that was wrong)`);
+    const missingLines = priceW
+      .filter(w => w.kind === "not_found")
+      .map(w => `- ${w.ticker}: ticker not found / likely renamed. ${w.message}`);
+    const oversizedLines = sizingW
+      .filter(w => w.kind === "oversized")
+      .map(w => `- ${w.account}: rec uses $${w.used.toFixed(0)} ${w.currency} but only $${w.actualAvail.toFixed(0)} ${w.currency} available. DOWNSIZE the share count to fit, or recommend depositing first.`);
+    const wrongAvailLines = sizingW
+      .filter(w => w.kind === "wrong_available")
+      .map(w => `- ${w.account}: you wrote "$${w.stated.toFixed(0)} ${w.currency} available", actual is $${w.actual.toFixed(0)} ${w.currency}.`);
+
+    if (priceLines.length === 0 && missingLines.length === 0 && oversizedLines.length === 0 && wrongAvailLines.length === 0) return;
+
+    const sections = [];
+    if (priceLines.length || missingLines.length) {
+      sections.push("**VERIFIED LIVE PRICES (ground truth — override anything else):**");
+      sections.push(...priceLines, ...missingLines);
+    }
+    if (oversizedLines.length || wrongAvailLines.length) {
+      if (sections.length) sections.push("");
+      sections.push("**ACCOUNT-CASH FIXES:**");
+      sections.push(...oversizedLines, ...wrongAvailLines);
+    }
+
+    const prompt = [
+      "Rewrite this advice card so it uses the correct values below. Output ONLY a JSON object with shape { title, body, meta, sev } — no markdown fence, no preamble.",
+      "",
+      ...sections,
+      "",
+      "Rules:",
+      "- Update every $price, entry, target, stop, share count, and % that depended on a wrong number.",
+      "- For oversized recs: reduce share count to fit the actual account bucket. Never recommend a trade that exceeds available cash.",
+      "- If a call only made sense at the OLD price (e.g. 'cheap at $80, target $95' but stock is actually $260), re-evaluate the recommendation — it might flip to HOLD or TRIM.",
+      "- Keep the same severity and intent unless price reality forces a change.",
+      "- Do NOT mention being corrected. Read as if it were right the first time.",
+      "",
+      "ORIGINAL CARD:",
+      JSON.stringify({ title: card.title, body: card.body, meta: card.meta, sev: card.sev }, null, 2),
+    ].join("\n");
+
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": process.env.ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-5",
+          max_tokens: 2048,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      if (!r.ok) return;
+      const j = await r.json();
+      const raw = (j?.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+      // Strip code fence if present
+      const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+      // Find JSON object — first { to last }
+      const s = cleaned.indexOf("{");
+      const e = cleaned.lastIndexOf("}");
+      if (s < 0 || e <= s) return;
+      const parsed = JSON.parse(cleaned.slice(s, e + 1));
+      if (parsed && typeof parsed === "object") {
+        if (typeof parsed.title === "string") card.title = parsed.title;
+        if (typeof parsed.body === "string") card.body = parsed.body;
+        if (typeof parsed.meta === "string") card.meta = parsed.meta;
+        if (typeof parsed.sev === "string") card.sev = parsed.sev;
+        // Clear the warnings now that they've been corrected
+        delete card.priceWarnings;
+      }
+    } catch (e) { console.warn("correctAdviceCards card", idx, "warn:", e?.message); }
+  }));
+
+  return cards;
+}
+
 // Run price-integrity validation on a single text blob (e.g., briefing
 // markdown). Returns an array of warnings — same shape as the per-card
 // warnings but flat, since briefings aren't card-structured.
@@ -874,9 +1051,13 @@ async function validateTextPrices(text, tickerCcyHints = {}) {
     const key = `${q.ticker}|${q.resolvedCurrency || ""}`;
     const current = priceMap[key];
     if (current == null) {
+      const aliased = TICKER_ALIASES[q.ticker];
+      const aliasNote = aliased != null && aliased !== q.ticker
+        ? ` (did you mean ${aliased}?)`
+        : aliased === null ? " — confirmed delisted/renamed" : "";
       warnings.push({
         ticker: q.ticker, quotedPrice: q.quotedPrice, kind: "not_found",
-        message: `${q.ticker} not found on FMP or Yahoo — possibly renamed, delisted, or a typo`,
+        message: `${q.ticker} not found on FMP or Yahoo — possibly renamed, delisted, or a typo${aliasNote}`,
       });
     } else {
       const drift = Math.abs(current - q.quotedPrice) / current;
@@ -1245,6 +1426,13 @@ router.post("/", requireStocksAuth, async (req, res) => {
         const i = parseInt(idx, 10);
         if (parsed.advice[i]) parsed.advice[i].priceWarnings = list;
       }
+      // Sizing check across the whole concatenated body text
+      const combined = parsed.advice.map(c => (c.title || "") + "\n" + (c.body || "")).join("\n\n");
+      const sizingWarnings = validateRecSizing(combined, profile);
+      if (Object.keys(warnings).length || sizingWarnings.length) {
+        console.log(`[advice] correction pass: ${Object.keys(warnings).length} price-affected cards + ${sizingWarnings.length} sizing warnings — rewriting`);
+        await correctAdviceCards(parsed.advice, warnings, sizingWarnings);
+      }
     } catch (e) { console.warn("validateAdvicePrices warn:", e?.message); }
 
     res.json({
@@ -1408,6 +1596,11 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
           const i = parseInt(idx, 10);
           if (singleCards[i]) singleCards[i].priceWarnings = list;
         }
+        const combined = singleCards.map(c => (c.title || "") + "\n" + (c.body || "")).join("\n\n");
+        const sizingWarnings = validateRecSizing(combined, profile);
+        if (Object.keys(warnings).length || sizingWarnings.length) {
+          await correctAdviceCards(singleCards, warnings, sizingWarnings);
+        }
       } catch (e) { console.warn("degraded validateAdvicePrices warn:", e?.message); }
       return res.json({
         consensus: singleCards,
@@ -1522,6 +1715,18 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
       for (const [idx, list] of Object.entries(aWarn)) {
         const i = parseInt(idx, 10);
         if (alternatives[i]) alternatives[i].priceWarnings = list;
+      }
+      // Sizing check + corrective rewrite for both buckets
+      const consensusText = consensus.map(c => (c.title || "") + "\n" + (c.body || "")).join("\n\n");
+      const altText = alternatives.map(c => (c.title || "") + "\n" + (c.body || "")).join("\n\n");
+      const cSize = validateRecSizing(consensusText, profile);
+      const aSize = validateRecSizing(altText, profile);
+      if (Object.keys(cWarn).length || cSize.length) {
+        console.log(`[consensus] correction: ${Object.keys(cWarn).length} price cards + ${cSize.length} sizing`);
+        await correctAdviceCards(consensus, cWarn, cSize);
+      }
+      if (Object.keys(aWarn).length || aSize.length) {
+        await correctAdviceCards(alternatives, aWarn, aSize);
       }
     } catch (e) { console.warn("consensus validateAdvicePrices warn:", e?.message); }
 

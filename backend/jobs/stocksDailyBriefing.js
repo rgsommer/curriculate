@@ -498,6 +498,14 @@ PRICE CURRENCY CONVENTION (strict):
 - Entry/Target/Stop in trade recs MUST be in the security's native currency.
 - CAD/USD conversions in parentheses are OK only for portfolio totals or cash-sizing math, not for stock prices.
 
+CANONICAL TICKER RULE (read carefully):
+- ALWAYS use the actual exchange ticker, never the brand-name acronym. Common errors:
+  • Royal Bank = "RY" (NYSE) or "RY.TO" (TSX) — NEVER "RBC" (RBC is RBC Bearings, an unrelated US company).
+  • TD Bank = "TD" (NYSE, ~$80 USD) or "TD.TO" (TSX, ~$154 CAD).
+  • Scotia = "BNS"/"BNS.TO". CIBC = "CM"/"CM.TO". National = "NA"/"NA.TO".
+  • Block (formerly Square) = "XYZ", not "SQ". Meta = "META", not "FB".
+- When in doubt, web_search "<company name> stock ticker" before recommending.
+
 PRICE INTEGRITY (mandatory — accuracy over completeness):
 - For ANY ticker not in the user's current holdings table, web_search "<TICKER> stock price" and use ONLY the retrieved live quote. NEVER quote a price from memory — training data is stale, you will be wrong by 30-200%.
 - Verify ticker is currently tradable before recommending. Beware renamed/delisted symbols:

@@ -214,15 +214,70 @@ function valueOfPosition(p, fx) {
   return { cad: p.priceCad * p.qty, usd: (p.priceCad / fx) * p.qty };
 }
 
+// Common-name → canonical-ticker aliases (mirrors backend TICKER_ALIASES
+// for the chart path). Catches "RBC" → "RY" etc. so the chart fetches the
+// right company's price data, not RBC Bearings'.
+const CHART_TICKER_ALIASES = {
+  "RBC": "RY", "ROYAL": "RY",
+  "TDB": "TD",
+  "SCOTIA": "BNS",
+  "CIBC": "CM",
+  "NATIONAL": "NA",
+  "ENBRIDGE": "ENB",
+  "FORTIS": "FTS",
+  "TCENERGY": "TRP",
+  "MANULIFE": "MFC",
+  "SUNLIFE": "SLF",
+  "GOOGLE": "GOOGL",
+  "ALPHABET": "GOOGL",
+  "FACEBOOK": "META",
+  "FB": "META",
+  "SQUARE": "XYZ",
+  "SQ": "XYZ",
+};
+
+// Resolve the right exchange ticker for chart / quote lookups, based on
+// the position's trading currency. ENB held in a CAD sub → "ENB.TO" (the
+// TSX listing) so the chart shows the Canadian price, not the US ADR.
+// If the ticker already carries a Canadian suffix (.TO/.V/.NE/.CN), or
+// the position trades in USD, leave it as-is.
+function resolveChartTicker(ticker, currency) {
+  const raw = String(ticker || "").toUpperCase().replace(/\.+$/, "");
+  const aliased = CHART_TICKER_ALIASES[raw] || raw;
+  const hasCadSuffix = /\.(TO|V|NE|CN)$/.test(aliased);
+  if (currency === "CAD" && !hasCadSuffix) return `${aliased}.TO`;
+  return aliased;
+}
+
 function aggregateByTicker(positions, fx) {
   const m = {};
   positions.forEach((p) => {
     const v = valueOfPosition(p, fx);
-    if (!m[p.ticker]) m[p.ticker] = { ticker: p.ticker, name: p.name, qty: 0, cad: 0, usd: 0 };
+    if (!m[p.ticker]) m[p.ticker] = {
+      ticker: p.ticker,
+      name: p.name,
+      qty: 0,
+      cad: 0,
+      usd: 0,
+      // Track how much value sits in each currency so we can pick the
+      // right exchange listing for the chart (largest-bucket wins).
+      _cadValue: 0,
+      _usdValue: 0,
+    };
     m[p.ticker].qty += p.qty;
     m[p.ticker].cad += v.cad;
     m[p.ticker].usd += v.usd;
+    if (p.ccy === "USD") m[p.ticker]._usdValue += v.cad; // both in CAD-equiv
+    else m[p.ticker]._cadValue += v.cad;
   });
+  // Attach chartTicker to each agg row based on dominant currency
+  for (const row of Object.values(m)) {
+    const dominantCcy = row._cadValue >= row._usdValue ? "CAD" : "USD";
+    row.chartTicker = resolveChartTicker(row.ticker, dominantCcy);
+    row.chartCurrency = dominantCcy;
+    delete row._cadValue;
+    delete row._usdValue;
+  }
   return Object.values(m).sort((a, b) => b.cad - a.cad);
 }
 
@@ -907,10 +962,23 @@ export default function StocksAdvisorPage() {
     return result;
   };
 
-  // Shared refresh-prices flow — uses backend proxy to avoid Yahoo CORS
+  // Shared refresh-prices flow — uses backend proxy to avoid Yahoo CORS.
+  // For each position we fetch the exchange listing matching the position's
+  // currency (ENB in a CAD sub → ENB.TO, not bare ENB which is the US
+  // ADR). Then we map the response back onto the original position key
+  // so priceCad / priceUsd land on the right field.
   const refreshPrices = async () => {
-    const tickers = [...new Set(user.positions.map((p) => p.ticker))];
-    if (tickers.length === 0) { showToast("No positions to refresh."); return { ok: 0, fail: 0 }; }
+    if (user.positions.length === 0) { showToast("No positions to refresh."); return { ok: 0, fail: 0 }; }
+    // Build a unique set of (exchangeTicker → [original ticker, currency])
+    // mappings, so the backend gets the right listing per position.
+    const fetchMap = new Map(); // exchangeTicker → { originalTicker, currency }
+    for (const p of user.positions) {
+      const exTicker = resolveChartTicker(p.ticker, p.ccy);
+      const key = `${exTicker}|${p.ccy}`;
+      if (!fetchMap.has(key)) fetchMap.set(key, { exchangeTicker: exTicker, originalTicker: p.ticker, currency: p.ccy });
+    }
+    const entries = [...fetchMap.values()];
+    const tickers = [...new Set(entries.map(e => e.exchangeTicker))];
     showToast(`Fetching ${tickers.length} tickers…`);
     try {
       const r = await fetch(`${BACKEND_URL}/api/stocks-prices`, {
@@ -920,11 +988,20 @@ export default function StocksAdvisorPage() {
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const { prices, failed } = await r.json();
+      // Build a lookup: (originalTicker, currency) → fetched price
+      const priceByOrig = {};
+      for (const ent of entries) {
+        const q = prices?.[ent.exchangeTicker];
+        if (q) priceByOrig[`${ent.originalTicker}|${ent.currency}`] = q;
+      }
       const updated = user.positions.map((p) => {
-        const q = prices?.[p.ticker];
+        const q = priceByOrig[`${p.ticker}|${p.ccy}`];
         if (!q) return p;
-        if (q.currency === "USD") return { ...p, priceUsd: q.price };
-        if (q.currency === "CAD") return { ...p, priceCad: q.price };
+        // Write to the currency field that matches the position's
+        // native trading currency — never let a USD ADR price overwrite
+        // a CAD-sub priceCad and vice versa.
+        if (p.ccy === "USD") return { ...p, priceUsd: q.price };
+        if (p.ccy === "CAD") return { ...p, priceCad: q.price };
         return p;
       });
       updateUser(() => ({ positions: updated }));
@@ -933,7 +1010,7 @@ export default function StocksAdvisorPage() {
       return { ok, fail: failed?.length || 0 };
     } catch (e) {
       showToast(`Price fetch failed: ${e?.message || "network"}`);
-      return { ok: 0, fail: tickers.length };
+      return { ok: 0, fail: user.positions.length };
     }
   };
 
@@ -1716,10 +1793,12 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
       {/* Holdings breakdown — one row per ticker, split by USD-sub vs CAD-sub */}
       <HoldingsBreakdownCard user={user} fx={fx} onEditPosition={onEditPosition} />
 
-      {/* Per-ticker performance — multi-line chart, range tabs */}
+      {/* Per-ticker performance — multi-line chart, range tabs.
+          Use chartTicker (e.g. "ENB.TO" for CAD-held Enbridge) so the
+          chart reflects the exchange the user actually trades on. */}
       <TickerPerformanceCard
-        tickers={agg.map(a => a.ticker).slice(0, 10)}
-        holdings={agg.slice(0, 10)}
+        tickers={agg.slice(0, 10).map(a => a.chartTicker || a.ticker)}
+        holdings={agg.slice(0, 10).map(a => ({ ...a, ticker: a.chartTicker || a.ticker }))}
         fx={fx}
         sessionToken={sessionToken}
       />
