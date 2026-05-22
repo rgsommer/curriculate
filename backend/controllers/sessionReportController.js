@@ -1,5 +1,6 @@
 // backend/controllers/sessionReportController.js
 import { generateNarrativeFromInsights } from "../ai/aiScoring.js";
+import { buildOverlayModeSummary, overlayHeadline } from "./overlayReportSummary.js";
 
 function safeArr(x) {
   return Array.isArray(x) ? x : [];
@@ -603,6 +604,16 @@ const canIncludeStudentDetail = !!includeIndividualReports && planAllowsStudentD
       }
     : { enabled: false };
 
+  // ── Overlay mode summary (Escape Room / Whodunnit / Quest) ──────────────
+  // Never block the report on overlay enrichment.
+  let overlayModeSummary = { active: false };
+  try {
+    overlayModeSummary = await buildOverlayModeSummary({ taskset, room, roomCode: code });
+  } catch (e) {
+    overlayModeSummary = { active: false, error: String(e?.message || e) };
+  }
+  const overlayOneLine = overlayHeadline(overlayModeSummary);
+
   return {
     ownerId: String(ownerId),
     roomCode: code,
@@ -626,6 +637,9 @@ const canIncludeStudentDetail = !!includeIndividualReports && planAllowsStudentD
     noiseSummary,
 
     readingCompSummary,
+
+    overlayModeSummary,
+    overlayHeadline: overlayOneLine,
 
     teams,
     attachments,

@@ -147,6 +147,10 @@ const SessionReportSchema = new mongoose.Schema(
     // Bloom's Taxonomy cognitive skills analysis
     bloomsTaxonomy: { type: mongoose.Schema.Types.Mixed, default: null },
 
+    // Overlay mode summary (Escape Room / Whodunnit / Quest) — null/{active:false} if none used
+    overlayModeSummary: { type: mongoose.Schema.Types.Mixed, default: null },
+    overlayHeadline: { type: String, default: "" },
+
     // Scoring rubric categories used
     assessmentCategories: { type: Array, default: [] },
 

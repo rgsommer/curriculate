@@ -667,6 +667,72 @@ function formatDate(d) {
     [];
   renderTaskSummaryCards(taskCardsSource);
 
+  // ---------- Overlay Mode Summary (Escape Room / Whodunnit / Quest) ----------
+  const overlay = report.overlayModeSummary;
+  if (overlay && overlay.active) {
+    ensureSpace(620);
+    sectionTitle("Special Mode Summary");
+
+    if (overlay.escapeRoom?.enabled) {
+      doc.font("Helvetica-Bold").fontSize(12).fillColor("#1f2937").text("🔐 Escape Room");
+      doc.moveDown(0.2);
+      const theme = overlay.escapeRoom.themeName ? ` — ${overlay.escapeRoom.themeName}` : "";
+      doc.font("Helvetica").fontSize(10).fillColor("#374151")
+        .text(`This session ran in Escape Room mode${theme}.`);
+      doc.moveDown(0.2);
+      const teamRows = Array.isArray(overlay.escapeRoom.teams) ? overlay.escapeRoom.teams : [];
+      teamRows.forEach((t) => {
+        const status = t.escaped
+          ? `escaped${t.escapeTimeMs ? ` in ${Math.round(t.escapeTimeMs / 60000)}m` : ""}`
+          : `${t.locksOpened || 0} lock(s) opened, ${t.keysEarned || 0} key(s) earned`;
+        doc.text(`  • ${t.teamName}: ${status}${t.hintsUsed ? ` · ${t.hintsUsed} hint(s)` : ""}`);
+      });
+      doc.moveDown(0.5);
+    }
+
+    if (overlay.whodunnit?.enabled && overlay.whodunnit.suspectName) {
+      doc.font("Helvetica-Bold").fontSize(12).fillColor("#1f2937").text("🕵 Whodunnit");
+      doc.moveDown(0.2);
+      doc.font("Helvetica").fontSize(10).fillColor("#374151")
+        .text(`Suspect (${overlay.whodunnit.themeRole}, ${overlay.whodunnit.difficulty}): ${overlay.whodunnit.suspectName}.`);
+      const correct = overlay.whodunnit.accusations?.correct || [];
+      const incorrect = overlay.whodunnit.accusations?.incorrect || [];
+      if (correct.length) doc.text(`  • Correct accusations: ${correct.join(", ")}`);
+      if (incorrect.length) doc.text(`  • Incorrect accusations: ${incorrect.join(", ")}`);
+      if (!correct.length && !incorrect.length) doc.text("  • No team made a final accusation.");
+      if (overlay.whodunnit.totalClues) {
+        doc.text(`  • Total clues released: ${overlay.whodunnit.totalClues}`);
+      }
+      doc.moveDown(0.5);
+    }
+
+    if (overlay.quest?.enabled) {
+      doc.font("Helvetica-Bold").fontSize(12).fillColor("#1f2937").text("⚔ Quest Mode");
+      doc.moveDown(0.2);
+      doc.font("Helvetica").fontSize(10).fillColor("#374151")
+        .text(`Across the class: ${overlay.quest.totalBonusUnlocked} bonus task(s) unlocked, ${overlay.quest.totalHiddenUnlocked} hidden task(s) unlocked.`);
+      const qTeams = Array.isArray(overlay.quest.teams) ? overlay.quest.teams : [];
+      qTeams.forEach((t) => {
+        doc.text(`  • ${t.teamName}: ${t.coinsEarned} coin(s) earned, ${t.coinsSpent} spent, ${t.unlockedBonus} bonus + ${t.unlockedHidden} hidden unlocked${t.trades ? `, ${t.trades} trade(s)` : ""}`);
+      });
+      doc.moveDown(0.5);
+    }
+
+    if (overlay.levelUp?.enabled) {
+      doc.font("Helvetica-Bold").fontSize(12).fillColor("#1f2937").text("⬆ LevelUp Activity");
+      doc.moveDown(0.2);
+      doc.font("Helvetica").fontSize(10).fillColor("#374151")
+        .text(`${overlay.levelUp.totalImproved} of ${overlay.levelUp.totalAttempts} retries improved on the original score.`);
+      (overlay.levelUp.teams || []).forEach((t) => {
+        const ups = (t.upgrades || []).map((u) => {
+          const arrow = u.improved ? `${u.originalScore} → ${u.retryScore} (+${u.masteryBonus} mastery)` : `${u.originalScore} → ${u.retryScore}, kept ${u.kept}`;
+          return `task ${u.originalTaskIndex + 1}: ${arrow}`;
+        }).join("; ");
+        doc.text(`  • ${t.teamName}: ${ups}`);
+      });
+      doc.moveDown(0.5);
+    }
+  }
 
   ensureSpace(640);
 

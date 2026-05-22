@@ -169,6 +169,12 @@ const TaskSetSchema = new Schema(
     duelTieThresholdPts:    { type: Number,  default: 10 },        // top-2 gap to qualify
     duelCooldownMs:         { type: Number,  default: 4 * 60 * 1000 },
 
+    // LevelUp — early-finisher upgrade. When enabled, after a team completes
+    // all core + the 2 always-on bonus tasks, they may re-attempt their
+    // lowest-scored task with a freshly generated AI variant. Scoring policy
+    // is MAX(original, retry). See LEVEL_UP_PLAN.md for the full spec.
+    levelUpEnabledByDefault: { type: Boolean, default: true },
+
     tasks: [TaskSchema],
     isPublic: { type: Boolean, default: false },
 

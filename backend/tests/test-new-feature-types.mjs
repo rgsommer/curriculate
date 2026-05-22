@@ -312,6 +312,115 @@ section("10. Duel — playability gate + concurrent block + correct/wrong/timeou
   assert(right.duel.ended === true, "duel ended");
 }
 
+/* ──────────────── 11. LEVELUP ──────────────── */
+section("11. LevelUp — eligibility, candidate-pick, MAX scoring");
+{
+  const lu = await import("../services/levelUp.js");
+
+  // Eligibility set is loaded and contains expected types
+  assert(lu.LEVEL_UP_ELIGIBLE_TYPES.has("multiple-choice"), "multiple-choice is LevelUp-eligible");
+  assert(lu.LEVEL_UP_ELIGIBLE_TYPES.has("legends"), "legends is LevelUp-eligible");
+  assert(!lu.LEVEL_UP_ELIGIBLE_TYPES.has("open-text"), "open-text is NOT LevelUp-eligible");
+  assert(!lu.LEVEL_UP_ELIGIBLE_TYPES.has("photo"), "photo is NOT LevelUp-eligible");
+
+  // Build a fake room: 3 core tasks, 2 bonus tasks, team finished all 5
+  const room = {
+    code: "ROOM1",
+    taskset: {
+      subject: "science",
+      gradeLevel: "5",
+      tasks: [
+        { taskType: "multiple-choice", title: "Q1", points: 10, requiredForCompletion: true },
+        { taskType: "sequence",        title: "Q2", points: 10, requiredForCompletion: true },
+        { taskType: "matching",        title: "Q3", points: 10, requiredForCompletion: true },
+        { taskType: "trivia",          title: "B1", points: 10, requiredForCompletion: false, isBonus: true },
+        { taskType: "spinner",         title: "B2", points: 10, requiredForCompletion: false, isBonus: true },
+      ],
+      levelUpEnabledByDefault: true,
+    },
+    teams: { A: { teamName: "Eagles" } },
+    submissions: [
+      { teamId: "A", taskIndex: 0, points: 90,  skipped: false }, // 90%
+      { teamId: "A", taskIndex: 1, points: 40,  skipped: false }, // 40% ← lowest
+      { teamId: "A", taskIndex: 2, points: 70,  skipped: false }, // 70%
+      { teamId: "A", taskIndex: 3, points: 100, skipped: false }, // 100%
+      { teamId: "A", taskIndex: 4, points: 80,  skipped: false }, // 80%
+    ],
+  };
+
+  assert(lu.teamReadyForLevelUp(room, "A") === true, "team ready (all 3 core + 2 bonus done)");
+
+  const cand = lu.pickLevelUpCandidate(room, "A");
+  assert(cand && cand.taskIndex === 1, `picks lowest task (sequence, idx 1) — got idx ${cand?.taskIndex}`);
+  assert(cand.taskType === "sequence", "candidate type is sequence");
+  assert(Math.abs(cand.scorePercent - 40) < 0.001, "candidate scorePercent is ~40");
+
+  // Offer payload shape
+  const offer = lu.buildLevelUpOffer(room, "A");
+  assert(offer.available === true, "offer.available true");
+  assert(offer.attemptsRemaining === 2, "starts with 2 attempts remaining");
+  assert(offer.candidate.taskTitle === "Q2", "offer shows correct task title");
+
+  // MAX-of scoring policy
+  const r1 = lu.resolveLevelUpScore({ originalPoints: 40, retryPoints: 80 });
+  assert(r1.keptPoints === 80, "improved: keeps 80");
+  assert(r1.improved === true, "improved: improved flag true");
+  assert(r1.masteryBonus > 0, "improved: mastery bonus awarded");
+
+  const r2 = lu.resolveLevelUpScore({ originalPoints: 40, retryPoints: 20 });
+  assert(r2.keptPoints === 40, "regression: keeps 40 (original)");
+  assert(r2.improved === false, "regression: improved false");
+  assert(r2.masteryBonus === 0, "regression: no mastery bonus");
+
+  // Teacher disable gate
+  room.levelUpDisabled = true;
+  assert(lu.whyLevelUpUnavailable(room, "A") === "disabled-by-teacher", "teacher disable blocks LevelUp");
+  room.levelUpDisabled = false;
+
+  // Attempts cap
+  const st = lu.getTeamLevelUpState(room, "A");
+  st.attempts = 2;
+  assert(lu.whyLevelUpUnavailable(room, "A") === "max-attempts", "max-attempts cap enforced");
+  st.attempts = 0;
+
+  // No-eligible-task: only ineligible types remain
+  const noElig = {
+    ...room,
+    taskset: {
+      ...room.taskset,
+      tasks: [
+        { taskType: "open-text", title: "Essay", points: 10, requiredForCompletion: true },
+        { taskType: "photo",     title: "Pic",   points: 10, requiredForCompletion: false, isBonus: true },
+        { taskType: "letter",    title: "Note",  points: 10, requiredForCompletion: false, isBonus: true },
+      ],
+    },
+    submissions: [
+      { teamId: "A", taskIndex: 0, points: 30, skipped: false },
+      { teamId: "A", taskIndex: 1, points: 30, skipped: false },
+      { teamId: "A", taskIndex: 2, points: 30, skipped: false },
+    ],
+  };
+  assert(lu.pickLevelUpCandidate(noElig, "A") === null, "no eligible task → candidate is null");
+
+  // Already-upgraded type is skipped
+  const alreadyUp = {
+    ...room,
+    taskset: {
+      ...room.taskset,
+      tasks: [
+        ...room.taskset.tasks,
+        { taskType: "sequence", title: "Q2 (retry)", points: 10, isLevelUp: true, levelUpOfTaskIndex: 1, requiredForCompletion: false },
+      ],
+    },
+    submissions: [
+      ...room.submissions,
+      { teamId: "A", taskIndex: 5, points: 95, skipped: false },
+    ],
+  };
+  const cand2 = lu.pickLevelUpCandidate(alreadyUp, "A");
+  assert(cand2 === null || cand2.taskType !== "sequence", "already-upgraded type skipped");
+}
+
 /* ──────────────── SUMMARY ──────────────── */
 console.log(`\n────────────────────────────`);
 console.log(`PASSED: ${pass}   FAILED: ${fail}`);

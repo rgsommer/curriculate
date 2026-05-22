@@ -259,6 +259,79 @@ function buildCsvImportBlockHtml({ csvInfo, classBound }) {
     </div>`;
 }
 
+function buildOverlayHtmlBlock(overlay) {
+  if (!overlay || !overlay.active) return "";
+  const parts = [];
+  if (overlay.escapeRoom?.enabled) {
+    const teamRows = (overlay.escapeRoom.teams || [])
+      .map((t) => {
+        const status = t.escaped
+          ? `escaped${t.escapeTimeMs ? ` in ${Math.round(t.escapeTimeMs / 60000)}m` : ""}`
+          : `${t.locksOpened || 0} lock(s) opened · ${t.keysEarned || 0} key(s) earned`;
+        const hints = t.hintsUsed ? ` · ${t.hintsUsed} hint(s)` : "";
+        return `<li><strong>${escHtml(t.teamName)}</strong>: ${escHtml(status)}${escHtml(hints)}</li>`;
+      })
+      .join("");
+    const theme = overlay.escapeRoom.themeName ? ` — ${escHtml(overlay.escapeRoom.themeName)}` : "";
+    parts.push(`
+      <div style="margin-top:6px;">
+        <div style="font-weight:800;">🔐 Escape Room${theme}</div>
+        ${teamRows ? `<ul style="margin:6px 0 0; padding-left:18px;">${teamRows}</ul>` : ""}
+      </div>`);
+  }
+  if (overlay.whodunnit?.enabled && overlay.whodunnit.suspectName) {
+    const c = overlay.whodunnit.accusations?.correct || [];
+    const w = overlay.whodunnit.accusations?.incorrect || [];
+    const subRows = [];
+    if (c.length) subRows.push(`<li>Correct accusations: ${escHtml(c.join(", "))}</li>`);
+    if (w.length) subRows.push(`<li>Incorrect accusations: ${escHtml(w.join(", "))}</li>`);
+    if (!c.length && !w.length) subRows.push(`<li>No team made a final accusation.</li>`);
+    if (overlay.whodunnit.totalClues) subRows.push(`<li>Total clues released: ${overlay.whodunnit.totalClues}</li>`);
+    parts.push(`
+      <div style="margin-top:10px;">
+        <div style="font-weight:800;">🕵 Whodunnit — Suspect: ${escHtml(overlay.whodunnit.suspectName)}</div>
+        <ul style="margin:6px 0 0; padding-left:18px;">${subRows.join("")}</ul>
+      </div>`);
+  }
+  if (overlay.quest?.enabled) {
+    const teamRows = (overlay.quest.teams || [])
+      .map((t) => `<li><strong>${escHtml(t.teamName)}</strong>: ${t.coinsEarned} coin(s) earned · ${t.unlockedBonus} bonus + ${t.unlockedHidden} hidden unlocked</li>`)
+      .join("");
+    parts.push(`
+      <div style="margin-top:10px;">
+        <div style="font-weight:800;">⚔ Quest Mode</div>
+        <div style="font-size:13px; color:#334155;">Class total: ${overlay.quest.totalBonusUnlocked} bonus + ${overlay.quest.totalHiddenUnlocked} hidden tasks unlocked.</div>
+        ${teamRows ? `<ul style="margin:6px 0 0; padding-left:18px;">${teamRows}</ul>` : ""}
+      </div>`);
+  }
+  if (overlay.levelUp?.enabled) {
+    const teamRows = (overlay.levelUp.teams || [])
+      .map((t) => {
+        const ups = (t.upgrades || [])
+          .map((u) =>
+            u.improved
+              ? `Task ${u.originalTaskIndex + 1}: ${u.originalScore} → ${u.retryScore} <strong>(+${u.masteryBonus} mastery)</strong>`
+              : `Task ${u.originalTaskIndex + 1}: ${u.originalScore} → ${u.retryScore}, kept ${u.kept}`,
+          )
+          .join("; ");
+        return `<li><strong>${escHtml(t.teamName)}</strong>: ${ups}</li>`;
+      })
+      .join("");
+    parts.push(`
+      <div style="margin-top:10px;">
+        <div style="font-weight:800;">⬆ LevelUp Activity</div>
+        <div style="font-size:13px; color:#334155;">${overlay.levelUp.totalImproved} of ${overlay.levelUp.totalAttempts} retries improved on the original score.</div>
+        ${teamRows ? `<ul style="margin:6px 0 0; padding-left:18px;">${teamRows}</ul>` : ""}
+      </div>`);
+  }
+  if (!parts.length) return "";
+  return `
+    <div style="margin-top:14px; padding:12px 14px; border-radius:14px; background:#fef3c7; border:1px solid #fcd34d;">
+      <div style="font-weight:900; margin-bottom:6px;">Special Mode Summary</div>
+      ${parts.join("")}
+    </div>`;
+}
+
 function buildEmailHtml({
   transcript,
   aiSummary,
@@ -274,6 +347,7 @@ function buildEmailHtml({
   bloomsTaxonomy,
   csvInfo,
   classBound,
+  overlayModeSummary,
 }) {
   const tier = planTier(planName);
   const overview = extractOverview({ transcript, aiSummary });
@@ -398,6 +472,8 @@ function buildEmailHtml({
             <strong>Overall proficiency:</strong> ${escHtml(overview.proficiencyLabel || "—")}
           </div>
         </div>
+
+        ${buildOverlayHtmlBlock(overlayModeSummary)}
 
         ${buildCsvImportBlockHtml({ csvInfo, classBound })}
 
@@ -663,6 +739,7 @@ async function buildReportPdfBuffer({
   studentGrades,
   gradingConfig,
   bloomsTaxonomy,
+  overlayModeSummary = null,
 }) {
   const overview = extractOverview({ transcript, aiSummary });
   const teams = extractTeams(transcript, aiSummary);
@@ -799,6 +876,64 @@ async function buildReportPdfBuffer({
     if (chatBlurb) {
       ensureSpace(100);
       drawNoteBox("Class Chat Blurb  (copy & paste)", chatBlurb, "#ecfdf5", "#6ee7b7");
+    }
+
+    // Overlay Mode Summary (Escape Room / Whodunnit / Quest)
+    if (overlayModeSummary && overlayModeSummary.active) {
+      ensureSpace(140);
+      sectionTitle("Special Mode Summary");
+      const o = overlayModeSummary;
+      doc.font("Helvetica").fontSize(10).fillColor("#0f172a");
+      if (o.escapeRoom?.enabled) {
+        const theme = o.escapeRoom.themeName ? ` — ${o.escapeRoom.themeName}` : "";
+        doc.font("Helvetica-Bold").text(`Escape Room${theme}`);
+        doc.font("Helvetica");
+        (o.escapeRoom.teams || []).forEach((t) => {
+          const status = t.escaped
+            ? `escaped${t.escapeTimeMs ? ` in ${Math.round(t.escapeTimeMs / 60000)}m` : ""}`
+            : `${t.locksOpened || 0} lock(s) opened, ${t.keysEarned || 0} key(s) earned`;
+          doc.text(`  • ${t.teamName}: ${status}${t.hintsUsed ? ` · ${t.hintsUsed} hint(s)` : ""}`);
+        });
+        doc.moveDown(0.3);
+      }
+      if (o.whodunnit?.enabled && o.whodunnit.suspectName) {
+        doc.font("Helvetica-Bold").text(`Whodunnit — Suspect: ${o.whodunnit.suspectName}`);
+        doc.font("Helvetica");
+        const c = o.whodunnit.accusations?.correct || [];
+        const w = o.whodunnit.accusations?.incorrect || [];
+        if (c.length) doc.text(`  • Correct accusations: ${c.join(", ")}`);
+        if (w.length) doc.text(`  • Incorrect accusations: ${w.join(", ")}`);
+        if (!c.length && !w.length) doc.text("  • No team made a final accusation.");
+        if (o.whodunnit.totalClues) doc.text(`  • Total clues released: ${o.whodunnit.totalClues}`);
+        doc.moveDown(0.3);
+      }
+      if (o.quest?.enabled) {
+        doc.font("Helvetica-Bold").text(`Quest Mode`);
+        doc.font("Helvetica").text(
+          `  Across the class: ${o.quest.totalBonusUnlocked} bonus + ${o.quest.totalHiddenUnlocked} hidden task(s) unlocked.`
+        );
+        (o.quest.teams || []).forEach((t) => {
+          doc.text(`  • ${t.teamName}: ${t.coinsEarned} coins earned, ${t.unlockedBonus} bonus + ${t.unlockedHidden} hidden unlocked${t.trades ? `, ${t.trades} trade(s)` : ""}`);
+        });
+        doc.moveDown(0.3);
+      }
+      if (o.levelUp?.enabled) {
+        doc.font("Helvetica-Bold").text(`LevelUp Activity`);
+        doc.font("Helvetica").text(
+          `  ${o.levelUp.totalImproved} of ${o.levelUp.totalAttempts} retries improved on the original score.`
+        );
+        (o.levelUp.teams || []).forEach((t) => {
+          const ups = (t.upgrades || [])
+            .map((u) => {
+              if (u.improved) return `task ${u.originalTaskIndex + 1}: ${u.originalScore} → ${u.retryScore} (+${u.masteryBonus} mastery)`;
+              return `task ${u.originalTaskIndex + 1}: ${u.originalScore} → ${u.retryScore}, kept ${u.kept}`;
+            })
+            .join("; ");
+          doc.text(`  • ${t.teamName}: ${ups}`);
+        });
+        doc.moveDown(0.3);
+      }
+      doc.moveDown(0.3);
     }
 
     // Skills Developed
@@ -1257,6 +1392,9 @@ export async function sendTranscriptEmail({
   // NEW: optional CSV attachment + metadata for the email body block
   csvAttachment, // { csv: string, anyMatched, hasAnyId, completedCount, totalCount }
   classBound = false, // true if this session was launched with a class binding
+  // NEW: overlay-mode (Escape Room / Whodunnit / Quest) summary for the email body + subject
+  overlayModeSummary = null,
+  overlayHeadline: overlayHeadlineText = "",
 }) {
   if (!to) throw new Error("Missing destination email.");
   if (!transcript) throw new Error("Missing transcript payload.");
@@ -1278,6 +1416,7 @@ export async function sendTranscriptEmail({
     bloomsTaxonomy,
     csvInfo,
     classBound,
+    overlayModeSummary,
   });
 
   const pdfBuffer = await buildReportPdfBuffer({
@@ -1293,14 +1432,26 @@ export async function sendTranscriptEmail({
     studentGrades,
     gradingConfig,
     bloomsTaxonomy,
+    overlayModeSummary,
   });
 
   const roomCode = transcript?.roomCode || transcript?.code || "";
   const tasksetName = transcript?.tasksetName || transcript?.name || "Curriculate Activity";
 
+  // Prepend an overlay-mode prefix like "[Escape Room] " or "[Whodunnit] "
+  // so teachers can spot themed sessions in their inbox at a glance.
+  const overlayPrefix = (() => {
+    const o = overlayModeSummary;
+    if (!o || !o.active) return "";
+    if (o.escapeRoom?.enabled && o.whodunnit?.enabled) return "[Escape Room × Whodunnit] ";
+    if (o.escapeRoom?.enabled) return "[Escape Room] ";
+    if (o.whodunnit?.enabled) return "[Whodunnit] ";
+    if (o.quest?.enabled) return "[Quest Mode] ";
+    return "";
+  })();
   const subject = process.env.EMAIL_SUBJECT_PREFIX
-    ? `${process.env.EMAIL_SUBJECT_PREFIX} ${tasksetName} (Room ${roomCode})`
-    : `Curriculate Report Ready — ${tasksetName} (Room ${roomCode})`;
+    ? `${process.env.EMAIL_SUBJECT_PREFIX} ${overlayPrefix}${tasksetName} (Room ${roomCode})`
+    : `${overlayPrefix}Curriculate Report Ready — ${tasksetName} (Room ${roomCode})`;
 
     // Build the attachments array. PDF is always present.
     // CSV is appended only if a non-empty csvInfo was passed in and at

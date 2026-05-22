@@ -68,6 +68,16 @@ import OpenAI, { toFile } from "openai";
 // 8) Controllers
 import { getMeController } from "./controllers/meController.js"; // you'll create this
 import { listSessions, getSessionDetails } from "./controllers/analyticsController.js";
+import { buildOverlayModeSummary, overlayHeadline } from "./controllers/overlayReportSummary.js";
+import {
+  buildLevelUpOffer,
+  pickLevelUpCandidate,
+  generateLevelUpVariant,
+  getTeamLevelUpState,
+  whyLevelUpUnavailable,
+  resolveLevelUpScore,
+  MAX_LEVEL_UP_ATTEMPTS,
+} from "./services/levelUp.js";
 
 // 9) Middleware
 import { authRequired } from "./middleware/authRequired.js";
@@ -5942,6 +5952,80 @@ if (!isMultiPack && task.taskType === "what-am-i") {
       console.error("[handleStudentSubmit] Failed to persist submission to DB:", dbErr?.message);
     });
 
+    // ── LevelUp: apply MAX-of scoring policy ────────────────────────────
+    //   If this is a LevelUp re-attempt, look up the team's original submission
+    //   for the original task and keep MAX(original, retry) + +5 mastery bonus
+    //   on strict improvement. Mutates the submissionDoc + team score in place.
+    if (task.isLevelUp && Number.isFinite(task.levelUpOfTaskIndex)) {
+      try {
+        const origIdx = Number(task.levelUpOfTaskIndex);
+        const origSub = (room.submissions || []).find(
+          (s) =>
+            String(s.teamId) === String(effectiveTeamId) &&
+            Number(s.taskIndex) === origIdx &&
+            !s.skipped &&
+            !s._isLevelUpResolved,
+        );
+        const originalPoints = origSub ? Number(origSub.points) || 0 : Number(task.levelUpOriginalScore || 0);
+        const { keptPoints, masteryBonus, improved, delta } = resolveLevelUpScore({
+          originalPoints,
+          retryPoints: pointsEarned,
+        });
+
+        // Annotate this submission as a LevelUp result.
+        submissionDoc.isLevelUp = true;
+        submissionDoc.levelUpOfTaskIndex = origIdx;
+        submissionDoc.originalPoints = originalPoints;
+        submissionDoc.retryPoints = pointsEarned;
+        submissionDoc.improved = improved;
+        submissionDoc.masteryBonus = masteryBonus;
+
+        // The credited points = (kept - original) + masteryBonus so the team's
+        // running total reflects only the *delta*, not double-credit.
+        const teamObj = room.teams[effectiveTeamId];
+        const beforeAdjust = pointsEarned; // we already added pointsEarned to team.score earlier in scoring
+        const targetForRound = (keptPoints - originalPoints) + masteryBonus;
+        const adjustment = targetForRound - beforeAdjust;
+        if (teamObj && adjustment !== 0) {
+          teamObj.score = (Number(teamObj.score) || 0) + adjustment;
+        }
+        submissionDoc.points = targetForRound;
+
+        // Mark original submission so we don't double-resolve if a 2nd LevelUp
+        // somehow targets the same original.
+        if (origSub) origSub._isLevelUpResolved = true;
+
+        // Record into the per-team LevelUp history.
+        const lst = getTeamLevelUpState(room, effectiveTeamId);
+        lst.history.push({
+          originalTaskIndex: origIdx,
+          newTaskIndex: idx,
+          originalScore: originalPoints,
+          retryScore: pointsEarned,
+          kept: keptPoints,
+          improved,
+          masteryBonus,
+          delta,
+          ts: Date.now(),
+        });
+
+        // Inform the team's clients so the UI can show "9 → 12 (+1 mastery)".
+        io.to(code).emit("levelUp:resolved", {
+          roomCode: code,
+          teamId: effectiveTeamId,
+          originalTaskIndex: origIdx,
+          newTaskIndex: idx,
+          originalPoints,
+          retryPoints: pointsEarned,
+          keptPoints,
+          masteryBonus,
+          improved,
+        });
+      } catch (luErr) {
+        console.warn("[levelUp] resolve failed:", luErr?.message || luErr);
+      }
+    }
+
     // ── Legends: server validates the 4-phase 5W sort. Recomputes points from
     //   the assignments object (client-claimed stats are advisory only). ──
     if (!isMultiPack && task.taskType === "legends" && answer && typeof answer === "object") {
@@ -6440,6 +6524,111 @@ if (!isMultiPack && task.taskType === "what-am-i") {
         try { ack({ ok: false, error: "Server error during submission" }); } catch {}
       }
     });
+  });
+
+  // ── LevelUp: query whether an upgrade is available ──────────────────────
+  socket.on("student:levelUpOffer", ({ roomCode, teamId } = {}, ack) => {
+    try {
+      const code = String(roomCode || "").toUpperCase();
+      const room = rooms[code];
+      const effectiveTeamId = teamId || socket.data.teamId;
+      if (!room || !effectiveTeamId) {
+        if (typeof ack === "function") ack({ ok: false, available: false, reason: "no-room" });
+        return;
+      }
+      const offer = buildLevelUpOffer(room, effectiveTeamId);
+      if (typeof ack === "function") ack({ ok: true, ...offer });
+    } catch (e) {
+      console.warn("[levelUp:offer] error:", e?.message || e);
+      if (typeof ack === "function") ack({ ok: false, available: false, reason: "error" });
+    }
+  });
+
+  // ── LevelUp: accept the upgrade — generate variant + inject ─────────────
+  socket.on("student:requestLevelUp", async ({ roomCode, teamId } = {}, ack) => {
+    try {
+      const code = String(roomCode || "").toUpperCase();
+      const room = rooms[code];
+      const effectiveTeamId = teamId || socket.data.teamId;
+      if (!room || !effectiveTeamId) {
+        if (typeof ack === "function") ack({ ok: false, error: "no-room" });
+        return;
+      }
+      const reason = whyLevelUpUnavailable(room, effectiveTeamId);
+      if (reason) {
+        if (typeof ack === "function") ack({ ok: false, error: reason });
+        return;
+      }
+      const candidate = pickLevelUpCandidate(room, effectiveTeamId);
+      if (!candidate) {
+        if (typeof ack === "function") ack({ ok: false, error: "no-eligible-task" });
+        return;
+      }
+
+      // Generate a fresh variant. Don't deduct the attempt on failure.
+      let variant;
+      try {
+        variant = await generateLevelUpVariant(room, candidate);
+      } catch (genErr) {
+        console.warn("[levelUp] generation failed:", genErr?.message || genErr);
+        if (typeof ack === "function") ack({ ok: false, error: "generation-failed" });
+        return;
+      }
+
+      // Inject as a new task at the end of room.taskset.tasks. The team's
+      // taskIndex is bumped so they receive it next.
+      if (!Array.isArray(room.taskset.tasks)) room.taskset.tasks = [];
+      const newIndex = room.taskset.tasks.length;
+      room.taskset.tasks.push(variant);
+
+      const st = getTeamLevelUpState(room, effectiveTeamId);
+      st.attempts += 1;
+      st.lastAttemptAt = Date.now();
+
+      const team = room.teams[effectiveTeamId];
+      if (team) {
+        team.taskIndex = newIndex;
+        team.currentTask = variant;
+      }
+
+      // Tell that team's clients to load the new task.
+      io.to(code).emit("levelUp:taskReady", {
+        roomCode: code,
+        teamId: effectiveTeamId,
+        taskIndex: newIndex,
+        task: variant,
+      });
+
+      if (typeof ack === "function") {
+        ack({
+          ok: true,
+          taskIndex: newIndex,
+          taskType: variant.taskType,
+          attemptsUsed: st.attempts,
+          attemptsRemaining: MAX_LEVEL_UP_ATTEMPTS - st.attempts,
+        });
+      }
+    } catch (e) {
+      console.error("[levelUp:request] error:", e?.message || e, e?.stack);
+      if (typeof ack === "function") ack({ ok: false, error: "server-error" });
+    }
+  });
+
+  // ── Teacher control: per-session disable ────────────────────────────────
+  socket.on("teacher:disableLevelUp", ({ roomCode, disabled } = {}, ack) => {
+    try {
+      const code = String(roomCode || "").toUpperCase();
+      const room = rooms[code];
+      if (!room) {
+        if (typeof ack === "function") ack({ ok: false });
+        return;
+      }
+      room.levelUpDisabled = !!disabled;
+      io.to(code).emit("levelUp:availability", { disabled: room.levelUpDisabled });
+      if (typeof ack === "function") ack({ ok: true, disabled: room.levelUpDisabled });
+    } catch {
+      if (typeof ack === "function") ack({ ok: false });
+    }
   });
 
   socket.on("task:requestNext", ({ roomCode, teamId } = {}, ack) => {
@@ -8796,6 +8985,23 @@ socket.on(
       console.log(`[report] Bloom's Taxonomy: ${bloomsTaxonomy.cognitiveTaskCount} cognitive tasks, highest=${bloomsTaxonomy.highestLevel}, dominant=${bloomsTaxonomy.dominantLevel}`);
     }
 
+    // Overlay mode summary (Escape Room / Whodunnit / Quest) — never block on enrichment
+    let overlayModeSummary = { active: false };
+    let overlayOneLine = "";
+    try {
+      overlayModeSummary = await buildOverlayModeSummary({
+        taskset: room?.taskset || {},
+        room,
+        roomCode: code,
+      });
+      overlayOneLine = overlayHeadline(overlayModeSummary);
+      if (overlayModeSummary.active) {
+        console.log(`[report] overlay active for ${code}: ${overlayOneLine}`);
+      }
+    } catch (e) {
+      console.warn("[report] overlay enrichment failed:", e?.message || e);
+    }
+
     try {
       // Always save the report — use ownerId if available, fallback to "anonymous"
       {
@@ -8818,6 +9024,8 @@ socket.on(
           runByPresenterId: room.runByPresenterId || "",
           runByPresenterName: room.runByPresenterName || "",
           runByPresenterEmail: room.runByPresenterEmail || "",
+          overlayModeSummary,
+          overlayHeadline: overlayOneLine,
           headline: (summary && (summary.headline || summary.title)) || `Curriculate Report — ${code}`,
           overviewEmail: (summary && (summary.emailOverview || summary.overview || "")) || "",
           parentNote,
@@ -9125,6 +9333,8 @@ socket.on(
           bloomsTaxonomy,
           csvAttachment,
           classBound,
+          overlayModeSummary,
+          overlayHeadline: overlayOneLine,
         }),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Email send timed out after 45 seconds")), 45_000)
@@ -9185,6 +9395,8 @@ socket.on(
             bloomsTaxonomy,
             csvAttachment: originalTeacherCsv,
             classBound,
+            overlayModeSummary,
+            overlayHeadline: overlayOneLine,
           });
           console.log(`[shared] Sent report email to original teacher: ${sharedFromTeacherEmail}`);
         } catch (e) {
@@ -9394,6 +9606,8 @@ socket.on(
           bloomsTaxonomy: report.bloomsTaxonomy || null,
           csvAttachment: retryCsv,
           classBound: retryClassBound,
+          overlayModeSummary: report.overlayModeSummary || null,
+          overlayHeadline: report.overlayHeadline || "",
         }),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Email retry timed out after 45 seconds")), 45_000)

@@ -151,7 +151,10 @@ function StudentApp() {
   const [joiningRoom, setJoiningRoom] = useState(false);
   const [leaderboard, setLeaderboard] = useState([]); // Update via socket.on('leaderboard-update', setLeaderboard)
   const [tasksetComplete, setTasksetComplete] = useState(false);
-  const [postPhase, setPostPhase] = useState("tasks"); // "tasks" | "feedback" | "trophy"
+  const [postPhase, setPostPhase] = useState("tasks"); // "tasks" | "levelup" | "feedback" | "trophy"
+  const [levelUpOffer, setLevelUpOffer] = useState(null); // { available, candidate, attemptsRemaining }
+  const [levelUpRequesting, setLevelUpRequesting] = useState(false);
+  const [levelUpResolved, setLevelUpResolved] = useState(null); // last resolved levelUp event for UI feedback
   const [taskRenderError, setTaskRenderError] = useState(null);
   const [bumped, setBumped] = useState(null); // { reason } if team was bumped by presenter
 
@@ -1468,9 +1471,30 @@ function StudentApp() {
         clearInterval(postSubmitTimerRef.current);
         postSubmitTimerRef.current = null;
       }
-      setPostPhase("feedback");
-      tryPlaySessionEndSound();
-      // Don't set tasksetComplete yet — feedback form should show first
+      // ── LevelUp: check whether an upgrade is available before showing
+      //    the feedback form. If available, jump to the "levelup" phase.
+      try {
+        socket.emit(
+          "student:levelUpOffer",
+          {
+            roomCode: (roomCode || "").trim().toUpperCase(),
+            teamId,
+          },
+          (resp) => {
+            if (resp && resp.ok && resp.available) {
+              setLevelUpOffer(resp);
+              setPostPhase("levelup");
+            } else {
+              setPostPhase("feedback");
+              tryPlaySessionEndSound();
+            }
+          },
+        );
+      } catch {
+        setPostPhase("feedback");
+        tryPlaySessionEndSound();
+      }
+      // Don't set tasksetComplete yet — feedback (or LevelUp) form must show first
     };
 
     socket.on("room:state", handleRoomState);
@@ -1485,6 +1509,28 @@ function StudentApp() {
     socket.on("team:pacing-hold", handlePacingHold);
     socket.on("team:pacing-released", handlePacingRelease);
     socket.on("session:complete", handleSessionComplete);
+
+    // ── LevelUp: server pushed a new task to play (after we accepted) ──
+    const handleLevelUpTaskReady = (payload) => {
+      if (!payload || String(payload.teamId) !== String(teamId)) return;
+      console.log("[StudentApp] levelUp:taskReady", payload);
+      setLevelUpOffer(null);
+      setLevelUpRequesting(false);
+      setPostPhase("tasks");
+      setWaitingForLaunch(false);
+      setTasksetComplete(false);
+      if (payload.task) {
+        setCurrentTask(payload.task);
+        setCurrentTaskIndex(payload.taskIndex);
+      }
+    };
+    const handleLevelUpResolved = (payload) => {
+      if (!payload || String(payload.teamId) !== String(teamId)) return;
+      console.log("[StudentApp] levelUp:resolved", payload);
+      setLevelUpResolved(payload);
+    };
+    socket.on("levelUp:taskReady", handleLevelUpTaskReady);
+    socket.on("levelUp:resolved", handleLevelUpResolved);
 
     const handleBumped = (payload) => {
       if (payload?.teamId && payload.teamId !== teamId) return;
@@ -1585,6 +1631,8 @@ function StudentApp() {
       socket.off("team:pacing-hold", handlePacingHold);
       socket.off("team:pacing-released", handlePacingRelease);
       socket.off("session:complete", handleSessionComplete);
+      socket.off("levelUp:taskReady", handleLevelUpTaskReady);
+      socket.off("levelUp:resolved", handleLevelUpResolved);
       socket.off("team:bumped", handleBumped);
       socket.off("mystery:boxGrid", handleMysteryBoxGrid);
       socket.off("mystery:challengeBeacon", handleChallengeBeacon);
@@ -5266,6 +5314,127 @@ function StudentApp() {
     )}
           
 {/* POST-TASK FEEDBACK (after last task, before trophy) */}
+{/* LEVELUP OFFER — shown after all tasks but before the feedback form */}
+{postPhase === "levelup" && levelUpOffer && levelUpOffer.available && (
+  <section
+    style={{
+      marginTop: 12,
+      padding: 20,
+      borderRadius: 18,
+      background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)",
+      border: "2px solid #f59e0b",
+      boxShadow: "0 16px 40px rgba(0,0,0,0.25)",
+    }}
+  >
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+      <div style={{ fontSize: 36 }}>⬆</div>
+      <div>
+        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: "#92400e" }}>
+          You've got time. Want to LevelUp?
+        </h2>
+        <div style={{ marginTop: 4, fontSize: 13, color: "#78350f", fontWeight: 600 }}>
+          {levelUpOffer.attemptsRemaining} attempt{levelUpOffer.attemptsRemaining === 1 ? "" : "s"} remaining
+        </div>
+      </div>
+    </div>
+    <div
+      style={{
+        background: "rgba(255,255,255,0.7)",
+        borderRadius: 12,
+        padding: 14,
+        marginBottom: 14,
+        fontSize: 15,
+        color: "#1f2937",
+      }}
+    >
+      <div style={{ fontWeight: 700, marginBottom: 6 }}>🎯 Lowest score so far:</div>
+      <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 6 }}>
+        {levelUpOffer.candidate?.taskTitle || levelUpOffer.candidate?.taskType} — {levelUpOffer.candidate?.scorePercent}%
+      </div>
+      <div style={{ fontSize: 13, color: "#475569" }}>
+        We'll give you a fresh version of the same task. You keep the higher of the two scores — never the lower. Beat it and earn a +5 mastery bonus.
+      </div>
+    </div>
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+      <button
+        type="button"
+        disabled={levelUpRequesting}
+        onClick={() => {
+          if (levelUpRequesting) return;
+          setLevelUpRequesting(true);
+          socket.emit(
+            "student:requestLevelUp",
+            {
+              roomCode: (roomCode || "").trim().toUpperCase(),
+              teamId,
+            },
+            (resp) => {
+              if (!resp || !resp.ok) {
+                setLevelUpRequesting(false);
+                // Fall back to feedback if regeneration failed
+                setLevelUpOffer(null);
+                setPostPhase("feedback");
+                tryPlaySessionEndSound();
+              }
+              // On ok: server emits levelUp:taskReady → handler swaps us to "tasks"
+            },
+          );
+        }}
+        style={{
+          flex: "1 1 auto",
+          padding: "14px 20px",
+          borderRadius: 12,
+          background: levelUpRequesting ? "#9ca3af" : "#0f172a",
+          color: "#fff",
+          fontWeight: 800,
+          fontSize: 16,
+          border: "none",
+          cursor: levelUpRequesting ? "wait" : "pointer",
+          boxShadow: "0 4px 12px rgba(15,23,42,0.3)",
+        }}
+      >
+        {levelUpRequesting ? "Generating fresh task…" : "Yes, give me a fresh one"}
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setLevelUpOffer(null);
+          setPostPhase("feedback");
+          tryPlaySessionEndSound();
+        }}
+        style={{
+          padding: "14px 18px",
+          borderRadius: 12,
+          background: "rgba(255,255,255,0.6)",
+          color: "#1f2937",
+          fontWeight: 700,
+          fontSize: 14,
+          border: "1px solid rgba(15,23,42,0.2)",
+          cursor: "pointer",
+        }}
+      >
+        I'm done — final score this round
+      </button>
+    </div>
+    {levelUpResolved && (
+      <div
+        style={{
+          marginTop: 12,
+          padding: 10,
+          borderRadius: 10,
+          background: levelUpResolved.improved ? "#d1fae5" : "#e5e7eb",
+          fontSize: 14,
+          color: "#1f2937",
+          fontWeight: 600,
+        }}
+      >
+        Last LevelUp: {levelUpResolved.originalPoints} → {levelUpResolved.retryPoints}
+        {levelUpResolved.improved ? ` (+${levelUpResolved.masteryBonus} mastery bonus!)` : " — your original score stands."}
+      </div>
+    )}
+  </section>
+)}
+
 {postPhase === "feedback" && !tasksetComplete && (
   <section
     style={{
