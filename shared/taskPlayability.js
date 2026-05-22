@@ -597,6 +597,96 @@ export function assessTaskPlayability(rawTask) {
       break;
     }
 
+    // ── New task types added 2026 ────────────────────────────────────
+    case TASK_TYPES.WHAT_AM_I: {
+      const cfg = t.config || {};
+      const answer = cfg.answer || t.answer;
+      const clues = Array.isArray(cfg.clues) ? cfg.clues : (Array.isArray(t.clues) ? t.clues : []);
+      if (!isNonEmptyString(answer)) issues.push("what-am-i requires config.answer (the secret subject)");
+      if (clues.length < 3) issues.push(`what-am-i needs ≥3 clues (got ${clues.length})`);
+      break;
+    }
+
+    case TASK_TYPES.QUEST: {
+      const cfg = t.config || {};
+      if (!isNonEmptyString(cfg.title)) issues.push("quest requires config.title (mission name)");
+      if (!isNonEmptyString(cfg.scenario)) issues.push("quest requires config.scenario (narrative setup)");
+      const objs = Array.isArray(cfg.objectives) ? cfg.objectives : [];
+      if (objs.length < 1) issues.push("quest needs ≥1 objective");
+      const res = Array.isArray(cfg.resources) ? cfg.resources : [];
+      if (res.length < 1) issues.push("quest needs ≥1 resource");
+      break;
+    }
+
+    case TASK_TYPES.CAREERS: {
+      const cfg = t.config || {};
+      const allowedModes = ["best-fit", "pathway-builder", "aptitude-match", "salary-vs-lifestyle", "who-should-be-hired", "career-myths"];
+      if (!allowedModes.includes(cfg.mode)) {
+        issues.push(`careers config.mode must be one of ${allowedModes.join("/")}`);
+      }
+      // mode-specific minimal payload
+      if (cfg.mode === "best-fit" && !cfg.career) issues.push("careers best-fit needs config.career");
+      if (cfg.mode === "pathway-builder" && (!Array.isArray(cfg.pathways) || cfg.pathways.length < 2))
+        issues.push("careers pathway-builder needs ≥2 pathways");
+      if (cfg.mode === "who-should-be-hired" && (!Array.isArray(cfg.candidates) || cfg.candidates.length < 2))
+        issues.push("careers who-should-be-hired needs ≥2 candidates");
+      if (cfg.mode === "salary-vs-lifestyle" && (!cfg.optionA || !cfg.optionB))
+        issues.push("careers salary-vs-lifestyle needs optionA + optionB");
+      if (cfg.mode === "career-myths" && (!Array.isArray(cfg.questions) || cfg.questions.length === 0))
+        issues.push("careers career-myths needs ≥1 question");
+      if (cfg.mode === "aptitude-match" && (!Array.isArray(cfg.prompts) || cfg.prompts.length === 0))
+        issues.push("careers aptitude-match needs ≥1 prompt");
+      break;
+    }
+
+    case TASK_TYPES.CURRENT_EVENTS: {
+      const cfg = t.config || {};
+      // The persisted task is a shell — `lessonTopic` (or task.topicLabel) is
+      // the only required input. Resolver fills the rest at runtime.
+      const topic = cfg.lessonTopic || t.topicLabel;
+      if (!isNonEmptyString(topic)) {
+        issues.push("current-events requires config.lessonTopic (or task.topicLabel)");
+      }
+      break;
+    }
+
+    case TASK_TYPES.HOLE_IN_ONE: {
+      const cfg = t.config || {};
+      const board = cfg.board || {};
+      const w = Number(board.width), h = Number(board.height);
+      if (!(w >= 6 && w <= 30)) issues.push(`hole-in-one board.width must be 6-30 (got ${w})`);
+      if (!(h >= 6 && h <= 30)) issues.push(`hole-in-one board.height must be 6-30 (got ${h})`);
+      if (!board.startPosition || !board.holePosition) {
+        issues.push("hole-in-one needs board.startPosition AND board.holePosition");
+      }
+      if (Array.isArray(cfg.questionBank) && cfg.questionBank.length < 1) {
+        issues.push("hole-in-one needs ≥1 question in config.questionBank");
+      }
+      break;
+    }
+
+    case TASK_TYPES.LEGENDS: {
+      const cfg = t.config || {};
+      const figure = cfg.figure || {};
+      if (!isNonEmptyString(figure.name)) issues.push("legends requires config.figure.name");
+      if (!isNonEmptyString(figure.portraitUrl)) issues.push("legends requires config.figure.portraitUrl");
+      else if (!/^https?:\/\//.test(figure.portraitUrl)) issues.push("legends config.figure.portraitUrl must be http(s)");
+      const facts = Array.isArray(cfg.facts) ? cfg.facts : [];
+      if (facts.length !== 10) issues.push(`legends requires exactly 10 facts (got ${facts.length})`);
+      else {
+        const counts = { what: 0, where: 0, why: 0, when: 0, decoy: 0 };
+        for (const f of facts) {
+          if (counts[f.category] !== undefined) counts[f.category] += 1;
+        }
+        if (counts.what !== 2)  issues.push(`legends needs exactly 2 'what' facts (got ${counts.what})`);
+        if (counts.where !== 2) issues.push(`legends needs exactly 2 'where' facts (got ${counts.where})`);
+        if (counts.why !== 2)   issues.push(`legends needs exactly 2 'why' facts (got ${counts.why})`);
+        if (counts.when !== 1)  issues.push(`legends needs exactly 1 'when' fact (got ${counts.when})`);
+        if (counts.decoy !== 3) issues.push(`legends needs exactly 3 'decoy' facts (got ${counts.decoy})`);
+      }
+      break;
+    }
+
     default: {
       // Unknown types: only enforce generic title/prompt
       issues.push(`unknown taskType "${t.taskType}" (normalized to "${normalizedType}")`);
