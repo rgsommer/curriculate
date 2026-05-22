@@ -119,6 +119,8 @@ export default function WordWeaverDuelTask({
   const [wordOrientations, setWordOrientations] = useState(() => ({})); // {wordIdx: "H" | "V"}
   const [rotatedView, setRotatedView] = useState(false);
   const [placementError, setPlacementError] = useState(null); // error message for placement feedback
+  const [badDropFlash, setBadDropFlash] = useState(false);     // 600ms red flash on bad drop
+  const badDropTimerRef = useRef(null);
   const [touchDragIdx, setTouchDragIdx] = useState(null); // touch-drag word index
   const [touchDragPos, setTouchDragPos] = useState(null); // {x,y} for touch ghost
   const boardRef = useRef(null); // ref to grid container for hit-testing touch drops
@@ -200,7 +202,10 @@ export default function WordWeaverDuelTask({
       const cell = b[rr][cc];
       const existing = cell?.ch ? String(cell.ch).toUpperCase() : "";
       const want = w[i];
-      if (existing && existing !== want) return { ok: false, reason: `Conflict at ${rr + 1},${cc + 1}.` };
+      if (existing && existing !== want) return {
+        ok: false,
+        reason: `That spot already has "${existing}" — your word needs a "${want}" there.`,
+      };
       if (existing && existing === want) hasIntersection = true;
     }
 
@@ -265,10 +270,16 @@ export default function WordWeaverDuelTask({
 
       if (!check.ok) {
         setPlacementError(check.reason);
+        // Trigger a 600ms red flash on the board so a bad drag has
+        // unmistakable visual feedback (tester ask).
+        setBadDropFlash(true);
+        if (badDropTimerRef.current) window.clearTimeout(badDropTimerRef.current);
+        badDropTimerRef.current = window.setTimeout(() => setBadDropFlash(false), 600);
         return prev;
       }
 
       setPlacementError(null);
+      setBadDropFlash(false);
 
       const intersections = computeIntersections(anchorR, anchorC, word, wordOri, b);
       const points = word.length + intersections * 2;
@@ -296,6 +307,62 @@ export default function WordWeaverDuelTask({
 
       return b;
     });
+  };
+
+  // Take a word back off the board. Letters on shared intersections
+  // remain only if another placed word still owns the cell.
+  const unplaceWord = (wordIdx) => {
+    if (!canInteract) return;
+    const info = placed?.[wordIdx];
+    if (!info) return;
+
+    const wordRaw = scrabbleWords[wordIdx] ?? "";
+    const word = String(wordRaw).trim().toUpperCase();
+    if (!word) return;
+
+    setBoard((prev) => {
+      const b = prev.map((row) => row.map((cell) => ({ ...cell })));
+      for (let i = 0; i < word.length; i++) {
+        const rr = info.orientation === "V" ? info.r + i : info.r;
+        const cc = info.orientation === "H" ? info.c + i : info.c;
+        const cell = b[rr]?.[cc];
+        if (!cell) continue;
+        // If the cell was owned by this word AND no other placed word
+        // also covers it, clear the cell. Otherwise leave intact for
+        // the other word that shares this letter.
+        const sharedWith = Object.entries(placed || {}).some(([otherIdxStr, otherInfo]) => {
+          const otherIdx = Number(otherIdxStr);
+          if (otherIdx === wordIdx) return false;
+          if (!otherInfo) return false;
+          const otherWord = String(scrabbleWords[otherIdx] || "").toUpperCase();
+          for (let j = 0; j < otherWord.length; j++) {
+            const orr = otherInfo.orientation === "V" ? otherInfo.r + j : otherInfo.r;
+            const occ = otherInfo.orientation === "H" ? otherInfo.c + j : otherInfo.c;
+            if (orr === rr && occ === cc) return true;
+          }
+          return false;
+        });
+        if (!sharedWith) {
+          b[rr][cc] = { ch: "", wordId: null };
+        }
+      }
+      return b;
+    });
+
+    // Subtract the points awarded for this word and clear from `placed`.
+    setScores((s) => ({
+      ...(s || {}),
+      [info.playerIndex]: Math.max(0, (Number(s?.[info.playerIndex]) || 0) - (info.points || 0)),
+    }));
+    setPlaced((p) => {
+      const next = { ...(p || {}) };
+      delete next[wordIdx];
+      return next;
+    });
+    setPlacementError(null);
+    setBadDropFlash(false);
+    // Step the turn back so the same player can try again.
+    setActivePlayer((ap) => (players.length ? (ap - 1 + players.length) % players.length : ap));
   };
 
   // --- Custom drag image for HTML5 drag ---
@@ -734,7 +801,7 @@ export default function WordWeaverDuelTask({
                 style={s.secondaryBtn}
                 title="Rotate the board view (visual only)"
               >
-                {rotatedView ? "Un-rotate board" : "Rotate board"}
+                {rotatedView ? "Rotate again" : "Rotate board"}
               </button>
             </div>
 
@@ -753,7 +820,15 @@ export default function WordWeaverDuelTask({
             )}
           </div>
 
-          <div style={s.boardWrap}>
+          <div
+            style={{
+              ...s.boardWrap,
+              outline: badDropFlash ? "3px solid #ef4444" : "none",
+              borderRadius: 8,
+              boxShadow: badDropFlash ? "0 0 0 8px rgba(239,68,68,0.18)" : "none",
+              transition: "box-shadow 0.2s, outline 0.2s",
+            }}
+          >
             <div
               ref={boardRef}
               style={{
@@ -896,9 +971,35 @@ export default function WordWeaverDuelTask({
                   )}
 
                   {isPlaced && (
-                    <div style={s.placedMeta}>
-                      +{placedInfo.points} pts • {players[placedInfo.playerIndex] || `Player ${placedInfo.playerIndex + 1}`} • {placedInfo.orientation}
-                    </div>
+                    <>
+                      <div style={s.placedMeta}>
+                        +{placedInfo.points} pts • {players[placedInfo.playerIndex] || `Player ${placedInfo.playerIndex + 1}`} • {placedInfo.orientation}
+                      </div>
+                      {/* Allow a player to take a word back if they see
+                          a better play. Lifts the letters off the board,
+                          subtracts the points awarded, returns the turn. */}
+                      {canInteract && mode !== "review" && (
+                        <button
+                          type="button"
+                          onClick={() => unplaceWord(idx)}
+                          style={{
+                            padding: "4px 6px",
+                            borderRadius: 4,
+                            border: "1px dashed rgba(239,68,68,0.45)",
+                            background: "transparent",
+                            color: "#b91c1c",
+                            cursor: "pointer",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            opacity: 0.85,
+                            marginTop: 2,
+                          }}
+                          title="Take this word back and try a different placement"
+                        >
+                          ↩ Un-place
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               );

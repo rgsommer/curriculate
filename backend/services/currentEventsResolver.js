@@ -75,10 +75,17 @@ REGION: ${region}
 ${worldviewBlock}
 
 SEARCH STRATEGY:
+- USE THE web_search TOOL FIRST AND ALWAYS. Do NOT invent a story. The output must describe a real, verifiable news article you found in search results.
 - Prefer WORLD news (international scope) over hyper-local stories.
 - The teacher's country is ${region}, but country-scoped stories are the secondary path.
 - Search for news from the PAST 7 DAYS related to the lesson topic.
 - Prefer story categories: ${cats}.
+- If web_search returns nothing usable, return an error response shape: { "noStory": true, "reason": "<short reason>" } — do NOT fabricate a story.
+
+CONTENT BAR (HARD):
+- eventSummary MUST describe what actually happened in the real article — names, places, and dates from the source.
+- It must NOT read like AI prose; it must read like a summary of a wire story. Imagine a sub-editor with deadline pressure.
+- sourceUrl MUST be the real article URL you fetched. sourceName MUST be the publisher you saw in search results.
 
 PUBLISHER RULES (HARD):
 The following publishers are EXCLUDED. Do NOT use any story whose URL hostname matches any of these domains:

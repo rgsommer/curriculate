@@ -402,9 +402,29 @@ export default function EchoChainTask({ task, memberNames = [], practiceMode = f
         {/* Confirm flow — when waiting for the next player to recite. */}
         {seed && !confirmed && (
           <div style={{ margin: "12px 0", textAlign: "center" }}>
-            {/* Step 1: tap-toggle Listen & Check.  Was auto-on; tester
-                wanted explicit on/off control so the chain is recited
-                when ready. */}
+            {/* Big call-to-action that fires after every Add so the
+                next player knows exactly what to do. */}
+            <div
+              style={{
+                marginBottom: 14,
+                padding: "12px 14px",
+                borderRadius: 12,
+                background: "rgba(59,130,246,0.10)",
+                border: "1px solid rgba(59,130,246,0.45)",
+                color: "#bfdbfe",
+                fontSize: ".95em",
+                fontWeight: 800,
+                lineHeight: 1.4,
+              }}
+            >
+              👉 <strong style={{ color: "#dbeafe" }}>Now say the entire sequence in order</strong>, then tap your name below.
+            </div>
+
+            {/* Step 1 (OPTIONAL): tap-toggle Listen & Check.  We've
+                de-emphasised this because tester feedback flagged it
+                as unreliable — the primary path is now to recite the
+                chain aloud and tap your name to confirm. Mic is a
+                bonus / verification tool only. */}
             <button
               type="button"
               onClick={toggleListen}
@@ -412,17 +432,19 @@ export default function EchoChainTask({ task, memberNames = [], practiceMode = f
               style={{
                 background: listening
                   ? "linear-gradient(135deg, #ef4444, #b91c1c)"
-                  : "linear-gradient(135deg, #3b82f6, #2563eb)",
-                color: "#fff",
-                fontWeight: 900,
-                padding: "12px 24px",
+                  : "rgba(59,130,246,0.18)",
+                color: listening ? "#fff" : "#bfdbfe",
+                fontWeight: 700,
+                fontSize: ".88em",
+                padding: "8px 16px",
+                border: listening ? "none" : "1px solid rgba(59,130,246,0.5)",
                 boxShadow: listening
                   ? "0 0 0 4px rgba(239,68,68,0.25)"
-                  : "0 4px 12px rgba(59,130,246,.3)",
+                  : "none",
                 animation: listening ? "ec-pulse 1.4s ease infinite" : "none",
               }}
             >
-              {listening ? "🎤 Listening — tap to stop" : "🎤 Listen & Check"}
+              {listening ? "🎤 Listening — tap to stop" : "🎤 Optional: tap to verify with mic"}
             </button>
 
             {!heardIt && listening && (

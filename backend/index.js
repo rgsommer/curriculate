@@ -16972,6 +16972,60 @@ Give brief, constructive feedback. Start with what was good, then suggest one im
   }
 });
 
+// ─── Text-feedback (used by current-events + similar prose tasks) ──────
+// Body: { mode, prompt, context, response }. Returns { ok, feedback }.
+// Coach voice — short, specific, concrete. Falls back to a rubric note
+// on any error so the client always gets something to display.
+app.post("/api/text-feedback", express.json({ limit: "256kb" }), async (req, res) => {
+  try {
+    const { mode, prompt, context, response } = req.body || {};
+    const text = String(response || "").trim();
+    if (!text) return res.json({ ok: true, feedback: "" });
+
+    if (!process.env.OPENAI_API_KEY) {
+      return res.json({
+        ok: true,
+        feedback:
+          "Solid first take. To strengthen a current-events response, point to a specific fact from the story AND link it to a concept from this week's lesson — your reader should be able to tell, just from your response, which lesson and which story.",
+      });
+    }
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    const systemMsg =
+      "You are a warm, specific classroom coach giving feedback on a student team's written response to a current-events prompt. " +
+      "Reply in 2-3 sentences. Acknowledge what landed, then name ONE concrete thing they could add (a specific fact from the story OR a clearer link to the lesson). " +
+      "Never moralize, never give a score, never repeat the student's text back at them.";
+    const userMsg = [
+      `Mode: ${mode || "current-events"}`,
+      prompt ? `Prompt: ${prompt}` : null,
+      context ? `Context: ${context}` : null,
+      `Student response: ${text}`,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    const chatResp = await openai.chat.completions.create({
+      model: process.env.TEXT_FEEDBACK_MODEL || "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemMsg },
+        { role: "user", content: userMsg },
+      ],
+      max_tokens: 220,
+      temperature: 0.7,
+    });
+
+    const feedback = chatResp.choices?.[0]?.message?.content?.trim() || "";
+    return res.json({ ok: true, feedback });
+  } catch (err) {
+    console.error("[/api/text-feedback] error:", err?.message || err);
+    return res.json({
+      ok: true,
+      feedback:
+        "Thoughtful start. A stronger version connects a specific detail from the story to something from your lesson, then adds your team's own take or question.",
+    });
+  }
+});
+
 // ------------------------------
 // Media: Presigned S3 Upload URLs
 // ------------------------------

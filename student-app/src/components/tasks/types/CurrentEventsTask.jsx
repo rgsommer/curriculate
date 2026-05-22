@@ -7,7 +7,30 @@
 // backend sends a placeholder task with `config.loading: true`.
 //
 // See CURRENT_EVENTS_PLAN.md §11 + §14 for the spec.
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
+
+// Count sentence-shaped chunks in a free-text response. Handles the
+// common end-of-sentence punctuation + the case where the user just
+// types two lines with no terminators (counts each non-empty line).
+function countSentences(text) {
+  const t = String(text || "").trim();
+  if (!t) return 0;
+  // Split on . ! ? while keeping the punctuation; filter to sentences
+  // with at least 3 words so trivial fragments don't pad the count.
+  const parts = t
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s && s.replace(/[^\w]+/g, " ").trim().split(/\s+/).length >= 3);
+  if (parts.length > 0) return parts.length;
+  // Fallback: count non-empty lines (covers tester typing without
+  // punctuation).
+  return t
+    .split(/\n+/)
+    .map((s) => s.trim())
+    .filter((s) => s.split(/\s+/).length >= 3).length;
+}
+
+const MIN_RESPONSE_SENTENCES = 3;
 
 export default function CurrentEventsTask({ task, onSubmit, disabled }) {
   const cfg = task?.config || {};
@@ -15,12 +38,53 @@ export default function CurrentEventsTask({ task, onSubmit, disabled }) {
   const loading = !!cfg.loading || !resolved;
 
   const [response, setResponse] = useState("");
+  // Track whether the user has been shown AI feedback yet. After they
+  // submit a long-enough response, we kick off scoring and show the
+  // coach reply BEFORE auto-advancing. (No feedback = silent ship was
+  // tester complaint #4.)
+  const [feedbackPhase, setFeedbackPhase] = useState("compose"); // compose | scoring | feedback
+  const [aiFeedback, setAiFeedback] = useState(null);
+
+  const sentenceCount = useMemo(() => countSentences(response), [response]);
+  const meetsMinimum = sentenceCount >= MIN_RESPONSE_SENTENCES;
+
+  const handleSubmitResponse = async () => {
+    if (!meetsMinimum || disabled) return;
+    setFeedbackPhase("scoring");
+    // Best-effort AI feedback via the existing /api/audio/transcribe-ish
+    // generic feedback endpoint — falls back to a friendly rubric note
+    // if the network call fails or no key is configured.
+    let coach = "";
+    try {
+      const backendBase = process.env.NEXT_PUBLIC_BACKEND_URL || "https://api.curriculate.net";
+      const r = await fetch(`${backendBase}/api/text-feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "current-events",
+          prompt: resolved?.studentTask || task?.prompt || "Respond to the current event.",
+          context: `Story: ${resolved?.currentEventHeadline || resolved?.title || ""}\n${resolved?.eventSummary || ""}`,
+          response: response.trim(),
+        }),
+      });
+      const j = await r.json().catch(() => null);
+      if (j?.feedback) coach = String(j.feedback);
+    } catch {}
+    if (!coach) {
+      coach =
+        "Thoughtful response. Strong responses connect the story to a specific idea or detail from your lesson and offer at least one of your own observations or questions — try to do both in your next one.";
+    }
+    setAiFeedback(coach);
+    setFeedbackPhase("feedback");
+  };
 
   const handleContinue = () => {
     if (onSubmit) {
       onSubmit({
         type: "current-events-response",
         text: response.trim(),
+        sentenceCount,
+        feedback: aiFeedback,
         autoComplete: true,
         meta: {
           sourceUrl: resolved?.sourceUrl || null,
@@ -60,6 +124,14 @@ export default function CurrentEventsTask({ task, onSubmit, disabled }) {
 
       <div style={titleStyle}>{resolved.title || task?.title || "This Week's Connection"}</div>
 
+      {/* Top-of-task instruction line — testers couldn't tell what was
+          expected of them. Sets up roles (Reader / Responder) and the
+          fact that the story below is a real current event. */}
+      <div style={instructionStrip}>
+        You will be presented with <strong>an actual current event</strong>. One player
+        <strong> reads it aloud</strong>; the team then <strong>responds in at least {MIN_RESPONSE_SENTENCES} sentences</strong>.
+      </div>
+
       {resolved.currentEventHeadline ? (
         <div style={headlineStyle}>{resolved.currentEventHeadline}</div>
       ) : null}
@@ -97,27 +169,74 @@ export default function CurrentEventsTask({ task, onSubmit, disabled }) {
         </div>
       ) : null}
 
-      <textarea
-        value={response}
-        onChange={(e) => setResponse(e.target.value)}
-        placeholder="Your team's response (optional)…"
-        disabled={disabled}
-        style={textareaStyle}
-        maxLength={600}
-      />
+      {feedbackPhase === "compose" && (
+        <>
+          <div style={{ ...cardLabel, marginTop: 4 }}>
+            Your team's response · at least {MIN_RESPONSE_SENTENCES} sentences
+          </div>
+          <textarea
+            value={response}
+            onChange={(e) => setResponse(e.target.value)}
+            placeholder={`Type at least ${MIN_RESPONSE_SENTENCES} sentences responding to the story above…`}
+            disabled={disabled}
+            style={textareaStyle}
+            maxLength={1200}
+          />
+          <div
+            style={{
+              fontSize: "0.78rem",
+              color: meetsMinimum ? "#86efac" : "#cbd5e1",
+              textAlign: "right",
+              marginTop: -4,
+            }}
+          >
+            {meetsMinimum
+              ? `✓ ${sentenceCount} sentence${sentenceCount === 1 ? "" : "s"}`
+              : `${sentenceCount} of ${MIN_RESPONSE_SENTENCES} sentences — keep going`}
+          </div>
+          <button
+            type="button"
+            onClick={handleSubmitResponse}
+            disabled={!meetsMinimum || disabled}
+            style={{
+              ...continueBtn,
+              opacity: !meetsMinimum || disabled ? 0.5 : 1,
+              cursor: !meetsMinimum || disabled ? "not-allowed" : "pointer",
+            }}
+          >
+            Submit response →
+          </button>
+        </>
+      )}
 
-      <button
-        type="button"
-        onClick={handleContinue}
-        disabled={disabled}
-        style={{
-          ...continueBtn,
-          opacity: disabled ? 0.5 : 1,
-          cursor: disabled ? "not-allowed" : "pointer",
-        }}
-      >
-        Continue →
-      </button>
+      {feedbackPhase === "scoring" && (
+        <div style={{ ...cardWrap, textAlign: "center" }}>
+          <div className="ce-pulse" style={{ fontSize: "0.85rem", color: "#a78bfa", fontWeight: 700 }}>
+            Reading your response…
+          </div>
+        </div>
+      )}
+
+      {feedbackPhase === "feedback" && (
+        <>
+          <div style={{ ...cardWrap, borderColor: "rgba(245,158,11,0.5)" }}>
+            <div style={{ ...cardLabel, color: "#fde68a" }}>Coach's note on your response</div>
+            <p style={{ ...bodyText, color: "#fef3c7" }}>{aiFeedback}</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleContinue}
+            disabled={disabled}
+            style={{
+              ...continueBtn,
+              opacity: disabled ? 0.5 : 1,
+              cursor: disabled ? "not-allowed" : "pointer",
+            }}
+          >
+            Continue →
+          </button>
+        </>
+      )}
 
       {resolved.sourceName ? (
         <div style={sourceLine}>
@@ -162,6 +281,15 @@ const tagStrip = {
   borderRadius: 999,
 };
 const titleStyle = { fontSize: "1.5rem", fontWeight: 800, color: "#f1f5f9", lineHeight: 1.2 };
+const instructionStrip = {
+  fontSize: "0.88rem",
+  color: "#e2e8f0",
+  background: "rgba(59,130,246,0.10)",
+  border: "1px solid rgba(59,130,246,0.35)",
+  borderRadius: 10,
+  padding: "10px 12px",
+  lineHeight: 1.45,
+};
 const headlineStyle = { fontSize: "1rem", color: "#cbd5e1", fontStyle: "italic", lineHeight: 1.4 };
 const cardWrap = {
   padding: 12,

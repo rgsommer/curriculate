@@ -1052,6 +1052,7 @@ function DemoPlayer({
   const [lastEarned, setLastEarned] = useState(null); // for pop animation
   const [streak, setStreak] = useState(0);
   const [showFeedback, setShowFeedback] = useState(false); // feedback popup
+  const feedbackDelayTimerRef = useRef(null); // for OVERLAY_TYPES delayed popup
   const [pendingEntry, setPendingEntry] = useState(null); // entry awaiting feedback
   const [showTreat, setShowTreat] = useState(false);
   const treatShownRef = useRef(false);
@@ -1362,12 +1363,42 @@ function DemoPlayer({
         setShowTreat(true);
       }
 
-      // Pause timer and show feedback popup straight away — no points
-      // pop yet, the pop fires inside handleFeedback when (and only
-      // when) the student actually rates the task.
+      // Pause timer; for task types that render an answer overlay or
+      // post-submit review state, delay the feedback popup so the player
+      // actually sees the overlay before the modal covers it. Otherwise
+      // pop the feedback dialog immediately.
       clearInterval(timerRef.current);
       setPendingEntry(entry);
-      setShowFeedback(true);
+      // Task types that show an answer-reveal / review overlay on submit.
+      // Keep this list in sync with the renderers' disabled/review-state
+      // logic; new types with their own overlay should be added here.
+      const FEEDBACK_OVERLAY_DELAY_MS = 2400;
+      const OVERLAY_TYPES = new Set([
+        "sort",
+        "vennsort",
+        "sequence",
+        "mad-dash-sequence",
+        "matching",
+        "timeline",
+        "multiple-choice",
+        "true-false",
+        "cloze",
+        "short-answer",
+        "trivia",
+        "fake-out",
+        "legends",
+        "record-audio",
+        "peer-editing",
+      ]);
+      if (OVERLAY_TYPES.has(task?.taskType)) {
+        // Show the overlay first; then prompt for feedback.
+        const timer = setTimeout(() => setShowFeedback(true), FEEDBACK_OVERLAY_DELAY_MS);
+        // If the user moves to next task before delay (shouldn't be possible
+        // since UI is locked, but defensive), clean up.
+        feedbackDelayTimerRef.current = timer;
+      } else {
+        setShowFeedback(true);
+      }
     },
     [task, taskIdx, total, results, onFinish, user.taskPoints, completedTypes]
   );

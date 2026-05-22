@@ -889,31 +889,73 @@ export default function PeerEditingTask({ task, onSubmit, disabled }) {
             )}
           </div>
 
-          {/* --- Feedback summary: how many issues caught vs missed.
-                Added per tester feedback: "Excellent! There should be feedback." */}
+          {/* --- Feedback summary: how many issues caught vs missed, AND
+                a per-issue list of what was missed (with the offending
+                word highlighted in its sentence so the player learns
+                what to look for next time). */}
           {!isPaper && totalIssuesToFind > 0 && (() => {
             const errSet = new Set(errorIndices);
-            const found = [...marks.keys()].filter((idx) => errSet.has(idx)).length;
-            const missed = totalIssuesToFind - found;
+            const foundIdxs = [...marks.keys()].filter((idx) => errSet.has(idx));
+            const found = foundIdxs.length;
+            const missedIdxs = errorIndices.filter((idx) => !marks.has(idx));
+            const missed = missedIdxs.length;
             const pct = Math.round((found / totalIssuesToFind) * 100);
             const color = pct >= 80 ? "#22c55e" : pct >= 50 ? "#f59e0b" : "#ef4444";
             const bg    = pct >= 80 ? "rgba(34,197,94,0.10)" : pct >= 50 ? "rgba(245,158,11,0.10)" : "rgba(239,68,68,0.10)";
             const bd    = pct >= 80 ? "rgba(34,197,94,0.4)"  : pct >= 50 ? "rgba(245,158,11,0.4)"  : "rgba(239,68,68,0.4)";
+            // Build a short "missed issues" list — show each missed word
+            // in the context of its sentence so the player can see what
+            // they didn't catch.
+            const buildContext = (wordIdx) => {
+              const sentIdx = wordIdxToSentence?.[wordIdx];
+              const sentence = (sentIdx != null && sentences?.[sentIdx]) || null;
+              if (!sentence) return String(words?.[wordIdx]?.text || words?.[wordIdx] || "");
+              const sentenceText = (sentence.words || sentence)
+                .map((w, i) => {
+                  const idx = sentence.startIndex != null ? sentence.startIndex + i : -1;
+                  const text = typeof w === "string" ? w : w?.text || "";
+                  return idx === wordIdx ? `«${text}»` : text;
+                })
+                .join(" ");
+              return sentenceText;
+            };
             return (
               <div style={{
                 marginTop: 16, padding: "14px 18px", borderRadius: 14,
                 background: bg, border: `1px solid ${bd}`,
+                textAlign: "left",
               }}>
-                <div style={{ fontSize: 15, fontWeight: 900, color }}>
+                <div style={{ fontSize: 15, fontWeight: 900, color, textAlign: "center" }}>
                   You caught {found} of {totalIssuesToFind} issue{totalIssuesToFind !== 1 ? "s" : ""} ({pct}%)
                 </div>
                 {missed > 0 && (
-                  <div style={{ fontSize: 12, marginTop: 4, color: "rgba(226,232,240,0.7)" }}>
-                    {missed} issue{missed !== 1 ? "s" : ""} not flagged — your teacher can review your marks against the answer key.
-                  </div>
+                  <>
+                    <div style={{
+                      fontSize: 12, marginTop: 10, color: "rgba(226,232,240,0.85)",
+                      fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase",
+                    }}>
+                      Missed — what to spot next time:
+                    </div>
+                    <ul style={{
+                      margin: "6px 0 0 0",
+                      padding: "0 0 0 18px",
+                      fontSize: 12.5,
+                      lineHeight: 1.55,
+                      color: "rgba(226,232,240,0.92)",
+                    }}>
+                      {missedIdxs.slice(0, 6).map((idx) => (
+                        <li key={idx}>{buildContext(idx)}</li>
+                      ))}
+                      {missedIdxs.length > 6 && (
+                        <li style={{ opacity: 0.7 }}>
+                          …and {missedIdxs.length - 6} more.
+                        </li>
+                      )}
+                    </ul>
+                  </>
                 )}
                 {hintsUsed > 0 && (
-                  <div style={{ fontSize: 12, marginTop: 4, color: "rgba(226,232,240,0.6)" }}>
+                  <div style={{ fontSize: 12, marginTop: 8, color: "rgba(226,232,240,0.6)" }}>
                     Hints used: {hintsUsed} (a small score penalty applies)
                   </div>
                 )}

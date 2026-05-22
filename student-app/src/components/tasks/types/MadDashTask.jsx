@@ -214,6 +214,10 @@ export default function MadDashTask({
   const [phase, setPhase] = useState(intraTeamEnabled ? "lobby" : "instructions");
   const [scanIdx, setScanIdx] = useState(0);
   const [errorFlash, setErrorFlash] = useState(false);
+  // lastScanResult: { scanned: "Red", correct: bool, ts } — drives the
+  // post-scan check/X reveal in the big target. Cleared on a 1.1s timer.
+  const [lastScanResult, setLastScanResult] = useState(null);
+  const lastScanClearTimerRef = useRef(null);
   // Progressive hints: how many route colors have been revealed as hints
   const [hintsUsed, setHintsUsed] = useState(0);
 
@@ -258,6 +262,18 @@ export default function MadDashTask({
 
     const expected = route[scanIdx];
     const ok = normalizeColorName(colorName) === normalizeColorName(expected);
+
+    // Tester ask: show the player WHAT was scanned (so they can tell a
+    // mis-tap from a route mistake) and a clear ✓/✗ for ~1s before the
+    // target updates. We never reveal the expected colour BEFORE the
+    // scan — the big target shows "?" until scanned.
+    setLastScanResult({ scanned: colorName, correct: ok, ts: Date.now() });
+    if (lastScanClearTimerRef.current) {
+      window.clearTimeout(lastScanClearTimerRef.current);
+    }
+    lastScanClearTimerRef.current = window.setTimeout(() => {
+      setLastScanResult(null);
+    }, 1100);
 
     if (!ok) {
       setErrorFlash(true);
@@ -633,14 +649,67 @@ export default function MadDashTask({
                 {route.slice(0, scanIdx).map((c, i) => (
                   <ColorBlock key={`done-${i}`} index={i} color={c} size="md" muted />
                 ))}
-                {/* Current target — full size + glow */}
+                {/* Current target — show "?" placeholder until a scan is
+                    received. On scan, briefly show the scanned colour with
+                    a ✓ or ✗ overlay, then auto-advance. We never spoil
+                    the expected colour before the scan. */}
                 {scanIdx < route.length && (
-                  <div style={{ animation: "mdPulse 1.4s ease-in-out infinite" }}>
-                    <ColorBlock
-                      index={scanIdx}
-                      color={route[scanIdx]}
-                      size="xl"
-                    />
+                  <div style={{ position: "relative", animation: "mdPulse 1.4s ease-in-out infinite" }}>
+                    {lastScanResult ? (
+                      // Reveal the just-scanned colour with a result badge
+                      <div style={{ position: "relative" }}>
+                        <ColorBlock
+                          index={scanIdx}
+                          color={lastScanResult.scanned}
+                          size="xl"
+                        />
+                        <div
+                          aria-label={lastScanResult.correct ? "Correct" : "Wrong"}
+                          style={{
+                            position: "absolute",
+                            top: -8,
+                            right: -8,
+                            width: 36,
+                            height: 36,
+                            borderRadius: 999,
+                            background: lastScanResult.correct ? "#22c55e" : "#ef4444",
+                            color: "#fff",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 20,
+                            fontWeight: 900,
+                            boxShadow: "0 4px 14px rgba(0,0,0,0.25)",
+                            border: "3px solid #fff",
+                          }}
+                        >
+                          {lastScanResult.correct ? "✓" : "✗"}
+                        </div>
+                      </div>
+                    ) : (
+                      // Hidden target — no spoiler
+                      <div
+                        style={{
+                          width: 96,
+                          height: 96,
+                          borderRadius: 14,
+                          background:
+                            "repeating-linear-gradient(45deg,#cbd5e1,#cbd5e1 8px,#94a3b8 8px,#94a3b8 16px)",
+                          color: "#1e293b",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontWeight: 900,
+                          boxShadow:
+                            "0 4px 14px rgba(0,0,0,0.18), inset 0 0 0 3px rgba(255,255,255,0.85)",
+                        }}
+                        aria-label={`Scan step ${scanIdx + 1} — recall the color from memory`}
+                      >
+                        <div style={{ fontSize: 26, lineHeight: 1 }}>{scanIdx + 1}</div>
+                        <div style={{ fontSize: 22, marginTop: 4 }}>?</div>
+                      </div>
+                    )}
                   </div>
                 )}
                 {/* Remaining (locked, ?-only) */}

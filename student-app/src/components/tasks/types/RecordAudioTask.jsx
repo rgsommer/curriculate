@@ -30,6 +30,11 @@ export default function RecordAudioTask({
   const [hasRecording, setHasRecording]     = useState(false);
   const [errorMsg, setErrorMsg]             = useState(null);
   const [isPreparingSubmit, setIsPreparingSubmit] = useState(false);
+  // Hold the AI transcript + feedback after submit so we can show the
+  // player what the AI heard and the coaching note before the task
+  // advances. Tester report: "Submitting but I was not shown the
+  // feedback" — fixed by rendering this review for ~4s.
+  const [submissionReview, setSubmissionReview] = useState(null); // { transcript, feedback }
 
   // ── Minimum-time enforcement ──────────────────────────────────────────────
   const minSeconds = parseMinSeconds(task);
@@ -373,6 +378,15 @@ export default function RecordAudioTask({
         }
       }
 
+      // Surface the transcript + AI feedback for the player BEFORE we
+      // tell the parent we're done — without this the task advances and
+      // the player never sees what was heard.
+      if (payload?.transcript || payload?.feedback) {
+        setSubmissionReview({
+          transcript: payload.transcript || "",
+          feedback: payload.feedback || "",
+        });
+      }
       await Promise.resolve(onSubmit?.(payload));
       setIsPreparingSubmit(false);
     } catch (err) {
@@ -388,6 +402,44 @@ export default function RecordAudioTask({
       ? "STOP"
       : `STOP (${remaining}s)`
     : null;
+
+  // Post-submit review: show transcript + AI feedback so the player
+  // sees what was heard and gets coaching before the next task.
+  if (submissionReview) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center h-full p-8 bg-gradient-to-br from-purple-700 via-pink-600 to-red-600 text-white"
+        style={{ fontFamily: "system-ui, sans-serif" }}
+      >
+        <h2 className="text-3xl font-black mb-3 drop-shadow-2xl">
+          ✅ Recording received
+        </h2>
+        {submissionReview.transcript && (
+          <div className="w-full max-w-3xl bg-white/15 backdrop-blur-lg rounded-2xl p-5 mb-3 border border-white/25 shadow-xl">
+            <div className="text-sm font-bold uppercase tracking-wider opacity-80 mb-2">
+              What I heard:
+            </div>
+            <div className="text-lg leading-snug italic">
+              "{submissionReview.transcript}"
+            </div>
+          </div>
+        )}
+        {submissionReview.feedback && (
+          <div className="w-full max-w-3xl bg-yellow-300/20 backdrop-blur-lg rounded-2xl p-5 mb-3 border border-yellow-200/50 shadow-xl">
+            <div className="text-sm font-bold uppercase tracking-wider opacity-80 mb-2 text-yellow-100">
+              Coaching note:
+            </div>
+            <div className="text-lg leading-snug text-yellow-50">
+              {submissionReview.feedback}
+            </div>
+          </div>
+        )}
+        <div className="text-base opacity-80 mt-2">
+          Moving to the next task in a moment…
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

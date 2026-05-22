@@ -1178,6 +1178,10 @@ router.get("/feedback-export", async (req, res) => {
     // Build per-task-type aggregation
     // Include ALL completed results (even those where feedback popup was skipped)
     const byType = {};
+    // Cross-type comment stream — populated alongside per-type aggregation,
+    // emitted at the TOP of the report so testers' comments are the first
+    // thing reviewers see (not buried under per-type tables).
+    const allComments = [];
 
     for (const lead of leads) {
       // Prefer the append-only feedbackEntries log; fall back to
@@ -1193,6 +1197,7 @@ router.get("/feedback-export", async (req, res) => {
               confusing: r.feedback?.confusing || "",
               suggestion: r.feedback?.suggestion || "",
               skipped: !!r.skipped,
+              createdAt: r.feedback?.createdAt || r.completedAt || null,
             }));
 
       // Also count completions from the lifetime counter so the
@@ -1221,11 +1226,37 @@ router.get("/feedback-export", async (req, res) => {
           if (e.clarity > 0) byType[tt].clarityScores.push(e.clarity);
         }
         const skipTag = e.skipped ? " (via skip)" : "";
+        const ratingTag = e.fun > 0
+          ? ` [${e.fun}★]`
+          : "";
+        const whenTag = e.createdAt
+          ? ` (${new Date(e.createdAt).toISOString().slice(0, 10)})`
+          : "";
         if (e.confusing && String(e.confusing).trim()) {
-          byType[tt].comments.push(`  [CONFUSING${skipTag}] "${String(e.confusing).trim()}" — ${lead.name}`);
+          byType[tt].comments.push(`  [CONFUSING${skipTag}]${ratingTag} "${String(e.confusing).trim()}" — ${lead.name}${whenTag}`);
+          allComments.push({
+            taskType: tt,
+            title: byType[tt].title,
+            kind: "confusing",
+            text: String(e.confusing).trim(),
+            rating: e.fun || 0,
+            from: lead.name,
+            createdAt: e.createdAt || null,
+            skipped: !!e.skipped,
+          });
         }
         if (e.suggestion && String(e.suggestion).trim()) {
-          byType[tt].comments.push(`  [SUGGESTION${skipTag}] "${String(e.suggestion).trim()}" — ${lead.name}`);
+          byType[tt].comments.push(`  [SUGGESTION${skipTag}]${ratingTag} "${String(e.suggestion).trim()}" — ${lead.name}${whenTag}`);
+          allComments.push({
+            taskType: tt,
+            title: byType[tt].title,
+            kind: "suggestion",
+            text: String(e.suggestion).trim(),
+            rating: e.fun || 0,
+            from: lead.name,
+            createdAt: e.createdAt || null,
+            skipped: !!e.skipped,
+          });
         }
       }
     }
@@ -1237,13 +1268,41 @@ router.get("/feedback-export", async (req, res) => {
       return avgA - avgB;
     });
 
+    // Sort all comments newest-first so the freshest tester feedback
+    // is the very first thing a reviewer sees when opening the report.
+    allComments.sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return tb - ta;
+    });
+
     const lines = [
       "=== CURRICULATE DEMO/PRACTICE FEEDBACK REPORT ===",
       `Generated: ${new Date().toISOString()}`,
       `Total testers: ${leads.length}`,
       `Task types with feedback: ${sorted.length}`,
+      `Total comments: ${allComments.length}`,
       "",
     ];
+
+    // ─── TOP-LEVEL FEEDBACK COMMENTS STREAM ──────────────────────────────
+    // Surfaces every tester comment in one block, newest first, so
+    // reviewers don't have to scroll through 50+ per-type summaries to
+    // find actionable feedback. Format is grep-friendly:
+    //   [kind] task-type [N★] (YYYY-MM-DD): "text" — name
+    if (allComments.length > 0) {
+      lines.push("=== ALL COMMENTS (newest first) ===");
+      lines.push("");
+      for (const c of allComments) {
+        const rating = c.rating > 0 ? ` [${c.rating}★]` : "";
+        const when = c.createdAt ? ` (${new Date(c.createdAt).toISOString().slice(0, 10)})` : "";
+        const skip = c.skipped ? " (via skip)" : "";
+        lines.push(`[${c.kind}] ${c.taskType}${rating}${when}${skip}: "${c.text}" — ${c.from}`);
+      }
+      lines.push("");
+      lines.push("=== PER TASK-TYPE BREAKDOWN ===");
+      lines.push("");
+    }
 
     for (const [taskType, data] of sorted) {
       const avgFun = data.funScores.length
