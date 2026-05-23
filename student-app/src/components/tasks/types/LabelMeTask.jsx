@@ -115,8 +115,13 @@ export default function LabelMeTask({ task, onSubmit, disabled, mode = "play", r
   const hasAnswerKey = Object.keys(correctByMarker).length > 0;
 
   const handleSubmit = () => {
-    if (!isComplete || disabled || inReview) return;
-    if (hasAnswerKey && !localReview && !isReview) { setLocalReview(true); return; }
+    // External review mode is read-only; otherwise this handler drives both the
+    // "Submit Labels" → review step AND the "Continue →" final submit. (Bug:
+    // previously guarded on `inReview`, which is true once localReview flips on,
+    // so the Continue button silently did nothing.)
+    if (disabled || isReview) return;
+    if (!isComplete) return;
+    if (hasAnswerKey && !localReview) { setLocalReview(true); return; }
     onSubmit?.({
       type: "labelme",
       assignments,
@@ -138,8 +143,10 @@ export default function LabelMeTask({ task, onSubmit, disabled, mode = "play", r
   };
 
   return (
-    <div style={{ maxWidth: 760, margin: "0 auto", padding: 14 }}>
-      <div style={{ fontWeight: 1000, fontSize: "1.15rem", marginBottom: 2 }}>{task?.title || "Label Me"}</div>
+    // Light surface so the dark title/prompt/legend text is always legible —
+    // the practice theme is dark and these used to render near-invisible.
+    <div style={{ maxWidth: 760, margin: "0 auto", padding: 16, background: "#f8fafc", color: "#0f172a", borderRadius: 18, boxShadow: "0 12px 40px rgba(15,23,42,0.18)" }}>
+      <div style={{ fontWeight: 1000, fontSize: "1.15rem", marginBottom: 2, color: "#0f172a" }}>{task?.title || "Label Me"}</div>
       <div style={{ fontSize: "0.9rem", color: "#475569", marginBottom: 10 }}>
         {task?.prompt || "Match each marker A-E to the correct term."}
       </div>
