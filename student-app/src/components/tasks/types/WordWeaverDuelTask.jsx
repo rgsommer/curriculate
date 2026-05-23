@@ -208,9 +208,25 @@ export default function WordWeaverDuelTask({
       if (existing && existing === want) hasIntersection = true;
     }
 
-    // Enforce intersection rule: after first word is placed, all subsequent words must intersect
+    // Enforce intersection rule: after the first word, subsequent words must
+    // cross an existing word — BUT only when a crossing is actually possible.
+    // If this word shares NO letter with anything already on the board, the
+    // generator gave us words that can't interlock; forcing a cross would
+    // dead-end the player (tester: "words didn't have enough in common"). In
+    // that case allow free placement so the game is always completable.
     if (placedCount > 0 && !hasIntersection) {
-      return { ok: false, reason: "This word must cross an existing word at a shared letter." };
+      const wordLetters = new Set(w.split(""));
+      let crossingPossible = false;
+      for (let rr = 0; rr < b.length && !crossingPossible; rr++) {
+        for (let cc = 0; cc < b[rr].length; cc++) {
+          const ch = b[rr][cc]?.ch ? String(b[rr][cc].ch).toUpperCase() : "";
+          if (ch && wordLetters.has(ch)) { crossingPossible = true; break; }
+        }
+      }
+      if (crossingPossible) {
+        return { ok: false, reason: "This word must cross an existing word at a shared letter." };
+      }
+      // else: no shared letter anywhere → allow placing it on its own.
     }
 
     return { ok: true };

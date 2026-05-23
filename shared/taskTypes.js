@@ -2773,6 +2773,17 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - config.words must contain 8–12 real vocabulary words from the topic.
     - prompt should tell students to use these words in a word-building challenge.
 
+    INTERLOCKING (IMPORTANT — this is a crossword-style builder):
+    - The words must INTERLOCK like a crossword: choose words that SHARE common
+      letters so they can cross each other. Prefer a set where most words share
+      at least one letter with several others (e.g. common letters like E, A, R,
+      S, T, O, N appearing across the set).
+    - Mix shorter words (3–5 letters) with longer ones so crossings are easy to
+      find. Avoid a set of words with almost no letters in common (e.g. all
+      starting and ending on rare, non-overlapping letters), or the puzzle is
+      unsolvable.
+    - GOOD (shared letters interlock): ["photosynthesis","chloroplast","stomata","oxygen","glucose","sunlight","carbon","water"]
+
     Common failure prevention:
     - Do NOT generate placeholder words. Use REAL vocabulary from the provided concept list.
     - Do NOT use "WORD" + number patterns. Every word must be meaningful.
