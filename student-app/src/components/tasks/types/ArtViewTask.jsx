@@ -71,6 +71,21 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
   // that was the root cause of "no art ever shows". Use the valid SVG.)
   const DEFAULT_ART_URL = "/demo-images/great-wave.svg";
 
+  // Absolute last-resort fallback: a self-contained data-URI SVG that needs NO
+  // network request and NO bundled asset to render. If even the bundled
+  // /demo-images default somehow fails to serve, this guarantees the viewing
+  // frame still shows an image instead of a broken "won't load" box.
+  const INLINE_FALLBACK =
+    "data:image/svg+xml;utf8," +
+    encodeURIComponent(
+      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 560' width='800' height='560'>
+        <rect width='800' height='560' fill='#1e293b'/>
+        <rect x='40' y='40' width='720' height='480' fill='none' stroke='#64748b' stroke-width='6' rx='12'/>
+        <text x='400' y='270' fill='#e2e8f0' font-family='system-ui,sans-serif' font-size='34' font-weight='700' text-anchor='middle'>Artwork</text>
+        <text x='400' y='320' fill='#94a3b8' font-family='system-ui,sans-serif' font-size='20' text-anchor='middle'>Study the details and describe what you observe.</text>
+      </svg>`
+    );
+
   // Skip the LOADING preload-validation step entirely — it was sticking
   // the practicer on a black spinner whenever the preload promise hung
   // (e.g. CORS quirks, slow image hosts).  Render the image directly
@@ -103,11 +118,13 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
   //  fails.  Server-side fetch fallback is still available but
   //  triggered lazily on image error, not as a blocking preload.)
   const handleImageError = useCallback(() => {
+    if (resolvedUrl === INLINE_FALLBACK) return; // can't fail further
     if (usedDefaultFallback) {
-      // Already on the default and it ALSO failed — fall through to
-      // description-only mode.
-      setLoadError("Image unavailable");
-      setResolvedUrl("");
+      // Bundled default ALSO failed (e.g. assets not served at this path).
+      // Swap to the self-contained inline SVG so the frame always shows an
+      // image — never a broken "won't load" box.
+      setLoadError("");
+      setResolvedUrl(INLINE_FALLBACK);
       return;
     }
     // Try server-side replacement first; if that fails, snap to the

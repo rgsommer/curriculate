@@ -75,6 +75,23 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
   // default stays. This eliminates the "stuck on loading / no doc"
   // failure mode tester flagged.
   const LOCAL_DEFAULT_DOC = "/demo-images/emancipation-proclamation.svg";
+  // Self-contained data-URI fallback — needs NO network/asset serving, so the
+  // document frame can never end up as a broken "won't load" box even if the
+  // bundled SVG fails to serve at this path.
+  const INLINE_FALLBACK_DOC =
+    "data:image/svg+xml;utf8," +
+    encodeURIComponent(
+      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 600' width='800' height='600'>
+        <rect width='800' height='600' fill='#f5f1e6'/>
+        <rect x='60' y='50' width='680' height='500' fill='#fffdf7' stroke='#caa46a' stroke-width='4'/>
+        <text x='400' y='150' fill='#5b4326' font-family='Georgia,serif' font-size='32' font-weight='700' text-anchor='middle'>Historical Document</text>
+        <line x1='120' y1='200' x2='680' y2='200' stroke='#d8c9a6' stroke-width='3'/>
+        <line x1='120' y1='250' x2='680' y2='250' stroke='#d8c9a6' stroke-width='3'/>
+        <line x1='120' y1='300' x2='680' y2='300' stroke='#d8c9a6' stroke-width='3'/>
+        <line x1='120' y1='350' x2='560' y2='350' stroke='#d8c9a6' stroke-width='3'/>
+        <text x='400' y='460' fill='#7a6442' font-family='Georgia,serif' font-size='18' text-anchor='middle'>Read carefully and analyze its purpose, audience, and significance.</text>
+      </svg>`
+    );
   const [phase, setPhase] = useState(PHASE.READING);
   // In practice/demo mode, external (http) image URLs are often stale/dead in
   // older saved demo sets (tester: "still NO historical doc image… do I have to
@@ -152,7 +169,10 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
       }
 
       if (!cancelled) {
-        setLoadError("Document image unavailable");
+        // Even the bundled default couldn't preload — use the self-contained
+        // inline SVG so a document always renders (never "won't load").
+        setResolvedUrl(INLINE_FALLBACK_DOC);
+        setLoadError("");
         setPhase(PHASE.READING);
       }
     }
@@ -334,16 +354,16 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
               alt={config.imageDescription || "Historical document"}
               referrerPolicy="no-referrer"
               onError={(e) => {
-                // If the AI-supplied image fails, snap to the bundled
-                // local default so SOMETHING is always on screen.
-                if (e.target.src.indexOf(LOCAL_DEFAULT_DOC) === -1) {
+                const src = e.target.src || "";
+                if (src.startsWith("data:")) return; // inline fallback can't fail
+                // AI-supplied image failed → bundled local default → inline SVG.
+                if (src.indexOf(LOCAL_DEFAULT_DOC) === -1) {
                   setResolvedUrl(LOCAL_DEFAULT_DOC);
                 } else {
-                  // Even the bundled default failed to load — fall back to the
-                  // text description so the task is NEVER blank.
-                  // (Tester, May 2026: "NO HISTORICAL DOCUMENT!")
-                  setResolvedUrl("");
-                  setLoadError("Document image unavailable — read the description below.");
+                  // Even the bundled default failed to serve — use the
+                  // self-contained inline SVG so a document ALWAYS renders.
+                  setResolvedUrl(INLINE_FALLBACK_DOC);
+                  setLoadError("");
                 }
               }}
               style={{
