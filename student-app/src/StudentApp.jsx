@@ -3571,6 +3571,10 @@ function StudentApp() {
           font-weight: 600;
           border: 1px solid rgba(15,23,42,0.25);
           background: rgba(255,255,255,0.85);
+          /* Explicit dark text: this pill always has a near-white background,
+             so it must not inherit the theme text color (near-white on the
+             Bold/Dyno dark themes, which made the label invisible). */
+          color: #1a1a2e;
         }
 
         .station-dot {

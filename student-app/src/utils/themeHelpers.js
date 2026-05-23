@@ -4,6 +4,22 @@
  * Theme definitions for the student app.
  * Each theme has static shell styles + a CSS keyframe animation
  * that gets injected into a <style> tag for the animated background.
+ *
+ * Token set (use getThemeShell() to read these in components):
+ *   text          primary text on the page/card
+ *   textMuted     secondary/supporting text
+ *   accent        brand accent (borders, highlights — NOT body text; low ratio)
+ *   surface       solid card/panel background (use instead of hardcoding #fff)
+ *   surfaceBorder card/panel border
+ *   inputBg / inputBorder   form controls
+ *   success / error / warn / info   semantic colors, pre-tuned per theme so
+ *                 they stay legible on that theme's background
+ *
+ * These are OPT-IN. Existing theme-blind tasks are not retrofitted, but new or
+ * updated tasks should read tokens from getThemeShell(uiTheme) (or the "light"/
+ * "dark" mode via getThemeMode) instead of hardcoding colors — that is what
+ * makes Bold vs Dyno actually look different inside a task, not just in the
+ * background.
  */
 
 export const THEMES = {
@@ -15,6 +31,16 @@ export const THEMES = {
     cardBorder: "1px solid rgba(255,107,107,0.3)",
     text: "#1a1a2e",
     accent: "#ff6b6b",
+    // --- Extended tokens (opt-in; see getThemeShell + header note) ---
+    textMuted: "rgba(26,26,46,0.66)",
+    surface: "#ffffff",
+    surfaceBorder: "rgba(26,26,46,0.14)",
+    inputBg: "#ffffff",
+    inputBorder: "rgba(26,26,46,0.18)",
+    success: "#15803d",
+    error: "#dc2626",
+    warn: "#b45309",
+    info: "#1d4ed8",
     // Animated background: warm floating blobs
     animationCSS: `
       @keyframes eager-drift {
@@ -56,11 +82,22 @@ export const THEMES = {
   bold: {
     label: "Bold",
     emoji: "⚡",
-    pageBg: "#0a0a1a",
-    cardBg: "rgba(15,15,35,0.95)",
+    // Bold leans into deep electric VIOLET to separate it clearly from Dyno's teal.
+    pageBg: "#0d0620",
+    cardBg: "rgba(26,14,52,0.95)",
     cardBorder: "1px solid rgba(139,92,246,0.7)",
     text: "#f0f0ff",
     accent: "#8b5cf6",
+    // --- Extended tokens (opt-in) ---
+    textMuted: "rgba(240,240,255,0.66)",
+    surface: "#180c30",
+    surfaceBorder: "rgba(139,92,246,0.45)",
+    inputBg: "rgba(255,255,255,0.06)",
+    inputBorder: "rgba(139,92,246,0.4)",
+    success: "#4ade80",
+    error: "#f87171",
+    warn: "#fbbf24",
+    info: "#a78bfa",
     animationCSS: `
       @keyframes bold-pulse {
         0%, 100% { opacity: 0.15; transform: scale(1); }
@@ -78,8 +115,8 @@ export const THEMES = {
         content: '';
         position: absolute; inset: 0;
         background-image:
-          linear-gradient(rgba(139,92,246,0.12) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(139,92,246,0.12) 1px, transparent 1px);
+          linear-gradient(rgba(139,92,246,0.18) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(139,92,246,0.18) 1px, transparent 1px);
         background-size: 60px 60px;
         animation: bold-grid 4s linear infinite;
       }
@@ -103,11 +140,23 @@ export const THEMES = {
   dyno: {
     label: "Dyno",
     emoji: "🚀",
-    pageBg: "#041c32",
-    cardBg: "rgba(4,28,50,0.88)",
+    // Dyno leans into brighter deep-ocean TEAL/CYAN, a touch lighter than Bold's
+    // violet so the two dark themes differ in both hue and value.
+    pageBg: "#04243d",
+    cardBg: "rgba(5,38,62,0.9)",
     cardBorder: "1px solid rgba(34,211,238,0.35)",
     text: "#ecfeff",
     accent: "#22d3ee",
+    // --- Extended tokens (opt-in) ---
+    textMuted: "rgba(236,254,255,0.68)",
+    surface: "#052a44",
+    surfaceBorder: "rgba(34,211,238,0.3)",
+    inputBg: "rgba(255,255,255,0.05)",
+    inputBorder: "rgba(34,211,238,0.35)",
+    success: "#34d399",
+    error: "#fb7185",
+    warn: "#fbbf24",
+    info: "#38bdf8",
     animationCSS: `
       @keyframes dyno-slide {
         0% { transform: translateX(-100%) rotate(-45deg); }
@@ -129,9 +178,9 @@ export const THEMES = {
         background: repeating-linear-gradient(
           -45deg,
           transparent,
-          transparent 40px,
-          rgba(34,211,238,0.06) 40px,
-          rgba(34,211,238,0.06) 42px
+          transparent 38px,
+          rgba(34,211,238,0.11) 38px,
+          rgba(34,211,238,0.11) 42px
         );
         animation: dyno-slide 20s linear infinite;
       }
@@ -165,6 +214,16 @@ export function getThemeShell(uiTheme) {
     cardBorder: t.cardBorder,
     text: t.text,
     accent: t.accent,
+    // Extended tokens (fall back to the legacy values when a theme predates them)
+    textMuted: t.textMuted ?? t.text,
+    surface: t.surface ?? t.cardBg,
+    surfaceBorder: t.surfaceBorder ?? t.cardBorder,
+    inputBg: t.inputBg ?? t.cardBg,
+    inputBorder: t.inputBorder ?? t.cardBorder,
+    success: t.success ?? "#16a34a",
+    error: t.error ?? "#dc2626",
+    warn: t.warn ?? "#d97706",
+    info: t.info ?? "#2563eb",
   };
 }
 
