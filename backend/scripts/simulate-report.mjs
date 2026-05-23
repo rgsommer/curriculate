@@ -162,6 +162,16 @@ function buildPayload() {
         { label: "Application", percent: 70 + Math.floor(Math.random() * 25), comment: "Connected concepts to real-world examples." },
       ],
       summary: `${name} participated actively throughout the session, demonstrating ${i % 2 === 0 ? "strong" : "growing"} understanding of the water cycle stages. ${i % 3 === 0 ? "Showed leadership during the brainstorm activity." : "Engaged well with peers during collaborative tasks."}`,
+      // Captured written/dictated responses — drives the "Speech & Text Quality"
+      // sections. Mix of clear and filler-heavy so the sample shows the range.
+      responses: [
+        {
+          text:
+            i % 2 === 0
+              ? "The water cycle moves water through evaporation, condensation, and precipitation. The sun heats the ocean, water rises as vapor, cools into clouds, and falls back as rain to refill rivers and lakes that living things depend on."
+              : "um so like the water just kind of goes up you know and um basically it like comes back down i mean uh when it rains yeah",
+        },
+      ],
     })),
   };
 
@@ -196,8 +206,12 @@ async function main() {
   const sendMode = process.argv.includes("--send");
   const { transcript, aiSummary, studentGrades, bloomsTaxonomy } = buildPayload();
 
+  // Recipient: REPORT_TO env or --to=<email> arg, else default.
+  const toArg = (process.argv.find((a) => a.startsWith("--to=")) || "").slice(5);
+  const recipient = process.env.REPORT_TO || toArg || "rgsommer@me.com";
+
   const params = {
-    to: "rgsommer@me.com",
+    to: recipient,
     transcript,
     aiSummary,
     includeIndividualReports: true,
