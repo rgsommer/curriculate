@@ -104,13 +104,27 @@ if (typeof document !== "undefined") {
  * Deterministic randomization per task (+ team salt) to prevent flipping.
  */
 export default function TrueFalseTask({
-  task,
+  task: taskProp,
   onSubmit,
   disabled,
   onAnswerChange,
   answerDraft,
   memberNames = [],
 }) {
+  // Accept statements[] (and config variants) as a synonym for items[]. Some
+  // generated/stored true-false tasks keep the questions under "statements",
+  // which previously rendered as "no questions to do". (Tester: michael, 2026.)
+  const task = React.useMemo(() => {
+    if (!taskProp || typeof taskProp !== "object") return taskProp;
+    if (Array.isArray(taskProp.items) && taskProp.items.length) return taskProp;
+    const alt =
+      (Array.isArray(taskProp.statements) && taskProp.statements) ||
+      (Array.isArray(taskProp.questions) && taskProp.questions) ||
+      (Array.isArray(taskProp.config?.items) && taskProp.config.items) ||
+      (Array.isArray(taskProp.config?.statements) && taskProp.config.statements) ||
+      null;
+    return alt ? { ...taskProp, items: alt } : taskProp;
+  }, [taskProp]);
   const theme = task?.uiTheme || "modern";
   const hasItems = Array.isArray(task?.items) && task.items.length > 0;
 

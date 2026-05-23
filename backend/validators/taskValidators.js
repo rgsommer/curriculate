@@ -385,8 +385,12 @@ export function normalizeTaskByType(taskType, rawTask) {
         ? task.items
         : Array.isArray(task.questions)
         ? task.questions
+        : Array.isArray(task.statements)
+        ? task.statements
         : Array.isArray(task.config?.items)
         ? task.config.items
+        : Array.isArray(task.config?.statements)
+        ? task.config.statements
         : [];
 
       items = items

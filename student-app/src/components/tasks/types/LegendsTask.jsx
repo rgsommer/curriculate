@@ -160,6 +160,26 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
     <div style={wrap}>
       <div style={tagStrip}>Legends · Phase {phaseIdx + 1} of {PHASES.length}</div>
 
+      {/* Goal + how-to — testers didn't realise the aim is to identify WHO the
+          hidden figure is, or that tapping matching facts advances the task. */}
+      <div
+        style={{
+          alignSelf: "center",
+          textAlign: "center",
+          maxWidth: 560,
+          margin: "2px auto 8px",
+          color: "#e9d5ff",
+        }}
+      >
+        <div style={{ fontWeight: 900, fontSize: "1.05rem" }}>
+          🕵️ Who is this mystery legend?
+        </div>
+        <div style={{ fontSize: "0.85rem", opacity: 0.85, lineHeight: 1.35, marginTop: 2 }}>
+          Tap the facts that answer each question. Sort enough correct clues across all{" "}
+          {PHASES.length} phases and the figure is revealed.
+        </div>
+      </div>
+
       <div style={portraitWrap}>
         <img
           src={portraitSrc}
@@ -237,8 +257,8 @@ const tagStrip = {
 };
 const portraitWrap = {
   position: "relative",
-  width: 120,
-  height: 120,
+  width: 188,
+  height: 188,
   alignSelf: "center",
   borderRadius: "50%",
   overflow: "hidden",
