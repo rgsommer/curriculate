@@ -26,6 +26,14 @@ const S3_BUCKET = process.env.S3_BUCKET || "";
 const AWS_REGION = process.env.AWS_REGION || "us-east-1";
 const PRESIGN_SECONDS = 7 * 24 * 60 * 60; // SigV4 max (7 days)
 
+// Image model config. gpt-image-1 is OpenAI's best, but Google's Gemini image
+// model is stronger on likeness + instruction-following (better for accurate
+// historical portraits). Prefer it when its key is set; otherwise fall back to
+// OpenAI at HIGH quality. All env-overridable.
+const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY || "";
+const GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image-preview";
+const OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
+
 let _s3 = null;
 function s3() {
   if (_s3) return _s3;
@@ -62,18 +70,57 @@ async function uploadImage(buffer, contentType, label) {
   return { key, url };
 }
 
-async function genAiImage(prompt) {
+// Google Gemini native image generation (generateContent + IMAGE modality).
+async function genGeminiImage(fullPrompt) {
+  if (!GEMINI_KEY) return null;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${encodeURIComponent(GEMINI_KEY)}`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: fullPrompt }] }],
+      generationConfig: { responseModalities: ["IMAGE"] },
+    }),
+  });
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const img = parts.find((p) => p?.inlineData?.data);
+  if (!img) return null;
+  return {
+    buffer: Buffer.from(img.inlineData.data, "base64"),
+    contentType: img.inlineData.mimeType || "image/png",
+  };
+}
+
+// OpenAI gpt-image-1 at HIGH quality.
+async function genOpenAiImage(fullPrompt) {
   const client = oai();
   if (!client) return null;
   const resp = await client.images.generate({
-    model: "gpt-image-1",
-    prompt: `Clear, classroom-appropriate, well-lit, neutral-background image. ${prompt}`,
+    model: OPENAI_IMAGE_MODEL,
+    prompt: fullPrompt,
     size: "1024x1024",
+    quality: "high",
     n: 1,
   });
   const b64 = resp?.data?.[0]?.b64_json;
   if (!b64) return null;
   return { buffer: Buffer.from(b64, "base64"), contentType: "image/png" };
+}
+
+// Generate one image, preferring the stronger model when configured.
+async function genAiImage(prompt) {
+  const fullPrompt = `Clear, classroom-appropriate, well-lit, neutral-background image. ${prompt}`;
+  try {
+    const g = await genGeminiImage(fullPrompt);
+    if (g) return g;
+  } catch (_) {}
+  try {
+    return await genOpenAiImage(fullPrompt);
+  } catch (_) {
+    return null;
+  }
 }
 
 async function searchPhoto(query) {
