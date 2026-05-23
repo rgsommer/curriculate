@@ -24,11 +24,18 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
   const objectives = Array.isArray(cfg.objectives) ? cfg.objectives : [];
   const resources  = Array.isArray(cfg.resources)  ? cfg.resources  : [];
   const ranks      = Array.isArray(cfg.ranks)      ? cfg.ranks      : [];
+  // Scarce, team-exclusive resources that drive trading (comparative advantage).
+  const specialties = Array.isArray(cfg.specialties) ? cfg.specialties.filter(Boolean) : [];
+  const specialtyStartingStock = Math.max(1, Math.floor(Number(cfg.specialtyStartingStock) || 2));
 
-  const [state, setState] = useState(
-    // Practice mode: pre-seed local state so the buttons actually work.
-    practiceMode ? { coins: PRACTICE_STARTER_COINS, inventory: {} } : null,
-  );
+  const [state, setState] = useState(() => {
+    // Practice mode: pre-seed local state so the buttons work, and hand the
+    // solo player the first specialty so the trade UI is demoable end-to-end.
+    if (!practiceMode) return null;
+    const seed = { coins: PRACTICE_STARTER_COINS, inventory: {}, specialtyResourceId: specialties[0] || "" };
+    if (specialties[0]) seed.inventory[specialties[0]] = specialtyStartingStock;
+    return seed;
+  });
   const [busyResId, setBusyResId] = useState(null);
   const [error, setError] = useState(null);
 
@@ -57,6 +64,8 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
 
   const inv = state?.inventory && typeof state.inventory === "object" ? state.inventory : {};
   const coins = Number(state?.coins) || 0;
+  const mySpecialty = state?.specialtyResourceId || "";
+  const resourceName = (rid) => resources.find((r) => r.id === rid)?.name || rid;
 
   // Compute objective progress
   const objectivesProgress = useMemo(() => {
@@ -239,6 +248,27 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
         </div>
       )}
 
+      {/* Specialty banner — your comparative advantage. Other teams need this;
+          trade your surplus to teams holding the specialties you're missing. */}
+      {mySpecialty && (
+        <div
+          style={{
+            margin: "2px 0",
+            padding: "10px 12px",
+            borderRadius: 10,
+            background: "rgba(14,165,233,0.15)",
+            border: "1px solid rgba(14,165,233,0.45)",
+            color: "#e0f2fe",
+            fontSize: "0.85rem",
+            lineHeight: 1.4,
+          }}
+        >
+          ✦ <strong>Your team's specialty: {resourceName(mySpecialty)}</strong> (×{Number(inv[mySpecialty]) || 0}).
+          Other teams need it and it's pricey in the depot — <strong>trade your surplus</strong> for the
+          specialties you're missing.
+        </div>
+      )}
+
       {/* Objectives panel */}
       {objectivesProgress.length > 0 && (
         <div style={cardWrap}>
@@ -281,10 +311,16 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: "0.95rem", fontWeight: 600, color: "#f1f5f9" }}>
                       {r.name || r.id}
+                      {specialties.includes(r.id) && (
+                        <span style={{ fontSize: "0.68rem", marginLeft: 6, color: "#7dd3fc", fontWeight: 800 }}>✦ specialty</span>
+                      )}
                       {have > 0 && <span style={{ fontSize: "0.78rem", marginLeft: 6, color: "#bbf7d0" }}>×{have}</span>}
                     </div>
                     {cost > 0 ? (
-                      <div style={{ fontSize: "0.72rem", color: "#cbd5e1" }}>{cost} coin{cost === 1 ? "" : "s"}</div>
+                      <div style={{ fontSize: "0.72rem", color: "#cbd5e1" }}>
+                        {cost} coin{cost === 1 ? "" : "s"}
+                        {specialties.includes(r.id) ? " — cheaper to trade for" : ""}
+                      </div>
                     ) : null}
                   </div>
                   <button

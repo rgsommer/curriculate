@@ -7007,8 +7007,30 @@ socket.on("quest:requestState", async (payload = {}, ack) => {
       return;
     }
     // Lazy import to avoid bumping module-load cost for non-quest sessions
-    const { getQuestState, getQuestStateSnapshot } = await import("./services/questEconomy.js");
-    const state = await getQuestState({ roomCode: code, teamId });
+    const { getQuestState, getQuestStateSnapshot, assignSpecialty } = await import("./services/questEconomy.js");
+    let state = await getQuestState({ roomCode: code, teamId });
+
+    // Comparative-advantage seeding: deterministically assign this team ONE
+    // scarce specialty (round-robin over config.specialties) + a starting stock,
+    // so teams hold different surpluses and have a reason to trade. Guarded so
+    // it only seeds once per team.
+    try {
+      const room = rooms[code];
+      const questTask = (room?.taskset?.tasks || []).find((t) => t?.taskType === "quest");
+      const specialties = Array.isArray(questTask?.config?.specialties) ? questTask.config.specialties.filter(Boolean) : [];
+      if (specialties.length && !state?.specialtyResourceId) {
+        // Deterministic team index from sorted team ids → stable assignment.
+        const teamIds = Object.keys(room?.teams || {}).sort();
+        const idx = Math.max(0, teamIds.indexOf(String(teamId)));
+        const specialtyId = specialties[idx % specialties.length];
+        const stock = Math.max(1, Math.floor(Number(questTask?.config?.specialtyStartingStock) || 2));
+        const seeded = await assignSpecialty({ roomCode: code, teamId, specialtyId, stock });
+        if (seeded.assigned && seeded.state) state = seeded.state;
+      }
+    } catch (seedErr) {
+      console.warn("[quest:requestState] specialty seed skipped:", seedErr?.message);
+    }
+
     if (typeof ack === "function") ack({ ok: true, state: getQuestStateSnapshot(state) });
   } catch (e) {
     console.error("[quest:requestState] error", e?.message);

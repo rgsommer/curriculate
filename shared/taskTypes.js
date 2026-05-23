@@ -4700,16 +4700,49 @@ config: {
     - config.title            -- mission title (e.g. "Launch the Sea Expedition")
     - config.scenario         -- 2-4 sentence narrative setup
     - config.objectives       -- array of 1-3 objectives, each: { id, description, requiredResources: { resourceId: quantity } }
-    - config.resources        -- array of 3-6 resources the team can acquire. Each:
+    - config.resources        -- array of 4-7 resources the team can acquire. Each:
         { id, name, acquisitionOptions: [{ type: "coins", amount: N }], prerequisites: [] }
+    - config.specialties      -- array of 2-3 SCARCE resource ids (must also appear in config.resources).
+                                 Each team is automatically seeded with a STARTING STOCK of ONE specialty
+                                 (round-robin), so different teams hold different surpluses.
+    - config.specialtyStartingStock -- integer (default 2): how many units of its specialty a team starts with.
     - config.premiumResources -- optional map of upgraded variants for bonus points
     - config.ranks            -- 3-4 rank tiers, ordered from minimum to most advanced
 
-    GUIDANCE:
+    DESIGN FOR TRADE (this is the heart of Quest Mode — teams must NEED each other):
+    - Mark 2-3 resources as SPECIALTIES (list their ids in config.specialties). Give each specialty a
+      HIGH depot price (e.g. 12-20 coins) so buying it outright is painful.
+    - Make at least one OBJECTIVE require a MIX of specialties (e.g. needs 1× of specialtyA AND 1× of
+      specialtyB). Since each team only starts with ONE specialty, they MUST trade their surplus to a
+      team holding the other — comparative advantage creates real gains from trade.
+    - The depot still sells specialties (no hard dead-ends), but trading a teammate's surplus is far
+      cheaper than the depot price — that price gap is the incentive to trade.
+    - Keep NON-specialty "basic supplies" cheap (2-6 coins) and affordable from coins earned in one taskset.
+
+    OTHER GUIDANCE:
     - The lesson topic should be woven into the scenario AND the resource names where possible.
     - Resources should sound like real expedition supplies, not arbitrary tokens.
-    - Avoid runaway difficulty: the basic supply set must be affordable with coins earned across a single taskset.
     - Premium resources should grant bonus points, not be required for completion.
+
+    EXAMPLE config (Sea Expedition):
+    {
+      "title": "Launch the Sea Expedition",
+      "scenario": "Three crews race to outfit a ship. No crew has everything — you'll need to trade.",
+      "specialties": ["navigation_charts", "fresh_water", "salted_rations"],
+      "specialtyStartingStock": 2,
+      "resources": [
+        { "id": "navigation_charts", "name": "Navigation Charts", "acquisitionOptions": [{ "type": "coins", "amount": 16 }], "prerequisites": [] },
+        { "id": "fresh_water", "name": "Barrels of Fresh Water", "acquisitionOptions": [{ "type": "coins", "amount": 14 }], "prerequisites": [] },
+        { "id": "salted_rations", "name": "Salted Rations", "acquisitionOptions": [{ "type": "coins", "amount": 15 }], "prerequisites": [] },
+        { "id": "rope", "name": "Rope", "acquisitionOptions": [{ "type": "coins", "amount": 4 }], "prerequisites": [] },
+        { "id": "lantern", "name": "Lantern", "acquisitionOptions": [{ "type": "coins", "amount": 5 }], "prerequisites": [] }
+      ],
+      "objectives": [
+        { "id": "obj_provision", "description": "Provision the ship for open water", "requiredResources": { "fresh_water": 1, "salted_rations": 1, "navigation_charts": 1 } },
+        { "id": "obj_rig", "description": "Rig the deck", "requiredResources": { "rope": 2, "lantern": 1 } }
+      ],
+      "ranks": [ ... ]
+    }
     `,
   },
 

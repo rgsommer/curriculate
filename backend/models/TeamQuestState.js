@@ -63,6 +63,11 @@ const TeamQuestStateSchema = new Schema(
 
     questRank: { type: String, default: null },
 
+    // The scarce "specialty" resource this team was seeded with (comparative
+    // advantage): cheap for them to trade away, expensive for others to buy
+    // from the depot. Assigned once, deterministically, on first state fetch.
+    specialtyResourceId: { type: String, default: "" },
+
     tradeHistory:        { type: [TradeRecordSchema], default: [] },
     contributionRecords: { type: [ContributionRecordSchema], default: [] },
   },

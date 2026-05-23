@@ -171,6 +171,28 @@ export async function tradeBetweenTeams({ roomCode, buyerTeamId, sellerTeamId, r
 }
 
 /**
+ * One-time specialty seed. Assigns a team its scarce specialty resource and
+ * grants a starting stock — but ONLY if it hasn't been assigned yet (guarded so
+ * repeated state fetches don't keep granting). Returns { assigned, state }.
+ */
+export async function assignSpecialty({ roomCode, teamId, specialtyId, stock = 2 }) {
+  const code = String(roomCode || "").toUpperCase();
+  if (!code || !teamId || !specialtyId) return { assigned: false, state: null };
+  const qty = Math.max(1, Math.floor(Number(stock) || 1));
+
+  // Guard on specialtyResourceId being empty so only the first call seeds.
+  const state = await TeamQuestState.findOneAndUpdate(
+    { roomCode: code, teamId, $or: [{ specialtyResourceId: { $exists: false } }, { specialtyResourceId: "" }, { specialtyResourceId: null }] },
+    { $set: { specialtyResourceId: specialtyId }, $inc: { [`inventory.${specialtyId}`]: qty } },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  );
+  if (state) return { assigned: true, state };
+  // Already assigned → return current state unchanged.
+  const existing = await TeamQuestState.findOne({ roomCode: code, teamId });
+  return { assigned: false, state: existing };
+}
+
+/**
  * Convert a TeamQuestState document into a plain JSON-safe object suitable for socket emit.
  * Maps need explicit conversion or they serialize as `{}`.
  */
@@ -193,6 +215,7 @@ export function getQuestStateSnapshot(state) {
     completedBonusTaskIds: state.completedBonusTaskIds || [],
     completedHiddenTaskIds: state.completedHiddenTaskIds || [],
     questRank: state.questRank,
+    specialtyResourceId: state.specialtyResourceId || "",
   };
 }
 
@@ -248,6 +271,7 @@ export default {
   grantResource,
   removeResource,
   tradeBetweenTeams,
+  assignSpecialty,
   getQuestStateSnapshot,
   recordTaskComplete,
 };
