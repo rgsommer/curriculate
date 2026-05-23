@@ -6080,7 +6080,8 @@ export const TASK_SHELLS = {
       taskType: "diff-detective",
       title: "{{TITLE}}",
       prompt: "{{PROMPT}}",
-      config: { textA: "{{TEXT_A}}", textB: "{{TEXT_B}}" },
+      original: "{{TEXT_A}}",
+      modified: "{{TEXT_B}}",
     };
     return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
   },
