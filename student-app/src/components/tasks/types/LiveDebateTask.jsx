@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/LiveDebateTask.jsx
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import SpeechQualityMeter from "../SpeechQualityMeter";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -507,6 +508,12 @@ export default function LiveDebateTask({
                 >
                   {isRecording ? "STOP" : isTranscribing ? "..." : "MIC"}
                 </button>
+              </div>
+
+              {/* Live argument-quality speedometer (spoken or typed) — rewards
+                  sustained, varied argument; flags filler words. */}
+              <div style={{ background: "rgba(255,255,255,0.92)", borderRadius: 12, padding: "8px 12px", margin: "8px 0" }}>
+                <SpeechQualityMeter text={transcript} />
               </div>
 
               <button

@@ -12,86 +12,12 @@
 // it does NOT change grading.
 
 import React, { useMemo } from "react";
+import { computeTextQuality } from "@shared/textQuality.js";
 
-// Single-word and multi-word filler/hedge phrases. Multi-word phrases are
-// matched before tokenizing so "you know" counts as one filler.
-const FILLER_PHRASES = ["you know", "i mean", "kind of", "sort of", "you see"];
-const FILLER_WORDS = new Set([
-  "um", "uh", "umm", "uhh", "er", "erm", "ah", "ahh", "hmm", "mhm",
-  "like", "basically", "literally", "actually", "really", "very",
-  "just", "so", "well", "right", "okay", "ok", "stuff", "things",
-  "whatever", "anyways", "anyway", "totally", "honestly",
-]);
-
-/**
- * Compute a 0-100 quality score for a chunk of answer text.
- * Returns { score, words, fillers, fillerExamples, label, color }.
- */
-export function computeTextQuality(rawText) {
-  const text = String(rawText || "").toLowerCase().trim();
-  if (!text) {
-    return { score: 0, words: 0, fillers: 0, fillerExamples: [], label: "Start writing or speaking…", color: "#94a3b8" };
-  }
-
-  // Count multi-word filler phrases first, then strip them so their leftover
-  // tokens don't double-count.
-  let fillers = 0;
-  const fillerExamples = [];
-  let working = text;
-  for (const phrase of FILLER_PHRASES) {
-    const re = new RegExp(`\\b${phrase.replace(/ /g, "\\s+")}\\b`, "g");
-    const m = working.match(re);
-    if (m) {
-      fillers += m.length;
-      fillerExamples.push(phrase);
-      working = working.replace(re, " ");
-    }
-  }
-
-  const tokens = working.split(/\s+/).map((w) => w.replace(/[^a-z']/g, "")).filter(Boolean);
-  const n = tokens.length;
-  if (n === 0) {
-    return { score: 0, words: 0, fillers, fillerExamples, label: "Start writing or speaking…", color: "#94a3b8" };
-  }
-
-  const uniqueWords = new Set(tokens);
-  for (const t of tokens) {
-    if (FILLER_WORDS.has(t)) {
-      fillers += 1;
-      if (fillerExamples.length < 4 && !fillerExamples.includes(t)) fillerExamples.push(t);
-    }
-  }
-
-  // --- Components ---
-  // Length: up to 60 pts for a sustained ~50+ word answer (duration proxy).
-  const lengthComponent = Math.min(1, n / 50) * 60;
-  // Variety: up to 20 pts for a healthy unique/total ratio (penalizes "the the
-  // the" padding and circular repetition).
-  const uniqueRatio = uniqueWords.size / n;
-  const varietyComponent = Math.max(0, Math.min(1, (uniqueRatio - 0.3) / 0.5)) * 20;
-  // Baseline: 20 pts just for producing something.
-  const baseline = 20;
-
-  // Filler penalty: density-scaled, capped so a few "um"s sting but don't zero
-  // a strong answer. ~10% fillers ≈ -25, ~18%+ ≈ -45.
-  const fillerDensity = fillers / n;
-  const fillerPenalty = Math.min(45, fillerDensity * 250);
-
-  const score = Math.max(0, Math.min(100, Math.round(lengthComponent + varietyComponent + baseline - fillerPenalty)));
-
-  let label, color;
-  if (score >= 80) { label = "Excellent — clear & substantive"; color = "#16a34a"; }
-  else if (score >= 60) { label = "Strong"; color = "#22c55e"; }
-  else if (score >= 40) { label = "Good — keep going"; color = "#eab308"; }
-  else if (score >= 20) { label = "Warming up"; color = "#f97316"; }
-  else { label = "Just starting"; color = "#ef4444"; }
-
-  if (fillers > 0 && score >= 20) {
-    label = `${label} · ${fillers} filler${fillers === 1 ? "" : "s"}`;
-  }
-
-  return { score, words: n, fillers, fillerExamples, label, color };
-}
+// Re-export so existing imports of computeTextQuality from this module keep
+// working; the scoring itself now lives in shared/textQuality.js (shared with
+// the backend session reports).
+export { computeTextQuality };
 
 /**
  * Speedometer gauge. Pass the live answer `text`; it recomputes on each change.

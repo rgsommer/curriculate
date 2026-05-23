@@ -14,6 +14,84 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { sendSystemEmail } from "./shareInviteEmailer.js";
+import { computeTextQuality, qualityGrade } from "../../shared/textQuality.js";
+
+// Deep-walk the transcript/aiSummary and aggregate every written or dictated
+// text response per speaker (participant name; falls back to team for group
+// work). Powers the "Speech & Text Quality" report sections. Returns a Map of
+// lowercased-name -> { name, isTeam, text, count }.
+function collectTextByParticipant(transcript, aiSummary) {
+  const byName = new Map();
+  const seen = new Set();
+
+  const coerce = (v) => {
+    if (typeof v === "string") return v.trim();
+    return "";
+  };
+
+  const add = (name, isTeam, text) => {
+    const t = coerce(text);
+    if (!t || t.length < 2) return;
+    const key = String(name || "").trim().toLowerCase() || "__unattributed";
+    const dedup = `${key}|${t}`;
+    if (seen.has(dedup)) return;
+    seen.add(dedup);
+    if (!byName.has(key)) byName.set(key, { name: String(name || "Unattributed").trim() || "Unattributed", isTeam, text: "", count: 0 });
+    const rec = byName.get(key);
+    rec.text += (rec.text ? "  " : "") + t;
+    rec.count += 1;
+  };
+
+  let depth = 0;
+  const visit = (node, ctxName, ctxTeam) => {
+    if (!node || typeof node !== "object" || depth > 8) return;
+    depth += 1;
+    if (Array.isArray(node)) {
+      for (const n of node) visit(n, ctxName, ctxTeam);
+      depth -= 1;
+      return;
+    }
+    const name = String(node.participantName || node.studentName || node.playerName || node.name || ctxName || "").trim();
+    const team = String(node.teamName || node.team || node.groupName || ctxTeam || "").trim();
+    const speaker = name || team;
+    const isTeam = !name && !!team;
+
+    // Text-bearing answer fields (typed or dictated).
+    const direct =
+      coerce(node.answerText) ||
+      coerce(typeof node.answerPayload === "string" ? node.answerPayload : "") ||
+      coerce(node.response) ||
+      coerce(node.text) ||
+      coerce(node.explanation) ||
+      coerce(node.transcript);
+    if (direct && speaker) add(speaker, isTeam, direct);
+
+    // Arrays of sub-answers.
+    for (const arrKey of ["answers", "responses", "subAnswers", "items"]) {
+      if (Array.isArray(node[arrKey])) {
+        for (const a of node[arrKey]) {
+          if (typeof a === "string") { if (speaker) add(speaker, isTeam, a); }
+          else if (a && typeof a === "object") {
+            const v = coerce(a.value) || coerce(a.response) || coerce(a.text) || coerce(a.answer);
+            if (v && speaker) add(speaker, isTeam, v);
+          }
+        }
+      }
+    }
+
+    for (const k of Object.keys(node)) {
+      const child = node[k];
+      if (!child || typeof child !== "object") continue;
+      if (["pdf", "html", "raw", "debug"].includes(k)) continue;
+      visit(child, name || ctxName, team || ctxTeam);
+    }
+    depth -= 1;
+  };
+
+  visit(transcript, "", "");
+  visit(aiSummary, "", "");
+  return byName;
+}
 
 const __emailDir = path.dirname(fileURLToPath(import.meta.url));
 let _mascotBuf = null;
@@ -1292,6 +1370,64 @@ async function buildReportPdfBuffer({
       doc.font("Helvetica").fontSize(10).fillColor("#475569").text("(No photo/recording submissions were attached to this session.)");
     }
 
+    // ---- Speech & text quality by speaker ----
+    const qualityMap = collectTextByParticipant(transcript, aiSummary);
+    const qualityRows = [];
+    for (const rec of qualityMap.values()) {
+      const q = computeTextQuality(rec.text);
+      if (q.words < 3) continue;
+      qualityRows.push({
+        name: rec.name,
+        isTeam: rec.isTeam,
+        responses: rec.count,
+        words: q.words,
+        fillers: q.fillers,
+        score: q.score,
+        grade: qualityGrade(q.score),
+        fillerExamples: q.fillerExamples,
+      });
+    }
+    if (qualityRows.length) {
+      qualityRows.sort((a, b) => b.score - a.score);
+      doc.moveDown(0.6);
+      ensureSpace(120);
+      sectionTitle("Speech & Text Quality by Speaker");
+      doc.font("Helvetica").fontSize(9).fillColor("#475569").text(
+        "A 0–100 read on each speaker's written and spoken (dictated) responses: higher = more sustained, varied, " +
+          "substantive language; lower = very short or filler-heavy (“um”, “uh”, “like”, “you know”). " +
+          "Gauges expression, not correctness.",
+        { width: doc.page.width - doc.page.margins.left - doc.page.margins.right }
+      );
+      doc.moveDown(0.4);
+
+      const qx = doc.page.margins.left;
+      const c = { name: qx, resp: qx + 220, words: qx + 290, fill: qx + 360, qual: qx + 440 };
+      let hy = doc.y;
+      doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#64748b");
+      doc.text("SPEAKER", c.name, hy);
+      doc.text("RESP.", c.resp, hy);
+      doc.text("WORDS", c.words, hy);
+      doc.text("FILLERS", c.fill, hy);
+      doc.text("QUALITY", c.qual, hy);
+      doc.moveTo(qx, doc.y + 2).lineTo(doc.page.width - doc.page.margins.right, doc.y + 2).lineWidth(0.5).strokeColor("#cbd5e1").stroke();
+      doc.moveDown(0.5);
+
+      for (const r of qualityRows) {
+        ensureSpace(34);
+        const ry = doc.y;
+        const qc = r.score >= 80 ? "#16a34a" : r.score >= 60 ? "#22c55e" : r.score >= 40 ? "#b45309" : r.score >= 20 ? "#ea580c" : "#dc2626";
+        doc.font("Helvetica-Bold").fontSize(10).fillColor("#0f172a")
+          .text(r.name + (r.isTeam ? " (team)" : ""), c.name, ry, { width: 210, ellipsis: true });
+        doc.font("Helvetica").fontSize(10).fillColor("#334155");
+        doc.text(String(r.responses), c.resp, ry);
+        doc.text(String(r.words), c.words, ry);
+        doc.text(String(r.fillers), c.fill, ry);
+        doc.font("Helvetica-Bold").fillColor(qc).text(`${r.score} · ${r.grade}`, c.qual, ry);
+        doc.y = ry + 16;
+      }
+      doc.fillColor("#0f172a");
+    }
+
     const upgradeLine = buildSoftUpgradeLine(planName);
     if (upgradeLine) {
       doc.moveDown(0.8);
@@ -1359,6 +1495,27 @@ async function buildReportPdfBuffer({
             doc.text(`• ${label}: ${pText}${comment}`, { lineGap: 1 });
           });
           doc.moveDown(0.4);
+        }
+
+        // Speech & text quality for this student (from their captured
+        // written/dictated responses). Falls back to the team bucket for
+        // group work where individual text wasn't attributed.
+        const qRec =
+          qualityMap.get(String(p.studentName || "").toLowerCase()) ||
+          (p.teamName ? qualityMap.get(String(p.teamName).toLowerCase()) : null);
+        if (qRec) {
+          const q = computeTextQuality(qRec.text);
+          if (q.words >= 3) {
+            const qc = q.score >= 80 ? "#16a34a" : q.score >= 60 ? "#22c55e" : q.score >= 40 ? "#b45309" : q.score >= 20 ? "#ea580c" : "#dc2626";
+            sectionTitle("Speech & Text Quality");
+            doc.font("Helvetica-Bold").fontSize(11).fillColor(qc).text(`${q.score} / 100 — ${qualityGrade(q.score)}`);
+            doc.font("Helvetica").fontSize(9).fillColor("#475569").text(
+              `${q.words} words across ${qRec.count} response${qRec.count === 1 ? "" : "s"}` +
+                (q.fillers > 0 ? ` · ${q.fillers} filler word${q.fillers === 1 ? "" : "s"}${q.fillerExamples.length ? ` (${q.fillerExamples.slice(0, 3).join(", ")})` : ""}` : " · no filler words — nicely done")
+            );
+            doc.fillColor("#0f172a");
+            doc.moveDown(0.4);
+          }
         }
 
         sectionTitle("Teacher Comment");

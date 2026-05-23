@@ -1,5 +1,6 @@
 // backend/reports/sessionReportPdf.js
 import PDFDocument from "pdfkit";
+import { computeTextQuality, qualityGrade } from "../../shared/textQuality.js";
 
 /**
  * Fetch an image as a pdfkit-embeddable Buffer (PNG or JPEG only — pdfkit does
@@ -323,6 +324,103 @@ export async function renderSessionReportPdfBuffer(reportDoc) {
       doc.moveDown(0.35);
       shortAns.forEach((s, i) => renderSample(s, i + 1));
     }
+  }
+
+  // Speech & text quality per speaker. Aggregates every written/dictated
+  // response a participant produced this session and scores it (0-100) for
+  // sustained substance + vocabulary variety, penalizing filler density
+  // (um/uh/like/you know). Shared scorer with the live student-app meter.
+  function renderSpeechQualitySection() {
+    const rawSamples = deepCollectWrittenSamples(report);
+    if (!rawSamples.length) return;
+
+    // Group all of a speaker's text together. Prefer participant name; fall
+    // back to team (group work) and finally a generic bucket.
+    const bySpeaker = new Map();
+    for (const s of rawSamples) {
+      if (!s.text || s.text.trim().length < 1) continue;
+      const name = (s.participantName || s.teamName || "Unattributed").trim();
+      if (!bySpeaker.has(name)) bySpeaker.set(name, { name, isTeam: !s.participantName && !!s.teamName, texts: [] });
+      bySpeaker.get(name).texts.push(s.text);
+    }
+    if (bySpeaker.size === 0) return;
+
+    const rows = [];
+    for (const { name, isTeam, texts } of bySpeaker.values()) {
+      const combined = texts.join("  ");
+      const q = computeTextQuality(combined);
+      if (q.words < 3) continue; // not enough to judge meaningfully
+      rows.push({
+        name,
+        isTeam,
+        words: q.words,
+        fillers: q.fillers,
+        score: q.score,
+        grade: qualityGrade(q.score),
+        fillerExamples: q.fillerExamples,
+        responses: texts.length,
+      });
+    }
+    if (rows.length === 0) return;
+
+    rows.sort((a, b) => b.score - a.score);
+
+    doc.addPage();
+    sectionTitle("Speech & Text Quality by Speaker");
+
+    doc
+      .font("Helvetica")
+      .fontSize(10)
+      .fillColor("#111111")
+      .text(
+        "A 0–100 read on each speaker's written and spoken (dictated) responses across the session: " +
+          "higher = more sustained, varied, substantive language; lower = very short or heavy with filler words " +
+          "(“um”, “uh”, “like”, “you know”). This gauges expression, not correctness."
+      );
+    doc.moveDown(0.6);
+
+    // Column layout.
+    const left = 54;
+    const cols = {
+      name: left,
+      responses: left + 230,
+      words: left + 310,
+      fillers: left + 380,
+      quality: left + 450,
+    };
+    const headerY = doc.y;
+    doc.font("Helvetica-Bold").fontSize(9).fillColor("#555555");
+    doc.text("SPEAKER", cols.name, headerY);
+    doc.text("RESP.", cols.responses, headerY);
+    doc.text("WORDS", cols.words, headerY);
+    doc.text("FILLERS", cols.fillers, headerY);
+    doc.text("QUALITY", cols.quality, headerY);
+    doc.moveTo(left, doc.y + 2).lineTo(pageWidth - 54, doc.y + 2).lineWidth(0.5).strokeColor("#CCCCCC").stroke();
+    doc.moveDown(0.5);
+
+    for (const r of rows) {
+      ensureSpace(40);
+      const y = doc.y;
+      const qColor =
+        r.score >= 80 ? "#16a34a" : r.score >= 60 ? "#22c55e" : r.score >= 40 ? "#b45309" : r.score >= 20 ? "#ea580c" : "#dc2626";
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#111111")
+        .text(r.name + (r.isTeam ? " (team)" : ""), cols.name, y, { width: 220, ellipsis: true });
+      doc.font("Helvetica").fontSize(10).fillColor("#333333");
+      doc.text(String(r.responses), cols.responses, y);
+      doc.text(String(r.words), cols.words, y);
+      doc.text(String(r.fillers), cols.fillers, y);
+      doc.font("Helvetica-Bold").fillColor(qColor).text(`${r.score} · ${r.grade}`, cols.quality, y);
+      // Filler examples hint (only when notable).
+      if (r.fillers >= 3 && r.fillerExamples.length) {
+        doc.font("Helvetica-Oblique").fontSize(8).fillColor("#888888")
+          .text(`frequent fillers: ${r.fillerExamples.slice(0, 3).join(", ")}`, cols.name + 8, doc.y + 1, { width: 460 });
+      }
+      doc.moveDown(0.55);
+    }
+
+    doc.moveDown(0.3);
+    doc.font("Helvetica-Oblique").fontSize(8).fillColor("#999999")
+      .text("Based on captured text/dictation only — purely oral tasks with no transcript aren't scored here.");
   }
 
   // Collect every student-submitted image artifact (photos of paper work,
@@ -1005,6 +1103,9 @@ function formatDate(d) {
   
   // ---------- Written response samples (optional) ----------
   renderWrittenSamplesSection();
+
+  // ---------- Speech & text quality per speaker ----------
+  renderSpeechQualitySection();
 
   // ---------- Submitted student work (photos / paper snapshots / drawings) ----------
   // Always surface the artifacts students submitted (paper-photo answers,
