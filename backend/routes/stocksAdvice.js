@@ -70,10 +70,16 @@ function verifySessionToken(token) {
     return payload;
   } catch { return null; }
 }
-function requireStocksAuth(req, res, next) {
+function getSessionToken(req) {
+  const cookie = req.headers?.cookie || "";
+  const m = cookie.match(/(?:^|;\s*)stocks_session=([^;]+)/);
+  if (m) { try { return decodeURIComponent(m[1]); } catch { return m[1]; } }
   const a = req.headers?.authorization || req.headers?.Authorization || "";
-  const token = typeof a === "string" && a.startsWith("Bearer ") ? a.slice(7).trim() : null;
-  if (!token) return res.status(401).json({ error: "Missing Authorization bearer token" });
+  return typeof a === "string" && a.startsWith("Bearer ") ? a.slice(7).trim() : null;
+}
+function requireStocksAuth(req, res, next) {
+  const token = getSessionToken(req);
+  if (!token) return res.status(401).json({ error: "Missing session credential" });
   const payload = verifySessionToken(token);
   if (!payload) return res.status(401).json({ error: "Invalid or expired session" });
   req.stocksUser = { email: payload.email.toLowerCase() };
@@ -813,7 +819,7 @@ async function correctBriefingWithVerifiedPrices(markdown, warnings, sizingWarni
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-5",
+        model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-6",
         max_tokens: 4096,
         messages: [{ role: "user", content: correction }],
       }),
@@ -987,7 +993,7 @@ async function correctAdviceCards(cards, perCardPriceWarnings, allSizingWarnings
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-5",
+          model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-6",
           max_tokens: 2048,
           messages: [{ role: "user", content: prompt }],
         }),
@@ -1209,7 +1215,7 @@ async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, l
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-5",
+      model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-6",
       max_tokens: 8192, // bumped from 4096 — per-account cards push past 4k now
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 12 }],
       messages: [{ role: "user", content: prompt }],
@@ -1301,7 +1307,7 @@ router.post("/", requireStocksAuth, async (req, res) => {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-5",
+        model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-6",
         max_tokens: 8192, // bumped — per-account cards push past 4k now
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 12 }],
         messages: [{ role: "user", content: prompt }],

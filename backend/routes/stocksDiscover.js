@@ -48,10 +48,16 @@ function verifySessionToken(token) {
     return payload;
   } catch { return null; }
 }
-function requireStocksAuth(req, res, next) {
+function getSessionToken(req) {
+  const cookie = req.headers?.cookie || "";
+  const m = cookie.match(/(?:^|;\s*)stocks_session=([^;]+)/);
+  if (m) { try { return decodeURIComponent(m[1]); } catch { return m[1]; } }
   const a = req.headers?.authorization || req.headers?.Authorization || "";
-  const token = typeof a === "string" && a.startsWith("Bearer ") ? a.slice(7).trim() : null;
-  if (!token) return res.status(401).json({ error: "Missing Authorization bearer token" });
+  return typeof a === "string" && a.startsWith("Bearer ") ? a.slice(7).trim() : null;
+}
+function requireStocksAuth(req, res, next) {
+  const token = getSessionToken(req);
+  if (!token) return res.status(401).json({ error: "Missing session credential" });
   const payload = verifySessionToken(token);
   if (!payload) return res.status(401).json({ error: "Invalid or expired session" });
   req.stocksUser = { email: payload.email.toLowerCase() };

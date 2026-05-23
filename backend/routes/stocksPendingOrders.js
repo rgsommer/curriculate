@@ -43,10 +43,16 @@ function verifySessionToken(token) {
     return payload;
   } catch { return null; }
 }
-function requireStocksAuth(req, res, next) {
+function getSessionToken(req) {
+  const cookie = req.headers?.cookie || "";
+  const m = cookie.match(/(?:^|;\s*)stocks_session=([^;]+)/);
+  if (m) { try { return decodeURIComponent(m[1]); } catch { return m[1]; } }
   const a = req.headers?.authorization || req.headers?.Authorization || "";
-  const token = typeof a === "string" && a.startsWith("Bearer ") ? a.slice(7).trim() : null;
-  if (!token) return res.status(401).json({ error: "Missing Authorization bearer token" });
+  return typeof a === "string" && a.startsWith("Bearer ") ? a.slice(7).trim() : null;
+}
+function requireStocksAuth(req, res, next) {
+  const token = getSessionToken(req);
+  if (!token) return res.status(401).json({ error: "Missing session credential" });
   const payload = verifySessionToken(token);
   if (!payload) return res.status(401).json({ error: "Invalid or expired session" });
   req.stocksUser = { email: payload.email.toLowerCase() };
@@ -117,7 +123,15 @@ router.post("/:id/fill", requireStocksAuth, async (req, res) => {
     const fillPrice = num(req.body?.price) ?? order.limitPrice;
     const fillAt = req.body?.executedAt ? new Date(req.body.executedAt) : new Date();
 
-    if (fillQty <= 0 || fillPrice < 0) return res.status(400).json({ error: "Bad fill data" });
+    // Validate the fill against the order — reject zero/negative price, and
+    // never let a fill exceed the ordered quantity (partial fills are fine).
+    // Without this the client could corrupt cost basis/cash with an arbitrary
+    // qty or a free (price 0) fill.
+    if (fillQty == null || fillQty <= 0) return res.status(400).json({ error: "Fill qty must be > 0" });
+    if (fillPrice == null || fillPrice <= 0) return res.status(400).json({ error: "Fill price must be > 0" });
+    if (fillQty > order.qty + 1e-6) {
+      return res.status(400).json({ error: `Fill qty ${fillQty} exceeds ordered ${order.qty}` });
+    }
 
     // Apply the trade to positions + cash + journal (mirrors stocksTrade.js)
     const portfolio = await StocksPortfolio.findOne({ email: req.stocksUser.email });
@@ -125,17 +139,25 @@ router.post("/:id/fill", requireStocksAuth, async (req, res) => {
     const acctRow = portfolio.accounts.find(a => a.id === order.account);
     if (!acctRow) return res.status(400).json({ error: "Unknown account on this order" });
 
+    const fx = portfolio.fxUsdCad || 1.37;
     const settleCcy = order.settleCcy || order.currency;
-    const grossValue = fillQty * fillPrice;
+    const grossValue = fillQty * fillPrice; // in the trade's currency
 
     // Position update
     const positions = portfolio.positions.map(p => ({ ...(p.toObject?.() || p) }));
     applyOrderToPositions(positions, order.account, order.side, order.ticker, fillQty, fillPrice, order.currency, settleCcy);
 
-    // Cash adjustment
+    // Cash adjustment — settle in the settleCcy bucket. When the trade's
+    // currency differs from the settle currency (e.g. a USD buy paid from CAD
+    // cash), convert gross into the settle currency first so the cash bucket
+    // and the journal's CAD value stay consistent. fxUsdCad is CAD per USD.
     const cashKey = settleCcy === "USD" ? "cashUsd" : "cashCad";
+    let settleValue = grossValue;
+    if (order.currency !== settleCcy) {
+      settleValue = order.currency === "USD" ? grossValue * fx : grossValue / fx;
+    }
     const sign = order.side === "SELL" ? 1 : -1;
-    acctRow[cashKey] = (acctRow[cashKey] || 0) + sign * grossValue;
+    acctRow[cashKey] = (acctRow[cashKey] || 0) + sign * settleValue;
 
     portfolio.positions = positions;
     portfolio.markModified("accounts");
@@ -143,7 +165,6 @@ router.post("/:id/fill", requireStocksAuth, async (req, res) => {
     await portfolio.save();
 
     // Journal entry
-    const fx = portfolio.fxUsdCad || 1.37;
     const cadValue = order.currency === "USD" ? grossValue * fx : grossValue;
     const journal = await StocksTradeJournal.create({
       email: req.stocksUser.email,

@@ -163,8 +163,14 @@ export function md2html(md) {
   h = h.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
        .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
        .replace(/`([^`]+)`/g, "<code style='background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:90%;font-family:SF Mono,Menlo,Consolas,monospace'>$1</code>");
-  // links
-  h = h.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<a href='$2' style='color:#1d4ed8;text-decoration:none'>$1</a>");
+  // links — allowlist safe schemes and neutralize attribute-breaking quotes
+  // so a javascript: URL or a stray ' in a web-search-derived link can't
+  // inject markup if this HTML is ever rendered outside the sandboxed iframe.
+  h = h.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, text, url) => {
+    const u = String(url).trim();
+    const safe = /^(https?:|mailto:)/i.test(u) ? u.replace(/'/g, "%27") : "#";
+    return `<a href='${safe}' style='color:#1d4ed8;text-decoration:none'>${text}</a>`;
+  });
   // tables
   h = h.replace(/((?:^\|.*\|\s*\n)+)/gm, (block) => {
     const rows = block.trim().split("\n").map((r) => r.replace(/^\||\|$/g, "").split("|").map((c) => c.trim()));
@@ -818,7 +824,7 @@ export async function generateBriefing(profile) {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-5",
+        model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-6",
         max_tokens: tokens,
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 12 }],
         messages,
@@ -1115,7 +1121,11 @@ export async function runMonthlyReportJob(opts = {}) {
         const acct = flagged[i];
         const cc = acct.monthlyReportCcEmail && acct.monthlyReportCcEmail.trim();
         if (!cc) continue;
-        const accountReport = reports[i];
+        // Match the report to THIS account by id — never by array index.
+        // buildAllAccountReports can drop entries (a missing account yields
+        // null), so positional pairing risks emailing a beneficiary another
+        // account's financials.
+        const accountReport = reports.find(r => r && r.accountId === acct.id);
         if (!accountReport) continue;
         const singleBlock = formatAccountReportMarkdown(accountReport);
         const ccSubject = `${acct.name} monthly report — ${monthLabel}`;

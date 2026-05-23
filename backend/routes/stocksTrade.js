@@ -57,10 +57,16 @@ function verifySessionToken(token) {
     return payload;
   } catch { return null; }
 }
-function requireStocksAuth(req, res, next) {
+function getSessionToken(req) {
+  const cookie = req.headers?.cookie || "";
+  const m = cookie.match(/(?:^|;\s*)stocks_session=([^;]+)/);
+  if (m) { try { return decodeURIComponent(m[1]); } catch { return m[1]; } }
   const a = req.headers?.authorization || req.headers?.Authorization || "";
-  const token = typeof a === "string" && a.startsWith("Bearer ") ? a.slice(7).trim() : null;
-  if (!token) return res.status(401).json({ error: "Missing Authorization bearer token" });
+  return typeof a === "string" && a.startsWith("Bearer ") ? a.slice(7).trim() : null;
+}
+function requireStocksAuth(req, res, next) {
+  const token = getSessionToken(req);
+  if (!token) return res.status(401).json({ error: "Missing session credential" });
   const payload = verifySessionToken(token);
   if (!payload) return res.status(401).json({ error: "Invalid or expired session" });
   req.stocksUser = { email: payload.email.toLowerCase() };
@@ -189,18 +195,27 @@ function netCashCadOfTrade(legs, fx) {
   return Number.isFinite(net) ? net : 0;
 }
 
+// Convert a gross amount from the trade currency into the settle currency.
+// fxUsdCad is CAD per USD, so USD→CAD multiplies and CAD→USD divides.
+function toSettleCcy(gross, tradeCcy, settleCcy, fx) {
+  if (tradeCcy === settleCcy) return gross;
+  return tradeCcy === "USD" ? gross * fx : gross / fx;
+}
+
 // Mutates the account row's cash balance.
 //   BUY/WITHDRAW  → cash[bucket] -= grossValue
 //   SELL/DEPOSIT  → cash[bucket] += grossValue
 //
 // `bucket` is the SUB-ACCOUNT cash bucket the trade settles in. Defaults to
 // the leg's currency, but a leg can pass `settleCcy` to settle a USD trade
-// out of CAD cash (cross-currency purchase) and vice versa.
-function adjustAccountCash(account, leg) {
+// out of CAD cash (cross-currency purchase) and vice versa. When settleCcy
+// differs from the trade currency, gross is converted at `fx` so the cash
+// bucket matches the journal's CAD value.
+function adjustAccountCash(account, leg, fx) {
   if (!account) return;
   const settleCcy = leg.settleCcy || leg.currency;
   const cashKey = settleCcy === "USD" ? "cashUsd" : "cashCad";
-  const gross = Number(leg.grossValue) || 0;
+  const gross = toSettleCcy(Number(leg.grossValue) || 0, leg.currency, settleCcy, fx);
   const sign = leg.side === "SELL" || leg.side === "DEPOSIT" ? 1 : -1;
   account[cashKey] = (account[cashKey] || 0) + sign * gross;
 }
@@ -266,6 +281,8 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
     const acctRow = portfolio.accounts.find((a) => a.id === account);
     if (!acctRow) return res.status(400).json({ error: "Unknown account id" });
 
+    const fx = portfolio.fxUsdCad || 1.37;
+
     // Apply legs to a copy of the positions array (and adjust cash inline)
     const newPositions = [...portfolio.positions.map((p) => ({ ...(p.toObject?.() || p) }))];
     try {
@@ -279,7 +296,7 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
           });
         }
         // Cash adjustment for ALL leg types
-        adjustAccountCash(acctRow, leg);
+        adjustAccountCash(acctRow, leg, fx);
       }
     } catch (e) {
       return res.status(400).json({ error: e.message });
@@ -293,7 +310,7 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
         // Undo the adjustment we made to acctRow for this leg
         const settleCcy = leg.settleCcy || leg.currency;
         const cashKey = settleCcy === "USD" ? "cashUsd" : "cashCad";
-        const gross = Number(leg.grossValue) || 0;
+        const gross = toSettleCcy(Number(leg.grossValue) || 0, leg.currency, settleCcy, fx);
         const sign = leg.side === "SELL" || leg.side === "DEPOSIT" ? 1 : -1;
         acctRow[cashKey] = (acctRow[cashKey] || 0) - sign * gross; // undo
 
@@ -310,7 +327,6 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
     await portfolio.save();
 
     // Journal the trade
-    const fx = portfolio.fxUsdCad || 1.37;
     const entry = await StocksTradeJournal.create({
       email: req.stocksUser.email,
       executedAt: executedAt ? new Date(executedAt) : new Date(),

@@ -132,6 +132,7 @@ import classRosterRouter from "./routes/classRoster.js";
 import studentScavengerProgressRouter from "./routes/studentScavengerProgress.js";
 import studentContactRouter from "./routes/studentContact.js";
 import studentProgressRouter from "./routes/studentProgress.js";
+import stocksAuthRouter from "./routes/stocksAuth.js";
 import stocksPortfolioRouter from "./routes/stocksPortfolio.js";
 import stocksPricesRouter from "./routes/stocksPrices.js";
 import stocksAdviceRouter from "./routes/stocksAdvice.js";
@@ -410,6 +411,17 @@ const aiLimiter = rateLimit({
   message: { ok: false, error: "AI rate limit exceeded — please slow down." },
 });
 
+// Generous limiter for the unauthenticated public-quote proxy. High enough
+// for normal page polling, low enough to blunt someone using it to hammer
+// Yahoo through us.
+const pricesLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 120,            // 120 quote requests per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Price request rate limit exceeded — please slow down." },
+});
+
 const app = express();
 
 // Lazy-load sample report PDF for recommendation emails
@@ -527,8 +539,20 @@ app.use("/class-roster", classRosterRouter);
 app.use("/student-scavenger-progress", studentScavengerProgressRouter);
 app.use("/student-contact", studentContactRouter);
 app.use("/student-progress", studentProgressRouter);
+// Stocks-advisor token signing secret — warn loudly if it's reusing the
+// medicentre secret or missing entirely, so a misconfig is caught at boot
+// rather than silently cross-contaminating token validity between features.
+if (!process.env.STOCKS_SECRET) {
+  if (process.env.MEDICENTRE_SECRET) {
+    console.warn("[stocks] STOCKS_SECRET not set — falling back to MEDICENTRE_SECRET. Set a dedicated STOCKS_SECRET to isolate stocks auth.");
+  } else {
+    console.warn("[stocks] Neither STOCKS_SECRET nor MEDICENTRE_SECRET is set — stocks sign-in and portfolio auth will fail until one is configured.");
+  }
+}
+
+app.use("/api/stocks-auth", authLimiter, stocksAuthRouter);
 app.use("/api/stocks-portfolio", stocksPortfolioRouter);
-app.use("/api/stocks-prices", stocksPricesRouter);
+app.use("/api/stocks-prices", pricesLimiter, stocksPricesRouter);
 app.use("/api/stocks-advice", stocksAdviceRouter);
 app.use("/api/stocks-trade", stocksTradeRouter);
 app.use("/api/stocks-pending-orders", stocksPendingOrdersRouter);

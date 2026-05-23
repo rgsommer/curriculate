@@ -3,13 +3,18 @@
 /**
  * Curriculate.net/stocks — Personal Stock Advisor
  *
- * Auth: passwordless email-PIN (5-digit code via Resend → HMAC session token).
+ * Auth: passwordless email-PIN (6-digit code via Resend → HMAC session token).
  * Storage: MongoDB via the api.curriculate.net backend
  *   GET  /api/stocks-portfolio     — load current user's portfolio
  *   PUT  /api/stocks-portfolio     — upsert
  *   DELETE /api/stocks-portfolio   — reset
- * Only the {email, sessionToken} pair sits in localStorage so the user stays
- * signed in across refreshes; the actual portfolio is server-side.
+ * The real session credential lives in an HttpOnly cookie (set by the backend
+ * on verify-pin and sent automatically via `credentials: "include"`), so it is
+ * NOT reachable by JavaScript/XSS. localStorage holds only the email as a
+ * non-secret "we were signed in" hint; on reload the cookie re-authenticates
+ * (a 401 from the portfolio GET clears the hint). `auth.sessionToken` here is a
+ * non-secret placeholder kept only to gate effects/props — the cookie is the
+ * source of truth.
  */
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -18,8 +23,12 @@ const BACKEND_URL =
   (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_BACKEND_URL) ||
   "https://api.curriculate.net";
 
+// Non-secret placeholder. The actual credential is the HttpOnly cookie; this
+// value only needs to be truthy so existing "signed-in?" gates keep working.
+const COOKIE_MARKER = "cookie";
+
 // =============================================================================
-// Auth persistence (only stores { email, sessionToken } — never portfolio data)
+// Auth persistence (stores only { email } — never the token or portfolio data)
 // =============================================================================
 const AUTH_KEY = "stocksAdvisor.auth.v1";
 
@@ -27,14 +36,22 @@ function loadAuth() {
   if (typeof window === "undefined") return null;
   try {
     const j = JSON.parse(localStorage.getItem(AUTH_KEY));
-    if (j && j.email && j.sessionToken) return j;
+    if (j && j.email) return { email: j.email, sessionToken: COOKIE_MARKER };
   } catch {}
   return null;
 }
 function saveAuth(auth) {
   if (typeof window === "undefined") return;
-  if (auth) localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
+  // Persist email only — the credential is the HttpOnly cookie.
+  if (auth && auth.email) localStorage.setItem(AUTH_KEY, JSON.stringify({ email: auth.email }));
   else localStorage.removeItem(AUTH_KEY);
+}
+
+// Clear the HttpOnly session cookie on the server (sign-out).
+async function apiLogout() {
+  try {
+    await fetch(`${BACKEND_URL}/api/stocks-auth/logout`, { method: "POST", credentials: "include" });
+  } catch {}
 }
 
 // =============================================================================
@@ -42,6 +59,7 @@ function saveAuth(auth) {
 // =============================================================================
 async function apiGetPortfolio(sessionToken) {
   const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio`, {
+    credentials: "include",
     headers: { Authorization: `Bearer ${sessionToken}` },
   });
   if (r.status === 401) throw new Error("UNAUTHORIZED");
@@ -57,6 +75,7 @@ async function apiPutPortfolio(sessionToken, profile) {
   // body picked only 4 fields.)
   const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio`, {
     method: "PUT",
+    credentials: "include",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
     body: JSON.stringify({
       riskTolerance: profile.riskTolerance,
@@ -81,6 +100,7 @@ async function apiPutPortfolio(sessionToken, profile) {
 async function apiDeletePortfolio(sessionToken) {
   const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio`, {
     method: "DELETE",
+    credentials: "include",
     headers: { Authorization: `Bearer ${sessionToken}` },
   });
   if (r.status === 401) throw new Error("UNAUTHORIZED");
@@ -91,6 +111,7 @@ async function apiDeletePortfolio(sessionToken) {
 async function apiMigratePortfolio(sessionToken) {
   const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/migrate`, {
     method: "POST",
+    credentials: "include",
     headers: { Authorization: `Bearer ${sessionToken}` },
   });
   if (r.status === 401) throw new Error("UNAUTHORIZED");
@@ -101,6 +122,7 @@ async function apiMigratePortfolio(sessionToken) {
 async function apiRecordTrade(sessionToken, trade) {
   const r = await fetch(`${BACKEND_URL}/api/stocks-trade`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
     body: JSON.stringify(trade),
   });
@@ -111,6 +133,7 @@ async function apiRecordTrade(sessionToken, trade) {
 
 async function apiListPendingOrders(sessionToken) {
   const r = await fetch(`${BACKEND_URL}/api/stocks-pending-orders`, {
+    credentials: "include",
     headers: { Authorization: `Bearer ${sessionToken}` },
   });
   const j = await r.json().catch(() => ({}));
@@ -120,6 +143,7 @@ async function apiListPendingOrders(sessionToken) {
 async function apiCreatePendingOrder(sessionToken, order) {
   const r = await fetch(`${BACKEND_URL}/api/stocks-pending-orders`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
     body: JSON.stringify(order),
   });
@@ -130,6 +154,7 @@ async function apiCreatePendingOrder(sessionToken, order) {
 async function apiFillPendingOrder(sessionToken, id, fill) {
   const r = await fetch(`${BACKEND_URL}/api/stocks-pending-orders/${id}/fill`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
     body: JSON.stringify(fill || {}),
   });
@@ -140,6 +165,7 @@ async function apiFillPendingOrder(sessionToken, id, fill) {
 async function apiCancelPendingOrder(sessionToken, id) {
   const r = await fetch(`${BACKEND_URL}/api/stocks-pending-orders/${id}`, {
     method: "DELETE",
+    credentials: "include",
     headers: { Authorization: `Bearer ${sessionToken}` },
   });
   const j = await r.json().catch(() => ({}));
@@ -759,8 +785,8 @@ export default function StocksAdvisorPage() {
     return (
       <FullscreenShell>
         <AuthView
-          onSuccess={(email, sessionToken) => {
-            const a = { email, sessionToken };
+          onSuccess={(email) => {
+            const a = { email, sessionToken: COOKIE_MARKER };
             saveAuth(a);
             setAuth(a);
           }}
@@ -809,6 +835,7 @@ export default function StocksAdvisorPage() {
     try {
       const r = await fetch(`${BACKEND_URL}/api/stocks-advice/send-briefing`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.sessionToken}` },
         body: JSON.stringify({ send: false }),
       });
@@ -828,6 +855,7 @@ export default function StocksAdvisorPage() {
     try {
       const r = await fetch(`${BACKEND_URL}/api/stocks-advice/send-monthly-report`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.sessionToken}` },
         body: JSON.stringify({ send: false }),
       });
@@ -845,6 +873,7 @@ export default function StocksAdvisorPage() {
     try {
       const r = await fetch(`${BACKEND_URL}/api/stocks-advice/send-monthly-report`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.sessionToken}` },
         body: JSON.stringify({ send: true }),
       });
@@ -867,6 +896,7 @@ export default function StocksAdvisorPage() {
     try {
       const r = await fetch(`${BACKEND_URL}/api/stocks-advice/send-briefing`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.sessionToken}` },
         // Pass the previously-previewed markdown so the backend reuses it
         // instead of regenerating — keeps the sent email identical to what
@@ -1070,7 +1100,7 @@ export default function StocksAdvisorPage() {
             <button
               className="sa-btn ghost"
               style={{ display: "block", marginTop: 8, padding: "4px 0" }}
-              onClick={() => { saveAuth(null); setAuth(null); setProfile(null); }}
+              onClick={() => { apiLogout(); saveAuth(null); setAuth(null); setProfile(null); }}
             >Sign out</button>
           </div>
         </aside>
@@ -1433,6 +1463,7 @@ export default function StocksAdvisorPage() {
                 if (!confirm("Wipe all your positions and settings on the server?")) return;
                 try {
                   await apiDeletePortfolio(auth.sessionToken);
+                  await apiLogout();
                   saveAuth(null);
                   setAuth(null);
                   setProfile(null);
@@ -1517,11 +1548,10 @@ export default function StocksAdvisorPage() {
 
 function AuthView({ onSuccess }) {
   // step: "email" → enter email and request a PIN
-  //       "pin"   → enter the 5-digit PIN we just emailed
+  //       "pin"   → enter the 6-digit PIN we just emailed
   const [step, setStep] = useState("email");
   const [email, setEmail] = useState("");
-  const [token, setToken] = useState(null);
-  const [pin, setPin] = useState(["", "", "", "", ""]);
+  const [pin, setPin] = useState(["", "", "", "", "", ""]);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -1531,15 +1561,15 @@ function AuthView({ onSuccess }) {
     if (!e || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return setErr("Enter a valid email address.");
     setBusy(true);
     try {
-      const r = await fetch("/api/stocks/request-pin", {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-auth/request-pin`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: e }),
       });
       const j = await r.json();
       if (!r.ok) return setErr(j.error || "Could not send code. Try again.");
       setEmail(e);
-      setToken(j.token);
       setStep("pin");
       setTimeout(() => document.querySelector(".sa-pin input")?.focus(), 30);
     } catch {
@@ -1552,17 +1582,20 @@ function AuthView({ onSuccess }) {
   const verifyPin = async () => {
     setErr(null);
     const p = pin.join("");
-    if (p.length !== 5) return setErr("Enter the 5-digit code.");
+    if (p.length !== 6) return setErr("Enter the 6-digit code.");
     setBusy(true);
     try {
-      const r = await fetch("/api/stocks/verify-pin", {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-auth/verify-pin`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, pin: p, token }),
+        body: JSON.stringify({ email, pin: p }),
       });
       const j = await r.json();
       if (!r.ok || !j.ok) return setErr(j.error || "Incorrect or expired code.");
-      onSuccess(email, j.sessionToken);
+      // The HttpOnly cookie was just set by the response; we ignore the token
+      // in the body and never persist it.
+      onSuccess(email);
     } catch {
       setErr("Network error. Try again.");
     } finally {
@@ -1575,7 +1608,7 @@ function AuthView({ onSuccess }) {
       <div className="sa-auth">
         <div className="sa-auth-card">
           <h1>Stocks Advisor</h1>
-          <div className="sa-sub">Enter your email and we&apos;ll send you a 5-digit code to sign in.</div>
+          <div className="sa-sub">Enter your email and we&apos;ll send you a 6-digit code to sign in.</div>
           {err && <div className="sa-err">{err}</div>}
           <div className="sa-row">
             <label>Email</label>
@@ -1609,11 +1642,11 @@ function AuthView({ onSuccess }) {
       <div className="sa-auth-card">
         <h1>Check your email</h1>
         <div className="sa-sub">
-          We sent a 5-digit code to <b>{email}</b>. Enter it below. The code expires in 10 minutes.
+          We sent a 6-digit code to <b>{email}</b>. Enter it below. The code expires in 10 minutes.
         </div>
         {err && <div className="sa-err">{err}</div>}
         <div className="sa-row">
-          <label>5-digit code</label>
+          <label>6-digit code</label>
           <div className="sa-pin">
             {pin.map((v, i) => (
               <input
@@ -1626,7 +1659,7 @@ function AuthView({ onSuccess }) {
                   const next = [...pin];
                   next[i] = e.target.value.replace(/[^0-9]/g, "");
                   setPin(next);
-                  if (next[i] && i < 4) {
+                  if (next[i] && i < 5) {
                     document.querySelectorAll(".sa-pin input")[i + 1]?.focus();
                   }
                 }}
@@ -1651,11 +1684,11 @@ function AuthView({ onSuccess }) {
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14, fontSize: 13 }}>
           <button
             className="sa-btn ghost"
-            onClick={() => { setStep("email"); setPin(["", "", "", "", ""]); setErr(null); }}
+            onClick={() => { setStep("email"); setPin(["", "", "", "", "", ""]); setErr(null); }}
           >← Use a different email</button>
           <button
             className="sa-btn ghost"
-            onClick={() => { setPin(["", "", "", "", ""]); requestPin(); }}
+            onClick={() => { setPin(["", "", "", "", "", ""]); requestPin(); }}
             disabled={busy}
           >Resend code</button>
         </div>
@@ -2145,6 +2178,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
     (async () => {
       try {
         const r = await fetch(`${BACKEND_URL}/api/stocks-advice/snapshot`, {
+          credentials: "include",
           headers: { Authorization: `Bearer ${sessionToken}` },
         });
         if (r.status === 404) return; // no snapshot yet — fine
@@ -2190,6 +2224,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
       await onRefresh();
       const r = await fetch(`${BACKEND_URL}/api/stocks-advice`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
         body: JSON.stringify({}),
       });
@@ -2214,6 +2249,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
       await onRefresh();
       const r = await fetch(`${BACKEND_URL}/api/stocks-advice/consensus`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
         body: JSON.stringify({}),
       });
@@ -3336,6 +3372,7 @@ function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId, onRectif
     try {
       const r = await fetch(`${BACKEND_URL}/api/stocks-reconcile`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
         body: JSON.stringify({ files, accountMap }),
       });
@@ -4651,6 +4688,7 @@ function DiscoverView({ sessionToken, user }) {
     (async () => {
       try {
         const r = await fetch(`${BACKEND_URL}/api/stocks-discover/candidates`, {
+          credentials: "include",
           headers: { Authorization: `Bearer ${sessionToken}` },
         });
         if (!r.ok) return;
@@ -4679,6 +4717,7 @@ function DiscoverView({ sessionToken, user }) {
       }
       const r = await fetch(`${BACKEND_URL}/api/stocks-discover/scan`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
         body: JSON.stringify(body),
       });
@@ -4698,7 +4737,7 @@ function DiscoverView({ sessionToken, user }) {
   const toggleStar = async (id) => {
     try {
       await fetch(`${BACKEND_URL}/api/stocks-discover/candidates/${id}/star`, {
-        method: "POST", headers: { Authorization: `Bearer ${sessionToken}` },
+        method: "POST", credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` },
       });
       setCandidates((cs) => cs.map((c) => c._id === id ? { ...c, starred: !c.starred } : c));
     } catch {}
@@ -4707,7 +4746,7 @@ function DiscoverView({ sessionToken, user }) {
     if (!confirm("Hide this candidate from future scans?")) return;
     try {
       await fetch(`${BACKEND_URL}/api/stocks-discover/candidates/${id}/dismiss`, {
-        method: "POST", headers: { Authorization: `Bearer ${sessionToken}` },
+        method: "POST", credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` },
       });
       setCandidates((cs) => cs.filter((c) => c._id !== id));
     } catch {}
@@ -4940,6 +4979,7 @@ function PerformanceView({ sessionToken }) {
     (async () => {
       try {
         const r = await fetch(`${BACKEND_URL}/api/stocks-advice/data-status`, {
+          credentials: "include",
           headers: { Authorization: `Bearer ${sessionToken}` },
         });
         if (!r.ok) return;
@@ -4958,6 +4998,7 @@ function PerformanceView({ sessionToken }) {
     (async () => {
       try {
         const r = await fetch(`${BACKEND_URL}/api/stocks-discover/scorecard`, {
+          credentials: "include",
           headers: { Authorization: `Bearer ${sessionToken}` },
         });
         if (!r.ok) return;
@@ -4975,12 +5016,15 @@ function PerformanceView({ sessionToken }) {
       try {
         const [snapRes, perfRes, scoreRes] = await Promise.all([
           fetch(`${BACKEND_URL}/api/stocks-portfolio/performance?days=365&accountId=${encodeURIComponent(selectedAccountId)}`, {
+            credentials: "include",
             headers: { Authorization: `Bearer ${sessionToken}` },
           }),
           fetch(`${BACKEND_URL}/api/stocks-advice/performance?days=30`, {
+            credentials: "include",
             headers: { Authorization: `Bearer ${sessionToken}` },
           }),
           fetch(`${BACKEND_URL}/api/stocks-advice/scorecard?days=${scorecardDays}`, {
+            credentials: "include",
             headers: { Authorization: `Bearer ${sessionToken}` },
           }),
         ]);
@@ -5442,7 +5486,7 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37, sessionToken
     (async () => {
       try {
         const url = `${BACKEND_URL}/api/stocks-advice/recs-for-tickers?tickers=${encodeURIComponent(tickers.join(","))}&hours=48`;
-        const r = await fetch(url, { headers: { Authorization: `Bearer ${sessionToken}` } });
+        const r = await fetch(url, { credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` } });
         if (!r.ok) return;
         const j = await r.json();
         if (cancelled) return;
@@ -5800,6 +5844,7 @@ function TradesView({ sessionToken }) {
     (async () => {
       try {
         const r = await fetch(`${BACKEND_URL}/api/stocks-trade?days=${days}`, {
+          credentials: "include",
           headers: { Authorization: `Bearer ${sessionToken}` },
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -6473,7 +6518,7 @@ body.stocks-app-mode {
 .sa-pin input {
   text-align: center; font-size: 24px; font-weight: 700;
   font-feature-settings: "tnum"; letter-spacing: 0;
-  width: 60px; height: 64px; padding: 0; border-radius: 12px;
+  flex: 1 1 0; min-width: 0; max-width: 60px; height: 64px; padding: 0; border-radius: 12px;
 }
 .sa-err {
   background: var(--sa-red-soft); color: var(--sa-red);

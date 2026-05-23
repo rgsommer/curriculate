@@ -13,7 +13,7 @@
 //
 // Auth model:
 //   • End-user routes verify the HMAC session token that was issued by
-//     the frontend's /api/stocks/verify-pin route. The signing secret
+//     the backend's /api/stocks-auth/verify-pin route. The signing secret
 //     is read from STOCKS_SECRET (falls back to MEDICENTRE_SECRET) —
 //     identical to the frontend so tokens round-trip.
 //   • The /by-email/:email route is for the daily-briefing scheduled
@@ -66,15 +66,20 @@ function verifySessionToken(token) {
   }
 }
 
-function getBearer(req) {
+// Prefer the HttpOnly session cookie; fall back to the Authorization bearer
+// (kept for transition + non-browser callers).
+function getSessionToken(req) {
+  const cookie = req.headers?.cookie || "";
+  const m = cookie.match(/(?:^|;\s*)stocks_session=([^;]+)/);
+  if (m) { try { return decodeURIComponent(m[1]); } catch { return m[1]; } }
   const a = req.headers?.authorization || req.headers?.Authorization || "";
   return typeof a === "string" && a.startsWith("Bearer ") ? a.slice(7).trim() : null;
 }
 
 // User-token middleware
 function requireStocksAuth(req, res, next) {
-  const token = getBearer(req);
-  if (!token) return res.status(401).json({ error: "Missing Authorization bearer token" });
+  const token = getSessionToken(req);
+  if (!token) return res.status(401).json({ error: "Missing session credential" });
   const payload = verifySessionToken(token);
   if (!payload) return res.status(401).json({ error: "Invalid or expired session" });
   req.stocksUser = { email: payload.email.toLowerCase() };
@@ -292,6 +297,14 @@ function sanitizePortfolioInput(body, email) {
       }));
   }
   if (Array.isArray(body.positions)) {
+    // Money/quantity coercion — reject NaN/Infinity (which `typeof === "number"`
+    // would otherwise let through) and clamp to sane bounds so a malformed
+    // client PUT can't poison cost basis / P&L math downstream.
+    const money = (v) => (Number.isFinite(v) && v >= 0 && v <= 1e7 ? v : null);
+    const qtyNum = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 && n <= 1e9 ? n : 0;
+    };
     out.positions = body.positions
       .filter((p) => p && p.ticker && p.qty != null)
       .slice(0, 500)
@@ -301,13 +314,13 @@ function sanitizePortfolioInput(body, email) {
         // in case bad tickers slip through the AI parser.
         ticker: String(p.ticker || "").toUpperCase().slice(0, 16).replace(/\.+$/, ""),
         name: String(p.name || "").slice(0, 200),
-        qty: Number(p.qty) || 0,
+        qty: qtyNum(p.qty),
         ccy: p.ccy === "CAD" ? "CAD" : "USD",
         subCcy: p.subCcy === "CAD" ? "CAD" : p.subCcy === "USD" ? "USD" : null,
-        priceUsd: typeof p.priceUsd === "number" ? p.priceUsd : null,
-        priceCad: typeof p.priceCad === "number" ? p.priceCad : null,
-        costBasisUsd: typeof p.costBasisUsd === "number" ? p.costBasisUsd : null,
-        costBasisCad: typeof p.costBasisCad === "number" ? p.costBasisCad : null,
+        priceUsd: money(p.priceUsd),
+        priceCad: money(p.priceCad),
+        costBasisUsd: money(p.costBasisUsd),
+        costBasisCad: money(p.costBasisCad),
         notes: String(p.notes || "").slice(0, 500),
       }));
   }

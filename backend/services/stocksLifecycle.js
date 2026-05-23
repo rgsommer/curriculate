@@ -172,8 +172,16 @@ export async function computeLifecycle(profile) {
 
   // Pull recently-realized losses from the journal (SELLs in the last 30
   // days where the sell price was below the avg cost basis of the position).
-  // These create a superficial-loss window — buying the same security back
-  // within 30 days denies the loss.
+  // ONLY actual losses create a superficial-loss window — a profitable sale
+  // does not. The journal leg doesn't store cost basis, so we look it up from
+  // the position's recorded basis (best-effort: a fully-sold position has no
+  // basis on file and is skipped rather than flagged as a false positive).
+  const costByKey = {};
+  for (const p of positions) {
+    const cost = p.ccy === "USD" ? p.costBasisUsd : p.costBasisCad;
+    if (cost == null) continue;
+    costByKey[`${p.acct}|${String(p.ticker || "").toUpperCase()}|${p.ccy}`] = cost;
+  }
   const recentSellLosses = [];
   try {
     const recentSells = await StocksTradeJournal.find({
@@ -184,6 +192,10 @@ export async function computeLifecycle(profile) {
     for (const t of recentSells) {
       for (const leg of t.legs || []) {
         if (leg.side !== "SELL") continue;
+        const key = `${t.account}|${String(leg.ticker || "").toUpperCase()}|${leg.currency}`;
+        const cost = costByKey[key];
+        // Skip unless we can confirm the sale was at a loss (price < basis).
+        if (cost == null || leg.pricePerShare == null || leg.pricePerShare >= cost) continue;
         const daysAgo = Math.ceil((Date.now() - new Date(t.executedAt).getTime()) / 86400000);
         const expiresInDays = Math.max(0, 30 - daysAgo);
         recentSellLosses.push({

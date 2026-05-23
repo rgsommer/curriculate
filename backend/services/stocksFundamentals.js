@@ -79,7 +79,7 @@ export async function getFundamentals(ticker, currency = "USD") {
           peRatio: r?.peRatioTTM ?? r?.priceEarningsRatioTTM ?? null,
           psRatio: r?.priceToSalesRatioTTM ?? null,
           pbRatio: r?.priceToBookRatioTTM ?? null,
-          dividendYieldPct: r?.dividendYielTTM != null ? r.dividendYielTTM * 100 : (r?.dividendYieldTTM != null ? r.dividendYieldTTM * 100 : null),
+          dividendYieldPct: r?.dividendYieldTTM != null ? r.dividendYieldTTM * 100 : null,
           payoutRatio: r?.payoutRatioTTM ?? null,
           debtToEquity: r?.debtEquityRatioTTM ?? null,
           currentRatio: r?.currentRatioTTM ?? null,

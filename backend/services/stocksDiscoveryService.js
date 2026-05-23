@@ -261,7 +261,7 @@ Output JSON schema (return EXACTLY this shape, nothing else):
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: process.env.STOCKS_DISCOVERY_MODEL || "claude-sonnet-4-5",
+      model: process.env.STOCKS_DISCOVERY_MODEL || "claude-sonnet-4-6",
       max_tokens: 1500,
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }],
       messages: [{ role: "user", content: prompt }],
@@ -413,7 +413,7 @@ Return ONLY that JSON object. No prose before or after.`;
     method: "POST",
     headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
-      model: process.env.STOCKS_DISCOVERY_MODEL || "claude-sonnet-4-5",
+      model: process.env.STOCKS_DISCOVERY_MODEL || "claude-sonnet-4-6",
       max_tokens: 4000,
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 10 }],
       messages: [{ role: "user", content: prompt }],
@@ -446,7 +446,11 @@ Return ONLY that JSON object. No prose before or after.`;
 // Persist AI-only candidates with the same shape as FMP-screened ones,
 // so the rest of the UI doesn't care which path produced them.
 async function saveAiOnlyCandidates({ email, candidates, sharedSources, excludeSet }) {
+  // Normalize to UTC midnight so the {email,ticker,scanDate} unique index
+  // actually enforces "one candidate per day" — a millisecond-precise
+  // timestamp would let two same-day scans create duplicate rows.
   const scanDate = new Date();
+  scanDate.setUTCHours(0, 0, 0, 0);
   const saved = [];
   for (const c of candidates) {
     const ticker = String(c.ticker || "").toUpperCase().replace(/\.+$/, "").trim();
@@ -568,7 +572,7 @@ export async function runDiscoveryScan({ email, excludeTickers = [], sectors = n
   // limit to top ~80 by market cap × volume liquidity proxy before doing
   // the per-ticker FMP fundamentals calls (each ~3 API hits).
   const preRanked = filtered
-    .map((u) => ({ ...u, _proxy: (Number(u.marketCap) || 0) * Math.log10(Number(u.volume) || 1 + 1) }))
+    .map((u) => ({ ...u, _proxy: (Number(u.marketCap) || 0) * Math.log10((Number(u.volume) || 0) + 1) }))
     .sort((a, b) => b._proxy - a._proxy)
     .slice(0, 80);
 
@@ -594,7 +598,9 @@ export async function runDiscoveryScan({ email, excludeTickers = [], sectors = n
   // thesis calls can fire simultaneously; bursting 8 in parallel exceeds
   // that. Throttling to 2 keeps per-minute usage at ~8K tokens which is
   // safely under the ceiling.
+  // UTC midnight so the per-day unique index dedupes same-day re-scans.
   const scanDate = new Date();
+  scanDate.setUTCHours(0, 0, 0, 0);
   const results = await mapWithThrottle(topCandidates, async (c) => {
     const thesisPayload = {
       ticker: c.symbol,

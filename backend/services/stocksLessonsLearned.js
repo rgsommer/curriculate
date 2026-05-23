@@ -58,9 +58,14 @@ export async function computeLessons(email) {
     const cur = priceMap[r.ticker];
     let hypoPnlPct = null;
     if (r.entryPrice && cur) {
-      const raw = (cur - r.entryPrice) / r.entryPrice;
       const dir = r.action === "BUY" ? 1 : (r.action === "SELL" || r.action === "TRIM") ? -1 : 0;
-      hypoPnlPct = dir * raw * 100;
+      // Non-directional calls (HOLD) have no hypothetical P&L — leave null so
+      // they don't get counted as forced-zero entries that bias the averages
+      // and hit-rate denominators toward 0.
+      if (dir !== 0) {
+        const raw = (cur - r.entryPrice) / r.entryPrice;
+        hypoPnlPct = dir * raw * 100;
+      }
     }
     return { rec: r, followed, hypoPnlPct, currentPrice: cur };
   });

@@ -60,10 +60,16 @@ function verifySessionToken(token) {
     return payload;
   } catch { return null; }
 }
-function requireStocksAuth(req, res, next) {
+function getSessionToken(req) {
+  const cookie = req.headers?.cookie || "";
+  const m = cookie.match(/(?:^|;\s*)stocks_session=([^;]+)/);
+  if (m) { try { return decodeURIComponent(m[1]); } catch { return m[1]; } }
   const a = req.headers?.authorization || req.headers?.Authorization || "";
-  const token = typeof a === "string" && a.startsWith("Bearer ") ? a.slice(7).trim() : null;
-  if (!token) return res.status(401).json({ error: "Missing Authorization bearer token" });
+  return typeof a === "string" && a.startsWith("Bearer ") ? a.slice(7).trim() : null;
+}
+function requireStocksAuth(req, res, next) {
+  const token = getSessionToken(req);
+  if (!token) return res.status(401).json({ error: "Missing session credential" });
   const payload = verifySessionToken(token);
   if (!payload) return res.status(401).json({ error: "Invalid or expired session" });
   req.stocksUser = { email: payload.email.toLowerCase() };
@@ -427,8 +433,26 @@ router.post("/", requireStocksAuth, async (req, res) => {
       return res.status(400).json({ error: "Maximum 20 CSVs per request" });
     }
 
+    // Bound CSV size so a giant payload can't OOM the line-splitter. A real
+    // CIBC export is well under 1 MB; the global body limit (25 MB) is far
+    // too permissive for this route.
+    const MAX_FILE_BYTES = 2 * 1024 * 1024;   // 2 MB per file
+    const MAX_TOTAL_BYTES = 8 * 1024 * 1024;  // 8 MB combined
+    let totalBytes = 0;
+    for (const f of files) {
+      const content = typeof f?.content === "string" ? f.content : "";
+      const bytes = Buffer.byteLength(content, "utf8");
+      totalBytes += bytes;
+      if (bytes > MAX_FILE_BYTES) {
+        return res.status(413).json({ error: `CSV "${f?.filename || ""}" exceeds the 2 MB per-file limit` });
+      }
+    }
+    if (totalBytes > MAX_TOTAL_BYTES) {
+      return res.status(413).json({ error: "Combined CSV upload exceeds the 8 MB limit" });
+    }
+
     const parsed = files.map((f) => {
-      const r = parseCibcCsv(f?.content || "");
+      const r = parseCibcCsv(typeof f?.content === "string" ? f.content : "");
       return { filename: f?.filename || "", ...r };
     });
 

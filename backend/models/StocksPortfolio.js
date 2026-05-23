@@ -3,8 +3,8 @@
 // One document per email. Holds the user's risk tolerance, accounts,
 // positions, and FX assumption for the personal stock advisor at /stocks.
 //
-// Auth is via HMAC session token issued by the frontend's
-// /api/stocks/verify-pin route. See backend/routes/stocksPortfolio.js
+// Auth is via HMAC session token issued by the backend's
+// /api/stocks-auth/verify-pin route. See backend/routes/stocksPortfolio.js
 // for the verification logic.
 
 import mongoose from "mongoose";

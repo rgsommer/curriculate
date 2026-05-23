@@ -196,6 +196,11 @@ export function formatTechnicalsLine(t) {
     parts.push(`${t.recentCross.type === "golden" ? "🌟 golden cross" : "💀 death cross"} ${t.recentCross.daysAgo}d ago`);
   }
   if (t.annualizedVolPct != null) parts.push(`vol ${t.annualizedVolPct.toFixed(0)}%`);
-  if (t.atr14 != null) parts.push(`ATR $${t.atr14.toFixed(2)} (${t.atrPctOfPrice.toFixed(1)}%) → 2.5×ATR stop $${t.suggested25AtrStop.toFixed(2)}`);
+  if (t.atr14 != null) {
+    // atrPctOfPrice / suggested25AtrStop are null when last price is missing.
+    const pctStr = Number.isFinite(t.atrPctOfPrice) ? ` (${t.atrPctOfPrice.toFixed(1)}%)` : "";
+    const stopStr = Number.isFinite(t.suggested25AtrStop) ? ` → 2.5×ATR stop $${t.suggested25AtrStop.toFixed(2)}` : "";
+    parts.push(`ATR $${t.atr14.toFixed(2)}${pctStr}${stopStr}`);
+  }
   return parts.join(" · ");
 }

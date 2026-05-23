@@ -147,13 +147,16 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(),
 
   // Use explicit profit (cost-basis math) when caller provides it; otherwise
   // fall back to the old value-minus-principal estimate.
-  const profit = (typeof profitCad === "number" && Number.isFinite(profitCad))
-    ? profitCad
-    : (currentValueCad - principal);
-  const profitBasis = (typeof profitCad === "number") ? "cost-basis" : "value-minus-principal";
-  // Profit-share applies only when principal is active (otherwise there's no
-  // capital at risk on the beneficiary's behalf to be sharing returns on).
-  const shareToBene = principalActive ? Math.max(0, profit) * (effectiveSharePct / 100) : 0;
+  const haveRealProfit = (typeof profitCad === "number" && Number.isFinite(profitCad));
+  const profit = haveRealProfit ? profitCad : (currentValueCad - principal);
+  const profitBasis = haveRealProfit ? "cost-basis" : "value-minus-principal";
+  // Profit-share applies only when principal is active AND we have real
+  // cost-basis profit. NEVER compute profit-share off the value-minus-
+  // principal fallback — that estimate conflates later cash deposits/
+  // withdrawals with trading gains and would overpay the beneficiary.
+  const shareToBene = (principalActive && haveRealProfit)
+    ? Math.max(0, profit) * (effectiveSharePct / 100)
+    : 0;
   const grossPayoutIfNow = effectivePrincipal + interestOwed + shareToBene;
 
   // Early-payout penalty — applies only when asOf is BEFORE lockUntilDate.
@@ -469,7 +472,13 @@ export function formatAccountReportMarkdown(report) {
 
     if (ba.profit < 0 && ba.carryLosses) {
       parts.push("");
-      parts.push(`> ⚠️ Account is in **loss** of ${fmtMoney(ba.profit)}. The account holder absorbs this; beneficiary still receives principal + interest (${fmtMoney(ba.effectivePrincipal + ba.interestOwed)}).`);
+      const penaltyNote = (ba.isEarly && ba.penaltyAmount > 0)
+        ? ` less the early-payout penalty of ${fmtMoney(ba.penaltyAmount)}`
+        : "";
+      // Use the computed net payout (which already nets any early-payout
+      // penalty) rather than re-deriving principal+interest, so the prose
+      // matches the "payout if cashed out today" figure in the table above.
+      parts.push(`> ⚠️ Account is in **loss** of ${fmtMoney(ba.profit)}. The account holder absorbs this; beneficiary still receives principal + interest${penaltyNote} (${fmtMoney(ba.payoutIfNow)}).`);
     }
 
     // Structural protections summary — only render if any are configured
