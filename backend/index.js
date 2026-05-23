@@ -5758,14 +5758,15 @@ if (!isMultiPack && task.taskType === "what-am-i") {
 
     // ==== Participation / completion credit ====
     // Task types that aren't objectively or AI-scored (scoringMode "none" —
-    // movement, creative, performance, social) still earn full credit for
-    // COMPLETING them, so every task contributes to the final grade. Skips
-    // already short-circuit above with 0 points, so reaching here means the
-    // student completed the task. Only fires when nothing else scored it.
+    // movement, creative, performance, social) earn PARTIAL credit for
+    // completing them — half marks, so objectively/AI-graded tasks weigh more
+    // in the final grade while every task still contributes. Skips already
+    // short-circuit above with 0 points. Only fires when nothing else scored it.
     if (meta?.scoringMode === "none" && pointsEarned === 0 && correct === null) {
-      pointsEarned = basePoints;
+      const PARTICIPATION_FRACTION = 0.5;
+      pointsEarned = Math.round(basePoints * PARTICIPATION_FRACTION);
       correct = true; // completion = success for participation tasks
-      console.log(`[Participation] full credit (${basePoints}) for team ${effectiveTeamId} on task ${idx} (${task.taskType})`);
+      console.log(`[Participation] ${PARTICIPATION_FRACTION * 100}% credit (${pointsEarned}) for team ${effectiveTeamId} on task ${idx} (${task.taskType})`);
     }
 
     // ==== Handwriting bonus — students who wrote on paper earn extra points ====
