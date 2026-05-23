@@ -7039,6 +7039,42 @@ socket.on("quest:requestState", async (payload = {}, ack) => {
 });
 
 // ---------------------------------------------------------------------------
+//  Quest Mode — specialty directory ("who specializes in what"). Answers the
+//  buyer's "where do I get this?" by publishing each team's ASSIGNED specialty
+//  (stable + public). Live inventories/prices stay private — that's negotiation.
+// ---------------------------------------------------------------------------
+socket.on("quest:market", async (payload = {}, ack) => {
+  try {
+    const { roomCode } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!code || !room) {
+      if (typeof ack === "function") ack({ ok: false, error: "Missing room" });
+      return;
+    }
+    const questTask = (room?.taskset?.tasks || []).find((t) => t?.taskType === "quest");
+    const specialties = Array.isArray(questTask?.config?.specialties) ? questTask.config.specialties.filter(Boolean) : [];
+    const resourcesCfg = Array.isArray(questTask?.config?.resources) ? questTask.config.resources : [];
+    const nameOf = (rid) => resourcesCfg.find((r) => r.id === rid)?.name || rid;
+
+    const TeamQuestState = (await import("./models/TeamQuestState.js")).default;
+    const docs = await TeamQuestState.find({ roomCode: code }).select("teamId specialtyResourceId").lean();
+    const bySpecialty = {};
+    for (const d of docs || []) {
+      if (!d?.specialtyResourceId) continue;
+      const name = room.teams?.[d.teamId]?.teamName || `Team ${String(d.teamId).slice(-4)}`;
+      (bySpecialty[d.specialtyResourceId] ||= []).push({ teamId: d.teamId, teamName: name });
+    }
+    const ids = specialties.length ? specialties : Object.keys(bySpecialty);
+    const directory = ids.map((sid) => ({ specialtyId: sid, name: nameOf(sid), teams: bySpecialty[sid] || [] }));
+    if (typeof ack === "function") ack({ ok: true, directory });
+  } catch (e) {
+    console.error("[quest:market] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 //  Quest Mode — resource acquisition flow (commit #5)
 //  Two-step UX:
 //    1. quest:requestResource — return current state, the resource definition,

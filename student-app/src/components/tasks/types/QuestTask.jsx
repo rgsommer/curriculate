@@ -45,6 +45,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
   const [sellPrice, setSellPrice] = useState(3);
   const [tradeMsg, setTradeMsg] = useState(null);   // { ok, text }
   const [tradeBusy, setTradeBusy] = useState(false);
+  const [market, setMarket] = useState(null);       // [{ specialtyId, name, teams:[{teamName}] }]
 
   const isLive = !!(socket && roomCode && teamId) && !practiceMode;
 
@@ -123,6 +124,28 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
       },
     );
   };
+
+  // Load the specialty directory ("who specializes in what") so buyers know
+  // which team to approach. Live → ask the server; practice → synthesize one
+  // from config.specialties + bot team names so it's illustrative.
+  useEffect(() => {
+    if (isLive) {
+      socket.emit("quest:market", { roomCode }, (resp) => {
+        if (resp?.ok && Array.isArray(resp.directory)) setMarket(resp.directory);
+      });
+      return;
+    }
+    if (practiceMode && specialties.length) {
+      const botTeams = ["Team Ada", "Team Newton", "Team Maya", "Team Darwin"];
+      setMarket(
+        specialties.map((sid, i) => ({
+          specialtyId: sid,
+          name: resources.find((r) => r.id === sid)?.name || sid,
+          teams: i === 0 ? [{ teamName: "You" }] : [{ teamName: botTeams[i % botTeams.length] }],
+        }))
+      );
+    }
+  }, [isLive, socket, roomCode, practiceMode, specialties.length]);
 
   // Seller side: when a buyer scans our offer, the server tells us the sale
   // completed so we can celebrate it (state is refreshed via quest:stateUpdated).
@@ -351,6 +374,24 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
           Go to another team to swap supplies: <strong>show your QR to sell</strong> a resource for coins,
           or <strong>scan their QR to buy</strong> one.
         </div>
+
+        {/* Specialty directory — where to find each scarce resource. */}
+        {Array.isArray(market) && market.length > 0 && (
+          <div style={{ marginBottom: 8, padding: "8px 10px", borderRadius: 10, background: "rgba(15,23,42,0.5)", border: "1px solid rgba(124,58,237,0.3)" }}>
+            <div style={{ fontSize: "0.7rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, color: "#a78bfa", marginBottom: 4 }}>
+              Who specializes in what
+            </div>
+            {market.map((m) => (
+              <div key={m.specialtyId} style={{ fontSize: "0.8rem", color: "#e2e8f0", lineHeight: 1.5 }}>
+                <strong>{m.name}:</strong>{" "}
+                {m.teams.length
+                  ? m.teams.map((t) => t.teamName).join(", ")
+                  : <span style={{ color: "#94a3b8" }}>nobody yet</span>}
+                {m.specialtyId === mySpecialty ? <span style={{ color: "#7dd3fc" }}> (your team)</span> : null}
+              </div>
+            ))}
+          </div>
+        )}
 
         {!tradeMode && (
           <div style={{ display: "flex", gap: 8 }}>
