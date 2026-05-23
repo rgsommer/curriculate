@@ -11,8 +11,34 @@
 
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import TaskRunner from "./components/tasks/TaskRunner.jsx";
-import DEMO_TASKS from "./demoTasks.js";
+import DEMO_TASKS_RAW from "./demoTasks.js";
 import { API_BASE_URL } from "./config.js";
+
+// Task types that fundamentally need MULTIPLE live people (debate opponents,
+// a pass-around chain, peer teach-back/rating, mime guessers, a team selfie,
+// a duel). They technically "complete" via the simulated demo socket, but a
+// lone practicer just finds them pointless — tester (Michael) skipped each with
+// "im solo" / "solo". We hide them from the solo practice queue. They remain in
+// the full catalog (features page) and in real, multi-student sessions.
+const SOLO_UNFRIENDLY_TYPES = new Set([
+  "ai-debate-judge",
+  "live-debate",
+  "echo-chain",
+  "collaboration",
+  "narration-synthesize",
+  "brainstorm-battle",
+  "draw-mime",
+  "mime",
+  "script-play",
+  "team-selfie",
+  "hangman-duel",
+  "musical-chairs",
+]);
+
+// The queue every solo practice run draws from (multiplayer-only types removed).
+const DEMO_TASKS = DEMO_TASKS_RAW.filter(
+  (t) => !SOLO_UNFRIENDLY_TYPES.has(String(t?.taskType || t?.type || ""))
+);
 
 // ----------------------------------------------------------------
 // Helpers
