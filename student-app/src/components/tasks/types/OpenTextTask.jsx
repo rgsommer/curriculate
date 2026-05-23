@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import DesignatedWriter from "../DesignatedWriter";
 import HandwritingCapture, { HANDWRITING_BONUS_POINTS } from "../HandwritingCapture";
+import SpeechQualityMeter from "../SpeechQualityMeter";
 
 /**
  * Open-text response task.
@@ -814,6 +815,17 @@ export default function OpenTextTask({
               >
                 {isListening ? "Stop 🎤" : "Speak 🎤"}
               </button>
+            </div>
+
+            {/* Live answer-quality speedometer (typed or dictated). */}
+            <div
+              style={{
+                background: "rgba(255,255,255,0.92)",
+                borderRadius: "12px",
+                padding: "8px 12px",
+              }}
+            >
+              <SpeechQualityMeter text={value} />
             </div>
 
             {/* Points meter — running point total (base + length bonus) with a

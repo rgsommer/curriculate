@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/DiffDetectiveTask.jsx
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { TaskCardFrame, Pill, PrimaryButton, GhostButton, TextArea } from "../taskStyles";
+import SpeechQualityMeter from "../SpeechQualityMeter";
 
 export default function DiffDetectiveTask({
   task,
@@ -272,6 +273,13 @@ export default function DiffDetectiveTask({
         rows={6}
         placeholder='Speak or type: "jumps was changed to jumped", "206 to 208"…'
       />
+
+      {/* Live answer-quality speedometer (typed or dictated). */}
+      {!isSubmitted && (
+        <div style={{ marginTop: 8 }}>
+          <SpeechQualityMeter text={answer} />
+        </div>
+      )}
 
       {/* Hint */}
       {hasHints ? (

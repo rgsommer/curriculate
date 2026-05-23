@@ -77,7 +77,32 @@
       "Bash(node --check backend/controllers/tasksetController.js)",
       "Bash(node --check backend/controllers/demoTasksetController.js)",
       "Bash(node --check backend/controllers/teacherProfileController.js)",
-      "Bash(grep -n \"API_BASE\\\\|BACKEND_URL\\\\|from \\\\\"./config\\\\|from \\\\\"../config\\\\|import.*config\\\\|fetch\\(\\\\`\\\\|fetch\\(API\" DemoMode.jsx)"
+      "Bash(grep -n \"API_BASE\\\\|BACKEND_URL\\\\|from \\\\\"./config\\\\|from \\\\\"../config\\\\|import.*config\\\\|fetch\\(\\\\`\\\\|fetch\\(API\" DemoMode.jsx)",
+      "Bash(perl -0pi -e 's/PHASES\\\\[phaseIdx\\\\]/phases[phaseIdx]/g; s/PHASES\\\\.length/phases.length/g' LegendsTask.jsx)",
+      "Bash(sed -n '2546,2562p' student-app/src/components/tasks/TaskRunner.jsx)",
+      "Bash(sed -n '525,545p' student-app/src/components/tasks/TaskRunner.jsx)",
+      "Bash(sed -n '93,110p' student-app/src/demoTasks.js)",
+      "Bash(sed -n '136,150p' backend/tests/test-all-shells.mjs)",
+      "Bash(node --check shared/taskPlayability.js)",
+      "Bash(timeout=300 npx tsc --noEmit)",
+      "Bash(node --check backend/reports/sessionReportPdf.js)",
+      "Bash(awk 'NR>=8 && NR<=580 && /function|=>|for \\\\\\(const t of list\\\\\\)/ {print NR\": \"$0}' backend/reports/sessionReportPdf.js)",
+      "Bash(node --check backend/controllers/sessionReportController.js)",
+      "Bash(node --check shared/taskTypes.js)",
+      "Bash(npx --no-install esbuild src/components/tasks/types/DiffDetectiveTask.jsx src/components/tasks/types/LegendsTask.jsx src/components/tasks/types/AIDebateJudgeTask.jsx src/components/tasks/types/MysteryCluesTask.jsx src/components/tasks/types/OpenTextTask.jsx src/components/tasks/types/NarrationSynthesizeTask.jsx --bundle --outfile=/dev/null --loader:.jsx=jsx --format=esm --external:react)",
+      "Bash(npx --no-install esbuild src/components/tasks/types/__TRACKED_VAR__.jsx --loader:.jsx=jsx --format=esm)",
+      "Bash(npx --no-install esbuild \"student-app/src/components/tasks/types/WordWeaverDuelTask.jsx\" --loader:.jsx=jsx --format=esm)",
+      "Bash(node --check backend/routes/demo.js)",
+      "Bash(node --check backend/models/ConferenceLead.js)",
+      "Bash(npx --no-install esbuild \"src/DemoMode.jsx\" --loader:.jsx=jsx --format=esm)",
+      "Bash(grep -nE 'useState|value=\\\\{|<textarea|<TextArea|onChange=\\\\{' __TRACKED_VAR__.jsx)",
+      "Bash(sed -n '320,345p' CaseStudyTask.jsx)",
+      "Bash(sed -n '175,200p' CurrentEventsTask.jsx)",
+      "Bash(sed -n '400,420p' LetterTask.jsx)",
+      "Bash(sed -n '415,440p' TeachBackTask.jsx)",
+      "Bash(sed -n '270,292p' CareersTask.jsx)",
+      "Bash(sed -n '448,472p' InterviewTask.jsx)",
+      "Bash(grep -nE ^import __TRACKED_VAR__.jsx)"
     ]
   }
 }
