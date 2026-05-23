@@ -1028,7 +1028,11 @@ const DEMO_TASKS = [
   {
     taskType: "ai-debate-judge",
     title: "AI Debate Judge",
-    prompt: "The AI judge will evaluate both sides of the debate!",
+    prompt: "Debate the resolution, then summon the AI judge for a verdict!",
+    config: {
+      topic: "Resolved: Students should be allowed to use AI tools for schoolwork.",
+      debateSeconds: 120,
+    },
   },
 
   // 47. Brainstorm Battle

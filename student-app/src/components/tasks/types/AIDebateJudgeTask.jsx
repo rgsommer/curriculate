@@ -3,6 +3,25 @@ import React, { useState, useEffect } from "react";
 import StepCircle from "../StepCircle";
 
 export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, onSubmit, presenter }) {
+  const config = task?.config || {};
+
+  // Tester (Nysa, May 2026): "no topic is ever prepared. there should be a clear
+  // declaration of the topic, instructions, a 1-2-3 GO start button, and a
+  // running timer with a time goal." So before the judge step we now run a
+  // structured DEBATE phase: topic + sides + start + countdown.
+  const topic = String(
+    config.topic || config.resolution || config.postulate || config.motion || task?.prompt || ""
+  ).trim();
+  const affLabel = config.affirmativeLabel || config.sideA || "Affirmative";
+  const negLabel = config.negativeLabel || config.sideB || "Negative";
+  const goalSeconds = (() => {
+    const c = Number(config.debateSeconds ?? task?.timeLimitSeconds ?? config.timeLimitSeconds);
+    return Number.isFinite(c) && c > 0 ? c : 120; // default 2:00
+  })();
+
+  const [phase, setPhase] = useState("debate"); // "debate" -> "judge"
+  const [started, setStarted] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(goalSeconds);
   const [isJudging, setIsJudging] = useState(false);
   const [verdict, setVerdict] = useState(null);
   const [showFullFeedback, setShowFullFeedback] = useState(false);
@@ -21,6 +40,29 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
     socket.on("ai-judge:verdict", handleVerdict);
     return () => socket.off("ai-judge:verdict", handleVerdict);
   }, [socket, onSubmit]);
+
+  // Debate countdown (client-side, presentational time goal).
+  useEffect(() => {
+    if (phase !== "debate" || !started) return;
+    if (secondsLeft <= 0) return;
+    const t = setTimeout(() => setSecondsLeft((s) => (s > 0 ? s - 1 : 0)), 1000);
+    return () => clearTimeout(t);
+  }, [phase, started, secondsLeft]);
+
+  const fmtTime = (s) => {
+    const v = Math.max(0, Math.floor(s));
+    return `${Math.floor(v / 60)}:${String(v % 60).padStart(2, "0")}`;
+  };
+
+  const startDebate = async () => {
+    if (disabled || started) return;
+    try {
+      await presenter?.showCountdown?.({ title: "Debate starts in…", seconds: 3, subtext: "1 — 2 — 3 — GO!" });
+    } catch (e) {
+      // ignore — countdown is best-effort
+    }
+    setStarted(true);
+  };
 
   const triggerJudging = async () => {
     if (disabled || isJudging) return;
@@ -79,6 +121,108 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
         >
           Continue →
         </button>
+      </div>
+    );
+  }
+
+  // ─── DEBATE PHASE: topic, sides, 1-2-3 GO start, running timer ───
+  if (phase === "debate") {
+    const timeUp = started && secondsLeft <= 0;
+    const pct = goalSeconds > 0 ? Math.max(0, Math.min(100, (secondsLeft / goalSeconds) * 100)) : 0;
+    return (
+      <div style={{ padding: 32, textAlign: "center", maxWidth: 1000, margin: "0 auto" }}>
+        <div className="text-2xl font-bold text-indigo-700 mb-2">🗣️ Debate Time</div>
+
+        {/* Topic declaration */}
+        <div
+          style={{
+            margin: "0 auto 20px",
+            maxWidth: 900,
+            borderRadius: 20,
+            padding: 20,
+            background: "linear-gradient(135deg, rgba(99,102,241,0.12), rgba(56,189,248,0.10))",
+            border: "1px solid rgba(99,102,241,0.35)",
+          }}
+        >
+          <div className="text-lg font-bold uppercase tracking-wide text-indigo-600 mb-2">Today's Resolution</div>
+          <div className="text-3xl font-extrabold text-slate-900 leading-snug">
+            {topic || "Your teacher will announce the debate topic."}
+          </div>
+        </div>
+
+        {/* Sides */}
+        <div className="grid grid-cols-2 gap-4" style={{ maxWidth: 900, margin: "0 auto 24px" }}>
+          <div style={{ borderRadius: 16, padding: 16, background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.35)" }}>
+            <div className="text-xl font-extrabold text-green-700">✅ {affLabel}</div>
+            <div className="text-base text-slate-700 mt-1">Argue <b>for</b> the resolution.</div>
+          </div>
+          <div style={{ borderRadius: 16, padding: 16, background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.30)" }}>
+            <div className="text-xl font-extrabold text-red-700">❌ {negLabel}</div>
+            <div className="text-base text-slate-700 mt-1">Argue <b>against</b> the resolution.</div>
+          </div>
+        </div>
+
+        {!started ? (
+          <>
+            <div
+              className="mx-auto mb-6 text-left"
+              style={{ maxWidth: 900, borderRadius: 16, padding: 16, background: "rgba(255,255,255,0.85)", border: "1px solid rgba(15,23,42,0.12)" }}
+            >
+              <div className="text-xl font-bold mb-2">How this works</div>
+              <div className="text-lg leading-relaxed text-gray-700">
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={1} /> Each side makes its case with evidence and clear structure.</div>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={2} /> You have <b>{fmtTime(goalSeconds)}</b> to debate — watch the timer.</div>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}><StepCircle n={3} /> When time's up, summon the AI Judge for a verdict.</div>
+              </div>
+            </div>
+            <button
+              onClick={startDebate}
+              disabled={disabled}
+              className="px-20 py-12 bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-4xl font-bold rounded-full shadow-2xl hover:shadow-3xl transition disabled:opacity-50"
+            >
+              ▶️ Start Debate (1‑2‑3 GO!)
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="text-base font-bold uppercase tracking-wide text-slate-500 mb-1">
+              {timeUp ? "Time!" : "Time remaining"} · Goal {fmtTime(goalSeconds)}
+            </div>
+            <div
+              className="font-extrabold mb-4"
+              style={{
+                fontSize: 72,
+                lineHeight: 1,
+                fontVariantNumeric: "tabular-nums",
+                color: timeUp ? "#dc2626" : secondsLeft <= 15 ? "#f59e0b" : "#0f172a",
+              }}
+            >
+              {fmtTime(secondsLeft)}
+            </div>
+            <div style={{ maxWidth: 700, margin: "0 auto 24px", height: 14, borderRadius: 999, background: "rgba(15,23,42,0.10)", overflow: "hidden" }}>
+              <div
+                style={{
+                  height: "100%",
+                  width: `${pct}%`,
+                  borderRadius: 999,
+                  background: timeUp ? "#dc2626" : "linear-gradient(90deg, #22c55e, #0ea5e9)",
+                  transition: "width 1s linear",
+                }}
+              />
+            </div>
+            <button
+              onClick={() => setPhase("judge")}
+              disabled={disabled}
+              className={`px-16 py-8 text-white text-3xl font-bold rounded-full shadow-2xl transition disabled:opacity-50 ${
+                timeUp
+                  ? "bg-gradient-to-r from-purple-700 to-pink-700 animate-pulse"
+                  : "bg-gradient-to-r from-slate-600 to-slate-700"
+              }`}
+            >
+              {timeUp ? "⏰ Time's up — Summon the Judge ▶" : "We're done — Summon the Judge ▶"}
+            </button>
+          </>
+        )}
       </div>
     );
   }
