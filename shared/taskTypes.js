@@ -6068,13 +6068,23 @@ export const TASK_SHELLS = {
 
   /* ── DIFF DETECTIVE ── */
   [TASK_TYPES.DIFF_DETECTIVE]: function buildDiffDetectiveShell() {
+    const diffCount = 5;
     const placeholders = [
       "TITLE: Short Diff Detective title (3-7 words)",
       "PROMPT: 1-2 sentence student instructions",
       "TEXT_A: Original text passage (3-6 sentences). Include real subject-matter content.",
-      "TEXT_B: Modified version of TEXT_A with 5-8 deliberate differences (changed words, added/removed details, altered facts). Differences should test understanding, not just spelling.",
+      `TEXT_B: Modified version of TEXT_A with EXACTLY ${diffCount} deliberate differences (changed words, added/removed details, altered facts). Differences should test understanding, not just spelling.`,
     ];
     const names = ["TITLE", "PROMPT", "TEXT_A", "TEXT_B"];
+
+    const differences = [];
+    for (let i = 0; i < diffCount; i++) {
+      placeholders.push(
+        `DIFF_${i + 1}: Difference ${i + 1}, written EXACTLY as "original phrase → modified phrase" — copy the exact words from TEXT_A and TEXT_B separated by the → arrow.`
+      );
+      names.push(`DIFF_${i + 1}`);
+      differences.push({ expected: `{{DIFF_${i + 1}}}` });
+    }
 
     const shell = {
       taskType: "diff-detective",
@@ -6082,6 +6092,8 @@ export const TASK_SHELLS = {
       prompt: "{{PROMPT}}",
       original: "{{TEXT_A}}",
       modified: "{{TEXT_B}}",
+      differences,
+      totalDifferences: diffCount,
     };
     return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
   },

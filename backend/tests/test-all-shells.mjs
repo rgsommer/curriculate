@@ -157,16 +157,13 @@ const fillGenerators = {
   },
 
   [TASK_TYPES.JEOPARDY]: (si) => {
-    const t = pickTerms(si, 1); const m = meta(si);
-    return { fill: {
-      TITLE: `${m.topic} BrainBlitz`, PROMPT: "Listen to the clues and shout the answer!",
-      ANSWER: t[0],
-      CLUE_1: `This is a key concept in ${m.topic}`,
-      CLUE_2: `Students learn about this in grade ${m.grade} ${m.subject}`,
-      CLUE_3: `It starts with the letter ${t[0][0].toUpperCase()}`,
-      CLUE_4: `It is essential for understanding ${m.topic}`,
-      CLUE_5: `The answer is: ${t[0].split("").join(", ")}`,
-    }, opts: {} };
+    const t = pickTerms(si, 6); const m = meta(si);
+    const fill = { TITLE: `${m.topic} BrainBlitz`, PROMPT: "Listen to the clues and shout the answer!" };
+    for (let i = 0; i < 6; i++) {
+      fill[`CLUE_${i + 1}`] = `A grade ${m.grade} ${m.subject} concept from ${m.topic} (clue ${i + 1})`;
+      fill[`ANSWER_${i + 1}`] = t[i];
+    }
+    return { fill, opts: { itemCount: 6 } };
   },
 
   [TASK_TYPES.FAKE_OUT]: (si) => {
@@ -360,6 +357,11 @@ const fillGenerators = {
       TITLE: `${m.topic} Error Spotter`, PROMPT: "Find the differences between Text A and Text B.",
       TEXT_A: `In ${m.topic}, ${t[0]} is a fundamental concept. It connects to ${t[1]} through several key principles. Students in grade ${m.grade} learn that ${t[2]} plays an important role in understanding the subject.`,
       TEXT_B: `In ${m.topic}, ${t[0]} is an advanced concept. It connects to ${t[2]} through several minor principles. Students in grade ${m.grade + 1} learn that ${t[1]} plays a small role in understanding the topic.`,
+      DIFF_1: "fundamental → advanced",
+      DIFF_2: "key → minor",
+      DIFF_3: "important → small",
+      DIFF_4: "subject → topic",
+      DIFF_5: `${t[1]} → ${t[2]}`,
     }, opts: {} };
   },
 
