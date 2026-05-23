@@ -31,7 +31,7 @@ import cardsRouter from "./routes/cards.js";
 import { TASK_TYPE_META, analyzeBloomsTaxonomy } from "../shared/taskTypes.js";
 import { COLORS } from "../shared/colors.js";
 import { computeUnlockedSkins, diffUnlocks } from "../shared/skins.js";
-import { FREEMIUM, isFreemiumActive, canSubmitGrading, isVoiceGated, isModeGated } from "../shared/freemiumConfig.js";
+import { FREEMIUM, isFreemiumActive, canSubmitGrading, canSubmitGradingByIp, isVoiceGated, isModeGated } from "../shared/freemiumConfig.js";
 
 // 5) Local utils
 import { recordNoiseSample, computeNoiseSummary } from "./utils/noiseTelemetry.js";
@@ -186,7 +186,7 @@ const GradingUsage = mongoose.models.GradingUsage || mongoose.model(
       inputMode: { type: String, index: true },   // "photo" | "paste" | "batch" | "video" | "audio" | "upload"
       appName:   { type: String, index: true },   // "pulse-grading" | "curriculate" | "fieldday"
       imageCount: Number,
-      overrideInputUsed: Boolean,
+      rubricOverrideUsed: Boolean,
       responseTimeMs: Number,
       refCode: String,
       userAgent: String,
@@ -471,6 +471,26 @@ app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf.toString("utf8"); },
 }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+
+// 2b) Rate limiters for the public (unauthenticated) AI grading endpoints.
+// Ceilings are set high enough that a real classroom batch (a school can grade
+// dozens of students from one NAT'd IP) never trips them, but a script hammering
+// the paid OpenAI calls is stopped. Keyed on IP (trust proxy is set above).
+const gradingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 500,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "rate_limited", message: "Too many grading requests. Please wait a few minutes and try again." },
+});
+// Email send is far more abusable (open relay risk) so it gets a tighter cap.
+const gradingEmailLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "rate_limited", message: "Too many emails sent. Please wait before sending more." },
+});
 
 // 3) Health check (before auth — must be publicly reachable by load balancers)
 app.get("/health", async (_req, res) => {
@@ -13799,15 +13819,32 @@ function buildRubricInstructions({
   }
 
   // ── Freemium usage helpers ─────────────────────────────────────────
+  // Derive the client IP the same way the grading handler records it, so the
+  // freemium counter and the stored GradingUsage.ip stay consistent.
+  function clientIpFrom(req) {
+    return (
+      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      null
+    );
+  }
+
+  function _monthStart() {
+    const d = new Date();
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+  // Count this month's usage by sessionId (the user-facing free quota).
   async function getMonthlyUsageCount(sessionId) {
     if (!sessionId) return 0;
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
-    return GradingUsage.countDocuments({
-      sessionId,
-      timestamp: { $gte: monthStart },
-    });
+    return GradingUsage.countDocuments({ sessionId, timestamp: { $gte: _monthStart() } });
+  }
+  // Count this month's usage by IP (the abuse ceiling — independent of session,
+  // so cycling sessionIds can't dodge it).
+  async function getMonthlyUsageCountByIp(ip) {
+    if (!ip) return 0;
+    return GradingUsage.countDocuments({ ip, timestamp: { $gte: _monthStart() } });
   }
 
   // GET /grading/freemium-status?sessionId=xxx
@@ -13816,7 +13853,8 @@ function buildRubricInstructions({
     try {
       const sessionId = req.query.sessionId || null;
       const active = isFreemiumActive();
-      const usedThisMonth = sessionId ? await getMonthlyUsageCount(sessionId) : 0;
+      // The number shown to the user is their per-session usage.
+      const usedThisMonth = await getMonthlyUsageCount(sessionId);
       const check = canSubmitGrading(usedThisMonth, "FREE"); // anonymous users are always FREE
 
       res.json({
@@ -13845,6 +13883,22 @@ function buildRubricInstructions({
 
     const meta = req.body?.meta || {};
     const sessionId = meta.sessionId || null;
+    const ip = clientIpFrom(req);
+
+    // Abuse ceiling first: a single IP cycling sessionIds can't run up unbounded
+    // paid AI calls, but the ceiling is high enough for a whole school's traffic.
+    const ipUsedThisMonth = await getMonthlyUsageCountByIp(ip);
+    const ipCheck = canSubmitGradingByIp(ipUsedThisMonth);
+    if (!ipCheck.allowed) {
+      res.status(429).json({
+        error: "rate_limited",
+        message: ipCheck.reason,
+        upgradeUrl: FREEMIUM.UPGRADE_URL,
+      });
+      return false;
+    }
+
+    // Per-session free quota (the user-facing limit).
     const usedThisMonth = await getMonthlyUsageCount(sessionId);
     const check = canSubmitGrading(usedThisMonth, "FREE");
 
@@ -13884,7 +13938,7 @@ function buildRubricInstructions({
     return true;
   }
 
-  app.post("/grading", async (req, res) => {
+  app.post("/grading", gradingLimiter, async (req, res) => {
     console.log("GRADING BODY keys:", Object.keys(req.body || {}));
     console.log("images?", Array.isArray(req.body?.images) ? req.body.images.length : 0);
     console.log("answerKeyImages?", Array.isArray(req.body?.answerKeyImages) ? req.body.answerKeyImages.length : 0);
@@ -13898,6 +13952,13 @@ function buildRubricInstructions({
       const startTime = Date.now();
 
       const { images, answerKeyImages, workInput, rubricOverride, answerKeyOverride, gradeBand, standards: rawStandards, subjectArea: rawSubject, strictnessBias: rawBias } = req.body || {};
+      // Reject absurd image counts early — one student submission is a handful of
+      // pages, not dozens. Guards the sequential decode/S3-upload loop below.
+      const MAX_IMAGES = 40;
+      if ((Array.isArray(images) && images.length > MAX_IMAGES) ||
+          (Array.isArray(answerKeyImages) && answerKeyImages.length > MAX_IMAGES)) {
+        return res.status(413).json({ error: "Too many images in one request." });
+      }
       const standards = ["canada", "us", "uk", "eu"].includes(rawStandards) ? rawStandards : "canada";
       const subjectArea = ["math", "english", "science", "history", "geography", "languages"].includes(rawSubject) ? rawSubject : "";
       const strictnessBias = Math.max(-3, Math.min(3, Math.round(Number(rawBias) || 0)));
@@ -14630,7 +14691,7 @@ function buildRubricInstructions({
               inputMode: req.body?.meta?.inputMode || (batchMode ? "batch" : (trimmed ? "paste" : "photo")),
               appName: resolveAppName(req),
               imageCount: Array.isArray(images) ? images.length : 0,
-              overrideInputUsed: Boolean(String(rubricOverride || "").trim()),
+              rubricOverrideUsed: Boolean(String(rubricOverride || "").trim()),
               responseTimeMs,
               refCode,
               userAgent,
@@ -14871,22 +14932,7 @@ function buildRubricInstructions({
 
       (async () => {
         try {
-          let location = null;
-
-          // Node 18+ has global fetch. If your runtime is older, skip geo.
-          if (typeof fetch === "function" && ip) {
-            try {
-              const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-              const geo = await geoRes.json();
-              location = {
-                country: geo?.country_name || null,
-                region: geo?.region || null,
-                city: geo?.city || null,
-              };
-            } catch {
-              location = null;
-            }
-          }
+          const location = await geoLocateCached(ip);
 
           await GradingUsage.create({
             timestamp: new Date(),
@@ -14930,7 +14976,7 @@ function buildRubricInstructions({
       console.error("🔥 /grading failed:", err?.message || err);
       return res.status(500).json({
         error: "Grading failed",
-        details: err?.message || "unknown error"
+        details: safeErrDetail(err)
       });
     }
   });
@@ -14951,7 +14997,7 @@ function buildRubricInstructions({
   //  a link to /results/{refCode}. Skips students with no stored email.
   //  Returns { ok, sent, skipped, errors }.
   // ====================================================================
-  app.post("/grading/send-student-results", async (req, res) => {
+  app.post("/grading/send-student-results", gradingEmailLimiter, async (req, res) => {
     try {
       const { teacherName, taskSetName, results } = req.body || {};
       const list = Array.isArray(results) ? results : [];
@@ -15016,7 +15062,7 @@ function buildRubricInstructions({
   //  Body: { to, subject, html, pdfAttachment?, pdfFilename? }
   //  `to` may be a single email or an array / comma-separated string of emails.
   // ====================================================================
-  app.post("/grading/send-email", async (req, res) => {
+  app.post("/grading/send-email", gradingEmailLimiter, async (req, res) => {
     try {
       const { to, subject, html, pdfAttachment, pdfFilename, pdfAttachments, csvAttachments } = req.body || {};
       // Normalize `to` into an array of unique, validated, lowercased addresses.
@@ -15035,45 +15081,54 @@ function buildRubricInstructions({
       if (!recipients.length) {
         return res.status(400).json({ error: "Invalid email address." });
       }
+      // Abuse guard: this endpoint is unauthenticated, so cap fan-out and payload
+      // to keep it from being used as an open relay for bulk mail.
+      const MAX_RECIPIENTS = 30;
+      const MAX_BODY_BYTES = 1 * 1024 * 1024;        // 1 MB of HTML
+      const MAX_ATTACHMENTS = 20;
+      const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20 MB total
+      if (recipients.length > MAX_RECIPIENTS) {
+        return res.status(400).json({ error: `Too many recipients (max ${MAX_RECIPIENTS}).` });
+      }
       // Keep `email` as the primary recipient for downstream logging /
       // teacher-outreach upserts; the rest are delivered alongside it.
       const email = recipients[0];
       if (!body) {
         return res.status(400).json({ error: "Missing email body." });
       }
+      if (Buffer.byteLength(body, "utf8") > MAX_BODY_BYTES) {
+        return res.status(400).json({ error: "Email body too large." });
+      }
 
-      // Build attachments array for nodemailer
+      // Build attachments array for nodemailer, enforcing count + total size caps.
       const attachments = [];
+      let attachmentBytes = 0;
+      const addAttachment = (data, filename, contentType) => {
+        if (!data) return;
+        if (attachments.length >= MAX_ATTACHMENTS) return;
+        const content = Buffer.from(data, "base64");
+        if (attachmentBytes + content.length > MAX_ATTACHMENT_BYTES) {
+          const err = new Error("attachments_too_large");
+          err.statusCode = 400;
+          throw err;
+        }
+        attachmentBytes += content.length;
+        attachments.push({ filename, content, contentType });
+      };
       // New: array of { data, filename } objects
       if (Array.isArray(pdfAttachments)) {
         for (const att of pdfAttachments) {
-          if (att?.data) {
-            attachments.push({
-              filename: att.filename || "report.pdf",
-              content: Buffer.from(att.data, "base64"),
-              contentType: "application/pdf",
-            });
-          }
+          addAttachment(att?.data, att?.filename || "report.pdf", "application/pdf");
         }
       }
       // Legacy: single attachment fallback
       if (!attachments.length && pdfAttachment) {
-        attachments.push({
-          filename: pdfFilename || "batch-results.pdf",
-          content: Buffer.from(pdfAttachment, "base64"),
-          contentType: "application/pdf",
-        });
+        addAttachment(pdfAttachment, pdfFilename || "batch-results.pdf", "application/pdf");
       }
       // CSV attachments (Edsby grade export)
       if (Array.isArray(csvAttachments)) {
         for (const csv of csvAttachments) {
-          if (csv?.data) {
-            attachments.push({
-              filename: csv.filename || "grades.csv",
-              content: Buffer.from(csv.data, "base64"),
-              contentType: "text/csv",
-            });
-          }
+          addAttachment(csv?.data, csv?.filename || "grades.csv", "text/csv");
         }
       }
 
@@ -15123,12 +15178,19 @@ function buildRubricInstructions({
       return res.json({ ok: true });
     } catch (err) {
       console.error("POST /grading/send-email error:", err?.message || err, err?.stack);
-      const detail = err?.code === "EAUTH" ? "SMTP authentication failed — check email credentials."
-        : err?.code === "ECONNECTION" || err?.code === "ESOCKET" ? "Could not connect to email server."
-        : err?.code === "ETIMEDOUT" ? "Email server connection timed out."
-        : err?.responseCode ? `SMTP rejected: ${err.responseCode} ${err.response || ""}`
-        : `${err?.message || "Unknown error"}`;
-      return res.status(500).json({ error: `Failed to send email: ${detail}` });
+      if (err?.statusCode === 400 || err?.message === "attachments_too_large") {
+        return res.status(400).json({ error: "Attachments are too large." });
+      }
+      // Don't leak SMTP/internal details to the client in production.
+      if (process.env.NODE_ENV !== "production") {
+        const detail = err?.code === "EAUTH" ? "SMTP authentication failed — check email credentials."
+          : err?.code === "ECONNECTION" || err?.code === "ESOCKET" ? "Could not connect to email server."
+          : err?.code === "ETIMEDOUT" ? "Email server connection timed out."
+          : err?.responseCode ? `SMTP rejected: ${err.responseCode} ${err.response || ""}`
+          : `${err?.message || "Unknown error"}`;
+        return res.status(500).json({ error: `Failed to send email: ${detail}` });
+      }
+      return res.status(500).json({ error: "Failed to send email. Please try again." });
     }
   });
 
@@ -15138,7 +15200,7 @@ function buildRubricInstructions({
   //  Sends 1-3 page images and returns { rotated: boolean }.
   //  Uses the full model with retry for reliable detection.
   // ====================================================================
-  app.post("/grading/check-rotation", async (req, res) => {
+  app.post("/grading/check-rotation", gradingLimiter, async (req, res) => {
     try {
       const { images } = req.body || {};
       if (!Array.isArray(images) || images.length === 0) {
@@ -15194,7 +15256,7 @@ function buildRubricInstructions({
   //  Sends thumbnail images and asks AI to identify where each new
   //  student's work begins (first page vs continuation).
   // ====================================================================
-  app.post("/grading/classify-pages", async (req, res) => {
+  app.post("/grading/classify-pages", gradingLimiter, async (req, res) => {
     try {
       const { pageImages, answerKeyPages = 0 } = req.body || {};
 
@@ -15523,7 +15585,7 @@ Do NOT include any text outside the JSON array.`,
       console.error("🔥 /grading/classify-pages failed:", err?.message || err);
       return res.status(500).json({
         error: "Page classification failed",
-        details: err?.message || "unknown error",
+        details: safeErrDetail(err),
       });
     }
   });
@@ -15534,7 +15596,7 @@ Do NOT include any text outside the JSON array.`,
   //  Sends ONLY the answer key image(s) to the AI for focused extraction
   //  of correct answers, point values, and KITA category annotations.
   // ====================================================================
-  app.post("/grading/extract-answer-key", async (req, res) => {
+  app.post("/grading/extract-answer-key", gradingLimiter, async (req, res) => {
     try {
       const { answerKeyImages, standards: rawStandards, gradeBand } = req.body || {};
       const standards = ["canada", "us", "uk", "eu"].includes(rawStandards) ? rawStandards : "canada";
@@ -15709,7 +15771,7 @@ Return valid JSON matching this exact schema.`;
       });
     } catch (err) {
       console.error("[extract-answer-key] error:", err);
-      res.status(500).json({ error: err.message || "Extraction failed." });
+      res.status(500).json({ error: safeErrDetail(err, "Extraction failed.") });
     }
   });
 
@@ -15722,7 +15784,7 @@ Return valid JSON matching this exact schema.`;
   //  answers), rubrics describe the criteria, point distribution, and
   //  performance descriptors used to score student work.
   // ====================================================================
-  app.post("/grading/extract-rubric", async (req, res) => {
+  app.post("/grading/extract-rubric", gradingLimiter, async (req, res) => {
     try {
       const { rubricImages, standards: rawStandards, gradeBand } = req.body || {};
       const standards = ["canada", "us", "uk", "eu"].includes(rawStandards) ? rawStandards : "canada";
@@ -15840,7 +15902,7 @@ Return valid JSON matching this exact schema.`;
       });
     } catch (err) {
       console.error("[extract-rubric] error:", err);
-      res.status(500).json({ error: err.message || "Rubric extraction failed." });
+      res.status(500).json({ error: safeErrDetail(err, "Rubric extraction failed.") });
     }
   });
 
@@ -15848,7 +15910,7 @@ Return valid JSON matching this exact schema.`;
   //  Grading Session Summary (concept-level trends across a copied session)
   //  POST /grading/session-summary
   // ====================================================================
-  app.post("/grading/session-summary", async (req, res) => {
+  app.post("/grading/session-summary", gradingLimiter, async (req, res) => {
     try {
       const { gradeBand, evidence, rubricOverride, meta } = req.body || {};
 
@@ -15904,7 +15966,7 @@ Return valid JSON matching this exact schema.`;
       console.error("🔥 /grading/session-summary failed:", err?.message || err);
       return res.status(500).json({
         error: "Session summary failed",
-        details: err?.message || "unknown error",
+        details: safeErrDetail(err),
       });
     }
   });
@@ -16095,8 +16157,8 @@ const execFileAsync = promisify(execFile);
 //  Pandoc correctly converts OMML equations to LaTeX, unlike LibreOffice.
 // ====================================================================
 const docxUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
-app.post("/grading/convert-docx", docxUpload.single("file"), async (req, res) => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "docx-convert-"));
+app.post("/grading/convert-docx", gradingLimiter, docxUpload.single("file"), async (req, res) => {
+  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "docx-convert-"));
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded." });
 
@@ -16104,10 +16166,18 @@ app.post("/grading/convert-docx", docxUpload.single("file"), async (req, res) =>
     if (ext !== ".docx" && ext !== ".doc") {
       return res.status(400).json({ error: "Only .docx or .doc files are supported." });
     }
+    // Verify the bytes actually match the claimed type, not just the extension.
+    // .docx is a ZIP container ("PK\x03\x04"); .doc is OLE2 ("\xD0\xCF\x11\xE0").
+    const buf = req.file.buffer;
+    const isZip = buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04;
+    const isOle = buf.length >= 4 && buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0;
+    if ((ext === ".docx" && !isZip) || (ext === ".doc" && !isOle)) {
+      return res.status(400).json({ error: "File content does not match a Word document." });
+    }
 
     // Write DOCX to temp file
     const docxPath = path.join(tmpDir, "input" + ext);
-    fs.writeFileSync(docxPath, req.file.buffer);
+    await fs.promises.writeFile(docxPath, req.file.buffer);
 
     // Verify pandoc is available
     try {
@@ -16150,7 +16220,7 @@ app.post("/grading/convert-docx", docxUpload.single("file"), async (req, res) =>
     });
   } catch (err) {
     console.error("[convert-docx] Error:", err);
-    return res.status(500).json({ error: "Conversion failed: " + (err?.message || "Unknown error") });
+    return res.status(500).json({ error: "Conversion failed: " + safeErrDetail(err, "Unknown error") });
   } finally {
     // Clean up temp dir
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
@@ -16163,35 +16233,104 @@ const videoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize
 //  Video Grading: Transcription + Frame Extraction + AI Grading
 //  POST /grading/video
 // ====================================================================
-// Module-level helper for freemium usage count (used by video endpoint outside mongoose .then)
-async function getMonthlyUsageCountGlobal(sessionId) {
-  if (!sessionId) return 0;
+// Module-level helpers for freemium usage count (used by video/audio endpoints,
+// which are registered at top level and can't see the scoped helpers).
+function clientIpFromGlobal(req) {
+  return (
+    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+    req.socket?.remoteAddress ||
+    null
+  );
+}
+
+// Return an error detail string only outside production, so we never leak
+// internal/stack/SMTP details to clients in prod.
+function safeErrDetail(err, fallback = "unknown error") {
+  if (process.env.NODE_ENV !== "production") return err?.message || fallback;
+  return fallback;
+}
+
+// In-memory geo cache so we don't hit ipapi.co (free tier ~1k/day) on every
+// single grade. Cached per IP for 24h; bounded to avoid unbounded growth.
+const _geoCache = new Map(); // ip -> { location, expires }
+const GEO_TTL_MS = 24 * 60 * 60 * 1000;
+async function geoLocateCached(ip) {
+  if (!ip || typeof fetch !== "function") return null;
+  const hit = _geoCache.get(ip);
+  if (hit && hit.expires > Date.now()) return hit.location;
+  let location = null;
+  try {
+    const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+    const geo = await geoRes.json();
+    location = {
+      country: geo?.country_name || null,
+      region: geo?.region || null,
+      city: geo?.city || null,
+    };
+  } catch {
+    location = null;
+  }
+  if (_geoCache.size > 5000) _geoCache.clear(); // crude bound
+  _geoCache.set(ip, { location, expires: Date.now() + GEO_TTL_MS });
+  return location;
+}
+// Count this month's usage filtered by a single key (sessionId or ip).
+async function getMonthlyUsageCountGlobal(filter) {
   const GU = mongoose.models.GradingUsage;
-  if (!GU) return 0;
+  if (!GU || !filter || (!filter.sessionId && !filter.ip)) return 0;
   const monthStart = new Date();
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
-  return GU.countDocuments({ sessionId, timestamp: { $gte: monthStart } });
+  return GU.countDocuments({ ...filter, timestamp: { $gte: monthStart } });
+}
+// Shared freemium gate for the top-level video/audio endpoints. Returns true if
+// allowed; otherwise sends a 403/429 and returns false.
+async function checkFreemiumGateGlobal(req, res, { inputMode = null } = {}) {
+  if (!isFreemiumActive()) return true;
+  const sessionId = req.body?.sessionId || null;
+  const ip = clientIpFromGlobal(req);
+
+  // Abuse ceiling (per IP) first, then the per-session free quota.
+  const ipUsedThisMonth = ip ? await getMonthlyUsageCountGlobal({ ip }) : 0;
+  const ipCheck = canSubmitGradingByIp(ipUsedThisMonth);
+  if (!ipCheck.allowed) {
+    res.status(429).json({
+      ok: false,
+      error: "rate_limited",
+      message: ipCheck.reason,
+      upgradeUrl: FREEMIUM.UPGRADE_URL,
+    });
+    return false;
+  }
+
+  const usedThisMonth = sessionId ? await getMonthlyUsageCountGlobal({ sessionId }) : 0;
+  const check = canSubmitGrading(usedThisMonth, "FREE");
+  if (!check.allowed) {
+    res.status(403).json({
+      ok: false,
+      error: "monthly_limit_reached",
+      message: check.reason,
+      upgradeUrl: FREEMIUM.UPGRADE_URL,
+    });
+    return false;
+  }
+  if (inputMode && isModeGated(inputMode)) {
+    res.status(403).json({
+      ok: false,
+      error: "feature_locked",
+      message: `${inputMode} mode requires a Plus subscription.`,
+      upgradeUrl: FREEMIUM.UPGRADE_URL,
+    });
+    return false;
+  }
+  return true;
 }
 
-app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
+app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (req, res) => {
   let tmpDir = null;
   try {
-    // ── Freemium gate ──
-    // For video, meta comes as form fields (not JSON body)
-    if (isFreemiumActive()) {
-      const sessionId = req.body?.sessionId || null;
-      const usedThisMonth = await getMonthlyUsageCountGlobal(sessionId);
-      const check = canSubmitGrading(usedThisMonth, "FREE");
-      if (!check.allowed) {
-        return res.status(403).json({
-          ok: false,
-          error: "monthly_limit_reached",
-          message: check.reason,
-          upgradeUrl: FREEMIUM.UPGRADE_URL,
-        });
-      }
-    }
+    // ── Freemium gate ──  (meta comes as form fields, not JSON body)
+    if (!(await checkFreemiumGateGlobal(req, res))) return;
 
     if (!req.file || !req.file.buffer || req.file.buffer.length < 1000) {
       return res.status(400).json({ ok: false, error: "No video data or file too small." });
@@ -16225,7 +16364,7 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
       : (req.file.mimetype || "").includes("webm") ? "webm"
       : "mp4";
     const videoPath = path.join(tmpDir, `input.${ext}`);
-    fs.writeFileSync(videoPath, req.file.buffer);
+    await fs.promises.writeFile(videoPath, req.file.buffer);
 
     console.log(`[video-grade] Received ${(req.file.buffer.length / 1024 / 1024).toFixed(1)}MB ${ext} video, type=${performanceType}${instrumentFamily ? ` family=${instrumentFamily}` : ""}${instrument ? ` inst=${instrument}` : ""}`);
 
@@ -16246,27 +16385,21 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
 
     let transcript = "";
     let transcriptWithTimestamps = "";
-    const audioBuffer = fs.readFileSync(audioPath);
+    const audioBuffer = await fs.promises.readFile(audioPath);
 
     if (audioBuffer.length > 500) {
       const audioFile = await toFile(audioBuffer, "audio.mp3", { type: "audio/mpeg" });
 
-      // Get both plain text and verbose JSON (for timestamps)
-      const [textResp, verboseResp] = await Promise.all([
-        oai.audio.transcriptions.create({
-          model: "whisper-1",
-          file: await toFile(Buffer.from(audioBuffer), "audio.mp3", { type: "audio/mpeg" }),
-          response_format: "text",
-        }),
-        oai.audio.transcriptions.create({
-          model: "whisper-1",
-          file: audioFile,
-          response_format: "verbose_json",
-          timestamp_granularities: ["segment"],
-        }),
-      ]);
+      // One verbose_json call gives us both the full text and per-segment
+      // timestamps — no need to transcribe twice.
+      const verboseResp = await oai.audio.transcriptions.create({
+        model: "whisper-1",
+        file: audioFile,
+        response_format: "verbose_json",
+        timestamp_granularities: ["segment"],
+      });
 
-      transcript = (typeof textResp === "string" ? textResp : textResp?.text || "").trim();
+      transcript = String(verboseResp?.text || "").trim();
 
       // Build timestamped transcript
       if (verboseResp?.segments) {
@@ -16320,10 +16453,10 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
     }
 
     // Read frames as base64
-    const frameFiles = fs.readdirSync(framesDir).filter(f => f.endsWith(".jpg")).sort();
+    const frameFiles = (await fs.promises.readdir(framesDir)).filter(f => f.endsWith(".jpg")).sort();
     const frames = [];
     for (const f of frameFiles) {
-      const buf = fs.readFileSync(path.join(framesDir, f));
+      const buf = await fs.promises.readFile(path.join(framesDir, f));
       frames.push(`data:image/jpeg;base64,${buf.toString("base64")}`);
     }
 
@@ -16538,7 +16671,7 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
           appName: resolveAppName(req),
           gradeLevel: gradeBand,
           imageCount: frames.length,
-          overrideInputUsed: Boolean(rubricOverride),
+          rubricOverrideUsed: Boolean(rubricOverride),
           responseTimeMs,
           userAgent: req.headers["user-agent"] || null,
         });
@@ -16561,7 +16694,7 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
 
   } catch (err) {
     console.error("[video-grade] Error:", err?.message || err);
-    return res.status(500).json({ ok: false, error: "Video grading failed: " + (err?.message || "unknown error") });
+    return res.status(500).json({ ok: false, error: "Video grading failed: " + safeErrDetail(err) });
   } finally {
     // Cleanup temp files
     if (tmpDir) {
@@ -16575,9 +16708,12 @@ app.post("/grading/video", videoUpload.single("video"), async (req, res) => {
 //  POST /grading/audio
 //  Accepts multipart audio upload + performanceType + instrument info
 // ====================================================================
-app.post("/grading/audio", audioUpload.single("audio"), async (req, res) => {
+app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (req, res) => {
   const startTime = Date.now();
   try {
+    // ── Freemium gate ──  (parity with /grading and /grading/video)
+    if (!(await checkFreemiumGateGlobal(req, res))) return;
+
     if (!req.file || !req.file.buffer || req.file.buffer.length < 500) {
       return res.status(400).json({ error: "No audio file or file too small." });
     }
@@ -16611,7 +16747,7 @@ app.post("/grading/audio", audioUpload.single("audio"), async (req, res) => {
     let duration = 0;
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "audio-grade-"));
     const audioPath = path.join(tmpDir, `input.${ext}`);
-    fs.writeFileSync(audioPath, req.file.buffer);
+    await fs.promises.writeFile(audioPath, req.file.buffer);
 
     try {
       const { stdout } = await execFileAsync("ffprobe", [
@@ -16762,7 +16898,7 @@ app.post("/grading/audio", audioUpload.single("audio"), async (req, res) => {
           appName: resolveAppName(req),
           gradeLevel: gradeBand,
           imageCount: 0,
-          overrideInputUsed: Boolean(rubricOverride),
+          rubricOverrideUsed: Boolean(rubricOverride),
           responseTimeMs,
           userAgent: req.headers["user-agent"] || null,
         });
@@ -16783,7 +16919,7 @@ app.post("/grading/audio", audioUpload.single("audio"), async (req, res) => {
 
   } catch (err) {
     console.error("[audio-grade] Error:", err?.message || err);
-    return res.status(500).json({ error: "Audio grading failed: " + (err?.message || "unknown error") });
+    return res.status(500).json({ error: "Audio grading failed: " + safeErrDetail(err) });
   }
 });
 

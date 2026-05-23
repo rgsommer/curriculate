@@ -102,6 +102,7 @@ export default function AudioGrading({
   const [refCode, setRefCode] = useState("");
   const [copiedRef, setCopiedRef] = useState(false);
   const fileInputRef = useRef(null);
+  const abortControllerRef = useRef(null);
   const progressTimerRef = useRef(null);
 
   const backendBase = gradingUrl?.replace(/\/grading$/, "") || process.env.NEXT_PUBLIC_BACKEND_URL || "";
@@ -120,6 +121,12 @@ export default function AudioGrading({
   const handleFileSelect = useCallback((e) => {
     const f = e.target.files?.[0];
     if (!f) return;
+    // Validate type — accept audio/* MIME or a known audio extension.
+    const okExt = /\.(mp3|m4a|wav|aac|ogg|flac|wma|webm)$/i.test(f.name);
+    if (!(f.type || "").startsWith("audio/") && !okExt) {
+      setError("Please select an audio file (MP3, M4A, WAV, AAC, OGG, FLAC, or WebM).");
+      return;
+    }
     if (f.size > MAX_FILE_SIZE) {
       setError(`Audio file is too large (${(f.size / 1024 / 1024).toFixed(0)}MB). Maximum is 200MB.`);
       return;
@@ -211,6 +218,7 @@ export default function AudioGrading({
     setSubmitting(true);
     setError("");
     setResult(null);
+    abortControllerRef.current = new AbortController();
     startProgressTimer();
 
     try {
@@ -230,6 +238,7 @@ export default function AudioGrading({
       const resp = await fetch(`${backendBase}/grading/audio`, {
         method: "POST",
         body: formData,
+        signal: abortControllerRef.current?.signal,
       });
 
       if (!resp.ok) {
@@ -266,7 +275,8 @@ export default function AudioGrading({
         }
       }
     } catch (err) {
-      setError(err.message || "Audio grading failed.");
+      if (err?.name === "AbortError") setError("");
+      else setError(err.message || "Audio grading failed.");
     } finally {
       stopProgressTimer();
       setSubmitting(false);
@@ -749,10 +759,30 @@ export default function AudioGrading({
             {submitting ? progress || "Processing..." : "Grade Recording"}
           </button>
 
+          {submitting && (
+            <button
+              type="button"
+              onClick={() => { abortControllerRef.current?.abort(); }}
+              style={{
+                width: "100%", padding: "10px 20px", borderRadius: 10,
+                border: "1px solid #cbd5e1", background: "#fff", color: "#475569",
+                fontSize: 14, fontWeight: 700, cursor: "pointer", marginBottom: 8,
+              }}
+            >
+              Cancel
+            </button>
+          )}
+
           {/* Progress bar */}
           {submitting && (
             <div style={{ marginBottom: 12 }}>
-              <div style={{
+              <div
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(progressPct)}
+                aria-label="Audio grading progress"
+                style={{
                 width: "100%", height: 8, borderRadius: 4,
                 background: "#e2e8f0", overflow: "hidden",
               }}>

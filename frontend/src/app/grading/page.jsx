@@ -654,6 +654,20 @@ function extractDetectedAnswerKey(anyObj) {
   return null;
 }
 
+// Only allow http(s) URLs to be rendered as clickable links. AI-generated
+// assessment content could otherwise smuggle a javascript:/data: URL that would
+// execute on click. Returns the URL if safe, else null.
+function safeHttpUrl(url) {
+  const s = String(url || "").trim();
+  if (!s) return null;
+  try {
+    const u = new URL(s, "https://curriculate.net");
+    return (u.protocol === "http:" || u.protocol === "https:") ? s : null;
+  } catch {
+    return null;
+  }
+}
+
 function formatIncorrectItemHtml(item, idx, escapeHtml) {
   if (!item || typeof item !== "object") return "";
 
@@ -1241,9 +1255,14 @@ export default function GradingPage() {
     const [showFeedbackPrompt, setShowFeedbackPrompt] = useState(false);
     const [feedbackText, setFeedbackText] = useState("");
     const [feedbackSending, setFeedbackSending] = useState(false);
+    const [feedbackError, setFeedbackError] = useState("");
     const [feedbackSent, setFeedbackSent] = useState(false);
     const lastSubmitKeyRef = useRef("");
     const lastWorkKeyRef = useRef(""); // tracks same student work (ignoring settings) for ref code reuse
+    // Monotonic id per grade request. A late-resolving stale request (e.g. rapid
+    // strictness taps or switching student mid-grade) must not overwrite a newer
+    // result or auto-publish under the wrong ref code.
+    const submitReqIdRef = useRef(0);
     const [submissionAttempt, setSubmissionAttempt] = useState(0);
     const [retryNotice, setRetryNotice] = useState(""); // UX text
     const [feedbackTrigger, setFeedbackTrigger] = useState(null);
@@ -1642,6 +1661,21 @@ export default function GradingPage() {
 
     // Parent note prompt state
     const [showParentNote, setShowParentNote] = useState(false);
+
+    // Escape closes whichever overlay/dialog is open (keyboard accessibility).
+    useEffect(() => {
+      const anyOpen = showFeedbackPrompt || showReferralPrompt || showParentNote || enlargedRubricPage;
+      if (!anyOpen) return;
+      const onKey = (e) => {
+        if (e.key !== "Escape") return;
+        if (enlargedRubricPage) setEnlargedRubricPage(null);
+        else if (showFeedbackPrompt) dismissFeedbackPrompt();
+        else if (showReferralPrompt) { setShowReferralPrompt(false); setReferralDone(false); }
+        else if (showParentNote) setShowParentNote(false);
+      };
+      window.addEventListener("keydown", onKey);
+      return () => window.removeEventListener("keydown", onKey);
+    }, [showFeedbackPrompt, showReferralPrompt, showParentNote, enlargedRubricPage]);
 
     // Feature tour state
     const [tourStep, setTourStep] = useState(-1); // -1 = inactive
@@ -2157,6 +2191,7 @@ export default function GradingPage() {
       if (!msg) return;
 
       setFeedbackSending(true);
+      setFeedbackError("");
       try {
         const url = "/api/feedback"; // or `${backendBase}/api/feedback` if needed
         const res = await fetch(url, {
@@ -2194,7 +2229,7 @@ export default function GradingPage() {
         setFeedbackSent(true);
       } catch (e) {
         console.error("Feedback failed:", e);
-        // show toast / inline error if you have it
+        setFeedbackError("Couldn't send your feedback. Please try again.");
       } finally {
         setFeedbackSending(false);
       }
@@ -2498,6 +2533,7 @@ export default function GradingPage() {
       }
 
       setSubmitting(true);
+      const myReqId = ++submitReqIdRef.current;
 
       try {
         // Priority: manual override > sticky captured > default
@@ -2634,16 +2670,6 @@ export default function GradingPage() {
           },
         };
 
-        console.log("SUBMIT DEBUG", {
-          inputMode,
-          photosToUseLen: photosToUse.length,
-          workLen: trimmedWork.length,
-          compression: profileToUse,
-          submitKey,
-          isRetry,
-          nextAttempt,
-        });
-
         const res = await fetch(gradingUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2651,6 +2677,9 @@ export default function GradingPage() {
         });
 
         const text = await res.text();
+        // A newer grade started while this one was in flight — drop this result
+        // so the stale response can't clobber the newer one or publish wrongly.
+        if (myReqId !== submitReqIdRef.current) return;
         setServerText(text);
         setCopied(false);
 
@@ -2848,6 +2877,8 @@ export default function GradingPage() {
           throw new Error(msg);
         }
       } catch (err) {
+        // Ignore errors from a superseded request — a newer grade owns the UI now.
+        if (myReqId !== submitReqIdRef.current) return;
         setCopyEnabled(false);
         console.error("Submit error:", err);
         const msg = err?.message || "";
@@ -2861,7 +2892,8 @@ export default function GradingPage() {
             : msg || "Something went wrong. Please try again."
         );
       } finally {
-        setSubmitting(false);
+        // Only the most recent request controls the submitting/spinner state.
+        if (myReqId === submitReqIdRef.current) setSubmitting(false);
       }
     }
 
@@ -3353,7 +3385,9 @@ export default function GradingPage() {
               ${htmlAssignmentLinks.map(l => `
                 <li>
                   ${escapeHtml(l?.label || "Evidence")}${
-                    l?.url ? `: <a href="${escapeHtml(l.url)}" target="_blank" rel="noreferrer">${escapeHtml(l.url)}</a>` : ""
+                    safeHttpUrl(l?.url)
+                      ? `: <a href="${escapeHtml(safeHttpUrl(l.url))}" target="_blank" rel="noreferrer">${escapeHtml(l.url)}</a>`
+                      : (l?.url ? `: ${escapeHtml(l.url)}` : "")
                   }
                 </li>
               `).join("")}
@@ -3437,9 +3471,9 @@ export default function GradingPage() {
             <ul style="margin:0 0 0 18px; padding:0;">
               ${htmlLinks.map(img => `
                 <li>
-                  <a href="${escapeHtml(img.url)}" target="_blank" rel="noreferrer">
-                    View photo ${escapeHtml(img.index)}
-                  </a>
+                  ${safeHttpUrl(img.url)
+                    ? `<a href="${escapeHtml(safeHttpUrl(img.url))}" target="_blank" rel="noreferrer">View photo ${escapeHtml(img.index)}</a>`
+                    : `Photo ${escapeHtml(img.index)}`}
                 </li>
               `).join("")}
             </ul>
@@ -4064,7 +4098,20 @@ export default function GradingPage() {
                       ...styles.thumb,
                       ...(accent ? { border: `2.5px solid ${accent}`, boxShadow: `0 0 8px ${accent}55` } : {}),
                     }}>
-                      <div style={{ position: "relative", cursor: "pointer" }} onClick={() => !submitting && cyclePhotoTag(p.id)} title={tapTitle}>
+                      <div
+                        style={{ position: "relative", cursor: "pointer" }}
+                        onClick={() => !submitting && cyclePhotoTag(p.id)}
+                        onKeyDown={(e) => {
+                          if ((e.key === "Enter" || e.key === " ") && !submitting) {
+                            e.preventDefault();
+                            cyclePhotoTag(p.id);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Photo ${idx + 1}, ${isKey ? "tagged as answer key" : isRubric ? "tagged as rubric" : "untagged"}. ${tapTitle}`}
+                        title={tapTitle}
+                      >
                         <img src={p.dataUrl} alt={`Captured ${idx + 1}`} style={styles.thumbImg} />
                         {tag && (
                           <div style={{
@@ -5591,9 +5638,9 @@ export default function GradingPage() {
                           {getAssignmentLinksFromAssessment(assessment).map((l, i) => (
                             <li key={i}>
                               {l?.label ? <b>{l.label}:</b> : <b>Link:</b>}{" "}
-                              {l?.url ? (
+                              {safeHttpUrl(l?.url) ? (
                                 <a
-                                  href={l.url}
+                                  href={safeHttpUrl(l.url)}
                                   target="_blank"
                                   rel="noreferrer"
                                   onClick={(e) => e.stopPropagation()}
@@ -5601,7 +5648,7 @@ export default function GradingPage() {
                                   {l.url}
                                 </a>
                               ) : (
-                                <span style={{ opacity: 0.75 }}>(no url)</span>
+                                <span style={{ opacity: 0.75 }}>{l?.url ? l.url : "(no url)"}</span>
                               )}
                             </li>
                           ))}
@@ -5629,14 +5676,18 @@ export default function GradingPage() {
                       <ul style={styles.gradingUl}>
                         {getAssignmentImagesFromAssessment(assessment).map((img) => (
                           <li key={img.url}>
-                            <a
-                              href={img.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              View photo {img.index}
-                            </a>
+                            {safeHttpUrl(img.url) ? (
+                              <a
+                                href={safeHttpUrl(img.url)}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                View photo {img.index}
+                              </a>
+                            ) : (
+                              <span style={{ opacity: 0.75 }}>Photo {img.index}</span>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -5787,6 +5838,12 @@ export default function GradingPage() {
                   {feedbackSending ? "Sending…" : "Send"}
                 </button>
               </div>
+
+              {feedbackError ? (
+                <div role="alert" style={{ marginTop: 8, color: "#b91c1c", fontSize: 13 }}>
+                  {feedbackError}
+                </div>
+              ) : null}
 
               <div style={feedbackStyles.finePrint}>
                 This takes 10 seconds and helps me improve the tool for teachers.

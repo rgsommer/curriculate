@@ -667,7 +667,10 @@ export function sessionItemToResult(item, index) {
  */
 export function buildSessionEdsbyCsv(results, assessmentName = "Curriculate Grade", rosterClasses = []) {
   const escCsv = (v) => {
-    const s = String(v ?? "");
+    let s = String(v ?? "");
+    // Neutralize spreadsheet formula injection: a field starting with = + - @
+    // (or tab/CR) is treated as a formula by Excel/Sheets/Edsby. Prefix with '.
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
     return s.includes(",") || s.includes('"') || s.includes("\n")
       ? `"${s.replace(/"/g, '""')}"` : s;
   };

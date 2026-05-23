@@ -322,6 +322,7 @@ async function fetchWithRetry(url, options, { retries = 2, baseDelay = 2000 } = 
       const res = await fetch(url, options);
       return res;
     } catch (err) {
+      if (err?.name === "AbortError") throw err; // user cancelled — don't retry
       if (attempt >= retries) throw err;
       const delay = baseDelay * Math.pow(2, attempt); // 2s, 4s
       console.warn(`[batch] fetch attempt ${attempt + 1} failed, retrying in ${delay}ms:`, err.message);
@@ -573,6 +574,9 @@ export default function BatchGrading({
   const pdfDocRef = useRef(null);
   const imageDataRef = useRef([]); // For image-mode batches (JPEG/PNG uploads)
   const abortRef = useRef(false);
+  // Controller to actually cancel in-flight grade fetches when the user hits Stop
+  // (the abortRef flag only stops scheduling the next batch).
+  const abortControllerRef = useRef(null);
   const fileInputRef = useRef(null);
 
   // ---------- Edsby Class Roster (state declared early — used in grading callback) ----------
@@ -923,7 +927,11 @@ export default function BatchGrading({
 
   // ---------- Precision mode: merge N results into one via median scoring ----------
   function mergeMultiPassResults(passes) {
-    if (!passes || passes.length === 0) return passes[0];
+    if (!passes || passes.length === 0) {
+      // No passes ran (e.g. aborted before the first pass completed) — return a
+      // valid error entry instead of undefined, which would crash the results grid.
+      return { error: "Grading was cancelled before completing." };
+    }
     if (passes.length === 1) return passes[0];
 
     // Filter out errored passes
@@ -1016,7 +1024,11 @@ export default function BatchGrading({
     if ((!doc && imgArr.length === 0) || !gradingUrl) return;
 
     abortRef.current = false;
+    abortControllerRef.current = new AbortController();
     setGrading(true);
+    // Wrap the whole run so an unexpected throw (or early return) can never leave
+    // the UI stuck in the "grading" state — finally always clears it.
+    try {
     setResults([]);
     setStudentBias({});
     setClassSummary(null);
@@ -1212,6 +1224,7 @@ export default function BatchGrading({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
+          signal: abortControllerRef.current?.signal,
         });
 
         const data = await res.json();
@@ -1366,12 +1379,22 @@ export default function BatchGrading({
           `Grading student ${start + offset + 1} of ${total}`
         )
       );
-      const settled = await Promise.all(promises);
+      // allSettled: an unexpected throw in one student's grade must not discard
+      // the whole batch (which would lose every already-graded student).
+      const settled = await Promise.allSettled(promises);
 
-      for (const entry of settled) {
-        if (abortRef.current) break;
-        batchResults.push(entry);
-      }
+      settled.forEach((outcome, offset) => {
+        if (outcome.status === "fulfilled") {
+          batchResults.push(outcome.value);
+        } else {
+          console.error(`[batch] student ${start + offset + 1} grade threw:`, outcome.reason);
+          batchResults.push({
+            studentIndex: start + offset,
+            studentName: `Student ${start + offset + 1}`,
+            error: "Grading failed for this student. Re-grade to retry.",
+          });
+        }
+      });
 
       setResults([...batchResults]);
     }
@@ -2068,7 +2091,6 @@ export default function BatchGrading({
     }
 
     setProgress({ done: total, total, current: "Done!" });
-    setGrading(false);
 
     // Track this filename as processed (persisted in localStorage)
     if (pdfName) {
@@ -2103,6 +2125,9 @@ export default function BatchGrading({
         setScanTipVisible(true);
       }
     } catch {}
+    } finally {
+      setGrading(false);
+    }
   }, [
     studentCount,
     pageCount,
@@ -2144,18 +2169,25 @@ export default function BatchGrading({
     setRegradingIndex(resultIndex);
 
     try {
-      // Find the page group for this student
-      const groups = detectedGroups || (() => {
-        const g = [];
+      // Find the page group for this student.
+      let groups = detectedGroups || (isTap ? tapGroups : null);
+      if (!groups) {
+        // In auto/tap mode, pagesPerStudent is non-numeric ("auto"/"tap"), so we
+        // CANNOT reconstruct multi-page groups by assuming 1 page each — doing so
+        // would regrade the wrong pages. Require the real groups instead.
+        if (isAuto || isTap) {
+          throw new Error("Page groups unavailable — please re-run the batch before re-grading.");
+        }
+        // Fixed pages-per-student mode: reconstruct deterministically.
         const pps = Number(pagesPerStudent) || 1;
         const firstPage = (Number(answerKeyPages) || 0) + 1;
+        groups = [];
         for (let i = 0; i < results.length; i++) {
           const start = firstPage + i * pps;
           const end = Math.min(start + pps - 1, pageCount);
-          g.push({ startPage: start, endPage: end, pages: Array.from({ length: end - start + 1 }, (_, k) => start + k) });
+          groups.push({ startPage: start, endPage: end, pages: Array.from({ length: end - start + 1 }, (_, k) => start + k) });
         }
-        return g;
-      })();
+      }
       const groupIdx = resultIndex - 1; // index is 1-based
       const group = groups[groupIdx];
       if (!group) throw new Error("Cannot find page group for this student");
@@ -2340,7 +2372,9 @@ export default function BatchGrading({
     if (!results.length) return;
 
     const escCsv = (v) => {
-      const s = String(v ?? "");
+      let s = String(v ?? "");
+      // Neutralize spreadsheet formula injection (=, +, -, @, tab, CR).
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
       if (s.includes(",") || s.includes('"') || s.includes("\n")) {
         return `"${s.replace(/"/g, '""')}"`;
       }
@@ -2474,11 +2508,15 @@ export default function BatchGrading({
       return "#dc2626";
     };
 
+    // HTML-escape any model/teacher/filename-derived text before it goes into
+    // the email body (effectiveTitle comes from the PDF filename or AI output).
+    const escHtml = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
     let html = `<div style="font-family: -apple-system, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 640px; color: #1e293b;">`;
 
     // Header
     html += `<h2 style="margin: 0 0 4px; font-size: 20px; color: #0f172a;">Pulse Grading Batch Results</h2>`;
-    html += `<p style="margin: 0 0 16px; font-size: 14px; color: #64748b;">${effectiveTitle || "Uploaded batch"} &mdash; ${results.length} student${results.length !== 1 ? "s" : ""} graded</p>`;
+    html += `<p style="margin: 0 0 16px; font-size: 14px; color: #64748b;">${escHtml(effectiveTitle || "Uploaded batch")} &mdash; ${results.length} student${results.length !== 1 ? "s" : ""} graded</p>`;
 
     // Rubric note (if teacher typed one in)
     const rubricNote = (rubricOverride || "").trim();
@@ -2673,7 +2711,9 @@ export default function BatchGrading({
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const headers = ["Student ID", "First Name", "Last Name", "Assessment Name", "Date", "Grade", "Out Of", "Comment"];
     const escCsv = (v) => {
-      const s = String(v ?? "");
+      let s = String(v ?? "");
+      // Neutralize spreadsheet formula injection (=, +, -, @, tab, CR).
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
       return s.includes(",") || s.includes('"') || s.includes("\n")
         ? `"${s.replace(/"/g, '""')}"` : s;
     };
@@ -3633,6 +3673,16 @@ export default function BatchGrading({
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div
                   onClick={() => setPrecisionMode(!precisionMode)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setPrecisionMode((v) => !v);
+                    }
+                  }}
+                  role="switch"
+                  aria-checked={precisionMode}
+                  aria-label="Precision Mode"
+                  tabIndex={0}
                   style={{
                     width: 40,
                     height: 22,
@@ -3929,8 +3979,15 @@ export default function BatchGrading({
       {/* Progress */}
       {grading && (
         <div style={batchStyles.progressSection}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>{progress.current}{rotationMsg ? ` — ${rotationMsg}` : ""}</div>
-          <div style={batchStyles.progressBar}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }} aria-live="polite">{progress.current}{rotationMsg ? ` — ${rotationMsg}` : ""}</div>
+          <div
+            style={batchStyles.progressBar}
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={progress.total || 0}
+            aria-valuenow={progress.done || 0}
+            aria-label="Batch grading progress"
+          >
             <div
               style={{
                 ...batchStyles.progressFill,
@@ -3942,7 +3999,7 @@ export default function BatchGrading({
             {progress.done} / {progress.total} complete
           </div>
           <button
-            onClick={() => { abortRef.current = true; }}
+            onClick={() => { abortRef.current = true; abortControllerRef.current?.abort(); }}
             style={{ ...batchStyles.ghostBtn, marginTop: 8 }}
             type="button"
           >
@@ -4065,7 +4122,9 @@ export default function BatchGrading({
                     const b64 = await buildResultsPdf(results, opts);
                     if (!b64) { alert("No results available."); return; }
                     const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
-                    window.open(URL.createObjectURL(blob), "_blank");
+                    const blobUrl = URL.createObjectURL(blob);
+                    window.open(blobUrl, "_blank");
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
                     setReportsPrinted(true);
                   } catch (e) {
                     console.error("[batch] PDF report failed:", e?.message || e);
@@ -4092,7 +4151,9 @@ export default function BatchGrading({
                     const b64 = await buildStripsPdf(results, opts);
                     if (!b64) { alert("No results available."); return; }
                     const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
-                    window.open(URL.createObjectURL(blob), "_blank");
+                    const blobUrl = URL.createObjectURL(blob);
+                    window.open(blobUrl, "_blank");
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
                     setStripsPrinted(true);
                   } catch (e) {
                     console.error("[batch] PDF strips failed:", e?.message || e);

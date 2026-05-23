@@ -14,7 +14,14 @@ export const FREEMIUM = {
   ACTIVATION_DATE: new Date("2026-11-30T00:00:00Z"),
 
   // ── Free-tier limits ──────────────────────────────────────────────
-  FREE_MONTHLY_LIMIT: 10,           // max grading submissions per month (free tier)
+  FREE_MONTHLY_LIMIT: 10,           // max grading submissions per month per session (free tier)
+  // Per-IP monthly abuse ceiling. The free limit above is per browser session
+  // (anyone can clear it / use another device), so it can't be the only gate or
+  // it's trivially reset. This much-higher IP ceiling stops a single client from
+  // spinning up unlimited sessions to run up OpenAI costs, while staying high
+  // enough that a whole school behind one NAT'd IP can work normally.
+  // ~30 teachers × 10 free grades = 300, so 600 gives real schools generous room.
+  IP_MONTHLY_LIMIT: 600,
   FREE_VOICE: "warm",               // the one voice available for free
   FREE_MODES: ["paste"],            // input modes available for free
 
@@ -96,4 +103,21 @@ export function canSubmitGrading(usedThisMonth, userTier) {
     allowed: true,
     remaining: FREEMIUM.FREE_MONTHLY_LIMIT - usedThisMonth,
   };
+}
+
+/**
+ * Per-IP abuse ceiling check. Independent of the per-session free limit: this
+ * exists only to stop a single network from running up unbounded paid AI calls
+ * by cycling sessionIds. Returns { allowed, reason }.
+ * @param {number} ipUsedThisMonth - submissions from this IP this billing period
+ */
+export function canSubmitGradingByIp(ipUsedThisMonth) {
+  if (!isFreemiumActive()) return { allowed: true };
+  if (ipUsedThisMonth >= FREEMIUM.IP_MONTHLY_LIMIT) {
+    return {
+      allowed: false,
+      reason: "We're seeing unusually high grading activity from your network. Please try again later, or upgrade to Plus for unlimited grading.",
+    };
+  }
+  return { allowed: true };
 }

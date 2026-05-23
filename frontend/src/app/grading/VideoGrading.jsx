@@ -107,7 +107,14 @@ export default function VideoGrading({
   const [copiedRef, setCopiedRef] = useState(false);
   const fileInputRef = useRef(null);
   const abortRef = useRef(false);
+  const abortControllerRef = useRef(null);
+  const previewUrlRef = useRef(null);
   const progressTimerRef = useRef(null);
+
+  // Revoke the preview object URL on unmount to avoid leaking it for the page lifetime.
+  useEffect(() => () => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+  }, []);
 
   const backendBase = gradingUrl?.replace(/\/grading$/, "") || process.env.NEXT_PUBLIC_BACKEND_URL || "";
   const resultsUrl = backendBase ? `${backendBase.replace(/\/$/, "")}/results` : "";
@@ -129,8 +136,10 @@ export default function VideoGrading({
     setError("");
     setResult(null);
 
-    // Generate preview URL
+    // Generate preview URL (revoking any previous one first).
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
     const url = URL.createObjectURL(f);
+    previewUrlRef.current = url;
     setPreview(url);
   }, []);
 
@@ -226,6 +235,7 @@ export default function VideoGrading({
     setError("");
     setResult(null);
     abortRef.current = false;
+    abortControllerRef.current = new AbortController();
     startProgressTimer();
 
     const effectiveBias = biasOverride != null ? biasOverride : strictnessBias;
@@ -247,6 +257,7 @@ export default function VideoGrading({
       const resp = await fetch(`${backendBase}/grading/video`, {
         method: "POST",
         body: formData,
+        signal: abortControllerRef.current?.signal,
       });
 
       if (!resp.ok) {
@@ -283,7 +294,11 @@ export default function VideoGrading({
         }
       }
     } catch (err) {
-      setError(err.message || "Video grading failed.");
+      if (err?.name === "AbortError") {
+        setError("");
+      } else {
+        setError(err.message || "Video grading failed.");
+      }
     } finally {
       stopProgressTimer();
       setSubmitting(false);
@@ -370,6 +385,7 @@ export default function VideoGrading({
   }
 
   const clearAll = useCallback(() => {
+    if (previewUrlRef.current) { URL.revokeObjectURL(previewUrlRef.current); previewUrlRef.current = null; }
     setFile(null);
     setPreview(null);
     setResult(null);
@@ -798,10 +814,30 @@ export default function VideoGrading({
             {submitting ? progress || "Processing..." : "Grade Video"}
           </button>
 
+          {submitting && (
+            <button
+              type="button"
+              onClick={() => { abortRef.current = true; abortControllerRef.current?.abort(); }}
+              style={{
+                width: "100%", padding: "10px 20px", borderRadius: 10,
+                border: "1px solid #cbd5e1", background: "#fff", color: "#475569",
+                fontSize: 14, fontWeight: 700, cursor: "pointer", marginBottom: 8,
+              }}
+            >
+              Cancel
+            </button>
+          )}
+
           {/* Progress bar */}
           {submitting && (
             <div style={{ marginBottom: 12 }}>
-              <div style={{
+              <div
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(progressPct)}
+                aria-label="Video grading progress"
+                style={{
                 width: "100%", height: 8, borderRadius: 4,
                 background: "#e2e8f0", overflow: "hidden",
               }}>
