@@ -67,6 +67,7 @@ import CurrentEventsTask from "./types/CurrentEventsTask";
 import CareersTask from "./types/CareersTask";
 import HoleInOneTask from "./types/HoleInOneTask";
 import LegendsTask from "./types/LegendsTask";
+import TruthOrDareTask from "./types/TruthOrDareTask";
 import TriviaTask from "./types/TriviaTask";
 import SpinnerTask from "./types/SpinnerTask";
 import TeamSelfieTask from "./types/TeamSelfieTask";
@@ -3338,6 +3339,23 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
           task={tp}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.TRUTH_OR_DARE:
+    case "truth-or-dare": {
+      content = (
+        <TruthOrDareTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+          roomCode={roomCode}
+          teamId={derivedTeamId}
+          taskIndex={taskIndex}
+          practiceMode={practiceMode}
         />
       );
       break;

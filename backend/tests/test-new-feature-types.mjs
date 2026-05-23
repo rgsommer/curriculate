@@ -421,6 +421,129 @@ section("11. LevelUp — eligibility, candidate-pick, MAX scoring");
   assert(cand2 === null || cand2.taskType !== "sequence", "already-upgraded type skipped");
 }
 
+/* ──────────────── N. TRUTH OR DARE ──────────────── */
+section("N. Truth or Dare — type plumbing + safety + library + selector");
+{
+  // N.1 — meta coverage
+  const meta = TASK_TYPE_META["truth-or-dare"];
+  const blooms = TASK_BLOOMS_MAP["truth-or-dare"];
+  assert(meta && meta.implemented === true,          "truth-or-dare: meta.implemented = true");
+  assert(Array.isArray(blooms) && blooms.length >= 1, `truth-or-dare: has Bloom's mapping (${blooms})`);
+
+  // N.2 — sanitize + validate
+  const t = sanitizeTaskShapeByType("truth-or-dare", {
+    taskType: "truth-or-dare",
+    title: "T-or-D — Science",
+    prompt: "Truth or dare?",
+    subject: "science",
+    unitName: "ecosystems",
+    gradeLevel: 6,
+    totalRounds: 6,
+    physicalIntensityMax: 2,
+    socialIntensityMax: 2,
+    movementAllowed: true,
+    noiseAllowed: true,
+    tierProgression: "linear",
+    judgmentMode: "mixed",
+    seedChallenges: [
+      { id: "s1", type: "truth", tier: "sprout", category: "recall", prompt: "Name a producer in a forest food web.", timeSeconds: 20, judgmentMode: "teacher", rewardTier: "small" },
+      { id: "s2", type: "dare",  tier: "sprout", category: "mime",   prompt: "Mime photosynthesis for 20 seconds.",   timeSeconds: 30, judgmentMode: "class-vote", rewardTier: "medium" },
+    ],
+  });
+  const tN = normalizeTaskByType("truth-or-dare", t);
+  const tV = validateTaskByType("truth-or-dare", tN);
+  assert(tV.ok, `truth-or-dare well-formed validates (errors: ${(tV.errors||[]).join("|")})`);
+
+  // N.3 — safety pipeline catches blacklisted content
+  const { moderateChallengeSync } = await import("../services/truthOrDare/moderation.js");
+  const bad = moderateChallengeSync(
+    {
+      type: "dare",
+      tier: "sprout",
+      category: "mime",
+      prompt: "Tell us about your crush in the class.",
+      teacherHint: "",
+      physicalIntensity: 0,
+      socialIntensity: 1,
+      noiseExpected: 0,
+    },
+    { caps: { physicalIntensityMax: 2, socialIntensityMax: 2, movementAllowed: true, noiseAllowed: true } },
+  );
+  assert(!bad.ok, "moderation rejects 'crush' content");
+  assert(bad.flaggedBy === "phrase-blacklist" || bad.flaggedBy === "pattern-blacklist", `flaggedBy is a blacklist layer (was ${bad.flaggedBy})`);
+
+  // Intensity cap enforcement
+  const cap = moderateChallengeSync(
+    {
+      type: "dare", tier: "stem", category: "mime",
+      prompt: "Climb up onto your desk and spin three times.",
+      physicalIntensity: 3, socialIntensity: 1, noiseExpected: 2,
+    },
+    { caps: { physicalIntensityMax: 1, socialIntensityMax: 2, movementAllowed: false, noiseAllowed: true } },
+  );
+  assert(!cap.ok, "moderation rejects physicalIntensity > cap or movementAllowed=false");
+
+  // Clean content passes
+  const good = moderateChallengeSync(
+    {
+      type: "truth", tier: "sprout", category: "recall",
+      prompt: "Tell us one new fact you learned about photosynthesis today.",
+      teacherHint: "Any honest answer earns the points.",
+      physicalIntensity: 0, socialIntensity: 1, noiseExpected: 0,
+    },
+    { caps: { physicalIntensityMax: 2, socialIntensityMax: 2, movementAllowed: true, noiseAllowed: true } },
+  );
+  assert(good.ok, `clean recall challenge passes moderation (reasons: ${good.reasons?.join("|")})`);
+
+  // N.4 — curated library returns a match for science / grade 6
+  const { findCuratedChallenge, librarySize } = await import("../services/truthOrDare/library.js");
+  assert(librarySize() > 0, `evergreen library is non-empty (size=${librarySize()})`);
+  const lib = findCuratedChallenge({ subject: "science", gradeLevel: 6, tier: "sprout", kindHint: "either" });
+  assert(lib && lib.id && lib.prompt, "library returns a science / grade-6 entry");
+
+  // N.5 — selector cooldown gate
+  const { selectNextTeam, applyCooldown, escalateTier, demoteTier } = await import("../services/truthOrDare/selector.js");
+  let cd = new Map();
+  cd = applyCooldown(cd, "TEAM-A", 0, 2);
+  const pick = selectNextTeam(
+    [
+      { teamId: "TEAM-A", playerName: "Alex", score: 5 },
+      { teamId: "TEAM-B", playerName: "Bea",  score: 5 },
+    ],
+    { currentRound: 1, cooldownsBy: cd },
+  );
+  assert(pick.teamId === "TEAM-B", `cooldown gates team A out at round 1 (got ${pick.teamId})`);
+
+  // Tier escalation
+  assert(escalateTier("sprout", 3) === "stem", "3 successes escalate sprout → stem");
+  assert(escalateTier("stem", 5)   === "big",  "5 successes escalate stem → big");
+  assert(demoteTier("big") === "stem", "demote big → stem");
+  assert(demoteTier("sprout") === "sprout", "demote sprout floors at sprout");
+
+  // N.6 — recentChallenges dedupe
+  const rc = await import("../services/truthOrDare/recentChallenges.js");
+  rc.clearRoom("TEST-ROOM");
+  rc.rememberChallenge("TEST-ROOM", { id: "ch-1", prompt: "Tell us a fun fact." });
+  assert(rc.hasSeenChallenge("TEST-ROOM", { prompt: "tell us a fun fact." }), "dedupe matches normalized text");
+  assert(rc.hasSeenChallenge("TEST-ROOM", { id: "ch-1" }), "dedupe matches by id");
+  rc.clearRoom("TEST-ROOM");
+  assert(!rc.hasSeenChallenge("TEST-ROOM", { id: "ch-1" }), "clearRoom resets state");
+
+  // N.7 — generator returns library fallback when API key missing
+  // (skipLibrary=false: even without OPENAI_API_KEY this should return a normalized challenge from the library)
+  const { generateChallenge } = await import("../services/truthOrDare/generator.js");
+  const result = await generateChallenge({
+    roomCode: "TEST-GEN",
+    subject: "science",
+    unitName: "ecosystems",
+    gradeLevel: 6,
+    tier: "sprout",
+    kindHint: "either",
+  });
+  assert(result && result.challenge && result.challenge.prompt, "generator returns a challenge (fallback path acceptable)");
+  assert(["ai", "library", "fallback"].includes(result.challenge.sourceProvenance), `sourceProvenance is valid (${result.challenge.sourceProvenance})`);
+}
+
 /* ──────────────── SUMMARY ──────────────── */
 console.log(`\n────────────────────────────`);
 console.log(`PASSED: ${pass}   FAILED: ${fail}`);

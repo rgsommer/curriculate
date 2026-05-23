@@ -7751,6 +7751,275 @@ socket.on("whatAmI:requestState", (payload = {}, ack) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+//  Truth or Dare sockets
+// ---------------------------------------------------------------------------
+// See TRUTH_OR_DARE_PLAN.md §8 for the full event taxonomy. The orchestrator
+// lives in backend/services/truthOrDare/orchestrator.js and is keyed per
+// roomCode. We dynamic-import the module to avoid top-of-file circular hits.
+
+socket.on("tod:teacher:start", async (payload = {}, ack) => {
+  try {
+    const { roomCode, mode = "individual", configOverrides = {}, taskIndex = null, totalRounds = 8 } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) { if (typeof ack === "function") ack({ ok: false, error: "Room not found" }); return; }
+
+    const { createOrchestrator } = await import("./services/truthOrDare/orchestrator.js");
+    const TruthOrDareSession = (await import("./models/TruthOrDareSession.js")).default;
+    const TruthOrDareRound = (await import("./models/TruthOrDareRound.js")).default;
+
+    // Build a session-config snapshot
+    const config = {
+      physicalIntensityMax: 2,
+      socialIntensityMax: 2,
+      movementAllowed: true,
+      noiseAllowed: true,
+      safeClassroomMode: false,
+      cameraEnabled: false,
+      micEnabled: true,
+      injectionFrequencyMin: 10,
+      maxInjectionsPerSession: 3,
+      gradeBand: "",
+      worldview: "general",
+      subject: "general",
+      unitName: "current topic",
+      gradeLevel: 7,
+      tierProgression: "linear",
+      judgmentMode: "teacher",
+      ...configOverrides,
+    };
+
+    // Persist session row
+    let sessionDoc = null;
+    try {
+      sessionDoc = await TruthOrDareSession.create({
+        roomCode: code,
+        tasksetId: room.taskSetId || null,
+        taskIndex: Number.isFinite(taskIndex) ? Number(taskIndex) : null,
+        mode,
+        config,
+        totalRounds,
+      });
+    } catch (e) {
+      console.warn("[tod:teacher:start] DB create failed:", e?.message);
+    }
+
+    // Snapshot teams from the room
+    const teams = Array.isArray(room.teams) ? room.teams.map((t) => ({
+      teamId: t.teamId || t.id,
+      playerName: t.name || t.playerName || "",
+      score: Number(t.score) || 0,
+    })) : [];
+
+    const orch = createOrchestrator({
+      roomCode: code,
+      sessionId: sessionDoc?._id?.toString() || null,
+      mode,
+      config,
+      teams,
+      totalRounds,
+      emit: (event, body) => {
+        try { io.to(code).emit(event, body); } catch {}
+      },
+      persist: async ({ sessionId, lastRound }) => {
+        if (!sessionId || !lastRound) return;
+        try {
+          // Append a round row
+          const roundDoc = await TruthOrDareRound.create({
+            sessionId,
+            roomCode: code,
+            roundIndex: lastRound.roundIndex,
+            selectedTeamId: lastRound.teamId,
+            selectedPlayerName: lastRound.playerName,
+            promptHash: (await import("./services/truthOrDare/orchestrator.js")).hashPrompt(lastRound.prompt),
+            choice: lastRound.choice,
+            challenge: { type: "truth", tier: "sprout", prompt: lastRound.prompt },
+            verdict: lastRound.verdict,
+            verdictBy: lastRound.verdictBy,
+            pointsAwarded: lastRound.pointsAwarded,
+            coinsAwarded: lastRound.coinsAwarded,
+            specialItem: lastRound.specialItem || "",
+          });
+          await TruthOrDareSession.findByIdAndUpdate(sessionId, {
+            $push: { rounds: roundDoc._id },
+            $set: { totalRounds: lastRound.roundIndex + 1 },
+          });
+        } catch (e) {
+          console.warn("[tod:persist] round write failed:", e?.message);
+        }
+      },
+    });
+
+    await orch.start();
+    if (typeof ack === "function") ack({ ok: true, sessionId: sessionDoc?._id?.toString() || null });
+  } catch (e) {
+    console.error("[tod:teacher:start] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+socket.on("tod:teacher:peek-decision", async (payload = {}, ack) => {
+  try {
+    const { roomCode, action, newText } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const { getOrchestrator } = await import("./services/truthOrDare/orchestrator.js");
+    const o = getOrchestrator(code);
+    if (!o) { if (typeof ack === "function") ack({ ok: false, error: "No active T-or-D session" }); return; }
+    const ok = o.teacherPeekDecision(action, newText || "");
+    if (typeof ack === "function") ack({ ok });
+  } catch (e) { if (typeof ack === "function") ack({ ok: false, error: "Server error" }); }
+});
+
+socket.on("tod:teacher:override", async (payload = {}, ack) => {
+  try {
+    const { roomCode, action, teamId } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const { getOrchestrator } = await import("./services/truthOrDare/orchestrator.js");
+    const o = getOrchestrator(code);
+    if (!o) { if (typeof ack === "function") ack({ ok: false, error: "No active T-or-D session" }); return; }
+    let ok;
+    if (action === "force-select" && teamId) ok = o.teacherForceSelect(teamId);
+    else ok = o.teacherOverride(action);
+    if (typeof ack === "function") ack({ ok });
+  } catch (e) { if (typeof ack === "function") ack({ ok: false, error: "Server error" }); }
+});
+
+socket.on("tod:teacher:inject", async (payload = {}, ack) => {
+  try {
+    const { roomCode, challenge } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    if (!challenge || typeof challenge.prompt !== "string" || !challenge.prompt.trim()) {
+      if (typeof ack === "function") ack({ ok: false, error: "challenge.prompt required" });
+      return;
+    }
+    // Run the safety pipeline on the manual injection too
+    const { moderateChallenge } = await import("./services/truthOrDare/moderation.js");
+    const mod = await moderateChallenge(challenge, { caps: {} });
+    if (!mod.ok) {
+      if (typeof ack === "function") ack({ ok: false, error: "Challenge blocked by safety filter", reasons: mod.reasons });
+      return;
+    }
+    const { getOrchestrator } = await import("./services/truthOrDare/orchestrator.js");
+    const o = getOrchestrator(code);
+    if (!o) { if (typeof ack === "function") ack({ ok: false, error: "No active T-or-D session" }); return; }
+    const ok = o.teacherInject(challenge);
+    if (typeof ack === "function") ack({ ok });
+  } catch (e) { if (typeof ack === "function") ack({ ok: false, error: "Server error" }); }
+});
+
+socket.on("tod:teacher:config", async (payload = {}, ack) => {
+  try {
+    const { roomCode, ...delta } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const { getOrchestrator } = await import("./services/truthOrDare/orchestrator.js");
+    const o = getOrchestrator(code);
+    if (!o) { if (typeof ack === "function") ack({ ok: false, error: "No active T-or-D session" }); return; }
+    o.updateConfig(delta);
+    if (typeof ack === "function") ack({ ok: true });
+  } catch (e) { if (typeof ack === "function") ack({ ok: false, error: "Server error" }); }
+});
+
+socket.on("tod:teacher:end", async (payload = {}, ack) => {
+  try {
+    const { roomCode } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const { getOrchestrator, destroyOrchestrator } = await import("./services/truthOrDare/orchestrator.js");
+    const o = getOrchestrator(code);
+    if (o) o.stop("teacher-ended");
+    destroyOrchestrator(code);
+    if (typeof ack === "function") ack({ ok: true });
+  } catch (e) { if (typeof ack === "function") ack({ ok: false, error: "Server error" }); }
+});
+
+socket.on("tod:player:choice", async (payload = {}, ack) => {
+  try {
+    const { roomCode, choice, teamId } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const { getOrchestrator } = await import("./services/truthOrDare/orchestrator.js");
+    const o = getOrchestrator(code);
+    if (!o) { if (typeof ack === "function") ack({ ok: false, error: "No active T-or-D session" }); return; }
+    if (teamId && teamId !== o.selectedTeamId) {
+      if (typeof ack === "function") ack({ ok: false, error: "Not your turn" });
+      return;
+    }
+    const ok = o.setPlayerChoice(choice);
+    if (typeof ack === "function") ack({ ok });
+  } catch (e) { if (typeof ack === "function") ack({ ok: false, error: "Server error" }); }
+});
+
+socket.on("tod:player:done", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const { getOrchestrator } = await import("./services/truthOrDare/orchestrator.js");
+    const o = getOrchestrator(code);
+    if (!o) { if (typeof ack === "function") ack({ ok: false, error: "No active T-or-D session" }); return; }
+    if (teamId && teamId !== o.selectedTeamId) {
+      if (typeof ack === "function") ack({ ok: false, error: "Not your turn" });
+      return;
+    }
+    const ok = o.setPlayerDone();
+    if (typeof ack === "function") ack({ ok });
+  } catch (e) { if (typeof ack === "function") ack({ ok: false, error: "Server error" }); }
+});
+
+socket.on("tod:audience:react", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId, emoji } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const { getOrchestrator } = await import("./services/truthOrDare/orchestrator.js");
+    const o = getOrchestrator(code);
+    if (!o) { if (typeof ack === "function") ack({ ok: false, error: "No active T-or-D session" }); return; }
+    o.recordAudienceReaction(teamId, emoji);
+    if (typeof ack === "function") ack({ ok: true });
+  } catch (e) { if (typeof ack === "function") ack({ ok: false, error: "Server error" }); }
+});
+
+socket.on("tod:audience:vote", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId, verdict } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const { getOrchestrator } = await import("./services/truthOrDare/orchestrator.js");
+    const o = getOrchestrator(code);
+    if (!o) { if (typeof ack === "function") ack({ ok: false, error: "No active T-or-D session" }); return; }
+    const ok = o.recordAudienceVote(teamId, verdict);
+    if (typeof ack === "function") ack({ ok });
+  } catch (e) { if (typeof ack === "function") ack({ ok: false, error: "Server error" }); }
+});
+
+socket.on("tod:steal:request", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const { getOrchestrator } = await import("./services/truthOrDare/orchestrator.js");
+    const o = getOrchestrator(code);
+    if (!o) { if (typeof ack === "function") ack({ ok: false, error: "No active T-or-D session" }); return; }
+    const ok = o.recordStealRequest(teamId);
+    if (typeof ack === "function") ack({ ok });
+  } catch (e) { if (typeof ack === "function") ack({ ok: false, error: "Server error" }); }
+});
+
+socket.on("tod:requestState", async (payload = {}, ack) => {
+  try {
+    const { roomCode } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const { getOrchestrator } = await import("./services/truthOrDare/orchestrator.js");
+    const o = getOrchestrator(code);
+    if (!o) { if (typeof ack === "function") ack({ ok: false, error: "No active T-or-D session" }); return; }
+    if (typeof ack === "function") ack({
+      ok: true,
+      phase: o.phase,
+      roundIndex: o.roundIndex,
+      totalRounds: o.totalRounds,
+      selectedTeamId: o.selectedTeamId,
+      selectedPlayerName: o.selectedPlayerName,
+      choice: o.choice,
+      mode: o.mode,
+    });
+  } catch (e) { if (typeof ack === "function") ack({ ok: false, error: "Server error" }); }
+});
+
 
   socket.on("task:submit", (payload, ack) => {
     handleStudentSubmit(payload, ack).catch((err) => {

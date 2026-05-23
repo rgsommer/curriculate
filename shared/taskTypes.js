@@ -154,6 +154,10 @@ export const TASK_TYPES = {
   // Legends — 5W deduction game. Identify a legendary figure by sorting 10 facts
   // into WHAT / WHERE / WHY / WHEN buckets (2/2/2/1 with 3 decoys).
   LEGENDS: "legends",
+
+  // Truth or Dare — classroom-safe social engagement engine.
+  // Standalone task and overlay-injectable. See TRUTH_OR_DARE_PLAN.md.
+  TRUTH_OR_DARE: "truth-or-dare",
 };
 
 // ================================
@@ -226,6 +230,7 @@ export const TASK_BLOOMS_MAP = {
   "hole-in-one":                ["APPLY", "ANALYZE"],
   "current-events":             ["ANALYZE", "EVALUATE"],
   "legends":                    ["ANALYZE", "REMEMBER"],
+  "truth-or-dare":              ["APPLY", "ANALYZE", "REMEMBER"],
 
   // Evaluate -- critique, judge, argue, defend
   "open-text":                  ["EVALUATE", "UNDERSTAND"],
@@ -4471,6 +4476,111 @@ config: {
     `,
   },
 
+  [TASK_TYPES.TRUTH_OR_DARE]: {
+    label: "Truth or Dare",
+    category: CATEGORY.OTHER,
+    implemented: true,
+    demoEligible: true,
+    demoSelectable: true,
+    generatorEligible: true,
+    profileInjectedOnly: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "subjective",
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 600,    // 10 min for a full T-or-D round set
+    estimatedMinutes: 7,
+    interTeamEnabled: true,
+    intraTeamEnabled: true,
+    description:
+      "Classroom-safe Truth or Dare. A spotlight randomizer picks a player or team; they choose Truth, Dare, or Double Dare; an AI-generated, curriculum-aware challenge follows; the class votes or the teacher judges; points and coins are awarded. Built for ~5-8 rounds in 6-10 minutes. See TRUTH_OR_DARE_PLAN.md.\n\nAI MUST output:\n- taskType: 'truth-or-dare'\n- title (e.g. 'Truth or Dare — Water Cycle')\n- prompt (1-2 sentence student-facing intro)\n- config.subject, config.unitName, config.gradeLevel\n- config.physicalIntensityMax (0-3, default 2)\n- config.socialIntensityMax (0-3, default 2)\n- config.movementAllowed (bool, default true)\n- config.noiseAllowed (bool, default true)\n- config.totalRounds (3-10, default 6)\n- config.tierProgression ('linear' | 'random', default 'linear')\n- config.judgmentMode ('teacher' | 'class-vote' | 'mixed', default 'mixed')\n- config.safeClassroomMode (bool, default false)\n- config.seedChallenges (array, 1-3): optional pre-seeded challenges (with same shape the runtime generator produces) so the first round is instant.",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "truth-or-dare".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Set non-empty title + prompt fields.
+    - The task itself is a CONTAINER — the runtime generator produces the
+      individual round challenges at play time. You only need to set up the
+      session config and (optionally) 1-3 seed challenges so the first
+      round can render instantly.
+
+    Required config fields:
+    - config.subject (e.g. "Science", "History", "English")
+    - config.unitName (e.g. "Water Cycle", "American Revolution")
+    - config.gradeLevel (number 1-12)
+    - config.physicalIntensityMax (0-3, default 2) - cap on Dare physicality
+    - config.socialIntensityMax (0-3, default 2) - cap on social pressure
+    - config.movementAllowed (bool, default true)
+    - config.noiseAllowed (bool, default true)
+    - config.totalRounds (3-10, default 6)
+    - config.tierProgression ('linear' | 'random', default 'linear')
+    - config.judgmentMode ('teacher' | 'class-vote' | 'mixed', default 'mixed')
+    - config.safeClassroomMode (bool, default false)
+
+    Optional config.seedChallenges (array, 1-3 entries): each entry shaped as
+      { type: 'truth' | 'dare',
+        tier: 'sprout' | 'stem' | 'big',
+        category: 'recall'|'explain'|'defend'|'mime'|'persuade'|'roleplay'|'improv'|'draw'|'narrate'|'compose'|'reflect'|'predict',
+        prompt: '...',
+        teacherHint: '...',
+        timeSeconds: 15-90,
+        physicalIntensity: 0-3,
+        socialIntensity: 0-3,
+        noiseExpected: 0-3,
+        acceptableAnswers: [...] | null,
+        judgmentMode: 'ai'|'teacher'|'class-vote',
+        rewardTier: 'small'|'medium'|'large' }
+
+    SAFETY (absolute):
+    - NO romance, attraction, personal disclosure, family income, religion-mockery,
+      sexual content, substances, weapons, self-harm, body image, touching other
+      students, food/drink, leaving classroom, climbing furniture, naming-and-shaming.
+    - Every challenge MUST be doable from a seat unless movementAllowed=true.
+    - Every challenge MUST give the performer a path to look brilliant, not be
+      embarrassed.
+
+    Example output:
+    {
+      "taskType": "truth-or-dare",
+      "title": "Truth or Dare - Water Cycle",
+      "prompt": "Spotlight Round! Step into the light and show what you know about the water cycle.",
+      "config": {
+        "subject": "Science",
+        "unitName": "Water Cycle",
+        "gradeLevel": 5,
+        "physicalIntensityMax": 2,
+        "socialIntensityMax": 2,
+        "movementAllowed": true,
+        "noiseAllowed": true,
+        "totalRounds": 6,
+        "tierProgression": "linear",
+        "judgmentMode": "mixed",
+        "safeClassroomMode": false,
+        "seedChallenges": [
+          {
+            "type": "truth",
+            "tier": "sprout",
+            "category": "recall",
+            "prompt": "In one sentence, name the three main stages of the water cycle.",
+            "teacherHint": "Accept evaporation, condensation, precipitation in any order.",
+            "timeSeconds": 20,
+            "physicalIntensity": 0,
+            "socialIntensity": 1,
+            "noiseExpected": 0,
+            "acceptableAnswers": ["evaporation, condensation, precipitation"],
+            "judgmentMode": "ai",
+            "rewardTier": "small"
+          }
+        ]
+      }
+    }
+    `,
+  },
+
   [TASK_TYPES.QUEST]: {
     label: "Quest",
     category: CATEGORY.OTHER,
@@ -5091,6 +5201,7 @@ export const SUBJECT_AFFINITY = {
   [TASK_TYPES.TRIVIA]:                 { math: 0.9, science: 0.9, history: 1.0, language: 0.9, arts: 0.9, health: 0.9, business: 0.9, religion: 0.9, general: 1.0 },
   [TASK_TYPES.SPINNER]:                { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 1.0, health: 1.0, business: 1.0, religion: 1.0, general: 1.0 },
   [TASK_TYPES.TEAM_SELFIE]:            { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 1.0, health: 1.0, business: 1.0, religion: 1.0, general: 1.0 },
+  [TASK_TYPES.TRUTH_OR_DARE]:          { math: 0.7, science: 0.9, history: 0.95, language: 0.95, arts: 1.0, health: 0.8, business: 0.7, religion: 0.7, general: 0.9 },
 };
 
 // Subject-detection: map freeform subject strings to affinity bucket keys
@@ -6074,6 +6185,80 @@ export const TASK_SHELLS = {
         clues,
         difficulty: "{{DIFFICULTY}}",
         mode: "intra-team",
+      },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  [TASK_TYPES.TRUTH_OR_DARE]: function buildTruthOrDareShell({ seedCount = 1 } = {}) {
+    // Clamp seedCount to 1-3
+    const N = Math.max(1, Math.min(3, Number(seedCount) || 1));
+
+    const placeholders = [
+      "TITLE: Short, exciting title (3-7 words) — e.g. 'Truth or Dare - Water Cycle'",
+      "PROMPT: 1-2 sentence student-facing intro — keep it playful + suspenseful",
+      "SUBJECT: The general subject area (e.g. 'Science', 'History', 'English')",
+      "UNIT_NAME: Specific unit/topic (e.g. 'Water Cycle', 'American Revolution')",
+      "GRADE_LEVEL: integer 1-12 matching the requested grade",
+    ];
+    const names = ["TITLE", "PROMPT", "SUBJECT", "UNIT_NAME", "GRADE_LEVEL"];
+
+    const seedChallenges = [];
+    for (let i = 1; i <= N; i++) {
+      seedChallenges.push({
+        type: `{{SEED_${i}_TYPE}}`,
+        tier: `{{SEED_${i}_TIER}}`,
+        category: `{{SEED_${i}_CATEGORY}}`,
+        prompt: `{{SEED_${i}_PROMPT}}`,
+        teacherHint: `{{SEED_${i}_TEACHER_HINT}}`,
+        timeSeconds: `{{SEED_${i}_TIME_SECONDS}}`,
+        physicalIntensity: `{{SEED_${i}_PHYS}}`,
+        socialIntensity: `{{SEED_${i}_SOCIAL}}`,
+        noiseExpected: `{{SEED_${i}_NOISE}}`,
+        acceptableAnswers: `{{SEED_${i}_ACCEPTABLE}}`,
+        judgmentMode: `{{SEED_${i}_JUDGE}}`,
+        rewardTier: `{{SEED_${i}_REWARD}}`,
+      });
+
+      placeholders.push(
+        `SEED_${i}_TYPE: 'truth' or 'dare' (string)`,
+        `SEED_${i}_TIER: 'sprout' | 'stem' | 'big' — start with 'sprout' for the first seed`,
+        `SEED_${i}_CATEGORY: one of 'recall' 'explain' 'defend' 'mime' 'persuade' 'roleplay' 'improv' 'draw' 'narrate' 'compose' 'reflect' 'predict'`,
+        `SEED_${i}_PROMPT: The actual challenge text shown to the student. Curriculum-aware, SAFE, encourages a path to GLORY not embarrassment.`,
+        `SEED_${i}_TEACHER_HINT: 1-sentence tip for the teacher on what to look for`,
+        `SEED_${i}_TIME_SECONDS: integer 15-90`,
+        `SEED_${i}_PHYS: integer 0-3 (physical intensity)`,
+        `SEED_${i}_SOCIAL: integer 0-3 (social intensity / pressure)`,
+        `SEED_${i}_NOISE: integer 0-3 (expected noise from the room)`,
+        `SEED_${i}_ACCEPTABLE: For Truths with objective answers, a comma-separated list of acceptable answer phrasings. For Dares or subjective Truths: null.`,
+        `SEED_${i}_JUDGE: 'ai' | 'teacher' | 'class-vote' — pick based on whether the answer is objectively checkable`,
+        `SEED_${i}_REWARD: 'small' | 'medium' | 'large' — match to tier`,
+      );
+      names.push(
+        `SEED_${i}_TYPE`, `SEED_${i}_TIER`, `SEED_${i}_CATEGORY`,
+        `SEED_${i}_PROMPT`, `SEED_${i}_TEACHER_HINT`, `SEED_${i}_TIME_SECONDS`,
+        `SEED_${i}_PHYS`, `SEED_${i}_SOCIAL`, `SEED_${i}_NOISE`,
+        `SEED_${i}_ACCEPTABLE`, `SEED_${i}_JUDGE`, `SEED_${i}_REWARD`,
+      );
+    }
+
+    const shell = {
+      taskType: "truth-or-dare",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      config: {
+        subject: "{{SUBJECT}}",
+        unitName: "{{UNIT_NAME}}",
+        gradeLevel: "{{GRADE_LEVEL}}",
+        physicalIntensityMax: 2,
+        socialIntensityMax: 2,
+        movementAllowed: true,
+        noiseAllowed: true,
+        totalRounds: 6,
+        tierProgression: "linear",
+        judgmentMode: "mixed",
+        safeClassroomMode: false,
+        seedChallenges,
       },
     };
     return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };

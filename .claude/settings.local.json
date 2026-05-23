@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"^function \\\\|^const .* = \\(\\\\|^export default\\\\|function renderTask\\\\|=> {$\" TaskRunner.jsx)",
+      "Bash(ls -1 tailwind.config.* postcss.config.*)",
+      "Bash(grep -l \"tailwind\" package.json)",
+      "Bash(grep -rln \"@tailwind\" src)"
+    ]
+  }
+}

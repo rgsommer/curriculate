@@ -687,6 +687,15 @@ export function assessTaskPlayability(rawTask) {
       break;
     }
 
+    case TASK_TYPES.TRUTH_OR_DARE: {
+      const cfg = t.config || {};
+      if (!isNonEmptyString(cfg.subject)) issues.push("truth-or-dare requires config.subject");
+      if (!isNonEmptyString(cfg.unitName)) issues.push("truth-or-dare requires config.unitName");
+      const grade = Number(cfg.gradeLevel);
+      if (!(grade >= 1 && grade <= 12)) issues.push(`truth-or-dare config.gradeLevel must be 1-12 (got ${cfg.gradeLevel})`);
+      break;
+    }
+
     default: {
       // Unknown types: only enforce generic title/prompt
       issues.push(`unknown taskType "${t.taskType}" (normalized to "${normalizedType}")`);

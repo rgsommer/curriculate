@@ -1006,6 +1006,88 @@ export function sanitizeTaskShapeByType(type, task) {
     t.config = cfg;
   }
 
+  // ── TRUTH_OR_DARE: promote top-level config + normalize seed challenges ──
+  if (type === TASK_TYPES.TRUTH_OR_DARE) {
+    const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+    const cfg = _isObj(t.config) ? { ...t.config } : {};
+
+    // Promote top-level fields that should live under config
+    for (const k of [
+      "subject", "unitName", "gradeLevel",
+      "physicalIntensityMax", "socialIntensityMax",
+      "movementAllowed", "noiseAllowed",
+      "totalRounds", "tierProgression", "judgmentMode", "safeClassroomMode",
+      "seedChallenges",
+    ]) {
+      if (cfg[k] === undefined && t[k] !== undefined) {
+        cfg[k] = t[k];
+        delete t[k];
+      }
+    }
+
+    // Defaults
+    if (cfg.physicalIntensityMax == null) cfg.physicalIntensityMax = 2;
+    if (cfg.socialIntensityMax == null) cfg.socialIntensityMax = 2;
+    if (cfg.movementAllowed == null) cfg.movementAllowed = true;
+    if (cfg.noiseAllowed == null) cfg.noiseAllowed = true;
+    if (cfg.totalRounds == null) cfg.totalRounds = 6;
+    if (cfg.tierProgression == null) cfg.tierProgression = "linear";
+    if (cfg.judgmentMode == null) cfg.judgmentMode = "mixed";
+    if (cfg.safeClassroomMode == null) cfg.safeClassroomMode = false;
+
+    // Coerce numerics
+    if (cfg.gradeLevel != null) cfg.gradeLevel = Number(cfg.gradeLevel) || cfg.gradeLevel;
+    cfg.physicalIntensityMax = Math.max(0, Math.min(3, Number(cfg.physicalIntensityMax) || 0));
+    cfg.socialIntensityMax = Math.max(0, Math.min(3, Number(cfg.socialIntensityMax) || 0));
+    cfg.totalRounds = Math.max(3, Math.min(12, Number(cfg.totalRounds) || 6));
+
+    // Normalize seedChallenges (defensive shape only — runtime generator
+    // produces the real ones)
+    if (Array.isArray(cfg.seedChallenges)) {
+      const allowedTypes = ["truth", "dare"];
+      const allowedTiers = ["sprout", "stem", "big"];
+      const allowedCats = [
+        "recall", "explain", "defend", "mime", "persuade", "roleplay",
+        "improv", "draw", "narrate", "compose", "reflect", "predict",
+      ];
+      const allowedJudge = ["ai", "teacher", "class-vote"];
+      const allowedReward = ["small", "medium", "large"];
+
+      cfg.seedChallenges = cfg.seedChallenges
+        .map((c, i) => {
+          if (!c || typeof c !== "object") return null;
+          const prompt = typeof c.prompt === "string" ? c.prompt.trim() : "";
+          if (!prompt) return null;
+
+          // Accept comma-separated acceptableAnswers string
+          let accept = c.acceptableAnswers;
+          if (typeof accept === "string") {
+            accept = accept.split(",").map((s) => s.trim()).filter(Boolean);
+          }
+          if (!Array.isArray(accept)) accept = null;
+
+          return {
+            id: typeof c.id === "string" && c.id.trim() ? c.id : `seed-${i + 1}`,
+            type: allowedTypes.includes(c.type) ? c.type : "truth",
+            tier: allowedTiers.includes(c.tier) ? c.tier : "sprout",
+            category: allowedCats.includes(c.category) ? c.category : "recall",
+            prompt,
+            teacherHint: typeof c.teacherHint === "string" ? c.teacherHint.trim() : "",
+            timeSeconds: Math.max(15, Math.min(90, Number(c.timeSeconds) || 30)),
+            physicalIntensity: Math.max(0, Math.min(3, Number(c.physicalIntensity) || 0)),
+            socialIntensity: Math.max(0, Math.min(3, Number(c.socialIntensity) || 1)),
+            noiseExpected: Math.max(0, Math.min(3, Number(c.noiseExpected) || 0)),
+            acceptableAnswers: accept,
+            judgmentMode: allowedJudge.includes(c.judgmentMode) ? c.judgmentMode : "teacher",
+            rewardTier: allowedReward.includes(c.rewardTier) ? c.rewardTier : "small",
+          };
+        })
+        .filter(Boolean);
+    }
+
+    t.config = cfg;
+  }
+
   // ── QUEST: promote top-level mission fields into config ──
   if (type === TASK_TYPES.QUEST) {
     const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);

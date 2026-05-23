@@ -3252,6 +3252,60 @@ export function validateTaskByType(taskType, task) {
       break;
     }
 
+    case TASK_TYPES.TRUTH_OR_DARE: {
+      const cfg = isObject(task.config) ? task.config : {};
+      if (typeof cfg.subject !== "string" || !cfg.subject.trim()) {
+        errors.push("truth-or-dare requires config.subject");
+      }
+      if (typeof cfg.unitName !== "string" || !cfg.unitName.trim()) {
+        errors.push("truth-or-dare requires config.unitName");
+      }
+      const grade = Number(cfg.gradeLevel);
+      if (!(grade >= 1 && grade <= 12)) {
+        errors.push(`truth-or-dare config.gradeLevel must be 1-12 (got ${cfg.gradeLevel})`);
+      }
+      // Intensity caps
+      for (const field of ["physicalIntensityMax", "socialIntensityMax"]) {
+        if (cfg[field] != null) {
+          const n = Number(cfg[field]);
+          if (!(n >= 0 && n <= 3)) {
+            errors.push(`truth-or-dare config.${field} must be 0-3 (got ${cfg[field]})`);
+          }
+        }
+      }
+      // Round count
+      if (cfg.totalRounds != null) {
+        const r = Number(cfg.totalRounds);
+        if (!(r >= 3 && r <= 12)) {
+          errors.push(`truth-or-dare config.totalRounds must be 3-12 (got ${cfg.totalRounds})`);
+        }
+      }
+      // Enum validation
+      const allowedTierProgression = ["linear", "random"];
+      if (cfg.tierProgression && !allowedTierProgression.includes(cfg.tierProgression)) {
+        errors.push(`truth-or-dare config.tierProgression must be one of ${allowedTierProgression.join("/")}`);
+      }
+      const allowedJudgmentModes = ["teacher", "class-vote", "mixed"];
+      if (cfg.judgmentMode && !allowedJudgmentModes.includes(cfg.judgmentMode)) {
+        errors.push(`truth-or-dare config.judgmentMode must be one of ${allowedJudgmentModes.join("/")}`);
+      }
+      // Seed challenge shape (lenient — runtime generator produces the real ones)
+      if (cfg.seedChallenges != null) {
+        if (!Array.isArray(cfg.seedChallenges)) {
+          errors.push("truth-or-dare config.seedChallenges must be an array");
+        } else if (cfg.seedChallenges.length > 5) {
+          errors.push("truth-or-dare config.seedChallenges max 5");
+        } else {
+          cfg.seedChallenges.forEach((c, i) => {
+            if (!isObject(c)) { errors.push(`truth-or-dare seedChallenges[${i}] must be an object`); return; }
+            if (!["truth", "dare"].includes(c.type)) errors.push(`truth-or-dare seedChallenges[${i}].type must be truth|dare`);
+            if (typeof c.prompt !== "string" || !c.prompt.trim()) errors.push(`truth-or-dare seedChallenges[${i}].prompt required`);
+          });
+        }
+      }
+      break;
+    }
+
     case TASK_TYPES.CURRENT_EVENTS: {
       // The persisted task is a SHELL — the only required input is lessonTopic
       // (everything else has a default). The `resolved` block is filled at runtime
