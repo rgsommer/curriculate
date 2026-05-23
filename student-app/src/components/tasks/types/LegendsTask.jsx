@@ -172,11 +172,11 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
         }}
       >
         <div style={{ fontWeight: 900, fontSize: "1.05rem" }}>
-          🕵️ Who is this mystery legend?
+          🕵️ Deduce the mystery legend
         </div>
         <div style={{ fontSize: "0.85rem", opacity: 0.85, lineHeight: 1.35, marginTop: 2 }}>
-          Tap the facts that answer each question. Sort enough correct clues across all{" "}
-          {PHASES.length} phases and the figure is revealed.
+          Tap the facts that match each question to advance. The figure is named
+          at the end — or tap <b>Reveal who it is</b> anytime.
         </div>
       </div>
 
@@ -230,6 +230,28 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
           );
         })}
       </div>
+
+      {/* Always let the team find out WHO the legend is — even if they're stuck
+          on a phase. Tester reached "skip" without ever learning the answer. */}
+      <button
+        type="button"
+        onClick={() => setRevealed(true)}
+        disabled={disabled}
+        style={{
+          alignSelf: "center",
+          marginTop: 4,
+          padding: "8px 16px",
+          borderRadius: 999,
+          border: "1px solid rgba(167,139,250,0.5)",
+          background: "rgba(124,58,237,0.12)",
+          color: "#e9d5ff",
+          fontWeight: 800,
+          fontSize: "0.85rem",
+          cursor: disabled ? "not-allowed" : "pointer",
+        }}
+      >
+        🔍 Reveal who it is
+      </button>
     </div>
   );
 }
