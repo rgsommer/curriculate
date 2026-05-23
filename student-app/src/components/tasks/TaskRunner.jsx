@@ -2034,6 +2034,10 @@ export default function TaskRunner({
         "sort", "vennsort", "sequence", "mad-dash-sequence",
         "matching", "timeline", "multiple-choice", "true-false",
         "cloze", "short-answer", "trivia", "fake-out", "legends",
+        // peer-editing & diff-detective show a post-submit review/answer key
+        // the student needs to read before the celebration covers it.
+        // (Tester: "did not wait long enough for me to read it.")
+        "peer-editing", "diff-detective",
       ]);
       const delay = ANSWER_REVEAL_TYPES.has(type) ? 2500 : 0;
       if (delay > 0) {

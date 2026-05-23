@@ -328,6 +328,12 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
                 // local default so SOMETHING is always on screen.
                 if (e.target.src.indexOf(LOCAL_DEFAULT_DOC) === -1) {
                   setResolvedUrl(LOCAL_DEFAULT_DOC);
+                } else {
+                  // Even the bundled default failed to load — fall back to the
+                  // text description so the task is NEVER blank.
+                  // (Tester, May 2026: "NO HISTORICAL DOCUMENT!")
+                  setResolvedUrl("");
+                  setLoadError("Document image unavailable — read the description below.");
                 }
               }}
               style={{

@@ -5,7 +5,7 @@
 // Intra-team: each player contributes separately, building on teammates' prior explanations.
 // AI-assessed for clarity, accuracy, age-appropriateness, and additive value.
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
 /* ─── Constants ─── */
 const INPUT_MODES = [
@@ -109,6 +109,29 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
 
   const [inputMode, setInputMode] = useState("text");
   const [explanation, setExplanation] = useState("");
+
+  // Tester ask: "Don't allow more than two key terms per sentence (to prevent
+  // just listing them)." Flag the first sentence that crams in >2 concepts so
+  // students explain rather than list.
+  const MAX_TERMS_PER_SENTENCE = 2;
+  const offendingSentence = useMemo(() => {
+    if (!concepts.length) return null;
+    const sentences = String(explanation || "")
+      .split(/[.!?\n]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (const s of sentences) {
+      const count = concepts.filter((c) => coversConcept(s, c)).length;
+      if (count > MAX_TERMS_PER_SENTENCE) return { sentence: s, count };
+    }
+    return null;
+  }, [explanation, concepts]);
+
+  // Tester ask: "Don't allow pasting." Keeps students from pasting a
+  // pre-written answer instead of explaining in their own words.
+  const blockPaste = useCallback((e) => {
+    e.preventDefault();
+  }, []);
   const [isRecording, setIsRecording] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -192,6 +215,7 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
   /* ─── Submit ─── */
   const handleSubmit = useCallback(async () => {
     if (!explanation.trim() && !mediaRecorderRef.current?._audioData) return;
+    if (offendingSentence) return; // too many key terms in one sentence
 
     setAssessing(true);
 
@@ -250,7 +274,7 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
         taskType: "teach-back",
       };
     }, 1500);
-  }, [explanation, inputMode, concepts, targetAge, priorEntries]);
+  }, [explanation, inputMode, concepts, targetAge, priorEntries, offendingSentence]);
 
   const pendingSubmissionRef = useRef(null);
   const acknowledgeAiFeedback = useCallback(() => {
@@ -398,6 +422,7 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
         <textarea
           value={explanation}
           onChange={(e) => setExplanation(e.target.value)}
+          onPaste={blockPaste}
           placeholder={`Explain ${concepts.join(", ")} in simple words that ${targetAge} would understand...`}
           disabled={disabled}
           rows={6}
@@ -410,6 +435,7 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
           <textarea
             value={explanation}
             onChange={(e) => setExplanation(e.target.value)}
+            onPaste={blockPaste}
             placeholder="Your speech will appear here. You can also edit it."
             rows={5}
             // bg-white + text-slate-900 keeps the dictated text visible
@@ -459,6 +485,7 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
           <textarea
             value={explanation}
             onChange={(e) => setExplanation(e.target.value)}
+            onPaste={blockPaste}
             placeholder="Optionally add written notes to supplement your recording..."
             rows={3}
             className="w-full rounded-2xl border border-gray-300 p-4 text-sm font-medium focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none resize-none"
@@ -479,12 +506,22 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
         </span>
       </div>
 
+      {/* Too-many-terms-per-sentence warning (prevents just listing terms) */}
+      {offendingSentence && (
+        <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+          ✋ Try to use at most {MAX_TERMS_PER_SENTENCE} key terms per sentence —
+          explain them, don't just list them. One of your sentences uses{" "}
+          {offendingSentence.count}. Break it into shorter sentences.
+        </div>
+      )}
+
       {/* Submit */}
       <button
         onClick={handleSubmit}
         disabled={
           disabled ||
           assessing ||
+          !!offendingSentence ||
           (!explanation.trim() && !mediaRecorderRef.current?._audioData)
         }
         className="w-full py-4 rounded-2xl bg-blue-600 text-white text-lg font-black shadow-xl hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
