@@ -6069,18 +6069,58 @@ export const TASK_SHELLS = {
   /* ── DIFF DETECTIVE ── */
   [TASK_TYPES.DIFF_DETECTIVE]: function buildDiffDetectiveShell() {
     const diffCount = 5;
+
+    // Tester ask: diff-detective should compare more than just an edited
+    // passage — "two art pics, two documents, two historical figures, two
+    // specimens, two scenes, two definitions, two processes, two pieces of
+    // equipment". The generator produces TEXT, so visual subjects become rich
+    // written descriptions; students spot the differences between the two. One
+    // subject type is chosen per task so demo + generated sets vary.
+    const COMPARE_TYPES = [
+      { mode: "text", labelA: "Original", labelB: "Modified", arrow: true,
+        a: "Original text passage (3-6 sentences) with real subject-matter content.",
+        b: `A modified copy of TEXT_A with EXACTLY ${diffCount} deliberate changes (changed words, added/removed details, altered facts).` },
+      { mode: "compare", labelA: "Definition A", labelB: "Definition B", arrow: false,
+        a: "A clear definition/explanation of one key concept (3-6 sentences).",
+        b: `A definition of a RELATED but different concept — similar on the surface but differing in EXACTLY ${diffCount} meaningful ways.` },
+      { mode: "compare", labelA: "Process A", labelB: "Process B", arrow: false,
+        a: "A step-by-step description of one process (3-6 sentences).",
+        b: `A similar process that differs in EXACTLY ${diffCount} important ways.` },
+      { mode: "compare", labelA: "Document A", labelB: "Document B", arrow: false,
+        a: "A short primary-source style document excerpt (3-6 sentences).",
+        b: `A second excerpt on the same topic differing in EXACTLY ${diffCount} notable ways (claims, dates, tone, details).` },
+      { mode: "compare", labelA: "Figure A", labelB: "Figure B", arrow: false,
+        a: "A vivid description of one historical figure (who, when, contributions) in 3-6 sentences.",
+        b: `A description of a DIFFERENT but comparable historical figure, differing in EXACTLY ${diffCount} ways.` },
+      { mode: "compare", labelA: "Specimen A", labelB: "Specimen B", arrow: false,
+        a: "A description of one organism/specimen (features, habitat, traits) in 3-6 sentences.",
+        b: `A related specimen that differs in EXACTLY ${diffCount} observable ways.` },
+      { mode: "compare", labelA: "Scene A", labelB: "Scene B", arrow: false,
+        a: "A description of one scene/setting (3-6 sentences).",
+        b: `A very similar scene with EXACTLY ${diffCount} differences (spot-the-difference style).` },
+      { mode: "compare", labelA: "Artwork A", labelB: "Artwork B", arrow: false,
+        a: "A description of one artwork (subject, style, composition, colors) in 3-6 sentences.",
+        b: `A comparable artwork differing in EXACTLY ${diffCount} ways.` },
+      { mode: "compare", labelA: "Item A", labelB: "Item B", arrow: false,
+        a: "A description of one piece of equipment/tool (parts, purpose, use) in 3-6 sentences.",
+        b: `A similar piece of equipment differing in EXACTLY ${diffCount} ways.` },
+    ];
+    const pick = COMPARE_TYPES[Math.floor(Math.random() * COMPARE_TYPES.length)];
+
     const placeholders = [
       "TITLE: Short Diff Detective title (3-7 words)",
-      "PROMPT: 1-2 sentence student instructions",
-      "TEXT_A: Original text passage (3-6 sentences). Include real subject-matter content.",
-      `TEXT_B: Modified version of TEXT_A with EXACTLY ${diffCount} deliberate differences (changed words, added/removed details, altered facts). Differences should test understanding, not just spelling.`,
+      `PROMPT: 1-2 sentence student instructions — tell them to find the ${diffCount} differences between ${pick.labelA} and ${pick.labelB}.`,
+      `TEXT_A (${pick.labelA}): ${pick.a}`,
+      `TEXT_B (${pick.labelB}): ${pick.b}`,
     ];
     const names = ["TITLE", "PROMPT", "TEXT_A", "TEXT_B"];
 
     const differences = [];
     for (let i = 0; i < diffCount; i++) {
       placeholders.push(
-        `DIFF_${i + 1}: Difference ${i + 1}, written EXACTLY as "original phrase → modified phrase" — copy the exact words from TEXT_A and TEXT_B separated by the → arrow.`
+        pick.arrow
+          ? `DIFF_${i + 1}: Difference ${i + 1}, written EXACTLY as "original phrase → modified phrase" — copy the exact words from TEXT_A and TEXT_B separated by the → arrow.`
+          : `DIFF_${i + 1}: Difference ${i + 1} — one clear sentence stating how ${pick.labelA} and ${pick.labelB} differ on a specific point.`
       );
       names.push(`DIFF_${i + 1}`);
       differences.push({ expected: `{{DIFF_${i + 1}}}` });
@@ -6090,6 +6130,9 @@ export const TASK_SHELLS = {
       taskType: "diff-detective",
       title: "{{TITLE}}",
       prompt: "{{PROMPT}}",
+      mode: pick.mode,
+      labelA: pick.labelA,
+      labelB: pick.labelB,
       original: "{{TEXT_A}}",
       modified: "{{TEXT_B}}",
       differences,

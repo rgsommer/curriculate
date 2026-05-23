@@ -30,8 +30,13 @@ export default function DiffDetectiveTask({
   const cfg = task?.config || {};
   const imageA = task?.imageA || cfg.imageA || task?.originalImage || cfg.originalImage || "";
   const imageB = task?.imageB || cfg.imageB || task?.modifiedImage || cfg.modifiedImage || "";
-  const isImageMode =
-    String(task?.mode || cfg.mode || "").toLowerCase() === "image" || (!!imageA && !!imageB);
+  const modeStr = String(task?.mode || cfg.mode || "").toLowerCase();
+  const isImageMode = modeStr === "image" || (!!imageA && !!imageB);
+  // "compare" = two genuinely different things (definitions, processes,
+  // figures, specimens…), not an edited passage. Differences are conceptual,
+  // so we reveal them as a list rather than highlighting word swaps.
+  const isCompareMode = modeStr === "compare";
+  const showDiffList = isImageMode || isCompareMode;
   const labelA = task?.labelA || cfg.labelA || (isImageMode ? "Image A" : "Original");
   const labelB = task?.labelB || cfg.labelB || (isImageMode ? "Image B" : "Modified");
 
@@ -163,7 +168,7 @@ export default function DiffDetectiveTask({
   );
 
   return (
-    <TaskCardFrame badge="🕵️ Diff Detective" title={prompt} subtitle={`Find ${numExpected} difference${numExpected === 1 ? "" : "s"} between the two ${isImageMode ? "images" : "passages"}.`} right={right}>
+    <TaskCardFrame badge="🕵️ Diff Detective" title={prompt} subtitle={`Find ${numExpected} difference${numExpected === 1 ? "" : "s"} between the two ${isImageMode ? "images" : isCompareMode ? "items" : "passages"}.`} right={right}>
       {/* Passages — auto-fit so the two panels stack on narrow (phone)
           screens instead of squishing to ~150px wide and looking broken.
           Tester reported this as "not available yet on student devices." */}
@@ -227,8 +232,8 @@ export default function DiffDetectiveTask({
       </div>
 
       <div style={{ marginBottom: 8, fontWeight: 850, color: "rgba(15,23,42,0.80)" }}>
-        {isImageMode
-          ? `List the differences you spot between the two ${"images"} (one per line).`
+        {showDiffList
+          ? `List the differences you spot between the two ${isImageMode ? "images" : "items"} (one per line).`
           : `Write the changes in words (example: "206 changed to 208", "jumps changed to jumped").`}
       </div>
 
@@ -299,12 +304,12 @@ export default function DiffDetectiveTask({
 
       {isSubmitted && (
         <div style={{ textAlign: "center", marginTop: 12, fontSize: "0.95rem", color: "rgba(22,163,74,1)", fontWeight: 900 }}>
-          {isImageMode ? "Answer locked! Here are the differences:" : "Answer locked! Highlights shown above."}
+          {showDiffList ? "Answer locked! Here are the differences:" : "Answer locked! Highlights shown above."}
         </div>
       )}
 
-      {/* Image mode can't highlight in place, so reveal the answer key as a list. */}
-      {isSubmitted && isImageMode && differences.length > 0 && (
+      {/* Image/compare modes can't highlight in place, so reveal the answer key as a list. */}
+      {isSubmitted && showDiffList && differences.length > 0 && (
         <div
           style={{
             marginTop: 10,
