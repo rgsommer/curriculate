@@ -77,6 +77,9 @@ function pointsForReveal(revealedCount, totalClues, perClueCurve) {
   return def[Math.min(revealedCount, def.length - 1)];
 }
 
+// Bonus points for spelling the answer exactly (vs. an accepted fuzzy match).
+const EXACT_SPELLING_BONUS = 2;
+
 /* ──────────────── Component ──────────────── */
 export default function WhatAmITask({ task, onSubmit, disabled, socket, roomCode, teamId, taskIndex }) {
   const rawCfg = task?.config || {};
@@ -227,8 +230,11 @@ export default function WhatAmITask({ task, onSubmit, disabled, socket, roomCode
     if (inputDisabled || !answer.trim()) return;
     const r = isAcceptable(answer, cfg);
     if (r.ok) {
-      const pts = pointCeiling;
-      setResult({ ok: true, pts, strategy: r.strategy });
+      // Reward exact spelling (tester typed "Elcipse" for "Solar Eclipse" via
+      // fuzzy match and asked if exact would earn more — yes, +2 bonus).
+      const exactBonus = r.strategy === "exact" ? EXACT_SPELLING_BONUS : 0;
+      const pts = pointCeiling + exactBonus;
+      setResult({ ok: true, pts, strategy: r.strategy, exactBonus });
       setSubmitted(true);
     } else {
       // Wrong → lockout
@@ -251,6 +257,7 @@ export default function WhatAmITask({ task, onSubmit, disabled, socket, roomCode
         totalClues,
         pointsEarned: result?.ok ? result.pts : 0,
         strategy: result?.strategy || null,
+        exactBonus: result?.exactBonus || 0,
         autoComplete: true,
       });
     }
@@ -511,6 +518,15 @@ export default function WhatAmITask({ task, onSubmit, disabled, socket, roomCode
             <div style={{ fontSize: "0.85rem", fontWeight: 500, marginTop: 6, color: "#86efac" }}>
               The answer: <strong style={{ color: "#bbf7d0" }}>{cfg.answer}</strong>
             </div>
+            {result.exactBonus > 0 ? (
+              <div style={{ fontSize: "0.8rem", fontWeight: 700, marginTop: 6, color: "#fde68a" }}>
+                ✨ +{result.exactBonus} bonus for exact spelling!
+              </div>
+            ) : result.strategy === "fuzzy" || result.strategy === "substring" ? (
+              <div style={{ fontSize: "0.8rem", fontWeight: 500, marginTop: 6, color: "#fcd34d" }}>
+                Close enough! Spelling it exactly earns a +{EXACT_SPELLING_BONUS} bonus next time.
+              </div>
+            ) : null}
           </div>
           <button
             onClick={handleContinue}

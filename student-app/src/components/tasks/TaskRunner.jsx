@@ -921,6 +921,9 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
 
   const [hideChain, setHideChain] = useState(() => (!readOnly ? true : false));
   const [speakerIndex, setSpeakerIndex] = useState(0);
+  // Tester: "don't allow add until someone has clicked '__ said that'." Each
+  // turn requires confirming who recited the chain before the next word is added.
+  const [recitedThisTurn, setRecitedThisTurn] = useState(false);
 
   const [listening, setListening] = useState(false);
   const [lastTranscript, setLastTranscript] = useState("");
@@ -935,6 +938,7 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
     setLastTranscript("");
     setLastCheck(null);
     setListening(false);
+    setRecitedThisTurn(false);
   }, [task?.id, task?._id, task?.taskId, readOnly]);
 
   // Pad practice mode with bot teammates so the per-player "X said
@@ -953,6 +957,10 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
     if (allNames.length > 0) return allNames[idx % allNames.length];
     return `Player ${idx + 1}`;
   };
+
+  // Only enforce the "confirm who recited" gate when we actually know the
+  // teammates (otherwise there's no "said that" button to click).
+  const requiresRecital = !readOnly && allNames.length > 0;
 
   const canUseSpeech =
     typeof window !== "undefined" &&
@@ -1045,6 +1053,7 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
 
   const addWord = () => {
     if (disabled || readOnly) return;
+    if (requiresRecital && !recitedThisTurn) return; // must confirm recital first
     const w = String(nextWord || "").trim();
     if (!w) return;
     setChain((prev) => [...prev, w]);
@@ -1053,6 +1062,7 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
     setSpeakerIndex((s) => s + 1);
     setLastCheck(null);
     setLastTranscript("");
+    setRecitedThisTurn(false); // next turn needs a fresh recital
   };
 
   const reset = () => {
@@ -1064,6 +1074,7 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
     setLastCheck(null);
     setLastTranscript("");
     setListening(false);
+    setRecitedThisTurn(false);
   };
 
   const finish = () => {
@@ -1313,6 +1324,7 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
                   lastCheck,
                 });
                 setSpeakerIndex(i + 1);
+                setRecitedThisTurn(true); // unlocks "Add" for this turn
               }}
               disabled={disabled}
               style={{
@@ -1363,6 +1375,12 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
           <input
             value={nextWord}
             onChange={(e) => setNextWord(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addWord(); // addWord enforces the recital gate itself
+              }
+            }}
             disabled={disabled}
             placeholder="Type the next word your team adds…"
             style={{
@@ -1378,12 +1396,13 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
           <button
             type="button"
             onClick={addWord}
-            disabled={disabled || !String(nextWord || "").trim()}
+            disabled={disabled || !String(nextWord || "").trim() || (requiresRecital && !recitedThisTurn)}
+            title={requiresRecital && !recitedThisTurn ? "First tap who recited the chain above" : "Add the next word"}
             style={{
               padding: "10px 12px",
               borderRadius: 999,
               border: "none",
-              background: !String(nextWord || "").trim()
+              background: (!String(nextWord || "").trim() || (requiresRecital && !recitedThisTurn))
                 ? "#9ca3af"
                 : CONTRAST_ACCENT,
               color: "#ffffff",
@@ -1393,6 +1412,11 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
           >
             Add
           </button>
+        </div>
+      )}
+      {!readOnly && requiresRecital && !recitedThisTurn && (
+        <div style={{ marginTop: 6, fontSize: "0.82rem", color: "#92400e" }}>
+          ☝️ Tap "<b>{getSpeakerLabel(speakerIndex)} said that</b>" above to confirm the recital, then add the next word.
         </div>
       )}
 

@@ -141,6 +141,10 @@ export default function NarrationSynthesizeTask({
   const [phase, setPhase] = useState("prompt"); // prompt | speaking | rate | done
   const [secondsLeft, setSecondsLeft] = useState(perTurnSeconds);
   const timerRef = useRef(null);
+  const speakingStartRef = useRef(0);
+  // Tester: "length goal of ~30s with progress, + incentive for extra points
+  // for another 10s." Accumulate a team length bonus across turns.
+  const [lengthBonusPoints, setLengthBonusPoints] = useState(0);
 
   const [ratings, setRatings] = useState(() =>
     Array.from({ length: playerCount }, () => ({
@@ -181,6 +185,15 @@ export default function NarrationSynthesizeTask({
 
   const canUseTimer = perTurnSeconds > 0;
 
+  // Length goal: a substantive explanation target with a bonus band.
+  const talkGoalSeconds = clampInt(config.talkGoalSeconds, 5, 300, 30);
+  const talkBonusSeconds = talkGoalSeconds + 10;
+  const nextIndex = (turnIndex + 1) % playerCount;
+  const isLastTurn = turnIndex + 1 >= playerCount;
+  const nextName = playerNames[nextIndex] || `Player ${nextIndex + 1}`;
+  // Seconds spoken so far this turn (for the goal progress bar).
+  const elapsedSpeaking = canUseTimer ? Math.max(0, perTurnSeconds - secondsLeft) : null;
+
   function startTimer() {
     if (!canUseTimer) return;
     stopTimer();
@@ -188,12 +201,24 @@ export default function NarrationSynthesizeTask({
       setSecondsLeft((s) => {
         const next = Math.max(0, (Number(s) || 0) - 1);
         if (next <= 0) {
-          stopTimer();
-          setPhase("rate");
+          endSpeaking();
         }
         return next;
       });
     }, 1000);
+  }
+
+  // Award the length bonus for the turn that just ended, then go to rating.
+  function endSpeaking() {
+    stopTimer();
+    const elapsedSec = speakingStartRef.current
+      ? (Date.now() - speakingStartRef.current) / 1000
+      : 0;
+    let bonus = 0;
+    if (elapsedSec >= talkBonusSeconds) bonus = 4;
+    else if (elapsedSec >= talkGoalSeconds) bonus = 2;
+    if (bonus > 0) setLengthBonusPoints((p) => p + bonus);
+    setPhase("rate");
   }
 
   function stopTimer() {
@@ -204,13 +229,13 @@ export default function NarrationSynthesizeTask({
   }
 
   function goToSpeaking() {
+    speakingStartRef.current = Date.now();
     setPhase("speaking");
     startTimer();
   }
 
   function finishSpeaking() {
-    stopTimer();
-    setPhase("rate");
+    endSpeaking();
   }
 
   function setRatingForTurn(val) {
@@ -249,6 +274,9 @@ export default function NarrationSynthesizeTask({
       ratingScale,
       prompts,
       perTurnSeconds,
+      talkGoalSeconds,
+      lengthBonus: lengthBonusPoints > 0,
+      lengthBonusPoints,
       completedAt: new Date().toISOString(),
     };
 
@@ -571,6 +599,11 @@ export default function NarrationSynthesizeTask({
           <div style={{ fontSize: 12, color: "#92400e", fontWeight: 700, marginTop: 2 }}>
             They'll explain the concept out loud.
           </div>
+          {!isLastTurn && (
+            <div style={{ fontSize: 12, color: "#78350f", fontWeight: 700, marginTop: 6, opacity: 0.85 }}>
+              ➡️ Then pass to <b>{nextName}</b>
+            </div>
+          )}
         </div>
       )}
 
@@ -583,6 +616,38 @@ export default function NarrationSynthesizeTask({
           >
             🎤 {currentName} — Start Turn
           </button>
+        </div>
+      )}
+
+      {/* Length goal: aim for ~30s, bonus for going to ~40s. */}
+      {phase === "speaking" && elapsedSpeaking != null && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 800, color: "#475569", marginBottom: 4 }}>
+            <span>🎯 Talk goal: {talkGoalSeconds}s{elapsedSpeaking >= talkGoalSeconds ? " — reached! ✅" : ""}</span>
+            <span>{elapsedSpeaking}s spoken</span>
+          </div>
+          <div style={{ height: 10, borderRadius: 999, background: "rgba(15,23,42,0.10)", overflow: "hidden" }}>
+            <div
+              style={{
+                height: "100%",
+                width: `${Math.min(100, (elapsedSpeaking / talkBonusSeconds) * 100)}%`,
+                background:
+                  elapsedSpeaking >= talkBonusSeconds
+                    ? "linear-gradient(90deg, #f59e0b, #22c55e)"
+                    : elapsedSpeaking >= talkGoalSeconds
+                    ? "#22c55e"
+                    : "linear-gradient(90deg, #0ea5e9, #22c55e)",
+                transition: "width 1s linear",
+              }}
+            />
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: elapsedSpeaking >= talkBonusSeconds ? "#b45309" : "#64748b" }}>
+            {elapsedSpeaking >= talkBonusSeconds
+              ? "✨ Bonus earned — going long pays off!"
+              : elapsedSpeaking >= talkGoalSeconds
+              ? `Keep going to ${talkBonusSeconds}s for a bonus!`
+              : `Aim for ${talkGoalSeconds}s of clear explanation.`}
+          </div>
         </div>
       )}
 
