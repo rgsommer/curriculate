@@ -110,12 +110,12 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
 
   /* ──────────────── Render ──────────────── */
 
-  // Bundled local default so we never show a blank portrait. The
-  // /demo-images/great-wave.svg is a public-domain placeholder that
-  // ships with the app — visible immediately even if the AI-supplied
-  // portraitUrl is missing or fails to load.
-  // (great-wave.jpg was a 0-byte placeholder that never rendered.)
-  const FALLBACK_PORTRAIT = "/demo-images/great-wave.svg";
+  // Bundled local default — a generic "mystery person" silhouette so a missing
+  // or failed portrait still reads as an unknown FIGURE (the old great-wave.svg
+  // fallback showed a seascape, which made no sense for "guess the legend").
+  // Real portraits are pre-generated to S3 at taskset creation (see
+  // taskImageGen.js); this only shows when none is available.
+  const FALLBACK_PORTRAIT = "/demo-images/mystery-portrait.svg";
   const portraitSrc = figure.portraitUrl || FALLBACK_PORTRAIT;
 
   if (revealed) {
@@ -383,8 +383,8 @@ const revealLabel = {
   color: "#c4b5fd",
 };
 const portraitLarge = {
-  width: 160,
-  height: 160,
+  width: 224,
+  height: 224,
   borderRadius: "50%",
   border: "4px solid #fde68a",
   background: "rgba(15,23,42,0.5)",

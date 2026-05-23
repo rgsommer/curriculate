@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0%" stop-color="#3b2d6b"/>
+      <stop offset="100%" stop-color="#1e1b3a"/>
+    </radialGradient>
+    <linearGradient id="fig" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#cbb6f7"/>
+      <stop offset="100%" stop-color="#8b6fd6"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="400" height="400" fill="url(#bg)"/>
+  <!-- Head + shoulders silhouette of an unknown figure -->
+  <circle cx="200" cy="150" r="68" fill="url(#fig)"/>
+  <path d="M70 400 C70 300 130 250 200 250 C270 250 330 300 330 400 Z" fill="url(#fig)"/>
+  <!-- Question mark, subtle -->
+  <text x="200" y="186" text-anchor="middle" font-family="system-ui, sans-serif" font-size="120" font-weight="900" fill="#1e1b3a" opacity="0.55">?</text>
+</svg>
