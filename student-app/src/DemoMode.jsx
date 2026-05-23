@@ -1356,25 +1356,55 @@ function DemoPlayer({
     [pendingEntry, results, taskIdx, total, onFinish, hasCommitment, target, finishWithBonus]
   );
 
+  // Skip-reason dialog state (driven by the nav-bar "Skip →" button).
+  // Without this, tapping Skip used to silently drop the task with no
+  // feedback. Tester regression: 'it no longer prompts for why if skip
+  // task!' — restored by gating goNext behind a reason capture.
+  const [skipPromptOpen, setSkipPromptOpen] = useState(false);
+  const [skipPromptText, setSkipPromptText] = useState("");
+
+  const _commitSkip = useCallback(
+    (reason) => {
+      const trimmed = String(reason || "").trim().slice(0, 300);
+      setResults((prev) => [
+        ...prev,
+        {
+          taskType: task?.taskType,
+          title: task?.title,
+          answer: null,
+          skipped: true,
+          points: 0,
+          completedAt: new Date().toISOString(),
+          feedback: trimmed
+            ? {
+                confusing: trimmed,
+                suggestion: "",
+                source: "skip-nav",
+                fun: 0,
+                clarity: 0,
+                feedbackBonus: 0,
+              }
+            : null,
+        },
+      ]);
+      setStreak(0);
+      if (taskIdx < total - 1) {
+        setTaskIdx((i) => i + 1);
+      } else {
+        onFinish(results);
+      }
+    },
+    [task, taskIdx, total, results, onFinish],
+  );
+
+  // Public goNext wrapper used by the nav-bar "Skip →" button.
+  // Opens a tiny reason prompt; an empty reason still records the skip
+  // (no friction wall) but a typed reason becomes a [CONFUSING] entry
+  // in the feedback export, which is the most actionable data we have.
   const goNext = useCallback(() => {
-    setResults((prev) => [
-      ...prev,
-      {
-        taskType: task?.taskType,
-        title: task?.title,
-        answer: null,
-        skipped: true,
-        points: 0,
-        completedAt: new Date().toISOString(),
-      },
-    ]);
-    setStreak(0);
-    if (taskIdx < total - 1) {
-      setTaskIdx((i) => i + 1);
-    } else {
-      onFinish(results);
-    }
-  }, [task, taskIdx, total, results, onFinish]);
+    setSkipPromptText("");
+    setSkipPromptOpen(true);
+  }, []);
 
   const goPrev = useCallback(() => {
     if (taskIdx > 0) setTaskIdx((i) => i - 1);
@@ -1658,6 +1688,120 @@ function DemoPlayer({
           requireRealScans={isConference}
         />
       </div>
+
+      {/* Skip-reason dialog — shows when the user taps the nav-bar
+          "Skip →" button. Reason is optional but heavily encouraged: an
+          empty submission still advances, a typed reason ships to the
+          feedback export as a [CONFUSING] entry. */}
+      {skipPromptOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            background: "rgba(2,6,23,0.55)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setSkipPromptOpen(false);
+              setSkipPromptText("");
+            }
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              background: "#0f172a",
+              color: "#f8fafc",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 16,
+              padding: 18,
+              boxShadow: "0 20px 50px rgba(0,0,0,0.4)",
+            }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 4 }}>
+              Skip this task?
+            </div>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12, lineHeight: 1.45 }}>
+              A quick reason helps us fix what wasn't working. (Leave blank to skip silently.)
+            </div>
+            <textarea
+              autoFocus
+              rows={3}
+              value={skipPromptText}
+              onChange={(e) => setSkipPromptText(e.target.value)}
+              placeholder="e.g. 'mic permission popup never appeared', 'instructions unclear', 'too hard for this group'…"
+              maxLength={300}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.2)",
+                background: "rgba(255,255,255,0.07)",
+                color: "#f8fafc",
+                fontSize: 14,
+                outline: "none",
+                boxSizing: "border-box",
+                resize: "vertical",
+                minHeight: 64,
+                fontFamily: "inherit",
+              }}
+            />
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setSkipPromptOpen(false);
+                  setSkipPromptText("");
+                }}
+                style={{
+                  flex: 1,
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  background: "transparent",
+                  color: "#cbd5e1",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const reason = skipPromptText;
+                  setSkipPromptOpen(false);
+                  setSkipPromptText("");
+                  _commitSkip(reason);
+                }}
+                style={{
+                  flex: 2,
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: skipPromptText.trim()
+                    ? "linear-gradient(135deg, #22c55e, #16a34a)"
+                    : "linear-gradient(135deg, #475569, #334155)",
+                  color: "#fff",
+                  fontWeight: 800,
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                {skipPromptText.trim() ? "Skip + send feedback" : "Skip silently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Nav buttons */}
       <div style={styles.navBar}>

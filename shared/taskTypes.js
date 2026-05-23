@@ -2704,6 +2704,9 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
   [TASK_TYPES.DIFF_DETECTIVE]: {
     label: "Diff Detective",
     category: "analysis",
+    implemented: true,
+    demoEligible: true,
+    generatorEligible: true,
     intraTeamEnabled: false,
     interTeamEnabled: false,
     description: `
