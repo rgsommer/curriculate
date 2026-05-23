@@ -251,6 +251,8 @@ export default function FeaturesPage() {
                 body="Tasks that require sorting, sequencing, comparing, and explaining."
                 bullets={[
                   "Sorting/categorizing and matching formats",
+                  "Label Me — match markers A–E on an AI-generated diagram, map, or illustration",
+                  "Spot the Difference — compare two passages, two images, or two real subjects",
                   "Sequencing/timeline-style tasks",
                   "Explain-your-thinking prompts",
                 ]}

@@ -1250,12 +1250,13 @@ export async function streamDemoTaskset(req, res) {
           sseWrite(res, "attempt", { taskType, attempt, maxAttempts, phase: "success", ok: true });
 
           // Pre-generate images for image-based tasks so the demo renders
-          // instantly with no waiting. Demo uses allowAi:false (free photo
-          // search, no paid gpt-image-1) since the demo regenerates often —
-          // keeps demo cost ~zero while still pre-generating. Best-effort
-          // (no-ops without an S3 bucket).
+          // instantly with no waiting. Demo defaults to allowAi:false (free
+          // photo search) to keep cost ~zero — EXCEPT labelme, which needs a
+          // clean UNLABELLED diagram that photo search can't provide, so it
+          // uses AI generation. Best-effort (no-ops without an S3 bucket).
           try {
-            await pregenerateTaskImages(attemptTask, { allowAi: false });
+            const needsAiDiagram = attemptTask?.taskType === "labelme";
+            await pregenerateTaskImages(attemptTask, { allowAi: needsAiDiagram });
           } catch (_) {}
 
           tasksByType[taskType] = attemptTask;

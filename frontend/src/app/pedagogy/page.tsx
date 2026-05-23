@@ -105,6 +105,7 @@ const bloomsData: BloomLevel[] = [
       "Trivia",
       "Spinner",
       "Cloze",
+      "Label Me",
     ],
     secondaryTasks: [
       "Short Answer",
@@ -142,6 +143,7 @@ const bloomsData: BloomLevel[] = [
       "Echo Chain",
       "Record Audio",
       "Cloze",
+      "Label Me",
     ],
   },
   {
