@@ -71,6 +71,13 @@ export async function updateMyProfile(req, res) {
         typeof req.body.prefersDrawingMimeTasks === "boolean"
           ? req.body.prefersDrawingMimeTasks
           : true,
+
+      // When false, image-based tasks must source photo-real images (search)
+      // rather than AI-generated ones. Default true (AI-gen is fast/reliable).
+      allowAiGeneratedImages:
+        typeof req.body.allowAiGeneratedImages === "boolean"
+          ? req.body.allowAiGeneratedImages
+          : true,
     };
 
     let profile = await TeacherProfile.findOne();

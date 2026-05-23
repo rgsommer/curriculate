@@ -1,0 +1,185 @@
+// backend/services/taskImageGen.js
+//
+// Pre-generates the images for image-based tasks at TASKSET-CREATION time so
+// rendering is instant (no waiting, no flaky external fetch at play time).
+//
+// Sources, in priority:
+//   - AI image generation (OpenAI gpt-image-1) when allowed by the teacher
+//   - photo-real search (Openverse, CC-licensed, keyless) otherwise / as fallback
+// then uploads the bytes to S3 and rewrites the task's image fields to the
+// stored URL.
+//
+// Authenticity rule: historical-doc / art-view / legends ALWAYS prefer real
+// photos (an AI-generated "Mona Lisa" or "Lincoln" would be a misleading
+// fabrication), so they ignore the AI-allowed toggle and search. diff-detective
+// "compare" mode (e.g. a 1950s vs a 2025 microscope) honors the toggle.
+//
+// Everything here is best-effort and env-guarded: with no OPENAI_API_KEY / no
+// S3 bucket it no-ops and the task keeps its existing fallbacks (SVG scene,
+// text descriptions, bundled local images).
+
+import OpenAI from "openai";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+const S3_BUCKET = process.env.S3_BUCKET || "";
+const AWS_REGION = process.env.AWS_REGION || "us-east-1";
+const PRESIGN_SECONDS = 7 * 24 * 60 * 60; // SigV4 max (7 days)
+
+let _s3 = null;
+function s3() {
+  if (_s3) return _s3;
+  if (!S3_BUCKET) return null;
+  _s3 = new S3Client({ region: AWS_REGION });
+  return _s3;
+}
+
+let _oai = null;
+function oai() {
+  if (_oai) return _oai;
+  if (!process.env.OPENAI_API_KEY) return null;
+  _oai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return _oai;
+}
+
+export function imageStorageAvailable() {
+  return !!s3();
+}
+
+async function uploadImage(buffer, contentType, label) {
+  const client = s3();
+  if (!client) return null;
+  const ext = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg";
+  const key = `task-images/${Date.now()}-${Math.random().toString(16).slice(2)}-${label}.${ext}`;
+  await client.send(
+    new PutObjectCommand({ Bucket: S3_BUCKET, Key: key, Body: buffer, ContentType: contentType })
+  );
+  const url = await getSignedUrl(
+    client,
+    new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }),
+    { expiresIn: PRESIGN_SECONDS }
+  );
+  return { key, url };
+}
+
+async function genAiImage(prompt) {
+  const client = oai();
+  if (!client) return null;
+  const resp = await client.images.generate({
+    model: "gpt-image-1",
+    prompt: `Clear, classroom-appropriate, well-lit, neutral-background image. ${prompt}`,
+    size: "1024x1024",
+    n: 1,
+  });
+  const b64 = resp?.data?.[0]?.b64_json;
+  if (!b64) return null;
+  return { buffer: Buffer.from(b64, "base64"), contentType: "image/png" };
+}
+
+async function searchPhoto(query) {
+  try {
+    const u = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(query)}&license_type=commercial&page_size=5`;
+    const res = await fetch(u, { headers: { "User-Agent": "Curriculate/1.0 (classroom)" } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const hit = (data?.results || []).find((r) => r?.url);
+    if (!hit?.url) return null;
+    const imgRes = await fetch(hit.url, { headers: { "User-Agent": "Curriculate/1.0 (classroom)" } });
+    if (!imgRes.ok) return null;
+    const ct = imgRes.headers.get("content-type") || "image/jpeg";
+    if (!ct.startsWith("image/")) return null;
+    const buffer = Buffer.from(await imgRes.arrayBuffer());
+    return { buffer, contentType: ct };
+  } catch {
+    return null;
+  }
+}
+
+// Source ONE image: AI-gen (if allowed) → photo search fallback → null. Upload
+// to S3 and return { key, url } or null.
+async function sourceOne({ prompt, query, allowAi, label }) {
+  let img = null;
+  if (allowAi) {
+    try { img = await genAiImage(prompt); } catch (_) {}
+  }
+  if (!img) {
+    img = await searchPhoto(query || prompt);
+  }
+  if (!img) return null;
+  try {
+    return await uploadImage(img.buffer, img.contentType, label);
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Pre-generate images for an image-based task. Mutates + returns the task.
+ * Always graceful — on any failure or missing config the task is left unchanged
+ * so its existing fallbacks (SVG scene / text / bundled image) still apply.
+ *
+ * @param {object} task
+ * @param {{ allowAi?: boolean }} opts - allowAi from TeacherProfile.allowAiGeneratedImages
+ */
+export async function pregenerateTaskImages(task, { allowAi = true } = {}) {
+  if (!task || typeof task !== "object") return task;
+  if (!imageStorageAvailable()) return task; // nowhere to store → skip
+  const type = String(task.taskType || task.type || "");
+  const cfg = task.config || {};
+
+  try {
+    // diff-detective "compare two real subjects" (honors the AI toggle)
+    if (type === "diff-detective" && task.subjectA && task.subjectB) {
+      const [a, b] = await Promise.all([
+        sourceOne({ prompt: task.imagePromptA || task.subjectA, query: task.subjectA, allowAi, label: "a" }),
+        sourceOne({ prompt: task.imagePromptB || task.subjectB, query: task.subjectB, allowAi, label: "b" }),
+      ]);
+      if (a && b) {
+        task.mode = "image";
+        task.imageA = a.url; task.imageAKey = a.key;
+        task.imageB = b.url; task.imageBKey = b.key;
+        task.labelA = task.labelA || task.subjectA;
+        task.labelB = task.labelB || task.subjectB;
+      }
+      // else: keep mode "compare" → renderer shows the text descriptions + list
+      return task;
+    }
+
+    // Authenticity-critical: always source a REAL image (ignore AI toggle).
+    if (type === "historical-doc" || type === "art-view") {
+      const subject =
+        cfg.imageTitle || cfg.docTitle || cfg.imageDescription || task.title || "";
+      if (subject) {
+        const got = await sourceOne({ prompt: subject, query: subject, allowAi: false, label: type });
+        if (got) {
+          task.config = cfg;
+          task.config.imageUrl = got.url;
+          task.config.imageS3Key = got.key;
+        }
+      }
+      return task;
+    }
+
+    if (type === "legends") {
+      const fig = cfg.figure || {};
+      if (fig.name) {
+        const got = await sourceOne({
+          prompt: `portrait photo of ${fig.name}`,
+          query: fig.name,
+          allowAi: false,
+          label: "legend",
+        });
+        if (got && task.config?.figure) {
+          task.config.figure.portraitUrl = got.url;
+          task.config.figure.portraitS3Key = got.key;
+        }
+      }
+      return task;
+    }
+  } catch (e) {
+    console.warn("[taskImageGen] pregenerate failed (non-fatal):", e?.message);
+  }
+  return task;
+}
+
+export default pregenerateTaskImages;

@@ -6070,12 +6070,60 @@ export const TASK_SHELLS = {
   [TASK_TYPES.DIFF_DETECTIVE]: function buildDiffDetectiveShell() {
     const diffCount = 5;
 
-    // VISUAL scene mode (tester: "gen must supply 2 images"). Half the time we
-    // ask only for a short list of topic items; normalizeTaskByType then
-    // deterministically renders TWO SVG images (Scene A + Scene B with exactly
-    // N differences) plus the exact answer key — fully generated, no curation,
-    // no external image URLs. See shared/diffDetectiveScene.js.
-    if (Math.random() < 0.5) {
+    const roll = Math.random();
+
+    // COMPARE TWO REAL SUBJECTS (e.g. "a 1950s microscope" vs "a 2025
+    // microscope"). The model emits two image subjects + short descriptions +
+    // the expected observable differences; the backend pre-generates the two
+    // images at taskset-creation time (AI-gen or photo search per the teacher's
+    // setting) so render is instant. See backend/services/taskImageGen.js.
+    if (roll < 0.33) {
+      const cmpPlaceholders = [
+        "TITLE: Short Diff Detective title (3-7 words)",
+        `PROMPT: 1-2 sentence instructions — tell students to find the ${diffCount} differences between the two images.`,
+        "SUBJECT_A: A concrete, depictable image subject (3-8 words), e.g. \"a 1950s optical microscope\" or \"a Monarch butterfly\".",
+        "SUBJECT_B: A RELATED but different depictable subject to compare against SUBJECT_A, e.g. \"a 2025 digital microscope\" or \"a Viceroy butterfly\".",
+        "DESC_A: 1-2 sentence description of SUBJECT_A (used if an image can't be sourced).",
+        "DESC_B: 1-2 sentence description of SUBJECT_B (used if an image can't be sourced).",
+      ];
+      const cmpNames = ["TITLE", "PROMPT", "SUBJECT_A", "SUBJECT_B", "DESC_A", "DESC_B"];
+      const cmpDifferences = [];
+      for (let i = 0; i < diffCount; i++) {
+        cmpPlaceholders.push(
+          `DIFF_${i + 1}: Difference ${i + 1} — one clear sentence describing a difference students should observe between SUBJECT_A and SUBJECT_B.`
+        );
+        cmpNames.push(`DIFF_${i + 1}`);
+        cmpDifferences.push({ expected: `{{DIFF_${i + 1}}}` });
+      }
+      const cmpShell = {
+        taskType: "diff-detective",
+        title: "{{TITLE}}",
+        prompt: "{{PROMPT}}",
+        mode: "compare",
+        subjectA: "{{SUBJECT_A}}",
+        subjectB: "{{SUBJECT_B}}",
+        imagePromptA: "{{SUBJECT_A}}",
+        imagePromptB: "{{SUBJECT_B}}",
+        labelA: "{{SUBJECT_A}}",
+        labelB: "{{SUBJECT_B}}",
+        original: "{{DESC_A}}",
+        modified: "{{DESC_B}}",
+        differences: cmpDifferences,
+        totalDifferences: diffCount,
+      };
+      return {
+        shell: JSON.stringify(cmpShell, null, 2),
+        fillInstructions: cmpPlaceholders.join("\n"),
+        placeholderNames: cmpNames,
+      };
+    }
+
+    // VISUAL scene mode (tester: "gen must supply 2 images"). We ask only for a
+    // short list of topic items; normalizeTaskByType then deterministically
+    // renders TWO SVG images (Scene A + Scene B with exactly N differences)
+    // plus the exact answer key — fully generated, no curation, no external
+    // image URLs. See shared/diffDetectiveScene.js.
+    if (roll < 0.66) {
       const itemCount = 8;
       const scenePlaceholders = [
         "TITLE: Short Diff Detective title (3-7 words)",

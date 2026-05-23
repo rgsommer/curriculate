@@ -362,9 +362,13 @@ const fillGenerators = {
       DIFF_3: "important → small",
       DIFF_4: "subject → topic",
       DIFF_5: `${t[1]} → ${t[2]}`,
-      // Scene (visual) mode picks this instead; provide a superset so either
-      // randomly-chosen shell variant has all its fills.
+      // Scene (visual) mode picks this instead; provide a superset so any
+      // randomly-chosen shell variant (text / scene / compare-real) has its fills.
       ITEMS: `${m.topic} | ${t[0]} | ${t[1]} | ${t[2]} | Sample D | Sample E | Sample F | Sample G`,
+      SUBJECT_A: `a classic example of ${t[0]}`,
+      SUBJECT_B: `a modern example of ${t[0]}`,
+      DESC_A: `An older form of ${t[0]} in ${m.topic}.`,
+      DESC_B: `A newer form of ${t[0]} in ${m.topic}.`,
     }, opts: {} };
   },
 

@@ -120,6 +120,10 @@ const TeacherProfileSchema = new Schema(
     // Auto-inject team selfie before treasure runner (default: on)
     includeTeamSelfie: { type: Boolean, default: true },
 
+    // Image-based tasks (diff-detective compare mode, etc.): allow AI-generated
+    // images. When false, those tasks source photo-real images via search.
+    allowAiGeneratedImages: { type: Boolean, default: true },
+
     // Track free-tier selfie usage (allowed for first 2 sessions, then requires upgrade)
     freeSelfieSessionsUsed: { type: Number, default: 0 },
 

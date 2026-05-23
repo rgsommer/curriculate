@@ -3,6 +3,7 @@
 import TeacherProfile from "../models/TeacherProfile.js";
 import TaskSet from "../models/TaskSet.js";
 import UserSubscription from "../models/UserSubscription.js";
+import { pregenerateTaskImages } from "../services/taskImageGen.js";
 
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { planTaskTypes } from "../ai/planTaskTypes.js";
@@ -212,6 +213,17 @@ export async function generateTaskset(req, res) {
       return res.status(422).json({
         error: "AI did not generate any usable tasks.",
       });
+    }
+
+    // Pre-generate images for image-based tasks (diff-detective compare,
+    // historical-doc, art-view, legends) so play-time render is instant — no
+    // waiting, no flaky external fetch. Honors the teacher's
+    // allowAiGeneratedImages setting. Best-effort: no-ops without keys/bucket.
+    try {
+      const allowAi = profile?.allowAiGeneratedImages !== false;
+      await Promise.all(finalTasks.map((t) => pregenerateTaskImages(t, { allowAi })));
+    } catch (e) {
+      console.warn("[aiTasksetController] image pre-generation skipped:", e?.message);
     }
 
     // Build TaskSet JSON

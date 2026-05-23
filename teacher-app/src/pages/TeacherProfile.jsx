@@ -50,6 +50,7 @@ export default function TeacherProfile() {
     includeRiddleInSets: false,
     includeMysteryCluesInSets: false,
     includeTeamSelfie: true,
+    allowAiGeneratedImages: true,
 
     // Plan tier
     planTier: "FREE",
@@ -131,6 +132,10 @@ export default function TeacherProfile() {
           includeTeamSelfie:
             typeof data.includeTeamSelfie === "boolean"
               ? data.includeTeamSelfie
+              : true,
+          allowAiGeneratedImages:
+            typeof data.allowAiGeneratedImages === "boolean"
+              ? data.allowAiGeneratedImages
               : true,
 
           // Plan tier (FREE | PLUS | PRO) — gates Match a Session (PLUS) +
@@ -569,6 +574,37 @@ export default function TeacherProfile() {
             />
             <span style={{ fontSize: "0.95rem", fontWeight: 600 }}>
               Team selfie before game starts (included in reports)
+            </span>
+          </label>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              cursor: "pointer",
+              padding: "8px 0",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={profile.allowAiGeneratedImages !== false}
+              onChange={(e) =>
+                handleChange("allowAiGeneratedImages", e.target.checked)
+              }
+              style={{
+                width: 20,
+                height: 20,
+                accentColor: "#6366f1",
+                cursor: "pointer",
+              }}
+            />
+            <span style={{ fontSize: "0.95rem", fontWeight: 600 }}>
+              Allow AI-generated images in image-based tasks
+              <span style={{ display: "block", fontSize: "0.8rem", fontWeight: 400, color: "#64748b" }}>
+                When off, those tasks use photo-real images instead. (Historical
+                documents, art, and figures always use real images.)
+              </span>
             </span>
           </label>
 

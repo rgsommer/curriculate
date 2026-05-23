@@ -10,6 +10,7 @@ import * as fs from "fs/promises";
 import path from "path";
 import mongoose from "mongoose";
 import { assessTaskPlayability } from "../../shared/taskPlayability.js";
+import { pregenerateTaskImages } from "../services/taskImageGen.js";
 
 /**
  * Canonical demo pool key
@@ -1247,6 +1248,12 @@ export async function streamDemoTaskset(req, res) {
           });
 
           sseWrite(res, "attempt", { taskType, attempt, maxAttempts, phase: "success", ok: true });
+
+          // Pre-generate images for image-based tasks so the demo renders
+          // instantly with no waiting. Best-effort (no-ops without keys/bucket).
+          try {
+            await pregenerateTaskImages(attemptTask, { allowAi: true });
+          } catch (_) {}
 
           tasksByType[taskType] = attemptTask;
           break;
