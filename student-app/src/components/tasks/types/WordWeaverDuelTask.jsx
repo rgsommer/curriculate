@@ -209,24 +209,30 @@ export default function WordWeaverDuelTask({
     }
 
     // Enforce intersection rule: after the first word, subsequent words must
-    // cross an existing word — BUT only when a crossing is actually possible.
-    // If this word shares NO letter with anything already on the board, the
-    // generator gave us words that can't interlock; forcing a cross would
-    // dead-end the player (tester: "words didn't have enough in common"). In
-    // that case allow free placement so the game is always completable.
+    // cross an existing word. We KEEP this requirement whenever a crossing is
+    // possible — the strategic puzzle is precisely "find an arrangement where
+    // they all interlock," and ↩ Un-place lets the player rearrange to make
+    // room. We ONLY waive it for a word that can NEVER cross because it shares
+    // no letter with ANY OTHER word in the set (a generator slip-up — the case
+    // behind "words didn't have enough in common"). That keeps the challenge
+    // intact while never producing a truly-unplaceable dead-end.
     if (placedCount > 0 && !hasIntersection) {
       const wordLetters = new Set(w.split(""));
-      let crossingPossible = false;
-      for (let rr = 0; rr < b.length && !crossingPossible; rr++) {
-        for (let cc = 0; cc < b[rr].length; cc++) {
-          const ch = b[rr][cc]?.ch ? String(b[rr][cc].ch).toUpperCase() : "";
-          if (ch && wordLetters.has(ch)) { crossingPossible = true; break; }
-        }
+      let selfSkipped = false;
+      const sharesWithSet = (scrabbleWords || []).some((other) => {
+        const o = String(other || "").toUpperCase();
+        if (!selfSkipped && o === w) { selfSkipped = true; return false; } // skip this word itself once
+        for (const ch of o) if (wordLetters.has(ch)) return true;
+        return false;
+      });
+      if (sharesWithSet) {
+        return {
+          ok: false,
+          reason: "This word needs to cross another word at a shared letter. Tip: tap ↩ Un-place on a placed word to rearrange and make room.",
+        };
       }
-      if (crossingPossible) {
-        return { ok: false, reason: "This word must cross an existing word at a shared letter." };
-      }
-      // else: no shared letter anywhere → allow placing it on its own.
+      // else: this word shares no letter with any other word → it can never
+      // cross; allow placing it on its own so the board is still completable.
     }
 
     return { ok: true };
@@ -746,7 +752,8 @@ export default function WordWeaverDuelTask({
       "Pick a word from the Word Rack.",
       "Choose the direction: Horizontal or Vertical.",
       "Place the word: drag it onto the grid (or click a grid square after selecting).",
-      "If a letter overlaps a matching letter, you get bonus points.",
+      "Words must cross at a shared letter — overlapping a matching letter earns bonus points.",
+      "Stuck fitting them all? Tap ↩ Un-place on any placed word to take it back and try a different arrangement — interlocking every word is the puzzle!",
       "Use Next turn to pass the device to the next player.",
     ];
 
