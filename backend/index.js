@@ -5765,7 +5765,8 @@ if (!isMultiPack && task.taskType === "what-am-i") {
     if (meta?.scoringMode === "none" && pointsEarned === 0 && correct === null) {
       const PARTICIPATION_FRACTION = 0.5;
       pointsEarned = Math.round(basePoints * PARTICIPATION_FRACTION);
-      correct = true; // completion = success for participation tasks
+      // Points only — leave `correct` null so these are EXCLUDED from accuracy
+      // stats (there's no right/wrong answer to a movement/creative task).
       console.log(`[Participation] ${PARTICIPATION_FRACTION * 100}% credit (${pointsEarned}) for team ${effectiveTeamId} on task ${idx} (${task.taskType})`);
     }
 
