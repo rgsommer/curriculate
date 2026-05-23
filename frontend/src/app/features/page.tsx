@@ -546,6 +546,18 @@ export default function FeaturesPage() {
                   "Cooldown (4 min default) prevents back-to-back interruptions",
                 ]}
               />
+              <FeatureCard
+                title="🔥 Truth or Dare"
+                body="The classroom party game, rebuilt with academic safety rails. A weighted spotlight picks a student, they choose TRUTH (a curriculum-tied question) or DARE (a curriculum-tied performance), then the class judges. Five-layer moderation makes every prompt safe; an evergreen library guarantees the game never breaks."
+                bullets={[
+                  "AI generator + 5-layer safety pipeline: phrase blacklist → regex → category whitelist → intensity caps → OpenAI moderation API",
+                  "Curated evergreen library auto-falls-back when moderation blocks an AI prompt — the game never stalls",
+                  "Weighted-random spotlight with per-team cooldowns (no one gets picked twice in a row, quiet kids get gentle boosts)",
+                  "Three tiers (🌱 Sprout → 🌿 Stem → 🌳 Big) escalate after 3 successes, demote on fail — every student climbs",
+                  "Teacher peek window (1.5s) lets you Approve / Reroll / Edit before students ever see a challenge",
+                  "Per-room dedupe + worldview-aware prompts (secular / faith / general) + safe-classroom mode (no movement, no noise)",
+                ]}
+              />
             </div>
             <div className="mt-6">
               <Link

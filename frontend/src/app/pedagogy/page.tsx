@@ -94,7 +94,7 @@ const bloomsData: BloomLevel[] = [
     description: "Retrieving relevant knowledge from long-term memory",
     icon: <Brain className="w-5 h-5" />,
     primary: 9,
-    secondary: 8,
+    secondary: 9,
     tasks: [
       "Multiple Choice",
       "True/False",
@@ -115,6 +115,7 @@ const bloomsData: BloomLevel[] = [
       "Physical Mystery",
       "Brain Blitz",
       "Legends",
+      "Truth or Dare",
     ],
   },
   {
@@ -150,7 +151,7 @@ const bloomsData: BloomLevel[] = [
     color: "#eab308",
     description: "Carrying out or using a procedure in a given situation",
     icon: <Wrench className="w-5 h-5" />,
-    primary: 15,
+    primary: 16,
     secondary: 10,
     tasks: [
       "Sort",
@@ -168,6 +169,7 @@ const bloomsData: BloomLevel[] = [
       "Hide & Seek",
       "Quest",
       "Hole in One",
+      "Truth or Dare",
     ],
     secondaryTasks: [
       "Physical MC",
@@ -190,7 +192,7 @@ const bloomsData: BloomLevel[] = [
     description: "Breaking material into parts and detecting relationships",
     icon: <Search className="w-5 h-5" />,
     primary: 13,
-    secondary: 14,
+    secondary: 15,
     tasks: [
       "Mind Mapper",
       "Brain Blitz",
@@ -221,6 +223,7 @@ const bloomsData: BloomLevel[] = [
       "Brainstorm Battle",
       "Careers",
       "Hole in One",
+      "Truth or Dare",
     ],
   },
   {
