@@ -366,6 +366,7 @@ export default function FeaturesPage() {
                   "AI-generated class chat blurb (copy-paste for Google Classroom or newsletters)",
                   "Parent note with engagement level, skills practiced, and proficiency",
                   "Skills developed badges, concepts covered, and activity highlights",
+                  "Speech & text quality score per speaker — sustained, varied language vs. filler-heavy",
                   "Team selfie photos included in reports",
                 ]}
               />
