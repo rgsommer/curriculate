@@ -140,8 +140,15 @@ function Pill({ children }) {
   );
 }
 
-export default function MysteryCluesTask({ task, onSubmit, disabled }) {
-  const isFinal = !!task?.isFinal;
+export default function MysteryCluesTask({ task, onSubmit, disabled, practiceMode = false }) {
+  // Practice mode = single isolated task with no "earlier cards to recall
+  // from session storage". Make it a self-contained mini-game: reveal
+  // clues briefly, hide, then ask the user to pick them out of a grid.
+  // Tester (Bernadette, May 2026): 'Keeps cycling the victory video but
+  // as far as I can see there is no actual clue revealed.' The
+  // non-practice flow assumes a multi-task session where earlier reveal
+  // cards seed sessionStorage, which never happens in solo practice.
+  const isFinal = practiceMode ? false : !!task?.isFinal;
   const revealMs = Number(task?.revealMs ?? REVEAL_MS_DEFAULT) || REVEAL_MS_DEFAULT;
   const bonusPoints = Number(task?.bonusPoints ?? BONUS_DEFAULT) || BONUS_DEFAULT;
 
@@ -171,8 +178,19 @@ export default function MysteryCluesTask({ task, onSubmit, disabled }) {
   const [selected, setSelected] = useState([]);
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null); // {correct, revealed, selected}
+  // Practice mode self-recall: once the reveal hides, the user must
+  // pick the clues they just saw from a grid of distractors. This
+  // makes the task a complete game rather than "just memorize and move
+  // on" (which is what Bernadette saw).
+  const [practiceRecallPhase, setPracticeRecallPhase] = useState(false);
+  const treatAsFinal = isFinal || practiceRecallPhase;
 
-  const revealedAll = useMemo(() => loadRevealed(task), [task]);
+  const revealedAll = useMemo(() => {
+    // In practice mode the storage-based session log is empty (no
+    // earlier tasks), so use the clues we just revealed in THIS task.
+    if (practiceMode) return uniqClean(cluesThisTask);
+    return loadRevealed(task);
+  }, [task, practiceMode, cluesThisTask]);
 
   const tickRef = useRef(null);
   const startRef = useRef(null);
@@ -225,6 +243,17 @@ export default function MysteryCluesTask({ task, onSubmit, disabled }) {
     if (isFinal) return;
     if (phase !== "done") return;
 
+    // In practice mode, don't auto-submit at "done" — instead jump
+    // straight into a self-contained recall phase using the clues that
+    // were just shown. This turns the previously-broken "no clue ever
+    // revealed" flow into an actual mini-game.
+    if (practiceMode) {
+      const t = window.setTimeout(() => {
+        setPracticeRecallPhase(true);
+      }, 1200);
+      return () => window.clearTimeout(t);
+    }
+
     const t = window.setTimeout(() => {
       if (typeof onSubmit === "function") {
         onSubmit({
@@ -244,12 +273,12 @@ export default function MysteryCluesTask({ task, onSubmit, disabled }) {
     const base = provided.length ? provided : DEFAULT_GRID;
 
     // Ensure revealed items are always present in the grid.
-    const mustInclude = uniqClean(isFinal ? revealedAll : []);
+    const mustInclude = uniqClean(treatAsFinal ? revealedAll : []);
     const merged = uniqClean([...mustInclude, ...base]);
 
     // Cap to 24 for layout sanity (keeps it game-show clean)
     return merged.slice(0, 24);
-  }, [task, revealedAll, isFinal]);
+  }, [task, revealedAll, treatAsFinal]);
 
   function togglePick(v) {
     if (submitted) return;
@@ -351,8 +380,9 @@ export default function MysteryCluesTask({ task, onSubmit, disabled }) {
       {/* DONE PHASE (non-final) — countdown reached zero.  Show a
           short confirmation so the screen isn't blank between
           "Hiding in 0s" and the next task.  Auto-submits ~1.5s later
-          (see effect above). */}
-      {!isFinal && phase === "done" && (
+          (see effect above). In practice mode this panel still
+          appears for the brief transition into the recall phase. */}
+      {!isFinal && phase === "done" && !practiceRecallPhase && (
         <div
           style={{
             marginTop: 26,
@@ -404,8 +434,8 @@ export default function MysteryCluesTask({ task, onSubmit, disabled }) {
         </div>
       )}
 
-      {/* FINAL RECALL */}
-      {isFinal && (
+      {/* FINAL RECALL (including practice-mode self-recall) */}
+      {treatAsFinal && (
         <div style={{ marginTop: 24 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <div style={{ opacity: 0.9 }}>

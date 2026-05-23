@@ -2954,7 +2954,7 @@ case TASK_TYPES.COLLABORATION:
 
     case TASK_TYPES.MYSTERY_CLUES:
       content = (
-        <MysteryCluesTask task={tp} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+        <MysteryCluesTask task={tp} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} practiceMode={practiceMode} />
       );
       break;
 

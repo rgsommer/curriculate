@@ -544,7 +544,27 @@ export default function BrainSparkNotesTask({ task, onAdvance, onSkip }) {
                       <div style={styles.notesGrid}>
                         {mainPoints.map((mp, idx) => {
                           const h = mp?.heading ?? `Point ${idx + 1}`;
-                          const bullets = Array.isArray(mp?.bullets) ? mp.bullets : [];
+                          // Handle BOTH shapes the validator can produce:
+                          //   {heading, bullets:[...]} (flat)
+                          //   {heading, sections:[{title, bullets:[...]}]} (nested)
+                          // The previous renderer only read `bullets`, so the
+                          // nested-sections shape rendered as "No bullets
+                          // provided" — Bernadette: "there were no main
+                          // points." Now we flatten sections into a single
+                          // bullet list (with section titles as sub-headings)
+                          // so SOMETHING always shows.
+                          const rawBullets = Array.isArray(mp?.bullets) ? mp.bullets : [];
+                          const rawSections = Array.isArray(mp?.sections) ? mp.sections : [];
+                          const flatBullets = rawBullets.length > 0
+                            ? rawBullets.map((b) => ({ text: String(b || "").trim(), sub: null }))
+                            : rawSections.flatMap((sec) => {
+                                const secTitle = String(sec?.title || sec?.heading || "").trim();
+                                const secBullets = Array.isArray(sec?.bullets) ? sec.bullets : [];
+                                return secBullets
+                                  .map((b) => String(b || "").trim())
+                                  .filter(Boolean)
+                                  .map((text) => ({ text, sub: secTitle || null }));
+                              });
                           const cardId = `mp-${idx}`;
                           const isExpanded = expandedCards[cardId];
 
@@ -567,11 +587,20 @@ export default function BrainSparkNotesTask({ task, onAdvance, onSkip }) {
                               </div>
 
                               <div style={styles.noteCardContent(isExpanded)}>
-                                {bullets.length > 0 ? (
+                                {flatBullets.length > 0 ? (
                                   <ul style={styles.bulletList}>
-                                    {bullets.map((b, i) => (
+                                    {flatBullets.map((b, i) => (
                                       <li key={`mp-${idx}-b-${i}`} style={styles.keyPoint}>
-                                        {b}
+                                        {b.sub ? (
+                                          <>
+                                            <strong style={{ color: "#475569", fontSize: 12, display: "block" }}>
+                                              {b.sub}
+                                            </strong>
+                                            {b.text}
+                                          </>
+                                        ) : (
+                                          b.text
+                                        )}
                                       </li>
                                     ))}
                                   </ul>
