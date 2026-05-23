@@ -96,6 +96,9 @@ export default function NarrationSynthesizeTask({
     if (namesRaw.length >= playerCount) {
       return namesRaw.slice(0, playerCount).map((n, i) => safeName(n, i));
     }
+    // No roster (solo practice / demo) → use friendly NAMED BOTS instead of
+    // bare "Player 1/2/3" (tester ask). Real classroom sessions pass
+    // config.playerNames, so bots only fill the unnamed slots.
     return Array.from({ length: playerCount }, (_, i) => safeName(namesRaw[i], i));
   }, [config.playerNames, playerCount]);
 
@@ -896,8 +899,12 @@ function clampInt(val, min, max, fallback) {
   return Math.max(min, Math.min(max, i));
 }
 
+// Friendly named bots for solo practice / demos (no roster). Curriculum-flavored
+// so the teach-back feels like a team of classmates, not "Player 1/2/3".
+const BOT_NAMES = ["Ada", "Newton", "Maya", "Darwin", "Hypatia", "Tesla", "Rosa", "Kepler"];
+
 function safeName(v, i) {
   const s = String(v || "").trim();
-  if (!s) return `Player ${i + 1}`;
+  if (!s) return BOT_NAMES[i % BOT_NAMES.length] || `Player ${i + 1}`;
   return s.slice(0, 24);
 }

@@ -28,6 +28,22 @@ const PHASE_TEXT = {
   when:  (n) => ({ label: `WHEN did it happen?`,        prompt: `Tap the 1 fact about WHEN ${n} lived or worked.` }),
 };
 
+// Pronouns by the figure's documented birth sex (Curriculate names real,
+// historical people — so we use he/she/his/her, not "they"). The generator
+// supplies figure.gender ("male" | "female"); we fall back to neutral wording
+// only when it's genuinely unknown.
+function _pronouns(figure = {}) {
+  const g = String(figure.gender || figure.sex || figure.pronoun || "").trim().toLowerCase();
+  if (g.startsWith("m") || g === "he" || g === "him" || g === "his") {
+    return { subj: "he", obj: "him", poss: "his", possName: "his" };
+  }
+  if (g.startsWith("f") || g === "she" || g === "her" || g === "hers") {
+    return { subj: "she", obj: "her", poss: "her", possName: "her" };
+  }
+  // Unknown → name-based wording instead of "they" (keeps it concrete).
+  return { subj: null, obj: null, poss: null, possName: null };
+}
+
 function _shuffle(arr) {
   const out = arr.slice();
   for (let i = out.length - 1; i > 0; i--) {
@@ -47,6 +63,9 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
 
   // The legend is KNOWN — name the phases after them.
   const who = String(figure.name || "this legend").trim();
+  const pr = useMemo(() => _pronouns(figure), [figure]);
+  // Possessive for the banner: "his/her life" when sex is known, else "their".
+  const possLife = pr.poss ? `${pr.poss} life` : "their life";
   const phases = useMemo(
     () => PHASES.map((p) => ({ ...p, ...(PHASE_TEXT[p.key]?.(who) || {}) })),
     [who]
@@ -196,7 +215,7 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
         <div style={{ fontWeight: 1000, fontSize: "1.35rem", color: "#fff" }}>{who}</div>
         {figure.era ? <div style={{ fontSize: "0.8rem", opacity: 0.8 }}>{figure.era}</div> : null}
         <div style={{ fontSize: "0.85rem", opacity: 0.9, lineHeight: 1.35, marginTop: 4 }}>
-          A legend! Sort the facts about their life into <b>What · Where · Why · When</b>.
+          A legend! Sort the facts about {possLife} into <b>What · Where · Why · When</b>.
         </div>
       </div>
 

@@ -5,6 +5,21 @@ import StepCircle from "../StepCircle";
 export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, onSubmit, presenter }) {
   const config = task?.config || {};
 
+  // This task uses dark Tailwind text (text-slate-900, text-gray-700, …) that
+  // assumes a LIGHT page. The student app theme is often DARK, which made the
+  // topic prompt "black on dark" and the judge's feedback "white on white"
+  // (tester report). We render every screen on an explicit light surface so the
+  // dark text is always legible regardless of the surrounding theme.
+  const lightSurface = {
+    background: "#f8fafc",
+    color: "#0f172a",
+    borderRadius: 24,
+    boxShadow: "0 12px 40px rgba(15,23,42,0.18)",
+    margin: "0 auto",
+    maxWidth: 1040,
+    width: "100%",
+  };
+
   // Tester (Nysa, May 2026): "no topic is ever prepared. there should be a clear
   // declaration of the topic, instructions, a 1-2-3 GO start button, and a
   // running timer with a time goal." So before the judge step we now run a
@@ -79,7 +94,7 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
 
   if (verdict) {
     return (
-      <div style={{ padding: 32, fontFamily: "system-ui", maxWidth: 1000, margin: "0 auto", textAlign: "center" }}>
+      <div style={{ ...lightSurface, padding: 32, fontFamily: "system-ui", textAlign: "center" }}>
         <h1 className="text-6xl font-bold mb-8 text-indigo-800">AI DEBATE JUDGE VERDICT</h1>
 
         <div className="text-9xl mb-8">
@@ -91,11 +106,11 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
         </div>
 
         <div className="grid grid-cols-2 gap-12 text-5xl mb-16">
-          <div className="bg-green-100 p-12 rounded-3xl">
+          <div className="bg-green-100 p-12 rounded-3xl text-slate-900">
             <strong>AFFIRMATIVE</strong><br />
             {verdict.scores.affirmative}/100
           </div>
-          <div className="bg-red-100 p-12 rounded-3xl">
+          <div className="bg-red-100 p-12 rounded-3xl text-slate-900">
             <strong>NEGATIVE</strong><br />
             {verdict.scores.negative}/100
           </div>
@@ -109,9 +124,11 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
         </button>
 
         {showFullFeedback && (
-          <div className="mt-16 bg-white p-12 rounded-3xl shadow-2xl text-left text-2xl leading-relaxed">
-            <h2 className="text-4xl font-bold mb-8 text-center">Judge's Written Decision</h2>
-            <div className="whitespace-pre-wrap">{verdict.feedback}</div>
+          <div className="mt-16 bg-white p-12 rounded-3xl shadow-2xl text-left text-2xl leading-relaxed" style={{ color: "#0f172a" }}>
+            <h2 className="text-4xl font-bold mb-8 text-center" style={{ color: "#0f172a" }}>Judge's Written Decision</h2>
+            <div className="whitespace-pre-wrap" style={{ color: "#1e293b" }}>
+              {verdict.feedback || "The judge did not return written feedback. Scores and the winner are shown above."}
+            </div>
           </div>
         )}
 
@@ -130,7 +147,7 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
     const timeUp = started && secondsLeft <= 0;
     const pct = goalSeconds > 0 ? Math.max(0, Math.min(100, (secondsLeft / goalSeconds) * 100)) : 0;
     return (
-      <div style={{ padding: 32, textAlign: "center", maxWidth: 1000, margin: "0 auto" }}>
+      <div style={{ ...lightSurface, padding: 32, textAlign: "center" }}>
         <div className="text-2xl font-bold text-indigo-700 mb-2">🗣️ Debate Time</div>
 
         {/* Topic declaration */}
@@ -228,7 +245,7 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
   }
 
   return (
-    <div style={{ padding: 40, textAlign: "center" }}>
+    <div style={{ ...lightSurface, padding: 40, textAlign: "center" }}>
       <h1 className="text-6xl font-bold mb-12 text-indigo-800">Ready for AI Judge?</h1>
 
       {/* Grade-7 clear instructions */}

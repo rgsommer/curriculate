@@ -4498,6 +4498,7 @@ config: {
 
     Required config fields:
     - config.figure.name        -- the legendary figure's full name (e.g. "Marie Curie")
+    - config.figure.gender      -- "male" or "female" (the figure's documented birth sex; used for he/she pronouns)
     - config.figure.portraitUrl -- a permanent, public-domain portrait URL (Wikipedia / Wikimedia Commons preferred)
     - config.figure.era         -- short era label (e.g. "Late 1800s - early 1900s")
     - config.figure.summary     -- 1-2 sentence summary shown after the reveal
@@ -4528,6 +4529,7 @@ config: {
       "config": {
         "figure": {
           "name": "Marie Curie",
+          "gender": "female",
           "portraitUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c8/Marie_Curie_c1920.jpg",
           "era": "Late 1800s - early 1900s",
           "summary": "Pioneering physicist and chemist who discovered radium and polonium; first person to win Nobel Prizes in two different sciences."

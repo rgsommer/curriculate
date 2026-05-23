@@ -297,7 +297,6 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
               alt={config.imageDescription || "Study this image"}
               onError={handleImageError}
               referrerPolicy="no-referrer"
-              crossOrigin="anonymous"
               style={{
                 width: "100%",
                 maxWidth: 900,

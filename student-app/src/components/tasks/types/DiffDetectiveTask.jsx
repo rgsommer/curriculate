@@ -17,6 +17,11 @@ export default function DiffDetectiveTask({
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isDictating, setIsDictating] = useState(false);
   const recognitionRef = useRef(null);
+  // Mic stays on until the student taps "Stop" — or a hard 10s safety cap.
+  // The Web Speech API fires `onend` on every natural pause, so without these
+  // refs the button would "unclick itself" mid-sentence (tester report).
+  const wantDictatingRef = useRef(false);   // user intent (true = keep listening)
+  const maxTimerRef = useRef(null);         // 10s auto-stop
 
   const differences = task?.differences || [];
   const numExpected = differences.length;
@@ -59,6 +64,8 @@ export default function DiffDetectiveTask({
   // --- Clean up speech recognition on unmount ---
   useEffect(() => {
     return () => {
+      wantDictatingRef.current = false;
+      if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null; }
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch {}
         recognitionRef.current = null;
@@ -89,15 +96,35 @@ export default function DiffDetectiveTask({
       setAnswer((prev) => (prev + " " + transcript).trimStart());
     };
 
-    recognition.onerror = () => setIsDictating(false);
-    recognition.onend = () => setIsDictating(false);
+    recognition.onerror = () => {
+      // A transient "no-speech" / "aborted" error shouldn't kill the session —
+      // only a real stop (user tap or 10s cap) clears the intent flag.
+      if (!wantDictatingRef.current) setIsDictating(false);
+    };
 
+    // The API ends on every natural pause. While the student still wants to
+    // dictate (and we're inside the 10s window), transparently restart so the
+    // button stays "clicked" the whole time.
+    recognition.onend = () => {
+      if (wantDictatingRef.current) {
+        try { recognition.start(); return; } catch {}
+      }
+      setIsDictating(false);
+    };
+
+    wantDictatingRef.current = true;
     recognition.start();
     recognitionRef.current = recognition;
     setIsDictating(true);
+
+    // Hard 10-second safety cap.
+    if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
+    maxTimerRef.current = setTimeout(() => stopDictation(), 10000);
   };
 
   const stopDictation = () => {
+    wantDictatingRef.current = false;
+    if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null; }
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch {}
       recognitionRef.current = null;

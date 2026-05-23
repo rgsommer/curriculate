@@ -542,6 +542,8 @@ export default function MysteryCluesTask({ task, onSubmit, disabled, practiceMod
               // after submission: show feedback
               let border = "1px solid rgba(255,255,255,0.22)";
               let bgCell = "rgba(255,255,255,0.10)";
+              let ring = "none";          // bold outer halo for the picked state
+              let lift = "none";          // subtle scale so a pick "pops"
               if (submitted) {
                 if (wasRevealed && selected.includes(v)) {
                   bgCell = "rgba(34,197,94,0.28)";
@@ -554,8 +556,14 @@ export default function MysteryCluesTask({ task, onSubmit, disabled, practiceMod
                   border = "1px solid rgba(250,204,21,0.45)";
                 }
               } else if (picked) {
-                bgCell = "rgba(255,255,255,0.18)";
-                border = "1px solid rgba(255,255,255,0.38)";
+                // Tester: "selected task is hard to see that it is selected;
+                // make bolder border." Use a thick bright sky-blue border plus
+                // an outer glow ring and a small scale-up so the pick is
+                // unmistakable against the dark grid.
+                bgCell = "rgba(56,189,248,0.30)";
+                border = "3px solid rgba(56,189,248,1)";
+                ring = "0 0 0 4px rgba(56,189,248,0.45)";
+                lift = "scale(1.05)";
               }
 
               return (
@@ -569,7 +577,11 @@ export default function MysteryCluesTask({ task, onSubmit, disabled, practiceMod
                     borderRadius: 18,
                     border,
                     background: bgCell,
-                    boxShadow: picked ? "0 18px 40px rgba(0,0,0,0.18)" : "0 12px 26px rgba(0,0,0,0.12)",
+                    boxShadow: picked
+                      ? `${ring}, 0 18px 40px rgba(0,0,0,0.28)`
+                      : "0 12px 26px rgba(0,0,0,0.12)",
+                    transform: lift,
+                    transition: "transform 120ms ease, box-shadow 120ms ease, background 120ms ease",
                     cursor: disabled || submitted ? "not-allowed" : "pointer",
                     color: "#fff",
                     fontSize: 40,

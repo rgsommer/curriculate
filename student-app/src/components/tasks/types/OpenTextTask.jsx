@@ -168,6 +168,24 @@ export default function OpenTextTask({
     return 0;
   }, [wordCount]);
 
+  // Points meter (tester ask: "show a points meter"). Shows the running point
+  // total the answer is on track to earn (base + length bonus) and how close
+  // the next bonus tier is, so the points feel tangible while writing.
+  const BONUS_TIERS = [
+    { words: 20, bonus: 1 },
+    { words: 40, bonus: 3 },
+    { words: 80, bonus: 5 },
+    { words: 150, bonus: 7 },
+  ];
+  const pointsMeter = useMemo(() => {
+    const maxBonus = BONUS_TIERS[BONUS_TIERS.length - 1].bonus;
+    const nextTier = BONUS_TIERS.find((t) => wordCount < t.words) || null;
+    const totalNow = basePoints + lengthBonusPoints;
+    const totalMax = basePoints + maxBonus;
+    const fillPct = totalMax > 0 ? Math.min(100, (totalNow / totalMax) * 100) : 0;
+    return { totalNow, totalMax, fillPct, nextTier, maxBonus };
+  }, [wordCount, basePoints, lengthBonusPoints]);
+
   // Milestone celebrations
   useEffect(() => {
     if (wordCount > prevWordCountRef.current) {
@@ -796,6 +814,58 @@ export default function OpenTextTask({
               >
                 {isListening ? "Stop 🎤" : "Speak 🎤"}
               </button>
+            </div>
+
+            {/* Points meter — running point total (base + length bonus) with a
+                fill bar toward the maximum, plus the next bonus tier. */}
+            <div
+              style={{
+                background: "rgba(255,255,255,0.15)",
+                borderRadius: "12px",
+                padding: "10px 12px",
+                backdropFilter: "blur(10px)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: 6,
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: 800,
+                }}
+              >
+                <span>🏆 Points</span>
+                <span style={{ fontVariantNumeric: "tabular-nums" }}>
+                  {pointsMeter.totalNow} <span style={{ opacity: 0.7, fontWeight: 600 }}>/ {pointsMeter.totalMax} max</span>
+                </span>
+              </div>
+              <div
+                style={{
+                  height: "8px",
+                  background: "rgba(0,0,0,0.18)",
+                  borderRadius: "999px",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${pointsMeter.fillPct}%`,
+                    background: "linear-gradient(90deg, #fbbf24, #f59e0b)",
+                    borderRadius: "999px",
+                    transition: "width 0.3s ease",
+                  }}
+                />
+              </div>
+              {pointsMeter.nextTier && (
+                <div style={{ marginTop: 6, fontSize: 11, color: "rgba(255,255,255,0.85)", fontWeight: 600 }}>
+                  +{pointsMeter.nextTier.bonus - lengthBonusPoints > 0 ? pointsMeter.nextTier.bonus - lengthBonusPoints : pointsMeter.nextTier.bonus} pt
+                  {" "}at {pointsMeter.nextTier.words} words ({Math.max(0, pointsMeter.nextTier.words - wordCount)} to go)
+                </div>
+              )}
             </div>
 
             {/* Milestone celebration */}
