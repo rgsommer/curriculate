@@ -133,6 +133,15 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
     [resources, inv]
   );
 
+  // Fair-value anchor for a resource = its supply-depot coin price (falls back
+  // to 3 when the resource has no coin option). Sellers start here, then adjust.
+  const anchorPriceFor = (resId) => {
+    const r = resources.find((x) => x.id === resId);
+    const coinOpt = (r?.acquisitionOptions || []).find((o) => o?.type === "coins");
+    const amt = Number(coinOpt?.amount);
+    return Number.isFinite(amt) && amt > 0 ? Math.floor(amt) : 3;
+  };
+
   // The offer encoded into the QR the buyer scans.
   const offerQrValue = useMemo(() => {
     if (!sellResId) return "";
@@ -313,7 +322,13 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
               type="button"
               style={{ ...buyBtn, background: "#0ea5e9", flex: 1, minWidth: 0 }}
               disabled={disabled}
-              onClick={() => { setTradeMsg(null); setSellResId(ownedResources[0]?.id || ""); setTradeMode("sell"); }}
+              onClick={() => {
+                setTradeMsg(null);
+                const first = ownedResources[0]?.id || "";
+                setSellResId(first);
+                if (first) setSellPrice(anchorPriceFor(first));
+                setTradeMode("sell");
+              }}
             >
               Make an offer
             </button>
@@ -337,7 +352,11 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
             ) : (
               <>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
-                  <select value={sellResId} onChange={(e) => setSellResId(e.target.value)} style={selectStyle}>
+                  <select
+                    value={sellResId}
+                    onChange={(e) => { const id = e.target.value; setSellResId(id); setSellPrice(anchorPriceFor(id)); }}
+                    style={selectStyle}
+                  >
                     {ownedResources.map((r) => (
                       <option key={r.id} value={r.id}>{(r.name || r.id)} (×{Number(inv[r.id]) || 0})</option>
                     ))}
@@ -354,6 +373,11 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
                     coins
                   </label>
                 </div>
+                {sellResId && (
+                  <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginBottom: 6 }}>
+                    Standard value: {anchorPriceFor(sellResId)} coin{anchorPriceFor(sellResId) === 1 ? "" : "s"} — adjust the price to negotiate.
+                  </div>
+                )}
                 {offerQrValue && (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, background: "#fff", padding: 12, borderRadius: 12 }}>
                     <QRCodeSVG value={offerQrValue} size={184} marginSize={2} />
