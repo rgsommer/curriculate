@@ -6,6 +6,7 @@
 // AI-assessed for clarity, accuracy, age-appropriateness, and additive value.
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import SpeechQualityMeter from "../SpeechQualityMeter";
 
 /* ─── Constants ─── */
 const INPUT_MODES = [
