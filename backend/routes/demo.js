@@ -491,6 +491,58 @@ router.post("/orphan-feedback", async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  POST /session-rating                                               */
+/*                                                                    */
+/*  End-of-session "overall impression" ratings (1-5 stars each):     */
+/*  overall, wantTeacherUse, recommend — plus an optional comment.    */
+/*  Appended to the lead's sessionRatings log (capped 100).           */
+/* ------------------------------------------------------------------ */
+router.post("/session-rating", async (req, res) => {
+  try {
+    const { email, conference, overall, wantTeacherUse, recommend, comment, source } = req.body || {};
+    if (!email) return res.status(400).json({ error: "email is required" });
+
+    const clamp = (n) => Math.max(0, Math.min(5, Math.round(Number(n) || 0)));
+    const o = clamp(overall);
+    const w = clamp(wantTeacherUse);
+    const r = clamp(recommend);
+    const c = String(comment || "").trim().slice(0, 1000);
+
+    // Require at least one star somewhere — don't store empty submissions.
+    if (o === 0 && w === 0 && r === 0 && !c) {
+      return res.json({ ok: true, saved: false });
+    }
+
+    const entry = {
+      overall: o,
+      wantTeacherUse: w,
+      recommend: r,
+      comment: c,
+      source: String(source || "").slice(0, 40),
+      createdAt: new Date(),
+    };
+
+    const lead = await ConferenceLead.findOneAndUpdate(
+      {
+        email: String(email).toLowerCase().trim(),
+        conference: conference || "general",
+      },
+      { $push: { sessionRatings: { $each: [entry], $slice: -100 } } },
+      { new: false }
+    );
+
+    if (!lead) {
+      return res.status(404).json({ error: "Lead not found — register first" });
+    }
+
+    res.json({ ok: true, saved: true });
+  } catch (err) {
+    console.error("[demo/session-rating] Error:", err.message);
+    res.status(500).json({ error: "Failed to save rating" });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  GET /nudge-inactive                                                */
 /*                                                                    */
 /*  Admin-triggered re-engagement.  Sends a personalized "we miss     *

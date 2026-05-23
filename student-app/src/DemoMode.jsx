@@ -2067,6 +2067,177 @@ function AmbassadorPopup({ user, onDismiss }) {
 
 const RECOMMEND_POINTS = 25;
 
+// ----------------------------------------------------------------
+// End-of-session "overall impression" star ratings
+// ----------------------------------------------------------------
+
+// A single 1-5 star row. value 0 = unrated.
+function StarRow({ value, onChange, disabled }) {
+  const [hover, setHover] = useState(0);
+  return (
+    <div style={{ display: "flex", gap: 4 }} role="radiogroup">
+      {[1, 2, 3, 4, 5].map((n) => {
+        const active = (hover || value) >= n;
+        return (
+          <button
+            key={n}
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange(n)}
+            onMouseEnter={() => !disabled && setHover(n)}
+            onMouseLeave={() => !disabled && setHover(0)}
+            aria-label={`${n} star${n > 1 ? "s" : ""}`}
+            aria-checked={value === n}
+            role="radio"
+            style={{
+              background: "transparent",
+              border: "none",
+              cursor: disabled ? "default" : "pointer",
+              fontSize: 30,
+              lineHeight: 1,
+              padding: "0 2px",
+              color: active ? "#f59e0b" : "#d1d5db",
+              filter: active ? "drop-shadow(0 1px 2px rgba(245,158,11,0.4))" : "none",
+              transition: "color 0.12s, transform 0.12s",
+              transform: (hover || value) === n ? "scale(1.15)" : "scale(1)",
+            }}
+          >
+            {active ? "★" : "☆"}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SessionRating({ user, source = "practice" }) {
+  const [overall, setOverall] = useState(0);
+  const [wantTeacherUse, setWantTeacherUse] = useState(0);
+  const [recommend, setRecommend] = useState(0);
+  const [comment, setComment] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | sending | sent | error
+
+  const anyRated = overall > 0 || wantTeacherUse > 0 || recommend > 0;
+
+  const conference =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("event") || "general"
+      : "general";
+
+  const handleSubmit = async () => {
+    if (!anyRated || status === "sending") return;
+    setStatus("sending");
+    try {
+      const resp = await fetch(`${API_BASE_URL}/api/conference/session-rating`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: user.email,
+          conference,
+          overall,
+          wantTeacherUse,
+          recommend,
+          comment: comment.trim(),
+          source,
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      setStatus(data?.ok ? "sent" : "error");
+    } catch (err) {
+      console.warn("[session-rating] failed:", err);
+      setStatus("error");
+    }
+  };
+
+  if (status === "sent") {
+    return (
+      <div style={{
+        width: "100%", padding: 20, borderRadius: 16,
+        background: "linear-gradient(135deg, #ecfdf5, #d1fae5)",
+        border: "2px solid #6ee7b7", textAlign: "center", marginBottom: 20,
+      }}>
+        <div style={{ fontSize: 30, marginBottom: 4 }}>💚</div>
+        <div style={{ fontSize: 16, fontWeight: 900, color: "#047857" }}>
+          Thank you for the feedback!
+        </div>
+        <div style={{ fontSize: 13, color: "#059669", marginTop: 2 }}>
+          It helps us make Curriculate better for your class.
+        </div>
+      </div>
+    );
+  }
+
+  const rows = [
+    { key: "overall", label: "Overall impression of Curriculate", value: overall, set: setOverall },
+    { key: "teacher", label: "I'd like my teacher to use this in class", value: wantTeacherUse, set: setWantTeacherUse },
+    { key: "recommend", label: "I'd likely recommend Curriculate", value: recommend, set: setRecommend },
+  ];
+
+  return (
+    <div style={{
+      width: "100%", padding: 20, borderRadius: 16,
+      background: "linear-gradient(135deg, #fffbeb, #fef9c3)",
+      border: "2px solid #fde68a", marginBottom: 20,
+    }}>
+      <div style={{ fontSize: 16, fontWeight: 900, color: "#92400e", marginBottom: 2, textAlign: "center" }}>
+        How did we do?
+      </div>
+      <div style={{ fontSize: 12, color: "#a16207", marginBottom: 14, textAlign: "center" }}>
+        Tap the stars — your honest rating helps us improve.
+      </div>
+
+      {rows.map((r) => (
+        <div
+          key={r.key}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            gap: 10, padding: "8px 0", borderTop: "1px solid rgba(146,64,14,0.12)",
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#78350f", flex: 1, lineHeight: 1.3 }}>
+            {r.label}
+          </div>
+          <StarRow value={r.value} onChange={r.set} disabled={status === "sending"} />
+        </div>
+      ))}
+
+      <textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        disabled={status === "sending"}
+        rows={2}
+        placeholder="Anything else you'd like to tell us? (optional)"
+        style={{
+          width: "100%", marginTop: 12, padding: "10px 12px", borderRadius: 10,
+          border: "1px solid #fcd34d", background: "rgba(255,255,255,0.85)",
+          color: "#1e293b", fontSize: 13, fontFamily: "inherit", resize: "vertical",
+          boxSizing: "border-box",
+        }}
+      />
+
+      <button
+        type="button"
+        onClick={handleSubmit}
+        disabled={!anyRated || status === "sending"}
+        style={{
+          width: "100%", marginTop: 12, padding: "12px 16px", borderRadius: 12, border: "none",
+          background: anyRated ? "linear-gradient(135deg, #f59e0b, #d97706)" : "#e5e7eb",
+          color: anyRated ? "#fff" : "#9ca3af",
+          fontWeight: 900, fontSize: 15,
+          cursor: anyRated && status !== "sending" ? "pointer" : "default",
+        }}
+      >
+        {status === "sending" ? "Sending…" : "Submit Rating"}
+      </button>
+      {status === "error" && (
+        <div style={{ marginTop: 8, fontSize: 12, color: "#b91c1c", textAlign: "center", fontWeight: 700 }}>
+          Couldn't save — please try again.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RecommendTeacher({ user, onPointsEarned }) {
   const [expanded, setExpanded] = useState(false);
   const [teacherName, setTeacherName] = useState("");
@@ -3036,6 +3207,9 @@ function DemoResults({
             </div>
           </div>
         )}
+
+        {/* Overall impression — 1-5 star ratings for the whole session */}
+        <SessionRating user={user} source={source} />
 
         {/* Recommend a Teacher */}
         <RecommendTeacher user={user} onPointsEarned={(pts) => setRecommendBonus((b) => b + pts)} />

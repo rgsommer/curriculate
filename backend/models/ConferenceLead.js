@@ -87,6 +87,21 @@ const conferenceLeadSchema = new mongoose.Schema(
       },
     ],
 
+    // End-of-session "overall impression" ratings (1-5 stars each). Captured
+    // once per finished practice session on the results screen. Append-only so
+    // replays stack; capped to the last 100 entries.
+    sessionRatings: [
+      {
+        _id: false,
+        overall: { type: Number, min: 0, max: 5, default: 0 },          // overall impression of Curriculate
+        wantTeacherUse: { type: Number, min: 0, max: 5, default: 0 },    // "I'd like my teacher to use this in class"
+        recommend: { type: Number, min: 0, max: 5, default: 0 },         // "I'd likely recommend Curriculate"
+        comment: { type: String, default: "" },
+        source: { type: String, default: "" },                          // "conference" | "classroom" | "practice"
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
+
     // Task results captured during demo play
     results: [
       {
