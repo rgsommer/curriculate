@@ -110,16 +110,29 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
 
   /* ──────────────── Render ──────────────── */
 
+  // Bundled local default so we never show a blank portrait. The
+  // /demo-images/great-wave.jpg is a public-domain placeholder that
+  // ships with the app — visible immediately even if the AI-supplied
+  // portraitUrl is missing or fails to load.
+  const FALLBACK_PORTRAIT = "/demo-images/great-wave.jpg";
+  const portraitSrc = figure.portraitUrl || FALLBACK_PORTRAIT;
+
   if (revealed) {
     return (
       <div style={wrap}>
         <div style={revealHeader}>
           <div style={revealLabel}>This Legendary Figure Is…</div>
-          {figure.portraitUrl ? (
-            <img src={figure.portraitUrl} alt={figure.name || "Legendary figure"} style={portraitLarge} />
-          ) : (
-            <div style={{ ...portraitLarge, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "3rem" }}>👤</div>
-          )}
+          <img
+            src={portraitSrc}
+            alt={figure.name || "Legendary figure"}
+            referrerPolicy="no-referrer"
+            onError={(e) => {
+              if (e.target.src.indexOf(FALLBACK_PORTRAIT) === -1) {
+                e.target.src = FALLBACK_PORTRAIT;
+              }
+            }}
+            style={portraitLarge}
+          />
           <div style={revealName}>{figure.name || "?"}</div>
           {figure.era ? <div style={{ ...revealEra }}>{figure.era}</div> : null}
           {figure.summary ? <p style={revealSummary}>{figure.summary}</p> : null}
@@ -146,14 +159,20 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
     <div style={wrap}>
       <div style={tagStrip}>Legends · Phase {phaseIdx + 1} of {PHASES.length}</div>
 
-      {figure.portraitUrl ? (
-        <div style={portraitWrap}>
-          <img src={figure.portraitUrl} alt="A legendary figure" style={portrait} />
-          <div style={mysteryOverlay}>?</div>
-        </div>
-      ) : (
-        <div style={{ ...portraitWrap, alignItems: "center", justifyContent: "center", color: "#7c3aed", fontSize: "3rem" }}>?</div>
-      )}
+      <div style={portraitWrap}>
+        <img
+          src={portraitSrc}
+          alt="A legendary figure"
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            if (e.target.src.indexOf(FALLBACK_PORTRAIT) === -1) {
+              e.target.src = FALLBACK_PORTRAIT;
+            }
+          }}
+          style={portrait}
+        />
+        <div style={mysteryOverlay}>?</div>
+      </div>
 
       <h2 style={phaseTitle}>{phase.label}</h2>
       <p style={phasePrompt}>{phase.prompt}</p>

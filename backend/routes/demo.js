@@ -1141,6 +1141,9 @@ router.get("/feedback-summary", async (req, res) => {
       }))
       .sort((a, b) => a.avgFun - b.avgFun); // worst-rated first for attention
 
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
     res.json({
       ok: true,
       summary,
@@ -1322,6 +1325,13 @@ router.get("/feedback-export", async (req, res) => {
       lines.push("");
     }
 
+    // Disable proxy / CDN / browser caching so every pull is fresh.
+    // (The previous tester pulled the same stale May-10 export back even
+    // though new feedback had been submitted.)
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+    res.set("Surrogate-Control", "no-store");
     res.type("text/plain").send(lines.join("\n"));
   } catch (err) {
     console.error("[demo/feedback-export] Error:", err.message);

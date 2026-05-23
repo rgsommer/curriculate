@@ -61,12 +61,13 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
   const minObs = Number(config.minObservations) || 5;
   const focusHints = Array.isArray(config.focusHints) ? config.focusHints : [];
 
-  // Public-domain Wikimedia default — used both as the very last
-  // fallback and as the *initial* image when the task ships with no
-  // imageUrl at all.  Tester: "No art is viewed! just display a
-  // picture with a prompt to comment on it."
-  const DEFAULT_ART_URL =
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1280px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg";
+  // Bundled local default — guaranteed to load, no CORS / hotlink
+  // issues. Tester (Richard, May 2026): "Still no art! What is going
+  // on?? this task MUST MUST MUST display an image of a piece of
+  // historically relevant art." The previous external Wikimedia thumb
+  // was being blocked by hotlink protection in some networks.
+  // /demo-images/great-wave.jpg is bundled in student-app/public/.
+  const DEFAULT_ART_URL = "/demo-images/great-wave.jpg";
 
   // Skip the LOADING preload-validation step entirely — it was sticking
   // the practicer on a black spinner whenever the preload promise hung
@@ -286,6 +287,8 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
               src={resolvedUrl}
               alt={config.imageDescription || "Study this image"}
               onError={handleImageError}
+              referrerPolicy="no-referrer"
+              crossOrigin="anonymous"
               style={{
                 width: "100%",
                 maxWidth: 900,

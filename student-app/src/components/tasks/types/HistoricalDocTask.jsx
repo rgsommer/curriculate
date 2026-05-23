@@ -69,8 +69,14 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
   ];
   const historicalContext = config.historicalContext || "";
 
-  const [phase, setPhase] = useState(PHASE.LOADING);
-  const [resolvedUrl, setResolvedUrl] = useState("");
+  // Start in READING phase with the local default image already set,
+  // so something is on screen instantly. If the AI-supplied imageUrl
+  // loads in the preload effect, we swap to it; otherwise the local
+  // default stays. This eliminates the "stuck on loading / no doc"
+  // failure mode tester flagged.
+  const LOCAL_DEFAULT_DOC = "/demo-images/emancipation-proclamation.svg";
+  const [phase, setPhase] = useState(PHASE.READING);
+  const [resolvedUrl, setResolvedUrl] = useState(originalUrl || LOCAL_DEFAULT_DOC);
   const [loadError, setLoadError] = useState("");
   const [secondsLeft, setSecondsLeft] = useState(viewingSec);
   const [responses, setResponses] = useState(() =>
@@ -118,11 +124,12 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
         }
       }
 
-      // Default fallback — Declaration of Independence, public-domain
-      // image from Wikimedia.  Same justification as ArtView: tester
-      // wants the practicer to always see *something* meaningful.
-      const DEFAULT_DOC_URL =
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/United_States_Declaration_of_Independence.jpg/800px-United_States_Declaration_of_Independence.jpg";
+      // Bundled local default — Emancipation Proclamation (SVG) is
+      // shipped in student-app/public/demo-images/. Same fix as
+      // ArtView: external Wikimedia URLs were being blocked by hotlink
+      // protection or CORS in some networks. Tester (Richard, May 2026)
+      // was very explicit: this task MUST MUST MUST display a document.
+      const DEFAULT_DOC_URL = "/demo-images/emancipation-proclamation.svg";
       try {
         const url = await preloadImage(DEFAULT_DOC_URL);
         if (!cancelled) {
@@ -315,6 +322,14 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
             <img
               src={resolvedUrl}
               alt={config.imageDescription || "Historical document"}
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                // If the AI-supplied image fails, snap to the bundled
+                // local default so SOMETHING is always on screen.
+                if (e.target.src.indexOf(LOCAL_DEFAULT_DOC) === -1) {
+                  setResolvedUrl(LOCAL_DEFAULT_DOC);
+                }
+              }}
               style={{
                 width: "100%",
                 maxWidth: 900,

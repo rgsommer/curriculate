@@ -1335,6 +1335,41 @@ function DemoPlayer({
       setShowFeedback(false);
       setPendingEntry(null);
 
+      // ── PER-TASK INCREMENTAL FEEDBACK PERSISTENCE ─────────────────────
+      // Previously, ratings + comments only POSTed to the backend when
+      // the ResultsScreen mounted at session end. Testers who didn't
+      // finish a session lost every rating they'd given.  Now we
+      // fire-and-forget the single feedback entry to the existing
+      // /orphan-feedback endpoint the moment the user hits Send.
+      try {
+        if (feedback && user?.email) {
+          const hasContent =
+            (feedback.fun && feedback.fun > 0) ||
+            (feedback.clarity && feedback.clarity > 0) ||
+            (feedback.confusing && String(feedback.confusing).trim()) ||
+            (feedback.suggestion && String(feedback.suggestion).trim());
+          if (hasContent) {
+            fetch(`${API_BASE_URL}/api/conference/orphan-feedback`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                email: user.email,
+                conference: "general",
+                entries: [{
+                  taskType: entry.taskType,
+                  title: entry.title,
+                  fun: Number(feedback.fun) || 0,
+                  clarity: Number(feedback.clarity) || 0,
+                  confusing: String(feedback.confusing || ""),
+                  suggestion: String(feedback.suggestion || ""),
+                }],
+              }),
+              keepalive: true, // survives a tab close mid-flight
+            }).catch(() => { /* silent — results POST at session end is the backstop */ });
+          }
+        }
+      } catch { /* never block the UX on telemetry */ }
+
       // ── Commitment auto-end ────────────────────────────────────────
       // If the player committed to N tasks on entry and just hit it,
       // award the bonus and end the session immediately.  Skips don't
@@ -1353,7 +1388,7 @@ function DemoPlayer({
         onFinish(newResults);
       }
     },
-    [pendingEntry, results, taskIdx, total, onFinish, hasCommitment, target, finishWithBonus]
+    [pendingEntry, results, taskIdx, total, onFinish, hasCommitment, target, finishWithBonus, user?.email]
   );
 
   // Skip-reason dialog state (driven by the nav-bar "Skip →" button).

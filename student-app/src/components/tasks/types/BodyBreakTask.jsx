@@ -412,6 +412,27 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
             }
           />
 
+          {/* Honor-system reminder — addresses tester feedback:
+              "What will prevent kids from just saying Done? maybe just
+              honor system". Setting the expectation in copy is cheaper
+              than any anti-cheat we could build. */}
+          <div
+            style={{
+              marginTop: 8,
+              padding: "8px 12px",
+              borderRadius: 10,
+              background: "rgba(34,197,94,0.10)",
+              border: "1px solid rgba(34,197,94,0.30)",
+              color: "#bbf7d0",
+              fontSize: "0.8rem",
+              lineHeight: 1.4,
+              textAlign: "center",
+              fontWeight: 600,
+            }}
+          >
+            🤝 Honor system — your team trusts you to actually do the moves before tapping Done.
+          </div>
+
           <div style={styles.footer}>{finishText}</div>
         </div>
       </div>

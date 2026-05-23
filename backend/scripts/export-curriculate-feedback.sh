@@ -12,7 +12,15 @@ KEY="${ADMIN_API_TOKEN:-${ADMIN_API_KEY:?Set ADMIN_API_TOKEN environment variabl
 OUT="${OUT:-$(cd "$(dirname "$0")/../.." && pwd)/feedback-curriculate.txt}"
 
 echo "Fetching Curriculate feedback from $API_BASE ..."
-curl -s "$API_BASE/api/conference/feedback-export?key=$KEY" -o "$OUT"
+# Cache-bust with a timestamp so we never get a stale response from any
+# proxy or CDN in front of the API. Also pass explicit no-cache headers
+# in case Cloudflare / browser-derived caching is configured.
+TS=$(date +%s%N 2>/dev/null || date +%s)
+curl -s \
+  -H "Cache-Control: no-cache" \
+  -H "Pragma: no-cache" \
+  "$API_BASE/api/conference/feedback-export?key=$KEY&_t=$TS" \
+  -o "$OUT"
 
 if [ $? -eq 0 ] && [ -s "$OUT" ]; then
   echo "Saved to $OUT ($(wc -l < "$OUT") lines)"

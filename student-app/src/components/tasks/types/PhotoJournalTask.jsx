@@ -37,16 +37,31 @@ export default function PhotoJournalTask({
   const handleInnerPhotoSubmit = (payload) => {
     const normalized =
       typeof payload === "string" ? { type: "photo", summary: payload } : payload;
-    // Do NOT call the parent onSubmit yet; just capture the photo payload.
     setPhotoAnswer(normalized);
     setPhotoCaptured(true);
 
-    // Optionally let parent know draft changed
     if (onAnswerChange) {
       onAnswerChange({
         ...(answerDraft || {}),
         photo: normalized,
         explanation,
+      });
+    }
+
+    // Tester report (May 2026): 'after photo is submitted, it should
+    // not ask for additional comment on the photo. just one is fine.'
+    // PhotoTask already collects a caption — auto-submit the journal
+    // entry using that caption rather than forcing a second textarea.
+    if (onSubmit && !disabled) {
+      onSubmit({
+        type: "photo-journal",
+        photo: normalized,
+        // Preserve the inner caption as the explanation so existing
+        // back-end consumers (which read `explanation`) keep working.
+        explanation:
+          (typeof normalized?.summary === "string" && normalized.summary.trim()) ||
+          (typeof normalized?.caption === "string" && normalized.caption.trim()) ||
+          "(photo submitted)",
       });
     }
   };
