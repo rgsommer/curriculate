@@ -2,6 +2,40 @@
 import PDFDocument from "pdfkit";
 
 /**
+ * Fetch an image as a pdfkit-embeddable Buffer (PNG or JPEG only — pdfkit does
+ * not support SVG/WebP). Accepts http(s) URLs and data: URIs. Best-effort with
+ * an 8s timeout; returns null on any failure or unsupported format.
+ */
+async function fetchImageBytes(url) {
+  try {
+    if (!url || typeof url !== "string") return null;
+    let buf, ct;
+    if (url.startsWith("data:")) {
+      const m = url.match(/^data:([^;]+);base64,(.+)$/);
+      if (!m) return null;
+      ct = m[1];
+      buf = Buffer.from(m[2], "base64");
+    } else if (/^https?:\/\//i.test(url)) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const res = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) return null;
+      ct = res.headers.get("content-type") || "";
+      buf = Buffer.from(await res.arrayBuffer());
+    } else {
+      return null;
+    }
+    const isPng = buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+    const isJpeg = buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+    if (isPng || isJpeg || /png|jpe?g/i.test(ct)) return buf;
+    return null; // svg/webp/etc — pdfkit can't embed
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Render a branded Session Report PDF and return it as a Buffer.
  * The report doc can be a mongoose doc or a plain object.
  */
@@ -297,6 +331,7 @@ function taskTypeEmoji(typeRaw) {
   if (!t) return "🧩";
 
   // Common objective types
+  if (t.includes("labelme") || t.includes("label-me")) return "🏷️";
   if (t.includes("matching")) return "🔗";
   if (t.includes("sequence")) return "🔢";
   if (t.includes("timeline")) return "🕰️";
@@ -369,7 +404,7 @@ function formatDate(d) {
   
 
   // Task-aware summary card (simple PDF "card" block)
-  function renderTaskSummaryCards(tasks) {
+  async function renderTaskSummaryCards(tasks) {
     const list = Array.isArray(tasks) ? tasks.filter(Boolean) : [];
     if (!list.length) return;
 
@@ -531,10 +566,37 @@ function formatDate(d) {
         bulletsLines.push("Skill focus: critical thinking, applied reasoning, vocabulary usage.");
       }
 
+      if (norm === "labelme") {
+        const labels = Array.isArray(t.labels) ? t.labels : Array.isArray(t.config?.labels) ? t.config.labels : [];
+        labels.forEach((l) => { if (l?.id && l?.correct) bulletsLines.push(`${l.id} → ${l.correct}`); });
+        bulletsLines.push("Students match each marker A–E to the correct term on the diagram.");
+      }
+
       if (bulletsLines.length) {
         doc.moveDown(0.25);
         doc.font("Helvetica").fontSize(10).fillColor("#111111");
         bullets(bulletsLines);
+      }
+
+      // Label Me: embed the diagram/map itself so the report shows what was
+      // labelled (pdfkit handles PNG/JPEG; SVG/failed fetch is skipped).
+      if (norm === "labelme") {
+        const imgUrl = t.imageUrl || t.config?.imageUrl || "";
+        const imgBuf = await fetchImageBytes(imgUrl);
+        if (imgBuf) {
+          ensureSpace(250);
+          doc.moveDown(0.3);
+          const imgY = doc.y;
+          const imgH = 220;
+          try {
+            doc.image(imgBuf, innerX, imgY, { fit: [innerW, imgH], align: "center", valign: "top" });
+            doc.y = imgY + imgH + 6;
+          } catch (_) { /* corrupt image — skip */ }
+        } else if (imgUrl) {
+          doc.moveDown(0.2);
+          doc.font("Helvetica-Oblique").fontSize(9).fillColor("#6b7280").text("Diagram available in the live activity.", { width: innerW });
+          doc.font("Helvetica").fontSize(10).fillColor("#111111");
+        }
       }
 
       // Compute card height and redraw border correctly (quick trick: draw border after we know end y)
@@ -665,7 +727,7 @@ function formatDate(d) {
     report.summary?.tasks ||
     report.transcript?.tasks ||
     [];
-  renderTaskSummaryCards(taskCardsSource);
+  await renderTaskSummaryCards(taskCardsSource);
 
   // ---------- Overlay Mode Summary (Escape Room / Whodunnit / Quest) ----------
   const overlay = report.overlayModeSummary;
