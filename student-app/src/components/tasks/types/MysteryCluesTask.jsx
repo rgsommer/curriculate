@@ -17,6 +17,35 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const REVEAL_MS_DEFAULT = 8000;
 const BONUS_DEFAULT = 10;
+// Reveal "shuffle" cadence: the clue cards re-order with a flip every SHUFFLE_MS
+// during the reveal window (tester: "appear, shuffle, appear, shuffle, then
+// choose") so it's an actual memory challenge, not a static peek.
+const SHUFFLE_MS = 1200;
+
+function hashStr(s) {
+  let h = 2166136261;
+  const str = String(s || "");
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+// Deterministic shuffle (stable across re-renders for a given seed).
+function seededShuffle(arr, seed) {
+  const a = [...arr];
+  let s = (seed >>> 0) || 1;
+  const rnd = () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 // A safe default grid of 20 items (emojis are best, but any short token works)
 const DEFAULT_GRID = [
@@ -183,6 +212,9 @@ export default function MysteryCluesTask({ task, onSubmit, disabled, practiceMod
   // makes the task a complete game rather than "just memorize and move
   // on" (which is what Bernadette saw).
   const [practiceRecallPhase, setPracticeRecallPhase] = useState(false);
+  // Order the reveal cards are shown in; reshuffles during the reveal window.
+  const [revealOrder, setRevealOrder] = useState(() => cluesThisTask.map((_, i) => i));
+  const [shuffleTick, setShuffleTick] = useState(0);
   const treatAsFinal = isFinal || practiceRecallPhase;
 
   const revealedAll = useMemo(() => {
@@ -233,6 +265,30 @@ export default function MysteryCluesTask({ task, onSubmit, disabled, practiceMod
     };
   }, [phase, isFinal, revealMs]);
 
+  // Reveal "shuffle": re-order the clue cards every SHUFFLE_MS while they're
+  // showing, so it's an actual memory challenge (appear → shuffle → appear →
+  // shuffle → choose) instead of a static peek. Cards get a flip via shuffleTick.
+  useEffect(() => {
+    if (isFinal || phase !== "reveal") return;
+    if (cluesThisTask.length < 2) return; // nothing to shuffle
+    const id = window.setInterval(() => {
+      setShuffleTick((t) => {
+        const next = t + 1;
+        setRevealOrder((order) =>
+          seededShuffle(order.length ? order : cluesThisTask.map((_, i) => i), hashStr("mc-shuffle-" + next))
+        );
+        return next;
+      });
+    }, SHUFFLE_MS);
+    return () => window.clearInterval(id);
+  }, [phase, isFinal, cluesThisTask]);
+
+  // Reset the reveal order whenever the clue set changes.
+  useEffect(() => {
+    setRevealOrder(cluesThisTask.map((_, i) => i));
+    setShuffleTick(0);
+  }, [cluesThisTask]);
+
   // Auto-submit non-final reveal tasks shortly after hiding, to keep
   // flow moving.  Bumped from 450ms → 1500ms so the "✅ Cards
   // memorized" confirmation panel (rendered below for phase === 'done')
@@ -274,10 +330,16 @@ export default function MysteryCluesTask({ task, onSubmit, disabled, practiceMod
 
     // Ensure revealed items are always present in the grid.
     const mustInclude = uniqClean(treatAsFinal ? revealedAll : []);
-    const merged = uniqClean([...mustInclude, ...base]);
+    const distractors = base.filter((b) => !mustInclude.includes(b));
 
-    // Cap to 24 for layout sanity (keeps it game-show clean)
-    return merged.slice(0, 24);
+    // Keep the revealed clues, then cap to 24 for layout sanity.
+    const capped = uniqClean([...mustInclude, ...distractors]).slice(0, 24);
+
+    // Shuffle positions so the revealed clues aren't always the first cells
+    // (tester: the answers were "too easy, obviously"). Seeded by task so the
+    // layout stays stable across re-renders within the same task.
+    const seed = hashStr(storageKey(task)) ^ 0x9e3779b9;
+    return seededShuffle(capped, seed);
   }, [task, revealedAll, treatAsFinal]);
 
   function togglePick(v) {
@@ -357,10 +419,27 @@ export default function MysteryCluesTask({ task, onSubmit, disabled, practiceMod
       {/* REVEAL PHASE (non-final) */}
       {!isFinal && phase === "reveal" && (
         <div style={{ marginTop: 26 }}>
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-            {cluesThisTask.map((c) => (
-              <Card key={c} value={c} big />
-            ))}
+          <style>{`
+            @keyframes mcFlip {
+              0%   { transform: rotateY(0deg) scale(1); }
+              45%  { transform: rotateY(90deg) scale(1.06); }
+              55%  { transform: rotateY(90deg) scale(1.06); }
+              100% { transform: rotateY(0deg) scale(1); }
+            }
+          `}</style>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
+            {(revealOrder.length ? revealOrder : cluesThisTask.map((_, i) => i)).map((origIdx) => {
+              const c = cluesThisTask[origIdx];
+              if (c == null) return null;
+              return (
+                <div
+                  key={`${origIdx}-${shuffleTick}`}
+                  style={{ animation: "mcFlip 420ms ease", transformStyle: "preserve-3d" }}
+                >
+                  <Card value={c} big />
+                </div>
+              );
+            })}
           </div>
           <div style={{ marginTop: 18, opacity: 0.9 }}>
             <div style={{ height: 10, borderRadius: 999, background: "rgba(255,255,255,0.14)", overflow: "hidden" }}>

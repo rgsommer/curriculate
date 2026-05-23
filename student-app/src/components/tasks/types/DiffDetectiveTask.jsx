@@ -21,6 +21,20 @@ export default function DiffDetectiveTask({
   const differences = task?.differences || [];
   const numExpected = differences.length;
 
+  // Image (visual) comparison mode — tester ask: "Could this be between two art
+  // pics, two documents, two historical figures, two specimens, two scenes, two
+  // pieces of equipment…". When the task supplies two images we show them
+  // side-by-side instead of text passages; students still describe the
+  // differences they spot. Inline highlighting isn't possible on an image, so
+  // the answer key is revealed as a list after submitting.
+  const cfg = task?.config || {};
+  const imageA = task?.imageA || cfg.imageA || task?.originalImage || cfg.originalImage || "";
+  const imageB = task?.imageB || cfg.imageB || task?.modifiedImage || cfg.modifiedImage || "";
+  const isImageMode =
+    String(task?.mode || cfg.mode || "").toLowerCase() === "image" || (!!imageA && !!imageB);
+  const labelA = task?.labelA || cfg.labelA || (isImageMode ? "Image A" : "Original");
+  const labelB = task?.labelB || cfg.labelB || (isImageMode ? "Image B" : "Modified");
+
   // --- Load draft from parent (when task changes / saved draft exists) ---
   useEffect(() => {
     if (typeof answerDraft === "string") {
@@ -149,7 +163,7 @@ export default function DiffDetectiveTask({
   );
 
   return (
-    <TaskCardFrame badge="🕵️ Diff Detective" title={prompt} subtitle={`Find ${numExpected} change${numExpected === 1 ? "" : "s"} between the passages.`} right={right}>
+    <TaskCardFrame badge="🕵️ Diff Detective" title={prompt} subtitle={`Find ${numExpected} difference${numExpected === 1 ? "" : "s"} between the two ${isImageMode ? "images" : "passages"}.`} right={right}>
       {/* Passages — auto-fit so the two panels stack on narrow (phone)
           screens instead of squishing to ~150px wide and looking broken.
           Tester reported this as "not available yet on student devices." */}
@@ -169,8 +183,12 @@ export default function DiffDetectiveTask({
             border: "2px solid rgba(226,232,240,1)",
           }}
         >
-          <div style={{ fontWeight: 1000, marginBottom: 8, color: "rgba(22,163,74,1)" }}>Original</div>
-          {highlightText(task?.original, false)}
+          <div style={{ fontWeight: 1000, marginBottom: 8, color: "rgba(22,163,74,1)" }}>{labelA}</div>
+          {isImageMode ? (
+            <img src={imageA} alt={labelA} style={{ width: "100%", height: "auto", borderRadius: 12, display: "block" }} />
+          ) : (
+            highlightText(task?.original, false)
+          )}
         </div>
 
         <div
@@ -181,8 +199,12 @@ export default function DiffDetectiveTask({
             border: "2px solid rgba(252,165,165,1)",
           }}
         >
-          <div style={{ fontWeight: 1000, marginBottom: 8, color: "rgba(220,38,38,1)" }}>Modified</div>
-          {highlightText(task?.modified, true)}
+          <div style={{ fontWeight: 1000, marginBottom: 8, color: "rgba(220,38,38,1)" }}>{labelB}</div>
+          {isImageMode ? (
+            <img src={imageB} alt={labelB} style={{ width: "100%", height: "auto", borderRadius: 12, display: "block" }} />
+          ) : (
+            highlightText(task?.modified, true)
+          )}
         </div>
       </div>
 
@@ -205,7 +227,9 @@ export default function DiffDetectiveTask({
       </div>
 
       <div style={{ marginBottom: 8, fontWeight: 850, color: "rgba(15,23,42,0.80)" }}>
-        Write the changes in words (example: "206 changed to 208", "jumps changed to jumped").
+        {isImageMode
+          ? `List the differences you spot between the two ${"images"} (one per line).`
+          : `Write the changes in words (example: "206 changed to 208", "jumps changed to jumped").`}
       </div>
 
       <TextArea
@@ -275,7 +299,28 @@ export default function DiffDetectiveTask({
 
       {isSubmitted && (
         <div style={{ textAlign: "center", marginTop: 12, fontSize: "0.95rem", color: "rgba(22,163,74,1)", fontWeight: 900 }}>
-          Answer locked! Highlights shown above.
+          {isImageMode ? "Answer locked! Here are the differences:" : "Answer locked! Highlights shown above."}
+        </div>
+      )}
+
+      {/* Image mode can't highlight in place, so reveal the answer key as a list. */}
+      {isSubmitted && isImageMode && differences.length > 0 && (
+        <div
+          style={{
+            marginTop: 10,
+            background: "rgba(248,250,252,1)",
+            padding: 14,
+            borderRadius: 16,
+            border: "1px solid rgba(226,232,240,1)",
+            fontSize: "0.95rem",
+            color: "rgba(15,23,42,0.92)",
+          }}
+        >
+          {differences.map((d, i) => (
+            <div key={i} style={{ marginBottom: 4 }}>
+              ✓ {typeof d === "string" ? d : d?.expected || d?.text || d?.description || JSON.stringify(d)}
+            </div>
+          ))}
         </div>
       )}
     </TaskCardFrame>
