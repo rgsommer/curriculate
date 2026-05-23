@@ -68,7 +68,16 @@
       "Bash(C-c)",
       "Bash(node --check backend/index.js)",
       "Bash(node --check shared/freemiumConfig.js)",
-      "Bash(git apply *)"
+      "Bash(git apply *)",
+      "Bash(cd /Users/richardsommer/dev/curriculate/student-app && npx vite build 2>&1 | tail -3 && cd ../backend && echo \"=== shell test \\(diff-detective + overall\\) ===\" && node tests/test-all-shells.mjs 2>&1 | grep -E \"DIFF_DETECTIVE|Passed:|Success\" | head)",
+      "Bash(grep -n \"^import\\\\|useState, useCallback\\\\|from \\\\\"react\\\\\"\\\\|onClick={handleSubmit}\\\\|handleSubmit}\\\\|Submit\\\\b\" student-app/src/components/tasks/types/TeachBackTask.jsx)",
+      "Bash(node --input-type=module -e ' *)",
+      "Bash(node --check backend/services/taskImageGen.js)",
+      "Bash(node --check backend/validators/taskValidators.js)",
+      "Bash(node --check backend/controllers/tasksetController.js)",
+      "Bash(node --check backend/controllers/demoTasksetController.js)",
+      "Bash(node --check backend/controllers/teacherProfileController.js)",
+      "Bash(grep -n \"API_BASE\\\\|BACKEND_URL\\\\|from \\\\\"./config\\\\|from \\\\\"../config\\\\|import.*config\\\\|fetch\\(\\\\`\\\\|fetch\\(API\" DemoMode.jsx)"
     ]
   }
 }

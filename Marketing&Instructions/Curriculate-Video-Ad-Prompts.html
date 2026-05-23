@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Curriculate — "This or This?" Video Ad Series</title>
+<style>
+  @media print { body { margin: 0; } .page-break { page-break-before: always; } }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1e293b; background: #f8fafc; line-height: 1.6; }
+
+  /* Title page */
+  .title-page {
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%); color: white; text-align: center; padding: 60px 40px;
+  }
+  .title-page h1 { font-size: 48px; font-weight: 800; letter-spacing: -1px; margin-bottom: 12px; }
+  .title-page .subtitle { font-size: 24px; opacity: 0.9; margin-bottom: 8px; }
+  .title-page .concept { font-size: 20px; font-style: italic; opacity: 0.75; margin-bottom: 40px; }
+  .title-page .meta { font-size: 14px; opacity: 0.6; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 20px; }
+
+  /* Content pages */
+  .content { max-width: 800px; margin: 0 auto; padding: 40px 24px; }
+
+  /* Overview */
+  .overview { margin-bottom: 48px; }
+  .overview h2 { font-size: 28px; font-weight: 800; color: #1e293b; margin-bottom: 24px; border-bottom: 3px solid #2563eb; padding-bottom: 8px; display: inline-block; }
+  .overview-grid { display: grid; gap: 16px; }
+  .overview-item { display: flex; gap: 12px; padding: 14px 16px; background: white; border-radius: 12px; border: 1px solid #e2e8f0; }
+  .overview-item .label { font-weight: 700; color: #7c3aed; min-width: 100px; flex-shrink: 0; font-size: 14px; }
+  .overview-item .value { font-size: 14px; color: #334155; }
+
+  /* Video cards */
+  .video-card { background: white; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 40px; box-shadow: 0 2px 12px rgba(0,0,0,0.04); }
+  .video-header { background: linear-gradient(135deg, #2563eb, #7c3aed); padding: 20px 24px; color: white; }
+  .video-number { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; opacity: 0.75; margin-bottom: 4px; }
+  .video-title { font-size: 22px; font-weight: 800; }
+
+  .video-body { padding: 0; }
+  .prompt-section { padding: 20px 24px; border-bottom: 1px solid #f1f5f9; }
+  .prompt-section:last-child { border-bottom: none; }
+  .prompt-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .prompt-label .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .prompt-label.left .dot { background: #ef4444; }
+  .prompt-label.right .dot { background: #22c55e; }
+  .prompt-label.voice .dot { background: #f59e0b; }
+  .prompt-label.text .dot { background: #3b82f6; }
+  .prompt-label.music .dot { background: #a855f7; }
+  .prompt-label.duration .dot { background: #64748b; }
+  .prompt-label.left { color: #dc2626; }
+  .prompt-label.right { color: #16a34a; }
+  .prompt-label.voice { color: #d97706; }
+  .prompt-label.text { color: #2563eb; }
+  .prompt-label.music { color: #9333ea; }
+  .prompt-label.duration { color: #64748b; }
+
+  .prompt-text { font-size: 14px; color: #334155; line-height: 1.7; }
+  .prompt-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; font-size: 13px; color: #1e293b; line-height: 1.7; font-family: 'SF Mono', 'Fira Code', monospace; white-space: pre-wrap; }
+
+  .text-overlay-list { list-style: none; padding: 0; }
+  .text-overlay-list li { font-size: 14px; color: #334155; padding: 4px 0; }
+  .text-overlay-list li strong { color: #2563eb; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .two-col > div { padding: 14px 16px; border-radius: 10px; }
+  .two-col .music-box { background: #faf5ff; border: 1px solid #e9d5ff; }
+  .two-col .duration-box { background: #f8fafc; border: 1px solid #e2e8f0; }
+
+  /* Copy buttons */
+  .copy-btn {
+    display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; padding: 4px 10px;
+    border-radius: 6px; border: 1px solid #e2e8f0; background: white; color: #64748b;
+    font-size: 11px; cursor: pointer; font-family: inherit;
+  }
+  .copy-btn:hover { background: #f1f5f9; color: #334155; }
+  .copy-btn.copied { background: #dcfce7; border-color: #86efac; color: #16a34a; }
+</style>
+</head>
+<body>
+
+<!-- TITLE PAGE -->
+<div class="title-page">
+  <h1>Curriculate</h1>
+  <div class="subtitle">Video Ad Series — Production Brief</div>
+  <div class="concept">"This... or This?"</div>
+  <div class="concept" style="font-style:normal; opacity:0.85;">Diagonal Split-Screen Campaign</div>
+  <div class="meta">6 Short-Form Videos for Instagram Reels · TikTok · YouTube Shorts<br>April 2026</div>
+</div>
+
+<!-- CONTENT -->
+<div class="content">
+
+<!-- OVERVIEW -->
+<div class="overview page-break">
+  <h2>Series Overview</h2>
+  <div class="overview-grid">
+    <div class="overview-item">
+      <div class="label">Concept</div>
+      <div class="value">Each video uses a diagonal split screen. The left side shows a cartoon teacher buried in grading. The right side shows the same character living their best life. The contrast is instant and emotional.</div>
+    </div>
+    <div class="overview-item">
+      <div class="label">Format</div>
+      <div class="value">9:16 vertical (1080×1920). Diagonal split runs top-left to bottom-right. Left panel is desaturated/stressed. Right panel is vibrant/joyful.</div>
+    </div>
+    <div class="overview-item">
+      <div class="label">Duration</div>
+      <div class="value">8–10 seconds each. First 3s shows left panel (drudgery), next 3s reveals right panel (freedom), final 2–4s is full-screen CTA with logo.</div>
+    </div>
+    <div class="overview-item">
+      <div class="label">Style</div>
+      <div class="value">2D cartoon illustration, Pixar-adjacent character design. Consistent character within each video (varies between videos). Clean lines, expressive faces.</div>
+    </div>
+    <div class="overview-item">
+      <div class="label">AI Tool</div>
+      <div class="value">Runway Gen-3 Alpha Turbo (or Gen-4 if available). Generate left and right panels as separate clips, composite in CapCut or Premiere with diagonal mask.</div>
+    </div>
+    <div class="overview-item">
+      <div class="label">Voiceover</div>
+      <div class="value">Generate with ElevenLabs or Runway's built-in voice. Warm, relatable, slightly humorous tone. Alternate male/female voices across the series.</div>
+    </div>
+    <div class="overview-item">
+      <div class="label">Music</div>
+      <div class="value">Each video has a deliberate audio shift from stressed/muted (left) to upbeat/warm (right). Use royalty-free or AI-generated music. The transition should be sharp and satisfying.</div>
+    </div>
+    <div class="overview-item">
+      <div class="label">Distribution</div>
+      <div class="value">Instagram Reels, TikTok, YouTube Shorts, Facebook Reels. Can also be used as paid ads on Meta and TikTok.</div>
+    </div>
+  </div>
+</div>
+
+<!-- VIDEO 1 -->
+<div class="video-card page-break">
+  <div class="video-header">
+    <div class="video-number">Video 1 of 6</div>
+    <div class="video-title">The Grading Stack vs. The Beach</div>
+  </div>
+  <div class="video-body">
+    <div class="prompt-section">
+      <div class="prompt-label left"><span class="dot"></span>Left Panel — Runway Prompt</div>
+      <div class="prompt-box">Animated cartoon teacher character, female, glasses, hair in a bun, sitting at a cluttered desk piled high with papers and worksheets. She looks exhausted, rubbing her temples. A clock on the wall shows 9 PM. Warm yellow desk lamp light. Papers keep appearing on the stack. Muted, desaturated warm tones. 2D illustration style, Pixar-inspired character design. Camera slowly pushes in.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">📋 Copy prompt</button>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label right"><span class="dot"></span>Right Panel — Runway Prompt</div>
+      <div class="prompt-box">Same animated cartoon teacher character, now in a sundress and sunhat, walking barefoot on a beautiful tropical beach at golden hour. She looks relaxed and happy, arms stretched wide. Waves gently rolling in. Vibrant saturated colors — turquoise water, golden sand, pink-orange sky. 2D illustration style matching left panel. Camera tracks alongside her.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">📋 Copy prompt</button>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label voice"><span class="dot"></span>Voiceover Script</div>
+      <div class="prompt-text">"You could spend your evening doing this... <em>[pause]</em> ...or this. Curriculate grades in seconds, so you can actually enjoy your time off."</div>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label text"><span class="dot"></span>Text Overlay</div>
+      <ul class="text-overlay-list">
+        <li><strong>LEFT (0–3s):</strong> "Your evening..."</li>
+        <li><strong>RIGHT (3–6s):</strong> "...or your evening."</li>
+        <li><strong>FULL SCREEN (6–8s):</strong> "Curriculate grades in seconds." + logo + curriculate.net</li>
+      </ul>
+    </div>
+    <div class="prompt-section">
+      <div class="two-col">
+        <div class="music-box">
+          <div class="prompt-label music"><span class="dot"></span>Music / SFX</div>
+          <div class="prompt-text" style="font-size:13px">Starts with slow, tired piano on the left. Sharp transition to upbeat ukulele/acoustic guitar on the right.</div>
+        </div>
+        <div class="duration-box">
+          <div class="prompt-label duration"><span class="dot"></span>Duration</div>
+          <div class="prompt-text" style="font-size:13px">8–10 seconds</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VIDEO 2 -->
+<div class="video-card page-break">
+  <div class="video-header">
+    <div class="video-number">Video 2 of 6</div>
+    <div class="video-title">The Grading Stack vs. Evening Reading</div>
+  </div>
+  <div class="video-body">
+    <div class="prompt-section">
+      <div class="prompt-label left"><span class="dot"></span>Left Panel — Runway Prompt</div>
+      <div class="prompt-box">Animated cartoon teacher character, male, young, beard, sitting hunched over a desk covered in student papers. Red pen in hand, marking aggressively. Stacks of ungraded papers tower beside him. Harsh fluorescent overhead light. His coffee cup is empty. Expression is weary and frustrated. Flat 2D animation style, clean lines, muted blues and grays. Camera static, slight zoom.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">📋 Copy prompt</button>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label right"><span class="dot"></span>Right Panel — Runway Prompt</div>
+      <div class="prompt-box">Same animated cartoon male teacher character, relaxed on a cozy armchair by a fireplace. Wearing comfortable clothes, reading a novel with a content smile. A steaming mug of tea beside him. Warm amber firelight flickers. A cat curled on his lap. Rich warm tones — deep oranges, soft browns. Same flat 2D style. Camera slowly pulls back to reveal the cozy scene.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">📋 Copy prompt</button>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label voice"><span class="dot"></span>Voiceover Script</div>
+      <div class="prompt-text">"This... <em>[pause]</em> ...or this. When AI grades for you, your evenings are yours again."</div>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label text"><span class="dot"></span>Text Overlay</div>
+      <ul class="text-overlay-list">
+        <li><strong>LEFT (0–3s):</strong> "Still grading?"</li>
+        <li><strong>RIGHT (3–6s):</strong> "Or already relaxing?"</li>
+        <li><strong>FULL SCREEN (6–8s):</strong> "Curriculate — AI grading that gives you your life back." + logo</li>
+      </ul>
+    </div>
+    <div class="prompt-section">
+      <div class="two-col">
+        <div class="music-box">
+          <div class="prompt-label music"><span class="dot"></span>Music / SFX</div>
+          <div class="prompt-text" style="font-size:13px">Tense ticking clock sound on left. Dissolves into soft lo-fi chill beat on right.</div>
+        </div>
+        <div class="duration-box">
+          <div class="prompt-label duration"><span class="dot"></span>Duration</div>
+          <div class="prompt-text" style="font-size:13px">8–10 seconds</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VIDEO 3 -->
+<div class="video-card page-break">
+  <div class="video-header">
+    <div class="video-number">Video 3 of 6</div>
+    <div class="video-title">The Grading Stack vs. Movie Night</div>
+  </div>
+  <div class="video-body">
+    <div class="prompt-section">
+      <div class="prompt-label left"><span class="dot"></span>Left Panel — Runway Prompt</div>
+      <div class="prompt-box">Animated cartoon teacher character, female, curly hair, surrounded by scattered worksheets on a dining table. Laptop open showing a spreadsheet. She squints at messy handwriting on a paper, holding it up to the light. Family photos on the wall behind her — reminding her what she's missing. Cool desaturated palette. 2D cartoon style, expressive face showing guilt and fatigue. Camera holds steady.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">📋 Copy prompt</button>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label right"><span class="dot"></span>Right Panel — Runway Prompt</div>
+      <div class="prompt-box">Same animated cartoon female teacher on a big couch with her family — partner and two kids. They're sharing a bowl of popcorn, watching a movie projected on the wall. Everyone laughing. Warm golden living room light. Cozy blankets. Vibrant happy colors. Same 2D cartoon style. Camera slowly drifts in toward their smiling faces.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">📋 Copy prompt</button>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label voice"><span class="dot"></span>Voiceover Script</div>
+      <div class="prompt-text">"This... <em>[pause]</em> ...or this. Your family misses you. Curriculate handles the grading."</div>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label text"><span class="dot"></span>Text Overlay</div>
+      <ul class="text-overlay-list">
+        <li><strong>LEFT (0–3s):</strong> "Another night grading..."</li>
+        <li><strong>RIGHT (3–6s):</strong> "...or movie night."</li>
+        <li><strong>FULL SCREEN (6–8s):</strong> "Let Curriculate grade. You be there." + logo + curriculate.net</li>
+      </ul>
+    </div>
+    <div class="prompt-section">
+      <div class="two-col">
+        <div class="music-box">
+          <div class="prompt-label music"><span class="dot"></span>Music / SFX</div>
+          <div class="prompt-text" style="font-size:13px">Quiet, slightly melancholy strings on left. Warm, joyful orchestral swell on right.</div>
+        </div>
+        <div class="duration-box">
+          <div class="prompt-label duration"><span class="dot"></span>Duration</div>
+          <div class="prompt-text" style="font-size:13px">8–10 seconds</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VIDEO 4 -->
+<div class="video-card page-break">
+  <div class="video-header">
+    <div class="video-number">Video 4 of 6</div>
+    <div class="video-title">The Grading Stack vs. Vacation</div>
+  </div>
+  <div class="video-body">
+    <div class="prompt-section">
+      <div class="prompt-label left"><span class="dot"></span>Left Panel — Runway Prompt</div>
+      <div class="prompt-box">Animated cartoon teacher character, male, older, gray temples, sitting in a cramped home office. Summer sunlight streaming through the window behind him but he's stuck inside grading a massive pile of end-of-term papers. Calendar on wall shows "June — Summer Break" with days crossed off. He glances longingly at the window. Washed-out warm tones. 2D illustration, Pixar-adjacent style. Camera slowly pans from window to his tired face.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">📋 Copy prompt</button>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label right"><span class="dot"></span>Right Panel — Runway Prompt</div>
+      <div class="prompt-box">Same animated cartoon male teacher character with a backpack, standing at a scenic mountain overlook. Arms raised in triumph. Vast valley below with a winding river. Blue sky with fluffy clouds. Birds flying. He looks free and exhilarated. Hyper-saturated nature colors — emerald greens, sky blues, golden sunlight. Same 2D style. Camera pulls back to reveal the epic landscape.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">📋 Copy prompt</button>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label voice"><span class="dot"></span>Voiceover Script</div>
+      <div class="prompt-text">"This... <em>[pause]</em> ...or THIS. Grade smarter, not harder. Your summer is waiting."</div>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label text"><span class="dot"></span>Text Overlay</div>
+      <ul class="text-overlay-list">
+        <li><strong>LEFT (0–3s):</strong> "Summer break... still grading."</li>
+        <li><strong>RIGHT (3–6s):</strong> "Summer break... actually breaking."</li>
+        <li><strong>FULL SCREEN (6–8s):</strong> "Curriculate — grade smarter, live better." + logo</li>
+      </ul>
+    </div>
+    <div class="prompt-section">
+      <div class="two-col">
+        <div class="music-box">
+          <div class="prompt-label music"><span class="dot"></span>Music / SFX</div>
+          <div class="prompt-text" style="font-size:13px">Muffled, sluggish beat on left. Soaring adventure theme on right (think travel montage).</div>
+        </div>
+        <div class="duration-box">
+          <div class="prompt-label duration"><span class="dot"></span>Duration</div>
+          <div class="prompt-text" style="font-size:13px">8–10 seconds</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VIDEO 5 -->
+<div class="video-card page-break">
+  <div class="video-header">
+    <div class="video-number">Video 5 of 6</div>
+    <div class="video-title">The Grading Stack vs. Coffee Date</div>
+  </div>
+  <div class="video-body">
+    <div class="prompt-section">
+      <div class="prompt-label left"><span class="dot"></span>Left Panel — Runway Prompt</div>
+      <div class="prompt-box">Animated cartoon teacher character, female, young, ponytail, hunched over a cafe table but NOT enjoying it — she has stacks of papers spread across the table, laptop wedged between coffee cups. Other patrons chat and laugh around her. She looks stressed, checking her watch. The cafe is charming but she can't enjoy it. Warm cafe tones but desaturated around her. 2D cartoon style, clean and modern. Camera overhead looking down at the paper chaos.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">📋 Copy prompt</button>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label right"><span class="dot"></span>Right Panel — Runway Prompt</div>
+      <div class="prompt-box">Same animated cartoon female teacher at the same cafe, but now she's sitting across from a friend. Papers gone. Just two lattes and good conversation. She's laughing, head tilted back. Sunlight through the window catches her face. The cafe feels alive and warm. Saturated, inviting colors. Same 2D style. Camera at eye level, intimate framing.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">📋 Copy prompt</button>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label voice"><span class="dot"></span>Voiceover Script</div>
+      <div class="prompt-text">"This... <em>[pause]</em> ...or this. Same cafe. Same teacher. Different life. That's Curriculate."</div>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label text"><span class="dot"></span>Text Overlay</div>
+      <ul class="text-overlay-list">
+        <li><strong>LEFT (0–3s):</strong> "Working through lunch..."</li>
+        <li><strong>RIGHT (3–6s):</strong> "...or actually enjoying it."</li>
+        <li><strong>FULL SCREEN (6–8s):</strong> "Curriculate. Same teacher. Better life." + logo + curriculate.net</li>
+      </ul>
+    </div>
+    <div class="prompt-section">
+      <div class="two-col">
+        <div class="music-box">
+          <div class="prompt-label music"><span class="dot"></span>Music / SFX</div>
+          <div class="prompt-text" style="font-size:13px">Busy, anxious cafe ambiance on left. Warm acoustic guitar and soft cafe murmur on right.</div>
+        </div>
+        <div class="duration-box">
+          <div class="prompt-label duration"><span class="dot"></span>Duration</div>
+          <div class="prompt-text" style="font-size:13px">8–10 seconds</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VIDEO 6 -->
+<div class="video-card page-break">
+  <div class="video-header">
+    <div class="video-number">Video 6 of 6</div>
+    <div class="video-title">The Grading Stack vs. Time with Students</div>
+  </div>
+  <div class="video-body">
+    <div class="prompt-section">
+      <div class="prompt-label left"><span class="dot"></span>Left Panel — Runway Prompt</div>
+      <div class="prompt-box">Animated cartoon teacher character, female, glasses, sitting alone in an empty classroom after hours. Harsh fluorescent lights. She's surrounded by stacks of graded and ungraded papers. A single wilting plant on her desk. Clock shows 6:30 PM. She's mechanically marking papers with a red pen, no joy left. Cool blue-gray tones. 2D illustration style. Camera static, emphasizing loneliness.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">📋 Copy prompt</button>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label right"><span class="dot"></span>Right Panel — Runway Prompt</div>
+      <div class="prompt-box">Same animated cartoon female teacher in a lively, colorful classroom during the day. She's kneeling beside a student's desk, helping them with a smile. Other students are engaged in group activities, laughing. Colorful student artwork on the walls. Warm, vibrant classroom light. Pure joy on her face — THIS is why she became a teacher. Same 2D style. Camera slowly pans across the happy classroom.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">📋 Copy prompt</button>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label voice"><span class="dot"></span>Voiceover Script</div>
+      <div class="prompt-text">"This is what grading looks like. <em>[pause]</em> This is what teaching looks like. Curriculate handles one, so you can focus on the other."</div>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label text"><span class="dot"></span>Text Overlay</div>
+      <ul class="text-overlay-list">
+        <li><strong>LEFT (0–3s):</strong> "Grading."</li>
+        <li><strong>RIGHT (3–6s):</strong> "Teaching."</li>
+        <li><strong>FULL SCREEN (6–8s):</strong> "Curriculate handles the grading. You do the teaching." + logo</li>
+      </ul>
+    </div>
+    <div class="prompt-section">
+      <div class="two-col">
+        <div class="music-box">
+          <div class="prompt-label music"><span class="dot"></span>Music / SFX</div>
+          <div class="prompt-text" style="font-size:13px">Silence with just pen scratching on left. Bright, inspiring indie pop on right.</div>
+        </div>
+        <div class="duration-box">
+          <div class="prompt-label duration"><span class="dot"></span>Duration</div>
+          <div class="prompt-text" style="font-size:13px">8–10 seconds</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- POST-PRODUCTION NOTES -->
+<div class="video-card page-break" style="border-color:#f59e0b">
+  <div class="video-header" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">
+    <div class="video-number">Production Notes</div>
+    <div class="video-title">Post-Production Workflow</div>
+  </div>
+  <div class="video-body">
+    <div class="prompt-section">
+      <div class="prompt-label" style="color:#d97706"><span class="dot" style="background:#f59e0b"></span>Compositing the Diagonal Split</div>
+      <div class="prompt-text">Generate left and right panels as separate 9:16 clips in Runway. In CapCut or Premiere Pro, place both on the timeline and apply a diagonal mask (top-left to bottom-right, roughly 45 degrees). Add a thin white or gradient line along the diagonal for visual separation. The left clip plays first (0–3s), then the right clip wipes in along the diagonal (3–6s), then both dissolve to a full-screen branded end card (6–8s).</div>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label" style="color:#d97706"><span class="dot" style="background:#f59e0b"></span>End Card Template</div>
+      <div class="prompt-text">Curriculate gradient background (blue → purple). Large white logo centered. Tagline below in white. "curriculate.net" at the bottom. Keep it clean — 2 seconds is enough. Consider adding a subtle shimmer or particle animation.</div>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label" style="color:#d97706"><span class="dot" style="background:#f59e0b"></span>Character Consistency Tip</div>
+      <div class="prompt-text">Within each video, the left and right character must feel like the same person. Use Runway's "image to video" feature: generate a still character design first, then use that as the reference image for both left and right clips. This keeps proportions, hair, and face consistent across the split.</div>
+    </div>
+    <div class="prompt-section">
+      <div class="prompt-label" style="color:#d97706"><span class="dot" style="background:#f59e0b"></span>Voiceover Generation</div>
+      <div class="prompt-text">Use ElevenLabs with a warm, mid-30s voice. For videos 1, 3, 5: female voice. For videos 2, 4, 6: male voice. Keep the delivery conversational, not announcer-y. The "this... or this" rhythm should feel like a friend nudging you, not a sales pitch.</div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+function copyPrompt(btn) {
+  const box = btn.previousElementSibling;
+  const text = box.textContent.trim();
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = "Copied!";
+    btn.classList.add("copied");
+    setTimeout(() => {
+      btn.textContent = "\uD83D\uDCCB Copy prompt";
+      btn.classList.remove("copied");
+    }, 2000);
+  });
+}
+</script>
+
+</body>
+</html>
