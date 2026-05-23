@@ -1331,6 +1331,10 @@ setTaskLocked(false);
           task={currentTask}
           socket={demoSocket}
           demoMode={true}
+          // This is a solo practice surface — tell image/paper tasks so they
+          // use bundled local images (no waiting on stale external URLs) and
+          // default to on-screen input. Fixes "still NO historical doc image".
+          practiceMode={true}
           // Some task components call these; safe no-ops.
           onSubmit={onTaskSubmitted}
           onComplete={onTaskSubmitted}

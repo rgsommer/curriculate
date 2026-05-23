@@ -76,7 +76,14 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
   // failure mode tester flagged.
   const LOCAL_DEFAULT_DOC = "/demo-images/emancipation-proclamation.svg";
   const [phase, setPhase] = useState(PHASE.READING);
-  const [resolvedUrl, setResolvedUrl] = useState(originalUrl || LOCAL_DEFAULT_DOC);
+  // In practice/demo mode, external (http) image URLs are often stale/dead in
+  // older saved demo sets (tester: "still NO historical doc image… do I have to
+  // regen?"). Start from the bundled local doc so SOMETHING shows instantly;
+  // the preload effect below still upgrades to the real image if it loads.
+  const _isExternalUrl = /^https?:/i.test(String(originalUrl || ""));
+  const [resolvedUrl, setResolvedUrl] = useState(
+    (practiceMode && _isExternalUrl) || !originalUrl ? LOCAL_DEFAULT_DOC : originalUrl
+  );
   const [loadError, setLoadError] = useState("");
   const [secondsLeft, setSecondsLeft] = useState(viewingSec);
   const [responses, setResponses] = useState(() =>

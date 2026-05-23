@@ -75,11 +75,15 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
   // the practicer on a black spinner whenever the preload promise hung
   // (e.g. CORS quirks, slow image hosts).  Render the image directly
   // and use <img onError> to swap to the default if it fails to load.
-  // The practicer always sees *some* artwork right away.
+  // The practicer always sees *some* artwork right away. In practice/demo mode,
+  // external (http) URLs in older saved demo sets are often stale, so start
+  // from the bundled local artwork; the <img onError> still upgrades/falls back.
+  const _isExternalUrl = /^https?:/i.test(String(originalUrl || ""));
+  const _startUrl = (practiceMode && _isExternalUrl) || !originalUrl ? DEFAULT_ART_URL : originalUrl;
   const [phase, setPhase] = useState(PHASE.VIEWING);
-  const [resolvedUrl, setResolvedUrl] = useState(originalUrl || DEFAULT_ART_URL);
+  const [resolvedUrl, setResolvedUrl] = useState(_startUrl);
   const [loadError, setLoadError] = useState("");
-  const [usedDefaultFallback, setUsedDefaultFallback] = useState(!originalUrl);
+  const [usedDefaultFallback, setUsedDefaultFallback] = useState(_startUrl === DEFAULT_ART_URL);
   const [secondsLeft, setSecondsLeft] = useState(viewingSec);
   const [observations, setObservations] = useState([]);
   const [inputValue, setInputValue] = useState("");
