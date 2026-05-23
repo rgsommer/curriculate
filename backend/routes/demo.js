@@ -1040,6 +1040,34 @@ router.get("/leaderboard", async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  GET /practice-stats                                                 */
+/*  Per-task-type completed counts — lets practice mode prioritize the  */
+/*  least-practiced tasks so every type gets field-tested. Public (just  */
+/*  non-sensitive counts); cached briefly.                               */
+/* ------------------------------------------------------------------ */
+router.get("/practice-stats", async (req, res) => {
+  try {
+    const leads = await ConferenceLead.find({ "results.0": { $exists: true } })
+      .select("results")
+      .lean();
+    const counts = {};
+    for (const lead of leads) {
+      for (const r of lead.results || []) {
+        if (r?.skipped) continue;
+        const tt = String(r?.taskType || "").trim();
+        if (!tt) continue;
+        counts[tt] = (counts[tt] || 0) + 1;
+      }
+    }
+    res.set("Cache-Control", "public, max-age=300");
+    return res.json({ ok: true, counts });
+  } catch (e) {
+    console.warn("[demo] practice-stats failed:", e?.message);
+    return res.json({ ok: false, counts: {} });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  GET /feedback-summary                                              */
 /*  Aggregates per-task-type feedback from all students                 */
 /* ------------------------------------------------------------------ */

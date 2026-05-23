@@ -600,6 +600,24 @@ export default function RolePlayDeckTask({
                 Role-play the scenario as a team. Try to stay in character and use the traits on your card.
               </div>
 
+              {/* Clarify it's a spoken/acted task — tester (solo) expected a
+                  text box: "fun concept but nowhere to record what was going on". */}
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  background: "rgba(59,130,246,0.08)",
+                  border: "1px solid rgba(59,130,246,0.25)",
+                  color: "#334155",
+                  fontSize: "0.85rem",
+                  lineHeight: 1.4,
+                }}
+              >
+                🗣️ This one is <b>spoken / acted out loud</b> — there's nothing to
+                type. Perform the scene with your team, then tap <b>End role-play</b>.
+              </div>
+
               <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end", gap: 10 }}>
                 <button
                   type="button"

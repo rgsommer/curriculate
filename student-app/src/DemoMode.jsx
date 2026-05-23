@@ -148,11 +148,23 @@ function shuffleArray(arr) {
  * remaining duplicates (shuffled) at the end. Students see every type
  * before encountering repeats.
  */
-function buildSmartTaskOrder(tasks) {
+// Task types changed recently — prioritize them in practice so fixes get
+// re-verified in the field. Keep this list fresh as fixes land.
+const RECENTLY_UPDATED_TASK_TYPES = new Set([
+  "true-false", "legends", "diff-detective", "historical-doc", "art-view",
+  "echo-chain", "what-am-i", "narration-synthesize", "ai-debate-judge",
+  "word-weaver-duel", "mystery-clues", "body-break", "open-text", "teach-back",
+]);
+
+// Order practice tasks (one per type) so the LEAST-practiced and RECENTLY-FIXED
+// types come first — every task gets properly field-tested and fresh fixes are
+// re-verified. `counts` is { taskType: completedCount } from
+// /api/demo/practice-stats (empty → falls back to random).
+function buildSmartTaskOrder(tasks, counts = {}) {
   const seen = new Set();
   const firstPass = [];
   const extras = [];
-  // Shuffle first so the one-per-type order is randomized
+  // Shuffle first so ties (same count) are randomized rather than fixed-order.
   const shuffled = shuffleArray(tasks);
   for (const t of shuffled) {
     if (!seen.has(t.taskType)) {
@@ -162,6 +174,15 @@ function buildSmartTaskOrder(tasks) {
       extras.push(t);
     }
   }
+  // Rank the one-per-type pass: recently-fixed first, then fewest completions.
+  firstPass.sort((a, b) => {
+    const aFixed = RECENTLY_UPDATED_TASK_TYPES.has(a.taskType) ? 0 : 1;
+    const bFixed = RECENTLY_UPDATED_TASK_TYPES.has(b.taskType) ? 0 : 1;
+    if (aFixed !== bFixed) return aFixed - bFixed;
+    const aCount = counts[a.taskType] ?? 0;
+    const bCount = counts[b.taskType] ?? 0;
+    return aCount - bCount; // least-practiced first
+  });
   return [...firstPass, ...shuffleArray(extras)];
 }
 
@@ -861,8 +882,33 @@ function DemoPlayer({
   const hasCommitment = typeof target === "number" && target > 0;
   const bonusAwardedRef = useRef(false);
 
-  // Build a smart task order: one of each type first, then repeats
-  const taskOrder = useMemo(() => buildSmartTaskOrder(DEMO_TASKS), []);
+  // Per-type practice counts → prioritize least-practiced + recently-fixed.
+  const [practiceCounts, setPracticeCounts] = useState(null);
+  const orderFrozenRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(`${API_BASE_URL}/api/conference/practice-stats`);
+        const data = await resp.json();
+        if (!cancelled) setPracticeCounts(data?.counts && typeof data.counts === "object" ? data.counts : {});
+      } catch {
+        if (!cancelled) setPracticeCounts({}); // fall back to random order
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Build a smart task order: recently-fixed + least-practiced types first, then
+  // repeats. Freeze once practice counts have loaded so it never reshuffles
+  // mid-session (counts load during email capture, before play begins).
+  const taskOrder = useMemo(() => {
+    if (orderFrozenRef.current) return orderFrozenRef.current;
+    const order = buildSmartTaskOrder(DEMO_TASKS, practiceCounts || {});
+    if (practiceCounts !== null) orderFrozenRef.current = order;
+    return order;
+  }, [practiceCounts]);
 
   // ── Orphan-feedback recovery ───────────────────────────────────────
   // Drafts the user typed in TaskFeedback but never submitted (e.g.
