@@ -7781,6 +7781,67 @@ socket.on("quest:acquireResource", async (payload = {}, ack) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+//  Quest Mode — peer-to-peer trade. A SELLER team shows a QR encoding an offer
+//  { sellerTeamId, resourceId, quantity, price }; a BUYER team scans it to pay
+//  and acquire. Coins + resource move between the two teams' states server-side.
+// ---------------------------------------------------------------------------
+socket.on("quest:trade", async (payload = {}, ack) => {
+  try {
+    const { roomCode, buyerTeamId, offer } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !buyerTeamId || !offer || typeof offer !== "object") {
+      if (typeof ack === "function") ack({ ok: false, error: "Missing room, buyer, or offer" });
+      return;
+    }
+    const sellerTeamId = offer.sellerTeamId;
+    const resourceId = offer.resourceId;
+    const quantity = Math.max(1, Math.floor(Number(offer.quantity) || 1));
+    const price = Math.max(0, Math.floor(Number(offer.price) || 0));
+    if (!sellerTeamId || !resourceId) {
+      if (typeof ack === "function") ack({ ok: false, error: "Invalid trade offer" });
+      return;
+    }
+    if (String(sellerTeamId) === String(buyerTeamId)) {
+      if (typeof ack === "function") ack({ ok: false, error: "You can't buy from your own team" });
+      return;
+    }
+    // Both teams must belong to this live session.
+    const teamsObj = room.teams || {};
+    if (!teamsObj[sellerTeamId] || !teamsObj[buyerTeamId]) {
+      if (typeof ack === "function") ack({ ok: false, error: "Both teams must be in this session" });
+      return;
+    }
+
+    const { tradeBetweenTeams, getQuestStateSnapshot } = await import("./services/questEconomy.js");
+    const result = await tradeBetweenTeams({ roomCode: code, buyerTeamId, sellerTeamId, resourceId, quantity, price });
+    if (!result.ok) {
+      if (typeof ack === "function") ack({ ok: false, error: result.error || "Trade failed" });
+      return;
+    }
+
+    const buyerSnap = getQuestStateSnapshot(result.buyerState);
+    const sellerSnap = getQuestStateSnapshot(result.sellerState);
+    // Push fresh state to both teams' rooms (each team is a socket room named by teamId).
+    try { io.to(buyerTeamId).emit("quest:stateUpdated", buyerSnap); } catch {}
+    try { io.to(sellerTeamId).emit("quest:stateUpdated", sellerSnap); } catch {}
+    // Tell the seller a sale went through (so their screen can celebrate it).
+    try {
+      io.to(sellerTeamId).emit("quest:tradeCompleted", {
+        role: "seller", withTeam: buyerTeamId, resourceId, quantity, price,
+      });
+    } catch {}
+
+    if (typeof ack === "function") {
+      ack({ ok: true, state: buyerSnap, acquired: { resourceId, quantity, price, sellerTeamId } });
+    }
+  } catch (e) {
+    console.error("[quest:trade] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
 // Snapshot fetch (used by the renderer on mount or reconnect).
 socket.on("whatAmI:requestState", (payload = {}, ack) => {
   try {

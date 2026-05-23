@@ -108,6 +108,69 @@ export async function grantResource({ roomCode, teamId, resourceId, quantity = 1
 }
 
 /**
+ * Atomically remove N units of a resource from a team. Guarded so a team can't
+ * give away more than it holds (precondition: inventory.<id> >= qty).
+ * Returns { ok:false } if the team doesn't have enough.
+ */
+export async function removeResource({ roomCode, teamId, resourceId, quantity = 1, reason = "removed" }) {
+  const code = String(roomCode || "").toUpperCase();
+  if (!code || !teamId || !resourceId) return { ok: false, state: null };
+  const qty = Math.max(1, Math.floor(Number(quantity) || 1));
+
+  const state = await TeamQuestState.findOneAndUpdate(
+    { roomCode: code, teamId, [`inventory.${resourceId}`]: { $gte: qty } },
+    { $inc: { [`inventory.${resourceId}`]: -qty } },
+    { new: true },
+  );
+  if (!state) {
+    const existing = await TeamQuestState.findOne({ roomCode: code, teamId }).lean();
+    return { ok: false, state: existing || null, reason: "insufficient resource" };
+  }
+  void reason;
+  return { ok: true, state };
+}
+
+/**
+ * Peer-to-peer trade: buyer pays the seller `price` coins for `quantity` of
+ * `resourceId`. Resource + coins move between the two teams' states.
+ *
+ * Ordering with rollback (no cross-doc transaction needed at classroom scale):
+ *   1. Take the resource off the seller (guards they actually have it).
+ *   2. Charge the buyer's coins; if they can't pay, REFUND the seller's resource.
+ *   3. Give the resource to the buyer and the coins to the seller.
+ */
+export async function tradeBetweenTeams({ roomCode, buyerTeamId, sellerTeamId, resourceId, quantity = 1, price = 0 }) {
+  const code = String(roomCode || "").toUpperCase();
+  const qty = Math.max(1, Math.floor(Number(quantity) || 1));
+  const cost = Math.max(0, Math.floor(Number(price) || 0));
+  if (!code || !buyerTeamId || !sellerTeamId || !resourceId) return { ok: false, error: "Missing trade parameters" };
+  if (String(buyerTeamId) === String(sellerTeamId)) return { ok: false, error: "You can't trade with your own team" };
+
+  // 1. Seller gives up the resource (atomic guard on availability).
+  const sellerRemove = await removeResource({ roomCode: code, teamId: sellerTeamId, resourceId, quantity: qty, reason: `trade-to:${buyerTeamId}` });
+  if (!sellerRemove.ok) return { ok: false, error: "The other team no longer has that resource" };
+
+  // 2. Buyer pays. On failure, refund the seller's resource (rollback).
+  if (cost > 0) {
+    const spend = await spendCoins({ roomCode: code, teamId: buyerTeamId, amount: cost, reason: `trade-from:${sellerTeamId}` });
+    if (!spend.ok) {
+      await grantResource({ roomCode: code, teamId: sellerTeamId, resourceId, quantity: qty, reason: "trade-rollback" });
+      return { ok: false, error: `Not enough coins (need ${cost})` };
+    }
+  }
+
+  // 3. Buyer receives the resource; seller receives the coins.
+  const buyerGrant = await grantResource({ roomCode: code, teamId: buyerTeamId, resourceId, quantity: qty, reason: `trade-from:${sellerTeamId}` });
+  let sellerState = sellerRemove.state;
+  if (cost > 0) {
+    const award = await awardCoins({ roomCode: code, teamId: sellerTeamId, amount: cost, reason: `trade-to:${buyerTeamId}` });
+    sellerState = award.state || sellerState;
+  }
+
+  return { ok: true, buyerState: buyerGrant.state, sellerState, resourceId, quantity: qty, price: cost };
+}
+
+/**
  * Convert a TeamQuestState document into a plain JSON-safe object suitable for socket emit.
  * Maps need explicit conversion or they serialize as `{}`.
  */
@@ -183,6 +246,8 @@ export default {
   awardCoins,
   spendCoins,
   grantResource,
+  removeResource,
+  tradeBetweenTeams,
   getQuestStateSnapshot,
   recordTaskComplete,
 };

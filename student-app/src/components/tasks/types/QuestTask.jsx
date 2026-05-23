@@ -10,6 +10,8 @@
 // State source of truth: the server. We fetch via quest:requestState on mount,
 // and re-fetch after every quest:stateUpdated broadcast.
 import React, { useEffect, useMemo, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
+import QrScanner from "../../QrScanner";
 
 export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, teamId, taskIndex, practiceMode = false }) {
   const cfg = task?.config || {};
@@ -29,6 +31,13 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
   );
   const [busyResId, setBusyResId] = useState(null);
   const [error, setError] = useState(null);
+
+  // ── Peer-to-peer trade state ──
+  const [tradeMode, setTradeMode] = useState(null); // null | "sell" | "buy"
+  const [sellResId, setSellResId] = useState("");
+  const [sellPrice, setSellPrice] = useState(3);
+  const [tradeMsg, setTradeMsg] = useState(null);   // { ok, text }
+  const [tradeBusy, setTradeBusy] = useState(false);
 
   const isLive = !!(socket && roomCode && teamId) && !practiceMode;
 
@@ -104,6 +113,81 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
         }
       },
     );
+  };
+
+  // Seller side: when a buyer scans our offer, the server tells us the sale
+  // completed so we can celebrate it (state is refreshed via quest:stateUpdated).
+  useEffect(() => {
+    if (!isLive) return;
+    const onSold = (info) => {
+      if (!info) return;
+      setTradeMsg({ ok: true, text: `💰 Sold ${info.quantity}× ${info.resourceId} for ${info.price} coin${info.price === 1 ? "" : "s"}!` });
+    };
+    socket.on("quest:tradeCompleted", onSold);
+    return () => socket.off("quest:tradeCompleted", onSold);
+  }, [isLive, socket]);
+
+  // Resources this team actually holds (sellable).
+  const ownedResources = useMemo(
+    () => resources.filter((r) => (Number(inv[r.id]) || 0) > 0),
+    [resources, inv]
+  );
+
+  // The offer encoded into the QR the buyer scans.
+  const offerQrValue = useMemo(() => {
+    if (!sellResId) return "";
+    return JSON.stringify({
+      v: 1,
+      t: "quest-trade",
+      roomCode: roomCode || "",
+      sellerTeamId: teamId || "",
+      resourceId: sellResId,
+      quantity: 1,
+      price: Math.max(0, Math.floor(Number(sellPrice) || 0)),
+    });
+  }, [sellResId, sellPrice, roomCode, teamId]);
+
+  // Buyer side: parse a scanned offer and execute the trade. Returns true to
+  // stop the scanner once we've handled a valid (or definitively invalid) code.
+  const handleScan = (raw) => {
+    let offer;
+    try { offer = JSON.parse(String(raw || "")); } catch { offer = null; }
+    if (!offer || offer.t !== "quest-trade" || !offer.resourceId || !offer.sellerTeamId) {
+      setTradeMsg({ ok: false, text: "That isn't a Quest trade code — scan a teammate's offer QR." });
+      return false; // keep scanning
+    }
+    const qty = Math.max(1, Math.floor(Number(offer.quantity) || 1));
+    const cost = Math.max(0, Math.floor(Number(offer.price) || 0));
+
+    // Practice / no live session → simulate the trade locally so the mechanic
+    // is fully demoable on one device.
+    if (practiceMode || !isLive) {
+      const have = Number(state?.coins) || 0;
+      if (have < cost) { setTradeMsg({ ok: false, text: `Not enough coins (need ${cost}, have ${have}).` }); return true; }
+      setState((prev) => ({
+        ...(prev || { coins: 0, inventory: {} }),
+        coins: (Number(prev?.coins) || 0) - cost,
+        inventory: { ...(prev?.inventory || {}), [offer.resourceId]: (Number(prev?.inventory?.[offer.resourceId]) || 0) + qty },
+      }));
+      setTradeMsg({ ok: true, text: `Acquired ${qty}× ${offer.resourceId} for ${cost} coins (practice).` });
+      setTradeMode(null);
+      return true;
+    }
+
+    if (String(offer.sellerTeamId) === String(teamId)) {
+      setTradeMsg({ ok: false, text: "That's your own team's offer." });
+      return true;
+    }
+
+    setTradeBusy(true);
+    socket.emit("quest:trade", { roomCode, buyerTeamId: teamId, offer }, (resp) => {
+      setTradeBusy(false);
+      if (!resp?.ok) { setTradeMsg({ ok: false, text: resp?.error || "Trade failed." }); return; }
+      if (resp.state) setState(resp.state);
+      setTradeMsg({ ok: true, text: `Acquired ${qty}× ${offer.resourceId}!` });
+      setTradeMode(null);
+    });
+    return true; // stop scanning after a valid offer
   };
 
   const handleLaunch = () => {
@@ -215,6 +299,93 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
         </div>
       )}
 
+      {/* Trade with another team — show a QR to sell, or scan one to buy. */}
+      <div style={cardWrap}>
+        <div style={cardLabel}>Trade with another team</div>
+        <div style={{ fontSize: "0.78rem", color: "#cbd5e1", marginBottom: 8 }}>
+          Go to another team to swap supplies: <strong>show your QR to sell</strong> a resource for coins,
+          or <strong>scan their QR to buy</strong> one.
+        </div>
+
+        {!tradeMode && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              style={{ ...buyBtn, background: "#0ea5e9", flex: 1, minWidth: 0 }}
+              disabled={disabled}
+              onClick={() => { setTradeMsg(null); setSellResId(ownedResources[0]?.id || ""); setTradeMode("sell"); }}
+            >
+              Make an offer
+            </button>
+            <button
+              type="button"
+              style={{ ...buyBtn, background: "#22c55e", flex: 1, minWidth: 0 }}
+              disabled={disabled}
+              onClick={() => { setTradeMsg(null); setTradeMode("buy"); }}
+            >
+              Scan to buy
+            </button>
+          </div>
+        )}
+
+        {tradeMode === "sell" && (
+          <div>
+            {ownedResources.length === 0 ? (
+              <div style={{ fontSize: "0.82rem", color: "#fca5a5" }}>
+                You have no resources to sell yet — acquire some first.
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+                  <select value={sellResId} onChange={(e) => setSellResId(e.target.value)} style={selectStyle}>
+                    {ownedResources.map((r) => (
+                      <option key={r.id} value={r.id}>{(r.name || r.id)} (×{Number(inv[r.id]) || 0})</option>
+                    ))}
+                  </select>
+                  <label style={{ fontSize: "0.8rem", color: "#cbd5e1", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    Price
+                    <input
+                      type="number"
+                      min={0}
+                      value={sellPrice}
+                      onChange={(e) => setSellPrice(e.target.value)}
+                      style={priceInput}
+                    />
+                    coins
+                  </label>
+                </div>
+                {offerQrValue && (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, background: "#fff", padding: 12, borderRadius: 12 }}>
+                    <QRCodeSVG value={offerQrValue} size={184} marginSize={2} />
+                    <div style={{ fontSize: "0.78rem", color: "#0f172a", fontWeight: 700, textAlign: "center" }}>
+                      Show this to the buyer — they scan it to pay {Math.max(0, Math.floor(Number(sellPrice) || 0))} coin
+                      {Math.max(0, Math.floor(Number(sellPrice) || 0)) === 1 ? "" : "s"} for 1× {sellResId}.
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+            <button type="button" style={{ ...buyBtn, background: "rgba(75,85,99,0.6)", marginTop: 8 }} onClick={() => setTradeMode(null)}>
+              Done
+            </button>
+          </div>
+        )}
+
+        {tradeMode === "buy" && (
+          <div>
+            <div style={{ fontSize: "0.78rem", color: "#cbd5e1", marginBottom: 6 }}>
+              Point your camera at the seller's QR{tradeBusy ? " — processing…" : "."}
+            </div>
+            <QrScanner active onCode={handleScan} />
+            <button type="button" style={{ ...buyBtn, background: "rgba(75,85,99,0.6)", marginTop: 8 }} onClick={() => setTradeMode(null)}>
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {tradeMsg && <div style={tradeMsg.ok ? okStyle : errStyle}>{tradeMsg.text}</div>}
+      </div>
+
       {/* Launch button */}
       <button
         type="button"
@@ -324,4 +495,32 @@ const errStyle = {
   borderRadius: 8,
   padding: "6px 10px",
   marginTop: 8,
+};
+const okStyle = {
+  fontSize: "0.8rem",
+  color: "#bbf7d0",
+  background: "rgba(34,197,94,0.12)",
+  border: "1px solid rgba(34,197,94,0.4)",
+  borderRadius: 8,
+  padding: "6px 10px",
+  marginTop: 8,
+};
+const selectStyle = {
+  flex: 1,
+  minWidth: 140,
+  padding: "8px 10px",
+  borderRadius: 8,
+  background: "rgba(15,23,42,0.7)",
+  color: "#f1f5f9",
+  border: "1px solid rgba(124,58,237,0.45)",
+  fontSize: "0.85rem",
+};
+const priceInput = {
+  width: 64,
+  padding: "6px 8px",
+  borderRadius: 8,
+  background: "rgba(15,23,42,0.7)",
+  color: "#f1f5f9",
+  border: "1px solid rgba(124,58,237,0.45)",
+  fontSize: "0.85rem",
 };
