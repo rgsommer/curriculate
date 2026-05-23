@@ -71,7 +71,7 @@ export default function SmoothCountdownBar({
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     };
-  }, [running, safeDuration, onDone]);
+  }, [running, safeDuration, onDone, resetKey]);
 
   return (
     <div

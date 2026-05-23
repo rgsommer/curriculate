@@ -1,7 +1,7 @@
 // student-app/src/components/tasks/TaskRunner.jsx
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../../shared/taskTypes.js";
-//import ReadyCountdown from "../../components/ui/ReadyCountdown.jsx";
+import SmoothCountdownBar from "../ui/SmoothCountdownBar.jsx";
 
 import BodyBreakTask from "./types/BodyBreakTask";
 import MakeAndSnapTask from "./types/MakeAndSnapTask";
@@ -178,12 +178,6 @@ const CONTRAST_BG_LIGHT = "#f9fafb";
 const CONTRAST_BORDER = "#d1d5db";
 const CONTRAST_ACCENT = "#0ea5e9";
 
-// ---------------------------------------------------------------------
-// SmoothCountdownBar (global UI primitive)
-// - rAF-driven (no 1-second ticking)
-// - used by TaskRunner staging/review interstitials
-// ---------------------------------------------------------------------
-
 function BrainSparkNotesInline({ task, onSubmit, disabled }) {
   const notes = task?.notes ?? task?.config?.notes ?? null;
   const heading = String(notes?.heading || notes?.title || task?.title || "Notes").trim();
@@ -334,90 +328,6 @@ function BrainSparkNotesInline({ task, onSubmit, disabled }) {
         </button>
         <div style={{ opacity: 0.6, fontSize: 13 }}>Tap when you've written everything down.</div>
       </div>
-    </div>
-  );
-}
-
-function SmoothCountdownBar({
-  durationMs = 2000,
-  running = true,
-  resetKey,
-  height = 10,
-  onDone,
-  style,
-  trackStyle,
-  fillStyle,
-}) {
-  const [p, setP] = useState(0);
-  const doneRef = useRef(false);
-  const rafRef = useRef(null);
-  const startRef = useRef(null);
-
-  const safeDuration = Math.max(1, Number(durationMs) || 1);
-
-  useEffect(() => {
-    // reset
-    setP(0);
-    doneRef.current = false;
-    startRef.current = null;
-  }, [resetKey, safeDuration]);
-
-  useEffect(() => {
-    if (!running) {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-      return;
-    }
-
-    const tick = (now) => {
-      if (startRef.current == null) startRef.current = now;
-      const elapsed = now - startRef.current;
-      const next = Math.min(1, elapsed / safeDuration);
-      setP(next);
-
-      if (next >= 1) {
-        if (!doneRef.current) {
-          doneRef.current = true;
-          if (typeof onDone === "function") onDone();
-        }
-        return;
-      }
-      rafRef.current = requestAnimationFrame(tick);
-    };
-
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    };
-  }, [running, safeDuration, onDone, resetKey]);
-
-  return (
-    <div
-      style={{
-        width: "100%",
-        borderRadius: 999,
-        overflow: "hidden",
-        background: "rgba(15,23,42,0.10)",
-        height,
-        ...trackStyle,
-        ...style,
-      }}
-      aria-label="Countdown progress"
-      role="progressbar"
-      aria-valuemin={0}
-      aria-valuemax={1}
-      aria-valuenow={p}
-    >
-      <div
-        style={{
-          height: "100%",
-          width: `${(p * 100).toFixed(2)}%`,
-          borderRadius: 999,
-          background: "linear-gradient(90deg, rgba(56,189,248,1), rgba(52,211,153,1))",
-          ...fillStyle,
-        }}
-      />
     </div>
   );
 }

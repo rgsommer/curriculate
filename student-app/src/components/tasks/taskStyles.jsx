@@ -6,11 +6,19 @@ import { useThemeMode } from "../../utils/ThemeModeContext.js";
  * Curriculate Task UI System
  * Goal: keep TaskRunner thin while giving every task a consistent, beautiful frame.
  *
+ * CANONICAL FRAME FOR NEW TASKS:
+ * - Wrap the task in <TaskCardFrame> (header/title/badge + themed card).
+ * - Use <PrimaryButton> for the main submit/continue action and <GhostButton>
+ *   for secondary actions — do NOT hand-roll bespoke gradient buttons.
+ * - Use <WaitingPill> for "waiting for others / next task" states.
+ * These are opt-in: existing tasks are not being retrofitted, but new task
+ * types should adopt them so the student-facing frame stays consistent.
+ *
  * IMPORTANT:
  * - This file contains JSX, so it MUST be .jsx (or .tsx). If you use .js, Vite/Rollup may error.
  *
  * Usage:
- *   import { TaskCardFrame, Pill, PrimaryButton, GhostButton, TextInput, TextArea } from "../taskStyles";
+ *   import { TaskCardFrame, Pill, WaitingPill, PrimaryButton, GhostButton, TextInput, TextArea } from "../taskStyles";
  */
 
 export const UI = {
@@ -259,6 +267,55 @@ export function Pill({ children, subtle = false, theme: themeProp, style }) {
       }}
     >
       {children}
+    </span>
+  );
+}
+
+/**
+ * WaitingPill
+ * Presentational "waiting for others / next task" indicator with a subtle
+ * pulsing dot. Theme-aware. Opt-in — the caller decides when to render it
+ * based on its own (often socket-driven) state; this component owns no logic.
+ */
+export function WaitingPill({ children = "Waiting…", theme: themeProp, style }) {
+  const contextTheme = useThemeMode();
+  const theme = themeProp || contextTheme || "light";
+  const t = UI.theme[theme] || UI.theme.light;
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 14px",
+        borderRadius: 999,
+        border: t.pillBorder,
+        background: theme === "dark" ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.62)",
+        color: t.subtext,
+        fontWeight: 850,
+        fontSize: 13,
+        ...style,
+      }}
+      role="status"
+      aria-live="polite"
+    >
+      <span
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 999,
+          background: "currentColor",
+          opacity: 0.85,
+          animation: "curricWaitingPulse 1.2s ease-in-out infinite",
+        }}
+      />
+      <span>{children}</span>
+      <style>{`
+        @keyframes curricWaitingPulse {
+          0%, 100% { opacity: 0.25; transform: scale(0.85); }
+          50%      { opacity: 0.9;  transform: scale(1); }
+        }
+      `}</style>
     </span>
   );
 }
