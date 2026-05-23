@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import { API_BASE_URL } from "../../../config.js";
 import DesignatedWriter from "../DesignatedWriter";
 import HandwritingCapture, { HANDWRITING_BONUS_POINTS } from "../HandwritingCapture";
+import SpeechQualityMeter from "../SpeechQualityMeter";
 
 export default function CaseStudyTask({
   task,
@@ -318,6 +319,11 @@ export default function CaseStudyTask({
           </button>
         </div>
       )}
+
+      {/* Live answer-quality speedometer (typed or dictated). */}
+      <div style={{ background: "rgba(255,255,255,0.92)", borderRadius: 12, padding: "8px 12px", marginBottom: 8 }}>
+        <SpeechQualityMeter text={value} />
+      </div>
 
       {/* Text area */}
       <textarea
