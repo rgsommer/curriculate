@@ -11,19 +11,29 @@
 // and re-fetch after every quest:stateUpdated broadcast.
 import React, { useEffect, useMemo, useState } from "react";
 
-export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, teamId, taskIndex }) {
+export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, teamId, taskIndex, practiceMode = false }) {
   const cfg = task?.config || {};
+  // In practice mode there is no live socket-driven economy. Seed
+  // local-only state with enough coins to actually try the Buy buttons.
+  // Tester (Gavy, May 2026, via skip): 'for the demo, with no coins,
+  // how is one to buy? could others buy from me? how? what has to be
+  // done?'
+  const PRACTICE_STARTER_COINS = 30;
   const objectives = Array.isArray(cfg.objectives) ? cfg.objectives : [];
   const resources  = Array.isArray(cfg.resources)  ? cfg.resources  : [];
   const ranks      = Array.isArray(cfg.ranks)      ? cfg.ranks      : [];
 
-  const [state, setState] = useState(null);     // { coins, inventory, ... } from server
+  const [state, setState] = useState(
+    // Practice mode: pre-seed local state so the buttons actually work.
+    practiceMode ? { coins: PRACTICE_STARTER_COINS, inventory: {} } : null,
+  );
   const [busyResId, setBusyResId] = useState(null);
   const [error, setError] = useState(null);
 
-  const isLive = !!(socket && roomCode && teamId);
+  const isLive = !!(socket && roomCode && teamId) && !practiceMode;
 
-  // Snapshot fetch + subscribe to updates
+  // Snapshot fetch + subscribe to updates (skipped in practice mode —
+  // we manage state locally so a solo player can interact end-to-end).
   useEffect(() => {
     if (!isLive) return;
     let cancelled = false;
@@ -56,6 +66,29 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
   const allObjectivesMet = objectivesProgress.length > 0 && objectivesProgress.every((o) => o.allMet);
 
   const handleBuy = (resourceId) => {
+    // Practice mode: simulate the buy entirely client-side so the
+    // player can experience the mechanic without a live socket session.
+    if (practiceMode) {
+      const r = resources.find((x) => x.id === resourceId);
+      const coinOpt = (r?.acquisitionOptions || []).find((o) => o?.type === "coins");
+      const cost = Number(coinOpt?.amount) || 0;
+      const have = Number(state?.coins) || 0;
+      if (have < cost) {
+        setError(`Not enough coins (need ${cost}, have ${have}).`);
+        return;
+      }
+      setState((prev) => ({
+        ...(prev || { coins: PRACTICE_STARTER_COINS, inventory: {} }),
+        coins: (Number(prev?.coins) || 0) - cost,
+        inventory: {
+          ...(prev?.inventory || {}),
+          [resourceId]: (Number(prev?.inventory?.[resourceId]) || 0) + 1,
+        },
+      }));
+      setError(null);
+      return;
+    }
+
     if (!isLive) return;
     setBusyResId(resourceId);
     setError(null);
@@ -89,6 +122,29 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
       <div style={tagStrip}>Mission</div>
       <div style={titleStyle}>{cfg.title || task?.title || "The Quest"}</div>
       {cfg.scenario ? <p style={scenarioStyle}>{cfg.scenario}</p> : null}
+
+      {/* Practice-mode instructions — explains the economy. Tester
+          (Gavy, May 2026) tried this in solo demo with 0 coins and
+          couldn't tell how to interact. */}
+      {practiceMode && (
+        <div
+          style={{
+            margin: "8px 0 4px",
+            padding: "10px 12px",
+            borderRadius: 10,
+            background: "rgba(124,58,237,0.15)",
+            border: "1px solid rgba(124,58,237,0.45)",
+            color: "#e9d5ff",
+            fontSize: "0.85rem",
+            lineHeight: 1.45,
+            fontWeight: 500,
+          }}
+        >
+          🎯 <strong>Practice run.</strong> You start with {PRACTICE_STARTER_COINS} coins.
+          Tap <em>Buy</em> on resources below to fill the objectives. In a real session
+          you earn coins by completing other tasks and can trade with other teams.
+        </div>
+      )}
 
       {/* Objectives panel */}
       {objectivesProgress.length > 0 && (
@@ -141,7 +197,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
                   <button
                     type="button"
                     onClick={() => handleBuy(r.id)}
-                    disabled={disabled || !isLive || !canAfford || busyResId === r.id}
+                    disabled={disabled || (!isLive && !practiceMode) || !canAfford || busyResId === r.id}
                     style={{
                       ...buyBtn,
                       background: !canAfford ? "rgba(75,85,99,0.4)" : busyResId === r.id ? "#7c3aed88" : "#7c3aed",

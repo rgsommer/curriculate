@@ -313,6 +313,44 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
         )}
       </div>
 
+      {/* Prominent round / chairs-remaining badge — tester (Gavy, May
+          2026): "not obvious in the demo that there is a declining
+          number of chairs/scan codes". Now shown above the turntable
+          with the previous round's count struck through. */}
+      {practiceMode && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 14,
+            marginBottom: 14,
+            padding: "10px 18px",
+            borderRadius: 999,
+            background: "linear-gradient(135deg, #fef3c7, #fde68a)",
+            border: "2px solid #f59e0b",
+            boxShadow: "0 6px 16px rgba(245, 158, 11, 0.25)",
+            fontWeight: 800,
+            fontSize: "1.05rem",
+            color: "#92400e",
+          }}
+          aria-live="polite"
+        >
+          <span style={{ fontSize: "1.4rem" }}>🪑</span>
+          <span>Round {practiceRound} / {practiceRoundsTotal}</span>
+          <span style={{ opacity: 0.5 }}>·</span>
+          <span>
+            Chairs:{" "}
+            {practiceRound > 1 && (
+              <span style={{ textDecoration: "line-through", opacity: 0.55, marginRight: 6 }}>
+                {Math.max(2, 6 - (practiceRound - 1))}
+              </span>
+            )}
+            <strong style={{ fontSize: "1.25rem", color: "#7c2d12" }}>{stationsLeftLocal}</strong>
+          </span>
+        </div>
+      )}
+
       {/* Rotating chairs turntable.
           The chairs sit on an absolutely-positioned ring that we
           rotate as a group, so they actually orbit the center while

@@ -181,58 +181,14 @@ export default function PhotoJournalTask({
         )}
       </div>
 
-      <div
-        style={{
-          borderRadius: 12,
-          border: "1px solid #e5e7eb",
-          padding: 10,
-          background: "#ffffff",
-        }}
-      >
-        <div
-          style={{
-            marginBottom: 6,
-            fontSize: "0.9rem",
-            fontWeight: 600,
-          }}
-        >
-          Step 2 – Explain your photo
-        </div>
-        <textarea
-          rows={3}
-          value={explanation}
-          onChange={handleExplanationChange}
-          disabled={disabled}
-          style={{
-            width: "100%",
-            padding: "8px 10px",
-            borderRadius: 10,
-            border: "1px solid #d1d5db",
-            fontSize: "0.9rem",
-            resize: "vertical",
-          }}
-          placeholder={explanationPlaceholder}
-        />
-      </div>
-
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
-        <button
-          type="submit"
-          disabled={!readyToSubmit}
-          style={{
-            padding: "8px 14px",
-            borderRadius: 999,
-            border: "none",
-            background: readyToSubmit ? "#16a34a" : "#9ca3af",
-            color: "#ffffff",
-            fontSize: "0.9rem",
-            fontWeight: 600,
-            cursor: readyToSubmit ? "pointer" : "not-allowed",
-          }}
-        >
-          Submit Photo Journal
-        </button>
-      </div>
+      {/* Step 2 textarea + Submit button removed.
+          Tester (Gavy, May 2026): 'I think I could still see the
+          additional comment box. not needed. only one (the first).'
+          PhotoTask.jsx already collects a caption; that caption is
+          auto-promoted to the journal `explanation` inside
+          handleInnerPhotoSubmit and the journal auto-submits as soon
+          as the photo+caption is sent. No second prompt or button
+          should appear. */}
     </form>
   );
 }

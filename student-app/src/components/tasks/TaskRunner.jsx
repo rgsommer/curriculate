@@ -2114,7 +2114,23 @@ export default function TaskRunner({
       outgoing?.type === "submit" ||
       outgoing?.final === true;
 
-    if (submitOk && isCompletion && mode !== "review") triggerTaskVictory();
+    if (submitOk && isCompletion && mode !== "review") {
+      // For task types that render their own answer-reveal overlay,
+      // delay the victory video so it doesn't cover the reveal.
+      // Tester (Gavy, May 2026): 'overlay video obscured answer
+      // overlay. probably fine but technically not timed right'.
+      const ANSWER_REVEAL_TYPES = new Set([
+        "sort", "vennsort", "sequence", "mad-dash-sequence",
+        "matching", "timeline", "multiple-choice", "true-false",
+        "cloze", "short-answer", "trivia", "fake-out", "legends",
+      ]);
+      const delay = ANSWER_REVEAL_TYPES.has(type) ? 2500 : 0;
+      if (delay > 0) {
+        setTimeout(() => triggerTaskVictory(), delay);
+      } else {
+        triggerTaskVictory();
+      }
+    }
   };
 
   // Hangman expects socket.current; keep existing socket usage for other tasks.
@@ -3273,6 +3289,7 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
           roomCode={roomCode}
           teamId={derivedTeamId}
           taskIndex={taskIndex}
+          practiceMode={practiceMode}
         />
       );
       break;
