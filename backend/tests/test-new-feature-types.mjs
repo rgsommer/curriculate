@@ -424,6 +424,10 @@ section("11. LevelUp — eligibility, candidate-pick, MAX scoring");
 /* ──────────────── N. TRUTH OR DARE ──────────────── */
 section("N. Truth or Dare — type plumbing + safety + library + selector");
 {
+  // Dynamic imports up-front so the rest of this block can use them freely
+  const { sanitizeTaskShapeByType } = await import("../controllers/sanitizeTaskShape.js");
+  const { assessTaskPlayability } = await import("../../shared/taskPlayability.js");
+
   // N.1 — meta coverage
   const meta = TASK_TYPE_META["truth-or-dare"];
   const blooms = TASK_BLOOMS_MAP["truth-or-dare"];
@@ -528,6 +532,40 @@ section("N. Truth or Dare — type plumbing + safety + library + selector");
   assert(rc.hasSeenChallenge("TEST-ROOM", { id: "ch-1" }), "dedupe matches by id");
   rc.clearRoom("TEST-ROOM");
   assert(!rc.hasSeenChallenge("TEST-ROOM", { id: "ch-1" }), "clearRoom resets state");
+
+  // N.6b — validity + playability audit: bad inputs are either rejected or
+  // safely clamped. We exhaustively check every constraint that could
+  // realistically slip past the pipeline.
+  const _pipeline = (input) => {
+    const s = sanitizeTaskShapeByType("truth-or-dare", input);
+    const n = normalizeTaskByType("truth-or-dare", s);
+    return { v: validateTaskByType("truth-or-dare", n), p: assessTaskPlayability(n), n };
+  };
+
+  // Missing required fields → both validate AND playability reject
+  const noSubject = _pipeline({ taskType: "truth-or-dare", title: "x", prompt: "y", config: { unitName: "u", gradeLevel: 6 } });
+  assert(!noSubject.v.ok && !noSubject.p.playable, "missing subject: validate AND playability fail");
+  const noUnit = _pipeline({ taskType: "truth-or-dare", title: "x", prompt: "y", config: { subject: "s", gradeLevel: 6 } });
+  assert(!noUnit.v.ok && !noUnit.p.playable, "missing unitName: validate AND playability fail");
+  const badGrade = _pipeline({ taskType: "truth-or-dare", title: "x", prompt: "y", config: { subject: "s", unitName: "u", gradeLevel: 99 } });
+  assert(!badGrade.v.ok && !badGrade.p.playable, "gradeLevel out of range: validate AND playability fail");
+
+  // Enum violations → validate rejects (playability lenient — runtime gate)
+  const badJudge = _pipeline({ taskType: "truth-or-dare", title: "x", prompt: "y", config: { subject: "s", unitName: "u", gradeLevel: 6, judgmentMode: "magic" } });
+  assert(!badJudge.v.ok, "bad judgmentMode enum: validate rejects");
+
+  // Sanitizer clamps out-of-range numerics
+  const tooManyRounds = _pipeline({ taskType: "truth-or-dare", title: "x", prompt: "y", config: { subject: "s", unitName: "u", gradeLevel: 6, totalRounds: 99 } });
+  assert(tooManyRounds.v.ok && tooManyRounds.n.config.totalRounds === 12, "totalRounds=99 clamped to 12 by sanitizer");
+  const tooIntense = _pipeline({ taskType: "truth-or-dare", title: "x", prompt: "y", config: { subject: "s", unitName: "u", gradeLevel: 6, physicalIntensityMax: 9 } });
+  assert(tooIntense.v.ok && tooIntense.n.config.physicalIntensityMax === 3, "physicalIntensityMax=9 clamped to 3 by sanitizer");
+
+  // Sanitizer drops malformed seedChallenges entries
+  const mixedSeeds = _pipeline({
+    taskType: "truth-or-dare", title: "x", prompt: "y",
+    config: { subject: "s", unitName: "u", gradeLevel: 6, seedChallenges: [{ type: "truth" }, { type: "dare", prompt: "do a thing" }] },
+  });
+  assert(mixedSeeds.v.ok && mixedSeeds.n.config.seedChallenges.length === 1, "sanitizer drops promptless seed, keeps valid one");
 
   // N.7 — generator returns library fallback when API key missing
   // (skipLibrary=false: even without OPENAI_API_KEY this should return a normalized challenge from the library)
