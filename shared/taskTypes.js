@@ -31,6 +31,7 @@ export const TASK_TYPES = {
   SORT: "sort",
   SEQUENCE: "sequence",
   MATCHING: "matching",
+  LABELME: "labelme",
   TIMELINE: "timeline",
   VENNSORT: "vennsort",
 
@@ -201,6 +202,7 @@ export const TASK_BLOOMS_MAP = {
   "sort":                       ["APPLY", "ANALYZE"],
   "sequence":                   ["APPLY", "ANALYZE"],
   "matching":                   ["APPLY", "REMEMBER"],
+  "labelme":                    ["REMEMBER", "UNDERSTAND"],
   "timeline":                   ["APPLY", "ANALYZE"],
   "vennsort":                   ["APPLY", "ANALYZE"],
   "mad-dash":                   ["APPLY", "REMEMBER"],
@@ -782,6 +784,77 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
     }
 
     Rules for correctMatches: L1 matches R1, L2 matches R2, etc. Each left item matches exactly one right item.
+    `,
+},
+
+  [TASK_TYPES.LABELME]: {
+    label: "Label Me",
+    category: CATEGORY.ORDERING,
+    implemented: true,
+    demoEligible: true,
+    generatorEligible: true,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 120,
+    estimatedMinutes: 4,
+    correctAnswerShape: "marker-to-term-map",
+    interTeamEnabled: false,
+    intraTeamEnabled: false,
+    // Needs a generated diagram image — pre-generated at taskset creation.
+    description: `
+Label Me (image labeling — "Matching, but on a diagram").
+A diagram / map / illustration is shown with 5 markers A–E. Students match each
+marker to the correct term. Objective-scored via a marker→term map; reuses the
+Matching grading/review flow.
+
+AI generation / schema hints:
+taskType: "labelme"
+title: short (3-7 words)
+prompt: concise student instruction
+imagePrompt: a detailed prompt to generate a CLEAN, high-contrast, uncluttered
+  educational diagram/map/illustration (no text labels baked in — markers are
+  overlaid by the app). Age-appropriate visual complexity.
+labels: [{ id:"A", correct:"<term>", x:<0-100>, y:<0-100> }, ...5 entries A-E]
+  x/y are PERCENT positions of each feature on the image (responsive scaling).
+options: string[]  // the 5 correct terms (optionally + 1-2 distractors), shuffled by the app
+explanation?: short note shown after submit
+`,
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "labelme".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt, imagePrompt.
+    - Pick 5 meaningful, unambiguous features of ONE diagram/map/illustration
+      relevant to the lesson (e.g. parts of a flower, provinces on a map,
+      organs of the digestive system).
+    - labels: exactly 5 entries with id "A".."E", each a "correct" term and
+      approximate x/y PERCENT (0-100) of where that feature sits on the image.
+    - options: the 5 correct terms (you MAY add 1-2 plausible distractors).
+    - imagePrompt: describe a clean, high-contrast, uncluttered educational
+      diagram with NO letters/labels drawn on it (the app overlays A-E markers).
+    - One clearly correct answer per marker; avoid tiny/crowded features.
+
+    Example:
+    {
+      "taskType": "labelme",
+      "title": "Parts of a Flower",
+      "prompt": "Match each labelled marker (A-E) to the correct flower part.",
+      "imagePrompt": "A clean, high-contrast botanical diagram of a single flower in cross-section, simple flat illustration, no text labels, white background, clearly showing petal, stamen, pistil, sepal, and stem.",
+      "labels": [
+        { "id": "A", "correct": "Petal",  "x": 30, "y": 20 },
+        { "id": "B", "correct": "Stamen", "x": 55, "y": 38 },
+        { "id": "C", "correct": "Pistil", "x": 50, "y": 50 },
+        { "id": "D", "correct": "Sepal",  "x": 35, "y": 70 },
+        { "id": "E", "correct": "Stem",   "x": 50, "y": 88 }
+      ],
+      "options": ["Petal", "Stamen", "Pistil", "Sepal", "Stem"],
+      "explanation": "The pistil (center) is the female part; the stamen produces pollen."
+    }
     `,
 },
 
@@ -5126,6 +5199,7 @@ export const SUBJECT_AFFINITY = {
   [TASK_TYPES.FLASHCARDS_RACE]:        { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 0.9, health: 0.9, business: 1.0, religion: 1.0, general: 1.0 },
   [TASK_TYPES.JEOPARDY]:               { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 0.9, health: 0.9, business: 1.0, religion: 1.0, general: 1.0 }, // Brain Blitz
   [TASK_TYPES.MATCHING]:               { math: 0.9, science: 1.0, history: 1.0, language: 1.0, arts: 0.8, health: 0.8, business: 0.9, religion: 0.9, general: 0.9 },
+  [TASK_TYPES.LABELME]:                { math: 0.8, science: 1.0, history: 1.0, language: 0.7, arts: 0.9, health: 1.0, business: 0.7, religion: 0.9, general: 0.9 },
   [TASK_TYPES.SORT]:                   { math: 0.9, science: 1.0, history: 0.9, language: 0.8, arts: 0.6, health: 0.7, business: 0.8, religion: 0.7, general: 0.8 },
   [TASK_TYPES.SEQUENCE]:               { math: 1.0, science: 0.9, history: 1.0, language: 0.7, arts: 0.5, health: 0.6, business: 0.7, religion: 0.7, general: 0.8 },
   [TASK_TYPES.TIMELINE]:               { math: 0.4, science: 0.7, history: 1.0, language: 0.5, arts: 0.6, health: 0.3, business: 0.6, religion: 0.8, general: 0.6 },
@@ -5260,6 +5334,12 @@ export function normalizeTaskType(value) {
     v === "key-terms-match" || v === "key-terms" || v === "keyterms" ||
     v === "term-match" || v === "vocabulary-match" || v === "vocab-match"
   ) return TASK_TYPES.MATCHING;
+
+  if (
+    v === "labelme" || v === "label-me" || v === "label_me" || v === "label" ||
+    v === "labeling" || v === "labelling" || v === "diagram-label" ||
+    v === "image-label" || v === "map-label"
+  ) return TASK_TYPES.LABELME;
 
   if (v === "venn" || v === "venn-diagram" || v === "venndiagram") return TASK_TYPES.VENNSORT;
 
@@ -5458,6 +5538,39 @@ export const TASK_SHELLS = {
       leftItems,
       rightItems,
       correctMatches,
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  /* ── LABEL ME (image labeling) ── */
+  [TASK_TYPES.LABELME]: function buildLabelMeShell() {
+    const LETTERS = ["A", "B", "C", "D", "E"];
+    const placeholders = [
+      "TITLE: Short labeling activity title (3-7 words)",
+      "PROMPT: 1-2 sentence student instructions (e.g. 'Match each marker A-E to the correct part.')",
+      "IMAGE_PROMPT: A detailed prompt to generate ONE clean, high-contrast, uncluttered educational diagram / map / illustration relevant to the topic. NO letters or text labels drawn on it (the app overlays A-E markers). Simple flat style, white/neutral background, age-appropriate.",
+    ];
+    const names = ["TITLE", "PROMPT", "IMAGE_PROMPT"];
+    const labels = [];
+    const options = [];
+    for (const L of LETTERS) {
+      placeholders.push(
+        `${L}_TERM: The correct term/part for marker ${L} (a real feature of the diagram)`,
+        `${L}_X: Horizontal position of feature ${L} as a percent 0-100 (left→right)`,
+        `${L}_Y: Vertical position of feature ${L} as a percent 0-100 (top→bottom)`,
+      );
+      names.push(`${L}_TERM`, `${L}_X`, `${L}_Y`);
+      labels.push({ id: L, correct: `{{${L}_TERM}}`, x: `<<${L}_X>>`, y: `<<${L}_Y>>` });
+      options.push(`{{${L}_TERM}}`);
+    }
+    const shell = {
+      taskType: "labelme",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      imagePrompt: "{{IMAGE_PROMPT}}",
+      labels,
+      options,
+      grading: { exactMatch: true, partialCredit: true },
     };
     return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
   },

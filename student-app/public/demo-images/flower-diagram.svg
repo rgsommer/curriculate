@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <rect x="0" y="0" width="400" height="400" fill="#ffffff"/>
+  <!-- Stem -->
+  <rect x="192" y="210" width="16" height="150" rx="8" fill="#3f9d4f"/>
+  <!-- Leaf / sepal -->
+  <path d="M200 270 C150 250 120 285 150 305 C185 315 205 295 200 270 Z" fill="#4caf50"/>
+  <!-- Petals (5, fanned around the center) -->
+  <g fill="#ef6aa6" stroke="#d24f8c" stroke-width="2">
+    <ellipse cx="200" cy="70"  rx="34" ry="52"/>
+    <ellipse cx="270" cy="110" rx="34" ry="52" transform="rotate(60 270 110)"/>
+    <ellipse cx="262" cy="190" rx="34" ry="52" transform="rotate(120 262 190)"/>
+    <ellipse cx="138" cy="190" rx="34" ry="52" transform="rotate(240 138 190)"/>
+    <ellipse cx="130" cy="110" rx="34" ry="52" transform="rotate(300 130 110)"/>
+  </g>
+  <!-- Stamens (filaments + anthers) around the pistil -->
+  <g stroke="#caa11a" stroke-width="4">
+    <line x1="200" y1="150" x2="232" y2="120"/>
+    <line x1="200" y1="150" x2="168" y2="120"/>
+  </g>
+  <circle cx="234" cy="118" r="8" fill="#f4c430"/>
+  <circle cx="166" cy="118" r="8" fill="#f4c430"/>
+  <!-- Pistil (center) -->
+  <circle cx="200" cy="150" r="26" fill="#f6b93b" stroke="#caa11a" stroke-width="2"/>
+</svg>

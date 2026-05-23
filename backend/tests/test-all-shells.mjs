@@ -143,6 +143,21 @@ const fillGenerators = {
     return { fill, opts: {} };
   },
 
+  [TASK_TYPES.LABELME]: (si) => {
+    const t = pickTerms(si, 5); const m = meta(si);
+    const fill = {
+      TITLE: `Label ${m.topic}`,
+      PROMPT: "Match each marker A-E to the correct part.",
+      IMAGE_PROMPT: `A clean, high-contrast educational diagram of ${m.topic}, simple flat illustration, no text labels.`,
+    };
+    ["A", "B", "C", "D", "E"].forEach((L, i) => {
+      fill[`${L}_TERM`] = t[i];
+      fill[`${L}_X`] = String(20 + i * 12);
+      fill[`${L}_Y`] = String(20 + i * 12);
+    });
+    return { fill, opts: {} };
+  },
+
   [TASK_TYPES.VENNSORT]: (si) => {
     const t = pickTerms(si, 8); const m = meta(si);
     const fill = {

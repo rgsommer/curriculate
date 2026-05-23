@@ -192,6 +192,24 @@ export async function pregenerateTaskImages(task, { allowAi = true } = {}) {
       return task;
     }
 
+    // Label Me: generate the diagram from imagePrompt (honors the AI toggle).
+    if (type === "labelme" && !task.imageUrl) {
+      const prompt = task.imagePrompt || task.config?.imagePrompt || task.title;
+      if (prompt) {
+        const got = await sourceOne({
+          prompt: `Clean, high-contrast educational diagram, simple flat illustration, no text or letter labels. ${prompt}`,
+          query: String(task.title || prompt).slice(0, 80),
+          allowAi,
+          label: "labelme",
+        });
+        if (got) {
+          task.imageUrl = got.url;
+          task.imageS3Key = got.key;
+        }
+      }
+      return task;
+    }
+
     // Authenticity-critical: always source a REAL image (ignore AI toggle).
     if (type === "historical-doc" || type === "art-view") {
       const subject =

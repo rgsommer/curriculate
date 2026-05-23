@@ -45,6 +45,7 @@ import BrainBlitzTask from "./types/BrainBlitzTask";
 import PhotoJournalTask from "./types/PhotoJournalTask";
 import HangmanDuelTask from "./types/HangmanDuelTask";
 import MatchingTask from "./types/MatchingTask";
+import LabelMeTask from "./types/LabelMeTask";
 import WordWeaverDuelTask from "./types/WordWeaverDuelTask";
 import MoodCheckInTask from "./types/MoodCheckInTask"; // ✅ NEW
 import TreasureRunnerTask from "./types/TreasureRunnerTask"; // ✅ NEW
@@ -541,6 +542,15 @@ function normalizeTaskType(raw) {
     case "vocabulary-match":
     case "vocab-match":
       return TASK_TYPES.MATCHING;
+
+    case "labelme":
+    case "label-me":
+    case "label_me":
+    case "label":
+    case "diagram-label":
+    case "image-label":
+    case "map-label":
+      return TASK_TYPES.LABELME;
 
     // Timeline
     case "timeline":
@@ -2061,7 +2071,7 @@ export default function TaskRunner({
         // peer-editing & diff-detective show a post-submit review/answer key
         // the student needs to read before the celebration covers it.
         // (Tester: "did not wait long enough for me to read it.")
-        "peer-editing", "diff-detective",
+        "peer-editing", "diff-detective", "labelme",
       ]);
       const delay = ANSWER_REVEAL_TYPES.has(type) ? 2500 : 0;
       if (delay > 0) {
@@ -2554,6 +2564,19 @@ case "multi_player_feedback":
           review={isReview ? review : null}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
+        />
+      );
+      break;
+
+    case TASK_TYPES.LABELME:
+    case "labelme":
+      content = (
+        <LabelMeTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled || isReview}
+          mode={isReview ? "review" : "play"}
+          review={isReview ? review : null}
         />
       );
       break;

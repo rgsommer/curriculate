@@ -102,6 +102,23 @@ const DEMO_TASKS = [
     ],
   },
 
+  // 6b. Label Me (image labeling — local diagram so the demo works offline)
+  {
+    taskType: "labelme",
+    title: "Parts of a Flower",
+    prompt: "Match each marker (A-E) to the correct part of the flower.",
+    imageUrl: "/demo-images/flower-diagram.svg",
+    labels: [
+      { id: "A", correct: "Petal",  x: 50, y: 18 },
+      { id: "B", correct: "Stamen", x: 58, y: 30 },
+      { id: "C", correct: "Pistil", x: 50, y: 38 },
+      { id: "D", correct: "Sepal",  x: 38, y: 74 },
+      { id: "E", correct: "Stem",   x: 50, y: 82 },
+    ],
+    options: ["Petal", "Stamen", "Pistil", "Sepal", "Stem"],
+    explanation: "The pistil (center) is the female part; the stamens around it produce pollen.",
+  },
+
   // 7. Flashcards (uses task.cards with question + answer)
   {
     taskType: "flashcards",

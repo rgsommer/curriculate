@@ -964,6 +964,49 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
+    case TASK_TYPES.LABELME: {
+      // Canonical: labels[{id,correct,x,y}] + options[] (+ a marker→term
+      // correctMatches map, reusing Matching's objective grading shape).
+      const LETTERS = ["A", "B", "C", "D", "E"];
+      const rawLabels = Array.isArray(task.labels)
+        ? task.labels
+        : Array.isArray(task.config?.labels)
+        ? task.config.labels
+        : [];
+      const labels = rawLabels
+        .map((l, i) => {
+          const obj = isObject(l) ? l : {};
+          const id = asNonEmptyString(obj.id, LETTERS[i] || `M${i + 1}`).toUpperCase();
+          const correct = asNonEmptyString(obj.correct, asNonEmptyString(obj.term, asNonEmptyString(obj.answer, "")));
+          const x = Math.max(0, Math.min(100, Number(obj.x)));
+          const y = Math.max(0, Math.min(100, Number(obj.y)));
+          return { id, correct, x: Number.isFinite(x) ? x : 50, y: Number.isFinite(y) ? y : 50 };
+        })
+        .filter((l) => l.correct)
+        .slice(0, 5);
+
+      // Options: provided options ∪ all correct terms (dedup), keep strings.
+      const provided = Array.isArray(task.options)
+        ? task.options
+        : Array.isArray(task.config?.options)
+        ? task.config.options
+        : [];
+      const optSet = [];
+      const seenOpt = new Set();
+      for (const o of [...provided.map((s) => String(s || "").trim()), ...labels.map((l) => l.correct)]) {
+        const key = o.toLowerCase();
+        if (o && !seenOpt.has(key)) { seenOpt.add(key); optSet.push(o); }
+      }
+
+      task.labels = labels;
+      task.options = optSet;
+      task.correctMatches = Object.fromEntries(labels.map((l) => [l.id, l.correct]));
+      task.imageUrl = asNonEmptyString(task.imageUrl, asNonEmptyString(task.config?.imageUrl, ""));
+      task.imagePrompt = asNonEmptyString(task.imagePrompt, asNonEmptyString(task.config?.imagePrompt, ""));
+      if (!isObject(task.grading)) task.grading = { exactMatch: true, partialCredit: true };
+      break;
+    }
+
     case TASK_TYPES.MATCHING: {
       const cfg = isObject(task.config) ? task.config : (task.config = {});
 
@@ -2855,6 +2898,15 @@ export function validateTaskByType(taskType, task) {
 
       const order = task.correctOrder ?? cfg.correctOrder ?? task.correctAnswer ?? cfg.correctAnswer ?? task.answerKey ?? cfg.answerKey;
       if (!order) errors.push("correct order is required (correctOrder/correctAnswer/answerKey)");
+      break;
+    }
+
+    case TASK_TYPES.LABELME: {
+      if (!Array.isArray(task.labels) || task.labels.length < 5) errors.push("labels[] must have 5 markers (A-E)");
+      else if (task.labels.some((l) => !l || !l.correct)) errors.push("every label needs a correct term");
+      if (!Array.isArray(task.options) || task.options.length < 5) errors.push("options[] must have at least 5 terms");
+      if (!asNonEmptyString(task.imageUrl, "") && !asNonEmptyString(task.imagePrompt, ""))
+        errors.push("labelme needs imageUrl or imagePrompt (to generate the diagram)");
       break;
     }
 

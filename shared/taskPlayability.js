@@ -165,6 +165,19 @@ export function assessTaskPlayability(rawTask) {
       break;
     }
 
+    case TASK_TYPES.LABELME: {
+      hasAtLeast(5, "labels", () => t.labels, () => t.config?.labels);
+      hasAtLeast(5, "options", () => t.options, () => t.config?.options);
+      // An image OR an imagePrompt (to generate one) is required.
+      const hasImg =
+        (typeof t.imageUrl === "string" && t.imageUrl.trim()) ||
+        (typeof t.config?.imageUrl === "string" && t.config.imageUrl.trim()) ||
+        (typeof t.imagePrompt === "string" && t.imagePrompt.trim()) ||
+        (typeof t.config?.imagePrompt === "string" && t.config.imagePrompt.trim());
+      if (!hasImg) issues.push("imageUrl or imagePrompt is required");
+      break;
+    }
+
     case TASK_TYPES.VENNSORT: {
       hasAtLeast(2, "categories", () => t.categories, () => t.config?.categories);
       hasAtLeast(5, "items", () => t.items, () => t.config?.items);
