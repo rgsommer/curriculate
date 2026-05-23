@@ -5744,6 +5744,16 @@ if (!isMultiPack && task.taskType === "what-am-i") {
       console.log(`[Handwriting] +${handwritingBonus} bonus for team ${effectiveTeamId} on task ${idx} (${task.taskType})`);
     }
 
+    // ==== Length bonus — incentivize thorough, longer written answers ====
+    // (open-text etc.) Client computes/displays the bonus; we re-cap it here
+    // so a tampered client can't inflate the score.
+    let lengthBonus = 0;
+    if (answer && typeof answer === "object" && answer.lengthBonus === true) {
+      lengthBonus = Math.max(0, Math.min(7, Math.floor(Number(answer.lengthBonusPoints) || 0)));
+      pointsEarned += lengthBonus;
+      console.log(`[LengthBonus] +${lengthBonus} bonus for team ${effectiveTeamId} on task ${idx} (${task.taskType})`);
+    }
+
     // ==== Diff Detective race mechanics (first correct team wins bonus) ====
     if (
       task.taskType === "diff-detective" &&

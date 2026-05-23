@@ -156,6 +156,18 @@ export default function OpenTextTask({
 
   const meetsMin = computedMinWords <= 0 ? true : wordCount >= computedMinWords;
 
+  // Length bonus: substantive answers earn extra points. Single source of
+  // truth for both the "+N bonus" indicator and the submit payload. Tiers:
+  // <20 = 0; 20-39 = +1; 40-79 = +3; 80-149 = +5; 150+ = +7.
+  // (Server re-caps to guard against tampering.)
+  const lengthBonusPoints = useMemo(() => {
+    if (wordCount >= 150) return 7;
+    if (wordCount >= 80) return 5;
+    if (wordCount >= 40) return 3;
+    if (wordCount >= 20) return 1;
+    return 0;
+  }, [wordCount]);
+
   // Milestone celebrations
   useEffect(() => {
     if (wordCount > prevWordCountRef.current) {
@@ -208,6 +220,10 @@ export default function OpenTextTask({
         response: value,
         wordCount,
         minWords: computedMinWords || 0,
+        ...(lengthBonusPoints > 0 && {
+          lengthBonus: true,
+          lengthBonusPoints,
+        }),
         ...(handwritingUsed && {
           handwritingBonus: true,
           handwritingBonusPoints: HANDWRITING_BONUS_POINTS,
@@ -681,13 +697,8 @@ export default function OpenTextTask({
                     nonsense — but seeing the bonus tick up encourages
                     longer answers. */}
                 {(() => {
-                  // Bonus tiers tied to length: <20 = 0; 20-39 = +1;
-                  // 40-79 = +3; 80-149 = +5; 150+ = +7.
-                  const bonus =
-                    wordCount >= 150 ? 7 :
-                    wordCount >= 80  ? 5 :
-                    wordCount >= 40  ? 3 :
-                    wordCount >= 20  ? 1 : 0;
+                  // Tiers live in lengthBonusPoints (shared with submit payload).
+                  const bonus = lengthBonusPoints;
                   return (
                     <div
                       style={{

@@ -94,6 +94,21 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
   const [running, setRunning] = useState(false);
   const [timeLeft, setTimeLeft] = useState(totalSeconds);
 
+  // Peer-rating phase (tester ask, accountability): once everyone has tapped
+  // Done, a randomly-chosen team member rates the others. Only for teams of
+  // 2+; solo/unknown teams submit immediately as before.
+  const [ratingPhase, setRatingPhase] = useState(null); // { doneBy, judge } | null
+
+  const handleAllDone = (names) => {
+    const team = (Array.isArray(memberNames) ? memberNames : []).filter(Boolean);
+    if (team.length >= 2) {
+      const judge = team[Math.floor(Math.random() * team.length)];
+      setRatingPhase({ doneBy: names, judge });
+    } else {
+      onSubmit?.({ done: true, doneBy: names, count: names.length });
+    }
+  };
+
   // Only hard-reset the timer when the *task instance* changes.
   // (Some screens re-render/refresh task objects during staging transitions; we don't want that to cancel the timer.)
   const instanceKey = useMemo(() => {
@@ -379,61 +394,78 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
         </div>
 
         <div style={styles.controls}>
-          {Number.isFinite(totalSeconds) && canStart ? (
-            <button
-              type="button"
-              style={{ ...styles.btn, opacity: disabled ? 0.6 : 1 }}
-              onClick={(e) => {
-                e?.preventDefault?.();
-                e?.stopPropagation?.();
-                startPause();
-              }}
+          {ratingPhase ? (
+            <PeerRating
+              judge={ratingPhase.judge}
+              members={(Array.isArray(memberNames) ? memberNames : []).filter(Boolean)}
               disabled={disabled}
-              className={!running ? "bb-go" : undefined}
-            >
-              {running ? "Pause ⏸" : "Start ▶️ (begin timer)"}
-            </button>
-          ) : Number.isFinite(totalSeconds) ? (
-            <div style={{ fontSize: 12, opacity: 0.75, padding: "6px 2px" }}>
-              Intro playing… Start will appear in a moment.
-            </div>
-          ) : null}
+              onFinish={(ratings) =>
+                onSubmit?.({
+                  done: true,
+                  doneBy: ratingPhase.doneBy,
+                  count: ratingPhase.doneBy.length,
+                  judge: ratingPhase.judge,
+                  ratings,
+                })
+              }
+            />
+          ) : (
+            <>
+              {Number.isFinite(totalSeconds) && canStart ? (
+                <button
+                  type="button"
+                  style={{ ...styles.btn, opacity: disabled ? 0.6 : 1 }}
+                  onClick={(e) => {
+                    e?.preventDefault?.();
+                    e?.stopPropagation?.();
+                    startPause();
+                  }}
+                  disabled={disabled}
+                  className={!running ? "bb-go" : undefined}
+                >
+                  {running ? "Pause ⏸" : "Start ▶️ (begin timer)"}
+                </button>
+              ) : Number.isFinite(totalSeconds) ? (
+                <div style={{ fontSize: 12, opacity: 0.75, padding: "6px 2px" }}>
+                  Intro playing… Start will appear in a moment.
+                </div>
+              ) : null}
 
-          {/* Per-player Done buttons (single-device, peer-pressure
-              encouragement).  Each name lights up green as they tap.
-              When everyone has tapped, auto-submit so the task moves
-              on without an extra "submit team" tap.  Falls back to a
-              single big DONE if we don't know team names. */}
-          <PlayerDoneRow
-            memberNames={memberNames}
-            disabled={disabled}
-            onAllDone={(names) =>
-              onSubmit?.({ done: true, doneBy: names, count: names.length })
-            }
-          />
+              {/* Per-player Done buttons (single-device, peer-pressure
+                  encouragement).  Each name lights up green as they tap.
+                  When everyone has tapped, we move to peer-rating (teams of
+                  2+) or auto-submit (solo).  Falls back to a single big DONE
+                  if we don't know team names. */}
+              <PlayerDoneRow
+                memberNames={memberNames}
+                disabled={disabled}
+                onAllDone={handleAllDone}
+              />
 
-          {/* Honor-system reminder — addresses tester feedback:
-              "What will prevent kids from just saying Done? maybe just
-              honor system". Setting the expectation in copy is cheaper
-              than any anti-cheat we could build. */}
-          <div
-            style={{
-              marginTop: 8,
-              padding: "8px 12px",
-              borderRadius: 10,
-              background: "rgba(34,197,94,0.10)",
-              border: "1px solid rgba(34,197,94,0.30)",
-              color: "#bbf7d0",
-              fontSize: "0.8rem",
-              lineHeight: 1.4,
-              textAlign: "center",
-              fontWeight: 600,
-            }}
-          >
-            🤝 Honor system — your team trusts you to actually do the moves before tapping Done.
-          </div>
+              {/* Honor-system reminder — addresses tester feedback:
+                  "What will prevent kids from just saying Done? maybe just
+                  honor system". Setting the expectation in copy is cheaper
+                  than any anti-cheat we could build. */}
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  background: "rgba(34,197,94,0.10)",
+                  border: "1px solid rgba(34,197,94,0.30)",
+                  color: "#bbf7d0",
+                  fontSize: "0.8rem",
+                  lineHeight: 1.4,
+                  textAlign: "center",
+                  fontWeight: 600,
+                }}
+              >
+                🤝 Honor system — your team trusts you to actually do the moves before tapping Done.
+              </div>
 
-          <div style={styles.footer}>{finishText}</div>
+              <div style={styles.footer}>{finishText}</div>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -544,6 +576,126 @@ function PlayerDoneRow({ memberNames = [], disabled, onAllDone }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  PeerRating                                                        */
+/*  A randomly-chosen "judge" rates each teammate 1-5 stars after the */
+/*  break — drives accountability (tester ask). Ratings are optional; */
+/*  the Finish button is always enabled so the task can never stall.  */
+/* ------------------------------------------------------------------ */
+function PeerRating({ judge, members = [], disabled, onFinish }) {
+  const others = (Array.isArray(members) ? members : []).filter((m) => m && m !== judge);
+  const [ratings, setRatings] = useState({}); // { name: 1..5 }
+  const submittedRef = useRef(false);
+
+  const setStars = (name, stars) => {
+    if (disabled || submittedRef.current) return;
+    setRatings((prev) => ({ ...prev, [name]: stars }));
+  };
+
+  const finish = () => {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    onFinish?.(ratings);
+  };
+
+  return (
+    <div>
+      <div
+        style={{
+          textAlign: "center",
+          fontWeight: 1000,
+          fontSize: 16,
+          color: "#0f172a",
+          marginBottom: 4,
+        }}
+      >
+        🎲 {judge}, you're the judge!
+      </div>
+      <div
+        style={{
+          textAlign: "center",
+          fontSize: 13,
+          fontWeight: 700,
+          color: "#475569",
+          marginBottom: 12,
+        }}
+      >
+        Rate how well each teammate did the moves.
+      </div>
+
+      <div style={{ display: "grid", gap: 10 }}>
+        {others.map((name) => {
+          const current = ratings[name] || 0;
+          return (
+            <div
+              key={name}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                padding: "10px 14px",
+                borderRadius: 14,
+                border: "1px solid rgba(15,23,42,0.12)",
+                background: "rgba(255,255,255,0.92)",
+              }}
+            >
+              <span style={{ fontWeight: 900, fontSize: 14, color: "#0f172a", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                {name}
+              </span>
+              <div style={{ display: "flex", gap: 4, flex: "0 0 auto" }}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setStars(name, star)}
+                    disabled={disabled}
+                    aria-label={`${star} star${star > 1 ? "s" : ""} for ${name}`}
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      cursor: disabled ? "default" : "pointer",
+                      fontSize: 22,
+                      lineHeight: 1,
+                      padding: 0,
+                      filter: star <= current ? "none" : "grayscale(1)",
+                      opacity: star <= current ? 1 : 0.35,
+                      transition: "opacity 0.12s ease",
+                    }}
+                  >
+                    ⭐
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <button
+        type="button"
+        onClick={finish}
+        disabled={disabled}
+        style={{
+          marginTop: 14,
+          width: "100%",
+          borderRadius: 18,
+          padding: "14px 16px",
+          fontWeight: 1000,
+          fontSize: 16,
+          border: "none",
+          background: "linear-gradient(135deg, rgba(34,197,94,0.90), rgba(14,165,233,0.65))",
+          color: "#07121f",
+          cursor: disabled ? "default" : "pointer",
+          opacity: disabled ? 0.6 : 1,
+        }}
+      >
+        Finish ▶
+      </button>
     </div>
   );
 }
