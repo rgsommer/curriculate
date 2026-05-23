@@ -93,6 +93,8 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
   // worked example + a photo-snap submit. Default (unset) is on-screen.
   const _preferPaper = !!(task?.minimizeOnScreen || config?.minimizeOnScreen);
   const [useScreen, setUseScreen] = useState(practiceMode ? true : !_preferPaper);
+  // Writing on paper + snapping a photo is always available and earns a bonus.
+  const PAPER_BONUS_POINTS = 5;
   const inputRef = useRef(null);
 
   // (Preload + LOADING-phase validation removed — see state init above.
@@ -445,6 +447,8 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
                 responseSeconds: responseSec,
                 imageUsed: resolvedUrl || originalUrl || "(description only)",
                 paperMode: true,
+                handwritingBonus: true,
+                handwritingBonusPoints: PAPER_BONUS_POINTS,
                 ...photoData,
               });
             }}
@@ -607,6 +611,28 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
                 : observations.length > 0
                 ? `Submit (${minObs - observations.length} more needed for full points)`
                 : "Add observations to submit"}
+            </button>
+          )}
+
+          {/* Always offer the paper + photo option (earns a bonus). */}
+          {!submitted && phase === PHASE.RESPONDING && useScreen && (
+            <button
+              onClick={() => setUseScreen(false)}
+              disabled={disabled}
+              style={{
+                width: "100%",
+                marginTop: 10,
+                padding: "10px 16px",
+                borderRadius: 12,
+                border: "1px dashed #b45309",
+                background: "rgba(245,158,11,0.10)",
+                color: "#92400e",
+                fontSize: "0.9rem",
+                fontWeight: 800,
+                cursor: disabled ? "not-allowed" : "pointer",
+              }}
+            >
+              ✍️ Prefer paper? Write your observations and snap a photo — +{PAPER_BONUS_POINTS} bonus
             </button>
           )}
 

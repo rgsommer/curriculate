@@ -95,6 +95,8 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
   // worked example + a photo-snap submit. Default (unset) is on-screen.
   const _preferPaper = !!(task?.minimizeOnScreen || config?.minimizeOnScreen);
   const [useScreen, setUseScreen] = useState(practiceMode ? true : !_preferPaper);
+  // Writing on paper + snapping a photo is always available and earns a bonus.
+  const PAPER_BONUS_POINTS = 5;
   const firstInputRef = useRef(null);
 
   // ── Image preload + fallback ──
@@ -470,6 +472,8 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
                 docAuthor: config.docAuthor || "",
                 docYear: config.docYear || "",
                 paperMode: true,
+                handwritingBonus: true,
+                handwritingBonusPoints: PAPER_BONUS_POINTS,
                 ...photoData,
               });
             }}
@@ -616,6 +620,28 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
                 : answeredCount > 0
                 ? `Submit (${analysisPrompts.length - answeredCount} unanswered)`
                 : "Answer at least one question to submit"}
+            </button>
+          )}
+
+          {/* Always offer the paper + photo option (earns a bonus). */}
+          {!submitted && phase === PHASE.ANALYSIS && useScreen && (
+            <button
+              onClick={() => setUseScreen(false)}
+              disabled={disabled}
+              style={{
+                width: "100%",
+                marginTop: 10,
+                padding: "10px 16px",
+                borderRadius: 12,
+                border: "1px dashed #b45309",
+                background: "rgba(245,158,11,0.10)",
+                color: "#92400e",
+                fontSize: "0.9rem",
+                fontWeight: 800,
+                cursor: disabled ? "not-allowed" : "pointer",
+              }}
+            >
+              ✍️ Prefer paper? Write your answers and snap a photo — +{PAPER_BONUS_POINTS} bonus
             </button>
           )}
 
