@@ -54,6 +54,59 @@ async function apiLogout() {
   } catch {}
 }
 
+// Stream AI advice via SSE so the UI can show progress during the long
+// web_search turn. Resolves with the final payload ({advice, sources, ...})
+// on the "done" event; throws on "error" or if the stream ends without a
+// result — callers fall back to the blocking POST /api/stocks-advice.
+async function streamAdvice({ onPhase } = {}) {
+  const r = await fetch(`${BACKEND_URL}/api/stocks-advice/stream`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!r.ok || !r.body) throw new Error(`stream HTTP ${r.status}`);
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let result = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n\n")) !== -1) {
+      const block = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      let event = "message";
+      const dataLines = [];
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+      }
+      if (!dataLines.length) continue;
+      let data;
+      try { data = JSON.parse(dataLines.join("")); } catch { continue; }
+      if (event === "status" && data?.phase) onPhase?.(data.phase);
+      else if (event === "error") throw new Error(data?.error || "stream error");
+      else if (event === "done") result = data;
+    }
+  }
+  if (result) return result;
+  throw new Error("stream ended without result");
+}
+
+// Human label for a streaming advice phase (shown on the busy button).
+function aiPhaseLabel(phase) {
+  switch (phase) {
+    case "signals": return "Gathering signals…";
+    case "thinking": return "Thinking…";
+    case "searching": return "Searching the web…";
+    case "validating": return "Checking prices…";
+    default: return null;
+  }
+}
+
 // =============================================================================
 // API client
 // =============================================================================
@@ -2164,6 +2217,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
   const [consensusData, setConsensusData] = useState(null); // { consensus, alternatives, sources }
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
+  const [aiPhase, setAiPhase] = useState(null); // streaming progress phase
   const [aiAdvice, setAiAdvice] = useState(null); // { advice, sources, generatedAt }
   const [aiError, setAiError] = useState(null);
   // Briefing-derived snapshot — auto-loaded on Advice tab mount. Lets the
@@ -2218,18 +2272,27 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
 
   const handleAi = async () => {
     if (aiBusy) return;
-    setAiBusy(true); setAiError(null);
+    setAiBusy(true); setAiError(null); setAiPhase("signals");
     try {
       // Refresh prices first so the AI sees fresh quotes
       await onRefresh();
-      const r = await fetch(`${BACKEND_URL}/api/stocks-advice`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
-        body: JSON.stringify({}),
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      let j;
+      try {
+        // Preferred path: stream progress so the user isn't staring at a
+        // blank spinner during the ~30–90s web_search turn.
+        j = await streamAdvice({ onPhase: setAiPhase });
+      } catch (streamErr) {
+        // Any stream failure → fall back to the proven blocking endpoint.
+        setAiPhase("thinking");
+        const r = await fetch(`${BACKEND_URL}/api/stocks-advice`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+          body: JSON.stringify({}),
+        });
+        j = await r.json();
+        if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      }
       setAiAdvice(j);
       setConsensusData(null);
       // Fresh AI advice → clear stale "executed" marks (a new rec is not the
@@ -2238,7 +2301,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
     } catch (e) {
       setAiError(e?.message || "Failed");
     } finally {
-      setAiBusy(false);
+      setAiBusy(false); setAiPhase(null);
     }
   };
 
@@ -2339,7 +2402,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
           >
             {user.consensusMode
               ? (consensusBusy ? "Running 3×…" : "🧠🧠🧠 Update Advice (Consensus)")
-              : (aiBusy ? "Thinking…" : "🧠 Update Advice")}
+              : (aiBusy ? (aiPhaseLabel(aiPhase) || "Thinking…") : "🧠 Update Advice")}
           </button>
         </div>
       </div>

@@ -41,6 +41,15 @@ import { getTranscriptsForTopHoldings, formatTranscriptsBlock } from "../service
 
 const router = express.Router();
 
+// Performance tunables.
+//  • ADVICE_MAX_SEARCHES caps web_search round-trips inside the model turn —
+//    the single biggest latency lever. The prompt asks for 6–10; 8 is a good
+//    speed/depth balance. Override with STOCKS_ADVICE_MAX_SEARCHES.
+//  • CORRECTION_MODEL handles the (mostly mechanical) price/sizing card
+//    rewrites — a fast Haiku here is much cheaper than the advice model.
+const ADVICE_MAX_SEARCHES = Math.max(1, parseInt(process.env.STOCKS_ADVICE_MAX_SEARCHES, 10) || 8);
+const CORRECTION_MODEL = process.env.STOCKS_CORRECTION_MODEL || "claude-haiku-4-5";
+
 // ── token verification (same scheme as stocksPortfolio.js) ────────
 function getSecret() {
   return process.env.STOCKS_SECRET || process.env.MEDICENTRE_SECRET || "";
@@ -197,6 +206,23 @@ function formatQuantSignalsBlock(quantSignals) {
     lines.push(`  Technicals:   ${formatTechnicalsLine(sig.tech)}`);
   }
   return `\nQUANT SIGNALS PER HOLDING (pre-computed — use THESE numbers, don't guess from search results):\n${lines.join("\n")}\n`;
+}
+
+// Compact "use these exact prices" block built from the freshly-fetched
+// technicals. Reduces the #1 cause of the post-generation correction pass:
+// the model restating a stale holding price from memory. Anchoring the live
+// price up front means fewer drift warnings → the expensive rewrite pass
+// fires far less often.
+function formatVerifiedPricesBlock(quantSignals) {
+  if (!quantSignals || typeof quantSignals !== "object") return "";
+  const lines = [];
+  for (const [ticker, sig] of Object.entries(quantSignals)) {
+    const last = sig?.tech?.ok ? sig.tech.last : null;
+    if (!Number.isFinite(last)) continue;
+    lines.push(`  ${ticker}: $${last.toFixed(2)} ${sig.ccy || ""}`.trimEnd());
+  }
+  if (!lines.length) return "";
+  return `\nVERIFIED LIVE PRICES (fetched seconds ago — use these EXACT figures for these tickers; do NOT restate a different price from memory or search):\n${lines.join("\n")}\n`;
 }
 
 function buildPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null) {
@@ -456,6 +482,7 @@ ${formatLessonsBlock(lessons)}
 ${formatMacroBlock(macro)}
 ${formatFactorBlock(factors)}
 ${formatLifecycleBlock(lifecycle)}
+${formatVerifiedPricesBlock(quantSignals)}
 ${formatQuantSignalsBlock(quantSignals)}
 ${formatTranscriptsBlock(transcripts)}
 ${priceCurrencyBlock}
@@ -697,11 +724,27 @@ const TICKER_ALIASES = {
   "TWTR": null,
 };
 
+// Short-TTL cache for validation prices. A single advice run validates the
+// same tickers across the price + correction passes, and rapid re-runs hit
+// the same names — without this each lookup re-hits FMP/Yahoo. Caches null
+// (not-found) too, so a delisted/typo ticker isn't re-probed within the TTL.
+const VALIDATION_PRICE_CACHE = new Map(); // key -> { price, at }
+const VALIDATION_PRICE_TTL_MS = 90 * 1000;
+
 // Resolve a ticker's current price for validation. Canonical alias
 // resolution + Canadian-listing suffix handling all happen here.
 //
 //   currencyHint  — "CAD" or "USD" or null. When CAD we try `.TO` first.
 async function fetchValidationPrice(ticker, currencyHint = null) {
+  const cacheKey = `${String(ticker || "").toUpperCase()}|${currencyHint || ""}`;
+  const cached = VALIDATION_PRICE_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.at < VALIDATION_PRICE_TTL_MS) return cached.price;
+  const price = await resolveValidationPrice(ticker, currencyHint);
+  VALIDATION_PRICE_CACHE.set(cacheKey, { price, at: Date.now() });
+  return price;
+}
+
+async function resolveValidationPrice(ticker, currencyHint = null) {
   // Normalize: strip trailing dots, uppercase
   const raw = String(ticker || "").toUpperCase().replace(/\.+$/, "");
   // Alias resolution
@@ -714,14 +757,20 @@ async function fetchValidationPrice(ticker, currencyHint = null) {
   }
   const isCanadianHint = currencyHint === "CAD" && !/\.(TO|V|NE|CN)$/i.test(ticker);
   if (isCanadianHint) {
-    // Try Canadian variants in order of how commonly the AI uses bare
-    // symbols for them (.TO covers the vast majority of holdings).
-    for (const suffix of [".TO", ".V", ".NE", ".CN"]) {
+    // Probe the Canadian variants concurrently (each does FMP→Yahoo), then
+    // pick by preference order (.TO covers the vast majority of holdings).
+    // Parallel network, deterministic selection — ~2 serial calls worst case
+    // instead of up to 8.
+    const suffixes = [".TO", ".V", ".NE", ".CN"];
+    const results = await Promise.all(suffixes.map(async (suffix) => {
       const variant = `${ticker}${suffix}`;
       const p = await fetchFmpQuote(variant);
       if (Number.isFinite(p) && p > 0) return p;
       const py = await fetchYahooQuote(variant);
-      if (Number.isFinite(py) && py > 0) return py;
+      return (Number.isFinite(py) && py > 0) ? py : null;
+    }));
+    for (const p of results) {
+      if (p != null) return p;
     }
     // Fall through to bare-symbol lookup if no Canadian variant resolved
   }
@@ -819,7 +868,7 @@ async function correctBriefingWithVerifiedPrices(markdown, warnings, sizingWarni
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-6",
+        model: CORRECTION_MODEL,
         max_tokens: 4096,
         messages: [{ role: "user", content: correction }],
       }),
@@ -993,7 +1042,7 @@ async function correctAdviceCards(cards, perCardPriceWarnings, allSizingWarnings
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-6",
+          model: CORRECTION_MODEL,
           max_tokens: 2048,
           messages: [{ role: "user", content: prompt }],
         }),
@@ -1217,7 +1266,7 @@ async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, l
     body: JSON.stringify({
       model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-6",
       max_tokens: 8192, // bumped from 4096 — per-account cards push past 4k now
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 12 }],
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: ADVICE_MAX_SEARCHES }],
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -1268,6 +1317,91 @@ async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, l
   };
 }
 
+// Shared post-generation pipeline used by both the blocking POST / and the
+// streaming POST /stream: parse the model text into cards, persist tracked
+// recs, attach rec ids, then validate prices + sizing and run the (now-rare,
+// Haiku) correction pass. Returns the finished payload. Keeping this in one
+// place means the two entry points can't drift.
+async function finalizeAdvice({ email, profile, textOut, sources = [] }) {
+  let parsed = extractJson(textOut);
+  if (!parsed || !Array.isArray(parsed.advice)) {
+    const cards = briefingToAdviceCards(textOut);
+    if (cards.length > 0) {
+      parsed = { advice: cards, sources };
+    } else if (textOut && textOut.trim().length > 0) {
+      parsed = { advice: [{ title: "AI advice", body: textOut.slice(0, 8000) }], sources };
+    } else {
+      return { advice: [], sources, tracked: 0, generatedAt: new Date(), empty: true };
+    }
+  }
+
+  for (const card of parsed.advice) {
+    if (card.title) card.title = stripCiteTags(card.title);
+    if (card.body) card.body = stripCiteTags(card.body);
+    if (card.meta) card.meta = stripCiteTags(card.meta);
+  }
+
+  const generatedAt = new Date();
+  const recsToSave = [];
+  const recCardIndices = [];
+  const dedupeKey = (r) => `${r.action}|${r.ticker}|${r.entryPrice ?? ""}`;
+  const seen = new Set();
+  parsed.advice.forEach((card, idx) => {
+    const collected = [];
+    const primary = parseRec(card.body);
+    if (primary && primary.entryPrice && primary.action !== "HOLD") collected.push(primary);
+    const inline = parseRecsFromBriefing(card.body || "");
+    for (const r of inline) {
+      if (r && r.entryPrice && r.action !== "HOLD") collected.push(r);
+    }
+    for (const rec of collected) {
+      const k = dedupeKey(rec);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      recsToSave.push({
+        email,
+        generatedAt,
+        source: "ai",
+        ...rec,
+        rationale: (card.title || "") + " — " + (card.body || "").slice(0, 400),
+      });
+      recCardIndices.push(idx);
+    }
+  });
+  let inserted = [];
+  if (recsToSave.length) {
+    try {
+      inserted = await StocksAdviceRec.insertMany(recsToSave);
+    } catch (e) { console.warn("advice-rec save warning:", e?.message); }
+  }
+  inserted.forEach((doc, i) => {
+    const cardIdx = recCardIndices[i];
+    if (parsed.advice[cardIdx]) parsed.advice[cardIdx].recId = doc._id.toString();
+  });
+
+  try {
+    const ccyHints = buildTickerCurrencyHints(profile.positions);
+    const warnings = await validateAdvicePrices(parsed.advice, ccyHints);
+    for (const [idx, list] of Object.entries(warnings)) {
+      const i = parseInt(idx, 10);
+      if (parsed.advice[i]) parsed.advice[i].priceWarnings = list;
+    }
+    const combined = parsed.advice.map(c => (c.title || "") + "\n" + (c.body || "")).join("\n\n");
+    const sizingWarnings = validateRecSizing(combined, profile);
+    if (Object.keys(warnings).length || sizingWarnings.length) {
+      console.log(`[advice] correction pass: ${Object.keys(warnings).length} price-affected cards + ${sizingWarnings.length} sizing warnings — rewriting`);
+      await correctAdviceCards(parsed.advice, warnings, sizingWarnings);
+    }
+  } catch (e) { console.warn("validateAdvicePrices warn:", e?.message); }
+
+  return {
+    advice: parsed.advice,
+    sources: parsed.sources?.length ? parsed.sources : sources,
+    tracked: inserted.length,
+    generatedAt,
+  };
+}
+
 router.post("/", requireStocksAuth, async (req, res) => {
   try {
     if (!process.env.ANTHROPIC_API_KEY) {
@@ -1309,7 +1443,7 @@ router.post("/", requireStocksAuth, async (req, res) => {
       body: JSON.stringify({
         model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-6",
         max_tokens: 8192, // bumped — per-account cards push past 4k now
-        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 12 }],
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: ADVICE_MAX_SEARCHES }],
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -1341,115 +1475,150 @@ router.post("/", requireStocksAuth, async (req, res) => {
       }
     }
 
-    let parsed = extractJson(textOut);
-    if (!parsed || !Array.isArray(parsed.advice)) {
-      // Fallback: AI returned prose/markdown instead of strict JSON. Parse
-      // it as a briefing using the H2/H3 splitter so we still get usable
-      // cards and the scorecard parser still extracts Action: recs from
-      // card bodies. Same approach as runOneAdvicePass.
-      const cards = briefingToAdviceCards(textOut);
-      if (cards.length > 0) {
-        parsed = { advice: cards, sources };
-      } else if (textOut && textOut.trim().length > 0) {
-        // Last resort — single card containing the whole response so the
-        // user at least sees the AI's output instead of a red error.
-        parsed = { advice: [{ title: "AI advice", body: textOut.slice(0, 8000) }], sources };
-      } else {
-        return res.status(502).json({
-          error: "AI returned empty response",
-        });
-      }
-    }
-
-    // Defense-in-depth: also strip cite tags from each card's text fields
-    // in case Claude embedded them inside the JSON payload itself.
-    for (const card of parsed.advice) {
-      if (card.title) card.title = stripCiteTags(card.title);
-      if (card.body) card.body = stripCiteTags(card.body);
-      if (card.meta) card.meta = stripCiteTags(card.meta);
-    }
-
-    // Persist parsed recommendations so we can compute "if-followed" P&L later.
-    // We attach each saved rec's _id back to the card so the FRONTEND can pass
-    // it when the user clicks Execute → the trade journal then carries the
-    // linkedAdviceRecId and the scorecard knows which recs were followed.
-    const generatedAt = new Date();
-    const recsToSave = [];
-    const recCardIndices = [];
-    // Two-tier extraction:
-    //   1. parseRec() — finds the SINGLE primary rec at the top of a card
-    //      (the JSON-format path where each card is its own rec)
-    //   2. parseRecsFromBriefing() — finds ALL inline Action: lines in a
-    //      card body (the markdown-fallback path where a single "Signals
-    //      per holding" card contains 7+ ticker recommendations)
-    // Dedupe by (action,ticker,entryPrice) so a hit by both extractors
-    // doesn't double-count.
-    const dedupeKey = (r) => `${r.action}|${r.ticker}|${r.entryPrice ?? ""}`;
-    const seen = new Set();
-    parsed.advice.forEach((card, idx) => {
-      const collected = [];
-      const primary = parseRec(card.body);
-      if (primary && primary.entryPrice && primary.action !== "HOLD") collected.push(primary);
-      const inline = parseRecsFromBriefing(card.body || "");
-      for (const r of inline) {
-        if (r && r.entryPrice && r.action !== "HOLD") collected.push(r);
-      }
-      for (const rec of collected) {
-        const k = dedupeKey(rec);
-        if (seen.has(k)) continue;
-        seen.add(k);
-        recsToSave.push({
-          email: req.stocksUser.email,
-          generatedAt,
-          source: "ai",
-          ...rec,
-          rationale: (card.title || "") + " — " + (card.body || "").slice(0, 400),
-        });
-        recCardIndices.push(idx);
-      }
-    });
-    let inserted = [];
-    if (recsToSave.length) {
-      try {
-        inserted = await StocksAdviceRec.insertMany(recsToSave);
-      } catch (e) { console.warn("advice-rec save warning:", e?.message); }
-    }
-    // Attach rec _id back onto its card so the frontend can use it on Execute
-    inserted.forEach((doc, i) => {
-      const cardIdx = recCardIndices[i];
-      if (parsed.advice[cardIdx]) {
-        parsed.advice[cardIdx].recId = doc._id.toString();
-      }
-    });
-
-    // Post-validate every quoted price against Yahoo. Attaches a
-    // priceWarnings array to each affected card so the UI can render a
-    // red banner before the user acts on stale or hallucinated quotes.
-    try {
-      const ccyHints = buildTickerCurrencyHints(profile.positions);
-      const warnings = await validateAdvicePrices(parsed.advice, ccyHints);
-      for (const [idx, list] of Object.entries(warnings)) {
-        const i = parseInt(idx, 10);
-        if (parsed.advice[i]) parsed.advice[i].priceWarnings = list;
-      }
-      // Sizing check across the whole concatenated body text
-      const combined = parsed.advice.map(c => (c.title || "") + "\n" + (c.body || "")).join("\n\n");
-      const sizingWarnings = validateRecSizing(combined, profile);
-      if (Object.keys(warnings).length || sizingWarnings.length) {
-        console.log(`[advice] correction pass: ${Object.keys(warnings).length} price-affected cards + ${sizingWarnings.length} sizing warnings — rewriting`);
-        await correctAdviceCards(parsed.advice, warnings, sizingWarnings);
-      }
-    } catch (e) { console.warn("validateAdvicePrices warn:", e?.message); }
+    const result = await finalizeAdvice({ email: req.stocksUser.email, profile, textOut, sources });
+    if (result.empty) return res.status(502).json({ error: "AI returned empty response" });
 
     res.json({
-      generatedAt: generatedAt.toISOString(),
-      advice: parsed.advice,
-      sources: parsed.sources?.length ? parsed.sources : sources,
-      tracked: inserted.length,
+      generatedAt: result.generatedAt.toISOString(),
+      advice: result.advice,
+      sources: result.sources,
+      tracked: result.tracked,
     });
   } catch (err) {
     console.error("stocks-advice error:", err);
     res.status(500).json({ error: `Internal: ${err?.message || err}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// POST /api/stocks-advice/stream  (SSE)
+//
+// Same advice as POST /, but streams progress so the UI isn't a blank
+// spinner during the long web_search turn. Events:
+//   status {phase}  — signals | thinking | searching | validating
+//   delta  {text}   — incremental model text (a live "thinking" feed)
+//   done   {generatedAt, advice, sources, tracked}
+//   error  {error}
+// The frontend falls back to POST / on any stream error, so this path is
+// purely additive — a stream failure never blocks getting advice.
+// ─────────────────────────────────────────────────────────────────────
+router.post("/stream", requireStocksAuth, async (req, res) => {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(503).json({ error: "AI advice not configured: set ANTHROPIC_API_KEY." });
+  }
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // disable proxy buffering (nginx/Render)
+  if (res.flushHeaders) res.flushHeaders();
+  const send = (event, data) => {
+    try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch { /* client gone */ }
+  };
+
+  try {
+    const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
+    if (!profile || !profile.positions?.length) {
+      send("error", { error: "No positions to advise on." });
+      return res.end();
+    }
+
+    send("status", { phase: "signals" });
+    const summary = portfolioSummary(profile);
+    const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts] = await Promise.all([
+      monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] })),
+      computeQuantSignals(profile).catch(() => ({})),
+      getMacroContext().catch(() => null),
+      computeLifecycle(profile).catch(() => null),
+      computeFactorTilts(profile).catch(() => null),
+      computeLessons(req.stocksUser.email).catch(() => null),
+      getTranscriptsForTopHoldings(profile).catch(() => null),
+    ]);
+    const monitorAlerts = monitorRes?.alerts || [];
+    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts);
+
+    send("status", { phase: "thinking" });
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-6",
+        max_tokens: 8192,
+        stream: true,
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: ADVICE_MAX_SEARCHES }],
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    if (!r.ok || !r.body) {
+      const e = await r.text().catch(() => "");
+      send("error", { error: `Anthropic ${r.status}: ${String(e).slice(0, 200)}` });
+      return res.end();
+    }
+
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let textOut = "";
+    const sources = [];
+    const handleEvent = (payload) => {
+      const t = payload?.type;
+      if (t === "content_block_start" && payload.content_block?.type === "server_tool_use") {
+        send("status", { phase: "searching" });
+      } else if (t === "content_block_delta") {
+        const d = payload.delta;
+        if (d?.type === "text_delta" && d.text) {
+          textOut += d.text;
+          send("delta", { text: d.text });
+        } else if (d?.type === "citations_delta" && d.citation?.url) {
+          const c = d.citation;
+          if (!sources.find((s) => s.url === c.url)) sources.push({ title: c.title || c.url, url: c.url });
+        }
+      } else if (t === "error") {
+        send("error", { error: payload.error?.message || "stream error" });
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) !== -1) {
+        const block = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        const dataStr = block
+          .split("\n")
+          .filter((l) => l.startsWith("data:"))
+          .map((l) => l.slice(5).trim())
+          .join("");
+        if (!dataStr || dataStr === "[DONE]") continue;
+        let payload;
+        try { payload = JSON.parse(dataStr); } catch { continue; }
+        handleEvent(payload);
+      }
+    }
+
+    send("status", { phase: "validating" });
+    const cleanText = stripCiteTags(textOut);
+    const result = await finalizeAdvice({ email: req.stocksUser.email, profile, textOut: cleanText, sources });
+    if (result.empty) {
+      send("error", { error: "AI returned empty response" });
+      return res.end();
+    }
+    send("done", {
+      generatedAt: result.generatedAt.toISOString(),
+      advice: result.advice,
+      sources: result.sources,
+      tracked: result.tracked,
+    });
+    res.end();
+  } catch (err) {
+    console.error("stocks-advice stream error:", err);
+    send("error", { error: err?.message || "Internal error" });
+    try { res.end(); } catch { /* already closed */ }
   }
 });
 

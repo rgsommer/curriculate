@@ -826,7 +826,7 @@ export async function generateBriefing(profile) {
       body: JSON.stringify({
         model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-6",
         max_tokens: tokens,
-        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 12 }],
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: Math.max(1, parseInt(process.env.STOCKS_ADVICE_MAX_SEARCHES, 10) || 8) }],
         messages,
       }),
     });

@@ -9,7 +9,10 @@
 // for 1Y of daily closes per ticker. Results are cached for 1h.
 
 const CACHE = new Map(); // ticker → { fetchedAt, data }
-const TTL_MS = 60 * 60 * 1000; // 1 hour
+// 4h — these are derived from DAILY OHLC bars (RSI, SMA50/200, ATR, crosses),
+// which barely move intraday. A longer TTL lets the morning briefing's warm
+// cache survive into afternoon user-initiated advice runs (no cold re-fetch).
+const TTL_MS = 4 * 60 * 60 * 1000;
 const YAHOO_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/";
 
 async function fetchDailyOHLC(ticker, days = 260) {
