@@ -1,9 +1,10 @@
 // student-app/src/components/tasks/types/LegendsTask.jsx
 //
-// "Legends" — 5W deduction game. The team sees a portrait (no name) plus 10
-// facts in random order. Through 4 phases they sort facts into WHAT / WHERE /
-// WHY / WHEN buckets (2/2/2/1 with 3 decoys). After all sorting completes,
-// the legendary figure is revealed.
+// "Legends" — learn the 5Ws of a KNOWN legendary figure. The figure's name and
+// portrait are shown up front ("Marie Curie is a legend") — this is NOT a
+// guess-who. Through 4 phases the team sorts 10 facts (random order) into
+// WHAT / WHERE / WHY / WHEN buckets (2/2/2/1 with 3 decoys) to map out the
+// legend's story.
 //
 // Scoring: 2 pts per correct pick in a phase, -1 per wrong pick (clamped at 0).
 // Bonus: +3 if the entire phase is solved on the first try.
@@ -13,11 +14,19 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 const PHASES = [
-  { key: "what",  label: "WHAT did she do?",   prompt: "Tap the 2 facts that tell you WHAT she's famous for.",   needed: 2 },
-  { key: "where", label: "WHERE did she live?", prompt: "Tap the 2 facts that tell you WHERE — location, place.", needed: 2 },
-  { key: "why",   label: "WHY did she do it?", prompt: "Tap the 2 facts that tell you WHY — the motivation or need.", needed: 2 },
-  { key: "when",  label: "WHEN did this happen?", prompt: "Tap the 1 fact that tells you WHEN.", needed: 1 },
+  { key: "what",  needed: 2 },
+  { key: "where", needed: 2 },
+  { key: "why",   needed: 2 },
+  { key: "when",  needed: 1 },
 ];
+
+// The figure is KNOWN, so phase text names them directly (not "she").
+const PHASE_TEXT = {
+  what:  (n) => ({ label: `WHAT is ${n} known for?`,   prompt: `Tap the 2 facts about WHAT ${n} did or is famous for.` }),
+  where: (n) => ({ label: `WHERE did ${n} live & work?`, prompt: `Tap the 2 facts about WHERE — places connected to ${n}.` }),
+  why:   (n) => ({ label: `WHY did ${n} do it?`,        prompt: `Tap the 2 facts about WHY — ${n}'s motivation or purpose.` }),
+  when:  (n) => ({ label: `WHEN did it happen?`,        prompt: `Tap the 1 fact about WHEN ${n} lived or worked.` }),
+};
 
 function _shuffle(arr) {
   const out = arr.slice();
@@ -36,6 +45,13 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
   // Stable shuffle keyed off task id so re-renders don't re-shuffle the same instance
   const facts = useMemo(() => _shuffle(factsRaw.map((f, i) => ({ id: f.id || `f-${i}`, ...f }))), [factsRaw, task?.id, task?._taskIndex]);
 
+  // The legend is KNOWN — name the phases after them.
+  const who = String(figure.name || "this legend").trim();
+  const phases = useMemo(
+    () => PHASES.map((p) => ({ ...p, ...(PHASE_TEXT[p.key]?.(who) || {}) })),
+    [who]
+  );
+
   const [phaseIdx, setPhaseIdx] = useState(0);
   // assignments: factId → phaseKey | null. null means unsorted; "decoy" means actively-marked-as-decoy (we never expose this; decoys just stay unsorted).
   const [assignments, setAssignments] = useState({});
@@ -44,7 +60,7 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
   const [stats, setStats] = useState({ correct: 0, wrong: 0, perfectPhases: 0, points: 0 });
   const [revealed, setRevealed] = useState(false);
 
-  const phase = PHASES[phaseIdx];
+  const phase = phases[phaseIdx];
 
   const handleTap = (factId) => {
     if (disabled || revealed) return;
@@ -86,7 +102,7 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
       // Advance
       setTimeout(() => {
         setPicks([]);
-        if (phaseIdx + 1 < PHASES.length) {
+        if (phaseIdx + 1 < phases.length) {
           setPhaseIdx((p) => p + 1);
         } else {
           setRevealed(true);
@@ -122,7 +138,7 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
     return (
       <div style={wrap}>
         <div style={revealHeader}>
-          <div style={revealLabel}>This Legendary Figure Is…</div>
+          <div style={revealLabel}>You mapped this legend's story:</div>
           <img
             src={portraitSrc}
             alt={figure.name || "Legendary figure"}
@@ -158,32 +174,14 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
 
   return (
     <div style={wrap}>
-      <div style={tagStrip}>Legends · Phase {phaseIdx + 1} of {PHASES.length}</div>
+      <div style={tagStrip}>Legends · Phase {phaseIdx + 1} of {phases.length}</div>
 
-      {/* Goal + how-to — testers didn't realise the aim is to identify WHO the
-          hidden figure is, or that tapping matching facts advances the task. */}
-      <div
-        style={{
-          alignSelf: "center",
-          textAlign: "center",
-          maxWidth: 560,
-          margin: "2px auto 8px",
-          color: "#e9d5ff",
-        }}
-      >
-        <div style={{ fontWeight: 900, fontSize: "1.05rem" }}>
-          🕵️ Deduce the mystery legend
-        </div>
-        <div style={{ fontSize: "0.85rem", opacity: 0.85, lineHeight: 1.35, marginTop: 2 }}>
-          Tap the facts that match each question to advance. The figure is named
-          at the end — or tap <b>Reveal who it is</b> anytime.
-        </div>
-      </div>
-
+      {/* The legend is KNOWN — show name + clear portrait up front. This is NOT
+          a guess-who; the task is to sort the facts about their life. */}
       <div style={portraitWrap}>
         <img
           src={portraitSrc}
-          alt="A legendary figure"
+          alt={who}
           referrerPolicy="no-referrer"
           onError={(e) => {
             if (e.target.src.indexOf(FALLBACK_PORTRAIT) === -1) {
@@ -192,7 +190,14 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
           }}
           style={portrait}
         />
-        <div style={mysteryOverlay}>?</div>
+      </div>
+
+      <div style={{ alignSelf: "center", textAlign: "center", maxWidth: 560, margin: "2px auto 6px", color: "#e9d5ff" }}>
+        <div style={{ fontWeight: 1000, fontSize: "1.35rem", color: "#fff" }}>{who}</div>
+        {figure.era ? <div style={{ fontSize: "0.8rem", opacity: 0.8 }}>{figure.era}</div> : null}
+        <div style={{ fontSize: "0.85rem", opacity: 0.9, lineHeight: 1.35, marginTop: 4 }}>
+          A legend! Sort the facts about their life into <b>What · Where · Why · When</b>.
+        </div>
       </div>
 
       <h2 style={phaseTitle}>{phase.label}</h2>
@@ -231,8 +236,8 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
         })}
       </div>
 
-      {/* Always let the team find out WHO the legend is — even if they're stuck
-          on a phase. Tester reached "skip" without ever learning the answer. */}
+      {/* Let the team wrap up early if they're stuck on a phase (the figure is
+          already known — this just jumps to the summary). */}
       <button
         type="button"
         onClick={() => setRevealed(true)}
@@ -250,7 +255,7 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
           cursor: disabled ? "not-allowed" : "pointer",
         }}
       >
-        🔍 Reveal who it is
+        ✓ Done — wrap up
       </button>
     </div>
   );
@@ -291,19 +296,7 @@ const portrait = {
   width: "100%",
   height: "100%",
   objectFit: "cover",
-  // Slight desaturation to hint at "mystery"; not blurred so the image is recognisable to teachers who know
-  filter: "saturate(0.5) brightness(0.85)",
-};
-const mysteryOverlay = {
-  position: "absolute",
-  inset: 0,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontSize: "3rem",
-  fontWeight: 900,
-  color: "rgba(255,255,255,0.4)",
-  pointerEvents: "none",
+  // Shown clearly — the legend is known up front (not a guess-who).
 };
 const phaseTitle = {
   fontSize: "1.3rem",
