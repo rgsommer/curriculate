@@ -88,10 +88,11 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
   const [observations, setObservations] = useState([]);
   const [inputValue, setInputValue] = useState("");
   const [submitted, setSubmitted] = useState(false);
-  // Default to screen mode in practice (no real paper, no camera UX);
-  // classroom + conference still default to paper.  Tester reported
-  // "no place to comment" — paper mode hid the textarea.
-  const [useScreen, setUseScreen] = useState(practiceMode);
+  // Paper vs screen: practice is always on-screen. In a real session, honor the
+  // teacher's "prefer paper" setting (minimizeOnScreen) — paper mode shows a
+  // worked example + a photo-snap submit. Default (unset) is on-screen.
+  const _preferPaper = !!(task?.minimizeOnScreen || config?.minimizeOnScreen);
+  const [useScreen, setUseScreen] = useState(practiceMode ? true : !_preferPaper);
   const inputRef = useRef(null);
 
   // (Preload + LOADING-phase validation removed — see state init above.

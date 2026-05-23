@@ -90,10 +90,11 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
     analysisPrompts.map((prompt) => ({ prompt, response: "" }))
   );
   const [submitted, setSubmitted] = useState(false);
-  // Default to screen mode in practice (no paper, no camera).  Tester
-  // reported "no historical document visible, no place to comment" —
-  // because paper mode hid the on-screen textareas.
-  const [useScreen, setUseScreen] = useState(practiceMode);
+  // Paper vs screen: practice is always on-screen. In a real session, honor the
+  // teacher's "prefer paper" setting (minimizeOnScreen) — paper mode shows a
+  // worked example + a photo-snap submit. Default (unset) is on-screen.
+  const _preferPaper = !!(task?.minimizeOnScreen || config?.minimizeOnScreen);
+  const [useScreen, setUseScreen] = useState(practiceMode ? true : !_preferPaper);
   const firstInputRef = useRef(null);
 
   // ── Image preload + fallback ──
