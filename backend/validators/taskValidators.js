@@ -4,6 +4,7 @@
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { normalizeTaskType } from "../../shared/taskTypes.js";
 import { assessTaskPlayability } from "../../shared/taskPlayability.js";
+import { buildDiffScene } from "../../shared/diffDetectiveScene.js";
 import { selfCheckAnswer as _whatAmI_selfCheckAnswer } from "../services/whatAmIMatcher.js";
 
 /** Reject obvious placeholder / template-missing content. */
@@ -288,6 +289,34 @@ export function normalizeTaskByType(taskType, rawTask) {
   }
 
   switch (taskType) {
+    case TASK_TYPES.DIFF_DETECTIVE: {
+      // Visual scene mode: the generator supplied only a scene spec (a list of
+      // labels). Deterministically bake TWO SVG images + the exact answer key
+      // so the task is fully generated and ready-to-play. (See shell + scene
+      // module.) Falls through harmlessly for the text/compare variants.
+      let items = [];
+      if (Array.isArray(task.sceneItems)) items = task.sceneItems;
+      else if (typeof task.sceneItems === "string") items = task.sceneItems.split(/\s*\|\s*|\s*,\s*/);
+      items = items.map((s) => String(s || "").trim()).filter(Boolean);
+
+      if ((task.mode === "scene" || task.mode === "image") && items.length >= 3) {
+        const scene = buildDiffScene(items, task.title || task.prompt || "diff-detective");
+        if (scene) {
+          task.mode = "image";
+          task.imageA = task.imageA || scene.imageA;
+          task.imageB = task.imageB || scene.imageB;
+          task.labelA = task.labelA || scene.labelA;
+          task.labelB = task.labelB || scene.labelB;
+          task.differences = scene.differences;
+          task.totalDifferences = scene.totalDifferences;
+          // Keep text so downstream playability/reports always have content.
+          if (!task.original) task.original = `Scene A — items: ${items.join(", ")}.`;
+          if (!task.modified) task.modified = `Scene B — same scene with ${scene.totalDifferences} changes to spot.`;
+        }
+      }
+      break;
+    }
+
     case TASK_TYPES.MULTIPLE_CHOICE:
     case TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE: {
       let items = Array.isArray(task.items)

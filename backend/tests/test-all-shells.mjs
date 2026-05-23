@@ -362,6 +362,9 @@ const fillGenerators = {
       DIFF_3: "important → small",
       DIFF_4: "subject → topic",
       DIFF_5: `${t[1]} → ${t[2]}`,
+      // Scene (visual) mode picks this instead; provide a superset so either
+      // randomly-chosen shell variant has all its fills.
+      ITEMS: `${m.topic} | ${t[0]} | ${t[1]} | ${t[2]} | Sample D | Sample E | Sample F | Sample G`,
     }, opts: {} };
   },
 

@@ -6070,6 +6070,32 @@ export const TASK_SHELLS = {
   [TASK_TYPES.DIFF_DETECTIVE]: function buildDiffDetectiveShell() {
     const diffCount = 5;
 
+    // VISUAL scene mode (tester: "gen must supply 2 images"). Half the time we
+    // ask only for a short list of topic items; normalizeTaskByType then
+    // deterministically renders TWO SVG images (Scene A + Scene B with exactly
+    // N differences) plus the exact answer key — fully generated, no curation,
+    // no external image URLs. See shared/diffDetectiveScene.js.
+    if (Math.random() < 0.5) {
+      const itemCount = 8;
+      const scenePlaceholders = [
+        "TITLE: Short Diff Detective title (3-7 words)",
+        `PROMPT: 1-2 sentence instructions — tell students to spot the ${diffCount} differences between Scene A and Scene B.`,
+        `ITEMS: EXACTLY ${itemCount} short, distinct, topic-relevant labels (1-2 words each) that belong together in one scene or diagram, separated by " | " (e.g., "Sun | Cloud | Rain | River | Ocean | Mountain | Tree | Soil").`,
+      ];
+      const sceneShell = {
+        taskType: "diff-detective",
+        title: "{{TITLE}}",
+        prompt: "{{PROMPT}}",
+        mode: "scene",
+        sceneItems: "{{ITEMS}}",
+      };
+      return {
+        shell: JSON.stringify(sceneShell, null, 2),
+        fillInstructions: scenePlaceholders.join("\n"),
+        placeholderNames: ["TITLE", "PROMPT", "ITEMS"],
+      };
+    }
+
     // Tester ask: diff-detective should compare more than just an edited
     // passage — "two art pics, two documents, two historical figures, two
     // specimens, two scenes, two definitions, two processes, two pieces of
