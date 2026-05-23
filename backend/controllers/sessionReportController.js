@@ -1,6 +1,7 @@
 // backend/controllers/sessionReportController.js
 import { generateNarrativeFromInsights } from "../ai/aiScoring.js";
 import { buildOverlayModeSummary, overlayHeadline } from "./overlayReportSummary.js";
+import { signS3Key } from "../services/taskImageGen.js";
 
 function safeArr(x) {
   return Array.isArray(x) ? x : [];
@@ -478,9 +479,15 @@ export async function buildSessionReportSnapshot({
   const noiseSummary = computeNoiseSummary({ room, transcript, noiseSamples, noiseConfig });
 
   // Attachments: from mediaSubmissions + enrich with task info if available
-  const attachments = safeArr(mediaSubmissions)
-    .map((m) => {
-      if (!m?.url) return null;
+  // Resolve each submission's image URL. Prefer a FRESH signed URL from the
+  // stored S3 key (rescues key-only submissions and refreshes expired URLs);
+  // fall back to any url already on the submission.
+  const attachments = (await Promise.all(
+    safeArr(mediaSubmissions).map(async (m) => {
+      const key = m?.s3Key || m?.key || m?.s3key || "";
+      let url = key ? await signS3Key(key) : "";
+      if (!url && m?.url) url = String(m.url);
+      if (!url) return null;
       const idx = Number.isFinite(m?.taskIndex) ? m.taskIndex : -1;
       const task = tasks[idx] || {};
       const taskTitle = safeStr(task?.title || task?.taskType || (idx >= 0 ? `Task ${idx + 1}` : "Submission"));
@@ -491,7 +498,8 @@ export async function buildSessionReportSnapshot({
 
       return {
         type: m?.isPaperPhoto ? "photo" : inferAttachmentType(taskType),
-        url: String(m.url),
+        url,
+        s3Key: key || undefined,
         label: m?.isPaperPhoto ? `${taskTitle} - ${teamName} (${m.playerName || "paper"})` : label,
         teamId: String(m?.teamId || ""),
         teamName,
@@ -503,7 +511,7 @@ export async function buildSessionReportSnapshot({
         submittedAt: toDate(m?.submittedAt),
       };
     })
-    .filter(Boolean);
+  )).filter(Boolean);
 
   // Parent note: prefer AI field, otherwise blank (TeacherApp can regenerate later if needed)
   const parentNote =

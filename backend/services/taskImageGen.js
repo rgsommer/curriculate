@@ -50,6 +50,21 @@ function oai() {
   return _oai;
 }
 
+/**
+ * Sign a stored S3 key into a temporary GET URL. Lets reports/viewers resolve
+ * submitted artifacts that were stored as a bare key (or refresh an expired
+ * URL). Returns null if S3 isn't configured or the key is missing.
+ */
+export async function signS3Key(key, expiresIn = 7 * 24 * 60 * 60) {
+  const client = s3();
+  if (!client || !key) return null;
+  try {
+    return await getSignedUrl(client, new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }), { expiresIn });
+  } catch {
+    return null;
+  }
+}
+
 export function imageStorageAvailable() {
   return !!s3();
 }
