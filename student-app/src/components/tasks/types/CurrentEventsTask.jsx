@@ -8,6 +8,7 @@
 //
 // See CURRENT_EVENTS_PLAN.md §11 + §14 for the spec.
 import React, { useMemo, useState } from "react";
+import SpeechQualityMeter from "../SpeechQualityMeter";
 
 // Count sentence-shaped chunks in a free-text response. Handles the
 // common end-of-sentence punctuation + the case where the user just
@@ -182,6 +183,11 @@ export default function CurrentEventsTask({ task, onSubmit, disabled }) {
             style={textareaStyle}
             maxLength={1200}
           />
+
+          {/* Live answer-quality speedometer (typed or dictated). */}
+          <div style={{ margin: "8px 0" }}>
+            <SpeechQualityMeter text={response} dark />
+          </div>
           <div
             style={{
               fontSize: "0.78rem",

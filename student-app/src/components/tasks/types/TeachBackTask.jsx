@@ -457,6 +457,13 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
         </div>
       )}
 
+      {/* Live answer-quality speedometer for typed/dictated explanations. */}
+      {(inputMode === "text" || inputMode === "voice") && (
+        <div style={{ background: "rgba(255,255,255,0.92)", borderRadius: 16, padding: "8px 12px", marginTop: 10 }}>
+          <SpeechQualityMeter text={explanation} />
+        </div>
+      )}
+
       {inputMode === "record" && (
         <div className="text-center space-y-3">
           <div
