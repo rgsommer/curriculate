@@ -325,7 +325,56 @@ export async function renderSessionReportPdfBuffer(reportDoc) {
     }
   }
 
-  
+  // Collect every student-submitted image artifact (photos of paper work,
+  // handwriting/drawing snaps, photo challenges, team selfies). Targets
+  // SUBMISSION fields only — never the task's own prompt diagram.
+  function deepCollectSubmittedImages(root) {
+    const out = [];
+    const seen = new Set();
+    const FIELDS = ["photoUrl", "photoDataUrl", "handwritingPhotoUrl", "drawingDataUrl", "imageDataUrl", "selfieUrl", "snapshotUrl"];
+    const ARRAYS = ["playerPhotos", "paperPhotos", "photos", "attachments", "submissions"];
+    const isImg = (s) =>
+      typeof s === "string" &&
+      (s.startsWith("data:image/") ||
+        (/^https?:\/\//i.test(s) && (/\.(png|jpe?g|webp)(\?|$)/i.test(s) || /amazonaws\.com|s3[.-]/i.test(s))));
+    const add = (src, label) => { if (isImg(src) && !seen.has(src)) { seen.add(src); out.push({ src, label: String(label || "Submission").slice(0, 80) }); } };
+    const visit = (node, ctx) => {
+      if (!node || typeof node !== "object" || out.length >= 24) return;
+      if (Array.isArray(node)) { node.forEach((n) => visit(n, ctx)); return; }
+      const label = node.playerName || node.studentName || node.participantName || node.teamName || node.title || node.taskTitle || node.taskType || node.type || ctx;
+      for (const f of FIELDS) add(node[f], label);
+      for (const key of ARRAYS) {
+        if (Array.isArray(node[key])) for (const p of node[key]) add(p?.url || p?.photoUrl || p?.photoDataUrl || p?.src, p?.name || label);
+      }
+      for (const k of Object.keys(node)) if (node[k] && typeof node[k] === "object") visit(node[k], label);
+    };
+    visit(root, "");
+    return out;
+  }
+
+  async function renderSubmittedWorkSection() {
+    const imgs = deepCollectSubmittedImages(report);
+    if (!imgs.length) return;
+    ensureSpace(80);
+    sectionTitle("Submitted Student Work");
+    doc.font("Helvetica").fontSize(9).fillColor("#6b7280")
+      .text("Artifacts students submitted during the session (paper photos, drawings, snapshots).");
+    doc.moveDown(0.4);
+    const w = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    for (const it of imgs) {
+      const buf = await fetchImageBytes(it.src);
+      if (!buf) continue;
+      ensureSpace(230);
+      doc.font("Helvetica-Bold").fontSize(9).fillColor("#374151").text(it.label, { width: w });
+      const y = doc.y + 2;
+      try {
+        doc.image(buf, doc.page.margins.left, y, { fit: [w, 210], align: "left", valign: "top" });
+        doc.y = y + 210 + 10;
+      } catch (_) { /* skip corrupt image */ }
+    }
+  }
+
+
 function taskTypeEmoji(typeRaw) {
   const t = String(typeRaw || "").toLowerCase();
   if (!t) return "🧩";
@@ -956,6 +1005,12 @@ function formatDate(d) {
   
   // ---------- Written response samples (optional) ----------
   renderWrittenSamplesSection();
+
+  // ---------- Submitted student work (photos / paper snapshots / drawings) ----------
+  // Always surface the artifacts students submitted (paper-photo answers,
+  // handwriting snaps, drawings, photo challenges, team selfies) so the teacher
+  // report mirrors what's in the students' own reports.
+  await renderSubmittedWorkSection();
 
 // ---------- Attachments page ----------
   const attachments = Array.isArray(report.attachments) ? report.attachments : [];
