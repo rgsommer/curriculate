@@ -118,7 +118,6 @@ export default function WordWeaverDuelTask({
   const [selectedWordIdx, setSelectedWordIdx] = useState(null);
   const [orientation, setOrientation] = useState("H"); // H | V (legacy, kept for compatibility)
   const [wordOrientations, setWordOrientations] = useState(() => ({})); // {wordIdx: "H" | "V"}
-  const [rotatedView, setRotatedView] = useState(false);
   const [placementError, setPlacementError] = useState(null); // error message for placement feedback
   const [badDropFlash, setBadDropFlash] = useState(false);     // 600ms red flash on bad drop
   const badDropTimerRef = useRef(null);
@@ -151,7 +150,6 @@ export default function WordWeaverDuelTask({
     setSelectedWordIdx(null);
     setOrientation("H");
     setWordOrientations({});
-    setRotatedView(false);
     setBoard(emptyBoard);
     setPlaced({});
     setPlacementError(null);
@@ -806,15 +804,11 @@ export default function WordWeaverDuelTask({
                 Orientation: {orientation === "H" ? "Horizontal" : "Vertical"}
               </button>
 
-              <button
-                type="button"
-                disabled={!canInteract}
-                onClick={() => setRotatedView((v) => !v)}
-                style={s.secondaryBtn}
-                title="Rotate the board view (visual only)"
-              >
-                {rotatedView ? "Rotate again" : "Rotate board"}
-              </button>
+              {/* Removed the "Rotate board" view toggle: it applied a cosmetic
+                  CSS rotate(90deg) that made the grid LOOK transposed while
+                  placement/intersection logic stayed on the true orientation —
+                  tester read this as "the grid is rotated" and hit spurious
+                  "words must cross at a shared letter" confusion. */}
             </div>
 
             <div style={{ marginTop: 10, fontSize: 13, opacity: 0.9 }}>
@@ -845,7 +839,6 @@ export default function WordWeaverDuelTask({
               ref={boardRef}
               style={{
                 ...s.board,
-                transform: rotatedView ? "rotate(90deg)" : "none",
                 transformOrigin: "center",
               }}
             >

@@ -393,6 +393,18 @@ export function normalizeTaskByType(taskType, rawTask) {
         ? task.config.statements
         : [];
 
+      // Strip placeholder/template statements that slipped through generation
+      // (tester saw "Statement 1" / "{{STATEMENT_1}}" rendered as real items).
+      // Mirrors the word-weaver placeholder guard below.
+      const isPlaceholderStatement = (s) => {
+        const t = String(s || "").trim();
+        if (!t) return true;
+        if (/^(statement|question|sentence|item|fact)\s*\d+[.!?]?$/i.test(t)) return true; // "Statement 1"
+        if (/\{\{.*?\}\}/.test(t) || /<<.*?>>/.test(t)) return true;                        // {{X}} / <<X>>
+        if (/^(sample|example|placeholder|todo|tbd|lorem ipsum)\b/i.test(t)) return true;
+        return false;
+      };
+
       items = items
         .map((it, i) => {
           const obj = isObject(it) ? { ...it } : {};
@@ -404,7 +416,7 @@ export function normalizeTaskByType(taskType, rawTask) {
             correctAnswer: tf ?? 0,
           };
         })
-        .filter((x) => x.prompt);
+        .filter((x) => x.prompt && !isPlaceholderStatement(x.prompt));
 
       task.items = items;
 
