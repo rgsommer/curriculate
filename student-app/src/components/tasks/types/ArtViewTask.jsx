@@ -66,8 +66,10 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
   // on?? this task MUST MUST MUST display an image of a piece of
   // historically relevant art." The previous external Wikimedia thumb
   // was being blocked by hotlink protection in some networks.
-  // /demo-images/great-wave.jpg is bundled in student-app/public/.
-  const DEFAULT_ART_URL = "/demo-images/great-wave.jpg";
+  // /demo-images/great-wave.svg is bundled in student-app/public/.
+  // (great-wave.jpg shipped as a 0-byte placeholder and never rendered —
+  // that was the root cause of "no art ever shows". Use the valid SVG.)
+  const DEFAULT_ART_URL = "/demo-images/great-wave.svg";
 
   // Skip the LOADING preload-validation step entirely — it was sticking
   // the practicer on a black spinner whenever the preload promise hung

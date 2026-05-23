@@ -236,35 +236,46 @@ export default function WordWeaverDuelTask({
       // First try the literal drop position (start cell = drop cell).
       let check = canPlaceWord(r, c, word, wordOri, b);
       let anchorR = r, anchorC = c;
+      let finalOri = wordOri;
 
-      // If literal placement fails, be generous: when the drop cell has an
-      // existing letter that matches one of the dragged word's letters,
-      // anchor the word so the matching letter lands on the drop cell.
-      // (Per tester feedback: "Dragging TEACH into the E of LEARN should
-      // automatically place in the correct spot — don't be too fussy.")
+      // If literal placement fails, be generous. Crucially, a crossing word
+      // must run PERPENDICULAR to the word it crosses, so the user's currently
+      // selected orientation is often "wrong" for an obvious cross. Try the
+      // selected orientation first, then the opposite — so dropping a word onto
+      // a shared letter just works regardless of orientation.
+      // (Tester: "if the user places a word so that two identical letters
+      // intersect — accept it!")
       if (!check.ok) {
         const dropChar = String(b[r]?.[c]?.ch || "").toUpperCase();
+        const orientationsToTry = wordOri === "H" ? ["H", "V"] : ["V", "H"];
+
+        // Pass 1: anchor a matching letter of the word onto the drop cell.
         if (dropChar) {
-          // Try every matching letter position in the word
-          for (let i = 0; i < word.length; i++) {
-            if (word[i] !== dropChar) continue;
-            const tryR = wordOri === "V" ? r - i : r;
-            const tryC = wordOri === "H" ? c - i : c;
-            if (tryR < 0 || tryC < 0) continue;
-            const tryCheck = canPlaceWord(tryR, tryC, word, wordOri, b);
-            if (tryCheck.ok) { check = tryCheck; anchorR = tryR; anchorC = tryC; break; }
+          for (const ori of orientationsToTry) {
+            for (let i = 0; i < word.length; i++) {
+              if (word[i] !== dropChar) continue;
+              const tryR = ori === "V" ? r - i : r;
+              const tryC = ori === "H" ? c - i : c;
+              if (tryR < 0 || tryC < 0) continue;
+              const tryCheck = canPlaceWord(tryR, tryC, word, ori, b);
+              if (tryCheck.ok) { check = tryCheck; anchorR = tryR; anchorC = tryC; finalOri = ori; break; }
+            }
+            if (check.ok) break;
           }
         }
-        // Second-pass tolerance: try a 1-cell shift in each direction along
-        // the word axis. Helps when the user drops near (but not exactly on)
-        // a valid intersection cell.
+
+        // Pass 2: tolerance — try a small shift along each orientation's axis.
+        // Helps when the user drops near (but not exactly on) a valid cell.
         if (!check.ok) {
-          for (const delta of [-1, 1, -2, 2]) {
-            const tryR = wordOri === "V" ? r + delta : r;
-            const tryC = wordOri === "H" ? c + delta : c;
-            if (tryR < 0 || tryC < 0) continue;
-            const tryCheck = canPlaceWord(tryR, tryC, word, wordOri, b);
-            if (tryCheck.ok) { check = tryCheck; anchorR = tryR; anchorC = tryC; break; }
+          for (const ori of orientationsToTry) {
+            for (const delta of [-1, 1, -2, 2]) {
+              const tryR = ori === "V" ? r + delta : r;
+              const tryC = ori === "H" ? c + delta : c;
+              if (tryR < 0 || tryC < 0) continue;
+              const tryCheck = canPlaceWord(tryR, tryC, word, ori, b);
+              if (tryCheck.ok) { check = tryCheck; anchorR = tryR; anchorC = tryC; finalOri = ori; break; }
+            }
+            if (check.ok) break;
           }
         }
       }
@@ -282,19 +293,19 @@ export default function WordWeaverDuelTask({
       setPlacementError(null);
       setBadDropFlash(false);
 
-      const intersections = computeIntersections(anchorR, anchorC, word, wordOri, b);
+      const intersections = computeIntersections(anchorR, anchorC, word, finalOri, b);
       const points = word.length + intersections * 2;
 
       for (let i = 0; i < word.length; i++) {
-        const rr = wordOri === "V" ? anchorR + i : anchorR;
-        const cc = wordOri === "H" ? anchorC + i : anchorC;
+        const rr = finalOri === "V" ? anchorR + i : anchorR;
+        const cc = finalOri === "H" ? anchorC + i : anchorC;
         const cur = b[rr][cc];
         b[rr][cc] = { ch: word[i], wordId: cur?.wordId ?? wordIdx }; // preserve earlier ownership on intersections
       }
 
       setPlaced((p) => ({
         ...(p || {}),
-        [wordIdx]: { r: anchorR, c: anchorC, orientation: wordOri, playerIndex: activePlayer, points, intersections },
+        [wordIdx]: { r: anchorR, c: anchorC, orientation: finalOri, playerIndex: activePlayer, points, intersections },
       }));
 
       setScores((s) => ({

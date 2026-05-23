@@ -111,10 +111,11 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
   /* ──────────────── Render ──────────────── */
 
   // Bundled local default so we never show a blank portrait. The
-  // /demo-images/great-wave.jpg is a public-domain placeholder that
+  // /demo-images/great-wave.svg is a public-domain placeholder that
   // ships with the app — visible immediately even if the AI-supplied
   // portraitUrl is missing or fails to load.
-  const FALLBACK_PORTRAIT = "/demo-images/great-wave.jpg";
+  // (great-wave.jpg was a 0-byte placeholder that never rendered.)
+  const FALLBACK_PORTRAIT = "/demo-images/great-wave.svg";
   const portraitSrc = figure.portraitUrl || FALLBACK_PORTRAIT;
 
   if (revealed) {

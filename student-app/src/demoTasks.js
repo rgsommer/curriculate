@@ -1257,14 +1257,16 @@ const DEMO_TASKS = [
     title: "Art View",
     prompt: "Study the artwork carefully, then share your observations!",
     config: {
-      imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg/800px-Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg",
-      imageTitle: "Mona Lisa",
-      imageArtist: "Leonardo da Vinci",
-      imageYear: "1503-1519",
+      // Local bundled asset — external Wikimedia URLs were unreliable in
+      // classroom networks (hotlink/CORS), so the demo never rendered art.
+      imageUrl: "/demo-images/great-wave.svg",
+      imageTitle: "The Great Wave off Kanagawa",
+      imageArtist: "Katsushika Hokusai",
+      imageYear: "c. 1831",
       viewingSeconds: 45,
       responseSeconds: 90,
       minObservations: 3,
-      focusHints: ["Look at the expression", "Notice the background", "Observe the colors and lighting"],
+      focusHints: ["Look at the wave's shape", "Notice Mount Fuji in the background", "Observe the colors and movement"],
     },
   },
 
@@ -1274,12 +1276,13 @@ const DEMO_TASKS = [
     title: "Historical Document",
     prompt: "Examine this historical document and analyze its significance.",
     config: {
-      imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/US_One_Cent_Obv.png/440px-US_One_Cent_Obv.png",
-      docTitle: "The Lincoln Penny",
-      docAuthor: "Victor D. Brenner (designer)",
-      docYear: "1909",
-      imageDescription: "The Lincoln cent, first issued in 1909 to commemorate Abraham Lincoln's 100th birthday.",
-      historicalContext: "The Lincoln penny was the first US coin to feature a real person. It was designed to honor the 16th president on his centennial.",
+      // Local bundled asset (see art-view note) — guaranteed to render.
+      imageUrl: "/demo-images/emancipation-proclamation.svg",
+      docTitle: "The Emancipation Proclamation",
+      docAuthor: "Abraham Lincoln",
+      docYear: "1863",
+      imageDescription: "The Emancipation Proclamation, issued by President Abraham Lincoln on January 1, 1863, declaring enslaved people in the Confederate states to be free.",
+      historicalContext: "Issued during the Civil War, the Emancipation Proclamation reframed the war as a fight against slavery and paved the way for the 13th Amendment.",
       viewingSeconds: 40,
       responseSeconds: 90,
       analysisPrompts: [
