@@ -161,12 +161,20 @@ export async function pregenerateTaskImages(task, { allowAi = true } = {}) {
     }
 
     if (type === "legends") {
+      // Unlike documents/artworks (which must be the real artifact), a figure's
+      // portrait CAN be AI-generated as long as it's historically accurate — so
+      // legends honors the teacher's allowAiGeneratedImages toggle. The prompt
+      // demands fidelity to the real, documented appearance; search is the
+      // fallback (and the only source when AI is off).
       const fig = cfg.figure || {};
       if (fig.name) {
         const got = await sourceOne({
-          prompt: `portrait photo of ${fig.name}`,
+          prompt:
+            `Historically accurate, realistic portrait of ${fig.name}` +
+            (fig.era ? `, ${fig.era}` : "") +
+            `. True to their real, documented appearance — period-accurate face, clothing, and setting. No text or captions.`,
           query: fig.name,
-          allowAi: false,
+          allowAi,
           label: "legend",
         });
         if (got && task.config?.figure) {
