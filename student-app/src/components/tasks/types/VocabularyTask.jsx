@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/VocabularyTask.jsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useThemeMode } from "../../../utils/ThemeModeContext.js";
+import { isDarkTheme } from "../../../utils/themeHelpers.js";
 import DesignatedWriter from "../DesignatedWriter";
 
 function escapeRegex(s) {
@@ -39,7 +40,7 @@ export default function VocabularyTask({
   memberNames = [],
 }) {
   const themeMode = useThemeMode();
-  const isDark = themeMode === "dark";
+  const isDark = isDarkTheme(themeMode);
   const requiredWords = useMemo(() => {
     const cfg = task?.config || {};
     const words =

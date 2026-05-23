@@ -228,12 +228,22 @@ export function getThemeShell(uiTheme) {
 }
 
 /**
+ * True for dark themes. This is the single source of truth for "is this a dark
+ * theme" — components must use this instead of `theme === "dark"`, because the
+ * theme key flowing through ThemeModeContext is now the specific theme
+ * ("eager" | "bold" | "dyno"), not the literal "light"/"dark".
+ * (The legacy literals "light"/"dark" are still accepted for back-compat.)
+ */
+export function isDarkTheme(theme) {
+  return theme === "bold" || theme === "dyno" || theme === "dark";
+}
+
+/**
  * Returns "dark" or "light" depending on theme.
  * Bold and Dyno are dark themes; Eager is light.
  */
 export function getThemeMode(uiTheme) {
-  if (uiTheme === "bold" || uiTheme === "dyno") return "dark";
-  return "light";
+  return isDarkTheme(uiTheme) ? "dark" : "light";
 }
 
 /**

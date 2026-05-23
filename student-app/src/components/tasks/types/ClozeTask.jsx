@@ -7,6 +7,7 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { TaskCardFrame, Pill, PrimaryButton } from "../taskStyles";
 import { useThemeMode } from "../../../utils/ThemeModeContext";
+import { isDarkTheme } from "../../../utils/themeHelpers.js";
 
 /* ------------------------------------------------------------------ */
 /*  CSS animations                                                     */
@@ -65,7 +66,7 @@ function injectStyles() {
 /*  Theme-adaptive colors                                              */
 /* ------------------------------------------------------------------ */
 function themeColors(theme) {
-  const dark = theme === "dark";
+  const dark = isDarkTheme(theme);
   return {
     // Word chip (unused)
     chipText:      dark ? "rgba(255,255,255,0.88)" : "#1e293b",

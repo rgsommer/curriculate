@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useThemeMode } from "../../../utils/ThemeModeContext.js";
+import { isDarkTheme } from "../../../utils/themeHelpers.js";
 import StepCircle from "../StepCircle";
 
 /**
@@ -31,7 +32,7 @@ export default function WordWeaverDuelTask({
 }) {
   const sock = useMemo(() => socket?.current || socket || null, [socket]);
   const themeMode = useThemeMode();
-  const isDark = themeMode === "dark";
+  const isDark = isDarkTheme(themeMode);
   const s = useMemo(() => getStyles(isDark), [isDark]);
 
   const canInteract = mode === "play" && !disabled;

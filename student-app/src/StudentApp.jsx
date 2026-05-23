@@ -45,7 +45,7 @@ import {
   buildObjectiveAnswerKey,
 } from "./utils/answerKeyHelpers.js";
 import { buildMatchingReveal } from "./utils/matchingReveal.js";
-import { getThemeShell, getThemeMode, formatRemainingMs } from "./utils/themeHelpers.js";
+import { getThemeShell, formatRemainingMs } from "./utils/themeHelpers.js";
 import ThemeModeContext from "./utils/ThemeModeContext.js";
 
 // Hooks
@@ -142,7 +142,6 @@ function StudentApp() {
   // Theme selector (must be inside component)
   const [uiTheme, setUiTheme] = useState("eager"); // "eager" | "bold" | "dyno"
   const themeShell = getThemeShell(uiTheme);
-  const themeMode = getThemeMode(uiTheme);
 
   // Socket connection hook
   const { connected, setConnected, statusMessage, setStatusMessage } = useSocketConnection(socket);
@@ -3526,7 +3525,7 @@ function StudentApp() {
   // ─────────────────────────────────────────────
 
   return (
-    <ThemeModeContext.Provider value={themeMode}>
+    <ThemeModeContext.Provider value={uiTheme}>
     <>
     {/* Animated theme background — rendered OUTSIDE the content div so z-index layering works */}
     {!isFlashcardsRace && !isMadDash && !isMindMapper && (

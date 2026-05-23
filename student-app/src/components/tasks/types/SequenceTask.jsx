@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/SequenceTask.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useThemeMode } from "../../../utils/ThemeModeContext.js";
+import { isDarkTheme } from "../../../utils/themeHelpers.js";
 
 /**
  * Sequence / Timeline task
@@ -37,7 +38,7 @@ export default function SequenceTask({
   onAnswerChange,
 }) {
   const themeMode = useThemeMode();
-  const isDark = themeMode === "dark";
+  const isDark = isDarkTheme(themeMode);
   const items = useMemo(() => {
     const raw =
       (Array.isArray(task?.config?.items) && task.config.items.length > 0 && task.config.items) ||

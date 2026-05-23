@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/taskStyles.jsx
 import React from "react";
 import { useThemeMode } from "../../utils/ThemeModeContext.js";
+import { THEMES, isDarkTheme } from "../../utils/themeHelpers.js";
 
 /**
  * Curriculate Task UI System
@@ -61,6 +62,37 @@ export const UI = {
   },
 };
 
+/**
+ * Build a per-theme palette by taking the light/dark base (which owns the
+ * polished gradients/shadows) and overriding the *color identity* from the
+ * single source of truth in themeHelpers.THEMES. This is what unifies the two
+ * theme systems: themeHelpers owns the colors; taskStyles owns the structure.
+ * Bold (violet) and Dyno (cyan) therefore look different inside tasks even
+ * though both are "dark" mode. "light"/"dark" remain as back-compat aliases.
+ */
+function buildThemePalette(key) {
+  const tk = THEMES[key];
+  const dark = isDarkTheme(key);
+  const base = dark ? UI.theme.dark : UI.theme.light;
+  if (!tk) return base;
+  const fallbackBorder = dark ? "rgba(255,255,255,0.12)" : "rgba(15,23,42,0.12)";
+  return {
+    ...base,
+    text: tk.text || base.text,
+    subtext: tk.textMuted || base.subtext,
+    border: `1px solid ${tk.surfaceBorder || fallbackBorder}`,
+    topBorder: `1px solid ${tk.surfaceBorder || fallbackBorder}`,
+    pillBorder: `1px solid ${tk.surfaceBorder || fallbackBorder}`,
+    inputBg: tk.inputBg || base.inputBg,
+    inputBorder: `1px solid ${tk.inputBorder || fallbackBorder}`,
+    accent: tk.accent || undefined,
+  };
+}
+
+UI.theme.eager = buildThemePalette("eager");
+UI.theme.bold = buildThemePalette("bold");
+UI.theme.dyno = buildThemePalette("dyno");
+
 export function TaskCardFrame({
   theme: themeProp,
   title,
@@ -77,7 +109,7 @@ export function TaskCardFrame({
 }) {
   const contextTheme = useThemeMode();
   const theme = themeProp || contextTheme || "light";
-  const t = UI.theme[theme] || UI.theme.light;
+  const t = UI.theme[theme] || (isDarkTheme(theme) ? UI.theme.dark : UI.theme.light);
 
   if (fullBleed) {
     // For "full screen" tasks (e.g., Draw/Mime). Still "uses TaskCardFrame" but doesn't constrain width.
@@ -125,7 +157,7 @@ export function TaskCardFrame({
               alignItems: "center",
               gap: 12,
               flexWrap: "wrap",
-              backdropFilter: theme === "dark" ? "blur(10px)" : undefined,
+              backdropFilter: isDarkTheme(theme) ? "blur(10px)" : undefined,
             }}
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -243,7 +275,7 @@ export function TaskBodyText({ children, style }) {
 export function Pill({ children, subtle = false, theme: themeProp, style }) {
   const contextTheme = useThemeMode();
   const theme = themeProp || contextTheme || "light";
-  const t = UI.theme[theme] || UI.theme.light;
+  const t = UI.theme[theme] || (isDarkTheme(theme) ? UI.theme.dark : UI.theme.light);
   return (
     <span
       style={{
@@ -254,7 +286,7 @@ export function Pill({ children, subtle = false, theme: themeProp, style }) {
         borderRadius: 999,
         border: t.pillBorder,
         background: subtle
-          ? theme === "dark"
+          ? isDarkTheme(theme)
             ? "rgba(255,255,255,0.06)"
             : "rgba(255,255,255,0.62)"
           : t.pillBg,
@@ -280,7 +312,7 @@ export function Pill({ children, subtle = false, theme: themeProp, style }) {
 export function WaitingPill({ children = "Waiting…", theme: themeProp, style }) {
   const contextTheme = useThemeMode();
   const theme = themeProp || contextTheme || "light";
-  const t = UI.theme[theme] || UI.theme.light;
+  const t = UI.theme[theme] || (isDarkTheme(theme) ? UI.theme.dark : UI.theme.light);
   return (
     <span
       style={{
@@ -290,7 +322,7 @@ export function WaitingPill({ children = "Waiting…", theme: themeProp, style }
         padding: "8px 14px",
         borderRadius: 999,
         border: t.pillBorder,
-        background: theme === "dark" ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.62)",
+        background: isDarkTheme(theme) ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.62)",
         color: t.subtext,
         fontWeight: 850,
         fontSize: 13,
@@ -323,14 +355,14 @@ export function WaitingPill({ children = "Waiting…", theme: themeProp, style }
 export function Divider({ theme: themeProp, style }) {
   const contextTheme = useThemeMode();
   const theme = themeProp || contextTheme || "light";
-  const t = UI.theme[theme] || UI.theme.light;
+  const t = UI.theme[theme] || (isDarkTheme(theme) ? UI.theme.dark : UI.theme.light);
   return (
     <div
       style={{
         height: 1,
         width: "100%",
         background:
-          theme === "dark"
+          isDarkTheme(theme)
             ? "rgba(255,255,255,0.14)"
             : "rgba(15,23,42,0.14)",
         margin: "16px 0",
@@ -343,7 +375,7 @@ export function Divider({ theme: themeProp, style }) {
 export function HelpText({ children, theme: themeProp, style }) {
   const contextTheme = useThemeMode();
   const theme = themeProp || contextTheme || "light";
-  const t = UI.theme[theme] || UI.theme.light;
+  const t = UI.theme[theme] || (isDarkTheme(theme) ? UI.theme.dark : UI.theme.light);
   return (
     <div
       style={{
@@ -351,7 +383,7 @@ export function HelpText({ children, theme: themeProp, style }) {
         fontWeight: 750,
         lineHeight: 1.35,
         color: t.subtext,
-        opacity: theme === "dark" ? 0.92 : 0.9,
+        opacity: isDarkTheme(theme) ? 0.92 : 0.9,
         ...style,
       }}
     >
@@ -387,7 +419,7 @@ export function PrimaryButton({ children, disabled, onClick, style, type = "butt
 export function GhostButton({ children, disabled, onClick, theme: themeProp, style, type = "button" }) {
   const contextTheme = useThemeMode();
   const theme = themeProp || contextTheme || "light";
-  const t = UI.theme[theme] || UI.theme.light;
+  const t = UI.theme[theme] || (isDarkTheme(theme) ? UI.theme.dark : UI.theme.light);
   return (
     <button
       type={type}
@@ -397,8 +429,8 @@ export function GhostButton({ children, disabled, onClick, theme: themeProp, sty
         borderRadius: 18,
         padding: "12px 14px",
         border: t.inputBorder,
-        background: theme === "dark" ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.70)",
-        color: theme === "dark" ? "rgba(255,255,255,0.92)" : "rgba(15,23,42,0.92)",
+        background: isDarkTheme(theme) ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.70)",
+        color: isDarkTheme(theme) ? "rgba(255,255,255,0.92)" : "rgba(15,23,42,0.92)",
         fontWeight: 1000,
         cursor: disabled ? "default" : "pointer",
         opacity: disabled ? 0.6 : 1,
@@ -413,7 +445,7 @@ export function GhostButton({ children, disabled, onClick, theme: themeProp, sty
 export function TextInput({ value, onChange, onKeyDown, placeholder, disabled, theme: themeProp, style, ...rest }) {
   const contextTheme = useThemeMode();
   const theme = themeProp || contextTheme || "light";
-  const t = UI.theme[theme] || UI.theme.light;
+  const t = UI.theme[theme] || (isDarkTheme(theme) ? UI.theme.dark : UI.theme.light);
   return (
     <input
       value={value}
@@ -427,7 +459,7 @@ export function TextInput({ value, onChange, onKeyDown, placeholder, disabled, t
         padding: "0 14px",
         border: t.inputBorder,
         background: t.inputBg,
-        color: theme === "dark" ? "#fff" : "#0f172a",
+        color: isDarkTheme(theme) ? "#fff" : "#0f172a",
         fontWeight: 850,
         outline: "none",
         width: "100%",
@@ -441,7 +473,7 @@ export function TextInput({ value, onChange, onKeyDown, placeholder, disabled, t
 export function TextArea({ value, onChange, placeholder, disabled, rows = 6, theme: themeProp, style, ...rest }) {
   const contextTheme = useThemeMode();
   const theme = themeProp || contextTheme || "light";
-  const t = UI.theme[theme] || UI.theme.light;
+  const t = UI.theme[theme] || (isDarkTheme(theme) ? UI.theme.dark : UI.theme.light);
   return (
     <textarea
       value={value}
@@ -455,7 +487,7 @@ export function TextArea({ value, onChange, placeholder, disabled, rows = 6, the
         borderRadius: 18,
         border: t.inputBorder,
         background: t.inputBg,
-        color: theme === "dark" ? "#fff" : "#0f172a",
+        color: isDarkTheme(theme) ? "#fff" : "#0f172a",
         fontWeight: 800,
         fontSize: "0.98rem",
         outline: "none",
