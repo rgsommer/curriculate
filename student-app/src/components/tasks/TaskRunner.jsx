@@ -2270,8 +2270,13 @@ export default function TaskRunner({
     );
   }
 
-  if (hasMultiItems && (isChoiceType || isShortType)) {
-    const multiMode = isChoiceType ? "choice" : "short";
+  // Multi-item TRUE-FALSE is intentionally NOT intercepted here — it falls
+  // through to its dedicated case below, which uses the polished, per-team
+  // TrueFalseTask in play mode (and MultiPartTask in review). MultiPartTask was
+  // shadowing that, so the dedicated component (and its correct `statement`
+  // handling) never ran in play. MC + short-answer still use MultiPartTask.
+  if (hasMultiItems && ((isChoiceType && type !== TASK_TYPES.TRUE_FALSE) || isShortType)) {
+    const multiMode = (isChoiceType && type !== TASK_TYPES.TRUE_FALSE) ? "choice" : "short";
     return (
         <div className="h-full overflow-auto" style={{ WebkitOverflowScrolling: "touch", transform: "translateZ(0)" }}>
           <MultiPartTask
