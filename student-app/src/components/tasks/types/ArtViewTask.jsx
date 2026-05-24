@@ -261,6 +261,9 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
 
   const formatTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const timerColor = secondsLeft <= 10 ? "#ef4444" : secondsLeft <= 30 ? "#f59e0b" : "#6b7280";
+  // High-contrast palette for the DARK viewing overlay (gray was nearly invisible
+  // on the black backdrop — tester: "countdown timer not visible").
+  const darkTimerColor = secondsLeft <= 10 ? "#fca5a5" : secondsLeft <= 30 ? "#fcd34d" : "#67e8f9";
   const meetsMin = observations.length >= minObs;
 
   // ─── LOADING PHASE ───
@@ -316,29 +319,34 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
         `}</style>
 
         {/* Vertical countdown bar — full at the top, depletes downward as time
-            elapses (tester ask). Always visible along the left edge. */}
-        <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 10, background: "rgba(255,255,255,0.15)", zIndex: 11 }}>
+            elapses (tester ask). Wide + bright so it's impossible to miss. */}
+        <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 18, background: "rgba(255,255,255,0.22)", zIndex: 11 }}>
           <div style={{
             width: "100%",
             height: `${Math.max(0, Math.min(100, (secondsLeft / Math.max(1, viewingSec)) * 100))}%`,
-            background: timerColor,
+            background: darkTimerColor,
+            boxShadow: `0 0 12px ${darkTimerColor}`,
             transition: "height 1s linear",
           }} />
         </div>
 
-        {/* Timer overlay */}
+        {/* Timer overlay — top-center, bright, large (avoids notch/cutoff at the
+            corners and stays legible on the dark image). */}
         <div style={{
           position: "absolute",
-          top: 16,
-          right: 20,
-          background: "rgba(0,0,0,0.7)",
-          color: timerColor,
-          padding: "8px 16px",
-          borderRadius: 12,
-          fontSize: "1.4rem",
+          top: 14,
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "rgba(0,0,0,0.85)",
+          color: darkTimerColor,
+          padding: "8px 20px",
+          borderRadius: 999,
+          fontSize: "1.7rem",
           fontWeight: 900,
           fontVariantNumeric: "tabular-nums",
-          zIndex: 10,
+          border: `2px solid ${darkTimerColor}`,
+          zIndex: 12,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
         }}>
           ⏳ {formatTime(secondsLeft)}
         </div>
@@ -492,12 +500,19 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
         </div>
         {phase !== PHASE.DONE && (
           <div style={{
-            fontSize: "1.5rem",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: "1.4rem",
             fontWeight: 900,
-            color: timerColor,
+            color: "#fff",
+            background: timerColor === "#6b7280" ? "#0ea5e9" : timerColor,
+            padding: "6px 14px",
+            borderRadius: 999,
             fontVariantNumeric: "tabular-nums",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
           }}>
-            {formatTime(secondsLeft)}
+            ⏳ {formatTime(secondsLeft)}
           </div>
         )}
       </div>

@@ -359,32 +359,44 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
           .hist-doc-scroll img { touch-action: pinch-zoom; }
         `}</style>
 
-        {/* Vertical countdown bar — full at top, depletes downward (tester ask). */}
-        <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 10, background: "rgba(255,255,255,0.18)", zIndex: 11 }}>
-          <div style={{
-            width: "100%",
-            height: `${Math.max(0, Math.min(100, (secondsLeft / Math.max(1, viewingSec)) * 100))}%`,
-            background: timerColor,
-            transition: "height 1s linear",
-          }} />
-        </div>
+        {(() => {
+          const dtc = secondsLeft <= 10 ? "#fca5a5" : secondsLeft <= 30 ? "#fcd34d" : "#67e8f9";
+          return (
+            <>
+              {/* Vertical countdown bar — full at top, depletes downward. Wide +
+                  bright so it can't be missed. */}
+              <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 18, background: "rgba(255,255,255,0.22)", zIndex: 11 }}>
+                <div style={{
+                  width: "100%",
+                  height: `${Math.max(0, Math.min(100, (secondsLeft / Math.max(1, viewingSec)) * 100))}%`,
+                  background: dtc,
+                  boxShadow: `0 0 12px ${dtc}`,
+                  transition: "height 1s linear",
+                }} />
+              </div>
 
-        {/* Timer overlay (brighter so it's clearly visible on the dark doc) */}
-        <div style={{
-          position: "absolute",
-          top: 16,
-          right: 20,
-          background: "rgba(0,0,0,0.75)",
-          color: secondsLeft <= 10 ? "#fca5a5" : secondsLeft <= 30 ? "#fcd34d" : "#f5f0e8",
-          padding: "8px 16px",
-          borderRadius: 12,
-          fontSize: "1.4rem",
-          fontWeight: 900,
-          fontVariantNumeric: "tabular-nums",
-          zIndex: 12,
-        }}>
-          ⏳ {formatTime(secondsLeft)}
-        </div>
+              {/* Timer pill — top-center, bright, large (avoids corner cutoff). */}
+              <div style={{
+                position: "absolute",
+                top: 14,
+                left: "50%",
+                transform: "translateX(-50%)",
+                background: "rgba(0,0,0,0.85)",
+                color: dtc,
+                padding: "8px 20px",
+                borderRadius: 999,
+                fontSize: "1.7rem",
+                fontWeight: 900,
+                fontVariantNumeric: "tabular-nums",
+                border: `2px solid ${dtc}`,
+                zIndex: 12,
+                boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
+              }}>
+                ⏳ {formatTime(secondsLeft)}
+              </div>
+            </>
+          );
+        })()}
 
         {/* Zoom controls — reliable manual zoom (pinch is flaky in overlays). */}
         <div style={{ position: "absolute", bottom: 16, right: 20, display: "flex", gap: 8, zIndex: 12 }}>
@@ -539,12 +551,19 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
         </div>
         {phase !== PHASE.DONE && (
           <div style={{
-            fontSize: "1.5rem",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: "1.4rem",
             fontWeight: 900,
-            color: timerColor,
+            color: "#fff",
+            background: timerColor === "#6b7280" ? "#8b5e3c" : timerColor,
+            padding: "6px 14px",
+            borderRadius: 999,
             fontVariantNumeric: "tabular-nums",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
           }}>
-            {formatTime(secondsLeft)}
+            ⏳ {formatTime(secondsLeft)}
           </div>
         )}
       </div>
