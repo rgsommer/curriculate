@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/ArtViewTask.jsx
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { API_BASE_URL } from "../../../config.js";
 import StepCircle from "../StepCircle";
 import PaperPhotoSubmit from "../PaperPhotoSubmit";
@@ -216,8 +217,13 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
   const meetsMin = observations.length >= minObs;
 
   // ─── LOADING PHASE ───
+  // Portaled to <body>: this is a position:fixed full-screen overlay, and an
+  // ancestor `transform` (TaskRunner's translateZ scroll wrapper) would
+  // otherwise make `inset:0` resolve against that wrapper — clipping the
+  // overlay to ~nothing. That was the real "no art / no document displayed"
+  // bug for art-view & historical-doc (the only fixed-overlay tasks).
   if (phase === PHASE.LOADING) {
-    return (
+    return createPortal(
       <div style={{
         position: "fixed",
         inset: 0,
@@ -241,13 +247,14 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
         <div style={{ color: "#9ca3af", fontSize: "1rem" }}>
           Loading artwork...
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
   // ─── VIEWING PHASE ───
   if (phase === PHASE.VIEWING) {
-    return (
+    return createPortal(
       <div style={{
         position: "fixed",
         inset: 0,
@@ -393,7 +400,8 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
             </div>
           )}
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 

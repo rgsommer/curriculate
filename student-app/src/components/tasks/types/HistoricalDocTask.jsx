@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/HistoricalDocTask.jsx
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { API_BASE_URL } from "../../../config.js";
 import StepCircle from "../StepCircle";
 import reportImageFailure from "../../../utils/reportImageFailure.js";
@@ -247,8 +248,11 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
   const timerColor = secondsLeft <= 10 ? "#ef4444" : secondsLeft <= 30 ? "#f59e0b" : "#6b7280";
 
   // ─── LOADING PHASE ───
+  // Portaled to <body>: position:fixed overlay must escape TaskRunner's
+  // translateZ scroll wrapper, or `inset:0` clips to that wrapper and the
+  // document never shows (the "no historical document displayed" bug).
   if (phase === PHASE.LOADING) {
-    return (
+    return createPortal(
       <div style={{
         position: "fixed",
         inset: 0,
@@ -272,13 +276,14 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
         <div style={{ color: "#d4a574", fontSize: "1rem", fontFamily: "serif" }}>
           Loading historical document...
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
   // ─── READING PHASE ───
   if (phase === PHASE.READING) {
-    return (
+    return createPortal(
       <div style={{
         position: "fixed",
         inset: 0,
@@ -418,7 +423,8 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
             </div>
           )}
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
