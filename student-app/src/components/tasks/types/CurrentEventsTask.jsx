@@ -50,11 +50,16 @@ export default function CurrentEventsTask({ task, onSubmit, disabled, practiceMo
   useEffect(() => {
     if (!wantsLive) return;
     let cancelled = false;
+    // Don't let a slow web-search hang forever — the pre-baked story is already
+    // on screen, so we abort after 12s (tester: "nothing showed up").
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
     (async () => {
       try {
         const r = await fetch(`${API_BASE_URL}/api/current-events/resolve`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             lessonTopic: cfg.lessonTopic || task?.title || "general learning",
             subject: cfg.subject || "General",
@@ -69,17 +74,22 @@ export default function CurrentEventsTask({ task, onSubmit, disabled, practiceMo
       } catch {
         /* keep pre-baked fallback */
       } finally {
+        clearTimeout(timer);
         if (!cancelled) setLiveFetching(false);
       }
     })();
     return () => {
       cancelled = true;
+      clearTimeout(timer);
+      controller.abort();
     };
   }, [wantsLive, cfg.lessonTopic, cfg.subject, cfg.gradeLevel, cfg.region, cfg.worldviewProfile, task?.title]);
 
-  // Prefer the live story when we got one; otherwise the pre-baked block.
+  // Prefer the live story when we got one; otherwise the pre-baked block. We do
+  // NOT block on liveFetching — the pre-baked story shows instantly and quietly
+  // upgrades to live news when it arrives, so the screen is never blank.
   const resolved = liveResolved || cfg.resolved || null;
-  const loading = liveFetching || !!cfg.loading || !resolved;
+  const loading = !!cfg.loading || !resolved;
 
   const [response, setResponse] = useState("");
   // Track whether the user has been shown AI feedback yet. After they
