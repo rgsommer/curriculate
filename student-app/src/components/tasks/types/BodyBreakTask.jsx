@@ -116,6 +116,7 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
   const [ratingPhase, setRatingPhase] = useState(null); // { doneBy, judge } | null
 
   const handleAllDone = (names) => {
+    setRunning(false); // everyone's done → stop the timer (tester)
     const team = effectiveMembers;
     if (team.length >= 2) {
       // The human is always the judge in practice (you rate the bots);
@@ -431,33 +432,48 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
             <>
               {Number.isFinite(totalSeconds) && canStart ? (
                 <>
-                  {!running && (
-                    <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: "#475569", marginBottom: 6 }}>
-                      👇 Tap to start the {totalSeconds}s timer, then do the moves together
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    style={{
-                      ...styles.btn,
-                      opacity: disabled ? 0.6 : 1,
-                      ...(running ? null : {
-                        background: "linear-gradient(135deg, #22c55e, #16a34a)",
+                  {!running ? (
+                    <>
+                      <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: "#475569", marginBottom: 6 }}>
+                        👇 Tap to start the {totalSeconds}s timer, then do the moves together
+                      </div>
+                      <button
+                        type="button"
+                        style={{
+                          ...styles.btn,
+                          opacity: disabled ? 0.6 : 1,
+                          background: "linear-gradient(135deg, #22c55e, #16a34a)",
+                          color: "#fff",
+                          border: "none",
+                          fontSize: 19,
+                        }}
+                        onClick={(e) => {
+                          e?.preventDefault?.();
+                          e?.stopPropagation?.();
+                          if (!running) startPause(); // start only — no accidental stop
+                        }}
+                        disabled={disabled}
+                        className="bb-go"
+                      >
+                        ▶️ START TIMER
+                      </button>
+                    </>
+                  ) : (
+                    // Running: a STATUS indicator, not a button — tapping it must
+                    // not stop the timer (tester).
+                    <div
+                      style={{
+                        ...styles.btn,
+                        background: "linear-gradient(135deg, #0ea5e9, #2563eb)",
                         color: "#fff",
                         border: "none",
-                        fontSize: 19,
-                      }),
-                    }}
-                    onClick={(e) => {
-                      e?.preventDefault?.();
-                      e?.stopPropagation?.();
-                      startPause();
-                    }}
-                    disabled={disabled}
-                    className={!running ? "bb-go" : undefined}
-                  >
-                    {running ? "Pause ⏸" : "▶️ START TIMER"}
-                  </button>
+                        textAlign: "center",
+                        cursor: "default",
+                      }}
+                    >
+                      🏃 In Motion…
+                    </div>
+                  )}
                 </>
               ) : Number.isFinite(totalSeconds) ? (
                 <div style={{ fontSize: 12, opacity: 0.75, padding: "6px 2px" }}>
@@ -524,25 +540,12 @@ function PlayerDoneRow({ memberNames = [], botNames = [], botsActive = false, di
   const total = names.length;
   const doneCount = doneSet.size;
 
-  // Practice bots auto-tap Done at staggered intervals once the timer is
-  // running — the player watches teammates finish (social pressure), then
-  // taps their own name. Mirrors TruthOrDare's bot turns.
-  useEffect(() => {
-    if (!botsActive || botSet.size === 0) return;
-    const timers = [...botSet].map((name, i) =>
-      window.setTimeout(() => {
-        setDoneSet((prev) => {
-          if (prev.has(name)) return prev;
-          const next = new Set(prev);
-          next.add(name);
-          return next;
-        });
-      }, 1400 + i * 1100 + Math.random() * 600)
-    );
-    return () => timers.forEach((t) => window.clearTimeout(t));
-  }, [botsActive, botSet]);
+  // Every name — the player AND the bots — is tappable to mark "done" (tester:
+  // "all bots should be allowed to click to say done"). No auto-tap; the player
+  // (single device) taps each as the group finishes.
 
-  // Auto-submit once everyone's marked done.
+  // Auto-submit once everyone's marked done → handleAllDone stops the timer
+  // and moves to ratings.
   useEffect(() => {
     if (submittedRef.current) return;
     if (total === 0) return;
@@ -591,18 +594,17 @@ function PlayerDoneRow({ memberNames = [], botNames = [], botsActive = false, di
           marginBottom: 8,
         }}
       >
-        Tap your name when you finish — {doneCount}/{total} done
+        Tap each person as they finish — {doneCount}/{total} done
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {names.map((name) => {
           const isDone = doneSet.has(name);
-          const isBot = botSet.has(name);
           return (
             <button
               key={name}
               type="button"
               onClick={() => {
-                if (disabled || submittedRef.current || isBot) return;
+                if (disabled || submittedRef.current) return;
                 setDoneSet((prev) => {
                   const next = new Set(prev);
                   if (next.has(name)) next.delete(name);
@@ -610,7 +612,7 @@ function PlayerDoneRow({ memberNames = [], botNames = [], botsActive = false, di
                   return next;
                 });
               }}
-              disabled={disabled || isBot}
+              disabled={disabled}
               style={{
                 padding: "10px 16px",
                 borderRadius: 14,
@@ -622,25 +624,20 @@ function PlayerDoneRow({ memberNames = [], botNames = [], botsActive = false, di
                 color: isDone ? "#fff" : "#0f172a",
                 fontWeight: 900,
                 fontSize: 14,
-                cursor: isBot ? "default" : disabled ? "default" : "pointer",
-                opacity: isBot && !isDone ? 0.7 : 1,
+                cursor: disabled ? "default" : "pointer",
                 boxShadow: isDone ? "0 4px 14px rgba(34,197,94,0.45)" : "0 2px 6px rgba(0,0,0,0.08)",
                 transform: isDone ? "scale(1.02)" : "scale(1)",
                 transition: "transform 0.12s ease, box-shadow 0.12s ease",
               }}
               aria-pressed={isDone}
               title={
-                isBot
-                  ? `${name} is a practice teammate`
-                  : isDone
+                isDone
                   ? `Tap again to undo ${name}'s Done`
                   : `Mark ${name} as done`
               }
             >
               {isDone
                 ? `✅ ${name} is done`
-                : isBot
-                ? `${name} — doing it…`
                 : `${name} — tap when done`}
             </button>
           );

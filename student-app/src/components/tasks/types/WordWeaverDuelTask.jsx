@@ -333,29 +333,34 @@ export default function WordWeaverDuelTask({
       if (existing && existing === want) hasIntersection = true;
     }
 
-    // Does this non-crossing placement butt up against / run alongside an
-    // existing word? In Scrabble that forms invalid perpendicular words, so we
-    // call it a "loose" (illegal) placement.
-    let adjacent = false;
+    // Classify a non-crossing placement's contact with existing words:
+    //   inline       — butts END-TO-END on the same axis (CREATE+TEACH=CREATEACH)
+    //   sideAdjacent — runs ALONGSIDE another word (invalid perpendicular words)
+    let inline = false;
+    let sideAdjacent = false;
     if (placedCount > 0 && !hasIntersection) {
       const at = (rr, cc) => (rr >= 0 && cc >= 0 && rr < b.length && cc < (b[rr]?.length || 0) && b[rr][cc]?.ch ? true : false);
-      if (ori === "H") { if (at(r, c - 1) || at(r, c + w.length)) adjacent = true; }
-      else { if (at(r - 1, c) || at(r + w.length, c)) adjacent = true; }
-      for (let i = 0; i < w.length && !adjacent; i++) {
+      if (ori === "H") { if (at(r, c - 1) || at(r, c + w.length)) inline = true; }
+      else { if (at(r - 1, c) || at(r + w.length, c)) inline = true; }
+      for (let i = 0; i < w.length && !sideAdjacent; i++) {
         const rr = ori === "V" ? r + i : r;
         const cc = ori === "H" ? c + i : c;
-        if (ori === "H") { if (at(rr - 1, cc) || at(rr + 1, cc)) adjacent = true; }
-        else { if (at(rr, cc - 1) || at(rr, cc + 1)) adjacent = true; }
+        if (ori === "H") { if (at(rr - 1, cc) || at(rr + 1, cc)) sideAdjacent = true; }
+        else { if (at(rr, cc - 1) || at(rr, cc + 1)) sideAdjacent = true; }
       }
     }
 
-    // The crossing-PREFERRED passes (requireCross=true) still reject adjacency
-    // and non-crossing placements so auto-placement always finds clean crosses
-    // first. The free pass (requireCross=false) ALLOWS them — but flags them
-    // `loose` so the caller can dock points (tester: "allow illegal placement …
-    // but at least don't give full points for those").
+    // Inline run-ons are NEVER allowed — that just glues two words into a fake
+    // one (tester: "should NOT allow inline placement eg. CREATE+TEACH").
+    if (placedCount > 0 && !hasIntersection && inline) {
+      return { ok: false, reason: "Words can't run straight into each other — leave a gap or cross at a shared letter." };
+    }
+
+    // Crossing-PREFERRED passes (requireCross=true) also reject side-adjacency
+    // and non-crossing so auto-placement finds clean crosses first. The free
+    // pass ALLOWS side-adjacency but flags it `adjacent` (red outline + docked).
     if (requireCross && placedCount > 0 && !hasIntersection) {
-      if (adjacent) {
+      if (sideAdjacent) {
         return { ok: false, reason: "Place it on a shared letter to cross, or leave a gap." };
       }
       const wordLetters = new Set(w.split(""));
@@ -374,10 +379,8 @@ export default function WordWeaverDuelTask({
       }
     }
 
-    // loose = placed without crossing after the first word (clean standalone OR
-    // adjacent). Adjacent is the "illegal" case and is docked hardest.
     const loose = placedCount > 0 && !hasIntersection;
-    return { ok: true, loose, adjacent };
+    return { ok: true, loose, adjacent: sideAdjacent };
   };
 
   const placeWord = (r, c, wordIdx) => {
@@ -485,11 +488,14 @@ export default function WordWeaverDuelTask({
         points = word.length;
       }
 
+      const looseIllegal = !!check?.adjacent && intersections === 0;
       for (let i = 0; i < word.length; i++) {
         const rr = finalOri === "V" ? anchorR + i : anchorR;
         const cc = finalOri === "H" ? anchorC + i : anchorC;
         const cur = b[rr][cc];
-        b[rr][cc] = { ch: word[i], wordId: cur?.wordId ?? wordIdx }; // preserve earlier ownership on intersections
+        // preserve earlier ownership on intersections; flag loose cells so the
+        // board outlines an illegal (side-adjacent) placement in red.
+        b[rr][cc] = { ch: word[i], wordId: cur?.wordId ?? wordIdx, loose: cur?.loose || looseIllegal };
       }
 
       setPlaced((p) => ({
@@ -1080,6 +1086,7 @@ export default function WordWeaverDuelTask({
                         style={{
                           ...s.cell,
                           ...(isEmpty ? s.cellEmpty : s.cellFilled),
+                          ...(cell?.loose ? { border: "2px solid #ef4444", background: "rgba(239,68,68,0.12)", color: "#b91c1c" } : {}),
                           ...(isPreview ? { background: "rgba(14,165,233,0.15)", borderStyle: "dashed", borderColor: "rgba(14,165,233,0.5)" } : {}),
                         }}
                         onDragOver={(ev) => {
@@ -1092,7 +1099,7 @@ export default function WordWeaverDuelTask({
                           if (selectedWordIdx == null) return;
                           placeWord(r, c, selectedWordIdx);
                         }}
-                        title={canInteract ? "Drop a word here (or click after selecting a word)" : ""}
+                        title={cell?.loose ? "Illegal (touching) placement — reduced points" : (canInteract ? "Drop a word here (or click after selecting a word)" : "")}
                       >
                         {cell?.ch ? String(cell.ch).toUpperCase() : ""}
                       </div>

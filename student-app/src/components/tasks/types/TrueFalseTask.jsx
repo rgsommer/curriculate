@@ -275,13 +275,9 @@ export default function TrueFalseTask({
     if (!hasItems) {
       if (!isNewTask) return;
 
-      // Deterministic flip so "True" isn't always on the same side.
-      const flipSingle = seededBool(`${taskKey}:tf:flip:single`);
-      setSingleFirstLabel(flipSingle ? "False" : "True");
-      setSingleSecondLabel(flipSingle ? "True" : "False");
-
-      // Deterministic label flip (prevents students from always tapping the same side).
-      const flip = seededBool(`${taskKey}:tf:single:flip`);
+      // Random flip on every play/render (tester: "randomize answer placement on
+      // every play, so on render") — True isn't pinned to one side.
+      const flip = Math.random() < 0.5;
       setSingleFirstLabel(flip ? "False" : "True");
       setSingleSecondLabel(flip ? "True" : "False");
 
@@ -306,15 +302,17 @@ export default function TrueFalseTask({
     const canonicalItems = Array.isArray(task.items) ? task.items : [];
     const count = canonicalItems.length;
 
-    const order = seededShuffle(
-      Array.from({ length: count }, (_, i) => i),
-      `${taskKey}:tf:questions`
-    );
+    // Fresh random question order + True/False side per play/render (tester:
+    // "randomize answer placement on every play").
+    const order = Array.from({ length: count }, (_, i) => i);
+    for (let i = order.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
 
-    // deterministic flip per question
     const built = order.map((canonicalIndex) => {
       const item = canonicalItems[canonicalIndex] || {};
-      const flip = seededBool(`${taskKey}:tf:flip:${canonicalIndex}`);
+      const flip = Math.random() < 0.5;
       const prompt =
         safeText(item.statement, "").trim() ||
         safeText(item.prompt, "").trim() ||

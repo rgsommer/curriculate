@@ -236,7 +236,7 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             mode: "art-view",
-            prompt: `Student observations about ${subject}. Coach them on observation skill — note what's strong and one thing to look for next.`,
+            prompt: `Student observations about ${subject}. Coach their observation skill AND teach: praise one strong observation, then point out one specific thing to notice next and EXPLAIN it concretely. If you suggest a connection (e.g. to a style, period, or technique), NAME the actual connection and say what to look for — don't just tell them to "make connections."`,
             context: config?.imageDescription || "",
             response: observations.map((o, i) => `${i + 1}. ${o}`).join("\n"),
           }),
