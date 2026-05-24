@@ -69,6 +69,21 @@ function todayPlus(days) {
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
 }
+// Day after a YYYY-MM-DD string (UTC-safe).
+function nextDay(iso) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+// Parse a human duration like "7h 35m" / "7h" / "45m" into minutes (null if none).
+function durToMin(s) {
+  if (!s || typeof s !== "string") return null;
+  const m = s.match(/(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?/i);
+  if (!m) return null;
+  const mins = (parseInt(m[1] || "0", 10) * 60) + parseInt(m[2] || "0", 10);
+  return mins > 0 ? mins : null;
+}
 
 // Flexibility options → day offsets relative to the chosen date. Single-
 // direction choices are ranges "up to" that day (and always include 0).
@@ -99,8 +114,16 @@ function savePrefs(prefs) {
 // ---------------------------------------------------------------------------
 // One flight offer card.
 // ---------------------------------------------------------------------------
-function OfferCard({ offer, currency, badges }) {
+function OfferCard({ offer, currency, badges, selectedDepartureDate, selectedReturnDate }) {
   const hasReturn = offer.returnDate != null;
+  const depOff = offer.departureDate && offer.departureDate !== selectedDepartureDate;
+  const retOff = hasReturn && offer.returnDate !== selectedReturnDate;
+  // Warning style for a date that isn't the exact one the user selected.
+  const warnDate = (iso, title) => (
+    <span className="rounded bg-amber-100 px-1 font-medium text-amber-700" title={title}>
+      ⚠ {fmtDay(iso)}
+    </span>
+  );
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -111,10 +134,15 @@ function OfferCard({ offer, currency, badges }) {
             ))}
             <span className="text-sm font-semibold text-slate-800">{offer.airline}</span>
           </div>
-          <div className="mt-1 text-xs text-slate-500">
-            {fmtDay(offer.departureDate)}
-            {hasReturn ? ` – ${fmtDay(offer.returnDate)}` : " · one-way"}
-            {offer.originCode && offer.destinationCode ? ` · ${offer.originCode} ⇄ ${offer.destinationCode}` : ""}
+          <div className="mt-1 inline-flex flex-wrap items-center gap-1 text-xs text-slate-500">
+            {depOff ? warnDate(offer.departureDate, "Not your selected departure date") : <span>{fmtDay(offer.departureDate)}</span>}
+            {hasReturn ? (
+              <>
+                <span>–</span>
+                {retOff ? warnDate(offer.returnDate, "Not your selected return date") : <span>{fmtDay(offer.returnDate)}</span>}
+              </>
+            ) : <span>· one-way</span>}
+            {offer.originCode && offer.destinationCode ? <span>· {offer.originCode} ⇄ {offer.destinationCode}</span> : null}
           </div>
         </div>
         <div className="text-right">
@@ -181,7 +209,7 @@ export default function TravelPage() {
   const [includeNearbyDestination, setIncludeNearbyDestination] = useState(false);
   const [tripType, setTripType] = useState("return"); // "return" | "oneway"
   const [departureDate, setDepartureDate] = useState(todayPlus(14));
-  const [returnDate, setReturnDate] = useState(todayPlus(21));
+  const [returnDate, setReturnDate] = useState(nextDay(todayPlus(14)));
   const [departureFlex, setDepartureFlex] = useState("0"); // FLEX_OPTIONS value
   const [returnFlex, setReturnFlex] = useState("0");
   const [maxStops, setMaxStops] = useState(2); // 0 | 1 | 2 (2 = "2+")
@@ -232,6 +260,13 @@ export default function TravelPage() {
       currency, emailTo,
     });
   }, [isHydrated, origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType, departureDate, returnDate, departureFlex, returnFlex, maxStops, prioritizeShortStops, currency, emailTo]);
+
+  // Changing the departure date defaults the return to the day after, unless
+  // the user already picked a return that's still later than the new departure.
+  const handleDepartureChange = useCallback((v) => {
+    setDepartureDate(v);
+    setReturnDate((prev) => (prev && prev > v ? prev : nextDay(v)));
+  }, []);
 
   const search = useCallback(async () => {
     setError("");
@@ -298,15 +333,26 @@ export default function TravelPage() {
     }
   }, [result, emailTo]);
 
-  // Badges across the result set.
+  // Badges across the result set: cheapest, fewest stops, shortest trip time.
   const offers = result?.offers || [];
   const cheapest = offers.reduce((m, o) => (m == null || o.price < m ? o.price : m), null);
   const totalStops = (o) => (o.outboundStops || 0) + (o.returnStops || 0);
   const fewestStops = offers.reduce((m, o) => (m == null || totalStops(o) < m ? totalStops(o) : m), null);
+  const tripMinutes = (o) => {
+    const out = durToMin(o.outboundDuration);
+    const ret = durToMin(o.returnDuration);
+    if (out == null && ret == null) return null;
+    return (out || 0) + (ret || 0);
+  };
+  const shortestTrip = offers.reduce((m, o) => {
+    const t = tripMinutes(o);
+    return t != null && (m == null || t < m) ? t : m;
+  }, null);
   function badgesFor(o) {
     const b = [];
     if (o.price === cheapest) b.push("Cheapest");
     if (fewestStops != null && totalStops(o) === fewestStops) b.push("Fewest stops");
+    if (shortestTrip != null && tripMinutes(o) === shortestTrip) b.push("Shortest trip");
     return b;
   }
 
@@ -376,7 +422,7 @@ export default function TravelPage() {
                 type="date"
                 value={departureDate}
                 min={todayPlus(0)}
-                onChange={(e) => setDepartureDate(e.target.value)}
+                onChange={(e) => handleDepartureChange(e.target.value)}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
               />
               <select
@@ -484,7 +530,14 @@ export default function TravelPage() {
                 </div>
                 <div className="space-y-3">
                   {offers.map((o, i) => (
-                    <OfferCard key={i} offer={o} currency={result.currency} badges={badgesFor(o)} />
+                    <OfferCard
+                      key={i}
+                      offer={o}
+                      currency={result.currency}
+                      badges={badgesFor(o)}
+                      selectedDepartureDate={departureDate}
+                      selectedReturnDate={tripType === "return" ? returnDate : null}
+                    />
                   ))}
                 </div>
 
