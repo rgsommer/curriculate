@@ -550,6 +550,10 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
                   fontSize: "1rem",
                   outline: "none",
                   transition: "border-color 0.2s",
+                  // Explicit colors: the input inherited the (dark) theme text
+                  // color on a white field → invisible "white on white" text.
+                  background: "#ffffff",
+                  color: "#0f172a",
                 }}
                 onFocus={(e) => { e.target.style.borderColor = "#3b82f6"; }}
                 onBlur={(e) => { e.target.style.borderColor = "#d1d5db"; }}
@@ -590,7 +594,7 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
                   }}
                 >
                   <StepCircle n={i + 1} size={24} />
-                  <span style={{ flex: 1, fontSize: "0.95rem" }}>{obs}</span>
+                  <span style={{ flex: 1, fontSize: "0.95rem", color: "#0f172a" }}>{obs}</span>
                   {phase === PHASE.RESPONDING && !submitted && (
                     <button
                       onClick={() => removeObservation(i)}

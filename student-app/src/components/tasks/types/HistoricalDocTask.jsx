@@ -594,6 +594,10 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
                         fontFamily: "inherit",
                         transition: "border-color 0.2s",
                         boxSizing: "border-box",
+                        // Explicit colors so the typed text isn't white-on-white
+                        // when the surrounding theme is dark.
+                        background: "#ffffff",
+                        color: "#0f172a",
                       }}
                       onFocus={(e) => { e.target.style.borderColor = "#8b5e3c"; }}
                       onBlur={(e) => { e.target.style.borderColor = "#e5e0d8"; }}
