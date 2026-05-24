@@ -1611,8 +1611,12 @@ function MultiPartTask({ mode, task, review, readOnly = false, onSubmit, submitt
       }
 
       return {
+        // True/False items commonly carry the question under `statement`
+        // (not `prompt`/`text`). Without this, multi-item T/F rendered blank
+        // questions — the long-standing "there were no questions" bug, since
+        // MultiPartTask (not the dedicated TrueFalseTask) renders multi-item T/F.
         itemId: item.id ?? idx,
-        prompt: item.prompt ?? item.text ?? "",
+        prompt: item.prompt ?? item.statement ?? item.text ?? item.question ?? "",
         value: answerVal,
         baseIndex,
       };
@@ -1648,6 +1652,7 @@ function MultiPartTask({ mode, task, review, readOnly = false, onSubmit, submitt
             item?.label ??
             item?.question ??
             item?.prompt ??
+            item?.statement ??   // True/False items carry the question here — was missing, so T/F showed "Question N" placeholders
             item?.stem ??
             item?.text ??
             item?.title ??
