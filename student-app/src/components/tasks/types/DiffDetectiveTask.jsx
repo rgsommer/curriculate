@@ -23,6 +23,8 @@ export default function DiffDetectiveTask({
   // refs the button would "unclick itself" mid-sentence (tester report).
   const wantDictatingRef = useRef(false);   // user intent (true = keep listening)
   const maxTimerRef = useRef(null);         // 10s auto-stop
+  const baseTextRef = useRef("");           // answer text before the current speech session
+  const sessionFinalRef = useRef("");       // finalized text accumulated this session
 
   const differences = task?.differences || [];
   const numExpected = differences.length;
@@ -92,9 +94,19 @@ export default function DiffDetectiveTask({
     recognition.interimResults = true;
     recognition.lang = "en-US";
 
+    // Recompute the answer as base + finalized + interim each event (do NOT
+    // append every event — that duplicated the whole transcript repeatedly,
+    // which read as "doesn't capture text").
     recognition.onresult = (e) => {
-      const transcript = Array.from(e.results).map((r) => r[0].transcript).join("");
-      setAnswer((prev) => (prev + " " + transcript).trimStart());
+      let finalText = "";
+      let interimText = "";
+      for (const res of Array.from(e.results)) {
+        if (res.isFinal) finalText += res[0].transcript;
+        else interimText += res[0].transcript;
+      }
+      sessionFinalRef.current = finalText; // results accumulate within a session
+      const combined = `${baseTextRef.current}${finalText}${interimText}`.replace(/\s{2,}/g, " ").trimStart();
+      setAnswer(combined);
     };
 
     recognition.onerror = () => {
@@ -104,15 +116,22 @@ export default function DiffDetectiveTask({
     };
 
     // The API ends on every natural pause. While the student still wants to
-    // dictate (and we're inside the 10s window), transparently restart so the
+    // dictate (and we're inside the 10s window), commit this session's finalized
+    // text into the base, then transparently restart so nothing is lost and the
     // button stays "clicked" the whole time.
     recognition.onend = () => {
       if (wantDictatingRef.current) {
+        const committed = `${baseTextRef.current}${sessionFinalRef.current}`.replace(/\s{2,}/g, " ").trimStart();
+        baseTextRef.current = committed && !committed.endsWith(" ") ? committed + " " : committed;
+        sessionFinalRef.current = "";
         try { recognition.start(); return; } catch {}
       }
       setIsDictating(false);
     };
 
+    // Seed the base with whatever's already typed so dictation appends to it.
+    baseTextRef.current = answer && !answer.endsWith(" ") ? answer + " " : (answer || "");
+    sessionFinalRef.current = "";
     wantDictatingRef.current = true;
     recognition.start();
     recognitionRef.current = recognition;

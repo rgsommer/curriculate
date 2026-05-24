@@ -248,11 +248,22 @@ export default function WhatAmITask({ task, onSubmit, disabled, socket, roomCode
     }
   };
 
+  // Give up — reveal the answer and move on (tester: after the 4th clue, offer
+  // "Submit Guess or I Give"). No points, no lockout; just an honest exit.
+  const handleGiveUp = () => {
+    if (submitted) return;
+    setResult({ ok: false, pts: 0, gaveUp: true });
+    setSubmitted(true);
+  };
+  // Offer the give-up exit once the 4th clue is out (or all clues, if fewer).
+  const canGiveUp = revealedCount >= Math.min(4, totalClues);
+
   const handleContinue = () => {
     if (onSubmit) {
       onSubmit({
         answer: answer.trim(),
         correct: !!result?.ok,
+        gaveUp: !!result?.gaveUp,
         cluesRevealed: revealedCount,
         totalClues,
         pointsEarned: result?.ok ? result.pts : 0,
@@ -493,10 +504,28 @@ export default function WhatAmITask({ task, onSubmit, disabled, socket, roomCode
               borderColor: result?.ok === false && !isLockedOut ? "#475569" : isLockedOut ? "#ef4444" : "#475569",
             }}
           />
-          <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
+          <div style={{ display: "flex", justifyContent: "center", gap: 12, flexWrap: "wrap" }}>
             <button onClick={handleSubmit} disabled={inputDisabled || !answer.trim()} style={submitBtn}>
               Submit Guess
             </button>
+            {canGiveUp && (
+              <button
+                onClick={handleGiveUp}
+                disabled={disabled || submitted}
+                style={{
+                  background: "transparent",
+                  border: "1px solid rgba(148,163,184,0.6)",
+                  borderRadius: 12,
+                  padding: "10px 20px",
+                  color: "#cbd5e1",
+                  fontSize: "0.95rem",
+                  fontWeight: 700,
+                  cursor: disabled ? "not-allowed" : "pointer",
+                }}
+              >
+                I Give Up
+              </button>
+            )}
           </div>
           {isLockedOut && (
             <div style={lockoutPill}>
@@ -543,6 +572,33 @@ export default function WhatAmITask({ task, onSubmit, disabled, socket, roomCode
               cursor: disabled ? "not-allowed" : "pointer",
               opacity: disabled ? 0.5 : 1,
               boxShadow: "0 4px 12px rgba(34,197,94,0.3)",
+            }}
+          >
+            Continue →
+          </button>
+        </>
+      )}
+
+      {/* Gave-up state — reveal the answer, no points, move on. */}
+      {submitted && result?.gaveUp && (
+        <>
+          <div style={resultBoxBad}>
+            No worries — the answer was <strong style={{ color: "#fde68a" }}>{cfg.answer}</strong>.
+          </div>
+          <button
+            onClick={handleContinue}
+            disabled={disabled}
+            style={{
+              marginTop: 4,
+              background: "linear-gradient(135deg, #64748b, #475569)",
+              border: "none",
+              borderRadius: 14,
+              padding: "12px 32px",
+              color: "#fff",
+              fontSize: "1rem",
+              fontWeight: 700,
+              cursor: disabled ? "not-allowed" : "pointer",
+              opacity: disabled ? 0.5 : 1,
             }}
           >
             Continue →

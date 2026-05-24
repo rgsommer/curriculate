@@ -585,10 +585,11 @@ export default function TrueFalseConnectFourTask({
               onClick={() => handleStatementClick(stmt)}
               className={[
                 "p-4 rounded-xl text-base font-medium text-center transition-all duration-200 cursor-pointer select-none",
-                "bg-amber-50 border-2 border-amber-400",
+                "bg-amber-50 border-2 border-amber-400 text-slate-900",
                 inputDisabled ? "opacity-50" : "hover:scale-[1.02] active:scale-95",
                 isActive ? "ring-4 ring-indigo-500 scale-[1.02] shadow-lg bg-indigo-50 border-indigo-400" : "",
               ].join(" ")}
+              style={{ color: "#0f172a" }}
             >
               {stmt.text}
             </div>
