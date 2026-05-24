@@ -333,42 +333,36 @@ export default function WordWeaverDuelTask({
       if (existing && existing === want) hasIntersection = true;
     }
 
-    // A non-crossing placement must be truly SEPARATE — never butting up against
-    // or running alongside an existing word (tester: "it put it close to another
-    // letter which it should not do"). If it touches without crossing, reject so
-    // a free/new-chain placement always sits in clear space.
+    // Does this non-crossing placement butt up against / run alongside an
+    // existing word? In Scrabble that forms invalid perpendicular words, so we
+    // call it a "loose" (illegal) placement.
+    let adjacent = false;
     if (placedCount > 0 && !hasIntersection) {
       const at = (rr, cc) => (rr >= 0 && cc >= 0 && rr < b.length && cc < (b[rr]?.length || 0) && b[rr][cc]?.ch ? true : false);
-      let touches = false;
-      // Cell just before / after the word ends.
-      if (ori === "H") { if (at(r, c - 1) || at(r, c + w.length)) touches = true; }
-      else { if (at(r - 1, c) || at(r + w.length, c)) touches = true; }
-      // Cells alongside each letter.
-      for (let i = 0; i < w.length && !touches; i++) {
+      if (ori === "H") { if (at(r, c - 1) || at(r, c + w.length)) adjacent = true; }
+      else { if (at(r - 1, c) || at(r + w.length, c)) adjacent = true; }
+      for (let i = 0; i < w.length && !adjacent; i++) {
         const rr = ori === "V" ? r + i : r;
         const cc = ori === "H" ? c + i : c;
-        if (ori === "H") { if (at(rr - 1, cc) || at(rr + 1, cc)) touches = true; }
-        else { if (at(rr, cc - 1) || at(rr, cc + 1)) touches = true; }
-      }
-      if (touches) {
-        return { ok: false, reason: "Place it on a shared letter to cross, or leave a gap — it can't sit right beside another word." };
+        if (ori === "H") { if (at(rr - 1, cc) || at(rr + 1, cc)) adjacent = true; }
+        else { if (at(rr, cc - 1) || at(rr, cc + 1)) adjacent = true; }
       }
     }
 
-    // Enforce intersection rule: after the first word, subsequent words must
-    // cross an existing word. We KEEP this requirement whenever a crossing is
-    // possible — the strategic puzzle is precisely "find an arrangement where
-    // they all interlock," and ↩ Un-place lets the player rearrange to make
-    // room. We ONLY waive it for a word that can NEVER cross because it shares
-    // no letter with ANY OTHER word in the set (a generator slip-up — the case
-    // behind "words didn't have enough in common"). That keeps the challenge
-    // intact while never producing a truly-unplaceable dead-end.
+    // The crossing-PREFERRED passes (requireCross=true) still reject adjacency
+    // and non-crossing placements so auto-placement always finds clean crosses
+    // first. The free pass (requireCross=false) ALLOWS them — but flags them
+    // `loose` so the caller can dock points (tester: "allow illegal placement …
+    // but at least don't give full points for those").
     if (requireCross && placedCount > 0 && !hasIntersection) {
+      if (adjacent) {
+        return { ok: false, reason: "Place it on a shared letter to cross, or leave a gap." };
+      }
       const wordLetters = new Set(w.split(""));
       let selfSkipped = false;
       const sharesWithSet = (scrabbleWords || []).some((other) => {
         const o = String(other || "").toUpperCase();
-        if (!selfSkipped && o === w) { selfSkipped = true; return false; } // skip this word itself once
+        if (!selfSkipped && o === w) { selfSkipped = true; return false; }
         for (const ch of o) if (wordLetters.has(ch)) return true;
         return false;
       });
@@ -378,11 +372,12 @@ export default function WordWeaverDuelTask({
           reason: "This word needs to cross another word at a shared letter. Tip: tap ↩ Un-place on a placed word to rearrange and make room.",
         };
       }
-      // else: this word shares no letter with any other word → it can never
-      // cross; allow placing it on its own so the board is still completable.
     }
 
-    return { ok: true };
+    // loose = placed without crossing after the first word (clean standalone OR
+    // adjacent). Adjacent is the "illegal" case and is docked hardest.
+    const loose = placedCount > 0 && !hasIntersection;
+    return { ok: true, loose, adjacent };
   };
 
   const placeWord = (r, c, wordIdx) => {
@@ -472,11 +467,23 @@ export default function WordWeaverDuelTask({
         }
       }
 
-      setPlacementError(null);
       setBadDropFlash(false);
+      setPlacementError(null);
 
       const intersections = computeIntersections(anchorR, anchorC, word, finalOri, b);
-      const points = word.length + intersections * 2;
+      // Scoring: crossing = full word + crossing bonus; a clean standalone word
+      // = base; an "illegal" placement that sits right beside another word
+      // (forming invalid perpendicular words) is allowed but heavily docked
+      // (tester: "allow illegal placement … but don't give full points").
+      let points;
+      if (intersections > 0) {
+        points = word.length + intersections * 2;
+      } else if (check?.adjacent) {
+        points = Math.max(1, Math.round(word.length * 0.4));
+        setPlacementError("Placed beside another word (not a valid crossing) — reduced points.");
+      } else {
+        points = word.length;
+      }
 
       for (let i = 0; i < word.length; i++) {
         const rr = finalOri === "V" ? anchorR + i : anchorR;
