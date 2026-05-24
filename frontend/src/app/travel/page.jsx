@@ -85,6 +85,17 @@ function flexOffsets(value) {
   return (FLEX_OPTIONS.find((o) => o.value === value) || FLEX_OPTIONS[0]).offsets;
 }
 
+// Persist the user's search choices across sessions.
+const PREFS_KEY = "travelFinder.prefs.v1";
+function loadPrefs() {
+  if (typeof window === "undefined") return null;
+  try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || null; } catch { return null; }
+}
+function savePrefs(prefs) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch {}
+}
+
 // ---------------------------------------------------------------------------
 // One flight offer card.
 // ---------------------------------------------------------------------------
@@ -184,7 +195,43 @@ export default function TravelPage() {
   const [emailTo, setEmailTo] = useState("");
   const [emailState, setEmailState] = useState({ status: "idle", msg: "" }); // idle | sending | sent | error
 
-  useEffect(() => { setCurrency(detectCurrency()); }, []);
+  // Rehydrate saved choices on mount; fall back to auto-detected currency and
+  // reset any saved dates that are now in the past. Saving is gated on a state
+  // flag (not a ref) so the save effect can't run in the same commit as
+  // hydration and clobber storage with the pre-hydration defaults.
+  const [isHydrated, setIsHydrated] = useState(false);
+  useEffect(() => {
+    const p = loadPrefs();
+    const today = todayPlus(0);
+    if (p) {
+      if (typeof p.origin === "string") setOrigin(p.origin);
+      if (typeof p.destination === "string") setDestination(p.destination);
+      if (typeof p.includeNearbyOrigin === "boolean") setIncludeNearbyOrigin(p.includeNearbyOrigin);
+      if (typeof p.includeNearbyDestination === "boolean") setIncludeNearbyDestination(p.includeNearbyDestination);
+      if (p.tripType === "return" || p.tripType === "oneway") setTripType(p.tripType);
+      if (typeof p.departureDate === "string" && p.departureDate >= today) setDepartureDate(p.departureDate);
+      if (typeof p.returnDate === "string" && p.returnDate >= today) setReturnDate(p.returnDate);
+      if (FLEX_OPTIONS.some((o) => o.value === p.departureFlex)) setDepartureFlex(p.departureFlex);
+      if (FLEX_OPTIONS.some((o) => o.value === p.returnFlex)) setReturnFlex(p.returnFlex);
+      if ([0, 1, 2].includes(p.maxStops)) setMaxStops(p.maxStops);
+      if (typeof p.prioritizeShortStops === "boolean") setPrioritizeShortStops(p.prioritizeShortStops);
+      if (typeof p.emailTo === "string") setEmailTo(p.emailTo);
+      setCurrency(/^[A-Za-z]{3}$/.test(p.currency || "") ? p.currency : detectCurrency());
+    } else {
+      setCurrency(detectCurrency());
+    }
+    setIsHydrated(true);
+  }, []);
+
+  // Persist choices whenever they change (after the initial hydration).
+  useEffect(() => {
+    if (!isHydrated) return;
+    savePrefs({
+      origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType,
+      departureDate, returnDate, departureFlex, returnFlex, maxStops, prioritizeShortStops,
+      currency, emailTo,
+    });
+  }, [isHydrated, origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType, departureDate, returnDate, departureFlex, returnFlex, maxStops, prioritizeShortStops, currency, emailTo]);
 
   const search = useCallback(async () => {
     setError("");
