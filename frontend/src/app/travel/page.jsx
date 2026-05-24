@@ -498,7 +498,7 @@ export default function TravelPage() {
           {tripType === "return" && (
             <div className="rounded-lg border border-slate-200 p-3">
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Leave destination{destination.trim() ? ` (${destination.trim()})` : ""} — at the latest
+                Leave destination{destination.trim() ? ` (${destination.trim()})` : ""} — at the earliest
               </label>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <select

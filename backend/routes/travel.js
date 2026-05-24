@@ -193,10 +193,10 @@ router.post("/search", async (req, res) => {
   const returnLine = !returnDate ? "" : (() => {
     const dates = retDates.length > 1 ? `one of these target dates: ${retDates.join(", ")}` : returnDate;
     if (returnTimePref === "any") {
-      return `- Return: the traveller must LEAVE the destination on ${dates} — departing any time that day is fine.`;
+      return `- Return: the traveller leaves the destination on ${dates} — departing any time that day is fine.`;
     }
-    const cap = capPhrase(returnTimePref);
-    return `- Return: the traveller must LEAVE the destination, AT THE LATEST, ${cap} on ${dates}. This is a DEPARTURE target from the destination; prefer leaving as late as allowed up to that cap (to maximise time there), but do NOT include options that depart the destination later than the cap.`;
+    const floor = returnTimePref === "early" ? "EARLY (the morning)" : "LATE (the evening)";
+    return `- Return: the traveller will LEAVE the destination, AT THE EARLIEST, ${floor} on ${dates}. This is the EARLIEST acceptable departure FROM the destination (so the trip isn't cut short): acceptable return flights depart at or after ${floor} on the target date. Do NOT include options that leave the destination earlier than that; leaving later that day is fine.`;
   })();
 
   const prompt = `You are a flight-search assistant. Use the web_search tool to find REAL, CURRENT flight options and prices, then return them as strict JSON.
