@@ -665,7 +665,7 @@ const DEMO_TASKS = [
   {
     taskType: "hole-in-one",
     title: "Hole in One — Practice Course",
-    prompt: "Tilt the device (or use WASD / on-screen joystick) to roll the ball into the hole.",
+    prompt: "Answer questions to earn coins, buy rails to guide the ball, then tilt to roll it into the hole.",
     config: {
       board: {
         width: 10,
@@ -681,6 +681,16 @@ const DEMO_TASKS = [
       physics: { gravity: 0.35, friction: 0.95, bounciness: 0.6, ballRadius: 0.45 },
       scoring: { playPoints: 1, successPoints: 10 },
       controls: { tiltEnabled: true, fallbackControls: true, sensitivity: 1, smoothing: 0.85 },
+      // Earn phase — answer curriculum questions to earn coins (this is the
+      // lesson connection). Each correct answer funds rails for the build phase.
+      questionBank: [
+        { id: "q1", prompt: "What force pulls the ball downhill when you tilt the board?", correctAnswer: "gravity", reward: { coins: 5 } },
+        { id: "q2", prompt: "A surface that slows the ball down by resisting motion is called ___.", correctAnswer: "friction", reward: { coins: 5 } },
+        { id: "q3", prompt: "When the ball bounces off a wall, the angle it leaves equals the angle it ___.", correctAnswer: "hits", reward: { coins: 5 } },
+      ],
+      economy: { straightRailCost: 3, curvedRailCost: 5, bumperCost: 4 },
+      // A little seed money so the build phase is usable even before earning.
+      resources: { startingCoins: 6 },
     },
   },
 

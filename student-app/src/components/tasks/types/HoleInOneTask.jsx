@@ -305,6 +305,10 @@ export default function HoleInOneTask({ task, onSubmit, disabled }) {
         <div style={tagStrip}>Hole in One · Build the course</div>
         <div style={titleStyle}>Place rails to guide the ball</div>
         <div style={statusLine}>Coins: 🪙 {coins} · Placed: {placedObstacles.length}</div>
+        <div style={{ fontSize: "0.85rem", color: "#94a3b8", textAlign: "center", margin: "2px 0 8px", lineHeight: 1.35 }}>
+          Pick a rail type below, then <strong>tap the board</strong> to place it (each costs coins).
+          Rails are optional — tap <strong>Done → Tilt</strong> when you're ready to play.
+        </div>
 
         {/* Rail type picker */}
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
