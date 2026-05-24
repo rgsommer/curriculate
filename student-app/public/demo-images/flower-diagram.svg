@@ -1,24 +1,84 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
-  <rect x="0" y="0" width="400" height="400" fill="#ffffff"/>
-  <!-- Stem -->
-  <rect x="192" y="210" width="16" height="150" rx="8" fill="#3f9d4f"/>
-  <!-- Leaf / sepal -->
-  <path d="M200 270 C150 250 120 285 150 305 C185 315 205 295 200 270 Z" fill="#4caf50"/>
-  <!-- Petals (5, fanned around the center) -->
-  <g fill="#ef6aa6" stroke="#d24f8c" stroke-width="2">
-    <ellipse cx="200" cy="70"  rx="34" ry="52"/>
-    <ellipse cx="270" cy="110" rx="34" ry="52" transform="rotate(60 270 110)"/>
-    <ellipse cx="262" cy="190" rx="34" ry="52" transform="rotate(120 262 190)"/>
-    <ellipse cx="138" cy="190" rx="34" ry="52" transform="rotate(240 138 190)"/>
-    <ellipse cx="130" cy="110" rx="34" ry="52" transform="rotate(300 130 110)"/>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="75%">
+      <stop offset="0%" stop-color="#f7fbff"/>
+      <stop offset="100%" stop-color="#e8f1f8"/>
+    </radialGradient>
+    <radialGradient id="petal" cx="50%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#fde0ee"/>
+      <stop offset="45%" stop-color="#f48fc0"/>
+      <stop offset="100%" stop-color="#d24f8c"/>
+    </radialGradient>
+    <radialGradient id="center" cx="42%" cy="38%" r="70%">
+      <stop offset="0%" stop-color="#ffe28a"/>
+      <stop offset="60%" stop-color="#f6b93b"/>
+      <stop offset="100%" stop-color="#d68a14"/>
+    </radialGradient>
+    <linearGradient id="stem" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2f8f3f"/>
+      <stop offset="50%" stop-color="#54b765"/>
+      <stop offset="100%" stop-color="#2f8f3f"/>
+    </linearGradient>
+    <radialGradient id="leaf" cx="35%" cy="35%" r="80%">
+      <stop offset="0%" stop-color="#66c46f"/>
+      <stop offset="100%" stop-color="#2f8f3f"/>
+    </radialGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#1f2d3d" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="400" height="400" fill="url(#bg)"/>
+
+  <!-- ── Stem ── -->
+  <path d="M193 200 q-4 80 -1 150 q4 6 16 0 q3 -70 -1 -150 Z" fill="url(#stem)" filter="url(#soft)"/>
+
+  <!-- ── Sepal (green leaf-like structure, lower-left — marker D) with veins ── -->
+  <g filter="url(#soft)">
+    <path d="M196 280 C150 250 110 280 132 312 C168 328 196 312 196 280 Z" fill="url(#leaf)" stroke="#247a34" stroke-width="1.5"/>
+    <path d="M192 296 C172 292 152 300 134 308" fill="none" stroke="#1f6b2c" stroke-width="2" stroke-linecap="round"/>
+    <path d="M178 290 l-8 9 M166 292 l-7 9 M154 296 l-6 8" stroke="#2f8f3f" stroke-width="1.5" stroke-linecap="round"/>
   </g>
-  <!-- Stamens (filaments + anthers) around the pistil -->
-  <g stroke="#caa11a" stroke-width="4">
-    <line x1="200" y1="150" x2="232" y2="120"/>
-    <line x1="200" y1="150" x2="168" y2="120"/>
+
+  <!-- ── Petals (5, fanned around the centre) ── -->
+  <g fill="url(#petal)" stroke="#c2467f" stroke-width="1.5" filter="url(#soft)">
+    <ellipse cx="200" cy="78"  rx="36" ry="58"/>
+    <ellipse cx="276" cy="118" rx="36" ry="58" transform="rotate(72 276 118)"/>
+    <ellipse cx="248" cy="200" rx="36" ry="58" transform="rotate(144 248 200)"/>
+    <ellipse cx="152" cy="200" rx="36" ry="58" transform="rotate(216 152 200)"/>
+    <ellipse cx="124" cy="118" rx="36" ry="58" transform="rotate(288 124 118)"/>
   </g>
-  <circle cx="234" cy="118" r="8" fill="#f4c430"/>
-  <circle cx="166" cy="118" r="8" fill="#f4c430"/>
-  <!-- Pistil (center) -->
-  <circle cx="200" cy="150" r="26" fill="#f6b93b" stroke="#caa11a" stroke-width="2"/>
+  <!-- petal highlights -->
+  <g fill="#ffffff" opacity="0.35">
+    <ellipse cx="192" cy="58" rx="9" ry="20"/>
+  </g>
+
+  <!-- ── Stamens (filaments radiating from the centre, golden anthers) ── -->
+  <g stroke="#b8870f" stroke-width="3" stroke-linecap="round">
+    <line x1="200" y1="152" x2="232" y2="120"/>
+    <line x1="200" y1="152" x2="168" y2="120"/>
+    <line x1="200" y1="152" x2="200" y2="112"/>
+    <line x1="200" y1="152" x2="246" y2="150"/>
+    <line x1="200" y1="152" x2="154" y2="150"/>
+  </g>
+  <g fill="#ffd84d" stroke="#b8870f" stroke-width="1.5">
+    <circle cx="232" cy="118" r="7"/>
+    <circle cx="168" cy="118" r="7"/>
+    <circle cx="200" cy="110" r="7"/>
+    <circle cx="248" cy="150" r="7"/>
+    <circle cx="152" cy="150" r="7"/>
+  </g>
+
+  <!-- ── Pistil (centre): ovary + style + stigma ── -->
+  <circle cx="200" cy="152" r="30" fill="url(#center)" stroke="#b8870f" stroke-width="2" filter="url(#soft)"/>
+  <!-- stigma texture -->
+  <g fill="#c8860f" opacity="0.55">
+    <circle cx="200" cy="152" r="6"/>
+    <circle cx="188" cy="146" r="3"/>
+    <circle cx="212" cy="146" r="3"/>
+    <circle cx="188" cy="160" r="3"/>
+    <circle cx="212" cy="160" r="3"/>
+    <circle cx="200" cy="138" r="3"/>
+    <circle cx="200" cy="166" r="3"/>
+  </g>
 </svg>
