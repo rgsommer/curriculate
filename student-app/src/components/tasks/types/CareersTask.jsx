@@ -85,7 +85,9 @@ export default function CareersTask({ task, onSubmit, disabled }) {
           </label>
         </div>
         <div style={{ fontSize: "0.75rem", color: "#94a3b8", marginTop: 6 }}>
-          Your pick is <strong>private</strong> — no teammate will see who picked whom.
+          {teammates.length > 0
+            ? <>Your pick is <strong>private</strong> — in class, each student picks on their own device, so no teammate sees who picked whom.</>
+            : <>Just you here in practice — in a real class, each student would pick <strong>privately</strong> on their own device.</>}
         </div>
       </>
     );

@@ -224,15 +224,28 @@ export default function TruthOrDareTask({
     }));
   }, [cfg.seedChallenges]);
 
+  // Named "bots" so solo practice feels like a real round and the spotlight
+  // clearly names who's up (tester: "show bots in practice mode, and identify
+  // which player is to do the truth/dare"). The spotlight rotates You → bots.
+  const PRACTICE_ROSTER = ["You", "Ada", "Newton", "Maya"];
+  const [practiceSpotlight, setPracticeSpotlight] = useState("You");
+  const isBotTurn = practiceMode && practiceSpotlight !== "You";
+
   // Practice flow: SELECTING → CHOOSING → REVEALING → PERFORMING → JUDGING → REWARDING → next
   useEffect(() => {
     if (!practiceMode) return;
     if (practicePhase === PHASES.SELECTING) {
+      // Land the spotlight on the next player in rotation (You first each cycle).
+      setPracticeSpotlight(PRACTICE_ROSTER[practiceRound % PRACTICE_ROSTER.length]);
       const t = setTimeout(() => setPracticePhase(PHASES.CHOOSING), 2000);
       return () => clearTimeout(t);
     }
     if (practicePhase === PHASES.CHOOSING) {
-      // No auto-advance — player must pick
+      // Bot turn → the bot auto-picks after a beat. Your turn → wait for you.
+      if (practiceSpotlight !== "You") {
+        const t = setTimeout(() => handleChoice(Math.random() < 0.5 ? "truth" : "dare"), 1600);
+        return () => clearTimeout(t);
+      }
       return;
     }
     if (practicePhase === PHASES.REVEALING) {
@@ -240,6 +253,11 @@ export default function TruthOrDareTask({
       return () => clearTimeout(t);
     }
     if (practicePhase === PHASES.PERFORMING && practiceChallenge) {
+      // Bot "performs" quickly so the round keeps moving.
+      if (practiceSpotlight !== "You") {
+        const t = setTimeout(() => setPracticePhase(PHASES.JUDGING), 2500);
+        return () => clearTimeout(t);
+      }
       const budget = practiceChallenge.timeSeconds * 1000;
       const startedAt = Date.now();
       setPracticeTickMs(budget);
@@ -257,6 +275,15 @@ export default function TruthOrDareTask({
       };
     }
     if (practicePhase === PHASES.JUDGING) {
+      // Bot turn → auto-judge (the bot "nails it"); your turn → you self-judge.
+      if (practiceSpotlight !== "You") {
+        const t = setTimeout(() => {
+          setPracticeVerdict("pass");
+          setPracticePoints((p) => p + 10);
+          setPracticePhase(PHASES.REWARDING);
+        }, 1500);
+        return () => clearTimeout(t);
+      }
       // Solo: player self-judges via Pass / Try Again / Fail buttons
       return;
     }
@@ -274,7 +301,7 @@ export default function TruthOrDareTask({
       }, 2400);
       return () => clearTimeout(t);
     }
-  }, [practicePhase, practiceMode, practiceChallenge, practiceRound]);
+  }, [practicePhase, practiceMode, practiceChallenge, practiceRound, practiceSpotlight]);
 
   // ------------- Unified phase + data view (live vs practice) --------------
 
@@ -287,8 +314,8 @@ export default function TruthOrDareTask({
   const verdictPayload   = practiceMode
     ? (practiceVerdict ? { result: practiceVerdict, awardedPoints: practicePoints, awardedCoins: 0 } : null)
     : liveVerdict;
-  const selectedPlayer   = practiceMode ? "You"                   : liveSelectedPlayer;
-  const isMySelectedTurn = practiceMode || (teamId && liveSelectedTeamId === teamId);
+  const selectedPlayer   = practiceMode ? practiceSpotlight       : liveSelectedPlayer;
+  const isMySelectedTurn = practiceMode ? (practiceSpotlight === "You") : (teamId && liveSelectedTeamId === teamId);
 
   // ------------- Handlers ---------------------------------------------------
 
@@ -434,8 +461,10 @@ function SpotlightWheel({ reel = [], selectedPlayer = "", practiceMode = false }
     const i = setInterval(() => setTickIdx((n) => n + 1), 130);
     return () => clearInterval(i);
   }, []);
+  // Blur through the roster, then settle on whoever's actually up (You or a bot).
+  const PRACTICE_REEL = ["You", "Ada", "Newton", "Maya"];
   const displayed = practiceMode
-    ? (tickIdx % 2 === 0 ? "You" : (["A student…", "Someone brave…", "🎲", "🎯"][tickIdx % 4]))
+    ? (tickIdx < 14 ? PRACTICE_REEL[tickIdx % PRACTICE_REEL.length] : (selectedPlayer || "You"))
     : (reel.length
         ? reel[tickIdx % reel.length]?.playerName || "…"
         : (selectedPlayer || "…"));

@@ -362,10 +362,14 @@ const factCardWrong = {
   borderColor: "#ef4444",
   animation: "legends-shake 0.3s ease",
 };
+// Sorted facts are ALWAYS correct (wrong taps flash red and never get assigned),
+// so keep them GREEN as a persistent correct-answer overlay rather than dimming
+// to purple (tester: "only turn green if it is correct… serves as a correct
+// answer overlay").
 const factCardAssigned = {
-  opacity: 0.55,
-  background: "rgba(124,58,237,0.10)",
-  borderColor: "rgba(124,58,237,0.4)",
+  opacity: 0.92,
+  background: "rgba(34,197,94,0.16)",
+  borderColor: "rgba(34,197,94,0.55)",
 };
 const assignedBadge = {
   display: "inline-block",
@@ -375,9 +379,9 @@ const assignedBadge = {
   letterSpacing: 1,
   padding: "2px 8px",
   borderRadius: 999,
-  background: "rgba(124,58,237,0.25)",
-  color: "#c4b5fd",
-  border: "1px solid rgba(124,58,237,0.5)",
+  background: "rgba(34,197,94,0.22)",
+  color: "#bbf7d0",
+  border: "1px solid rgba(34,197,94,0.5)",
 };
 const revealHeader = {
   display: "flex",

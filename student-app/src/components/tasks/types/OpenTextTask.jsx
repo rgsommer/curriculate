@@ -291,13 +291,18 @@ export default function OpenTextTask({
   const preDictateTextRef = useRef("");
 
   const startListening = () => {
-    if (typeof window === "undefined" || !window.SpeechRecognition) {
+    // Chrome only exposes the prefixed `webkitSpeechRecognition`; the unprefixed
+    // name is undefined there, which made voice "not work" in Chrome (tester:
+    // "Voice input isn't working right now… Why??"). Accept either.
+    const SpeechRecognitionImpl =
+      (typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition)) || null;
+    if (!SpeechRecognitionImpl) {
       setErrorMsg("Voice input is not supported on this browser. Try Chrome or Safari.");
       return;
     }
 
     try {
-      const recognition = new window.SpeechRecognition();
+      const recognition = new SpeechRecognitionImpl();
       recognition.lang = task?.settings?.language || "en-US";
       recognition.interimResults = true;
       recognition.continuous = true;
