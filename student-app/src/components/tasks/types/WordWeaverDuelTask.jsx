@@ -315,6 +315,28 @@ export default function WordWeaverDuelTask({
       if (existing && existing === want) hasIntersection = true;
     }
 
+    // A non-crossing placement must be truly SEPARATE — never butting up against
+    // or running alongside an existing word (tester: "it put it close to another
+    // letter which it should not do"). If it touches without crossing, reject so
+    // a free/new-chain placement always sits in clear space.
+    if (placedCount > 0 && !hasIntersection) {
+      const at = (rr, cc) => (rr >= 0 && cc >= 0 && rr < b.length && cc < (b[rr]?.length || 0) && b[rr][cc]?.ch ? true : false);
+      let touches = false;
+      // Cell just before / after the word ends.
+      if (ori === "H") { if (at(r, c - 1) || at(r, c + w.length)) touches = true; }
+      else { if (at(r - 1, c) || at(r + w.length, c)) touches = true; }
+      // Cells alongside each letter.
+      for (let i = 0; i < w.length && !touches; i++) {
+        const rr = ori === "V" ? r + i : r;
+        const cc = ori === "H" ? c + i : c;
+        if (ori === "H") { if (at(rr - 1, cc) || at(rr + 1, cc)) touches = true; }
+        else { if (at(rr, cc - 1) || at(rr, cc + 1)) touches = true; }
+      }
+      if (touches) {
+        return { ok: false, reason: "Place it on a shared letter to cross, or leave a gap — it can't sit right beside another word." };
+      }
+    }
+
     // Enforce intersection rule: after the first word, subsequent words must
     // cross an existing word. We KEEP this requirement whenever a crossing is
     // possible — the strategic puzzle is precisely "find an arrangement where
