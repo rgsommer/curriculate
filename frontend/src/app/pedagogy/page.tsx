@@ -209,6 +209,7 @@ const bloomsData: BloomLevel[] = [
       "What Am I?",
       "Current Events",
       "Legends",
+      "Quest",
     ],
     secondaryTasks: [
       "Sort",

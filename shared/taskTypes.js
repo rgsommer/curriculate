@@ -227,7 +227,7 @@ export const TASK_BLOOMS_MAP = {
   "fake-out":                   ["ANALYZE", "EVALUATE"],
   "guess-who":                  ["ANALYZE"],
   "what-am-i":                  ["ANALYZE", "EVALUATE"],
-  "quest":                      ["APPLY", "EVALUATE"],
+  "quest":                      ["APPLY", "ANALYZE", "EVALUATE"],
   "careers":                    ["EVALUATE", "ANALYZE"],
   "hole-in-one":                ["APPLY", "ANALYZE"],
   "current-events":             ["ANALYZE", "EVALUATE"],

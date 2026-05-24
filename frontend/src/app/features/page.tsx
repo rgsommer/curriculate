@@ -473,14 +473,17 @@ export default function FeaturesPage() {
                 ]}
               />
               <FeatureCard
-                title="🪙 Quest Mode"
-                body="An expedition simulation. Teams earn coins from normal academic work, then spend them on resources (rope, water, a key, a chart) to complete a mission. Bonus + hidden tasks unlock when teams meet conditions — never idle, never bored."
+                title="🪙 Quest Mode — a live trading economy"
+                body="An expedition simulation with a real economy. Teams earn coins from academic work, hold a scarce specialty resource, and must TRADE with each other to assemble what a mission needs — no team can self-supply everything. Comparative advantage, scarcity, and rising prices make academic effort the engine of a market."
                 bullets={[
-                  "Auto-generates 2 bonus + 1 hidden task per taskset (early finishers get more)",
-                  "Coin balance lives on TeamQuestState; persistent across reconnects",
-                  "Resource prerequisites (need a barrel before you can carry water)",
-                  "Server-validated atomic spend (cannot overdraw)",
-                  "Teacher console: grant coins, force-unlock bonus / hidden tasks",
+                  "Each team is seeded with a different scarce specialty → real gains from trade (you need what they have)",
+                  "Peer-to-peer QR trade: show a QR to sell, scan one to buy — coins + resources move between teams, server-validated with rollback",
+                  "Specialty directory tells buyers which team to find; price defaults to a fair anchor, adjustable to negotiate",
+                  "Time-based price inflation (on by default) — buy early before the depot gets expensive",
+                  "Renewable specialties: refill slowly on their own, faster when you complete tasks (diligence beats free-riding)",
+                  "Diligent teams can invest coins to open a franchise — become a second supplier of the scarcest resource",
+                  "Per-session trade log in the teacher report; bonus + hidden tasks unlock for early finishers",
+                  "Server-validated atomic spend + teacher console (grant coins, force-unlock tasks)",
                 ]}
               />
               <FeatureCard
