@@ -287,12 +287,6 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
       audioData: mediaRecorderRef.current?._audioData || null,
     };
 
-    // Simulate AI assessment for demo / practice
-    // In live mode, the backend handles scoring
-    const mockScore = explanation.length > 100 ? PTS_EXCELLENT
-      : explanation.length > 50 ? PTS_GOOD
-      : PTS_BASIC;
-
     // Tester: 'in my recording, I did mention all the concepts, but
     // it said try to mention specifics: did it not parse the
     // recording?'  Old logic only matched the FIRST word of the
@@ -305,18 +299,44 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
       coversConcept(explanation, c)
     );
 
+    // CONTENT-AWARE score (tester: "entered a completely wrong answer and it
+    // still gave 20/20"). Coverage of the required concepts is the primary
+    // driver; explanation length is only a secondary quality signal. A response
+    // that covers NO concepts can't earn more than a token score.
+    const totalConcepts = concepts.length || 1;
+    const coverage = conceptsCovered.length / totalConcepts;
+    const wordCount = explanation.trim().split(/\s+/).filter(Boolean).length;
+    // Audio-only submissions can't be content-checked on the device, so don't
+    // penalize them here (the live backend transcribes + scores them).
+    const audioOnly =
+      !!mediaRecorderRef.current?._audioData &&
+      (!explanation.trim() || explanation.trim().startsWith("[Audio recorded"));
+    let mockScore;
+    if (audioOnly) {
+      mockScore = PTS_GOOD;
+    } else if (conceptsCovered.length === 0) {
+      mockScore = 2; // wrote something, but it doesn't address the concepts
+    } else if (coverage >= 1) {
+      mockScore = wordCount >= 25 ? PTS_EXCELLENT : PTS_GOOD; // all concepts + real explanation
+    } else if (coverage >= 0.5) {
+      mockScore = PTS_GOOD;
+    } else {
+      mockScore = PTS_BASIC;
+    }
+
     setTimeout(() => {
       const result = {
         score: mockScore,
         maxScore: PTS_EXCELLENT,
         conceptsCovered: conceptsCovered.length,
         totalConcepts: concepts.length,
-        feedback:
-          conceptsCovered.length === concepts.length
+        feedback: audioOnly
+          ? "Recording received — nice work explaining out loud! Your teacher's tool will review the content."
+          : conceptsCovered.length === concepts.length
             ? "Great job! You covered all the concepts clearly."
             : conceptsCovered.length > 0
             ? `Good effort! You covered ${conceptsCovered.length} of ${concepts.length} concepts. Try to explain the others too.`
-            : "Try mentioning specific concepts in your explanation.",
+            : "This didn't cover the required concepts yet — explain each one in your own words to earn full points.",
         addedNewInfo: priorEntries.length > 0,
       };
       setAiResult(result);

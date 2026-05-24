@@ -430,19 +430,35 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
           ) : (
             <>
               {Number.isFinite(totalSeconds) && canStart ? (
-                <button
-                  type="button"
-                  style={{ ...styles.btn, opacity: disabled ? 0.6 : 1 }}
-                  onClick={(e) => {
-                    e?.preventDefault?.();
-                    e?.stopPropagation?.();
-                    startPause();
-                  }}
-                  disabled={disabled}
-                  className={!running ? "bb-go" : undefined}
-                >
-                  {running ? "Pause ⏸" : "Start ▶️ (begin timer)"}
-                </button>
+                <>
+                  {!running && (
+                    <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: "#475569", marginBottom: 6 }}>
+                      👇 Tap to start the {totalSeconds}s timer, then do the moves together
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    style={{
+                      ...styles.btn,
+                      opacity: disabled ? 0.6 : 1,
+                      ...(running ? null : {
+                        background: "linear-gradient(135deg, #22c55e, #16a34a)",
+                        color: "#fff",
+                        border: "none",
+                        fontSize: 19,
+                      }),
+                    }}
+                    onClick={(e) => {
+                      e?.preventDefault?.();
+                      e?.stopPropagation?.();
+                      startPause();
+                    }}
+                    disabled={disabled}
+                    className={!running ? "bb-go" : undefined}
+                  >
+                    {running ? "Pause ⏸" : "▶️ START TIMER"}
+                  </button>
+                </>
               ) : Number.isFinite(totalSeconds) ? (
                 <div style={{ fontSize: 12, opacity: 0.75, padding: "6px 2px" }}>
                   Intro playing… Start will appear in a moment.
@@ -621,8 +637,11 @@ function PlayerDoneRow({ memberNames = [], botNames = [], botsActive = false, di
                   : `Mark ${name} as done`
               }
             >
-              {name}
-              {isDone ? " ✅" : isBot ? " …" : " — Done?"}
+              {isDone
+                ? `✅ ${name} is done`
+                : isBot
+                ? `${name} — doing it…`
+                : `${name} — tap when done`}
             </button>
           );
         })}

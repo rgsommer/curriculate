@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { TaskCardFrame, Pill, PrimaryButton, GhostButton, TextArea } from "../taskStyles";
 import SpeechQualityMeter from "../SpeechQualityMeter";
 import reportImageFailure from "../../../utils/reportImageFailure.js";
+import { API_BASE_URL } from "../../../config.js";
 
 export default function DiffDetectiveTask({
   task,
@@ -17,17 +18,16 @@ export default function DiffDetectiveTask({
   const [showHint, setShowHint] = useState(false);
   const [attempts, setAttempts] = useState(0);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [isDictating, setIsDictating] = useState(false);
+  const [isDictating, setIsDictating] = useState(false);   // recording in progress
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [dictationError, setDictationError] = useState("");
   const [imgError, setImgError] = useState(false); // a side image failed to load (S3/AI URL dead)
-  const recognitionRef = useRef(null);
-  // Mic stays on until the student taps "Stop" — or a hard 10s safety cap.
-  // The Web Speech API fires `onend` on every natural pause, so without these
-  // refs the button would "unclick itself" mid-sentence (tester report).
-  const wantDictatingRef = useRef(false);   // user intent (true = keep listening)
-  const maxTimerRef = useRef(null);         // 10s auto-stop
-  const baseTextRef = useRef("");           // answer text before the current speech session
-  const sessionFinalRef = useRef("");       // finalized text accumulated this session
+  // Record-then-transcribe via Whisper (the Web Speech API was unreliable in the
+  // practice iframe — tester: "speak answer does not work … should listen, then
+  // add text to input box"). MediaRecorder + /api/speech/transcribe is robust.
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const streamRef = useRef(null);
 
   const differences = task?.differences || [];
   const numExpected = differences.length;
@@ -70,108 +70,68 @@ export default function DiffDetectiveTask({
     }
   }, [answer, answerDraft, onAnswerChange]);
 
-  // --- Clean up speech recognition on unmount ---
+  // --- Clean up recording on unmount ---
   useEffect(() => {
     return () => {
-      wantDictatingRef.current = false;
-      if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null; }
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch {}
-        recognitionRef.current = null;
-      }
+      try { mediaRecorderRef.current?.stop(); } catch {}
+      try { streamRef.current?.getTracks().forEach((t) => t.stop()); } catch {}
     };
   }, []);
 
-  // --- Voice Dictation (Web Speech API) ---
-  const startDictation = () => {
-    if (typeof window === "undefined") return;
-
-    const hasWebkit = "webkitSpeechRecognition" in window;
-    const hasStandard = "SpeechRecognition" in window;
-
-    if (!hasWebkit && !hasStandard) {
-      alert("Sorry, voice dictation is not supported on this browser.");
+  // --- Voice: record audio, then transcribe via Whisper and append to the box ---
+  const startDictation = async () => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setDictationError("Voice input is not supported on this browser — please type your answer.");
       return;
     }
-
-    const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-
-    // Recompute the answer as base + finalized + interim each event (do NOT
-    // append every event — that duplicated the whole transcript repeatedly,
-    // which read as "doesn't capture text").
-    recognition.onresult = (e) => {
-      let finalText = "";
-      let interimText = "";
-      for (const res of Array.from(e.results)) {
-        if (res.isFinal) finalText += res[0].transcript;
-        else interimText += res[0].transcript;
-      }
-      sessionFinalRef.current = finalText; // results accumulate within a session
-      const combined = `${baseTextRef.current}${finalText}${interimText}`.replace(/\s{2,}/g, " ").trimStart();
-      setAnswer(combined);
-    };
-
-    recognition.onerror = (e) => {
-      const err = e?.error || "";
-      // FATAL errors (mic blocked / unavailable) must stop the session — otherwise
-      // onend keeps restarting forever and nothing ever transcribes (tester:
-      // "speak answer clicks but does not do speech to text"). Surface a message.
-      if (err === "not-allowed" || err === "service-not-allowed" || err === "audio-capture") {
-        wantDictatingRef.current = false;
-        if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null; }
-        setIsDictating(false);
-        setDictationError(
-          err === "audio-capture"
-            ? "No microphone found — you can type your answer instead."
-            : "Microphone access is blocked. Allow mic access (or type your answer)."
-        );
-        return;
-      }
-      // Transient ("no-speech" / "aborted") — keep the session alive; only clear
-      // the flag if the user already stopped.
-      if (!wantDictatingRef.current) setIsDictating(false);
-    };
-
-    // The API ends on every natural pause. While the student still wants to
-    // dictate (and we're inside the 10s window), commit this session's finalized
-    // text into the base, then transparently restart so nothing is lost and the
-    // button stays "clicked" the whole time.
-    recognition.onend = () => {
-      if (wantDictatingRef.current) {
-        const committed = `${baseTextRef.current}${sessionFinalRef.current}`.replace(/\s{2,}/g, " ").trimStart();
-        baseTextRef.current = committed && !committed.endsWith(" ") ? committed + " " : committed;
-        sessionFinalRef.current = "";
-        try { recognition.start(); return; } catch {}
-      }
-      setIsDictating(false);
-    };
-
-    // Seed the base with whatever's already typed so dictation appends to it.
-    baseTextRef.current = answer && !answer.endsWith(" ") ? answer + " " : (answer || "");
-    sessionFinalRef.current = "";
-    wantDictatingRef.current = true;
     setDictationError("");
-    recognition.start();
-    recognitionRef.current = recognition;
-    setIsDictating(true);
-
-    // Hard 10-second safety cap.
-    if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
-    maxTimerRef.current = setTimeout(() => stopDictation(), 10000);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
+      recorder.onstop = async () => {
+        try { streamRef.current?.getTracks().forEach((t) => t.stop()); } catch {}
+        streamRef.current = null;
+        if (chunksRef.current.length === 0) { setIsTranscribing(false); return; }
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        chunksRef.current = [];
+        setIsTranscribing(true);
+        try {
+          const form = new FormData();
+          form.append("audio", blob, "diff-detective.webm");
+          form.append("language", "en");
+          const res = await fetch(`${API_BASE_URL}/api/speech/transcribe`, { method: "POST", body: form });
+          const json = res.ok ? await res.json().catch(() => null) : null;
+          const text = json?.transcript ? String(json.transcript).trim() : "";
+          if (text) {
+            setAnswer((prev) => (prev && !prev.endsWith(" ") ? prev + " " : prev || "") + text);
+          } else {
+            setDictationError("Couldn't hear that clearly — try again or type your answer.");
+          }
+        } catch {
+          setDictationError("Transcription failed — you can type your answer instead.");
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsDictating(true);
+    } catch {
+      setDictationError("Microphone access is blocked. Allow mic access, or type your answer.");
+      setIsDictating(false);
+    }
   };
 
   const stopDictation = () => {
-    wantDictatingRef.current = false;
-    if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null; }
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch {}
-      recognitionRef.current = null;
-    }
     setIsDictating(false);
+    try {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop(); // → onstop transcribes + appends
+      }
+    } catch {}
   };
 
   const handleSubmit = () => {
@@ -299,9 +259,8 @@ export default function DiffDetectiveTask({
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
         <div style={{ fontWeight: 950, color: "rgba(15,23,42,0.92)" }}>Your Answer</div>
         <GhostButton
-         
           onClick={isDictating ? stopDictation : startDictation}
-          disabled={disabled || isSubmitted}
+          disabled={disabled || isSubmitted || isTranscribing}
           style={{
             borderRadius: 999,
             padding: "10px 12px",
@@ -309,7 +268,7 @@ export default function DiffDetectiveTask({
             border: `1px solid ${isDictating ? "rgba(239,68,68,0.35)" : "rgba(16,185,129,0.30)"}`,
           }}
         >
-          {isDictating ? "Stop Talking" : "Speak Answer"} 🎙️
+          {isTranscribing ? "Transcribing…" : isDictating ? "Stop & add text" : "Speak Answer"} 🎙️
         </GhostButton>
       </div>
 

@@ -2900,10 +2900,14 @@ function DemoResults({
   commitment = null,
   onPlayAgain,
 }) {
+  // The synthetic "commitment-bonus" entry is a reward, NOT a task — exclude it
+  // from task counts so committing to 10 shows 10 completed, not 11 (tester:
+  // "I chose 10 and it gave me 11 … not technically correct").
+  const isRealTask = (r) => r && !r.skipped && r.taskType !== "commitment-bonus";
   const hitCommitment =
     commitment &&
     typeof commitment.target === "number" &&
-    results.filter((r) => !r.skipped).length >= commitment.target;
+    results.filter(isRealTask).length >= commitment.target;
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [showAmbassador, setShowAmbassador] = useState(false);
@@ -2927,8 +2931,9 @@ function DemoResults({
       : "";
   const isConference = source === "conference" && !!conferenceEvent.trim();
 
-  const completed = results.filter((r) => !r.skipped);
+  const completed = results.filter(isRealTask);
   const skipped = results.filter((r) => r.skipped);
+  // basePoints intentionally includes the commitment-bonus entry's points.
   const basePoints = results.reduce((s, r) => s + (r.points || 0), 0);
   const totalPoints = basePoints + recommendBonus;
 

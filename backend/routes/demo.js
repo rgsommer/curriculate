@@ -466,24 +466,33 @@ router.post("/orphan-feedback", async (req, res) => {
       return res.json({ ok: true, savedCount: 0 });
     }
 
-    const lead = await ConferenceLead.findOneAndUpdate(
-      {
-        email: String(email).toLowerCase().trim(),
-        conference: conference || "general",
-      },
-      {
-        $push: {
-          feedbackEntries: { $each: cleaned, $slice: -500 },
-        },
-      },
-      { new: false }
-    );
+    // De-dupe against feedback the lead already submitted (e.g. via /results).
+    // Without this, a draft that WAS submitted normally also gets re-added by
+    // the orphan-recovery scan — so every comment showed up twice in the export.
+    const existingLead = await ConferenceLead.findOne(
+      { email: String(email).toLowerCase().trim(), conference: conference || "general" },
+      { feedbackEntries: 1 }
+    ).lean();
 
-    if (!lead) {
+    if (!existingLead) {
       return res.status(404).json({ error: "Lead not found — register first" });
     }
 
-    res.json({ ok: true, savedCount: cleaned.length });
+    const keyOf = (e) =>
+      `${String(e?.taskType || "").trim().toLowerCase()}|${String(e?.confusing || "").trim()}|${String(e?.suggestion || "").trim()}`;
+    const existingKeys = new Set((existingLead.feedbackEntries || []).map(keyOf));
+    const toAdd = cleaned.filter((e) => !existingKeys.has(keyOf(e)));
+
+    if (toAdd.length === 0) {
+      return res.json({ ok: true, savedCount: 0, deduped: cleaned.length });
+    }
+
+    await ConferenceLead.updateOne(
+      { _id: existingLead._id },
+      { $push: { feedbackEntries: { $each: toAdd, $slice: -500 } } }
+    );
+
+    res.json({ ok: true, savedCount: toAdd.length, deduped: cleaned.length - toAdd.length });
   } catch (err) {
     console.error("[demo/orphan-feedback] Error:", err.message);
     res.status(500).json({ error: "Failed to recover drafts" });
