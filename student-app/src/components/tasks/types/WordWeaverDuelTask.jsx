@@ -975,7 +975,13 @@ export default function WordWeaverDuelTask({
                 <button
                   type="button"
                   onClick={() => setShowSolution(true)}
-                  style={s.secondaryBtn}
+                  style={{
+                    ...s.secondaryBtn,
+                    background: "linear-gradient(135deg, #f59e0b, #d97706)",
+                    color: "#fff",
+                    border: "none",
+                    fontWeight: 900,
+                  }}
                   title="See one complete interlocking arrangement of all the words"
                 >
                   💡 Show solution

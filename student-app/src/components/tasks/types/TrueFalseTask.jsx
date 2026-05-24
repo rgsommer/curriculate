@@ -143,6 +143,39 @@ export default function TrueFalseTask({
   const [scorePopups, setScorePopups] = React.useState([]);
   const [confettiPieces, setConfettiPieces] = React.useState([]);
 
+  // Answer-reveal overlay (tester: "no answer overlay"). After submitting we
+  // reveal which statements were true/false BEFORE advancing; onSubmit is
+  // deferred until the player taps Continue.
+  const [revealed, setRevealed] = React.useState(false);
+  const pendingPayloadRef = useRef(null);
+
+  // Correct value ("true"/"false") for a canonical item index, or null if the
+  // task didn't ship an answer key (then we can't grade and skip the overlay).
+  const correctValForCanonical = React.useCallback(
+    (canonicalIndex) => {
+      const it = (Array.isArray(task?.items) ? task.items : [])[canonicalIndex];
+      const raw =
+        it?.correct ?? it?.answer ?? it?.isTrue ?? it?.correctAnswer ?? null;
+      if (raw === null || raw === undefined) return null;
+      if (typeof raw === "boolean") return raw ? "true" : "false";
+      const s = String(raw).trim().toLowerCase();
+      if (s === "true" || s === "t" || s === "1" || s === "yes") return "true";
+      if (s === "false" || s === "f" || s === "0" || s === "no") return "false";
+      return null;
+    },
+    [task]
+  );
+  const singleCorrectVal = React.useMemo(() => {
+    const raw =
+      task?.correctAnswer ?? task?.correct ?? task?.answer ?? task?.isTrue ?? null;
+    if (raw === null || raw === undefined) return null;
+    if (typeof raw === "boolean") return raw ? "true" : "false";
+    const s = String(raw).trim().toLowerCase();
+    if (s === "true" || s === "t" || s === "1" || s === "yes") return "true";
+    if (s === "false" || s === "f" || s === "0" || s === "no") return "false";
+    return null;
+  }, [task]);
+
   const instructions =
     "How to play: Read the statement. Decide if it is TRUE or FALSE. " +
     "Tap your answer. Then press Submit.";
@@ -326,6 +359,19 @@ export default function TrueFalseTask({
 
   const singleCanSubmit = !hasItems && !!singleSelected && !disabled;
 
+  // Whether we have an answer key to reveal (so the overlay is meaningful).
+  const canRevealAnswers = hasItems
+    ? presentedItems.some((p) => correctValForCanonical(p.canonicalIndex) != null)
+    : singleCorrectVal != null;
+
+  const fireSubmit = () => {
+    if (pendingPayloadRef.current == null) return;
+    const { payloadString, onChangeVal } = pendingPayloadRef.current;
+    pendingPayloadRef.current = null;
+    if (onAnswerChange) onAnswerChange(onChangeVal ?? payloadString);
+    onSubmit(payloadString);
+  };
+
   const handleSubmitClick = () => {
     if (disabled) return;
     if (!task) return;
@@ -351,13 +397,21 @@ export default function TrueFalseTask({
       const payload = { kind: "multi-true-false", kind2: "true-false", answers: canonicalAnswers };
       const payloadString = JSON.stringify(payload);
 
-      if (onAnswerChange) onAnswerChange(payloadString);
-      onSubmit(payloadString);
+      pendingPayloadRef.current = { payloadString, onChangeVal: payloadString };
+      if (canRevealAnswers) {
+        setRevealed(true); // reveal correctness; Continue fires onSubmit
+      } else {
+        fireSubmit();
+      }
     } else {
       if (!singleSelected) return;
       const val = singleSelected || "";
-      if (onAnswerChange) onAnswerChange(val);
-      onSubmit(val);
+      pendingPayloadRef.current = { payloadString: val, onChangeVal: val };
+      if (canRevealAnswers) {
+        setRevealed(true);
+      } else {
+        fireSubmit();
+      }
     }
   };
 
@@ -418,14 +472,14 @@ export default function TrueFalseTask({
   }, [playSound]);
 
   const handleSingleSelect = (label) => {
-    if (disabled) return;
+    if (disabled || revealed) return;
     const val = label.toLowerCase() === "true" ? "true" : "false";
     setSingleSelected(val);
     if (onAnswerChange) onAnswerChange(val);
   };
 
   const handleMultiSelect = (displayIdx, label) => {
-    if (disabled) return;
+    if (disabled || revealed) return;
     const val = label.toLowerCase() === "true" ? "true" : "false";
     setMultiSelectedValues((prev) => {
       const next = Array.isArray(prev) ? prev.slice() : [];
@@ -621,6 +675,12 @@ export default function TrueFalseTask({
             const isSecondSelected = selected === secondVal;
             const isAnswered = selected !== null && selected !== undefined;
 
+            // Answer reveal (after submit)
+            const correctVal = revealed ? correctValForCanonical(pItem.canonicalIndex) : null;
+            const gotIt = revealed && correctVal != null && selected === correctVal;
+            const missedIt = revealed && correctVal != null && selected !== correctVal;
+            const revealBorder = gotIt ? "#16a34a" : missedIt ? "#dc2626" : "#3b82f6";
+
             return (
               <div
                 key={pItem.canonicalIndex}
@@ -629,7 +689,7 @@ export default function TrueFalseTask({
                   borderRadius: "16px",
                   padding: "14px",
                   boxShadow: isAnswered ? "0 4px 12px rgba(59, 130, 246, 0.15)" : "0 2px 8px rgba(0,0,0,0.08)",
-                  border: "2px solid " + (isAnswered ? "#3b82f6" : "#e5e7eb"),
+                  border: "2px solid " + (revealed ? revealBorder : isAnswered ? "#3b82f6" : "#e5e7eb"),
                   animation: `slideInDown 0.5s ease-out ${displayIdx * 0.1}s backwards`,
                   transition: "all 0.3s ease",
                 }}
@@ -738,35 +798,82 @@ export default function TrueFalseTask({
                     {pItem.secondLabel}
                   </button>
                 </div>
+
+                {/* Answer reveal line */}
+                {revealed && correctVal != null && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      fontSize: "0.9rem",
+                      fontWeight: 700,
+                      color: gotIt ? "#15803d" : "#b91c1c",
+                    }}
+                  >
+                    {gotIt
+                      ? "✓ Correct!"
+                      : `✗ The answer is ${correctVal === "true" ? "TRUE" : "FALSE"}.`}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
 
-        {/* Submit button */}
-        <button
-          type="button"
-          onClick={handleSubmitClick}
-          disabled={disabled || !allAnswered}
-          style={{
-            padding: "16px 24px",
-            borderRadius: "16px",
-            border: "none",
-            fontWeight: 700,
-            fontSize: "1rem",
-            cursor: allAnswered && !disabled ? "pointer" : "not-allowed",
-            background: allAnswered && !disabled ? "linear-gradient(135deg, #10b981, #059669)" : "#9ca3af",
-            color: "#fff",
-            boxShadow: allAnswered && !disabled ? "0 8px 16px rgba(16, 185, 129, 0.3)" : "none",
-            transition: "all 0.3s ease",
-            transform: allAnswered && !disabled ? "scale(1)" : "scale(0.98)",
-            opacity: disabled ? 0.6 : 1,
-            textTransform: "uppercase",
-            letterSpacing: "0.5px",
-          }}
-        >
-          {allAnswered ? "🎉 Submit All Answers!" : "📝 Answer All Questions"}
-        </button>
+        {/* Submit / Continue button */}
+        {revealed ? (
+          <button
+            type="button"
+            onClick={fireSubmit}
+            style={{
+              padding: "16px 24px",
+              borderRadius: "16px",
+              border: "none",
+              fontWeight: 700,
+              fontSize: "1rem",
+              cursor: "pointer",
+              background: "linear-gradient(135deg, #6366f1, #4f46e5)",
+              color: "#fff",
+              boxShadow: "0 8px 16px rgba(99, 102, 241, 0.3)",
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+            }}
+          >
+            {(() => {
+              const correctCount = presentedItems.reduce((n, p, i) => {
+                const cv = correctValForCanonical(p.canonicalIndex);
+                return n + (cv != null && multiSelectedValues[i] === cv ? 1 : 0);
+              }, 0);
+              const gradable = presentedItems.filter(
+                (p) => correctValForCanonical(p.canonicalIndex) != null
+              ).length;
+              return `Continue ▶  (${correctCount}/${gradable} correct)`;
+            })()}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleSubmitClick}
+            disabled={disabled || !allAnswered}
+            style={{
+              padding: "16px 24px",
+              borderRadius: "16px",
+              border: "none",
+              fontWeight: 700,
+              fontSize: "1rem",
+              cursor: allAnswered && !disabled ? "pointer" : "not-allowed",
+              background: allAnswered && !disabled ? "linear-gradient(135deg, #10b981, #059669)" : "#9ca3af",
+              color: "#fff",
+              boxShadow: allAnswered && !disabled ? "0 8px 16px rgba(16, 185, 129, 0.3)" : "none",
+              transition: "all 0.3s ease",
+              transform: allAnswered && !disabled ? "scale(1)" : "scale(0.98)",
+              opacity: disabled ? 0.6 : 1,
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+            }}
+          >
+            {allAnswered ? "🎉 Submit All Answers!" : "📝 Answer All Questions"}
+          </button>
+        )}
 
         {/* Score popups */}
         {scorePopups.map((popup) => (
@@ -1011,8 +1118,50 @@ export default function TrueFalseTask({
         </button>
       </div>
 
-      {/* Submit button */}
-      {singleSelected && (
+      {/* Answer reveal (single) */}
+      {revealed && singleCorrectVal != null && (
+        <div
+          style={{
+            padding: "14px 18px",
+            borderRadius: "16px",
+            fontWeight: 700,
+            fontSize: "1.05rem",
+            textAlign: "center",
+            color: "#fff",
+            background:
+              singleSelected === singleCorrectVal
+                ? "linear-gradient(135deg, #16a34a, #15803d)"
+                : "linear-gradient(135deg, #dc2626, #b91c1c)",
+          }}
+        >
+          {singleSelected === singleCorrectVal
+            ? "✓ Correct!"
+            : `✗ The answer is ${singleCorrectVal === "true" ? "TRUE" : "FALSE"}.`}
+        </div>
+      )}
+
+      {/* Submit / Continue button */}
+      {revealed ? (
+        <button
+          type="button"
+          onClick={fireSubmit}
+          style={{
+            padding: "16px 24px",
+            borderRadius: "16px",
+            border: "none",
+            fontWeight: 700,
+            fontSize: "1rem",
+            cursor: "pointer",
+            background: "linear-gradient(135deg, #6366f1, #4f46e5)",
+            color: "#fff",
+            boxShadow: "0 8px 16px rgba(99, 102, 241, 0.3)",
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+          }}
+        >
+          Continue ▶
+        </button>
+      ) : singleSelected ? (
         <button
           type="button"
           onClick={handleSubmitClick}
@@ -1043,7 +1192,7 @@ export default function TrueFalseTask({
         >
           🎉 Submit Answer!
         </button>
-      )}
+      ) : null}
 
       {/* Score popups */}
       {scorePopups.map((popup) => (

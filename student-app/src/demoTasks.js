@@ -1320,9 +1320,9 @@ const DEMO_TASKS = [
       viewingSeconds: 40,
       responseSeconds: 90,
       analysisPrompts: [
-        "What symbols or images do you notice on this coin?",
-        "Why do you think Lincoln was chosen for this honor?",
-        "What does this tell us about American values at the time?",
+        "What is the main action this document declares, and who does it affect?",
+        "Why might Lincoln have issued this proclamation during the Civil War?",
+        "What does this document reveal about American values at the time?",
       ],
     },
   },
