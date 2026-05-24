@@ -174,22 +174,30 @@ router.post("/search", async (req, res) => {
     ? "Rank results by FEWEST and SHORTEST layovers first, then by price."
     : "Rank results by LOWEST total price first.";
 
-  // Build per-leg date guidance. With no time preference ("any"), the dates are
-  // ordinary DEPARTURE dates. With early/late, the dates are "be-there-by"
-  // ARRIVAL targets (the flight may depart the day before), and the ± flex
-  // widens the set of acceptable target dates.
-  const datesList = (dates, single) =>
-    dates.length > 1 ? `one of these dates (pick the cheapest): ${dates.join(", ")}` : single;
-  const targetWord = (p) =>
-    p === "early" ? "by EARLY in the day (the morning)" : "by the END of the day (evening/night)";
+  // Per-leg date guidance. The ± flex widens the set of acceptable target dates.
+  // Outbound = an ARRIVAL-at-destination target ("be at the destination by …");
+  // the flight may depart the prior day. Return = a DEPARTURE-from-destination
+  // target ("leave the destination by …").
+  const capPhrase = (p) =>
+    p === "early" ? "EARLY (by the morning)" : p === "late" ? "by the END of the day (evening)" : null;
 
-  const outboundLine = outboundTimePref === "any"
-    ? `- Outbound: depart ${origin} on ${datesList(depDates, departureDate)}.`
-    : `- Outbound: the traveller must BE AT the destination ${targetWord(outboundTimePref)} on ${depDates.length > 1 ? `one of these TARGET dates: ${depDates.join(", ")}` : `${departureDate}`}. The flight MAY depart ${origin} the day before — arriving the evening/night BEFORE a target date is perfectly acceptable. Choose the cheapest option that lands by the target; do NOT include options that arrive meaningfully later than the target time on the target date.`;
+  const outboundLine = (() => {
+    const dates = depDates.length > 1 ? `one of these target dates: ${depDates.join(", ")}` : departureDate;
+    if (outboundTimePref === "any") {
+      return `- Outbound: the traveller must BE AT the destination on ${dates} — arriving any time that day is fine, and an overnight flight that departs ${origin} the day before and lands that day counts. Arriving earlier is acceptable; do not arrive after that date.`;
+    }
+    const cap = capPhrase(outboundTimePref);
+    return `- Outbound: the traveller must BE AT the destination, AT THE LATEST, ${cap} on ${dates}. This is an ARRIVAL target — the flight may depart ${origin} the day before${outboundTimePref === "early" ? "; a red-eye that lands that morning, or arriving the evening before, is ideal" : ""}. Arriving earlier is fine; do NOT include options that arrive later than that cap on the target date.`;
+  })();
 
-  const returnLine = !returnDate ? "" : (returnTimePref === "any"
-    ? `- Return: depart the destination on ${datesList(retDates, returnDate)}.`
-    : `- Return: the traveller must BE BACK at ${origin} ${targetWord(returnTimePref)} on ${retDates.length > 1 ? `one of these TARGET dates: ${retDates.join(", ")}` : `${returnDate}`}. The return flight MAY depart the destination the day before — getting home the evening/night BEFORE a target date is fine. Choose the cheapest option that gets them back by the target.`);
+  const returnLine = !returnDate ? "" : (() => {
+    const dates = retDates.length > 1 ? `one of these target dates: ${retDates.join(", ")}` : returnDate;
+    if (returnTimePref === "any") {
+      return `- Return: the traveller must LEAVE the destination on ${dates} — departing any time that day is fine.`;
+    }
+    const cap = capPhrase(returnTimePref);
+    return `- Return: the traveller must LEAVE the destination, AT THE LATEST, ${cap} on ${dates}. This is a DEPARTURE target from the destination; prefer leaving as late as allowed up to that cap (to maximise time there), but do NOT include options that depart the destination later than the cap.`;
+  })();
 
   const prompt = `You are a flight-search assistant. Use the web_search tool to find REAL, CURRENT flight options and prices, then return them as strict JSON.
 
@@ -236,9 +244,10 @@ ${includeCarRental ? `  "carRental": { "note": "e.g. Economy from ~$22/day with 
       "returnStops": ${returnDate ? "0" : "null"},
       "outboundDuration": "7h 35m",
       "returnDuration": ${returnDate ? "\"8h 10m\"" : "null"},
-      "outboundArriveDate": "${departureDate}", // local DATE the outbound lands (YYYY-MM-DD)
-      "outboundArriveTime": "19:05",        // local arrival time at destination, 24h "HH:MM"
-      "returnArriveDate": ${returnDate ? `"${returnDate}"` : "null"}, // local DATE the return lands
+      "outboundArriveDate": "${departureDate}", // local DATE the outbound LANDS at destination (YYYY-MM-DD)
+      "outboundArriveTime": "19:05",        // local time the outbound LANDS at destination, 24h "HH:MM"
+      ${returnDate ? `"returnDepartTime": "16:20",          // local time the return LEAVES the destination, 24h "HH:MM"` : `"returnDepartTime": null,`}
+      "returnArriveDate": ${returnDate ? `"${returnDate}"` : "null"}, // local DATE the return lands back home
       "returnArriveTime": ${returnDate ? "\"21:40\"" : "null"},
       "stopsDetail": "Non-stop" ,           // human label e.g. "1 stop via Reykjavik (KEF), 2h layover"
       ${adults > 1 ? `"seatWarning": null,                  // string if the full party can't be seated at this fare, else null` : ""}
@@ -315,6 +324,7 @@ ${includeCarRental ? `  "carRental": { "note": "e.g. Economy from ~$22/day with 
           returnDuration: o.returnDuration ? stripCiteTags(String(o.returnDuration)) : null,
           outboundArriveDate: isValidDate(o.outboundArriveDate) ? o.outboundArriveDate : null,
           outboundArriveTime: /^\d{1,2}:\d{2}$/.test(o.outboundArriveTime || "") ? o.outboundArriveTime : null,
+          returnDepartTime: /^\d{1,2}:\d{2}$/.test(o.returnDepartTime || "") ? o.returnDepartTime : null,
           returnArriveDate: isValidDate(o.returnArriveDate) ? o.returnArriveDate : null,
           returnArriveTime: /^\d{1,2}:\d{2}$/.test(o.returnArriveTime || "") ? o.returnArriveTime : null,
           stopsDetail: o.stopsDetail ? stripCiteTags(String(o.stopsDetail)) : null,
@@ -464,7 +474,7 @@ router.post("/email", async (req, res) => {
   const rows = offers.map((o) => {
     const legs = [
       `Out: ${esc(stopsLabel(o.outboundStops))}${o.outboundDuration ? ` · ${esc(o.outboundDuration)}` : ""}${o.outboundArriveTime ? ` · arr ${o.outboundArriveDate ? esc(o.outboundArriveDate) + " " : ""}${esc(o.outboundArriveTime)}` : ""}`,
-      o.returnDate ? `Back: ${esc(stopsLabel(o.returnStops))}${o.returnDuration ? ` · ${esc(o.returnDuration)}` : ""}${o.returnArriveTime ? ` · arr ${o.returnArriveDate ? esc(o.returnArriveDate) + " " : ""}${esc(o.returnArriveTime)}` : ""}` : "",
+      o.returnDate ? `Back: ${esc(stopsLabel(o.returnStops))}${o.returnDuration ? ` · ${esc(o.returnDuration)}` : ""}${o.returnDepartTime ? ` · leaves ${esc(o.returnDate)} ${esc(o.returnDepartTime)}` : ""}${o.returnArriveTime ? ` · arr ${o.returnArriveDate ? esc(o.returnArriveDate) + " " : ""}${esc(o.returnArriveTime)}` : ""}` : "",
     ].filter(Boolean).join("<br/>");
     const depOff = selDep && o.departureDate && o.departureDate !== selDep;
     const retOff = selRet && o.returnDate && o.returnDate !== selRet;

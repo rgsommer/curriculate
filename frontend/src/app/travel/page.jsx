@@ -186,8 +186,11 @@ function OfferCard({ offer, currency, badges, selectedDepartureDate, selectedRet
             <div className="text-sm font-medium text-slate-800">
               {stopsLabel(offer.returnStops)}{offer.returnDuration ? ` · ${offer.returnDuration}` : ""}
             </div>
+            {offer.returnDepartTime && (
+              <div className="text-[11px] text-slate-500">Leaves {fmtDay(offer.returnDate)}, {offer.returnDepartTime}</div>
+            )}
             {arrLabel(offer.returnArriveDate, offer.returnArriveTime) && (
-              <div className="text-[11px] text-slate-500">{arrLabel(offer.returnArriveDate, offer.returnArriveTime)}</div>
+              <div className="text-[11px] text-slate-400">{arrLabel(offer.returnArriveDate, offer.returnArriveTime)} home</div>
             )}
           </div>
         )}
@@ -456,77 +459,77 @@ export default function TravelPage() {
             ))}
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Departure date</label>
+          {/* Outbound leg — arrival-at-destination target */}
+          <div className="rounded-lg border border-slate-200 p-3">
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+              Be at destination{destination.trim() ? ` (${destination.trim()})` : ""} — at the latest
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <select
+                value={outboundTimePref}
+                onChange={(e) => setOutboundTimePref(e.target.value)}
+                aria-label="Outbound arrival time"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 sm:w-40"
+              >
+                <option value="any">Anytime on</option>
+                <option value="early">Early on</option>
+                <option value="late">Late on</option>
+              </select>
               <input
                 type="date"
                 value={departureDate}
                 min={todayPlus(0)}
                 onChange={(e) => handleDepartureChange(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                aria-label="Be-at-destination date"
+                className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
               />
               <select
                 value={departureFlex}
                 onChange={(e) => setDepartureFlex(e.target.value)}
-                aria-label="Departure date flexibility"
-                className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                aria-label="Be-at-destination date flexibility"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 sm:w-44"
               >
                 {FLEX_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-            {tripType === "return" && (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Return date</label>
+          </div>
+
+          {/* Return leg — departure-from-destination target */}
+          {tripType === "return" && (
+            <div className="rounded-lg border border-slate-200 p-3">
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                Leave destination{destination.trim() ? ` (${destination.trim()})` : ""} — at the latest
+              </label>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <select
+                  value={returnTimePref}
+                  onChange={(e) => setReturnTimePref(e.target.value)}
+                  aria-label="Return departure time"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 sm:w-40"
+                >
+                  <option value="any">Anytime on</option>
+                  <option value="early">Early on</option>
+                  <option value="late">Late on</option>
+                </select>
                 <input
                   type="date"
                   value={returnDate}
                   min={departureDate || todayPlus(0)}
                   onChange={(e) => setReturnDate(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                  aria-label="Leave-destination date"
+                  className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
                 />
                 <select
                   value={returnFlex}
                   onChange={(e) => setReturnFlex(e.target.value)}
-                  aria-label="Return date flexibility"
-                  className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                  aria-label="Leave-destination date flexibility"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 sm:w-44"
                 >
                   {FLEX_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
-            )}
-          </div>
-
-          <div className={`grid grid-cols-1 gap-4 ${tripType === "return" ? "sm:grid-cols-2" : ""}`}>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Outbound flight</label>
-              <select
-                value={outboundTimePref}
-                onChange={(e) => setOutboundTimePref(e.target.value)}
-                aria-label="Outbound arrival time preference"
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-              >
-                <option value="any">Arrive anytime</option>
-                <option value="early">Arrive early (morning)</option>
-                <option value="late">Arrive late (evening)</option>
-              </select>
             </div>
-            {tripType === "return" && (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Return flight</label>
-                <select
-                  value={returnTimePref}
-                  onChange={(e) => setReturnTimePref(e.target.value)}
-                  aria-label="Return arrival time preference"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                >
-                  <option value="any">Arrive anytime</option>
-                  <option value="early">Arrive early (morning)</option>
-                  <option value="late">Arrive late (evening)</option>
-                </select>
-              </div>
-            )}
-          </div>
+          )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
