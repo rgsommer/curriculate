@@ -398,14 +398,17 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
           );
         })()}
 
-        {/* Zoom controls — reliable manual zoom (pinch is flaky in overlays). */}
+        {/* Zoom controls — reliable manual zoom (pinch is flaky in overlays).
+            Zoom-out is disabled at 100% (can't go below) — tester. */}
         <div style={{ position: "absolute", bottom: 16, right: 20, display: "flex", gap: 8, zIndex: 12 }}>
-          <button type="button" onClick={() => setZoom((z) => Math.max(1, +(z - 0.25).toFixed(2)))}
-            style={zoomBtnStyle} aria-label="Zoom out">−</button>
+          <button type="button" disabled={zoom <= 1}
+            onClick={() => setZoom((z) => Math.max(1, +(z - 0.25).toFixed(2)))}
+            style={{ ...zoomBtnStyle, opacity: zoom <= 1 ? 0.4 : 1, cursor: zoom <= 1 ? "default" : "pointer" }} aria-label="Zoom out">−</button>
           <button type="button" onClick={() => setZoom(1)}
             style={{ ...zoomBtnStyle, width: "auto", padding: "0 12px", fontSize: "0.8rem" }} aria-label="Reset zoom">{Math.round(zoom * 100)}%</button>
-          <button type="button" onClick={() => setZoom((z) => Math.min(4, +(z + 0.25).toFixed(2)))}
-            style={zoomBtnStyle} aria-label="Zoom in">+</button>
+          <button type="button" disabled={zoom >= 4}
+            onClick={() => setZoom((z) => Math.min(4, +(z + 0.25).toFixed(2)))}
+            style={{ ...zoomBtnStyle, opacity: zoom >= 4 ? 0.4 : 1, cursor: zoom >= 4 ? "default" : "pointer" }} aria-label="Zoom in">+</button>
         </div>
 
         {/* Instruction + document info overlay (collapsible on small screens) */}

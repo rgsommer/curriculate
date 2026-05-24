@@ -293,6 +293,11 @@ export default function OpenTextTask({
 
   // Track the text that existed before dictation started, so we append rather than replace
   const preDictateTextRef = useRef("");
+  // Finalized text for the CURRENT recognizer session (excludes interim). On a
+  // keep-alive restart we commit ONLY this — committing interim duplicated text
+  // because the recognizer re-hears the un-finalized tail (tester: "it keeps
+  // repeating and re-adding the same text").
+  const sessionFinalRef = useRef("");
 
   const startListening = () => {
     // Chrome only exposes the prefixed `webkitSpeechRecognition`; the unprefixed
@@ -325,7 +330,10 @@ export default function OpenTextTask({
             interimText += t;
           }
         }
-        const combined = (preDictateTextRef.current + " " + finalText + interimText).replace(/^\s+/, "");
+        sessionFinalRef.current = finalText; // session-cumulative final text
+        const base = preDictateTextRef.current || "";
+        const sep = base && !base.endsWith(" ") ? " " : "";
+        const combined = `${base}${sep}${finalText}${interimText}`.replace(/^\s+/, "");
         valueRef.current = combined;
         setValue(combined);
         emitDraft(combined);
@@ -352,9 +360,14 @@ export default function OpenTextTask({
 
       recognition.onend = () => {
         // Chrome ends the recognizer after a pause. If the user hasn't tapped
-        // Stop, re-base on the latest text and restart so dictation continues.
+        // Stop, commit ONLY the finalized text to the base (never interim) and
+        // restart — committing interim re-adds the same words next session.
         if (listenIntentRef.current) {
-          preDictateTextRef.current = valueRef.current || "";
+          const base = preDictateTextRef.current || "";
+          const sep = base && !base.endsWith(" ") ? " " : "";
+          const committed = `${base}${sep}${sessionFinalRef.current}`.replace(/^\s+/, "");
+          preDictateTextRef.current = committed && !committed.endsWith(" ") ? committed + " " : committed;
+          sessionFinalRef.current = "";
           try {
             recognition.start();
             return;
@@ -366,6 +379,7 @@ export default function OpenTextTask({
       };
 
       valueRef.current = value || "";
+      sessionFinalRef.current = "";
       listenIntentRef.current = true;
       recognition.start();
       recognitionRef.current = recognition;

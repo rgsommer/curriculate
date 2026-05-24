@@ -152,6 +152,9 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
   // while intent is true we restart it so dictation survives natural pauses
   // (tester: "records but doesn't transcribe" — it was silently ending).
   const listenIntentRef = useRef(false);
+  // Finalized text for the current recognizer session (excludes interim) — only
+  // this is committed on a keep-alive restart, so interim isn't re-added.
+  const sessionFinalRef = useRef("");
   // Audio recording
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -183,7 +186,10 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
           if (event.results[i].isFinal) finalText += t;
           else interimText += t;
         }
-        const combined = (preDictateRef.current + " " + finalText + interimText).replace(/^\s+/, "");
+        sessionFinalRef.current = finalText;
+        const base = preDictateRef.current || "";
+        const sep = base && !base.endsWith(" ") ? " " : "";
+        const combined = `${base}${sep}${finalText}${interimText}`.replace(/^\s+/, "");
         explanationRef.current = combined;
         setExplanation(combined);
       };
@@ -205,7 +211,12 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
         // Stop, re-base on the latest text and restart so dictation survives
         // natural pauses (otherwise it looks like "records but doesn't transcribe").
         if (listenIntentRef.current) {
-          preDictateRef.current = explanationRef.current || "";
+          // Commit ONLY finalized text (never interim) before restarting.
+          const base = preDictateRef.current || "";
+          const sep = base && !base.endsWith(" ") ? " " : "";
+          const committed = `${base}${sep}${sessionFinalRef.current}`.replace(/^\s+/, "");
+          preDictateRef.current = committed && !committed.endsWith(" ") ? committed + " " : committed;
+          sessionFinalRef.current = "";
           try {
             recognition.start();
             return;
@@ -218,6 +229,7 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
 
       // Bank any text already in the box before starting.
       explanationRef.current = explanation || "";
+      sessionFinalRef.current = "";
       listenIntentRef.current = true;
       recognition.start();
       recognitionRef.current = recognition;

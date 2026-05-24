@@ -9,11 +9,13 @@
 // text-based score covers both typed and spoken input.
 
 const FILLER_PHRASES = ["you know", "i mean", "kind of", "sort of", "you see"];
+// Only UNAMBIGUOUS vocalized fillers — words like "so", "like", "just",
+// "really", "actually", "well", "right" are frequently legitimate (transitions,
+// comparisons, emphasis) and were producing false positives (tester: "thinks
+// transition words like 'so' and 'like' are filler words, when they're not").
 const FILLER_WORDS = new Set([
   "um", "uh", "umm", "uhh", "er", "erm", "ah", "ahh", "hmm", "mhm",
-  "like", "basically", "literally", "actually", "really", "very",
-  "just", "so", "well", "right", "okay", "ok", "stuff", "things",
-  "whatever", "anyways", "anyway", "totally", "honestly",
+  "uhm", "eh", "mm", "mmm",
 ]);
 
 /**

@@ -116,14 +116,26 @@ OUTPUT: return EXACTLY this JSON shape (no markdown, no commentary):
 }`;
 }
 
+// The web_search tool sometimes wraps text in citation markup like
+// <cite index="21-3">…</cite> — strip the tags (keep the inner text) so the
+// student app doesn't render raw markup (tester: "formatting issues").
+function _stripCitations(s) {
+  return String(s == null ? "" : s)
+    .replace(/<\/?cite\b[^>]*>/gi, "")
+    .replace(/\[\s*\d+(?:[-,]\d+)*\s*\]/g, "") // bare [21-3] style refs
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 function _normalizeResolved(parsed) {
   if (!parsed || typeof parsed !== "object") return null;
   const r = { ...parsed };
   for (const field of ["title", "currentEventHeadline", "eventSummary", "connectionToLesson", "studentTask", "extensionActivity", "teacherNotes", "sourceUrl", "sourceName"]) {
     if (r[field] != null && typeof r[field] !== "string") r[field] = String(r[field]);
+    if (typeof r[field] === "string") r[field] = _stripCitations(r[field]);
   }
   if (!Array.isArray(r.discussionQuestions)) r.discussionQuestions = [];
-  r.discussionQuestions = r.discussionQuestions.filter((q) => typeof q === "string" && q.trim()).slice(0, 5);
+  r.discussionQuestions = r.discussionQuestions.filter((q) => typeof q === "string" && q.trim()).map(_stripCitations).slice(0, 5);
   if (!Number.isFinite(Number(r.estimatedMinutes))) r.estimatedMinutes = 12;
   r.fetchedAt = new Date().toISOString();
   return r;
