@@ -491,6 +491,51 @@ router.post("/orphan-feedback", async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  POST /image-failure                                                */
+/*                                                                    */
+/*  Auto-telemetry: an image task fell back because its primary image */
+/*  (AI/S3/external URL) failed to load. Log it + (if the email is    */
+/*  known) append a feedbackEntry so it shows in /feedback-export and */
+/*  a fix can be initiated — instead of silently degrading.           */
+/* ------------------------------------------------------------------ */
+router.post("/image-failure", async (req, res) => {
+  try {
+    const { email, conference, taskType, url, source, build } = req.body || {};
+    const tt = String(taskType || "").trim();
+    if (!tt) return res.json({ ok: true, logged: false });
+
+    const detail =
+      `⚠️ AUTO: image failed to load${source ? ` (${String(source).slice(0, 40)})` : ""}` +
+      `${url ? ` — ${String(url).slice(0, 300)}` : ""}` +
+      `${build ? ` [build ${String(build).slice(0, 12)}]` : ""}`;
+
+    console.warn(`[image-failure] ${tt}: ${url || "(no url)"} build=${build || "?"} email=${email || "?"}`);
+
+    if (email) {
+      await ConferenceLead.updateOne(
+        { email: String(email).toLowerCase().trim(), conference: conference || "general" },
+        {
+          $push: {
+            feedbackEntries: {
+              $each: [{
+                taskType: tt, title: tt, fun: 0, clarity: 0,
+                confusing: detail, suggestion: "", skipped: false,
+                source: "image-failure", createdAt: new Date(),
+              }],
+              $slice: -500,
+            },
+          },
+        },
+      );
+    }
+    res.json({ ok: true, logged: true });
+  } catch (err) {
+    console.error("[demo/image-failure] Error:", err.message);
+    res.json({ ok: false });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  POST /session-rating                                               */
 /*                                                                    */
 /*  End-of-session "overall impression" ratings (1-5 stars each):     */
@@ -1255,7 +1300,7 @@ router.get("/feedback-export", async (req, res) => {
         { "feedbackEntries.0": { $exists: true } },
       ],
     })
-      .select("results name email source classroom createdAt feedbackEntries")
+      .select("results name email source classroom createdAt feedbackEntries sessionRatings")
       .lean();
 
     // Build per-task-type aggregation
@@ -1265,6 +1310,20 @@ router.get("/feedback-export", async (req, res) => {
     // emitted at the TOP of the report so testers' comments are the first
     // thing reviewers see (not buried under per-type tables).
     const allComments = [];
+
+    // End-of-session "overall impression" star ratings (1-5) — surfaced as their
+    // own section so this feedback isn't a black hole.
+    const sessionRatingsAgg = { overall: [], wantTeacherUse: [], recommend: [], comments: [] };
+    for (const lead of leads) {
+      for (const sr of lead.sessionRatings || []) {
+        if (Number(sr?.overall) > 0) sessionRatingsAgg.overall.push(Number(sr.overall));
+        if (Number(sr?.wantTeacherUse) > 0) sessionRatingsAgg.wantTeacherUse.push(Number(sr.wantTeacherUse));
+        if (Number(sr?.recommend) > 0) sessionRatingsAgg.recommend.push(Number(sr.recommend));
+        if (sr?.comment && String(sr.comment).trim()) {
+          sessionRatingsAgg.comments.push({ text: String(sr.comment).trim(), from: lead.name, at: sr.createdAt });
+        }
+      }
+    }
 
     for (const lead of leads) {
       // Prefer the append-only feedbackEntries log; fall back to
@@ -1367,6 +1426,25 @@ router.get("/feedback-export", async (req, res) => {
       `Total comments: ${allComments.length}`,
       "",
     ];
+
+    // ─── END-OF-SESSION OVERALL IMPRESSION RATINGS ───────────────────────
+    const avg = (arr) => (arr.length ? (arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(1) : "N/A");
+    if (sessionRatingsAgg.overall.length || sessionRatingsAgg.wantTeacherUse.length || sessionRatingsAgg.recommend.length || sessionRatingsAgg.comments.length) {
+      lines.push("=== OVERALL IMPRESSION (end-of-session star ratings) ===");
+      lines.push(`Overall impression:        ${avg(sessionRatingsAgg.overall)}/5  (n=${sessionRatingsAgg.overall.length})`);
+      lines.push(`Want teacher to use it:    ${avg(sessionRatingsAgg.wantTeacherUse)}/5  (n=${sessionRatingsAgg.wantTeacherUse.length})`);
+      lines.push(`Would recommend:           ${avg(sessionRatingsAgg.recommend)}/5  (n=${sessionRatingsAgg.recommend.length})`);
+      if (sessionRatingsAgg.comments.length) {
+        lines.push("  Comments:");
+        sessionRatingsAgg.comments
+          .sort((a, b) => (b.at ? new Date(b.at).getTime() : 0) - (a.at ? new Date(a.at).getTime() : 0))
+          .forEach((c) => {
+            const when = c.at ? ` (${new Date(c.at).toISOString().slice(0, 10)})` : "";
+            lines.push(`    "${c.text}" — ${c.from}${when}`);
+          });
+      }
+      lines.push("");
+    }
 
     // ─── TOP-LEVEL FEEDBACK COMMENTS STREAM ──────────────────────────────
     // Surfaces every tester comment in one block, newest first, so

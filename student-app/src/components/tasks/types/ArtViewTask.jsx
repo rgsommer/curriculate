@@ -4,6 +4,7 @@ import { API_BASE_URL } from "../../../config.js";
 import StepCircle from "../StepCircle";
 import PaperPhotoSubmit from "../PaperPhotoSubmit";
 import PaperExemplar from "../PaperExemplar";
+import reportImageFailure from "../../../utils/reportImageFailure.js";
 
 /**
  * Art View Task — Two-phase visual observation challenge with runtime image validation.
@@ -119,6 +120,9 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
   //  triggered lazily on image error, not as a blocking preload.)
   const handleImageError = useCallback(() => {
     if (resolvedUrl === INLINE_FALLBACK) return; // can't fail further
+    // Tell the backend so the failure shows in the feedback report and a fix
+    // (e.g. a dead S3/external URL) can be initiated — not just silently masked.
+    reportImageFailure({ taskType: "art-view", url: resolvedUrl, source: usedDefaultFallback ? "bundled-default" : "primary" });
     if (usedDefaultFallback) {
       // Bundled default ALSO failed (e.g. assets not served at this path).
       // Swap to the self-contained inline SVG so the frame always shows an

@@ -3502,11 +3502,19 @@ export default function DemoMode({ source = "conference", classroom = "" }) {
   const handleStart = useCallback(
     (u) => {
       setUser(u);
+      // Expose the practicer's identity so image-failure telemetry can attribute
+      // failures to this session (lands in the feedback report). conference is
+      // "general" to match how practice/classroom leads are stored.
+      try {
+        if (typeof window !== "undefined") {
+          window.__CURRICULATE_PRACTICE__ = { email: u?.email || "", name: u?.name || "", source: effectiveSource, conference: "general" };
+        }
+      } catch { /* ignore */ }
       // Conference flow → straight to play, no commitment picker.
       // Practice / classroom → commit phase first.
       setPhase(isConference ? "play" : "commit");
     },
-    [isConference]
+    [isConference, effectiveSource]
   );
 
   const handleCommit = useCallback((opt) => {

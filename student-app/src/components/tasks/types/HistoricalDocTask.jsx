@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "../../../config.js";
 import StepCircle from "../StepCircle";
+import reportImageFailure from "../../../utils/reportImageFailure.js";
 import PaperPhotoSubmit from "../PaperPhotoSubmit";
 import PaperExemplar from "../PaperExemplar";
 
@@ -356,6 +357,7 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
               onError={(e) => {
                 const src = e.target.src || "";
                 if (src.startsWith("data:")) return; // inline fallback can't fail
+                reportImageFailure({ taskType: "historical-doc", url: src, source: src.indexOf(LOCAL_DEFAULT_DOC) === -1 ? "primary" : "bundled-default" });
                 // AI-supplied image failed → bundled local default → inline SVG.
                 if (src.indexOf(LOCAL_DEFAULT_DOC) === -1) {
                   setResolvedUrl(LOCAL_DEFAULT_DOC);

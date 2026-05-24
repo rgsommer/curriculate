@@ -12,6 +12,7 @@
 // Anti-gaming: facts are shuffled per task instance; categories are server-known
 // (server validates final score in handleStudentSubmit branch).
 import React, { useEffect, useMemo, useState } from "react";
+import reportImageFailure from "../../../utils/reportImageFailure.js";
 
 const PHASES = [
   { key: "what",  needed: 2 },
@@ -164,6 +165,7 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
             referrerPolicy="no-referrer"
             onError={(e) => {
               if (e.target.src.indexOf(FALLBACK_PORTRAIT) === -1) {
+                reportImageFailure({ taskType: "legends", url: e.target.src, source: "portrait" });
                 e.target.src = FALLBACK_PORTRAIT;
               }
             }}
@@ -204,6 +206,7 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
           referrerPolicy="no-referrer"
           onError={(e) => {
             if (e.target.src.indexOf(FALLBACK_PORTRAIT) === -1) {
+              reportImageFailure({ taskType: "legends", url: e.target.src, source: "portrait" });
               e.target.src = FALLBACK_PORTRAIT;
             }
           }}

@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { TaskCardFrame, Pill, PrimaryButton, GhostButton, TextArea } from "../taskStyles";
 import SpeechQualityMeter from "../SpeechQualityMeter";
+import reportImageFailure from "../../../utils/reportImageFailure.js";
 
 export default function DiffDetectiveTask({
   task,
@@ -248,7 +249,7 @@ export default function DiffDetectiveTask({
         >
           <div style={{ fontWeight: 1000, marginBottom: 8, color: "rgba(22,163,74,1)" }}>{labelA}</div>
           {imagesUsable ? (
-            <img src={imageA} alt={labelA} onError={() => setImgError(true)} referrerPolicy="no-referrer" style={{ width: "100%", height: "auto", borderRadius: 12, display: "block" }} />
+            <img src={imageA} alt={labelA} onError={() => { reportImageFailure({ taskType: "diff-detective", url: imageA, source: "imageA" }); setImgError(true); }} referrerPolicy="no-referrer" style={{ width: "100%", height: "auto", borderRadius: 12, display: "block" }} />
           ) : isImageMode ? (
             task?.original ? highlightText(task?.original, false)
               : <div style={imgFallbackNote}>🖼️ This image couldn't load. Compare using the descriptions and list the differences you spot.</div>
@@ -267,7 +268,7 @@ export default function DiffDetectiveTask({
         >
           <div style={{ fontWeight: 1000, marginBottom: 8, color: "rgba(220,38,38,1)" }}>{labelB}</div>
           {imagesUsable ? (
-            <img src={imageB} alt={labelB} onError={() => setImgError(true)} referrerPolicy="no-referrer" style={{ width: "100%", height: "auto", borderRadius: 12, display: "block" }} />
+            <img src={imageB} alt={labelB} onError={() => { reportImageFailure({ taskType: "diff-detective", url: imageB, source: "imageB" }); setImgError(true); }} referrerPolicy="no-referrer" style={{ width: "100%", height: "auto", borderRadius: 12, display: "block" }} />
           ) : isImageMode ? (
             task?.modified ? highlightText(task?.modified, true)
               : <div style={imgFallbackNote}>🖼️ This image couldn't load. Compare using the descriptions and list the differences you spot.</div>
