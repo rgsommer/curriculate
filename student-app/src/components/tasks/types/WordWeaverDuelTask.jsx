@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useThemeMode } from "../../../utils/ThemeModeContext.js";
 import { isDarkTheme } from "../../../utils/themeHelpers.js";
 import StepCircle from "../StepCircle";
@@ -260,6 +261,7 @@ export default function WordWeaverDuelTask({
     setBoard(emptyBoard);
     setPlaced({});
     setPlacementError(null);
+    setAllWordsBonusGiven(false);
     setTimeLeft(turnkeeper.perTurnSeconds > 0 ? turnkeeper.perTurnSeconds : null);
   }, [taskKey, emptyBoard, turnkeeper.perTurnSeconds]);
 
@@ -280,6 +282,22 @@ export default function WordWeaverDuelTask({
 
   const placedCount = useMemo(() => Object.keys(placed || {}).length, [placed]);
   const allPlaced = scrabbleWords.length > 0 && placedCount >= scrabbleWords.length;
+
+  // "All words placed" completion bonus (tester ask). Awarded once, split across
+  // the players so finishing the whole board is rewarded beyond per-word points.
+  const ALL_WORDS_BONUS = 10;
+  const [allWordsBonusGiven, setAllWordsBonusGiven] = useState(false);
+  useEffect(() => {
+    if (!allPlaced || allWordsBonusGiven) return;
+    setAllWordsBonusGiven(true);
+    setScores((s) => {
+      const next = { ...(s || {}) };
+      const n = Math.max(1, players.length);
+      const each = Math.round(ALL_WORDS_BONUS / n);
+      for (let i = 0; i < n; i++) next[i] = (Number(next[i]) || 0) + each;
+      return next;
+    });
+  }, [allPlaced, allWordsBonusGiven, players.length]);
 
   const computeIntersections = (r, c, word, ori, b) => {
     let intersections = 0;
@@ -1292,8 +1310,11 @@ export default function WordWeaverDuelTask({
           )}
         </div>
 
-        {/* "Perfect solution" overlay — one complete interlocking arrangement. */}
-        {showSolution && solutionGrid && (
+        {/* "Perfect solution" overlay — one complete interlocking arrangement.
+            Portaled to <body>: a `transform` on an ancestor (TaskRunner wrapper)
+            would otherwise make this position:fixed overlay resolve to that
+            ancestor and render clipped/offscreen — i.e. "no solution overlay". */}
+        {showSolution && solutionGrid && createPortal(
           <div
             onClick={() => setShowSolution(false)}
             style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
@@ -1323,7 +1344,8 @@ export default function WordWeaverDuelTask({
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </div>
     );

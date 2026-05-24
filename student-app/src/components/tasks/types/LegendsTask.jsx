@@ -93,6 +93,10 @@ export default function LegendsTask({ task, onSubmit, disabled }) {
 
     if (correct) {
       setStats((s) => ({ ...s, correct: s.correct + 1, points: s.points + 2 }));
+      // Lock + label this pick IMMEDIATELY (turns green, shows its category) so
+      // the FIRST correct pick is confirmed on tap — not only after the second
+      // (tester: "only shows why, etc … after the second correct has been chosen").
+      setAssignments((a) => ({ ...a, [factId]: phase.key }));
     } else {
       // Wrong tap: flash + dock 1 point (clamped >=0). Still adds to the pick list so we don't infinite-pick.
       setStats((s) => ({ ...s, wrong: s.wrong + 1, points: Math.max(0, s.points - 1) }));
