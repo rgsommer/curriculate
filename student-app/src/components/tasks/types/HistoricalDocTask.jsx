@@ -27,6 +27,21 @@ import PaperExemplar from "../PaperExemplar";
 
 const PHASE = { LOADING: "loading", READING: "reading", ANALYSIS: "analysis", DONE: "done" };
 
+const zoomBtnStyle = {
+  width: 40,
+  height: 40,
+  borderRadius: 10,
+  border: "1px solid rgba(212,165,116,0.5)",
+  background: "rgba(0,0,0,0.75)",
+  color: "#f5f0e8",
+  fontSize: "1.3rem",
+  fontWeight: 900,
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
 function preloadImage(url, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     if (!url) return reject(new Error("No URL"));
@@ -105,6 +120,9 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
   );
   const [loadError, setLoadError] = useState("");
   const [secondsLeft, setSecondsLeft] = useState(viewingSec);
+  // Manual zoom (native pinch-zoom is unreliable inside a fixed overlay) — the
+  // image grows wider than the viewport and the container scrolls.
+  const [zoom, setZoom] = useState(1);
   const [responses, setResponses] = useState(() =>
     analysisPrompts.map((prompt) => ({ prompt, response: "" }))
   );
@@ -297,21 +315,41 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
           .hist-doc-scroll img { touch-action: pinch-zoom; }
         `}</style>
 
-        {/* Timer overlay */}
+        {/* Vertical countdown bar — full at top, depletes downward (tester ask). */}
+        <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 10, background: "rgba(255,255,255,0.18)", zIndex: 11 }}>
+          <div style={{
+            width: "100%",
+            height: `${Math.max(0, Math.min(100, (secondsLeft / Math.max(1, viewingSec)) * 100))}%`,
+            background: timerColor,
+            transition: "height 1s linear",
+          }} />
+        </div>
+
+        {/* Timer overlay (brighter so it's clearly visible on the dark doc) */}
         <div style={{
           position: "absolute",
           top: 16,
           right: 20,
-          background: "rgba(0,0,0,0.7)",
-          color: timerColor,
+          background: "rgba(0,0,0,0.75)",
+          color: secondsLeft <= 10 ? "#fca5a5" : secondsLeft <= 30 ? "#fcd34d" : "#f5f0e8",
           padding: "8px 16px",
           borderRadius: 12,
           fontSize: "1.4rem",
           fontWeight: 900,
           fontVariantNumeric: "tabular-nums",
-          zIndex: 10,
+          zIndex: 12,
         }}>
-          {formatTime(secondsLeft)}
+          ⏳ {formatTime(secondsLeft)}
+        </div>
+
+        {/* Zoom controls — reliable manual zoom (pinch is flaky in overlays). */}
+        <div style={{ position: "absolute", bottom: 16, right: 20, display: "flex", gap: 8, zIndex: 12 }}>
+          <button type="button" onClick={() => setZoom((z) => Math.max(1, +(z - 0.25).toFixed(2)))}
+            style={zoomBtnStyle} aria-label="Zoom out">−</button>
+          <button type="button" onClick={() => setZoom(1)}
+            style={{ ...zoomBtnStyle, width: "auto", padding: "0 12px", fontSize: "0.8rem" }} aria-label="Reset zoom">{Math.round(zoom * 100)}%</button>
+          <button type="button" onClick={() => setZoom((z) => Math.min(4, +(z + 0.25).toFixed(2)))}
+            style={zoomBtnStyle} aria-label="Zoom in">+</button>
         </div>
 
         {/* Instruction + document info overlay (collapsible on small screens) */}
@@ -326,7 +364,7 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
           paddingRight: 100,
         }}>
           <div style={{ fontWeight: 700, marginBottom: 4 }}>
-            Read this document carefully. Pinch to zoom, scroll to read.
+            Read this document carefully. Use +/− to zoom, then scroll to read.
           </div>
           {historicalContext && (
             <div style={{ fontSize: "0.8rem", color: "#d4a574", fontStyle: "italic", marginBottom: 4 }}>
@@ -374,8 +412,9 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
                 }
               }}
               style={{
-                width: "100%",
-                maxWidth: 900,
+                width: `${100 * zoom}%`,
+                maxWidth: zoom > 1 ? "none" : 900,
+                height: "auto",
                 objectFit: "contain",
                 borderRadius: 4,
                 boxShadow: "0 4px 30px rgba(0,0,0,0.5)",

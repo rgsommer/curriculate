@@ -268,6 +268,17 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
           .art-view-scroll img { touch-action: pinch-zoom; }
         `}</style>
 
+        {/* Vertical countdown bar — full at the top, depletes downward as time
+            elapses (tester ask). Always visible along the left edge. */}
+        <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 10, background: "rgba(255,255,255,0.15)", zIndex: 11 }}>
+          <div style={{
+            width: "100%",
+            height: `${Math.max(0, Math.min(100, (secondsLeft / Math.max(1, viewingSec)) * 100))}%`,
+            background: timerColor,
+            transition: "height 1s linear",
+          }} />
+        </div>
+
         {/* Timer overlay */}
         <div style={{
           position: "absolute",
@@ -282,7 +293,7 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
           fontVariantNumeric: "tabular-nums",
           zIndex: 10,
         }}>
-          {formatTime(secondsLeft)}
+          ⏳ {formatTime(secondsLeft)}
         </div>
 
         {/* Instruction + artwork info bar */}

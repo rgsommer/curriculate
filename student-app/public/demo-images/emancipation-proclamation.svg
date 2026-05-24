@@ -31,30 +31,23 @@
   <!-- Subtitle -->
   <text x="400" y="110" text-anchor="middle" font-family="Georgia, serif" font-size="13" fill="#3a2a1a" letter-spacing="3" opacity="0.7">A PROCLAMATION</text>
   <line x1="200" y1="125" x2="600" y2="125" stroke="#3a2a1a" stroke-width="0.5" opacity="0.3"/>
-  <!-- Simulated handwritten/printed text lines -->
-  <g opacity="0.45" fill="#2a1a0a">
-    <!-- Paragraph 1 lines -->
-    <rect x="120" y="145" width="520" height="2" rx="1"/>
-    <rect x="100" y="162" width="580" height="2" rx="1"/>
-    <rect x="100" y="179" width="560" height="2" rx="1"/>
-    <rect x="100" y="196" width="590" height="2" rx="1"/>
-    <rect x="100" y="213" width="540" height="2" rx="1"/>
-    <rect x="100" y="230" width="570" height="2" rx="1"/>
-    <rect x="100" y="247" width="510" height="2" rx="1"/>
-    <!-- Paragraph 2 lines -->
-    <rect x="120" y="272" width="530" height="2" rx="1"/>
-    <rect x="100" y="289" width="580" height="2" rx="1"/>
-    <rect x="100" y="306" width="550" height="2" rx="1"/>
-    <rect x="100" y="323" width="590" height="2" rx="1"/>
-    <rect x="100" y="340" width="520" height="2" rx="1"/>
-    <rect x="100" y="357" width="570" height="2" rx="1"/>
-    <rect x="100" y="374" width="490" height="2" rx="1"/>
-    <!-- Paragraph 3 lines -->
-    <rect x="120" y="399" width="540" height="2" rx="1"/>
-    <rect x="100" y="416" width="575" height="2" rx="1"/>
-    <rect x="100" y="433" width="530" height="2" rx="1"/>
-    <rect x="100" y="450" width="560" height="2" rx="1"/>
-    <rect x="100" y="467" width="500" height="2" rx="1"/>
+  <!-- Readable body text (excerpt of the Emancipation Proclamation) -->
+  <g fill="#2a1a0a" font-family="Georgia, 'Times New Roman', serif" font-size="13.5">
+    <text x="100" y="150">Whereas, on the twenty-second day of September, in the year of</text>
+    <text x="100" y="170">our Lord one thousand eight hundred and sixty-two, a proclamation</text>
+    <text x="100" y="190">was issued by the President of the United States, containing,</text>
+    <text x="100" y="210">among other things, the following, to wit:</text>
+    <text x="100" y="238">"That on the first day of January, in the year of our Lord one</text>
+    <text x="100" y="258">thousand eight hundred and sixty-three, all persons held as slaves</text>
+    <text x="100" y="278">within any State or designated part of a State, the people whereof</text>
+    <text x="100" y="298">shall then be in rebellion against the United States, shall be then,</text>
+    <text x="100" y="318">thenceforward, and forever free; and the Executive Government of</text>
+    <text x="100" y="338">the United States, including the military and naval authority thereof,</text>
+    <text x="100" y="358">will recognize and maintain the freedom of such persons."</text>
+    <text x="100" y="392">And I hereby enjoin upon the people so declared to be free to</text>
+    <text x="100" y="412">abstain from all violence, unless in necessary self-defence; and I</text>
+    <text x="100" y="432">recommend to them that, in all cases when allowed, they labor</text>
+    <text x="100" y="452">faithfully for reasonable wages.</text>
   </g>
   <!-- Signature area -->
   <text x="480" y="510" font-family="'Brush Script MT', 'Segoe Script', cursive" font-size="24" fill="#1a0a00" opacity="0.6" transform="rotate(-3, 480, 510)">Abraham Lincoln</text>

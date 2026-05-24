@@ -18,6 +18,7 @@ export default function DiffDetectiveTask({
   const [attempts, setAttempts] = useState(0);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isDictating, setIsDictating] = useState(false);
+  const [dictationError, setDictationError] = useState("");
   const [imgError, setImgError] = useState(false); // a side image failed to load (S3/AI URL dead)
   const recognitionRef = useRef(null);
   // Mic stays on until the student taps "Stop" — or a hard 10s safety cap.
@@ -114,9 +115,24 @@ export default function DiffDetectiveTask({
       setAnswer(combined);
     };
 
-    recognition.onerror = () => {
-      // A transient "no-speech" / "aborted" error shouldn't kill the session —
-      // only a real stop (user tap or 10s cap) clears the intent flag.
+    recognition.onerror = (e) => {
+      const err = e?.error || "";
+      // FATAL errors (mic blocked / unavailable) must stop the session — otherwise
+      // onend keeps restarting forever and nothing ever transcribes (tester:
+      // "speak answer clicks but does not do speech to text"). Surface a message.
+      if (err === "not-allowed" || err === "service-not-allowed" || err === "audio-capture") {
+        wantDictatingRef.current = false;
+        if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null; }
+        setIsDictating(false);
+        setDictationError(
+          err === "audio-capture"
+            ? "No microphone found — you can type your answer instead."
+            : "Microphone access is blocked. Allow mic access (or type your answer)."
+        );
+        return;
+      }
+      // Transient ("no-speech" / "aborted") — keep the session alive; only clear
+      // the flag if the user already stopped.
       if (!wantDictatingRef.current) setIsDictating(false);
     };
 
@@ -138,6 +154,7 @@ export default function DiffDetectiveTask({
     baseTextRef.current = answer && !answer.endsWith(" ") ? answer + " " : (answer || "");
     sessionFinalRef.current = "";
     wantDictatingRef.current = true;
+    setDictationError("");
     recognition.start();
     recognitionRef.current = recognition;
     setIsDictating(true);
@@ -295,6 +312,12 @@ export default function DiffDetectiveTask({
           {isDictating ? "Stop Talking" : "Speak Answer"} 🎙️
         </GhostButton>
       </div>
+
+      {dictationError && (
+        <div style={{ marginBottom: 8, fontWeight: 800, fontSize: "0.85rem", color: "#b91c1c", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 10, padding: "8px 12px" }}>
+          ⚠️ {dictationError}
+        </div>
+      )}
 
       <div style={{ marginBottom: 8, fontWeight: 850, color: "rgba(15,23,42,0.80)" }}>
         {showDiffList

@@ -458,8 +458,25 @@ export default function WhatAmITask({ task, onSubmit, disabled, socket, roomCode
         )}
       </div>
 
-      {/* Revealed clues, in order */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
+      {/* Revealed clues, in order. Selection/copy/right-click are blocked so
+          students can't paste clues into an AI to fetch the answer (tester). */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          width: "100%",
+          userSelect: "none",
+          WebkitUserSelect: "none",
+          MozUserSelect: "none",
+          msUserSelect: "none",
+          WebkitTouchCallout: "none",
+        }}
+        onCopy={(e) => e.preventDefault()}
+        onCut={(e) => e.preventDefault()}
+        onContextMenu={(e) => e.preventDefault()}
+        onDragStart={(e) => e.preventDefault()}
+      >
         {clues.slice(0, revealedCount).map((c, i) => (
           <div key={`clue-${i}`} style={clueBox}>
             <div style={clueLabel}>Clue {c.level ?? i + 1}</div>
