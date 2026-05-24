@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 360" width="320" height="360" role="img" aria-label="Portrait of a scientist">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e7e2d4"/>
+      <stop offset="100%" stop-color="#c9c1ab"/>
+    </linearGradient>
+    <radialGradient id="vig" cx="50%" cy="42%" r="62%">
+      <stop offset="60%" stop-color="rgba(0,0,0,0)"/>
+      <stop offset="100%" stop-color="rgba(60,50,35,0.28)"/>
+    </radialGradient>
+  </defs>
+  <rect width="320" height="360" fill="url(#bg)"/>
+  <!-- shoulders / period dress -->
+  <path d="M40 360 C40 285 90 250 160 250 C230 250 280 285 280 360 Z" fill="#3b3a3c"/>
+  <path d="M120 268 Q160 300 200 268 L200 360 L120 360 Z" fill="#2d2c2e"/>
+  <!-- high collar -->
+  <path d="M132 262 Q160 286 188 262 L182 254 Q160 270 138 254 Z" fill="#d8d2c4"/>
+  <!-- neck -->
+  <rect x="143" y="214" width="34" height="44" rx="14" fill="#dcb79a"/>
+  <!-- face -->
+  <ellipse cx="160" cy="168" rx="58" ry="66" fill="#e6c2a6"/>
+  <!-- hair: center-parted with a bun (early 1900s) -->
+  <path d="M100 168 C96 110 124 80 160 80 C196 80 224 110 220 168 C214 150 196 120 160 120 C124 120 106 150 100 168 Z" fill="#5a4632"/>
+  <path d="M158 84 L162 120" stroke="#4a3829" stroke-width="3"/>
+  <circle cx="160" cy="74" r="22" fill="#5a4632"/>
+  <!-- brows + eyes -->
+  <path d="M132 158 q14 -8 28 0" stroke="#6b513a" stroke-width="3" fill="none"/>
+  <path d="M160 158 q14 -8 28 0" stroke="#6b513a" stroke-width="3" fill="none"/>
+  <ellipse cx="143" cy="170" rx="6" ry="7" fill="#3b2a1d"/>
+  <ellipse cx="177" cy="170" rx="6" ry="7" fill="#3b2a1d"/>
+  <!-- nose + mouth -->
+  <path d="M160 176 l-5 18 q5 5 10 0" stroke="#c79a78" stroke-width="3" fill="none"/>
+  <path d="M148 208 q12 8 24 0" stroke="#a9603f" stroke-width="3" fill="none"/>
+  <rect width="320" height="360" fill="url(#vig)"/>
+</svg>

@@ -8,6 +8,13 @@
 // component in components/tasks/types/ actually reads from the `task` prop.
 // This file was audited against every component on 2026-05-02.
 
+import { buildDiffScene } from "@shared/diffDetectiveScene.js";
+
+// Self-contained (data-URI) image pair for the Spot-the-Difference demo, so it
+// actually shows TWO IMAGES instead of text passages (tester: image tasks never
+// rendered an image). No network dependency.
+const _DEMO_DIFF_SCENE = buildDiffScene(["Apple", "Sun", "Tree", "House", "Star", "Cat"], "demo-diff-v1");
+
 const DEMO_TASKS = [
 
   // =========================================================================
@@ -549,7 +556,9 @@ const DEMO_TASKS = [
     config: {
       figure: {
         name: "Marie Curie",
-        portraitUrl: "https://upload.wikimedia.org/wikipedia/commons/c/c8/Marie_Curie_c1920.jpg",
+        // Local bundled portrait — external Wikimedia URLs are blocked/hotlink-
+        // protected on classroom networks, so the portrait never rendered.
+        portraitUrl: "/demo-images/legend-portrait.svg",
         era: "Late 1800s – early 1900s",
         summary: "Pioneering physicist and chemist who discovered radium and polonium; first person to win Nobel Prizes in two different sciences (Physics 1903, Chemistry 1911).",
       },
@@ -700,18 +709,18 @@ const DEMO_TASKS = [
     ],
   },
 
-  // 21. Diff Detective (uses top-level original, modified, differences)
+  // 21. Diff Detective — IMAGE mode (two self-contained SVG scenes with 5
+  // controlled differences) so it actually shows pictures to compare.
   {
     taskType: "diff-detective",
     title: "Spot the Difference",
-    prompt: "Find what changed between the two versions!",
-    original: "The quick brown fox jumps over the lazy dog.",
-    modified: "The quick brown cat leaps over the sleepy dog.",
-    differences: [
-      { word: "fox", replacement: "cat" },
-      { word: "jumps", replacement: "leaps" },
-      { word: "lazy", replacement: "sleepy" },
-    ],
+    prompt: "Find what changed between the two scenes!",
+    mode: "image",
+    imageA: _DEMO_DIFF_SCENE?.imageA,
+    imageB: _DEMO_DIFF_SCENE?.imageB,
+    labelA: _DEMO_DIFF_SCENE?.labelA || "Scene A",
+    labelB: _DEMO_DIFF_SCENE?.labelB || "Scene B",
+    differences: _DEMO_DIFF_SCENE?.differences || [],
   },
 
   // 22. Echo Chain (uses config.seedTerm)
