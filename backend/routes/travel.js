@@ -73,6 +73,34 @@ function googleFlightsLink({ originCode, destinationCode, departureDate, returnD
   return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}`;
 }
 
+// USD-based FX rates, cached ~6h. Deterministic safety net so an offer that
+// comes back in the wrong currency (e.g. a USD Google Flights figure the model
+// forgot to convert) gets converted server-side rather than mislabeled.
+let fxCache = { rates: null, fetchedAt: 0 };
+async function getUsdRates() {
+  if (fxCache.rates && Date.now() - fxCache.fetchedAt < 6 * 3600 * 1000) return fxCache.rates;
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch("https://open.er-api.com/v6/latest/USD", { signal: ctrl.signal });
+    const j = await r.json();
+    if (j && j.result === "success" && j.rates && j.rates.USD) {
+      fxCache = { rates: j.rates, fetchedAt: Date.now() };
+      return j.rates;
+    }
+    throw new Error("bad FX response");
+  } finally {
+    clearTimeout(tid);
+  }
+}
+// Convert via USD cross-rate. Returns null if either currency is unknown.
+function convertAmount(amount, from, to, rates) {
+  if (from === to) return amount;
+  const rf = rates[from], rt = rates[to];
+  if (!rf || !rt) return null;
+  return (amount / rf) * rt;
+}
+
 // --------------------------------------------------------------------------
 // POST /api/travel/search
 //   Body: {
@@ -159,7 +187,7 @@ TRIP
 - Depart: ${depWindow}
 ${returnDate ? `- Return: ${retWindow}` : ""}
 - Passengers: ${adults} adult${adults === 1 ? "" : "s"}, travelling together.
-- Currency: ALL prices MUST be in ${currency}. Convert if a source quotes another currency.
+- Currency: report EVERY price in ${currency}. Many sources (especially Google Flights) quote USD or another currency. You MUST convert the amount to ${currency} using today's exchange rate — web_search "1 USD to ${currency}" (or the source's currency to ${currency}) to get the current rate and do the math. NEVER relabel a USD/other figure as ${currency} without actually converting it. Set every offer's "currency" field to "${currency}".
 
 CONSTRAINTS
 - ${stopsRule}
@@ -274,6 +302,30 @@ ${includeCarRental ? `  "carRental": { "note": "e.g. Economy from ~$22/day with 
           altBookingUrl: originCode && destinationCode ? googleFlightsLink(linkArgs) : null,
         };
       });
+
+    // FX safety net: convert any offer whose currency isn't the requested one
+    // (the model occasionally returns a raw USD figure). Re-sort by price after
+    // converting so "cheapest first" stays correct, unless the user opted to
+    // rank by layovers (in which case we preserve the model's ordering).
+    if (offers.some((o) => o.currency && o.currency !== currency)) {
+      try {
+        const rates = await getUsdRates();
+        for (const o of offers) {
+          if (o.currency && o.currency !== currency) {
+            const conv = convertAmount(o.price, o.currency, currency, rates);
+            if (conv != null) {
+              o.price = Math.round(conv);
+              o.currency = currency;
+              o.converted = true;
+            }
+          }
+        }
+        if (!prioritizeShortStops) offers.sort((a, c) => a.price - c.price);
+      } catch {
+        // FX unavailable — leave the model's values as-is (it was instructed to
+        // convert; this net only catches misses).
+      }
+    }
 
     // Optional car-rental nudge: keep the AI's note, build a deterministic
     // Kayak Cars deep link from the destination code + trip dates.

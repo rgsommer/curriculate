@@ -151,6 +151,7 @@ function OfferCard({ offer, currency, badges, selectedDepartureDate, selectedRet
           <div className="text-xl font-bold text-slate-900">{fmtMoney(offer.price, cur)}</div>
           <div className="text-[11px] text-slate-400">
             {adults > 1 ? "per person, all-in" : "1 adult, all-in"}
+            {offer.converted ? ` · converted to ${cur}` : ""}
           </div>
           {groupTotal != null && (
             <div className="text-xs font-medium text-slate-600">{fmtMoney(groupTotal, cur)} for {adults}</div>
