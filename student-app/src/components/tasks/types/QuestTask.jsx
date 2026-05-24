@@ -9,7 +9,7 @@
 //
 // State source of truth: the server. We fetch via quest:requestState on mount,
 // and re-fetch after every quest:stateUpdated broadcast.
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import QrScanner from "../../QrScanner";
 import { effectiveInflation, priceMultiplier, inflatedCost } from "@shared/questPricing.js";
@@ -50,18 +50,48 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
   // Inflation: { startedAt, inflation:{enabled,rate,windowSeconds} }. Practice
   // seeds it locally (clock starts on mount) so rising prices are demoable.
   const [meta, setMeta] = useState(
-    practiceMode ? { startedAt: Date.now(), inflation: effectiveInflation(cfg) } : null
+    practiceMode
+      ? {
+          startedAt: Date.now(),
+          inflation: effectiveInflation(cfg),
+          specialtyRegen: {
+            intervalMinutes: Math.max(1, Math.floor(Number(cfg.specialtyRegenMinutes) || 3)),
+            cap: Math.max(1, Math.floor(Number(cfg.specialtyRegenCap) || 5)),
+          },
+        }
+      : null
   );
   const [now, setNow] = useState(Date.now());
+  const practiceRegenRef = useRef(Date.now());
+  const [showPriceToast, setShowPriceToast] = useState(true);
 
   const isLive = !!(socket && roomCode && teamId) && !practiceMode;
 
-  // Tick so the displayed (rising) depot prices refresh over time.
+  // Always-on tick: refreshes the rising-price display AND drives practice regen.
   useEffect(() => {
-    if (!meta?.inflation?.enabled) return;
     const id = setInterval(() => setNow(Date.now()), 15000);
     return () => clearInterval(id);
-  }, [meta?.inflation?.enabled]);
+  }, []);
+
+  // Practice mode: simulate the renewable specialty top-up locally (server does
+  // this on requestState in live sessions). Runs each tick via `now`.
+  useEffect(() => {
+    if (!practiceMode || !meta?.specialtyRegen) return;
+    const sid = state?.specialtyResourceId;
+    if (!sid) return;
+    const { intervalMinutes = 3, cap = 5 } = meta.specialtyRegen;
+    const intervalMs = Math.max(1, intervalMinutes) * 60000;
+    const stock = Number(state?.inventory?.[sid]) || 0;
+    if (stock >= cap) { practiceRegenRef.current = Date.now(); return; }
+    const last = practiceRegenRef.current || Date.now();
+    const intervals = Math.floor((Date.now() - last) / intervalMs);
+    if (intervals <= 0) return;
+    const grant = Math.min(intervals, cap - stock);
+    if (grant <= 0) return;
+    const newStock = stock + grant;
+    practiceRegenRef.current = newStock >= cap ? Date.now() : last + grant * intervalMs;
+    setState((prev) => ({ ...prev, inventory: { ...(prev?.inventory || {}), [sid]: newStock } }));
+  }, [now, practiceMode, meta?.specialtyRegen, state?.specialtyResourceId]);
 
   // Current price multiplier + helper to price any base cost right now.
   const priceMult = priceMultiplier(meta?.inflation, meta?.startedAt, now);
@@ -72,14 +102,20 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
   useEffect(() => {
     if (!isLive) return;
     let cancelled = false;
-    socket.emit("quest:requestState", { roomCode, teamId }, (resp) => {
-      if (cancelled || !resp?.ok) return;
-      setState(resp.state || null);
-      if (resp.meta) setMeta(resp.meta);
-    });
+    const fetchState = () => {
+      socket.emit("quest:requestState", { roomCode, teamId }, (resp) => {
+        if (cancelled || !resp?.ok) return;
+        setState(resp.state || null);
+        if (resp.meta) setMeta(resp.meta);
+      });
+    };
+    fetchState();
+    // Re-fetch periodically so the renewable specialty top-up (computed
+    // server-side on requestState) shows up without any manual action.
+    const poll = setInterval(fetchState, 30000);
     const onUpdate = (s) => { if (!cancelled && s) setState(s); };
     socket.on("quest:stateUpdated", onUpdate);
-    return () => { cancelled = true; socket.off("quest:stateUpdated", onUpdate); };
+    return () => { cancelled = true; clearInterval(poll); socket.off("quest:stateUpdated", onUpdate); };
   }, [isLive, socket, roomCode, teamId]);
 
   const inv = state?.inventory && typeof state.inventory === "object" ? state.inventory : {};
@@ -267,6 +303,28 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
       <div style={titleStyle}>{cfg.title || task?.title || "The Quest"}</div>
       {cfg.scenario ? <p style={scenarioStyle}>{cfg.scenario}</p> : null}
 
+      {/* One-time urgency nudge: depot prices climb all game → stock up early. */}
+      {showPriceToast && meta?.inflation?.enabled && (
+        <div
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+            padding: "10px 12px", borderRadius: 10,
+            background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.5)",
+            color: "#fde68a", fontSize: "0.85rem", fontWeight: 600,
+          }}
+        >
+          <span>⏳ Depot prices climb all game — <strong>stock up early</strong> while they're cheap!</span>
+          <button
+            type="button"
+            onClick={() => setShowPriceToast(false)}
+            style={{ background: "transparent", border: "none", color: "#fde68a", fontWeight: 900, cursor: "pointer", fontSize: "1rem", lineHeight: 1 }}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Practice-mode instructions — explains the economy. Tester
           (Gavy, May 2026) tried this in solo demo with 0 coins and
           couldn't tell how to interact. */}
@@ -308,6 +366,11 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
           ✦ <strong>Your team's specialty: {resourceName(mySpecialty)}</strong> (×{Number(inv[mySpecialty]) || 0}).
           Other teams need it and it's pricey in the depot — <strong>trade your surplus</strong> for the
           specialties you're missing.
+          {meta?.specialtyRegen && (
+            <span style={{ display: "block", marginTop: 4, color: "#bae6fd" }}>
+              ♻️ It refills <strong>+1 every {meta.specialtyRegen.intervalMinutes} min</strong> (up to {meta.specialtyRegen.cap}) — keep selling, you'll have more later.
+            </span>
+          )}
         </div>
       )}
 
@@ -370,6 +433,13 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
                     {cost > 0 ? (
                       <div style={{ fontSize: "0.72rem", color: "#cbd5e1" }}>
                         {cost} coin{cost === 1 ? "" : "s"}
+                        {(() => {
+                          // Projected end-of-session price (full inflation) so players see the cost of waiting.
+                          const endPrice = meta?.inflation?.enabled
+                            ? Math.round(baseCost * (1 + (Number(meta.inflation.rate) || 0)))
+                            : cost;
+                          return endPrice > cost ? <span style={{ color: "#fca5a5" }}> → {endPrice} by end</span> : null;
+                        })()}
                         {specialties.includes(r.id) ? " — cheaper to trade for" : ""}
                       </div>
                     ) : null}

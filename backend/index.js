@@ -7007,8 +7007,11 @@ socket.on("quest:requestState", async (payload = {}, ack) => {
       return;
     }
     // Lazy import to avoid bumping module-load cost for non-quest sessions
-    const { getQuestState, getQuestStateSnapshot, assignSpecialty } = await import("./services/questEconomy.js");
+    const { getQuestState, getQuestStateSnapshot, assignSpecialty, regenSpecialty } = await import("./services/questEconomy.js");
     let state = await getQuestState({ roomCode: code, teamId });
+    const questTaskCfg = ((rooms[code]?.taskset?.tasks) || []).find((t) => t?.taskType === "quest")?.config || {};
+    const regenMinutes = Math.max(1, Math.floor(Number(questTaskCfg.specialtyRegenMinutes) || 3));
+    const regenCap = Math.max(1, Math.floor(Number(questTaskCfg.specialtyRegenCap) || 5));
 
     // Comparative-advantage seeding: deterministically assign this team ONE
     // scarce specialty (round-robin over config.specialties) + a starting stock,
@@ -7031,6 +7034,15 @@ socket.on("quest:requestState", async (payload = {}, ack) => {
       console.warn("[quest:requestState] specialty seed skipped:", seedErr?.message);
     }
 
+    // Renewable specialty: top up since the last fetch so the team keeps a
+    // sellable stock without effort.
+    try {
+      const regen = await regenSpecialty({ roomCode: code, teamId, intervalMinutes: regenMinutes, cap: regenCap });
+      if (regen.granted > 0 && regen.state) state = regen.state;
+    } catch (regenErr) {
+      console.warn("[quest:requestState] specialty regen skipped:", regenErr?.message);
+    }
+
     // Surface inflation settings + session start so the client can display the
     // live (rising) depot prices. The server still re-charges authoritatively.
     let meta = null;
@@ -7038,7 +7050,11 @@ socket.on("quest:requestState", async (payload = {}, ack) => {
       const room = rooms[code];
       const questTask = (room?.taskset?.tasks || []).find((t) => t?.taskType === "quest");
       const { effectiveInflation } = await import("../shared/questPricing.js");
-      meta = { startedAt: Number(room?.startedAt) || null, inflation: effectiveInflation(questTask?.config) };
+      meta = {
+        startedAt: Number(room?.startedAt) || null,
+        inflation: effectiveInflation(questTask?.config),
+        specialtyRegen: { intervalMinutes: regenMinutes, cap: regenCap },
+      };
     } catch { /* non-fatal */ }
 
     if (typeof ack === "function") ack({ ok: true, state: getQuestStateSnapshot(state), meta });

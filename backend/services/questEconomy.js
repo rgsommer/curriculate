@@ -212,13 +212,57 @@ export async function assignSpecialty({ roomCode, teamId, specialtyId, stock = 2
   // Guard on specialtyResourceId being empty so only the first call seeds.
   const state = await TeamQuestState.findOneAndUpdate(
     { roomCode: code, teamId, $or: [{ specialtyResourceId: { $exists: false } }, { specialtyResourceId: "" }, { specialtyResourceId: null }] },
-    { $set: { specialtyResourceId: specialtyId }, $inc: { [`inventory.${specialtyId}`]: qty } },
+    { $set: { specialtyResourceId: specialtyId, specialtyLastRegenAt: new Date() }, $inc: { [`inventory.${specialtyId}`]: qty } },
     { new: true, upsert: true, setDefaultsOnInsert: true },
   );
   if (state) return { assigned: true, state };
   // Already assigned → return current state unchanged.
   const existing = await TeamQuestState.findOne({ roomCode: code, teamId });
   return { assigned: false, state: existing };
+}
+
+/**
+ * Renewable specialty: top up a team's OWN specialty by +1 per elapsed interval
+ * since the regen clock, up to `cap`. Lets a team that sold its stock recover so
+ * it keeps being a supplier. Idempotent-ish (advances the clock by what it
+ * grants). Returns { state, granted }.
+ */
+export async function regenSpecialty({ roomCode, teamId, intervalMinutes = 3, cap = 5 }) {
+  const code = String(roomCode || "").toUpperCase();
+  if (!code || !teamId) return { state: null, granted: 0 };
+  const intervalMs = Math.max(1, Math.floor(Number(intervalMinutes) || 3)) * 60000;
+  const capN = Math.max(1, Math.floor(Number(cap) || 5));
+
+  const state = await TeamQuestState.findOne({ roomCode: code, teamId });
+  if (!state || !state.specialtyResourceId) return { state, granted: 0 };
+  const sid = state.specialtyResourceId;
+  const stock = state.inventory && typeof state.inventory.get === "function"
+    ? Number(state.inventory.get(sid)) || 0
+    : Number(state.inventory?.[sid]) || 0;
+
+  const now = Date.now();
+  const last = state.specialtyLastRegenAt ? new Date(state.specialtyLastRegenAt).getTime() : now;
+
+  // Already full → just keep the clock current so regen resumes from "now" once
+  // they sell some.
+  if (stock >= capN) {
+    await TeamQuestState.updateOne({ roomCode: code, teamId }, { $set: { specialtyLastRegenAt: new Date(now) } });
+    return { state, granted: 0 };
+  }
+
+  const intervals = Math.floor((now - last) / intervalMs);
+  if (intervals <= 0) return { state, granted: 0 };
+  const grant = Math.min(intervals, capN - stock);
+  if (grant <= 0) return { state, granted: 0 };
+
+  const newStock = stock + grant;
+  const newLast = newStock >= capN ? now : last + grant * intervalMs;
+  const updated = await TeamQuestState.findOneAndUpdate(
+    { roomCode: code, teamId },
+    { $inc: { [`inventory.${sid}`]: grant }, $set: { specialtyLastRegenAt: new Date(newLast) } },
+    { new: true },
+  );
+  return { state: updated || state, granted: grant };
 }
 
 /**
@@ -302,6 +346,7 @@ export default {
   tradeBetweenTeams,
   recordTrade,
   assignSpecialty,
+  regenSpecialty,
   getQuestStateSnapshot,
   recordTaskComplete,
 };

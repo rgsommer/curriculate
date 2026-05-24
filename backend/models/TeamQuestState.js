@@ -68,6 +68,10 @@ const TeamQuestStateSchema = new Schema(
     // advantage): cheap for them to trade away, expensive for others to buy
     // from the depot. Assigned once, deterministically, on first state fetch.
     specialtyResourceId: { type: String, default: "" },
+    // The specialty is a RENEWABLE node: it regenerates +1 every regen interval
+    // (up to a cap) so the team keeps being a supplier ("come back later, we'll
+    // have some"). This timestamp anchors the regen clock.
+    specialtyLastRegenAt: { type: Date, default: null },
 
     tradeHistory:        { type: [TradeRecordSchema], default: [] },
     contributionRecords: { type: [ContributionRecordSchema], default: [] },
