@@ -2,8 +2,23 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import { execSync } from "child_process";
+
+// Stamp the build with the git commit + time so we can confirm — from the
+// browser console on play.curriculate.net — exactly which code is live. This
+// settles "is the deploy actually serving the latest bundle?" questions.
+let __commit = "unknown";
+try { __commit = execSync("git rev-parse --short HEAD").toString().trim(); } catch { /* detached / no .git */ }
+if (!__commit || __commit === "unknown") {
+  __commit = (process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7) || "unknown";
+}
+const __buildTime = new Date().toISOString();
 
 export default defineConfig({
+  define: {
+    __BUILD_COMMIT__: JSON.stringify(__commit),
+    __BUILD_TIME__: JSON.stringify(__buildTime),
+  },
   plugins: [react()],
   server: {
     port: 5174, // different port so both can run at once
