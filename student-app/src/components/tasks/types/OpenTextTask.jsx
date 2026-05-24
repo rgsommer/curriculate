@@ -116,6 +116,10 @@ export default function OpenTextTask({
   const [handwritingUsed, setHandwritingUsed] = useState(false);
   const [handwritingPhoto, setHandwritingPhoto] = useState(null);
   const recognitionRef = useRef(null);
+  // User intent to keep listening — Chrome ends the recognizer after a pause;
+  // while this is true we restart it so dictation survives natural pauses.
+  const listenIntentRef = useRef(false);
+  const valueRef = useRef("");
   const textareaRef = useRef(null);
   const prevWordCountRef = useRef(0);
 
@@ -322,6 +326,7 @@ export default function OpenTextTask({
           }
         }
         const combined = (preDictateTextRef.current + " " + finalText + interimText).replace(/^\s+/, "");
+        valueRef.current = combined;
         setValue(combined);
         emitDraft(combined);
       };
@@ -341,13 +346,27 @@ export default function OpenTextTask({
           setErrorMsg("Voice input isn't working right now. You can still type your answer.");
         }
 
+        listenIntentRef.current = false;
         setIsListening(false);
       };
 
       recognition.onend = () => {
+        // Chrome ends the recognizer after a pause. If the user hasn't tapped
+        // Stop, re-base on the latest text and restart so dictation continues.
+        if (listenIntentRef.current) {
+          preDictateTextRef.current = valueRef.current || "";
+          try {
+            recognition.start();
+            return;
+          } catch {
+            /* fall through to stop */
+          }
+        }
         setIsListening(false);
       };
 
+      valueRef.current = value || "";
+      listenIntentRef.current = true;
       recognition.start();
       recognitionRef.current = recognition;
       setIsListening(true);
@@ -360,12 +379,18 @@ export default function OpenTextTask({
   };
 
   const stopListening = () => {
+    listenIntentRef.current = false;
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch {}
       recognitionRef.current = null;
     }
     setIsListening(false);
   };
+
+  // Keep the always-current value ref synced (covers typing while listening).
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   // Auto-stop dictation when task becomes disabled (e.g. time's up / force-ended)
   useEffect(() => {

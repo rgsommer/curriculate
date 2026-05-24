@@ -1393,6 +1393,32 @@ function canTeamAccessRoom(roomCode, teamId) {
   }
 }
 
+// Assign a team to one of the session's physical rooms (multi-room hunts).
+// Distributes teams round-robin across the NON-classroom selected rooms so
+// each team has an expected room; the scan handler then rejects scans whose
+// QR-encoded room doesn't match. No-ops for single-room sessions or if the
+// team already has a room. Sets team.locationSlug (normalized) + locationLabel.
+function assignTeamRoomLocation(room, team) {
+  if (!room || !team) return;
+  const selected = Array.isArray(room.selectedRooms) ? room.selectedRooms : [];
+  if (selected.length <= 1) return;            // not a multi-room session
+  if (team.locationSlug) return;               // already assigned
+  const slugify = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, "-");
+  const classroomSlug = slugify(room.locationCode || "Classroom");
+  // The "go to" destinations are the non-classroom rooms.
+  const pool = selected.filter((r) => {
+    const slug = slugify(r);
+    return slug && slug !== classroomSlug;
+  });
+  const ring = pool.length ? pool : selected;
+  if (!ring.length) return;
+  const i = Number.isFinite(room._roomAssignCursor) ? room._roomAssignCursor : 0;
+  const label = ring[i % ring.length];
+  room._roomAssignCursor = i + 1;
+  team.locationLabel = String(label).trim();
+  team.locationSlug = slugify(label);
+}
+
 function updateTeamScore(room, teamId, points) {
   // room may be a room object or (in some legacy calls) a roomCode string
   let targetRoom = room;
@@ -2815,8 +2841,12 @@ socket.on("task:force-advance", ({ roomCode }) => {
         room.teams[teamId].connected = true;
         room.teams[teamId].stale = false;
         room.teams[teamId].lastSeenAt = new Date();
+        // Multi-room hunt: give this team its room so scans can be gated by room.
+        assignTeamRoomLocation(room, room.teams[teamId]);
       } else {
         room.teams[teamId].teamName = resolvedTeamName;
+        // Backfill a room for teams that joined before multi-room was enabled.
+        assignTeamRoomLocation(room, room.teams[teamId]);
         const prevMembers = Array.isArray(room.teams[teamId].members) ? room.teams[teamId].members : [];
         const newMerged = Array.from(new Set([...prevMembers, ...memberList]));
 
@@ -6860,10 +6890,26 @@ function _getOrInitWhatAmIGame(room, taskIndex) {
     const task = tasks[idx] || {};
     const cfg = (task && typeof task.config === "object") ? task.config : {};
     const clues = Array.isArray(cfg.clues) ? cfg.clues : [];
+    // Mode resolution: honor an explicit config/top-level mode; otherwise make
+    // it an INTER-TEAM race whenever 2+ teams are in the room (first team to
+    // guess locks the round; clue reveals broadcast the shared ceiling). A
+    // single team falls back to intra-team. Respects interTeamEnabled === false.
+    const rawMode =
+      (typeof cfg.mode === "string" && cfg.mode) ||
+      (typeof task.mode === "string" && task.mode) ||
+      null;
+    let resolvedMode;
+    if (rawMode === "inter-team" || rawMode === "intra-team" || rawMode === "solo") {
+      resolvedMode = rawMode;
+    } else {
+      const teamCount = Object.keys(room.teams || {}).length;
+      const interOk = task.interTeamEnabled !== false && cfg.interTeamEnabled !== false;
+      resolvedMode = teamCount >= 2 && interOk ? "inter-team" : "intra-team";
+    }
     room.whatAmIGames[taskKey] = {
       taskKey,
       taskIndex: idx,
-      mode: typeof cfg.mode === "string" ? cfg.mode : "intra-team",
+      mode: resolvedMode,
       totalClues: clues.length,
       perClueCurve: Array.isArray(cfg?.scoring?.perClueCurve) ? cfg.scoring.perClueCurve.slice() : null,
       revealedByTeam: {},
@@ -7478,6 +7524,103 @@ socket.on("currentEvents:teacherRefresh", async (payload = {}, ack) => {
     if (typeof ack === "function") ack({ ok: true, resolved: result.resolved });
   } catch (e) {
     console.error("[currentEvents:teacherRefresh] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+//  AI Debate Judge — inter-team head-to-head judged by AI.
+//  Two teams debate the resolution (Affirmative vs Negative); the presenter
+//  captures each side's key arguments, then summons the judge. We send both
+//  argument sets to the LLM for a real verdict (winner + 0-100 scores +
+//  written feedback) and broadcast `ai-judge:verdict` to the room. Falls back
+//  to a deterministic rule-based verdict if no key is configured or on error,
+//  so the round always resolves.
+// ---------------------------------------------------------------------------
+function _ruleBasedDebateVerdict(affText, negText) {
+  const evidence = ["because", "since", "for example", "for instance", "evidence", "research", "studies", "data", "according to"];
+  const rebuttal = ["however", "but", "in contrast", "on the other hand", "actually", "while", "whereas"];
+  const score = (t) => {
+    const s = String(t || "").toLowerCase();
+    const words = s.split(/\s+/).filter(Boolean).length;
+    const ev = evidence.reduce((n, k) => n + (s.includes(k) ? 1 : 0), 0);
+    const rb = rebuttal.reduce((n, k) => n + (s.includes(k) ? 1 : 0), 0);
+    return Math.min(100, 30 + Math.min(40, Math.floor(words / 3)) + ev * 6 + rb * 5);
+  };
+  const a = score(affText), n = score(negText);
+  return {
+    winner: a >= n ? "affirmative" : "negative",
+    scores: { affirmative: a, negative: n },
+    feedback:
+      "Verdict based on argument length, use of evidence cues (\"because\", \"for example\"), and rebuttal cues (\"however\", \"in contrast\"). Strengthen future rounds with specific evidence and direct rebuttals.",
+  };
+}
+
+socket.on("ai-judge:request", async (payload = {}, ack) => {
+  try {
+    const { roomCode, topic, affirmative, negative } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    const affText = String(affirmative || "").slice(0, 4000);
+    const negText = String(negative || "").slice(0, 4000);
+
+    let verdict = null;
+    if (process.env.OPENAI_API_KEY && (affText.trim() || negText.trim())) {
+      try {
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        const sys =
+          "You are an impartial, encouraging classroom debate judge. Given a resolution and each side's key arguments, " +
+          "score BOTH sides 0-100 on argument quality, use of evidence, and rebuttal. Pick a winner. Keep written feedback " +
+          "warm, specific, and grade-appropriate (4-6 sentences). Respond with ONLY JSON: " +
+          '{"winner":"affirmative"|"negative","scores":{"affirmative":<int>,"negative":<int>},"feedback":"<text>"}.';
+        const usr =
+          `Resolution: ${topic || "(not provided)"}\n\n` +
+          `Affirmative arguments:\n${affText || "(none provided)"}\n\n` +
+          `Negative arguments:\n${negText || "(none provided)"}`;
+        const resp = await openai.chat.completions.create({
+          model: process.env.TEXT_FEEDBACK_MODEL || "gpt-4o-mini",
+          messages: [{ role: "system", content: sys }, { role: "user", content: usr }],
+          max_tokens: 500,
+          temperature: 0.5,
+        });
+        const raw = resp.choices?.[0]?.message?.content || "";
+        const m = raw.match(/\{[\s\S]*\}/);
+        if (m) {
+          const parsed = JSON.parse(m[0]);
+          const aff = Math.max(0, Math.min(100, Number(parsed?.scores?.affirmative)));
+          const neg = Math.max(0, Math.min(100, Number(parsed?.scores?.negative)));
+          const winner = parsed?.winner === "negative" ? "negative" : "affirmative";
+          if (Number.isFinite(aff) && Number.isFinite(neg)) {
+            verdict = { winner, scores: { affirmative: aff, negative: neg }, feedback: String(parsed?.feedback || "") };
+          }
+        }
+      } catch (e) {
+        console.warn("[ai-judge:request] LLM judge failed, using fallback:", e?.message);
+      }
+    }
+
+    if (!verdict) verdict = _ruleBasedDebateVerdict(affText, negText);
+
+    // Broadcast to the whole room (presenter + any team devices).
+    if (code) io.to(code).emit("ai-judge:verdict", verdict);
+    // Also reply directly to the requester (covers no-room / presenter-only).
+    socket.emit("ai-judge:verdict", verdict);
+
+    // Award participation points to all teams in the room (head-to-head bonus
+    // for the winning side when teams are explicitly tagged is deferred).
+    if (room && typeof addBonusSubmission === "function") {
+      try {
+        for (const tId of Object.keys(room.teams || {})) {
+          addBonusSubmission(room, tId, 10, "ai-debate-judge", { topic: topic || "" });
+        }
+        const rs = buildRoomState(room);
+        if (rs) io.to(code).emit("roomState", rs);
+      } catch {}
+    }
+
+    if (typeof ack === "function") ack({ ok: true, verdict });
+  } catch (e) {
+    console.error("[ai-judge:request] error", e?.message);
     if (typeof ack === "function") ack({ ok: false, error: "Server error" });
   }
 });
@@ -8742,6 +8885,20 @@ socket.on("tod:requestState", async (payload = {}, ack) => {
 
     room.selectedRooms = selectedRooms;
 
+    // Multi-room: assign each already-joined team a room (round-robin) and
+    // surface enforceLocation where the student-app reads it
+    // (roomState.taskset.enforceLocation + top-level via buildRoomState).
+    if (room.enforceLocation) {
+      room._roomAssignCursor = 0;
+      for (const t of Object.values(room.teams || {})) {
+        t.locationSlug = null; // re-deal cleanly on (re)start
+        assignTeamRoomLocation(room, t);
+      }
+    }
+    if (room.taskset && typeof room.taskset === "object") {
+      room.taskset.enforceLocation = room.enforceLocation;
+    }
+
     // Refresh teacher preference for paper mode
     try {
       const userId = socket.data?.userId || socket.data?.user?._id || null;
@@ -8974,6 +9131,90 @@ socket.on("tod:requestState", async (payload = {}, ack) => {
         // Leave room.taskIndex "out of the way" – student sends taskIndex=0
         room.taskIndex = -1;
 
+        // ── Live Debate: pair teams head-to-head at launch ──────────────
+        // Each pair gets opposite sides (FOR/AGAINST) embedded directly in
+        // their task:launch payload, so the student renderer enters multi-team
+        // mode on first render (no socket-event ordering race). Debate state
+        // lives on the room so the (shared) debate-response handler can enforce
+        // turns + completion. Any odd team out runs intra-team (no mySide).
+        const isLiveDebateLaunch =
+          quickTask.taskType === "live-debate";
+        if (isLiveDebateLaunch) {
+          const srcCfg = (task && typeof task.config === "object" && task.config) || {};
+          const postulate =
+            (task && (task.postulate || task.resolution || task.topic)) ||
+            srcCfg.postulate || srcCfg.resolution || srcCfg.topic ||
+            quickTask.prompt;
+          // Carry the topic + any config through (quickTask normally drops config).
+          quickTask.config = { ...(quickTask.config || {}), ...srcCfg, postulate };
+          quickTask.postulate = postulate;
+          quickTask.turnsPerTeam = Number(srcCfg.turnsPerTeam) > 0 ? Number(srcCfg.turnsPerTeam) : 3;
+
+          const teamIds = Object.keys(room.teams || {});
+          if (teamIds.length >= 2) {
+            // Fisher–Yates shuffle so pairings vary.
+            const ordered = teamIds.slice();
+            for (let i = ordered.length - 1; i > 0; i -= 1) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+            }
+            const teamLabel = (tid) =>
+              room.teams[tid]?.teamName || `Team ${String(tid).slice(-4)}`;
+            room.debate = {};
+            for (let i = 0; i + 1 < ordered.length; i += 2) {
+              const forId = ordered[i];
+              const againstId = ordered[i + 1];
+              const debateKey = `${code}:quick:${i / 2}`;
+              const forName = teamLabel(forId);
+              const againstName = teamLabel(againstId);
+              room.debate[debateKey] = {
+                debateKey,
+                taskId: "quick",
+                postulate,
+                turnsPerTeam: quickTask.turnsPerTeam,
+                teams: {
+                  for: { teamId: forId, name: forName },
+                  against: { teamId: againstId, name: againstName },
+                },
+                responses: [],
+                currentTurn: "for",
+                forCount: 0,
+                againstCount: 0,
+              };
+              [
+                [forId, "for", againstName, forName],
+                [againstId, "against", forName, againstName],
+              ].forEach(([teamId, side, opponentName, myTeamName]) => {
+                io.to(teamId).emit("task:launch", {
+                  index: 0,
+                  task: {
+                    ...quickTask,
+                    debateKey,
+                    mySide: side,
+                    myTeamName,
+                    opponentName,
+                    currentTurn: "for",
+                    turnsPerTeam: quickTask.turnsPerTeam,
+                    responses: [],
+                  },
+                  timeLimitSeconds: quickTask.timeLimitSeconds || 0,
+                });
+              });
+            }
+            // Odd team out → intra-team (no opponent): plain launch, no mySide.
+            if (ordered.length % 2 === 1) {
+              const soloId = ordered[ordered.length - 1];
+              io.to(soloId).emit("task:launch", {
+                index: 0,
+                task: quickTask,
+                timeLimitSeconds: quickTask.timeLimitSeconds || 0,
+              });
+            }
+            return; // handled per-team
+          }
+          // < 2 teams → fall through to room-wide (single team plays intra-team).
+        }
+
         io.to(code).emit("task:launch", {
           index: 0,
           task: quickTask,
@@ -9158,7 +9399,7 @@ socket.on("tod:requestState", async (payload = {}, ack) => {
   });
 
   // Game handlers (imported from socket/gameHandlers.js)
-  registerGameHandlers(socket, { io, rooms, updateTeamScore, generateAIScore, buildRoomState });
+  registerGameHandlers(socket, { io, rooms, updateTeamScore, addBonusSubmission, generateAIScore, buildRoomState });
 
 // Teacher ends session + email reports
 // Teacher ends session + generate immutable report snapshot + email teacher
@@ -17733,6 +17974,36 @@ app.post("/api/text-feedback", express.json({ limit: "256kb" }), async (req, res
       feedback:
         "Thoughtful start. A stronger version connects a specific detail from the story to something from your lesson, then adds your team's own take or question.",
     });
+  }
+});
+
+// ─── Current Events: resolve a real news story (HTTP, for practice mode) ───
+// The live-session path resolves via socket (roomEngine.sendTaskToTeam). Solo
+// practice has no room/socket, so the student-app calls this directly to swap
+// the pre-baked evergreen demo block for an ACTUAL current event. Reuses the
+// same resolver + 12h cache, so repeated practice hits are cheap.
+// Body: { lessonTopic, subject, gradeLevel, region, worldviewProfile,
+//         preferredCategories, forceRefresh }. Returns { ok, resolved } or { ok:false }.
+app.post("/api/current-events/resolve", express.json({ limit: "64kb" }), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const { resolveCurrentEvents } = await import("./services/currentEventsResolver.js");
+    const result = await resolveCurrentEvents({
+      lessonTopic: String(b.lessonTopic || "").slice(0, 240) || "general learning",
+      subject: String(b.subject || "General").slice(0, 80),
+      gradeLevel: Number(b.gradeLevel) || 7,
+      region: String(b.region || "Canada").slice(0, 60),
+      worldviewProfile: ["general", "secular", "christian"].includes(b.worldviewProfile) ? b.worldviewProfile : "general",
+      preferredCategories: Array.isArray(b.preferredCategories) ? b.preferredCategories.slice(0, 12).map((s) => String(s).slice(0, 40)) : undefined,
+      forceRefresh: !!b.forceRefresh,
+    });
+    if (!result?.ok || !result.resolved) {
+      return res.json({ ok: false, error: "Resolution failed" });
+    }
+    return res.json({ ok: true, resolved: result.resolved });
+  } catch (err) {
+    console.error("[/api/current-events/resolve] error:", err?.message || err);
+    return res.json({ ok: false, error: "Server error" });
   }
 });
 

@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/EchoChainTask.jsx
 import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { getPlayerName } from "../../../utils/playerName";
 import { TaskCardFrame } from "../taskStyles";
 
 /**
@@ -46,7 +47,7 @@ export default function EchoChainTask({ task, memberNames = [], practiceMode = f
     () => {
       const real = (Array.isArray(memberNames) ? memberNames.filter(Boolean) : []);
       if (practiceMode && real.length < 3) {
-        const me = real[0] || "You";
+        const me = real[0] || getPlayerName();
         return [me, ...ECHO_BOTS.slice(0, 2)];
       }
       return real;

@@ -59,6 +59,26 @@ console.log("StudentApp Build:", BUILD_MARKER);
 // For now, LiveSession-launched tasks are assumed to use "Classroom"
 const DEFAULT_LOCATION = "Classroom";
 
+// Multi-room hunts: station QR codes encode BOTH room and color as
+// `https://DOMAIN/{location}/{color}`. To actually validate that a team scanned
+// in the RIGHT room, we read the room from the scanned QR itself (not the
+// team's own assigned-room state, which would always "match"). Returns a
+// normalized slug, or "" when the QR carries no room segment (single-room).
+function parseScanLocationSlug(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  let path = s;
+  try { path = new URL(s).pathname; } catch { /* not a full URL — treat as path */ }
+  const segs = path
+    .split("/")
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .map((x) => { try { return decodeURIComponent(x); } catch { return x; } });
+  if (segs.length < 2) return ""; // e.g. just "/blue" — no room segment
+  const loc = segs[segs.length - 2]; // the segment before the color
+  return String(loc || "").toLowerCase().replace(/\s+/g, "-");
+}
+
 // Cap emoji/symbol usage in names to prevent spammy display names.
 // Allows up to `max` emoji/symbols; strips extras while keeping all regular text.
 const EMOJI_RE = /\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu;
@@ -1706,7 +1726,7 @@ function StudentApp() {
   // -------------------------------------------------------------------
   // Auto-open scanner when a scan is required
   // -------------------------------------------------------------------
-  const enforceLocation = !!roomState?.taskset?.enforceLocation;
+  const enforceLocation = !!(roomState?.enforceLocation ?? roomState?.taskset?.enforceLocation);
   const selectedRooms = roomState?.selectedRooms || [];
 
   const taskHardLocksStation =
@@ -3087,9 +3107,14 @@ function StudentApp() {
       stationId: norm.id,
     };
 
-    // Only include locationSlug when it should be enforced (multi-room hunts)
+    // Only include locationSlug when it should be enforced (multi-room hunts).
+    // Use the room encoded in the SCANNED QR so the backend can verify the team
+    // is physically in the right room; fall back to the team's known room only
+    // when the QR carries no room segment.
     if (enforceLocation && multi) {
-      scanPayload.locationSlug = (roomLocation || "").trim().toLowerCase().replace(/\s+/g, "-");
+      const scannedRoom = parseScanLocationSlug(data);
+      scanPayload.locationSlug =
+        scannedRoom || (roomLocation || "").trim().toLowerCase().replace(/\s+/g, "-");
     }
 
     if (stationScanInFlightRef.current) {

@@ -515,18 +515,22 @@ const DEMO_TASKS = [
     },
   },
 
-  // 18e. Current Events — practice mode uses the evergreen library entry tagged "general".
-  // The runtime resolver only fires in live sessions; in demo we ship a pre-resolved block.
+  // 18e. Current Events — practice mode now fetches a REAL story.
+  // liveResolveInPractice tells CurrentEventsTask to call
+  // /api/current-events/resolve on mount and swap in an actual current event;
+  // the pre-baked evergreen block below stays as a graceful fallback if the
+  // fetch fails (e.g. no API key). Live sessions resolve over the socket.
   {
     taskType: "current-events",
     title: "Current Events: This Week's Connection",
     prompt: "Connect today's lesson to a real story this week.",
     config: {
-      lessonTopic: "Today's lesson",
+      lessonTopic: "science, discovery, and the world this week",
       subject: "general",
       gradeLevel: 7,
       worldviewProfile: "general",
-      // Pre-baked evergreen — bypasses the live resolver for practice
+      liveResolveInPractice: true,
+      // Pre-baked evergreen — fallback if the live fetch fails
       resolved: {
         title: "Curiosity Beyond the Textbook",
         currentEventHeadline: "Scientists keep finding surprises in places we thought we knew.",

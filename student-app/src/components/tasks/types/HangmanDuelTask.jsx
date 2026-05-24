@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import StepCircle from "../StepCircle";
+import { getPlayerName } from "../../../utils/playerName";
 import {
   DndContext,
   PointerSensor,
@@ -535,6 +536,8 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
     const botStart = Math.abs(h) % PRACTICE_BOTS.length;
 
     const names = (fromMembers.length ? fromMembers : fromConfig).slice(0, count);
+    // Solo practice with no roster → seat the player (by name) first, then bots.
+    if (practiceMode && names.length === 0) names.push(getPlayerName());
     while (names.length < count) {
       if (practiceMode) {
         const bi = (botStart + names.length) % PRACTICE_BOTS.length;

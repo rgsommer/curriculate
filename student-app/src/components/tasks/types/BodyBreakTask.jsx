@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/BodyBreakTask.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import StepCircle from "../StepCircle";
+import { getPlayerName } from "../../../utils/playerName";
 
 function parseStepsFromPrompt(promptText) {
   const t = String(promptText || "").trim();
@@ -36,9 +37,24 @@ function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
-export default function BodyBreakTask({ task, onSubmit, disabled, stagingPhase, canStartTask, memberNames = [] }) {
+// Solo-practice bot teammates — mirrors TruthOrDare so a single player still
+// feels the team accountability loop (tester: "show bots in practice mode").
+// The player's own name is always included (tester: "always include the
+// player's name as one of the names"); the rest auto-tap Done after a beat.
+const PRACTICE_BOTS = ["Ada", "Newton", "Maya"];
+
+export default function BodyBreakTask({ task, onSubmit, disabled, stagingPhase, canStartTask, memberNames = [], practiceMode = false }) {
   const promptText = String(task?.prompt || "");
   const SHOW_TOP_MOVES_LIST = false;
+
+  // In live sessions we use the real team. In solo practice (no real team), we
+  // inject the player + bot roster so the player sees teammates finish.
+  const realMembers = (Array.isArray(memberNames) ? memberNames : []).filter(Boolean);
+  const usePracticeBots = practiceMode && realMembers.length < 2;
+  const me = getPlayerName();
+  const effectiveMembers = usePracticeBots ? [me, ...PRACTICE_BOTS] : realMembers;
+  // Bots = everyone except the human player when running practice bots.
+  const botNames = usePracticeBots ? PRACTICE_BOTS.slice() : [];
 
   // Hide Start until the TaskRunner staging/intro animation is fully gone.
   // TaskRunner passes canStartTask=true when stagingPhase === 'gone'.
@@ -100,9 +116,11 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
   const [ratingPhase, setRatingPhase] = useState(null); // { doneBy, judge } | null
 
   const handleAllDone = (names) => {
-    const team = (Array.isArray(memberNames) ? memberNames : []).filter(Boolean);
+    const team = effectiveMembers;
     if (team.length >= 2) {
-      const judge = team[Math.floor(Math.random() * team.length)];
+      // The human is always the judge in practice (you rate the bots);
+      // in a live team the judge is random.
+      const judge = usePracticeBots ? me : team[Math.floor(Math.random() * team.length)];
       setRatingPhase({ doneBy: names, judge });
     } else {
       onSubmit?.({ done: true, doneBy: names, count: names.length });
@@ -397,7 +415,7 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
           {ratingPhase ? (
             <PeerRating
               judge={ratingPhase.judge}
-              members={(Array.isArray(memberNames) ? memberNames : []).filter(Boolean)}
+              members={effectiveMembers}
               disabled={disabled}
               onFinish={(ratings) =>
                 onSubmit?.({
@@ -437,7 +455,9 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
                   2+) or auto-submit (solo).  Falls back to a single big DONE
                   if we don't know team names. */}
               <PlayerDoneRow
-                memberNames={memberNames}
+                memberNames={effectiveMembers}
+                botNames={botNames}
+                botsActive={running || !Number.isFinite(totalSeconds)}
                 disabled={disabled}
                 onAllDone={handleAllDone}
               />
@@ -476,13 +496,35 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
 /*  PlayerDoneRow                                                     */
 /*  Per-player "Done" button — single device, social pressure.        */
 /* ------------------------------------------------------------------ */
-function PlayerDoneRow({ memberNames = [], disabled, onAllDone }) {
+function PlayerDoneRow({ memberNames = [], botNames = [], botsActive = false, disabled, onAllDone }) {
   const names = (Array.isArray(memberNames) ? memberNames : []).filter(Boolean);
+  const botSet = useMemo(
+    () => new Set((Array.isArray(botNames) ? botNames : []).filter(Boolean)),
+    [botNames]
+  );
   const [doneSet, setDoneSet] = useState(() => new Set());
   const submittedRef = useRef(false);
 
   const total = names.length;
   const doneCount = doneSet.size;
+
+  // Practice bots auto-tap Done at staggered intervals once the timer is
+  // running — the player watches teammates finish (social pressure), then
+  // taps their own name. Mirrors TruthOrDare's bot turns.
+  useEffect(() => {
+    if (!botsActive || botSet.size === 0) return;
+    const timers = [...botSet].map((name, i) =>
+      window.setTimeout(() => {
+        setDoneSet((prev) => {
+          if (prev.has(name)) return prev;
+          const next = new Set(prev);
+          next.add(name);
+          return next;
+        });
+      }, 1400 + i * 1100 + Math.random() * 600)
+    );
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, [botsActive, botSet]);
 
   // Auto-submit once everyone's marked done.
   useEffect(() => {
@@ -538,12 +580,13 @@ function PlayerDoneRow({ memberNames = [], disabled, onAllDone }) {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {names.map((name) => {
           const isDone = doneSet.has(name);
+          const isBot = botSet.has(name);
           return (
             <button
               key={name}
               type="button"
               onClick={() => {
-                if (disabled || submittedRef.current) return;
+                if (disabled || submittedRef.current || isBot) return;
                 setDoneSet((prev) => {
                   const next = new Set(prev);
                   if (next.has(name)) next.delete(name);
@@ -551,7 +594,7 @@ function PlayerDoneRow({ memberNames = [], disabled, onAllDone }) {
                   return next;
                 });
               }}
-              disabled={disabled}
+              disabled={disabled || isBot}
               style={{
                 padding: "10px 16px",
                 borderRadius: 14,
@@ -563,15 +606,23 @@ function PlayerDoneRow({ memberNames = [], disabled, onAllDone }) {
                 color: isDone ? "#fff" : "#0f172a",
                 fontWeight: 900,
                 fontSize: 14,
-                cursor: disabled ? "default" : "pointer",
+                cursor: isBot ? "default" : disabled ? "default" : "pointer",
+                opacity: isBot && !isDone ? 0.7 : 1,
                 boxShadow: isDone ? "0 4px 14px rgba(34,197,94,0.45)" : "0 2px 6px rgba(0,0,0,0.08)",
                 transform: isDone ? "scale(1.02)" : "scale(1)",
                 transition: "transform 0.12s ease, box-shadow 0.12s ease",
               }}
               aria-pressed={isDone}
-              title={isDone ? `Tap again to undo ${name}'s Done` : `Mark ${name} as done`}
+              title={
+                isBot
+                  ? `${name} is a practice teammate`
+                  : isDone
+                  ? `Tap again to undo ${name}'s Done`
+                  : `Mark ${name} as done`
+              }
             >
-              {name}{isDone ? " ✅" : " — Done?"}
+              {name}
+              {isDone ? " ✅" : isBot ? " …" : " — Done?"}
             </button>
           );
         })}

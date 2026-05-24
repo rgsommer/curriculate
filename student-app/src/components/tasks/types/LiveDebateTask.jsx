@@ -85,10 +85,29 @@ export default function LiveDebateTask({
   const roomCode = roomCodeProp || task?.roomCode;
   const canEmit = Boolean(socket && typeof socket.emit === "function");
   const connected = socket && (socket.connected === undefined ? true : socket.connected);
+  const inRoom = Boolean(roomCode && canEmit && connected);
 
-  // ── Solo / intra-team detection ────────────────────────────
-  // Solo if: no room, no socket, OR server never assigned a side (single team in room)
-  const isSolo = !roomCode || !canEmit || !connected || !task.mySide;
+  // ── Server-assigned pairing ────────────────────────────────
+  // In a taskset, the backend pairs teams on arrival and pushes a `debate-start`
+  // (the team that arrives first sits in an "awaiting opponent" state until its
+  // partner shows up). Quick-launch embeds the pairing directly in the task.
+  // forceSolo lets a lone team bail out to a practice-bot debate.
+  const [serverDebate, setServerDebate] = useState(null);
+  const [forceSolo, setForceSolo] = useState(false);
+  const [verdict, setVerdict] = useState(null);
+
+  const mySide = serverDebate?.mySide ?? task.mySide ?? null;
+  const opponentName = serverDebate?.opponentName ?? task.opponentName ?? "the other team";
+  const myTeamNameVal = serverDebate?.myTeamName ?? task.myTeamName;
+  const debateKeyVal = serverDebate?.debateKey ?? task.debateKey;
+
+  // Three runtime modes:
+  //   multiTeam – paired with a real opponent (server-driven)
+  //   awaiting  – in a room, waiting for an opponent to reach this task
+  //   solo      – no room, or fell back to the practice bot
+  const multiTeam = inRoom && Boolean(mySide) && !forceSolo;
+  const awaitingOpponent = inRoom && !forceSolo && !mySide && Boolean(task.awaitingOpponent);
+  const isSolo = !multiTeam && !awaitingOpponent;
 
   // Split team members into two sides for intra-team mode.  When the
   // player is alone (only one human name), pad the AGAINST side with
@@ -121,7 +140,7 @@ export default function LiveDebateTask({
   const chunksRef = useRef([]);
   const threadEndRef = useRef(null);
 
-  const turnsPerSide = task.turnsPerTeam || 3;
+  const turnsPerSide = serverDebate?.turnsPerTeam ?? task.turnsPerTeam ?? 3;
 
   // ── Derived ────────────────────────────────────────────────
   const forResponses = responses.filter((r) => r.side === "for");
@@ -130,12 +149,27 @@ export default function LiveDebateTask({
   const currentSideMembers = currentTurn === "for" ? forMembers : againstMembers;
   const currentSideResponses = currentTurn === "for" ? forResponses : againstResponses;
   const turnIndex = currentSideResponses.length;
-  const currentSpeaker = currentSideMembers[turnIndex % currentSideMembers.length] || "???";
   const sideExhausted = turnIndex >= turnsPerSide;
   const allDone = forResponses.length >= turnsPerSide && againstResponses.length >= turnsPerSide;
 
+  // ── Turn ownership ─────────────────────────────────────────
+  // Solo/intra: this one device drives both sides, so it's always "my turn".
+  // Multi-team: this device only acts when the live turn matches our assigned
+  // side (task.mySide), and the speaker rotates through OUR team's members.
+  const isMyTurn = isSolo ? true : currentTurn === mySide;
+  const myResponsesCount = isSolo
+    ? turnIndex
+    : (mySide === "for" ? forResponses.length : againstResponses.length);
+  const mySpeaker = isSolo
+    ? (currentSideMembers[turnIndex % currentSideMembers.length] || "???")
+    : (names[myResponsesCount % names.length] || names[0] || "Your team");
+  const mySideExhausted = isSolo ? sideExhausted : myResponsesCount >= turnsPerSide;
+  // Whether to show the input box on this device right now.
+  const showInput = isSolo ? !sideExhausted : (isMyTurn && !mySideExhausted);
+
   // Debate topic — check all possible field names the AI might use
   const topic =
+    serverDebate?.postulate ||
     task.postulate ||
     task.resolution ||
     task.topic ||
@@ -149,27 +183,57 @@ export default function LiveDebateTask({
     threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [responses]);
 
-  // ── Socket listeners (multi-team mode only) ────────────────
+  // ── Socket listeners (room mode: awaiting OR paired) ───────
+  // We subscribe whenever we're in a room and haven't bailed to the bot, so a
+  // team sitting in the "awaiting opponent" state still receives debate-start.
   useEffect(() => {
-    if (isSolo || !socket) return;
+    if (!socket || !inRoom || forceSolo) return;
 
+    const handleDebateStart = (data) => {
+      // Server paired us with an opponent — enter multi-team mode.
+      setServerDebate({
+        mySide: data?.mySide,
+        opponentName: data?.opponentName,
+        myTeamName: data?.myTeamName,
+        debateKey: data?.debateKey,
+        postulate: data?.postulate,
+        currentTurn: data?.currentTurn || "for",
+        turnsPerTeam: data?.turnsPerTeam || 3,
+      });
+      setResponses([]);
+      setCurrentTurn(data?.currentTurn || "for");
+      setErrorMsg("");
+    };
     const handleNewResponse = (data) => {
       setResponses((prev) => [...prev, data]);
       if (data.currentTurn) setCurrentTurn(data.currentTurn);
     };
-    const handleDebateComplete = () => setDebateOver(true);
+    const handleDebateComplete = (data) => {
+      if (data) setVerdict(data);
+      setDebateOver(true);
+    };
     const handleDebateError = (data) => setErrorMsg(data?.message || "Something went wrong.");
 
+    socket.on("debate-start", handleDebateStart);
     socket.on("debate-new-response", handleNewResponse);
     socket.on("debate-complete", handleDebateComplete);
     socket.on("debate-error", handleDebateError);
 
     return () => {
+      socket.off("debate-start", handleDebateStart);
       socket.off("debate-new-response", handleNewResponse);
       socket.off("debate-complete", handleDebateComplete);
       socket.off("debate-error", handleDebateError);
     };
-  }, [socket, isSolo]);
+  }, [socket, inRoom, forceSolo]);
+
+  // Auto-fallback: if no opponent shows up within 45s, offer the practice bot
+  // automatically so a lone team is never stuck on the waiting screen.
+  useEffect(() => {
+    if (!awaitingOpponent) return;
+    const t = setTimeout(() => setForceSolo(true), 45000);
+    return () => clearTimeout(t);
+  }, [awaitingOpponent]);
 
   // ── Whisper-based recording ────────────────────────────────
   const startRecording = useCallback(async () => {
@@ -240,7 +304,7 @@ export default function LiveDebateTask({
       const entry = {
         side: currentTurn,
         teamName: currentTurn === "for" ? "Team FOR" : "Team AGAINST",
-        speaker: currentSpeaker,
+        speaker: mySpeaker,
         text,
       };
       const nextResponses = [...responses, entry];
@@ -281,15 +345,16 @@ export default function LiveDebateTask({
       return;
     }
 
-    // Multi-team: emit via socket
+    // Multi-team: emit via socket (server tracks turns + broadcasts to the pair)
     try {
       socket.emit("debate-response", {
         roomCode,
-        taskId: task.taskId || task._id || "default",
+        debateKey: debateKeyVal,
+        taskId: task.taskId || task._id || "quick",
         text,
-        speaker: currentSpeaker,
-        side: currentTurn,
-        teamName: task.myTeamName,
+        speaker: mySpeaker,
+        side: mySide,
+        teamName: myTeamNameVal,
       });
       setErrorMsg("");
       setTranscript("");
@@ -301,12 +366,34 @@ export default function LiveDebateTask({
   // ── Render helpers ─────────────────────────────────────────
   const forLabel = isSolo
     ? `Team FOR (${forMembers.join(", ")})`
-    : task.myTeamName || "Your team";
+    : (mySide === "for" ? (myTeamNameVal || "Your team") : opponentName);
   const againstLabel = isSolo
     ? `Team AGAINST (${againstMembers.join(", ")})`
-    : task.opponentName || "the other team";
+    : (mySide === "against" ? (myTeamNameVal || "Your team") : opponentName);
   const currentSideLabel = currentTurn === "for" ? forLabel : againstLabel;
   const otherSideLabel = currentTurn === "for" ? againstLabel : forLabel;
+
+  // ── Awaiting an opponent (taskset pairing) ─────────────────
+  if (awaitingOpponent) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center p-6 text-center">
+        <div className="text-2xl font-extrabold text-indigo-700 mb-1">Live Debate</div>
+        {topic ? <p className="text-lg text-slate-700 mb-4 max-w-md">{topic}</p> : null}
+        <div className="w-10 h-10 border-4 border-indigo-300 border-t-indigo-600 rounded-full animate-spin mb-4" />
+        <div className="text-lg font-bold text-slate-700">Waiting for another team to reach this debate…</div>
+        <div className="text-sm text-slate-500 mt-2 max-w-sm">
+          You'll be paired automatically as soon as an opponent arrives.
+        </div>
+        <button
+          type="button"
+          onClick={() => setForceSolo(true)}
+          className="mt-6 px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+        >
+          Debate the practice bot instead
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -333,10 +420,10 @@ export default function LiveDebateTask({
         ) : (
           <p className="font-bold text-xl mt-2">
             You are arguing{" "}
-            <span className={task.mySide === "for" ? "text-green-300" : "text-red-300"}>
-              {task.mySide === "for" ? "FOR" : "AGAINST"}
+            <span className={mySide === "for" ? "text-green-300" : "text-red-300"}>
+              {mySide === "for" ? "FOR" : "AGAINST"}
             </span>
-            {" "}vs {task.opponentName || "the other team"}
+            {" "}vs {opponentName}
           </p>
         )}
       </div>
@@ -347,9 +434,9 @@ export default function LiveDebateTask({
           <div className="text-center text-slate-400 mt-8 text-lg">
             {isSolo
               ? `${forMembers[0] || "Team FOR"} goes first — make your opening argument!`
-              : currentTurn === task.mySide
+              : currentTurn === mySide
               ? "You go first — make your opening argument!"
-              : `Waiting for ${otherSideLabel} to open...`}
+              : `Waiting for ${opponentName} to open...`}
           </div>
         )}
         {responses.map((r, i) => (
@@ -394,8 +481,52 @@ export default function LiveDebateTask({
             All arguments submitted!
           </div>
           <div className="text-center text-slate-600 mt-2">
-            {isSolo ? "Great debate, team!" : "The judge is reviewing the debate..."}
+            {isSolo ? "Great debate, team!" : verdict ? "The verdict is in!" : "The judge is reviewing the debate..."}
           </div>
+
+          {/* Server verdict (multi-team head-to-head) — who won + points. */}
+          {verdict && (
+            <div className="mt-4 max-w-2xl mx-auto p-4 rounded-2xl bg-white border border-indigo-200 shadow-sm text-slate-900">
+              <div className="font-extrabold text-base mb-2">🏆 Result</div>
+              <div className="text-base font-bold mb-1">
+                {verdict.winningSide === "tie"
+                  ? "It's a tie — both sides argued well!"
+                  : `${verdict.winningSide === "for"
+                      ? (verdict.forTeamName || "FOR")
+                      : (verdict.againstTeamName || "AGAINST")} wins this debate!`}
+              </div>
+              <div className="text-xs text-slate-700">
+                Scores — {verdict.forTeamName || "FOR"}: <b>{verdict.forScore}</b> ·{" "}
+                {verdict.againstTeamName || "AGAINST"}: <b>{verdict.againstScore}</b>
+              </div>
+              <div className="text-xs text-emerald-700 font-semibold mt-1">
+                Points were added to the scoreboard.
+              </div>
+            </div>
+          )}
+
+          {/* Continue — multi-team is teacher/student-advanced; the server already
+              scored, so we advance without re-awarding points. */}
+          {!isSolo && (
+            <button
+              type="button"
+              onClick={() =>
+                onSubmit?.({
+                  type: "live-debate",
+                  taskType: "live-debate",
+                  mode: "inter-team",
+                  completed: true,
+                  scoredByServer: true,
+                  points: 0,
+                  verdict,
+                })
+              }
+              className="mt-5 mx-auto block px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+            >
+              Continue ▶
+            </button>
+          )}
+
           {/* Coach feedback (rule-based) — visible immediately while
               the server-side AI scoring (if any) catches up. */}
           {coachFeedback && (
@@ -453,27 +584,28 @@ export default function LiveDebateTask({
             </div>
           ) : null}
 
-          {/* In solo mode, it's always someone's turn locally */}
-          {(isSolo || !sideExhausted) ? (
+          {/* Solo: it's always someone's turn locally. Multi-team: only when
+              the live turn matches our assigned side. */}
+          {showInput ? (
             <div className="space-y-3">
               {/* Assigned speaker banner */}
               <div className={`p-4 rounded-xl border-2 text-center ${
-                currentTurn === "for"
+                (isSolo ? currentTurn : mySide) === "for"
                   ? "bg-green-50 border-green-300"
                   : "bg-red-50 border-red-300"
               }`}>
                 <div className={`text-sm font-bold uppercase tracking-wide ${
-                  currentTurn === "for" ? "text-green-600" : "text-red-600"
+                  (isSolo ? currentTurn : mySide) === "for" ? "text-green-600" : "text-red-600"
                 }`}>
-                  {currentTurn === "for" ? "FOR" : "AGAINST"} — argument {turnIndex + 1} of {turnsPerSide}
+                  {(isSolo ? currentTurn : mySide) === "for" ? "FOR" : "AGAINST"} — argument {myResponsesCount + 1} of {turnsPerSide}
                 </div>
                 <div className={`text-2xl font-black mt-1 ${
-                  currentTurn === "for" ? "text-green-700" : "text-red-700"
+                  (isSolo ? currentTurn : mySide) === "for" ? "text-green-700" : "text-red-700"
                 }`}>
-                  {currentSpeaker}, you're up!
+                  {mySpeaker}, you're up!
                 </div>
                 <div className="text-sm text-slate-500 mt-1">
-                  Hand the device to {currentSpeaker}
+                  Hand the device to {mySpeaker}
                 </div>
               </div>
 
@@ -485,7 +617,7 @@ export default function LiveDebateTask({
                   placeholder={
                     isTranscribing
                       ? "Transcribing your speech..."
-                      : `${currentSpeaker}, speak or type your argument...`
+                      : `${mySpeaker}, speak or type your argument...`
                   }
                   // Explicit bg + text colour: tester reported the typed
                   // text was invisible — likely the parent dark theme
@@ -520,18 +652,20 @@ export default function LiveDebateTask({
                 onClick={submitResponse}
                 disabled={disabled || !transcript.trim() || isRecording || isTranscribing}
                 className={`w-full py-4 text-white rounded-xl font-bold text-xl transition disabled:opacity-50 ${
-                  currentTurn === "for"
+                  (isSolo ? currentTurn : mySide) === "for"
                     ? "bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
                     : "bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700"
                 }`}
               >
-                Submit {currentSpeaker}'s Argument ({turnIndex + 1}/{turnsPerSide})
+                Submit {mySpeaker}'s Argument ({myResponsesCount + 1}/{turnsPerSide})
               </button>
             </div>
           ) : !isSolo ? (
             <div className="p-6 text-center">
               <div className="text-xl font-bold text-slate-600">
-                {otherSideLabel}'s turn to argue...
+                {mySideExhausted
+                  ? `You've used all ${turnsPerSide} arguments — waiting for ${opponentName}…`
+                  : `${opponentName}'s turn to argue…`}
               </div>
               <div className="text-sm text-slate-500 mt-2">
                 Read their response above when it appears.

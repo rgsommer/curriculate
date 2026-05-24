@@ -19,6 +19,39 @@ function arraysDeepEqual(a, b) {
 }
 
 /**
+ * Rule-based debate scorer (server-side, authoritative). Mirrors the client's
+ * coach heuristic: argument length + evidence cues + rebuttal cues per side.
+ * Returns per-side scores, the winning side, and points to award each team.
+ */
+function scoreDebateResponses(responses, turnsPerTeam = 3) {
+  const arr = Array.isArray(responses) ? responses : [];
+  const evidenceTerms = ["because", "since", "for example", "for instance", "evidence", "research", "studies", "data", "according to"];
+  const rebuttalTerms = ["however", "but", "in contrast", "on the other hand", "actually", "while", "whereas"];
+  const sides = { for: 0, against: 0 };
+  for (const r of arr) {
+    const side = r?.side === "against" ? "against" : "for";
+    const text = String(r?.text || "").trim();
+    if (!text) continue;
+    const lower = text.toLowerCase();
+    const words = text.split(/\s+/).filter(Boolean).length;
+    const lengthScore = Math.min(20, Math.floor(words / 3));
+    const ev = evidenceTerms.reduce((s, t) => s + (lower.includes(t) ? 1 : 0), 0);
+    const rb = rebuttalTerms.reduce((s, t) => s + (lower.includes(t) ? 1 : 0), 0);
+    sides[side] += lengthScore + ev * 5 + rb * 3;
+  }
+  const winningSide = sides.for === sides.against ? "tie" : (sides.for > sides.against ? "for" : "against");
+  // Participation points scale with quality; winner gets a bonus.
+  const PARTICIPATION = 10;
+  const WINNER_BONUS = 15;
+  const quality = (n) => Math.max(0, Math.min(20, Math.round(n / 3)));
+  const award = {
+    for: PARTICIPATION + quality(sides.for) + (winningSide === "for" ? WINNER_BONUS : 0),
+    against: PARTICIPATION + quality(sides.against) + (winningSide === "against" ? WINNER_BONUS : 0),
+  };
+  return { forScore: sides.for, againstScore: sides.against, winningSide, award };
+}
+
+/**
  * Helper function: Shuffle array
  */
 function shuffle(arr) {
@@ -73,7 +106,7 @@ function getOrCreateTicTacToe(room, key = "default") {
  * @param {Function} context.generateAIScore - Function to generate AI score
  * @param {Function} context.buildRoomState - Function to build room state
  */
-function registerGameHandlers(socket, { io, rooms, updateTeamScore, generateAIScore, buildRoomState }) {
+function registerGameHandlers(socket, { io, rooms, updateTeamScore, addBonusSubmission, generateAIScore, buildRoomState }) {
 
   // ─────────────────────────────────────────────
   // Speed Draw (race-based, first correct wins)
@@ -481,12 +514,19 @@ function registerGameHandlers(socket, { io, rooms, updateTeamScore, generateAISc
     const code = (data.roomCode || "").toUpperCase();
     if (!code) return;
 
-    // Try the explicit debateKey from the client first, then fall back to legacy format
+    // Prefer the SHARED debate state stored on the room (set by teacherLaunchTask
+    // when it pairs teams). Fall back to the per-connection `debates` map (legacy
+    // start-live-debate path).
+    const room = rooms[code];
     const debateKey = data.debateKey || `${code}:${data.taskId || "default"}:0`;
-    const debate = debates[debateKey] || debates[`${code}:${data.taskId || "default"}`];
+    const debate =
+      (room?.debate && room.debate[debateKey]) ||
+      debates[debateKey] ||
+      debates[`${code}:${data.taskId || "default"}`];
 
     if (debate) {
       const { side, text, speaker } = data;
+      const turnsPerTeam = debate.turnsPerTeam || 3;
 
       // Enforce turn order — reject if it's not this team's turn
       if (side !== debate.currentTurn) {
@@ -504,21 +544,69 @@ function registerGameHandlers(socket, { io, rooms, updateTeamScore, generateAISc
       // Alternate turns
       debate.currentTurn = debate.currentTurn === "for" ? "against" : "for";
 
-      // Broadcast the new response + updated turn to the whole room
-      io.to(code).emit("debate-new-response", {
+      const payload = {
         ...entry,
         currentTurn: debate.currentTurn,
         forCount: debate.forCount,
         againstCount: debate.againstCount,
-      });
+      };
+
+      // Broadcast ONLY to the two paired teams (isolates concurrent pairs in the
+      // same room). Falls back to room-wide if we don't know the team ids.
+      const forId = debate.teams?.for?.teamId;
+      const againstId = debate.teams?.against?.teamId;
+      if (forId && againstId) {
+        io.to(forId).emit("debate-new-response", payload);
+        io.to(againstId).emit("debate-new-response", payload);
+      } else {
+        io.to(code).emit("debate-new-response", payload);
+      }
 
       // Check if debate is over (both teams used all turns)
-      if (debate.forCount >= debate.turnsPerTeam && debate.againstCount >= debate.turnsPerTeam) {
-        io.to(code).emit("debate-complete", {
+      if (debate.forCount >= turnsPerTeam && debate.againstCount >= turnsPerTeam) {
+        // Server-side scoring (authoritative). Award points to BOTH teams and
+        // surface the verdict so the client can show who won + standings.
+        const verdict = scoreDebateResponses(debate.responses, turnsPerTeam);
+        const forName = debate.teams?.for?.name;
+        const againstName = debate.teams?.against?.name;
+        const awarded = {};
+        if (typeof addBonusSubmission === "function" && room) {
+          if (forId && verdict.award.for > 0) {
+            addBonusSubmission(room, forId, verdict.award.for, "live-debate", {
+              side: "for", winningSide: verdict.winningSide, postulate: debate.postulate,
+            });
+            awarded[forId] = verdict.award.for;
+          }
+          if (againstId && verdict.award.against > 0) {
+            addBonusSubmission(room, againstId, verdict.award.against, "live-debate", {
+              side: "against", winningSide: verdict.winningSide, postulate: debate.postulate,
+            });
+            awarded[againstId] = verdict.award.against;
+          }
+        }
+        const completePayload = {
           taskId: debate.taskId,
           responses: debate.responses,
           postulate: debate.postulate,
-        });
+          winningSide: verdict.winningSide,
+          forScore: verdict.forScore,
+          againstScore: verdict.againstScore,
+          forTeamName: forName,
+          againstTeamName: againstName,
+          awarded,
+        };
+        if (forId && againstId) {
+          io.to(forId).emit("debate-complete", completePayload);
+          io.to(againstId).emit("debate-complete", completePayload);
+        } else {
+          io.to(code).emit("debate-complete", completePayload);
+        }
+        // Refresh the live scoreboard for the whole room.
+        try {
+          const rs = buildRoomState && buildRoomState(room);
+          if (rs) io.to(code).emit("roomState", rs);
+        } catch {}
+        if (room?.debate) delete room.debate[debateKey];
         delete debates[debateKey];
       }
     } else {

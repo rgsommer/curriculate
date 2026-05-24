@@ -40,6 +40,11 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
   const [isJudging, setIsJudging] = useState(false);
   const [verdict, setVerdict] = useState(null);
   const [showFullFeedback, setShowFullFeedback] = useState(false);
+  // Key arguments captured for each side so the AI judge has real content to
+  // evaluate (the debate itself is spoken/in-person). Without these the judge
+  // falls back to a generic verdict.
+  const [affArgs, setAffArgs] = useState("");
+  const [negArgs, setNegArgs] = useState("");
 
   // If there is no room connection, the judge cannot be summoned.
   // We show a clear message so students know what is wrong.
@@ -89,7 +94,12 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
       // ignore
     }
     setIsJudging(true);
-    socket.emit("ai-judge:request", { roomCode });
+    socket.emit("ai-judge:request", {
+      roomCode,
+      topic,
+      affirmative: affArgs,
+      negative: negArgs,
+    });
   };
 
   if (verdict) {
@@ -271,10 +281,36 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
         </div>
       </div>
 
-      <p className="text-3xl mb-16 text-gray-700">
-        The AI has been listening to your entire debate.<br />
-        When you're ready, summon the final verdict.
+      <p className="text-2xl mb-6 text-gray-700">
+        Enter each side's <b>key arguments</b> below so the judge can weigh them,
+        then summon the verdict.
       </p>
+
+      {/* Per-side argument capture — gives the AI real content to judge. */}
+      <div className="grid grid-cols-2 gap-6 mx-auto mb-10" style={{ maxWidth: 980 }}>
+        <div style={{ borderRadius: 16, padding: 14, background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.35)" }}>
+          <div className="text-2xl font-extrabold text-green-700 mb-2">✅ {affLabel}</div>
+          <textarea
+            value={affArgs}
+            onChange={(e) => setAffArgs(e.target.value)}
+            disabled={disabled}
+            rows={5}
+            placeholder="Type the Affirmative side's strongest points (evidence, reasons, rebuttals)…"
+            className="w-full rounded-xl border border-green-300 p-3 text-lg bg-white text-slate-900 placeholder:text-slate-400 outline-none resize-none"
+          />
+        </div>
+        <div style={{ borderRadius: 16, padding: 14, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.30)" }}>
+          <div className="text-2xl font-extrabold text-red-700 mb-2">❌ {negLabel}</div>
+          <textarea
+            value={negArgs}
+            onChange={(e) => setNegArgs(e.target.value)}
+            disabled={disabled}
+            rows={5}
+            placeholder="Type the Negative side's strongest points (evidence, reasons, rebuttals)…"
+            className="w-full rounded-xl border border-red-300 p-3 text-lg bg-white text-slate-900 placeholder:text-slate-400 outline-none resize-none"
+          />
+        </div>
+      </div>
 
       {notConnected && (
         <div

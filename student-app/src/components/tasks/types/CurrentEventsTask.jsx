@@ -7,8 +7,9 @@
 // backend sends a placeholder task with `config.loading: true`.
 //
 // See CURRENT_EVENTS_PLAN.md §11 + §14 for the spec.
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import SpeechQualityMeter from "../SpeechQualityMeter";
+import { API_BASE_URL } from "../../../config";
 
 // Count sentence-shaped chunks in a free-text response. Handles the
 // common end-of-sentence punctuation + the case where the user just
@@ -33,10 +34,52 @@ function countSentences(text) {
 
 const MIN_RESPONSE_SENTENCES = 3;
 
-export default function CurrentEventsTask({ task, onSubmit, disabled }) {
+export default function CurrentEventsTask({ task, onSubmit, disabled, practiceMode = false }) {
   const cfg = task?.config || {};
-  const resolved = cfg.resolved || null;
-  const loading = !!cfg.loading || !resolved;
+
+  // ── Practice-mode live news ──────────────────────────────────────────
+  // Live sessions resolve a REAL story over the socket (roomEngine). Solo
+  // practice ships a pre-baked "evergreen" demo block, which testers flagged
+  // as feeling fake. When the demo opts in (config.liveResolveInPractice), we
+  // fetch an actual current event over HTTP and swap it in. The pre-baked
+  // block stays as a graceful fallback if the fetch fails or no key is set.
+  const wantsLive = practiceMode && !!cfg.liveResolveInPractice && !cfg.resolvedFromLive;
+  const [liveResolved, setLiveResolved] = useState(null);
+  const [liveFetching, setLiveFetching] = useState(wantsLive);
+
+  useEffect(() => {
+    if (!wantsLive) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/current-events/resolve`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lessonTopic: cfg.lessonTopic || task?.title || "general learning",
+            subject: cfg.subject || "General",
+            gradeLevel: cfg.gradeLevel || 7,
+            region: cfg.region || "Canada",
+            worldviewProfile: cfg.worldviewProfile || "general",
+            preferredCategories: cfg.preferredCategories,
+          }),
+        });
+        const j = await r.json().catch(() => null);
+        if (!cancelled && j?.ok && j.resolved) setLiveResolved(j.resolved);
+      } catch {
+        /* keep pre-baked fallback */
+      } finally {
+        if (!cancelled) setLiveFetching(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [wantsLive, cfg.lessonTopic, cfg.subject, cfg.gradeLevel, cfg.region, cfg.worldviewProfile, task?.title]);
+
+  // Prefer the live story when we got one; otherwise the pre-baked block.
+  const resolved = liveResolved || cfg.resolved || null;
+  const loading = liveFetching || !!cfg.loading || !resolved;
 
   const [response, setResponse] = useState("");
   // Track whether the user has been shown AI feedback yet. After they

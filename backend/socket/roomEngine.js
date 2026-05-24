@@ -321,6 +321,23 @@ export function createRoomEngine(io) {
     }
 
     room.stations[nextStationId].assignedTeamId = teamId;
+
+    // Multi-room roaming hunt: the ROOM is part of the station identity. Pick a
+    // room too (avoid repeating the team's current room when possible) so teams
+    // genuinely roam between rooms, and set the expected room used to gate scans.
+    // No-op for single-room sessions (room is ignored entirely there).
+    if (Array.isArray(room.selectedRooms) && room.selectedRooms.length > 1) {
+      const slugify = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, "-");
+      const classroomSlug = slugify(room.locationCode || "Classroom");
+      const ring = room.selectedRooms.map(slugify).filter((s) => s && s !== classroomSlug);
+      const pool = ring.length ? ring : room.selectedRooms.map(slugify).filter(Boolean);
+      if (pool.length) {
+        const prev = team.locationSlug || null;
+        let choices = pool.filter((s) => s !== prev);
+        if (choices.length === 0) choices = pool;
+        team.locationSlug = choices[Math.floor(Math.random() * choices.length)];
+      }
+    }
   }
 
   // ================================
@@ -749,6 +766,7 @@ export function createRoomEngine(io) {
       // We expose ONLY a boolean here; full state goes through mystery:requestState.
       mysteryEnabled: !!(room.taskset?.mysteryEnabled || room.mysteryActive),
       selectedRooms: Array.isArray(room.selectedRooms) ? room.selectedRooms : [],
+      enforceLocation: !!room.enforceLocation,
       locationOptions: Array.isArray(room.locationOptions) ? room.locationOptions : [],
       moodCheckins: room.moodCheckins && typeof room.moodCheckins === "object" ? room.moodCheckins : {},
       submissions: Array.isArray(room.submissions) ? room.submissions : [],
@@ -1179,6 +1197,70 @@ export function createRoomEngine(io) {
       }
     }
 
+    // ── Live Debate: pair teams head-to-head as they ARRIVE at this task ──
+    // Self-paced tasksets send tasks per-team, so we pair on arrival: the first
+    // team to reach this index waits; the next team to arrive is paired with it
+    // (FOR vs AGAINST). Pairing is broadcast via `debate-start` to BOTH teams so
+    // the waiting team upgrades from its "waiting for an opponent" screen.
+    // Debate state lives on room.debate (shared) so debate-response can enforce
+    // turns + score. A lone team falls back to intra/bot mode client-side.
+    let debateInject = null;
+    if (task.taskType === "live-debate" && teamId) {
+      if (!room.debateLobbies) room.debateLobbies = {};
+      if (!room.debate) room.debate = {};
+      const postulate =
+        task.postulate || task.config?.postulate || task.config?.resolution ||
+        task.config?.topic || task.prompt || "";
+      const turnsPerTeam = Number(task.config?.turnsPerTeam) > 0 ? Number(task.config.turnsPerTeam) : 3;
+      const label = (tid) => room.teams[tid]?.teamName || `Team ${String(tid).slice(-4)}`;
+      const lobbyKey = String(index);
+
+      // Already paired at this index (reconnect / catch-up re-send)? Re-attach.
+      const existing = Object.values(room.debate).find(
+        (d) => d && d.taskId === String(index) &&
+          (d.teams?.for?.teamId === teamId || d.teams?.against?.teamId === teamId)
+      );
+      if (existing) {
+        const side = existing.teams.for.teamId === teamId ? "for" : "against";
+        debateInject = {
+          debateKey: existing.debateKey,
+          postulate: existing.postulate,
+          mySide: side,
+          myTeamName: side === "for" ? existing.teams.for.name : existing.teams.against.name,
+          opponentName: side === "for" ? existing.teams.against.name : existing.teams.for.name,
+          currentTurn: existing.currentTurn,
+          turnsPerTeam: existing.turnsPerTeam,
+          awaitingOpponent: false,
+        };
+      } else {
+        const waitingTeamId = room.debateLobbies[lobbyKey];
+        if (waitingTeamId && waitingTeamId !== teamId && room.teams[waitingTeamId]) {
+          const forId = waitingTeamId, againstId = teamId;
+          const debateKey = `${room.code}:${index}:${forId}-${againstId}`;
+          room.debate[debateKey] = {
+            debateKey, taskId: String(index), postulate, turnsPerTeam,
+            teams: { for: { teamId: forId, name: label(forId) }, against: { teamId: againstId, name: label(againstId) } },
+            responses: [], currentTurn: "for", forCount: 0, againstCount: 0,
+          };
+          room.debateLobbies[lobbyKey] = null;
+          // Upgrade the WAITING team to paired (it already has the task on screen).
+          io.to(forId).emit("debate-start", {
+            debateKey, postulate, mySide: "for", myTeamName: label(forId),
+            opponentName: label(againstId), currentTurn: "for", turnsPerTeam,
+          });
+          // Embed pairing into THIS team's task:launch so it starts paired.
+          debateInject = {
+            debateKey, postulate, mySide: "against", myTeamName: label(againstId),
+            opponentName: label(forId), currentTurn: "for", turnsPerTeam, awaitingOpponent: false,
+          };
+        } else {
+          // No opponent yet → this team waits (client shows a waiting screen).
+          room.debateLobbies[lobbyKey] = teamId;
+          debateInject = { awaitingOpponent: true, postulate, turnsPerTeam };
+        }
+      }
+    }
+
     const payload = {
       taskIndex: index, // preferred
       index,            // legacy
@@ -1186,6 +1268,7 @@ export function createRoomEngine(io) {
         ...task,
         minimizeOnScreen: !!room?.minimizeOnScreen || false,
         ...(nextStationColor ? { nextStationColor } : {}),
+        ...(debateInject || {}),
       },
       timeLimitSeconds,
       totalTasks: tasks.length,

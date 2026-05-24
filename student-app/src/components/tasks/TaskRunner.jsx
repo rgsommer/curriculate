@@ -78,6 +78,7 @@ import ClozeTask from "./types/ClozeTask";
 import TeachBackTask from "./types/TeachBackTask";
 import PaperModeCamera from "./PaperModeCamera.jsx";
 import CoachPanel from "./CoachPanel.jsx";
+import { getPlayerName } from "../../utils/playerName";
 
 
 // Task types that SKIP coach mode (already have built-in turn mechanics, or non-academic)
@@ -958,7 +959,7 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
   const allNames = (() => {
     const real = Array.isArray(memberNames) ? memberNames.filter(Boolean) : [];
     if (practiceMode && real.length < 3) {
-      const me = real[0] || "You";
+      const me = real[0] || getPlayerName();
       return [me, ...ECHO_BOTS_INLINE.slice(0, 2)];
     }
     return real;
@@ -2704,6 +2705,7 @@ case "multi_player_feedback":
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled}
           memberNames={memberNames}
+          practiceMode={practiceMode}
         />
       );
       break;
@@ -3274,6 +3276,7 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
           task={tp}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled}
+          practiceMode={practiceMode}
         />
       );
       break;

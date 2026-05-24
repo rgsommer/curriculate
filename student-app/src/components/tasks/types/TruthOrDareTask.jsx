@@ -17,6 +17,7 @@
 // Sub-components live in this single file to keep the bundle small.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { getPlayerName } from "../../../utils/playerName";
 
 const PHASES = Object.freeze({
   IDLE:       "idle",
@@ -126,6 +127,11 @@ export default function TruthOrDareTask({
   const cfg = task?.config || {};
   const isLive = !!(socket && roomCode && teamId) && !practiceMode;
 
+  // The player's own name drives the practice spotlight + roster (tester:
+  // "always include the player's name as one of the names"). Falls back to
+  // "You" if unknown.
+  const ME = getPlayerName();
+
   // ------------- Live mode: subscribe to server -----------------------------
 
   const [livePhase, setLivePhase]               = useState(PHASES.IDLE);
@@ -227,9 +233,9 @@ export default function TruthOrDareTask({
   // Named "bots" so solo practice feels like a real round and the spotlight
   // clearly names who's up (tester: "show bots in practice mode, and identify
   // which player is to do the truth/dare"). The spotlight rotates You → bots.
-  const PRACTICE_ROSTER = ["You", "Ada", "Newton", "Maya"];
-  const [practiceSpotlight, setPracticeSpotlight] = useState("You");
-  const isBotTurn = practiceMode && practiceSpotlight !== "You";
+  const PRACTICE_ROSTER = [ME, "Ada", "Newton", "Maya"];
+  const [practiceSpotlight, setPracticeSpotlight] = useState(ME);
+  const isBotTurn = practiceMode && practiceSpotlight !== ME;
 
   // Practice flow: SELECTING → CHOOSING → REVEALING → PERFORMING → JUDGING → REWARDING → next
   useEffect(() => {
@@ -242,7 +248,7 @@ export default function TruthOrDareTask({
     }
     if (practicePhase === PHASES.CHOOSING) {
       // Bot turn → the bot auto-picks after a beat. Your turn → wait for you.
-      if (practiceSpotlight !== "You") {
+      if (practiceSpotlight !== ME) {
         const t = setTimeout(() => handleChoice(Math.random() < 0.5 ? "truth" : "dare"), 1600);
         return () => clearTimeout(t);
       }
@@ -254,7 +260,7 @@ export default function TruthOrDareTask({
     }
     if (practicePhase === PHASES.PERFORMING && practiceChallenge) {
       // Bot "performs" quickly so the round keeps moving.
-      if (practiceSpotlight !== "You") {
+      if (practiceSpotlight !== ME) {
         const t = setTimeout(() => setPracticePhase(PHASES.JUDGING), 2500);
         return () => clearTimeout(t);
       }
@@ -276,7 +282,7 @@ export default function TruthOrDareTask({
     }
     if (practicePhase === PHASES.JUDGING) {
       // Bot turn → auto-judge (the bot "nails it"); your turn → you self-judge.
-      if (practiceSpotlight !== "You") {
+      if (practiceSpotlight !== ME) {
         const t = setTimeout(() => {
           setPracticeVerdict("pass");
           setPracticePoints((p) => p + 10);
@@ -315,7 +321,7 @@ export default function TruthOrDareTask({
     ? (practiceVerdict ? { result: practiceVerdict, awardedPoints: practicePoints, awardedCoins: 0 } : null)
     : liveVerdict;
   const selectedPlayer   = practiceMode ? practiceSpotlight       : liveSelectedPlayer;
-  const isMySelectedTurn = practiceMode ? (practiceSpotlight === "You") : (teamId && liveSelectedTeamId === teamId);
+  const isMySelectedTurn = practiceMode ? (practiceSpotlight === ME) : (teamId && liveSelectedTeamId === teamId);
 
   // ------------- Handlers ---------------------------------------------------
 
@@ -394,7 +400,7 @@ export default function TruthOrDareTask({
       />
 
       {!ended && phase === PHASES.SELECTING && (
-        <SpotlightWheel reel={liveReel} selectedPlayer={selectedPlayer} practiceMode={practiceMode} />
+        <SpotlightWheel reel={liveReel} selectedPlayer={selectedPlayer} practiceMode={practiceMode} me={ME} />
       )}
 
       {!ended && phase === PHASES.CHOOSING && (
@@ -453,7 +459,7 @@ function Header({ roundIndex, totalRounds, challenge, phase }) {
   );
 }
 
-function SpotlightWheel({ reel = [], selectedPlayer = "", practiceMode = false }) {
+function SpotlightWheel({ reel = [], selectedPlayer = "", practiceMode = false, me = "You" }) {
   // Slot-machine "blur" of avatars. We rotate display names every 120ms for
   // ~2.5s, then settle on the chosen player.
   const [tickIdx, setTickIdx] = useState(0);
@@ -462,9 +468,9 @@ function SpotlightWheel({ reel = [], selectedPlayer = "", practiceMode = false }
     return () => clearInterval(i);
   }, []);
   // Blur through the roster, then settle on whoever's actually up (You or a bot).
-  const PRACTICE_REEL = ["You", "Ada", "Newton", "Maya"];
+  const PRACTICE_REEL = [me, "Ada", "Newton", "Maya"];
   const displayed = practiceMode
-    ? (tickIdx < 14 ? PRACTICE_REEL[tickIdx % PRACTICE_REEL.length] : (selectedPlayer || "You"))
+    ? (tickIdx < 14 ? PRACTICE_REEL[tickIdx % PRACTICE_REEL.length] : (selectedPlayer || me))
     : (reel.length
         ? reel[tickIdx % reel.length]?.playerName || "…"
         : (selectedPlayer || "…"));

@@ -135,49 +135,106 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
   }, []);
   const [isRecording, setIsRecording] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [aiResult, setAiResult] = useState(null);
   const [assessing, setAssessing] = useState(false);
 
   // Speech recognition
   const recognitionRef = useRef(null);
+  // Text that existed before the CURRENT dictation session started — we APPEND
+  // dictated text to it. Updated on each recognizer restart (see onend).
+  const preDictateRef = useRef("");
+  // Always-current copy of the explanation, so the recognizer's restart logic
+  // can re-base off the latest text without a stale closure.
+  const explanationRef = useRef("");
+  // User intent to keep listening. Chrome's recognizer auto-ends after a pause;
+  // while intent is true we restart it so dictation survives natural pauses
+  // (tester: "records but doesn't transcribe" — it was silently ending).
+  const listenIntentRef = useRef(false);
   // Audio recording
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
 
   /* ─── Speech-to-text (voice mode) ─── */
   const startListening = useCallback(() => {
-    if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
-      alert("Speech recognition not supported in this browser.");
+    // Chrome only exposes the prefixed `webkitSpeechRecognition`; accept either.
+    const SpeechRecognitionImpl =
+      (typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition)) || null;
+    if (!SpeechRecognitionImpl) {
+      setVoiceError("Voice input is not supported on this browser. Try Chrome or Safari, or type instead.");
       return;
     }
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SR();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
 
-    let finalText = explanation;
-    recognition.onresult = (e) => {
-      let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) {
-          finalText += e.results[i][0].transcript + " ";
-        } else {
-          interim += e.results[i][0].transcript;
+    try {
+      const recognition = new SpeechRecognitionImpl();
+      recognition.lang = "en-US";
+      recognition.interimResults = true;
+      recognition.continuous = true;
+
+      // Remember what was already typed so dictation APPENDS rather than replaces.
+      preDictateRef.current = explanation || "";
+
+      recognition.onresult = (event) => {
+        let finalText = "";
+        let interimText = "";
+        for (let i = 0; i < event.results.length; i++) {
+          const t = event.results[i][0].transcript;
+          if (event.results[i].isFinal) finalText += t;
+          else interimText += t;
         }
-      }
-      setExplanation(finalText + interim);
-    };
-    recognition.onerror = () => setIsListening(false);
-    recognition.onend = () => setIsListening(false);
-    recognition.start();
-    recognitionRef.current = recognition;
-    setIsListening(true);
+        const combined = (preDictateRef.current + " " + finalText + interimText).replace(/^\s+/, "");
+        explanationRef.current = combined;
+        setExplanation(combined);
+      };
+
+      recognition.onerror = (event) => {
+        console.error("Speech recognition error:", event?.error);
+        if (event?.error === "no-speech" || event?.error === "aborted") return; // benign
+        if (event?.error === "not-allowed") {
+          setVoiceError("Microphone access was denied. Please allow mic access and try again.");
+        } else {
+          setVoiceError("Voice input isn't working right now. You can still type your answer.");
+        }
+        listenIntentRef.current = false;
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        // Chrome ends the recognizer after a pause. If the user hasn't tapped
+        // Stop, re-base on the latest text and restart so dictation survives
+        // natural pauses (otherwise it looks like "records but doesn't transcribe").
+        if (listenIntentRef.current) {
+          preDictateRef.current = explanationRef.current || "";
+          try {
+            recognition.start();
+            return;
+          } catch {
+            /* fall through to stop */
+          }
+        }
+        setIsListening(false);
+      };
+
+      // Bank any text already in the box before starting.
+      explanationRef.current = explanation || "";
+      listenIntentRef.current = true;
+      recognition.start();
+      recognitionRef.current = recognition;
+      setIsListening(true);
+      setVoiceError("");
+    } catch (err) {
+      console.error("Speech recognition start failed:", err);
+      setVoiceError("Voice input is not available. Please type your response.");
+      listenIntentRef.current = false;
+      setIsListening(false);
+    }
   }, [explanation]);
 
   const stopListening = useCallback(() => {
-    recognitionRef.current?.stop();
+    listenIntentRef.current = false;
+    try { recognitionRef.current?.stop(); } catch {}
+    recognitionRef.current = null;
     setIsListening(false);
   }, []);
 
@@ -285,9 +342,15 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
     }
   }, [onSubmit]);
 
+  // Keep the always-current text ref synced (covers typing while listening).
+  useEffect(() => {
+    explanationRef.current = explanation;
+  }, [explanation]);
+
   // Cleanup
   useEffect(() => {
     return () => {
+      listenIntentRef.current = false;
       recognitionRef.current?.stop();
       if (mediaRecorderRef.current?.state === "recording") {
         mediaRecorderRef.current.stop();
@@ -454,6 +517,14 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
           >
             {isListening ? "⏹ Stop Dictation" : "🎤 Start Speaking"}
           </button>
+          {isListening && (
+            <p className="text-xs text-gray-500 font-medium">Listening… speak naturally; pauses are fine.</p>
+          )}
+          {!!voiceError && (
+            <p className="text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              ⚠️ {voiceError}
+            </p>
+          )}
         </div>
       )}
 

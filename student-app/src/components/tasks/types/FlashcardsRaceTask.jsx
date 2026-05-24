@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/FlashcardsRaceTask.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { getPlayerName } from "../../../utils/playerName";
 import confetti from "canvas-confetti";
 
 /**
@@ -33,7 +34,7 @@ export default function FlashcardsRaceTask(props) {
       .map((n) => String(n || "").trim())
       .filter(Boolean);
     if (isDemoLocal && real.length < 3) {
-      const me = real[0] || "You";
+      const me = real[0] || getPlayerName();
       return [me, ...FRR_BOTS.map((b) => `${b} (bot)`)];
     }
     return real;

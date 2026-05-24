@@ -9,6 +9,7 @@
 // Reply phase (partnerAnswer) keeps the original single-textarea UI.
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { getPlayerName } from "../../../utils/playerName";
 import { TaskCardFrame, Pill, PrimaryButton, GhostButton, TextArea } from "../taskStyles";
 
 let __pid = 0;
@@ -67,7 +68,7 @@ export default function CollaborationTask({
       .map((n) => String(n || "").trim())
       .filter(Boolean);
     if (practiceMode) {
-      const me = real[0] || "You";
+      const me = real[0] || getPlayerName();
       return [me, ...PRACTICE_BOTS];
     }
     return real;

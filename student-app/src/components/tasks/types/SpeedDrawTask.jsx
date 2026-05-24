@@ -19,6 +19,7 @@
 // Falls back gracefully when no member names are supplied.
 
 import React, { useState, useEffect, useRef } from "react";
+import { getPlayerName } from "../../../utils/playerName";
 import StepCircle from "../StepCircle";
 
 const PHASE = {
@@ -52,7 +53,7 @@ export default function SpeedDrawTask({
       .map((n) => String(n || "").trim())
       .filter(Boolean);
     if (practiceMode && real.length < 3) {
-      const me = real[0] || "You";
+      const me = real[0] || getPlayerName();
       return [me, ...PRACTICE_BOTS.slice(0, 3).map((b) => `${b} (bot)`)];
     }
     return real;

@@ -138,6 +138,107 @@ async function genAiImage(prompt) {
   }
 }
 
+// Gemini image-to-image edit. Sends a source image + a text instruction and
+// asks for BOTH a TEXT part (so the model can return the change list) and an
+// IMAGE part (the edited copy). Returns { buffer, contentType, text } or null.
+async function genGeminiImageEdit(srcBuffer, srcMime, instruction) {
+  if (!GEMINI_KEY) return null;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${encodeURIComponent(GEMINI_KEY)}`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          { inlineData: { mimeType: srcMime || "image/png", data: srcBuffer.toString("base64") } },
+          { text: instruction },
+        ],
+      }],
+      generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
+    }),
+  });
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const img = parts.find((p) => p?.inlineData?.data);
+  if (!img) return null;
+  const text = parts.filter((p) => typeof p?.text === "string").map((p) => p.text).join("\n");
+  return {
+    buffer: Buffer.from(img.inlineData.data, "base64"),
+    contentType: img.inlineData.mimeType || "image/png",
+    text,
+  };
+}
+
+// Parse the model's change list out of a free-text blob. Accepts a bare JSON
+// array, a fenced ```json block, or an array of objects ({text|change|
+// description}). Returns string[] (the answer key) or [].
+function _parseChangeList(text) {
+  const t = String(text || "");
+  const m = t.match(/\[[\s\S]*\]/);
+  if (!m) return [];
+  let arr;
+  try { arr = JSON.parse(m[0]); } catch { return []; }
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((it) => {
+      if (typeof it === "string") return it.trim();
+      if (it && typeof it === "object") return String(it.text || it.change || it.description || it.diff || "").trim();
+      return "";
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Diff Detective "true spot-the-difference" pair via TWO AI calls:
+ *   1. Generate a base scene (image A) from a text prompt.
+ *   2. Feed image A back and ask for EXACTLY `diffCount` identifiable changes,
+ *      returning the edited image (B) AND a JSON list of the changes it made.
+ * The change list IS the answer key (diff-detective grades descriptively —
+ * students list what they spot; we reveal this list). If we get an image but
+ * NO usable change list, we return null so the caller falls back to the
+ * deterministic SVG scene (which always carries an exact answer key).
+ *
+ * Gemini-only (needs multimodal image input). Returns
+ *   { a:{buffer,contentType}, b:{buffer,contentType}, differences:[{text,hint}] }
+ * or null. Always best-effort.
+ */
+async function genDiffDetectivePair({ basePrompt, diffCount = 5 }) {
+  if (!GEMINI_KEY) return null;
+  const sceneText = String(basePrompt || "").trim() || "a simple, colorful classroom scene";
+  const genPrompt =
+    `Clear, classroom-appropriate, brightly-lit, flat illustration with a plain background. ` +
+    `A single cohesive scene: ${sceneText}. Several distinct, clearly-separated objects. ` +
+    `No text, letters, numbers, or captions anywhere in the image.`;
+  let a;
+  try { a = await genGeminiImage(genPrompt); } catch { a = null; }
+  if (!a?.buffer) return null;
+
+  const editInstruction =
+    `This is image A for a classroom "spot the difference" game. ` +
+    `Produce image B: an edited copy of THIS image with EXACTLY ${diffCount} clearly identifiable changes a student could spot ` +
+    `(for example: change an object's color, add or remove an object, change a shape or size, or move something). ` +
+    `Keep the overall scene, composition, and art style otherwise IDENTICAL — only the ${diffCount} intended changes should differ. ` +
+    `Do not add any text, letters, or numbers to the image. ` +
+    `In your text response, return ONLY a JSON array of exactly ${diffCount} short strings, each describing one change you made ` +
+    `(e.g. ["The red apple is now green", "A bird was added in the top-left", "The tree is taller"]).`;
+
+  let edit;
+  try { edit = await genGeminiImageEdit(a.buffer, a.contentType, editInstruction); } catch { edit = null; }
+  if (!edit?.buffer) return null;
+
+  const changeStrings = _parseChangeList(edit.text);
+  // No usable answer key → bail so the caller can use the deterministic SVG.
+  if (changeStrings.length < Math.min(3, diffCount)) return null;
+
+  const differences = changeStrings.slice(0, diffCount).map((text) => ({ text }));
+  return {
+    a: { buffer: a.buffer, contentType: a.contentType },
+    b: { buffer: edit.buffer, contentType: edit.contentType },
+    differences,
+  };
+}
+
 async function searchPhoto(query) {
   try {
     const u = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(query)}&license_type=commercial&page_size=5`;
@@ -190,6 +291,48 @@ export async function pregenerateTaskImages(task, { allowAi = true } = {}) {
   const cfg = task.config || {};
 
   try {
+    // diff-detective "scene" mode: TRUE spot-the-difference via 2-call image-
+    // to-image (generate base → introduce N identifiable changes). Produces a
+    // realistic same-scene A/B pair + a model-authored answer key. Honors the
+    // AI toggle; on ANY failure we leave the deterministic SVG scene (already
+    // baked by normalizeTaskByType, with its exact answer key) untouched.
+    if (
+      type === "diff-detective" &&
+      allowAi &&
+      !task.subjectA &&
+      (task.mode === "scene" || task.mode === "image" || task.sceneItems)
+    ) {
+      const items = Array.isArray(task.sceneItems)
+        ? task.sceneItems
+        : typeof task.sceneItems === "string"
+        ? task.sceneItems.split(/\s*\|\s*|\s*,\s*/)
+        : [];
+      const itemList = items.map((s) => String(s || "").trim()).filter(Boolean);
+      const basePrompt =
+        (itemList.length ? `a scene containing: ${itemList.join(", ")}` : "") ||
+        String(task.title || task.prompt || "a simple classroom scene").slice(0, 200);
+      const diffCount = Number(task.totalDifferences) || 5;
+
+      const pair = await genDiffDetectivePair({ basePrompt, diffCount });
+      if (pair) {
+        const [a, b] = await Promise.all([
+          uploadImage(pair.a.buffer, pair.a.contentType, "diff-a"),
+          uploadImage(pair.b.buffer, pair.b.contentType, "diff-b"),
+        ]);
+        if (a && b) {
+          task.mode = "image";
+          task.imageA = a.url; task.imageAKey = a.key;
+          task.imageB = b.url; task.imageBKey = b.key;
+          task.labelA = "Image A";
+          task.labelB = "Image B";
+          task.differences = pair.differences;
+          task.totalDifferences = pair.differences.length;
+        }
+      }
+      // else: keep the deterministic SVG scene from normalizeTaskByType.
+      return task;
+    }
+
     // diff-detective "compare two real subjects" (honors the AI toggle)
     if (type === "diff-detective" && task.subjectA && task.subjectB) {
       const [a, b] = await Promise.all([
