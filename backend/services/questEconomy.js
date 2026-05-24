@@ -222,6 +222,33 @@ export async function assignSpecialty({ roomCode, teamId, specialtyId, stock = 2
 }
 
 /**
+ * Effort reward: each completed academic task tops up the team's OWN specialty
+ * by +amount, up to `cap` (set higher than the passive regen cap so diligent
+ * teams become powerhouse suppliers). Idle teams only get the slow passive
+ * trickle — diligence accelerates the advantage without anyone being locked out.
+ */
+export async function bumpSpecialtyForEffort({ roomCode, teamId, cap = 8, amount = 1 }) {
+  const code = String(roomCode || "").toUpperCase();
+  if (!code || !teamId) return { state: null, granted: 0 };
+  const capN = Math.max(1, Math.floor(Number(cap) || 8));
+  const inc = Math.max(1, Math.floor(Number(amount) || 1));
+  const state = await TeamQuestState.findOne({ roomCode: code, teamId });
+  if (!state || !state.specialtyResourceId) return { state, granted: 0 };
+  const sid = state.specialtyResourceId;
+  const stock = state.inventory && typeof state.inventory.get === "function"
+    ? Number(state.inventory.get(sid)) || 0
+    : Number(state.inventory?.[sid]) || 0;
+  if (stock >= capN) return { state, granted: 0 };
+  const grant = Math.min(inc, capN - stock);
+  const updated = await TeamQuestState.findOneAndUpdate(
+    { roomCode: code, teamId },
+    { $inc: { [`inventory.${sid}`]: grant } },
+    { new: true },
+  );
+  return { state: updated || state, granted: grant };
+}
+
+/**
  * Renewable specialty: top up a team's OWN specialty by +1 per elapsed interval
  * since the regen clock, up to `cap`. Lets a team that sold its stock recover so
  * it keeps being a supplier. Idempotent-ish (advances the clock by what it
@@ -347,6 +374,7 @@ export default {
   recordTrade,
   assignSpecialty,
   regenSpecialty,
+  bumpSpecialtyForEffort,
   getQuestStateSnapshot,
   recordTaskComplete,
 };

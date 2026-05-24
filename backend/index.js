@@ -6287,7 +6287,7 @@ if (!isMultiPack && task.taskType === "what-am-i") {
 
       (async () => {
         try {
-          const { getQuestState, getQuestStateSnapshot } = await import("./services/questEconomy.js");
+          const { getQuestState, getQuestStateSnapshot, bumpSpecialtyForEffort } = await import("./services/questEconomy.js");
           const { evaluateUnlocks, computeCoreProgressPct } = await import("./services/questUnlocks.js");
           const TeamQuestState = (await import("./models/TeamQuestState.js")).default;
 
@@ -6300,6 +6300,19 @@ if (!isMultiPack && task.taskType === "what-am-i") {
               reason: `task-complete:${task?.taskType || "unknown"}`,
               tasksetId: room.taskset?._id || null,
             });
+          }
+
+          // 1b. Effort accelerates specialty supply: completing a task tops up the
+          //     team's OWN specialty (capped higher than the passive floor), so
+          //     diligent teams become powerhouse suppliers while idle teams get
+          //     only the slow passive trickle. Keeps everyone in the game while
+          //     rewarding work — and stops idle teams free-riding on trade income.
+          if (room.taskset?.questModeEnabled === true) {
+            try {
+              const qCfg = (room.taskset?.tasks || []).find((t) => t?.taskType === "quest")?.config || {};
+              const effortCap = Math.max(1, Math.floor(Number(qCfg.specialtyEffortCap) || 8));
+              await bumpSpecialtyForEffort({ roomCode: code, teamId: effectiveTeamId, cap: effortCap });
+            } catch (e) { void e; }
           }
 
           // 2. Record completion bucket atomically
@@ -7010,7 +7023,9 @@ socket.on("quest:requestState", async (payload = {}, ack) => {
     const { getQuestState, getQuestStateSnapshot, assignSpecialty, regenSpecialty } = await import("./services/questEconomy.js");
     let state = await getQuestState({ roomCode: code, teamId });
     const questTaskCfg = ((rooms[code]?.taskset?.tasks) || []).find((t) => t?.taskType === "quest")?.config || {};
-    const regenMinutes = Math.max(1, Math.floor(Number(questTaskCfg.specialtyRegenMinutes) || 3));
+    // Passive trickle is a SLOW floor (so idle teams aren't locked out but can't
+    // free-ride on trade income); completing tasks restocks far faster.
+    const regenMinutes = Math.max(1, Math.floor(Number(questTaskCfg.specialtyRegenMinutes) || 5));
     const regenCap = Math.max(1, Math.floor(Number(questTaskCfg.specialtyRegenCap) || 5));
 
     // Comparative-advantage seeding: deterministically assign this team ONE

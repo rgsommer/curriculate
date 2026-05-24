@@ -55,7 +55,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
           startedAt: Date.now(),
           inflation: effectiveInflation(cfg),
           specialtyRegen: {
-            intervalMinutes: Math.max(1, Math.floor(Number(cfg.specialtyRegenMinutes) || 3)),
+            intervalMinutes: Math.max(1, Math.floor(Number(cfg.specialtyRegenMinutes) || 5)),
             cap: Math.max(1, Math.floor(Number(cfg.specialtyRegenCap) || 5)),
           },
         }
@@ -368,7 +368,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
           specialties you're missing.
           {meta?.specialtyRegen && (
             <span style={{ display: "block", marginTop: 4, color: "#bae6fd" }}>
-              ♻️ It refills <strong>+1 every {meta.specialtyRegen.intervalMinutes} min</strong> (up to {meta.specialtyRegen.cap}) — keep selling, you'll have more later.
+              ♻️ Refills slowly on its own (<strong>+1 every {meta.specialtyRegen.intervalMinutes} min</strong>, up to {meta.specialtyRegen.cap}) — and <strong>completing tasks restocks it faster</strong>. Keep earning &amp; selling!
             </span>
           )}
         </div>
