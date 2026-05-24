@@ -323,11 +323,9 @@ export default function TrueFalseConnectFourTask({
     if (isIntraTeam) setCurrentTurn(0);
   }, [isIntraTeam]);
 
-  // ─── Submit final score when game ends (timer expired) ───
-  useEffect(() => {
+  // ─── Submit final score — when the timer expires OR the player taps Finish ───
+  const submitFinal = useCallback(() => {
     if (hasSubmittedRef.current) return;
-    if (!gameOver) return;
-
     hasSubmittedRef.current = true;
 
     // ── Scoring constants ──
@@ -388,7 +386,12 @@ export default function TrueFalseConnectFourTask({
       roundsPlayed: roundNumber,
       submittedAt: new Date().toISOString(),
     });
-  }, [gameOver]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [board, wins, names, timeLimitSeconds, remainingMs, clearedCells, roundNumber, onSubmit]);
+
+  // Auto-submit when the timer expires.
+  useEffect(() => {
+    if (gameOver) submitFinal();
+  }, [gameOver, submitFinal]);
 
   // ─── Statements pool ───
   const statements = useMemo(() => {
@@ -626,13 +629,34 @@ export default function TrueFalseConnectFourTask({
           <div className="text-2xl font-bold text-indigo-700 mb-3">
             Round {roundNumber} complete!
           </div>
+          <div className="flex flex-wrap gap-3 justify-center">
+            <button
+              onClick={handleRestart}
+              className="px-7 py-4 bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-xl font-extrabold rounded-2xl shadow-lg hover:scale-105 active:scale-95 transition-all duration-200"
+            >
+              ▶ Play Again
+            </button>
+            <button
+              onClick={submitFinal}
+              className="px-7 py-4 bg-gradient-to-r from-emerald-500 to-green-600 text-white text-xl font-extrabold rounded-2xl shadow-lg hover:scale-105 active:scale-95 transition-all duration-200"
+            >
+              ✓ Finish
+            </button>
+          </div>
+          <div className="text-base mt-2 text-slate-600">Play another round for more points, or finish up.</div>
+        </div>
+      )}
+
+      {/* Always offer a way to end the game (tester: "no way to continue or
+          end"). Shown while play is ongoing and not already over. */}
+      {!gameOver && !roundOver && !disabled && (
+        <div className="mt-4 text-center">
           <button
-            onClick={handleRestart}
-            className="px-8 py-4 bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-2xl font-extrabold rounded-2xl shadow-lg hover:scale-105 active:scale-95 transition-all duration-200 animate-pulse"
+            onClick={submitFinal}
+            className="px-6 py-3 bg-slate-100 text-slate-700 text-base font-bold rounded-xl border border-slate-300 hover:bg-slate-200 transition"
           >
-            Play Again!
+            ✓ Done — finish this task
           </button>
-          <div className="text-base mt-2 text-slate-600">Keep playing to earn more points!</div>
         </div>
       )}
 

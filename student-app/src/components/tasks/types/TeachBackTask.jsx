@@ -512,6 +512,14 @@ export default function TeachBackTask({ task, onSubmit, disabled }) {
         ))}
       </div>
 
+      {/* Clarify the two voice modes (tester: "not sure what the difference
+          between speak and record is"). */}
+      <div className="text-center text-xs text-gray-500 font-medium -mt-1">
+        {inputMode === "text" && "✏️ Type your explanation."}
+        {inputMode === "voice" && "🎤 Speak — your words turn into text as you talk (you can edit it)."}
+        {inputMode === "record" && "🔴 Record — saves an audio clip of you explaining out loud (no transcript shown)."}
+      </div>
+
       {/* Input area — explicit bg-white + text-slate-900 so the typed
           text is always readable.  Tester reported invisible text. */}
       {inputMode === "text" && (
