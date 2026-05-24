@@ -54,7 +54,8 @@ WORLDVIEW: christian
 - The EVENT itself need not be a Christian topic.
 - The framing and reflection questions may naturally weave in themes such as: ${CHRISTIAN_VALUES.join(", ")}, where genuinely relevant.
 - Do NOT force scripture or preach. Maintain educational credibility.
-- Reflection questions should invite thoughtful moral reflection, not push a doctrinal point.`;
+- Reflection questions should invite thoughtful moral reflection, not push a doctrinal point.
+- Do NOT pick or frame a story that presents contested origins claims as settled fact (biological macro-evolution, deep geological time / "millions of years", the age of the universe, abiogenesis). If a story touches these, report the discovery factually WITHOUT asserting evolutionary/old-earth interpretation as fact, or choose a different story. Prefer observational science, technology, space exploration, health, environment, and human-interest topics.`;
   } else if (worldviewProfile === "secular") {
     worldviewBlock = `
 WORLDVIEW: secular

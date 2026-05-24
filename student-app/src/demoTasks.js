@@ -525,10 +525,18 @@ const DEMO_TASKS = [
     title: "Current Events: This Week's Connection",
     prompt: "Connect today's lesson to a real story this week.",
     config: {
-      lessonTopic: "science, discovery, and the world this week",
+      lessonTopic: "science, technology, and the world this week",
       subject: "general",
       gradeLevel: 7,
       worldviewProfile: "general",
+      // Steer the demo toward neutral, broadly-acceptable topics — the public
+      // demo shouldn't lean into contested origins themes (evolution / deep
+      // time) for a mixed audience (tester). Real sessions use the teacher's
+      // worldview profile, which can narrow this further.
+      preferredCategories: [
+        "innovation", "technology", "space exploration", "health",
+        "environment", "education", "humanitarian efforts", "cultural developments",
+      ],
       liveResolveInPractice: true,
       // Pre-baked evergreen — fallback if the live fetch fails
       resolved: {
