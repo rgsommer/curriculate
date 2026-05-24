@@ -185,7 +185,7 @@ export default function WordWeaverDuelTask({
     return intersections;
   };
 
-  const canPlaceWord = (r, c, word, ori, b) => {
+  const canPlaceWord = (r, c, word, ori, b, requireCross = true) => {
     if (!word) return { ok: false, reason: "No word selected." };
     const w = String(word).toUpperCase();
 
@@ -216,7 +216,7 @@ export default function WordWeaverDuelTask({
     // no letter with ANY OTHER word in the set (a generator slip-up — the case
     // behind "words didn't have enough in common"). That keeps the challenge
     // intact while never producing a truly-unplaceable dead-end.
-    if (placedCount > 0 && !hasIntersection) {
+    if (requireCross && placedCount > 0 && !hasIntersection) {
       const wordLetters = new Set(w.split(""));
       let selfSkipped = false;
       const sharesWithSet = (scrabbleWords || []).some((other) => {
@@ -300,14 +300,29 @@ export default function WordWeaverDuelTask({
         }
       }
 
+      // If we couldn't make it cross, don't dead-end the player — let the word
+      // START A NEW CHAIN at the drop spot (free placement, no crossing bonus),
+      // as long as it fits and doesn't conflict (tester: "if a word cannot be
+      // placed, let it start a new chain"). Crossing still earns more points,
+      // so the strategy is rewarded, not forced.
       if (!check.ok) {
-        setPlacementError(check.reason);
-        // Trigger a 600ms red flash on the board so a bad drag has
-        // unmistakable visual feedback (tester ask).
-        setBadDropFlash(true);
-        if (badDropTimerRef.current) window.clearTimeout(badDropTimerRef.current);
-        badDropTimerRef.current = window.setTimeout(() => setBadDropFlash(false), 600);
-        return prev;
+        let freeCheck = canPlaceWord(r, c, word, wordOri, b, /* requireCross */ false);
+        let freeOri = wordOri;
+        if (!freeCheck.ok) {
+          const altOri = wordOri === "H" ? "V" : "H";
+          const altCheck = canPlaceWord(r, c, word, altOri, b, false);
+          if (altCheck.ok) { freeCheck = altCheck; freeOri = altOri; }
+        }
+        if (freeCheck.ok) {
+          check = freeCheck; anchorR = r; anchorC = c; finalOri = freeOri;
+        } else {
+          // Genuine conflict / out of bounds at this spot — flash and bail.
+          setPlacementError(check.reason);
+          setBadDropFlash(true);
+          if (badDropTimerRef.current) window.clearTimeout(badDropTimerRef.current);
+          badDropTimerRef.current = window.setTimeout(() => setBadDropFlash(false), 600);
+          return prev;
+        }
       }
 
       setPlacementError(null);
