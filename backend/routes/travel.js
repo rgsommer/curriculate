@@ -183,8 +183,8 @@ router.post("/search", async (req, res) => {
     : "Rank results by LOWEST total price first.";
 
   const prefPhrase = (p, leg) =>
-    p === "early" ? `Strongly prefer ${leg} flights that ARRIVE early in the day (morning).`
-    : p === "late" ? `Strongly prefer ${leg} flights that ARRIVE late in the day (evening/night).`
+    p === "early" ? `Strongly prefer ${leg} flights that ARRIVE early in the DAY (morning) at the destination, judged by local clock time. The calendar DATE of arrival does not matter — an overnight/red-eye that departs the prior evening and lands the next morning still counts as "early"; being a day off does NOT disqualify it.`
+    : p === "late" ? `Strongly prefer ${leg} flights that ARRIVE late in the DAY (evening/night) at the destination, judged by local clock time. The calendar DATE of arrival does not matter — a day earlier or later is fine; only the time of day counts.`
     : null;
   const timeRules = [
     prefPhrase(outboundTimePref, "outbound"),
