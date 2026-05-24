@@ -112,6 +112,8 @@ router.post("/search", async (req, res) => {
   const currency = /^[A-Za-z]{3}$/.test(b.currency || "") ? String(b.currency).toUpperCase() : "USD";
   const includeNearbyOrigin = !!b.includeNearbyOrigin;
   const includeNearbyDestination = !!b.includeNearbyDestination;
+  const adults = Math.min(9, Math.max(1, parseInt(b.adults, 10) || 1));
+  const includeCarRental = !!b.includeCarRental;
 
   if (!origin || !destination) {
     return res.status(400).json({ error: "Both a departure and destination are required." });
@@ -156,13 +158,16 @@ TRIP
 - Trip type: ${returnDate ? "Round trip (return)" : "One-way"}
 - Depart: ${depWindow}
 ${returnDate ? `- Return: ${retWindow}` : ""}
-- Passengers: 1 adult
+- Passengers: ${adults} adult${adults === 1 ? "" : "s"}, travelling together.
 - Currency: ALL prices MUST be in ${currency}. Convert if a source quotes another currency.
 
 CONSTRAINTS
 - ${stopsRule}
 - ${sortRule}
 ${isFlexible ? "- Dates are flexible (multiple candidates listed above). Compare across the candidate dates, surface the cheapest, and set each option's departureDate/returnDate to the actual dates it uses. A return must be on or after its departure." : ""}
+- "price" MUST be the PER-PERSON all-in fare (taxes & fees included), in ${currency}.
+${adults > 1 ? `- The party is ${adults} adults. If ${adults} seats are not all available at this fare, set "seatWarning" to a short note (e.g. "only 4 seats at this price; remaining seats ~$X more") and base "price" on the best fare the whole party can actually book.` : ""}
+${includeCarRental ? `- ALSO look up cheap rental cars at the destination (${destination}) for these dates. Set the top-level "carRental" object with a short note on the cheapest deal found (provider + approx per-day price). Keep it brief; it's a nudge, not a full quote.` : ""}
 
 SEARCH INSTRUCTIONS
 - Make several web_search calls (e.g. Google Flights, Skyscanner, Kayak, airline sites) to find genuinely current fares.
@@ -175,6 +180,7 @@ OUTPUT — respond with ONLY this JSON (no prose, no markdown fences):
   "originResolved": "Toronto (YYZ)",
   "destinationResolved": "London (LHR)",
   "summary": "one or two sentences of useful context (cheapest found, best value, etc.)",
+${includeCarRental ? `  "carRental": { "note": "e.g. Economy from ~$22/day with Enterprise at LHR" },` : ""}
   "offers": [
     {
       "airline": "Air Canada",            // or comma-separated if multiple carriers
@@ -182,13 +188,14 @@ OUTPUT — respond with ONLY this JSON (no prose, no markdown fences):
       "destinationCode": "LHR",            // IATA used for this option
       "departureDate": "${departureDate}", // actual date for this option (within the window)
       ${returnDate ? `"returnDate": "${returnDate}",  // actual return date for this option` : `"returnDate": null,`}
-      "price": 845,                         // number, in ${currency}
+      "price": 845,                         // PER-PERSON all-in fare (taxes+fees), in ${currency}
       "currency": "${currency}",
       "outboundStops": 0,                   // stops on the way there
       "returnStops": ${returnDate ? "0" : "null"},
       "outboundDuration": "7h 35m",
       "returnDuration": ${returnDate ? "\"8h 10m\"" : "null"},
       "stopsDetail": "Non-stop" ,           // human label e.g. "1 stop via Reykjavik (KEF), 2h layover"
+      ${adults > 1 ? `"seatWarning": null,                  // string if the full party can't be seated at this fare, else null` : ""}
       "notes": "short note, optional"
     }
   ]
@@ -261,17 +268,33 @@ OUTPUT — respond with ONLY this JSON (no prose, no markdown fences):
           outboundDuration: o.outboundDuration ? stripCiteTags(String(o.outboundDuration)) : null,
           returnDuration: o.returnDuration ? stripCiteTags(String(o.returnDuration)) : null,
           stopsDetail: o.stopsDetail ? stripCiteTags(String(o.stopsDetail)) : null,
+          seatWarning: o.seatWarning ? stripCiteTags(String(o.seatWarning)) : null,
           notes: o.notes ? stripCiteTags(String(o.notes)) : null,
           bookingUrl: originCode && destinationCode ? kayakLink(linkArgs) : null,
           altBookingUrl: originCode && destinationCode ? googleFlightsLink(linkArgs) : null,
         };
       });
 
+    // Optional car-rental nudge: keep the AI's note, build a deterministic
+    // Kayak Cars deep link from the destination code + trip dates.
+    let carRental = null;
+    if (includeCarRental && parsed.carRental && parsed.carRental.note) {
+      const destCode = offers.find((o) => o.destinationCode)?.destinationCode;
+      const pickup = departureDate;
+      const dropoff = returnDate || shiftDate(departureDate, 7);
+      carRental = {
+        note: stripCiteTags(String(parsed.carRental.note)).slice(0, 300),
+        bookingUrl: destCode ? `https://www.kayak.com/cars/${destCode}/${pickup}/${dropoff}?sort=price_a` : null,
+      };
+    }
+
     res.json({
       currency,
+      adults,
       originResolved: stripCiteTags(String(parsed.originResolved || origin)),
       destinationResolved: stripCiteTags(String(parsed.destinationResolved || destination)),
       summary: parsed.summary ? stripCiteTags(String(parsed.summary)) : "",
+      carRental,
       count: offers.length,
       offers,
       sources,

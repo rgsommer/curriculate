@@ -114,8 +114,10 @@ function savePrefs(prefs) {
 // ---------------------------------------------------------------------------
 // One flight offer card.
 // ---------------------------------------------------------------------------
-function OfferCard({ offer, currency, badges, selectedDepartureDate, selectedReturnDate }) {
+function OfferCard({ offer, currency, badges, selectedDepartureDate, selectedReturnDate, adults }) {
   const hasReturn = offer.returnDate != null;
+  const cur = offer.currency || currency;
+  const groupTotal = adults > 1 ? offer.price * adults : null;
   const depOff = offer.departureDate && offer.departureDate !== selectedDepartureDate;
   const retOff = hasReturn && offer.returnDate !== selectedReturnDate;
   // Warning style for a date that isn't the exact one the user selected.
@@ -145,11 +147,20 @@ function OfferCard({ offer, currency, badges, selectedDepartureDate, selectedRet
             {offer.originCode && offer.destinationCode ? <span>· {offer.originCode} ⇄ {offer.destinationCode}</span> : null}
           </div>
         </div>
-        <div className="text-right">
-          <div className="text-xl font-bold text-slate-900">{fmtMoney(offer.price, offer.currency || currency)}</div>
-          <div className="text-[11px] text-slate-400">1 adult</div>
+        <div className="shrink-0 text-right">
+          <div className="text-xl font-bold text-slate-900">{fmtMoney(offer.price, cur)}</div>
+          <div className="text-[11px] text-slate-400">
+            {adults > 1 ? "per person, all-in" : "1 adult, all-in"}
+          </div>
+          {groupTotal != null && (
+            <div className="text-xs font-medium text-slate-600">{fmtMoney(groupTotal, cur)} for {adults}</div>
+          )}
         </div>
       </div>
+
+      {offer.seatWarning && (
+        <div className="mt-2 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-800">⚠ {offer.seatWarning}</div>
+      )}
 
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
         <div className="rounded-lg bg-slate-50 px-3 py-2">
@@ -213,6 +224,8 @@ export default function TravelPage() {
   const [departureFlex, setDepartureFlex] = useState("0"); // FLEX_OPTIONS value
   const [returnFlex, setReturnFlex] = useState("0");
   const [maxStops, setMaxStops] = useState(2); // 0 | 1 | 2 (2 = "2+")
+  const [adults, setAdults] = useState(1);
+  const [includeCarRental, setIncludeCarRental] = useState(false);
   const [prioritizeShortStops, setPrioritizeShortStops] = useState(false);
   const [currency, setCurrency] = useState("CAD");
 
@@ -242,6 +255,8 @@ export default function TravelPage() {
       if (FLEX_OPTIONS.some((o) => o.value === p.departureFlex)) setDepartureFlex(p.departureFlex);
       if (FLEX_OPTIONS.some((o) => o.value === p.returnFlex)) setReturnFlex(p.returnFlex);
       if ([0, 1, 2].includes(p.maxStops)) setMaxStops(p.maxStops);
+      if (Number.isInteger(p.adults) && p.adults >= 1 && p.adults <= 9) setAdults(p.adults);
+      if (typeof p.includeCarRental === "boolean") setIncludeCarRental(p.includeCarRental);
       if (typeof p.prioritizeShortStops === "boolean") setPrioritizeShortStops(p.prioritizeShortStops);
       if (typeof p.emailTo === "string") setEmailTo(p.emailTo);
       setCurrency(/^[A-Za-z]{3}$/.test(p.currency || "") ? p.currency : detectCurrency());
@@ -256,10 +271,10 @@ export default function TravelPage() {
     if (!isHydrated) return;
     savePrefs({
       origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType,
-      departureDate, returnDate, departureFlex, returnFlex, maxStops, prioritizeShortStops,
-      currency, emailTo,
+      departureDate, returnDate, departureFlex, returnFlex, maxStops, adults, includeCarRental,
+      prioritizeShortStops, currency, emailTo,
     });
-  }, [isHydrated, origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType, departureDate, returnDate, departureFlex, returnFlex, maxStops, prioritizeShortStops, currency, emailTo]);
+  }, [isHydrated, origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType, departureDate, returnDate, departureFlex, returnFlex, maxStops, adults, includeCarRental, prioritizeShortStops, currency, emailTo]);
 
   // Changing the departure date defaults the return to the day after, unless
   // the user already picked a return that's still later than the new departure.
@@ -291,6 +306,8 @@ export default function TravelPage() {
           departureOffsets: flexOffsets(departureFlex),
           returnOffsets: tripType === "return" ? flexOffsets(returnFlex) : [0],
           maxStops,
+          adults,
+          includeCarRental,
           prioritizeShortStops,
           currency,
         }),
@@ -303,7 +320,7 @@ export default function TravelPage() {
     } finally {
       setLoading(false);
     }
-  }, [origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType, departureDate, returnDate, departureFlex, returnFlex, maxStops, prioritizeShortStops, currency]);
+  }, [origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType, departureDate, returnDate, departureFlex, returnFlex, maxStops, adults, includeCarRental, prioritizeShortStops, currency]);
 
   const emailResults = useCallback(async () => {
     if (!result) return;
@@ -362,7 +379,7 @@ export default function TravelPage() {
         <header className="mb-6 text-center">
           <h1 className="text-3xl font-bold text-slate-900">Flight Finder</h1>
           <p className="mt-1 text-sm text-slate-500">
-            AI-powered fare search for one adult. Prices in {currency}.
+            AI-powered fare search. Per-person prices, all-in, in {currency}.
           </p>
         </header>
 
@@ -456,7 +473,7 @@ export default function TravelPage() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Max stops</label>
               <select
@@ -467,6 +484,19 @@ export default function TravelPage() {
                 <option value={0}>Non-stop only</option>
                 <option value={1}>1 stop max</option>
                 <option value={2}>2+ stops OK</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Travellers</label>
+              <select
+                value={adults}
+                onChange={(e) => setAdults(parseInt(e.target.value, 10))}
+                aria-label="Number of adults"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              >
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+                  <option key={n} value={n}>{n} adult{n === 1 ? "" : "s"}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -491,6 +521,16 @@ export default function TravelPage() {
             Prioritize fewest / shortest layovers over price
           </label>
 
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={includeCarRental}
+              onChange={(e) => setIncludeCarRental(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+            />
+            Include cheap car rental at the destination
+          </label>
+
           <button
             type="button"
             onClick={search}
@@ -512,6 +552,18 @@ export default function TravelPage() {
             )}
             {result.summary && (
               <div className="mb-3 rounded-lg bg-sky-50 px-3 py-2 text-sm text-slate-700">{result.summary}</div>
+            )}
+            {result.carRental?.note && (
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-violet-50 px-3 py-2 text-sm text-violet-900">
+                <span className="font-semibold">🚗 Car rental:</span>
+                <span>{result.carRental.note}</span>
+                {result.carRental.bookingUrl && (
+                  <a href={result.carRental.bookingUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-violet-700">
+                    Compare cars ↗
+                  </a>
+                )}
+                <span className="text-[11px] text-violet-400">indicative</span>
+              </div>
             )}
 
             {offers.length === 0 ? (
@@ -537,6 +589,7 @@ export default function TravelPage() {
                       badges={badgesFor(o)}
                       selectedDepartureDate={departureDate}
                       selectedReturnDate={tripType === "return" ? returnDate : null}
+                      adults={result.adults || 1}
                     />
                   ))}
                 </div>
