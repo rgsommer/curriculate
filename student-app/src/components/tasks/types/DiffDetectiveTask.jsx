@@ -17,6 +17,7 @@ export default function DiffDetectiveTask({
   const [attempts, setAttempts] = useState(0);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isDictating, setIsDictating] = useState(false);
+  const [imgError, setImgError] = useState(false); // a side image failed to load (S3/AI URL dead)
   const recognitionRef = useRef(null);
   // Mic stays on until the student taps "Stop" — or a hard 10s safety cap.
   // The Web Speech API fires `onend` on every natural pause, so without these
@@ -40,6 +41,9 @@ export default function DiffDetectiveTask({
   const imageB = task?.imageB || cfg.imageB || task?.modifiedImage || cfg.modifiedImage || "";
   const modeStr = String(task?.mode || cfg.mode || "").toLowerCase();
   const isImageMode = modeStr === "image" || (!!imageA && !!imageB);
+  // If a generated / S3 image URL is dead, we still treat it as image mode for
+  // labels/answer-key, but render a graceful fallback instead of broken images.
+  const imagesUsable = isImageMode && !imgError;
   // "compare" = two genuinely different things (definitions, processes,
   // figures, specimens…), not an edited passage. Differences are conceptual,
   // so we reveal them as a list rather than highlighting word swaps.
@@ -202,6 +206,13 @@ export default function DiffDetectiveTask({
 
   const prompt = task?.prompt || `Find the ${numExpected} difference${numExpected === 1 ? "" : "s"}!`;
 
+  const imgFallbackNote = {
+    fontSize: "0.9rem",
+    color: "rgba(15,23,42,0.72)",
+    lineHeight: 1.45,
+    padding: "10px 0",
+  };
+
   const hasHints = differences.some((d) => d?.hint) && !isSubmitted;
 
   const right = (
@@ -236,8 +247,11 @@ export default function DiffDetectiveTask({
           }}
         >
           <div style={{ fontWeight: 1000, marginBottom: 8, color: "rgba(22,163,74,1)" }}>{labelA}</div>
-          {isImageMode ? (
-            <img src={imageA} alt={labelA} style={{ width: "100%", height: "auto", borderRadius: 12, display: "block" }} />
+          {imagesUsable ? (
+            <img src={imageA} alt={labelA} onError={() => setImgError(true)} referrerPolicy="no-referrer" style={{ width: "100%", height: "auto", borderRadius: 12, display: "block" }} />
+          ) : isImageMode ? (
+            task?.original ? highlightText(task?.original, false)
+              : <div style={imgFallbackNote}>🖼️ This image couldn't load. Compare using the descriptions and list the differences you spot.</div>
           ) : (
             highlightText(task?.original, false)
           )}
@@ -252,8 +266,11 @@ export default function DiffDetectiveTask({
           }}
         >
           <div style={{ fontWeight: 1000, marginBottom: 8, color: "rgba(220,38,38,1)" }}>{labelB}</div>
-          {isImageMode ? (
-            <img src={imageB} alt={labelB} style={{ width: "100%", height: "auto", borderRadius: 12, display: "block" }} />
+          {imagesUsable ? (
+            <img src={imageB} alt={labelB} onError={() => setImgError(true)} referrerPolicy="no-referrer" style={{ width: "100%", height: "auto", borderRadius: 12, display: "block" }} />
+          ) : isImageMode ? (
+            task?.modified ? highlightText(task?.modified, true)
+              : <div style={imgFallbackNote}>🖼️ This image couldn't load. Compare using the descriptions and list the differences you spot.</div>
           ) : (
             highlightText(task?.modified, true)
           )}
