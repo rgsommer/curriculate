@@ -142,6 +142,10 @@ router.post("/search", async (req, res) => {
   const includeNearbyDestination = !!b.includeNearbyDestination;
   const adults = Math.min(9, Math.max(1, parseInt(b.adults, 10) || 1));
   const includeCarRental = !!b.includeCarRental;
+  // Arrival-time preference per leg: "early" | "late" | "any".
+  const timePref = (v) => (["early", "late"].includes(v) ? v : "any");
+  const outboundTimePref = timePref(b.outboundTimePref);
+  const returnTimePref = timePref(b.returnTimePref);
 
   if (!origin || !destination) {
     return res.status(400).json({ error: "Both a departure and destination are required." });
@@ -178,6 +182,15 @@ router.post("/search", async (req, res) => {
     ? "Rank results by FEWEST and SHORTEST layovers first, then by price."
     : "Rank results by LOWEST total price first.";
 
+  const prefPhrase = (p, leg) =>
+    p === "early" ? `Strongly prefer ${leg} flights that ARRIVE early in the day (morning).`
+    : p === "late" ? `Strongly prefer ${leg} flights that ARRIVE late in the day (evening/night).`
+    : null;
+  const timeRules = [
+    prefPhrase(outboundTimePref, "outbound"),
+    returnDate ? prefPhrase(returnTimePref, "return") : null,
+  ].filter(Boolean);
+
   const prompt = `You are a flight-search assistant. Use the web_search tool to find REAL, CURRENT flight options and prices, then return them as strict JSON.
 
 TRIP
@@ -195,6 +208,7 @@ CONSTRAINTS
 ${isFlexible ? "- Dates are flexible (multiple candidates listed above). Compare across the candidate dates, surface the cheapest, and set each option's departureDate/returnDate to the actual dates it uses. A return must be on or after its departure." : ""}
 - "price" MUST be the PER-PERSON all-in fare (taxes & fees included), in ${currency}.
 ${adults > 1 ? `- The party is ${adults} adults. If ${adults} seats are not all available at this fare, set "seatWarning" to a short note (e.g. "only 4 seats at this price; remaining seats ~$X more") and base "price" on the best fare the whole party can actually book.` : ""}
+${timeRules.length ? timeRules.map((t) => `- ${t}`).join("\n") : ""}
 ${includeCarRental ? `- ALSO look up cheap rental cars at the destination (${destination}) for these dates. Set the top-level "carRental" object with a short note on the cheapest deal found (provider + approx per-day price). Keep it brief; it's a nudge, not a full quote.` : ""}
 
 SEARCH INSTRUCTIONS
@@ -222,6 +236,8 @@ ${includeCarRental ? `  "carRental": { "note": "e.g. Economy from ~$22/day with 
       "returnStops": ${returnDate ? "0" : "null"},
       "outboundDuration": "7h 35m",
       "returnDuration": ${returnDate ? "\"8h 10m\"" : "null"},
+      "outboundArriveTime": "19:05",        // local arrival time at destination, 24h "HH:MM"
+      "returnArriveTime": ${returnDate ? "\"21:40\"" : "null"},
       "stopsDetail": "Non-stop" ,           // human label e.g. "1 stop via Reykjavik (KEF), 2h layover"
       ${adults > 1 ? `"seatWarning": null,                  // string if the full party can't be seated at this fare, else null` : ""}
       "notes": "short note, optional"
@@ -295,6 +311,8 @@ ${includeCarRental ? `  "carRental": { "note": "e.g. Economy from ~$22/day with 
           returnStops: Number.isFinite(Number(o.returnStops)) ? Number(o.returnStops) : null,
           outboundDuration: o.outboundDuration ? stripCiteTags(String(o.outboundDuration)) : null,
           returnDuration: o.returnDuration ? stripCiteTags(String(o.returnDuration)) : null,
+          outboundArriveTime: /^\d{1,2}:\d{2}$/.test(o.outboundArriveTime || "") ? o.outboundArriveTime : null,
+          returnArriveTime: /^\d{1,2}:\d{2}$/.test(o.returnArriveTime || "") ? o.returnArriveTime : null,
           stopsDetail: o.stopsDetail ? stripCiteTags(String(o.stopsDetail)) : null,
           seatWarning: o.seatWarning ? stripCiteTags(String(o.seatWarning)) : null,
           notes: o.notes ? stripCiteTags(String(o.notes)) : null,
@@ -441,8 +459,8 @@ router.post("/email", async (req, res) => {
   const perLabel = adults > 1 ? "per person, all-in" : "1 adult, all-in";
   const rows = offers.map((o) => {
     const legs = [
-      `Out: ${esc(stopsLabel(o.outboundStops))}${o.outboundDuration ? ` · ${esc(o.outboundDuration)}` : ""}`,
-      o.returnDate ? `Back: ${esc(stopsLabel(o.returnStops))}${o.returnDuration ? ` · ${esc(o.returnDuration)}` : ""}` : "",
+      `Out: ${esc(stopsLabel(o.outboundStops))}${o.outboundDuration ? ` · ${esc(o.outboundDuration)}` : ""}${o.outboundArriveTime ? ` · arr ${esc(o.outboundArriveTime)}` : ""}`,
+      o.returnDate ? `Back: ${esc(stopsLabel(o.returnStops))}${o.returnDuration ? ` · ${esc(o.returnDuration)}` : ""}${o.returnArriveTime ? ` · arr ${esc(o.returnArriveTime)}` : ""}` : "",
     ].filter(Boolean).join("<br/>");
     const depOff = selDep && o.departureDate && o.departureDate !== selDep;
     const retOff = selRet && o.returnDate && o.returnDate !== selRet;

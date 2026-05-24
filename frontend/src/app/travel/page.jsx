@@ -169,6 +169,7 @@ function OfferCard({ offer, currency, badges, selectedDepartureDate, selectedRet
           <div className="text-sm font-medium text-slate-800">
             {stopsLabel(offer.outboundStops)}{offer.outboundDuration ? ` · ${offer.outboundDuration}` : ""}
           </div>
+          {offer.outboundArriveTime && <div className="text-[11px] text-slate-500">Arrives {offer.outboundArriveTime}</div>}
         </div>
         {hasReturn && (
           <div className="rounded-lg bg-slate-50 px-3 py-2">
@@ -176,6 +177,7 @@ function OfferCard({ offer, currency, badges, selectedDepartureDate, selectedRet
             <div className="text-sm font-medium text-slate-800">
               {stopsLabel(offer.returnStops)}{offer.returnDuration ? ` · ${offer.returnDuration}` : ""}
             </div>
+            {offer.returnArriveTime && <div className="text-[11px] text-slate-500">Arrives {offer.returnArriveTime}</div>}
           </div>
         )}
       </div>
@@ -227,6 +229,8 @@ export default function TravelPage() {
   const [maxStops, setMaxStops] = useState(2); // 0 | 1 | 2 (2 = "2+")
   const [adults, setAdults] = useState(1);
   const [includeCarRental, setIncludeCarRental] = useState(false);
+  const [outboundTimePref, setOutboundTimePref] = useState("any"); // any | early | late
+  const [returnTimePref, setReturnTimePref] = useState("any");
   const [prioritizeShortStops, setPrioritizeShortStops] = useState(false);
   const [currency, setCurrency] = useState("CAD");
 
@@ -258,6 +262,8 @@ export default function TravelPage() {
       if ([0, 1, 2].includes(p.maxStops)) setMaxStops(p.maxStops);
       if (Number.isInteger(p.adults) && p.adults >= 1 && p.adults <= 9) setAdults(p.adults);
       if (typeof p.includeCarRental === "boolean") setIncludeCarRental(p.includeCarRental);
+      if (["any", "early", "late"].includes(p.outboundTimePref)) setOutboundTimePref(p.outboundTimePref);
+      if (["any", "early", "late"].includes(p.returnTimePref)) setReturnTimePref(p.returnTimePref);
       if (typeof p.prioritizeShortStops === "boolean") setPrioritizeShortStops(p.prioritizeShortStops);
       if (typeof p.emailTo === "string") setEmailTo(p.emailTo);
       setCurrency(/^[A-Za-z]{3}$/.test(p.currency || "") ? p.currency : detectCurrency());
@@ -273,9 +279,9 @@ export default function TravelPage() {
     savePrefs({
       origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType,
       departureDate, returnDate, departureFlex, returnFlex, maxStops, adults, includeCarRental,
-      prioritizeShortStops, currency, emailTo,
+      outboundTimePref, returnTimePref, prioritizeShortStops, currency, emailTo,
     });
-  }, [isHydrated, origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType, departureDate, returnDate, departureFlex, returnFlex, maxStops, adults, includeCarRental, prioritizeShortStops, currency, emailTo]);
+  }, [isHydrated, origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType, departureDate, returnDate, departureFlex, returnFlex, maxStops, adults, includeCarRental, outboundTimePref, returnTimePref, prioritizeShortStops, currency, emailTo]);
 
   // Changing the departure date defaults the return to the day after, unless
   // the user already picked a return that's still later than the new departure.
@@ -309,6 +315,8 @@ export default function TravelPage() {
           maxStops,
           adults,
           includeCarRental,
+          outboundTimePref,
+          returnTimePref: tripType === "return" ? returnTimePref : "any",
           prioritizeShortStops,
           currency,
         }),
@@ -321,7 +329,7 @@ export default function TravelPage() {
     } finally {
       setLoading(false);
     }
-  }, [origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType, departureDate, returnDate, departureFlex, returnFlex, maxStops, adults, includeCarRental, prioritizeShortStops, currency]);
+  }, [origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType, departureDate, returnDate, departureFlex, returnFlex, maxStops, adults, includeCarRental, outboundTimePref, returnTimePref, prioritizeShortStops, currency]);
 
   const emailResults = useCallback(async () => {
     if (!result) return;
@@ -473,6 +481,37 @@ export default function TravelPage() {
                   className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
                 >
                   {FLEX_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+
+          <div className={`grid grid-cols-1 gap-4 ${tripType === "return" ? "sm:grid-cols-2" : ""}`}>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Outbound flight</label>
+              <select
+                value={outboundTimePref}
+                onChange={(e) => setOutboundTimePref(e.target.value)}
+                aria-label="Outbound arrival time preference"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              >
+                <option value="any">Arrive anytime</option>
+                <option value="early">Arrive early (morning)</option>
+                <option value="late">Arrive late (evening)</option>
+              </select>
+            </div>
+            {tripType === "return" && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Return flight</label>
+                <select
+                  value={returnTimePref}
+                  onChange={(e) => setReturnTimePref(e.target.value)}
+                  aria-label="Return arrival time preference"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                >
+                  <option value="any">Arrive anytime</option>
+                  <option value="early">Arrive early (morning)</option>
+                  <option value="late">Arrive late (evening)</option>
                 </select>
               </div>
             )}
