@@ -123,6 +123,11 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
   // Manual zoom (native pinch-zoom is unreliable inside a fixed overlay) — the
   // image grows wider than the viewport and the container scrolls.
   const [zoom, setZoom] = useState(1);
+  // AI feedback on the student's analysis (tester ask). Fetched after submit,
+  // shown before advancing; onSubmit deferred until Continue.
+  const [feedbackPhase, setFeedbackPhase] = useState("idle"); // idle | scoring | feedback
+  const [aiFeedback, setAiFeedback] = useState("");
+  const pendingSubmitRef = useRef(null);
   const [responses, setResponses] = useState(() =>
     analysisPrompts.map((prompt) => ({ prompt, response: "" }))
   );
@@ -242,11 +247,18 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
   const answeredCount = responses.filter((r) => r.response.trim().length > 0).length;
   const allAnswered = answeredCount === analysisPrompts.length;
 
+  const handleFeedbackContinue = useCallback(() => {
+    const p = pendingSubmitRef.current;
+    pendingSubmitRef.current = null;
+    if (p) onSubmit?.(p);
+  }, [onSubmit]);
+
   const doSubmit = useCallback(() => {
     if (submitted) return;
     setSubmitted(true);
     try { new Audio("/sounds/yay.mp3").play().catch(() => {}); } catch {}
-    onSubmit?.({
+
+    pendingSubmitRef.current = {
       type: "historical-doc",
       correct: false,
       basePoints: task?.points || 10,
@@ -259,7 +271,39 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
       docTitle: config.docTitle || "",
       docAuthor: config.docAuthor || "",
       docYear: config.docYear || "",
-    });
+    };
+
+    const answers = responses.filter((r) => r.response.trim());
+    if (!answers.length) {
+      const p = pendingSubmitRef.current; pendingSubmitRef.current = null;
+      onSubmit?.(p);
+      return;
+    }
+
+    setFeedbackPhase("scoring");
+    (async () => {
+      let coach = "";
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/text-feedback`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "historical-doc",
+            prompt: `Student analysis of "${config.docTitle || "a historical document"}". Coach their source-analysis: note what's strong and one way to deepen it (evidence from the document, context, or perspective).`,
+            context: config.imageDescription || config.historicalContext || "",
+            response: answers.map((r) => `Q: ${r.prompt}\nA: ${r.response}`).join("\n\n"),
+          }),
+        });
+        const j = await r.json().catch(() => null);
+        if (j?.feedback) coach = String(j.feedback);
+      } catch { /* fall through */ }
+      if (!coach) {
+        coach =
+          "Good analysis! Strong responses cite a specific detail from the document and connect it to its time and purpose. Next time, add one piece of direct evidence and consider whose perspective is represented.";
+      }
+      setAiFeedback(coach);
+      setFeedbackPhase("feedback");
+    })();
   }, [submitted, responses, answeredCount, analysisPrompts.length, viewingSec, responseSec, task, onSubmit, resolvedUrl, originalUrl, config]);
 
   const formatTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -734,6 +778,49 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
                   : "Your paper analysis has been noted. Great work!"
                 }
               </div>
+
+              {/* AI coach feedback */}
+              {feedbackPhase === "scoring" && (
+                <div style={{ marginTop: 14, color: "#8b5e3c", fontWeight: 700 }}>
+                  🤖 Coach is reading your analysis…
+                </div>
+              )}
+              {feedbackPhase === "feedback" && (
+                <>
+                  <div style={{
+                    marginTop: 14,
+                    textAlign: "left",
+                    background: "#fff",
+                    border: "1px solid #e5d5c0",
+                    borderRadius: 12,
+                    padding: 14,
+                    color: "#0f172a",
+                  }}>
+                    <div style={{ fontWeight: 900, fontSize: "0.85rem", color: "#8b5e3c", marginBottom: 6 }}>
+                      🤖 Coach feedback
+                    </div>
+                    <div style={{ fontSize: "0.95rem", lineHeight: 1.5 }}>{aiFeedback}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleFeedbackContinue}
+                    style={{
+                      marginTop: 14,
+                      width: "100%",
+                      padding: "12px 20px",
+                      borderRadius: 12,
+                      border: "none",
+                      background: "linear-gradient(135deg, #b45309, #92400e)",
+                      color: "#fff",
+                      fontWeight: 900,
+                      fontSize: "1rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Continue ▶
+                  </button>
+                </>
+              )}
             </div>
           )}
         </>

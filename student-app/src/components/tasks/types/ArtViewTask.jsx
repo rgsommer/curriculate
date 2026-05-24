@@ -105,6 +105,12 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
   const [observations, setObservations] = useState([]);
   const [inputValue, setInputValue] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  // AI feedback on the student's observations (tester ask). After submit we
+  // fetch a short coach note BEFORE advancing; onSubmit is deferred until the
+  // student taps Continue. Falls back to a friendly rubric note on any failure.
+  const [feedbackPhase, setFeedbackPhase] = useState("idle"); // idle | scoring | feedback
+  const [aiFeedback, setAiFeedback] = useState("");
+  const pendingSubmitRef = useRef(null);
   // Paper vs screen: practice is always on-screen. In a real session, honor the
   // teacher's "prefer paper" setting (minimizeOnScreen) — paper mode shows a
   // worked example + a photo-snap submit. Default (unset) is on-screen.
@@ -199,7 +205,9 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
     if (submitted) return;
     setSubmitted(true);
     try { new Audio("/sounds/yay.mp3").play().catch(() => {}); } catch {}
-    onSubmit?.({
+
+    // Stash the submission; fire it only after the student reads the feedback.
+    pendingSubmitRef.current = {
       type: "art-view",
       correct: false,
       basePoints: task?.points || 10,
@@ -209,8 +217,47 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
       viewingSeconds: viewingSec,
       responseSeconds: responseSec,
       imageUsed: resolvedUrl || originalUrl || "(description only)",
-    });
-  }, [submitted, observations, minObs, viewingSec, responseSec, task, onSubmit, resolvedUrl, originalUrl]);
+    };
+
+    // No observations to coach (e.g. paper mode) → skip straight to ship.
+    if (!observations.length) {
+      const p = pendingSubmitRef.current; pendingSubmitRef.current = null;
+      onSubmit?.(p);
+      return;
+    }
+
+    setFeedbackPhase("scoring");
+    (async () => {
+      let coach = "";
+      try {
+        const subject = config?.imageTitle || config?.docTitle || task?.title || "this artwork";
+        const r = await fetch(`${API_BASE_URL}/api/text-feedback`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "art-view",
+            prompt: `Student observations about ${subject}. Coach them on observation skill — note what's strong and one thing to look for next.`,
+            context: config?.imageDescription || "",
+            response: observations.map((o, i) => `${i + 1}. ${o}`).join("\n"),
+          }),
+        });
+        const j = await r.json().catch(() => null);
+        if (j?.feedback) coach = String(j.feedback);
+      } catch { /* fall through to default */ }
+      if (!coach) {
+        coach =
+          "Nice observing! Strong observations name specific details (color, line, shape, mood) and what they make you wonder. Next time, try connecting one detail to why the artist might have chosen it.";
+      }
+      setAiFeedback(coach);
+      setFeedbackPhase("feedback");
+    })();
+  }, [submitted, observations, minObs, viewingSec, responseSec, task, onSubmit, resolvedUrl, originalUrl, config]);
+
+  const handleFeedbackContinue = useCallback(() => {
+    const p = pendingSubmitRef.current;
+    pendingSubmitRef.current = null;
+    if (p) onSubmit?.(p);
+  }, [onSubmit]);
 
   const formatTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const timerColor = secondsLeft <= 10 ? "#ef4444" : secondsLeft <= 30 ? "#f59e0b" : "#6b7280";
@@ -697,6 +744,49 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
                   : "Your paper observations have been noted. Great work!"
                 }
               </div>
+
+              {/* AI coach feedback */}
+              {feedbackPhase === "scoring" && (
+                <div style={{ marginTop: 14, color: "#0e7490", fontWeight: 700 }}>
+                  🤖 Coach is reading your observations…
+                </div>
+              )}
+              {feedbackPhase === "feedback" && (
+                <>
+                  <div style={{
+                    marginTop: 14,
+                    textAlign: "left",
+                    background: "#fff",
+                    border: "1px solid #99f6e4",
+                    borderRadius: 12,
+                    padding: 14,
+                    color: "#0f172a",
+                  }}>
+                    <div style={{ fontWeight: 900, fontSize: "0.85rem", color: "#0e7490", marginBottom: 6 }}>
+                      🤖 Coach feedback
+                    </div>
+                    <div style={{ fontSize: "0.95rem", lineHeight: 1.5 }}>{aiFeedback}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleFeedbackContinue}
+                    style={{
+                      marginTop: 14,
+                      width: "100%",
+                      padding: "12px 20px",
+                      borderRadius: 12,
+                      border: "none",
+                      background: "linear-gradient(135deg, #0ea5e9, #0284c7)",
+                      color: "#fff",
+                      fontWeight: 900,
+                      fontSize: "1rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Continue ▶
+                  </button>
+                </>
+              )}
             </div>
           )}
         </>
