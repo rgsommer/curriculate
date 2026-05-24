@@ -515,18 +515,29 @@ export default function HoleInOneTask({ task, onSubmit, disabled }) {
         )}
       </div>
 
-      {/* Virtual joystick (only when not using orientation) */}
+      {/* Virtual joystick (only when not using orientation). Pointer events →
+          works with a laptop MOUSE as well as touch. Keyboard (WASD / arrows)
+          also works anytime. */}
       {sourceLabel !== "orientation" && (
-        <div
-          style={joystickWrap}
-          onTouchStart={virtualJoystick.onTouchStart}
-          onTouchMove={virtualJoystick.onTouchMove}
-          onTouchEnd={virtualJoystick.onTouchEnd}
-        >
-          <div style={joystickPad}>
-            <span style={{ fontSize: "0.65rem", color: "#94a3b8" }}>drag</span>
+        <>
+          <div
+            style={{ ...joystickWrap, touchAction: "none", cursor: "grab" }}
+            onPointerDown={virtualJoystick.onPointerDown}
+            onPointerMove={virtualJoystick.onPointerMove}
+            onPointerUp={virtualJoystick.onPointerUp}
+            onPointerCancel={virtualJoystick.onPointerCancel}
+            onTouchStart={virtualJoystick.onTouchStart}
+            onTouchMove={virtualJoystick.onTouchMove}
+            onTouchEnd={virtualJoystick.onTouchEnd}
+          >
+            <div style={joystickPad}>
+              <span style={{ fontSize: "0.65rem", color: "#94a3b8" }}>drag (or use WASD / arrow keys)</span>
+            </div>
           </div>
-        </div>
+          <div style={{ fontSize: "0.72rem", color: "#94a3b8", textAlign: "center", marginTop: 2 }}>
+            On a laptop: drag the pad with your mouse, or steer with <strong>WASD</strong> / arrow keys.
+          </div>
+        </>
       )}
 
       <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>

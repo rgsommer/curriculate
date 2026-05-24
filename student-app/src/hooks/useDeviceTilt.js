@@ -14,7 +14,7 @@
 // from a user-gesture handler. Other browsers expose orientation events freely.
 // Chromebooks / desktops without orientation hardware fall back to arrow keys
 // or a virtual on-screen joystick.
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 
 function _hasOrientationApi() {
   return typeof window !== "undefined" && typeof window.DeviceOrientationEvent !== "undefined";
@@ -37,6 +37,7 @@ export default function useDeviceTilt({ sensitivity = 1, smoothing = 0.85 } = {}
   const smoothRef = useRef({ x: 0, y: 0 });
   const keyVelRef = useRef({ x: 0, y: 0 });
   const joyRef = useRef({ x: 0, y: 0 });
+  const joyOriginRef = useRef(null); // drag origin, in a ref so it survives re-renders
 
   // Apply the smoothing function with whichever source is currently active
   const applySmoothed = useCallback((nextX, nextY, source) => {
@@ -117,24 +118,30 @@ export default function useDeviceTilt({ sensitivity = 1, smoothing = 0.85 } = {}
     }
   }, []);
 
-  // Virtual joystick handlers (bind to a touchable element)
-  const virtualJoystick = useCallback(() => {
-    let origin = null;
-    const onTouchStart = (e) => {
-      const t = e.touches?.[0];
-      if (!t) return;
-      origin = { x: t.clientX, y: t.clientY };
+  // Virtual joystick handlers. Uses POINTER events so it works with a laptop
+  // MOUSE (and pen) — not just touch (tester: "doesn't work on laptop"). The
+  // drag origin lives in a ref so it survives the 60Hz re-renders. Touch aliases
+  // are kept for older browsers without Pointer Events.
+  const virtualJoystick = useMemo(() => {
+    const clamp = (n) => Math.max(-1, Math.min(1, n));
+    const begin = (x, y) => { joyOriginRef.current = { x, y }; };
+    const move = (x, y) => {
+      const o = joyOriginRef.current;
+      if (!o) return;
+      joyRef.current = { x: clamp((x - o.x) / 60), y: clamp((y - o.y) / 60) }; // 60px = full deflection
     };
-    const onTouchMove = (e) => {
-      const t = e.touches?.[0];
-      if (!t || !origin) return;
-      const dx = (t.clientX - origin.x) / 60; // 60px = full deflection
-      const dy = (t.clientY - origin.y) / 60;
-      joyRef.current = { x: Math.max(-1, Math.min(1, dx)), y: Math.max(-1, Math.min(1, dy)) };
+    const end = () => { joyRef.current = { x: 0, y: 0 }; joyOriginRef.current = null; };
+    return {
+      onPointerDown: (e) => { begin(e.clientX, e.clientY); try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch {} },
+      onPointerMove: (e) => move(e.clientX, e.clientY),
+      onPointerUp: end,
+      onPointerCancel: end,
+      // Touch fallbacks (browsers without Pointer Events):
+      onTouchStart: (e) => { const t = e.touches?.[0]; if (t) begin(t.clientX, t.clientY); },
+      onTouchMove: (e) => { const t = e.touches?.[0]; if (t) move(t.clientX, t.clientY); },
+      onTouchEnd: end,
     };
-    const onTouchEnd = () => { joyRef.current = { x: 0, y: 0 }; origin = null; };
-    return { onTouchStart, onTouchMove, onTouchEnd };
   }, []);
 
-  return { tilt, sourceLabel, permissionState, requestPermission, virtualJoystick: virtualJoystick() };
+  return { tilt, sourceLabel, permissionState, requestPermission, virtualJoystick };
 }
