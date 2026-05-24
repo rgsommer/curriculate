@@ -114,12 +114,19 @@ function savePrefs(prefs) {
 // ---------------------------------------------------------------------------
 // One flight offer card.
 // ---------------------------------------------------------------------------
-function OfferCard({ offer, currency, badges, selectedDepartureDate, selectedReturnDate, adults }) {
+function OfferCard({ offer, currency, badges, selectedDepartureDate, selectedReturnDate, adults, outboundPref, returnPref }) {
   const hasReturn = offer.returnDate != null;
   const cur = offer.currency || currency;
   const groupTotal = adults > 1 ? offer.price * adults : null;
-  const depOff = offer.departureDate && offer.departureDate !== selectedDepartureDate;
-  const retOff = hasReturn && offer.returnDate !== selectedReturnDate;
+  // Only flag an "off" date in plain departure-date mode. With a time
+  // preference the date is a be-there-by target and departing the day before
+  // is expected, so don't warn.
+  const depOff = outboundPref === "any" && offer.departureDate && offer.departureDate !== selectedDepartureDate;
+  const retOff = returnPref === "any" && hasReturn && offer.returnDate !== selectedReturnDate;
+  const arrLabel = (date, time) => {
+    if (!date && !time) return null;
+    return `Arrives ${date ? fmtDay(date) : ""}${date && time ? ", " : ""}${time || ""}`;
+  };
   // Warning style for a date that isn't the exact one the user selected.
   const warnDate = (iso, title) => (
     <span className="rounded bg-amber-100 px-1 font-medium text-amber-700" title={title}>
@@ -169,7 +176,9 @@ function OfferCard({ offer, currency, badges, selectedDepartureDate, selectedRet
           <div className="text-sm font-medium text-slate-800">
             {stopsLabel(offer.outboundStops)}{offer.outboundDuration ? ` · ${offer.outboundDuration}` : ""}
           </div>
-          {offer.outboundArriveTime && <div className="text-[11px] text-slate-500">Arrives {offer.outboundArriveTime}</div>}
+          {arrLabel(offer.outboundArriveDate, offer.outboundArriveTime) && (
+            <div className="text-[11px] text-slate-500">{arrLabel(offer.outboundArriveDate, offer.outboundArriveTime)}</div>
+          )}
         </div>
         {hasReturn && (
           <div className="rounded-lg bg-slate-50 px-3 py-2">
@@ -177,7 +186,9 @@ function OfferCard({ offer, currency, badges, selectedDepartureDate, selectedRet
             <div className="text-sm font-medium text-slate-800">
               {stopsLabel(offer.returnStops)}{offer.returnDuration ? ` · ${offer.returnDuration}` : ""}
             </div>
-            {offer.returnArriveTime && <div className="text-[11px] text-slate-500">Arrives {offer.returnArriveTime}</div>}
+            {arrLabel(offer.returnArriveDate, offer.returnArriveTime) && (
+              <div className="text-[11px] text-slate-500">{arrLabel(offer.returnArriveDate, offer.returnArriveTime)}</div>
+            )}
           </div>
         )}
       </div>
@@ -634,6 +645,8 @@ export default function TravelPage() {
                       selectedDepartureDate={departureDate}
                       selectedReturnDate={tripType === "return" ? returnDate : null}
                       adults={result.adults || 1}
+                      outboundPref={outboundTimePref}
+                      returnPref={tripType === "return" ? returnTimePref : "any"}
                     />
                   ))}
                 </div>
