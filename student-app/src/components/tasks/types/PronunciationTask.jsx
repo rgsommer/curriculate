@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/PronunciationTask.jsx
 import React, { useState, useRef } from "react";
+import { API_BASE_URL } from "../../../config.js";
 
 const ACCENT_FLAGS = {
   american: "US",
@@ -50,10 +51,16 @@ export default function PronunciationTask({ task, onSubmit, disabled }) {
   const [submitted, setSubmitted] = useState(false);
   const [selectedAccent, setSelectedAccent] = useState(initialAccent);
   const [errorMsg, setErrorMsg] = useState(null);
+  // AI response shown BEFORE advancing (tester: "did not see the AI response").
+  const [feedbackPhase, setFeedbackPhase] = useState("idle"); // idle | scoring | feedback
+  const [aiFeedback, setAiFeedback] = useState("");
+  const [transcript, setTranscript] = useState("");
 
   const mediaRecorderRef = useRef(null);
   const streamRef = useRef(null);
   const chunks = useRef([]);
+  const audioBlobRef = useRef(null);
+  const pendingSubmitRef = useRef(null);
 
   const safeStopStream = () => {
     try {
@@ -81,6 +88,7 @@ export default function PronunciationTask({ task, onSubmit, disabled }) {
       mr.onstop = () => {
         try {
           const blob = new Blob(chunks.current, { type: "audio/webm" });
+          audioBlobRef.current = blob;
           const url = URL.createObjectURL(blob);
           setAudioUrl(url);
         } catch (e) {
@@ -117,18 +125,67 @@ export default function PronunciationTask({ task, onSubmit, disabled }) {
     if (disabled || submitted) return;
     if (!audioUrl) return;
 
-    onSubmit?.({
+    setSubmitted(true);
+
+    // Stash the submission; fire it only after the student reads the AI response.
+    pendingSubmitRef.current = {
       type: safeTask.taskType || safeTask.type || "pronunciation",
       audioUrl,
       referenceText,
       targetAccent: selectedAccent,
       language,
-      // Helpful optional extras for the scorer:
       phonetic: safeTask.phonetic || null,
       accentOptions,
-    });
+    };
 
-    setSubmitted(true);
+    setFeedbackPhase("scoring");
+    (async () => {
+      let said = "";
+      // 1) Transcribe what they said (Whisper).
+      try {
+        const blob = audioBlobRef.current;
+        if (blob) {
+          const form = new FormData();
+          form.append("audio", blob, "pronunciation.webm");
+          form.append("language", "en");
+          const r = await fetch(`${API_BASE_URL}/api/speech/transcribe`, { method: "POST", body: form });
+          const j = r.ok ? await r.json().catch(() => null) : null;
+          said = j?.transcript ? String(j.transcript).trim() : "";
+        }
+      } catch { /* ignore */ }
+      if (said) setTranscript(said);
+      pendingSubmitRef.current = { ...pendingSubmitRef.current, transcript: said };
+
+      // 2) Coach feedback comparing what they said to the reference.
+      let coach = "";
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/text-feedback`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "pronunciation",
+            prompt: `A student read this sentence aloud in a ${accentLabel(selectedAccent).nice} accent and we transcribed it. Compare what they SAID to the TARGET. Praise what matched, then point out any words that were dropped/mispronounced and how to say them. Keep it warm and 2-3 sentences.`,
+            context: `TARGET: "${referenceText}"`,
+            response: said ? `They said: "${said}"` : "(no clear transcript captured)",
+          }),
+        });
+        const j = await r.json().catch(() => null);
+        if (j?.feedback) coach = String(j.feedback);
+      } catch { /* fall through */ }
+      if (!coach) {
+        coach = said
+          ? "Nice work reading aloud! Compare your recording to the sentence — slow down on any longer words and pronounce each syllable clearly."
+          : "Recording received! Read the sentence again slowly and clearly, pronouncing each word fully.";
+      }
+      setAiFeedback(coach);
+      setFeedbackPhase("feedback");
+    })();
+  };
+
+  const handleContinue = () => {
+    const p = pendingSubmitRef.current;
+    pendingSubmitRef.current = null;
+    onSubmit?.(p || { type: "pronunciation", audioUrl, referenceText, targetAccent: selectedAccent, language });
   };
 
   const accentLabel = (accent) => {
@@ -354,29 +411,72 @@ export default function PronunciationTask({ task, onSubmit, disabled }) {
         )}
       </div>
 
-      {/* Submit */}
-      <button
-        type="button"
-        onClick={handleSubmit}
-        disabled={!audioUrl || submitted || disabled}
-        style={{
-          padding: "14px 34px",
-          borderRadius: 999,
-          background: !audioUrl || submitted || disabled ? "#94a3b8" : "#8b5cf6",
-          color: "white",
-          fontWeight: 1000,
-          fontSize: "1.15rem",
-          border: "none",
-          cursor: !audioUrl || submitted || disabled ? "not-allowed" : "pointer",
-          boxShadow: "0 10px 24px rgba(139,92,246,0.35)",
-        }}
-      >
-        {submitted ? "Submitted – Analyzing…" : "Submit & Get Accent Score"}
-      </button>
+      {/* Submit / AI response */}
+      {feedbackPhase === "idle" && (
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={!audioUrl || submitted || disabled}
+          style={{
+            padding: "14px 34px",
+            borderRadius: 999,
+            background: !audioUrl || submitted || disabled ? "#94a3b8" : "#8b5cf6",
+            color: "white",
+            fontWeight: 1000,
+            fontSize: "1.15rem",
+            border: "none",
+            cursor: !audioUrl || submitted || disabled ? "not-allowed" : "pointer",
+            boxShadow: "0 10px 24px rgba(139,92,246,0.35)",
+          }}
+        >
+          Submit &amp; Get AI Feedback
+        </button>
+      )}
 
-      <div style={{ marginTop: 14, fontSize: "0.9rem", color: "#64748b" }}>
-        Tip: students can repeat this task over time to track pronunciation progress.
-      </div>
+      {feedbackPhase === "scoring" && (
+        <div style={{ fontWeight: 900, color: "#8b5cf6", fontSize: "1.05rem" }}>
+          🎧 Listening to your recording…
+        </div>
+      )}
+
+      {feedbackPhase === "feedback" && (
+        <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "left" }}>
+          {transcript && (
+            <div style={{ marginBottom: 12, padding: 12, borderRadius: 14, background: "#f1f5f9", border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: "0.8rem", fontWeight: 900, color: "#475569", marginBottom: 4 }}>What we heard</div>
+              <div style={{ fontStyle: "italic", color: "#0f172a" }}>"{transcript}"</div>
+            </div>
+          )}
+          <div style={{ padding: 14, borderRadius: 14, background: "#f3e8ff", border: "1px solid #d8b4fe", color: "#0f172a" }}>
+            <div style={{ fontSize: "0.85rem", fontWeight: 900, color: "#7c3aed", marginBottom: 6 }}>🤖 AI feedback</div>
+            <div style={{ fontSize: "0.98rem", lineHeight: 1.5 }}>{aiFeedback}</div>
+          </div>
+          <button
+            type="button"
+            onClick={handleContinue}
+            style={{
+              marginTop: 14,
+              width: "100%",
+              padding: "13px 24px",
+              borderRadius: 14,
+              background: "linear-gradient(135deg, #8b5cf6, #7c3aed)",
+              color: "white",
+              fontWeight: 1000,
+              fontSize: "1.05rem",
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            Continue ▶
+          </button>
+        </div>
+      )}
+
+      {feedbackPhase === "idle" && (
+        <div style={{ marginTop: 14, fontSize: "0.9rem", color: "#64748b" }}>
+          Tip: students can repeat this task over time to track pronunciation progress.
+        </div>
+      )}
     </div>
   );
 }

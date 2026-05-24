@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/MakeAndSnapTask.jsx
 import React, { useRef, useState } from "react";
+import { API_BASE_URL } from "../../../config.js";
 
 export default function MakeAndSnapTask({
   task,
@@ -13,6 +14,10 @@ export default function MakeAndSnapTask({
   const [imageFile, setImageFile] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [uploading, setUploading] = useState(false);
+  // AI feedback shown before advancing (tester: "could not see the feedback").
+  const [feedbackPhase, setFeedbackPhase] = useState("idle"); // idle | scoring | feedback
+  const [aiFeedback, setAiFeedback] = useState("");
+  const pendingSubmitRef = useRef(null);
   const fileRef = useRef(null);
 
   // Some demo placeholders accidentally ship the "not in the pool" message to students.
@@ -217,9 +222,40 @@ export default function MakeAndSnapTask({
       ? `${answerText} [S3:${s3.s3Key}]`
       : answerText;
 
-    onSubmit?.(enriched);
+    pendingSubmitRef.current = enriched;
     setSubmitted(true);
     setUploading(false);
+
+    // Show AI feedback on the description (vs the prompt) BEFORE advancing.
+    setFeedbackPhase("scoring");
+    (async () => {
+      let coach = "";
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/text-feedback`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "make-and-snap",
+            prompt: `A student built something for this task and wrote a description of how it matches. Coach them: praise what connects to the prompt, then suggest one way to make the connection clearer or stronger. If the description seems off-topic for the prompt, gently say so and ask them to relate it back. 2-3 sentences.`,
+            context: `PROMPT: ${promptText}`,
+            response: note.trim() || "(no description written)",
+          }),
+        });
+        const j = await r.json().catch(() => null);
+        if (j?.feedback) coach = String(j.feedback);
+      } catch { /* fall through */ }
+      if (!coach) {
+        coach = "Nice work! Strong descriptions name exactly which part of your creation shows the idea from the prompt — point to one specific detail and explain the link.";
+      }
+      setAiFeedback(coach);
+      setFeedbackPhase("feedback");
+    })();
+  };
+
+  const handleContinue = () => {
+    const p = pendingSubmitRef.current;
+    pendingSubmitRef.current = null;
+    onSubmit?.(p);
   };
 
   const handleNoteChange = (e) => {
@@ -463,31 +499,71 @@ export default function MakeAndSnapTask({
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={handleSubmit}
-        disabled={uiDisabled || !imagePreview || !noteAcceptable}
-        style={{
-          display: "block",
-          width: "100%",
-          padding: "10px 14px",
-          borderRadius: 10,
-          border: "none",
-          background:
-            uiDisabled || !imagePreview || !noteAcceptable
-              ? "#64748b"
-              : "#22c55e",
-          color: "#fff",
-          fontSize: "1rem",
-          fontWeight: 600,
-          cursor:
-            uiDisabled || !imagePreview || !noteAcceptable
-              ? "default"
-              : "pointer",
-        }}
-      >
-        {submitted ? "Submitted" : uploading ? "Uploading…" : "Submit"}
-      </button>
+      {feedbackPhase === "idle" ? (
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={uiDisabled || !imagePreview || !noteAcceptable}
+          style={{
+            display: "block",
+            width: "100%",
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: "none",
+            background:
+              uiDisabled || !imagePreview || !noteAcceptable
+                ? "#64748b"
+                : "#22c55e",
+            color: "#fff",
+            fontSize: "1rem",
+            fontWeight: 600,
+            cursor:
+              uiDisabled || !imagePreview || !noteAcceptable
+                ? "default"
+                : "pointer",
+          }}
+        >
+          {uploading ? "Uploading…" : "Submit"}
+        </button>
+      ) : feedbackPhase === "scoring" ? (
+        <div style={{ textAlign: "center", fontWeight: 900, color: "#7dd3fc", padding: "10px 0" }}>
+          🤖 Looking at your work…
+        </div>
+      ) : (
+        <div>
+          <div
+            style={{
+              padding: 12,
+              borderRadius: 12,
+              background: "rgba(34,197,94,0.12)",
+              border: "1px solid rgba(34,197,94,0.4)",
+              color: "#f1f5f9",
+            }}
+          >
+            <div style={{ fontWeight: 1000, marginBottom: 6, color: "#86efac" }}>🤖 AI feedback</div>
+            <div style={{ fontSize: "0.95rem", lineHeight: 1.45 }}>{aiFeedback}</div>
+          </div>
+          <button
+            type="button"
+            onClick={handleContinue}
+            style={{
+              display: "block",
+              width: "100%",
+              marginTop: 12,
+              padding: "11px 14px",
+              borderRadius: 10,
+              border: "none",
+              background: "#0ea5e9",
+              color: "#fff",
+              fontSize: "1rem",
+              fontWeight: 900,
+              cursor: "pointer",
+            }}
+          >
+            Continue ▶
+          </button>
+        </div>
+      )}
     </div>
   );
 }
