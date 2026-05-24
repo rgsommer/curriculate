@@ -19,6 +19,110 @@ import StepCircle from "../StepCircle";
  *
  * Defensive: never assumes optional fields/events exist.
  */
+
+// Greedy crossword layout: place the longest word first, then each remaining
+// word at the best crossing (shared letter, perpendicular, no conflicts).
+// Words that can't interlock are dropped onto their own row below. Returns a
+// cropped 2D grid of letters (null = empty) — used for the "Show solution"
+// overlay. Not provably optimal; a complete, connected interlock is enough.
+function buildCrosswordSolution(rawWords) {
+  const words = (rawWords || [])
+    .map((w) => String(w || "").trim().toUpperCase())
+    .filter((w) => w.length >= 2);
+  if (!words.length) return null;
+  words.sort((a, b) => b.length - a.length);
+
+  const cells = new Map(); // "r,c" -> letter
+  const key = (r, c) => `${r},${c}`;
+  const placed = [];
+
+  // Can `word` go at (r,c) in orientation ori without conflicts? Returns the
+  // number of valid crossings, or -1 if it conflicts.
+  const fit = (word, r, c, ori) => {
+    let crossings = 0;
+    for (let i = 0; i < word.length; i++) {
+      const rr = ori === "V" ? r + i : r;
+      const cc = ori === "H" ? c + i : c;
+      const existing = cells.get(key(rr, cc));
+      if (existing != null) {
+        if (existing !== word[i]) return -1;
+        crossings += 1;
+      } else {
+        // Avoid running directly alongside another word (keep it readable):
+        // a non-crossing cell shouldn't have perpendicular neighbours.
+        if (ori === "H") {
+          if (cells.get(key(rr - 1, cc)) != null || cells.get(key(rr + 1, cc)) != null) return -1;
+        } else {
+          if (cells.get(key(rr, cc - 1)) != null || cells.get(key(rr, cc + 1)) != null) return -1;
+        }
+      }
+    }
+    // Ends must not butt directly against another letter.
+    if (ori === "H") {
+      if (cells.get(key(r, c - 1)) != null || cells.get(key(r, c + word.length)) != null) return -1;
+    } else {
+      if (cells.get(key(r - 1, c)) != null || cells.get(key(r + word.length, c)) != null) return -1;
+    }
+    return crossings;
+  };
+
+  const stamp = (word, r, c, ori) => {
+    for (let i = 0; i < word.length; i++) {
+      const rr = ori === "V" ? r + i : r;
+      const cc = ori === "H" ? c + i : c;
+      cells.set(key(rr, cc), word[i]);
+    }
+    placed.push({ word, r, c, ori });
+  };
+
+  // First word horizontally at origin.
+  stamp(words[0], 0, 0, "H");
+
+  for (let w = 1; w < words.length; w++) {
+    const word = words[w];
+    let best = null; // { r, c, ori, crossings }
+    // Try crossing every already-placed letter.
+    for (const [k, letter] of cells) {
+      const [pr, pc] = k.split(",").map(Number);
+      for (let i = 0; i < word.length; i++) {
+        if (word[i] !== letter) continue;
+        // Place perpendicular so word[i] lands on (pr,pc).
+        for (const ori of ["H", "V"]) {
+          const r = ori === "V" ? pr - i : pr;
+          const c = ori === "H" ? pc - i : pc;
+          const crossings = fit(word, r, c, ori);
+          if (crossings >= 1 && (!best || crossings > best.crossings)) {
+            best = { r, c, ori, crossings };
+          }
+        }
+      }
+    }
+    if (best) {
+      stamp(word, best.r, best.c, best.ori);
+    } else {
+      // Couldn't interlock — drop it on its own row two below everything.
+      let maxR = 0;
+      for (const k of cells.keys()) maxR = Math.max(maxR, Number(k.split(",")[0]));
+      stamp(word, maxR + 2, 0, "H");
+    }
+  }
+
+  // Crop to bounds → 2D array.
+  let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
+  for (const k of cells.keys()) {
+    const [r, c] = k.split(",").map(Number);
+    minR = Math.min(minR, r); maxR = Math.max(maxR, r);
+    minC = Math.min(minC, c); maxC = Math.max(maxC, c);
+  }
+  const rows = maxR - minR + 1, colsN = maxC - minC + 1;
+  const grid = Array.from({ length: rows }, () => Array.from({ length: colsN }, () => null));
+  for (const [k, letter] of cells) {
+    const [r, c] = k.split(",").map(Number);
+    grid[r - minR][c - minC] = letter;
+  }
+  return grid;
+}
+
 export default function WordWeaverDuelTask({
   task,
   onSubmit,
@@ -141,6 +245,9 @@ export default function WordWeaverDuelTask({
 
   // simple per-turn timer (optional). purely UI.
   const [timeLeft, setTimeLeft] = useState(null);
+  const [showSolution, setShowSolution] = useState(false); // "perfect solution" overlay
+  // A complete interlocking layout of the word set, for the solution overlay.
+  const solutionGrid = useMemo(() => buildCrosswordSolution(scrabbleWords), [scrabbleWords]);
 
   // Reset when task changes
   const taskKey = String(task?._id || task?.id || `${task?.taskType || "word-weaver"}:${gridSize}:${scrabbleWords.join("|")}`);
@@ -842,6 +949,17 @@ export default function WordWeaverDuelTask({
                 Orientation: {orientation === "H" ? "Horizontal" : "Vertical"}
               </button>
 
+              {solutionGrid && (
+                <button
+                  type="button"
+                  onClick={() => setShowSolution(true)}
+                  style={s.secondaryBtn}
+                  title="See one complete interlocking arrangement of all the words"
+                >
+                  💡 Show solution
+                </button>
+              )}
+
               {/* Removed the "Rotate board" view toggle: it applied a cosmetic
                   CSS rotate(90deg) that made the grid LOOK transposed while
                   placement/intersection logic stayed on the true orientation —
@@ -1145,6 +1263,40 @@ export default function WordWeaverDuelTask({
             </div>
           )}
         </div>
+
+        {/* "Perfect solution" overlay — one complete interlocking arrangement. */}
+        {showSolution && solutionGrid && (
+          <div
+            onClick={() => setShowSolution(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{ background: isDark ? "#0f172a" : "#ffffff", color: isDark ? "#f1f5f9" : "#0f172a", borderRadius: 16, padding: 18, maxWidth: "95vw", maxHeight: "90vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.45)" }}
+            >
+              <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 4 }}>💡 One full solution</div>
+              <div style={{ fontSize: 13, opacity: 0.8, marginBottom: 12, maxWidth: 420 }}>
+                A complete way all the words interlock. There are other valid layouts — this is just one to learn from.
+              </div>
+              <div style={{ display: "inline-block" }}>
+                {solutionGrid.map((row, r) => (
+                  <div key={r} style={{ display: "flex" }}>
+                    {row.map((ch, c) => (
+                      <div key={c} style={{ ...s.cell, cursor: "default", ...(ch ? s.cellFilled : { border: "1px solid transparent", background: "transparent" }) }}>
+                        {ch || ""}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <div>
+                <button type="button" onClick={() => setShowSolution(false)} style={{ ...s.secondaryBtn, marginTop: 14 }}>
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
