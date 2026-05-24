@@ -398,6 +398,13 @@ export default function MysteryCluesTask({ task, onSubmit, disabled, practiceMod
               <>Final challenge: select <b>exactly</b> the cards you saw earlier — no extras.</>
             )}
           </div>
+          {practiceMode && (
+            <div style={{ marginTop: 6, fontSize: 12.5, opacity: 0.8, lineHeight: 1.4, maxWidth: 720 }}>
+              💡 In a real class set, clue cards are revealed across several earlier tasks, then a
+              final station asks students to recall them all — testing memory over the whole session.
+              Here in practice it's a quick self-contained round.
+            </div>
+          )}
         </div>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
