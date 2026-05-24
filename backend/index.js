@@ -140,6 +140,7 @@ import stocksTradeRouter from "./routes/stocksTrade.js";
 import stocksPendingOrdersRouter from "./routes/stocksPendingOrders.js";
 import stocksDiscoverRouter from "./routes/stocksDiscover.js";
 import stocksReconcileRouter from "./routes/stocksReconcile.js";
+import travelRouter from "./routes/travel.js";
 import { scheduleDailyBriefing, scheduleMonthlyReport, scheduleWeeklyDiscovery } from "./jobs/stocksDailyBriefing.js";
 
 function renderEmailTemplate(str, vars) {
@@ -578,6 +579,9 @@ app.use("/api/stocks-trade", stocksTradeRouter);
 app.use("/api/stocks-pending-orders", stocksPendingOrdersRouter);
 app.use("/api/stocks-discover", stocksDiscoverRouter);
 app.use("/api/stocks-reconcile", stocksReconcileRouter);
+
+// Public flight-search tool on curriculate.net/travel (Amadeus-backed)
+app.use("/api/travel", travelRouter);
 
 // Fieldday
 app.use("/fieldday/api", fielddayRouter);
