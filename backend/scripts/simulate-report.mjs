@@ -123,6 +123,11 @@ function buildPayload() {
     tasks: TASKS,
     teamsDetailed: teams,
     totalPossible: 100,
+    questTrades: [
+      { sellerTeamName: "Water Warriors", buyerTeamName: "Splash Squad", resourceId: "fresh_water", quantity: 1, price: 6, at: Date.now() },
+      { sellerTeamName: "Cycle Stars", buyerTeamName: "Water Warriors", resourceId: "salted_rations", quantity: 2, price: 10, at: Date.now() },
+      { sellerTeamName: "Splash Squad", buyerTeamName: "Cloud Chasers", resourceId: "navigation_charts", quantity: 1, price: 8, at: Date.now() },
+    ],
     submissions: [
       { kind: "photo", teamName: "Water Warriors", taskTitle: "Team Water Cycle Photo", filename: "water-warriors-photo.jpg", url: "https://curriculate.net/placeholder" },
       { kind: "photo", teamName: "Splash Squad", taskTitle: "Team Water Cycle Photo", filename: "splash-squad-photo.jpg", url: "https://curriculate.net/placeholder" },

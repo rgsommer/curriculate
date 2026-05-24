@@ -171,6 +171,35 @@ export async function tradeBetweenTeams({ roomCode, buyerTeamId, sellerTeamId, r
 }
 
 /**
+ * Persist a completed trade to BOTH teams' tradeHistory (capped) for the
+ * per-session trade log / analytics. Best-effort; never throws to the caller.
+ */
+export async function recordTrade({ roomCode, sellerTeamId, buyerTeamId, resourceId, quantity = 1, price = 0 }) {
+  const code = String(roomCode || "").toUpperCase();
+  if (!code || !sellerTeamId || !buyerTeamId || !resourceId) return;
+  const rec = {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    sellerTeamId: String(sellerTeamId),
+    buyerTeamId: String(buyerTeamId),
+    resourceId: String(resourceId),
+    quantity: Math.max(1, Math.floor(Number(quantity) || 1)),
+    price: Math.max(0, Math.floor(Number(price) || 0)),
+    acquisitionMethod: "qr-trade",
+    sellerPointsAwarded: 0,
+    buyerPointsAwarded: 0,
+    scannedAt: new Date(),
+  };
+  try {
+    await TeamQuestState.updateMany(
+      { roomCode: code, teamId: { $in: [String(sellerTeamId), String(buyerTeamId)] } },
+      { $push: { tradeHistory: { $each: [rec], $slice: -200 } } },
+    );
+  } catch (e) {
+    void e; // best-effort
+  }
+}
+
+/**
  * One-time specialty seed. Assigns a team its scarce specialty resource and
  * grants a starting stock — but ONLY if it hasn't been assigned yet (guarded so
  * repeated state fetches don't keep granting). Returns { assigned, state }.
@@ -271,6 +300,7 @@ export default {
   grantResource,
   removeResource,
   tradeBetweenTeams,
+  recordTrade,
   assignSpecialty,
   getQuestStateSnapshot,
   recordTaskComplete,

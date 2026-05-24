@@ -7889,12 +7889,30 @@ socket.on("quest:trade", async (payload = {}, ack) => {
       return;
     }
 
-    const { tradeBetweenTeams, getQuestStateSnapshot } = await import("./services/questEconomy.js");
+    const { tradeBetweenTeams, getQuestStateSnapshot, recordTrade } = await import("./services/questEconomy.js");
     const result = await tradeBetweenTeams({ roomCode: code, buyerTeamId, sellerTeamId, resourceId, quantity, price });
     if (!result.ok) {
       if (typeof ack === "function") ack({ ok: false, error: result.error || "Trade failed" });
       return;
     }
+
+    // Per-session trade log: persist to both teams (analytics) + keep a light
+    // in-memory record on the room so the end-of-session report can include it.
+    recordTrade({ roomCode: code, sellerTeamId, buyerTeamId, resourceId, quantity, price });
+    try {
+      if (!Array.isArray(room.questTrades)) room.questTrades = [];
+      room.questTrades.push({
+        sellerTeamId,
+        sellerTeamName: room.teams?.[sellerTeamId]?.teamName || "",
+        buyerTeamId,
+        buyerTeamName: room.teams?.[buyerTeamId]?.teamName || "",
+        resourceId,
+        quantity: Math.max(1, Math.floor(Number(quantity) || 1)),
+        price: Math.max(0, Math.floor(Number(price) || 0)),
+        at: Date.now(),
+      });
+      if (room.questTrades.length > 500) room.questTrades = room.questTrades.slice(-500);
+    } catch {}
 
     const buyerSnap = getQuestStateSnapshot(result.buyerState);
     const sellerSnap = getQuestStateSnapshot(result.sellerState);

@@ -1428,6 +1428,42 @@ async function buildReportPdfBuffer({
       doc.fillColor("#0f172a");
     }
 
+    // ---- Quest Trades (peer-to-peer economy log) ----
+    const questTrades = Array.isArray(transcript?.questTrades) ? transcript.questTrades : [];
+    if (questTrades.length) {
+      doc.moveDown(0.6);
+      ensureSpace(140);
+      sectionTitle("Quest Trades");
+
+      const totalCoins = questTrades.reduce((s, t) => s + (Number(t.price) || 0), 0);
+      const byResource = {};
+      for (const t of questTrades) {
+        const k = t.resourceId || "?";
+        byResource[k] = (byResource[k] || 0) + (Number(t.quantity) || 1);
+      }
+      const topRes = Object.entries(byResource).sort((a, b) => b[1] - a[1]).slice(0, 3)
+        .map(([r, n]) => `${r} (${n})`).join(", ");
+
+      doc.font("Helvetica").fontSize(9).fillColor("#475569").text(
+        `${questTrades.length} peer-to-peer trade${questTrades.length === 1 ? "" : "s"} between teams · ` +
+          `${totalCoins} coin${totalCoins === 1 ? "" : "s"} changed hands` +
+          (topRes ? ` · most traded: ${topRes}` : "")
+      );
+      doc.moveDown(0.4);
+
+      doc.font("Helvetica").fontSize(10).fillColor("#0f172a");
+      for (const t of questTrades.slice(0, 60)) {
+        ensureSpace(16);
+        const seller = t.sellerTeamName || t.sellerTeamId || "—";
+        const buyer = t.buyerTeamName || t.buyerTeamId || "—";
+        doc.text(`• ${seller} → ${buyer}:  ${Number(t.quantity) || 1}× ${t.resourceId}  for ${Number(t.price) || 0} coin${(Number(t.price) || 0) === 1 ? "" : "s"}`, { lineGap: 1 });
+      }
+      if (questTrades.length > 60) {
+        doc.font("Helvetica-Oblique").fontSize(8).fillColor("#94a3b8").text(`…and ${questTrades.length - 60} more.`);
+      }
+      doc.fillColor("#0f172a");
+    }
+
     const upgradeLine = buildSoftUpgradeLine(planName);
     if (upgradeLine) {
       doc.moveDown(0.8);

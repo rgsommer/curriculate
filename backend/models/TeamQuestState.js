@@ -17,6 +17,7 @@ const TradeRecordSchema = new Schema(
     buyerTeamId: String,
     resourceId: String,
     quantity: Number,
+    price: Number,
     acquisitionMethod: String,
     approvedBy: String,
     qrToken: String,

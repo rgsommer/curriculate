@@ -368,6 +368,7 @@ export function createRoomEngine(io) {
       scores: teamScores,
       submissions: room.submissions,
       behaviorDings: Array.isArray(room.behaviorDings) ? room.behaviorDings : [],
+      questTrades: Array.isArray(room.questTrades) ? room.questTrades : [],
     };
   }
 
