@@ -7050,10 +7050,14 @@ socket.on("quest:requestState", async (payload = {}, ack) => {
     }
 
     // Renewable specialty: top up since the last fetch so the team keeps a
-    // sellable stock without effort.
+    // sellable stock without effort (primary + any franchised extra).
     try {
-      const regen = await regenSpecialty({ roomCode: code, teamId, intervalMinutes: regenMinutes, cap: regenCap });
+      const regen = await regenSpecialty({ roomCode: code, teamId, intervalMinutes: regenMinutes, cap: regenCap, which: "primary" });
       if (regen.granted > 0 && regen.state) state = regen.state;
+      if (state?.extraSpecialtyResourceId) {
+        const regenX = await regenSpecialty({ roomCode: code, teamId, intervalMinutes: regenMinutes, cap: regenCap, which: "extra" });
+        if (regenX.granted > 0 && regenX.state) state = regenX.state;
+      }
     } catch (regenErr) {
       console.warn("[quest:requestState] specialty regen skipped:", regenErr?.message);
     }
@@ -7069,6 +7073,10 @@ socket.on("quest:requestState", async (payload = {}, ack) => {
         startedAt: Number(room?.startedAt) || null,
         inflation: effectiveInflation(questTask?.config),
         specialtyRegen: { intervalMinutes: regenMinutes, cap: regenCap },
+        franchise: {
+          cost: Math.max(0, Math.floor(Number(questTask?.config?.franchiseCost) || 30)),
+          enabled: (Array.isArray(questTask?.config?.specialties) ? questTask.config.specialties.filter(Boolean).length : 0) >= 2,
+        },
       };
     } catch { /* non-fatal */ }
 
@@ -7099,12 +7107,13 @@ socket.on("quest:market", async (payload = {}, ack) => {
     const nameOf = (rid) => resourcesCfg.find((r) => r.id === rid)?.name || rid;
 
     const TeamQuestState = (await import("./models/TeamQuestState.js")).default;
-    const docs = await TeamQuestState.find({ roomCode: code }).select("teamId specialtyResourceId").lean();
+    const docs = await TeamQuestState.find({ roomCode: code }).select("teamId specialtyResourceId extraSpecialtyResourceId").lean();
     const bySpecialty = {};
     for (const d of docs || []) {
-      if (!d?.specialtyResourceId) continue;
       const name = room.teams?.[d.teamId]?.teamName || `Team ${String(d.teamId).slice(-4)}`;
-      (bySpecialty[d.specialtyResourceId] ||= []).push({ teamId: d.teamId, teamName: name });
+      if (d?.specialtyResourceId) (bySpecialty[d.specialtyResourceId] ||= []).push({ teamId: d.teamId, teamName: name });
+      // Franchised extra suppliers also count — they sell that resource too.
+      if (d?.extraSpecialtyResourceId) (bySpecialty[d.extraSpecialtyResourceId] ||= []).push({ teamId: d.teamId, teamName: name, franchise: true });
     }
     const ids = specialties.length ? specialties : Object.keys(bySpecialty);
     const directory = ids.map((sid) => ({ specialtyId: sid, name: nameOf(sid), teams: bySpecialty[sid] || [] }));
@@ -7962,6 +7971,69 @@ socket.on("quest:trade", async (payload = {}, ack) => {
     }
   } catch (e) {
     console.error("[quest:trade] error", e?.message);
+    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+//  Quest Mode — open a franchise. A diligent team invests coins to become a
+//  SECOND supplier of a scarce specialty (the one in shortest supply right now).
+//  Capped at one extra per team. Doubles as a coin sink against inflation.
+// ---------------------------------------------------------------------------
+socket.on("quest:franchise", async (payload = {}, ack) => {
+  try {
+    const { roomCode, teamId } = payload || {};
+    const code = String(roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !teamId) {
+      if (typeof ack === "function") ack({ ok: false, error: "Missing room/team" });
+      return;
+    }
+    const questTask = (room?.taskset?.tasks || []).find((t) => t?.taskType === "quest");
+    const specialties = Array.isArray(questTask?.config?.specialties) ? questTask.config.specialties.filter(Boolean) : [];
+    if (specialties.length < 2) {
+      if (typeof ack === "function") ack({ ok: false, error: "Franchises aren't available in this mission" });
+      return;
+    }
+    const cost = Math.max(0, Math.floor(Number(questTask?.config?.franchiseCost) || 30));
+    const stock = Math.max(1, Math.floor(Number(questTask?.config?.franchiseStartingStock) || 2));
+
+    const TeamQuestState = (await import("./models/TeamQuestState.js")).default;
+    const { openFranchise, getQuestStateSnapshot } = await import("./services/questEconomy.js");
+
+    const me = await TeamQuestState.findOne({ roomCode: code, teamId }).lean();
+    if (me?.extraSpecialtyResourceId) {
+      if (typeof ack === "function") ack({ ok: false, error: "Your team already runs a franchise" });
+      return;
+    }
+
+    // Pick the scarce specialty: the one supplied by the FEWEST teams right now
+    // (counting both primary + franchised), excluding this team's own primary.
+    const docs = await TeamQuestState.find({ roomCode: code }).select("teamId specialtyResourceId extraSpecialtyResourceId").lean();
+    const supplierCount = {};
+    for (const s of specialties) supplierCount[s] = 0;
+    for (const d of docs || []) {
+      if (d.specialtyResourceId && supplierCount[d.specialtyResourceId] != null) supplierCount[d.specialtyResourceId] += 1;
+      if (d.extraSpecialtyResourceId && supplierCount[d.extraSpecialtyResourceId] != null) supplierCount[d.extraSpecialtyResourceId] += 1;
+    }
+    const candidates = specialties.filter((s) => s !== me?.specialtyResourceId);
+    if (candidates.length === 0) {
+      if (typeof ack === "function") ack({ ok: false, error: "No other specialty to franchise" });
+      return;
+    }
+    candidates.sort((a, b) => (supplierCount[a] || 0) - (supplierCount[b] || 0));
+    const specialtyId = candidates[0];
+
+    const result = await openFranchise({ roomCode: code, teamId, specialtyId, cost, stock });
+    if (!result.ok) {
+      if (typeof ack === "function") ack({ ok: false, error: result.error || "Could not open franchise" });
+      return;
+    }
+    const snap = getQuestStateSnapshot(result.state);
+    try { io.to(teamId).emit("quest:stateUpdated", snap); } catch {}
+    if (typeof ack === "function") ack({ ok: true, state: snap, specialtyId, name: (questTask?.config?.resources || []).find((r) => r.id === specialtyId)?.name || specialtyId });
+  } catch (e) {
+    console.error("[quest:franchise] error", e?.message);
     if (typeof ack === "function") ack({ ok: false, error: "Server error" });
   }
 });

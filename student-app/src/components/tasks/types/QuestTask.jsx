@@ -121,6 +121,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
   const inv = state?.inventory && typeof state.inventory === "object" ? state.inventory : {};
   const coins = Number(state?.coins) || 0;
   const mySpecialty = state?.specialtyResourceId || "";
+  const myExtra = state?.extraSpecialtyResourceId || "";
   const resourceName = (rid) => resources.find((r) => r.id === rid)?.name || rid;
 
   // Compute objective progress
@@ -284,6 +285,37 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
       setTradeMode(null);
     });
     return true; // stop scanning after a valid offer
+  };
+
+  // Open a franchise: invest coins to become a second supplier of a scarce
+  // specialty. Live → server picks the scarcest + charges; practice → simulate.
+  const handleFranchise = () => {
+    const cost = Number(meta?.franchise?.cost) || 30;
+    if (state?.extraSpecialtyResourceId) return;
+    if ((Number(state?.coins) || 0) < cost) {
+      setTradeMsg({ ok: false, text: `Not enough coins to franchise (need ${cost}).` });
+      return;
+    }
+    if (practiceMode || !isLive) {
+      const cand = specialties.find((s) => s !== state?.specialtyResourceId);
+      if (!cand) { setTradeMsg({ ok: false, text: "No other specialty to franchise." }); return; }
+      const stock = 2;
+      setState((prev) => ({
+        ...prev,
+        coins: (Number(prev?.coins) || 0) - cost,
+        extraSpecialtyResourceId: cand,
+        inventory: { ...(prev?.inventory || {}), [cand]: (Number(prev?.inventory?.[cand]) || 0) + stock },
+      }));
+      setTradeMsg({ ok: true, text: `🏭 Franchise opened — you now supply ${resourceName(cand)}!` });
+      return;
+    }
+    setTradeBusy(true);
+    socket.emit("quest:franchise", { roomCode, teamId }, (resp) => {
+      setTradeBusy(false);
+      if (!resp?.ok) { setTradeMsg({ ok: false, text: resp?.error || "Could not open franchise." }); return; }
+      if (resp.state) setState(resp.state);
+      setTradeMsg({ ok: true, text: `🏭 Franchise opened — you now supply ${resp.name || resp.specialtyId}!` });
+    });
   };
 
   const handleLaunch = () => {
@@ -489,6 +521,33 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
               </div>
             ))}
           </div>
+        )}
+
+        {/* Franchise: diligent teams can invest coins to become a 2nd supplier. */}
+        {meta?.franchise?.enabled && (
+          myExtra ? (
+            <div style={{ marginBottom: 8, fontSize: "0.8rem", color: "#bbf7d0", fontWeight: 600 }}>
+              🏭 Franchise: <strong>{resourceName(myExtra)}</strong> (×{Number(inv[myExtra]) || 0}) — your second supply line.
+            </div>
+          ) : (
+            <div style={{ marginBottom: 8 }}>
+              <button
+                type="button"
+                disabled={disabled || tradeBusy || (Number(state?.coins) || 0) < (Number(meta?.franchise?.cost) || 30)}
+                onClick={handleFranchise}
+                style={{
+                  ...buyBtn, width: "100%",
+                  background: (Number(state?.coins) || 0) >= (Number(meta?.franchise?.cost) || 30) ? "#a855f7" : "rgba(75,85,99,0.5)",
+                  cursor: (Number(state?.coins) || 0) >= (Number(meta?.franchise?.cost) || 30) ? "pointer" : "not-allowed",
+                }}
+              >
+                🏭 Open a franchise — {Number(meta?.franchise?.cost) || 30} coins
+              </button>
+              <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: 4 }}>
+                Invest your earnings to start producing a second scarce resource other teams need.
+              </div>
+            </div>
+          )
         )}
 
         {!tradeMode && (

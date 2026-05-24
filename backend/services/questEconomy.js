@@ -254,26 +254,28 @@ export async function bumpSpecialtyForEffort({ roomCode, teamId, cap = 8, amount
  * it keeps being a supplier. Idempotent-ish (advances the clock by what it
  * grants). Returns { state, granted }.
  */
-export async function regenSpecialty({ roomCode, teamId, intervalMinutes = 3, cap = 5 }) {
+export async function regenSpecialty({ roomCode, teamId, intervalMinutes = 5, cap = 5, which = "primary" }) {
   const code = String(roomCode || "").toUpperCase();
   if (!code || !teamId) return { state: null, granted: 0 };
-  const intervalMs = Math.max(1, Math.floor(Number(intervalMinutes) || 3)) * 60000;
+  const intervalMs = Math.max(1, Math.floor(Number(intervalMinutes) || 5)) * 60000;
   const capN = Math.max(1, Math.floor(Number(cap) || 5));
+  const idField = which === "extra" ? "extraSpecialtyResourceId" : "specialtyResourceId";
+  const tsField = which === "extra" ? "extraSpecialtyLastRegenAt" : "specialtyLastRegenAt";
 
   const state = await TeamQuestState.findOne({ roomCode: code, teamId });
-  if (!state || !state.specialtyResourceId) return { state, granted: 0 };
-  const sid = state.specialtyResourceId;
+  if (!state || !state[idField]) return { state, granted: 0 };
+  const sid = state[idField];
   const stock = state.inventory && typeof state.inventory.get === "function"
     ? Number(state.inventory.get(sid)) || 0
     : Number(state.inventory?.[sid]) || 0;
 
   const now = Date.now();
-  const last = state.specialtyLastRegenAt ? new Date(state.specialtyLastRegenAt).getTime() : now;
+  const last = state[tsField] ? new Date(state[tsField]).getTime() : now;
 
   // Already full → just keep the clock current so regen resumes from "now" once
   // they sell some.
   if (stock >= capN) {
-    await TeamQuestState.updateOne({ roomCode: code, teamId }, { $set: { specialtyLastRegenAt: new Date(now) } });
+    await TeamQuestState.updateOne({ roomCode: code, teamId }, { $set: { [tsField]: new Date(now) } });
     return { state, granted: 0 };
   }
 
@@ -286,10 +288,44 @@ export async function regenSpecialty({ roomCode, teamId, intervalMinutes = 3, ca
   const newLast = newStock >= capN ? now : last + grant * intervalMs;
   const updated = await TeamQuestState.findOneAndUpdate(
     { roomCode: code, teamId },
-    { $inc: { [`inventory.${sid}`]: grant }, $set: { specialtyLastRegenAt: new Date(newLast) } },
+    { $inc: { [`inventory.${sid}`]: grant }, $set: { [tsField]: new Date(newLast) } },
     { new: true },
   );
   return { state: updated || state, granted: grant };
+}
+
+/**
+ * Open a franchise: a diligent team invests `cost` coins to become a SECOND
+ * supplier of a scarce specialty (capped at one extra per team). Guarded so a
+ * team can't franchise twice. Returns { ok, state, error?, specialtyId? }.
+ */
+export async function openFranchise({ roomCode, teamId, specialtyId, cost = 30, stock = 2 }) {
+  const code = String(roomCode || "").toUpperCase();
+  if (!code || !teamId || !specialtyId) return { ok: false, error: "Missing franchise parameters" };
+  const cst = Math.max(0, Math.floor(Number(cost) || 0));
+  const qty = Math.max(1, Math.floor(Number(stock) || 1));
+
+  const existing = await TeamQuestState.findOne({ roomCode: code, teamId });
+  if (existing?.extraSpecialtyResourceId) return { ok: false, error: "Your team already runs a franchise" };
+  if (existing?.specialtyResourceId === specialtyId) return { ok: false, error: "That's already your specialty" };
+
+  // Charge first (atomic balance guard).
+  if (cst > 0) {
+    const spend = await spendCoins({ roomCode: code, teamId, amount: cst, reason: `franchise:${specialtyId}` });
+    if (!spend.ok) return { ok: false, error: `Not enough coins (need ${cst})` };
+  }
+  // Set the franchise + seed stock + start its regen clock. Guard extra still empty.
+  const updated = await TeamQuestState.findOneAndUpdate(
+    { roomCode: code, teamId, $or: [{ extraSpecialtyResourceId: { $exists: false } }, { extraSpecialtyResourceId: "" }, { extraSpecialtyResourceId: null }] },
+    { $set: { extraSpecialtyResourceId: specialtyId, extraSpecialtyLastRegenAt: new Date() }, $inc: { [`inventory.${specialtyId}`]: qty } },
+    { new: true },
+  );
+  if (!updated) {
+    // Lost a race (already franchised) → refund.
+    if (cst > 0) await awardCoins({ roomCode: code, teamId, amount: cst, reason: "franchise-refund" });
+    return { ok: false, error: "Your team already runs a franchise" };
+  }
+  return { ok: true, state: updated, specialtyId };
 }
 
 /**
@@ -316,6 +352,7 @@ export function getQuestStateSnapshot(state) {
     completedHiddenTaskIds: state.completedHiddenTaskIds || [],
     questRank: state.questRank,
     specialtyResourceId: state.specialtyResourceId || "",
+    extraSpecialtyResourceId: state.extraSpecialtyResourceId || "",
   };
 }
 
@@ -375,6 +412,7 @@ export default {
   assignSpecialty,
   regenSpecialty,
   bumpSpecialtyForEffort,
+  openFranchise,
   getQuestStateSnapshot,
   recordTaskComplete,
 };

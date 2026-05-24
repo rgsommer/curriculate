@@ -73,6 +73,12 @@ const TeamQuestStateSchema = new Schema(
     // have some"). This timestamp anchors the regen clock.
     specialtyLastRegenAt: { type: Date, default: null },
 
+    // A diligent team can "open a franchise" — invest coins to become a SECOND
+    // supplier of a scarce specialty (capped at one extra). It regenerates
+    // passively like the primary. Empty until franchised.
+    extraSpecialtyResourceId: { type: String, default: "" },
+    extraSpecialtyLastRegenAt: { type: Date, default: null },
+
     tradeHistory:        { type: [TradeRecordSchema], default: [] },
     contributionRecords: { type: [ContributionRecordSchema], default: [] },
   },
