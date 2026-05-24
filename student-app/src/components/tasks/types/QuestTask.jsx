@@ -12,6 +12,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import QrScanner from "../../QrScanner";
+import { effectiveInflation, priceMultiplier, inflatedCost } from "@shared/questPricing.js";
 
 export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, teamId, taskIndex, practiceMode = false }) {
   const cfg = task?.config || {};
@@ -46,8 +47,25 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
   const [tradeMsg, setTradeMsg] = useState(null);   // { ok, text }
   const [tradeBusy, setTradeBusy] = useState(false);
   const [market, setMarket] = useState(null);       // [{ specialtyId, name, teams:[{teamName}] }]
+  // Inflation: { startedAt, inflation:{enabled,rate,windowSeconds} }. Practice
+  // seeds it locally (clock starts on mount) so rising prices are demoable.
+  const [meta, setMeta] = useState(
+    practiceMode ? { startedAt: Date.now(), inflation: effectiveInflation(cfg) } : null
+  );
+  const [now, setNow] = useState(Date.now());
 
   const isLive = !!(socket && roomCode && teamId) && !practiceMode;
+
+  // Tick so the displayed (rising) depot prices refresh over time.
+  useEffect(() => {
+    if (!meta?.inflation?.enabled) return;
+    const id = setInterval(() => setNow(Date.now()), 15000);
+    return () => clearInterval(id);
+  }, [meta?.inflation?.enabled]);
+
+  // Current price multiplier + helper to price any base cost right now.
+  const priceMult = priceMultiplier(meta?.inflation, meta?.startedAt, now);
+  const priceNow = (base) => inflatedCost(base, meta?.inflation, meta?.startedAt, now);
 
   // Snapshot fetch + subscribe to updates (skipped in practice mode —
   // we manage state locally so a solo player can interact end-to-end).
@@ -57,6 +75,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
     socket.emit("quest:requestState", { roomCode, teamId }, (resp) => {
       if (cancelled || !resp?.ok) return;
       setState(resp.state || null);
+      if (resp.meta) setMeta(resp.meta);
     });
     const onUpdate = (s) => { if (!cancelled && s) setState(s); };
     socket.on("quest:stateUpdated", onUpdate);
@@ -90,7 +109,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
     if (practiceMode) {
       const r = resources.find((x) => x.id === resourceId);
       const coinOpt = (r?.acquisitionOptions || []).find((o) => o?.type === "coins");
-      const cost = Number(coinOpt?.amount) || 0;
+      const cost = priceNow(Number(coinOpt?.amount) || 0); // current (inflated) price
       const have = Number(state?.coins) || 0;
       if (have < cost) {
         setError(`Not enough coins (need ${cost}, have ${have}).`);
@@ -319,14 +338,23 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
       {/* Resource shop */}
       {resources.length > 0 && (
         <div style={cardWrap}>
-          <div style={cardLabel}>Supply depot</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <div style={cardLabel}>Supply depot</div>
+            {meta?.inflation?.enabled && priceMult > 1.001 && (
+              <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#fca5a5", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 999, padding: "2px 8px" }}>
+                ▲ prices +{Math.round((priceMult - 1) * 100)}%
+              </span>
+            )}
+          </div>
           <div style={{ fontSize: "0.78rem", color: "#cbd5e1", marginBottom: 8 }}>
             Earn coins by completing tasks, then spend them here.
+            {meta?.inflation?.enabled ? " Prices rise over time — buy early!" : ""}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {resources.map((r) => {
               const coinOpt = (r.acquisitionOptions || []).find((o) => o?.type === "coins");
-              const cost = Number(coinOpt?.amount) || 0;
+              const baseCost = Number(coinOpt?.amount) || 0;
+              const cost = priceNow(baseCost); // live (inflated) price
               const canAfford = coins >= cost;
               const have = Number(inv[r.id]) || 0;
               return (

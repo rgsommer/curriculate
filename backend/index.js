@@ -7031,7 +7031,17 @@ socket.on("quest:requestState", async (payload = {}, ack) => {
       console.warn("[quest:requestState] specialty seed skipped:", seedErr?.message);
     }
 
-    if (typeof ack === "function") ack({ ok: true, state: getQuestStateSnapshot(state) });
+    // Surface inflation settings + session start so the client can display the
+    // live (rising) depot prices. The server still re-charges authoritatively.
+    let meta = null;
+    try {
+      const room = rooms[code];
+      const questTask = (room?.taskset?.tasks || []).find((t) => t?.taskType === "quest");
+      const { effectiveInflation } = await import("../shared/questPricing.js");
+      meta = { startedAt: Number(room?.startedAt) || null, inflation: effectiveInflation(questTask?.config) };
+    } catch { /* non-fatal */ }
+
+    if (typeof ack === "function") ack({ ok: true, state: getQuestStateSnapshot(state), meta });
   } catch (e) {
     console.error("[quest:requestState] error", e?.message);
     if (typeof ack === "function") ack({ ok: false, error: "Server error" });
@@ -7818,7 +7828,14 @@ socket.on("quest:acquireResource", async (payload = {}, ack) => {
       if (typeof ack === "function") ack({ ok: false, error: "Only coin acquisition is supported in MVP" });
       return;
     }
-    const cost = Math.max(0, Number(chosen.amount) || 0);
+    // Time-based depot inflation (ON by default for Quest): the price the
+    // server actually charges climbs over the session clock.
+    const baseCost = Math.max(0, Number(chosen.amount) || 0);
+    const { effectiveInflation, inflatedCost } = await import("../shared/questPricing.js");
+    const questTaskForCfg = (room?.taskset?.tasks || []).find((t) => t?.taskType === "quest");
+    const infl = effectiveInflation(questTaskForCfg?.config);
+    const startedAtMs = Number(room?.startedAt) || null;
+    const cost = inflatedCost(baseCost, infl, startedAtMs);
     const qty = Math.max(1, Math.floor(Number(quantity) || 1));
 
     const spend = await spendCoins({ roomCode: code, teamId, amount: cost * qty, reason: `acquire:${resourceId}` });
