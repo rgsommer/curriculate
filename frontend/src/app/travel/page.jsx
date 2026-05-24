@@ -339,6 +339,10 @@ export default function TravelPage() {
           destinationResolved: result.destinationResolved,
           summary: result.summary,
           currency: result.currency,
+          adults: result.adults || 1,
+          carRental: result.carRental || null,
+          selectedDepartureDate: departureDate,
+          selectedReturnDate: tripType === "return" ? returnDate : null,
           offers: result.offers,
         }),
       });
@@ -348,7 +352,7 @@ export default function TravelPage() {
     } catch (e) {
       setEmailState({ status: "error", msg: e.message || "Failed to send." });
     }
-  }, [result, emailTo]);
+  }, [result, emailTo, departureDate, returnDate, tripType]);
 
   // Badges across the result set: cheapest, fewest stops, shortest trip time.
   const offers = result?.offers || [];

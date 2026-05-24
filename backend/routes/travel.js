@@ -346,43 +346,99 @@ router.post("/email", async (req, res) => {
   }
 
   const currency = /^[A-Za-z]{3}$/.test(b.currency || "") ? String(b.currency).toUpperCase() : "USD";
+  const adults = Math.min(9, Math.max(1, parseInt(b.adults, 10) || 1));
+  const selDep = isValidDate(b.selectedDepartureDate) ? b.selectedDepartureDate : null;
+  const selRet = isValidDate(b.selectedReturnDate) ? b.selectedReturnDate : null;
   const route = `${esc(b.originResolved || "")} → ${esc(b.destinationResolved || "")}`.trim();
   const fmtMoney = (amt, cur) => {
     try { return new Intl.NumberFormat("en-CA", { style: "currency", currency: cur || currency, maximumFractionDigits: 0 }).format(amt); }
     catch { return `${amt} ${cur || currency}`; }
   };
   const stopsLabel = (n) => (n == null ? "" : n === 0 ? "Non-stop" : n === 1 ? "1 stop" : `${n} stops`);
+  const durToMin = (s) => {
+    if (!s || typeof s !== "string") return null;
+    const m = s.match(/(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?/i);
+    const mins = m ? (parseInt(m[1] || "0", 10) * 60) + parseInt(m[2] || "0", 10) : 0;
+    return mins > 0 ? mins : null;
+  };
+  // Highlight a date that isn't the one the user selected (mirrors the web UI).
+  const fmtDate = (iso, isOff) => {
+    if (!iso) return "";
+    return isOff
+      ? `<span style="background:#fef3c7;color:#b45309;border-radius:3px;padding:0 3px;">⚠ ${esc(iso)}</span>`
+      : esc(iso);
+  };
 
+  // Badges across the set: cheapest, fewest stops, shortest trip time.
+  const totalStops = (o) => (o.outboundStops || 0) + (o.returnStops || 0);
+  const tripMin = (o) => {
+    const out = durToMin(o.outboundDuration); const ret = durToMin(o.returnDuration);
+    return out == null && ret == null ? null : (out || 0) + (ret || 0);
+  };
+  const cheapest = offers.reduce((m, o) => (m == null || Number(o.price) < m ? Number(o.price) : m), null);
+  const fewestStops = offers.reduce((m, o) => (m == null || totalStops(o) < m ? totalStops(o) : m), null);
+  const shortestTrip = offers.reduce((m, o) => { const t = tripMin(o); return t != null && (m == null || t < m) ? t : m; }, null);
+  const badgeHtml = (o) => {
+    const bs = [];
+    if (Number(o.price) === cheapest) bs.push("Cheapest");
+    if (fewestStops != null && totalStops(o) === fewestStops) bs.push("Fewest stops");
+    if (shortestTrip != null && tripMin(o) === shortestTrip) bs.push("Shortest trip");
+    return bs.map((x) => `<span style="background:#d1fae5;color:#047857;border-radius:9px;padding:1px 7px;font-size:11px;font-weight:600;margin-right:4px;">${x}</span>`).join("");
+  };
+
+  const perLabel = adults > 1 ? "per person, all-in" : "1 adult, all-in";
   const rows = offers.map((o) => {
     const legs = [
       `Out: ${esc(stopsLabel(o.outboundStops))}${o.outboundDuration ? ` · ${esc(o.outboundDuration)}` : ""}`,
       o.returnDate ? `Back: ${esc(stopsLabel(o.returnStops))}${o.returnDuration ? ` · ${esc(o.returnDuration)}` : ""}` : "",
     ].filter(Boolean).join("<br/>");
-    const dates = `${esc(o.departureDate || "")}${o.returnDate ? ` – ${esc(o.returnDate)}` : " (one-way)"}`;
+    const depOff = selDep && o.departureDate && o.departureDate !== selDep;
+    const retOff = selRet && o.returnDate && o.returnDate !== selRet;
+    const dates = `${fmtDate(o.departureDate, depOff)}${o.returnDate ? ` – ${fmtDate(o.returnDate, retOff)}` : " (one-way)"}`;
+    const groupTotal = adults > 1 ? `<br/><span style="color:#475569;font-size:11px;">${esc(fmtMoney(Number(o.price) * adults, o.currency))} for ${adults}</span>` : "";
+    const seat = o.seatWarning ? `<br/><span style="background:#fef3c7;color:#92400e;border-radius:3px;padding:0 3px;font-size:11px;">⚠ ${esc(o.seatWarning)}</span>` : "";
     const link = o.bookingUrl ? `<a href="${esc(o.bookingUrl)}" style="color:#0284c7;">Find best price ↗</a>` : "";
     return `<tr>
-      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:700;white-space:nowrap;">${esc(fmtMoney(Number(o.price), o.currency))}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">${esc(o.airline || "")}<br/><span style="color:#64748b;font-size:12px;">${dates}${o.originCode && o.destinationCode ? ` · ${esc(o.originCode)}⇄${esc(o.destinationCode)}` : ""}</span></td>
-      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#334155;">${legs}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${link}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;white-space:nowrap;vertical-align:top;"><span style="font-weight:700;">${esc(fmtMoney(Number(o.price), o.currency))}</span><br/><span style="color:#94a3b8;font-size:10px;">${perLabel}</span>${groupTotal}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;vertical-align:top;">${badgeHtml(o)}${badgeHtml(o) ? "<br/>" : ""}${esc(o.airline || "")}<br/><span style="color:#64748b;font-size:12px;">${dates}${o.originCode && o.destinationCode ? ` · ${esc(o.originCode)}⇄${esc(o.destinationCode)}` : ""}</span>${seat}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#334155;vertical-align:top;">${legs}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;white-space:nowrap;vertical-align:top;">${link}</td>
     </tr>`;
   }).join("");
 
+  const carHtml = (b.carRental && b.carRental.note)
+    ? `<p style="background:#f5f3ff;color:#5b21b6;border-radius:8px;padding:10px 12px;margin:0 0 14px;font-size:13px;">🚗 <strong>Car rental:</strong> ${esc(b.carRental.note)}${b.carRental.bookingUrl ? ` <a href="${esc(b.carRental.bookingUrl)}" style="color:#7c3aed;">Compare cars ↗</a>` : ""} <span style="color:#a78bfa;font-size:11px;">(indicative)</span></p>`
+    : "";
+
   const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.5;color:#0f172a;max-width:680px;margin:24px auto;padding:8px;">
     <h2 style="margin:0 0 4px;font-size:20px;">Flight results${route ? `: ${route}` : ""}</h2>
-    ${b.summary ? `<p style="color:#475569;margin:6px 0 16px;">${esc(b.summary)}</p>` : ""}
+    ${b.summary ? `<p style="color:#475569;margin:6px 0 14px;">${esc(b.summary)}</p>` : ""}
+    ${carHtml}
     <table style="border-collapse:collapse;width:100%;font-size:14px;">
       <thead><tr style="text-align:left;color:#64748b;font-size:12px;text-transform:uppercase;">
         <th style="padding:8px 10px;">Price</th><th style="padding:8px 10px;">Flight</th><th style="padding:8px 10px;">Stops</th><th style="padding:8px 10px;">Book</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <p style="color:#94a3b8;font-size:12px;margin-top:18px;">Fares are AI-estimated from web search for 1 adult and may be out of date — confirm the final price on the booking site. Searched at <a href="https://curriculate.net/travel" style="color:#0284c7;">curriculate.net/travel</a>.</p>
+    <p style="color:#94a3b8;font-size:12px;margin-top:18px;">Fares are AI-estimated from web search (${perLabel}) and may be out of date — confirm the final price on the booking site. ⚠ marks dates that differ from the one you selected. Searched at <a href="https://curriculate.net/travel" style="color:#0284c7;">curriculate.net/travel</a>.</p>
   </div>`;
 
-  const text = `Flight results${route ? `: ${b.originResolved} -> ${b.destinationResolved}` : ""}\n\n` +
-    offers.map((o) => `${fmtMoney(Number(o.price), o.currency)} — ${o.airline} — ${o.departureDate}${o.returnDate ? ` to ${o.returnDate}` : " (one-way)"} — ${stopsLabel(o.outboundStops)}${o.bookingUrl ? `\n  ${o.bookingUrl}` : ""}`).join("\n\n") +
-    `\n\nFares are AI-estimated for 1 adult — confirm on the booking site. curriculate.net/travel`;
+  const badgeText = (o) => {
+    const bs = [];
+    if (Number(o.price) === cheapest) bs.push("Cheapest");
+    if (fewestStops != null && totalStops(o) === fewestStops) bs.push("Fewest stops");
+    if (shortestTrip != null && tripMin(o) === shortestTrip) bs.push("Shortest trip");
+    return bs.length ? ` [${bs.join(", ")}]` : "";
+  };
+  const text = `Flight results${route ? `: ${b.originResolved} -> ${b.destinationResolved}` : ""}\n` +
+    (b.carRental?.note ? `Car rental: ${b.carRental.note}\n` : "") + "\n" +
+    offers.map((o) => {
+      const depMark = selDep && o.departureDate !== selDep ? " (!)" : "";
+      const retMark = selRet && o.returnDate && o.returnDate !== selRet ? " (!)" : "";
+      const total = adults > 1 ? ` (${fmtMoney(Number(o.price) * adults, o.currency)} for ${adults})` : "";
+      return `${fmtMoney(Number(o.price), o.currency)} ${perLabel}${total}${badgeText(o)} — ${o.airline} — ${o.departureDate}${depMark}${o.returnDate ? ` to ${o.returnDate}${retMark}` : " (one-way)"} — ${stopsLabel(o.outboundStops)}${o.seatWarning ? `\n  ! ${o.seatWarning}` : ""}${o.bookingUrl ? `\n  ${o.bookingUrl}` : ""}`;
+    }).join("\n\n") +
+    `\n\nFares are AI-estimated (${perLabel}); (!) marks non-exact dates — confirm on the booking site. curriculate.net/travel`;
 
   try {
     const from = process.env.TRAVEL_FROM || "Curriculate Flights <noreply@curriculate.net>";
