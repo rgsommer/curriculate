@@ -96,7 +96,17 @@ router.post("/search", async (req, res) => {
   const destination = String(b.destination || "").trim();
   const departureDate = String(b.departureDate || "").trim();
   const returnDate = b.returnDate ? String(b.returnDate).trim() : null;
-  const flexDays = Math.min(2, Math.max(0, parseInt(b.flexDays, 10) || 0));
+  // Per-date flexibility: arrays of day offsets in [-2,2] relative to the
+  // chosen date (e.g. [-2,-1,0] = "up to 2 days earlier", [-1,0,1] = "±1 day").
+  const parseOffsets = (arr) => {
+    const xs = (Array.isArray(arr) ? arr : [0])
+      .map((n) => parseInt(n, 10))
+      .filter((n) => Number.isInteger(n) && n >= -2 && n <= 2);
+    const uniq = [...new Set(xs.length ? xs : [0])];
+    return uniq.sort((a, c) => a - c);
+  };
+  const departureOffsets = parseOffsets(b.departureOffsets);
+  const returnOffsets = parseOffsets(b.returnOffsets);
   const maxStops = [0, 1, 2].includes(b.maxStops) ? b.maxStops : 2;
   const prioritizeShortStops = !!b.prioritizeShortStops;
   const currency = /^[A-Za-z]{3}$/.test(b.currency || "") ? String(b.currency).toUpperCase() : "USD";
@@ -116,13 +126,18 @@ router.post("/search", async (req, res) => {
     return res.status(400).json({ error: "Return date cannot be before departure date." });
   }
 
-  // Describe the flexible-date window for the prompt.
-  const depWindow = flexDays > 0
-    ? `${shiftDate(departureDate, -flexDays)} to ${shiftDate(departureDate, flexDays)} (centered on ${departureDate})`
+  // Expand the flexibility offsets into concrete candidate dates for the prompt.
+  const depDates = [...new Set(departureOffsets.map((o) => shiftDate(departureDate, o)).filter(Boolean))].sort();
+  const retDates = returnDate
+    ? [...new Set(returnOffsets.map((o) => shiftDate(returnDate, o)).filter(Boolean))].sort()
+    : [];
+  const isFlexible = depDates.length > 1 || retDates.length > 1;
+  const depWindow = depDates.length > 1
+    ? `any of these dates (pick the cheapest): ${depDates.join(", ")}`
     : departureDate;
-  const retWindow = returnDate && flexDays > 0
-    ? `${shiftDate(returnDate, -flexDays)} to ${shiftDate(returnDate, flexDays)} (centered on ${returnDate})`
-    : returnDate;
+  const retWindow = returnDate
+    ? (retDates.length > 1 ? `any of these dates (pick the cheapest): ${retDates.join(", ")}` : returnDate)
+    : null;
 
   const stopsRule =
     maxStops === 0 ? "Only non-stop (direct) flights. Discard anything with a connection."
@@ -147,7 +162,7 @@ ${returnDate ? `- Return: ${retWindow}` : ""}
 CONSTRAINTS
 - ${stopsRule}
 - ${sortRule}
-${flexDays > 0 ? "- The dates above are flexible windows. Look across the window and surface the cheapest dates; note each option's actual date." : ""}
+${isFlexible ? "- Dates are flexible (multiple candidates listed above). Compare across the candidate dates, surface the cheapest, and set each option's departureDate/returnDate to the actual dates it uses. A return must be on or after its departure." : ""}
 
 SEARCH INSTRUCTIONS
 - Make several web_search calls (e.g. Google Flights, Skyscanner, Kayak, airline sites) to find genuinely current fares.
@@ -263,6 +278,109 @@ OUTPUT — respond with ONLY this JSON (no prose, no markdown fences):
     });
   } catch (err) {
     res.status(502).json({ error: err.message || "Flight search failed." });
+  }
+});
+
+// --------------------------------------------------------------------------
+// POST /api/travel/email — email a set of results to one recipient.
+//   Body: { to, originResolved, destinationResolved, summary, currency, offers }
+// --------------------------------------------------------------------------
+function isValidEmail(e) {
+  return typeof e === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+}
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// Lightweight in-memory per-IP rate limit so the public endpoint can't be used
+// as a spam relay (5 sends / 10 min).
+const emailHits = new Map();
+function emailRateLimited(ip) {
+  const now = Date.now();
+  const windowMs = 10 * 60 * 1000;
+  const hits = (emailHits.get(ip) || []).filter((t) => now - t < windowMs);
+  if (hits.length >= 5) return true;
+  hits.push(now);
+  emailHits.set(ip, hits);
+  return false;
+}
+
+router.post("/email", async (req, res) => {
+  if (!process.env.RESEND_API_KEY) {
+    return res.status(503).json({ error: "Email is not configured on the server (missing RESEND_API_KEY)." });
+  }
+  const b = req.body || {};
+  const to = String(b.to || "").trim();
+  if (!isValidEmail(to)) return res.status(400).json({ error: "A valid email address is required." });
+
+  const offers = Array.isArray(b.offers) ? b.offers.slice(0, 12) : [];
+  if (offers.length === 0) return res.status(400).json({ error: "No results to email." });
+
+  const ip = (req.headers["x-forwarded-for"] || req.ip || "").toString().split(",")[0].trim();
+  if (emailRateLimited(ip)) {
+    return res.status(429).json({ error: "Too many emails sent recently. Please try again in a few minutes." });
+  }
+
+  const currency = /^[A-Za-z]{3}$/.test(b.currency || "") ? String(b.currency).toUpperCase() : "USD";
+  const route = `${esc(b.originResolved || "")} → ${esc(b.destinationResolved || "")}`.trim();
+  const fmtMoney = (amt, cur) => {
+    try { return new Intl.NumberFormat("en-CA", { style: "currency", currency: cur || currency, maximumFractionDigits: 0 }).format(amt); }
+    catch { return `${amt} ${cur || currency}`; }
+  };
+  const stopsLabel = (n) => (n == null ? "" : n === 0 ? "Non-stop" : n === 1 ? "1 stop" : `${n} stops`);
+
+  const rows = offers.map((o) => {
+    const legs = [
+      `Out: ${esc(stopsLabel(o.outboundStops))}${o.outboundDuration ? ` · ${esc(o.outboundDuration)}` : ""}`,
+      o.returnDate ? `Back: ${esc(stopsLabel(o.returnStops))}${o.returnDuration ? ` · ${esc(o.returnDuration)}` : ""}` : "",
+    ].filter(Boolean).join("<br/>");
+    const dates = `${esc(o.departureDate || "")}${o.returnDate ? ` – ${esc(o.returnDate)}` : " (one-way)"}`;
+    const link = o.bookingUrl ? `<a href="${esc(o.bookingUrl)}" style="color:#0284c7;">Find best price ↗</a>` : "";
+    return `<tr>
+      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:700;white-space:nowrap;">${esc(fmtMoney(Number(o.price), o.currency))}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">${esc(o.airline || "")}<br/><span style="color:#64748b;font-size:12px;">${dates}${o.originCode && o.destinationCode ? ` · ${esc(o.originCode)}⇄${esc(o.destinationCode)}` : ""}</span></td>
+      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#334155;">${legs}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${link}</td>
+    </tr>`;
+  }).join("");
+
+  const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.5;color:#0f172a;max-width:680px;margin:24px auto;padding:8px;">
+    <h2 style="margin:0 0 4px;font-size:20px;">Flight results${route ? `: ${route}` : ""}</h2>
+    ${b.summary ? `<p style="color:#475569;margin:6px 0 16px;">${esc(b.summary)}</p>` : ""}
+    <table style="border-collapse:collapse;width:100%;font-size:14px;">
+      <thead><tr style="text-align:left;color:#64748b;font-size:12px;text-transform:uppercase;">
+        <th style="padding:8px 10px;">Price</th><th style="padding:8px 10px;">Flight</th><th style="padding:8px 10px;">Stops</th><th style="padding:8px 10px;">Book</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p style="color:#94a3b8;font-size:12px;margin-top:18px;">Fares are AI-estimated from web search for 1 adult and may be out of date — confirm the final price on the booking site. Searched at <a href="https://curriculate.net/travel" style="color:#0284c7;">curriculate.net/travel</a>.</p>
+  </div>`;
+
+  const text = `Flight results${route ? `: ${b.originResolved} -> ${b.destinationResolved}` : ""}\n\n` +
+    offers.map((o) => `${fmtMoney(Number(o.price), o.currency)} — ${o.airline} — ${o.departureDate}${o.returnDate ? ` to ${o.returnDate}` : " (one-way)"} — ${stopsLabel(o.outboundStops)}${o.bookingUrl ? `\n  ${o.bookingUrl}` : ""}`).join("\n\n") +
+    `\n\nFares are AI-estimated for 1 adult — confirm on the booking site. curriculate.net/travel`;
+
+  try {
+    const from = process.env.TRAVEL_FROM || "Curriculate Flights <noreply@curriculate.net>";
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from,
+        to: [to],
+        subject: `Flight results${route ? `: ${(b.originResolved || "").replace(/\s*\(.*$/, "")} → ${(b.destinationResolved || "").replace(/\s*\(.*$/, "")}` : ""}`,
+        text,
+        html,
+      }),
+    });
+    if (!r.ok) {
+      const body = await r.text().catch(() => "");
+      throw new Error(`Email provider error ${r.status}: ${body.slice(0, 200)}`);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(502).json({ error: err.message || "Failed to send email." });
   }
 });
 

@@ -70,6 +70,21 @@ function todayPlus(days) {
   return d.toISOString().slice(0, 10);
 }
 
+// Flexibility options → day offsets relative to the chosen date. Single-
+// direction choices are ranges "up to" that day (and always include 0).
+const FLEX_OPTIONS = [
+  { value: "0", label: "Exact date", offsets: [0] },
+  { value: "-2", label: "Up to 2 days earlier", offsets: [-2, -1, 0] },
+  { value: "-1", label: "Up to 1 day earlier", offsets: [-1, 0] },
+  { value: "+1", label: "Up to 1 day later", offsets: [0, 1] },
+  { value: "+2", label: "Up to 2 days later", offsets: [0, 1, 2] },
+  { value: "pm1", label: "± 1 day", offsets: [-1, 0, 1] },
+  { value: "pm2", label: "± 2 days", offsets: [-2, -1, 0, 1, 2] },
+];
+function flexOffsets(value) {
+  return (FLEX_OPTIONS.find((o) => o.value === value) || FLEX_OPTIONS[0]).offsets;
+}
+
 // ---------------------------------------------------------------------------
 // One flight offer card.
 // ---------------------------------------------------------------------------
@@ -156,7 +171,8 @@ export default function TravelPage() {
   const [tripType, setTripType] = useState("return"); // "return" | "oneway"
   const [departureDate, setDepartureDate] = useState(todayPlus(14));
   const [returnDate, setReturnDate] = useState(todayPlus(21));
-  const [flexDays, setFlexDays] = useState(0); // 0 | 1 | 2
+  const [departureFlex, setDepartureFlex] = useState("0"); // FLEX_OPTIONS value
+  const [returnFlex, setReturnFlex] = useState("0");
   const [maxStops, setMaxStops] = useState(2); // 0 | 1 | 2 (2 = "2+")
   const [prioritizeShortStops, setPrioritizeShortStops] = useState(false);
   const [currency, setCurrency] = useState("CAD");
@@ -165,11 +181,15 @@ export default function TravelPage() {
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
+  const [emailTo, setEmailTo] = useState("");
+  const [emailState, setEmailState] = useState({ status: "idle", msg: "" }); // idle | sending | sent | error
+
   useEffect(() => { setCurrency(detectCurrency()); }, []);
 
   const search = useCallback(async () => {
     setError("");
     setResult(null);
+    setEmailState({ status: "idle", msg: "" });
     if (!origin.trim() || !destination.trim()) { setError("Please enter both a departure and destination."); return; }
     if (!departureDate) { setError("Please choose a departure date."); return; }
     if (tripType === "return" && !returnDate) { setError("Please choose a return date."); return; }
@@ -186,7 +206,8 @@ export default function TravelPage() {
           includeNearbyDestination,
           departureDate,
           returnDate: tripType === "return" ? returnDate : null,
-          flexDays,
+          departureOffsets: flexOffsets(departureFlex),
+          returnOffsets: tripType === "return" ? flexOffsets(returnFlex) : [0],
           maxStops,
           prioritizeShortStops,
           currency,
@@ -200,7 +221,35 @@ export default function TravelPage() {
     } finally {
       setLoading(false);
     }
-  }, [origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType, departureDate, returnDate, flexDays, maxStops, prioritizeShortStops, currency]);
+  }, [origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType, departureDate, returnDate, departureFlex, returnFlex, maxStops, prioritizeShortStops, currency]);
+
+  const emailResults = useCallback(async () => {
+    if (!result) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTo.trim())) {
+      setEmailState({ status: "error", msg: "Please enter a valid email address." });
+      return;
+    }
+    setEmailState({ status: "sending", msg: "" });
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/travel/email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: emailTo.trim(),
+          originResolved: result.originResolved,
+          destinationResolved: result.destinationResolved,
+          summary: result.summary,
+          currency: result.currency,
+          offers: result.offers,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Failed to send.");
+      setEmailState({ status: "sent", msg: `Sent to ${emailTo.trim()}.` });
+    } catch (e) {
+      setEmailState({ status: "error", msg: e.message || "Failed to send." });
+    }
+  }, [result, emailTo]);
 
   // Badges across the result set.
   const offers = result?.offers || [];
@@ -283,6 +332,14 @@ export default function TravelPage() {
                 onChange={(e) => setDepartureDate(e.target.value)}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
               />
+              <select
+                value={departureFlex}
+                onChange={(e) => setDepartureFlex(e.target.value)}
+                aria-label="Departure date flexibility"
+                className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              >
+                {FLEX_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
             </div>
             {tripType === "return" && (
               <div>
@@ -294,23 +351,19 @@ export default function TravelPage() {
                   onChange={(e) => setReturnDate(e.target.value)}
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
                 />
+                <select
+                  value={returnFlex}
+                  onChange={(e) => setReturnFlex(e.target.value)}
+                  aria-label="Return date flexibility"
+                  className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                >
+                  {FLEX_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
               </div>
             )}
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Flexible dates</label>
-              <select
-                value={flexDays}
-                onChange={(e) => setFlexDays(parseInt(e.target.value, 10))}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-              >
-                <option value={0}>Exact date</option>
-                <option value={1}>± 1 day</option>
-                <option value={2}>± 2 days</option>
-              </select>
-            </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Max stops</label>
               <select
@@ -386,6 +439,30 @@ export default function TravelPage() {
                   {offers.map((o, i) => (
                     <OfferCard key={i} offer={o} currency={result.currency} badges={badgesFor(o)} />
                   ))}
+                </div>
+
+                <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Email these results</label>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <input
+                      type="email"
+                      value={emailTo}
+                      onChange={(e) => { setEmailTo(e.target.value); if (emailState.status !== "idle") setEmailState({ status: "idle", msg: "" }); }}
+                      placeholder="you@example.com"
+                      className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                      autoComplete="email"
+                    />
+                    <button
+                      type="button"
+                      onClick={emailResults}
+                      disabled={emailState.status === "sending"}
+                      className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {emailState.status === "sending" ? "Sending…" : "Send"}
+                    </button>
+                  </div>
+                  {emailState.status === "sent" && <div className="mt-2 text-sm text-emerald-600">{emailState.msg}</div>}
+                  {emailState.status === "error" && <div className="mt-2 text-sm text-rose-600">{emailState.msg}</div>}
                 </div>
 
                 {result.sources?.length > 0 && (
