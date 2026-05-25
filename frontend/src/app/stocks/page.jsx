@@ -4753,6 +4753,75 @@ function HcScoreBar({ score }) {
   );
 }
 
+const MOSAIC_CAT_LABELS = {
+  insiderFilings: "Insider / filings", demand: "Demand", hiring: "Hiring", supplyChain: "Supply chain",
+  regulatory: "Regulatory", marketStructure: "Market structure", managementLanguage: "Mgmt language",
+};
+
+function mosaicDirIcon(d) {
+  if (d === "confirming") return { icon: "✓", color: "var(--sa-green)" };
+  if (d === "contradictory") return { icon: "✗", color: "var(--sa-red)" };
+  return { icon: "•", color: "var(--sa-muted)" };
+}
+
+function MosaicBlock({ mosaic }) {
+  const conf = mosaic.overallConfirmation;
+  const confColor = conf === "confirming" ? "var(--sa-green)" : conf === "contradictory" ? "var(--sa-red)" : "var(--sa-amber)";
+  return (
+    <div style={{ marginTop: 12, border: "1px solid var(--sa-border)", borderRadius: 10, padding: 12, background: "var(--sa-panel-2)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ fontWeight: 700, fontSize: 13 }}>🧩 Mosaic Edge</span>
+        <span style={{ fontSize: 20, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{mosaic.edgeScore ?? "—"}</span>
+        <span style={{ fontSize: 11, color: "var(--sa-muted)" }}>conf {mosaic.confidence ?? "—"}% · {mosaic.mode} mode</span>
+        <span style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: confColor, border: `1px solid ${confColor}` }}>{conf}</span>
+        {mosaic.rumourFlagged && <span style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--sa-amber-soft)", color: "#b45309" }}>RUMOUR-FLAGGED</span>}
+        <span style={{ fontSize: 11, color: "var(--sa-muted)" }}>· already priced in: <b>{mosaic.alreadyPricedIn}</b></span>
+      </div>
+
+      {Array.isArray(mosaic.topSignals) && mosaic.topSignals.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--sa-text-2)", textTransform: "uppercase", letterSpacing: ".05em" }}>Top hidden-momentum signals</div>
+          <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 5 }}>
+            {mosaic.topSignals.map((s, i) => {
+              const d = mosaicDirIcon(s.direction);
+              return (
+                <div key={i} style={{ fontSize: 12, lineHeight: 1.45 }}>
+                  <span style={{ color: d.color, fontWeight: 700, marginRight: 5 }}>{d.icon}</span>
+                  {s.signal}
+                  <span style={{ display: "inline-flex", gap: 5, marginLeft: 6, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 10, background: "var(--sa-accent-soft)", color: "var(--sa-accent-2)", padding: "1px 6px", borderRadius: 6 }}>{s.sourceCategory || MOSAIC_CAT_LABELS[s.category] || "public"}</span>
+                    <span style={{ fontSize: 10, color: "var(--sa-muted)" }}>conf {s.confidence} · false-signal {s.falseSignalRisk} · priced-in {s.pricedIn}</span>
+                    {s.isRumour && <span style={{ fontSize: 10, color: "var(--sa-amber)" }}>rumour</span>}
+                    {s.isSocialOnly && <span style={{ fontSize: 10, color: "var(--sa-amber)" }}>social-only</span>}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Category mini-scores */}
+      <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", fontSize: 10.5, color: "var(--sa-muted)" }}>
+        {(mosaic.categories || []).map((c) => (
+          <span key={c.key}>{MOSAIC_CAT_LABELS[c.key] || c.key}: <b style={{ color: "var(--sa-text-2)" }}>{c.score ?? "n/a"}</b></span>
+        ))}
+      </div>
+
+      {Array.isArray(mosaic.penaltiesApplied) && mosaic.penaltiesApplied.length > 0 && (
+        <div style={{ marginTop: 6, fontSize: 11, color: "var(--sa-red)" }}>Penalties: {mosaic.penaltiesApplied.join(", ")}</div>
+      )}
+      {Array.isArray(mosaic.eventPressure) && mosaic.eventPressure.length > 0 && (
+        <div style={{ marginTop: 6, fontSize: 11, color: "var(--sa-text-2)" }}>Event timing: {mosaic.eventPressure.join(" · ")}</div>
+      )}
+      {mosaic.followUp && <div style={{ marginTop: 6, fontSize: 11.5 }}><b>Follow-up research:</b> {mosaic.followUp}</div>}
+      <div style={{ marginTop: 8, fontSize: 10.5, color: "var(--sa-muted)", lineHeight: 1.45 }}>
+        ⚖️ {mosaic.legalityNote} <i>{mosaic.disclaimer}</i>
+      </div>
+    </div>
+  );
+}
+
 function HighConvictionCard({ pick, rank }) {
   const [showDetail, setShowDetail] = useState(false);
   const mf = pick.multiFactor || {};
@@ -4841,6 +4910,8 @@ function HighConvictionCard({ pick, rank }) {
         </div>
       )}
 
+      {pick.mosaic && <MosaicBlock mosaic={pick.mosaic} />}
+
       <button className="sa-btn ghost" style={{ marginTop: 10, fontSize: 12 }} onClick={() => setShowDetail((s) => !s)}>
         {showDetail ? "Hide score detail" : "Show score detail & data flags"}
       </button>
@@ -4895,6 +4966,8 @@ function DiscoverView({ sessionToken, user }) {
   const [sectorsCsv, setSectorsCsv] = useState("");
   // High-conviction multi-factor screen (additive — separate from the scan above)
   const [hcRiskMode, setHcRiskMode] = useState("balanced");
+  const [hcMosaic, setHcMosaic] = useState(false);          // include Mosaic Intelligence
+  const [hcMosaicMode, setHcMosaicMode] = useState("balanced"); // mosaic alt-data mode
   const [hcBusy, setHcBusy] = useState(false);
   const [hcError, setHcError] = useState(null);
   const [hcResult, setHcResult] = useState(null); // { picks, disclaimer, mode, upgradeRecommendation }
@@ -4956,7 +5029,7 @@ function DiscoverView({ sessionToken, user }) {
     if (hcBusy) return;
     setHcBusy(true); setHcError(null);
     try {
-      const body = { riskMode: hcRiskMode };
+      const body = { riskMode: hcRiskMode, includeMosaic: hcMosaic, mosaicMode: hcMosaicMode };
       if (sectorsCsv.trim()) body.sectors = sectorsCsv.split(",").map((s) => s.trim()).filter(Boolean);
       const r = await fetch(`${BACKEND_URL}/api/stocks-discover/high-conviction`, {
         method: "POST",
@@ -5030,6 +5103,22 @@ function DiscoverView({ sessionToken, user }) {
               {hcBusy ? "Screening…" : "Run high-conviction screen"}
             </button>
           </div>
+        </div>
+
+        {/* Mosaic Intelligence toggle — public-data signal aggregation as a 7th factor */}
+        <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12.5 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={hcMosaic} onChange={(e) => setHcMosaic(e.target.checked)} />
+            <span style={{ fontWeight: 600 }}>🧩 Add Mosaic Intelligence</span>
+          </label>
+          <span style={{ color: "var(--sa-muted)" }}>public-data signal mosaic (insider filings, hiring, demand, supply chain, regulatory, market structure, mgmt language)</span>
+          {hcMosaic && (
+            <select value={hcMosaicMode} onChange={(e) => setHcMosaicMode(e.target.value)} style={{ padding: "5px 8px", borderRadius: 7, fontSize: 12 }} title="Mosaic alt-data mode">
+              <option value="conservative">Conservative signals only</option>
+              <option value="balanced">Balanced</option>
+              <option value="aggressive">Aggressive alt-data</option>
+            </select>
+          )}
         </div>
 
         {hcError && <div className="sa-err" style={{ marginTop: 12 }}>{hcError}</div>}

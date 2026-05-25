@@ -17,7 +17,7 @@ import express from "express";
 import crypto from "crypto";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
-import { runDiscoveryScan, runHighConvictionScan } from "../services/stocksDiscoveryService.js";
+import { runDiscoveryScan, runHighConvictionScan, runMosaicForTickers } from "../services/stocksDiscoveryService.js";
 
 const router = express.Router();
 
@@ -129,13 +129,15 @@ router.post("/high-conviction", requireStocksAuth, async (req, res) => {
     const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
     const heldTickers = profile?.positions?.map((p) => p.ticker) || [];
 
-    const { riskMode = "balanced", sectors = null, marketCapMin, marketCapMax } = req.body || {};
+    const { riskMode = "balanced", sectors = null, marketCapMin, marketCapMax, includeMosaic = false, mosaicMode = "balanced" } = req.body || {};
 
     const result = await runHighConvictionScan({
       email: req.stocksUser.email,
       riskMode,
       sectors,
       topN: 3,
+      includeMosaic: !!includeMosaic,
+      mosaicMode,
       opts: {
         excludeTickers: heldTickers,
         ...(typeof marketCapMin === "number" ? { marketCapMin } : {}),
@@ -145,6 +147,27 @@ router.post("/high-conviction", requireStocksAuth, async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error("stocks-discover /high-conviction error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// POST /api/stocks-discover/mosaic — standalone Mosaic Intelligence run on an
+// explicit ticker list, or (default) the user's current holdings.
+router.post("/mosaic", requireStocksAuth, async (req, res) => {
+  try {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return res.status(503).json({ error: "Mosaic Intelligence requires ANTHROPIC_API_KEY in env." });
+    }
+    const { tickers, mode = "balanced" } = req.body || {};
+    let list = Array.isArray(tickers) ? tickers.filter((t) => typeof t === "string") : null;
+    if (!list || !list.length) {
+      const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
+      list = [...new Set((profile?.positions || []).map((p) => p.ticker).filter(Boolean))];
+    }
+    const result = await runMosaicForTickers({ tickers: list.slice(0, 8), mode });
+    res.json(result);
+  } catch (err) {
+    console.error("stocks-discover /mosaic error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });
   }
 });

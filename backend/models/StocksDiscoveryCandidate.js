@@ -101,6 +101,9 @@ const StocksDiscoveryCandidateSchema = new mongoose.Schema(
     thesis: { type: ThesisSchema, default: () => ({}) },
     // Multi-factor high-conviction analysis (additive; only the new screen sets this)
     multiFactor: { type: MultiFactorSchema, default: null },
+    // Mosaic Intelligence (additive) — public-data signal aggregation. Loosely
+    // typed; the shape is validated/sanitized in buildMosaicForResult().
+    mosaic: { type: mongoose.Schema.Types.Mixed, default: null },
     // User actions
     starred: { type: Boolean, default: false },
     dismissed: { type: Boolean, default: false },

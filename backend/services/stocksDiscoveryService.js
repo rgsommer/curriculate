@@ -38,6 +38,7 @@ import {
   deriveRiskRating,
   fetchYahooDaily,
 } from "./stocksDiscoveryScore.js";
+import { runMosaicBatch, mosaicMode as getMosaicMode, MOSAIC_DISCLAIMER } from "./stocksMosaic.js";
 
 const FMP_BASE = "https://financialmodelingprep.com";
 const SCREENER_CACHE = new Map(); // key → { fetchedAt, data }
@@ -826,8 +827,9 @@ Return the ${topN} STRONGEST candidates only, ordered best-first. If fewer than 
   try { return JSON.parse(m[0]); } catch { return { picks: [] }; }
 }
 
-export async function runHighConvictionScan({ email, riskMode = "balanced", sectors = null, topN = 3, opts = {} }) {
+export async function runHighConvictionScan({ email, riskMode = "balanced", sectors = null, topN = 3, opts = {}, includeMosaic = false, mosaicMode = "balanced" }) {
   const mode = ["conservative", "balanced", "aggressive", "speculative"].includes(riskMode) ? riskMode : "balanced";
+  const mMode = ["conservative", "balanced", "aggressive"].includes(mosaicMode) ? mosaicMode : "balanced";
   const weights = weightsFor(mode);
   const shortlistN = 6;
 
@@ -854,8 +856,15 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
     return { ...c, sub, raw };
   }));
 
-  // AI catalyst/sentiment/narrative + top-N selection
-  const ai = await scoreCandidatesWithAI(withFactors, mode, topN);
+  // AI catalyst/sentiment/narrative + top-N selection, plus (optional) the
+  // Mosaic Intelligence batch — run in parallel to keep wall time down.
+  const mosaicCandidates = withFactors.map((c) => ({ ticker: c.ticker, name: c.name, sector: c.sector, marketCap: c.marketCap, price: c.price, currency: c.currency }));
+  const [ai, mosaicByTicker] = await Promise.all([
+    scoreCandidatesWithAI(withFactors, mode, topN),
+    includeMosaic
+      ? runMosaicBatch(mosaicCandidates, mMode).catch((e) => { console.warn("[mosaic] batch failed:", e?.message); return {}; })
+      : Promise.resolve({}),
+  ]);
   const aiByTicker = {};
   for (const p of ai.picks || []) aiByTicker[String(p.ticker || "").toUpperCase()] = p;
 
@@ -881,7 +890,18 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
       fundamentals: factors.fundamentals, momentum: factors.momentum, technical: factors.technical,
       catalysts, sentiment, riskControl: factors.riskControl,
     };
-    const weightedScore = blendScore(subForBlend, weights);
+    // Mosaic Edge folds in as a 7th ranking factor when enabled — the base 6
+    // weights are scaled down by the mode's rankWeight so the total stays 1.0.
+    const mosaic = includeMosaic ? (mosaicByTicker[c.ticker] || null) : null;
+    let blendWeights = weights;
+    let subForBlendFinal = subForBlend;
+    if (mosaic && mosaic.edgeScore != null) {
+      const mw = getMosaicMode(mMode).rankWeight;
+      blendWeights = Object.fromEntries(Object.entries(weights).map(([k, v]) => [k, v * (1 - mw)]));
+      blendWeights.mosaic = mw;
+      subForBlendFinal = { ...subForBlend, mosaic: { score: mosaic.edgeScore } };
+    }
+    const weightedScore = blendScore(subForBlendFinal, blendWeights);
     const dataFlags = ["fundamentals", "momentum", "technical", "riskControl"]
       .flatMap((k) => (c.sub[k]?.flags || []).map((f) => `${k}: ${f}`));
     const confidence = computeConfidence(subForBlend, dataFlags.length);
@@ -925,6 +945,7 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
             },
             thesis: { bullCase: multiFactor.bullCase, killThesis: multiFactor.whatProvesWrong, catalysts: multiFactor.keyCatalysts, conviction: weightedScore >= 75 ? "high" : weightedScore >= 55 ? "medium" : "low", sources: multiFactor.sources },
             multiFactor,
+            mosaic: mosaic || null,
             scanDate, lastPriceCheckedAt: scanDate, lastPrice: c.price,
           } },
         { upsert: true, new: true, setDefaultsOnInsert: true }
@@ -935,7 +956,27 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
     }
   }
 
-  return { picks, riskMode: mode, mode: scanMode, upgradeRecommendation, scanDate, disclaimer: HIGH_CONVICTION_DISCLAIMER, shortlistSize: shortlist.length };
+  // Folding Mosaic in may reorder the picks — sort by the final blended score.
+  picks.sort((a, b) => (b.multiFactor?.weightedScore ?? 0) - (a.multiFactor?.weightedScore ?? 0));
+
+  return {
+    picks, riskMode: mode, mode: scanMode, upgradeRecommendation, scanDate,
+    disclaimer: HIGH_CONVICTION_DISCLAIMER,
+    mosaicEnabled: !!includeMosaic, mosaicMode: includeMosaic ? mMode : null,
+    shortlistSize: shortlist.length,
+  };
+}
+
+// Standalone Mosaic Intelligence run for an explicit set of tickers (or the
+// caller's holdings). Returns { results: { TICKER: mosaicObject }, mode }.
+export async function runMosaicForTickers({ tickers = [], mode = "balanced" }) {
+  const candidates = (tickers || [])
+    .map((t) => (typeof t === "string" ? { ticker: t.toUpperCase().trim() } : t))
+    .filter((c) => c.ticker)
+    .slice(0, 8);
+  if (!candidates.length) return { results: {}, mode, disclaimer: MOSAIC_DISCLAIMER, error: "No tickers provided." };
+  const results = await runMosaicBatch(candidates, mode);
+  return { results, mode, disclaimer: MOSAIC_DISCLAIMER };
 }
 
 // small local helpers
