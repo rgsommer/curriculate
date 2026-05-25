@@ -1491,23 +1491,24 @@ export default function TaskSets() {
                         </span>
                         {title}
                       </div>
-                      {/* Quick-action buttons always visible */}
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}
+                    </div>
+
+                    {/* Quick-action buttons — below the title, Test run beside Launch */}
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => testRun(ts)}
+                        style={btn("secondary")}
+                        title="Step through the tasks as a student would — no QR scans"
                       >
-                        <button
-                          type="button"
-                          onClick={() => testRun(ts)}
-                          style={btn("secondary")}
-                          title="Step through the tasks as a student would — no QR scans"
-                        >
-                          🧪 Test run
-                        </button>
-                        <button type="button" onClick={() => launchNow(ts)} style={btn("primary")}>
-                          Launch
-                        </button>
-                      </div>
+                        🧪 Test run
+                      </button>
+                      <button type="button" onClick={() => launchNow(ts)} style={btn("primary")}>
+                        Launch
+                      </button>
                     </div>
 
                     <div style={{ marginTop: 6, color: "#6b7280", fontSize: "0.9rem" }}>

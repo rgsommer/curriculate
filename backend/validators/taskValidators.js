@@ -91,6 +91,22 @@ function isObject(x) {
   return x && typeof x === "object" && !Array.isArray(x);
 }
 
+// Detect generic instruction text (vs. a real question). Used to stop the
+// short-answer single-prompt fallback from turning a directive like
+// "Answer each question in one sentence." into a bogus, unanswerable question.
+function _isGenericInstruction(s) {
+  const t = String(s || "").trim().toLowerCase();
+  if (!t) return true;
+  // Common normalizer/AI instruction defaults that are NOT questions.
+  if (/^(complete the task|answer( each)?|respond|write|explain your|describe your|share your)\b/.test(t) &&
+      !/\?$/.test(t)) {
+    // "Answer each question..." style directives that end without a '?'.
+    if (/\b(each|the following|below|in (one|a) sentence|your (answer|response))\b/.test(t)) return true;
+    if (t === "complete the task." || t === "complete the task") return true;
+  }
+  return false;
+}
+
 function asNonEmptyString(x, fallback = "") {
   if (typeof x === "string" && x.trim()) return x.trim();
   return fallback;
@@ -2859,6 +2875,11 @@ export function validateTaskByType(taskType, task) {
         asNonEmptyString(o?.prompt) || asNonEmptyString(o?.question) || "";
 
       const hasItems = Array.isArray(task.items) && task.items.length;
+      // GUARD: if the AI emitted an items[] key but it came through empty, the
+      // task has no questions — reject instead of falling through to the
+      // single-prompt fallback (which would turn the generic instruction prompt
+      // into a bogus "question"). Bug class 1: empty content array.
+      const emptyItemsKey = Array.isArray(task.items) && task.items.length === 0;
       if (hasItems) {
         if (task.items.length < 1) errors.push("items[] must have at least 1 item");
         task.items.forEach((it, i) => {
@@ -2870,14 +2891,19 @@ export function validateTaskByType(taskType, task) {
             console.warn(`[validate] short-answer items[${i}].correctAnswer missing — AI scoring will be used`);
           }
         });
+      } else if (emptyItemsKey) {
+        errors.push("short-answer items[] is empty — provide at least one question");
       } else {
         // Single-prompt fallback — also check alternate field names
         const saPrompt = _resolvePrompt(task);
         const saAns = _resolveAns(task);
         if (!saPrompt) errors.push("prompt required");
-        // Missing correctAnswer is not a blocker — AI scoring can handle it
-        // Auto-convert to items[] if we found a prompt
-        if (saPrompt) {
+        // Auto-convert to items[] if we found a prompt — but only if it reads
+        // like an actual question, not a generic instruction. Otherwise the
+        // task is unanswerable (no real question was generated).
+        else if (_isGenericInstruction(saPrompt)) {
+          errors.push("short-answer has no question — the prompt is a generic instruction, not a question; provide items[] with real questions");
+        } else {
           task.items = [{ id: "q1", prompt: saPrompt, correctAnswer: saAns || "" }];
         }
       }
