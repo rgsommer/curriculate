@@ -6513,23 +6513,32 @@ function DiscoveryScorecardCard({ data }) {
           <th>At</th>
           <th>Now</th>
           <th>Return</th>
+          <th>Peak</th>
           <th>SPY return</th>
           <th>Alpha</th>
+          <th>Horizon outcomes</th>
           <th>Conv</th>
         </tr></thead>
         <tbody>
-          {data.items.map((i) => (
+          {data.items.map((i) => {
+            const horizons = [["30d", i.outcome30d], ["90d", i.outcome90d], ["180d", i.outcome180d], ["365d", i.outcome365d]]
+              .filter(([, o]) => o && o.pct != null)
+              .map(([lbl, o]) => `${lbl} ${fmtPct(o.pct)}`);
+            return (
             <tr key={i._id}>
-              <td className="tk">{i.starred && "★ "}{i.ticker}</td>
+              <td className="tk">{i.starred && "★ "}{i.dismissed && "✕ "}{i.ticker}</td>
               <td className="sa-muted">{new Date(i.scanDate).toLocaleDateString([], { month: "short", day: "numeric" })} ({i.daysOld}d)</td>
               <td><span className="sa-amount">${i.priceAtDiscovery?.toFixed(2)}</span></td>
               <td><span className="sa-amount">${i.currentPrice?.toFixed(2)}</span></td>
               <td style={{ color: colorPct(i.returnPct), fontWeight: 600 }}><span className="sa-amount">{fmtPct(i.returnPct)}</span></td>
+              <td style={{ color: colorPct(i.peakPct) }}><span className="sa-amount">{fmtPct(i.peakPct)}</span></td>
               <td style={{ color: colorPct(i.spyReturnPct) }}><span className="sa-amount">{fmtPct(i.spyReturnPct)}</span></td>
               <td style={{ color: colorPct(i.alphaPct), fontWeight: 600 }}><span className="sa-amount">{fmtPct(i.alphaPct)}</span></td>
+              <td className="sa-muted" style={{ fontSize: 10.5 }}>{horizons.length ? horizons.join(" · ") : "—"}</td>
               <td className="sa-muted" style={{ fontSize: 11 }}>{i.conviction || "—"}</td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>

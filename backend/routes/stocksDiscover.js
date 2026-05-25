@@ -318,6 +318,13 @@ router.get("/scorecard", requireStocksAuth, async (req, res) => {
         starred: c.starred,
         dismissed: !!c.dismissed,
         addedToPortfolio: !!c.addedToPortfolio,
+        // Point-in-time tracking captured by the daily outcome tracker
+        peakPct: c.peakPct ?? null,
+        troughPct: c.troughPct ?? null,
+        outcome30d: c.outcome30d || null,
+        outcome90d: c.outcome90d || null,
+        outcome180d: c.outcome180d || null,
+        outcome365d: c.outcome365d || null,
       });
     }
 

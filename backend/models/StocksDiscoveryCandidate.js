@@ -112,7 +112,16 @@ const StocksDiscoveryCandidateSchema = new mongoose.Schema(
     scanDate: { type: Date, default: Date.now, index: true },
     lastPriceCheckedAt: { type: Date, default: null },
     lastPrice: { type: Number, default: null },
-    // Outcome buckets — populated by a separate scorer cron
+    lastOutcomeCheckAt: { type: Date, default: null },
+    // Running peak / drawdown since tracking began (point-in-time, captured by
+    // the daily outcome tracker — regardless of any action taken on the name)
+    peakPrice: { type: Number, default: null },
+    peakPct: { type: Number, default: null },
+    peakAt: { type: Date, default: null },
+    troughPrice: { type: Number, default: null },
+    troughPct: { type: Number, default: null },
+    troughAt: { type: Date, default: null },
+    // Outcome buckets — frozen at maturity by the daily outcome tracker
     outcome30d: { type: { pct: Number, dollars: Number, atPrice: Number }, default: null, _id: false },
     outcome90d: { type: { pct: Number, dollars: Number, atPrice: Number }, default: null, _id: false },
     outcome180d: { type: { pct: Number, dollars: Number, atPrice: Number }, default: null, _id: false },

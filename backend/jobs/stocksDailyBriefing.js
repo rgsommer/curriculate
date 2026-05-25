@@ -1261,3 +1261,63 @@ export function scheduleWeeklyDiscovery() {
     try { await runWeeklyDiscoveryJob(); } catch (e) { console.error("[stocks-weekly-discovery] tick error:", e); }
   }, { timezone: tz });
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Discovery OUTCOME tracker — point-in-time tracking of every discovered
+// candidate over time, regardless of action taken on it. Each run:
+//   • refreshes lastPrice
+//   • updates running peak / trough (max gain / max drawdown since tracking)
+//   • freezes the 30/90/180/365-day outcome bucket once that horizon matures
+// Candidates stop being tracked after ~400 days (all horizons captured).
+// ─────────────────────────────────────────────────────────────────────
+function resolveDiscSymbol(ticker, currency) {
+  const s = String(ticker || "").toUpperCase();
+  if (s.includes(".")) return s;
+  return currency === "CAD" ? `${s}.TO` : s;
+}
+
+export async function runDiscoveryOutcomeTracker(opts = {}) {
+  const horizons = [[30, "outcome30d"], [90, "outcome90d"], [180, "outcome180d"], [365, "outcome365d"]];
+  const cutoff = new Date(Date.now() - 400 * 86400 * 1000);
+  const query = { scanDate: { $gte: cutoff } };
+  if (opts.onlyEmail) query.email = opts.onlyEmail.toLowerCase();
+  const cands = await StocksDiscoveryCandidate.find(query).lean();
+  if (!cands.length) return { checked: 0, updated: 0 };
+
+  // One live price per resolved exchange symbol (CAD discoveries → .TO).
+  const symbols = [...new Set(cands.map((c) => resolveDiscSymbol(c.ticker, c.currencyAtDiscovery)))];
+  const priceMap = {};
+  await Promise.all(symbols.map(async (s) => { priceMap[s] = await fetchCurrentPrice(s); }));
+
+  const now = new Date();
+  let updated = 0;
+  for (const c of cands) {
+    const px = priceMap[resolveDiscSymbol(c.ticker, c.currencyAtDiscovery)];
+    if (px == null || !c.priceAtDiscovery) continue;
+    const pct = ((px - c.priceAtDiscovery) / c.priceAtDiscovery) * 100;
+    const daysOld = (Date.now() - new Date(c.scanDate).getTime()) / 86400000;
+    const set = { lastPrice: px, lastPriceCheckedAt: now, lastOutcomeCheckAt: now };
+    if (c.peakPrice == null || px > c.peakPrice) { set.peakPrice = px; set.peakPct = pct; set.peakAt = now; }
+    if (c.troughPrice == null || px < c.troughPrice) { set.troughPrice = px; set.troughPct = pct; set.troughAt = now; }
+    for (const [h, field] of horizons) {
+      // Freeze the bucket at the first tracking run on/after the horizon.
+      if (daysOld >= h && !c[field]) set[field] = { pct, dollars: px - c.priceAtDiscovery, atPrice: px };
+    }
+    try { await StocksDiscoveryCandidate.updateOne({ _id: c._id }, { $set: set }); updated++; } catch { /* skip */ }
+  }
+  console.log(`[stocks-outcome-tracker] checked ${cands.length}, updated ${updated}`);
+  return { checked: cands.length, updated };
+}
+
+export function scheduleDiscoveryOutcomeTracker() {
+  if (process.env.STOCKS_BRIEFING_ENABLED !== "1") return null;
+  // Once daily, after the US close (default 6 PM ET) so peak/trough capture
+  // reflects the day's settled price.
+  const expr = process.env.STOCKS_OUTCOME_TRACKER_CRON || "0 18 * * 1-5";
+  const tz = process.env.STOCKS_BRIEFING_TZ || "America/New_York";
+  console.log(`[stocks-outcome-tracker] scheduled: "${expr}" ${tz}`);
+  return cron.schedule(expr, async () => {
+    console.log(`[stocks-outcome-tracker] tick: ${new Date().toISOString()}`);
+    try { await runDiscoveryOutcomeTracker(); } catch (e) { console.error("[stocks-outcome-tracker] tick error:", e); }
+  }, { timezone: tz });
+}
