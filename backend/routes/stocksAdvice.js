@@ -540,6 +540,24 @@ const REC_STOP_WORD_TICKERS = new Set([
   "MARKET","LIMIT","GTC","DAY","OCO",
 ]);
 
+// Infer the rec's native currency so downstream price checks hit the right
+// listing. A Canadian exchange suffix is decisive; otherwise look for an
+// explicit "$NN CAD/USD" near the price. Returns null when unknown (the model
+// default of USD then applies on save).
+function detectRecCurrency(text, ticker) {
+  if (/\.(TO|V|NE|CN)$/i.test(ticker || "")) return "CAD";
+  const m = (text || "").match(/\$\s*[\d.,]+(?:\s*[-–]\s*\$?\s*[\d.,]+)?\s*(CAD|USD)\b/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+// Map a stored rec to the exchange symbol to quote it on: CAD recs → .TO so
+// "if-followed" P&L and target/stop alerts are checked on the right market.
+function recSymbol(rec) {
+  const t = String(rec?.ticker || "").toUpperCase();
+  if (t.includes(".")) return t;
+  return rec?.entryCurrency === "CAD" ? `${t}.TO` : t;
+}
+
 function parseRec(body) {
   if (!body || typeof body !== "string") return null;
   const m = body.match(/Action:\s*(BUY|SELL|TRIM|HOLD)\s*(\d[\d,]*)?\s*(?:sh)?\s*([A-Z][A-Z0-9.\-]{0,15})\b[^.]*?(?:Entry:\s*\$?([\d.]+))?[^.]*?(?:Target:\s*\$?([\d.]+))?[^.]*?(?:Stop:\s*\$?([\d.]+))?[^.]*?(?:Horizon:\s*([^.\n]+))?/i);
@@ -571,6 +589,7 @@ function parseRec(body) {
     else if (h.includes("month")) horizonDays = num * 30;
     else if (h.includes("year")) horizonDays = num * 365;
   }
+  const entryCurrency = detectRecCurrency(body, ticker);
   return {
     action: action.toUpperCase(),
     shares,
@@ -579,6 +598,7 @@ function parseRec(body) {
     targetPrice: target ? parseFloat(target) : null,
     stopPrice: stop ? parseFloat(stop) : null,
     horizonDays,
+    ...(entryCurrency ? { entryCurrency } : {}),
   };
 }
 
@@ -1675,12 +1695,13 @@ router.get("/performance", requireStocksAuth, async (req, res) => {
       }
     }
 
-    // Fetch current prices (deduped) for scoring
-    const tickers = [...new Set(recs.map((r) => r.ticker))];
+    // Fetch current prices (deduped) for scoring — keyed by the resolved
+    // exchange symbol so CAD recs are quoted on the TSX listing.
+    const symbols = [...new Set(recs.map((r) => recSymbol(r)))];
     const priceMap = {};
     await Promise.all(
-      tickers.map(async (t) => {
-        priceMap[t] = await fetchCurrentPrice(t);
+      symbols.map(async (sym) => {
+        priceMap[sym] = await fetchCurrentPrice(sym);
       })
     );
 
@@ -1689,7 +1710,7 @@ router.get("/performance", requireStocksAuth, async (req, res) => {
     //   pnlAtFill    — using the actual fill price from the linked trade
     //                  if executed; else null
     const scored = recs.map((r) => {
-      const cur = priceMap[r.ticker];
+      const cur = priceMap[recSymbol(r)];
       const hypoPnl = scorePnl(r, cur);
       const trade = tradeByRec[String(r._id)];
       let realizedPnl = null;
@@ -2384,10 +2405,10 @@ router.get("/scorecard", requireStocksAuth, async (req, res) => {
       if (t.linkedAdviceRecId) tradesByRecId.set(String(t.linkedAdviceRecId), t);
     }
 
-    // Fetch current prices once per unique ticker
-    const tickers = [...new Set(recs.map(r => r.ticker).filter(Boolean))];
+    // Fetch current prices once per unique resolved symbol (CAD recs → .TO)
+    const symbols = [...new Set(recs.map(r => recSymbol(r)).filter(Boolean))];
     const priceMap = {};
-    await Promise.all(tickers.map(async t => { priceMap[t] = await fetchCurrentPrice(t); }));
+    await Promise.all(symbols.map(async sym => { priceMap[sym] = await fetchCurrentPrice(sym); }));
 
     const items = [];
     let followedCount = 0, skippedCount = 0, pendingCount = 0;
@@ -2396,7 +2417,7 @@ router.get("/scorecard", requireStocksAuth, async (req, res) => {
 
     for (const rec of recs) {
       const linkedTrade = tradesByRecId.get(String(rec._id));
-      const currentPrice = priceMap[rec.ticker];
+      const currentPrice = priceMap[recSymbol(rec)];
       const followed = !!linkedTrade;
 
       // Hypothetical P&L: how the rec WOULD have performed (entry → current)

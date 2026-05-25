@@ -71,6 +71,22 @@ async function fetchCurrentPrice(ticker) {
   } catch { return null; }
 }
 
+// Infer a rec's native currency (Canadian suffix is decisive; else an explicit
+// "$NN CAD/USD" near the price). Null → model default (USD) applies on save.
+function detectRecCurrency(text, ticker) {
+  if (/\.(TO|V|NE|CN)$/i.test(ticker || "")) return "CAD";
+  const m = (text || "").match(/\$\s*[\d.,]+(?:\s*[-–]\s*\$?\s*[\d.,]+)?\s*(CAD|USD)\b/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+// Exchange symbol to quote a stored rec on: CAD recs → .TO so target/stop
+// alerts are checked on the right market, not the US ADR.
+function recSymbol(rec) {
+  const t = String(rec?.ticker || "").toUpperCase();
+  if (t.includes(".")) return t;
+  return rec?.entryCurrency === "CAD" ? `${t}.TO` : t;
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Monitor every still-open AI rec for this user. For each rec, check
 // whether the live price has crossed its target or stop. Update the
@@ -85,10 +101,12 @@ export async function monitorOpenRecs(email) {
   const openRecs = await StocksAdviceRec.find({ email, status: "open" }).lean();
   if (openRecs.length === 0) return { alerts: [], hits: 0, inRange: 0 };
 
-  // De-dupe tickers and fetch one price per ticker
-  const tickers = [...new Set(openRecs.map(r => r.ticker))];
+  // De-dupe and fetch one price per resolved exchange symbol — a CAD rec
+  // (entryCurrency "CAD") must be checked on its TSX listing (ENB → ENB.TO),
+  // not the US ADR, or target/stop alerts fire on the wrong market.
+  const symbols = [...new Set(openRecs.map(r => recSymbol(r)))];
   const priceMap = {};
-  await Promise.all(tickers.map(async t => { priceMap[t] = await fetchCurrentPrice(t); }));
+  await Promise.all(symbols.map(async sym => { priceMap[sym] = await fetchCurrentPrice(sym); }));
 
   const targetAlerts = [];
   const stopAlerts = [];
@@ -97,7 +115,7 @@ export async function monitorOpenRecs(email) {
   const now = new Date();
 
   for (const rec of openRecs) {
-    const px = priceMap[rec.ticker];
+    const px = priceMap[recSymbol(rec)];
     if (px == null) continue;
 
     let targetHit = false;
@@ -784,6 +802,7 @@ export function parseRecsFromBriefing(text) {
       else if (h.includes("year")) horizonDays = num * 365;
     }
     if (entry) {
+      const entryCurrency = detectRecCurrency(text.slice(m.index, m.index + 200), ticker);
       recs.push({
         action: action.toUpperCase(),
         ticker,
@@ -792,6 +811,7 @@ export function parseRecsFromBriefing(text) {
         targetPrice: target ? parseFloat(target) : null,
         stopPrice: stop ? parseFloat(stop) : null,
         horizonDays,
+        ...(entryCurrency ? { entryCurrency } : {}),
       });
     }
   }
