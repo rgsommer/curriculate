@@ -636,10 +636,43 @@ export default function TaskSets() {
         atDeskOnly: !!full?.atDeskOnly,
         aiWordBank: Array.isArray(concepts) ? concepts.join(", ") : "",
       };
-      const res = await apiFetchJson("/api/ai/tasksets", { method: "POST", body: payload });
-      if (!res || (res.ok === false && !res.taskset)) {
-        throw new Error(res?.error || "Generation failed");
+      // Stream via SSE (same as the generator) so the ~30s generation keeps the
+      // connection alive — a silent POST gets killed by idle-timeout proxies,
+      // which is why the button could appear stuck on "Regenerating…".
+      const res = await apiFetch("/api/ai/tasksets", {
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      });
+      if (!res.ok) {
+        let msg = `Request failed (${res.status})`;
+        try { const j = await res.json(); msg = j?.error || msg; } catch { /* ignore */ }
+        throw new Error(msg);
       }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let finalData = null;
+      let streamErr = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split("\n\n");
+        buf = parts.pop() ?? "";
+        for (const part of parts) {
+          const dataLine = part.split("\n").find((l) => l.startsWith("data:"));
+          if (!dataLine) continue;
+          try {
+            const msg = JSON.parse(dataLine.slice(5).trim());
+            if (msg.type === "complete" && (msg.taskset || msg.ok)) finalData = msg;
+            else if (msg.type === "error") streamErr = msg.error || "Generation error";
+            else if (msg.taskset && !finalData) finalData = msg; // tolerate non-streaming JSON
+          } catch { /* partial / non-JSON line */ }
+        }
+      }
+      if (streamErr) throw new Error(streamErr);
+      if (!finalData) throw new Error("No taskset was returned");
       showToast("✅ Regenerated as a new taskset.");
       await loadSets();
     } catch (e) {
@@ -1485,6 +1518,12 @@ export default function TaskSets() {
               ? `Avg ${avgComp} min`
               : "";
 
+            // Created-on date
+            const createdDate = ts?.createdAt ? new Date(ts.createdAt) : null;
+            const createdLabel = createdDate && !isNaN(createdDate.getTime())
+              ? `Created ${createdDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`
+              : "";
+
             const secondLineParts = [
               subject && subject.toLowerCase() !== title.toLowerCase() && subject,
               grade && `Grade ${grade}`,
@@ -1493,6 +1532,7 @@ export default function TaskSets() {
               avgCompLabel,
               goalLabel,
               blooms ? `Bloom's ${blooms}` : "",
+              createdLabel,
               `Plays ${times}`,
               last ? `Last played ${last}` : "Never played",
             ].filter(Boolean);
