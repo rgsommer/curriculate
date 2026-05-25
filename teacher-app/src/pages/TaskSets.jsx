@@ -1,7 +1,7 @@
 // teacher-app/src/pages/TaskSets.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiFetchJson } from "../api/apiFetch";
+import { apiFetch, apiFetchJson } from "../api/apiFetch";
 import { fetchMyProfile } from "../api/profile";
 import { API_BASE_URL, STUDENT_APP_URL } from "../config";
 import { TASK_TYPE_META } from "../../../shared/taskTypes.js";
