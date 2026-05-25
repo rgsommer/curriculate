@@ -407,12 +407,17 @@ async function mapWithThrottle(items, mapper, { concurrency = 2, maxRetries = 2 
 // Less rigorous than a real screener (the AI surfaces well-known names
 // more often than obscure ones) but unlocks Discovery without paying for
 // FMP Starter.
-async function aiOnlyProspect({ email, excludeTickers, sectors, topN, marketCapMin, marketCapMax }) {
+async function aiOnlyProspect({ email, excludeTickers, sectors, topN, marketCapMin, marketCapMax, market = "both" }) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY required");
 
   const minM = marketCapMin ? `$${(marketCapMin / 1_000_000).toFixed(0)}M` : "$200M";
   const maxM = marketCapMax ? `$${(marketCapMax / 1_000_000).toFixed(0)}M` : "$5B";
+  const marketClause = market === "us"
+    ? "- ONLY US-listed names (NASDAQ / NYSE / AMEX). Do not return Canadian or other listings."
+    : market === "canada"
+    ? "- ONLY Canadian-listed names (TSX / TSXV). Report tickers with their Canadian suffix (e.g. SHOP.TO). Do not return US listings."
+    : "- Cover BOTH US (NASDAQ/NYSE/AMEX) AND Canadian (TSX/TSXV) listings — actively surface qualifying Canadian names, don't default to US-only. Aim for a mix when both have strong setups.";
   const sectorClause = Array.isArray(sectors) && sectors.length > 0
     ? `Focus on sectors: ${sectors.join(", ")}.`
     : "Sectors are open — bias toward technology, biotech, energy, defense, fintech where 10× setups historically cluster.";
@@ -426,7 +431,7 @@ Use the web_search tool to find current candidates. Criteria:
 - Market cap roughly between ${minM} and ${maxM}
 - Strong revenue growth (>20% YoY) OR a clear turnaround thesis
 - Upcoming catalyst in next 6 months OR underappreciated structural tailwind
-- Cover BOTH US (NASDAQ/NYSE/AMEX) AND Canadian (TSX/TSXV) listings — actively surface qualifying Canadian names, don't default to US-only. Aim for a mix when both have strong setups.
+${marketClause}
 - For each name, report the EXACT exchange and the listing the user would actually trade (e.g. a TSX name as "SHOP.TO" with exchange "TSX"); liquid enough to trade
 - NOT already a widely-covered mega-cap (avoid NVDA, AAPL, MSFT, GOOGL, AMZN, META, TSLA)
 ${sectorClause}
@@ -738,11 +743,31 @@ export const HIGH_CONVICTION_DISCLAIMER =
   "This is not financial advice. These are high-conviction screening results based on available data and may be wrong.";
 
 // Build a ~6-name shortlist to run the expensive analysis on. Reuses the FMP
+// Market scope helpers (US / Canada / both).
+function exchangesForMarket(market) {
+  if (market === "us") return "NASDAQ,NYSE,AMEX";
+  if (market === "canada") return "TSX,TSXV";
+  return "NASDAQ,NYSE,AMEX,TSX,TSXV"; // both / default
+}
+function candidateMarket(c) {
+  const ex = String(c.exchange || c.exchangeShortName || "").toUpperCase();
+  const ccy = c.currency || c.currencyAtDiscovery;
+  const tk = String(c.ticker || c.symbol || "");
+  if (ccy === "CAD" || /^(TSX|TSXV|CN|NEO|NE)$/.test(ex) || /\.(TO|V|NE|CN)$/i.test(tk)) return "CA";
+  return "US";
+}
+function matchesMarket(c, market) {
+  if (!market || market === "both") return true;
+  return candidateMarket(c) === (market === "us" ? "US" : "CA");
+}
+
 // screen + composite score; falls back to the AI prospector on FMP 403.
-async function buildShortlist({ email, sectors, opts, excl, shortlistN }) {
+async function buildShortlist({ email, sectors, opts, excl, shortlistN, market = "both" }) {
   try {
-    const universe = await runUniverseScreen({ sectors, ...opts });
-    const filtered = (universe || []).filter((u) => !excl.has(String(u.symbol || "").toUpperCase()));
+    const universe = await runUniverseScreen({ sectors, exchanges: exchangesForMarket(market), ...opts });
+    const filtered = (universe || []).filter((u) =>
+      !excl.has(String(u.symbol || "").toUpperCase()) && matchesMarket(u, market)
+    );
     const preRanked = filtered
       .map((u) => ({ ...u, _proxy: (Number(u.marketCap) || 0) * Math.log10((Number(u.volume) || 0) + 1) }))
       .sort((a, b) => b._proxy - a._proxy)
@@ -774,7 +799,7 @@ async function buildShortlist({ email, sectors, opts, excl, shortlistN }) {
     // FMP screener unavailable — let the AI surface candidate tickers, then we
     // still score them deterministically off Yahoo (technicals/returns work
     // without FMP).
-    const ai = await aiOnlyProspect({ email, excludeTickers: Array.from(excl), sectors, topN: shortlistN, marketCapMin: opts.marketCapMin, marketCapMax: opts.marketCapMax });
+    const ai = await aiOnlyProspect({ email, excludeTickers: Array.from(excl), sectors, topN: shortlistN, marketCapMin: opts.marketCapMin, marketCapMax: opts.marketCapMax, market });
     const shortlist = (ai.candidates || []).map((c) => ({
       ticker: String(c.ticker || "").toUpperCase().replace(/\.+$/, ""),
       name: c.name || "",
@@ -790,7 +815,7 @@ async function buildShortlist({ email, sectors, opts, excl, shortlistN }) {
         operatingIncomeGrowthPct: c?.signals?.operatingIncomeGrowthPct ?? null,
         netDebtToEquity: c?.signals?.netDebtToEquity ?? null,
       },
-    })).filter((c) => c.ticker);
+    })).filter((c) => c.ticker && matchesMarket(c, market));
     const reason = e?.body ? ` FMP said: "${String(e.body).slice(0, 180)}".` : "";
     return {
       shortlist,
@@ -880,9 +905,10 @@ Return the ${topN} STRONGEST candidates only, ordered best-first. If fewer than 
   try { return JSON.parse(m[0]); } catch { return { picks: [] }; }
 }
 
-export async function runHighConvictionScan({ email, riskMode = "balanced", sectors = null, topN = 3, opts = {}, includeMosaic = false, mosaicMode = "balanced" }) {
+export async function runHighConvictionScan({ email, riskMode = "balanced", sectors = null, topN = 3, opts = {}, includeMosaic = false, mosaicMode = "balanced", market = "both" }) {
   const mode = ["conservative", "balanced", "aggressive", "speculative"].includes(riskMode) ? riskMode : "balanced";
   const mMode = ["conservative", "balanced", "aggressive"].includes(mosaicMode) ? mosaicMode : "balanced";
+  const mkt = ["both", "us", "canada"].includes(market) ? market : "both";
   const weights = weightsFor(mode);
   const shortlistN = 6;
 
@@ -895,7 +921,7 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
   recentlyDismissed.forEach((d) => excl.add(d.ticker));
   (opts.excludeTickers || []).forEach((t) => excl.add(String(t).toUpperCase()));
 
-  const { shortlist, mode: scanMode, upgradeRecommendation } = await buildShortlist({ email, sectors, opts, excl, shortlistN });
+  const { shortlist, mode: scanMode, upgradeRecommendation } = await buildShortlist({ email, sectors, opts, excl, shortlistN, market: mkt });
   if (!shortlist.length) {
     return { picks: [], riskMode: mode, mode: scanMode, upgradeRecommendation, disclaimer: HIGH_CONVICTION_DISCLAIMER, error: "No candidates cleared the pre-screen." };
   }
@@ -1030,6 +1056,7 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
     picks, riskMode: mode, mode: scanMode, upgradeRecommendation, scanDate,
     disclaimer: HIGH_CONVICTION_DISCLAIMER,
     mosaicEnabled: !!includeMosaic, mosaicMode: includeMosaic ? mMode : null,
+    market: mkt,
     belowBar,
     diagnostic: {
       shortlistSize: shortlist.length,

@@ -4995,6 +4995,7 @@ function DiscoverView({ sessionToken, user }) {
   const [sectorsCsv, setSectorsCsv] = useState("");
   // High-conviction multi-factor screen (additive — separate from the scan above)
   const [hcRiskMode, setHcRiskMode] = useState("balanced");
+  const [hcMarket, setHcMarket] = useState("both");         // both | us | canada
   const [hcMosaic, setHcMosaic] = useState(false);          // include Mosaic Intelligence
   const [hcMosaicMode, setHcMosaicMode] = useState("balanced"); // mosaic alt-data mode
   const [hcBusy, setHcBusy] = useState(false);
@@ -5058,7 +5059,7 @@ function DiscoverView({ sessionToken, user }) {
     if (hcBusy) return;
     setHcBusy(true); setHcError(null);
     try {
-      const body = { riskMode: hcRiskMode, includeMosaic: hcMosaic, mosaicMode: hcMosaicMode };
+      const body = { riskMode: hcRiskMode, market: hcMarket, includeMosaic: hcMosaic, mosaicMode: hcMosaicMode };
       if (sectorsCsv.trim()) body.sectors = sectorsCsv.split(",").map((s) => s.trim()).filter(Boolean);
       const r = await fetch(`${BACKEND_URL}/api/stocks-discover/high-conviction`, {
         method: "POST",
@@ -5127,6 +5128,16 @@ function DiscoverView({ sessionToken, user }) {
               <option value="balanced">Balanced</option>
               <option value="aggressive">Aggressive</option>
               <option value="speculative">Speculative</option>
+            </select>
+            <select
+              value={hcMarket}
+              onChange={(e) => setHcMarket(e.target.value)}
+              style={{ padding: "7px 10px", borderRadius: 8, fontSize: 13 }}
+              title="Which market to screen"
+            >
+              <option value="both">🇺🇸🇨🇦 Both markets</option>
+              <option value="us">🇺🇸 US only</option>
+              <option value="canada">🇨🇦 Canada only</option>
             </select>
             <button className="sa-btn" onClick={runHighConviction} disabled={hcBusy}>
               {hcBusy ? "Screening…" : "Run high-conviction screen"}

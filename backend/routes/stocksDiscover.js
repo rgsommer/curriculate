@@ -129,7 +129,7 @@ router.post("/high-conviction", requireStocksAuth, async (req, res) => {
     const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
     const heldTickers = profile?.positions?.map((p) => p.ticker) || [];
 
-    const { riskMode = "balanced", sectors = null, marketCapMin, marketCapMax, includeMosaic = false, mosaicMode = "balanced" } = req.body || {};
+    const { riskMode = "balanced", sectors = null, marketCapMin, marketCapMax, includeMosaic = false, mosaicMode = "balanced", market = "both" } = req.body || {};
 
     const result = await runHighConvictionScan({
       email: req.stocksUser.email,
@@ -138,6 +138,7 @@ router.post("/high-conviction", requireStocksAuth, async (req, res) => {
       topN: 3,
       includeMosaic: !!includeMosaic,
       mosaicMode,
+      market,
       opts: {
         excludeTickers: heldTickers,
         ...(typeof marketCapMin === "number" ? { marketCapMin } : {}),
