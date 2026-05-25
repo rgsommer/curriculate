@@ -4829,6 +4829,10 @@ function HighConvictionCard({ pick, rank }) {
   const risk = hcRiskColor(mf.riskRating);
   const cap = pick.marketCap ? `$${(pick.marketCap / 1e9).toFixed(pick.marketCap >= 1e9 ? 2 : 3)}B` : "—";
   const price = pick.priceAtDiscovery != null ? `$${pick.priceAtDiscovery} ${ccy}` : "—";
+  // Which market the opportunity is in (exchange + country).
+  const exch = (pick.exchange || "").toUpperCase();
+  const isCanada = ccy === "CAD" || /^(TSX|TSXV|CN|NEO|NE)$/.test(exch) || /\.(TO|V|NE|CN)$/i.test(pick.ticker || "");
+  const market = `${exch ? exch + " · " : ""}${isCanada ? "🇨🇦 Canada" : "🇺🇸 US"}`;
 
   return (
     <div className="sa-card" style={{ padding: 16, position: "relative" }}>
@@ -4843,7 +4847,7 @@ function HighConvictionCard({ pick, rank }) {
             )}
           </div>
           <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
-            {price} · {cap} · {pick.sector || "—"} · {mf.timeHorizon || "medium-term"}
+            {price} · {cap} · {market} · {pick.sector || "—"} · {mf.timeHorizon || "medium-term"}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>

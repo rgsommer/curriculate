@@ -127,24 +127,38 @@ export async function runUniverseScreen(opts = {}) {
     limit = 200,
   } = opts;
 
-  const key = JSON.stringify({ marketCapMin, marketCapMax, priceMin, volumeMin, sectors, limit });
+  // Screen US AND Canadian listings (override via opts.exchanges).
+  const exchanges = opts.exchanges || "NASDAQ,NYSE,AMEX,TSX,TSXV";
+  const key = JSON.stringify({ marketCapMin, marketCapMax, priceMin, volumeMin, sectors, limit, exchanges });
   const cached = SCREENER_CACHE.get(key);
   if (cached && Date.now() - cached.fetchedAt < SCREENER_TTL_MS) return cached.data;
 
-  const params = new URLSearchParams({
-    marketCapMoreThan: String(marketCapMin),
-    marketCapLowerThan: String(marketCapMax),
-    priceMoreThan: String(priceMin),
-    volumeMoreThan: String(volumeMin),
-    isEtf: "false",
-    isActivelyTrading: "true",
-    limit: String(limit),
-  });
-  if (Array.isArray(sectors) && sectors.length > 0) {
-    params.append("sector", sectors.join(","));
+  const buildParams = () => {
+    const p = new URLSearchParams({
+      marketCapMoreThan: String(marketCapMin),
+      marketCapLowerThan: String(marketCapMax),
+      priceMoreThan: String(priceMin),
+      volumeMoreThan: String(volumeMin),
+      isEtf: "false",
+      isActivelyTrading: "true",
+      limit: String(limit),
+    });
+    if (Array.isArray(sectors) && sectors.length > 0) p.append("sector", sectors.join(","));
+    return p;
+  };
+
+  const params = buildParams();
+  if (exchanges) params.append("exchange", exchanges);
+  let data = await fmpGet(`/api/v3/stock-screener?${params.toString()}`);
+  let universe = Array.isArray(data) ? data : [];
+
+  // Some FMP tiers/keys don't honor the exchange filter — if the filtered
+  // screen came back empty, retry without it so we never regress to nothing.
+  if (universe.length === 0 && exchanges) {
+    const data2 = await fmpGet(`/api/v3/stock-screener?${buildParams().toString()}`);
+    universe = Array.isArray(data2) ? data2 : [];
   }
-  const data = await fmpGet(`/api/v3/stock-screener?${params.toString()}`);
-  const universe = Array.isArray(data) ? data : [];
+
   SCREENER_CACHE.set(key, { fetchedAt: Date.now(), data: universe });
   return universe;
 }
@@ -412,7 +426,8 @@ Use the web_search tool to find current candidates. Criteria:
 - Market cap roughly between ${minM} and ${maxM}
 - Strong revenue growth (>20% YoY) OR a clear turnaround thesis
 - Upcoming catalyst in next 6 months OR underappreciated structural tailwind
-- Traded on US or Canadian exchanges; liquid enough to trade
+- Cover BOTH US (NASDAQ/NYSE/AMEX) AND Canadian (TSX/TSXV) listings — actively surface qualifying Canadian names, don't default to US-only. Aim for a mix when both have strong setups.
+- For each name, report the EXACT exchange and the listing the user would actually trade (e.g. a TSX name as "SHOP.TO" with exchange "TSX"); liquid enough to trade
 - NOT already a widely-covered mega-cap (avoid NVDA, AAPL, MSFT, GOOGL, AMZN, META, TSLA)
 ${sectorClause}
 ${excludeClause}
