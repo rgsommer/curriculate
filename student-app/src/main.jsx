@@ -5,6 +5,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import App from "./StudentApp.jsx";
 import DemoPage from "./pages/DemoPage.jsx";
 import DemoMode from "./DemoMode.jsx";
+import PreviewPage from "./pages/PreviewPage.jsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import "./index.css";
 
@@ -59,6 +60,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
 
             {/* Classroom practice (student-facing, points + teacher tracking) */}
             <Route path="/practice" element={<DemoMode source="classroom" />} />
+
+            {/* Teacher "Test run" — step through a taskset's tasks, no scans */}
+            <Route path="/preview" element={<PreviewPage />} />
 
             {/* Unknown routes -> main */}
             <Route path="*" element={<App />} />

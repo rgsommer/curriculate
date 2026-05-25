@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom";
 import { apiFetchJson } from "../api/apiFetch";
 import { fetchMyProfile } from "../api/profile";
-import { API_BASE_URL } from "../config";
+import { API_BASE_URL, STUDENT_APP_URL } from "../config";
 import { TASK_TYPE_META } from "../../../shared/taskTypes.js";
 
 const _API_BASE = API_BASE_URL || "";
@@ -588,6 +588,15 @@ export default function TaskSets() {
     setActive(taskset);
     localStorage.setItem("curriculateLaunchImmediately", "true");
     navigate("/live");
+  };
+
+  // "Test run" — open the student app's preview route and step through the
+  // taskset's tasks exactly as a student would, with no QR scans / live session.
+  const testRun = (taskset) => {
+    const id = taskset?._id || taskset?.id;
+    if (!id) return;
+    const url = `${STUDENT_APP_URL}/preview?id=${encodeURIComponent(id)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   // Helper: hit /api/shared/create-link with optional class binding
@@ -1487,6 +1496,14 @@ export default function TaskSets() {
                         onClick={(e) => e.stopPropagation()}
                         style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}
                       >
+                        <button
+                          type="button"
+                          onClick={() => testRun(ts)}
+                          style={btn("secondary")}
+                          title="Step through the tasks as a student would — no QR scans"
+                        >
+                          🧪 Test run
+                        </button>
                         <button type="button" onClick={() => launchNow(ts)} style={btn("primary")}>
                           Launch
                         </button>

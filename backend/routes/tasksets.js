@@ -126,6 +126,35 @@ router.get("/public", async (req, res) => {
 });
 
 /**
+ * Read-only PREVIEW of a taskset by id (NO auth) — powers the teacher "Test
+ * run" feature, which opens the student app (a separate origin without the
+ * teacher's auth cookie) to play through the tasks. Returns only what the
+ * renderer needs. IDs are non-enumerable ObjectIds, so this is low-risk.
+ *
+ * Must come BEFORE "/:id" (distinct path depth, but kept explicit).
+ */
+router.get("/:id/preview", async (req, res) => {
+  try {
+    const set = await TaskSet.findById(req.params.id).lean();
+    if (!set) return res.status(404).json({ ok: false, error: "Not found" });
+    return res.json({
+      ok: true,
+      taskset: {
+        _id: String(set._id),
+        name: set.name || set.title || "Taskset",
+        subject: set.subject || "",
+        gradeLevel: set.gradeLevel || "",
+        questModeEnabled: !!set.questModeEnabled,
+        tasks: Array.isArray(set.tasks) ? set.tasks : [],
+      },
+    });
+  } catch (err) {
+    console.error("GET /api/tasksets/:id/preview error:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+/**
  * Get a single taskset by id
  * GET /api/tasksets/:id
  */
