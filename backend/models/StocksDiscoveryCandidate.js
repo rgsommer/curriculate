@@ -42,6 +42,22 @@ const FactorSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// Rules-based projection (entry/target/stop + projected ROI). Mechanical
+// asymmetric-R:R projection off the ATR stop — not a forecast.
+const ProjectionSchema = new mongoose.Schema(
+  {
+    entryZone: { type: String, default: "" },
+    target: { type: Number, default: null },
+    stop: { type: Number, default: null },
+    projectedRoiPct: { type: Number, default: null },
+    downsidePct: { type: Number, default: null },
+    timeframe: { type: String, default: "" },
+    rr: { type: Number, default: null },
+    basis: { type: String, default: "" },
+  },
+  { _id: false }
+);
+
 const MultiFactorSchema = new mongoose.Schema(
   {
     riskMode: { type: String, enum: ["conservative", "balanced", "aggressive", "speculative"], default: "balanced" },
@@ -63,6 +79,7 @@ const MultiFactorSchema = new mongoose.Schema(
     watchZone: { type: String, default: "" },        // suggested watch/buy zone (text, native ccy)
     stopLevel: { type: String, default: "" },         // stop-loss / invalidation level (text)
     timeHorizon: { type: String, enum: ["short-term", "medium-term", "long-term"], default: "medium-term" },
+    projection: { type: ProjectionSchema, default: null },
     whyBeatOthers: { type: String, default: "" },
     whatProvesWrong: { type: String, default: "" },
     hypePenaltyApplied: { type: Boolean, default: false },

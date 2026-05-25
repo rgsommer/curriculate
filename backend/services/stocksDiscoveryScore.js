@@ -306,6 +306,38 @@ export function deriveRiskRating(riskControlScore, tech, marketCap) {
   return "Speculative";
 }
 
+// Rules-based projection: entry zone, target, stop, projected ROI %, downside,
+// and a time frame — derived from ATR + a risk-mode reward:risk ratio. This is
+// a MECHANICAL projection (asymmetric R:R off the volatility-based stop), NOT a
+// forecast or promise. Always computable from technicals, so it works for both
+// AI picks and the deterministic fallback.
+const RR_BY_MODE = { conservative: 1.5, balanced: 2.0, aggressive: 2.5, speculative: 3.0 };
+const TIMEFRAME_BY_HORIZON = { "short-term": "~1–3 months", "medium-term": "~3–9 months", "long-term": "~9–18 months" };
+
+export function deriveProjection({ tech, price, riskMode = "balanced", timeHorizon = "medium-term" }) {
+  const last = (tech?.ok && Number.isFinite(tech.last)) ? tech.last : (Number.isFinite(price) ? price : null);
+  if (last == null || last <= 0) return null;
+  const rr = RR_BY_MODE[riskMode] ?? 2.0;
+  const atr = (tech?.ok && Number.isFinite(tech.atr14)) ? tech.atr14 : null;
+  // Stop = volatility-based (2.5×ATR) when available, else a −15% floor.
+  let stop = (tech?.ok && Number.isFinite(tech.suggested25AtrStop) && tech.suggested25AtrStop > 0)
+    ? tech.suggested25AtrStop : last * 0.85;
+  if (stop >= last) stop = last * 0.85;
+  const risk = last - stop;
+  const target = last + rr * risk;
+  const entryLow = atr ? Math.max(stop, last - atr) : last * 0.97;
+  return {
+    entryZone: `${entryLow.toFixed(2)}–${last.toFixed(2)}`,
+    target: Number(target.toFixed(2)),
+    stop: Number(stop.toFixed(2)),
+    projectedRoiPct: Math.round(((target - last) / last) * 100),
+    downsidePct: Math.round(((stop - last) / last) * 100),
+    timeframe: TIMEFRAME_BY_HORIZON[timeHorizon] || "~3–9 months",
+    rr,
+    basis: `Rules-based: 2.5×ATR stop, ${rr}:1 reward target`,
+  };
+}
+
 // Compute all four deterministic modules for one candidate. Returns the
 // sub-scores plus the raw inputs the AI layer needs.
 export async function computeDeterministicFactors({ ticker, currency, marketCap, fmpFundamentals, spyPoints }) {

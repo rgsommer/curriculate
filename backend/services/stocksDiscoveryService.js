@@ -36,6 +36,7 @@ import {
   blendScore,
   computeConfidence,
   deriveRiskRating,
+  deriveProjection,
   fetchYahooDaily,
 } from "./stocksDiscoveryScore.js";
 import { runMosaicBatch, mosaicMode as getMosaicMode, MOSAIC_DISCLAIMER } from "./stocksMosaic.js";
@@ -959,6 +960,7 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
       watchZone: str(p.suggestedWatchZone),
       stopLevel: str(p.stopLevel),
       timeHorizon: ["short-term", "medium-term", "long-term"].includes(p.timeHorizon) ? p.timeHorizon : "medium-term",
+      projection: deriveProjection({ tech: c.raw?.tech, price: c.price, riskMode: mode, timeHorizon: ["short-term", "medium-term", "long-term"].includes(p.timeHorizon) ? p.timeHorizon : "medium-term" }),
       whyBeatOthers: str(p.whyBeatOthers),
       whatProvesWrong: str(p.whatProvesWrong),
       hypePenaltyApplied: !!p.hypePenaltyApplied,
@@ -1067,6 +1069,7 @@ function deterministicFallbackPicks(withFactors, weights, mode, topN) {
         riskRating: deriveRiskRating(c.sub.riskControl?.score, c.raw?.tech, c.marketCap),
         bullCase: "", bearCase: "", keyCatalysts: [],
         watchZone: "", stopLevel: "", timeHorizon: "medium-term",
+        projection: deriveProjection({ tech: c.raw?.tech, price: c.price, riskMode: mode, timeHorizon: "medium-term" }),
         whyBeatOthers: "Ranked on hard data only — no AI high-conviction selection this run.",
         whatProvesWrong: "", hypePenaltyApplied: false,
         dataFlags, sources: [],

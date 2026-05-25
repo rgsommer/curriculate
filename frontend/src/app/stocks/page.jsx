@@ -4899,6 +4899,31 @@ function HighConvictionCard({ pick, rank }) {
         {mf.stopLevel && <div><span style={{ color: "var(--sa-muted)" }}>Invalidation/stop:</span> <b>{mf.stopLevel}</b></div>}
       </div>
 
+      {mf.projection && (
+        <div style={{ marginTop: 10, border: "1px solid var(--sa-border)", borderRadius: 8, padding: "8px 10px", fontSize: 12 }}>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "baseline" }}>
+            <span>
+              <span style={{ color: "var(--sa-muted)" }}>Projected ROI:</span>{" "}
+              <b style={{ color: mf.projection.projectedRoiPct >= 0 ? "var(--sa-green)" : "var(--sa-red)" }}>
+                {mf.projection.projectedRoiPct >= 0 ? "+" : ""}{mf.projection.projectedRoiPct}%
+              </b>
+              {mf.projection.downsidePct != null && (
+                <span style={{ color: "var(--sa-muted)" }}> (downside {mf.projection.downsidePct}%)</span>
+              )}
+            </span>
+            <span><span style={{ color: "var(--sa-muted)" }}>Time frame:</span> <b>{mf.projection.timeframe}</b></span>
+          </div>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 4 }}>
+            <span><span style={{ color: "var(--sa-muted)" }}>Entry:</span> <b>${mf.projection.entryZone} {ccy}</b></span>
+            <span><span style={{ color: "var(--sa-muted)" }}>Target:</span> <b>${mf.projection.target} {ccy}</b></span>
+            <span><span style={{ color: "var(--sa-muted)" }}>Stop:</span> <b>${mf.projection.stop} {ccy}</b></span>
+          </div>
+          <div style={{ marginTop: 4, fontSize: 10.5, color: "var(--sa-muted)" }}>
+            {mf.projection.basis} — mechanical projection, not a forecast.
+          </div>
+        </div>
+      )}
+
       {mf.whyBeatOthers && (
         <div style={{ marginTop: 10, fontSize: 12, background: "var(--sa-panel-2)", borderRadius: 8, padding: "8px 10px" }}>
           <span style={{ fontWeight: 700 }}>Why it beat the others: </span>{mf.whyBeatOthers}
