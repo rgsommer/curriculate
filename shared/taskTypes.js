@@ -2339,24 +2339,26 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
 
     Task-specific guidance:
     - This is a Connect Four game powered by true/false statements. Students pick a statement, then drop a piece into a column. TRUE statements → Blue piece, FALSE statements → Red piece. First to get 4-in-a-row wins.
-    - Generate a LARGE pool of true/false statements so students can play multiple rounds in 5 minutes.
-    - Create ONE true/false statement for EVERY term, concept, or vocabulary word from the topic. Then add extra statements to reach at least 20 total.
-    - Aim for 20–30 statements. Mix of TRUE and FALSE (roughly 50/50 split).
+    - Generate a pool of true/false statements so students can play multiple rounds in 5 minutes.
+    - Create ONE true/false statement for EVERY term, concept, or vocabulary word from the topic.
+    - REQUIRED: 8–12 statements (MINIMUM 6 — fewer will be REJECTED). 20–30 is even better if the topic supports it.
+    - Mix of TRUE and FALSE, roughly 50/50 — at least 2 TRUE and at least 2 FALSE.
     - Each statement must be a clear, factual claim that is unambiguously true or false.
 
-    REQUIRED STRUCTURE -- statements array at ROOT level:
+    REQUIRED STRUCTURE -- items array at ROOT level (8–12 entries, minimum 6):
     {
       "taskType": "true-false-connect-four",
       "title": "Connect Four: The Water Cycle",
       "prompt": "Pick a statement, then tap a column to drop your piece!",
       "timeLimitSeconds": 300,
-      "statements": [
-        { "text": "Evaporation turns liquid water into water vapor.", "isFalse": false },
-        { "text": "Condensation happens when water vapor cools and forms droplets.", "isFalse": false },
-        { "text": "Rain falls upward during precipitation.", "isFalse": true },
-        { "text": "The water cycle is powered by the moon's gravity.", "isFalse": true }
+      "items": [
+        { "prompt": "Evaporation turns liquid water into water vapor.", "correctAnswer": true },
+        { "prompt": "Condensation happens when water vapor cools and forms droplets.", "correctAnswer": true },
+        { "prompt": "Rain falls upward during precipitation.", "correctAnswer": false },
+        { "prompt": "The water cycle is powered by the moon's gravity.", "correctAnswer": false }
       ]
     }
+    (Either items[{prompt, correctAnswer:boolean}] or statements[{text, isFalse:boolean}] is accepted — they carry the same data.)
 
     CRITICAL -- NO PLACEHOLDER TEXT:
     - NEVER use "Statement 1", "True statement", "False statement", or any generic filler.
@@ -2364,9 +2366,9 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - FALSE statements should be plausible-sounding but incorrect (not absurd jokes).
 
     Common failure prevention:
-    - statements[] MUST contain at least 15 items. 20–30 is ideal.
-    - Each statement MUST have "text" (non-empty string) and "isFalse" (boolean).
-    - Include roughly equal numbers of true and false statements.
+    - items[]/statements[] MUST contain at least 6 entries (8–12 recommended, 20–30 ideal).
+    - Each entry MUST be either { prompt, correctAnswer:boolean } or { text, isFalse:boolean } (non-empty text).
+    - Include at least 2 TRUE and at least 2 FALSE; aim for a roughly equal split.
     - Do NOT put statements inside config -- put them at the ROOT level of the task object.
     `,
   },
@@ -3598,9 +3600,11 @@ IMPORTANT:
     
     Task-specific guidance:
     - Create a synthesize-and-summarize task: provide 2–3 short source bullets and ask for a 3–5 sentence synthesis with a claim + evidence.
-    
+    - CRITICAL: provide ONE prompt per player. config.prompts.length MUST be >= config.playerCount, or a player sits idle with nothing to do. If playerCount is 4, supply at least 4 prompts.
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
+    - config.prompts.length MUST be >= config.playerCount (one prompt per player).
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
     - Ensure prompts are student-facing instructions (what to do).
     `,

@@ -244,6 +244,9 @@ function validatePlayabilityByType(type, task) {
   if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
     if (typeof cfg.playerCount !== "number") errors.push("config.playerCount must be a number");
     if (_len(cfg.prompts) < 2) errors.push("config.prompts must have at least 2 items");
+    else if (typeof cfg.playerCount === "number" && _len(cfg.prompts) < cfg.playerCount) {
+      errors.push(`config.prompts (${_len(cfg.prompts)}) must be >= config.playerCount (${cfg.playerCount}) — one prompt per player`);
+    }
   }
 
   if (type === TASK_TYPES.ROLE_PLAY_DECK) {
@@ -326,7 +329,7 @@ function validatePlayabilityByType(type, task) {
       : Array.isArray(task?.statements) ? task.statements
       : Array.isArray(cfg?.statements) ? cfg.statements
       : [];
-    const minItems = type === TASK_TYPES.TRUE_FALSE_CONNECT_FOUR ? 10 : 9;
+    const minItems = type === TASK_TYPES.TRUE_FALSE_CONNECT_FOUR ? 6 : 9;
     if (tfItems.length < minItems) {
       errors.push(`${type} requires at least ${minItems} true/false statements (got ${tfItems.length})`);
     }
@@ -1075,7 +1078,7 @@ export const retryMustHave = {
   [TASK_TYPES.MAKE_AND_SNAP]:
     "MAKE_AND_SNAP must include config: { requiresPhoto: true, materials: string[] } and a clear prompt.",
   [TASK_TYPES.NARRATION_SYNTHESIZE]:
-    "NARRATION_SYNTHESIZE must include config.playerCount (number, 2..8) and config.prompts (array of at least 4 strings). Do not omit. Example: { config: { playerCount: 4, prompts: ['...', '...', '...', '...'] } }",
+    "NARRATION_SYNTHESIZE must include config.playerCount (number, 2..8) and config.prompts (array). CRITICAL: there must be ONE prompt per player — config.prompts.length MUST be >= config.playerCount, or a player will sit idle. Example: { config: { playerCount: 4, prompts: ['...', '...', '...', '...'] } } (4 players → 4 prompts). Do not omit.",
   [TASK_TYPES.PRONUNCIATION]:
     "PRONUNCIATION must include referenceText (non-empty string) AND (optional) targetWords array. Do not omit referenceText.",
   [TASK_TYPES.ROLE_PLAY_DECK]:
@@ -1085,7 +1088,7 @@ export const retryMustHave = {
   [TASK_TYPES.TRUE_FALSE_TICTACTOE]:
     "TRUE_FALSE_TICTACTOE must include at least 9 statements as items[] (for a 3x3 board). Each item: { text: string, isFalse: boolean }. Aim for a mix of true and false.",
   [TASK_TYPES.TRUE_FALSE_CONNECT_FOUR]:
-    'TRUE_FALSE_CONNECT_FOUR must include at least 10 statements (items[] or statements[]). Each statement: { text: string, isFalse: boolean }. Aim for a roughly 50/50 mix of true and false — at least 3 of each. Do NOT return an empty items array. Every statement must be content-specific (not generic) and clearly true or clearly false.',
+    'TRUE_FALSE_CONNECT_FOUR must include items[] (an array of 8–12 statements; a MINIMUM of 6 is required or the task will be REJECTED). Each item: { prompt: string, correctAnswer: boolean } where correctAnswer=true means the statement is TRUE. (statements[] with { text, isFalse } is also accepted.) Balance true/false — at least 2 of each, aim for roughly 50/50. Do NOT return an empty items/statements array. Every statement must be content-specific (not generic) and clearly true or clearly false.',
   [TASK_TYPES.READING_COMP]:
     "READING_COMP must include a paragraph (generatedParagraph or paragraph field) about ONE unified topic. Do NOT stitch together summaries of multiple unrelated subjects. Go deep on one topic rather than touching many shallowly.",
   [TASK_TYPES.RECORD_AUDIO]:
@@ -1493,6 +1496,21 @@ export async function regenerateSingleTask({
     ? `\n\n    ⚠️ REASON THE PREVIOUS ATTEMPT WAS REJECTED:\n    ${previousError}\n    You MUST fix this specific issue. Do NOT repeat the same mistake.`
     : "";
 
+  // Worldview hint — for value-laden types (truth-or-dare) the subject implies a
+  // worldview lens. Surface it so the AI sets config.worldview from the start
+  // rather than defaulting to "general" (which steers the runtime neutral/secular).
+  const _worldviewHint = (() => {
+    if (allowedType !== TASK_TYPES.TRUTH_OR_DARE) return "";
+    const subj = String(subject || "");
+    if (/bible|religion|faith|theology|scripture/i.test(subj)) {
+      return `\n    WORLDVIEW: This is a faith subject — set config.worldview = "faith".`;
+    }
+    if (/secular|atheist|humanist/i.test(subj)) {
+      return `\n    WORLDVIEW: This is a secular subject — set config.worldview = "secular".`;
+    }
+    return "";
+  })();
+
   const user = `
     Create ONE task of type "${allowedType}".
     - You MUST include non-empty string fields: "title" and "prompt" for every task.
@@ -1502,7 +1520,7 @@ export async function regenerateSingleTask({
     Grade: ${gradeLevel}
     Difficulty: ${difficulty}
     Learning goal: ${learningGoal}
-    Topic: ${topicLabel}
+    Topic: ${topicLabel}${_worldviewHint}
 
     Vocabulary (use these; do not drift):
     ${vocabularyLines}

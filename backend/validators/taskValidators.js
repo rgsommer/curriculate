@@ -3015,19 +3015,19 @@ export function validateTaskByType(taskType, task) {
 
     case TASK_TYPES.TRUE_FALSE_CONNECT_FOUR: {
       const c4Stmts = Array.isArray(task.statements) ? task.statements : [];
-      if (c4Stmts.length < 10) {
-        errors.push(`true-false-connect-four requires at least 10 statements (got ${c4Stmts.length})`);
+      if (c4Stmts.length < 6) {
+        errors.push(`true-false-connect-four requires at least 6 statements (got ${c4Stmts.length})`);
         break;
       }
       const badStmts = c4Stmts.filter((s) => !s?.text || typeof s.text !== "string" || !s.text.trim());
       if (badStmts.length > 0) {
         errors.push(`${badStmts.length} statement(s) have empty text`);
       }
-      // Check for reasonable true/false balance (at least 30% each side)
+      // Check for reasonable true/false balance (at least 2 of each side)
       const falseCount = c4Stmts.filter((s) => s.isFalse).length;
       const trueCount = c4Stmts.length - falseCount;
-      if (falseCount < 3 || trueCount < 3) {
-        errors.push(`statements must include at least 3 true and 3 false (got ${trueCount} true, ${falseCount} false)`);
+      if (falseCount < 2 || trueCount < 2) {
+        errors.push(`statements must include at least 2 true and 2 false (got ${trueCount} true, ${falseCount} false)`);
       }
       break;
     }
@@ -3081,6 +3081,23 @@ export function validateTaskByType(taskType, task) {
       const cfg = task.config || {};
       if (cfg.statements || cfg.wordsByStation || cfg.rounds || cfg.secretAnswers || cfg.seedTerm || cfg.goodFoods) {
         errors.push(`${taskType} has config fields from another task type — wrong taskType assignment`);
+      }
+      // --- PHOTO time heuristic: complex drawing/build prompts need more time ---
+      // WARN (don't block); the sanitizer bumps timeLimitSeconds so this only fires
+      // if something downstream cleared it.
+      if (
+        taskType === TASK_TYPES.PHOTO ||
+        taskType === TASK_TYPES.MAKE_AND_SNAP ||
+        taskType === TASK_TYPES.PHOTO_JOURNAL
+      ) {
+        const prompt = String(task.prompt || "");
+        const isComplex = prompt.length > 200 || /drawing|model|build|construct|create|design/i.test(prompt);
+        if (isComplex) {
+          const tl = Number(task.timeLimitSeconds) || 0;
+          if (tl < 240) {
+            task._validationWarning = `${taskType} has a complex drawing/build prompt but only ${tl || "(unset)"}s — should allow at least 240s`;
+          }
+        }
       }
       break;
     }
@@ -3201,7 +3218,14 @@ export function validateTaskByType(taskType, task) {
 
     case TASK_TYPES.NARRATION_SYNTHESIZE: {
       const nsCfg = task.config || {};
-      if (!Array.isArray(nsCfg.prompts) || nsCfg.prompts.length < 2) errors.push("narration-synthesize requires config.prompts[] with at least 2 prompts");
+      if (!Array.isArray(nsCfg.prompts) || nsCfg.prompts.length < 2) {
+        errors.push("narration-synthesize requires config.prompts[] with at least 2 prompts");
+      } else {
+        const pc = Number(nsCfg.playerCount);
+        if (Number.isFinite(pc) && nsCfg.prompts.length < pc) {
+          errors.push(`narration-synthesize requires one prompt per player: prompts (${nsCfg.prompts.length}) must be >= playerCount (${pc})`);
+        }
+      }
       break;
     }
 

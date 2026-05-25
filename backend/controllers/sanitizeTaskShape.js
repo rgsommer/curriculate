@@ -40,6 +40,15 @@ export function sanitizeTaskShapeByType(type, task) {
   if (!task || typeof task !== "object") return task;
   const t = { ...task };
 
+  // ── BONUS UNLOCK (all types): bonus tasks should open at 50% core progress, not 100% ──
+  // A coreProgressPct of 100 means early-finishers never see the bonus until the
+  // whole core is done — too late. Downgrade the legacy 100 default to 50.
+  if (t.isBonus === true && t.unlockConditions && typeof t.unlockConditions === "object"
+      && t.unlockConditions.coreProgressPct === 100) {
+    t.unlockConditions = { ...t.unlockConditions, coreProgressPct: 50 };
+    console.log(`[sanitize] bonus task unlock downgraded from coreProgressPct:100 → 50 (was opening too late)`);
+  }
+
   if (type === TASK_TYPES.MULTIPLE_CHOICE || type === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) {
     const cfg = t.config && typeof t.config === "object" ? { ...t.config } : null;
 
@@ -334,6 +343,18 @@ export function sanitizeTaskShapeByType(type, task) {
 
   // ── MAD_DASH_SEQUENCE: normalize correctOrder to integers + auto-scramble ──
   if (type === TASK_TYPES.MAD_DASH_SEQUENCE) {
+    // Nit: when BOTH config.correctOrder and top-level correctOrder exist, drop
+    // the top-level copy (config is canonical). Warn if the two disagree.
+    if (Array.isArray(t.config?.correctOrder) && Array.isArray(t.correctOrder)) {
+      const a = t.config.correctOrder.map((v) => parseInt(v, 10));
+      const b = t.correctOrder.map((v) => parseInt(v, 10));
+      const disagree = a.length !== b.length || a.some((v, i) => v !== b[i]);
+      if (disagree) {
+        console.log(`[sanitize] MAD_DASH_SEQUENCE has conflicting correctOrder (config vs top-level) — keeping config copy: config=[${a}] top=[${b}]`);
+      }
+      delete t.correctOrder;
+    }
+
     const items = Array.isArray(t.config?.items) ? t.config.items : Array.isArray(t.items) ? t.items : [];
     let order = t.config?.correctOrder || t.correctOrder;
 
@@ -383,6 +404,68 @@ export function sanitizeTaskShapeByType(type, task) {
     if (Array.isArray(order) && order.length > 0) {
       if (t.config && typeof t.config === "object") t.config.correctOrder = order;
       if (Array.isArray(t.correctOrder)) t.correctOrder = order;
+    }
+  }
+
+  // ── TRUE_FALSE_CONNECT_FOUR: keep statements[] and items[] canonical keys in sync ──
+  // The validator/normalizer accepts statements OR items; if the AI populated only
+  // one of them at the top level, mirror it to the other so normalize never loses data.
+  if (type === TASK_TYPES.TRUE_FALSE_CONNECT_FOUR) {
+    const hasStatements = Array.isArray(t.statements) && t.statements.length > 0;
+    const hasItems = Array.isArray(t.items) && t.items.length > 0;
+    if (hasStatements && !hasItems) {
+      t.items = t.statements;
+    } else if (hasItems && !hasStatements) {
+      t.statements = t.items;
+    }
+  }
+
+  // ── NARRATION_SYNTHESIZE: clamp playerCount DOWN to prompts.length (never idle players) ──
+  if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
+    const cfg = t.config && typeof t.config === "object" ? t.config : null;
+    if (cfg) {
+      const prompts =
+        (Array.isArray(cfg.prompts) && cfg.prompts) ||
+        (Array.isArray(t.prompts) && t.prompts) ||
+        (Array.isArray(cfg.items) && cfg.items) ||
+        (Array.isArray(t.items) && t.items) ||
+        [];
+      const promptCount = prompts.filter((p) => {
+        if (typeof p === "string") return p.trim();
+        return p && typeof p === "object";
+      }).length;
+      const pc = Number(cfg.playerCount);
+      if (promptCount >= 1 && Number.isFinite(pc) && pc > promptCount) {
+        cfg.playerCount = Math.max(1, promptCount);
+        console.log(`[sanitize] NARRATION_SYNTHESIZE clamped playerCount ${pc} → ${cfg.playerCount} to match prompts.length`);
+      }
+      t.config = cfg;
+    }
+  }
+
+  // ── PHOTO / MAKE_AND_SNAP: bump time for complex drawing/build prompts ──
+  if (type === TASK_TYPES.PHOTO || type === TASK_TYPES.MAKE_AND_SNAP || type === TASK_TYPES.PHOTO_JOURNAL) {
+    const prompt = String(t.prompt || "");
+    const isComplex = prompt.length > 200 || /drawing|model|build|construct|create|design/i.test(prompt);
+    if (isComplex) {
+      const current = Number(t.timeLimitSeconds) || 0;
+      if (current < 240) {
+        t.timeLimitSeconds = 240;
+        console.log(`[sanitize] ${type} complex prompt — bumped timeLimitSeconds ${current || "(unset)"} → 240`);
+      }
+    }
+  }
+
+  // ── ECHO_CHAIN: title-case known proper-noun seed phrases ──
+  if (type === TASK_TYPES.ECHO_CHAIN) {
+    const cfg = t.config && typeof t.config === "object" ? t.config : null;
+    const seed = cfg && typeof cfg.seedTerm === "string" ? cfg.seedTerm : null;
+    if (seed && /holy spirit|jesus christ|old testament|new testament/i.test(seed)) {
+      const titled = seed.replace(/\b\w/g, (c) => c.toUpperCase());
+      if (titled !== seed) {
+        cfg.seedTerm = titled;
+        console.log(`[sanitize] ECHO_CHAIN title-cased proper-noun seedTerm "${seed}" → "${titled}"`);
+      }
     }
   }
 
@@ -1017,11 +1100,24 @@ export function sanitizeTaskShapeByType(type, task) {
       "physicalIntensityMax", "socialIntensityMax",
       "movementAllowed", "noiseAllowed",
       "totalRounds", "tierProgression", "judgmentMode", "safeClassroomMode",
-      "seedChallenges",
+      "seedChallenges", "worldview",
     ]) {
       if (cfg[k] === undefined && t[k] !== undefined) {
         cfg[k] = t[k];
         delete t[k];
+      }
+    }
+
+    // Infer worldview from subject when unset — a faith subject should not default
+    // to "general" (which steers the runtime generator secular/neutral).
+    if (!cfg.worldview || typeof cfg.worldview !== "string" || !cfg.worldview.trim()) {
+      const subj = String(cfg.subject || "");
+      if (/bible|religion|faith|theology|scripture/i.test(subj)) {
+        cfg.worldview = "faith";
+        console.log(`[sanitize] TRUTH_OR_DARE inferred worldview="faith" from subject "${subj}"`);
+      } else if (/secular|atheist|humanist/i.test(subj)) {
+        cfg.worldview = "secular";
+        console.log(`[sanitize] TRUTH_OR_DARE inferred worldview="secular" from subject "${subj}"`);
       }
     }
 

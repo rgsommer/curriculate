@@ -582,6 +582,106 @@ section("N. Truth or Dare — type plumbing + safety + library + selector");
   assert(["ai", "library", "fallback"].includes(result.challenge.sourceProvenance), `sourceProvenance is valid (${result.challenge.sourceProvenance})`);
 }
 
+/* ──────────────── P. TASKSET-GENERATION AUDIT FIXES ──────────────── */
+section("P. Taskset-generation audit fixes (Grade-8 Bible/Pentecost audit)");
+{
+  const { assessTaskPlayability } = await import("../../shared/taskPlayability.js");
+  // Canonical pipeline: sanitize → normalize → validate → playability
+  const run = (type, input) => {
+    const s = sanitizeTaskShapeByType(type, input);
+    const n = normalizeTaskByType(type, s);
+    return { n, v: validateTaskByType(type, n), p: assessTaskPlayability(n) };
+  };
+
+  // Fix 1 — true-false-connect-four: 6 statements now validate (was 10 minimum)
+  const c4Six = run("true-false-connect-four", {
+    taskType: "true-false-connect-four", title: "Pentecost T/F", prompt: "Pick & drop",
+    statements: [
+      { text: "The Holy Spirit came at Pentecost.", isFalse: false },
+      { text: "Tongues of fire appeared.", isFalse: false },
+      { text: "Peter stayed silent.", isFalse: true },
+      { text: "Pentecost happened 50 days after Easter.", isFalse: false },
+      { text: "No one was baptized that day.", isFalse: true },
+      { text: "The disciples spoke many languages.", isFalse: false },
+    ],
+  });
+  assert(c4Six.v.ok, "connect-four with 6 balanced statements validates (lowered from 10)");
+  assert(c4Six.p.playable, "connect-four with 6 statements is playable");
+
+  // Fix 1 — empty statements/items → rejected
+  const c4Empty = run("true-false-connect-four", {
+    taskType: "true-false-connect-four", title: "Empty", prompt: "x", statements: [],
+  });
+  assert(!c4Empty.v.ok, "connect-four with empty statements is rejected (the original bug)");
+
+  // Fix 1 sanitizer — items[] populated but statements[] missing → both populated
+  const c4ItemsOnly = sanitizeTaskShapeByType("true-false-connect-four", {
+    taskType: "true-false-connect-four", title: "x", prompt: "y",
+    items: [{ prompt: "A", correctAnswer: true }, { prompt: "B", correctAnswer: false }],
+  });
+  assert(Array.isArray(c4ItemsOnly.statements) && c4ItemsOnly.statements.length === 2,
+    "connect-four sanitizer mirrors items[] → statements[]");
+
+  // Fix 2 — narration-synthesize: playerCount 4 + 3 prompts → clamp to 3, then validate
+  const narr = run("narration-synthesize", {
+    taskType: "narration-synthesize", title: "Synthesize", prompt: "Take turns",
+    config: { playerCount: 4, prompts: ["Explain Pentecost", "Add a cause", "Add an effect"] },
+  });
+  assert(narr.n.config.playerCount === 3, "narration playerCount clamped down to prompts.length (4→3)");
+  assert(narr.v.ok, "narration with clamped playerCount validates (no idle player)");
+
+  // Fix 3 — truth-or-dare faith subject → worldview auto-set to "faith"
+  const tod = sanitizeTaskShapeByType("truth-or-dare", {
+    taskType: "truth-or-dare", title: "T/D", prompt: "Spotlight",
+    config: { subject: "Bible", unitName: "Pentecost", gradeLevel: 8 },
+  });
+  assert(tod.config.worldview === "faith", 'faith subject ("Bible") → config.worldview = "faith"');
+  const todSec = sanitizeTaskShapeByType("truth-or-dare", {
+    taskType: "truth-or-dare", title: "T/D", prompt: "x",
+    config: { subject: "Secular Ethics", unitName: "u", gradeLevel: 8 },
+  });
+  assert(todSec.config.worldview === "secular", 'secular subject → config.worldview = "secular"');
+
+  // Fix 4 — photo with multi-symbol drawing prompt → timeLimitSeconds bumped to >= 240
+  const photo = sanitizeTaskShapeByType("photo", {
+    taskType: "photo", title: "Draw the symbols",
+    prompt: "Create a drawing showing the dove, flames, and wind symbols of the Holy Spirit.",
+    timeLimitSeconds: 90,
+  });
+  assert(photo.timeLimitSeconds >= 240, "photo drawing prompt bumped timeLimitSeconds 90 → >= 240");
+
+  // Fix 5 — bonus task with coreProgressPct:100 → downgraded to 50
+  const bonus = sanitizeTaskShapeByType("open-text", {
+    taskType: "open-text", title: "Bonus", prompt: "Reflect",
+    isBonus: true, unlockConditions: { coreProgressPct: 100 },
+  });
+  assert(bonus.unlockConditions.coreProgressPct === 50, "bonus unlock coreProgressPct 100 → 50");
+  const bonus75 = sanitizeTaskShapeByType("open-text", {
+    taskType: "open-text", title: "Bonus", prompt: "Reflect",
+    isBonus: true, unlockConditions: { coreProgressPct: 75 },
+  });
+  assert(bonus75.unlockConditions.coreProgressPct === 75, "explicit non-100 bonus unlock preserved");
+
+  // Nit 1 — echo-chain known proper-noun seedTerm → title-cased
+  const echo = sanitizeTaskShapeByType("echo-chain", {
+    taskType: "echo-chain", title: "Echo", prompt: "Repeat", config: { seedTerm: "holy spirit" },
+  });
+  assert(echo.config.seedTerm === "Holy Spirit", 'echo-chain "holy spirit" → "Holy Spirit"');
+  const echoPlain = sanitizeTaskShapeByType("echo-chain", {
+    taskType: "echo-chain", title: "Echo", prompt: "Repeat", config: { seedTerm: "covenant" },
+  });
+  assert(echoPlain.config.seedTerm === "covenant", "echo-chain leaves arbitrary lowercase vocab as-is");
+
+  // Nit 2 — mad-dash-sequence: duplicate top-level correctOrder dropped (config canonical)
+  const madDash = sanitizeTaskShapeByType("mad-dash-sequence", {
+    taskType: "mad-dash-sequence", title: "Order", prompt: "Sequence it",
+    config: { items: ["a", "b", "c", "d"], correctOrder: [1, 3, 0, 2] },
+    correctOrder: [1, 3, 0, 2],
+  });
+  assert(madDash.correctOrder === undefined && Array.isArray(madDash.config.correctOrder),
+    "mad-dash duplicate top-level correctOrder dropped (config kept)");
+}
+
 /* ──────────────── SUMMARY ──────────────── */
 console.log(`\n────────────────────────────`);
 console.log(`PASSED: ${pass}   FAILED: ${fail}`);

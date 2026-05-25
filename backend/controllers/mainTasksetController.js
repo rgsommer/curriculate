@@ -2144,7 +2144,12 @@ export async function createAiTaskset(req, res) {
         if (finalized[i] && typeof finalized[i] === "object") {
           finalized[i].isBonus = true;
           finalized[i].requiredForCompletion = false;
-          finalized[i].unlockConditions = { coreProgressPct: 100 };  // unlock when core is fully done
+          // Default unlock at 50% core progress so early-finishers see bonuses in
+          // time. Preserve any explicit coreProgressPct the AI already returned.
+          const existing = finalized[i].unlockConditions;
+          if (!existing || typeof existing !== "object" || existing.coreProgressPct === undefined) {
+            finalized[i].unlockConditions = { coreProgressPct: 50 };
+          }
         }
       }
       // Hidden task (quest mode only)
