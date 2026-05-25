@@ -334,11 +334,12 @@ export default function TaskSets() {
 
   const [toast, setToast] = useState("");
   const toastTimerRef = useRef(null);
-  const showToast = useCallback((msg) => {
+  const showToast = useCallback((msg, ms = 2500) => {
     setToast(msg);
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = window.setTimeout(() => setToast(""), 2500);
+    toastTimerRef.current = window.setTimeout(() => setToast(""), ms);
   }, []);
+  const [regeneratingId, setRegeneratingId] = useState(null);
 
   const [reportOpen, setReportOpen] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
@@ -597,6 +598,56 @@ export default function TaskSets() {
     if (!id) return;
     const url = `${STUDENT_APP_URL}/preview?id=${encodeURIComponent(id)}`;
     window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  // Regenerate a taskset with the SAME constraints (subject, grade, difficulty,
+  // topic, task-type mix, count, quest/duel flags, vocabulary). Useful when the
+  // generator has improved — produces a fresh, non-destructive NEW taskset.
+  const regenerate = async (taskset) => {
+    const id = taskset?._id || taskset?.id;
+    if (!id || regeneratingId) return;
+    setRegeneratingId(id);
+    showToast("♻️ Regenerating with the same constraints… (~30s)", 60000);
+    try {
+      // List rows may be trimmed — pull the full taskset (tasks + meta).
+      let full = taskset;
+      if (!Array.isArray(full.tasks) || full.tasks.length === 0 || !full.meta) {
+        const data = await apiFetchJson(`/api/tasksets/${encodeURIComponent(id)}`);
+        full = unwrapTasksetResponse(data) || taskset;
+      }
+      const tasks = Array.isArray(full.tasks) ? full.tasks : [];
+      const types = [...new Set(tasks.map((t) => t?.taskType).filter(Boolean))];
+      const concepts =
+        full?.meta?.conceptAllocation?.requestedConcepts ||
+        full?.meta?.coverage?.requested ||
+        [];
+      const payload = {
+        tasksetName: `${getTitle(full)} (regenerated)`,
+        subject: full?.subject || getSubject(full) || "General",
+        gradeLevel: full?.gradeLevel || getGrade(full) || 7,
+        difficulty: (full?.difficulty || "MEDIUM").toUpperCase(),
+        learningGoal: full?.learningGoal || "",
+        topicLabel: full?.topicLabel || getTitle(full) || "",
+        requiredTaskTypes: types,
+        guaranteedTaskTypes: types,
+        numberOfTasks: tasks.length || types.length || undefined,
+        questMode: !!full?.questModeEnabled,
+        duelsEnabled: !!full?.duelsEnabled,
+        atDeskOnly: !!full?.atDeskOnly,
+        aiWordBank: Array.isArray(concepts) ? concepts.join(", ") : "",
+      };
+      const res = await apiFetchJson("/api/ai/tasksets", { method: "POST", body: payload });
+      if (!res || (res.ok === false && !res.taskset)) {
+        throw new Error(res?.error || "Generation failed");
+      }
+      showToast("✅ Regenerated as a new taskset.");
+      await loadSets();
+    } catch (e) {
+      console.error("[TaskSets] regenerate failed:", e);
+      showToast(`Regenerate failed: ${e?.message || "error"}`, 4000);
+    } finally {
+      setRegeneratingId(null);
+    }
   };
 
   // Helper: hit /api/shared/create-link with optional class binding
@@ -1505,6 +1556,15 @@ export default function TaskSets() {
                         title="Step through the tasks as a student would — no QR scans"
                       >
                         🧪 Test run
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => regenerate(ts)}
+                        disabled={regeneratingId === id}
+                        style={btn("secondary")}
+                        title="Regenerate this taskset with the same constraints (creates a new copy)"
+                      >
+                        {regeneratingId === id ? "♻️ Regenerating…" : "♻️ Regenerate"}
                       </button>
                       <button type="button" onClick={() => launchNow(ts)} style={btn("primary")}>
                         Launch
