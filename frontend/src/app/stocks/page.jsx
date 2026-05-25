@@ -4724,6 +4724,156 @@ function FullscreenShell({ children }) {
 }
 
 // =============================================================================
+// HighConvictionCard — renders one multi-factor pick with a transparent
+// per-module score breakdown, bull/bear, catalysts, risk, and zones.
+// =============================================================================
+const HC_FACTOR_ORDER = [
+  ["fundamentals", "Fundamentals"],
+  ["momentum", "Growth / momentum"],
+  ["technical", "Technical setup"],
+  ["catalysts", "Catalysts / events"],
+  ["sentiment", "Sentiment / news"],
+  ["riskControl", "Risk control"],
+];
+
+function hcRiskColor(rating) {
+  if (rating === "Low") return { bg: "var(--sa-green-soft)", fg: "var(--sa-green)" };
+  if (rating === "Medium") return { bg: "var(--sa-accent-soft)", fg: "var(--sa-accent-2)" };
+  if (rating === "High") return { bg: "var(--sa-amber-soft)", fg: "#b45309" };
+  return { bg: "var(--sa-red-soft)", fg: "var(--sa-red)" }; // Speculative
+}
+
+function HcScoreBar({ score }) {
+  const v = Number.isFinite(score) ? score : null;
+  const color = v == null ? "#cbd5e1" : v >= 70 ? "var(--sa-green)" : v >= 45 ? "var(--sa-accent)" : "var(--sa-amber)";
+  return (
+    <div style={{ height: 8, background: "var(--sa-panel-2)", borderRadius: 5, overflow: "hidden", flex: 1, minWidth: 60 }}>
+      <div style={{ width: `${v == null ? 0 : v}%`, height: "100%", background: color }} />
+    </div>
+  );
+}
+
+function HighConvictionCard({ pick, rank }) {
+  const [showDetail, setShowDetail] = useState(false);
+  const mf = pick.multiFactor || {};
+  const ccy = pick.currencyAtDiscovery || "USD";
+  const risk = hcRiskColor(mf.riskRating);
+  const cap = pick.marketCap ? `$${(pick.marketCap / 1e9).toFixed(pick.marketCap >= 1e9 ? 2 : 3)}B` : "—";
+  const price = pick.priceAtDiscovery != null ? `$${pick.priceAtDiscovery} ${ccy}` : "—";
+
+  return (
+    <div className="sa-card" style={{ padding: 16, position: "relative" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--sa-muted)" }}>#{rank}</span>
+            <span style={{ fontSize: 17, fontWeight: 700 }}>{pick.ticker}</span>
+            <span style={{ fontSize: 13, color: "var(--sa-text-2)" }}>{pick.name}</span>
+            {mf.hypePenaltyApplied && (
+              <span style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: "var(--sa-red-soft)", color: "var(--sa-red)" }}>HYPE-PENALIZED</span>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
+            {price} · {cap} · {pick.sector || "—"} · {mf.timeHorizon || "medium-term"}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 24, fontWeight: 800, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{mf.weightedScore ?? "—"}</div>
+            <div style={{ fontSize: 9.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>score</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1, marginTop: 4 }}>{mf.confidence ?? "—"}%</div>
+            <div style={{ fontSize: 9.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>conf.</div>
+          </div>
+          <span style={{ fontSize: 11, fontWeight: 700, padding: "5px 9px", borderRadius: 8, background: risk.bg, color: risk.fg, whiteSpace: "nowrap" }}>{mf.riskRating || "—"}</span>
+        </div>
+      </div>
+
+      {/* Factor breakdown bars */}
+      <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr", gap: 5 }}>
+        {HC_FACTOR_ORDER.map(([key, label]) => {
+          const f = mf.factors?.[key] || {};
+          return (
+            <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5 }}>
+              <span style={{ width: 130, color: "var(--sa-text-2)" }}>{label}</span>
+              <span style={{ width: 30, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{f.score ?? "n/a"}</span>
+              <HcScoreBar score={f.score} />
+              <span style={{ width: 34, textAlign: "right", color: "var(--sa-muted)" }}>{f.weight != null ? `${Math.round(f.weight * 100)}%` : ""}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sa-green)", textTransform: "uppercase", letterSpacing: ".05em" }}>Bull case</div>
+          <div style={{ fontSize: 12.5, lineHeight: 1.5, marginTop: 3 }}>{mf.bullCase || "—"}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sa-red)", textTransform: "uppercase", letterSpacing: ".05em" }}>Bear case</div>
+          <div style={{ fontSize: 12.5, lineHeight: 1.5, marginTop: 3 }}>{mf.bearCase || "—"}</div>
+        </div>
+      </div>
+
+      {Array.isArray(mf.keyCatalysts) && mf.keyCatalysts.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sa-text-2)", textTransform: "uppercase", letterSpacing: ".05em" }}>Key catalysts</div>
+          <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 12.5, lineHeight: 1.5 }}>
+            {mf.keyCatalysts.map((c, i) => <li key={i}>{c}</li>)}
+          </ul>
+        </div>
+      )}
+
+      <div style={{ marginTop: 10, display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12 }}>
+        {mf.watchZone && <div><span style={{ color: "var(--sa-muted)" }}>Watch/buy zone:</span> <b>{mf.watchZone}</b></div>}
+        {mf.stopLevel && <div><span style={{ color: "var(--sa-muted)" }}>Invalidation/stop:</span> <b>{mf.stopLevel}</b></div>}
+      </div>
+
+      {mf.whyBeatOthers && (
+        <div style={{ marginTop: 10, fontSize: 12, background: "var(--sa-panel-2)", borderRadius: 8, padding: "8px 10px" }}>
+          <span style={{ fontWeight: 700 }}>Why it beat the others: </span>{mf.whyBeatOthers}
+        </div>
+      )}
+      {mf.whatProvesWrong && (
+        <div style={{ marginTop: 8, fontSize: 12 }}>
+          <span style={{ fontWeight: 700, color: "var(--sa-red)" }}>What proves this wrong: </span>{mf.whatProvesWrong}
+        </div>
+      )}
+
+      <button className="sa-btn ghost" style={{ marginTop: 10, fontSize: 12 }} onClick={() => setShowDetail((s) => !s)}>
+        {showDetail ? "Hide score detail" : "Show score detail & data flags"}
+      </button>
+      {showDetail && (
+        <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--sa-text-2)" }}>
+          {HC_FACTOR_ORDER.map(([key, label]) => {
+            const f = mf.factors?.[key] || {};
+            if (!f.contributors || f.contributors.length === 0) return null;
+            return (
+              <div key={key} style={{ marginBottom: 6 }}>
+                <b>{label} ({f.score ?? "n/a"}):</b> {f.contributors.join(" · ")}
+              </div>
+            );
+          })}
+          {Array.isArray(mf.dataFlags) && mf.dataFlags.length > 0 && (
+            <div style={{ marginTop: 6, color: "var(--sa-amber)" }}>
+              ⚠ Missing/stale data: {mf.dataFlags.join("; ")}
+            </div>
+          )}
+          {Array.isArray(mf.sources) && mf.sources.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              Sources: {mf.sources.map((s, i) => (
+                <a key={i} href={s.url} target="_blank" rel="noreferrer" style={{ color: "var(--sa-accent)", marginRight: 8 }}>{s.title?.slice(0, 40) || "link"}</a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
 // Discover view — find high-potential candidate stocks NOT in your portfolio.
 // On-demand scan: pulls FMP screener universe (microcap–smallcap growth setups),
 // composite-scores each candidate, asks the AI to write a bull thesis + kill
@@ -4743,6 +4893,11 @@ function DiscoverView({ sessionToken, user }) {
   const [marketCapMin, setMarketCapMin] = useState(200);   // millions
   const [marketCapMax, setMarketCapMax] = useState(5000);  // millions
   const [sectorsCsv, setSectorsCsv] = useState("");
+  // High-conviction multi-factor screen (additive — separate from the scan above)
+  const [hcRiskMode, setHcRiskMode] = useState("balanced");
+  const [hcBusy, setHcBusy] = useState(false);
+  const [hcError, setHcError] = useState(null);
+  const [hcResult, setHcResult] = useState(null); // { picks, disclaimer, mode, upgradeRecommendation }
 
   // Load existing candidates on mount
   useEffect(() => {
@@ -4797,6 +4952,28 @@ function DiscoverView({ sessionToken, user }) {
     }
   };
 
+  const runHighConviction = async () => {
+    if (hcBusy) return;
+    setHcBusy(true); setHcError(null);
+    try {
+      const body = { riskMode: hcRiskMode };
+      if (sectorsCsv.trim()) body.sectors = sectorsCsv.split(",").map((s) => s.trim()).filter(Boolean);
+      const r = await fetch(`${BACKEND_URL}/api/stocks-discover/high-conviction`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setHcResult(j);
+    } catch (e) {
+      setHcError(e?.message || "Screen failed");
+    } finally {
+      setHcBusy(false);
+    }
+  };
+
   const toggleStar = async (id) => {
     try {
       await fetch(`${BACKEND_URL}/api/stocks-discover/candidates/${id}/star`, {
@@ -4826,6 +5003,58 @@ function DiscoverView({ sessionToken, user }) {
       <h2>Discover</h2>
       <div className="sa-breadcrumb">
         Multi-bagger candidate scanner — AI-written thesis for each. Honest expectation: most leads underperform; a small number 5-10×.
+      </div>
+
+      {/* ── High-conviction multi-factor screen (top 2-3, transparent scoring) ── */}
+      <div className="sa-card" style={{ marginBottom: 18, padding: 16, borderColor: "var(--sa-accent)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>🎯 High-Conviction Screen</div>
+            <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 2, maxWidth: 560 }}>
+              Combines fundamentals, momentum, technicals, catalysts, sentiment & risk control into one transparent 0–100 score. Returns the 2–3 strongest evidence clusters — not guarantees.
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <select
+              value={hcRiskMode}
+              onChange={(e) => setHcRiskMode(e.target.value)}
+              style={{ padding: "7px 10px", borderRadius: 8, fontSize: 13 }}
+              title="Risk mode re-weights the six factors"
+            >
+              <option value="conservative">Conservative</option>
+              <option value="balanced">Balanced</option>
+              <option value="aggressive">Aggressive</option>
+              <option value="speculative">Speculative</option>
+            </select>
+            <button className="sa-btn" onClick={runHighConviction} disabled={hcBusy}>
+              {hcBusy ? "Screening…" : "Run high-conviction screen"}
+            </button>
+          </div>
+        </div>
+
+        {hcError && <div className="sa-err" style={{ marginTop: 12 }}>{hcError}</div>}
+
+        {hcResult && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ background: "var(--sa-amber-soft)", border: "1px solid #fde68a", color: "#92400e", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.5, marginBottom: 14 }}>
+              ⚠️ {hcResult.disclaimer}
+            </div>
+            {hcResult.upgradeRecommendation && (
+              <div style={{ fontSize: 12, color: "var(--sa-muted)", marginBottom: 12 }}>{hcResult.upgradeRecommendation}</div>
+            )}
+            {(!hcResult.picks || hcResult.picks.length === 0) ? (
+              <div style={{ fontSize: 13, color: "var(--sa-muted)" }}>
+                {hcResult.error || "No candidates cleared a genuine high-conviction bar this run."}
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {hcResult.picks.map((p, i) => (
+                  <HighConvictionCard key={p._id || p.ticker} pick={p} rank={i + 1} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="sa-card" style={{ marginBottom: 14, padding: 14 }}>

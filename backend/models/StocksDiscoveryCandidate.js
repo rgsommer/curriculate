@@ -30,6 +30,49 @@ const ThesisSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// Multi-factor "high-conviction" analysis (additive — only populated by the
+// high-conviction screen, never by the legacy scan). Every sub-score is 0-100
+// with the data points that produced it, so the score is fully transparent.
+const FactorSchema = new mongoose.Schema(
+  {
+    score: { type: Number, default: null },      // 0-100, null = not assessable
+    weight: { type: Number, default: 0 },         // its weight in the blend (risk-mode dependent)
+    contributors: { type: [String], default: [] },// human-readable "what moved this"
+  },
+  { _id: false }
+);
+
+const MultiFactorSchema = new mongoose.Schema(
+  {
+    riskMode: { type: String, enum: ["conservative", "balanced", "aggressive", "speculative"], default: "balanced" },
+    // 0-100 blended, transparent score computed in code from the 6 modules
+    weightedScore: { type: Number, default: null },
+    confidence: { type: Number, default: null },  // 0-100 — driven by data completeness + evidence agreement
+    factors: {
+      fundamentals: { type: FactorSchema, default: () => ({}) },
+      momentum: { type: FactorSchema, default: () => ({}) },
+      technical: { type: FactorSchema, default: () => ({}) },
+      catalysts: { type: FactorSchema, default: () => ({}) },
+      sentiment: { type: FactorSchema, default: () => ({}) },
+      riskControl: { type: FactorSchema, default: () => ({}) },
+    },
+    riskRating: { type: String, enum: ["Low", "Medium", "High", "Speculative"], default: "Medium" },
+    bullCase: { type: String, default: "" },
+    bearCase: { type: String, default: "" },
+    keyCatalysts: { type: [String], default: [] },
+    watchZone: { type: String, default: "" },        // suggested watch/buy zone (text, native ccy)
+    stopLevel: { type: String, default: "" },         // stop-loss / invalidation level (text)
+    timeHorizon: { type: String, enum: ["short-term", "medium-term", "long-term"], default: "medium-term" },
+    whyBeatOthers: { type: String, default: "" },
+    whatProvesWrong: { type: String, default: "" },
+    hypePenaltyApplied: { type: Boolean, default: false },
+    // Missing/stale data the score had to work around (transparency)
+    dataFlags: { type: [String], default: [] },
+    sources: { type: [{ title: String, url: String }], default: [], _id: false },
+  },
+  { _id: false }
+);
+
 const StocksDiscoveryCandidateSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, lowercase: true, trim: true, index: true },
@@ -54,8 +97,10 @@ const StocksDiscoveryCandidateSchema = new mongoose.Schema(
       cashRunwayMonths: { type: Number, default: null },
       shortFloatPct: { type: Number, default: null },
     },
-    // AI-written investment thesis
+    // AI-written investment thesis (legacy scan)
     thesis: { type: ThesisSchema, default: () => ({}) },
+    // Multi-factor high-conviction analysis (additive; only the new screen sets this)
+    multiFactor: { type: MultiFactorSchema, default: null },
     // User actions
     starred: { type: Boolean, default: false },
     dismissed: { type: Boolean, default: false },

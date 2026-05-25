@@ -17,7 +17,7 @@ import express from "express";
 import crypto from "crypto";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
-import { runDiscoveryScan } from "../services/stocksDiscoveryService.js";
+import { runDiscoveryScan, runHighConvictionScan } from "../services/stocksDiscoveryService.js";
 
 const router = express.Router();
 
@@ -114,6 +114,37 @@ router.post("/scan", requireStocksAuth, async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error("stocks-discover /scan error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// POST /api/stocks-discover/high-conviction — multi-factor screen, top 2-3.
+// Works with or without FMP (AI-only fallback); only ANTHROPIC_API_KEY is hard-
+// required. Body: { riskMode, sectors, marketCapMin, marketCapMax }.
+router.post("/high-conviction", requireStocksAuth, async (req, res) => {
+  try {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return res.status(503).json({ error: "High-conviction screen requires ANTHROPIC_API_KEY in env." });
+    }
+    const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
+    const heldTickers = profile?.positions?.map((p) => p.ticker) || [];
+
+    const { riskMode = "balanced", sectors = null, marketCapMin, marketCapMax } = req.body || {};
+
+    const result = await runHighConvictionScan({
+      email: req.stocksUser.email,
+      riskMode,
+      sectors,
+      topN: 3,
+      opts: {
+        excludeTickers: heldTickers,
+        ...(typeof marketCapMin === "number" ? { marketCapMin } : {}),
+        ...(typeof marketCapMax === "number" ? { marketCapMax } : {}),
+      },
+    });
+    res.json(result);
+  } catch (err) {
+    console.error("stocks-discover /high-conviction error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });
   }
 });

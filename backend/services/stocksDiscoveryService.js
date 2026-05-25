@@ -30,6 +30,14 @@
 //     broken.
 
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
+import {
+  computeDeterministicFactors,
+  weightsFor,
+  blendScore,
+  computeConfidence,
+  deriveRiskRating,
+  fetchYahooDaily,
+} from "./stocksDiscoveryScore.js";
 
 const FMP_BASE = "https://financialmodelingprep.com";
 const SCREENER_CACHE = new Map(); // key → { fetchedAt, data }
@@ -663,3 +671,275 @@ export async function runDiscoveryScan({ email, excludeTickers = [], sectors = n
     mode: "fmp-screened",
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// HIGH-CONVICTION MULTI-FACTOR SCREEN (additive — does not touch the legacy
+// scan above). Builds a shortlist, scores 4 modules deterministically
+// (stocksDiscoveryScore.js), then a single AI/web_search call assesses
+// catalysts + sentiment + narrative-shift and writes the qualitative output.
+// The final 0-100 is blended in code from all six modules × risk-mode weights,
+// so it stays transparent. Returns only the top 2-3 with a hard disclaimer.
+// ═══════════════════════════════════════════════════════════════════════
+
+export const HIGH_CONVICTION_DISCLAIMER =
+  "This is not financial advice. These are high-conviction screening results based on available data and may be wrong.";
+
+// Build a ~6-name shortlist to run the expensive analysis on. Reuses the FMP
+// screen + composite score; falls back to the AI prospector on FMP 403.
+async function buildShortlist({ email, sectors, opts, excl, shortlistN }) {
+  try {
+    const universe = await runUniverseScreen({ sectors, ...opts });
+    const filtered = (universe || []).filter((u) => !excl.has(String(u.symbol || "").toUpperCase()));
+    const preRanked = filtered
+      .map((u) => ({ ...u, _proxy: (Number(u.marketCap) || 0) * Math.log10((Number(u.volume) || 0) + 1) }))
+      .sort((a, b) => b._proxy - a._proxy)
+      .slice(0, 60);
+    const withFundamentals = await Promise.all(
+      preRanked.map(async (u) => {
+        const fundamentals = await fetchCandidateFundamentals(u.symbol);
+        return { ...u, fundamentals, _score: scoreCandidate(u, fundamentals) };
+      })
+    );
+    const top = withFundamentals
+      .filter((c) => c._score > 20)
+      .sort((a, b) => b._score - a._score)
+      .slice(0, shortlistN)
+      .map((c) => ({
+        ticker: String(c.symbol).toUpperCase(),
+        name: c.companyName || c.name || "",
+        sector: c.sector || "",
+        industry: c.industry || "",
+        exchange: c.exchangeShortName || "",
+        marketCap: c.marketCap ?? null,
+        price: c.price ?? null,
+        currency: (c.exchangeShortName === "TSX" || c.exchangeShortName === "TSXV") ? "CAD" : "USD",
+        fundamentals: c.fundamentals,
+      }));
+    return { shortlist: top, mode: "fmp-screened", upgradeRecommendation: null };
+  } catch (e) {
+    if (!(e instanceof FMPPlanInsufficientError)) throw e;
+    // FMP screener unavailable — let the AI surface candidate tickers, then we
+    // still score them deterministically off Yahoo (technicals/returns work
+    // without FMP).
+    const ai = await aiOnlyProspect({ email, excludeTickers: Array.from(excl), sectors, topN: shortlistN, marketCapMin: opts.marketCapMin, marketCapMax: opts.marketCapMax });
+    const shortlist = (ai.candidates || []).map((c) => ({
+      ticker: String(c.ticker || "").toUpperCase().replace(/\.+$/, ""),
+      name: c.name || "",
+      sector: c.sector || "",
+      industry: c.industry || "",
+      exchange: c.exchange || "",
+      marketCap: typeof c.marketCap === "number" ? c.marketCap : null,
+      price: typeof c.currentPrice === "number" ? c.currentPrice : null,
+      currency: (c.exchange === "TSX" || c.exchange === "TSXV") ? "CAD" : "USD",
+      fundamentals: {
+        revenueGrowthPct: c?.signals?.revenueGrowthPct ?? null,
+        grossMarginPct: c?.signals?.grossMarginPct ?? null,
+        operatingIncomeGrowthPct: c?.signals?.operatingIncomeGrowthPct ?? null,
+        netDebtToEquity: c?.signals?.netDebtToEquity ?? null,
+      },
+    })).filter((c) => c.ticker);
+    return {
+      shortlist,
+      mode: "ai-only",
+      upgradeRecommendation: "FMP screener unavailable (403) — shortlist came from AI web search instead of a fundamentals screen. Technical/momentum scores are still live from Yahoo. Upgrade to FMP Starter for a rigorous fundamentals screen.",
+    };
+  }
+}
+
+// Single AI call: score catalysts + sentiment + narrative for the whole
+// shortlist and write the qualitative analysis, then pick + order the top 2-3.
+async function scoreCandidatesWithAI(candidatesForAI, riskMode, topN) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY required for high-conviction screen");
+
+  const lines = candidatesForAI.map((c, i) => {
+    const s = c.sub;
+    const detSummary = ["fundamentals", "momentum", "technical", "riskControl"]
+      .map((k) => `${k}=${s[k]?.score ?? "n/a"}`).join(", ");
+    const keyFacts = (c.raw?.fundamentals || {});
+    return `[#${i + 1}] ${c.ticker} — ${c.name || "?"} (${c.sector || "?"}), ~$${c.marketCap ? (c.marketCap / 1e9).toFixed(2) + "B" : "?"} cap, price ${c.price != null ? "$" + c.price : "?"} ${c.currency}
+   deterministic sub-scores: ${detSummary}
+   rev growth ${keyFacts.revenueGrowthPct?.toFixed?.(0) ?? "?"}%, gross margin ${keyFacts.grossMarginPct?.toFixed?.(0) ?? "?"}%, FCF yield ${keyFacts.freeCashFlowYieldPct?.toFixed?.(1) ?? "?"}%, D/E ${keyFacts.netDebtToEquity?.toFixed?.(2) ?? "?"}, P/S ${keyFacts.psTTM?.toFixed?.(1) ?? "?"}
+   12mo/6mo/3mo return: ${c.raw?.returns?.r12m?.toFixed?.(0) ?? "?"}% / ${c.raw?.returns?.r6m?.toFixed?.(0) ?? "?"}% / ${c.raw?.returns?.r3m?.toFixed?.(0) ?? "?"}%, RSI ${c.raw?.tech?.rsi14?.toFixed?.(0) ?? "?"}`;
+  }).join("\n\n");
+
+  const prompt = `You are a skeptical buy-side analyst running a multi-factor high-conviction screen in "${riskMode}" risk mode. You are given ${candidatesForAI.length} pre-screened candidates with deterministic fundamentals/momentum/technical/risk sub-scores already computed (0-100). Your job is to add the two evidence layers the code can't compute, then select the strongest 2-3.
+
+CANDIDATES:
+${lines}
+
+For EACH candidate, use web_search to assess:
+- CATALYSTS (next ~6 months): earnings date, recent guidance changes, product launches, FDA decisions (if biotech), M&A rumours/news, regulatory events, major contracts, short-interest changes, unusual options activity.
+- SENTIMENT: news tone, analyst rating/target changes, social/media buzz, product/customer review trends, management credibility. **Heavily penalize hype that is NOT backed by improving fundamentals** — set hypePenaltyApplied=true and a low sentiment score when the story is narrative-only.
+- NARRATIVE SHIFT: accelerating mentions of AI/defence/energy/fintech/crypto/biotech/infrastructure in recent filings/transcripts vs prior quarters; mismatch between improving fundamentals and lagging price; mismatch between negative sentiment and a strong balance sheet.
+
+Scoring rules:
+- catalystScore and sentimentScore are 0-100 EVIDENCE STRENGTH, not certainty.
+- A name whose thesis depends ONLY on hype, OR has heavy dilution / weak balance sheet / collapsing revenue / no clear catalyst, must score low and may be dropped from the top picks entirely.
+- Prefer asymmetric risk/reward and the strongest evidence cluster across MULTIPLE independent lenses, not a single signal.
+
+LANGUAGE: never use "guaranteed", "sure thing", or "can't lose". Use "highest-conviction", "asymmetric risk/reward", "probability-weighted upside", "strongest evidence cluster", "watchlist candidate".
+
+Return STRICT JSON only:
+{
+  "picks": [
+    {
+      "ticker": "ABCD",
+      "catalystScore": <0-100>,
+      "sentimentScore": <0-100>,
+      "catalystContributors": ["specific catalyst with date if known", "..."],
+      "sentimentContributors": ["analyst/news/sentiment evidence", "..."],
+      "keyCatalysts": ["bullet", "bullet"],
+      "bullCase": "2-3 sentences, cite specific numbers/evidence",
+      "bearCase": "2-3 sentences, the real downside / what bears see",
+      "whatProvesWrong": "1-2 sentences — the specific outcome that invalidates the thesis",
+      "whyBeatOthers": "1-2 sentences — why this cleared the bar over the other candidates",
+      "suggestedWatchZone": "price zone to watch/accumulate, native currency",
+      "stopLevel": "invalidation / stop-loss level, native currency",
+      "timeHorizon": "short-term" | "medium-term" | "long-term",
+      "hypePenaltyApplied": true | false,
+      "riskRatingHint": "Low" | "Medium" | "High" | "Speculative",
+      "sources": [{"title":"...","url":"..."}]
+    }
+  ]
+}
+Return the ${topN} STRONGEST candidates only, ordered best-first. If fewer than ${topN} clear a genuine high-conviction bar, return fewer — do not pad. No prose outside the JSON.`;
+
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({
+      model: process.env.STOCKS_DISCOVERY_MODEL || "claude-sonnet-4-6",
+      max_tokens: 4096,
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: Math.max(1, parseInt(process.env.STOCKS_DISCOVERY_MAX_SEARCHES, 10) || 10) }],
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  if (!r.ok) {
+    const err = await r.text().catch(() => "");
+    throw new Error(`Anthropic ${r.status}: ${err.slice(0, 200)}`);
+  }
+  const j = await r.json();
+  const text = (j?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return { picks: [] };
+  try { return JSON.parse(m[0]); } catch { return { picks: [] }; }
+}
+
+export async function runHighConvictionScan({ email, riskMode = "balanced", sectors = null, topN = 3, opts = {} }) {
+  const mode = ["conservative", "balanced", "aggressive", "speculative"].includes(riskMode) ? riskMode : "balanced";
+  const weights = weightsFor(mode);
+  const shortlistN = 6;
+
+  // Exclude held + recently dismissed
+  const excl = new Set();
+  const recentlyDismissed = await StocksDiscoveryCandidate.find({
+    email: email.toLowerCase(), dismissed: true,
+    scanDate: { $gte: new Date(Date.now() - 60 * 86400 * 1000) },
+  }).select("ticker").lean();
+  recentlyDismissed.forEach((d) => excl.add(d.ticker));
+  (opts.excludeTickers || []).forEach((t) => excl.add(String(t).toUpperCase()));
+
+  const { shortlist, mode: scanMode, upgradeRecommendation } = await buildShortlist({ email, sectors, opts, excl, shortlistN });
+  if (!shortlist.length) {
+    return { picks: [], riskMode: mode, mode: scanMode, upgradeRecommendation, disclaimer: HIGH_CONVICTION_DISCLAIMER, error: "No candidates cleared the pre-screen." };
+  }
+
+  // Deterministic factors (parallel) — one shared SPY history for rel-strength
+  const spyPoints = await fetchYahooDaily("SPY", "1y").catch(() => null);
+  const withFactors = await Promise.all(shortlist.map(async (c) => {
+    const { sub, raw } = await computeDeterministicFactors({
+      ticker: c.ticker, currency: c.currency, marketCap: c.marketCap, fmpFundamentals: c.fundamentals, spyPoints,
+    });
+    return { ...c, sub, raw };
+  }));
+
+  // AI catalyst/sentiment/narrative + top-N selection
+  const ai = await scoreCandidatesWithAI(withFactors, mode, topN);
+  const aiByTicker = {};
+  for (const p of ai.picks || []) aiByTicker[String(p.ticker || "").toUpperCase()] = p;
+
+  // Assemble + blend (top picks the AI returned, in its order)
+  const scanDate = new Date();
+  scanDate.setUTCHours(0, 0, 0, 0);
+  const picks = [];
+  for (const p of (ai.picks || [])) {
+    const c = withFactors.find((x) => x.ticker === String(p.ticker || "").toUpperCase());
+    if (!c) continue;
+    const catalysts = { score: clampScore(p.catalystScore), weight: weights.catalysts, contributors: arr(p.catalystContributors) };
+    const sentiment = { score: clampScore(p.sentimentScore), weight: weights.sentiment, contributors: arr(p.sentimentContributors) };
+    // Attach weights to the deterministic modules too (for display transparency)
+    const factors = {
+      fundamentals: { ...c.sub.fundamentals, weight: weights.fundamentals },
+      momentum: { ...c.sub.momentum, weight: weights.momentum },
+      technical: { ...c.sub.technical, weight: weights.technical },
+      catalysts,
+      sentiment,
+      riskControl: { ...c.sub.riskControl, weight: weights.riskControl },
+    };
+    const subForBlend = {
+      fundamentals: factors.fundamentals, momentum: factors.momentum, technical: factors.technical,
+      catalysts, sentiment, riskControl: factors.riskControl,
+    };
+    const weightedScore = blendScore(subForBlend, weights);
+    const dataFlags = ["fundamentals", "momentum", "technical", "riskControl"]
+      .flatMap((k) => (c.sub[k]?.flags || []).map((f) => `${k}: ${f}`));
+    const confidence = computeConfidence(subForBlend, dataFlags.length);
+    let riskRating = deriveRiskRating(c.sub.riskControl?.score, c.raw?.tech, c.marketCap);
+    if (p.hypePenaltyApplied || p.riskRatingHint === "Speculative") riskRating = "Speculative";
+    else if (["Low", "Medium", "High", "Speculative"].includes(p.riskRatingHint) && rank(p.riskRatingHint) > rank(riskRating)) riskRating = p.riskRatingHint;
+
+    const multiFactor = {
+      riskMode: mode,
+      weightedScore,
+      confidence,
+      factors,
+      riskRating,
+      bullCase: str(p.bullCase),
+      bearCase: str(p.bearCase),
+      keyCatalysts: arr(p.keyCatalysts),
+      watchZone: str(p.suggestedWatchZone),
+      stopLevel: str(p.stopLevel),
+      timeHorizon: ["short-term", "medium-term", "long-term"].includes(p.timeHorizon) ? p.timeHorizon : "medium-term",
+      whyBeatOthers: str(p.whyBeatOthers),
+      whatProvesWrong: str(p.whatProvesWrong),
+      hypePenaltyApplied: !!p.hypePenaltyApplied,
+      dataFlags,
+      sources: arr(p.sources).filter((s) => s && s.url).map((s) => ({ title: s.title || s.url, url: s.url })),
+    };
+
+    // Persist (upsert by email+ticker+day) — score mirrors weightedScore so
+    // the legacy list/scorecard still works.
+    try {
+      const doc = await StocksDiscoveryCandidate.findOneAndUpdate(
+        { email: email.toLowerCase(), ticker: c.ticker, scanDate },
+        { $set: {
+            email: email.toLowerCase(), ticker: c.ticker, name: c.name, sector: c.sector, industry: c.industry,
+            exchange: c.exchange, marketCap: c.marketCap, priceAtDiscovery: c.price, currencyAtDiscovery: c.currency,
+            score: weightedScore ?? 0,
+            signals: {
+              revenueGrowthPct: c.raw?.fundamentals?.revenueGrowthPct ?? null,
+              grossMarginPct: c.raw?.fundamentals?.grossMarginPct ?? null,
+              operatingMarginPct: c.raw?.fundamentals?.operatingMarginPct ?? null,
+              netDebtToEquity: c.raw?.fundamentals?.netDebtToEquity ?? null,
+            },
+            thesis: { bullCase: multiFactor.bullCase, killThesis: multiFactor.whatProvesWrong, catalysts: multiFactor.keyCatalysts, conviction: weightedScore >= 75 ? "high" : weightedScore >= 55 ? "medium" : "low", sources: multiFactor.sources },
+            multiFactor,
+            scanDate, lastPriceCheckedAt: scanDate, lastPrice: c.price,
+          } },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+      picks.push(doc.toObject());
+    } catch (e) {
+      console.warn("[high-conviction] save failed:", e?.message);
+    }
+  }
+
+  return { picks, riskMode: mode, mode: scanMode, upgradeRecommendation, scanDate, disclaimer: HIGH_CONVICTION_DISCLAIMER, shortlistSize: shortlist.length };
+}
+
+// small local helpers
+function clampScore(v) { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : null; }
+function arr(v) { return Array.isArray(v) ? v.filter((x) => x != null).slice(0, 8) : []; }
+function str(v) { return typeof v === "string" ? v.slice(0, 1200) : ""; }
+function rank(r) { return { Low: 0, Medium: 1, High: 2, Speculative: 3 }[r] ?? 1; }
