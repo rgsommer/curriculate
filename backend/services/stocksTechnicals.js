@@ -103,14 +103,27 @@ function recentCross(closes, lookback = 60) {
   return null;
 }
 
-export async function getTechnicals(ticker) {
+// Resolve the exchange listing to fetch from Yahoo. A CAD-held name with a
+// bare symbol (e.g. ENB) must hit the TSX listing (ENB.TO), not the US ADR —
+// otherwise the technicals (RSI/SMA/ATR/last price) are computed off the wrong
+// market and in the wrong currency. Mirrors normalizeForFmp in
+// stocksFundamentals.js so both signal sources agree on the listing.
+function resolveSymbol(ticker, currency) {
+  const t = String(ticker || "").toUpperCase().trim();
+  if (t.includes(".")) return t;          // already exchange-qualified
+  if (currency === "CAD") return `${t}.TO`;
+  return t;
+}
+
+export async function getTechnicals(ticker, currency = null) {
   const now = Date.now();
-  const cached = CACHE.get(ticker);
+  const sym = resolveSymbol(ticker, currency);
+  const cached = CACHE.get(sym);
   if (cached && now - cached.fetchedAt < TTL_MS) return cached.data;
 
   let data;
   try {
-    const { points, currency } = await fetchDailyOHLC(ticker, 260);
+    const { points, currency: nativeCcy } = await fetchDailyOHLC(sym, 260);
     if (points.length < 50) {
       data = { ok: false, reason: "insufficient history" };
     } else {
@@ -158,7 +171,7 @@ export async function getTechnicals(ticker) {
 
       data = {
         ok: true,
-        currency,
+        currency: nativeCcy || currency || null,
         last,
         sma20, sma50, sma200,
         rsi14,
@@ -176,7 +189,7 @@ export async function getTechnicals(ticker) {
     data = { ok: false, reason: e?.message || "fetch failed" };
   }
 
-  CACHE.set(ticker, { fetchedAt: now, data });
+  CACHE.set(sym, { fetchedAt: now, data });
   return data;
 }
 

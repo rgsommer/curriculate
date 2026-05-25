@@ -187,8 +187,12 @@ export async function computeQuantSignals(profile, topN = 8) {
   await Promise.all(
     agg.map(async (a) => {
       const ccy = tickerInfo[a.ticker]?.ccy || "USD";
+      // Pass currency so a CAD holding resolves to its TSX listing (ENB →
+      // ENB.TO) for BOTH feeds — otherwise technicals/last-price come from the
+      // US ADR and the AI reasons (and the verified-prices block anchors) on
+      // the wrong market.
       const [tech, fund] = await Promise.all([
-        getTechnicals(a.ticker).catch(() => ({ ok: false })),
+        getTechnicals(a.ticker, ccy).catch(() => ({ ok: false })),
         getFundamentals(a.ticker, ccy).catch(() => ({ ok: false })),
       ]);
       out[a.ticker] = { tech, fund, ccy };
