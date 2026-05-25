@@ -865,15 +865,16 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
       ? runMosaicBatch(mosaicCandidates, mMode).catch((e) => { console.warn("[mosaic] batch failed:", e?.message); return {}; })
       : Promise.resolve({}),
   ]);
-  const aiByTicker = {};
-  for (const p of ai.picks || []) aiByTicker[String(p.ticker || "").toUpperCase()] = p;
+  // Match AI picks to the shortlist by NORMALIZED ticker so a suffix/format
+  // mismatch (ABC vs ABC.TO) doesn't silently drop a valid pick.
+  const byNorm = new Map(withFactors.map((c) => [normTicker(c.ticker), c]));
 
   // Assemble + blend (top picks the AI returned, in its order)
   const scanDate = new Date();
   scanDate.setUTCHours(0, 0, 0, 0);
   const picks = [];
   for (const p of (ai.picks || [])) {
-    const c = withFactors.find((x) => x.ticker === String(p.ticker || "").toUpperCase());
+    const c = byNorm.get(normTicker(p.ticker));
     if (!c) continue;
     const catalysts = { score: clampScore(p.catalystScore), weight: weights.catalysts, contributors: arr(p.catalystContributors) };
     const sentiment = { score: clampScore(p.sentimentScore), weight: weights.sentiment, contributors: arr(p.sentimentContributors) };
@@ -959,12 +960,86 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
   // Folding Mosaic in may reorder the picks — sort by the final blended score.
   picks.sort((a, b) => (b.multiFactor?.weightedScore ?? 0) - (a.multiFactor?.weightedScore ?? 0));
 
+  // If the AI selector returned nothing (common in the thin-data AI-only path,
+  // or when it's being strict), don't dead-end. Fall back to ranking the
+  // shortlist by HARD DATA ONLY (the 4 deterministic modules) and surface the
+  // best as clearly-labelled "below-bar" watchlist candidates — never as
+  // confirmed high-conviction picks.
+  let belowBar = false;
+  if (picks.length === 0) {
+    const fb = deterministicFallbackPicks(withFactors, weights, mode, topN);
+    picks.push(...fb);
+    belowBar = picks.length > 0;
+  }
+
   return {
     picks, riskMode: mode, mode: scanMode, upgradeRecommendation, scanDate,
     disclaimer: HIGH_CONVICTION_DISCLAIMER,
     mosaicEnabled: !!includeMosaic, mosaicMode: includeMosaic ? mMode : null,
-    shortlistSize: shortlist.length,
+    belowBar,
+    diagnostic: {
+      shortlistSize: shortlist.length,
+      aiReturned: (ai.picks || []).length,
+      note: belowBar
+        ? "AI selector returned no high-conviction picks — showing strongest shortlist names by hard data only (catalysts/sentiment not confirmed)."
+        : null,
+    },
   };
+}
+
+// Deterministic-only fallback picks (no catalyst/sentiment) — used when the AI
+// selector returns nothing so the user still sees the transparent scoring.
+function deterministicFallbackPicks(withFactors, weights, mode, topN) {
+  const detWeights = { fundamentals: weights.fundamentals, momentum: weights.momentum, technical: weights.technical, riskControl: weights.riskControl };
+  const ranked = withFactors
+    .map((c) => {
+      const detSub = { fundamentals: c.sub.fundamentals, momentum: c.sub.momentum, technical: c.sub.technical, riskControl: c.sub.riskControl };
+      return { c, detScore: blendScore(detSub, detWeights) };
+    })
+    .filter((x) => x.detScore != null)
+    .sort((a, b) => b.detScore - a.detScore)
+    .slice(0, topN);
+
+  return ranked.map(({ c, detScore }) => {
+    const notAssessed = (w) => ({ score: null, weight: w, contributors: ["Not assessed — below high-conviction bar"] });
+    const factors = {
+      fundamentals: { ...c.sub.fundamentals, weight: weights.fundamentals },
+      momentum: { ...c.sub.momentum, weight: weights.momentum },
+      technical: { ...c.sub.technical, weight: weights.technical },
+      catalysts: notAssessed(weights.catalysts),
+      sentiment: notAssessed(weights.sentiment),
+      riskControl: { ...c.sub.riskControl, weight: weights.riskControl },
+    };
+    const subForConf = {
+      fundamentals: factors.fundamentals, momentum: factors.momentum, technical: factors.technical,
+      catalysts: factors.catalysts, sentiment: factors.sentiment, riskControl: factors.riskControl,
+    };
+    const dataFlags = ["fundamentals", "momentum", "technical", "riskControl"]
+      .flatMap((k) => (c.sub[k]?.flags || []).map((f) => `${k}: ${f}`));
+    dataFlags.push("Catalysts & sentiment not assessed (no AI selection this run)");
+    return {
+      ticker: c.ticker, name: c.name, sector: c.sector, industry: c.industry,
+      marketCap: c.marketCap, priceAtDiscovery: c.price, currencyAtDiscovery: c.currency,
+      score: detScore,
+      belowBar: true,
+      multiFactor: {
+        riskMode: mode,
+        weightedScore: detScore,
+        confidence: computeConfidence(subForConf, dataFlags.length),
+        factors,
+        riskRating: deriveRiskRating(c.sub.riskControl?.score, c.raw?.tech, c.marketCap),
+        bullCase: "", bearCase: "", keyCatalysts: [],
+        watchZone: "", stopLevel: "", timeHorizon: "medium-term",
+        whyBeatOthers: "Ranked on hard data only — no AI high-conviction selection this run.",
+        whatProvesWrong: "", hypePenaltyApplied: false,
+        dataFlags, sources: [],
+      },
+    };
+  });
+}
+
+function normTicker(t) {
+  return String(t || "").toUpperCase().replace(/\.+$/, "").replace(/\.(TO|V|NE|CN|US)$/i, "");
 }
 
 // Standalone Mosaic Intelligence run for an explicit set of tickers (or the

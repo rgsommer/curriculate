@@ -5134,9 +5134,17 @@ function DiscoverView({ sessionToken, user }) {
             {(!hcResult.picks || hcResult.picks.length === 0) ? (
               <div style={{ fontSize: 13, color: "var(--sa-muted)" }}>
                 {hcResult.error || "No candidates cleared a genuine high-conviction bar this run."}
+                {hcResult.diagnostic?.shortlistSize != null && (
+                  <span> (screened {hcResult.diagnostic.shortlistSize} shortlist names.)</span>
+                )}
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {hcResult.belowBar && (
+                  <div style={{ background: "var(--sa-amber-soft)", border: "1px solid #fde68a", color: "#92400e", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.5 }}>
+                    ⓘ No candidate cleared the high-conviction bar this run — showing the strongest shortlist names ranked on <b>hard data only</b> (fundamentals / momentum / technical / risk). Catalysts & sentiment were not confirmed. Treat these as <b>watchlist candidates</b>, not buy signals.
+                  </div>
+                )}
                 {hcResult.picks.map((p, i) => (
                   <HighConvictionCard key={p._id || p.ticker} pick={p} rank={i + 1} />
                 ))}
