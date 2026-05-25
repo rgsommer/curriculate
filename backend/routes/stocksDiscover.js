@@ -249,10 +249,12 @@ router.post("/candidates/:id/dismiss", requireStocksAuth, async (req, res) => {
 router.get("/scorecard", requireStocksAuth, async (req, res) => {
   try {
     const since = new Date(Date.now() - 365 * 86400 * 1000);
+    // Track EVERY discovered candidate over time regardless of action taken
+    // (starred / dismissed / added). Dismiss only hides a name from future
+    // scans — it must not drop it from outcome tracking.
     const candidates = await StocksDiscoveryCandidate.find({
       email: req.stocksUser.email,
       scanDate: { $gte: since, $lte: new Date(Date.now() - 7 * 86400 * 1000) }, // at least 7 days old
-      dismissed: { $ne: true },
     }).lean();
 
     if (candidates.length === 0) {
@@ -314,6 +316,8 @@ router.get("/scorecard", requireStocksAuth, async (req, res) => {
         priceTarget: c.thesis?.priceTarget || null,
         conviction: c.thesis?.conviction || null,
         starred: c.starred,
+        dismissed: !!c.dismissed,
+        addedToPortfolio: !!c.addedToPortfolio,
       });
     }
 

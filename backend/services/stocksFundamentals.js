@@ -17,20 +17,45 @@ function fmpKey() {
   return process.env.FMP_API_KEY || "";
 }
 
-async function fmpGet(path) {
+// Translate a legacy /api/v3 path to its /stable equivalent (FMP moved the
+// symbol into a ?symbol= query param for newer keys).
+function toStablePath(path) {
+  const m = path.match(/^\/api\/v3\/([^/]+)\/([^/?]+)(\?.*)?$/);
+  if (!m) return null;
+  const [, endpoint, symbol, query] = m;
+  const q = query ? query.slice(1) : "";
+  return `/stable/${endpoint}?symbol=${encodeURIComponent(symbol)}${q ? "&" + q : ""}`;
+}
+
+async function fmpFetchRaw(path) {
   const key = fmpKey();
-  if (!key) throw new Error("FMP_API_KEY not configured");
   const sep = path.includes("?") ? "&" : "?";
   const url = `https://financialmodelingprep.com${path}${sep}apikey=${key}`;
   const ctrl = new AbortController();
   const tid = setTimeout(() => ctrl.abort(), 7000);
   try {
     const r = await fetch(url, { signal: ctrl.signal });
-    if (!r.ok) throw new Error(`FMP ${r.status}`);
-    return await r.json();
+    const body = await r.text().catch(() => "");
+    return { status: r.status, ok: r.ok, body };
   } finally {
     clearTimeout(tid);
   }
+}
+
+async function fmpGet(path) {
+  if (!fmpKey()) throw new Error("FMP_API_KEY not configured");
+  let res = await fmpFetchRaw(path);
+  // Auto-migrate legacy /api/v3 → /stable on 403 (newer FMP keys, incl.
+  // Premium, are provisioned for the stable API only).
+  if ((res.status === 403 || /legacy|deprecated|stable/i.test(res.body)) && path.startsWith("/api/v3/")) {
+    const stable = toStablePath(path);
+    if (stable) {
+      const alt = await fmpFetchRaw(stable);
+      if (alt.ok) { try { return JSON.parse(alt.body); } catch { return null; } }
+    }
+  }
+  if (!res.ok) throw new Error(`FMP ${res.status}: ${String(res.body).slice(0, 120)}`);
+  try { return JSON.parse(res.body); } catch { return null; }
 }
 
 // FMP uses different ticker conventions for Canadian listings: .TO suffix.

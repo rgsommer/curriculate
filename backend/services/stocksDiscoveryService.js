@@ -46,34 +46,70 @@ const SCREENER_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const FUNDAMENTALS_CACHE = new Map(); // ticker → { fetchedAt, data }
 const FUNDAMENTALS_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-// FMP-plan-insufficient signal. Thrown when an FMP endpoint returns 403
-// (plan doesn't include the endpoint — most commonly the stock-screener
-// which requires Starter tier or higher). Callers can catch this and
-// gracefully fall back to AI-only discovery.
+// FMP 403 signal. A 403 does NOT necessarily mean "plan too low" — on a valid
+// (even Premium) key it most often means the legacy /api/v3 endpoint is no
+// longer served for that key and you must use the /stable API, or the key is
+// wrong. We capture FMP's actual response body so the real reason is visible
+// instead of guessed.
 export class FMPPlanInsufficientError extends Error {
-  constructor(path, status) {
-    super(`FMP ${status} on ${path} — plan doesn't include this endpoint`);
+  constructor(path, status, body = "") {
+    super(`FMP ${status} on ${path}${body ? ` — ${String(body).slice(0, 200)}` : ""}`);
     this.name = "FMPPlanInsufficientError";
     this.status = status;
     this.path = path;
+    this.body = String(body || "");
   }
 }
 
-async function fmpGet(path) {
+// Translate a legacy /api/v3 path to its /stable equivalent. FMP's stable API
+// moved the symbol from the path into a ?symbol= query param and renamed the
+// screener. Returns null if we don't know the mapping.
+function toStablePath(path) {
+  if (path.startsWith("/api/v3/stock-screener")) {
+    return path.replace("/api/v3/stock-screener", "/stable/company-screener");
+  }
+  const m = path.match(/^\/api\/v3\/([^/]+)\/([^/?]+)(\?.*)?$/);
+  if (m) {
+    const [, endpoint, symbol, query] = m;
+    const q = query ? query.slice(1) : "";
+    return `/stable/${endpoint}?symbol=${encodeURIComponent(symbol)}${q ? "&" + q : ""}`;
+  }
+  return null;
+}
+
+async function fmpFetchRaw(path) {
   const key = process.env.FMP_API_KEY;
-  if (!key) throw new Error("FMP_API_KEY not configured");
   const sep = path.includes("?") ? "&" : "?";
   const url = `${FMP_BASE}${path}${sep}apikey=${key}`;
   const ctrl = new AbortController();
   const tid = setTimeout(() => ctrl.abort(), 15000);
   try {
     const r = await fetch(url, { signal: ctrl.signal });
-    if (r.status === 403) throw new FMPPlanInsufficientError(path, 403);
-    if (!r.ok) throw new Error(`FMP ${r.status}`);
-    return await r.json();
+    const body = await r.text().catch(() => "");
+    return { status: r.status, ok: r.ok, body };
   } finally {
     clearTimeout(tid);
   }
+}
+
+async function fmpGet(path) {
+  if (!process.env.FMP_API_KEY) throw new Error("FMP_API_KEY not configured");
+  let res = await fmpFetchRaw(path);
+  // Auto-migrate: a 403 or "legacy endpoint" message on /api/v3 with a valid
+  // key usually just means "use /stable". Retry the stable equivalent once.
+  // If stable works we transparently fix it; if not, we fall through and
+  // report the real error (which the AI-only path then catches).
+  if ((res.status === 403 || /legacy|deprecated|stable/i.test(res.body)) && path.startsWith("/api/v3/")) {
+    const stable = toStablePath(path);
+    if (stable) {
+      const alt = await fmpFetchRaw(stable);
+      if (alt.ok) { try { return JSON.parse(alt.body); } catch { return []; } }
+      if (alt.status === 403) res = alt; // report the stable 403 (more accurate)
+    }
+  }
+  if (res.status === 403) throw new FMPPlanInsufficientError(path, 403, res.body);
+  if (!res.ok) throw new Error(`FMP ${res.status}: ${String(res.body).slice(0, 160)}`);
+  try { return JSON.parse(res.body); } catch { return []; }
 }
 
 // ─── Screener ──────────────────────────────────────────────────────────
@@ -739,10 +775,11 @@ async function buildShortlist({ email, sectors, opts, excl, shortlistN }) {
         netDebtToEquity: c?.signals?.netDebtToEquity ?? null,
       },
     })).filter((c) => c.ticker);
+    const reason = e?.body ? ` FMP said: "${String(e.body).slice(0, 180)}".` : "";
     return {
       shortlist,
       mode: "ai-only",
-      upgradeRecommendation: "FMP screener unavailable (403) — shortlist came from AI web search instead of a fundamentals screen. Technical/momentum scores are still live from Yahoo. Upgrade to FMP Starter for a rigorous fundamentals screen.",
+      upgradeRecommendation: `FMP screener returned 403 even after trying the /stable API.${reason} On a Premium plan this usually means the FMP_API_KEY deployed on the server isn't your Premium key, or that key isn't provisioned for the screener endpoint — verify the key in the backend env. Shortlist came from AI web search; technical/momentum scores are still live from Yahoo.`,
     };
   }
 }
