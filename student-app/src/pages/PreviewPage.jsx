@@ -9,6 +9,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import TaskRunner from "../components/tasks/TaskRunner.jsx";
 import { getTaskTypeMeta, normalizeTaskType } from "../../../shared/taskTypes.js";
+import { assessTaskPlayability } from "../../../shared/taskPlayability.js";
 import { API_BASE_URL } from "../config.js";
 
 // Stub socket so TaskRunner + team task types don't crash without a live room.
@@ -85,7 +86,36 @@ export default function PreviewPage() {
     setIndex(next);
     setRunKey((k) => k + 1);
   };
-  const handleSubmit = () => {
+
+  // Capture a teacher's Skip note from test-run into the feedback file.
+  // TaskRunner's skip dialog calls onSubmit({ skipped:true, skipReason }).
+  // Without this, those notes are dropped (stub socket, no live session).
+  const recordSkipFeedback = (answer, task) => {
+    try {
+      const reason = String(answer?.skipReason || "").trim();
+      if (!reason) return;
+      const taskType = normalizeTaskType(task?.taskType || task?.type) || "unknown";
+      fetch(`${API_BASE_URL}/api/conference/preview-feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tasksetName: taskset?.name || "",
+          entries: [{
+            taskType,
+            title: task?.title || "",
+            confusing: reason,
+            skipped: true,
+          }],
+        }),
+      }).catch(() => { /* fire-and-forget */ });
+    } catch { /* ignore */ }
+  };
+
+  const handleSubmit = (answer) => {
+    // Persist a skip reason if the teacher skipped this task.
+    if (answer && typeof answer === "object" && answer.skipped === true) {
+      recordSkipFeedback(answer, currentTask);
+    }
     // Advance to the next task on submit (last task just stays, showing its result).
     if (index < total - 1) goTo(index + 1);
   };
@@ -108,6 +138,15 @@ export default function PreviewPage() {
     }
     return t;
   }, [currentTask]);
+
+  // Playability check — flags tasks that are missing required content (e.g. a
+  // connect-four with no statements, narration with no prompts). This is the
+  // safety net for OLD saved sets generated before the generator validators
+  // existed: the teacher catches the broken task here, during test-run.
+  const playability = useMemo(
+    () => (currentTask ? assessTaskPlayability(currentTask) : { playable: true, issues: [] }),
+    [currentTask]
+  );
 
   const shell = {
     minHeight: "100vh",
@@ -182,6 +221,32 @@ export default function PreviewPage() {
         <button type="button" onClick={() => goTo(index + 1)} disabled={index >= total - 1}
           style={navBtn(index >= total - 1)}>Next →</button>
       </div>
+
+      {/* Playability warning — this task is missing required content */}
+      {previewTask && !playability.playable && (
+        <div
+          style={{
+            marginBottom: 10,
+            padding: "12px 14px",
+            borderRadius: 12,
+            background: "rgba(251,191,36,0.14)",
+            border: "1px solid rgba(251,191,36,0.55)",
+            color: "#fde68a",
+          }}
+        >
+          <div style={{ fontWeight: 900, marginBottom: 4 }}>
+            ⚠️ This task is missing required content
+          </div>
+          <ul style={{ margin: "4px 0 6px", paddingLeft: 20, fontSize: 13, lineHeight: 1.5 }}>
+            {playability.issues.map((issue, i) => (
+              <li key={i}>{issue}</li>
+            ))}
+          </ul>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>
+            Students would see a broken or empty task. Fix it with “🔧 Fix” or “♻️ Regenerate” back in Task Sets before running this with a class.
+          </div>
+        </div>
+      )}
 
       {/* The real student renderer */}
       {previewTask && (

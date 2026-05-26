@@ -500,6 +500,85 @@ router.post("/orphan-feedback", async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  POST /preview-feedback                                             */
+/*                                                                    */
+/*  Captures Skip notes (and any per-task feedback) made by a teacher */
+/*  during a "Test run" preview. Test-run has no live session and no  */
+/*  registered tester, so these would otherwise be lost. We funnel    */
+/*  them into a stable "Test run (teacher)" ConferenceLead so they    */
+/*  appear in /feedback-export alongside tester comments, tagged      */
+/*  source:"preview". No prior registration required (single upsert). */
+/* ------------------------------------------------------------------ */
+const PREVIEW_LEAD_EMAIL = "testrun@curriculate.preview";
+router.post("/preview-feedback", async (req, res) => {
+  try {
+    const { entries, tasksetName } = req.body || {};
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return res.status(400).json({ error: "entries array is required" });
+    }
+
+    const setLabel = String(tasksetName || "").trim().slice(0, 120);
+    const cleaned = entries
+      .map((e) => {
+        const taskType = String(e?.taskType || "").trim();
+        if (!taskType) return null;
+        const confusing = String(e?.confusing || e?.skipReason || "").trim().slice(0, 1000);
+        const suggestion = String(e?.suggestion || "").trim().slice(0, 1000);
+        const fun = Number(e?.fun) || 0;
+        const clarity = Number(e?.clarity) || 0;
+        if (!confusing && !suggestion && fun <= 0 && clarity <= 0) return null;
+        return {
+          taskType,
+          title: String(e?.title || "").slice(0, 200),
+          fun, clarity, confusing, suggestion,
+          skipped: e?.skipped !== false, // preview notes are skip-driven by default
+          source: "preview",
+          createdAt: new Date(),
+        };
+      })
+      .filter(Boolean)
+      .slice(0, 50);
+
+    if (cleaned.length === 0) return res.json({ ok: true, savedCount: 0 });
+
+    // Upsert the stable preview lead, then de-dupe + append entries.
+    const lead = await ConferenceLead.findOneAndUpdate(
+      { email: PREVIEW_LEAD_EMAIL, conference: "preview" },
+      {
+        $set: {
+          email: PREVIEW_LEAD_EMAIL,
+          conference: "preview",
+          name: setLabel ? `Test run (${setLabel})` : "Test run (teacher)",
+          role: "teacher",
+          source: "preview",
+        },
+        $setOnInsert: { registeredAt: new Date() },
+      },
+      { upsert: true, new: true, projection: { feedbackEntries: 1 } }
+    );
+
+    const keyOf = (e) =>
+      `${String(e?.taskType || "").trim().toLowerCase()}|${String(e?.confusing || "").trim()}|${String(e?.suggestion || "").trim()}`;
+    const existingKeys = new Set((lead?.feedbackEntries || []).map(keyOf));
+    const toAdd = cleaned.filter((e) => !existingKeys.has(keyOf(e)));
+
+    if (toAdd.length === 0) {
+      return res.json({ ok: true, savedCount: 0, deduped: cleaned.length });
+    }
+
+    await ConferenceLead.updateOne(
+      { email: PREVIEW_LEAD_EMAIL, conference: "preview" },
+      { $push: { feedbackEntries: { $each: toAdd, $slice: -500 } } }
+    );
+
+    res.json({ ok: true, savedCount: toAdd.length, deduped: cleaned.length - toAdd.length });
+  } catch (err) {
+    console.error("[demo/preview-feedback] Error:", err.message);
+    res.status(500).json({ error: "Failed to save preview feedback" });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  POST /image-failure                                                */
 /*                                                                    */
 /*  Auto-telemetry: an image task fell back because its primary image */
