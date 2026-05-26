@@ -673,10 +673,17 @@ const wrap = {
   display: "flex",
   flexDirection: "column",
   gap: 12,
-  padding: "14px 14px",
+  padding: "16px 16px",
   width: "100%",
   maxWidth: 560,
   margin: "0 auto",
+  // QuestTask is dark-themed (light text throughout). Carry its own dark
+  // surface so it stays legible regardless of the parent backdrop — e.g. the
+  // teacher "Test run" preview mounts tasks inside a WHITE card, which made
+  // the near-white title and light panels disappear (low-contrast bug).
+  background: "linear-gradient(160deg, #1e1b4b 0%, #0f172a 100%)",
+  borderRadius: 16,
+  color: "#f1f5f9",
 };
 const tagStrip = {
   fontSize: "0.65rem",
