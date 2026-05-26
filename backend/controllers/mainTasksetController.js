@@ -2222,6 +2222,7 @@ export async function createAiTaskset(req, res) {
 
     let playabilityIssues = scanPlayability();
     let playabilityRepaired = 0;
+    let playabilityReplaced = 0;
 
     if (playabilityIssues.length) {
       sendSSE({ type: "phase", phase: "playability", message: `Auto-repairing ${playabilityIssues.length} task(s)…` });
@@ -2285,23 +2286,80 @@ export async function createAiTaskset(req, res) {
             console.warn(`[AI] playability auto-repair attempt ${attempt} failed for #${idx + 1} ${type}:`, e?.message || e);
           }
         }
+
+        // ── DROP + REPLACE ── 3 additive attempts couldn't fix this task, so
+        // we will NOT ship it broken. First try a couple of clean same-type
+        // regenerations; if those also fail, drop it for a guaranteed-playable
+        // open-text reflection on the same concepts so the slot is never empty
+        // or broken.
+        if (!fixed) {
+          for (let r = 1; r <= 2 && !fixed; r++) {
+            try {
+              let fresh = await regenerateSingleTask({
+                allowedType: type,
+                mustHave: retryMustHave[type] || "",
+                subject, gradeLevel, difficulty, learningGoal, topicLabel,
+                vocabularyLines: scopedLines,
+                specialConsiderations: [
+                  mergedSpecialConsiderations,
+                  assignedTerms.length ? `CONCEPT REQUIREMENTS\nInclude these concepts: ${assignedTerms.join(", ")}` : "",
+                  "Generate a COMPLETE, fresh task of this type from scratch. Include EVERY required field and the FULL minimum number of items — the previous version was missing required content.",
+                ].filter(Boolean).join("\n\n"),
+                previousTask: null,
+              });
+              fresh = finalizeTask(type, fresh);
+              for (const k of PRESERVE) { if (original[k] !== undefined) fresh[k] = original[k]; }
+              const pa3 = assessTaskPlayability(fresh);
+              if (!pa3 || pa3.playable !== false) {
+                finalized[idx] = fresh;
+                playabilityReplaced += 1;
+                fixed = true;
+              }
+            } catch (e) {
+              console.warn(`[AI] replacement regen ${r} failed for #${idx + 1} ${type}:`, e?.message || e);
+            }
+          }
+
+          if (!fixed) {
+            // Guaranteed-playable fallback: open-text only needs title + prompt,
+            // so it ALWAYS renders. Keep it on-topic with the assigned concepts.
+            const topicForPrompt = assignedTerms.length
+              ? assignedTerms.join(", ")
+              : (topicLabel || subject || "today's lesson");
+            const fallback = finalizeTask(TASK_TYPES.OPEN_TEXT, {
+              taskType: TASK_TYPES.OPEN_TEXT,
+              title: `Reflect: ${(original.title || topicLabel || subject || "Your Thinking")}`.slice(0, 80),
+              prompt: `In a few clear sentences, explain what you understand about ${topicForPrompt}. Include a definition in your own words and one example.`,
+            });
+            for (const k of PRESERVE) { if (original[k] !== undefined) fallback[k] = original[k]; }
+            finalized[idx] = fallback;
+            playabilityReplaced += 1;
+            fixed = true;
+            console.warn(`[AI] playability: dropped unfixable #${idx + 1} ${type} → replaced with open-text reflection`);
+          }
+        }
       }
       // Re-scan to see what (if anything) still fails after all repair attempts.
       playabilityIssues = scanPlayability();
     }
 
-    if (playabilityRepaired || playabilityIssues.length) {
-      console.warn(`[AI] playability: auto-repaired ${playabilityRepaired}, ${playabilityIssues.length} still flagged`);
+    if (playabilityRepaired || playabilityReplaced || playabilityIssues.length) {
+      console.warn(`[AI] playability: auto-repaired ${playabilityRepaired}, replaced ${playabilityReplaced}, ${playabilityIssues.length} still flagged`);
     }
 
+    const fixedTotal = playabilityRepaired + playabilityReplaced;
+    const fixedNote = fixedTotal
+      ? ` (auto-fixed ${fixedTotal}${playabilityReplaced ? `, ${playabilityReplaced} replaced` : ""})`
+      : "";
     sendSSE({
       type: "phase",
       phase: "playability",
       message: playabilityIssues.length
-        ? `⚠️ ${playabilityIssues.length} task(s) still need attention${playabilityRepaired ? ` (auto-repaired ${playabilityRepaired})` : ""}`
-        : (playabilityRepaired ? `✅ Auto-repaired ${playabilityRepaired} task(s) — all playable` : "✅ All tasks playable"),
+        ? `⚠️ ${playabilityIssues.length} task(s) still need attention${fixedNote}`
+        : (fixedTotal ? `✅ All tasks playable${fixedNote}` : "✅ All tasks playable"),
       playabilityIssues,
       playabilityRepaired,
+      playabilityReplaced,
     });
 
     const doc = await TaskSet.create({
@@ -2326,9 +2384,14 @@ export async function createAiTaskset(req, res) {
         coverage,
         coverageFixes: fixes,
         // Auto playability test result (render-contract check). Empty issues[]
-        // means every task is renderable for students. repairedCount = how many
-        // were auto-regenerated to fix a render gap.
-        playability: { checkedAt: new Date(), issues: playabilityIssues, repairedCount: playabilityRepaired },
+        // means every task is renderable for students. repairedCount = fixed in
+        // place; replacedCount = dropped + swapped for a playable task.
+        playability: {
+          checkedAt: new Date(),
+          issues: playabilityIssues,
+          repairedCount: playabilityRepaired,
+          replacedCount: playabilityReplaced,
+        },
         generation: {
           report: generationReport,
           ...(overusedTerms.length > 0 && { qualityWarnings: { overusedTerms } }),

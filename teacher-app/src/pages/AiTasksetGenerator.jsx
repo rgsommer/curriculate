@@ -2220,11 +2220,16 @@ export default function AiTasksetGenerator() {
             const pa = result?.taskset?.meta?.playability || {};
             const issues = pa.issues || [];
             const repaired = Number(pa.repairedCount) || 0;
+            const replaced = Number(pa.replacedCount) || 0;
+            const fixedBits = [
+              repaired ? `auto-repaired ${repaired}` : "",
+              replaced ? `replaced ${replaced} unfixable` : "",
+            ].filter(Boolean).join(", ");
             if (!issues.length) {
               return (
                 <div style={{ marginBottom: 8, fontSize: "0.82rem", color: "#15803d", fontWeight: 700 }}>
                   🧪 Playability test passed — all {Array.isArray(result.taskset.tasks) ? result.taskset.tasks.length : ""} tasks render
-                  {repaired ? ` (auto-repaired ${repaired}).` : "."}
+                  {fixedBits ? ` (${fixedBits}).` : "."}
                 </div>
               );
             }
@@ -2241,7 +2246,7 @@ export default function AiTasksetGenerator() {
               >
                 <div style={{ fontWeight: 900, marginBottom: 4 }}>
                   ⚠️ {issues.length} task{issues.length === 1 ? "" : "s"} still need attention
-                  {repaired ? ` (auto-repaired ${repaired} other${repaired === 1 ? "" : "s"})` : ""}
+                  {fixedBits ? ` (${fixedBits})` : ""}
                 </div>
                 <ul style={{ margin: "4px 0 6px", paddingLeft: 18, fontSize: "0.82rem", lineHeight: 1.5 }}>
                   {issues.map((p, i) => (
