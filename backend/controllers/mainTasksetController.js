@@ -2228,44 +2228,65 @@ export async function createAiTaskset(req, res) {
       // Fields to carry over so downstream wiring (bonus/hidden flags, fixed
       // stations, escape-room key→taskId, ordering) survives the regeneration.
       const PRESERVE = ["id", "isBonus", "requiredForCompletion", "unlockConditions", "isHidden", "displayKey", "stationColor", "_taskIndex"];
+      // Up to 3 attempts per task — we really don't want to ship a broken set.
+      // Each attempt is ADDITIVE (keep good content, top up the missing piece)
+      // and the latest failure is fed back into the next attempt's hint.
+      const MAX_REPAIR_ATTEMPTS = 3;
       for (const flag of playabilityIssues) {
         const idx = flag.index;
-        const old = finalized[idx];
-        if (!old) continue;
-        const type = old.taskType || old.type;
-        try {
-          const assignedTerms = Array.isArray(conceptPlan[idx]) ? conceptPlan[idx] : [];
-          const scopedLines = buildVocabularyLinesFromConcepts(assignedTerms);
-          const scopedConsiderations = [
-            mergedSpecialConsiderations,
-            assignedTerms.length
-              ? `CONCEPT REQUIREMENTS\nYou MUST include ALL of these concepts in THIS ONE task: ${assignedTerms.join(", ")}`
-              : "",
-            `PLAYABILITY FIX\nThe previous version was NOT renderable for students. Fix EXACTLY this: ${flag.issues.join("; ")}`,
-          ].filter(Boolean).join("\n\n");
+        const original = finalized[idx];
+        if (!original) continue;
+        const type = original.taskType || original.type;
+        const assignedTerms = Array.isArray(conceptPlan[idx]) ? conceptPlan[idx] : [];
+        const scopedLines = buildVocabularyLinesFromConcepts(assignedTerms);
 
-          let repaired = await regenerateSingleTask({
-            allowedType: type,
-            mustHave: retryMustHave[type] || "",
-            subject, gradeLevel, difficulty, learningGoal, topicLabel,
-            vocabularyLines: scopedLines,
-            specialConsiderations: scopedConsiderations,
-            previousTask: old,
-            previousError: flag.issues.join("; "),
-          });
-          repaired = finalizeTask(type, repaired);
-          for (const k of PRESERVE) { if (old[k] !== undefined) repaired[k] = old[k]; }
+        let prevAttempt = original;        // shown to the AI for reference
+        let curIssues = flag.issues;       // what to fix this round
+        let fixed = false;
 
-          const pa2 = assessTaskPlayability(repaired);
-          if (!pa2 || pa2.playable !== false) {
-            finalized[idx] = repaired;
-            playabilityRepaired += 1;
+        for (let attempt = 1; attempt <= MAX_REPAIR_ATTEMPTS && !fixed; attempt++) {
+          try {
+            const scopedConsiderations = [
+              mergedSpecialConsiderations,
+              assignedTerms.length
+                ? `CONCEPT REQUIREMENTS\nYou MUST include ALL of these concepts in THIS ONE task: ${assignedTerms.join(", ")}`
+                : "",
+              [
+                `PLAYABILITY FIX (ADDITIVE) — repair attempt ${attempt} of ${MAX_REPAIR_ATTEMPTS}`,
+                `The previous version of this task is shown above for reference. It is NOT renderable for students because: ${curIssues.join("; ")}.`,
+                "Repair it ADDITIVELY: KEEP every part of the previous task that is already correct, and only ADD or FIX the specific piece called out above.",
+                "If the problem is simply too few items (e.g. it needs 4 clues but has 3, or needs 6 statements but has 4), RETURN THE EXISTING ITEMS UNCHANGED and APPEND the missing one(s), written in the same style/format as the existing ones. Do not rewrite or reorder the good items.",
+              ].join("\n"),
+            ].filter(Boolean).join("\n\n");
+
+            let repaired = await regenerateSingleTask({
+              allowedType: type,
+              mustHave: retryMustHave[type] || "",
+              subject, gradeLevel, difficulty, learningGoal, topicLabel,
+              vocabularyLines: scopedLines,
+              specialConsiderations: scopedConsiderations,
+              previousTask: prevAttempt,
+              previousError: curIssues.join("; "),
+            });
+            repaired = finalizeTask(type, repaired);
+            for (const k of PRESERVE) { if (original[k] !== undefined) repaired[k] = original[k]; }
+
+            const pa2 = assessTaskPlayability(repaired);
+            if (!pa2 || pa2.playable !== false) {
+              finalized[idx] = repaired;
+              playabilityRepaired += 1;
+              fixed = true;
+            } else {
+              // Carry the latest (still-broken) version + its issues forward.
+              prevAttempt = repaired;
+              curIssues = (pa2 && Array.isArray(pa2.issues) && pa2.issues.length) ? pa2.issues : curIssues;
+            }
+          } catch (e) {
+            console.warn(`[AI] playability auto-repair attempt ${attempt} failed for #${idx + 1} ${type}:`, e?.message || e);
           }
-        } catch (e) {
-          console.warn(`[AI] playability auto-repair failed for #${idx + 1} ${type}:`, e?.message || e);
         }
       }
-      // Re-scan to see what (if anything) still fails after repair.
+      // Re-scan to see what (if anything) still fails after all repair attempts.
       playabilityIssues = scanPlayability();
     }
 
