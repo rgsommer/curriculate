@@ -37,6 +37,7 @@ import {
   computeConfidence,
   deriveRiskRating,
   deriveProjection,
+  deterministicComposite,
   fetchYahooDaily,
 } from "./stocksDiscoveryScore.js";
 import { runMosaicBatch, mosaicMode as getMosaicMode, MOSAIC_DISCLAIMER } from "./stocksMosaic.js";
@@ -1029,7 +1030,9 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
             multiFactor,
             mosaic: mosaic || null,
             scanDate, lastPriceCheckedAt: scanDate, lastPrice: c.price,
-          } },
+          },
+          $push: { scoreHistory: { $each: [{ date: scanDate, score: deterministicComposite(c.sub, mode), source: "highconviction" }], $slice: -90 } },
+        },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
       picks.push(doc.toObject());
@@ -1203,7 +1206,9 @@ export async function runMoonshotScan({ email, market = "both", sectors = null, 
             moonshot,
             mosaic: c.mosaic || null,
             scanDate, lastPriceCheckedAt: scanDate, lastPrice: c.price,
-          } },
+          },
+          $push: { scoreHistory: { $each: [{ date: scanDate, score: deterministicComposite(c.sub, "balanced"), source: "moonshot" }], $slice: -90 } },
+        },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
       picks.push(doc.toObject());

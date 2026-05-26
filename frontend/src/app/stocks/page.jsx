@@ -4822,6 +4822,36 @@ function MosaicBlock({ mosaic }) {
   );
 }
 
+// Structural-conviction trend from the candidate's scoreHistory (deterministic
+// composite over time, appended on scans + daily by the tracker). Smoothed over
+// the last few readings so one noisy point doesn't flip it.
+function convictionTrend(history) {
+  const pts = (history || []).filter((p) => p && Number.isFinite(p.score)).slice(-6);
+  if (pts.length < 2) return { dir: "new", points: pts.length };
+  const last = pts[pts.length - 1].score;
+  const priors = pts.slice(0, -1).slice(-3);
+  const base = priors.reduce((s, p) => s + p.score, 0) / priors.length;
+  const delta = Math.round(last - base);
+  const dir = delta >= 4 ? "rising" : delta <= -4 ? "falling" : "stable";
+  return { dir, delta, points: pts.length };
+}
+
+function ConvictionTrendBadge({ history }) {
+  const t = convictionTrend(history);
+  if (!t) return null;
+  if (t.dir === "new") return <span style={{ fontSize: 10.5, color: "var(--sa-muted)" }} title="Conviction trend builds over repeat scans + the daily tracker">conviction: building…</span>;
+  const cfg = {
+    rising: { icon: "▲", color: "var(--sa-green)", label: "rising" },
+    falling: { icon: "▼", color: "var(--sa-red)", label: "falling" },
+    stable: { icon: "▬", color: "var(--sa-muted)", label: "stable" },
+  }[t.dir];
+  return (
+    <span style={{ fontSize: 11, color: cfg.color, fontWeight: 600 }} title={`Structural (AI-free) conviction ${cfg.label} over last ${t.points} readings`}>
+      {cfg.icon} conviction {cfg.label}{t.delta ? ` (${t.delta > 0 ? "+" : ""}${t.delta})` : ""}
+    </span>
+  );
+}
+
 function MoonshotCard({ pick, rank }) {
   const m = pick.moonshot || {};
   const [open, setOpen] = useState(false);
@@ -4849,6 +4879,7 @@ function MoonshotCard({ pick, rank }) {
           <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
             {pick.priceAtDiscovery != null ? `$${pick.priceAtDiscovery} ${ccy}` : "—"} · {cap} · {market} · {pick.sector || "—"} · {m.timeHorizon || "long-term"}
           </div>
+          <div style={{ marginTop: 3 }}><ConvictionTrendBadge history={pick.scoreHistory} /></div>
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 24, fontWeight: 800 }}>{m.compositeScore ?? "—"}</div>
@@ -4979,6 +5010,7 @@ function HighConvictionCard({ pick, rank }) {
           <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
             {price} · {cap} · {market} · {pick.sector || "—"} · {mf.timeHorizon || "medium-term"}
           </div>
+          <div style={{ marginTop: 3 }}><ConvictionTrendBadge history={pick.scoreHistory} /></div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <div style={{ textAlign: "center" }}>

@@ -283,6 +283,20 @@ export function blendScore(subScores, weights) {
   return Math.round(acc / wsum);
 }
 
+// A consistent, AI-free "structural conviction" score (0-100) — blends only
+// the four deterministic modules. Used for the daily conviction-trend series
+// so points are comparable run-to-run (the full composite includes an AI
+// narrative layer we can't recompute for free every day).
+export function deterministicComposite(sub, riskMode = "balanced") {
+  if (!sub) return null;
+  const w = weightsFor(riskMode);
+  const detW = { fundamentals: w.fundamentals, momentum: w.momentum, technical: w.technical, riskControl: w.riskControl };
+  return blendScore(
+    { fundamentals: sub.fundamentals, momentum: sub.momentum, technical: sub.technical, riskControl: sub.riskControl },
+    detW
+  );
+}
+
 // Confidence (0-100): how much to trust the score. Driven by data
 // completeness (how many modules had real data) minus a penalty for flags.
 export function computeConfidence(subScores, extraFlagCount = 0) {

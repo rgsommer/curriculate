@@ -133,6 +133,10 @@ const StocksDiscoveryCandidateSchema = new mongoose.Schema(
     lastPriceCheckedAt: { type: Date, default: null },
     lastPrice: { type: Number, default: null },
     lastOutcomeCheckAt: { type: Date, default: null },
+    // Structural-conviction trend series — appended on each scan AND by the
+    // daily tracker (AI-free deterministic composite), so conviction can be
+    // shown as rising / stable / falling over time regardless of action.
+    scoreHistory: { type: [{ date: Date, score: Number, source: String, _id: false }], default: [] },
     // Running peak / drawdown since tracking began (point-in-time, captured by
     // the daily outcome tracker — regardless of any action taken on the name)
     peakPrice: { type: Number, default: null },

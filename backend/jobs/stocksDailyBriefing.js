@@ -28,6 +28,7 @@ import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContex
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
 import { computeLessons, formatLessonsBlock } from "../services/stocksLessonsLearned.js";
+import { computeDeterministicFactors, deterministicComposite, fetchYahooDaily } from "../services/stocksDiscoveryScore.js";
 import { getTranscriptsForTopHoldings, formatTranscriptsBlock } from "../services/stocksEarningsTranscripts.js";
 import { buildAllAccountReports, formatAllReportsMarkdown, formatAccountReportMarkdown, isLastTradingDayOfMonth } from "../services/stocksMonthlyReport.js";
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
@@ -1305,8 +1306,42 @@ export async function runDiscoveryOutcomeTracker(opts = {}) {
     }
     try { await StocksDiscoveryCandidate.updateOne({ _id: c._id }, { $set: set }); updated++; } catch { /* skip */ }
   }
-  console.log(`[stocks-outcome-tracker] checked ${cands.length}, updated ${updated}`);
-  return { checked: cands.length, updated };
+
+  // ── Daily conviction snapshot (AI-free) ──────────────────────────────
+  // Append a deterministic "structural conviction" point so the trend updates
+  // automatically every day, even when no scan is run. Bounded to the names
+  // the user actually cares about (starred OR scanned in the last 21 days),
+  // deduped by ticker, capped — no AI/web_search cost.
+  const recent = new Date(Date.now() - 21 * 86400 * 1000);
+  const trackSeen = new Set();
+  const toTrack = [];
+  for (const c of cands.sort((a, b) => new Date(b.scanDate) - new Date(a.scanDate))) {
+    if (!(c.starred || new Date(c.scanDate) >= recent)) continue;
+    const k = `${c.email}|${c.ticker}`;
+    if (trackSeen.has(k)) continue;
+    trackSeen.add(k);
+    toTrack.push(c);
+    if (toTrack.length >= 30) break;
+  }
+  let convictionUpdated = 0;
+  if (toTrack.length) {
+    const spyPoints = await fetchYahooDaily("SPY", "1y").catch(() => null);
+    for (const c of toTrack) {
+      try {
+        const det = await computeDeterministicFactors({ ticker: c.ticker, currency: c.currencyAtDiscovery, marketCap: c.marketCap, fmpFundamentals: null, spyPoints });
+        const score = deterministicComposite(det.sub, "balanced");
+        if (score == null) continue;
+        await StocksDiscoveryCandidate.updateOne(
+          { _id: c._id },
+          { $push: { scoreHistory: { $each: [{ date: now, score, source: "auto" }], $slice: -90 } } }
+        );
+        convictionUpdated++;
+      } catch { /* skip */ }
+    }
+  }
+
+  console.log(`[stocks-outcome-tracker] checked ${cands.length}, updated ${updated}, conviction ${convictionUpdated}`);
+  return { checked: cands.length, updated, convictionUpdated };
 }
 
 export function scheduleDiscoveryOutcomeTracker() {
