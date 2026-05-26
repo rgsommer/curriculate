@@ -126,6 +126,9 @@ export default function ShortAnswerTask({
 }) {
   const theme = task?.uiTheme || "modern";
   const hasItems = Array.isArray(task.items) && task.items.length > 0;
+  // Stable key so the build effect re-runs (and re-labels questions) when the
+  // roster changes, without re-shuffling on every parent re-render.
+  const memberKey = (Array.isArray(memberNames) ? memberNames : []).join("|");
 
   const [presentedItems, setPresentedItems] = React.useState([]);
   const [multiAnswersByDisplayIdx, setMultiAnswersByDisplayIdx] = React.useState([]);
@@ -190,11 +193,24 @@ export default function ShortAnswerTask({
       const order = Array.from({ length: count }, (_, i) => i);
       shuffleArray(order);
 
-      const built = order.map((canonicalIndex) => {
+      // Split ~2 questions per player and label each with whose turn it is.
+      // Generators can produce a big pool; we only present (players × perPlayer)
+      // so each teammate answers a couple, and prefix each with their name so
+      // they know who's up. Falls back to "You" in solo practice.
+      const players = (Array.isArray(memberNames) && memberNames.length > 0)
+        ? memberNames.map((n) => String(n || "").trim()).filter(Boolean)
+        : [];
+      const roster = players.length > 0 ? players : ["You"];
+      const perPlayer = Math.max(1, Number(task?.config?.questionsPerPlayer) || 2);
+      const targetCount = Math.min(count, roster.length * perPlayer) || count;
+      const selected = order.slice(0, targetCount);
+
+      const built = selected.map((canonicalIndex, displayIdx) => {
         const item = canonicalItems[canonicalIndex] || {};
         return {
           canonicalIndex,
           prompt: item.prompt || task.prompt || `Question ${canonicalIndex + 1}`,
+          player: roster[displayIdx % roster.length],
         };
       });
 
@@ -214,7 +230,8 @@ export default function ShortAnswerTask({
       setPresentedItems([]);
       setMultiAnswersByDisplayIdx([]);
     }
-  }, [task, hasItems, answerDraft]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task, hasItems, answerDraft, memberKey]);
 
   function shuffleArray(arr) {
     for (let i = arr.length - 1; i > 0; i -= 1) {
@@ -836,15 +853,35 @@ export default function ShortAnswerTask({
                     >
                       {displayIdx + 1}
                     </div>
-                    <div
-                      style={{
-                        fontSize: "1rem",
-                        fontWeight: 600,
-                        flex: 1,
-                        color: "#1a202c",
-                      }}
-                    >
-                      {pItem.prompt}
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+                      {pItem.player && (
+                        <div
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 5,
+                            alignSelf: "flex-start",
+                            fontSize: "0.72rem",
+                            fontWeight: 800,
+                            color: "#0369a1",
+                            background: "rgba(14,165,233,0.12)",
+                            border: "1px solid rgba(14,165,233,0.35)",
+                            borderRadius: 999,
+                            padding: "2px 8px",
+                          }}
+                        >
+                          👤 {pItem.player}’s turn
+                        </div>
+                      )}
+                      <div
+                        style={{
+                          fontSize: "1rem",
+                          fontWeight: 600,
+                          color: "#1a202c",
+                        }}
+                      >
+                        {pItem.prompt}
+                      </div>
                     </div>
                     {hasContent && (
                       <div style={{ fontSize: "1.2rem", animation: "pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)" }}>

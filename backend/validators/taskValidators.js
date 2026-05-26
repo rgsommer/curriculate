@@ -1989,6 +1989,13 @@ export function normalizeTaskByType(taskType, rawTask) {
           prompt: asNonEmptyString(it.prompt) || asNonEmptyString(it.question) || "",
           correctAnswer: _saAnswer(it),
         }));
+        // Cap the question pool. The AI sometimes makes one question per
+        // vocabulary word (testers saw 20+), which is far too many — a
+        // short-answer task is split ~2 questions per player. Keep at most 12
+        // so even a 6-player team gets two unique questions each.
+        if (task.items.length > 12) {
+          task.items = task.items.slice(0, 12);
+        }
       } else {
         // Single-prompt format → convert to items[]
         const saPrompt = asNonEmptyString(task.prompt) || asNonEmptyString(task.question) || "";
@@ -1996,6 +2003,12 @@ export function normalizeTaskByType(taskType, rawTask) {
         if (saPrompt && saAns) {
           task.items = [{ id: "q1", prompt: saPrompt, correctAnswer: saAns }];
         }
+      }
+      // Default the per-player split so the renderer can hand out ~2 questions
+      // each and label them by name. Teacher can still override via config.
+      task.config = (task.config && typeof task.config === "object") ? task.config : {};
+      if (typeof task.config.questionsPerPlayer !== "number") {
+        task.config.questionsPerPlayer = 2;
       }
       break;
     }

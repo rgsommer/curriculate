@@ -534,10 +534,16 @@ export const TASK_TYPE_META = {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Create 3–6 short-answer questions that can be answered in 1–2 sentences or a number/phrase. Include an answerKey or exemplar answer where the schema allows.
-    
+    - Create EXACTLY 4–6 short-answer questions total — NOT one question per vocabulary word.
+      A short-answer task is meant to be split ~2 questions per player on a team, so keep the
+      set small. Pick the best 4–6 questions; do not try to cover every vocabulary term.
+    - Each question can be answered in 1–2 sentences or a number/phrase. Include an answerKey or
+      exemplar answer where the schema allows.
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
+    - Hard cap: never output more than 8 items. If you have many vocabulary words, choose the
+      6 most important rather than making a question for each.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
     - Ensure prompts are student-facing instructions (what to do).
     `,
