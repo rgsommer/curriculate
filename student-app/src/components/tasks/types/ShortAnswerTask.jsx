@@ -140,6 +140,47 @@ export default function ShortAnswerTask({
   const [showConfetti, setShowConfetti] = React.useState(false);
   const [focusedIndex, setFocusedIndex] = React.useState(null);
 
+  // ── Bonus-round model ─────────────────────────────────────
+  // Round 1 hands out ~2 questions per player (required); each extra round
+  // hands out 1 each for bonus points, until the question pool is exhausted.
+  // Players choose "another round" or "finish" after each round.
+  const [poolOrder, setPoolOrder] = React.useState([]);   // shuffled canonical idxs
+  const [usedCanonical, setUsedCanonical] = React.useState([]); // consumed by prior rounds
+  const [roundNumber, setRoundNumber] = React.useState(1);
+  const [roundSubmitted, setRoundSubmitted] = React.useState(false); // current round scored
+  const [accAnswers, setAccAnswers] = React.useState({}); // canonicalIndex -> answer (all rounds)
+  const [accCorrect, setAccCorrect] = React.useState(0);  // correct answers across rounds
+
+  const roster = React.useMemo(() => {
+    const real = (Array.isArray(memberNames) ? memberNames : [])
+      .map((n) => String(n || "").trim())
+      .filter(Boolean);
+    return real.length > 0 ? real : ["You"];
+  }, [memberKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const perPlayerR1 = Math.max(1, Number(task?.config?.questionsPerPlayer) || 2);
+
+  // Build one round's batch of (player-labelled) questions from the pool.
+  const buildRound = React.useCallback((order, used, roundNum) => {
+    const canonicalItems = Array.isArray(task?.items) ? task.items : [];
+    const remaining = order.filter((idx) => !used.includes(idx));
+    const perPlayer = roundNum === 1 ? perPlayerR1 : 1;
+    const take = Math.min(remaining.length, roster.length * perPlayer) || remaining.length;
+    return remaining.slice(0, take).map((canonicalIndex, displayIdx) => {
+      const item = canonicalItems[canonicalIndex] || {};
+      return {
+        canonicalIndex,
+        prompt: item.prompt || task?.prompt || `Question ${canonicalIndex + 1}`,
+        player: roster[displayIdx % roster.length],
+      };
+    });
+  }, [task, roster, perPlayerR1]);
+
+  const questionsLeftAfterCurrent = React.useMemo(() => {
+    const presentedIdxs = presentedItems.map((p) => p.canonicalIndex);
+    const consumed = new Set([...usedCanonical, ...presentedIdxs]);
+    return poolOrder.filter((idx) => !consumed.has(idx)).length;
+  }, [poolOrder, usedCanonical, presentedItems]);
+
   // ── Minimum word-count gate ──────────────────────────────
   const wordCount = (s) =>
     typeof s === "string" ? s.trim().split(/\s+/).filter(Boolean).length : 0;
@@ -193,27 +234,17 @@ export default function ShortAnswerTask({
       const order = Array.from({ length: count }, (_, i) => i);
       shuffleArray(order);
 
-      // Split ~2 questions per player and label each with whose turn it is.
-      // Generators can produce a big pool; we only present (players × perPlayer)
-      // so each teammate answers a couple, and prefix each with their name so
-      // they know who's up. Falls back to "You" in solo practice.
-      const players = (Array.isArray(memberNames) && memberNames.length > 0)
-        ? memberNames.map((n) => String(n || "").trim()).filter(Boolean)
-        : [];
-      const roster = players.length > 0 ? players : ["You"];
-      const perPlayer = Math.max(1, Number(task?.config?.questionsPerPlayer) || 2);
-      const targetCount = Math.min(count, roster.length * perPlayer) || count;
-      const selected = order.slice(0, targetCount);
+      // Bonus-round model: round 1 hands out ~2 questions per player; later
+      // rounds hand out 1 each for bonus points until the pool runs out.
+      // Reset all round bookkeeping for the new task.
+      setPoolOrder(order);
+      setUsedCanonical([]);
+      setRoundNumber(1);
+      setRoundSubmitted(false);
+      setAccAnswers({});
+      setAccCorrect(0);
 
-      const built = selected.map((canonicalIndex, displayIdx) => {
-        const item = canonicalItems[canonicalIndex] || {};
-        return {
-          canonicalIndex,
-          prompt: item.prompt || task.prompt || `Question ${canonicalIndex + 1}`,
-          player: roster[displayIdx % roster.length],
-        };
-      });
-
+      const built = buildRound(order, [], 1);
       setPresentedItems(built);
 
       if (Array.isArray(restoredByDisplayIdx) && restoredByDisplayIdx.length === built.length) {
@@ -270,22 +301,18 @@ export default function ShortAnswerTask({
 
     try {
       if (hasItems && presentedItems.length > 0) {
-        const canonicalCount = task.items.length;
-        const canonicalAnswers = new Array(canonicalCount).fill("");
-
-        presentedItems.forEach((pItem, displayIdx) => {
-          const val = multiAnswersByDisplayIdx[displayIdx] || "";
-          canonicalAnswers[pItem.canonicalIndex] = val;
-        });
-
+        // Evaluate ONLY this round's presented questions, then accumulate.
         const perItemResults = [];
+        const roundAnswers = {}; // canonicalIndex -> answer (this round)
 
-        for (let canonicalIndex = 0; canonicalIndex < canonicalCount; canonicalIndex += 1) {
-          const item = task.items[canonicalIndex] || {};
-          const studentAnswer = canonicalAnswers[canonicalIndex] || "";
+        for (let displayIdx = 0; displayIdx < presentedItems.length; displayIdx += 1) {
+          const pItem = presentedItems[displayIdx];
+          const item = task.items[pItem.canonicalIndex] || {};
+          const studentAnswer = multiAnswersByDisplayIdx[displayIdx] || "";
+          roundAnswers[pItem.canonicalIndex] = studentAnswer;
 
           const result = await evaluateShortAnswer({
-            question: item.prompt || task.prompt || `Question ${canonicalIndex + 1}`,
+            question: item.prompt || task.prompt || `Question ${pItem.canonicalIndex + 1}`,
             studentAnswer,
             gradeLevel: task.gradeLevel || task?.config?.gradeLevel || "6-8",
             correctAnswer: item.correctAnswer || "",
@@ -293,8 +320,9 @@ export default function ShortAnswerTask({
           });
 
           perItemResults.push({
-            canonicalIndex,
-            prompt: item.prompt || `Question ${canonicalIndex + 1}`,
+            canonicalIndex: pItem.canonicalIndex,
+            prompt: item.prompt || `Question ${pItem.canonicalIndex + 1}`,
+            player: pItem.player,
             studentAnswer,
             correct: result.correct === true,
             accepted: result.correct === true || (result.score ?? 0) >= 0.75,
@@ -306,33 +334,29 @@ export default function ShortAnswerTask({
         }
 
         const allCorrect =
-          perItemResults.length > 0 &&
-          perItemResults.every((r) => r.correct === true || r.score >= 0.75);
+          perItemResults.length > 0 && perItemResults.every((r) => r.accepted);
 
         const reviewPayload = {
           type: "multi-short",
           itemResults: perItemResults,
           allCorrect,
+          roundNumber,
         };
 
+        // NOTE: don't accumulate here — re-submitting the same round (after an
+        // edit) would double-count. Prior-round totals are folded in at the
+        // round transition (startNextRound) and at finishTask.
         setReview(reviewPayload);
+        setRoundSubmitted(true);
         setAttemptCount((n) => n + 1);
 
         if (allCorrect) {
           setShowConfetti(true);
           playSound();
           setTimeout(() => setShowConfetti(false), 3000);
-
-          const payload = {
-            kind: "multi-short-answer",
-            answers: canonicalAnswers,
-            review: reviewPayload,
-          };
-
-          const payloadString = JSON.stringify(payload);
-          if (onAnswerChange) onAnswerChange(payloadString);
-          onSubmit(payloadString);
         }
+        // NOTE: advancing the task is now driven by the "Finish" button
+        // (see round-nav UI), so players can opt into bonus rounds first.
       } else {
         const result = await evaluateShortAnswer({
           question: task.prompt || task.title || "Short answer",
@@ -380,6 +404,67 @@ export default function ShortAnswerTask({
     }
   };
 
+  // Snapshot the current round's answers (canonicalIndex -> answer).
+  const currentRoundAnswers = () => {
+    const out = {};
+    presentedItems.forEach((pItem, displayIdx) => {
+      const val = multiAnswersByDisplayIdx[displayIdx];
+      if (typeof val === "string" && val.length) out[pItem.canonicalIndex] = val;
+    });
+    return out;
+  };
+  const currentRoundAccepted = () =>
+    (review?.itemResults || []).filter((r) => r.accepted).length;
+
+  // Bonus round: fold in the current batch, then deal the next (1 each) round.
+  const startNextRound = () => {
+    if (checking) return;
+    const presentedIdxs = presentedItems.map((p) => p.canonicalIndex);
+    const nextUsed = [...usedCanonical, ...presentedIdxs];
+    const nextRoundNum = roundNumber + 1;
+    const built = buildRound(poolOrder, nextUsed, nextRoundNum);
+    if (built.length === 0) {
+      finishTask();
+      return;
+    }
+    // Accumulate this round before moving on.
+    const rAnswers = currentRoundAnswers();
+    const rAccepted = currentRoundAccepted();
+    setAccAnswers((prev) => ({ ...prev, ...rAnswers }));
+    setAccCorrect((prev) => prev + rAccepted);
+
+    setUsedCanonical(nextUsed);
+    setRoundNumber(nextRoundNum);
+    setPresentedItems(built);
+    setMultiAnswersByDisplayIdx(new Array(built.length).fill(""));
+    setReview(null);
+    setRoundSubmitted(false);
+    setFocusedIndex(null);
+  };
+
+  // Finish: hand the full set of answers (all rounds) up to the parent.
+  const finishTask = () => {
+    const merged = { ...accAnswers, ...currentRoundAnswers() };
+    const totalCorrect = accCorrect + currentRoundAccepted();
+    const canonicalCount = Array.isArray(task?.items) ? task.items.length : 0;
+    const canonicalAnswers = new Array(canonicalCount).fill("");
+    Object.entries(merged).forEach(([idx, val]) => {
+      const i = Number(idx);
+      if (Number.isInteger(i) && i >= 0 && i < canonicalCount) canonicalAnswers[i] = val;
+    });
+    const payload = {
+      kind: "multi-short-answer",
+      answers: canonicalAnswers,
+      rounds: roundNumber,
+      correctCount: totalCorrect,
+      bonusRounds: Math.max(0, roundNumber - 1),
+      review,
+    };
+    const payloadString = JSON.stringify(payload);
+    if (onAnswerChange) onAnswerChange(payloadString);
+    onSubmit(payloadString);
+  };
+
   const handleSingleChange = (e) => {
     const value = e.target.value;
     setSingleAnswer(value);
@@ -397,6 +482,8 @@ export default function ShortAnswerTask({
     });
 
     if (review) setReview(null);
+    // Editing after scoring re-arms the Submit button (re-score this round).
+    if (roundSubmitted) setRoundSubmitted(false);
 
     try {
       const nextDraft = Array.isArray(multiAnswersByDisplayIdx)
@@ -786,8 +873,13 @@ export default function ShortAnswerTask({
               boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
             }}
           >
-            <div style={{ fontSize: "0.85rem", opacity: 0.85, fontWeight: 600 }}>
-              📚 SHORT ANSWER CHALLENGE
+            <div style={{ fontSize: "0.85rem", opacity: 0.85, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+              <span>📚 SHORT ANSWER CHALLENGE</span>
+              {roundNumber > 1 && (
+                <span style={{ background: "rgba(255,255,255,0.22)", borderRadius: 999, padding: "1px 8px", fontWeight: 800 }}>
+                  ⭐ Bonus round {roundNumber}
+                </span>
+              )}
             </div>
             <div style={{ fontSize: "1.35rem", fontWeight: 800, marginTop: 4 }}>
               {task.title || "Explain your thinking"}
@@ -944,47 +1036,91 @@ export default function ShortAnswerTask({
           {waitingCard}
           {multiReviewCard}
 
-          <button
-            type="button"
-            onClick={handleSubmitClick}
-            disabled={disabled || checking || !multiReady}
-            style={{
-              marginTop: "12px",
-              padding: multiReady ? "14px 28px" : "14px 28px",
-              fontSize: "1rem",
-              fontWeight: 800,
-              borderRadius: "10px",
-              border: "none",
-              cursor: disabled || checking || !multiReady ? "not-allowed" : "pointer",
-              background: disabled
-                ? "rgba(156,163,175,0.5)"
+          {roundSubmitted && !checking ? (
+            // Round scored — choose a bonus round or finish.
+            <div style={{ marginTop: 12, display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              {questionsLeftAfterCurrent > 0 && (
+                <button
+                  type="button"
+                  onClick={startNextRound}
+                  disabled={disabled}
+                  style={{
+                    padding: "14px 22px",
+                    fontSize: "1rem",
+                    fontWeight: 800,
+                    borderRadius: "10px",
+                    border: "2px solid #0ea5e9",
+                    cursor: "pointer",
+                    background: "rgba(14,165,233,0.12)",
+                    color: "#0369a1",
+                  }}
+                  title="Deal 1 more question per player for bonus points"
+                >
+                  ▶ Another round (+bonus) · {questionsLeftAfterCurrent} left
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={finishTask}
+                disabled={disabled}
+                style={{
+                  padding: "14px 28px",
+                  fontSize: "1rem",
+                  fontWeight: 800,
+                  borderRadius: "10px",
+                  border: "none",
+                  cursor: "pointer",
+                  background: "linear-gradient(135deg, #22c55e, #16a34a)",
+                  color: "#fff",
+                  boxShadow: "0 8px 16px rgba(34,197,94,0.3)",
+                }}
+              >
+                ✓ Finish
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSubmitClick}
+              disabled={disabled || checking || !multiReady}
+              style={{
+                marginTop: "12px",
+                padding: multiReady ? "14px 28px" : "14px 28px",
+                fontSize: "1rem",
+                fontWeight: 800,
+                borderRadius: "10px",
+                border: "none",
+                cursor: disabled || checking || !multiReady ? "not-allowed" : "pointer",
+                background: disabled
+                  ? "rgba(156,163,175,0.5)"
+                  : multiReady
+                  ? "linear-gradient(135deg, #ff6b6b, #ffd93d)"
+                  : "rgba(156,163,175,0.6)",
+                color: "#fff",
+                opacity: disabled || checking || !multiReady ? 0.65 : 1,
+                transition: "all 0.3s ease-out",
+                boxShadow: multiReady
+                  ? "0 8px 16px rgba(255,107,107,0.3)"
+                  : "0 2px 8px rgba(0,0,0,0.1)",
+                alignSelf: "flex-end",
+              }}
+              onMouseDown={(e) =>
+                multiReady &&
+                !disabled &&
+                !checking &&
+                (e.target.style.transform = "scale(0.96)")
+              }
+              onMouseUp={(e) => (e.target.style.transform = "scale(1)")}
+            >
+              {checking
+                ? "⏳ Checking..."
                 : multiReady
-                ? "linear-gradient(135deg, #ff6b6b, #ffd93d)"
-                : "rgba(156,163,175,0.6)",
-              color: "#fff",
-              opacity: disabled || checking || !multiReady ? 0.65 : 1,
-              transition: "all 0.3s ease-out",
-              boxShadow: multiReady
-                ? "0 8px 16px rgba(255,107,107,0.3)"
-                : "0 2px 8px rgba(0,0,0,0.1)",
-              alignSelf: "flex-end",
-            }}
-            onMouseDown={(e) =>
-              multiReady &&
-              !disabled &&
-              !checking &&
-              (e.target.style.transform = "scale(0.96)")
-            }
-            onMouseUp={(e) => (e.target.style.transform = "scale(1)")}
-          >
-            {checking
-              ? "⏳ Checking..."
-              : multiReady
-              ? "🚀 Submit All Answers"
-              : multiMinWC === 0
-              ? "📝 Answer every question"
-              : `✍️ Write more (${minWords}+ words)`}
-          </button>
+                ? (roundNumber === 1 ? "🚀 Submit answers" : `🚀 Submit round ${roundNumber}`)
+                : multiMinWC === 0
+                ? "📝 Answer every question"
+                : `✍️ Write more (${minWords}+ words)`}
+            </button>
+          )}
 
           <style>{`
             @keyframes slideUp {
