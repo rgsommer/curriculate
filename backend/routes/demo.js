@@ -1713,21 +1713,6 @@ function lastCompletedWeek(now = new Date()) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  lastNCompletedWeeks: a rolling window of the last N fully-elapsed  */
-/*  weeks, ending at the most recent completed Saturday.  Used for the */
-/*  admin "gift-card" leaderboard — a 5-week span gives the admin time */
-/*  to buy + send cards and keep track of who's who across recent      */
-/*  weeks (rather than a single week that resets every Sunday).        */
-/* ------------------------------------------------------------------ */
-function lastNCompletedWeeks(n = 5, now = new Date()) {
-  const { end } = lastCompletedWeek(now); // most recent completed Sat 23:59:59.999
-  const start = new Date(end);
-  start.setDate(start.getDate() - (7 * n - 1)); // N weeks inclusive
-  start.setHours(0, 0, 0, 0);
-  return { start, end };
-}
-
-/* ------------------------------------------------------------------ */
 /*  currentWeek: this week's Sun 00:00 → now.  Used for the live      */
 /*  "this week so far" leaderboard alongside the locked gift-card     */
 /*  window — so on Sunday morning when last week is empty (everyone  */
@@ -1752,12 +1737,12 @@ function currentWeek(now = new Date()) {
 /*  performers from a list of {name, points, secondary?}.  Used for   */
 /*  both the weekly and the all-time leaderboards in the admin email. */
 /* ------------------------------------------------------------------ */
-function buildTopThreeBlock(title, rows, currentEmail) {
+function buildTopThreeBlock(title, rows, currentEmail, emptyMsg = "No results in this window yet.") {
   if (!rows || rows.length === 0) {
     return `
       <div style="background:#fff;padding:14px 24px;border:1px solid #e2e8f0;border-top:none;">
         <div style="font-weight:900;font-size:13px;margin-bottom:6px;color:#1e293b;">${title}</div>
-        <div style="font-size:12px;color:#94a3b8;font-style:italic;">No results in this window yet.</div>
+        <div style="font-size:12px;color:#94a3b8;font-style:italic;">${esc(emptyMsg)}</div>
       </div>`;
   }
   const top3 = rows.slice(0, 3);
@@ -1854,37 +1839,58 @@ async function sendAdminNotification(lead) {
       lead.email
     );
 
-    // PAST 5 WEEKS top 3 — rolling gift-card window. A 5-week span (ending
-    // the most recent completed Saturday) gives the admin time to buy + send
-    // gift cards and keep track of who's who across recent weeks.
-    const { start: weekStart, end: weekEnd } = lastNCompletedWeeks(5, new Date());
-    const weeklyLeads = await ConferenceLead.find({
+    // PAST 5 WEEKS — a SEPARATE Top 3 for EACH completed week, newest first,
+    // so the admin sees that week's gift-card winners and can track who's who
+    // across the last 5 weeks. Query the whole span once, then bucket per week.
+    const weeks = []; // newest → oldest
+    {
+      const { start: s0, end: e0 } = lastCompletedWeek(new Date());
+      for (let i = 0; i < 5; i++) {
+        const ws = new Date(s0); ws.setDate(ws.getDate() - 7 * i);
+        const we = new Date(e0); we.setDate(we.getDate() - 7 * i);
+        weeks.push({ start: ws, end: we });
+      }
+    }
+    const spanStart = weeks[weeks.length - 1].start;
+    const spanEnd = weeks[0].end;
+    const spanLeads = await ConferenceLead.find({
       ...scopeFilter,
       ...excludeEmailFilter,
-      "sessions.completedAt": { $gte: weekStart, $lte: weekEnd },
+      "sessions.completedAt": { $gte: spanStart, $lte: spanEnd },
     })
       .select("name email sessions")
       .lean();
 
-    const weeklyRanked = weeklyLeads
-      .map((l) => {
-        const weekPts = (l.sessions || [])
-          .filter((s) => {
-            const t = s?.completedAt ? new Date(s.completedAt).getTime() : 0;
-            return t >= weekStart.getTime() && t <= weekEnd.getTime();
-          })
-          .reduce((sum, s) => sum + (s.points || 0), 0);
-        return { name: l.name, email: l.email, points: weekPts };
-      })
-      .filter((r) => r.points > 0)
-      .sort((a, b) => b.points - a.points);
+    // Gift-card qualifying threshold: a player only makes a week's Top 3 if
+    // they earned at least this many points that week. Protects against
+    // handing out cards on lean weeks when only a few people played a little.
+    // Tunable via env (WEEKLY_GIFT_CARD_MIN_POINTS); default 300.
+    const giftCardMinPoints = Math.max(0, Number(process.env.WEEKLY_GIFT_CARD_MIN_POINTS) || 300);
 
     const weekFmt = (d) => d.toISOString().slice(0, 10);
-    weeklyTopHtml = buildTopThreeBlock(
-      `🎁 Past 5 Weeks Top 3 — ${weekFmt(weekStart)} → ${weekFmt(weekEnd)} (gift-card window)`,
-      weeklyRanked,
-      lead.email
-    );
+    weeklyTopHtml = weeks
+      .map(({ start, end }, i) => {
+        const ranked = spanLeads
+          .map((l) => {
+            const pts = (l.sessions || [])
+              .filter((s) => {
+                const t = s?.completedAt ? new Date(s.completedAt).getTime() : 0;
+                return t >= start.getTime() && t <= end.getTime();
+              })
+              .reduce((sum, s) => sum + (s.points || 0), 0);
+            return { name: l.name, email: l.email, points: pts };
+          })
+          .filter((r) => r.points >= giftCardMinPoints) // only qualifiers
+          .sort((a, b) => b.points - a.points);
+        const recent = i === 0 ? " (most recent)" : "";
+        return buildTopThreeBlock(
+          `🎁 Week of ${weekFmt(start)} → ${weekFmt(end)} — Top 3 (≥${giftCardMinPoints} pts)${recent}`,
+          ranked,
+          lead.email,
+          `No one reached the ${giftCardMinPoints}-point gift-card threshold this week.`
+        );
+      })
+      .join("");
 
     // LIVE current week (in progress) — same shape, just a different
     // time window.  On Sunday morning (when last week may be empty)
