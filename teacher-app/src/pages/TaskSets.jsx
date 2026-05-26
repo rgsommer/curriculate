@@ -641,6 +641,7 @@ export default function TaskSets() {
         learningGoal: full?.learningGoal || "",
         topicLabel: full?.topicLabel || getTitle(full) || "",
         types,
+        reselectTypes: false,
         numberOfTasks: tasks.length || types.length || 1,
         questMode: !!full?.questModeEnabled,
         duelsEnabled: !!full?.duelsEnabled,
@@ -668,11 +669,19 @@ export default function TaskSets() {
   // delete the throwaway copy so there's no duplicate.
   const runRegenerate = async () => {
     if (!regenForm || !regenSource || regeneratingId) return;
-    const id = regenSource?._id || regenSource?.id;
+    const src = regenSource;
+    const form = regenForm;
+    const id = src?._id || src?.id;
     if (!id) return;
 
     const replace = regenMode === "replace";
+    // Re-select: let the AI choose a fresh set of task types instead of reusing
+    // the original mix. We still pass the count so the set stays the same size.
+    const reselect = !!form.reselectTypes;
     setRegeneratingId(id);
+    // Close the modal immediately — generation runs in the background and the
+    // toast reports progress / completion.
+    setRegenOpen(false);
     showToast(
       replace
         ? "♻️ Regenerating in place… (~30s)"
@@ -680,22 +689,22 @@ export default function TaskSets() {
       60000
     );
     try {
-      const types = regenForm.types || [];
-      const n = Math.max(1, Number(regenForm.numberOfTasks) || types.length || 1);
+      const types = reselect ? [] : (form.types || []);
+      const n = Math.max(1, Number(form.numberOfTasks) || (form.types || []).length || 1);
       const payload = {
-        tasksetName: replace ? getTitle(regenSource) : `${getTitle(regenSource)} (regenerated)`,
-        subject: regenForm.subject || "General",
-        gradeLevel: regenForm.gradeLevel || 7,
-        difficulty: (regenForm.difficulty || "MEDIUM").toUpperCase(),
-        learningGoal: regenForm.learningGoal || "",
-        topicLabel: regenForm.topicLabel || getTitle(regenSource) || "",
+        tasksetName: replace ? getTitle(src) : `${getTitle(src)} (regenerated)`,
+        subject: form.subject || "General",
+        gradeLevel: form.gradeLevel || 7,
+        difficulty: (form.difficulty || "MEDIUM").toUpperCase(),
+        learningGoal: form.learningGoal || "",
+        topicLabel: form.topicLabel || getTitle(src) || "",
         requiredTaskTypes: types,
         guaranteedTaskTypes: types,
         numberOfTasks: n,
-        questMode: !!regenForm.questMode,
-        duelsEnabled: !!regenForm.duelsEnabled,
-        atDeskOnly: !!regenForm.atDeskOnly,
-        aiWordBank: (regenForm.aiWordBank || "").trim(),
+        questMode: !!form.questMode,
+        duelsEnabled: !!form.duelsEnabled,
+        atDeskOnly: !!form.atDeskOnly,
+        aiWordBank: (form.aiWordBank || "").trim(),
       };
       // Stream via SSE (same as the generator) so the ~30s generation keeps the
       // connection alive — a silent POST gets killed by idle-timeout proxies.
@@ -757,7 +766,6 @@ export default function TaskSets() {
       } else {
         showToast("✅ Regenerated as a new taskset.");
       }
-      setRegenOpen(false);
       setRegenForm(null);
       setRegenSource(null);
       await loadSets();
@@ -2005,37 +2013,55 @@ export default function TaskSets() {
                   </label>
                 </div>
 
-                {/* Task-type mix (read-only display of the locked mix) */}
+                {/* Task-type mix */}
                 <div>
-                  <span style={regenLabelStyle}>Task-type mix ({(regenForm.types || []).length})</span>
-                  <div style={{ marginTop: 6, display: "flex", gap: 5, flexWrap: "wrap" }}>
-                    {(regenForm.types || []).map((t) => {
-                      const meta = TASK_TYPE_META[t];
-                      const label = meta?.label || t.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-                      return (
-                        <span key={t} style={{
-                          display: "inline-flex", alignItems: "center", gap: 5,
-                          padding: "3px 8px", borderRadius: 12, fontSize: "0.72rem", fontWeight: 700,
-                          background: "rgba(15,23,42,0.05)", border: "1px solid rgba(15,23,42,0.12)",
-                        }}>
-                          {label}
-                          <button
-                            type="button"
-                            title="Remove this type"
-                            onClick={() => setRegenForm((f) => ({ ...f, types: (f.types || []).filter((x) => x !== t) }))}
-                            style={{ border: "none", background: "transparent", cursor: "pointer", color: "#9ca3af", fontWeight: 900, padding: 0, lineHeight: 1 }}
-                          >
-                            ×
-                          </button>
-                        </span>
-                      );
-                    })}
-                    {(regenForm.types || []).length === 0 && (
-                      <span style={{ fontSize: 12, color: "#9ca3af", fontWeight: 700 }}>
-                        Any types (AI picks)
-                      </span>
-                    )}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <span style={regenLabelStyle}>
+                      Task-type mix{regenForm.reselectTypes ? "" : ` (${(regenForm.types || []).length})`}
+                    </span>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, fontWeight: 700, color: "#374151" }}>
+                      <input
+                        type="checkbox"
+                        checked={!!regenForm.reselectTypes}
+                        onChange={(e) => setRegenForm((f) => ({ ...f, reselectTypes: e.target.checked }))}
+                      />
+                      Let AI pick new task types
+                    </label>
                   </div>
+                  {regenForm.reselectTypes ? (
+                    <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280", fontWeight: 700, lineHeight: 1.5 }}>
+                      The AI will choose a fresh set of {Math.max(1, Number(regenForm.numberOfTasks) || (regenForm.types || []).length || 1)} task type{Number(regenForm.numberOfTasks) === 1 ? "" : "s"} for this topic instead of reusing the originals.
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 6, display: "flex", gap: 5, flexWrap: "wrap" }}>
+                      {(regenForm.types || []).map((t) => {
+                        const meta = TASK_TYPE_META[t];
+                        const label = meta?.label || t.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+                        return (
+                          <span key={t} style={{
+                            display: "inline-flex", alignItems: "center", gap: 5,
+                            padding: "3px 8px", borderRadius: 12, fontSize: "0.72rem", fontWeight: 700,
+                            background: "rgba(15,23,42,0.05)", border: "1px solid rgba(15,23,42,0.12)",
+                          }}>
+                            {label}
+                            <button
+                              type="button"
+                              title="Remove this type"
+                              onClick={() => setRegenForm((f) => ({ ...f, types: (f.types || []).filter((x) => x !== t) }))}
+                              style={{ border: "none", background: "transparent", cursor: "pointer", color: "#9ca3af", fontWeight: 900, padding: 0, lineHeight: 1 }}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        );
+                      })}
+                      {(regenForm.types || []).length === 0 && (
+                        <span style={{ fontSize: 12, color: "#9ca3af", fontWeight: 700 }}>
+                          Any types (AI picks)
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Vocabulary / word bank */}
