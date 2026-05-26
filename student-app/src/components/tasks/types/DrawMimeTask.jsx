@@ -473,9 +473,17 @@ export default function DrawMimeTask({
     return arr.length > 0 ? arr : ["Draw or Mime"];
   }, [task]);
 
-  // Number of rounds = number of players (each gets a turn to perform)
+  // Rounds = ~2 turns per player (each player performs twice), capped by the
+  // number of distinct clues so we don't force repeats. Tester saw 20 rounds
+  // because this used to fall back to clues.length when the roster was empty —
+  // now it's always player-count driven (default 4 in solo/practice).
   const [roundIndex, setRoundIndex] = useState(0);
-  const totalRounds = Math.max(1, (Array.isArray(memberNames) ? memberNames.filter(Boolean).length : 0) || clues.length);
+  const _rosterCount = (Array.isArray(memberNames) ? memberNames.filter(Boolean).length : 0) || 4;
+  const PERFORMANCES_PER_PLAYER = 2;
+  const totalRounds = Math.max(
+    1,
+    Math.min(Math.max(clues.length, 1), _rosterCount * PERFORMANCES_PER_PLAYER)
+  );
   const currentClue = clues[roundIndex % clues.length]; // cycle through clues if fewer than rounds
   const isLastRound = roundIndex >= totalRounds - 1;
 
