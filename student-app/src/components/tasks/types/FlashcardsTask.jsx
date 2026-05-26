@@ -148,8 +148,15 @@ export default function FlashcardsTask({ task, onSubmit, disabled, memberNames }
     setBuzzCountdown(0);
   };
 
+  // The answer is visible once the buzz countdown reveals it OR the card is
+  // flipped manually — either way Right/Wrong should be clickable.
+  const answerShowing = revealed || flipped;
+
   const markBuzzResult = (wasRight) => {
-    if (!revealed) return;
+    // Allow marking as soon as the answer is showing — either revealed by the
+    // buzz countdown OR flipped manually. Tester: "should be able to click as
+    // soon as the answer shows, not have to wait for the countdown."
+    if (!revealed && !flipped) return;
     const name = playerNames[buzzedBy] || "";
     if (name) bumpScore(name, wasRight ? "right" : "wrong");
 
@@ -414,15 +421,15 @@ export default function FlashcardsTask({ task, onSubmit, disabled, memberNames }
 
           <div style={{ display: "flex", justifyContent: "center", gap: 12, flexWrap: "wrap" }}>
             <button
-              disabled={disabled || !revealed}
+              disabled={disabled || !answerShowing}
               onClick={() => markBuzzResult(true)}
               style={{
                 padding: "14px 18px",
                 borderRadius: 16,
                 fontWeight: 1000,
                 border: "1px solid rgba(22,163,74,0.25)",
-                background: !revealed ? "rgba(22,163,74,0.10)" : "rgba(22,163,74,0.18)",
-                cursor: disabled || !revealed ? "not-allowed" : "pointer",
+                background: !answerShowing ? "rgba(22,163,74,0.10)" : "rgba(22,163,74,0.18)",
+                cursor: disabled || !answerShowing ? "not-allowed" : "pointer",
                 color: "#14532d",
                 minWidth: 200,
                 fontSize: 18,
@@ -432,15 +439,15 @@ export default function FlashcardsTask({ task, onSubmit, disabled, memberNames }
             </button>
 
             <button
-              disabled={disabled || !revealed}
+              disabled={disabled || !answerShowing}
               onClick={() => markBuzzResult(false)}
               style={{
                 padding: "14px 18px",
                 borderRadius: 16,
                 fontWeight: 1000,
                 border: "1px solid rgba(220,38,38,0.25)",
-                background: !revealed ? "rgba(220,38,38,0.10)" : "rgba(220,38,38,0.16)",
-                cursor: disabled || !revealed ? "not-allowed" : "pointer",
+                background: !answerShowing ? "rgba(220,38,38,0.10)" : "rgba(220,38,38,0.16)",
+                cursor: disabled || !answerShowing ? "not-allowed" : "pointer",
                 color: "#7f1d1d",
                 minWidth: 200,
                 fontSize: 18,

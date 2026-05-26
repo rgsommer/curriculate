@@ -375,12 +375,14 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
                 }} />
               </div>
 
-              {/* Timer pill — top-center, bright, large (avoids corner cutoff). */}
+              {/* Timer pill — top-RIGHT, bright, large. Kept out of the
+                  left-aligned heading's flow (the instruction bar reserves
+                  space on the right) so it no longer covers the instructions.
+                  Tester: "the countdown bar covers the instructions/heading." */}
               <div style={{
                 position: "absolute",
                 top: 14,
-                left: "50%",
-                transform: "translateX(-50%)",
+                right: 16,
                 background: "rgba(0,0,0,0.85)",
                 color: dtc,
                 padding: "8px 20px",
@@ -413,14 +415,15 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
 
         {/* Instruction + document info overlay (collapsible on small screens) */}
         <div style={{
-          padding: "12px 16px",
           background: "rgba(26,26,46,0.95)",
           color: "#f5f0e8",
           fontSize: "0.85rem",
           zIndex: 10,
           borderBottom: "1px solid rgba(212,165,116,0.3)",
           flexShrink: 0,
-          paddingRight: 100,
+          // Clear the vertical countdown bar on the left (18px) and the timer
+          // pill on the right so neither covers the heading text.
+          padding: "12px 150px 12px 32px",
         }}>
           <div style={{ fontWeight: 700, marginBottom: 4 }}>
             Read this document carefully. Use +/− to zoom, then scroll to read.

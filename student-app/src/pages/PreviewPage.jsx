@@ -30,6 +30,7 @@ export default function PreviewPage() {
   const [loading, setLoading] = useState(true);
   const [index, setIndex] = useState(0);
   const [runKey, setRunKey] = useState(0); // bump to remount TaskRunner (replay a task)
+  const [finished, setFinished] = useState(false); // end-of-run screen
   const socket = useMemo(() => makeStubSocket(), []);
 
   const tasksetId = useMemo(() => {
@@ -85,6 +86,7 @@ export default function PreviewPage() {
     const next = Math.max(0, Math.min(total - 1, i));
     setIndex(next);
     setRunKey((k) => k + 1);
+    setFinished(false);
   };
 
   // Capture a teacher's Skip note from test-run into the feedback file.
@@ -116,8 +118,11 @@ export default function PreviewPage() {
     if (answer && typeof answer === "object" && answer.skipped === true) {
       recordSkipFeedback(answer, currentTask);
     }
-    // Advance to the next task on submit (last task just stays, showing its result).
+    // Advance to the next task on submit; on the LAST task, show the
+    // end-of-run screen (tester: "doesn't know what to do after the last task
+    // — should report/ask for feedback/end").
     if (index < total - 1) goTo(index + 1);
+    else setFinished(true);
   };
 
   const typeLabel = (t) => {
@@ -248,24 +253,56 @@ export default function PreviewPage() {
         </div>
       )}
 
-      {/* The real student renderer */}
-      {previewTask && (
-        <div style={{ background: "rgba(255,255,255,0.96)", borderRadius: 16, overflow: "hidden", color: "#0f172a" }}>
-          <TaskRunner
-            key={runKey}
-            task={previewTask}
-            socket={socket}
-            roomCode="PREVIEW"
-            teamId="preview-team"
-            demoMode={true}
-            practiceMode={true}
-            memberNames={["Teacher", "Ada", "Newton"]}
-            onSubmit={handleSubmit}
-            onComplete={handleSubmit}
-            onDone={handleSubmit}
-            setShowInstructions={() => {}}
-          />
+      {/* End-of-run screen — shown after the last task is completed/skipped. */}
+      {finished ? (
+        <div
+          style={{
+            background: "rgba(255,255,255,0.96)",
+            borderRadius: 16,
+            color: "#0f172a",
+            padding: "32px 24px",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: 48, marginBottom: 8 }}>🎉</div>
+          <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>
+            Test run complete
+          </div>
+          <div style={{ color: "#475569", fontWeight: 600, marginBottom: 20 }}>
+            You stepped through all {total} task{total === 1 ? "" : "s"} of “{taskset?.name || "this taskset"}”.
+            In a live session students would now see their scores and a feedback prompt.
+          </div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+            <button type="button" onClick={() => goTo(0)} style={endBtn(true)}>
+              ↻ Run again from the top
+            </button>
+            <button type="button" onClick={() => goTo(total - 1)} style={endBtn(false)}>
+              ← Back to last task
+            </button>
+            <button type="button" onClick={() => window.close()} style={endBtn(false)}>
+              ✕ Close preview
+            </button>
+          </div>
         </div>
+      ) : (
+        previewTask && (
+          <div style={{ background: "rgba(255,255,255,0.96)", borderRadius: 16, overflow: "hidden", color: "#0f172a" }}>
+            <TaskRunner
+              key={runKey}
+              task={previewTask}
+              socket={socket}
+              roomCode="PREVIEW"
+              teamId="preview-team"
+              demoMode={true}
+              practiceMode={true}
+              memberNames={["Teacher", "Ada", "Newton"]}
+              onSubmit={handleSubmit}
+              onComplete={handleSubmit}
+              onDone={handleSubmit}
+              setShowInstructions={() => {}}
+            />
+          </div>
+        )
       )}
 
       <div style={{ marginTop: 12, fontSize: 12, opacity: 0.7, textAlign: "center" }}>
@@ -273,6 +310,19 @@ export default function PreviewPage() {
       </div>
     </div>
   );
+}
+
+function endBtn(primary) {
+  return {
+    padding: "10px 18px",
+    borderRadius: 10,
+    border: primary ? "1px solid #7c3aed" : "1px solid #cbd5e1",
+    background: primary ? "#7c3aed" : "#fff",
+    color: primary ? "#fff" : "#0f172a",
+    fontWeight: 800,
+    cursor: "pointer",
+    fontSize: 14,
+  };
 }
 
 function navBtn(disabled) {

@@ -431,8 +431,22 @@ export function assessTaskPlayability(rawTask) {
     }
 
     case TASK_TYPES.SCRIPT_PLAY: {
-      // Expect lines/dialogue array somewhere
-      const n = arrLen(() => t.lines, () => t.config?.lines, () => t.dialogue, () => t.config?.dialogue);
+      // The renderer accepts several shapes: config.scenes[].turns, a flat
+      // lines[]/config.lines[], or dialogue[]. Count across all of them so we
+      // don't false-flag valid scene-format scripts, and DO flag the truly
+      // empty ones — which otherwise fall back to a generic placeholder script
+      // ("Alright team — let's start the scene!") that reads as nonsense.
+      const sceneArr =
+        (Array.isArray(t.config?.scenes) && t.config.scenes) ||
+        (Array.isArray(t.scenes) && t.scenes) ||
+        [];
+      const sceneTurns = sceneArr.reduce(
+        (sum, sc) =>
+          sum + (Array.isArray(sc?.turns) ? sc.turns.filter((x) => x && (x.line || x.text)).length : 0),
+        0
+      );
+      const flat = arrLen(() => t.lines, () => t.config?.lines, () => t.dialogue, () => t.config?.dialogue);
+      const n = Math.max(sceneTurns, flat);
       if (n < 4) issues.push(`script lines/dialogue must have at least 4 lines (got ${n})`);
       break;
     }

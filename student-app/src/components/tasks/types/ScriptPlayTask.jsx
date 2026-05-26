@@ -93,18 +93,18 @@ export default function ScriptPlayTask({ task, onSubmit, disabled = false, membe
       ];
     }
 
-    // Safe fallback: never show a blank task
+    // Honest fallback: this task shipped with no usable dialogue. Don't fake a
+    // generic scene (testers rightly flagged "Alright team — let's start the
+    // scene!" as nonsense) — say so plainly, like the other empty-content
+    // tasks, so the teacher knows to regenerate.
     return [
       {
-        title: "Scene 1",
+        title: "Script not generated",
         contextBefore:
-          "Pass the device to the next speaker after each line. Read expressively, using the tone and direction cues.",
+          "⚠️ This Script Play task didn't include any dialogue lines. Ask your teacher to regenerate this task — the script is missing.",
         contextAfter: "",
         turns: [
-          { speakerIndex: 0, line: "Alright team — let's start the scene!", tone: "confident", direction: "" },
-          { speakerIndex: 1, line: "I'm ready. What's the plan?", tone: "curious", direction: "" },
-          { speakerIndex: 0, line: "We'll take turns and make it expressive.", tone: "encouraging", direction: "" },
-          { speakerIndex: 1, line: "Deal. Let's make it memorable!", tone: "excited", direction: "" },
+          { speakerIndex: 0, line: "No script lines were generated for this task.", tone: "", direction: "" },
         ],
       },
     ];
