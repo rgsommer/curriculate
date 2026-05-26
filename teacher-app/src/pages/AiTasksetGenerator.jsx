@@ -2217,11 +2217,14 @@ export default function AiTasksetGenerator() {
               show (missing required content). Computed server-side right after
               generation; teacher sees it immediately. */}
           {(() => {
-            const issues = result?.taskset?.meta?.playability?.issues || [];
+            const pa = result?.taskset?.meta?.playability || {};
+            const issues = pa.issues || [];
+            const repaired = Number(pa.repairedCount) || 0;
             if (!issues.length) {
               return (
                 <div style={{ marginBottom: 8, fontSize: "0.82rem", color: "#15803d", fontWeight: 700 }}>
-                  🧪 Playability test passed — all {Array.isArray(result.taskset.tasks) ? result.taskset.tasks.length : ""} tasks render.
+                  🧪 Playability test passed — all {Array.isArray(result.taskset.tasks) ? result.taskset.tasks.length : ""} tasks render
+                  {repaired ? ` (auto-repaired ${repaired}).` : "."}
                 </div>
               );
             }
@@ -2237,7 +2240,8 @@ export default function AiTasksetGenerator() {
                 }}
               >
                 <div style={{ fontWeight: 900, marginBottom: 4 }}>
-                  ⚠️ {issues.length} task{issues.length === 1 ? "" : "s"} need attention before running with a class
+                  ⚠️ {issues.length} task{issues.length === 1 ? "" : "s"} still need attention
+                  {repaired ? ` (auto-repaired ${repaired} other${repaired === 1 ? "" : "s"})` : ""}
                 </div>
                 <ul style={{ margin: "4px 0 6px", paddingLeft: 18, fontSize: "0.82rem", lineHeight: 1.5 }}>
                   {issues.map((p, i) => (
@@ -2248,7 +2252,7 @@ export default function AiTasksetGenerator() {
                   ))}
                 </ul>
                 <div style={{ fontSize: "0.78rem", opacity: 0.9 }}>
-                  Use “🔧 Fix” or “♻️ Regenerate” on the task set to repair these.
+                  Auto-repair couldn’t fix {issues.length === 1 ? "this one" : "these"} — use “🔧 Fix” or “♻️ Regenerate” on the task set.
                 </div>
               </div>
             );

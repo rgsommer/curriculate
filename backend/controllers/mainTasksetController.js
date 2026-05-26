@@ -2198,38 +2198,89 @@ export async function createAiTaskset(req, res) {
       }
     }
 
-    // ✅ AUTO PLAYABILITY TEST — run right after generation. validateTaskByType
-    // checks the GENERATION schema; assessTaskPlayability checks what the
-    // STUDENT renderer actually needs, so it catches contract gaps that would
-    // otherwise only surface when a teacher test-runs the set. We record (not
-    // abort) so the teacher sees exactly which tasks need attention.
+    // ✅ AUTO PLAYABILITY TEST + REPAIR — runs right after generation.
+    // validateTaskByType checks the GENERATION schema; assessTaskPlayability
+    // checks what the STUDENT renderer actually needs, so it catches
+    // contract gaps that would otherwise only surface on a test-run. Any task
+    // that fails gets ONE targeted regeneration (with the issue as the fix
+    // hint); whatever still fails is reported so the teacher can act.
     sendSSE({ type: "phase", phase: "playability", message: "Testing tasks for playability…" });
-    const playabilityIssues = [];
-    (Array.isArray(finalized) ? finalized : []).forEach((t, idx) => {
-      if (!t) return;
-      try {
-        const pa = assessTaskPlayability(t);
-        if (pa && pa.playable === false && Array.isArray(pa.issues) && pa.issues.length) {
-          playabilityIssues.push({
-            index: idx,
-            taskType: t.taskType || t.type || "unknown",
-            title: t.title || "",
-            issues: pa.issues,
-          });
-        }
-      } catch { /* never let the check break generation */ }
-    });
+
+    const scanPlayability = () => {
+      const out = [];
+      (Array.isArray(finalized) ? finalized : []).forEach((t, idx) => {
+        if (!t) return;
+        try {
+          const pa = assessTaskPlayability(t);
+          if (pa && pa.playable === false && Array.isArray(pa.issues) && pa.issues.length) {
+            out.push({ index: idx, taskType: t.taskType || t.type || "unknown", title: t.title || "", issues: pa.issues });
+          }
+        } catch { /* never let the check break generation */ }
+      });
+      return out;
+    };
+
+    let playabilityIssues = scanPlayability();
+    let playabilityRepaired = 0;
+
     if (playabilityIssues.length) {
-      console.warn(`[AI] playability test flagged ${playabilityIssues.length} task(s):`,
-        playabilityIssues.map((p) => `#${p.index + 1} ${p.taskType}: ${p.issues.join("; ")}`).join(" | "));
+      sendSSE({ type: "phase", phase: "playability", message: `Auto-repairing ${playabilityIssues.length} task(s)…` });
+      // Fields to carry over so downstream wiring (bonus/hidden flags, fixed
+      // stations, escape-room key→taskId, ordering) survives the regeneration.
+      const PRESERVE = ["id", "isBonus", "requiredForCompletion", "unlockConditions", "isHidden", "displayKey", "stationColor", "_taskIndex"];
+      for (const flag of playabilityIssues) {
+        const idx = flag.index;
+        const old = finalized[idx];
+        if (!old) continue;
+        const type = old.taskType || old.type;
+        try {
+          const assignedTerms = Array.isArray(conceptPlan[idx]) ? conceptPlan[idx] : [];
+          const scopedLines = buildVocabularyLinesFromConcepts(assignedTerms);
+          const scopedConsiderations = [
+            mergedSpecialConsiderations,
+            assignedTerms.length
+              ? `CONCEPT REQUIREMENTS\nYou MUST include ALL of these concepts in THIS ONE task: ${assignedTerms.join(", ")}`
+              : "",
+            `PLAYABILITY FIX\nThe previous version was NOT renderable for students. Fix EXACTLY this: ${flag.issues.join("; ")}`,
+          ].filter(Boolean).join("\n\n");
+
+          let repaired = await regenerateSingleTask({
+            allowedType: type,
+            mustHave: retryMustHave[type] || "",
+            subject, gradeLevel, difficulty, learningGoal, topicLabel,
+            vocabularyLines: scopedLines,
+            specialConsiderations: scopedConsiderations,
+            previousTask: old,
+            previousError: flag.issues.join("; "),
+          });
+          repaired = finalizeTask(type, repaired);
+          for (const k of PRESERVE) { if (old[k] !== undefined) repaired[k] = old[k]; }
+
+          const pa2 = assessTaskPlayability(repaired);
+          if (!pa2 || pa2.playable !== false) {
+            finalized[idx] = repaired;
+            playabilityRepaired += 1;
+          }
+        } catch (e) {
+          console.warn(`[AI] playability auto-repair failed for #${idx + 1} ${type}:`, e?.message || e);
+        }
+      }
+      // Re-scan to see what (if anything) still fails after repair.
+      playabilityIssues = scanPlayability();
     }
+
+    if (playabilityRepaired || playabilityIssues.length) {
+      console.warn(`[AI] playability: auto-repaired ${playabilityRepaired}, ${playabilityIssues.length} still flagged`);
+    }
+
     sendSSE({
       type: "phase",
       phase: "playability",
       message: playabilityIssues.length
-        ? `⚠️ ${playabilityIssues.length} task(s) need attention`
-        : "✅ All tasks playable",
+        ? `⚠️ ${playabilityIssues.length} task(s) still need attention${playabilityRepaired ? ` (auto-repaired ${playabilityRepaired})` : ""}`
+        : (playabilityRepaired ? `✅ Auto-repaired ${playabilityRepaired} task(s) — all playable` : "✅ All tasks playable"),
       playabilityIssues,
+      playabilityRepaired,
     });
 
     const doc = await TaskSet.create({
@@ -2254,8 +2305,9 @@ export async function createAiTaskset(req, res) {
         coverage,
         coverageFixes: fixes,
         // Auto playability test result (render-contract check). Empty issues[]
-        // means every task is renderable for students.
-        playability: { checkedAt: new Date(), issues: playabilityIssues },
+        // means every task is renderable for students. repairedCount = how many
+        // were auto-regenerated to fix a render gap.
+        playability: { checkedAt: new Date(), issues: playabilityIssues, repairedCount: playabilityRepaired },
         generation: {
           report: generationReport,
           ...(overusedTerms.length > 0 && { qualityWarnings: { overusedTerms } }),
