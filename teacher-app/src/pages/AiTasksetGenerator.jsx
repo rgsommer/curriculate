@@ -2212,6 +2212,48 @@ export default function AiTasksetGenerator() {
           <div style={{ marginBottom: 6 }}>
             ✅ Task set <strong>{result.taskset.name}</strong> created.
           </div>
+
+          {/* Auto playability test — flags tasks the student renderer can't
+              show (missing required content). Computed server-side right after
+              generation; teacher sees it immediately. */}
+          {(() => {
+            const issues = result?.taskset?.meta?.playability?.issues || [];
+            if (!issues.length) {
+              return (
+                <div style={{ marginBottom: 8, fontSize: "0.82rem", color: "#15803d", fontWeight: 700 }}>
+                  🧪 Playability test passed — all {Array.isArray(result.taskset.tasks) ? result.taskset.tasks.length : ""} tasks render.
+                </div>
+              );
+            }
+            return (
+              <div
+                style={{
+                  marginBottom: 10,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  background: "#fffbeb",
+                  border: "1px solid #fcd34d",
+                  color: "#92400e",
+                }}
+              >
+                <div style={{ fontWeight: 900, marginBottom: 4 }}>
+                  ⚠️ {issues.length} task{issues.length === 1 ? "" : "s"} need attention before running with a class
+                </div>
+                <ul style={{ margin: "4px 0 6px", paddingLeft: 18, fontSize: "0.82rem", lineHeight: 1.5 }}>
+                  {issues.map((p, i) => (
+                    <li key={i}>
+                      <strong>#{(p.index ?? i) + 1} {p.taskType}</strong>
+                      {p.title ? ` — “${p.title}”` : ""}: {(p.issues || []).join("; ")}
+                    </li>
+                  ))}
+                </ul>
+                <div style={{ fontSize: "0.78rem", opacity: 0.9 }}>
+                  Use “🔧 Fix” or “♻️ Regenerate” on the task set to repair these.
+                </div>
+              </div>
+            );
+          })()}
+
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
               type="button"

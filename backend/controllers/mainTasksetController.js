@@ -2198,6 +2198,40 @@ export async function createAiTaskset(req, res) {
       }
     }
 
+    // ✅ AUTO PLAYABILITY TEST — run right after generation. validateTaskByType
+    // checks the GENERATION schema; assessTaskPlayability checks what the
+    // STUDENT renderer actually needs, so it catches contract gaps that would
+    // otherwise only surface when a teacher test-runs the set. We record (not
+    // abort) so the teacher sees exactly which tasks need attention.
+    sendSSE({ type: "phase", phase: "playability", message: "Testing tasks for playability…" });
+    const playabilityIssues = [];
+    (Array.isArray(finalized) ? finalized : []).forEach((t, idx) => {
+      if (!t) return;
+      try {
+        const pa = assessTaskPlayability(t);
+        if (pa && pa.playable === false && Array.isArray(pa.issues) && pa.issues.length) {
+          playabilityIssues.push({
+            index: idx,
+            taskType: t.taskType || t.type || "unknown",
+            title: t.title || "",
+            issues: pa.issues,
+          });
+        }
+      } catch { /* never let the check break generation */ }
+    });
+    if (playabilityIssues.length) {
+      console.warn(`[AI] playability test flagged ${playabilityIssues.length} task(s):`,
+        playabilityIssues.map((p) => `#${p.index + 1} ${p.taskType}: ${p.issues.join("; ")}`).join(" | "));
+    }
+    sendSSE({
+      type: "phase",
+      phase: "playability",
+      message: playabilityIssues.length
+        ? `⚠️ ${playabilityIssues.length} task(s) need attention`
+        : "✅ All tasks playable",
+      playabilityIssues,
+    });
+
     const doc = await TaskSet.create({
       name: displayName,
       title: displayName,
@@ -2219,6 +2253,9 @@ export async function createAiTaskset(req, res) {
         errors,
         coverage,
         coverageFixes: fixes,
+        // Auto playability test result (render-contract check). Empty issues[]
+        // means every task is renderable for students.
+        playability: { checkedAt: new Date(), issues: playabilityIssues },
         generation: {
           report: generationReport,
           ...(overusedTerms.length > 0 && { qualityWarnings: { overusedTerms } }),
