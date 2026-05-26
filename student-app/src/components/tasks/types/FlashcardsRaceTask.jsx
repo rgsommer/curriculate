@@ -22,7 +22,16 @@ export default function FlashcardsRaceTask(props) {
 
   const isDemoLocal = useMemo(() => {
     const rc = String(roomCode || "").trim().toUpperCase();
-    return !socket || rc === "DEMO" || task?.demoMode === true;
+    // "PREVIEW" + _previewMode = teacher Test run (stub socket, no live race).
+    // Without these the component sat in "waiting" forever listening for
+    // socket events that never arrive — testers saw "no flashcards in testrun".
+    return (
+      !socket ||
+      rc === "DEMO" ||
+      rc === "PREVIEW" ||
+      task?.demoMode === true ||
+      task?._previewMode === true
+    );
   }, [socket, roomCode, task]);
 
   // Pad practice with bogus team-mates so per-player buzz buttons
