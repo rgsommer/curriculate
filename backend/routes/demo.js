@@ -1713,6 +1713,21 @@ function lastCompletedWeek(now = new Date()) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  lastNCompletedWeeks: a rolling window of the last N fully-elapsed  */
+/*  weeks, ending at the most recent completed Saturday.  Used for the */
+/*  admin "gift-card" leaderboard — a 5-week span gives the admin time */
+/*  to buy + send cards and keep track of who's who across recent      */
+/*  weeks (rather than a single week that resets every Sunday).        */
+/* ------------------------------------------------------------------ */
+function lastNCompletedWeeks(n = 5, now = new Date()) {
+  const { end } = lastCompletedWeek(now); // most recent completed Sat 23:59:59.999
+  const start = new Date(end);
+  start.setDate(start.getDate() - (7 * n - 1)); // N weeks inclusive
+  start.setHours(0, 0, 0, 0);
+  return { start, end };
+}
+
+/* ------------------------------------------------------------------ */
 /*  currentWeek: this week's Sun 00:00 → now.  Used for the live      */
 /*  "this week so far" leaderboard alongside the locked gift-card     */
 /*  window — so on Sunday morning when last week is empty (everyone  */
@@ -1794,7 +1809,7 @@ async function sendAdminNotification(lead) {
   const wasOfferedReferral = engagement.level === "keener" && isConference;
 
   // ── Top 3 weekly (locked + live) + Top 3 all-time → gift card decisions ─
-  let weeklyTopHtml = "";    // last completed Sun→Sat (gift-card window)
+  let weeklyTopHtml = "";    // past 5 completed weeks (gift-card window)
   let liveWeekTopHtml = "";  // current week-in-progress, Sun 00:00 → now
   let allTimeTopHtml = "";
   try {
@@ -1839,8 +1854,10 @@ async function sendAdminNotification(lead) {
       lead.email
     );
 
-    // WEEKLY top 3 — last completed Sun→Sat window
-    const { start: weekStart, end: weekEnd } = lastCompletedWeek(new Date());
+    // PAST 5 WEEKS top 3 — rolling gift-card window. A 5-week span (ending
+    // the most recent completed Saturday) gives the admin time to buy + send
+    // gift cards and keep track of who's who across recent weeks.
+    const { start: weekStart, end: weekEnd } = lastNCompletedWeeks(5, new Date());
     const weeklyLeads = await ConferenceLead.find({
       ...scopeFilter,
       ...excludeEmailFilter,
@@ -1864,7 +1881,7 @@ async function sendAdminNotification(lead) {
 
     const weekFmt = (d) => d.toISOString().slice(0, 10);
     weeklyTopHtml = buildTopThreeBlock(
-      `🎁 Weekly Top 3 — ${weekFmt(weekStart)} → ${weekFmt(weekEnd)} (gift-card window)`,
+      `🎁 Past 5 Weeks Top 3 — ${weekFmt(weekStart)} → ${weekFmt(weekEnd)} (gift-card window)`,
       weeklyRanked,
       lead.email
     );
@@ -1894,7 +1911,7 @@ async function sendAdminNotification(lead) {
       .filter((r) => r.points > 0)
       .sort((a, b) => b.points - a.points);
     liveWeekTopHtml = buildTopThreeBlock(
-      `🟢 This Week So Far — ${weekFmt(liveStart)} → now (live; gift-card decided Sun)`,
+      `🟢 This Week So Far — ${weekFmt(liveStart)} → now (live)`,
       liveRanked,
       lead.email
     );
