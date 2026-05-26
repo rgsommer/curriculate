@@ -436,9 +436,17 @@ export async function computeDeterministicFactors({ ticker, currency, marketCap,
   const preParabolic = scorePreParabolic(history, tech, relStrength6mPp);
   const realityLag = scoreRealityLag(f, returns, relStrength6mPp);
 
+  // Liquidity: median daily $ volume over the last ~20 sessions (for the
+  // short-term illiquid-exit hard reject).
+  let liquidityUsdPerDay = null;
+  if (Array.isArray(history) && history.length >= 5) {
+    const dv = history.slice(-20).map((p) => (Number.isFinite(p.close) && Number.isFinite(p.vol) ? p.close * p.vol : null)).filter((x) => x != null).sort((a, b) => a - b);
+    if (dv.length) liquidityUsdPerDay = dv[Math.floor(dv.length / 2)];
+  }
+
   return {
     sub: { fundamentals, momentum, technical, riskControl },
-    raw: { tech, returns, relStrength6mPp, fundamentals: f },
+    raw: { tech, returns, relStrength6mPp, fundamentals: f, liquidityUsdPerDay },
     moonshot: { preParabolic, realityLag },
   };
 }

@@ -160,12 +160,13 @@ router.post("/moonshot", requireStocksAuth, async (req, res) => {
     }
     const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
     const heldTickers = profile?.positions?.map((p) => p.ticker) || [];
-    const { sectors = null, marketCapMin, marketCapMax, market = "both" } = req.body || {};
+    const { sectors = null, marketCapMin, marketCapMax, market = "both", horizon = "long" } = req.body || {};
 
     const result = await runMoonshotScan({
       email: req.stocksUser.email,
       sectors,
       market,
+      horizon,
       opts: {
         excludeTickers: heldTickers,
         ...(typeof marketCapMin === "number" ? { marketCapMin } : {}),

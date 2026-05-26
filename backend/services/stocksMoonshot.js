@@ -45,9 +45,10 @@ export function calibrateProbabilities(p5Raw, p10Raw) {
 // One AI/web_search call over the shortlist: asymmetric-upside model, narrative
 // & dominance thesis, the 20-field output, and selection of the top 2–5.
 // Receives the deterministic + Mosaic signals so it reasons from evidence.
-export async function assessMoonshot(candidates, market = "both") {
+export async function assessMoonshot(candidates, market = "both", horizon = "long") {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY required for Moonshot mode");
+  const isShort = horizon === "short";
 
   const lines = candidates.map((c, i) => {
     const s = c.sub || {};
@@ -61,19 +62,51 @@ export async function assessMoonshot(candidates, market = "both") {
    12/6/3mo return ${c.raw?.returns?.r12m?.toFixed?.(0) ?? "?"}/${c.raw?.returns?.r6m?.toFixed?.(0) ?? "?"}/${c.raw?.returns?.r3m?.toFixed?.(0) ?? "?"}%`;
   }).join("\n\n");
 
-  const prompt = `You are an elite asymmetric-opportunity analyst. From the pre-screened candidates below, select the 2–5 with the most credible REALISTIC 5x–10x potential over a 3–10 year horizon — the profile of an emerging category leader BEFORE the market fully prices it in. This is NOT a safety screen.
+  const shortTermAddendum = `
+SHORT-TERM MODE — HORIZON IS 3–18 MONTHS, NOT YEARS. A 10x in this window is almost never fundamental compounding; it is one of: (1) multiple re-rating, (2) narrative ignition, (3) supply/demand squeeze, (4) hard catalyst inflection (FDA, big contract, beat-and-raise, profitability crossover, takeout), (5) sector momentum + being the clean leader.
+
+DETECT AND REPORT EXPLICITLY for each candidate (use web_search):
+A. CATALYST CALENDAR — list every BINARY event in the next 90 days WITH DATES (earnings, FDA/PDUFA, trial readout, contract decision, launch, index-inclusion candidacy). A short-term candidate with NO catalyst in 6 months is auto-rejected. Score "catalystDensity" 0-100 = number × magnitude of plausibly-bullish binary events in 6 months.
+B. SUPPLY/DEMAND MECHANICS — float size, short interest %, days-to-cover, options OI concentration. Score "supplyDemand" 0-100. Flag SUPPLY KILLERS with dates: lockup expirations, active ATM/shelf draws, insider 10b5-1 sales, convertible overhang. Any supply killer inside the horizon → downgrade hard.
+C. NARRATIVE IGNITION STAGE — detect PRE-virality: X mentions accelerating WoW but low absolute, early WSB DD, 1-3 mid-tier YouTube creators, rising Stocktwits, positive Google-Trends slope at low level. Classify stage: "Early" | "Mid" | "Late" | "Peak". REJECT names already at peak retail crowding (the move already happened). Score "narrativeIgnition" 0-100 (highest for Early).
+D. INFLECTION POINTS — first GAAP-profit quarter, margin crossing 40/50/60%, FCF turning positive, operating-leverage step-change, net-cash established.
+E. OPTIONS READ — unusual call volume (>3x 20d avg), sustained C/P > 2.5, cheap front-month IV vs back, dealer short-gamma, large OTM sweeps. Summarize in "optionsRead".
+F. PRECEDENT MATCHING — name 2-3 historical comparables that ran 10x in a similar setup and what stage this is vs theirs (e.g. "like NVDA Apr-2023", "like SMCI mid-2023"). If you can't name a credible precedent, the thesis is weak.
+G. CROWDING — estimate how discovered it already is (analyst count, 13F holders, WSB rank, CNBC/Bloomberg frequency, insider sell volume). Score "crowdingInverse" 0-100 where HIGHER = LESS crowded (better entry). Reject top-5% crowding.
+H. SECTOR MOMENTUM — short-term 10x needs a sector tailwind. Confirm sector ETF rising + broad leadership. Score "sectorMomentum" 0-100. A 10x in a falling sector is improbable.
+I. STOP DISCIPLINE — give invalidation price, recommended max position size (% of portfolio), trailing-stop strategy, and a time-based stop (exit N days after catalyst if no move).
+
+HARD REJECTS (set hardReject=true + reason): no catalyst within 6 months; lockup/large ATM inside horizon; >90th-pct retail crowding; sector in confirmed downtrend; avg daily $ volume < $5M; float-rotation already >2x in last 30 days (move likely cooked).`;
+
+  const calibration = isShort
+    ? `PROBABILITY CALIBRATION (do not produce fiction): A short-term (≤18mo) 10x is EXTREMELY rare — even a perfect catalyst+squeeze+narrative setup is low-single-digits for 10x and maybe low-double-digits for 5x. Hard ceilings: P(5x) ≤ 30%, P(10x) ≤ 15%, P(10x) < P(5x) always. Rough PRIORS, not forecasts.`
+    : `PROBABILITY CALIBRATION (do not produce fiction): 10x over 5–10y is RARE. Base rate for a random small-cap is ~1–3%; even an exceptional, convergent setup is at most low-double-digits. Hard ceilings: P(5x) ≤ 30%, P(10x) ≤ 15%, P(10x) < P(5x) always. Rough PRIORS, not forecasts.`;
+
+  const shortSchemaFields = isShort ? `,
+      "subScores": { "catalystDensity": <0-100>, "supplyDemand": <0-100>, "narrativeIgnition": <0-100>, "crowdingInverse": <0-100>, "sectorMomentum": <0-100> },
+      "catalystCalendar": ["2025-XX-XX earnings", "2025-XX-XX PDUFA", "..."],
+      "floatShort": "float size, short interest %, days-to-cover",
+      "supplyKillers": ["lockup 2025-XX-XX ~Xm shares", "ATM active", "..."],
+      "narrativeStage": "Early" | "Mid" | "Late" | "Peak",
+      "optionsRead": "unusual flow / IV skew / dealer gamma summary",
+      "precedents": ["like NVDA Apr-2023 (stage: ...)", "..."],
+      "sectorMomentumNote": "Y/N + sector ETF return",
+      "invalidationPrice": <number>,
+      "maxPositionPct": <number, e.g. 3>,
+      "stopStrategy": "trailing + time-based stop",
+      "hardReject": false,
+      "hardRejectReason": ""` : "";
+
+  const prompt = `You are an elite asymmetric-opportunity analyst. From the pre-screened candidates below, select the 2–5 with the most credible REALISTIC 5x–10x potential over a ${isShort ? "3–18 MONTH" : "3–10 YEAR"} horizon — ${isShort ? "driven by catalysts, supply/demand mechanics, and early-stage narrative ignition, NOT slow fundamental compounding" : "the profile of an emerging category leader BEFORE the market fully prices it in"}. This is NOT a safety screen.
 
 Candidates (deterministic + public-data signals already computed):
 ${lines}
-
-Use web_search to evaluate each on: massive/expanding TAM, accelerating revenue, narrative shift underway, institutional accumulation (public 13F/Form 4), founder-led/visionary leadership, balance-sheet durability or strategic capital access, operating leverage, multi-year macro tailwinds (AI infra, defense, energy/nuclear, semis, cybersecurity, fintech, robotics, space, reshoring), and signal CONVERGENCE across lenses.
+${isShort ? shortTermAddendum : `
+Use web_search to evaluate each on: massive/expanding TAM, accelerating revenue, narrative shift underway, institutional accumulation (public 13F/Form 4), founder-led/visionary leadership, balance-sheet durability or strategic capital access, operating leverage, multi-year macro tailwinds (AI infra, defense, energy/nuclear, semis, cybersecurity, fintech, robotics, space, reshoring), and signal CONVERGENCE across lenses.`}
 
 Reject/penalize: pump-and-dumps, fraud-risk microcaps, pure meme/hype with no execution, heavily-diluted zombies, no real business, obvious value traps. Penalize hype-without-execution and dilution hard.
 
-PROBABILITY CALIBRATION (critical — do not produce fiction):
-- 10x over 5–10y is RARE. Base rate for a random small-cap is ~1–3%. Even an exceptional, convergent setup is at most low-double-digits.
-- Anchor to those base rates. Hard ceilings: P(5x) ≤ 30%, P(10x) ≤ 15%, and P(10x) < P(5x) always. If you're tempted to go higher, you're wrong.
-- These are rough PRIORS, not forecasts. Favor asymmetry (downside ~50–70% vs upside 500%+), not certainty.
+${calibration}
 
 LANGUAGE: never "guaranteed", "sure thing", "can't lose". Use "asymmetric", "probability-weighted", "highest-conviction", "watchlist candidate".
 
@@ -100,11 +133,11 @@ Return STRICT JSON only — the 2–5 strongest, best first:
       "timeHorizon": "short-term" | "medium-term" | "long-term",
       "redFlags": ["..."],
       "finalThesis": "2-4 sentence investment thesis",
-      "sources": [{"title":"...","url":"..."}]
+      "sources": [{"title":"...","url":"..."}]${shortSchemaFields}
     }
   ]
 }
-If fewer than 2 candidates clear a genuine asymmetric-10x bar, return fewer. Do not pad. No prose outside the JSON.`;
+If fewer than 2 candidates clear a genuine asymmetric bar${isShort ? " (or all have hardReject=true)" : ""}, return fewer. Do not pad. No prose outside the JSON.`;
 
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -133,29 +166,72 @@ const str = (v, n = 1200) => (typeof v === "string" ? v.slice(0, n) : "");
 // Assemble one AI pick + the candidate's deterministic/mosaic signals into the
 // persisted/displayable moonshot object, with calibrated probabilities and a
 // transparent composite score.
-export function buildMoonshotResult(aiItem, candidate) {
+export function buildMoonshotResult(aiItem, candidate, horizon = "long") {
   const ms = candidate.moonshot || {};
+  const isShort = horizon === "short";
+  const ss = aiItem.subScores || {};
   const { p5xPct, p10xPct } = calibrateProbabilities(aiItem.p5xPct, aiItem.p10xPct);
 
-  // Transparent composite (0-100): the asymmetry signals that define moonshot.
-  const parts = [
-    [candidate.sub?.fundamentals?.score, 0.18],
-    [candidate.sub?.momentum?.score, 0.12],
-    [ms.preParabolic?.score, 0.18],
-    [ms.realityLag?.score, 0.14],
-    [candidate.syntheticInsider, 0.16],
-    [candidate.mosaic?.edgeScore, 0.12],
-    [candidate.sub?.riskControl?.score, 0.10],
-  ];
+  // Transparent composite (0-100). Long-term weights reward durable compounding
+  // signals; short-term reweights toward catalysts / supply-demand / narrative
+  // ignition / technical / sector momentum / low crowding (per the addendum).
+  const techBlend = (() => {
+    const a = candidate.sub?.technical?.score, b = ms.preParabolic?.score;
+    const vals = [a, b].filter(Number.isFinite);
+    return vals.length ? vals.reduce((s, x) => s + x, 0) / vals.length : null;
+  })();
+  const parts = isShort
+    ? [
+        [candidate.sub?.fundamentals?.score, 0.12],
+        [candidate.sub?.riskControl?.score, 0.05],
+        [techBlend, 0.15],
+        [num(ss.catalystDensity), 0.20],
+        [num(ss.supplyDemand), 0.13],
+        [num(ss.narrativeIgnition), 0.13],
+        [num(ss.crowdingInverse), 0.09],
+        [num(ss.sectorMomentum), 0.08],
+        [ms.realityLag?.score, 0.05],
+      ]
+    : [
+        [candidate.sub?.fundamentals?.score, 0.18],
+        [candidate.sub?.momentum?.score, 0.12],
+        [ms.preParabolic?.score, 0.18],
+        [ms.realityLag?.score, 0.14],
+        [candidate.syntheticInsider, 0.16],
+        [candidate.mosaic?.edgeScore, 0.12],
+        [candidate.sub?.riskControl?.score, 0.10],
+      ];
   let acc = 0, w = 0;
   for (const [s, wt] of parts) { if (Number.isFinite(s)) { acc += s * wt; w += wt; } }
   const compositeScore = w > 0 ? Math.round(acc / w) : null;
 
+  const shortTerm = isShort ? {
+    catalystDensity: num(ss.catalystDensity),
+    supplyDemand: num(ss.supplyDemand),
+    narrativeIgnition: num(ss.narrativeIgnition),
+    crowdingInverse: num(ss.crowdingInverse),
+    sectorMomentum: num(ss.sectorMomentum),
+    catalystCalendar: arr(aiItem.catalystCalendar),
+    floatShort: str(aiItem.floatShort, 200),
+    supplyKillers: arr(aiItem.supplyKillers),
+    narrativeStage: ["Early", "Mid", "Late", "Peak"].includes(aiItem.narrativeStage) ? aiItem.narrativeStage : null,
+    optionsRead: str(aiItem.optionsRead, 400),
+    precedents: arr(aiItem.precedents),
+    sectorMomentumNote: str(aiItem.sectorMomentumNote, 200),
+    invalidationPrice: num(aiItem.invalidationPrice),
+    maxPositionPct: num(aiItem.maxPositionPct),
+    stopStrategy: str(aiItem.stopStrategy, 300),
+  } : null;
+
   return {
+    horizon: isShort ? "short" : "long",
     compositeScore,
     p5xPct, p10xPct,
+    hardReject: !!aiItem.hardReject,
+    hardRejectReason: str(aiItem.hardRejectReason, 200),
     confidence: ["low", "medium", "high"].includes(aiItem.confidence) ? aiItem.confidence : "medium",
-    timeHorizon: ["short-term", "medium-term", "long-term"].includes(aiItem.timeHorizon) ? aiItem.timeHorizon : "long-term",
+    timeHorizon: ["short-term", "medium-term", "long-term"].includes(aiItem.timeHorizon) ? aiItem.timeHorizon : (isShort ? "short-term" : "long-term"),
+    shortTerm,
     signals: {
       preParabolic: ms.preParabolic?.score ?? null,
       preParabolicWhy: arr(ms.preParabolic?.contributors, 5),

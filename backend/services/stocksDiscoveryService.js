@@ -1131,8 +1131,9 @@ function normTicker(t) {
 // / reality-lag / synthetic-insider signals and a focused AI asymmetric-upside
 // layer with calibrated P(5x)/P(10x). Smaller-cap, higher-growth bias.
 // ═══════════════════════════════════════════════════════════════════════
-export async function runMoonshotScan({ email, market = "both", sectors = null, opts = {} }) {
+export async function runMoonshotScan({ email, market = "both", sectors = null, opts = {}, horizon = "long" }) {
   const mkt = ["both", "us", "canada"].includes(market) ? market : "both";
+  const hz = horizon === "short" ? "short" : "long";
   // Moonshot bias: skew smaller-cap (more room to compound) unless overridden.
   const moonshotOpts = {
     marketCapMin: typeof opts.marketCapMin === "number" ? opts.marketCapMin : 100_000_000,
@@ -1168,16 +1169,23 @@ export async function runMoonshotScan({ email, market = "both", sectors = null, 
     c.syntheticInsider = syntheticInsiderScore(c.mosaic);
   }
 
-  const ai = await assessMoonshot(withFactors, mkt);
+  const ai = await assessMoonshot(withFactors, mkt, hz);
   const byNorm = new Map(withFactors.map((c) => [normTicker(c.ticker), c]));
 
   const scanDate = new Date();
   scanDate.setUTCHours(0, 0, 0, 0);
   const picks = [];
+  let rejectedCount = 0;
   for (const item of (ai.picks || [])) {
     const c = byNorm.get(normTicker(item.ticker));
     if (!c) continue;
-    const moonshot = buildMoonshotResult(item, c);
+    const moonshot = buildMoonshotResult(item, c, hz);
+    // Short-term hard rejects: AI-flagged (no catalyst / supply killer / peak
+    // crowding / sector downtrend / cooked) OR deterministically illiquid.
+    if (hz === "short") {
+      const illiquid = c.raw?.liquidityUsdPerDay != null && c.raw.liquidityUsdPerDay < 5_000_000;
+      if (moonshot.hardReject || illiquid) { rejectedCount++; continue; }
+    }
     try {
       const doc = await StocksDiscoveryCandidate.findOneAndUpdate(
         { email: email.toLowerCase(), ticker: c.ticker, scanDate },
@@ -1203,7 +1211,7 @@ export async function runMoonshotScan({ email, market = "both", sectors = null, 
   }
   picks.sort((a, b) => (b.moonshot?.compositeScore ?? 0) - (a.moonshot?.compositeScore ?? 0));
 
-  return { picks, market: mkt, mode: scanMode, upgradeRecommendation, scanDate, disclaimer: MOONSHOT_DISCLAIMER, shortlistSize: shortlist.length };
+  return { picks, market: mkt, horizon: hz, mode: scanMode, upgradeRecommendation, scanDate, disclaimer: MOONSHOT_DISCLAIMER, shortlistSize: shortlist.length, rejectedCount };
 }
 
 // Standalone Mosaic Intelligence run for an explicit set of tickers (or the

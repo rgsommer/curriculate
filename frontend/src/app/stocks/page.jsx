@@ -4867,11 +4867,49 @@ function MoonshotCard({ pick, rank }) {
 
       {/* Signal badges */}
       <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-        <Badge label="Pre-parabolic" v={sig.preParabolic} />
-        <Badge label="Reality-lag" v={sig.realityLag} />
-        <Badge label="Synthetic-insider" v={sig.syntheticInsider} />
-        <Badge label="Mosaic edge" v={sig.mosaicEdge} />
+        {m.shortTerm ? (
+          <>
+            <Badge label="Catalyst" v={m.shortTerm.catalystDensity} />
+            <Badge label="Supply/demand" v={m.shortTerm.supplyDemand} />
+            <Badge label="Narrative" v={m.shortTerm.narrativeIgnition} />
+            <Badge label="Sector mom." v={m.shortTerm.sectorMomentum} />
+            <Badge label="Un-crowded" v={m.shortTerm.crowdingInverse} />
+            {m.shortTerm.narrativeStage && <span style={{ fontSize: 10.5, background: "var(--sa-accent-soft)", color: "var(--sa-accent-2)", borderRadius: 6, padding: "2px 7px" }}>Stage: <b>{m.shortTerm.narrativeStage}</b></span>}
+          </>
+        ) : (
+          <>
+            <Badge label="Pre-parabolic" v={sig.preParabolic} />
+            <Badge label="Reality-lag" v={sig.realityLag} />
+            <Badge label="Synthetic-insider" v={sig.syntheticInsider} />
+            <Badge label="Mosaic edge" v={sig.mosaicEdge} />
+          </>
+        )}
       </div>
+
+      {m.shortTerm && (
+        <div style={{ marginTop: 8, border: "1px solid var(--sa-border)", borderRadius: 8, padding: "8px 10px", background: "var(--sa-panel-2)" }}>
+          {Array.isArray(m.shortTerm.catalystCalendar) && m.shortTerm.catalystCalendar.length > 0 && (
+            <Field label="📅 Catalyst calendar (90d)">{m.shortTerm.catalystCalendar.join(" · ")}</Field>
+          )}
+          <Field label="Float / short">{m.shortTerm.floatShort}</Field>
+          {Array.isArray(m.shortTerm.supplyKillers) && m.shortTerm.supplyKillers.length > 0 && (
+            <div style={{ fontSize: 12, marginTop: 6, color: "var(--sa-red)" }}><b>⚠ Supply killers:</b> {m.shortTerm.supplyKillers.join(" · ")}</div>
+          )}
+          <Field label="Options read">{m.shortTerm.optionsRead}</Field>
+          <Field label="Sector momentum">{m.shortTerm.sectorMomentumNote}</Field>
+          {Array.isArray(m.shortTerm.precedents) && m.shortTerm.precedents.length > 0 && (
+            <Field label="Precedents">{m.shortTerm.precedents.join(" · ")}</Field>
+          )}
+          {(m.shortTerm.invalidationPrice != null || m.shortTerm.maxPositionPct != null || m.shortTerm.stopStrategy) && (
+            <div style={{ fontSize: 12, marginTop: 6 }}>
+              <span style={{ color: "var(--sa-muted)", fontWeight: 600 }}>Stop discipline: </span>
+              {m.shortTerm.invalidationPrice != null && <>invalidation <b>${m.shortTerm.invalidationPrice} {ccy}</b> · </>}
+              {m.shortTerm.maxPositionPct != null && <>max size <b>{m.shortTerm.maxPositionPct}%</b> · </>}
+              {m.shortTerm.stopStrategy}
+            </div>
+          )}
+        </div>
+      )}
 
       <Field label="Why the market may underestimate it">{m.marketUnderestimation}</Field>
       <Field label="Narrative shift">{m.narrativeShift}</Field>
@@ -5093,6 +5131,7 @@ function DiscoverView({ sessionToken, user }) {
   const [msBusy, setMsBusy] = useState(false);
   const [msError, setMsError] = useState(null);
   const [msResult, setMsResult] = useState(null); // moonshot { picks, disclaimer, ... }
+  const [msHorizon, setMsHorizon] = useState("long"); // long 3-10y | short 3-18mo
   const [hcBusy, setHcBusy] = useState(false);
   const [hcError, setHcError] = useState(null);
   const [hcResult, setHcResult] = useState(null); // { picks, disclaimer, mode, upgradeRecommendation }
@@ -5176,7 +5215,7 @@ function DiscoverView({ sessionToken, user }) {
     if (msBusy) return;
     setMsBusy(true); setMsError(null);
     try {
-      const body = { market: hcMarket };
+      const body = { market: hcMarket, horizon: msHorizon };
       if (sectorsCsv.trim()) body.sectors = sectorsCsv.split(",").map((s) => s.trim()).filter(Boolean);
       const r = await fetch(`${BACKEND_URL}/api/stocks-discover/moonshot`, {
         method: "POST",
@@ -5314,11 +5353,21 @@ function DiscoverView({ sessionToken, user }) {
       {/* ── Moonshot 10x mode ── */}
       <div className="sa-card" style={{ marginBottom: 18 }}>
         <div style={{ fontWeight: 700, fontSize: 15 }}>🚀 Moonshot 10x</div>
-        <div style={{ fontSize: 12.5, color: "var(--sa-muted)", marginTop: 4, marginBottom: 12, lineHeight: 1.5 }}>
-          Aggressive hunt for 2–5 asymmetric 5x–10x setups over a 3–10 year horizon — pre-parabolic structure, market-reality lag, synthetic-insider & Mosaic signals, with calibrated probabilities. Uses the market + sectors selected above. <b>Speculative — most won't 5x.</b>
+        <div style={{ fontSize: 12.5, color: "var(--sa-muted)", marginTop: 4, marginBottom: 10, lineHeight: 1.5 }}>
+          Aggressive hunt for 2–5 asymmetric 5x–10x setups — pre-parabolic structure, market-reality lag, synthetic-insider & Mosaic signals, calibrated probabilities. Uses the market + sectors selected above. <b>Speculative — most won't 5x.</b>
         </div>
+        <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8, marginBottom: 10, width: "fit-content" }}>
+          {[["long", "Long-term (3–10y)"], ["short", "Short-term (3–18mo)"]].map(([v, label]) => (
+            <button key={v} onClick={() => setMsHorizon(v)} style={{ padding: "5px 12px", fontSize: 12, fontWeight: 600, border: "none", borderRadius: 6, cursor: "pointer", background: msHorizon === v ? "var(--sa-accent)" : "transparent", color: msHorizon === v ? "#fff" : "var(--sa-text-2)" }}>{label}</button>
+          ))}
+        </div>
+        {msHorizon === "short" && (
+          <div style={{ fontSize: 11.5, color: "var(--sa-muted)", marginBottom: 10, lineHeight: 1.5 }}>
+            Short-term mode weights catalysts, supply/demand mechanics, and early-stage narrative ignition over slow fundamentals. Auto-rejects names with no catalyst in 6 months, lockup/ATM overhang, peak crowding, sector downtrends, or under $5M/day volume.
+          </div>
+        )}
         <button className="sa-btn" onClick={runMoonshot} disabled={msBusy}>
-          {msBusy ? "Hunting moonshots…" : "🚀 Run Moonshot 10x scan"}
+          {msBusy ? "Hunting moonshots…" : `🚀 Run Moonshot ${msHorizon === "short" ? "(short-term)" : "(long-term)"} scan`}
         </button>
         {msError && <div className="sa-err" style={{ marginTop: 12 }}>{msError}</div>}
         {msResult && (
