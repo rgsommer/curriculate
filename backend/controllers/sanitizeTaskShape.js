@@ -1189,10 +1189,22 @@ export function sanitizeTaskShapeByType(type, task) {
     const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
     const cfg = _isObj(t.config) ? { ...t.config } : {};
 
-    for (const k of ["title", "scenario", "objectives", "resources", "premiumResources", "ranks"]) {
+    for (const k of ["title", "scenario", "objectives", "resources", "premiumResources", "ranks", "subject", "worldview"]) {
       if (cfg[k] === undefined && t[k] !== undefined) {
         cfg[k] = t[k];
         delete t[k];
+      }
+    }
+
+    // Infer worldview from subject/title/scenario when unset. The quest renderer
+    // uses worldview="faith" to relabel the economy as sharing/stewarding gifts
+    // instead of "buying" them — "buying the Holy Spirit / its gifts" reads as
+    // simony (Acts 8) on Bible topics.
+    if (!cfg.worldview || typeof cfg.worldview !== "string" || !cfg.worldview.trim()) {
+      const faithText = `${cfg.subject || t.subject || ""} ${cfg.title || ""} ${cfg.scenario || ""}`;
+      if (/\b(bible|religion|faith|theology|scriptures?|pentecost|holy spirit|gospel|disciples?|apostles?|christ|jesus)\b/i.test(faithText)) {
+        cfg.worldview = "faith";
+        console.log(`[sanitize] QUEST inferred worldview="faith"`);
       }
     }
 

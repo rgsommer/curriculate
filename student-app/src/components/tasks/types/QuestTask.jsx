@@ -29,6 +29,18 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
   const specialties = Array.isArray(cfg.specialties) ? cfg.specialties.filter(Boolean) : [];
   const specialtyStartingStock = Math.max(1, Math.floor(Number(cfg.specialtyStartingStock) || 2));
 
+  // ── Faith reframing ────────────────────────────────────────────────────
+  // On Bible/faith topics, framing the economy as "buy the Holy Spirit / its
+  // gifts" reads as simony (Acts 8). Keep the trade mechanic but relabel the
+  // economy as gathering, sharing and stewarding gifts. Detected via an
+  // explicit worldview flag (set by the generator) or keywords in the mission
+  // text, so existing sets reframe too. L(secular, faith) picks the wording.
+  const _faithText = `${cfg.title || ""} ${cfg.scenario || ""} ${task?.subject || ""} ${task?.title || ""} ${task?.topicLabel || ""}`;
+  const isFaith =
+    String(cfg.worldview || "").toLowerCase() === "faith" ||
+    /\b(holy spirit|pentecost|gospel|scriptures?|bible|disciples?|apostles?|salvation|christ|jesus|repentance|baptism)\b/i.test(_faithText);
+  const L = (secular, faith) => (isFaith ? faith : secular);
+
   const [state, setState] = useState(() => {
     // Practice mode: pre-seed local state so the buttons work, and hand the
     // solo player the first specialty so the trade UI is demoable end-to-end.
@@ -345,7 +357,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
             color: "#fde68a", fontSize: "0.85rem", fontWeight: 600,
           }}
         >
-          <span>⏳ Depot prices climb all game — <strong>stock up early</strong> while they're cheap!</span>
+          <span>⏳ {L("Depot prices climb all game — ", "Gifts grow scarcer over time — ")}<strong>{L("stock up early", "gather early")}</strong>{L(" while they're cheap!", " while they're plentiful!")}</span>
           <button
             type="button"
             onClick={() => setShowPriceToast(false)}
@@ -395,12 +407,17 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
             lineHeight: 1.4,
           }}
         >
-          ✦ <strong>Your team's specialty: {resourceName(mySpecialty)}</strong> (×{Number(inv[mySpecialty]) || 0}).
-          Other teams need it and it's pricey in the depot — <strong>trade your surplus</strong> for the
-          specialties you're missing.
+          ✦ <strong>{L("Your team's specialty:", "Your team's gift:")} {resourceName(mySpecialty)}</strong> (×{Number(inv[mySpecialty]) || 0}).
+          {L(
+            " Other teams need it and it's pricey in the depot — ",
+            " Other teams need it too — "
+          )}<strong>{L("trade your surplus", "share your abundance")}</strong>{L(
+            " for the specialties you're missing.",
+            " for the gifts you're missing."
+          )}
           {meta?.specialtyRegen && (
             <span style={{ display: "block", marginTop: 4, color: "#bae6fd" }}>
-              ♻️ Refills slowly on its own (<strong>+1 every {meta.specialtyRegen.intervalMinutes} min</strong>, up to {meta.specialtyRegen.cap}) — and <strong>completing tasks restocks it faster</strong>. Keep earning &amp; selling!
+              ♻️ Refills slowly on its own (<strong>+1 every {meta.specialtyRegen.intervalMinutes} min</strong>, up to {meta.specialtyRegen.cap}) — and <strong>completing tasks restocks it faster</strong>. {L("Keep earning & selling!", "Keep earning & sharing!")}
             </span>
           )}
         </div>
@@ -434,16 +451,16 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
       {resources.length > 0 && (
         <div style={cardWrap}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <div style={cardLabel}>Supply depot</div>
+            <div style={cardLabel}>{L("Supply depot", "The Storehouse")}</div>
             {meta?.inflation?.enabled && priceMult > 1.001 && (
               <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#fca5a5", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 999, padding: "2px 8px" }}>
-                ▲ prices +{Math.round((priceMult - 1) * 100)}%
+                {L("▲ prices", "▲ scarcer")} +{Math.round((priceMult - 1) * 100)}%
               </span>
             )}
           </div>
           <div style={{ fontSize: "0.78rem", color: "#cbd5e1", marginBottom: 8 }}>
-            Earn coins by completing tasks, then spend them here.
-            {meta?.inflation?.enabled ? " Prices rise over time — buy early!" : ""}
+            {L("Earn coins by completing tasks, then spend them here.", "Earn blessings by completing tasks, then gather gifts here.")}
+            {meta?.inflation?.enabled ? L(" Prices rise over time — buy early!", " Gifts grow scarcer over time — gather early!") : ""}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {resources.map((r) => {
@@ -458,13 +475,13 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
                     <div style={{ fontSize: "0.95rem", fontWeight: 600, color: "#f1f5f9" }}>
                       {r.name || r.id}
                       {specialties.includes(r.id) && (
-                        <span style={{ fontSize: "0.68rem", marginLeft: 6, color: "#7dd3fc", fontWeight: 800 }}>✦ specialty</span>
+                        <span style={{ fontSize: "0.68rem", marginLeft: 6, color: "#7dd3fc", fontWeight: 800 }}>{L("✦ specialty", "✦ gift")}</span>
                       )}
                       {have > 0 && <span style={{ fontSize: "0.78rem", marginLeft: 6, color: "#bbf7d0" }}>×{have}</span>}
                     </div>
                     {cost > 0 ? (
                       <div style={{ fontSize: "0.72rem", color: "#cbd5e1" }}>
-                        {cost} coin{cost === 1 ? "" : "s"}
+                        {cost} {L(cost === 1 ? "coin" : "coins", cost === 1 ? "blessing" : "blessings")}
                         {(() => {
                           // Projected end-of-session price (full inflation) so players see the cost of waiting.
                           const endPrice = meta?.inflation?.enabled
@@ -472,7 +489,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
                             : cost;
                           return endPrice > cost ? <span style={{ color: "#fca5a5" }}> → {endPrice} by end</span> : null;
                         })()}
-                        {specialties.includes(r.id) ? " — cheaper to trade for" : ""}
+                        {specialties.includes(r.id) ? L(" — cheaper to trade for", " — easier to receive by sharing") : ""}
                       </div>
                     ) : null}
                   </div>
@@ -487,7 +504,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
                       opacity: !canAfford ? 0.55 : 1,
                     }}
                   >
-                    {busyResId === r.id ? "…" : "Buy"}
+                    {busyResId === r.id ? "…" : L("Buy", "Gather")}
                   </button>
                 </div>
               );
@@ -499,10 +516,11 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
 
       {/* Trade with another team — show a QR to sell, or scan one to buy. */}
       <div style={cardWrap}>
-        <div style={cardLabel}>Trade with another team</div>
+        <div style={cardLabel}>{L("Trade with another team", "Share with another team")}</div>
         <div style={{ fontSize: "0.78rem", color: "#cbd5e1", marginBottom: 8 }}>
-          Go to another team to swap supplies: <strong>show your QR to sell</strong> a resource for coins,
-          or <strong>scan their QR to buy</strong> one.
+          {L("Go to another team to swap supplies: ", "Go to another team to share gifts: ")}
+          <strong>{L("show your QR to sell", "show your QR to share")}</strong>{L(" a resource for coins, or ", " a gift, or ")}
+          <strong>{L("scan their QR to buy", "scan their QR to receive")}</strong> one.
         </div>
 
         {/* Specialty directory — where to find each scarce resource. */}
@@ -527,7 +545,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
         {meta?.franchise?.enabled && (
           myExtra ? (
             <div style={{ marginBottom: 8, fontSize: "0.8rem", color: "#bbf7d0", fontWeight: 600 }}>
-              🏭 Franchise: <strong>{resourceName(myExtra)}</strong> (×{Number(inv[myExtra]) || 0}) — your second supply line.
+              🏭 {L("Franchise:", "Second gift:")} <strong>{resourceName(myExtra)}</strong> (×{Number(inv[myExtra]) || 0}){L(" — your second supply line.", " — a second gift you can share.")}
             </div>
           ) : (
             <div style={{ marginBottom: 8 }}>
@@ -541,10 +559,10 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
                   cursor: (Number(state?.coins) || 0) >= (Number(meta?.franchise?.cost) || 30) ? "pointer" : "not-allowed",
                 }}
               >
-                🏭 Open a franchise — {Number(meta?.franchise?.cost) || 30} coins
+                🏭 {L("Open a franchise", "Take on a second gift")} — {Number(meta?.franchise?.cost) || 30} {L("coins", "blessings")}
               </button>
               <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: 4 }}>
-                Invest your earnings to start producing a second scarce resource other teams need.
+                {L("Invest your earnings to start producing a second scarce resource other teams need.", "Devote your earnings to steward a second gift other teams need.")}
               </div>
             </div>
           )
@@ -564,7 +582,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
                 setTradeMode("sell");
               }}
             >
-              Make an offer
+              {L("Make an offer", "Offer to share")}
             </button>
             <button
               type="button"
@@ -572,7 +590,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
               disabled={disabled}
               onClick={() => { setTradeMsg(null); setTradeMode("buy"); }}
             >
-              Scan to buy
+              {L("Scan to buy", "Scan to receive")}
             </button>
           </div>
         )}
@@ -581,7 +599,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
           <div>
             {ownedResources.length === 0 ? (
               <div style={{ fontSize: "0.82rem", color: "#fca5a5" }}>
-                You have no resources to sell yet — acquire some first.
+                {L("You have no resources to sell yet — acquire some first.", "You have no gifts to share yet — gather some first.")}
               </div>
             ) : (
               <>
@@ -596,7 +614,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
                     ))}
                   </select>
                   <label style={{ fontSize: "0.8rem", color: "#cbd5e1", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                    Price
+                    {L("Price", "Gift back")}
                     <input
                       type="number"
                       min={0}
@@ -604,20 +622,19 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
                       onChange={(e) => setSellPrice(e.target.value)}
                       style={priceInput}
                     />
-                    coins
+                    {L("coins", "blessings")}
                   </label>
                 </div>
                 {sellResId && (
                   <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginBottom: 6 }}>
-                    Standard value: {anchorPriceFor(sellResId)} coin{anchorPriceFor(sellResId) === 1 ? "" : "s"} — adjust the price to negotiate.
+                    {L("Standard value:", "Customary gift back:")} {anchorPriceFor(sellResId)} {L(anchorPriceFor(sellResId) === 1 ? "coin" : "coins", anchorPriceFor(sellResId) === 1 ? "blessing" : "blessings")}{L(" — adjust the price to negotiate.", " — adjust to agree together.")}
                   </div>
                 )}
                 {offerQrValue && (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, background: "#fff", padding: 12, borderRadius: 12 }}>
                     <QRCodeSVG value={offerQrValue} size={184} marginSize={2} />
                     <div style={{ fontSize: "0.78rem", color: "#0f172a", fontWeight: 700, textAlign: "center" }}>
-                      Show this to the buyer — they scan it to pay {Math.max(0, Math.floor(Number(sellPrice) || 0))} coin
-                      {Math.max(0, Math.floor(Number(sellPrice) || 0)) === 1 ? "" : "s"} for 1× {sellResId}.
+                      {L("Show this to the buyer — they scan it to pay ", "Show this to the recipient — they scan it to give ")}{Math.max(0, Math.floor(Number(sellPrice) || 0))} {L(Math.max(0, Math.floor(Number(sellPrice) || 0)) === 1 ? "coin" : "coins", Math.max(0, Math.floor(Number(sellPrice) || 0)) === 1 ? "blessing" : "blessings")} for 1× {sellResId}.
                     </div>
                   </div>
                 )}
@@ -632,7 +649,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
         {tradeMode === "buy" && (
           <div>
             <div style={{ fontSize: "0.78rem", color: "#cbd5e1", marginBottom: 6 }}>
-              Point your camera at the seller's QR{tradeBusy ? " — processing…" : "."}
+              {L("Point your camera at the seller's QR", "Point your camera at the sharer's QR")}{tradeBusy ? " — processing…" : "."}
             </div>
             <QrScanner active onCode={handleScan} />
             <button type="button" style={{ ...buyBtn, background: "rgba(75,85,99,0.6)", marginTop: 8 }} onClick={() => setTradeMode(null)}>
@@ -656,7 +673,7 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
           opacity: allObjectivesMet ? 1 : 0.55,
         }}
       >
-        {allObjectivesMet ? "Launch Mission →" : "Gather supplies to launch"}
+        {allObjectivesMet ? "Launch Mission →" : L("Gather supplies to launch", "Gather gifts to launch")}
       </button>
 
       {ranks.length > 0 && (
