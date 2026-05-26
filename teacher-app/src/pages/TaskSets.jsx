@@ -341,6 +341,14 @@ export default function TaskSets() {
   }, []);
   const [regeneratingId, setRegeneratingId] = useState(null);
 
+  // Regenerate confirm modal — shows the reconstructed constraints (editable)
+  // plus a "new copy" vs "replace original" choice before generating.
+  const [regenOpen, setRegenOpen] = useState(false);
+  const [regenPreparing, setRegenPreparing] = useState(false);
+  const [regenSource, setRegenSource] = useState(null); // full taskset
+  const [regenMode, setRegenMode] = useState("new"); // "new" | "replace"
+  const [regenForm, setRegenForm] = useState(null); // editable constraint fields
+
   const [reportOpen, setReportOpen] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState("");
@@ -600,14 +608,18 @@ export default function TaskSets() {
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
-  // Regenerate a taskset with the SAME constraints (subject, grade, difficulty,
-  // topic, task-type mix, count, quest/duel flags, vocabulary). Useful when the
-  // generator has improved — produces a fresh, non-destructive NEW taskset.
-  const regenerate = async (taskset) => {
+  // Open the Regenerate confirm modal. Reconstructs the original taskset's
+  // constraints (subject, grade, difficulty, topic, task-type mix, count,
+  // quest/duel flags, vocabulary) into an EDITABLE form so the teacher can
+  // tweak them and choose "new copy" vs "replace original" before generating.
+  const openRegenerateModal = async (taskset) => {
     const id = taskset?._id || taskset?.id;
     if (!id || regeneratingId) return;
-    setRegeneratingId(id);
-    showToast("♻️ Regenerating with the same constraints… (~30s)", 60000);
+    setRegenOpen(true);
+    setRegenMode("new");
+    setRegenForm(null);
+    setRegenSource(null);
+    setRegenPreparing(true);
     try {
       // List rows may be trimmed — pull the full taskset (tasks + meta).
       let full = taskset;
@@ -621,24 +633,72 @@ export default function TaskSets() {
         full?.meta?.conceptAllocation?.requestedConcepts ||
         full?.meta?.coverage?.requested ||
         [];
-      const payload = {
-        tasksetName: `${getTitle(full)} (regenerated)`,
+      setRegenSource(full);
+      setRegenForm({
         subject: full?.subject || getSubject(full) || "General",
-        gradeLevel: full?.gradeLevel || getGrade(full) || 7,
+        gradeLevel: String(full?.gradeLevel || getGrade(full) || 7),
         difficulty: (full?.difficulty || "MEDIUM").toUpperCase(),
         learningGoal: full?.learningGoal || "",
         topicLabel: full?.topicLabel || getTitle(full) || "",
-        requiredTaskTypes: types,
-        guaranteedTaskTypes: types,
-        numberOfTasks: tasks.length || types.length || undefined,
+        types,
+        numberOfTasks: tasks.length || types.length || 1,
         questMode: !!full?.questModeEnabled,
         duelsEnabled: !!full?.duelsEnabled,
         atDeskOnly: !!full?.atDeskOnly,
         aiWordBank: Array.isArray(concepts) ? concepts.join(", ") : "",
+      });
+    } catch (e) {
+      console.error("[TaskSets] prepare regenerate failed:", e);
+      showToast(`Couldn't load constraints: ${e?.message || "error"}`, 4000);
+      setRegenOpen(false);
+    } finally {
+      setRegenPreparing(false);
+    }
+  };
+
+  const closeRegenModal = () => {
+    if (regeneratingId) return; // don't close mid-generation
+    setRegenOpen(false);
+    setRegenForm(null);
+    setRegenSource(null);
+  };
+
+  // Run the generation using the (possibly edited) form. On "replace original"
+  // we generate a fresh taskset, copy its tasks/meta onto the original id, and
+  // delete the throwaway copy so there's no duplicate.
+  const runRegenerate = async () => {
+    if (!regenForm || !regenSource || regeneratingId) return;
+    const id = regenSource?._id || regenSource?.id;
+    if (!id) return;
+
+    const replace = regenMode === "replace";
+    setRegeneratingId(id);
+    showToast(
+      replace
+        ? "♻️ Regenerating in place… (~30s)"
+        : "♻️ Regenerating as a new copy… (~30s)",
+      60000
+    );
+    try {
+      const types = regenForm.types || [];
+      const n = Math.max(1, Number(regenForm.numberOfTasks) || types.length || 1);
+      const payload = {
+        tasksetName: replace ? getTitle(regenSource) : `${getTitle(regenSource)} (regenerated)`,
+        subject: regenForm.subject || "General",
+        gradeLevel: regenForm.gradeLevel || 7,
+        difficulty: (regenForm.difficulty || "MEDIUM").toUpperCase(),
+        learningGoal: regenForm.learningGoal || "",
+        topicLabel: regenForm.topicLabel || getTitle(regenSource) || "",
+        requiredTaskTypes: types,
+        guaranteedTaskTypes: types,
+        numberOfTasks: n,
+        questMode: !!regenForm.questMode,
+        duelsEnabled: !!regenForm.duelsEnabled,
+        atDeskOnly: !!regenForm.atDeskOnly,
+        aiWordBank: (regenForm.aiWordBank || "").trim(),
       };
       // Stream via SSE (same as the generator) so the ~30s generation keeps the
-      // connection alive — a silent POST gets killed by idle-timeout proxies,
-      // which is why the button could appear stuck on "Regenerating…".
+      // connection alive — a silent POST gets killed by idle-timeout proxies.
       const res = await apiFetch("/api/ai/tasksets", {
         method: "POST",
         body: JSON.stringify(payload),
@@ -673,7 +733,33 @@ export default function TaskSets() {
       }
       if (streamErr) throw new Error(streamErr);
       if (!finalData) throw new Error("No taskset was returned");
-      showToast("✅ Regenerated as a new taskset.");
+
+      if (replace) {
+        // Copy the freshly generated content onto the original taskset, then
+        // delete the throwaway copy so the list isn't duplicated.
+        const fresh = finalData.taskset || {};
+        const newId = fresh?._id || fresh?.id;
+        const patch = {
+          tasks: Array.isArray(fresh.tasks) ? fresh.tasks : [],
+        };
+        if (fresh.meta) patch.meta = fresh.meta;
+        if (typeof fresh.durationMinutes === "number") patch.durationMinutes = fresh.durationMinutes;
+        await apiFetchJson(`/api/tasksets/${encodeURIComponent(id)}`, {
+          method: "PUT",
+          body: patch,
+        });
+        if (newId && String(newId) !== String(id)) {
+          try {
+            await apiFetchJson(`/api/tasksets/${encodeURIComponent(newId)}`, { method: "DELETE" });
+          } catch { /* best-effort cleanup */ }
+        }
+        showToast("✅ Regenerated in place.");
+      } else {
+        showToast("✅ Regenerated as a new taskset.");
+      }
+      setRegenOpen(false);
+      setRegenForm(null);
+      setRegenSource(null);
       await loadSets();
     } catch (e) {
       console.error("[TaskSets] regenerate failed:", e);
@@ -987,6 +1073,19 @@ export default function TaskSets() {
     border: "1px solid rgba(15,23,42,0.12)",
     boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
     padding: 16,
+  };
+
+  const regenFieldStyle = { display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 160 };
+  const regenLabelStyle = { fontSize: 12, fontWeight: 900, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.02em" };
+  const regenInputStyle = {
+    padding: "8px 10px",
+    borderRadius: 10,
+    border: "1.5px solid #d1d5db",
+    fontSize: "0.9rem",
+    background: "#fff",
+    color: "#111827",
+    width: "100%",
+    boxSizing: "border-box",
   };
 
   const table = {
@@ -1599,10 +1698,10 @@ export default function TaskSets() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => regenerate(ts)}
+                        onClick={() => openRegenerateModal(ts)}
                         disabled={regeneratingId === id}
                         style={btn("secondary")}
-                        title="Regenerate this taskset with the same constraints (creates a new copy)"
+                        title="Regenerate this taskset with the same constraints — review and tweak before generating"
                       >
                         {regeneratingId === id ? "♻️ Regenerating…" : "♻️ Regenerate"}
                       </button>
@@ -1812,6 +1911,206 @@ export default function TaskSets() {
                 Copy Link
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Regenerate Confirm Modal */}
+      {regenOpen && (
+        <div
+          style={modalOverlay}
+          onMouseDown={(e) => { if (e.target === e.currentTarget) closeRegenModal(); }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div style={{ ...modalCard, width: "min(560px, 100%)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+              <div>
+                <div style={{ fontWeight: 1000, fontSize: "1.1rem" }}>♻️ Regenerate task set</div>
+                <div style={{ marginTop: 4, color: "#6b7280", fontWeight: 800, fontSize: "0.9rem" }}>
+                  {regenSource ? getTitle(regenSource) : ""}
+                </div>
+              </div>
+              <button type="button" style={btn("ghost")} onClick={closeRegenModal} disabled={!!regeneratingId}>
+                Close
+              </button>
+            </div>
+
+            <p style={{ marginTop: 10, color: "#6b7280", fontSize: 13, lineHeight: 1.5 }}>
+              Generates <strong>fresh AI content</strong> (new questions &amp; prompts) using these constraints.
+              Tweak anything below before generating.
+            </p>
+
+            {regenPreparing || !regenForm ? (
+              <div style={{ marginTop: 12, color: "#6b7280", fontWeight: 800 }}>Loading constraints…</div>
+            ) : (
+              <div style={{ marginTop: 8, display: "grid", gap: 12 }}>
+                {/* Subject + Grade */}
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <label style={regenFieldStyle}>
+                    <span style={regenLabelStyle}>Subject</span>
+                    <input
+                      type="text"
+                      value={regenForm.subject}
+                      onChange={(e) => setRegenForm((f) => ({ ...f, subject: e.target.value }))}
+                      style={regenInputStyle}
+                    />
+                  </label>
+                  <label style={{ ...regenFieldStyle, maxWidth: 130 }}>
+                    <span style={regenLabelStyle}>Grade</span>
+                    <input
+                      type="text"
+                      value={regenForm.gradeLevel}
+                      onChange={(e) => setRegenForm((f) => ({ ...f, gradeLevel: e.target.value }))}
+                      style={regenInputStyle}
+                    />
+                  </label>
+                </div>
+
+                {/* Topic */}
+                <label style={regenFieldStyle}>
+                  <span style={regenLabelStyle}>Topic</span>
+                  <input
+                    type="text"
+                    value={regenForm.topicLabel}
+                    onChange={(e) => setRegenForm((f) => ({ ...f, topicLabel: e.target.value }))}
+                    style={regenInputStyle}
+                  />
+                </label>
+
+                {/* Difficulty + Count */}
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <label style={regenFieldStyle}>
+                    <span style={regenLabelStyle}>Difficulty</span>
+                    <select
+                      value={regenForm.difficulty}
+                      onChange={(e) => setRegenForm((f) => ({ ...f, difficulty: e.target.value }))}
+                      style={regenInputStyle}
+                    >
+                      <option value="EASY">Easy</option>
+                      <option value="MEDIUM">Medium</option>
+                      <option value="HARD">Hard</option>
+                    </select>
+                  </label>
+                  <label style={{ ...regenFieldStyle, maxWidth: 130 }}>
+                    <span style={regenLabelStyle}># of tasks</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={40}
+                      value={regenForm.numberOfTasks}
+                      onChange={(e) => setRegenForm((f) => ({ ...f, numberOfTasks: e.target.value }))}
+                      style={regenInputStyle}
+                    />
+                  </label>
+                </div>
+
+                {/* Task-type mix (read-only display of the locked mix) */}
+                <div>
+                  <span style={regenLabelStyle}>Task-type mix ({(regenForm.types || []).length})</span>
+                  <div style={{ marginTop: 6, display: "flex", gap: 5, flexWrap: "wrap" }}>
+                    {(regenForm.types || []).map((t) => {
+                      const meta = TASK_TYPE_META[t];
+                      const label = meta?.label || t.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+                      return (
+                        <span key={t} style={{
+                          display: "inline-flex", alignItems: "center", gap: 5,
+                          padding: "3px 8px", borderRadius: 12, fontSize: "0.72rem", fontWeight: 700,
+                          background: "rgba(15,23,42,0.05)", border: "1px solid rgba(15,23,42,0.12)",
+                        }}>
+                          {label}
+                          <button
+                            type="button"
+                            title="Remove this type"
+                            onClick={() => setRegenForm((f) => ({ ...f, types: (f.types || []).filter((x) => x !== t) }))}
+                            style={{ border: "none", background: "transparent", cursor: "pointer", color: "#9ca3af", fontWeight: 900, padding: 0, lineHeight: 1 }}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      );
+                    })}
+                    {(regenForm.types || []).length === 0 && (
+                      <span style={{ fontSize: 12, color: "#9ca3af", fontWeight: 700 }}>
+                        Any types (AI picks)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Vocabulary / word bank */}
+                <label style={regenFieldStyle}>
+                  <span style={regenLabelStyle}>Vocabulary / word bank (comma-separated)</span>
+                  <textarea
+                    rows={2}
+                    value={regenForm.aiWordBank}
+                    onChange={(e) => setRegenForm((f) => ({ ...f, aiWordBank: e.target.value }))}
+                    style={{ ...regenInputStyle, resize: "vertical", fontFamily: "inherit" }}
+                  />
+                </label>
+
+                {/* Flags */}
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13, fontWeight: 700, color: "#374151" }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                    <input type="checkbox" checked={!!regenForm.questMode} onChange={(e) => setRegenForm((f) => ({ ...f, questMode: e.target.checked }))} />
+                    Quest mode
+                  </label>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                    <input type="checkbox" checked={!!regenForm.duelsEnabled} onChange={(e) => setRegenForm((f) => ({ ...f, duelsEnabled: e.target.checked }))} />
+                    Duels
+                  </label>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                    <input type="checkbox" checked={!!regenForm.atDeskOnly} onChange={(e) => setRegenForm((f) => ({ ...f, atDeskOnly: e.target.checked }))} />
+                    At-desk only
+                  </label>
+                </div>
+
+                {/* New copy vs Replace original */}
+                <div style={{ marginTop: 4 }}>
+                  <span style={regenLabelStyle}>Output</span>
+                  <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {[
+                      { v: "new", label: "📄 New copy", tip: "Keeps the original; saves a fresh “(regenerated)” copy." },
+                      { v: "replace", label: "♻️ Replace original", tip: "Overwrites this task set's tasks in place." },
+                    ].map((opt) => (
+                      <button
+                        key={opt.v}
+                        type="button"
+                        title={opt.tip}
+                        onClick={() => setRegenMode(opt.v)}
+                        style={{
+                          ...btn(regenMode === opt.v ? "primary" : "secondary"),
+                          opacity: regeneratingId ? 0.6 : 1,
+                        }}
+                        disabled={!!regeneratingId}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  {regenMode === "replace" && (
+                    <div style={{ marginTop: 8, fontSize: 12, color: "#b45309", fontWeight: 700 }}>
+                      ⚠️ This overwrites the current tasks. There's no undo.
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
+                  <button type="button" style={btn("ghost")} onClick={closeRegenModal} disabled={!!regeneratingId}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...btn("primary"), opacity: regeneratingId ? 0.7 : 1, cursor: regeneratingId ? "wait" : "pointer" }}
+                    onClick={runRegenerate}
+                    disabled={!!regeneratingId}
+                  >
+                    {regeneratingId ? "♻️ Generating…" : "Generate"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
