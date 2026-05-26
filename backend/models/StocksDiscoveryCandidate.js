@@ -121,6 +121,9 @@ const StocksDiscoveryCandidateSchema = new mongoose.Schema(
     // Mosaic Intelligence (additive) — public-data signal aggregation. Loosely
     // typed; the shape is validated/sanitized in buildMosaicForResult().
     mosaic: { type: mongoose.Schema.Types.Mixed, default: null },
+    // Moonshot 10x analysis (additive) — asymmetric-upside output. Loosely
+    // typed; shape is validated/sanitized in buildMoonshotResult().
+    moonshot: { type: mongoose.Schema.Types.Mixed, default: null },
     // User actions
     starred: { type: Boolean, default: false },
     dismissed: { type: Boolean, default: false },

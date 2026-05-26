@@ -40,6 +40,7 @@ import {
   fetchYahooDaily,
 } from "./stocksDiscoveryScore.js";
 import { runMosaicBatch, mosaicMode as getMosaicMode, MOSAIC_DISCLAIMER } from "./stocksMosaic.js";
+import { assessMoonshot, buildMoonshotResult, syntheticInsiderScore, MOONSHOT_DISCLAIMER } from "./stocksMoonshot.js";
 
 const FMP_BASE = "https://financialmodelingprep.com";
 const SCREENER_CACHE = new Map(); // key → { fetchedAt, data }
@@ -1122,6 +1123,87 @@ function deterministicFallbackPicks(withFactors, weights, mode, topN) {
 
 function normTicker(t) {
   return String(t || "").toUpperCase().replace(/\.+$/, "").replace(/\.(TO|V|NE|CN|US)$/i, "");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MOONSHOT 10x SCAN (additive) — hunts 2–5 asymmetric high-upside candidates.
+// Reuses the shortlist + deterministic factors + Mosaic, adds the pre-parabolic
+// / reality-lag / synthetic-insider signals and a focused AI asymmetric-upside
+// layer with calibrated P(5x)/P(10x). Smaller-cap, higher-growth bias.
+// ═══════════════════════════════════════════════════════════════════════
+export async function runMoonshotScan({ email, market = "both", sectors = null, opts = {} }) {
+  const mkt = ["both", "us", "canada"].includes(market) ? market : "both";
+  // Moonshot bias: skew smaller-cap (more room to compound) unless overridden.
+  const moonshotOpts = {
+    marketCapMin: typeof opts.marketCapMin === "number" ? opts.marketCapMin : 100_000_000,
+    marketCapMax: typeof opts.marketCapMax === "number" ? opts.marketCapMax : 10_000_000_000,
+    ...opts,
+  };
+  const excl = new Set();
+  const recentlyDismissed = await StocksDiscoveryCandidate.find({
+    email: email.toLowerCase(), dismissed: true,
+    scanDate: { $gte: new Date(Date.now() - 60 * 86400 * 1000) },
+  }).select("ticker").lean();
+  recentlyDismissed.forEach((d) => excl.add(d.ticker));
+  (opts.excludeTickers || []).forEach((t) => excl.add(String(t).toUpperCase()));
+
+  const shortlistN = 8;
+  const { shortlist, mode: scanMode, upgradeRecommendation } = await buildShortlist({ email, sectors, opts: moonshotOpts, excl, shortlistN, market: mkt });
+  if (!shortlist.length) {
+    return { picks: [], market: mkt, mode: scanMode, upgradeRecommendation, disclaimer: MOONSHOT_DISCLAIMER, error: "No candidates cleared the pre-screen." };
+  }
+
+  // Deterministic factors (+ pre-parabolic / reality-lag) and Mosaic in parallel.
+  const spyPoints = await fetchYahooDaily("SPY", "1y").catch(() => null);
+  const withFactors = await Promise.all(shortlist.map(async (c) => {
+    const det = await computeDeterministicFactors({ ticker: c.ticker, currency: c.currency, marketCap: c.marketCap, fmpFundamentals: c.fundamentals, spyPoints });
+    return { ...c, sub: det.sub, raw: det.raw, moonshot: det.moonshot };
+  }));
+  const mosaicByTicker = await runMosaicBatch(
+    withFactors.map((c) => ({ ticker: c.ticker, name: c.name, sector: c.sector, marketCap: c.marketCap, price: c.price, currency: c.currency })),
+    "aggressive"
+  ).catch((e) => { console.warn("[moonshot] mosaic failed:", e?.message); return {}; });
+  for (const c of withFactors) {
+    c.mosaic = mosaicByTicker[c.ticker] || null;
+    c.syntheticInsider = syntheticInsiderScore(c.mosaic);
+  }
+
+  const ai = await assessMoonshot(withFactors, mkt);
+  const byNorm = new Map(withFactors.map((c) => [normTicker(c.ticker), c]));
+
+  const scanDate = new Date();
+  scanDate.setUTCHours(0, 0, 0, 0);
+  const picks = [];
+  for (const item of (ai.picks || [])) {
+    const c = byNorm.get(normTicker(item.ticker));
+    if (!c) continue;
+    const moonshot = buildMoonshotResult(item, c);
+    try {
+      const doc = await StocksDiscoveryCandidate.findOneAndUpdate(
+        { email: email.toLowerCase(), ticker: c.ticker, scanDate },
+        { $set: {
+            email: email.toLowerCase(), ticker: c.ticker, name: c.name, sector: c.sector, industry: c.industry,
+            exchange: c.exchange, marketCap: c.marketCap, priceAtDiscovery: c.price, currencyAtDiscovery: c.currency,
+            score: moonshot.compositeScore ?? 0,
+            signals: {
+              revenueGrowthPct: c.raw?.fundamentals?.revenueGrowthPct ?? null,
+              grossMarginPct: c.raw?.fundamentals?.grossMarginPct ?? null,
+              operatingMarginPct: c.raw?.fundamentals?.operatingMarginPct ?? null,
+              netDebtToEquity: c.raw?.fundamentals?.netDebtToEquity ?? null,
+            },
+            thesis: { bullCase: moonshot.finalThesis, killThesis: (moonshot.redFlags || []).join("; "), catalysts: moonshot.keyCatalysts, conviction: moonshot.confidence, sources: moonshot.sources },
+            moonshot,
+            mosaic: c.mosaic || null,
+            scanDate, lastPriceCheckedAt: scanDate, lastPrice: c.price,
+          } },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+      picks.push(doc.toObject());
+    } catch (e) { console.warn("[moonshot] save failed:", e?.message); }
+  }
+  picks.sort((a, b) => (b.moonshot?.compositeScore ?? 0) - (a.moonshot?.compositeScore ?? 0));
+
+  return { picks, market: mkt, mode: scanMode, upgradeRecommendation, scanDate, disclaimer: MOONSHOT_DISCLAIMER, shortlistSize: shortlist.length };
 }
 
 // Standalone Mosaic Intelligence run for an explicit set of tickers (or the

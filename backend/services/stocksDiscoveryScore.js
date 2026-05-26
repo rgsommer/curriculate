@@ -338,6 +338,64 @@ export function deriveProjection({ tech, price, riskMode = "balanced", timeHoriz
   };
 }
 
+// ── Moonshot deterministic detectors ──────────────────────────────────
+// Pre-parabolic structure: the "coiling before the move" pattern — volatility
+// compression + tight multi-month consolidation + holding a rising base +
+// positive relative strength + sitting just under resistance WITHOUT already
+// being extended. Pattern only; says nothing about whether it breaks out.
+export function scorePreParabolic(points, tech, relStrength6mPp) {
+  const contributors = [];
+  if (!points || points.length < 60 || !tech?.ok) return { score: null, contributors, flags: ["insufficient history"] };
+  const closes = points.map((p) => p.close);
+  const last = closes[closes.length - 1];
+  const yrHigh = Math.max(...closes);
+  let score = 0;
+  const add = (pts, label) => { score += pts; contributors.push(`${label} → +${pts}`); };
+  const stdev = (a) => { if (a.length < 2) return null; const m = a.reduce((s, x) => s + x, 0) / a.length; return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / a.length); };
+
+  const ret = [];
+  for (let i = 1; i < closes.length; i++) ret.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+  const vRecent = stdev(ret.slice(-20)), vFull = stdev(ret);
+  if (vRecent != null && vFull != null && vFull > 0) {
+    const ratio = vRecent / vFull;
+    if (ratio < 0.6) add(25, `Volatility compressed (recent ${(ratio * 100).toFixed(0)}% of 1y)`);
+    else if (ratio < 0.85) add(15, `Volatility easing (${(ratio * 100).toFixed(0)}% of 1y)`);
+  }
+  const r60 = closes.slice(-60);
+  const rng = (Math.max(...r60) - Math.min(...r60)) / last;
+  if (rng < 0.18) add(25, `Tight 3-mo consolidation (${(rng * 100).toFixed(0)}% range)`);
+  else if (rng < 0.30) add(15, `Moderate consolidation (${(rng * 100).toFixed(0)}% range)`);
+  if (tech.priceVsSma200 != null && tech.priceVsSma200 >= 0 && tech.priceVsSma200 < 30) add(20, `Holding above 200d base (+${tech.priceVsSma200.toFixed(0)}%)`);
+  if (relStrength6mPp != null && relStrength6mPp >= 0) add(15, `Outperforming S&P (RS +${relStrength6mPp.toFixed(0)}pp)`);
+  const distHigh = (yrHigh - last) / yrHigh;
+  if (distHigh <= 0.15 && (tech.priceVsSma50 == null || tech.priceVsSma50 < 25)) add(15, `Coiled ${(distHigh * 100).toFixed(0)}% under 52w high, not yet extended`);
+  return { score: clamp(Math.round(score), 0, 100), contributors, flags: [] };
+}
+
+// Market-reality lag: business improving faster than the stock reflects —
+// strong/accelerating fundamentals while price lags the market. High score =
+// the kind of mispricing that precedes a re-rating.
+export function scoreRealityLag(f, returns, relStrength6mPp) {
+  const contributors = [];
+  if (!f) return { score: null, contributors, flags: ["fundamentals unavailable"] };
+  let fund = 0;
+  if (f.revenueGrowthPct != null) fund += f.revenueGrowthPct >= 40 ? 0.5 : f.revenueGrowthPct >= 20 ? 0.3 : f.revenueGrowthPct > 0 ? 0.1 : 0;
+  if (f.operatingIncomeGrowthPct != null && f.operatingIncomeGrowthPct > 0) fund += 0.25;
+  if (f.grossMarginPct != null && f.grossMarginPct >= 50) fund += 0.15;
+  if (f.freeCashFlowYieldPct != null && f.freeCashFlowYieldPct > 0) fund += 0.1;
+  fund = Math.min(1, fund);
+  let weak = 0;
+  if (relStrength6mPp != null) weak = relStrength6mPp < -10 ? 1 : relStrength6mPp < 0 ? 0.7 : relStrength6mPp < 10 ? 0.3 : 0;
+  else if (returns?.r6m != null) weak = returns.r6m < 0 ? 0.8 : returns.r6m < 10 ? 0.4 : 0.1;
+  const score = clamp(Math.round(100 * fund * weak), 0, 100);
+  contributors.push(
+    fund > 0.5 && weak > 0.5
+      ? `Strong fundamentals (rev ${f.revenueGrowthPct?.toFixed?.(0) ?? "?"}%) but price lagging${relStrength6mPp != null ? ` (RS ${relStrength6mPp.toFixed(0)}pp)` : ""} — possible re-rating setup`
+      : `Fundamental strength ${(fund * 100).toFixed(0)}% vs price-lag ${(weak * 100).toFixed(0)}%`
+  );
+  return { score, contributors, flags: [] };
+}
+
 // Compute all four deterministic modules for one candidate. Returns the
 // sub-scores plus the raw inputs the AI layer needs.
 export async function computeDeterministicFactors({ ticker, currency, marketCap, fmpFundamentals, spyPoints }) {
@@ -374,9 +432,13 @@ export async function computeDeterministicFactors({ ticker, currency, marketCap,
   const momentum = scoreMomentum(returns, relStrength6mPp, tech);
   const technical = scoreTechnical(tech, returns);
   const riskControl = scoreRiskControl(f, tech, marketCap);
+  // Moonshot-only detectors (cheap, reuse the already-fetched history).
+  const preParabolic = scorePreParabolic(history, tech, relStrength6mPp);
+  const realityLag = scoreRealityLag(f, returns, relStrength6mPp);
 
   return {
     sub: { fundamentals, momentum, technical, riskControl },
     raw: { tech, returns, relStrength6mPp, fundamentals: f },
+    moonshot: { preParabolic, realityLag },
   };
 }

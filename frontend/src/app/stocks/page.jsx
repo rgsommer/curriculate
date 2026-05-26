@@ -4822,6 +4822,98 @@ function MosaicBlock({ mosaic }) {
   );
 }
 
+function MoonshotCard({ pick, rank }) {
+  const m = pick.moonshot || {};
+  const [open, setOpen] = useState(false);
+  const ccy = pick.currencyAtDiscovery || "USD";
+  const cap = pick.marketCap ? `$${(pick.marketCap / 1e9).toFixed(pick.marketCap >= 1e9 ? 2 : 3)}B` : "—";
+  const exch = (pick.exchange || "").toUpperCase();
+  const isCanada = ccy === "CAD" || /^(TSX|TSXV|CN|NEO|NE)$/.test(exch) || /\.(TO|V|NE|CN)$/i.test(pick.ticker || "");
+  const market = `${exch ? exch + " · " : ""}${isCanada ? "🇨🇦 Canada" : "🇺🇸 US"}`;
+  const sig = m.signals || {};
+  const Badge = ({ label, v }) => v == null ? null : (
+    <span style={{ fontSize: 10.5, background: "var(--sa-panel-2)", borderRadius: 6, padding: "2px 7px" }}>{label} <b>{v}</b></span>
+  );
+  const Field = ({ label, children }) => !children ? null : (
+    <div style={{ fontSize: 12, marginTop: 6 }}><span style={{ color: "var(--sa-muted)", fontWeight: 600 }}>{label}: </span>{children}</div>
+  );
+
+  return (
+    <div className="sa-card" style={{ padding: 16, border: "1px solid var(--sa-border)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>
+            <span style={{ color: "var(--sa-muted)", marginRight: 6 }}>#{rank}</span>{pick.ticker}
+            <span style={{ color: "var(--sa-text-2)", fontWeight: 500, marginLeft: 8, fontSize: 13 }}>{pick.name}</span>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
+            {pick.priceAtDiscovery != null ? `$${pick.priceAtDiscovery} ${ccy}` : "—"} · {cap} · {market} · {pick.sector || "—"} · {m.timeHorizon || "long-term"}
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 24, fontWeight: 800 }}>{m.compositeScore ?? "—"}</div>
+          <div style={{ fontSize: 10, color: "var(--sa-muted)", letterSpacing: ".06em" }}>MOONSHOT</div>
+        </div>
+      </div>
+
+      {/* Asymmetry / probabilities */}
+      <div style={{ marginTop: 10, display: "flex", gap: 18, flexWrap: "wrap", alignItems: "baseline" }}>
+        {m.estimatedUpside && <span style={{ fontSize: 13 }}><span style={{ color: "var(--sa-muted)" }}>Upside:</span> <b style={{ color: "var(--sa-green)" }}>{m.estimatedUpside}</b></span>}
+        <span style={{ fontSize: 13 }}><span style={{ color: "var(--sa-muted)" }}>P(5x):</span> <b>{m.p5xPct != null ? m.p5xPct + "%" : "—"}</b></span>
+        <span style={{ fontSize: 13 }}><span style={{ color: "var(--sa-muted)" }}>P(10x):</span> <b>{m.p10xPct != null ? m.p10xPct + "%" : "—"}</b></span>
+        <span style={{ fontSize: 12, color: "var(--sa-muted)" }}>confidence {m.confidence || "—"}</span>
+      </div>
+      <div style={{ fontSize: 10.5, color: "var(--sa-muted)", marginTop: 2 }}>Probabilities are rough base-rate-anchored priors, not forecasts.</div>
+
+      {/* Signal badges */}
+      <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <Badge label="Pre-parabolic" v={sig.preParabolic} />
+        <Badge label="Reality-lag" v={sig.realityLag} />
+        <Badge label="Synthetic-insider" v={sig.syntheticInsider} />
+        <Badge label="Mosaic edge" v={sig.mosaicEdge} />
+      </div>
+
+      <Field label="Why the market may underestimate it">{m.marketUnderestimation}</Field>
+      <Field label="Narrative shift">{m.narrativeShift}</Field>
+      <Field label="TAM thesis">{m.tamThesis}</Field>
+      <Field label="Final thesis">{m.finalThesis}</Field>
+
+      <button className="sa-btn ghost" style={{ marginTop: 10, fontSize: 12 }} onClick={() => setOpen((o) => !o)}>
+        {open ? "Hide detail" : "Show full thesis, catalysts, risks & sources"}
+      </button>
+      {open && (
+        <div style={{ marginTop: 8, borderTop: "1px solid var(--sa-border)", paddingTop: 8 }}>
+          <Field label="Institutional signals">{m.institutionalSignals}</Field>
+          <Field label="Technical setup">{m.technicalSummary}</Field>
+          <Field label="Revenue / margin trajectory">{m.revenueMarginTrajectory}</Field>
+          <Field label="Future dominance">{m.futureDominance}</Field>
+          <Field label="Best case">{m.bestCase}</Field>
+          <Field label="Bear case">{m.bearCase}</Field>
+          {Array.isArray(m.keyCatalysts) && m.keyCatalysts.length > 0 && (
+            <Field label="Key catalysts">{m.keyCatalysts.join(" · ")}</Field>
+          )}
+          {Array.isArray(m.coreRisks) && m.coreRisks.length > 0 && (
+            <Field label="Core risks">{m.coreRisks.join(" · ")}</Field>
+          )}
+          {Array.isArray(m.redFlags) && m.redFlags.length > 0 && (
+            <div style={{ fontSize: 12, marginTop: 6, color: "var(--sa-red)" }}><b>🚩 Red flags:</b> {m.redFlags.join(" · ")}</div>
+          )}
+          {Array.isArray(sig.preParabolicWhy) && sig.preParabolicWhy.length > 0 && (
+            <div style={{ fontSize: 11, marginTop: 6, color: "var(--sa-muted)" }}>Pre-parabolic: {sig.preParabolicWhy.join(" · ")}</div>
+          )}
+          {Array.isArray(m.sources) && m.sources.length > 0 && (
+            <div style={{ fontSize: 11, marginTop: 6 }}>
+              Sources: {m.sources.map((s, i) => (
+                <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--sa-accent)", marginRight: 8 }}>{s.title?.slice(0, 40) || "link"}</a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HighConvictionCard({ pick, rank }) {
   const [showDetail, setShowDetail] = useState(false);
   const mf = pick.multiFactor || {};
@@ -4998,6 +5090,9 @@ function DiscoverView({ sessionToken, user }) {
   const [hcMarket, setHcMarket] = useState("both");         // both | us | canada
   const [hcMosaic, setHcMosaic] = useState(false);          // include Mosaic Intelligence
   const [hcMosaicMode, setHcMosaicMode] = useState("balanced"); // mosaic alt-data mode
+  const [msBusy, setMsBusy] = useState(false);
+  const [msError, setMsError] = useState(null);
+  const [msResult, setMsResult] = useState(null); // moonshot { picks, disclaimer, ... }
   const [hcBusy, setHcBusy] = useState(false);
   const [hcError, setHcError] = useState(null);
   const [hcResult, setHcResult] = useState(null); // { picks, disclaimer, mode, upgradeRecommendation }
@@ -5074,6 +5169,28 @@ function DiscoverView({ sessionToken, user }) {
       setHcError(e?.message || "Screen failed");
     } finally {
       setHcBusy(false);
+    }
+  };
+
+  const runMoonshot = async () => {
+    if (msBusy) return;
+    setMsBusy(true); setMsError(null);
+    try {
+      const body = { market: hcMarket };
+      if (sectorsCsv.trim()) body.sectors = sectorsCsv.split(",").map((s) => s.trim()).filter(Boolean);
+      const r = await fetch(`${BACKEND_URL}/api/stocks-discover/moonshot`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setMsResult(j);
+    } catch (e) {
+      setMsError(e?.message || "Moonshot scan failed");
+    } finally {
+      setMsBusy(false);
     }
   };
 
@@ -5187,6 +5304,39 @@ function DiscoverView({ sessionToken, user }) {
                 )}
                 {hcResult.picks.map((p, i) => (
                   <HighConvictionCard key={p._id || p.ticker} pick={p} rank={i + 1} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Moonshot 10x mode ── */}
+      <div className="sa-card" style={{ marginBottom: 18 }}>
+        <div style={{ fontWeight: 700, fontSize: 15 }}>🚀 Moonshot 10x</div>
+        <div style={{ fontSize: 12.5, color: "var(--sa-muted)", marginTop: 4, marginBottom: 12, lineHeight: 1.5 }}>
+          Aggressive hunt for 2–5 asymmetric 5x–10x setups over a 3–10 year horizon — pre-parabolic structure, market-reality lag, synthetic-insider & Mosaic signals, with calibrated probabilities. Uses the market + sectors selected above. <b>Speculative — most won't 5x.</b>
+        </div>
+        <button className="sa-btn" onClick={runMoonshot} disabled={msBusy}>
+          {msBusy ? "Hunting moonshots…" : "🚀 Run Moonshot 10x scan"}
+        </button>
+        {msError && <div className="sa-err" style={{ marginTop: 12 }}>{msError}</div>}
+        {msResult && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ background: "var(--sa-amber-soft)", border: "1px solid #fde68a", color: "#92400e", borderRadius: 8, padding: "10px 12px", fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>
+              ⚠️ {msResult.disclaimer}
+            </div>
+            {msResult.upgradeRecommendation && (
+              <div style={{ fontSize: 12, color: "var(--sa-muted)", marginBottom: 12 }}>{msResult.upgradeRecommendation}</div>
+            )}
+            {(!msResult.picks || msResult.picks.length === 0) ? (
+              <div style={{ fontSize: 13, color: "var(--sa-muted)" }}>
+                {msResult.error || "No candidate cleared the asymmetric-10x bar this run."}
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {msResult.picks.map((p, i) => (
+                  <MoonshotCard key={p._id || p.ticker} pick={p} rank={i + 1} />
                 ))}
               </div>
             )}

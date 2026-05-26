@@ -17,7 +17,7 @@ import express from "express";
 import crypto from "crypto";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
-import { runDiscoveryScan, runHighConvictionScan, runMosaicForTickers } from "../services/stocksDiscoveryService.js";
+import { runDiscoveryScan, runHighConvictionScan, runMosaicForTickers, runMoonshotScan } from "../services/stocksDiscoveryService.js";
 
 const router = express.Router();
 
@@ -148,6 +148,33 @@ router.post("/high-conviction", requireStocksAuth, async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error("stocks-discover /high-conviction error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// POST /api/stocks-discover/moonshot — aggressive asymmetric 5x–10x hunt, top 2-5.
+router.post("/moonshot", requireStocksAuth, async (req, res) => {
+  try {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return res.status(503).json({ error: "Moonshot mode requires ANTHROPIC_API_KEY in env." });
+    }
+    const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
+    const heldTickers = profile?.positions?.map((p) => p.ticker) || [];
+    const { sectors = null, marketCapMin, marketCapMax, market = "both" } = req.body || {};
+
+    const result = await runMoonshotScan({
+      email: req.stocksUser.email,
+      sectors,
+      market,
+      opts: {
+        excludeTickers: heldTickers,
+        ...(typeof marketCapMin === "number" ? { marketCapMin } : {}),
+        ...(typeof marketCapMax === "number" ? { marketCapMax } : {}),
+      },
+    });
+    res.json(result);
+  } catch (err) {
+    console.error("stocks-discover /moonshot error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });
   }
 });
