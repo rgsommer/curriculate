@@ -1692,9 +1692,30 @@ export default function TaskSets() {
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {diffFlag && (
-                          <span title={diffTip} style={{ cursor: "default", marginRight: 6 }}>
-                            {diffFlag}
+                        {(diffFlag || ts?.atDeskOnly) && (
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              verticalAlign: "middle",
+                              lineHeight: 1.05,
+                              marginRight: 6,
+                            }}
+                          >
+                            {diffFlag && (
+                              <span title={diffTip} style={{ cursor: "default" }}>
+                                {diffFlag}
+                              </span>
+                            )}
+                            {ts?.atDeskOnly && (
+                              <span
+                                title="At-desk only \u2014 students stay seated; no QR-code scans"
+                                style={{ cursor: "default", fontSize: "0.8rem" }}
+                              >
+                                \uD83E\uDE91
+                              </span>
+                            )}
                           </span>
                         )}
                         <span style={{ marginRight: 6, fontSize: "0.8rem", color: "#9ca3af" }}>
@@ -1703,21 +1724,6 @@ export default function TaskSets() {
                         {title}
                       </div>
 
-                      <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-                      {/* At-desk (no QR scans) indicator */}
-                      {ts?.atDeskOnly && (
-                        <span
-                          title="At-desk only — students stay seated; no QR-code scans / no moving between stations"
-                          style={{
-                            display: "inline-flex", alignItems: "center", gap: 4,
-                            padding: "2px 9px", borderRadius: 999,
-                            fontSize: "0.7rem", fontWeight: 800,
-                            background: "#e0f2fe", color: "#075985", border: "1px solid #7dd3fc",
-                          }}
-                        >
-                          🪑 At-desk · no scans
-                        </span>
-                      )}
                       {/* Verification badge from the auto playability test */}
                       {(() => {
                         const v = getVerification(ts);
@@ -1753,7 +1759,6 @@ export default function TaskSets() {
                           </span>
                         );
                       })()}
-                      </div>
                     </div>
 
                     {/* Quick-action buttons — below the title, Test run beside Launch */}
