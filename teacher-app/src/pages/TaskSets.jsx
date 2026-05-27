@@ -1703,6 +1703,21 @@ export default function TaskSets() {
                         {title}
                       </div>
 
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+                      {/* At-desk (no QR scans) indicator */}
+                      {ts?.atDeskOnly && (
+                        <span
+                          title="At-desk only — students stay seated; no QR-code scans / no moving between stations"
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: 4,
+                            padding: "2px 9px", borderRadius: 999,
+                            fontSize: "0.7rem", fontWeight: 800,
+                            background: "#e0f2fe", color: "#075985", border: "1px solid #7dd3fc",
+                          }}
+                        >
+                          🪑 At-desk · no scans
+                        </span>
+                      )}
                       {/* Verification badge from the auto playability test */}
                       {(() => {
                         const v = getVerification(ts);
@@ -1738,6 +1753,7 @@ export default function TaskSets() {
                           </span>
                         );
                       })()}
+                      </div>
                     </div>
 
                     {/* Quick-action buttons — below the title, Test run beside Launch */}
