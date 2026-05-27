@@ -288,11 +288,18 @@ export default function WhatAmITask({ task, onSubmit, disabled, socket, roomCode
     flexDirection: "column",
     alignItems: "center",
     minHeight: "60vh",
-    padding: "20px 14px",
+    padding: "24px 16px",
     gap: 14,
     width: "100%",
     maxWidth: 520,
     margin: "0 auto",
+    // This task is dark-themed (light title/prompt/clue text). Carry its own
+    // dark surface so it stays legible regardless of the parent backdrop — the
+    // teacher "Test run" preview mounts tasks inside a WHITE card, which made
+    // the title and clue text disappear (low-contrast bug).
+    background: "linear-gradient(160deg, #1e1b4b 0%, #0f172a 100%)",
+    borderRadius: 16,
+    color: "#f1f5f9",
   };
   const titleStyle = {
     fontSize: "0.75rem",
@@ -477,12 +484,15 @@ export default function WhatAmITask({ task, onSubmit, disabled, socket, roomCode
         onContextMenu={(e) => e.preventDefault()}
         onDragStart={(e) => e.preventDefault()}
       >
-        {clues.slice(0, revealedCount).map((c, i) => (
-          <div key={`clue-${i}`} style={clueBox}>
-            <div style={clueLabel}>Clue {c.level ?? i + 1}</div>
-            <div>{c.text}</div>
-          </div>
-        ))}
+        {clues.slice(0, revealedCount).map((c, i) => {
+          const clueText = typeof c === "string" ? c : (c?.text || c?.clue || c?.hint || c?.description || "");
+          return (
+            <div key={`clue-${i}`} style={clueBox}>
+              <div style={clueLabel}>Clue {(c && c.level) ?? i + 1}</div>
+              <div>{clueText}</div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Reveal next clue */}
