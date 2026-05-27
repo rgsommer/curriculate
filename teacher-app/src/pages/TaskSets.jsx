@@ -130,6 +130,19 @@ function getGrade(ts) {
   return safeStr(ts?.grade || ts?.gradeLevel || ts?.gradeBand || "");
 }
 
+// Verification status from the auto playability test (set at generation and on
+// "Fix"). "verified" = tested with zero outstanding issues → safe to run with a
+// class. "issues" = tested but some tasks still need attention. null = never
+// tested (older set generated before the playability test existed).
+function getVerification(ts) {
+  const pa = ts?.meta?.playability;
+  if (!pa || !pa.checkedAt) return null;
+  const issues = Array.isArray(pa.issues) ? pa.issues : [];
+  return issues.length === 0
+    ? { state: "verified", count: 0 }
+    : { state: "issues", count: issues.length };
+}
+
 function getTasksCount(ts) {
   const n = Number(
     ts?.numTasks ??
@@ -1689,6 +1702,42 @@ export default function TaskSets() {
                         </span>
                         {title}
                       </div>
+
+                      {/* Verification badge from the auto playability test */}
+                      {(() => {
+                        const v = getVerification(ts);
+                        if (!v) return null;
+                        if (v.state === "verified") {
+                          return (
+                            <span
+                              title="Sanitized & playability-tested \u2014 safe to run with a class"
+                              style={{
+                                flexShrink: 0, alignSelf: "center",
+                                display: "inline-flex", alignItems: "center", gap: 4,
+                                padding: "2px 9px", borderRadius: 999,
+                                fontSize: "0.7rem", fontWeight: 800,
+                                background: "#dcfce7", color: "#166534", border: "1px solid #86efac",
+                              }}
+                            >
+                              \u2713 Verified
+                            </span>
+                          );
+                        }
+                        return (
+                          <span
+                            title={`${v.count} task${v.count === 1 ? "" : "s"} still need attention \u2014 run \uD83D\uDD27 Fix or \u267B\uFE0F Regenerate`}
+                            style={{
+                              flexShrink: 0, alignSelf: "center",
+                              display: "inline-flex", alignItems: "center", gap: 4,
+                              padding: "2px 9px", borderRadius: 999,
+                              fontSize: "0.7rem", fontWeight: 800,
+                              background: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d",
+                            }}
+                          >
+                            \u26A0\uFE0F {v.count}
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {/* Quick-action buttons — below the title, Test run beside Launch */}

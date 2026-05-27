@@ -9,6 +9,7 @@ import { sanitizeTaskShapeByType } from "../controllers/sanitizeTaskShape.js";
 import { validateAiTask, regenerateSingleTask } from "../controllers/sharedTasksetController.js";
 import TaskDiagnosticLog from "../models/TaskDiagnosticLog.js";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
+import { assessTaskPlayability } from "../../shared/taskPlayability.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -360,6 +361,20 @@ router.post("/:id/sanitize", auth, async (req, res) => {
 
     // ── Save ──
     doc.tasks = sanitized;
+    // Recompute playability over the sanitized + AI-repaired tasks so the set
+    // can earn (or lose) the "verified / safe to go" badge in Task Sets.
+    const paIssues = [];
+    sanitized.forEach((t, idx) => {
+      if (!t || typeof t !== "object") return;
+      try {
+        const pa = assessTaskPlayability(t);
+        if (pa && pa.playable === false && Array.isArray(pa.issues) && pa.issues.length) {
+          paIssues.push({ index: idx, taskType: t.taskType || t.type || "unknown", title: t.title || "", issues: pa.issues });
+        }
+      } catch { /* never let the check break the save */ }
+    });
+    doc.meta = { ...(doc.meta || {}), playability: { checkedAt: new Date(), issues: paIssues, source: "sanitize" } };
+    doc.markModified("meta");
     doc.updatedAt = new Date();
     await doc.save();
 
