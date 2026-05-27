@@ -1184,6 +1184,11 @@ function DemoPlayer({
   // ANY activity bumps lastActivityRef and (in practice) dismisses the
   // modal.  No task is ever silently skipped any more.
   const [showDoneModal, setShowDoneModal] = useState(false);
+  // At the hard idle limit we no longer silently end — we surface a
+  // "Need more time?" prompt and wait for the player, so a present-but-idle
+  // student (e.g. mid-read on a long task) is never kicked out.
+  const [needMoreTime, setNeedMoreTime] = useState(false);
+  const [idleResumeKey, setIdleResumeKey] = useState(0);
   useEffect(() => {
     lastActivityRef.current = Date.now();
     setShowDoneModal(false);
@@ -1205,9 +1210,12 @@ function DemoPlayer({
       }
 
       if (idleFor >= IDLE_PROMPT_MS + IDLE_AUTO_END_MS) {
-        // 15 minutes of nothing → finish the session entirely.
+        // 15 minutes of nothing → don't silently end. Surface a "Need more
+        // time?" prompt (works on ANY task) and pause the idle timer until the
+        // player answers. They stay in the session unless they choose to end.
         clearInterval(timerRef.current);
-        onFinish(results);
+        setShowDoneModal(false);
+        setNeedMoreTime(true);
         return;
       }
       if (idleFor >= IDLE_PROMPT_MS) {
@@ -1218,7 +1226,7 @@ function DemoPlayer({
     }, 1000);
 
     return () => clearInterval(timerRef.current);
-  }, [taskIdx, timerEffectivelyPaused, results, onFinish, isConference]);
+  }, [taskIdx, timerEffectivelyPaused, results, onFinish, isConference, idleResumeKey]);
 
   // Modal handlers.  "Keep going" just bumps activity so the popup goes
   // away; "I'm done" finishes the session immediately.
@@ -1228,6 +1236,20 @@ function DemoPlayer({
   };
   const handleEndPractice = () => {
     setShowDoneModal(false);
+    onFinish(results);
+  };
+
+  // "Need more time?" prompt (shown at the hard idle limit instead of
+  // auto-ending). "Keep practicing" resets the idle clock and re-arms the
+  // timer; "I'm done" ends the session.
+  const handleNeedMoreTime = () => {
+    lastActivityRef.current = Date.now();
+    setNeedMoreTime(false);
+    setShowDoneModal(false);
+    setIdleResumeKey((k) => k + 1); // re-arm the idle timer effect
+  };
+  const handleEndFromIdle = () => {
+    setNeedMoreTime(false);
     onFinish(results);
   };
 
@@ -1657,7 +1679,74 @@ function DemoPlayer({
               </button>
             </div>
             <div style={{ fontSize: 11, color: "rgba(148,163,184,0.6)", marginTop: 14 }}>
-              We'll auto-finish in ~5 minutes if no one taps.
+              Still idle in a few minutes? We'll just check you're still here — we won't end without asking.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* "Need more time?" — shown at the hard idle limit instead of silently
+          ending. Stays up until the player answers, on ANY task. */}
+      {needMoreTime && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed", inset: 0, zIndex: 10002,
+            background: "rgba(15,23,42,0.65)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: "100%", maxWidth: 380,
+              background: "#0f172a",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 20,
+              padding: "24px 22px",
+              color: "#f1f5f9",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: 40, marginBottom: 8 }}>⏳</div>
+            <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>
+              Need more time?
+            </div>
+            <div style={{ fontSize: 13, color: "rgba(226,232,240,0.7)", lineHeight: 1.5, marginBottom: 18 }}>
+              It's been quiet for a while. Still working on this task?
+              <br />
+              Tap <b>Keep practicing</b> to stay in, or <b>I'm done</b> to finish up.
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                type="button"
+                onClick={handleNeedMoreTime}
+                style={{
+                  flex: 1, padding: "10px 16px", borderRadius: 12,
+                  border: "none",
+                  background: "linear-gradient(135deg, #22c55e, #16a34a)",
+                  color: "#fff", fontWeight: 900, fontSize: 14,
+                  cursor: "pointer",
+                  boxShadow: "0 4px 14px rgba(34,197,94,0.4)",
+                }}
+              >
+                Keep practicing
+              </button>
+              <button
+                type="button"
+                onClick={handleEndFromIdle}
+                style={{
+                  flex: 1, padding: "10px 16px", borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.16)",
+                  background: "rgba(255,255,255,0.06)",
+                  color: "#f1f5f9", fontWeight: 800, fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                I'm done
+              </button>
             </div>
           </div>
         </div>
