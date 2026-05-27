@@ -1210,7 +1210,10 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt, passage, errors, mode.
     - passage: a 40–80 word paragraph on the topic that reads like a student wrote it.
-      Embed 5–10 intentional errors (typos, grammar, logic, punctuation).
+      Embed 5–10 intentional errors using a MIX of types — do NOT make them all spelling.
+      Include at least one or two of EACH: spelling/typos, grammar (subject/verb agreement,
+      verb tense, or a wrong/misused word), and punctuation (missing/incorrect comma,
+      apostrophe, period, or capitalization); add a factual/logical error where it fits.
       Write naturally — don't make every sentence have an error.
     - errors: array of objects, each with:
         wordIndex (0-based index of the erroneous word in the passage when split by whitespace),

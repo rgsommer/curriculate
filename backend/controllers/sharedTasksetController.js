@@ -1447,12 +1447,19 @@ export async function buildPeerEditingErrors(passage, { gradeLevel } = {}) {
     "You find the intentional mistakes in a student writing sample for a peer-editing exercise. Return ONLY JSON.";
   const user = `
 The passage below is shown as whitespace-separated tokens in the form index:word.
-Find 5-8 clear, unambiguous errors (spelling/typos, grammar, punctuation, or factual/logical mistakes).
+Find 5-8 clear, unambiguous errors and return them as the answer key.
 Return JSON exactly as: { "errors": [ { "wordIndex": <0-based index>, "word": "<exact token at that index>", "type": "typo|grammar|punctuation|logic|delete", "correct": "<correction, or null for delete>" } ] }
+
+Use a MIX of error types — do NOT make them all spelling. Across the 5-8 errors, include at least:
+- one or two spelling/typo errors (type "typo"),
+- at least one grammar error — subject/verb agreement, verb tense, or a wrong/misused word (type "grammar"),
+- at least one punctuation error — missing/incorrect comma, apostrophe, period, capitalization (type "punctuation"),
+- and, where it fits naturally, a factual or logical error about the topic (type "logic").
+
 Rules:
 - wordIndex MUST be the exact index shown before the colon for that token.
 - "word" MUST equal the token exactly as shown (including any punctuation).
-- Choose only tokens that are genuinely wrong. Provide between 5 and 8 errors.
+- Choose only tokens that are genuinely wrong (not stylistic preferences).
 ${gradeLevel ? `- Keep corrections appropriate for grade ${gradeLevel}.` : ""}
 
 Numbered passage:
