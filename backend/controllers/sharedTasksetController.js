@@ -1050,7 +1050,7 @@ export const retryMustHave = {
   [TASK_TYPES.FLASHCARDS]:
     'FLASHCARDS: Pick 12–20 terms from the vocabulary list as card fronts (question field). Write a clear definition for each as the card back (answer field). config.items (>=5). Each item: { question, answer }. NEVER use placeholder text like "Term 1" or "Card 2".',
   [TASK_TYPES.FLASHCARDS_RACE]:
-    'FLASHCARDS_RACE: Pick 8–15 terms from the vocabulary list. For each term, write a clue/definition as the "question" and the term itself as the "answer". config.items (>=5). Each item: { question, answer }. NEVER use placeholder text like "Question 1" or "Answer 2".',
+    'FLASHCARDS_RACE: Pick 8–15 terms/concepts from the vocabulary list. For each, write a clue/definition as the "question" and the SHORT TERM ITSELF as the "answer" (a word or short phrase, ≤50 chars). The answer is ALWAYS the vocabulary term, NEVER a computed value or worked solution. For math, use term↔definition cards (e.g. question "The top number of a fraction" → answer "numerator"; question "A polygon with 4 equal sides" → answer "square"), NOT compute-the-answer problems (do NOT make the answer something like "5/4 + 1/2 = 7/4"). config.items (>=5). Each item: { question, answer }. NEVER use placeholder text like "Question 1" or "Answer 2".',
   [TASK_TYPES.WORD_WEAVER_DUEL]:
     "WORD_WEAVER_DUEL should include words (array 5–10) and gridSize (number).",
   [TASK_TYPES.DIFF_DETECTIVE]:

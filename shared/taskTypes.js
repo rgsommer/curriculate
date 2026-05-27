@@ -2591,7 +2591,8 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - You MUST place flashcards inside config.items (NOT at the root level).
     - Each flashcard MUST have: { "question": "...", "answer": "..." }
     - "question" = the prompt shown on the card (short, clear -- a definition, clue, or question).
-    - "answer" = the expected correct response (1–5 words, unambiguous).
+    - "answer" = the expected correct response (1–5 words, unambiguous, ≤50 characters).
+    - For MATH: make term↔definition cards — the answer is the short vocabulary TERM (e.g. question "The top number of a fraction" → answer "numerator"; "A polygon with 4 equal sides" → answer "square"). Do NOT make compute-the-answer problems where the answer is a worked value like "5/4 + 1/2 = 7/4". Race answers are short terms students type fast, never calculations.
 
     CRITICAL -- config.items structure:
     {
@@ -5255,7 +5256,7 @@ export const SUBJECT_AFFINITY = {
   [TASK_TYPES.TRUE_FALSE]:             { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 0.8, health: 0.9, business: 1.0, religion: 1.0, general: 1.0 },
   [TASK_TYPES.SHORT_ANSWER]:           { math: 0.9, science: 1.0, history: 1.0, language: 1.0, arts: 0.8, health: 0.8, business: 1.0, religion: 1.0, general: 1.0 },
   [TASK_TYPES.FLASHCARDS]:             { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 0.9, health: 0.9, business: 1.0, religion: 1.0, general: 1.0 },
-  [TASK_TYPES.FLASHCARDS_RACE]:        { math: 0.5, science: 1.0, history: 1.0, language: 1.0, arts: 0.9, health: 0.9, business: 1.0, religion: 1.0, general: 1.0 },
+  [TASK_TYPES.FLASHCARDS_RACE]:        { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 0.9, health: 0.9, business: 1.0, religion: 1.0, general: 1.0 },
   [TASK_TYPES.JEOPARDY]:               { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 0.9, health: 0.9, business: 1.0, religion: 1.0, general: 1.0 }, // Brain Blitz
   [TASK_TYPES.MATCHING]:               { math: 0.9, science: 1.0, history: 1.0, language: 1.0, arts: 0.8, health: 0.8, business: 0.9, religion: 0.9, general: 0.9 },
   [TASK_TYPES.LABELME]:                { math: 0.8, science: 1.0, history: 1.0, language: 0.7, arts: 0.9, health: 1.0, business: 0.7, religion: 0.9, general: 0.9 },
