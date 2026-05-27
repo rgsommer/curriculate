@@ -383,15 +383,11 @@ export default function MadDashSequenceTask({ task, onSubmit, disabled, presente
             <div className="text-2xl font-black">
               Time: <span className="text-amber-600">{fmt(timerMs)}</span>
             </div>
-            <div className="mt-3 font-extrabold">
-              Scan next:{" "}
-              {scanSeq[scanIdx] ? (
-                <span className="px-3 py-1 rounded-full font-black" style={colorPillStyle(scanSeq[scanIdx])}>
-                  {scanSeq[scanIdx]}
-                </span>
-              ) : (
-                <span className="text-emerald-700">—</span>
-              )}
+            {/* Intentionally NOT revealing the next colour — that would let
+                students match colours without reading/ordering the statements.
+                They scan the stations in the order they worked out. */}
+            <div className="mt-3 font-extrabold text-slate-700">
+              Scan the stations in the order you worked out.
             </div>
 
             <div className={`mt-4 p-4 rounded-xl border ${errorFlash ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50"}`}>

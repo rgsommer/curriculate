@@ -1,5 +1,5 @@
 // student-app/src/components/tasks/types/SequenceTask.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useThemeMode } from "../../../utils/ThemeModeContext.js";
 import { isDarkTheme } from "../../../utils/themeHelpers.js";
 
