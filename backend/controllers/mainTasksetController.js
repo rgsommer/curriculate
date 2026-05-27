@@ -361,6 +361,22 @@ ${JSON.stringify(slim, null, 2)}`;
       // Re-run sanitizer on the reviewed task
       const type = normalizeSelectedType(cleaned.taskType || original.taskType) || original.taskType;
       const sanitized = sanitizeTaskShapeByType(type, cleaned);
+
+      // GUARDRAIL: the reviewer sometimes drops type-specific structured fields
+      // it doesn't understand (e.g. peer-editing errors[], a deck's items[]),
+      // which would ship a broken task. Never let the review make a task WORSE:
+      // if the original was playable and the reviewed version isn't, keep the
+      // original.
+      try {
+        const origOk = assessTaskPlayability(original).playable !== false;
+        const revOk = assessTaskPlayability(sanitized).playable !== false;
+        if (origOk && !revOk) {
+          console.warn(`[PostReview] Task ${i} (${type}) became unplayable after review (likely dropped a required field) — keeping original.`);
+          fixCount--;
+          return original;
+        }
+      } catch { /* if the check throws, fall through to the reviewed task */ }
+
       return sanitized;
     });
 
