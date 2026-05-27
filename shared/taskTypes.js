@@ -1614,8 +1614,15 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
 
       Task-specific guidance:
       - This is a MOVEMENT MISSION -- no quiz, no answer options, no scoring.
-      - Create a quick physical challenge tied to the topic (e.g., act out a concept, mime an action, move to corners, use gestures).
-      - The "prompt" field is displayed on screen to students. Write 2–4 clear steps addressed directly to the student (second-person).
+      - Tie the movement to the TOPIC (this is what makes it different from Body Break,
+        which is content-free): the gesture/movement should represent or reinforce a concept
+        (e.g. "make a right angle with your arms", "step LEFT for a proper fraction, RIGHT for
+        improper", "trace a number line in the air").
+      - Keep it SHORT and EASY TO ACT: 2–3 simple, physically-doable steps. Do NOT list many
+        actions, and avoid anything abstract or hard to perform standing at a desk (testers:
+        "way too many actions", "many would be difficult to act out").
+      - The "prompt" field is displayed on screen to students. Write the 2–3 steps addressed
+        directly to the student (second-person).
       - IMPORTANT: Do NOT reference a teacher giving verbal cues. The student reads the prompt and taps DONE when finished.
       - Include a safety reminder (e.g., "Move safely and be aware of your space!").
 
@@ -2436,11 +2443,18 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Avoid copyrighted passages; write original content.
 
     Task-specific guidance:
-    - Create 10–15 statements about the given topic.
+    - Create 8–10 statements about the given topic (not more — students stack them one by one).
     - Each item has: { "statement": "...", "category": "benefit"|"harm"|"neutral" }
-    - Use tri-state categories when the topic involves evaluating impacts, consequences, or effects.
-    - Use binary (benefit/harm only, no neutral) when the topic is factual true/false.
-    - Mix categories so roughly 40% benefit, 30% harm, 30% neutral (for tri-state) or 50/50 (for binary).
+    - For FACTUAL / recall topics (e.g. math, science facts), use BINARY:
+      benefit = a CORRECT statement (stacks), harm = an INCORRECT statement (collapses).
+      Do NOT use "neutral" for factual topics — a true fact is never "neutral", and a
+      neutral pile of true statements confused testers. Every factual item is either
+      correct (benefit) or incorrect (harm).
+    - Use the tri-state "neutral" ONLY for genuine evaluation/impact topics (benefit vs harm
+      vs truly-neither), never for factual recall.
+    - BALANCE IS REQUIRED: at least 3 of the items must be HARM (incorrect/false), so students
+      have to discriminate — do NOT make almost everything a benefit (testers: "too many to
+      stack", "not enough false").
     - Statements should require genuine thought -- avoid obviously true/false items.
 
     Example structure (tri-state):
@@ -2452,7 +2466,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
         { "statement": "Factory production made goods cheaper and more available.", "category": "benefit" },
         { "statement": "Child labor became widespread in factories.", "category": "harm" },
         { "statement": "Population shifted from rural to urban areas.", "category": "neutral" },
-        ... (10-15 items total)
+        ... (8-10 items total)
       ]
     }
 
@@ -2464,13 +2478,13 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       "items": [
         { "statement": "Mitochondria produce ATP.", "category": "benefit" },
         { "statement": "Plant cells have no cell wall.", "category": "harm" },
-        ... (10-15 items total)
+        ... (8-10 items total)
       ]
     }
 
     Common failure prevention:
     - category must be one of: "benefit", "harm", "neutral" -- not true/false.
-    - Include 10–15 items, not fewer.
+    - Include 8-10 items (at least 3 of them HARM).
     - Ensure prompts are student-facing instructions (what to do).
     `,
   },

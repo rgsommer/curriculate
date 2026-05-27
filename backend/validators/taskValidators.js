@@ -586,6 +586,16 @@ export function normalizeTaskByType(taskType, rawTask) {
       task.items = normalized.items;
       task.config = normalized.config;
 
+      // Cap item count — too many terms overwhelm the drag UI (testers saw ~30
+      // when the whole word bank got dumped in). A good sort is 8-14 terms.
+      const SORT_MAX_ITEMS = 14;
+      if (Array.isArray(task.items) && task.items.length > SORT_MAX_ITEMS) {
+        task.items = task.items.slice(0, SORT_MAX_ITEMS);
+      }
+      if (isObject(task.config) && Array.isArray(task.config.items) && task.config.items.length > SORT_MAX_ITEMS) {
+        task.config.items = task.config.items.slice(0, SORT_MAX_ITEMS);
+      }
+
       const cfg = isObject(task.config) ? task.config : (task.config = {});
       const buckets = Array.isArray(cfg.buckets) ? cfg.buckets : [];
       const items = Array.isArray(cfg.items) ? cfg.items : [];
@@ -2850,6 +2860,10 @@ export function validateTaskByType(taskType, task) {
         errors.push("tower-builder requires items[] with at least 5 statements");
         break;
       }
+      // Cap — too many statements means an endless stack (tester: "too many to stack").
+      if (task.items.length > 10) {
+        task.items = task.items.slice(0, 10);
+      }
       const validCats = new Set(["benefit", "harm", "neutral"]);
       for (const it of task.items) {
         if (!isNonEmptyString(it?.statement)) errors.push("each item.statement must be a non-empty string");
@@ -2860,6 +2874,12 @@ export function validateTaskByType(taskType, task) {
             errors.push("each item.category must be benefit, harm, or neutral");
           }
         }
+      }
+      // Balance — need enough HARM (incorrect/collapse) statements so students must
+      // discriminate, not just stack everything (tester: "not enough false").
+      const harmCount = task.items.filter((it) => it?.category === "harm").length;
+      if (harmCount < 2) {
+        errors.push(`tower-builder needs at least 2 "harm" (incorrect) statements so it isn't all-stack — found ${harmCount}. Make ~3 of the statements false/incorrect.`);
       }
       break;
     }
