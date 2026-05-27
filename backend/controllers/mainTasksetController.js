@@ -1878,23 +1878,30 @@ export async function createAiTaskset(req, res) {
         .filter(Boolean)
         .join("\n\n");
 
-      // Generate the first attempt via per-task single-type call (no batch)
-      let attemptTask = await regenerateSingleTask({
-        allowedType: expectedType,
-        mustHave,
-        subject,
-        gradeLevel,
-        difficulty,
-        learningGoal,
-        topicLabel,
-        vocabularyLines: scopedLines,
-        specialConsiderations: scopedConsiderations,
-        previousTask: null,
-      });
-
       let lastErr = null;
       let success = false;
       let usedAttempts = 0;
+
+      // Generate the first attempt. Wrapped in try/catch so a first-try schema
+      // failure (regenerateSingleTask throws assertValidAiTask) doesn't escape
+      // and abort the WHOLE set — the retry loop + final drop handle it.
+      let attemptTask = null;
+      try {
+        attemptTask = await regenerateSingleTask({
+          allowedType: expectedType,
+          mustHave,
+          subject,
+          gradeLevel,
+          difficulty,
+          learningGoal,
+          topicLabel,
+          vocabularyLines: scopedLines,
+          specialConsiderations: scopedConsiderations,
+          previousTask: null,
+        });
+      } catch (e) {
+        lastErr = e; // first loop iteration sees attemptTask=null → retries with the error hint
+      }
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         usedAttempts = attempt;
@@ -1935,19 +1942,27 @@ export async function createAiTaskset(req, res) {
             assignedTerms,
           });
 
-          attemptTask = await regenerateSingleTask({
-            allowedType: expectedType,
-            mustHave,
-            subject,
-            gradeLevel,
-            difficulty,
-            learningGoal,
-            topicLabel,
-            vocabularyLines: scopedLines,
-            specialConsiderations: scopedConsiderations,
-            previousTask: attemptTask,
-            previousError: String(e?.message || e),
-          });
+          // Wrapped: if THIS regeneration also throws its schema error, don't
+          // let it escape the loop and abort the whole set — null it so the
+          // next iteration retries, and the final !success branch drops it.
+          try {
+            attemptTask = await regenerateSingleTask({
+              allowedType: expectedType,
+              mustHave,
+              subject,
+              gradeLevel,
+              difficulty,
+              learningGoal,
+              topicLabel,
+              vocabularyLines: scopedLines,
+              specialConsiderations: scopedConsiderations,
+              previousTask: attemptTask,
+              previousError: String(e?.message || e),
+            });
+          } catch (regenErr) {
+            lastErr = regenErr;
+            attemptTask = null;
+          }
         }
       }
 
