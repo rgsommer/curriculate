@@ -117,8 +117,8 @@ function validatePlayabilityByType(type, task) {
     }
     // Check item text length
     if (Array.isArray(cfg.items)) {
-      const longItems = cfg.items.filter((it) => String(it?.text || it || "").length > 80);
-      if (longItems.length > 0) errors.push(`${longItems.length} item(s) exceed 80 characters — keep item text short`);
+      const longItems = cfg.items.filter((it) => String(it?.text || it || "").length > 120);
+      if (longItems.length > 0) errors.push(`${longItems.length} item(s) exceed 120 characters — keep item text short`);
     }
   }
 
@@ -309,8 +309,8 @@ function validatePlayabilityByType(type, task) {
   if (type === TASK_TYPES.SORT) {
     const sortItems = Array.isArray(cfg?.items) ? cfg.items : [];
     if (sortItems.length < 8) errors.push(`config.items[] must have at least 8 items for sort tasks (got ${sortItems.length})`);
-    const longSortItems = sortItems.filter((it) => String(it?.text || it || "").length > 80);
-    if (longSortItems.length > 0) errors.push(`${longSortItems.length} sort item(s) exceed 80 characters — keep item text short`);
+    const longSortItems = sortItems.filter((it) => String(it?.text || it || "").length > 120);
+    if (longSortItems.length > 0) errors.push(`${longSortItems.length} sort item(s) exceed 120 characters — keep item text short`);
   }
 
   // ── Photo prompt complexity check (warning only — does not block) ──
