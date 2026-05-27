@@ -1786,7 +1786,7 @@ export default function TaskSets() {
                                 background: "#dcfce7", color: "#166534", border: "1px solid #86efac",
                               }}
                             >
-                              \u2713 Verified
+                              ✓ Verified
                             </span>
                           );
                         }
@@ -1801,21 +1801,25 @@ export default function TaskSets() {
                               background: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d",
                             }}
                           >
-                            \u26A0\uFE0F {v.count}
+                            ⚠️ {v.count}
                           </span>
                         );
                       })()}
                     </div>
 
-                    {/* Quick-action buttons — below the title, Test run beside Launch */}
+                    {/* Quick-action buttons — single line: Test run · Regenerate · Launch. */}
+                    {/* flexWrap:nowrap + slightly smaller text keeps all three on one row even on narrow cards. */}
                     <div
                       onClick={(e) => e.stopPropagation()}
-                      style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}
+                      style={{
+                        display: "flex", gap: 6, flexWrap: "nowrap", marginTop: 8,
+                        alignItems: "center",
+                      }}
                     >
                       <button
                         type="button"
                         onClick={() => testRun(ts)}
-                        style={btn("secondary")}
+                        style={{ ...btn("secondary"), padding: "5px 10px", fontSize: "0.78rem", whiteSpace: "nowrap" }}
                         title="Step through the tasks as a student would — no QR scans"
                       >
                         🧪 Test run
@@ -1824,7 +1828,7 @@ export default function TaskSets() {
                         const isRegen = regeneratingId === id;
                         const rp = isRegen ? regenProgress : null;
                         const pct = rp && rp.total ? Math.min(100, Math.round((rp.done / rp.total) * 100)) : null;
-                        const style = { ...btn("secondary") };
+                        const style = { ...btn("secondary"), padding: "5px 10px", fontSize: "0.78rem", whiteSpace: "nowrap" };
                         if (isRegen) {
                           style.cursor = "wait";
                           style.borderColor = "#a5b4fc";
@@ -1856,7 +1860,11 @@ export default function TaskSets() {
                           </button>
                         );
                       })()}
-                      <button type="button" onClick={() => launchNow(ts)} style={btn("primary")}>
+                      <button
+                        type="button"
+                        onClick={() => launchNow(ts)}
+                        style={{ ...btn("primary"), padding: "5px 12px", fontSize: "0.78rem", whiteSpace: "nowrap" }}
+                      >
                         Launch
                       </button>
                     </div>
