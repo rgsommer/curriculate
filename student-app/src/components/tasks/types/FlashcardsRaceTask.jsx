@@ -105,6 +105,11 @@ export default function FlashcardsRaceTask(props) {
       (Array.isArray(task?.flashcards) && task.flashcards) ||
       (Array.isArray(task?.config?.cards) && task.config.cards) ||
       (Array.isArray(task?.config?.flashcards) && task.config.flashcards) ||
+      // The generator/validator stores the deck in config.items (and sometimes
+      // top-level items) — read those too, otherwise a real generated deck looks
+      // empty and the component falls back to the generic demo cards.
+      (Array.isArray(task?.config?.items) && task.config.items) ||
+      (Array.isArray(task?.items) && task.items) ||
       [];
     const cleaned = raw
       .map((c, i) => ({
