@@ -4342,6 +4342,7 @@ if (
                   }}
                 >
                   <label
+                    title="A duel is a surprise head-to-head: the system pauses and pits two teams against each other in a quick challenge (e.g. a fast question or word game). The winner earns bonus points, then play resumes. Great for energy; turn off for a calmer session."
                     style={{
                       display: "flex",
                       alignItems: "center",
