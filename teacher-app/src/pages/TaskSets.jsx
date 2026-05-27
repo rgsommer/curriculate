@@ -518,6 +518,7 @@ export default function TaskSets() {
   const [fixNote, setFixNote] = useState("");
   const [fixRunning, setFixRunning] = useState(false);
   const [fixResult, setFixResult] = useState(null);
+  const [fixPhase, setFixPhase] = useState("");
 
   const openFixDialog = (id) => {
     setFixDialogId(String(id));
@@ -530,23 +531,67 @@ export default function TaskSets() {
     setFixNote("");
     setFixResult(null);
     setFixRunning(false);
+    setFixPhase("");
   };
 
   const runFix = async () => {
     if (!fixDialogId || fixRunning) return;
     setFixRunning(true);
     setFixResult(null);
+    setFixPhase("Validating tasks…");
     try {
-      const data = await apiFetchJson(`/api/tasksets/${encodeURIComponent(fixDialogId)}/sanitize`, {
+      // Stream via SSE so the long AI-repair pass keeps the connection alive
+      // (a silent POST gets killed by idle-timeout proxies → "Failed to fetch").
+      const res = await apiFetch(`/api/tasksets/${encodeURIComponent(fixDialogId)}/sanitize`, {
         method: "POST",
-        body: { note: fixNote },
+        body: JSON.stringify({ note: fixNote }),
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
       });
-      setFixResult(data);
+      if (!res.ok) {
+        let msg = `Request failed (${res.status})`;
+        try { const j = await res.json(); msg = j?.error || msg; } catch { /* ignore */ }
+        throw new Error(msg);
+      }
+      // Backward-compat: a backend that doesn't stream returns plain JSON.
+      const ct = res.headers.get("content-type") || "";
+      if (!ct.includes("text/event-stream")) {
+        const data = await res.json();
+        if (data?.ok === false) throw new Error(data?.error || "Fix failed");
+        setFixResult(data);
+        await loadSets();
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let finalData = null;
+      let streamErr = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split("\n\n");
+        buf = parts.pop() ?? "";
+        for (const part of parts) {
+          const dataLine = part.split("\n").find((l) => l.startsWith("data:"));
+          if (!dataLine) continue;
+          try {
+            const msg = JSON.parse(dataLine.slice(5).trim());
+            if (msg.type === "complete") finalData = msg;
+            else if (msg.type === "error") streamErr = msg.error || "Fix failed";
+            else if (msg.type === "phase") setFixPhase(msg.message || "");
+          } catch { /* partial / heartbeat line */ }
+        }
+      }
+      if (streamErr) throw new Error(streamErr);
+      if (!finalData) throw new Error("No result was returned");
+      setFixResult(finalData);
       await loadSets();
     } catch (e) {
-      setFixResult({ ok: false, message: e?.message || "Fix failed" });
+      setFixResult({ ok: false, failed: true, message: e?.message || "Fix failed" });
     } finally {
       setFixRunning(false);
+      setFixPhase("");
     }
   };
 
@@ -2286,25 +2331,33 @@ export default function TaskSets() {
                     background: fixRunning ? "#94a3b8" : "#2563eb", color: "#fff",
                     fontWeight: 700, fontSize: 13, cursor: fixRunning ? "wait" : "pointer",
                   }}>
-                    {fixRunning ? "Fixing…" : "🔧 Diagnose & Fix"}
+                    {fixRunning ? (fixPhase || "Fixing…") : "🔧 Diagnose & Fix"}
                   </button>
                 </div>
               </>
             )}
 
-            {fixResult && (
+            {fixResult && (() => {
+              const failed = fixResult.failed === true || fixResult.ok === false || typeof fixResult.issuesFound !== "number";
+              return (
               <div>
                 {/* Summary */}
                 <div style={{
-                  background: fixResult.issuesFound === 0 ? "#f0fdf4" : "#fef2f2",
-                  border: `1.5px solid ${fixResult.issuesFound === 0 ? "#86efac" : "#fca5a5"}`,
+                  background: failed ? "#fef2f2" : fixResult.issuesFound === 0 ? "#f0fdf4" : "#fffbeb",
+                  border: `1.5px solid ${failed ? "#fca5a5" : fixResult.issuesFound === 0 ? "#86efac" : "#fcd34d"}`,
                   borderRadius: 12, padding: 14, marginBottom: 14,
                 }}>
                   <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>
-                    {fixResult.issuesFound === 0 ? "✅ All Clear" : `⚠️ ${fixResult.issuesFound} issue(s) found`}
+                    {failed
+                      ? "❌ Couldn't run Diagnose & Fix"
+                      : fixResult.issuesFound === 0
+                        ? "✅ All Clear"
+                        : `⚠️ ${fixResult.issuesFound} issue(s) found`}
                   </div>
                   <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.5 }}>
-                    {fixResult.message}
+                    {failed
+                      ? `${fixResult.message || "Something went wrong."} — please try again. (If it keeps failing, the AI repair may be taking too long; retry in a moment.)`
+                      : fixResult.message}
                   </div>
                 </div>
 
@@ -2357,7 +2410,8 @@ export default function TaskSets() {
                   </button>
                 </div>
               </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       )}

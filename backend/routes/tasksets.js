@@ -221,13 +221,38 @@ router.delete("/:id", auth, async (req, res) => {
  * Body (optional): { note: "teacher's description of what's wrong" }
  */
 router.post("/:id/sanitize", auth, async (req, res) => {
+  // Stream as SSE when asked. The AI-repair pass can run 30–60s; a silent POST
+  // gets killed by idle-timeout proxies (→ "Failed to fetch" in the browser),
+  // so we keep the connection alive with heartbeats and deliver the result in a
+  // final "complete" event. Falls back to plain JSON for non-streaming callers.
+  const wantsStream = String(req.headers.accept || "").includes("text/event-stream");
+  let hb = null;
+  const sendSSE = (obj) => {
+    if (!wantsStream) return;
+    try { res.write(`data: ${JSON.stringify(obj)}\n\n`); } catch { /* client gone */ }
+  };
+  if (wantsStream) {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    sendSSE({ type: "phase", phase: "start", message: "Validating tasks…" });
+    hb = setInterval(() => sendSSE({ type: "heartbeat" }), 10000);
+  }
+  const finishErr = (status, errMsg) => {
+    if (hb) clearInterval(hb);
+    if (wantsStream) { sendSSE({ type: "error", error: errMsg }); return res.end(); }
+    return res.status(status).json({ ok: false, error: errMsg });
+  };
   try {
     const doc = await TaskSet.findOne({
       _id: req.params.id,
       ...ownedOrLegacyQuery(req.userId),
     });
 
-    if (!doc) return res.status(404).json({ ok: false, error: "Not found" });
+    if (!doc) return finishErr(404, "Not found");
 
     const tasks = Array.isArray(doc.tasks) ? doc.tasks : [];
     const teacherNote = String(req.body?.note || "").trim().slice(0, 1000);
@@ -318,8 +343,11 @@ router.post("/:id/sanitize", auth, async (req, res) => {
     const AI_REPAIR_LIMIT = 5;
     const repairQueue = needsAiRepair.slice(0, AI_REPAIR_LIMIT);
 
+    let repairN = 0;
     for (const { idx, type, task, postErrors } of repairQueue) {
       try {
+        repairN += 1;
+        sendSSE({ type: "phase", phase: "ai-repair", message: `AI-repairing task ${idx + 1} (${repairN}/${repairQueue.length})…` });
         console.log(`[sanitize] AI repairing task ${idx} (${type}): ${postErrors.join("; ")}`);
         const repaired = await regenerateSingleTask({
           allowedType: type,
@@ -422,7 +450,7 @@ router.post("/:id/sanitize", auth, async (req, res) => {
       message = `Found ${issuesFound} issue(s) across ${diagnostics.length} task(s). Could not auto-fix — logged for developer review.`;
     }
 
-    return res.json({
+    const payload = {
       ok: true,
       taskCount: tasks.length,
       issuesFound,
@@ -431,10 +459,16 @@ router.post("/:id/sanitize", auth, async (req, res) => {
       diagnostics,
       logId,
       message,
-    });
+    };
+    if (hb) clearInterval(hb);
+    if (wantsStream) {
+      sendSSE({ type: "complete", ...payload });
+      return res.end();
+    }
+    return res.json(payload);
   } catch (err) {
     console.error("POST /api/tasksets/:id/sanitize error:", err);
-    return res.status(500).json({ ok: false, error: "Failed to sanitize" });
+    return finishErr(500, "Failed to sanitize");
   }
 });
 
