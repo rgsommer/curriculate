@@ -1952,7 +1952,19 @@ export async function createAiTaskset(req, res) {
       }
 
       if (!success) {
-        throw lastErr || new Error(`Failed to generate task for ${expectedType}`);
+        // Don't abort the WHOLE set because one task type kept failing its
+        // schema (e.g. flashcards-race answers too long for a math topic).
+        // Drop this slot and carry on — the drop-insurance buffer keeps the
+        // final count, and coverage auto-fix backfills any concepts it covered.
+        console.warn(`[AI] dropping ungeneratable slot ${i} (${expectedType}): ${lastErr?.message || lastErr}`);
+        errors.push({
+          index: i,
+          taskType: expectedType,
+          dropped: true,
+          error: String(lastErr?.message || lastErr),
+        });
+        sendSSE({ type: "progress", done: finalized.length, total: safeCount, taskType: expectedType });
+        continue; // skip the finalized.push / attemptsByTask.push for this slot
       }
 
       // record how many attempts this slot used (1 = first-pass success)
@@ -1960,6 +1972,11 @@ export async function createAiTaskset(req, res) {
 
       // 🔴 Progress event: tell the client one more task is done
       sendSSE({ type: "progress", done: finalized.length, total: safeCount, taskType: expectedType });
+    }
+
+    // If EVERY slot failed, don't save an empty set — surface a clear error.
+    if (finalized.filter(Boolean).length === 0) {
+      throw new Error("Could not generate any valid tasks for this topic. Try different task types or simplifying the vocabulary, then regenerate.");
     }
 
     // ✅ Coverage report + auto-fix (only when there are vocabulary terms to check)
