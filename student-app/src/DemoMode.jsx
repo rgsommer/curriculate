@@ -1253,6 +1253,17 @@ function DemoPlayer({
     onFinish(results);
   };
 
+  // If the "Need more time?" prompt goes unanswered for 1 minute, the player
+  // has truly left — silently end so the session + results finalize.
+  useEffect(() => {
+    if (!needMoreTime) return;
+    const t = setTimeout(() => {
+      setNeedMoreTime(false);
+      onFinish(results);
+    }, 60 * 1000);
+    return () => clearTimeout(t);
+  }, [needMoreTime, onFinish, results]);
+
   // Submit handler — earns adaptive points, then shows feedback popup
   const handleSubmit = useCallback(
     (answer) => {
