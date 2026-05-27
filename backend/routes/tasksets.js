@@ -6,7 +6,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import TaskSet from "../models/TaskSet.js";
 import { sanitizeTaskShapeByType } from "../controllers/sanitizeTaskShape.js";
-import { validateAiTask, regenerateSingleTask } from "../controllers/sharedTasksetController.js";
+import { validateAiTask, regenerateSingleTask, buildPeerEditingErrors } from "../controllers/sharedTasksetController.js";
 import TaskDiagnosticLog from "../models/TaskDiagnosticLog.js";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { assessTaskPlayability } from "../../shared/taskPlayability.js";
@@ -345,42 +345,75 @@ router.post("/:id/sanitize", auth, async (req, res) => {
 
     let repairN = 0;
     for (const { idx, type, task, postErrors } of repairQueue) {
+      const diagEntry = diagnostics.find((d) => d.taskIndex === idx);
       try {
         repairN += 1;
         sendSSE({ type: "phase", phase: "ai-repair", message: `AI-repairing task ${idx + 1} (${repairN}/${repairQueue.length})…` });
         console.log(`[sanitize] AI repairing task ${idx} (${type}): ${postErrors.join("; ")}`);
-        const repaired = await regenerateSingleTask({
-          allowedType: type,
-          subject: tsMeta.subject,
-          gradeLevel: tsMeta.gradeLevel,
-          difficulty: tsMeta.difficulty,
-          learningGoal: tsMeta.learningGoal,
-          topicLabel: tsMeta.topicLabel,
-          vocabularyLines: "",
-          specialConsiderations: teacherNote || "",
-          previousTask: task,
-          previousError: postErrors.join("; "),
-          temperature: 0.5,
-        });
+
+        let repaired = null;
+
+        // Focused peer-editing repair: the passage is usually fine (it already
+        // contains the intentional mistakes) — it's just missing the errors[]
+        // answer key. Rebuild ONLY the key for the existing passage instead of
+        // regenerating the whole task (which kept drifting and losing the key).
+        if (type === TASK_TYPES.PEER_EDITING && (task.passage || task.text)) {
+          const passage = String(task.passage || task.text || "");
+          try {
+            const rawErrs = await buildPeerEditingErrors(passage, { gradeLevel: tsMeta.gradeLevel });
+            if (Array.isArray(rawErrs) && rawErrs.length >= 3) {
+              repaired = sanitizeTaskShapeByType(type, { ...task, passage, errors: rawErrs });
+            }
+          } catch (peErr) {
+            console.warn(`[sanitize] peer-editing key build failed for task ${idx}:`, peErr?.message);
+          }
+        }
+
+        // Generic AI repair (or peer-editing fallback if the key build fell short).
+        if (!repaired) {
+          repaired = await regenerateSingleTask({
+            allowedType: type,
+            subject: tsMeta.subject,
+            gradeLevel: tsMeta.gradeLevel,
+            difficulty: tsMeta.difficulty,
+            learningGoal: tsMeta.learningGoal,
+            topicLabel: tsMeta.topicLabel,
+            vocabularyLines: "",
+            specialConsiderations: teacherNote || "",
+            previousTask: task,
+            previousError: postErrors.join("; "),
+            temperature: 0.5,
+          });
+        }
 
         if (repaired && typeof repaired === "object") {
           // Preserve original title/prompt if AI didn't improve them
           if (!repaired.title && task.title) repaired.title = task.title;
-          sanitized[idx] = repaired;
-          aiRepaired++;
 
-          // Update the diagnostic entry
-          const diagEntry = diagnostics.find((d) => d.taskIndex === idx);
+          // RE-VALIDATE — only claim "fixed" if the repaired task actually passes
+          // the generation validator AND the render-contract playability check.
+          // (Previously it marked fixed unconditionally, so broken tasks were
+          // saved while the report said "AUTO-FIXED".)
+          let postRepairErrors = [];
+          try {
+            const v = validateAiTask(type, repaired);
+            if (!v.ok) postRepairErrors = v.errors || [];
+          } catch (e) { postRepairErrors = [e?.message || "Validation error"]; }
+          let playable = true;
+          try { playable = assessTaskPlayability(repaired).playable !== false; } catch { playable = true; }
+          const trulyFixed = postRepairErrors.length === 0 && playable;
+
+          sanitized[idx] = repaired;
+          if (trulyFixed) aiRepaired++;
           if (diagEntry) {
-            diagEntry.aiRepaired = true;
-            diagEntry.fixed = true;
-            diagEntry.postFixErrors = [];
+            diagEntry.aiRepaired = trulyFixed;
+            diagEntry.fixed = trulyFixed;
+            diagEntry.postFixErrors = trulyFixed ? [] : (postRepairErrors.length ? postRepairErrors : ["Still not renderable after repair"]);
+            if (!trulyFixed) diagEntry.aiRepairError = "Repair attempt did not fully resolve the issue";
           }
         }
       } catch (aiErr) {
         console.error(`[sanitize] AI repair failed for task ${idx}:`, aiErr?.message);
-        // Update diagnostic to note AI repair was attempted but failed
-        const diagEntry = diagnostics.find((d) => d.taskIndex === idx);
         if (diagEntry) {
           diagEntry.aiRepairError = aiErr?.message || "AI repair failed";
         }

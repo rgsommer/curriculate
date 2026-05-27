@@ -1429,6 +1429,55 @@ Return a JSON object with keys: ${placeholderNames.join(", ")}
 
 
 /* ============================================================
+   PEER-EDITING ERROR-KEY BUILDER
+   Given a passage that already contains intentional mistakes, ask the AI for
+   ONLY the errors[] answer key. Far more reliable than regenerating the whole
+   task (the AI keeps drifting the passage and losing the key), and it preserves
+   the good passage. Returns a raw errors[] array — the caller should run it
+   through sanitizeTaskShapeByType for index repair + validation.
+   ============================================================ */
+
+export async function buildPeerEditingErrors(passage, { gradeLevel } = {}) {
+  const text = String(passage || "").trim();
+  if (!text) return [];
+  const client = getClient();
+  const words = text.split(/\s+/);
+  const numbered = words.map((w, i) => `${i}:${w}`).join(" ");
+  const system =
+    "You find the intentional mistakes in a student writing sample for a peer-editing exercise. Return ONLY JSON.";
+  const user = `
+The passage below is shown as whitespace-separated tokens in the form index:word.
+Find 5-8 clear, unambiguous errors (spelling/typos, grammar, punctuation, or factual/logical mistakes).
+Return JSON exactly as: { "errors": [ { "wordIndex": <0-based index>, "word": "<exact token at that index>", "type": "typo|grammar|punctuation|logic|delete", "correct": "<correction, or null for delete>" } ] }
+Rules:
+- wordIndex MUST be the exact index shown before the colon for that token.
+- "word" MUST equal the token exactly as shown (including any punctuation).
+- Choose only tokens that are genuinely wrong. Provide between 5 and 8 errors.
+${gradeLevel ? `- Keep corrections appropriate for grade ${gradeLevel}.` : ""}
+
+Numbered passage:
+${numbered}
+`.trim();
+
+  const request = {
+    model: process.env.AI_MODEL || "gpt-4.1-mini",
+    temperature: 0.2,
+    max_completion_tokens: 1024,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  };
+  if (!process.env.AI_DISABLE_JSON_RESPONSE_FORMAT) request.response_format = { type: "json_object" };
+
+  const completion = await client.chat.completions.create(request);
+  const raw = completion.choices?.[0]?.message?.content?.trim() || "{}";
+  const parsed = extractJsonFromText(raw);
+  const errs = Array.isArray(parsed?.errors) ? parsed.errors : (Array.isArray(parsed) ? parsed : []);
+  return errs;
+}
+
+/* ============================================================
    SINGLE TASK REGENERATION (one task, one type)
    ============================================================ */
 

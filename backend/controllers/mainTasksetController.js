@@ -13,6 +13,7 @@ import {
   retryMustHave,
   buildVocabularyLines,
   regenerateSingleTask,
+  buildPeerEditingErrors,
 } from "./sharedTasksetController.js";
 import { buildTasksetPrompt } from "./sharedTasksetController.js";
 import { getTimingStatsForGenerator } from "../services/taskTypeTimingAggregator.js";
@@ -2294,6 +2295,27 @@ export async function createAiTaskset(req, res) {
         let prevAttempt = original;        // shown to the AI for reference
         let curIssues = flag.issues;       // what to fix this round
         let fixed = false;
+
+        // Focused peer-editing repair: the passage is usually fine; it's just
+        // missing the errors[] answer key. Rebuild ONLY the key for the existing
+        // passage (reliable) before falling back to whole-task regeneration.
+        if (type === TASK_TYPES.PEER_EDITING && (original.passage || original.text)) {
+          try {
+            const passage = String(original.passage || original.text || "");
+            const rawErrs = await buildPeerEditingErrors(passage, { gradeLevel });
+            if (Array.isArray(rawErrs) && rawErrs.length >= 3) {
+              let pe = sanitizeTaskShapeByType(type, { ...original, passage, errors: rawErrs });
+              for (const k of PRESERVE) { if (original[k] !== undefined) pe[k] = original[k]; }
+              if (assessTaskPlayability(pe).playable !== false) {
+                finalized[idx] = pe;
+                playabilityRepaired += 1;
+                fixed = true;
+              }
+            }
+          } catch (e) {
+            console.warn(`[AI] peer-editing key build failed for #${idx + 1}:`, e?.message || e);
+          }
+        }
 
         for (let attempt = 1; attempt <= MAX_REPAIR_ATTEMPTS && !fixed; attempt++) {
           try {
